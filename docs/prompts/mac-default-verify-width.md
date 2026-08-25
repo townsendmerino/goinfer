@@ -4,6 +4,16 @@
 > measurement task with a one-character outcome — it either clears a default change or kills
 > it. Do not build anything.
 
+> **UPDATED 2026-08-25 after a strengthened Linux sweep — read this before running.** At n=12
+> paired (`docs/measurements/default-verify-width-2026-08-25.md`) the finding SPLIT: the code
+> half replicates hard (+8.7% at int4 on 11/12 pairs, +8.6% at int8 on 10/12) and **the math
+> half does not** (+3.1% on 6/12 — a coin flip). Width 8 is not optimal in any cell, but the
+> optimum is **quant-dependent**: 7 at int4, **6** at int8. So the question here is no longer
+> "does +7.1%/+5.1% reproduce". It is: **does 7 beat 8 on CODE, paired, on a different pairing —
+> and where does that pairing's own quant sweep put the optimum?** Measure math too and expect
+> little from it. Report PAIRED deltas with win counts; pooled means have prompt-to-prompt sd
+> around 10–35 tok/s and hide the effect entirely.
+
 ## The finding to confirm or kill
 
 The adaptive-width ship-gates (`docs/measurements/adaptive-width-shipgates-2026-08-25.md`)
