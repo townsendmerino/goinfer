@@ -103,3 +103,92 @@ func TestCPUBlockSpec_lossless(t *testing.T) {
 			"break-even, so this is the new CPU path drafting wrongly, not a weak drafter", perRound)
 	}
 }
+
+// TestCPUBlockSpec_scheduleInvariant is the adaptive controller's losslessness gate.
+//
+// WHY A SEPARATE TEST AND NOT A FLAG ON THE ONE ABOVE. Block drafting is lossless by
+// construction at ANY fixed width, and the test above already proves the fixed-width path.
+// What adaptivity adds is width TRANSITIONS, and a transition is exactly where a wrong
+// rollback or a stale position would live: each round truncates the KV cache to startPos and
+// re-verifies, so a round that drafts fewer positions than the last must not leave the
+// previous block's tail behind, and one that drafts more must not read positions it never
+// wrote. Neither shows as an error — both show as output diverging from plain greedy.
+//
+// The schedule is FORCED rather than left to the controller on purpose. A controller left to
+// itself may hold one width for the whole run and pass this test having exercised nothing;
+// the brief's requirement is that min, max and both directions of transition are covered, so
+// the test states the schedule instead of hoping for it.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestCPUBlockSpec_scheduleInvariant -v -timeout 60m
+func TestCPUBlockSpec_scheduleInvariant(t *testing.T) {
+	requireHeavyModel(t)
+	target := assetPath(t, "GOINFER_QWEN3_4B")
+	ddir := assetPath(t, "GOINFER_DFLASH_F32")
+
+	m, err := Load(target, Options{Quant: "int8"})
+	if err != nil {
+		t.Fatalf("Load target: %v", err)
+	}
+	defer m.Close()
+	d, err := LoadDFlashDrafter(ddir)
+	if err != nil {
+		t.Fatalf("LoadDFlashDrafter: %v", err)
+	}
+	defer d.Close()
+
+	prompt := []int{9707, 11, 358, 1079, 264, 8720, 315}
+	const maxNew = 48
+
+	base := make([]int, 0, maxNew)
+	out, _ := m.Generate(context.Background(), prompt, maxNew, SamplingParams{})
+	for id := range out {
+		base = append(base, id)
+	}
+	if len(base) == 0 {
+		t.Fatal("plain generation produced nothing")
+	}
+
+	bs := d.BlockSize()
+	if bs < 4 {
+		t.Skipf("drafter block size %d is too small to exercise a width schedule", bs)
+	}
+	// min -> max -> min, plus a single-step move in each direction, so every transition class
+	// the controller can produce appears at least once.
+	sched := []int{2, bs, 2, 3, bs, bs - 1, 2}
+	t.Logf("forced width schedule (block size %d): %v", bs, sched)
+
+	spec, err := m.NewCPUBlockSpec(d, len(prompt)+maxNew+bs+2)
+	if err != nil {
+		t.Fatalf("NewCPUBlockSpec: %v", err)
+	}
+	got, rounds, err := spec.Generate(prompt, BlockSpecOptions{
+		MaxTokens:     maxNew,
+		widthSchedule: sched,
+	})
+	if err != nil {
+		t.Fatalf("BlockSpec.Generate (scheduled): %v", err)
+	}
+	t.Logf("scheduled run: %d tokens in %d rounds (plain produced %d)", len(got), rounds, len(base))
+	if rounds < len(sched) {
+		t.Logf("NOTE: %d rounds < %d schedule entries — not every transition was reached", rounds, len(sched))
+	}
+
+	n := min(len(base), len(got))
+	if n == 0 {
+		t.Fatal("scheduled speculative generation produced nothing")
+	}
+	for i := range n {
+		if got[i] != base[i] {
+			t.Fatalf("DIVERGED at token %d under a CHANGING width schedule: spec=%d plain=%d\n"+
+				"  schedule=%v\n  spec=%v\n  plain=%v\n"+
+				"Block drafting is lossless at any fixed width, so a divergence here is a width "+
+				"TRANSITION bug — a missed cache rollback when the block narrows, or positions "+
+				"read that were never written when it widens.",
+				i, got[i], base[i], sched, got[:min(len(got), i+3)], base[:min(len(base), i+3)])
+		}
+	}
+	if len(got) != len(base) {
+		t.Errorf("length mismatch: spec %d vs plain %d — a schedule change must not move where "+
+			"generation stops", len(got), len(base))
+	}
+}
