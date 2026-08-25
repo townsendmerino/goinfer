@@ -655,6 +655,8 @@ it needs real microarchitectural profiling (cache-miss/TLB perf counters), which
 attempt. **Recorded honestly as an open mechanism, not chased further this pass** — a fix (explicit
 software prefetch, e.g. `PRFM`, was floated as a candidate) would be premature against a mechanism
 this uncertain; measure the actual bottleneck before writing an assembly change aimed at it.
+**Superseded below — the real profiling this section deferred was run 2026-08-25 and confirmed the
+4-accumulator-chain candidate.**
 
 **This also explains 35B's much smaller gap, tentatively.** 35B's separate gate/up/down experts and
 different shapes may simply be less sensitive to whatever this cold-access cost actually is than
@@ -674,6 +676,63 @@ that row4 belongs only on the resident path (never dispatch it under `-stream-we
 does. v8's surviving justifications (disk halving, structurally eliminating the double-fetch bug
 class, the no-bigger-files ruling) are independent of this finding and still stand on their own —
 but its paged-decode story, if it has one, needs the mechanism understood first, not v8 itself.
+
+## Real hardware-counter profiling: mechanism confirmed (2026-08-25)
+
+The prior section's open question — front-end (prefetch/fetch-decode) or back-end (execution/memory
+stall) — answered with real PMU counters, not inference from wall-clock alone.
+
+**Method:** `xcrun xctrace record --template 'CPU Counters'` (macOS's Instruments CLI; no root/SIP
+changes needed, confirmed working via a trivial `--launch -- /bin/echo hello` smoke test first). A
+temporary standalone tool (`cmd/_coldprofile`, deleted after this pass, never committed) loads the
+real `qwen3.5-35b-a3b-int4-row4.giw` resident and calls ONLY the canonical or ONLY the row4 free
+kernel directly against a disjoint, never-before-touched slice of MoE expert tensors per run — gemma4
+was the original model but its source checkpoint isn't available locally to rebuild a fresh row4
+`.giw` after disk pressure forced its deletion twice this pass (recorded, not incidental — see below);
+qwen3.5 was substituted since the mechanism under test is the kernel/format, not the specific model.
+
+**A real methodological trap, found and fixed before trusting any number:** `xctrace --launch`
+records the ENTIRE process lifetime, including this model's ~2-2.5 minute mmap/load phase, which
+dominates wall-clock and therefore raw trace size regardless of how many experts get touched — the
+first attempt (N=400 canonical) produced a **23 GB raw `.ktrace`** (found under `$TMPDIR`, not the
+final `.trace` bundle, which stayed a few MB) and drove the machine to `ENOSPC` for the second time
+this session; a same-day repeat at N=20 produced **19.2 GB**, proving trace size tracks wall-clock
+duration, not touch count, and that shrinking N alone doesn't fix it. **Fix:** attach xctrace AFTER
+load completes instead of launching fresh — the tool signals readiness via a marker file once loaded,
+then polls for a second file before starting the touch loop (with a 4s hold on each side so the
+attach/detach handshake isn't racing a touch loop that finishes in under a second). This cut every
+subsequent trace to **~60-70 MB**, letting two independent replicates run safely.
+
+**Result, N=20 experts × 2 replicates each, cold (never-before-touched), real production kernels:**
+
+| metric | canonical (r1 / r2) | row4 (r1 / r2) |
+|---|---|---|
+| active on-core scheduling bursts | 255 / 261 | 560 / 487 (~2x more) |
+| front-end delivery-bound (Instruction Delivery Bottleneck) | 20.1% / 21.0% | 15.3% / 14.5% |
+| back-end processing-bound (Instruction Processing Bottleneck) | 35.1% / 31.6% | 43.0% / 40.5% |
+| discarded (speculation waste) | 3.75% / 3.64% | 2.59% / 2.11% |
+| useful | 41.1% / 43.8% | 39.1% / 43.0% |
+
+(Apple's "CPU Bottlenecks" top-down categorization — `cycle`, `delivery`, `discarded`, `processing`,
+`useful` — extracted from the `MetricTable` schema via `xcrun xctrace export --xpath`; this is a
+derived front-end/back-end split, not a raw L1D-miss count directly, a real limit of this pass worth
+stating plainly.)
+
+**The direction is unambiguous and replicates: row4 is LOWER front-end-bound and HIGHER
+back-end-bound than canonical, with roughly twice as many distinct on-core bursts for the same touch
+count.** This rules the front-end candidate out on real evidence (not just the assembly read that
+retracted it above) and confirms the back-end candidate: row4 is not starved for fetch/decode
+bandwidth on cold data — if anything less than canonical — it is stalling harder in execution, and
+getting interrupted (rescheduled) roughly twice as often while doing it. The most coherent physical
+story: row4's kernel keeps 4 independent accumulator chains depending on the SAME cold cache-line
+region in flight per group (`dotW4A8SplitHalf4Row`'s own design, built to hide WARM fold latency);
+canonical only ever has one row's data in flight. A cold miss on that shared region stalls 4 rows'
+worth of in-flight execution state at once instead of 1's — more frequent, harder back-end stalls,
+not a fetch-pattern problem. **This is now a measured finding, not a hypothesis** — the honest
+remaining gap is that it's a top-down bottleneck split rather than a raw cache-miss/TLB-miss counter
+reading, and N=20×2 is a real but modest sample; a `PRFM`-style fix remains out of scope for the
+reasons already stated (parked mechanism, not a build decision), but any future attempt now has a
+confirmed target (back-end/execution stalls under concurrent in-flight state) rather than a guess.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 

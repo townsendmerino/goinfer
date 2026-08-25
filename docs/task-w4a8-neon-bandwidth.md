@@ -502,6 +502,21 @@ the GGUF/safetensors streaming loaders) stands
 UNCHANGED and is now understood to be specifically a warm-data result — do not extend it to any
 model that will be paged.**
 
+**Mechanism confirmed 2026-08-25, via real PMU counters** (`docs/task-zeno-compare.md`'s "Real
+hardware-counter profiling" section — full method and numbers there). `xcrun xctrace record
+--template 'CPU Counters'`, attached mid-run (not `--launch`, which captures the multi-minute load
+phase and blew a raw `.ktrace` out to 19-23 GB before this was caught), on N=20 cold, never-touched
+experts × 2 replicates each, canonical vs row4. Result replicates cleanly both times: row4 runs in
+~2x as many, shorter on-core scheduling bursts, with a LOWER front-end delivery-bound fraction
+(14.5-15.3% vs canonical's 20.1-21.0%) and a HIGHER back-end processing-bound fraction (40.5-43.0%
+vs canonical's 31.6-35.1%). The front-end/prefetch candidate is now ruled out on measured evidence,
+not just the assembly read above, and the back-end candidate is confirmed: row4's 4 simultaneous
+accumulator chains share a cold cache-line region, so one miss stalls 4 rows' worth of in-flight
+state instead of 1's — more frequent, harder back-end stalls, not a fetch-pattern problem. Recorded
+as a top-down bottleneck split (front-end/back-end), not a raw L1D-miss counter reading, and N=20×2
+is real but modest — stated honestly, not oversold. A `PRFM`-style fix remains parked, not
+built — but any future attempt now aims at a confirmed target instead of a guess.
+
 ## Zero-cost item — RETIRED 2026-08-24, per its own line above ("if Gate 1 ships, this note gets
 ## retired")
 
