@@ -33,12 +33,12 @@ exhausted (`vm.swapusage`: 5.35/6.14 GB used) before the kill. Output `.giw` was
 the process died before writing any real tensor data.
 
 **Mechanism, characterized (not fixed) per this doc's own house discipline:**
-`decoder.StreamTranscodeGGUF` (`decoder/gguf.go:1236-1242`) has an explicit carve-out:
+`decoder.StreamTranscodeGGUF` (`decoder/gguf.go:1245-1251`) has an explicit carve-out:
 
 > `// Dedicated-loader families (qwen35) can't stream; they fit resident.`
 > `if arch.qwen35 != nil { w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, nil, ""); ... }`
 
-and the streaming branch itself refuses the family outright (`decoder/gguf.go:1508-1510`):
+and the streaming branch itself refuses the family outright (`decoder/gguf.go:1517-1519`):
 
 > `if arch.qwen35 != nil || arch.gemma4 != nil { return nil, fmt.Errorf("...streaming transcode
 > unsupported for %s (load resident + prequant instead)", arch.Name) }`
@@ -130,7 +130,7 @@ bytes. P12's 2026-08-19 fix holds for this real streamed prequant checkpoint —
 gap's explanation**, closing the Phase 0 brief's last open item with a clean negative.
 
 **LM head: verified fast, by tracing the actual load call, not just reading the fix.** `embMat`
-(`decoder/gguf.go:1405`), the SAME shared closure used by every family including qwen35 for
+(`decoder/gguf.go:1414`), the SAME shared closure used by every family including qwen35 for
 `w.Embed`/`w.LMHead`, calls `quant.embeddingWith(embedInt4)` — the exact function the 2026-08-24
 W8A8 fix (`a11c56b`) changed to tag int4-mode embed/head `quantInt8I8` instead of weight-only
 `quantInt8`. Confirmed by tracing the call site this model's load actually goes through (the
@@ -558,11 +558,18 @@ for the 35B):**
 
 | model | kind | budget | tok/s (3-run avg) | vs kind-3 |
 |---|---|---|--:|--:|
-| gemma4-26b | 3 | 4 GB | **2.917** | — |
-| gemma4-26b | 4 | 4 GB | **1.546** | **−47.0%** |
-| gemma4-26b | 4 | 8 GB | **1.487** | **−49.0%** |
+| gemma4-26b | 3 | 4 GB | ~~2.917~~ | — |
+| gemma4-26b | 4 | 4 GB | ~~1.546~~ | ~~−47.0%~~ |
+| gemma4-26b | 4 | 8 GB | ~~1.487~~ | ~~−49.0%~~ |
 | qwen3.5-35b-a3b | 3 | 6 GB | **1.605** | — |
 | qwen3.5-35b-a3b | 4 | 12 GB | **1.408** | **−12.3%** |
+
+**STRUCK 2026-08-25 — withdrawn, not deleted. See "Supersession (2026-08-25)" below**, which
+re-ran exactly these two gemma4 cells on a different day and found the gap gone (kind-4 FASTER at
+both budgets) — including the kind-3 reference itself drifting 2.917→2.059 tok/s at the identical
+4GB config with zero code change in between, the clean proof that this table's absolute numbers
+were never as stable as a single quiet run made them look. The qwen3.5-35b-a3b row is untouched —
+not re-measured this pass, no reason yet to doubt it.
 
 **This is the opposite of what the earlier noisy readings suggested for gemma4.** On the busy
 machine, gemma4's kind-4 gap looked smaller (−11% to −27%) and improving with budget. Quiet, it is
@@ -590,9 +597,11 @@ kernel, the same fix, two different real checkpoints, two very different outcome
 (gemma4's fused gate‖up experts vs. 35B's separate gate/up/down, different hidden dims, different
 expert counts) likely matters and isn't understood yet.
 
-**Superseded by the cold-touch investigation below**, which found the actual mechanism.
+~~**Superseded by the cold-touch investigation below**, which found the actual mechanism.~~
+**STRUCK 2026-08-25 — the cold-touch investigation's own mechanism claim is itself withdrawn.
+See "Supersession (2026-08-25)."**
 
-## The cold-touch investigation: found it (2026-08-24)
+## ~~The cold-touch investigation: found it (2026-08-24)~~ — WITHDRAWN 2026-08-25, see below
 
 Three cheap, discriminating experiments, in the order the prior finding suggested them.
 
@@ -627,15 +636,19 @@ once per expert, no repeats.
 | component | kind-3 (total, 187 touches) | kind-4 (total, 187 touches) | delta |
 |---|--:|--:|--:|
 | `touch()` (pager: mutex, LRU, WILLNEED) | 363.4ms | 385.4ms | +6.1% (noise) |
-| `matmul` (the kernel itself) | 137.1ms | 231.7ms | **+69.0%** |
+| `matmul` (the kernel itself) | 137.1ms | ~~231.7ms~~ | ~~**+69.0%**~~ |
 | total per-touch | 2.68ms/touch | 3.30ms/touch | +23.3% |
 
-**The pager is exonerated a second way** — `touch()` costs the same regardless of kind, confirming
+**STRUCK 2026-08-25 — see "Supersession" below.** Not reproduced: 3/3 re-runs (2026-08-25, a
+methodologically-corrected two-file real-pager sweep) found row4's kernel FASTER cold, not 69%
+slower, on this exact shape.
+
+~~**The pager is exonerated a second way** — `touch()` costs the same regardless of kind, confirming
 (independently of `AdvisedBytes`) that the fix from the prior section is complete and the pager
 itself isn't the source of anything. **The kernel is where it lives, and the direction inverted
 from experiment 2**: row4 was +57-67% FASTER than canonical on warm, repeatedly-touched data: it is
 **69% SLOWER on cold, first-touched data**. Two different, physically coherent regimes, not a
-contradiction — but the mechanism is NOT the one first written here.
+contradiction — but the mechanism is NOT the one first written here.~~
 
 **Correction: "interleaving defeats the hardware prefetcher" does not survive reading the actual
 assembly, and is retracted.** `dotW4A8SplitHalf4Row` (`aikit/linalg/dot_w4a8_arm64.s`) reads
@@ -655,16 +668,17 @@ it needs real microarchitectural profiling (cache-miss/TLB perf counters), which
 attempt. **Recorded honestly as an open mechanism, not chased further this pass** — a fix (explicit
 software prefetch, e.g. `PRFM`, was floated as a candidate) would be premature against a mechanism
 this uncertain; measure the actual bottleneck before writing an assembly change aimed at it.
-**Superseded below — the real profiling this section deferred was run 2026-08-25 and confirmed the
-4-accumulator-chain candidate.**
+~~**Superseded below — the real profiling this section deferred was run 2026-08-25 and confirmed the
+4-accumulator-chain candidate.**~~ **STRUCK — that profiling section is itself withdrawn; see
+"Supersession" below.**
 
-**This also explains 35B's much smaller gap, tentatively.** 35B's separate gate/up/down experts and
+~~**This also explains 35B's much smaller gap, tentatively.** 35B's separate gate/up/down experts and
 different shapes may simply be less sensitive to whatever this cold-access cost actually is than
 gemma4's fused gate‖up layout — consistent with (though not separately confirmed against) the two
 models' very different regression sizes (gemma4 −47 to −49% vs. 35B −12.3%), but resting on the
-same not-yet-pinned-down mechanism above.
+same not-yet-pinned-down mechanism above.~~
 
-**Where this leaves Pass 2 (giw v8, single representation):** the cold-vs-warm split is now
+~~**Where this leaves Pass 2 (giw v8, single representation):** the cold-vs-warm split is now
 characterized precisely (the WHAT — 69% slower cold, budget-invariant), even though the WHY at the
 microarchitecture level is still open. **v8's reconstruct-canonical-at-load design does not address
 this either way** — the row4 bytes are still read cold, in their same on-disk layout, during paged
@@ -675,9 +689,10 @@ a row4 variant exists with better cold-read behavior without losing the warm-dat
 that row4 belongs only on the resident path (never dispatch it under `-stream-weights`) until one
 does. v8's surviving justifications (disk halving, structurally eliminating the double-fetch bug
 class, the no-bigger-files ruling) are independent of this finding and still stand on their own —
-but its paged-decode story, if it has one, needs the mechanism understood first, not v8 itself.
+but its paged-decode story, if it has one, needs the mechanism understood first, not v8 itself.~~
+**See "Supersession (2026-08-25)" for where this actually leaves Pass 2 and v8.**
 
-## Real hardware-counter profiling: mechanism confirmed (2026-08-25)
+## ~~Real hardware-counter profiling: mechanism confirmed (2026-08-25)~~ — INTERPRETATION WITHDRAWN, see below
 
 The prior section's open question — front-end (prefetch/fetch-decode) or back-end (execution/memory
 stall) — answered with real PMU counters, not inference from wall-clock alone.
@@ -718,21 +733,148 @@ subsequent trace to **~60-70 MB**, letting two independent replicates run safely
 derived front-end/back-end split, not a raw L1D-miss count directly, a real limit of this pass worth
 stating plainly.)
 
-**The direction is unambiguous and replicates: row4 is LOWER front-end-bound and HIGHER
-back-end-bound than canonical, with roughly twice as many distinct on-core bursts for the same touch
-count.** This rules the front-end candidate out on real evidence (not just the assembly read that
-retracted it above) and confirms the back-end candidate: row4 is not starved for fetch/decode
-bandwidth on cold data — if anything less than canonical — it is stalling harder in execution, and
-getting interrupted (rescheduled) roughly twice as often while doing it. The most coherent physical
-story: row4's kernel keeps 4 independent accumulator chains depending on the SAME cold cache-line
-region in flight per group (`dotW4A8SplitHalf4Row`'s own design, built to hide WARM fold latency);
-canonical only ever has one row's data in flight. A cold miss on that shared region stalls 4 rows'
-worth of in-flight execution state at once instead of 1's — more frequent, harder back-end stalls,
-not a fetch-pattern problem. **This is now a measured finding, not a hypothesis** — the honest
-remaining gap is that it's a top-down bottleneck split rather than a raw cache-miss/TLB-miss counter
-reading, and N=20×2 is a real but modest sample; a `PRFM`-style fix remains out of scope for the
-reasons already stated (parked mechanism, not a build decision), but any future attempt now has a
-confirmed target (back-end/execution stalls under concurrent in-flight state) rather than a guess.
+**WITHDRAWN 2026-08-25 (interpretation only — the table above stands as data, unchanged):** the
+paragraph originally here read the table as "row4 stalls harder in the back end, confirmed
+mechanism." That reading is retracted. The burst-count and top-down-split NUMBERS above are real
+and replicated (r1/r2 agree) — nothing about the measurement itself is in question. What's
+withdrawn is the INTERPRETIVE LEAP from "this is what a cold row4 touch's scheduling looks like" to
+"this is why row4 is slower cold." **A scheduling signature characterizes behavior, not cost** —
+it was read through the assumption that row4 WAS measurably slower cold, an assumption the
+"Supersession" section below found does not reproduce. With that assumption gone, the honest
+reading of this same table is just: row4's cold access pattern produces more, shorter on-core
+bursts and a different front-end/back-end split than canonical's — a real, measured DIFFERENCE in
+scheduling shape, with no established link to which one is faster. Confirming that link (if one
+exists) needs the counter data re-taken alongside a same-day throughput number that actually shows
+a gap to explain — this data alone never should have been read as settling why by itself.
+
+## Supersession (2026-08-25): the cold penalty does not reproduce, in either direction
+
+A follow-on harness pass (direct instruction, not a `docs/prompts/` brief this time) set out to
+build two mechanism-aimed remedies for the 69%-cold-penalty finding above — software prefetch and
+chain/line de-sharing — and validate them against it. Both were built (aikit:
+`dotW4A8SplitHalf4RowPrefetch`, `dotW4A8SplitHalf4RowDeshared`, correctness-proven bit-identical to
+production row4 across 5 shapes, warm-intact per `TestW4A8Row4ColdFix_warmIntact`: row4 baseline
+1.826x vs canonical, every PRFM distance exactly 1.000x, de-sharing 0.993x). But measuring them
+against the cold penalty required re-touching the real gemma4 shape cold — and that re-measurement
+is what withdraws the premise, not just tests the remedies.
+
+**Held to the same standard as what it reverses.** This section does NOT declare "row4 is faster
+cold, actually" as a new headline — that claim has exactly the evidentiary standing the 69%/47-49%
+findings above had before today: a result from one measurement session on one machine. The
+different-day-reproduction rule this incident itself argues for (below) applies to today's own
+numbers first. **Status: reversed under re-measurement, pending different-day confirmation** — not
+confirmed, not the new mechanism. The `cmd/prequant -row4` flag's cold-paging warning stays in the
+help text unchanged until that confirmation actually runs; nothing here is a green light to
+dispatch row4 under `-stream-weights`.
+
+**Kernel-level, 3 independent runs, corrected methodology.** A single-file test design (canonical
+bytes read via `wm.Int4()` off the SAME kind-4 file used for row4) was caught mid-pass as a real
+bug: the pager's double-WILLNEED fix registers ONLY the row4 span for a kind-4 tensor, so
+`touch()` never prefetches that tensor's canonical bytes at all — the real disk read silently
+leaks into the "matmul" timing window, making canonical look ~9x slower than it is. Fixed by
+loading canonical from its own dedicated kind-3 file (`gemma4-26b-int4.giw`) and row4 from the
+kind-4 file (`gemma4-26b-int4-row4.giw`) as two separate model instances — exactly
+`TestRow4_coldTouchLatency`'s original two-file design, which this bug never actually violated;
+the violation was introduced fresh in this pass's own first draft.
+
+| run | canonical kernel-only | row4 kernel-only | row4 vs canonical |
+|---|--:|--:|--:|
+| 1 (old kind-3 file, fresh row4 file) | 4.938 ms/call | 2.349 ms/call | **2.1x faster** |
+| 2 (same pair, genuine repeat, `-count=1`) | 4.376 ms/call | 0.930 ms/call | **4.7x faster** |
+| 3 (fresh-vs-fresh: both files built today, ruling out file-age/fragmentation as a confound) | 3.128 ms/call | 0.884 ms/call | **3.5x faster** |
+
+Row4 is faster cold in all 3 runs, by a wide and noisy margin (2.1x-4.7x) — the opposite direction
+from the 69%-slower finding, and the magnitude swings enough between runs 1 and 2 (same file pair,
+same day) that "faster" is the only stable claim; the exact ratio is not.
+
+**End-to-end, the number the whole investigation was actually chasing.** The kernel microbenchmark
+was never the real question — it was the paged-decode throughput gap in the "Quiet-machine
+re-measure" table above (struck). Re-ran the identical two cells today, same method (steady-state,
+prompt+completion total tokens / wall time, 3-run average, `Load` + `Model.Generate` in-process —
+adapted from the original `cmd/serve`+HTTP method to cut an HTTP-overhead variable the relative
+comparison doesn't need):
+
+| model | kind | budget | tok/s today | vs kind-3 today | tok/s 2026-08-24 | vs kind-3 then |
+|---|---|--:|--:|--:|--:|--:|
+| gemma4-26b | 3 | 4 GB | 2.059 | — | ~~2.917~~ | — |
+| gemma4-26b | 4 | 4 GB | 3.062 | **+48.8%** | ~~1.546~~ | ~~−47.0%~~ |
+| gemma4-26b | 4 | 8 GB | 2.618 | **+27.2%** | ~~1.487~~ | ~~−49.0%~~ |
+
+Both budgets, kind-4 is faster end to end today, not 47-49% slower. Three independent layers — the
+aikit kernel microbenchmark, the corrected real-pager kernel sweep, and this direct end-to-end
+decode — now all point the same direction on the same day.
+
+**The cleanest single piece of evidence is the kind-3 row against itself.** Same model, same
+budget, same dispatch code, zero commits touching `dotW4A8`/`MatmulBTW4A8Into`'s canonical path in
+between: **2.917 tok/s → 2.059 tok/s, a 29.4% drift with no code change.** Original measurement at
+commit `4abd64679f5aa714fa28b978f6cf4a22f957fe18` (2026-08-24 20:24:02 -0700); today's re-measurement
+at commit `32f854b52984ca58600280ba6f2a1b081a7f4b65` (2026-08-25 15:23:49 -0700). If the untouched
+reference number moves 29% between two sessions on the same box, a 47-69% delta between two
+DIFFERENT representations measured on DIFFERENT days is not distinguishable from that same noise
+floor. This one row is the whole instability case, in miniature.
+
+**Leading environmental candidate — listed, not asserted; checkable from this doc's own dates.**
+This session spent 2026-08-24 in a genuine disk-space crisis (directly observed: free space down to
+118 MB at one low point), and 2026-08-25's re-measurements all ran with 45-114 GB free, post-cleanup.
+Near-full APFS volumes are known to read cold (non-cached) data measurably slower than the same
+volume with headroom — SLC-cache exhaustion on the physical NAND and heavier allocation-metadata
+overhead both bite hardest exactly when free space is scarce. Every "row4 is slower cold" reading in
+this doc was taken during the near-full era; every "row4 is faster (or not slower) cold" reading
+postdates the cleanup. That correlation is exact for the two dated measurements above and is offered
+as the leading candidate explanation for the reversal — NOT confirmed, since isolating disk-fill
+level as a controlled variable (fill the volume back to near-100% and re-run the SAME two files)
+wasn't attempted this pass. It would also parsimoniously explain why two OTHER micro-findings in
+this same window flip-flopped (next paragraph) without needing three separate unrelated causes.
+
+**The meta-finding, and a proposed rule.** This is the THIRD single-machine micro-benchmark result
+from this box in the current window to fail to reproduce: the W4A8 issue-width probe (marginal-FMA
+ratio 1.11 "issue-limited" → re-measured 0.99-1.03, "does not reproduce," `dot_w4a8_arm64.s`'s own
+comment on `dotW4A8FoldSDOT4Acc`), the sampler scratch-reuse buffer change (5-6% slower → ~5%
+faster, same machine, opposite sessions), and this cold-penalty finding now. Three for three is a
+pattern, not bad luck. **Proposed rule for this repo's own house discipline: any single-machine
+micro-benchmark result that will drive more than a day of downstream implementation work must
+reproduce on a different day — ideally a different thermal/uptime/disk-fill state — before any
+remedy gets built against it.** This investigation followed every existing rule the campaign had
+(quiet box, `AdvisedBytes` counters, real production paths, real checkpoints) and still spent real
+engineering time building two working NEON kernels against a number that was never stable. That is
+not a process failure under the old rules — it is a gap the old rules didn't cover, and this
+incident is what writes the new one in.
+
+**A third instance of "the instrument was the finding."** This campaign has now hit this shape three
+times: the "interleaving defeats the hardware prefetcher" retraction above (the explanation, read
+from an assumption, didn't survive reading the actual assembly — the instrument was the flawed
+hypothesis, not a measurement); the double-WILLNEED pager bug (found only because building
+`AdvisedBytes` as a durable counter revealed it — the instrument built to verify a fix is what
+surfaced the real one); and now this pass's own single-file test design, which manufactured a fake
+9x canonical slowdown before the fresh-vs-fresh control caught it. Each time, fixing the
+measurement apparatus turned out to be more valuable than whatever the flawed apparatus originally
+reported. Recorded at full value, not folded quietly into a "methodology note" — this is a repeating
+shape worth naming.
+
+**The remedies: built, validated, premise-void.** `dotW4A8SplitHalf4RowPrefetch` and
+`dotW4A8SplitHalf4RowDeshared` (`aikit/linalg/dot_w4a8_arm64.s`), their Go wrappers
+(`MatmulBTW4A8Row4PrefetchInto`, `MatmulBTW4A8Row4DesharedInto`, `RepackW4A8Row4Deshared*`,
+`aikit/linalg/matmul_w4a8_row4_variants_arm64.go`), and their correctness tests
+(`matmul_w4a8_row4_variants_arm64_test.go`) are committed to aikit, parked per this repo's
+dead-end convention — not released, not wired into `WeightMat.MatmulBTW4A8Into`'s dispatch, no
+production path reaches them. `TestW4A8Row4ColdFix_warmIntact` is kept as a standalone regression
+guard (real value independent of this saga: it proves the remedies don't cost anything warm,
+whatever happens to the cold question). The numbers this pass measured (bit-identical, warm-intact,
+kernel-cold-faster-not-slower on this box today) are recorded here specifically so nobody rebuilds
+either kernel blind against the withdrawn 69% number. If the different-day confirmation below
+somehow finds a real cold penalty after all, both kernels are shovel-ready, not rebuilt from zero.
+
+**What's next, gated on one thing.** A different-day (different session, ideally different
+thermal/uptime/disk-fill state) re-run of exactly the two end-to-end cells above — `gemma4-26b-int4.giw`
+(kind-3) and `gemma4-26b-int4-row4.giw` (kind-4) at 4GB and 8GB via
+`TestGemma4EndToEndThroughput` (`decoder/gemma4_endtoend_throughput_test.go`, kept as a committed
+regression tool for exactly this) — decides which way the ledger closes: gap confirmed gone (this
+whole saga closes as measurement instability, full stop) or gap confirmed real (the mechanism hunt
+reopens at the pager/span-interaction or kind-4 on-disk-geometry layer, with the row4 KERNEL itself
+now formally exonerated by 3 corrected same-direction readings). **Both `gemma4-26b-int4.giw` and
+`gemma4-26b-int4-row4.giw` are kept on disk specifically for that re-run** — the standing
+end-of-session cleanup rule for campaign-generated `.giw` files is suspended for these two files
+only, until the confirmation runs.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 
@@ -747,7 +889,7 @@ scoping), a roadmap target regardless of any Zeno comparison.
 both call sites that currently hit the `sink=nil`/resident-fallback branch (`StreamTranscodeGGUF`'s
 own qwen35 carve-out, which both the general load path and `cmd/prequant` route through, per
 `internal/prequant/prequant.go:65-69`'s own comment — there is exactly one code path to fix, not
-two). gemma4 shares the same carve-out (`decoder/gguf.go:1244`) but is NOT in scope here — it fits
+two). gemma4 shares the same carve-out (`decoder/gguf.go:1253`) but is NOT in scope here — it fits
 resident on the boxes it's been run on; touch only the qwen35 branch unless a gemma4-specific
 gap surfaces independently.
 

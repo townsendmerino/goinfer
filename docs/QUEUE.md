@@ -305,7 +305,7 @@ supports.
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:564` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:252` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
-| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2243` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
+| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2252` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:246` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1030` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:497` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
@@ -407,10 +407,10 @@ supports.
 | `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
 | `docs/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
 | `docs/task-moe-streaming.md|decoder/residency.go:130` | goinfer | `return m.residentProjsInt4()` |
-| `docs/task-zeno-compare.md|decoder/gguf.go:1236` | goinfer | `// gemma4's fused PLE/MoE tail can't stream incrementally; it falls back to a` |
-| `docs/task-zeno-compare.md|decoder/gguf.go:1244` | goinfer | `if arch.gemma4 != nil {` |
-| `docs/task-zeno-compare.md|decoder/gguf.go:1405` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
-| `docs/task-zeno-compare.md|decoder/gguf.go:1508` | goinfer | `if g.Has("output.weight") {` |
+| `docs/task-zeno-compare.md|decoder/gguf.go:1245` | goinfer | `// gemma4's fused PLE/MoE tail can't stream incrementally; it falls back to a` |
+| `docs/task-zeno-compare.md|decoder/gguf.go:1253` | goinfer | `if arch.gemma4 != nil {` |
+| `docs/task-zeno-compare.md|decoder/gguf.go:1414` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
+| `docs/task-zeno-compare.md|decoder/gguf.go:1517` | goinfer | `if g.Has("output.weight") {` |
 | `docs/task-zeno-compare.md|decoder/serialize.go:170` | goinfer | `anchor: func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error)` |
 | `docs/task-zeno-compare.md|decoder/weightmat.go:123` | goinfer | `func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) ` |
 | `docs/task-zeno-compare.md|internal/prequant/prequant.go:65` | goinfer | `// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a` |

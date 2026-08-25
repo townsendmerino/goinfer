@@ -484,12 +484,16 @@ prefetched both copies from disk on every cold touch though the kernel only ever
 ~2x I/O tax per miss. Fixed by registering only the span the kernel will actually read. Post-fix,
 the pager itself was proven correct via `aikit` v1.28.0's `SpanCache.AdvisedBytes` (exact 1.0000x
 bytes-per-miss on both real models) — but a quiet-machine re-measure found gemma4's gap did NOT
-shrink, it grew (−47 to −49%, budget-invariant), while 35B's shrank to −12.3%. **Root cause found
+shrink, it grew (−47 to −49%, budget-invariant), while 35B's shrank to −12.3%. ~~**Root cause found
 (`docs/task-zeno-compare.md`'s "cold-touch investigation"):** the row4 kernel is 1.6-1.75x faster
 than canonical on WARM, repeatedly-touched data (confirmed again directly on gemma4's own shapes:
-+57-67%) but **~69% SLOWER on a cold, first-touched page** — real paged decode is dominated by cold
++57-67%) but **~69% SLOWER on a cold, first-touched page**~~ — **STRUCK 2026-08-25, does not
+reproduce (3/3 corrected re-runs found row4 FASTER cold, not slower — see
+`docs/task-zeno-compare.md`'s "Supersession (2026-08-25)" for the full re-measurement, the
+end-to-end confirmation, and why this is held to "reversed pending different-day confirmation," not
+a new headline).** ~~real paged decode is dominated by cold
 touches (many distinct experts, a real budget, little cross-token reuse), which is exactly the
-regime the kernel loses in despite being proven faster in isolation. **The exact microarchitecture
+regime the kernel loses in despite being proven faster in isolation.~~ **The exact microarchitecture
 mechanism is NOT yet pinned down** — a first hypothesis (row4's interleaved layout defeats hardware
 prefetch on a cold read) does not survive reading the actual assembly: `dotW4A8SplitHalf4Row`'s
 reads through `packed4` are a straight sequential post-increment scan, no less prefetcher-friendly
@@ -502,20 +506,35 @@ the GGUF/safetensors streaming loaders) stands
 UNCHANGED and is now understood to be specifically a warm-data result — do not extend it to any
 model that will be paged.**
 
-**Mechanism confirmed 2026-08-25, via real PMU counters** (`docs/task-zeno-compare.md`'s "Real
-hardware-counter profiling" section — full method and numbers there). `xcrun xctrace record
+~~**Mechanism confirmed 2026-08-25, via real PMU counters**~~ — **INTERPRETATION WITHDRAWN
+2026-08-25** (same day, later re-measurement pass; full account in
+`docs/task-zeno-compare.md`'s "Supersession (2026-08-25)"). The counter DATA below is real and
+replicated — kept as data, not deleted:
+
+~~`xcrun xctrace record
 --template 'CPU Counters'`, attached mid-run (not `--launch`, which captures the multi-minute load
 phase and blew a raw `.ktrace` out to 19-23 GB before this was caught), on N=20 cold, never-touched
 experts × 2 replicates each, canonical vs row4. Result replicates cleanly both times: row4 runs in
 ~2x as many, shorter on-core scheduling bursts, with a LOWER front-end delivery-bound fraction
 (14.5-15.3% vs canonical's 20.1-21.0%) and a HIGHER back-end processing-bound fraction (40.5-43.0%
-vs canonical's 31.6-35.1%). The front-end/prefetch candidate is now ruled out on measured evidence,
+vs canonical's 31.6-35.1%).~~ What's withdrawn is everything downstream of that table: ~~The
+front-end/prefetch candidate is now ruled out on measured evidence,
 not just the assembly read above, and the back-end candidate is confirmed: row4's 4 simultaneous
 accumulator chains share a cold cache-line region, so one miss stalls 4 rows' worth of in-flight
-state instead of 1's — more frequent, harder back-end stalls, not a fetch-pattern problem. Recorded
+state instead of 1's — more frequent, harder back-end stalls, not a fetch-pattern problem.~~ A
+scheduling signature characterizes behavior, not cost — this table was read through the assumption
+that row4 measurably WAS slower cold, an assumption the "Supersession" re-measurement (3
+independent runs, corrected methodology, plus an end-to-end confirmation) did not reproduce. With
+that assumption gone, the honest reading is: row4's cold access pattern produces a different,
+measured scheduling shape than canonical's — with no established link, currently, to which one
+costs more. ~~Recorded
 as a top-down bottleneck split (front-end/back-end), not a raw L1D-miss counter reading, and N=20×2
 is real but modest — stated honestly, not oversold. A `PRFM`-style fix remains parked, not
-built — but any future attempt now aims at a confirmed target instead of a guess.
+built — but any future attempt now aims at a confirmed target instead of a guess.~~ Both remedies
+(PRFM prefetch, chain/line de-sharing) were built anyway in the follow-on cold-fix pass, are
+correctness-proven and warm-intact, and are parked premise-void — see the Supersession section for
+the full disposition and why the `-row4` flag's cold-paging warning below stays in place pending
+different-day confirmation.
 
 ## Zero-cost item — RETIRED 2026-08-24, per its own line above ("if Gate 1 ships, this note gets
 ## retired")

@@ -361,6 +361,15 @@ func ggufGemma4Config(g *embed.GGUFFile) (*Config, error) {
 	if sc, ok := g.Float("gemma4.final_logit_softcapping"); ok {
 		cfg.FinalLogitSoftcap = sc
 	}
+	// 26B-A4B's parallel dense+MoE FFN sub-block (dense E2B/E4B/12B GGUFs carry no
+	// gemma4.expert_count key at all, so EnableMoeBlock stays false and their
+	// forward is byte-unchanged — same gate the safetensors path uses).
+	if ec := u("expert_count"); ec > 0 {
+		cfg.EnableMoeBlock = true
+		cfg.NumExperts = ec
+		cfg.TopKExperts = u("expert_used_count")
+		cfg.MoeIntermediateSize = u("expert_feed_forward_length")
+	}
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -2295,6 +2304,54 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			if l.DownProj, e = mat(p+"ffn_down.weight", hidden, ffn); e != nil {
 				return e
+			}
+			// 26B-A4B's parallel MoE branch (enable_moe_block; nil arch.MoE ⇒ the dense
+			// E2B/E4B/12B GGUFs, byte-unchanged). llama.cpp's converter fuses gate‖up per
+			// expert exactly like the safetensors path (ffn_gate_up_exps.weight is a 3-D
+			// [hidden, 2*moeInter, nE] blob, structurally identical to stackedExperts'
+			// existing [in,out,nExpert] contract — no new tensor-reading helper needed),
+			// and stores the router's weightless-RMSNorm learned scale + the per-expert
+			// scale as ffn_gate_inp.scale/ffn_down_exps.scale rather than a dequant
+			// artifact (both real model parameters — routerScale/perExpertScale below).
+			if arch.MoE != nil {
+				nE, moeInter := arch.MoE.NumExperts, arch.MoE.IntermediateDim
+				gm := &gemma4MoEWeights{
+					preFFNNorm:  l.PreMLPNorm,
+					postFFNNorm: l.PostMLPNorm,
+					mlpGate:     l.GateProj,
+					mlpUp:       l.UpProj,
+					mlpDown:     l.DownProj,
+					layerScalar: l.LayerScalar,
+					denseInter:  ffn,
+					moeInter:    moeInter,
+					nE:          nE,
+					topK:        arch.MoE.TopK,
+				}
+				if gm.postFFNNorm1, e = vnorm(p+"post_ffw_norm_1.weight", hidden); e != nil {
+					return e
+				}
+				if gm.preFFNNorm2, e = vnorm(p+"pre_ffw_norm_2.weight", hidden); e != nil {
+					return e
+				}
+				if gm.postFFNNorm2, e = vnorm(p+"post_ffw_norm_2.weight", hidden); e != nil {
+					return e
+				}
+				if gm.routerProj, e = mat(p+"ffn_gate_inp.weight", nE, hidden); e != nil {
+					return e
+				}
+				if gm.routerScale, e = vec(p+"ffn_gate_inp.scale", hidden); e != nil {
+					return e
+				}
+				if gm.perExpertScale, e = vec(p+"ffn_down_exps.scale", nE); e != nil {
+					return e
+				}
+				if gm.expertsGateUp, e = stackedExperts(p+"ffn_gate_up_exps.weight", 2*moeInter, hidden, nE); e != nil {
+					return e
+				}
+				if gm.expertsDown, e = stackedExperts(p+"ffn_down_exps.weight", hidden, moeInter, nE); e != nil {
+					return e
+				}
+				l.gemma4moe = gm
 			}
 			if g4.HiddenSizePerLayerInput > 0 {
 				if l.PLEGate, e = mat(p+"inp_gate.weight", g4.HiddenSizePerLayerInput, hidden); e != nil {
