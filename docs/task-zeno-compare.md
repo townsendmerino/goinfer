@@ -635,29 +635,45 @@ once per expert, no repeats.
 itself isn't the source of anything. **The kernel is where it lives, and the direction inverted
 from experiment 2**: row4 was +57-67% FASTER than canonical on warm, repeatedly-touched data: it is
 **69% SLOWER on cold, first-touched data**. Two different, physically coherent regimes, not a
-contradiction: canonical's plain row-major layout is friendly to a hardware prefetcher on a first,
-cold read from memory — it can predict "the next address" trivially. Row4's split-half +
-4-row-interleaved layout was designed for SIMD throughput once data sits in L1/L2/L3 cache, and its
-non-sequential byte ordering plausibly defeats simple prefetching on that same cold read, costing
-real stalls the warm-data benchmarks never see. Real paged decode is dominated by exactly this cold
-regime — many distinct experts, a real budget, limited cross-token reuse — which is why kind-4
-regresses end-to-end even though its own kernel is proven faster in isolation once warm.
+contradiction — but the mechanism is NOT the one first written here.
 
-**This also explains 35B's much smaller gap.** 35B's separate gate/up/down experts and different
-shapes may simply be less sensitive to this cold-prefetch cost than gemma4's fused gate‖up layout —
-consistent with (though not yet separately confirmed against) the two models' very different
-regression sizes (gemma4 −47 to −49% vs. 35B −12.3%).
+**Correction: "interleaving defeats the hardware prefetcher" does not survive reading the actual
+assembly, and is retracted.** `dotW4A8SplitHalf4Row` (`aikit/linalg/dot_w4a8_arm64.s`) reads
+`packed4` via four sequential `VLD1.P 16(R1)` post-increment loads per group — row0's chunk, then
+row1's, then row2's, then row3's, each the NEXT 16 bytes in one contiguous buffer (that is what
+"4-row-interleaved storage" means physically: the four rows' data for one group sit adjacent on
+disk). The canonical kernel is also a linear scan, just through one row at a time instead of four.
+Both are straight sequential address streams; a next-line hardware prefetcher has no obvious reason
+to handle one better than the other on pattern-detection grounds. **The real mechanism is not yet
+pinned down at the microarchitecture level** — the more likely candidate, unverified, is that row4
+keeps 4 independent accumulator chains in flight per group specifically to hide WARM fold latency
+(the kernel's own doc comment: "4 independent FMLA chains... come from 4 genuine distinct outputs"),
+and that design may interact differently with a cold DRAM/page-cache fetch's much higher latency —
+e.g. outstanding-load capacity, or how long a hardware prefetcher takes to ramp up on a fresh
+stream — than a single accumulator chain does. This is a hypothesis, not a measured fact; confirming
+it needs real microarchitectural profiling (cache-miss/TLB perf counters), which this pass did not
+attempt. **Recorded honestly as an open mechanism, not chased further this pass** — a fix (explicit
+software prefetch, e.g. `PRFM`, was floated as a candidate) would be premature against a mechanism
+this uncertain; measure the actual bottleneck before writing an assembly change aimed at it.
 
-**Where this leaves Pass 2 (giw v8, single representation):** the mechanism is now understood, not
-just characterized. **v8's reconstruct-canonical-at-load design does not address this** — the row4
-bytes are still read cold, in their interleaved layout, during paged decode either way; nothing
-about storing one representation instead of two changes the memory-access pattern that costs 69%
-on a first touch. Fixing THIS needs either a layout change (a row4 variant with better cold-read
-locality, if one exists without giving up the warm-data win) or accepting that row4 belongs only on
-the resident path (never dispatch it under `-stream-weights`) until such a variant exists. v8's
-surviving justifications (disk halving, structurally eliminating the double-fetch bug class,
-the no-bigger-files ruling) are independent of this finding and still stand on their own — but its
-paged-decode story, if it has one, needs this fixed first, not the other way around.
+**This also explains 35B's much smaller gap, tentatively.** 35B's separate gate/up/down experts and
+different shapes may simply be less sensitive to whatever this cold-access cost actually is than
+gemma4's fused gate‖up layout — consistent with (though not separately confirmed against) the two
+models' very different regression sizes (gemma4 −47 to −49% vs. 35B −12.3%), but resting on the
+same not-yet-pinned-down mechanism above.
+
+**Where this leaves Pass 2 (giw v8, single representation):** the cold-vs-warm split is now
+characterized precisely (the WHAT — 69% slower cold, budget-invariant), even though the WHY at the
+microarchitecture level is still open. **v8's reconstruct-canonical-at-load design does not address
+this either way** — the row4 bytes are still read cold, in their same on-disk layout, during paged
+decode regardless of whether canonical also lives on disk; nothing about storing one representation
+instead of two changes the row4 access pattern itself. Fixing the actual regression needs the
+mechanism pinned down first (real profiling, not spans-and-bytes), then either a layout change (if
+a row4 variant exists with better cold-read behavior without losing the warm-data win) or accepting
+that row4 belongs only on the resident path (never dispatch it under `-stream-weights`) until one
+does. v8's surviving justifications (disk halving, structurally eliminating the double-fetch bug
+class, the no-bigger-files ruling) are independent of this finding and still stand on their own —
+but its paged-decode story, if it has one, needs the mechanism understood first, not v8 itself.
 
 ## Streaming-transcode fix — scoped as its own task, not folded into Phase 0
 

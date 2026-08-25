@@ -489,10 +489,16 @@ shrink, it grew (−47 to −49%, budget-invariant), while 35B's shrank to −12
 than canonical on WARM, repeatedly-touched data (confirmed again directly on gemma4's own shapes:
 +57-67%) but **~69% SLOWER on a cold, first-touched page** — real paged decode is dominated by cold
 touches (many distinct experts, a real budget, little cross-token reuse), which is exactly the
-regime the kernel loses in despite being proven faster in isolation. Canonical's row-major layout
-is hardware-prefetcher-friendly on a cold read; row4's interleaving plausibly defeats that, costing
-real stalls the warm-data benchmarks (including this doc's own Gate 1 measurements) never see. **The
-resident-path gain (1.6-1.75x, proven above and via the GGUF/safetensors streaming loaders) stands
+regime the kernel loses in despite being proven faster in isolation. **The exact microarchitecture
+mechanism is NOT yet pinned down** — a first hypothesis (row4's interleaved layout defeats hardware
+prefetch on a cold read) does not survive reading the actual assembly: `dotW4A8SplitHalf4Row`'s
+reads through `packed4` are a straight sequential post-increment scan, no less prefetcher-friendly
+in address terms than canonical's own single-row scan. The likelier candidate, unconfirmed: row4's
+4 simultaneous accumulator chains (built to hide WARM fold latency) may interact worse with cold
+DRAM/page-cache latency than canonical's single chain — needs real profiling to confirm, not
+attempted this pass; a kernel fix (explicit prefetch) was floated and deliberately deferred rather
+than aimed at an unconfirmed mechanism. **The resident-path gain (1.6-1.75x, proven above and via
+the GGUF/safetensors streaming loaders) stands
 UNCHANGED and is now understood to be specifically a warm-data result — do not extend it to any
 model that will be paged.**
 
