@@ -322,7 +322,8 @@ load is discarded as a warmup outlier on both sides).
 
 **Method (2026-08-09 re-measurement).** Server-to-server: both engines driven over their own HTTP
 server, **client-timed inter-token rate** (decode-only, prefill excluded), **interleaved cell-by-cell
-with a server restart between cells**, same GGUF file both sides, sampling sent explicitly to each.
+with a server restart between cells**, same WEIGHTS both sides (verified per tensor by
+`scripts/gguf_same_weights.py` — a file md5 cannot pass, see §B2's note), sampling sent explicitly to each.
 The committed harness is `scripts/bench_peer.py`. *Historical note: the older rows below claimed
 "no methodology gap to discount" while goinfer's side came from in-process Go benchmarks — that
 claim was false and is withdrawn.*
@@ -681,7 +682,7 @@ elsewhere on this page keep their own binary and peer version and are NOT update
 **`OLLAMA_FLASH_ATTENTION:false`** (its default — not overridden), `num_ctx` set explicitly per cell
 and **verified via the `ollama ps` CONTEXT column** (all 10 peer cells: observed == requested,
 `100% GPU`) · RTX 2070 SUPER, driver **595.58.03** · qwen2.5-coder / phi3-mini / gemma3-1b at
-**q4_K_M**, same GGUF file both sides · **2026-08-09** · **decode-only, prefill excluded**
+**q4_K_M**, same weights both sides (per-tensor verified; a file md5 cannot pass) · **2026-08-09** · **decode-only, prefill excluded**
 (inter-token rate timed client-side from the first streamed token) · servers restarted per cell,
 interleaved · ≥8 completions per run, 2 runs per cell, spread shown · sampling sent explicitly.
 

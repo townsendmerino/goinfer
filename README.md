@@ -569,7 +569,8 @@ cost is scoped as **D6** in `docs/ollama-chase.md`.
 Secondary, and annotated — read the absolute numbers above and the cgo-free property first. Same
 measurements as the tables above, with the peer measured **identically**: both engines driven over
 their own HTTP server, client-timed inter-token rate, **interleaved cell-by-cell with a server
-restart between cells**, the **same GGUF file** on both sides (md5-verified), sampling sent
+restart between cells**, the **same weights** on both sides — verified **per tensor** by
+`scripts/gguf_same_weights.py`, *not* by file md5 (see below) — sampling sent
 explicitly to each. Peer: **Ollama v0.32.6** (`OLLAMA_FLASH_ATTENTION:false`, its default), except
 the one row footnoted ᵇ, which is carried from the earlier v0.32.5 campaign and labelled as such.
 
@@ -597,6 +598,27 @@ differ slightly from the v0.32.5 numbers these rows previously carried.
 
 Still ahead at short context, behind at long, the gap widening with depth: Ollama's flash attention
 holds nearly flat (269 → 260 on 0.5B) while goinfer decays (321 → 201).
+
+> **Why not md5, and why these rows are pending a refresh (2026-08-25, v0.15.0).**
+>
+> **The md5 guarantee these tables used to claim was unsatisfiable and never held.** `ollama create`
+> repacks a GGUF in a different **tensor order**: metadata keys and values identical, tensor names,
+> shapes and types identical, every **offset** different. So the file hash — and any tail slice of
+> it — differs even when the weights are bit-identical, for every model, always. It is replaced by
+> a per-tensor comparison at each file's own offsets (`scripts/gguf_same_weights.py`), which is what
+> fairness actually rests on and which **does** pass: **339/339**, **339/339** and **291/291**
+> tensors identical for the three models now used.
+>
+> **The numbers above predate this release's CPU and attention work and are NOT re-measured for
+> v0.15.0.** A 2026-08-22 run at `5b040f2` against the same Ollama v0.32.6 reproduced the 1.5B row
+> and the depth-3900 rows closely, but read **0.5B @128 = 284.3 tok/s (goinfer 1.08×)** against the
+> **320.9 (1.19×)** published here. One cell moving while its neighbours hold is more often a
+> measurement artifact than a regression, and it was **not** confirmed by a second run — so neither
+> figure is being promoted over the other here. Then the A1 attention restructure (2.4–2.8×), the
+> W4A8 row4 repack and the int4-mode LM head all landed, which moves the goinfer column again.
+> **Treat this section as v0.14.0-era until a fresh interleaved run is done at the v0.15.0 tag.**
+> Method and raw data: `docs/measurements/bench-peer-v0.15.0-2026-08-22.md`,
+> `docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`.
 
 **By sampling configuration, 128 context** (re-measured 2026-08-09, goinfer `686c9f8` vs Ollama
 **v0.32.6**, `OLLAMA_FLASH_ATTENTION:false`, `num_ctx` verified per cell):

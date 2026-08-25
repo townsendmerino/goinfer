@@ -33,7 +33,7 @@ CPU-path specific and not a scheduling or serving-layer defect shared by both ba
   ollama models were built from goinfer's own GGUFs with a `FROM` Modelfile.
 - **A file-md5 check cannot pass and is not evidence of anything.** `ollama create` repacks the
   container in a different tensor ORDER — metadata identical, all offsets different. Do not "fix"
-  a failing md5; that is expected. See `docs/measurements/bench-peer-v0.15.0-RUNNING.md`.
+  a failing md5; that is expected. See `docs/measurements/bench-peer-v0.15.0-2026-08-22.md`.
 - **The harness excludes prefill on both sides.** This is a decode-rate gap, not a TTFT artifact.
 - **Ollama was genuinely on CPU**, forced with `options.num_gpu=0`. Without that it silently uses
   the GPU; the force is in `ollama_payload` in `scripts/bench_peer.py`.

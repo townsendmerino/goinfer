@@ -13,6 +13,132 @@ serialization plumbing are named Experimental — explicitly, not by omission.
 **That split takes effect at the v1.0 tag.** Until then goinfer is pre-1.0 and
 any surface may still change.
 
+## [v0.15.0] — 2026-08-25
+
+**CPU decode roughly doubled on Apple Silicon, the Gated-DeltaNet family went GPU-resident on two
+backends, and a 35B runs on an 8 GB card.** 183 commits since v0.14.0, in six days. The one users
+of v0.14.0 should act on is smaller than any of that: **`.giw` was silently dropping gpt-oss
+attention sinks**, producing a CRC-valid, sink-free bundle that generated confidently wrong text
+with no error at write, load, or run time. If you built a `.giw` for gpt-oss on v0.14.0 — via
+`prequant` or `serve --stream-weights` — rebuild it.
+
+### Added
+
+#### Residency
+
+- **Gated-DeltaNet is GPU-resident on WebGPU *and* CUDA** — `qwen3_5` dense, its MoE sibling and
+  `qwen3_next` all resolve to a real runner instead of a feature-gate decline. **15.9× CPU decode**
+  on CUDA at released width; resident-vs-CPU worst cosine 0.999919, replay-after-Reset self-cosine
+  1.000000000.
+- **Qwen3.6-35B-A3B decodes RESIDENT on an 8 GB card** — ~20 GB of int4 experts against 8 GB of
+  VRAM, via C′ host→VRAM expert streaming. Raising the C′ slot default to `8*topK` is worth
+  **1.59×** on the 35B and **2.6×** on the 26B.
+- **Metal MoE expert paging is generic**, no longer gemma4-only.
+- **`gpu`: strided-lane wide attention** — `head_dim` is no longer a reason for the WebGPU backend
+  to decline a model.
+
+#### Loaders and formats
+
+- **Qwen3.8 GGUF loader (arch `qwen35`)** — **55.6 GB bf16 → 16.5 GB** on disk (3.4×), and it
+  decodes **1.69× faster** than the safetensors path. Real 16.5 GB Q4_K_M gate passes: 64 layers,
+  correct geometry, distinct-trigram 0.847.
+- **`.giw` v6 — every registered family is representable and `canSerialize` is now EMPTY.** The
+  tail writes `GProj` (Laguna), `AttnSinks` and per-expert biases (gpt-oss), the MLA sub-struct
+  (DeepSeek/Kimi) and the Mamba-2 sub-struct (Granite/Nemotron). The tail is UNCONDITIONAL rather
+  than arch-gated — arch-gating is precisely how gpt-oss's sinks went missing.
+- **arm64 W4A8 row4 repack wired into GGUF and safetensors loading**, at the two streaming choke
+  points every family's int4 path funnels through. A no-op off arm64 and on any shape the repack
+  rejects, so it needs no per-family changes.
+
+#### Elsewhere
+
+- **Optimistic next-token forward for sampled decode** — **+21.4% at T=0.2** on CUDA.
+- **`cmd/gate`** — seven shell/Python gate scripts collapsed into one Go runner over
+  `go test -json` (`census`, `heavy`, `parity`, `composition`, `selector`, `gpu`, `mutation`).
+- **DeltaNet Gate D0**, an env-gated component timing split (`GOINFER_DELTANET_TIMING=1`): on real
+  35B-A3B decode, projections 37.6% / recurrence 42.1% / other 20.2%, reconciling to 100.0%.
+
+### Changed
+
+- **`aikit` v1.21.0 → v1.28.0**, **`aikit/gpu` v0.28.0 → v0.30.0**, all five modules aligned.
+- **Go 1.26.6 → 1.27.0** across all five modules.
+- **Attention restructured (A1), bit-identical, 2.4–2.8×** — `attendBatchedHeads` now uses aikit's
+  `MatmulQKAcc64`/`MatmulAVAcc64`. Real 1.5B shape on M1 Pro: depth 128 **10.84 → 4.54 ms**,
+  depth 8192 **828.77 → 298.36 ms**. Zero logit difference on the parity tests.
+- **`int4` is the right CPU default again on Apple Silicon.** An earlier measurement this cycle
+  found `int8int8` ~60% faster and the guidance was changed to say so; with the W4A8 kernel and
+  the int4-mode LM head both shipped it is now backwards — int4 matches or beats int8int8 at both
+  real sizes, at half the RAM. **Both measurements were correct when taken**; the guidance moved
+  twice because the code did.
+- **The qwen35 projections honour `Options.Quant`** instead of staying f32 — **1.60× decode,
+  7.4× TTFT**, and it is a deliberate bandwidth trade with a stated cost: min cosine on the GGUF
+  gate moved 0.99298 → 0.98740 and coherent prompts 8/10 → 7/10. If you run qwen3_5 and care more
+  about the last fraction of accuracy than about decode rate, that is the trade you are now taking.
+
+### Fixed
+
+- **`.giw` silently dropped gpt-oss attention sinks** (see the note at the top). `canSerialize`
+  ACCEPTED gpt-oss; per-head sinks were per-layer state the writer had no field for. Refused first,
+  then properly represented in v6. Laguna was accepted too and failed loud at load instead of
+  silent — still a broken artifact produced without a warning.
+- **The `realckpt` test build was broken on `main`** — two incompatible `envOr` in one package, so
+  the release parity sweep could not compile, let alone run. Untagged `go vet` was clean, which is
+  why CI stayed green. **CI now vets the `realckpt` build**, the configuration the sweep uses and
+  the one nothing built.
+- **Optimistic-forward raced the resident's logits buffer on CUDA.**
+- **`matmul`/`matmulInto` never actually called `w.MatmulBTW4A8Into`** — the W4A8 kernel was
+  shipped but not reached from the dispatch path.
+- **The kind-4 pager double-`WILLNEED`'d**, registering more than the span the kernel reads.
+- **qwen35 GGUF transcode streams** instead of building the model resident first.
+- **`TestQwen35GGUF_weightDiff` died on a stale precondition and named the wrong tensor.** Its
+  helper was f32-only, which held until the projections started honouring `Options.Quant`; the
+  failure message hardcoded "router" while the tensor that was not f32 was `in_proj_qkv`. It
+  measures rather than refuses now, and the router is confirmed bit-identical.
+- **Two GPT-2 int4 golden floors** raised/exempted on measured grounds.
+
+### Measured and NOT shipped
+
+Recorded because a negative result costs the same to obtain and is worth as much:
+
+- **`.giw` kind 4 — correctness fully green, throughput regresses 25–30%.** Kind-3 vs kind-4
+  byte-identical at real scale on both bundles, paged full-vs-paged decode byte-identical with real
+  non-vacuous eviction, T3 green — and it is a **loss**, not the projected ~1.3× win, confirmed at
+  a fixed budget and at one matched to kind-3's residency fraction. The dispatch-inertness trap and
+  a paging-budget artifact were both ruled out.
+- **DeltaNet D1 parked** — a 6–7% projected ceiling, below the ~10% floor this repo already used to
+  reject another retry, and at *more* implementation cost. Parked shovel-ready, not abandoned.
+- **Metal `quant_vec`+o-proj fusion: net loss.** **CUDA `attn_block_full` max-shuffle: refuted**
+  (0.41%, ranges overlap) — reverted, benchmark kept.
+- **W4A8 is compute-bound on NEON, and this is the second independent confirmation.** It runs
+  ~1.6× slower than W8A8 while reading 1.6× fewer bytes; the nibble-unpack ALU is the limiter. A
+  June spike measured 1.58× and shelved a 3-bit follow-on for the same reason; this cycle measured
+  1.63×/1.57× on different hardware two months later.
+
+### Parity and evidence
+
+- **The peer benchmark was re-measured on both boxes, and its fairness guarantee had to be
+  replaced.** `bench_peer.py` promised "the same GGUF file on both sides (verify by md5)". That is
+  **unsatisfiable through Ollama's import path for any model**: `ollama create` repacks the
+  container in a different tensor ORDER, so the file hash always differs even when every tensor is
+  bit-identical. New `scripts/gguf_same_weights.py` compares per tensor at each file's own offsets
+  — **339/339, 339/339, 291/291 tensors identical** across the three models used.
+- **The CPU deficit was found, diagnosed, and largely closed.** goinfer decoded 0.32–0.54× of
+  Ollama on CPU at the start of this cycle (worse on arm64, not better). The quant confound was
+  real but partial; thread count and E-core inclusion were **ruled out by measurement** for
+  goinfer, while confirming llama.cpp's 6-thread default is doing real work. With the W4A8 row4
+  repack, the int4-mode LM head and the A1 attention restructure shipped, M1 Pro int4 decode went
+  **34.5 → ~82 tok/s (0.5B)** and **17.0 → ~40 tok/s (1.5B)**.
+- **Two op-level goldens stopped pinning identity weights.** `granite_mamba` and `qwen35_deltanet`
+  pinned HF's default init, leaving `D=1`, `dt_bias=1`, `norm.weight=1`, `conv1d.bias=0` — so a bug
+  in how goinfer *applies* those (×1 or +0) could not move the reference and the test passed
+  regardless. Regenerated from HF with seeded non-trivial values; both pass, so those paths are now
+  genuinely pinned. A scan of all 89 goldens found no other all-identical weight array.
+- **`TestQwen35GGUF_gate` floor re-baselined on the bisect, not on "it changed".** The 0.992 min
+  floor was set long ago and never revisited; `6d4fc79`'s deliberate bandwidth trade crossed it.
+  Min → 0.985 **plus a new mean floor at 0.995**, so the re-baseline does not simply lower a bar:
+  the mean now carries the systematic-drift duty because min is box-sensitive (~0.0015 across CPUs).
+  Both sit below the measured value with margin rather than at it.
+
 ## [v0.14.0] — 2026-08-19
 
 **Six new model families, gpt-oss on Metal, and the v1.0 API tiers declared.** 188 commits since

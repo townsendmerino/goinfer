@@ -1,8 +1,15 @@
-# v0.15.0 peer benchmark — IN FLIGHT
+# v0.15.0 peer benchmark — goinfer vs Ollama across CPU, CUDA and WebGPU
 
-> **Status: RUNNING, detached.** Started 2026-08-22 ~11:40 PDT on `linux-62gb` (RTX 2070 SUPER,
-> 8 GB) against goinfer `915d45e`. This file exists so the run can be picked up by a session that
-> did not start it. Delete it when the results land in a permanent measurement doc.
+> **Status: COMPLETE — 33/33 cells, zero failures.** Ran 2026-08-22 on `linux-62gb`
+> (RTX 2070 SUPER, 8 GB, Ryzen 7 3700X) against goinfer `5b040f2`, peer Ollama **v0.32.6**.
+> Results below.
+>
+> **These numbers are already partly superseded.** They predate the A1 attention restructure
+> (2.4–2.8×), the arm64 W4A8 row4 repack and the int4-mode LM head, all of which landed after and
+> move the goinfer column — the CPU rows especially. Kept because the METHOD, the fairness proof
+> and the CUDA depth curve are what the next run has to reproduce or beat, and because the CPU
+> deficit recorded here is what prompted the diagnosis in
+> `mac-cpu-decode-vs-ollama-2026-08-22.md`.
 
 ## Where everything is
 
@@ -63,3 +70,31 @@ with the currently published figures; the 7B is the row a claim should rest on.
 
 The 7B is `qwen2.5-7b-instruct`, not `-coder` — no coder 7B GGUF is on this box. Same architecture
 and tokenizer family; say so rather than implying one family across all three rows.
+
+## Results (2026-08-22, `5b040f2`, Ollama v0.32.6, greedy, decode-only)
+
+**Phase A — backend table, depth 128 (tok/s)**
+
+| model | goinfer-cpu | ollama-cpu | ratio | goinfer-cuda | ollama-cuda | ratio | goinfer-webgpu |
+|---|---|---|---|---|---|---|---|
+| 0.5B | 27.4 | 50.7 | 0.54× | 284.3 | 262.5 | 1.08× | 121.1 |
+| 1.5B | 10.6 | 24.2 | 0.44× | 220.8 | 196.1 | 1.13× | 89.7 |
+| 7B | 4.2 | 5.9 | 0.71× | 73.3 | 73.1 | 1.00× | 46.0 |
+
+**Phase B — depth curve, CUDA (goinfer ÷ ollama)**
+
+| model | 128 | 512 | 2048 | 3900 |
+|---|---|---|---|---|
+| 0.5B | 1.08× | 1.11× | 0.94× | **0.78×** |
+| 1.5B | 1.13× | 1.15× | 0.88× | **0.71×** |
+| 7B | 1.00× | 0.96× | 0.82× | **0.70×** |
+
+**Two findings worth carrying forward.** The CUDA advantage is **1.08–1.13× at shallow depth and a
+dead tie at 7B**, not the 1.19× the README's v0.14.0-era table shows for 0.5B @128 — one cell moving
+while its neighbours reproduce, unconfirmed by a second run. And **goinfer degrades with context
+depth while Ollama stays flat**: Ollama holds 262→259 / 196→174 / 73→70 across 128→3900 where
+goinfer falls 284→202 / 220→123 / 73→49. The depth curve is the more consequential of the two and
+is not addressed by this release's CPU work.
+
+The WebGPU column has **no ollama counterpart** (ollama has no WebGPU build); it is scored against
+ollama's CUDA row and must be labelled cross-backend, never presented as a like-for-like peer cell.
