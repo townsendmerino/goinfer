@@ -104,6 +104,15 @@ type BlockSpecOptions struct {
 	// there is no draft to verify) and MaxWidth the drafter's own block size.
 	MinWidth, MaxWidth int
 
+	// OnRound, if non-nil, is called after each completed round with the verify width that
+	// round used and the tokens it committed (accepted drafts plus the target's own token).
+	//
+	// It is one seam serving two needs the campaign has: the adaptive controller cannot be
+	// judged on end-to-end speed alone — a regime change mid-generation is exactly where a
+	// cumulative-average signal lags, and an aggregate number hides that — and `serve` owes
+	// per-request accept-rate and tok/verify in its response metadata regardless.
+	OnRound func(width, committed int)
+
 	// widthSchedule forces an exact per-round width sequence, cycling if generation outlasts
 	// it. TEST-ONLY, and it exists for one reason: the losslessness gate must exercise a
 	// CHANGING schedule. A controller that happens to hold one width all run would pass a
@@ -359,6 +368,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			break
 		}
 		anchor = next
+		if opt.OnRound != nil {
+			opt.OnRound(rw, 1+accepted)
+		}
 		guard.observe(1 + accepted)
 	}
 	return out, rounds, nil
