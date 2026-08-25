@@ -17,41 +17,6 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
-**G12 · `role: "developer"` is silently demoted to a user turn on the OpenAI surfaces — alias it
-to `system`** — `mac`, **CLAIMED 2026-08-25, IN FLIGHT.**
-
-**Read the task doc at `0221d32` or later, not at `9a9594c`.** The version first shipped called
-this "the known first blocker for the dsh run" and predicted the failure mode was a rejection.
-Both were wrong and are corrected at `0221d32`; a cold reader who picks up the earlier text will
-sequence this for the wrong reason and characterize a defect that does not exist.
-
-**It is NOT a blocker.** DeepSeek Harness ships a per-model `compat.supportsDeveloperRole: false`
-that makes it send `system` instead, so the Tier-0 dsh run (`docs/scoping-dsh-goinfer.md`) can
-happen today with no goinfer change.
-
-**It is silent-wrong, which is why it goes first anyway.** Verified on-device at `dc8355e`:
-`messagesToTurns` (`internal/serveapp/openai.go` — cite the function, lines move) switches on
-`system` / `tool` / `assistant` with a `default:` arm that appends a **user** turn. `developer`
-hits `default`, so it is neither rejected nor dropped — it is demoted to a user message, in
-position. A harness whose compat flag is forgotten, or one with no such flag, delivers its whole
-agent scaffold as the user's first message; the failure then reads as "the model is bad at agent
-work", not "the server mangled the request". A characterization run must not sit on top of that.
-
-**Scope — one chokepoint.** All four OpenAI-side surfaces funnel through `messagesToTurns` (call
-sites in `openai.go`, `responses.go`, `tools.go`, `vision_serve.go`), so one `case "developer":`
-arm covers chat/completions, responses message-items, the tools path and the vision path.
-`/v1/messages` takes `system` as a top-level field and is untouched. Unknown roles other than
-this one keep today's behavior — this is not a general unknown-role-tolerance change.
-
-**Gates** (full list in the task doc): table-driven per surface, with byte-identical prompt
-rendering against the equivalent `system` request as the equality gate; a test pinning the OLD
-demotion written first and shown failing against the fix, so it cannot go silent again; the
-verified before-state quoted in the fix's commit message; one line in the serve docs' OpenAI
-section so the C2 audit reads a claim that matches the code.
-
-**Docs:** `docs/prompts/serve-developer-role.md` (the task), `docs/scoping-dsh-goinfer.md`
-(why it is sequenced ahead of Tier 0). Budget: one short session, mostly tests.
-
 **A12 · The CUDA heavy tier does not fit in 8 GB in one process — the gate cannot pass here** —
 `linux`, **CLOSED `e682eb2` (2026-08-13). No capacity/leak issue ever existed — see the resolution
 block immediately below before reading the investigation.**

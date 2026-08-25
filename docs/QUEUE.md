@@ -75,6 +75,38 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 _(append with commit sha and date)_
 
+**G12 · `role: "developer"` silently demoted to a user turn on the OpenAI surfaces** — `mac`,
+**DONE `4ca19e9` (2026-08-25).** Claimed and finished the same day. One `case "developer":` arm in
+`messagesToTurns` (`internal/serveapp/openai.go`), which all four OpenAI-side surfaces funnel
+through, so chat/completions, the Responses message-item path, the tools path and the vision path
+were covered at once. Precedence needed no new concept — two `system` messages already resolve
+last-one-wins and the alias inherits it.
+
+**Two corrections to the record, both worth more than the fix:**
+
+1. The entry was first written (`9a9594c`) as "the known first blocker for the dsh Tier-0 run". It
+   was not a blocker — DeepSeek Harness ships `compat.supportsDeveloperRole: false`, so the run
+   could always have happened. Corrected at `0221d32`. What made it worth sequencing first was
+   that the failure was **silent**, not that it was blocking.
+2. **The remaining Step-0 assumption was wrong, and the wrong half was the one nobody checked.**
+   The task doc said a developer-role message on `/v1/messages` was "structurally impossible"
+   because Anthropic carries `system` as a top-level field, and asked only that the error be
+   confirmed clean. There is no error: `anthropicMessage.Role` is a free string, `anthropicRole`
+   maps everything that is not `"assistant"` to a user turn, and **there is no role validation
+   anywhere in `internal/serveapp`** — so the same silent demotion was live on that surface too.
+   Left demoted **deliberately** (the Anthropic API has no developer role; honoring one invents
+   behavior upstream does not have, on a surface whose bar is "works for the apps that matter"),
+   but now pinned by `TestAnthropicDeveloperRoleStaysUser` so the decision is visible rather than
+   silent. A prediction that a thing is impossible is not a check that it is.
+
+**Gate power, both directions:** a test pinning the old demotion was written first and shown
+failing against the fix; the two new alias gates were then shown failing with the arm reverted. The
+three that pin unchanged behavior (`instructions` plumbing, the non-goal guard, the Anthropic pin)
+pass either way, as they should. Equality gate is byte-identical rendering against the equivalent
+`system` request across all six families plus the `rawPrompt` fallback.
+
+**Unblocks** Tier 0 of `docs/scoping-dsh-goinfer.md` — the dsh run can now start past this.
+
 ## Sequencing — release BEFORE G2
 
 **Revised, and D3 is OUT of the release — no rebase attempted.**

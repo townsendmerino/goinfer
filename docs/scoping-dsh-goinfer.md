@@ -33,12 +33,13 @@ integrations area) containing:
   path), while the staged/CPU path keeps warm-KV session reuse that agent loops benefit from;
   deep-context decode slows (benchmarks §B7). Set expectations, don't let the harness discover
   them.
-- The `role: "developer"` note — **not a blocker** (dsh's
-  `compat.supportsDeveloperRole: false` makes it send `system`, so the run works today), but
-  the serve alias (`docs/prompts/serve-developer-role.md`) lands **first** anyway: without it,
-  a forgotten flag silently demotes the whole agent scaffold to a user message
-  (`messagesToTurns`' default arm, verified at `dc8355e`), and the run's findings would read as
-  model quality rather than request mangling. Silent-wrong before characterization.
+- The `role: "developer"` note — **RESOLVED, `4ca19e9` (2026-08-25).** `developer` is now an
+  alias for `system` on the OpenAI-compatible routes, so dsh's `compat.supportsDeveloperRole`
+  flag can be left at its default and the recipe does not need to mention it. It was never a
+  blocker (the flag made it send `system`); it was sequenced first because the old behavior
+  silently demoted the whole agent scaffold to a user message, which would have made this run's
+  findings read as model quality rather than request mangling. Recipe should state the alias
+  exists, so a reader who has the flag set knows they no longer need it.
 
 **Gate:** the recipe is written only from a real end-to-end run — dsh web driving goinfer
 through at least one multi-turn, tool-using agent task, with every friction point either fixed,
@@ -78,8 +79,9 @@ is boringly true.
 
 ## Decision rule and sequencing
 
-Tier 0 after the developer-role task lands (not because it blocks — because its absence makes
-the findings silently unreliable) → its measured run
+Tier 0 — **now unblocked; the developer-role alias landed at `4ca19e9` (2026-08-25), which
+was sequenced first not because it blocked but because its absence made the findings silently
+unreliable** → its measured run
 decides Tier 1 (build/park, recorded either way) → Tier 2 whenever Tier 0 is smooth, batched
 with other launch materials. Budget: Tier 0 ≈ one session including the run; Tier 1 unbudgeted
 until its precondition is met.

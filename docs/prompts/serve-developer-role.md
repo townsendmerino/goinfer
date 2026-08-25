@@ -1,5 +1,9 @@
 # goinfer task: `role: "developer"` compat on the serve surface
 
+> **DONE — `4ca19e9`, 2026-08-25, on `mac`.** Queue entry G12, released to `docs/QUEUE.md`'s Done
+> with the full record. Kept as written below because the reasoning is the point; **two things in
+> it turned out wrong, both marked inline.** Read the Step-0 correction before citing this doc.
+
 > **Box:** either. Small, self-contained — one short session, mostly tests. Stimulus: DeepSeek
 > Harness sends system prompts as `role: "developer"` for reasoning-class models, and the same
 > convention is spreading from OpenAI's newer APIs — general harness compat, not a dsh special
@@ -24,10 +28,24 @@ position** — not a 400, not a drop. This before-state goes in the fix's commit
 All four OpenAI-side surfaces funnel through this one function (call sites in `openai.go`,
 `responses.go`, `tools.go`, `vision_serve.go`), which is why the fix is a single chokepoint.
 
-**Remaining Step 0:** `/v1/messages` (Anthropic) takes `system` as a top-level field, so a
-developer-role content item should be structurally impossible — confirm the error for one is
-clean, and keep a regression test pinning it. `/v1/responses`' `instructions` field is separate
-plumbing — confirm it is unaffected either way.
+**Remaining Step 0 — ANSWERED, and the assumption in it was WRONG.** This section read: "
+`/v1/messages` (Anthropic) takes `system` as a top-level field, so a developer-role content item
+should be structurally impossible — confirm the error for one is clean." It is not impossible and
+there is no error. `anthropicMessage.Role` is a free string, `anthropicRole` maps everything that
+is not `"assistant"` to a user turn, and **there is no role validation anywhere in
+`internal/serveapp`** — so the identical silent demotion was live on `/v1/messages` too. The half
+of Step 0 that got predicted instead of checked is the half that was wrong; a prediction that a
+thing is impossible is not a check that it is.
+
+**Resolved deliberately, not fixed:** the alias is NOT applied on `/v1/messages`. The Anthropic
+Messages API has no developer role, and honoring one would invent behavior upstream does not have
+on a surface whose compatibility bar is "works for the apps that matter"; nothing sends it there
+either, because a client speaking that shape puts its system prompt in the top-level field. Today's
+demotion is pinned by `TestAnthropicDeveloperRoleStaysUser` so the decision is visible and fails
+loudly if it ever starts to matter.
+
+`/v1/responses`' `instructions` field: **confirmed unaffected** — it is constructed as a system
+message directly and never carried a wire role. Pinned by `TestDeveloperRoleResponsesInstructions`.
 
 ## The change
 
