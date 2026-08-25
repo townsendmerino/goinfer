@@ -1,25 +1,38 @@
 # goinfer task: `role: "developer"` compat on the serve surface
 
-> **Box:** either. Small, self-contained. Stimulus: DeepSeek Harness sends system prompts as
-> `role: "developer"` for reasoning-class models (its escape hatch is a per-model
-> `compat.supportsDeveloperRole: false`), and the same convention is spreading from OpenAI's
-> newer APIs — so this is general harness compat, not a dsh special case. Verified 2026-08-21:
-> `internal/serveapp` has no handling for the role (the only "developer" in the tree is the
-> harmony template's internal channel in `chat/templates.go` — unrelated).
+> **Box:** either. Small, self-contained — one short session, mostly tests. Stimulus: DeepSeek
+> Harness sends system prompts as `role: "developer"` for reasoning-class models, and the same
+> convention is spreading from OpenAI's newer APIs — general harness compat, not a dsh special
+> case.
+>
+> **This is NOT a blocker, and the doc must not read as one.** dsh ships a per-model
+> `compat.supportsDeveloperRole: false` that makes it send `system` instead, so the dsh Tier-0
+> run can happen today with no goinfer change. The reason to do this FIRST anyway is that the
+> current behavior is **silent-wrong**: the role isn't rejected, it's demoted (below), so a
+> harness whose flag is forgotten — or one with no such flag — delivers its entire agent
+> scaffold as the user's first message, and the failure reads as "the model is bad at agent
+> work," not "the server mangled the request." That is exactly the trap a characterization run
+> must not be sitting on top of. Silent-wrong and cheap ⇒ fix before the Tier-0 run.
 
-## Step 0 — characterize before fixing
+## Step 0 — characterization (the chat path is ANSWERED; finish the rest)
 
-Send a `role: "developer"` message to each surface and record what actually happens today —
-400, silent drop, or pass-through into the template as an unknown role. Do this for
-`/v1/chat/completions`, `/v1/completions` (n/a expected), `/v1/responses` (both the `input`
-message-item form and `instructions`), and `/v1/messages` (Anthropic — `system` is a top-level
-field there, so developer-role items should already be impossible; confirm the error is clean).
-The current behavior goes in the commit message; a fix without the before-state is the class of
-change this repo doesn't make.
+**Answered, verified on-device at `dc8355e`:** `messagesToTurns`
+(`internal/serveapp/openai.go` — cite the function, not a line; it will move) maps roles with a
+`switch` whose arms are `system` / `tool` / `assistant` and a `default:` that appends a **user**
+turn. `developer` therefore hits `default` and is **silently demoted to a user message, in
+position** — not a 400, not a drop. This before-state goes in the fix's commit message verbatim.
+All four OpenAI-side surfaces funnel through this one function (call sites in `openai.go`,
+`responses.go`, `tools.go`, `vision_serve.go`), which is why the fix is a single chokepoint.
+
+**Remaining Step 0:** `/v1/messages` (Anthropic) takes `system` as a top-level field, so a
+developer-role content item should be structurally impossible — confirm the error for one is
+clean, and keep a regression test pinning it. `/v1/responses`' `instructions` field is separate
+plumbing — confirm it is unaffected either way.
 
 ## The change
 
-Treat `role: "developer"` as `role: "system"` on the OpenAI-compatible surfaces:
+One `case "developer":` arm in `messagesToTurns` — the verified single chokepoint — treating
+`role: "developer"` as `role: "system"` on the OpenAI-compatible surfaces:
 
 - Same merge/precedence semantics as an explicit system message in the same position — an alias,
   not a new concept. If both `system` and `developer` messages appear, follow OpenAI's stated
@@ -35,8 +48,8 @@ Treat `role: "developer"` as `role: "system"` on the OpenAI-compatible surfaces:
 - Table-driven test per surface: developer-only, system+developer, developer in mid-conversation
   (should behave as the equivalent system-message request — byte-identical prompt rendering vs
   the aliased form).
-- The Step-0 characterization test kept as a regression guard for the *rejected* cases that stay
-  rejected.
+- A test pinning the OLD behavior is written first and shown failing against the fix — the
+  demotion was silent once; the gate exists so it cannot become silent again.
 - README/serve docs: one line in the OpenAI-surface section ("`developer` is accepted as an
   alias for `system`"), so the C2 audit reads a claim that matches the code.
 
