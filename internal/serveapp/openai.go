@@ -801,12 +801,22 @@ func grammarFor(rf *respFormat) (constrain.Grammar, error) {
 // messagesToTurns maps OpenAI messages to chat turns, carrying tool history
 // (assistant tool_calls and tool-result turns). The system message is returned
 // separately (families place it differently).
+//
+// "developer" is an alias for "system" (queue G12). OpenAI's newer APIs send the
+// system prompt under that role for reasoning-class models, and agent harnesses
+// have followed. It is an alias and nothing more: same position, same
+// last-one-wins precedence that two "system" messages already have, no new
+// concept downstream — by the time a template sees it, it is the system prompt.
+// This is NOT a general unknown-role tolerance; every other unrecognized role
+// keeps the default arm below. Before this arm existed, "developer" fell through
+// to default: and was silently demoted to a USER turn, which delivered a
+// harness's entire agent scaffold as the user's first message.
 func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 	var system string
 	var turns []chat.Turn
 	for _, m := range msgs {
 		switch m.Role {
-		case "system":
+		case "system", "developer":
 			system = m.text()
 		case "tool":
 			turns = append(turns, chat.Turn{Role: "tool", Content: m.text(), ToolName: m.Name, ToolCallID: m.ToolCallID})

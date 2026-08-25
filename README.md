@@ -254,6 +254,13 @@ streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
 
+On the OpenAI-compatible routes, **`role: "developer"` is accepted as an alias for
+`role: "system"`** — same position, and the same last-one-wins precedence two `system`
+messages already have. OpenAI's newer APIs send the system prompt under that role for
+reasoning-class models, and agent harnesses have followed. `/v1/messages` is unaffected:
+the Anthropic API carries the system prompt in its own top-level field and has no
+developer role.
+
 > **No auth by default — on loopback only.** `--addr` defaults to loopback, and there
 > that only keeps other *machines* out, not other browser *tabs* on yours: any web page
 > open while `serve` is running can silently `fetch()`/`POST` to this API (the request
