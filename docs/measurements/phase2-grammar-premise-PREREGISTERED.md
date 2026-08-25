@@ -52,6 +52,17 @@ Same DFlash drafter, same target, same prompts, same verify width, **paired per 
 separate "the mask helps" from "the mask hurts because the drafter proposes illegal tokens";
 it can explain a result but cannot decide one.
 
+**A1 IS RECORDED UNCONDITIONALLY, including when A2 dies — it is the autopsy.** The runs are
+paired anyway, so it is free, and the two failure modes it distinguishes are different verdicts
+about the future, not the same one twice:
+
+- **A1 healthy, A2 dead** → masking the DRAFTER is what costs acceptance. A grammar-aware
+  drafter, or Phase 3's MTP head under constraint, is still worth a thought.
+- **A1 and A2 both dead** → the drafter cannot draft into this distribution at all, masked or
+  not, and no variant of the same idea deserves one.
+
+A DIES with a cause is worth more than a DIES alone.
+
 **Metric: committed tokens per round (tok/verify)** — the same unit the block-drafting break-even
 is expressed in, so the number is directly comparable to the thresholds that already exist:
 guard threshold **2.5**, measured true break-even **~3.5** for this pairing, unconstrained
@@ -81,5 +92,10 @@ favouring A2 of N, and **T** A2's absolute mean tok/round.
   mechanism that measured worse than both endpoints it moves between should not outlive the last
   phase that might have reused it. Until then `Adaptive` stays default-off as shipped.
 - **If Phase 2 LIVES:** the first build step is the plumbing, not the prior — `BlockSpec` has to
-  accept a masked verify at all before a prior can steer anything.
+  accept a masked verify at all before a prior can steer anything. **A LIVES verdict therefore
+  arrives with a bill, and the results doc must carry a rough plumbing price** (what has to
+  change in `BlockSpec` to admit a stateful mask through the batched verify, and what that costs
+  the greedy-only guarantee) so the build decision is taken against a cost rather than against a
+  green light. The `LogitProcessor` refusal cuts both ways: it is why the premise is tested
+  first, and it is why "it lives" is not by itself an instruction to build.
 - **Either way**, the constrained-JSON suite is committed, like the mixed suite before it.
