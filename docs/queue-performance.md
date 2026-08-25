@@ -1250,6 +1250,18 @@ which is where the guesses point and precisely why they are not written down as 
 **What would make this landable:** measure the jitter P8 exists to reduce, so the trade has two
 numbers rather than one. Until then the allocation stays.
 
+> **MEASURE-DON'T-ASSUME, inherited by every drafter decision below (2026-08-25).** The
+> adaptive-width ship-gates measured something that sits UNDER this whole line of work, not just
+> under that campaign: **"structured output is more predictable, so a drafter accepts more of it"
+> DID NOT TRANSFER.** On CUDA-resident Qwen3-4B + DFlash, a suite built specifically to force
+> prose→structured transitions found acceptance *falling* across the boundary — width and
+> commits both dropped (5.3→4.0 @ 2.83 tok/round; 6.5→4.0 @ 2.17) — and **no verify width, and
+> no adaptive schedule, beat running NO drafter at all** on that suite (best arm 0.943×). The
+> assumption is load-bearing in several places here (front-loading, traffic-class routing, the
+> grammar prior, DFlash 2's suffix-decay rationale) and it came from a fork's result on
+> different hardware with a different drafter. **Treat it as a hypothesis per pairing, not a
+> property of text.** Full evidence: `docs/measurements/adaptive-width-shipgates-2026-08-25.md`.
+
 **P15 · DFlash 2 — P10's successor upstream, aimed at P10's two measured weaknesses** — `linux`,
 filed 2026-08-20 from [inco.ai/blog/dflash2](https://inco.ai/blog/dflash2/); **gates before code**.
 Upstream adds two modules to the v1 drafter P10 shipped: a two-tap dynamic depthwise convolution
@@ -1277,6 +1289,18 @@ calibrated to v1's acceptance curve and rebuilt. Design page:
 entry is the claimable work. Training code is not released, so thinking-mode targets have no
 re-finetune escape this time; the harness's existing hard-errors stand guard on the two known
 input-distribution traps.
+
+> **MEASURE-DON'T-ASSUME, inherited by every drafter decision below (2026-08-25).** The
+> adaptive-width ship-gates measured something that sits UNDER this whole line of work, not just
+> under that campaign: **"structured output is more predictable, so a drafter accepts more of it"
+> DID NOT TRANSFER.** On CUDA-resident Qwen3-4B + DFlash, a suite built specifically to force
+> prose→structured transitions found acceptance *falling* across the boundary — width and
+> commits both dropped (5.3→4.0 @ 2.83 tok/round; 6.5→4.0 @ 2.17) — and **no verify width, and
+> no adaptive schedule, beat running NO drafter at all** on that suite (best arm 0.943×). The
+> assumption is load-bearing in several places here (front-loading, traffic-class routing, the
+> grammar prior, DFlash 2's suffix-decay rationale) and it came from a fork's result on
+> different hardware with a different drafter. **Treat it as a hypothesis per pairing, not a
+> property of text.** Full evidence: `docs/measurements/adaptive-width-shipgates-2026-08-25.md`.
 
 **P10 · DSpark / DFlash block drafters — the α lever 05/06 named, arriving pretrained** — `linux`
 next (resident CUDA go/no-go), then `mac`, **increments 1–2 DONE 2026-08-15 (`linux-62gb`)**.
