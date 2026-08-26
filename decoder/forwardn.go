@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sync"
@@ -77,8 +78,8 @@ func (m *Model) specRollbackSafe() bool {
 // reused across the K rows (aikit's column-blocked W8A8 kernel); attention stays
 // per-position and causal. Bit-identical to K sequential forwards. Assumes
 // canBatchN(len(ids)) — callers check.
-func (m *Model) forwardLayersN(ids []int, cache *KVCache) ([]float32, error) {
-	return m.runLayersFromEmbedN(m.embedN(ids), cache)
+func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache) ([]float32, error) {
+	return m.runLayersFromEmbedN(reqCtx, m.embedN(ids), cache)
 }
 
 // embedN returns the [K*HiddenDim] embedding rows for ids (the per-row token embed
@@ -106,7 +107,7 @@ func (m *Model) embedN(ids []int) []float32 {
 // must already carry the embedding scale; injected vision rows are raw (HF's
 // masked_scatter overwrites the scaled placeholder embed). Returns the [K,
 // HiddenDim] post-final-norm hidden states (the LM head is the caller's).
-func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, error) {
+func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -166,6 +167,19 @@ func (m *Model) runLayersFromEmbedN(h []float32, cache *KVCache) ([]float32, err
 		defer m.layerPager.finishLayers()
 	}
 	for l := 0; l < arch.NumLayers; l++ {
+		// G18: an abandoned client must not leave this loop running. Prefill is where
+		// the time goes (a 3k-token prompt is minutes), and before this check a client
+		// that gave up left a core burning to completion — measured at 47:38 of CPU
+		// with nothing attached, with a retrying harness stacking one such prefill per
+		// retry. Checked per LAYER, not per token: the check is free at this
+		// granularity, but it is NOT instant — the bound is one layer's work, measured
+		// at ~12s for a 3072-token prompt on an M1 Pro (cancel at 300ms, observed at
+		// 12.34s; TestPrefillCancelMidFlight logs both). That is the tail to tighten
+		// if it ever matters — per-head inside attendBatchedHeads — not a claim that
+		// cancellation is immediate here.
+		if err := reqCtx.Err(); err != nil {
+			return nil, err
+		}
 		if m.layerPager != nil {
 			m.layerPager.enterLayer(l) // dense weight streaming (#4)
 		}
@@ -660,7 +674,7 @@ func (m *Model) lmHeadN(h []float32, M int) []float32 {
 // forwardN runs a batched forward over ids and returns the logits at every
 // position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to
 // K sequential forwards. Falls back to sequential for the non-batched archs.
-func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
+func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
 	K := len(ids)
 	if K == 0 {
 		return nil, nil
@@ -686,7 +700,7 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 		}
 		return out, nil
 	}
-	h, err := m.forwardLayersN(ids, cache)
+	h, err := m.forwardLayersN(reqCtx, ids, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -707,20 +721,25 @@ func (m *Model) forwardN(ids []int, cache *KVCache) ([][]float32, error) {
 // (the others' logits aren't needed). Falls back to sequential runLayers +
 // forward otherwise. Bit-identical to the sequential prefill (the seed token is
 // unchanged). The cache is filled with the whole prompt either way.
-func (m *Model) prefillLogits(prompt []int, cache *KVCache) ([]float32, error) {
+func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache) ([]float32, error) {
 	// Compute-time LoRA (#7) is wired only into the sequential forward (causalAttention
 	// + gatedMLP), so an active adapter takes the M=1 path — the prompt's K/V must carry
 	// the delta or decode would continue a base-projected context. The RAM-density win
 	// (N adapters share one base) is unaffected; only adapter'd prefill speed regresses.
 	if cache.lora != nil || !m.canBatchN(len(prompt)) {
 		for _, id := range prompt[:len(prompt)-1] {
+			// G18: the sequential fallback checks per token — it has no layer batch to
+			// bound, and a LoRA'd or non-batchable arch prefills here.
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if _, err := m.runLayers(id, cache); err != nil {
 				return nil, err
 			}
 		}
 		return m.forward(prompt[len(prompt)-1], cache)
 	}
-	h, err := m.forwardLayersN(prompt, cache)
+	h, err := m.forwardLayersN(ctx, prompt, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -737,7 +756,7 @@ func (m *Model) prefillLogits(prompt []int, cache *KVCache) ([]float32, error) {
 // bidirectional image-block attention lives in attendBatchedHeads. The injected
 // embeddings are RAW (the projector output), matching HF's masked_scatter, which
 // overwrites the scaled placeholder embed. See docs/multimodal.md §4–5.
-func (m *Model) prefillLogitsVL(ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: multimodal prefill needs the batched path (canBatchN false)")
 	}
@@ -751,7 +770,7 @@ func (m *Model) prefillLogitsVL(ids []int, imageEmbeds []float32, imgPos, imgLen
 	h := m.embedN(ids)
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale
 	cache.SetImageBlocks([][2]int{{imgPos, imgPos + imgLen}})
-	hN, err := m.runLayersFromEmbedN(h, cache)
+	hN, err := m.runLayersFromEmbedN(ctx, h, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +786,7 @@ func (m *Model) prefillLogitsVL(ids []int, imageEmbeds []float32, imgPos, imgLen
 // inside the ViT, not the decoder) — and the rotary uses m-RoPE (ropeAt reads
 // cache.mropePos). The merged features are RAW (no embed scale), matching HF's
 // scatter into inputs_embeds. (P5)
-func (m *Model) prefillLogitsQwenVL(ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
+func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: Qwen2.5-VL prefill needs the batched path (canBatchN false)")
 	}
@@ -785,7 +804,7 @@ func (m *Model) prefillLogitsQwenVL(ids []int, imageFeats []float32, imgPos, img
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageFeats) // raw merged features, no embed scale
 	cache.mropePos = mropePos                                 // ropeAt switches to m-RoPE for this prefill
 	cache.mropeDelta = mropeDelta(mropePos, len(ids))         // decode past the prefill rotates at seqPos+delta
-	hN, err := m.runLayersFromEmbedN(h, cache)
+	hN, err := m.runLayersFromEmbedN(ctx, h, cache)
 	if err != nil {
 		return nil, err
 	}

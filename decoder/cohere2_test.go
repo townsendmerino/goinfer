@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -155,7 +156,7 @@ func TestCohere2_batchedPrefillMatchesSequential(t *testing.T) {
 		t.Fatalf("seq forward: %v", err)
 	}
 
-	rows, err := m.forwardN(ids, m.NewCache(len(ids)))
+	rows, err := m.forwardN(context.Background(), ids, m.NewCache(len(ids)))
 	if err != nil {
 		t.Fatalf("batched forwardN: %v", err)
 	}

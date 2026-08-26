@@ -239,7 +239,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 	}
 	tpos := len(prompt)
 
-	seedLogits, err := target.prefillLogits(prompt[prefillFrom:], tc)
+	seedLogits, err := target.prefillLogits(ctx, prompt[prefillFrom:], tc)
 	if err != nil {
 		g.err = err
 		return
@@ -278,7 +278,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 
 		base := tpos
 		seq := append([]int{cur}, draftTok...)
-		logitsN, err := target.forwardN(seq, tc)
+		logitsN, err := target.forwardN(ctx, seq, tc)
 		if err != nil {
 			g.err = err
 			return

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,13 +33,13 @@ func TestTreeMaskLinearParity(t *testing.T) {
 	draft := []int{prompt[1], prompt[2], prompt[0], prompt[3], prompt[1]}
 
 	cache := base.NewCache(len(prompt) + K + 4)
-	if _, err := base.forwardN(prompt, cache); err != nil {
+	if _, err := base.forwardN(context.Background(), prompt, cache); err != nil {
 		t.Fatalf("prefill: %v", err)
 	}
 	startPos := len(prompt)
 
 	// A: ordinary causal forwardN over the draft.
-	la, err := base.forwardN(draft, cache)
+	la, err := base.forwardN(context.Background(), draft, cache)
 	if err != nil {
 		t.Fatalf("forwardN A: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestTreeMaskLinearParity(t *testing.T) {
 		}
 	}
 	cache.treeRowPos, cache.treeMask = pos, mask
-	lb, err := base.forwardN(draft, cache)
+	lb, err := base.forwardN(context.Background(), draft, cache)
 	cache.treeRowPos, cache.treeMask = nil, nil
 	if err != nil {
 		t.Fatalf("forwardN B: %v", err)

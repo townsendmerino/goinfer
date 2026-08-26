@@ -18,7 +18,7 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 ## In flight
 
 **G18 · Prefill ignores cancellation — an abandoned client leaves a core burning** — `mac`,
-**CLAIMED 2026-08-25, IN FLIGHT. Ships in v0.14.0** (decision:
+**DONE 2026-08-25. Ships in v0.14.0** (decision:
 `docs/measurements/dsh-tier0-decisions.md`).
 
 Correctness / consumer-trust class, **not** perf — the class C4-soak exists to catch, found early
@@ -38,10 +38,33 @@ work: `generateInto` has the ctx but calls `m.prefillLogits(prompt[prefillFrom:]
 token in the sequential fallback and the resident loop. At ~28 layers the check is free (the
 decisions doc: "at 25 tok/s the check is free") and bounds wasted work to one layer.
 
-**Gates (from the decision):** an abandoned-client test bounding CPU-after-disconnect; the same for
-a client killed mid-queue (the retry-storm shape — a retry must not inherit a zombie's slot);
-and **confirm decode's existing cancellation behavior while there**, so the fix's scope statement is
-checked rather than assumed.
+**Gates (from the decision) — all three landed** in `decoder/prefillcancel_test.go`, measured on an
+M1 Pro against qwen2.5-coder-1.5b:
+
+| gate | result |
+|---|---|
+| cancelled before start | returns in **746µs** (a 512-token prefill is seconds) |
+| cancelled mid-flight (retry-storm shape) | cancel at 300ms, observed at **12.34s** |
+| decode's existing behavior — checked, not assumed | stopped **0 tokens** after cancel; `gen.Err() = context canceled` |
+
+Mutation-checked: with the per-layer check removed, the cancelled-context test returns `err = nil`
+after doing the whole prefill.
+
+**The bound is one LAYER, and it is not instant — say so.** 12.34s at a 3072-token prompt is the
+measured tail, against a full prefill of ~335s (int8int8) or ~1587s (int4) before the fix. That is
+enough to stop retry-storm accumulation (dsh retries on a 300s timeout) and it is not the same
+claim as "cancellation is immediate". Tightening it further means checking per-head inside
+`attendBatchedHeads`; filed here as the known tail rather than left to be discovered.
+
+**Scope confirmed rather than assumed:** decode already honored cancellation — the defect was
+prefill-only, exactly as the decision stated.
+
+**Parity:** the edit touches `core` forward files, so `TestParityManifest_fresh` re-staled 27
+validated families. Discharged the sanctioned way — `scripts/refresh_parity_hashes.sh`, which runs
+the forward goldens as independent numeric ground truth first and refuses on any failure or on a
+vacuous zero-ran green. Goldens **27 passed / 21 skipped / 0 failed**; diff verified deps_hash-only,
+`validated_at` preserved. The check is a uniform early-return in the shared layer loop, so it is
+not a path a skipped family's golden would have exercised differently.
 
 **G14 · Tier 0 — the tested "Use goinfer with DeepSeek Harness" recipe** — `mac`, **CLAIMED
 2026-08-25, IN FLIGHT.** Scope, tiers and the standing "nothing in goinfer may depend on dsh" rule

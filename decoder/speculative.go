@@ -168,7 +168,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				dpos = len(prompt)
 				return nil
 			}
-			_, err := draft.prefillLogits(prompt, dc)
+			_, err := draft.prefillLogits(ctx, prompt, dc)
 			return err
 		}
 		draftTruncate := func(keep int) {
@@ -193,7 +193,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				}
 				return target.resident.ForwardN(embs, base)
 			}
-			return target.forwardN(seq, tc)
+			return target.forwardN(ctx, seq, tc)
 		}
 		targetTruncate := func(keep int) {
 			tpos = keep
@@ -217,7 +217,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				}
 			}
 		} else {
-			seedLogits, err = target.prefillLogits(prompt, tc)
+			seedLogits, err = target.prefillLogits(ctx, prompt, tc)
 			if err != nil {
 				g.err = err
 				return

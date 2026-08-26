@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -32,7 +33,7 @@ func TestForwardN_capturesMoELayers(t *testing.T) {
 	cache := m.NewCache(len(ids) + 1)
 	cache.captureLayers = layers
 	cache.captured = make([][]float32, len(layers))
-	if _, err := m.forwardN(ids, cache); err != nil {
+	if _, err := m.forwardN(context.Background(), ids, cache); err != nil {
 		t.Fatalf("forwardN: %v", err)
 	}
 	hidden := m.w.arch.HiddenDim

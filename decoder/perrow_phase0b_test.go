@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"math"
 	"os"
 	"testing"
@@ -65,7 +66,7 @@ func TestPerRowScalePhase0b(t *testing.T) {
 		}
 		defer m.Close()
 		cache := m.NewCache(len(ids) + 4)
-		logits, e := m.forwardN(ids, cache)
+		logits, e := m.forwardN(context.Background(), ids, cache)
 		if e != nil {
 			t.Skipf("forwardN not supported here: %v", e)
 			return nil, false

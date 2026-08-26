@@ -270,7 +270,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				}
 				return target.resident.ForwardN(embs, base)
 			}
-			return target.forwardN(seq, tc)
+			return target.forwardN(ctx, seq, tc)
 		}
 		targetTruncate := func(keep int) {
 			tpos = keep
@@ -292,7 +292,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				}
 			}
 		} else {
-			if seedLogits, err = target.prefillLogits(prompt[prefillFrom:], tc); err != nil {
+			if seedLogits, err = target.prefillLogits(ctx, prompt[prefillFrom:], tc); err != nil {
 				g.err = err
 				return
 			}

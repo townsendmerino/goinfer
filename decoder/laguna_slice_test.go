@@ -27,6 +27,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -124,7 +125,7 @@ func lagunaSliceOracle(t *testing.T, tag string) {
 		t.Error("canBatchN = false — laguna should use the batched prefill path")
 	} else {
 		bc := m.NewCache(len(g.PromptIDs) + g.NNew)
-		bl, err := m.prefillLogits(g.PromptIDs, bc)
+		bl, err := m.prefillLogits(context.Background(), g.PromptIDs, bc)
 		if err != nil {
 			t.Fatalf("prefillLogits: %v", err)
 		}

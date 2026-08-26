@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"testing"
@@ -37,7 +38,7 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 	for i := range ids {
 		ids[i] = tok
 	}
-	if _, err := m.forwardLayersN(ids, cache); err != nil {
+	if _, err := m.forwardLayersN(context.Background(), ids, cache); err != nil {
 		b.Fatalf("batched prefill to depth %d: %v", depth, err)
 	}
 	sampler := NewSampler(SamplingParams{Temperature: 0})

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"math"
 	"math/rand"
 	"os"
@@ -307,7 +308,7 @@ func TestKVI8_batchedPrefill(t *testing.T) {
 	prefill := func(kvI8 bool) [][]float32 {
 		mm := *m
 		mm.kvI8 = kvI8
-		lg, _ := mm.forwardN(ids, mm.NewCache(len(ids)+1)) // batched (canBatchN true)
+		lg, _ := mm.forwardN(context.Background(), ids, mm.NewCache(len(ids)+1)) // batched (canBatchN true)
 		return lg
 	}
 	refL := prefill(false)

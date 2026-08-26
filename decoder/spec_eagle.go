@@ -69,7 +69,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 			tc.captureLayers = capLayers
 			tc.captured = make([][]float32, len(capLayers))
 			defer func() { tc.captureLayers, tc.captured = nil, nil }()
-			lg, e := m.forwardN(ids, tc)
+			lg, e := m.forwardN(ctx, ids, tc)
 			if e != nil {
 				return nil, nil, e
 			}
@@ -239,7 +239,7 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 			tc.captureLayers = capLayers
 			tc.captured = make([][]float32, len(capLayers))
 			defer func() { tc.captureLayers, tc.captured = nil, nil }()
-			lg, e := m.forwardN(ids, tc)
+			lg, e := m.forwardN(ctx, ids, tc)
 			if e != nil {
 				return nil, nil, e
 			}

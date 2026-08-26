@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -127,7 +128,7 @@ func TestForwardN_matchesSequential(t *testing.T) {
 			}
 
 			cbat := m.NewCache(K)
-			bat, err := m.forwardN(ids, cbat)
+			bat, err := m.forwardN(context.Background(), ids, cbat)
 			if err != nil {
 				t.Fatalf("forwardN: %v", err)
 			}

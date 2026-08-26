@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -148,19 +149,19 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 
 	prompt := []int{1, 5, 3, 9, 2, 7}
 	cm := mMerged.NewCache(len(prompt))
-	lMerged, err := mMerged.prefillLogits(prompt, cm)
+	lMerged, err := mMerged.prefillLogits(context.Background(), prompt, cm)
 	if err != nil {
 		t.Fatalf("merged prefill: %v", err)
 	}
 	cb := mBase.NewCache(len(prompt))
 	cb.lora = mBase.adapter("a")
-	lCT, err := mBase.prefillLogits(prompt, cb)
+	lCT, err := mBase.prefillLogits(context.Background(), prompt, cb)
 	if err != nil {
 		t.Fatalf("compute-time prefill: %v", err)
 	}
 	// Sanity: the adapter is not vacuous — base-with-NO-adapter logits differ.
 	cn := mBase.NewCache(len(prompt))
-	lNone, err := mBase.prefillLogits(prompt, cn)
+	lNone, err := mBase.prefillLogits(context.Background(), prompt, cn)
 	if err != nil {
 		t.Fatalf("base prefill: %v", err)
 	}

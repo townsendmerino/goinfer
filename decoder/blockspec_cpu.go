@@ -1,6 +1,9 @@
 package decoder
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // CPU block drafting — MEASURED NEGATIVE. Do not wire this into serving.
 //
@@ -147,7 +150,7 @@ func (h *cpuDrafterHost) PrefillLastNArgmax(embeddings [][]float32, startPos int
 	} else {
 		h.cache.captureLayers = nil
 	}
-	out, err := h.m.runLayersFromEmbedN(flat, h.cache)
+	out, err := h.m.runLayersFromEmbedN(context.TODO(), flat, h.cache)
 	if err != nil {
 		return nil, err
 	}

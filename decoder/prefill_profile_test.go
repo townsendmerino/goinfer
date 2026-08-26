@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"testing"
@@ -43,7 +44,7 @@ func BenchmarkPrefillLong(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cache := m.NewCache(L + 4)
-		if _, err := m.prefillLogits(prompt, cache); err != nil {
+		if _, err := m.prefillLogits(context.Background(), prompt, cache); err != nil {
 			b.Fatalf("prefill: %v", err)
 		}
 	}

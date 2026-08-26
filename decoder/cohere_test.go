@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -153,7 +154,7 @@ func TestCohere_batchedPrefillMatchesSequential(t *testing.T) {
 	}
 
 	// Batched prefill: forwardN returns per-position logits; take the last row.
-	rows, err := m.forwardN(ids, m.NewCache(len(ids)))
+	rows, err := m.forwardN(context.Background(), ids, m.NewCache(len(ids)))
 	if err != nil {
 		t.Fatalf("batched forwardN: %v", err)
 	}

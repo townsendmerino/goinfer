@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -104,14 +105,14 @@ func TestMultimodal_imageBlockMask(t *testing.T) {
 	seq := []int{3, 7, 1, 12, 5} // K=5 > 1 → the batched attendBatchedHeads path
 
 	baseCache := m.NewCache(len(seq))
-	baseline, err := m.forwardN(seq, baseCache) // no image blocks → fully causal
+	baseline, err := m.forwardN(context.Background(), seq, baseCache) // no image blocks → fully causal
 	if err != nil {
 		t.Fatalf("forwardN baseline: %v", err)
 	}
 
 	maskCache := m.NewCache(len(seq))
 	maskCache.SetImageBlocks([][2]int{{1, 4}}) // positions 1,2,3 attend bidirectionally
-	masked, err := m.forwardN(seq, maskCache)
+	masked, err := m.forwardN(context.Background(), seq, maskCache)
 	if err != nil {
 		t.Fatalf("forwardN masked: %v", err)
 	}

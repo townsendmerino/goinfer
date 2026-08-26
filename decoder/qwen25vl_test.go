@@ -64,7 +64,7 @@ func TestQwen25VL_e2eChain(t *testing.T) {
 		t.Fatalf("mropePositions: %v", err)
 	}
 	cache := m.NewCache(len(g.InputIDs))
-	logits, err := m.prefillLogitsQwenVL(g.InputIDs, feats, g.ImageStart, g.NImageTokens, mropePos, cache)
+	logits, err := m.prefillLogitsQwenVL(context.Background(), g.InputIDs, feats, g.ImageStart, g.NImageTokens, mropePos, cache)
 	if err != nil {
 		t.Fatalf("prefillLogitsQwenVL: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestQwen25VL_imageParity(t *testing.T) {
 		t.Fatalf("mropePositions: %v", err)
 	}
 	cache := m.NewCache(len(g.InputIDs) + len(g.Continuation))
-	logits, err := m.prefillLogitsQwenVL(g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos, cache)
+	logits, err := m.prefillLogitsQwenVL(context.Background(), g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos, cache)
 	if err != nil {
 		t.Fatalf("prefillLogitsQwenVL: %v", err)
 	}

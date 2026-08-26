@@ -24,7 +24,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, features []float32, i
 		// Prefill: text embeddings with the projected vision features spliced in at
 		// the placeholder run, under the bidirectional image-block mask. The last
 		// position's logits seed the decode.
-		logits, err := m.prefillLogitsVL(ids, features, imgPos, imgLen, cache)
+		logits, err := m.prefillLogitsVL(ctx, ids, features, imgPos, imgLen, cache)
 		if err != nil {
 			g.err = err
 			return
@@ -93,7 +93,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, features []float3
 			return
 		}
 		cache := m.NewCache(len(ids) + maxTokens)
-		logits, err := m.prefillLogitsQwenVL(ids, features, imgPos, imgLen, mropePos, cache)
+		logits, err := m.prefillLogitsQwenVL(ctx, ids, features, imgPos, imgLen, mropePos, cache)
 		if err != nil {
 			g.err = err
 			return

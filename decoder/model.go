@@ -888,6 +888,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			kvOnly, hasKV := m.resident.(ResidentPrefillKV)
 			useKV := hasKV && os.Getenv("GOINFER_NO_KVONLY_PREFILL") == ""
 			for i, id := range prompt {
+				// G18: the resident prefill loop is the GPU-side twin of the batched CPU
+				// path's per-layer check. Same failure without it — an abandoned client
+				// leaves the whole prompt streaming through the device.
+				if err = ctx.Err(); err != nil {
+					g.err = err
+					return
+				}
 				emb := m.embedResident(id)
 				if useKV && i < len(prompt)-1 {
 					if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
@@ -904,7 +911,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			gpuPos = len(prompt)
 		}
 	} else {
-		if logits, err = m.prefillLogits(prompt[prefillFrom:], cache); err != nil {
+		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
 			g.err = err
 			return
 		}

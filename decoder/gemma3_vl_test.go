@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -111,7 +112,7 @@ func TestGemma3VL_imageParity(t *testing.T) {
 	defer m.Close()
 
 	cache := m.NewCache(len(g.InputIDs))
-	logits, err := m.prefillLogitsVL(g.InputIDs, g.ImageFeatures, g.ImageTokenStart, g.MMTokens, cache)
+	logits, err := m.prefillLogitsVL(context.Background(), g.InputIDs, g.ImageFeatures, g.ImageTokenStart, g.MMTokens, cache)
 	if err != nil {
 		t.Fatalf("prefillLogitsVL: %v", err)
 	}
