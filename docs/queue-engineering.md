@@ -18,8 +18,9 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 ## In flight
 
 **G19 · Tool-path streaming is SILENT while it buffers — SSE heartbeats (Finding 1, stage 1)** —
-`mac`, **DONE 2026-08-25. Ships in v0.14.0** (decision:
-`docs/measurements/dsh-tier0-decisions.md`).
+`mac`, **DONE 2026-08-25. Ships in v0.15.0** (decision:
+`docs/measurements/dsh-tier0-decisions.md`, which said v0.14.0 — that tag was already cut on
+2026-08-19; v0.15.0 is the open release).
 
 **The buffering is correct; the silence is the defect.** `tools.go` says it outright — *"Tool
 decisions need the whole output, so buffer (even when streaming)"* — because a tool call can only
@@ -60,8 +61,8 @@ hold back only from a potential tool-call opening, per family via the `chat` pac
 parsers. Real work; deliberately not rushed into the release.
 
 **G18 · Prefill ignores cancellation — an abandoned client leaves a core burning** — `mac`,
-**DONE 2026-08-25. Ships in v0.14.0** (decision:
-`docs/measurements/dsh-tier0-decisions.md`).
+**DONE 2026-08-25. Ships in v0.15.0** (decision:
+`docs/measurements/dsh-tier0-decisions.md`, which said v0.14.0 — already tagged 2026-08-19).
 
 Correctness / consumer-trust class, **not** perf — the class C4-soak exists to catch, found early
 by a real harness instead (the dsh Tier-0 run). Measured before-state, twice: goinfer climbed

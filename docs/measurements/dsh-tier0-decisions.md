@@ -1,5 +1,10 @@
 # Tier-0 findings — decisions (2026-08-25)
 
+> **Correction, 2026-08-25:** this doc says findings 2 and 1-stage-1 "ship in v0.14.0". **v0.14.0
+> was already tagged on 2026-08-19.** Both landed in **v0.15.0**, the open release (G18 `3a16a4b`,
+> G19 `43a3fdb`). Left in place below rather than rewritten, because the decision was right and
+> only its release label was wrong.
+
 > Companion to `docs/measurements/dsh-tier0-run-2026-08-25.md` (`892511d`). The run's verdict
 > stands as filed: gate not met, correctly not forced, all three causes goinfer's. These are the
 > dispositions the run stopped to ask for. Decider: Francis; drafted by Claude (Cowork) from the

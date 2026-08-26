@@ -60,6 +60,29 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
 
 ### Changed
 
+- **Streaming tool calls now emit SSE keep-alives instead of going silent — and a streaming
+  generation error is now an SSE error event, not a 500.** The tool paths must buffer the whole
+  generation before a tool call can be parsed, so `stream: true` with `tools` sent **zero bytes
+  until the generation finished** — measured at **1682.6 s to first byte** against a harness whose
+  idle timeout was 300 s, which no output survives however correct it is. They now emit SSE
+  **comment frames** (`: ping`) while the buffer fills; comments carry no data and every SSE parser
+  drops them, so tool-call parsing and the emitted content are unchanged.
+  **Compatibility note:** keep-alives require the SSE headers to be sent *before* the generation, so
+  on `/v1/chat/completions` and `/v1/responses` **with `tools` and `stream: true`**, a generation
+  failure now arrives as a mid-stream `error` event on a 200 response rather than as a 500. This
+  matches what the non-tool streaming paths already did (a status code is no longer available once
+  headers are flushed). **Non-streaming requests are unchanged and still return 500.**
+- **`role: "developer"` is accepted as an alias for `role: "system"`** on the OpenAI-compatible
+  routes — same position, same last-one-wins precedence two `system` messages already have.
+  OpenAI's newer APIs send the system prompt under that role for reasoning-class models and agent
+  harnesses have followed; notably, at least one harness sends it to *any* endpoint it cannot
+  identify, which is every goinfer deployment. Previously the role matched no case and fell through
+  to a **user** turn — silently demoting a whole agent scaffold into the user's first message.
+  `/v1/messages` is unaffected (the Anthropic API carries `system` as a top-level field and has no
+  developer role).
+- **`/health` and `/v1/models` no longer describe CPU prefill as plain `batched`.** The word named a
+  weight-streaming *shape* and was being read as a throughput claim; the measured best-case CPU
+  prefill rate is the same order as the model's decode rate, on one thread. The field now says so.
 - **`aikit` v1.21.0 → v1.28.0**, **`aikit/gpu` v0.28.0 → v0.30.0**, all five modules aligned.
 - **Go 1.26.6 → 1.27.0** across all five modules.
 - **Attention restructured (A1), bit-identical, 2.4–2.8×** — `attendBatchedHeads` now uses aikit's
@@ -75,8 +98,26 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
   gate moved 0.99298 → 0.98740 and coherent prompts 8/10 → 7/10. If you run qwen3_5 and care more
   about the last fraction of accuracy than about decode rate, that is the trade you are now taking.
 
+  > **That recommendation is about DECODE, and long prompts are a different question.** Measured
+  > 2026-08-25 on an M1 Pro (dense 1.5B, prefill + 1 token, `docs/queue-performance.md` G15): int4
+  > CPU **prefill** falls off a cliff between ~1.5k and ~3k tokens — 1520 tokens 99.9 s, 3020 tokens
+  > **1587.1 s** (an n^4.03 step), while `int8int8` over the same step goes 93.2 s → **334.9 s**
+  > (n^1.86, no cliff). For short prompts int4 remains the right default as stated. **For
+  > long-prompt workloads — agent transcripts, big system prompts, RAG context — prefer
+  > `int8int8` on CPU:** it is the only quant whose prefill cost stays predictable as the prompt
+  > grows. The cliff is under investigation (G15); it is not a reason to change the decode default.
+
 ### Fixed
 
+- **Prefill ignored cancellation — an abandoned client left a core running.** The serve layer passed
+  `r.Context()` into the generation correctly, so it reviewed as wired, but the context never
+  reached the work: `prefillLogits` / `forwardLayersN` / `runLayersFromEmbedN` took no context at
+  all and the resident prefill loop never checked one. A client that gave up left the whole prefill
+  running to completion, and a harness that retries stacked one generation per retry — measured at
+  **47:38 of CPU with nothing attached**. Context is now threaded through the prefill chain and
+  checked per layer (per token in the sequential fallback and the resident loop). **The bound is one
+  layer's work, not instant:** ~12.3 s at a 3072-token prompt, against a full prefill of ~335 s
+  (`int8int8`) or ~1587 s (`int4`). Found by a real agent harness driving the server, not by a gate.
 - **`.giw` silently dropped gpt-oss attention sinks** (see the note at the top). `canSerialize`
   ACCEPTED gpt-oss; per-head sinks were per-layer state the writer had no field for. Refused first,
   then properly represented in v6. Laguna was accepted too and failed loud at load instead of
