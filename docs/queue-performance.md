@@ -19,7 +19,7 @@ Throughput, latency, kernels, residency, memory. Anything whose success criterio
 
 
 
-## G15 · CPU prefill falls off an INT4-SPECIFIC cliff at ~1.5k-3k tokens — `mac`, QUEUED, filed 2026-08-25
+## G15 · CPU prefill falls off an INT4-SPECIFIC cliff at ~1.5k-3k tokens — `mac`, **CLAIMED 2026-08-25, IN FLIGHT** (diagnostics running)
 
 Found by the dsh Tier-0 run (`docs/measurements/dsh-tier0-run-2026-08-25.md`), which it made
 impossible: an 8k-token agent prompt could not be prefilled inside any harness timeout.
