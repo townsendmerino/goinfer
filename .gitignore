@@ -184,3 +184,6 @@ decoder/testdata/mellum-*-slice/
 # only reason to track it is that this family's gate must exercise BOTH mixers (3 DeltaNet
 # layers + 1 softmax), which a config-only fixture cannot do.
 !decoder/testdata/qwen3_5-tiny/model.safetensors
+
+# repowise index — generated codebase-intelligence artifacts, never committed
+.repowise/
