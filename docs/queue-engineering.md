@@ -1356,7 +1356,7 @@ unclaimed. Filed 2026-08-26 when the rule was consolidated.
 
 `scripts/bench_peer.py` and `scripts/bench_compare.sh` now REFUSE a checkpoint that resolves under
 `/srv/models` or `/Volumes/` (realpath, so a symlink out of `~/models` is caught). `cmd/gate` reads
-`GOINFER_GATE_MODELS` in two places — `cmd/gate/configs.go:14` and `cmd/gate/gpu.go:296`, both defaulting to
+`GOINFER_GATE_MODELS` in two places — `cmd/gate/configs.go:14` and `cmd/gate/gpu.go:312`, both defaulting to
 `$HOME/models` — and accepts whatever it is given.
 
 Correctness tests do not care what disk they read from, so this is not urgent. The throughput tests

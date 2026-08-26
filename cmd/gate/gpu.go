@@ -220,6 +220,11 @@ var testBoundaryRe = regexp.MustCompile(`^(=== RUN|=== CONT|=== PAUSE|(---|    -
 // carry no `--- FAIL`, which is exactly why detail() must recognize them.
 var crashHeadRe = regexp.MustCompile(`^(SIGSEGV|SIGBUS|SIGABRT|SIGILL|panic:|fatal error:)|signal arrived during`)
 
+// ourFrameRe matches a stack frame in code this repo owns or vendors — the frames
+// that identify WHICH test or function died, as opposed to the runtime and FFI
+// scaffolding above them.
+var ourFrameRe = regexp.MustCompile(`townsendmerino/(goinfer|aikit)|_test\.go:[0-9]+`)
+
 // registerDumpRe is the tail of a Go crash report — `r14  0x8000…`, `pc 0x…`.
 // Machine state, useless for identifying WHICH test died, and long enough to push
 // the part that matters off the end of a fixed-size excerpt.
@@ -261,17 +266,28 @@ func crashExcerpt(out string) []string {
 	if start < 0 {
 		return nil
 	}
-	var ex []string
+	// The head (signal, address, goroutine) plus — crucially — the first frames
+	// belonging to OUR code. A fixed prefix does not reach them: the real Metal
+	// crash puts ~8 runtime/purego/reflect frames above the goinfer frame, so a
+	// 24-line cap truncated exactly before the test name, which is the one fact
+	// worth printing.
+	var head, ours []string
 	for _, ln := range lines[start:] {
 		if registerDumpRe.MatchString(ln) {
 			break
 		}
-		ex = append(ex, ln)
-		if len(ex) >= 24 {
-			break
+		if len(head) < 6 {
+			head = append(head, ln)
+			continue
+		}
+		if ourFrameRe.MatchString(ln) && len(ours) < 8 {
+			ours = append(ours, strings.TrimRight(ln, "\r"))
 		}
 	}
-	return ex
+	if len(ours) == 0 {
+		return head
+	}
+	return append(append(head, "      ...(frames from this repo)..."), ours...)
 }
 
 var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
