@@ -36,6 +36,15 @@ A measurement enters a table **only if it satisfies all of**:
 - **Date** of the run, and a **thermal note** (plugged in, warm, repeated runs, median).
 - **Local disk only** — the checkpoint is read from local NVMe/SSD. A model read from the
   SMB archive mount is **not a measurement**; see *Model storage* below.
+- **Verified-idle box, with the machine state recorded beside the number** — load average at the
+  start of the run, and nothing else of ours running. Added 2026-08-25 after this list failed to
+  catch a bad number: a 3020-token prefill timing came back **1587.1 s** where three later
+  measurements of the identical thing give ~350 s. It satisfied every other bullet on this list —
+  same machine, same checkpoint, same quant, dated — and was wrong by 4.5×, most likely because an
+  abandoned prefill from a killed client was still burning a core (the defect now fixed as G18).
+  It survived into three documents and a release note before a disagreeing instrument caught it.
+  **A number with no recorded machine state cannot be argued with later**; that is what made this
+  one expensive rather than merely wrong. See the withdrawn G15 in `docs/queue-performance.md`.
 
 Anything not matching all of these is `—` and a re-measure, never a guess. This page
 exists *because* a sloppy comparison is worse than none: `docs/completed/gpu-assessment.md`
