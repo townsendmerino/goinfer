@@ -17,6 +17,39 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
+**G19 · Tool-path streaming is SILENT while it buffers — SSE heartbeats (Finding 1, stage 1)** —
+`mac`, **CLAIMED 2026-08-25, IN FLIGHT. Ships in v0.14.0** (decision:
+`docs/measurements/dsh-tier0-decisions.md`).
+
+**The buffering is correct; the silence is the defect.** `tools.go` says it outright — *"Tool
+decisions need the whole output, so buffer (even when streaming)"* — because a tool call can only
+be parsed from the complete output. But it means `stream: true` with tools declared sends **zero
+bytes until the generation finishes**. Measured against the real dsh agent request: **first byte at
+1682.6s**, all 495 bytes at once. dsh's default `streamIdleTimeoutMs` is **300000ms** and `TIMEOUT`
+is in its retry set, so any generation slower than five minutes cannot succeed through it however
+correct the output — and each retry stacked another generation (that half is G18).
+
+**Stage 1 (this item):** emit SSE **comment frames** (`: ping`) while the buffer holds. Comments are
+protocol-legal, content-free, and invisible to every SSE parser, so they defeat idle timeouts —
+dsh's and every other harness's — without touching the tool-call parsing the buffering exists for.
+
+**Two sites, both buffer-then-stream:** `internal/serveapp/tools.go` (chat completions) and
+`respondTools` in `internal/serveapp/responses.go`.
+
+**One consequence to state, not smuggle:** heartbeats require `sseStart` BEFORE `drive`, so a
+generation error can no longer be a 500 on those paths — headers are already flushed. That is not a
+new convention: `sseErr` exists for exactly this ("the response is already 200 with headers
+flushed, so a status code is no longer available", M1) and the non-tool streaming paths already use
+it. Non-streaming requests keep the 500 unchanged.
+
+**Gates:** frames flow during a slow tool-path generation; **no content delta is emitted early**
+(the buffering guarantee must be untouched); a tool call still parses identically; the
+non-streaming path still 500s on a generation error.
+
+**Stage 2, queued (NOT this item):** incremental tool-call-aware streaming — emit prose deltas,
+hold back only from a potential tool-call opening, per family via the `chat` package's existing
+parsers. Real work; deliberately not rushed into the release.
+
 **G18 · Prefill ignores cancellation — an abandoned client leaves a core burning** — `mac`,
 **DONE 2026-08-25. Ships in v0.14.0** (decision:
 `docs/measurements/dsh-tier0-decisions.md`).
