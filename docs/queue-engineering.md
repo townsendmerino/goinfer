@@ -17,6 +17,41 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
+**G21 · Incremental tool-call-aware streaming (Finding 1, stage 2)** — `mac`, **CLAIMED 2026-08-26,
+IN FLIGHT.** The real fix behind G19's heartbeats.
+
+G19 stopped the tool path from being *silent* (comment frames while it buffers). It did not make it
+*incremental*: the whole generation is still buffered, so a client sees no prose until the model
+finishes. This emits prose deltas as they generate and holds back only what could still turn into a
+tool call.
+
+**The safety property, which is what makes this delicate:** anything streamed early must be a
+BYTE-EXACT PREFIX of the `lead` that `ParseToolCalls` ultimately computes. A delta cannot be
+unsent, so an over-eager emit is unrecoverable corruption, not a cosmetic bug.
+
+**Survey of the four families (2026-08-26) — the scope follows from it:**
+
+| family | how `lead` is computed | streamable |
+|---|---|---|
+| `chatml` / `mellum2` | `Cut(out, "<tool_call>")` — raw prefix, untrimmed | **YES** |
+| `gemma4` | `Cut(out, "<\|tool_call>")` — raw prefix, untrimmed | **YES** |
+| `mistral` | `TrimSpace(before "[TOOL_CALLS]")` | **NO** — trimming means the streamed bytes would not equal `lead` |
+| `llama3` | `TrimSpace(out)`, strips `<\|python_tag\|>`, then `lead` only if the JSON at the first `{` parses | **NO** — normalized AND parse-dependent; nothing is known until the object parses |
+
+So: incremental for the two families whose `lead` is literally a prefix of the raw output, buffered
+(exactly as today) for the two where it is not. ChatML covers the Qwen family — the common tool
+case, and the one the dsh run used — so this is most of the value at none of the risk.
+
+**Mechanism:** hold back the longest suffix of pending output that is a proper prefix of the
+family's opener literal; emit everything before it. On seeing the opener, stop emitting and revert
+to buffering for the rest of the generation. `ParseToolCalls` still runs over the FULL buffer at the
+end, unchanged — this changes only *when* prose leaves, never how calls are parsed.
+
+**Gates:** the prefix property asserted directly (what was streamed must be a prefix of the parsed
+`lead`), including openers split across chunk boundaries one byte at a time; a tool call still
+parses identically; the non-streamable families still buffer; and no content delta may precede a
+tool call whose opener has been seen.
+
 **G19 · Tool-path streaming is SILENT while it buffers — SSE heartbeats (Finding 1, stage 1)** —
 `mac`, **DONE 2026-08-25. Ships in v0.15.0** (decision:
 `docs/measurements/dsh-tier0-decisions.md`, which said v0.14.0 — that tag was already cut on
