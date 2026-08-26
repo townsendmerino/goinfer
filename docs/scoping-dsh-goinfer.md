@@ -66,6 +66,52 @@ and coupling goinfer's name to a moving preview for visibility is the kind of tr
 declines. Re-read the plugin docs at pickup; if the API churns, park this tier with a date and a
 re-check trigger, the C3 deferral pattern.
 
+## DECISION 2026-08-26: Tier 1 is PARKED. Both halves were evaluated; both point the same way.
+
+**Half (b), API stability — FAILS, on dsh's own words.** rc.2's shipped READMEs state the stance
+three times over:
+
+- `dsh-llm-pi-ai`: *"the **pre-release array shape** (with per-profile `provider` fields) fails load
+  with migration directions."* The provider seam a goinfer plugin would sit on **has already broken
+  once** — and it is the same break this campaign walked into: the scoping doc above recorded the
+  array shape on 2026-08-21 and rc.2 rejects it. Four days.
+- `dsh-session`: *"`SESSION_FORMAT_VERSION` stays pinned at `0` — pre-release, no broad
+  compatibility implied … older: no upgrade path ships yet."*
+- `dsh-storage-json`: *"no migration, pre-release stance."*
+
+The API itself is real and rather good (`ctx.llm`, `ctx.tools.register`, cordis 4.0.1). It is not
+*absent*; it is *moving*, with the project saying so plainly. There is also no plugin-authoring
+template or SDK package, and the authoring docs link to monorepo-internal paths
+(`../../../.agents/notes/…`) that do not ship — so an external author is reading half a map.
+
+**Half (a), friction — WEAKER THAN WHEN THE TIER WAS SCOPED, and this is the stronger argument.**
+Tier 0 did find real friction, and the run log lists it. But writing the recipe *dissolved most of
+it*: the hanging `npx` install is dsh's own and a plugin cannot fix it; the `llm-pi-ai:` namespace,
+the dict-not-list shape, and the mandatory-but-unused `apiKeyEnv` are now five lines of documented
+YAML that work. What a plugin would still uniquely buy is narrow:
+
+| a plugin would add | worth it today? |
+|---|---|
+| discovery (find a running serve, read `/v1/models`) | saves one hand-written model entry |
+| lifecycle (spawn the single binary from the harness) | genuinely nice — the model-in-one-file story *inside* dsh |
+| compat defaults pre-set | **already unnecessary** — goinfer accepts dsh's three defaults as of v0.15.0 (G12) |
+
+One of the three reasons is gone *because the Tier-0 work removed it*, which is the outcome the
+tiering was designed to produce: fix the substance, and the wrapper stops being needed.
+
+**Re-check triggers — concrete, so this is a deferral and not a shrug.** Revisit when ANY holds:
+
+1. dsh publishes a **non-prerelease** version (no `-rc`), or states a compatibility policy for
+   `llm-pi-ai`'s provider profile schema;
+2. dsh ships a **plugin-authoring package or template** with its own stability statement;
+3. someone asks for goinfer-in-dsh **lifecycle spawning** specifically — the one item on the list
+   the recipe cannot document away.
+
+**Standing rule, unchanged and now load-bearing:** nothing in goinfer's repo depends on dsh. Tier 0
+shipped as documentation plus fixes to goinfer's own OpenAI surface — all of which (G12, G13, G18,
+G19, G21) are improvements for *every* harness, not for dsh. That is why parking Tier 1 costs
+nothing: none of the value already banked is contingent on it.
+
 **Rule regardless:** nothing in goinfer's repo may *depend* on dsh. The plugin lives as its own
 small repo/package; goinfer's side is only the OpenAI surface it already ships. Everything must
 degrade to Tier 0's plain-endpoint recipe if dsh moves.
