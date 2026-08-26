@@ -310,6 +310,21 @@ their own leg is re-run. (Carried from the pre-reboot handoff note in `~/bench-r
 blockquoted §B2 rows the other skips, folds §B6.1/§B6.2 into §B6 and §B7.1 into §B7, and draws the
 §B5 header boundary one row differently. Neither is wrong — do not "fix" one to match the other.
 
+**The run is detached and does not need the session that started it.** A supervisor script in
+Francis's `bench-reanchor` directory on the `linux` box runs both stages in order, refuses to start
+stage 2 unless stage 1 exits green, and appends every transition to a STATUS file beside it. If it
+dies, re-running it is the whole recovery: stage 1 is idempotent and stage 2 resumes from the cells
+already in its results JSON. A state note in the same directory carries the rest cold. That
+directory is outside the repo, so it resolves on that box only — hence prose here rather than a
+path anyone else's clone would fail to follow.
+
+**Two traps already paid for, 2026-08-26, both worth inheriting.** (1) The gate's verdict has
+THREE states, and an untracked file in the worktree makes it **INCONCLUSIVE, not PASS** — the first
+attempt wrote its log into `docs/measurements/` and had to be aborted six minutes in. Gate logs
+belong outside the tree and get committed **after** the run. (2) Killing that gate left a
+`cuda.test` process holding **5.3 GB of VRAM**; the next run would have measured a card that was
+not idle. Check `nvidia-smi --query-compute-apps` before relaunching anything.
+
 **Do not re-baseline a floor because a number moved.** If a row lands materially below its
 pre-upgrade value, that is a finding to be explained by mechanism, not a new baseline to bless.
 
