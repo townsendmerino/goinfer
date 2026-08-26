@@ -19,77 +19,61 @@ Throughput, latency, kernels, residency, memory. Anything whose success criterio
 
 
 
-## G15 · CPU prefill falls off an INT4-SPECIFIC cliff at ~1.5k-3k tokens — `mac`, **CLAIMED 2026-08-25, IN FLIGHT** (diagnostics running)
+## ~~G15 · CPU prefill falls off an INT4-SPECIFIC cliff at ~1.5k-3k tokens~~ — **WITHDRAWN 2026-08-25: THE CLIFF WAS A MEASUREMENT ARTIFACT**
 
-Found by the dsh Tier-0 run (`docs/measurements/dsh-tier0-run-2026-08-25.md`), which it made
-impossible: an 8k-token agent prompt could not be prefilled inside any harness timeout.
+**There is no int4 cliff. The finding was wrong and is withdrawn, not amended.** Kept in full
+because a withdrawn measurement that leaves no trace is how the same wrong number gets rediscovered.
 
-**Both curves, dense qwen2.5-coder-1.5b, CPU backend, M1 Pro, `max_tokens: 1` so the number is
-prefill + 1 token. Same script, same box, freshly restarted server per run.**
+**What happened.** One measurement — int4, 3020 tokens, through `cmd/serve` — returned **1587.1 s**.
+Three later measurements of the same thing return ~350 s:
 
-| prompt_tokens | `-quant int4` | `-quant int8int8` | int8 advantage |
-|---|---|---|---|
-| 170 | 4.5s (37.8 tok/s) | 3.3s (51.5 tok/s) | 1.36x |
-| 620 | 24.4s (25.4 tok/s) | 19.7s (31.5 tok/s) | 1.24x |
-| 1520 | 99.9s (15.2 tok/s) | 93.2s (16.3 tok/s) | 1.07x |
-| 3020 | **1587.1s (1.9 tok/s)** | **334.9s (9.0 tok/s)** | **4.74x** |
+| tokens | int4 (ORIGINAL, via serve) | int4 (RE-RUN, via serve, verified-idle box) | int8int8 (via serve) | int4 (direct `forwardLayersN`) |
+|---|---|---|---|---|
+| 170 | 4.5s | 4.1s | 3.3s | — |
+| 620 | 24.4s | 22.5s | 19.7s | — |
+| 1520 | 99.9s | 100.3s | 93.2s | — |
+| 3020 | **1587.1s** | **355.5s** | 334.9s | **348.9s** |
 
 Per-step exponents:
 
-| step | int4 | int8int8 |
-|---|---|---|
-| 170→620 | n^1.31 | n^1.38 |
-| 620→1520 | n^1.57 | n^1.73 |
-| 1520→3020 | **n^4.03** | n^1.86 |
+| step | int4 ORIGINAL | int4 RE-RUN | int8int8 |
+|---|---|---|---|
+| 170→620 | n^1.31 | n^1.32 | n^1.38 |
+| 620→1520 | n^1.57 | n^1.67 | n^1.73 |
+| 1520→3020 | **n^4.03** | **n^1.84** | n^1.86 |
 
-**int8int8 has NO cliff** — it converges smoothly on ~n^2, which is what attention costs and is
-therefore unremarkable. int4 goes to n^4 over the same step. The int8 advantage *decays*
-(1.36→1.07) through the smooth regime and then *explodes* to 4.74x exactly at the cliff, which is
-the same fact seen from the other side.
+The first three points reproduce within 3%. Only the 3020 point moved, and it moved by 4.5×. **int4
+and int8int8 scale identically at ~n^1.85** — which is just attention's own O(n²)-ish cost, and
+unremarkable. The n^4.03 "cliff", the "int4-specific" framing, and every conclusion drawn from them
+are void.
 
-**n^4.03 is a SECANT between two points, not a law.** A clean quartic mechanism is hard even to
-construct. Far more likely is a threshold crossed somewhere inside that octave — a size-class
-boundary, a staging buffer outgrowing something, an unpacking path whose cost structure flips —
-which then grows quadratically like everything else. Expect the pprof diff to show a mechanism that
-looks *discontinuous*, not a uniformly steeper curve; do not go looking for a quartic term. The
-diff-first design is right either way, and int4-vs-int8 at the same M is exactly the differential
-question.
+**How it was caught:** a direct-call instrument built to profile the cliff failed to reproduce it
+(348.9 s vs 1587.1 s). The first instinct was that the *instrument* was unrepresentative — the
+[synthetic-reproduces-shape-not-pressure] trap. It was the opposite: the instrument was right and
+the original number was bad. **A microbench disagreeing with the real path is a question, not a
+verdict on the microbench.**
 
-**Residual lesson, recorded because it cost a prediction.** The int8 advantage decayed
-1.36x → 1.24x → 1.07x, and that decay was a *real fact about the smooth regime*. It was then
-extrapolated across a regime boundary to predict a quant-independent cliff, and it inverted to
-4.74x instead. **An extrapolation carries the regime it was measured in** — the same class of error
-as `benchmarks.md`'s own standing warning not to extrapolate its ratios to 7B.
+**What the artifact probably was.** Not established, and deliberately not asserted. The leading
+candidate is an orphaned prefill from a client killed minutes earlier, burning a core throughout —
+the G18 defect, which was still unfixed when that number was taken, and which by construction hits
+the longest-running point hardest. That fits the shape (only the largest K affected) but was not
+proven, and the honest record is "contaminated, cause not established".
 
-**Do NOT file a mechanism — the discriminating instruments are cheap.** (The repo has already paid
-for this lesson five times on the GEMV.) Two hypotheses were raised and BOTH are weakened by the
-quant-specificity, because `runLayersFromEmbedN`'s ten K-sized scratch buffers and the
-K×(startPos+K) per-head attention scratch are **identical between quants**, so any GC-rate or
-cache-residency story predicts a quant-independent cliff and we do not have one:
+**What survives:**
+- **G16 stands entirely** — the single-threading is real, independently measured, and reproduced
+  here. It was never derived from the cliff.
+- **G17 stands** — the label was wrong on its own terms.
+- **The dsh conclusion stands.** An ~8k-token agent prompt extrapolates to ~2200 s at n^1.85, still
+  far past any harness idle timeout, so the Tier-0 verdict does not depend on the withdrawn number.
+- **The real curve is still bad news for CPU agent work**, just for an ordinary reason: prefill is
+  superlinear and single-threaded, so multi-thousand-token prompts are minutes. That is G16's lever,
+  not a quant choice.
 
-- ~~allocation-rate-driven GC going nonlinear~~ — predicts quant-independence
-- ~~per-head attention scores crossing L2/SLC (9→36 MB)~~ — predicts quant-independence
-
-**First diagnostics, before any hypothesis:**
-1. A 30s pprof CPU profile taken *during* an int4 3020-token prefill — names the unit directly.
-   The discriminating question is now specifically "what does int4 do at M=3020 that int8int8 does
-   not", so profile both and diff.
-2. `GODEBUG=gctrace=1` on an int4 1520-vs-3020 pair — splits GC share of wall time in one rerun
-   each, and settles the GC hypothesis rather than arguing it.
-
-**One more confirmatory point.** The int8int8 run's 4000-word case (~6020 tokens) hit the client's
-1200s ceiling and aborted. That is not a second cliff: extrapolating int8int8's own n^1.86 from the
-3020-token point predicts **~1216s** at 6020 tokens, so a timeout just past 1200s sits *on* the
-smooth curve. int4's cliff remains the only discontinuity in either dataset.
-
-**Ruled out already:** a silent fallback from batched to sequential forwards. `canBatchN`
-(`decoder/forwardn.go`) has **no size threshold** — only `K > 1` plus family exclusions — and
-qwen2.5 is a plain gated-MLP family, so batching stays engaged at every K.
-
-**Context worth carrying:** `demo/chat`'s docs call int8int8 the CPU fast lane and note the int4
-path pays per-token nibble unpacking; `ARCHITECTURE.md`'s dispatch table promises int4 only "the
-same kernel at every M" — i.e. possibly no amortization at M=len. That is a *lead for the profile
-to confirm or kill*, not a finding.
+**Process change this earns.** Every timing measurement here must record machine state at the moment
+it is taken — a pre-flight check that nothing else is running, and the load average alongside the
+number. This artifact survived three documents and several hours of reasoning because the number
+arrived with no context to contradict it. Retroactive reconstruction was only possible because the
+sequence happened to be re-runnable.
 
 ## G16 · CPU batched prefill is single-threaded — ~4-5x left on the pure-Go lane — QUEUED, filed 2026-08-25
 

@@ -319,3 +319,31 @@ defects no gate had caught — two of them shipped fixes the same day, and the t
 measured curve, three eliminated hypotheses, and a corrected recommendation in the release notes.
 The recipe still is not written, because the qualifying run still has not happened. That ordering is
 the point: the gate held.
+
+
+---
+
+# RETRACTION (2026-08-25): the int4 prefill cliff was a measurement artifact
+
+**Everything above about a cliff is withdrawn.** The 3020-token int4 number in this file
+(**1587.1 s**) does not reproduce. Three later measurements of the same thing give ~350 s:
+
+| tokens | int4 as recorded above | int4 re-run (verified-idle box) | int8int8 | int4 direct call |
+|---|---|---|---|---|
+| 1520 | 99.9s | 100.3s | 93.2s | — |
+| 3020 | **1587.1s** | **355.5s** | 334.9s | **348.9s** |
+
+The other three points reproduce within 3%; only that one moved, by 4.5×. **int4 and int8int8 scale
+identically at ~n^1.85** — attention's own cost curve. The `n^4.03` step, the "INT4-SPECIFIC"
+framing, and the "cliff" language in the Finding-3 section above are all void. Withdrawn in
+`docs/queue-performance.md` G15, with the full comparison and the process change it earns.
+
+**What does NOT change — this is the part that matters for this document.** The Tier-0 verdict is
+unaffected. An ~8k-token agent prompt extrapolates to **~2200 s** at the *corrected* n^1.85 curve,
+which is still far past dsh's 300 s idle timeout and past any harness's. Findings 1 and 2 were
+measured by different means, reproduced, and shipped fixes. The run's conclusion — that goinfer's
+API surface was green and its engine was not — stands on the corrected numbers.
+
+**What it cost.** A single contaminated number survived into three documents and a release note
+before a disagreeing instrument caught it. The instrument was doubted first, because a microbench
+that fails to reproduce the real path is usually the microbench's fault. Here it was not.

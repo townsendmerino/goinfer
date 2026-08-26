@@ -98,14 +98,12 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
   gate moved 0.99298 → 0.98740 and coherent prompts 8/10 → 7/10. If you run qwen3_5 and care more
   about the last fraction of accuracy than about decode rate, that is the trade you are now taking.
 
-  > **That recommendation is about DECODE, and long prompts are a different question.** Measured
-  > 2026-08-25 on an M1 Pro (dense 1.5B, prefill + 1 token, `docs/queue-performance.md` G15): int4
-  > CPU **prefill** falls off a cliff between ~1.5k and ~3k tokens — 1520 tokens 99.9 s, 3020 tokens
-  > **1587.1 s** (an n^4.03 step), while `int8int8` over the same step goes 93.2 s → **334.9 s**
-  > (n^1.86, no cliff). For short prompts int4 remains the right default as stated. **For
-  > long-prompt workloads — agent transcripts, big system prompts, RAG context — prefer
-  > `int8int8` on CPU:** it is the only quant whose prefill cost stays predictable as the prompt
-  > grows. The cliff is under investigation (G15); it is not a reason to change the decode default.
+  > **On long prompts, note that CPU prefill is single-threaded and superlinear in prompt length**
+  > — roughly n^1.85 for *both* quants (measured M1 Pro, dense 1.5B: 170 tok 4.1 s · 620 tok 22.5 s ·
+  > 1520 tok 100.3 s · 3020 tok 355.5 s at int4; int8int8 within ~5% at every point). That is
+  > attention's own cost curve, not a quantization effect, and it is why a multi-thousand-token
+  > prompt is minutes on CPU. It does **not** change which quant to pick: int4 and int8int8 scale
+  > alike. See `docs/queue-performance.md` G16 for the single-threading, which is the lever.
 
 ### Fixed
 
