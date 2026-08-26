@@ -137,6 +137,12 @@ for free, so it is not worth a separate measurement.)
 disclosure: **zero hits**. The decision lives only in a design doc and a code comment, while
 `/health` advertised "batched" — which is precisely the gap G17 just closed at the serve layer.
 
+**Both cheap halves are DONE 2026-08-25 (`0c84d1d`).** `docs/benchmarks.md` now carries the
+absolute prefill numbers beside the v0.5.0 relative speedup, states the path is single-threaded, and
+tells readers to size long-prompt expectations from the absolute table; `docs/task-attention-decode-cost.md`
+records the deferral's measured cost and its non-goals bullet now points at it, so the standing
+decision cannot be quoted without its price. **What remains in G16 is only the lever itself.**
+
 **So this item becomes two cheap things and one real one:** surface the fact (the G17 pattern,
 already built); record in the A1 campaign doc that the deferral has a measured cost; and then the
 actual lever — thread prefill attention's heads under A1's bit-identity constraint, which
