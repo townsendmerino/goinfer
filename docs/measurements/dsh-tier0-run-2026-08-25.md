@@ -216,16 +216,31 @@ The server advertises `prefill path: batched (CPU forwardLayersN, one weight str
 prompt)`. Measured (system prompt of N filler words, `max_tokens: 1`, so the number is prefill plus
 one token):
 
-| prompt_tokens | prefill+1tok | effective |
-|---|---|---|
-| 170 | 4.5s | 37.7 tok/s |
-| 620 | 24.4s | 25.4 tok/s |
+**`-quant int4`, dense 1.5B, CPU backend:**
 
-Two things are wrong here. The absolute rate (~38 tok/s at best) is **the same order as this
-model's decode rate** — batched prefill is not buying the speedup the label implies. And the rate
-*falls* as the prompt grows, i.e. cost is superlinear in prompt length (~n^1.3 over this range).
-Extrapolating that exponent to the agent request's ~8k-token prompt predicts ~700s, which is
-consistent with the >600s a `max_tokens: 1` request actually took.
+| prompt_tokens | prefill+1tok | effective | vs previous point |
+|---|---|---|---|
+| 170 | 4.5s | 37.7 tok/s | — |
+| 620 | 24.4s | 25.4 tok/s | 3.6× tokens → 5.4× time |
+| 1520 | 99.9s | 15.2 tok/s | 2.5× tokens → 4.1× time |
+| 3020 | **1587.1s** | **1.9 tok/s** | **2.0× tokens → 15.9× time** |
+
+(The 4000-word point was abandoned: at this trajectory it is hours, and the shape is already
+established.)
+
+**This is not a smooth exponent — there is a CLIFF.** An earlier reading of the first two points
+called it ~n^1.3; the full curve refutes that. Doubling the prompt from 1520 to 3020 tokens
+multiplies the time by **15.9×**, and the effective rate collapses by 8× to below 2 tok/s. Something
+falls off between ~1.5k and ~3k tokens; the first three points are merely bad, the fourth is a
+different regime.
+
+Two further things are wrong independent of the cliff. The absolute rate (~38 tok/s at its *best*)
+is **the same order as this model's decode rate** — batched prefill is not buying the speedup the
+label implies. And the process sits at **~105% CPU** — one core — throughout, on a machine with
+many.
+
+The agent request's ~8k-token prompt is far past the cliff, which is why a `max_tokens: 1` request
+against it exceeded 600s.
 
 **This is the root cause of the whole failure.** Findings 1 and 2 are what turn a slow prefill into
 a silent, uncancellable, retry-amplified one.
