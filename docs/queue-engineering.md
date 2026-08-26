@@ -176,8 +176,13 @@ vacuous zero-ran green. Goldens **27 passed / 21 skipped / 0 failed**; diff veri
 `validated_at` preserved. The check is a uniform early-return in the shared layer loop, so it is
 not a path a skipped family's golden would have exercised differently.
 
-**G14 · Tier 0 — the tested "Use goinfer with DeepSeek Harness" recipe** — `mac`, **CLAIMED
-2026-08-25, IN FLIGHT.** Scope, tiers and the standing "nothing in goinfer may depend on dsh" rule
+**G14 · Tier 0 — the tested "Use goinfer with DeepSeek Harness" recipe** — `mac`+`linux`, **DONE
+2026-08-26. The gate is MET and the recipe is written** (`README.md`, "Use goinfer with DeepSeek
+Harness"). Qualifying run: dsh on the mac driving a CUDA-resident goinfer on the linux box over
+Tailscale through a two-tool, multi-step task — `glob` → `read` → synthesis — completed in 277 s
+with **zero retries**, verified from the session transcript rather than from the answer. Prefill
+270 tok/s (2116 tokens in 7.84 s) vs ~30 tok/s on mac CPU. Full record in
+`docs/measurements/dsh-tier0-run-2026-08-25.md`. Scope, tiers and the standing "nothing in goinfer may depend on dsh" rule
 are in `docs/scoping-dsh-goinfer.md`; this is its Tier 0 only.
 
 **Gate (unchanged):** the recipe may be written ONLY from a real end-to-end run — dsh web driving

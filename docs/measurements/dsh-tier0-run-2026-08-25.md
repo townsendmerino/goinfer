@@ -401,3 +401,57 @@ mine (wrong environment assumptions, not wrong machine):
 
 **Lesson worth keeping:** a remote environment report is only as good as its search. Two of three
 "blockers" were artifacts of assuming the mac's directory layout and an ssh `PATH`.
+
+
+---
+
+# PASS 2 — THE QUALIFYING RUN PASSED (2026-08-26). The Tier-0 gate is met.
+
+**Setup:** goinfer built from `a0e1ae1` with `-tags cuda` (via `cuda/cmd/serve` — the root
+`cmd/serve` guard names this), `qwen2.5-7b-instruct-q4_k_m.gguf` at `-quant int4`, `-backend cuda`,
+`-ctx 16384`, bound `0.0.0.0:8080` with `-api-key`, on the RTX 2070 SUPER box (driver 595.91.07,
+CUDA 13.2, post distro upgrade). dsh 0.1.1-rc.2 ran on the mac, reaching it over Tailscale.
+Resident: `decode path: cuda-resident (int4)`, `prefill path: batched (one weight-stationary CUDA
+pass)`, **6963 MiB of 8192 MiB**.
+
+**Auth over the network:** 401 without a credential, 200 with `Authorization: Bearer`.
+
+**Prefill:** 2116-token prompt, prefill + 1 token, **7.84 s (270 tok/s)** — versus ~30 tok/s for the
+same shape on the M1 Pro CPU, which is why pass 2 was re-scoped to GPU.
+
+**The task:** *"List the files in the current directory, then read main.go and tell me what package
+it declares."* — chosen because it cannot be answered without two different tools and a synthesis
+step, so a correct answer cannot be a guess.
+
+| t | event |
+|---|---|
+| 0.1 s | step 1 begins |
+| 135.8 s | `glob {"pattern":"*"}` → result |
+| 136.3 s | `read {"file_path":"main.go"}` → result |
+| 136.3 s | step 2 begins |
+| 277.0 s | `turn/end: {"kind":"completed"}` |
+
+**Zero `llm/retry` events.** The failure that defined pass 1 — a 300 s idle timeout, retried five
+times, each retry stacking another uncancellable prefill — did not occur.
+
+Final answer, correct and grounded in what it read:
+
+> The file `main.go` declares the package `main`. … It looks like the main function is empty for now.
+
+**Verified from the transcript, not the answer.** A plausible answer is not evidence of tool use, so
+the session JSONL was read directly: two `tool/call` events with matching `tool/result`s, then a
+second step. The model read the file.
+
+## What the gate cost, and what it bought
+
+The recipe is now in `README.md`. Every step in it is something this campaign learned the hard way:
+the documented `npx` install hangs; `providers` is a dict under an `llm-pi-ai:` namespace;
+`apiKeyEnv` is mandatory even unused; the model must be able to answer *from* a tool result, which
+is a stricter bar than a context window. And no compat flags are needed — because three goinfer
+defects were fixed first (G12 developer-role, G18 cancellation, G19 heartbeats), plus G13 and G21
+alongside.
+
+**The ordering was the point.** The recipe could not have been written before the run, and the run
+could not have passed before the fixes. A recipe published from pass 1 would have documented a
+workaround for a silent demotion, a harness that appears to hang, and a server that keeps burning
+CPU after the client leaves.

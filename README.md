@@ -386,6 +386,91 @@ this encoder's asymmetric query/document encoding, an optional `input_type:
 "query"|"document"` (default `document`, the Cohere/Voyage convention) selects the
 query instruction prefix.
 
+### Use goinfer with DeepSeek Harness (dsh)
+
+A fully local agent stack: dsh's harness, goinfer's single binary, no cloud. **Verified end to end
+on 2026-08-26** — dsh drove a multi-turn, tool-using task (`glob` → `read` → answer) against a
+CUDA-resident goinfer across a network, completing in 277 s with no retries. Every step below comes
+from that run; see `docs/measurements/dsh-tier0-run-2026-08-25.md` for what it cost to learn.
+
+**1. Install dsh.** The documented `npx @deepseek-ai/dsh` **hangs** — its ~30 first-party packages
+are all prerelease-pinned with 1000+ peer edges, which npm's resolver cannot get through (observed:
+6 m of CPU, no output, SIGTERM ignored). Install with peer resolution off, then add the peers it
+skips:
+
+```bash
+npm install @deepseek-ai/dsh@0.1.1-rc.2 --legacy-peer-deps
+# --legacy-peer-deps skips peers, and cordis plugins ARE peers, so the first run
+# dies with ERR_MODULE_NOT_FOUND. Add them explicitly (19 at rc.2 — the error names
+# one at a time; installing them together is one command):
+npm install --legacy-peer-deps @deepseek-ai/cordis-plugin-group @deepseek-ai/dsh-fs \
+  @deepseek-ai/dsh-shell @deepseek-ai/dsh-sandbox @deepseek-ai/dsh-workflow ...
+```
+
+**2. Start goinfer.** A model that can hold an agent loop is the requirement — not just a context
+window. It must emit a tool call *and then answer from the result*; a model that re-calls the same
+tool forever looks like a server bug and is not one. A 1.5B failed this; **Qwen2.5-7B-Instruct
+passes**. Prefill dominates an agent turn (the harness sends a ~4 KB system prompt plus ~25 tool
+schemas, ~8k tokens), so a GPU backend is strongly preferred: measured **270 tok/s prefill on an
+RTX 2070 SUPER** vs ~30 tok/s on an M1 Pro CPU.
+
+```bash
+# Loopback:
+goinfer -model coder=~/models/qwen2.5-7b-instruct-q4_k_m.gguf -quant int4 -backend cuda -ctx 16384
+
+# Across a network: non-loopback REQUIRES an API key (serve refuses to start otherwise).
+GOINFER_API_KEY=<secret> goinfer -model coder=... -backend cuda -addr 0.0.0.0:8080 -ctx 16384
+```
+
+**3. Point dsh at it** — `$DSH_HOME/settings.yaml`. Three details each cost a debugging cycle:
+the section is namespaced **`llm-pi-ai:`** (a top-level `providers:` block loads fine and then fails
+at request time with `NO_ADAPTER`); `providers` is a **dict keyed by route**, not a list; and
+**`apiKeyEnv` is required** for a hand-declared route even on loopback, despite the docs — omit it
+and you get `PI_AI_ERROR: No API key`. On loopback the value is unused, so any non-empty string
+does; off loopback it must match goinfer's `-api-key`.
+
+```yaml
+llm-pi-ai:
+  providers:
+    goinfer:
+      apiKeyEnv: GOINFER_API_KEY
+      api: openai-completions
+      baseURL: http://127.0.0.1:8080/v1     # or http://<host>:8080/v1
+      defaultContextWindow: 32768
+      defaultMaxTokens: 2048
+      models:
+        - id: coder
+          contextWindow: 32768
+          maxTokens: 2048
+```
+
+**4. Select the model.** dsh defaults to `deepseek-official`; that is plugin config, not settings,
+so it needs a `--patch` overlay:
+
+```yaml
+# goinfer-patch.yml
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config: {provider: goinfer, model: coder}
+```
+
+```bash
+GOINFER_API_KEY=<secret> dsh --profile web --patch ./goinfer-patch.yml      # browser UI
+GOINFER_API_KEY=<secret> dsh --profile headless --patch ./goinfer-patch.yml "your task"
+```
+
+**No compatibility flags are needed.** dsh sends a reasoning model's system prompt as
+`role: "developer"`, the output cap as `max_completion_tokens`, and a bare `reasoning_effort` to any
+endpoint it does not recognize — which is every goinfer deployment. goinfer accepts all three, so
+leave `compat.supportsDeveloperRole` at its default. (Before v0.15.0, `developer` was silently
+demoted to a *user* turn, delivering the agent scaffold as the user's first message; if you are on
+an older build, set that flag to `false`.)
+
+**What to expect.** Agent turns are prefill-heavy and mostly silent while the model decides on a
+tool call — goinfer streams SSE keep-alives during that window so harness idle timeouts do not fire,
+and abandons the work if the client disconnects. Deep context slows decode (see the benchmarks
+below). If a turn hangs and no keep-alives arrive, you are on a pre-v0.15.0 build.
+
 ## Status
 
 Pre-1.0; the forward-pass / quantization contract is parity-gated and stable, the
