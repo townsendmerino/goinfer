@@ -257,6 +257,34 @@ rather than per token. Confirmed present on this box: `~/.venv-vl` has `Qwen3Nex
 **So the target method is `full-forward-oracle`, not `weightDiff`** — and `weightDiff` was never
 available anyway, since it is GGUF-vs-safetensors and the GGUF loader is the other open item below.
 
+**3. PRE-REGISTERED, before the checkpoint finished downloading and before any number exists.**
+Two facts from the released `config.json` (read, not assumed) make a below-floor result a live
+possibility rather than a remote one, and the decision rule is fixed now so it cannot be argued
+after the fact.
+
+- **goinfer's side is forced to `int4` by capacity, not chosen.** 80B at int8 is ~80 GB against
+  62 GB of RAM; int4 is ~40 GB and fits. There is no int8 run to fall back to on this box.
+- **Routing is 10 of 512 experts — 1.95%, the sparsest in the table by a factor of two.**
+  `nemotron3nano` at 6/128 (4.7%) already measured **0.978 at int8int8 vs 0.9977 with f32
+  activations**, and its recorded reason is the expert-flip cliff: perturbing the router flips
+  *which* experts run, a discrete change no averaging smooths. `qwen3_next` is sparser still, and
+  is being quantized harder.
+
+**Decision rule, fixed in advance:**
+
+| measured full-vocab cosine | verdict |
+|---|---|
+| ≥ 0.98, divergences near-ties under the 3% rule | `validated`, `method: real-model-oracle`, quant recorded as `int4` |
+| 0.975 – 0.98 | **PARKED, not argued into a pass.** The band below a threshold is where motivated reasoning lives |
+| < 0.975 | not a pass — and the cause is *measured*, not asserted, per below |
+
+**Below the floor, the two causes are distinguishable and must be distinguished.** Smooth,
+non-monotonic per-layer agreement = quant noise at extreme sparsity: the row stays `experimental`
+with the measured number and a deployment note ("do not run this family at int4"), which is a real
+deliverable. A cliff, or a curve that cannot recover, = a loader or forward defect: **STOP and
+file** — the work order puts a fix and its own validation outside this task, and E2's precedent is
+that four "demotion judgments" were really two loader bugs. Floor the **mean**, not min-over-N.
+
 **STATUS: the full checkpoint is downloading** to `~/models` (NOT `/srv/models`), 41 shards /
 162.6 GB, resumable, detached; 6 shards were already present from the 2026-08-17 slice pull.
 **Feasibility of the offloaded reference is REASONED, not yet measured** — it is verified when a
