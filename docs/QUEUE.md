@@ -300,13 +300,16 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | sha | subject |
 |---|---|
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
+| `0221d32` | docs: the developer-role task is NOT a blocker -- it is silent-wrong, which is worse |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
+| `4ca19e9` | fix(serve): accept `role: "developer"` as an alias for `system` (G12) |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
+| `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
@@ -470,6 +473,7 @@ than papered over.
 |---|---|
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
+| `internal/serveapp/openai.go` | goinfer |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/bench_peer.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
