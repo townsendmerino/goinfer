@@ -91,8 +91,11 @@ Nine extract-helper clusters, concentrated in two files:
 
 The `model.go` clusters are ordinary and safe. The `gguf.go` ones are in the `.giw`-adjacent
 parser, so they inherit §2's constraint: **extract-helper is only safe here behind a byte-identity
-gate on a real `.giw` fixture** (`internal/chatapp/model.giw`, 638 MB, is the artifact that would
-silently misdecode). Cheap to do, cheap to prove, but not a drive-by.
+gate on a real `.giw` fixture** — the 638 MB bundle the embedded chat demo carries is the artifact
+that would silently misdecode. (Described rather than cited: it lives under a gitignored directory,
+so a path here would resolve on one machine and nowhere else, and an uncommitted target has no
+history against which anyone could later establish what it contained.) Cheap to do, cheap to prove,
+but not a drive-by.
 
 One extract-method (`generate` in `decoder/blockspec.go`, 7 lines, −2 CCN) and one move-method
 (`server.serveChatText` → `loadedModel`, both in `internal/serveapp/openai.go`, uses 7 foreign vs
