@@ -17,6 +17,27 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
+**G14 · Tier 0 — the tested "Use goinfer with DeepSeek Harness" recipe** — `mac`, **CLAIMED
+2026-08-25, IN FLIGHT.** Scope, tiers and the standing "nothing in goinfer may depend on dsh" rule
+are in `docs/scoping-dsh-goinfer.md`; this is its Tier 0 only.
+
+**Gate (unchanged):** the recipe may be written ONLY from a real end-to-end run — dsh web driving
+goinfer through a multi-turn, tool-using agent task — with every friction point fixed, worked
+around in the recipe, or filed. Findings to `docs/measurements/`.
+
+**Unblocked by G12** (`4ca19e9`): the `developer` alias means the run uses dsh's default flags, and
+the recipe gets no workaround section — at most one line for anyone pinned to a pre-`4ca19e9`
+goinfer.
+
+**Model decision, made 2026-08-25 because nothing at the doc's recommended bar is on this box**
+(no Qwen3.8-27B / gpt-oss-20b / DeepSeek-lite): **two passes.** Wire-level shakeout on
+`qwen2.5-coder-1.5b` (1.0 GB, 32k, has tools) where an iteration costs seconds and the friction
+list gets found cheaply; then the QUALIFYING multi-turn run on `gemma4-26b-int4` (15 GB, closest to
+the bar on disk, and the one that actually exercises the resident re-prefill trade-off the recipe
+warns about). The recipe rests on the second run. If the recipe ends up quoting the 1.5B for
+anything, that must be said in the recipe. `Qwen3.5-35B-A3B` is on disk and is NOT a candidate —
+paged MoE at ~1.2-1.4 tok/s makes an agent loop impractical.
+
 **A12 · The CUDA heavy tier does not fit in 8 GB in one process — the gate cannot pass here** —
 `linux`, **CLOSED `e682eb2` (2026-08-13). No capacity/leak issue ever existed — see the resolution
 block immediately below before reading the investigation.**
