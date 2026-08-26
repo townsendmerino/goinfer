@@ -462,133 +462,152 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	attendOneHead := func(qhead int, ws *headWorkerScratch) {
 		kvh := qhead / group
 		qh, scores, ch, avAcc := ws.qh, ws.scores, ws.ch, ws.avAcc
-		for i := range K { // gather Q_head [K,hd]
-			b := i*qDim + qhead*hd
-			copy(qh[i*hd:i*hd+hd], q[b:b+hd])
-		}
-		// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads
-		// keys DIRECTLY — row stride kvDim (rows are nKeys apart), element
-		// stride 1 (a head's hd floats are contiguous) — skipping a kh gather
-		// entirely. Bit-identical by construction (P1; aikit v1.18.0
-		// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as
-		// MatmulBTAcc64, only b's addressing differs), verified at goinfer's own
-		// stride parameters by TestAttendStrided_matchesGatherReference.
+		// G20: walk the query rows in TILES. Every step below is row-wise — the Q
+		// gather, QKᵀ (rows are the leading dimension), the per-row softmax, scores·V
+		// (each row folds over keys independently) and the ctx scatter — so splitting
+		// rows splits INDEPENDENT OUTPUTS, which is what A1's bit-identity constraint
+		// permits. No key-dimension split happens here and none may: that would
+		// re-associate the softmax denominator and the AV fold, the exact thing acc64
+		// exists to prevent.
 		//
-		// A1 move (b): MatmulQKAcc64 interleaves 8 keys' dot products as 8
-		// concurrent f64 accumulator chains, hiding FMA latency the single-chain
-		// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so
-		// this is bit-identical, not just close — docs/task-attention-decode-cost.md).
-		// Measured 4.4x in isolation (both depth 130 and 8192 — a pure latency
-		// fix, not depth-dependent, unlike move (c)'s memory-order fix).
-		if useAcc64 {
-			linalg.MatmulQKAcc64(qh[:K*hd], keys, scores[:K*nKeys], K, hd, nKeys, kvh*hd, kvDim)
-		} else {
-			matmul(qh[:K*hd], ws.kh[:nKeys*hd], scores[:K*nKeys], K, hd, nKeys)
-		}
-		// Scaled, masked softmax per query row; zero the out-of-range entries
-		// so they contribute nothing to the scores·V matmul below.
-		for i := range K {
-			pos := startPos + i
-			if cache.treeRowPos != nil {
-				pos = cache.treeRowPos[i]
+		// The point is memory, not speed: scores is tile*nKeys instead of K*nKeys, so
+		// a worker slot stops growing with the square of the prompt and the G16 pool
+		// can still fan out on a long prompt.
+		//
+		// `i` indexes the TILE below; `gi` is the global row. Positions and masks must
+		// use `gi` — startPos+gi, treeRowPos[gi], treeMask[gi] — while buffers use `i`.
+		tile := attnRowTile(K, nKeys)
+		for t0 := 0; t0 < K; t0 += tile {
+			kt := min(tile, K-t0)
+			for i := range kt { // gather this tile's Q_head [kt,hd]
+				b := (t0+i)*qDim + qhead*hd
+				copy(qh[i*hd:i*hd+hd], q[b:b+hd])
 			}
-			rowS := scores[i*nKeys : i*nKeys+nKeys]
-			// TREE attention (05): row i attends to the whole committed prefix
-			// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
-			if cache.treeMask != nil {
-				loP := cache.WindowStart(pos, global) - base
-				batchCol0 := startPos - base
-				allowed := func(s int) bool {
-					if s < batchCol0 {
-						return s >= loP
-					}
-					j := s - batchCol0
-					return j < K && cache.treeMask[i][j]
+			// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads
+			// keys DIRECTLY — row stride kvDim (rows are nKeys apart), element
+			// stride 1 (a head's hd floats are contiguous) — skipping a kh gather
+			// entirely. Bit-identical by construction (P1; aikit v1.18.0
+			// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as
+			// MatmulBTAcc64, only b's addressing differs), verified at goinfer's own
+			// stride parameters by TestAttendStrided_matchesGatherReference.
+			//
+			// A1 move (b): MatmulQKAcc64 interleaves 8 keys' dot products as 8
+			// concurrent f64 accumulator chains, hiding FMA latency the single-chain
+			// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so
+			// this is bit-identical, not just close — docs/task-attention-decode-cost.md).
+			// Measured 4.4x in isolation (both depth 130 and 8192 — a pure latency
+			// fix, not depth-dependent, unlike move (c)'s memory-order fix).
+			if useAcc64 {
+				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
+			} else {
+				matmul(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
+			}
+			// Scaled, masked softmax per query row; zero the out-of-range entries
+			// so they contribute nothing to the scores·V matmul below.
+			for i := range kt {
+				gi := t0 + i // global row: positions and masks are indexed by it, buffers by i
+				pos := startPos + gi
+				if cache.treeRowPos != nil {
+					pos = cache.treeRowPos[gi]
 				}
-				maxS := math.Inf(-1)
-				for s := range nKeys {
-					if allowed(s) {
-						sc := float64(rowS[s]) * scale
-						rowS[s] = float32(sc)
-						if sc > maxS {
-							maxS = sc
+				rowS := scores[i*nKeys : i*nKeys+nKeys]
+				// TREE attention (05): row i attends to the whole committed prefix
+				// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
+				if cache.treeMask != nil {
+					loP := cache.WindowStart(pos, global) - base
+					batchCol0 := startPos - base
+					allowed := func(s int) bool {
+						if s < batchCol0 {
+							return s >= loP
 						}
+						j := s - batchCol0
+						return j < K && cache.treeMask[gi][j]
+					}
+					maxS := math.Inf(-1)
+					for s := range nKeys {
+						if allowed(s) {
+							sc := float64(rowS[s]) * scale
+							rowS[s] = float32(sc)
+							if sc > maxS {
+								maxS = sc
+							}
+						}
+					}
+					var sum float64
+					for s := range nKeys {
+						if allowed(s) {
+							e := math.Exp(float64(rowS[s]) - maxS)
+							rowS[s] = float32(e)
+							sum += e
+						} else {
+							rowS[s] = 0
+						}
+					}
+					inv := 1.0 / sum
+					for s := range nKeys {
+						if rowS[s] != 0 {
+							rowS[s] = float32(float64(rowS[s]) * inv)
+						}
+					}
+					continue
+				}
+				// Absolute attend range [start, hi]; map to physical columns by −base
+				// (base = absolute position of column 0). hi is the inclusive upper
+				// key bound: pos for a causal text query, or the image-block end for a
+				// bidirectional image position (so it also attends to the block's
+				// future tokens). Equals pos with no image blocks — inert for text.
+				loP := cache.WindowStart(pos, global) - base
+				hiP := cache.attendHi(pos) - base
+				maxS := math.Inf(-1)
+				for s := loP; s <= hiP; s++ {
+					sc := float64(rowS[s]) * scale
+					rowS[s] = float32(sc)
+					if sc > maxS {
+						maxS = sc
 					}
 				}
 				var sum float64
-				for s := range nKeys {
-					if allowed(s) {
-						e := math.Exp(float64(rowS[s]) - maxS)
-						rowS[s] = float32(e)
-						sum += e
-					} else {
-						rowS[s] = 0
-					}
+				for s := loP; s <= hiP; s++ {
+					e := math.Exp(float64(rowS[s]) - maxS)
+					rowS[s] = float32(e)
+					sum += e
 				}
 				inv := 1.0 / sum
-				for s := range nKeys {
-					if rowS[s] != 0 {
-						rowS[s] = float32(float64(rowS[s]) * inv)
-					}
+				for s := range loP {
+					rowS[s] = 0
 				}
-				continue
-			}
-			// Absolute attend range [start, hi]; map to physical columns by −base
-			// (base = absolute position of column 0). hi is the inclusive upper
-			// key bound: pos for a causal text query, or the image-block end for a
-			// bidirectional image position (so it also attends to the block's
-			// future tokens). Equals pos with no image blocks — inert for text.
-			loP := cache.WindowStart(pos, global) - base
-			hiP := cache.attendHi(pos) - base
-			maxS := math.Inf(-1)
-			for s := loP; s <= hiP; s++ {
-				sc := float64(rowS[s]) * scale
-				rowS[s] = float32(sc)
-				if sc > maxS {
-					maxS = sc
+				for s := loP; s <= hiP; s++ {
+					rowS[s] = float32(float64(rowS[s]) * inv)
+				}
+				for s := hiP + 1; s < nKeys; s++ {
+					rowS[s] = 0
 				}
 			}
-			var sum float64
-			for s := loP; s <= hiP; s++ {
-				e := math.Exp(float64(rowS[s]) - maxS)
-				rowS[s] = float32(e)
-				sum += e
+			// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
+			//                          = MatmulBT(scores, V_headᵀ[hd,nKeys])
+			// Acc64 reads vals DIRECTLY, "as if transposed" — row stride 1 (V's hd
+			// floats are contiguous, and vt's row index IS that offset), element
+			// stride kvDim (vt's column index steps by a whole KV row) — skipping
+			// a vt gather+transpose. Same bit-identity argument as QKᵀ.
+			//
+			// A1 move (c): MatmulAVAcc64 reads V rows contiguously (keys-outer,
+			// dims-inner) into hd independent f64 accumulators, instead of
+			// MatmulBTAcc64Strided's dims-outer/keys-inner walk (one cache line
+			// per f64 MAC at kvDim stride). Bit-identical by construction — each
+			// dim's accumulator sees the same key-ascending sequence of adds
+			// either way (docs/task-attention-decode-cost.md, docs/task-decode-
+			// splitkv-attention.md:36's "split the independent axis" principle).
+			// Measured 1.81x at depth 130, 2.39x at depth 8192 (aikit
+			// MatmulAVAcc64_ABBench).
+			if useAcc64 {
+				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
+			} else {
+				matmul(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
 			}
-			inv := 1.0 / sum
-			for s := range loP {
-				rowS[s] = 0
+			for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
+				b := (t0+i)*qDim + qhead*hd
+				copy(ctx[b:b+hd], ch[i*hd:i*hd+hd])
 			}
-			for s := loP; s <= hiP; s++ {
-				rowS[s] = float32(float64(rowS[s]) * inv)
-			}
-			for s := hiP + 1; s < nKeys; s++ {
-				rowS[s] = 0
-			}
-		}
-		// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
-		//                          = MatmulBT(scores, V_headᵀ[hd,nKeys])
-		// Acc64 reads vals DIRECTLY, "as if transposed" — row stride 1 (V's hd
-		// floats are contiguous, and vt's row index IS that offset), element
-		// stride kvDim (vt's column index steps by a whole KV row) — skipping
-		// a vt gather+transpose. Same bit-identity argument as QKᵀ.
-		//
-		// A1 move (c): MatmulAVAcc64 reads V rows contiguously (keys-outer,
-		// dims-inner) into hd independent f64 accumulators, instead of
-		// MatmulBTAcc64Strided's dims-outer/keys-inner walk (one cache line
-		// per f64 MAC at kvDim stride). Bit-identical by construction — each
-		// dim's accumulator sees the same key-ascending sequence of adds
-		// either way (docs/task-attention-decode-cost.md, docs/task-decode-
-		// splitkv-attention.md:36's "split the independent axis" principle).
-		// Measured 1.81x at depth 130, 2.39x at depth 8192 (aikit
-		// MatmulAVAcc64_ABBench).
-		if useAcc64 {
-			linalg.MatmulAVAcc64(scores[:K*nKeys], vals, ch[:K*hd], avAcc, K, nKeys, hd, kvh*hd, kvDim)
-		} else {
-			matmul(scores[:K*nKeys], ws.vt[:hd*nKeys], ch[:K*hd], K, nKeys, hd)
-		}
-		for i := range K { // scatter ctx_head into ctx[K,qDim]
-			b := i*qDim + qhead*hd
-			copy(ctx[b:b+hd], ch[i*hd:i*hd+hd])
 		}
 	}
 

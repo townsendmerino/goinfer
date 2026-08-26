@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 )
@@ -67,38 +68,125 @@ func TestPrefillAttnPoolInvariance(t *testing.T) {
 	}
 }
 
-// The budget must actually bind, and must degrade toward serial rather than
-// letting per-slot scratch grow without bound. These are pure arithmetic over
-// the sizing rule, so they run everywhere with no model.
+// The worker count must stay inside its caps and honor its override.
+//
+// NOTE — this test was rewritten when G20 landed, and the reason matters more
+// than the assertions. As written for G16 it asserted that K=32768 "must fall
+// back to serial, a 4 GB slot", because an untiled slot's scores buffer was
+// K*nKeys floats. G20 tiles the query rows, so no such slot exists any more: a
+// slot is one row tile wide (attnScoreTileBytes), and six workers at 32k cost
+// ~150 MB, not ~25 GB. The old assertion was not wrong when written; its premise
+// was removed. That is why it is replaced rather than relaxed — the property it
+// protected (unbounded per-slot growth must not happen) is now asserted directly,
+// against the real tiled size, by TestAttnRowTileBoundsScratch.
 func TestPrefillAttnWorkerBudget(t *testing.T) {
 	os.Unsetenv("GOINFER_PREFILL_ATTN_WORKERS")
+	os.Unsetenv("GOINFER_ATTN_ROW_TILE")
 	const hd, nH = 128, 12
 
-	// Short prompt: the P-core / head cap binds, not the budget.
-	if got := prefillAttnWorkers(64, 64, hd, nH); got != maxAttnWorkers {
-		t.Errorf("K=64: workers = %d, want %d (budget must not bind on a short prompt)", got, maxAttnWorkers)
-	}
-	// The count must be monotonically non-increasing in prompt length, and must
-	// reach 1 rather than allocating unboundedly on a very long one.
-	prev := maxAttnWorkers
-	for _, K := range []int{512, 1520, 3020, 8192, 32768} {
+	for _, K := range []int{64, 512, 1520, 3020, 8192, 32768} {
 		got := prefillAttnWorkers(K, K, hd, nH)
-		if got > prev {
-			t.Errorf("K=%d: workers rose to %d from %d — the budget must never grow with prompt length", K, got, prev)
-		}
 		if got < 1 {
 			t.Errorf("K=%d: workers = %d, must never be below 1", K, got)
 		}
-		perSlotMB := float64(4*(K*K+2*K*hd+2*K*hd)) / (1 << 20)
-		t.Logf("K=%-6d workers=%d  (per-slot scratch %.1f MB, total %.1f MB)", K, got, perSlotMB, perSlotMB*float64(got))
-		prev = got
+		if got > maxAttnWorkers || got > nH {
+			t.Errorf("K=%d: workers = %d exceeds the P-core/head cap (%d/%d)", K, got, maxAttnWorkers, nH)
+		}
+		tile := attnRowTile(K, K)
+		perSlot := 4 * (tile*K + 2*K*hd + 2*tile*hd)
+		t.Logf("K=%-6d tile=%-5d workers=%d  per-slot %.1f MB, total %.1f MB",
+			K, tile, got, float64(perSlot)/(1<<20), float64(perSlot*got)/(1<<20))
 	}
-	if got := prefillAttnWorkers(32768, 32768, hd, nH); got != 1 {
-		t.Errorf("K=32768: workers = %d, want 1 — a 4 GB slot must fall back to serial", got)
+
+	// A head count below the pool size binds before the P-core cap does.
+	if got := prefillAttnWorkers(512, 512, hd, 2); got != 2 {
+		t.Errorf("nH=2: workers = %d, want 2 — the head count must cap the pool", got)
 	}
-	// The escape hatch restores the exact pre-G16 path.
+	// The escape hatch restores the exact pre-G16 serial path.
 	t.Setenv("GOINFER_PREFILL_ATTN_WORKERS", "1")
 	if got := prefillAttnWorkers(64, 64, hd, nH); got != 1 {
 		t.Errorf("override to 1: got %d, want 1", got)
+	}
+}
+
+// G20 gate — query-row tiling must be BIT-IDENTICAL to the untiled path.
+//
+// Tiling splits independent outputs (each query row's attention is its own
+// reduction over keys), which is what A1 permits. The hazard is not the matmuls
+// but the POSITION MAPPING: the softmax uses startPos+row, treeRowPos[row] and
+// treeMask[row], all indexed by the GLOBAL row, while the buffers are indexed
+// within the tile. An off-by-tile there is a silent attention-mask bug that
+// produces plausible output — exactly the kind of defect a tolerance-based
+// comparison would wave through, so this compares float-for-float.
+func TestPrefillAttnRowTileInvariance(t *testing.T) {
+	m, err := loadBenchModel()
+	if err != nil {
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
+	}
+	for _, K := range []int{64, 512, 1200} {
+		if !m.canBatchN(K) {
+			t.Skipf("model has no batched prefill at K=%d", K)
+		}
+		ids := make([]int, K)
+		for i := range ids {
+			ids[i] = 700 + i%64
+		}
+		run := func(tile string) []float32 {
+			t.Helper()
+			t.Setenv("GOINFER_ATTN_ROW_TILE", tile)
+			t.Setenv("GOINFER_PREFILL_ATTN_WORKERS", "1") // isolate tiling from fan-out
+			out, err := m.forwardLayersN(context.Background(), ids, m.NewCache(K+8))
+			if err != nil {
+				t.Fatalf("K=%d tile=%s: %v", K, tile, err)
+			}
+			return out
+		}
+		// A tile equal to K is the untiled shape: one pass, exactly as before G20.
+		untiled := run(fmt.Sprint(K))
+		for _, tile := range []string{"1", "7", "64", "333"} {
+			got := run(tile)
+			if len(got) != len(untiled) {
+				t.Fatalf("K=%d tile=%s: length %d vs %d", K, tile, len(got), len(untiled))
+			}
+			diffs, firstAt := 0, -1
+			for i := range untiled {
+				if untiled[i] != got[i] {
+					diffs++
+					if firstAt < 0 {
+						firstAt = i
+					}
+				}
+			}
+			if diffs != 0 {
+				t.Errorf("K=%d tile=%s: NOT bit-identical to untiled — %d/%d floats differ, first at %d (%v vs %v)",
+					K, tile, diffs, len(untiled), firstAt, untiled[firstAt], got[firstAt])
+			}
+		}
+		t.Logf("K=%d: tiles 1/7/64/333 all bit-identical to untiled (%d floats)", K, len(untiled))
+	}
+}
+
+// The tile must bound scratch rather than track prompt length: that is the whole
+// point, and it is what lets the G16 pool keep its workers on a long prompt.
+func TestAttnRowTileBoundsScratch(t *testing.T) {
+	os.Unsetenv("GOINFER_ATTN_ROW_TILE")
+	os.Unsetenv("GOINFER_PREFILL_ATTN_WORKERS")
+	const hd, nH = 128, 12
+	prevBytes := 0
+	for _, K := range []int{512, 1520, 3020, 8192, 32768} {
+		tile := attnRowTile(K, K)
+		scoreBytes := 4 * tile * K
+		if scoreBytes > attnScoreTileBytes {
+			t.Errorf("K=%d: score tile is %d bytes, over the %d budget", K, scoreBytes, attnScoreTileBytes)
+		}
+		w := prefillAttnWorkers(K, K, hd, nH)
+		t.Logf("K=%-6d tile=%-5d scores=%4.1f MB  workers=%d", K, tile, float64(scoreBytes)/(1<<20), w)
+		prevBytes = scoreBytes
+	}
+	_ = prevBytes
+	// The case G20 exists for: at 8k the untiled slot was 272 MB and forced the
+	// pool to a single worker. Tiled, it must afford the full fan-out.
+	if w := prefillAttnWorkers(8192, 8192, hd, nH); w < maxAttnWorkers {
+		t.Errorf("K=8192: workers = %d, want %d — tiling was supposed to make long prompts affordable", w, maxAttnWorkers)
 	}
 }

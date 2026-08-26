@@ -116,8 +116,10 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
   > serial path: measured M1 Pro, dense 1.5B `int8int8`, **1520 tok 89.7 s → 33.8 s (2.65x)** and
   > **3020 tok 333.3 s → 101.6 s (3.28x)**. The fan-out is budgeted against per-slot scratch that
   > grows with the square of prompt length, so it steps down toward serial on very long prompts —
-  > at the default budget it is serial again by ~8k tokens, which is the case `docs/queue-performance.md`
-  > G20 addresses. `GOINFER_PREFILL_ATTN_WORKERS=1` restores the old behavior.
+  > attention is computed in query-row tiles (G20), so per-slot scratch stays flat — ~16 MB at an
+  > 8k prompt rather than 272 MB — and the fan-out survives long prompts instead of collapsing to
+  > one worker. Measured at 8192 tokens: **2381.8 s → 607.6 s (3.92x)**.
+  > `GOINFER_PREFILL_ATTN_WORKERS=1` restores the old serial behavior.
   >
   > **Prefill remains superlinear in prompt length**
   > — roughly n^1.85 for *both* quants (measured M1 Pro, dense 1.5B: 170 tok 4.1 s · 620 tok 22.5 s ·

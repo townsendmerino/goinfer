@@ -40,12 +40,12 @@ bit-identical to batched prefill/verify. The cost structure, from reading
   goroutines anywhere in the function. 12 independent query heads × 28 layers of exploitable
   parallelism, none used.
 - **Serial chains per output.** `MatmulBTAcc64Strided` runs "the SAME sequential f64 reduction
-  as `MatmulBTAcc64`" (comment at decoder/forwardn.go:473). Whether it interleaves *independent
+  as `MatmulBTAcc64`" (comment at decoder/forwardn.go:490). Whether it interleaves *independent
   outputs* (different keys' dots in QK, different dims in AV — legal without touching any
   single output's order) is an aikit-internal question Gate A0 must answer by reading the
   kernel.
 - **AV's element reads are 1KB-strided.** The scores·V call reads `vals` with element stride
-  `kvDim` (decoder/forwardn.go:572) — each successive f64 MAC touches a new cache line. The f32 path's
+  `kvDim` (decoder/forwardn.go:590) — each successive f64 MAC touches a new cache line. The f32 path's
   gather/transpose that fixed this is skipped on the acc64 path (and the f32 path itself is
   test-only today: "every live caller passes useAcc64=true").
 - RoPE and softmax ride along in the measured number but are O(heads·hd) and O(nKeys)

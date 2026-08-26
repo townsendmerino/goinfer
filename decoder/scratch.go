@@ -144,6 +144,31 @@ type headWorkerScratch struct {
 // work — docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md).
 const maxAttnWorkers = 6
 
+// attnScoreTileBytes is the per-slot budget for the `scores` buffer, which sets
+// the query-row tile (G20). scores is tile*nKeys floats, so pinning its BYTES
+// makes a worker slot's cost linear in nKeys instead of quadratic in prompt
+// length — which is what lets the G16 pool keep fanning out on a long prompt
+// instead of collapsing to one worker.
+//
+// 8 MiB is comfortably L2/SLC-resident on the machines this runs on and leaves
+// the tile large enough that per-tile call overhead is noise.
+const attnScoreTileBytes = 8 << 20
+
+// attnRowTile returns how many QUERY rows one attention pass handles. Never
+// below 1, never above K. GOINFER_ATTN_ROW_TILE overrides it — an A/B handle,
+// and how the bit-identity test forces the untiled shape to compare against.
+func attnRowTile(K, nKeys int) int {
+	if v := os.Getenv("GOINFER_ATTN_ROW_TILE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			return min(n, K)
+		}
+	}
+	if nKeys < 1 || K < 1 {
+		return max(1, K)
+	}
+	return max(1, min(K, attnScoreTileBytes/(nKeys*4)))
+}
+
 // prefillAttnScratchBudget caps the TOTAL per-head scratch a single batched
 // (prefill) sweep may hold across its worker pool. It exists because the
 // dominant slot buffer, `scores`, is K*nKeys floats — QUADRATIC in prompt
@@ -170,9 +195,12 @@ func prefillAttnWorkers(K, nKeys, hd, nH int) int {
 	if nH < 1 {
 		return 1
 	}
-	// Per slot, in bytes: scores (K*nKeys) + kh + vt (nKeys*hd each) + qh + ch
-	// (K*hd each), all float32. avAcc is hd float64 — noise beside these.
-	perSlot := 4 * (K*nKeys + 2*nKeys*hd + 2*K*hd)
+	// Per slot, in bytes, at the TILED size (G20): scores (tile*nKeys) + kh + vt
+	// (nKeys*hd each) + qh + ch (tile*hd each), all float32. avAcc is hd float64 —
+	// noise beside these. Tiling is why this is linear in nKeys rather than
+	// quadratic in prompt length, and therefore why long prompts still fan out.
+	t := attnRowTile(K, nKeys)
+	perSlot := 4 * (t*nKeys + 2*nKeys*hd + 2*t*hd)
 	if perSlot <= 0 {
 		return 1
 	}
@@ -232,14 +260,18 @@ func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
 	if n < 1 {
 		n = 1
 	}
+	// G20: slots are sized for one ROW TILE, not the whole prompt. attendOneHead
+	// walks its query rows in tiles of exactly this many, so anything larger would
+	// be allocated and never touched.
+	t := attnRowTile(K, nKeys)
 	pool := make([]headWorkerScratch, n)
 	for i := range pool {
 		pool[i] = headWorkerScratch{
-			qh:     make([]float32, K*hd),
+			qh:     make([]float32, t*hd),
 			kh:     make([]float32, nKeys*hd),
 			vt:     make([]float32, nKeys*hd),
-			scores: make([]float32, K*nKeys),
-			ch:     make([]float32, K*hd),
+			scores: make([]float32, t*nKeys),
+			ch:     make([]float32, t*hd),
 			avAcc:  make([]float64, hd),
 		}
 	}

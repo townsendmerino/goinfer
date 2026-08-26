@@ -174,7 +174,7 @@ is the headline.
 speeds up short and mid prompts and does nothing for the ~8k agent transcripts that motivated G16.
 That is the honest scope of what landed. See G20.
 
-## G20 · Tile prefill attention's `scores` over K so long prompts can parallelize — `mac`, **CLAIMED 2026-08-26, IN FLIGHT**
+## G20 · Tile prefill attention's `scores` over K so long prompts can parallelize — `mac`, **DONE 2026-08-26**
 
 **Substantiated by measurement, not assumed.** G16's lever is capped by memory, not by diminishing
 returns: at K=4096, going from 3 workers to 6 bought a further **1.39x** (250.2s → 180.4s) — and
@@ -197,8 +197,42 @@ would re-associate the softmax denominator and the AV fold — the exact thing a
 prevent. `TestPrefillAttnPoolInvariance` extends to cover it: same prompt, tiled vs untiled,
 bit-identical.
 
-**Not urgent, and not a prerequisite for anything shipped.** G16's lever stands on its own for short
-and mid prompts.
+**LANDED.** `attendOneHead` walks its query rows in tiles (`attnRowTile`, 8 MiB of `scores` per
+slot); pool slots are sized for one tile instead of the whole prompt.
+
+**Bit-identical, gated:** `TestPrefillAttnRowTileInvariance` compares tiles 1/7/64/333 against the
+untiled shape (tile = K) at K=64/512/1200, float-for-float. The hazard was never the matmuls — it
+was the position mapping: the softmax indexes `startPos+row`, `treeRowPos[row]` and
+`treeMask[row]` by the GLOBAL row while buffers index within the tile, and an off-by-tile there is a
+silent attention-mask bug that still produces fluent output. Exact equality is what catches that;
+a tolerance would not.
+
+**Per-slot scratch is now flat instead of quadratic**, which is the whole point:
+
+| K | tile | per-slot | 6 workers | before G20 (per-slot / workers) |
+|---|---|---|---|---|
+| 3020 | 694 | 11.6 MB | 69.7 MB | 40.7 MB / 6 |
+| 8192 | 256 | **16.2 MB** | 97.5 MB | **272 MB / 1** |
+| 32768 | 64 | **40.1 MB** | 240.4 MB | **4.2 GB / 1** |
+
+**Measured payoff at the size G20 exists for** — K=8192, dense 1.5B `int8int8`, M1 Pro:
+
+| workers | elapsed | rate |
+|---|---|---|
+| 1 (serial) | 2381.8s | 3.4 tok/s |
+| 6 (tiled) | **607.6s** | **13.5 tok/s** |
+
+**3.92x**, and the load record says it is conservative rather than flattering: the SERIAL arm ran
+8.09 → 1.70 (the box quieting) while the parallel arm ran 4.40 → 8.62 (busying), so the slow arm had
+the better conditions. It also lands within 13% of the n^1.85 extrapolation from the four-times-
+confirmed 333.3s at K=3020, which corroborates both numbers. Per the repo's own bench discipline the
+arms could not be interleaved (a 40-minute serial arm), so treat 3.92x as indicative-but-conservative
+rather than gold-standard.
+
+**One G16 assertion was invalidated and REPLACED, not relaxed.** `TestPrefillAttnWorkerBudget` used
+to assert that K=32768 falls back to one worker because a slot would be 4 GB. After tiling no such
+slot exists. The property it protected — per-slot growth must stay bounded — is now asserted
+directly against the real tiled size by `TestAttnRowTileBoundsScratch`.
 
 
 
@@ -1167,7 +1201,7 @@ makes 34 unreachable. A9 ran **before A5 landed**, so no override was needed. Re
 at the new cap would simply pass and look like confirmation, leaving no trace of the loss.
 
 **P1 · KV re-gather and V re-transpose on every decode token** — **LANDED `97f824a`, 2026-08-15**.
-Was `decoder/forwardn.go:603` (retargeted 2026-08-24 after later edits shifted the line).
+Was `decoder/forwardn.go:622` (retargeted 2026-08-24 after later edits shifted the line).
 
 Was estimated ~10–15% of per-token traffic at 4k+ context — the largest single item in the group.
 
