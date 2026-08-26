@@ -17,6 +17,41 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
+**G22 · The Metal `fault 0x10` flake is an UNPINNED AUTORELEASE POOL in aikit's Encoder — fix it
+where the pool lives** — `aikit`+`mac`, **QUEUED, diagnosed 2026-08-26.**
+
+**Not a shipping bug, and not a mystery — the mechanism is already written down in this repo.**
+`metal/model.go`'s `resident.Forward` says it outright: *"the NSAutoreleasePool (begin/end) is
+per-OS-thread, and Go can migrate goroutines mid-call — draining a pool on a different thread than
+it was pushed is UB (intermittent SIGSEGV). Same discipline the CUDA backend's LockOSThread executor
+uses."* The crash is exactly that drain: `aikit/gpu.(*Encoder).End` → `e.pool.Send(selDrain)`.
+
+**Why it only ever bites tests.** goinfer's production Metal paths PIN — `resident.Forward` and
+`BuildResident` both `runtime.LockOSThread`. aikit's `Encoder` API does not: it creates its pool
+inline (three sites in `metal.go`) and drains it in `End()`, with `LockOSThread` appearing nowhere
+in aikit's production code — only in its own tests. Any caller that does not pin is on UB, and
+**97 of goinfer's 108 metal test files do not pin.** That accounts for every observed property: the
+crash is probabilistic (it needs a scheduler migration in the window), its site MIGRATES between
+runs, it survives isolation (`TestSAQVFusion` alone: 3/3 pass in <0.5 s), and it never appears in
+the shipped product.
+
+**Observed rate here 2026-08-26:** `-short` full suite 1 fail / 3 runs; without `-short` 4/4 pass;
+a clean sequential gate run passed. `docs/task-gate-runner.md` records ~50% and once 6-of-7, with
+the operator's read that the rate tracks cumulative GPU dispatch volume — consistent with a
+migration-window race.
+
+**The fix belongs in aikit, not in 97 test files.** Whoever creates the pool should pin the thread
+and unpin after the drain, making the API safe regardless of caller — the same discipline
+`aikit/gpu/cuda.go` already documents for CUDA's locked executor. Pinning per-test is the wrong
+shape: it leaves the invariant unenforced for the next caller, and the crash site migrates precisely
+because any unpinned caller can be the victim.
+
+**Coordination:** aikit is not in goinfer's `go.work`, so this needs an aikit change, a version bump
+and a goinfer `require` bump — which is why it is filed rather than started.
+
+**Gate for it:** the `-short` metal suite run N times with zero `fault 0x10` deaths (N large enough
+to beat the observed rate — 20+ given ~30-50%), plus the existing goldens unchanged.
+
 **G21 · Incremental tool-call-aware streaming (Finding 1, stage 2)** — `mac`, **DONE 2026-08-26.**
 The real fix behind G19's heartbeats.
 

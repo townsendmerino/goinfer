@@ -1,0 +1,42 @@
+
+== provenance ==
+  repo        65441a3
+  date (UTC)  2026-08-26T18:25:17Z
+  host        Darwin arm64
+  backend     metal
+  models      /Users/francistownsend-merino/models
+  gpu         Apple M1 Pro
+
+== 0. clean GPU ==
+  SKIP  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+== 1. seam (runs anywhere — no GPU, no model download) ==
+  PASS  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+== 2. Metal suite ==
+  PASS  full metal suite
+      ok  	github.com/townsendmerino/goinfer/metal	122.639s
+
+== 3. cgo-free ==
+  PASS  serve builds CGO_ENABLED=0 (Metal is dlopen'd via purego-objc)
+
+== 4. lifecycle ==
+  PASS  Close() frees — sawtooth not staircase, and frees with a second model resident
+
+== 4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN) ==
+  PASS  prefill matches sequential decode and emits finite logits (no NaN)
+
+== 5. repo hygiene (derived from .github/workflows/ci.yml) ==
+  PASS    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  SKIP  15 linux-only CI hygiene step(s) — wrong platform for this host
+  PASS  8 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+== verdict ==
+  check groups: 7 declared -> 7 reported   |   verdicts within them: 7 pass, 2 skip, 0 fail
+
+  Skipped — a skip is not a pass; this gate does NOT cover:
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: 15 linux-only CI hygiene step(s) — wrong platform for this host
+
+  PASS — metal on Darwin @ 65441a3 (2026-08-26T18:27:32Z)
+  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.
