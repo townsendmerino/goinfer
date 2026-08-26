@@ -63,6 +63,11 @@ cache-residency story predicts a quant-independent cliff and we do not have one:
 2. `GODEBUG=gctrace=1` on an int4 1520-vs-3020 pair — splits GC share of wall time in one rerun
    each, and settles the GC hypothesis rather than arguing it.
 
+**One more confirmatory point.** The int8int8 run's 4000-word case (~6020 tokens) hit the client's
+1200s ceiling and aborted. That is not a second cliff: extrapolating int8int8's own n^1.86 from the
+3020-token point predicts **~1216s** at 6020 tokens, so a timeout just past 1200s sits *on* the
+smooth curve. int4's cliff remains the only discontinuity in either dataset.
+
 **Ruled out already:** a silent fallback from batched to sequential forwards. `canBatchN`
 (`decoder/forwardn.go`) has **no size threshold** — only `K > 1` plus family exclusions — and
 qwen2.5 is a plain gated-MLP family, so batching stays engaged at every K.

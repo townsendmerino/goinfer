@@ -294,3 +294,8 @@ parallelism — independent of the cliff, true pre-cliff, ~4-5x on the pure-Go l
 penalty from the inside — and it adds one line to the eventual recipe that could not have been
 written before: on the CPU backend, `int8int8` is not merely the fast lane, it is the only quant
 whose prefill cost stays predictable as an agent transcript grows.
+
+**One more confirmatory point.** The int8int8 run's 4000-word case (~6020 tokens) hit the client's
+1200s ceiling and aborted. That is not a second cliff: extrapolating int8int8's own n^1.86 from the
+3020-token point predicts **~1216s** at 6020 tokens, so a timeout just past 1200s sits *on* the
+smooth curve. int4's cliff remains the only discontinuity in either dataset.
