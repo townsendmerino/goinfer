@@ -1348,6 +1348,31 @@ just the function.
 
 ### G. New capability, scoped but not started
 
+**G13 · `/v1/messages` silently restructures the conversation for ANY illegal role — validate and
+reject instead** — either box, **QUEUED, filed 2026-08-25.** Small. Does not block Tier 0 of
+`docs/scoping-dsh-goinfer.md`; the interim state is visible (pinned), which is the point.
+
+**Before-state, already recorded as a passing test** — `TestAnthropicDeveloperRoleStaysUser` in
+`internal/serveapp/developerrole_test.go`, written during G12. `anthropicRole` maps everything that
+is not `"assistant"` to a user turn, and there is **no role validation anywhere in
+`internal/serveapp`**. So a typo'd, invented, or wrong-API role (`"developer"`, `"Assistant"`,
+`"sytem"`, anything) does not fail — it is silently folded into the conversation as a user turn,
+restructuring what the model sees. `developer` was not a special case; it was the instance that
+happened to get caught.
+
+**The change:** on `/v1/messages`, accept only `user` and `assistant` in the `messages` array and
+return a clean `invalid_request` 400 for anything else, which is what the upstream Anthropic API
+does. G12 framed this surface as demote-vs-alias and that was the wrong menu: upstream's actual
+behavior for an illegal role is neither — it is rejection. Rejecting is *more* faithful to the
+"works for the apps that matter" bar, not less, because real Anthropic-shape clients only ever send
+legal roles, so a 400 costs them nothing and buys everyone else a loud failure instead of a quiet
+restructuring. Flip `TestAnthropicDeveloperRoleStaysUser` from a pin to the rejection assertion as
+part of the change; keep a case per illegal-role shape.
+
+**Scope note:** this is the Anthropic surface only. The OpenAI surfaces' `default:`-to-user arm is
+deliberate and stays (G12's non-goal guard pins it) — OpenAI's own API is lenient there, and
+`developer` is now aliased rather than swallowed.
+
 **R1 · The refresh script's history — two corrections to the record** — `linux`, **CLOSED, both
 answered from the log**
 

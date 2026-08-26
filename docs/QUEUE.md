@@ -107,6 +107,19 @@ pass either way, as they should. Equality gate is byte-identical rendering again
 
 **Unblocks** Tier 0 of `docs/scoping-dsh-goinfer.md` — the dsh run can now start past this.
 
+**Follow-up filed as G13** (`docs/queue-engineering.md`): demote-vs-alias was the wrong menu for
+`/v1/messages`. Upstream rejects an illegal role, and `anthropicRole`'s
+everything-non-assistant-becomes-user mapping means ANY typo'd or invented role silently
+restructures the conversation today — `developer` was just the instance that got caught. Role
+validation kills the class; the pin above is its recorded before-state. Not blocking Tier 0.
+
+**Second exhibit for E2's lesson.** E2's four "demotion judgments" turned out to be two engineering
+bugs that only a released checkpoint could reveal: a generated fixture cannot disagree with the
+loader it gates. This is the same shape in different clothes — a predicted branch cannot disagree
+with the predictor, so "structurally impossible" typed where a check belonged was, with mechanical
+inevitability, the half that was wrong. If `docs/parity-coverage-policy.md` picks up the
+fixture rule on its next edit as E2 suggested, both belong in that paragraph.
+
 ## Sequencing — release BEFORE G2
 
 **Revised, and D3 is OUT of the release — no rebase attempted.**
