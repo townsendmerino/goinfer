@@ -230,6 +230,39 @@ green (`representativeConfig`, `familyDoc`, `archFeatureProfile`, `admissionGold
 Laguna GGUF metadata switch (confirmed via `git stash -u` against clean origin/main — not this
 family's issue).
 
+**T3 METHOD DETERMINED 2026-08-26 (`linux`), and the recorded blocker is SOFTER than it reads.**
+Work order: `docs/prompts/qwen3next-t3-validation.md` (`b6335bf`).
+
+**1. The `shared-path (via qwen3_5_moe)` proxy does NOT apply — checked first, before any download,
+and it fails structurally rather than on judgment.** `docs/parity-coverage-policy.md` requires an
+alias family share the source's forward file(s) **and the same `deps_hash`**, and names the
+disqualifier outright: *"If an alias family ever gains its own forward file or a distinct
+`deps_hash`, it loses proxy status and needs its own T3."* `qwen3_next` trips both. The hashes are
+`sha256:0e752ed6…` vs `sha256:1b8ec4f7…`, and they can never agree: `deps_hash` is a content hash
+over the family's dep files (`decoder/parity_manifest_test.go:197`) and the two `own:` sets differ by
+six files. The difference is live, not a stale record — `TestParityManifest_fresh` passes with 27/27
+families enforced. Substantively it is right that it fails: `decoder/qwen3next.go` is where deltas
+1–3 above actually live, so a proxy row would assert that `qwen3_5_moe`'s oracle covered code
+`qwen3_5_moe` never executes.
+
+**2. "No full reference forward of a 163GB bf16 model fits 62GB" is true of a RESIDENT reference and
+only of that.** The constraint is co-residency, and co-residency is not required: pin the reference
+logits to disk in one process, then run goinfer against the pinned file in another. That is already
+how every tiny golden is made (policy: *"its golden logits pinned once offline via the HF
+reference"*) — the slice route generalised the *slice*, when what needed generalising was the
+*pinning*. With `accelerate` disk-offload the reference's resident footprint is roughly one layer,
+not the model, and a single prefill pass over the eval prompt streams the 163 GB from NVMe **once**
+rather than per token. Confirmed present on this box: `~/.venv-vl` has `Qwen3NextForCausalLM`
+(transformers 5.12.0), `accelerate` 1.14.0, torch 2.12.0+cpu, and 502 GB free on the NVMe.
+**So the target method is `full-forward-oracle`, not `weightDiff`** — and `weightDiff` was never
+available anyway, since it is GGUF-vs-safetensors and the GGUF loader is the other open item below.
+
+**STATUS: the full checkpoint is downloading** to `~/models` (NOT `/srv/models`), 41 shards /
+162.6 GB, resumable, detached; 6 shards were already present from the 2026-08-17 slice pull.
+**Feasibility of the offloaded reference is REASONED, not yet measured** — it is verified when a
+reference forward actually completes, and if it does not, that is the finding and the row stays
+`experimental` with the measured reason.
+
 **Remaining: T3 real-checkpoint parity, GGUF loader.** Qwen3-Coder-Next is the recommended agentic
 coding model for 64GB-class systems; closes a real gap in goinfer's strongest family. **80B total
 does not fit the M1 Pro 16 GB rig even at int4** — this is a WebGPU/CUDA-streaming showcase, tagged
