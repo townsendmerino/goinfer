@@ -72,9 +72,10 @@ retry opens a new prefill while the abandoned one keeps running.
 
 **The seam is already right and that is the trap.** `internal/serveapp/tools.go` passes
 `r.Context()` into `lm.drive`, so the cancellation looks wired at review. It does not reach the
-work: `generateInto` has the ctx but calls `m.prefillLogits(prompt[prefillFrom:], cache)`
-(`decoder/model.go:907`) without it, and `prefillLogits` / `forwardLayersN` /
-`runLayersFromEmbedN` take no context at all. The resident prefill loop in `generateInto`
+work: `generateInto` (`decoder/model.go`) had the ctx but called `m.prefillLogits(prompt[prefillFrom:],
+cache)` without it, and `prefillLogits` / `forwardLayersN` / `runLayersFromEmbedN` took no context at
+all. (Cited by function, not line — this entry's own fix shifted those line numbers and broke the
+citation lint.) The resident prefill loop in `generateInto`
 (`for i, id := range prompt`) does not check it either.
 
 **Change:** thread ctx through the prefill chain and check it per layer in the batched path, per
@@ -1249,7 +1250,7 @@ of them:
 |---|---|
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
-| `decoder/forwardn.go:643` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
+| `decoder/forwardn.go:657` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
 | `decoder/model.go:731` | unchanged — same freeze |
 | `metal/model.go:1048` | unchanged — Metal is on hold for core-numerics surfaces |
 
