@@ -61,6 +61,29 @@ func loadAvg() string {
 	return strings.TrimSpace(line[i+1:])
 }
 
+// competingRun reports whether another goinfer serve or decoder test binary is
+// running — the specific thing that corrupts a prefill timing, as opposed to
+// ambient desktop load. Best-effort: if the process list cannot be read, it
+// reports nothing found rather than blocking a measurement.
+func competingRun() (string, bool) {
+	out, err := exec.Command("ps", "-eo", "pid,comm").Output()
+	if err != nil {
+		return "", false
+	}
+	self := fmt.Sprint(os.Getpid())
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || f[0] == self {
+			continue
+		}
+		base := f[1][strings.LastIndex(f[1], "/")+1:]
+		if strings.HasPrefix(base, "goinfer") || strings.HasPrefix(base, "decoder.test") {
+			return line, true
+		}
+	}
+	return "", false
+}
+
 // firstLoad parses the 1-minute load average out of loadAvg()'s text.
 func firstLoad(s string) (float64, bool) {
 	f := strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == ',' })
@@ -85,13 +108,29 @@ func TestG15PrefillProfile(t *testing.T) {
 			t.Fatalf("GOINFER_G15_K=%q: %v", v, err)
 		}
 	}
-	// Pre-flight: a busy box is how the G15 artifact happened. Refuse rather than
-	// silently produce a number nobody can later argue with.
+	// Pre-flight. The hazard that produced the G15 artifact was OUR OWN competing
+	// work — an abandoned prefill still saturating a core — not a busy desktop.
+	// The first version of this check refused on absolute load > 1.5, which is
+	// wrong for the machine it runs on: a developer Mac idles above that with
+	// Spotlight and an editor open, so the check skipped every real measurement
+	// and its only effect would have been to train people to set ALLOW_BUSY=1.
+	//
+	// So: refuse on a COMPETING PROCESS OF OURS (the real hazard, and precisely
+	// reproducible), and always RECORD the load rather than gating on it. A number
+	// with its machine state attached can be argued with later, which is the
+	// property that was actually missing.
 	loadBefore := loadAvg()
-	if v, ok := firstLoad(loadBefore); ok && v > 1.5 && os.Getenv("GOINFER_G15_ALLOW_BUSY") == "" {
-		t.Skipf("box is not idle (load %.2f, want <=1.5): a prefill timing taken under load is not a "+
-			"measurement. Wait for it to settle, or set GOINFER_G15_ALLOW_BUSY=1 and record the load "+
-			"beside the number.", v)
+	// Ambient load does not invalidate the number, but it does belong ON it: a
+	// timing taken at load 5 deserves to be read with more suspicion than one
+	// taken at load 0, and the reader can only do that if it is written down.
+	if v, ok := firstLoad(loadBefore); ok && v > 2.0 {
+		t.Logf("NOTE: ambient load is %.2f — not our own work (that is refused below), but this "+
+			"timing is noisier than an idle one. Quote it with the load.", v)
+	}
+	if other, found := competingRun(); found && os.Getenv("GOINFER_G15_ALLOW_BUSY") == "" {
+		t.Skipf("another goinfer process is running (%s): a prefill timing taken beside our own "+
+			"competing work is how the withdrawn G15 cliff happened. Wait for it, or set "+
+			"GOINFER_G15_ALLOW_BUSY=1 and say so beside the number.", other)
 	}
 	m, err := loadBenchModel()
 	if err != nil {

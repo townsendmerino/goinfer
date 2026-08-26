@@ -133,16 +133,27 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// Batched per-head attention scratch (reused across layers; nKeys = startPos+K
 	// is the same for every layer in this sweep). See attendBatchedHeads.
 	maxKeys := startPos + K
-	// A1 move (a): one pool slot is enough here even though nH may be > 1 —
-	// the batched (M=K>1) forward already runs each layer's whole K-row batch
-	// through ONE aikit matmul dispatch per head (the point of batching), so
-	// there's no per-token fork-join pressure to relieve the way decode (K=1,
-	// 672 tiny per-head calls/token) has. Threading batched attention's heads
-	// too is explicitly out of scope (docs/prompts/attention-a1-bit-identical-
-	// restructure.md's "Not in scope: Prefill/verify (M=K) fast-pathing beyond
-	// what (b)/(c) give for free") — this stays serial by construction (pool
-	// len 1 always takes attendBatchedHeads's serial branch).
-	attnPool := newHeadWorkerPool(1, K, maxKeys, hd)
+	// G16: prefill attention runs its heads in PARALLEL, budget permitting.
+	//
+	// A1 deferred this ("no M>1-specific work here") and implemented the deferral
+	// literally, as one pool slot — which forced attendBatchedHeads's serial
+	// branch below. The deferral had a measured cost: CPU prefill sat at ~100% of
+	// one core on a 6-P-core box while the weight matmuls beside it fanned out,
+	// and since serial attention is O(K²) while those matmuls are O(K), attention
+	// took a growing share as prompts got longer.
+	//
+	// Nothing about the guarantee changes. A1's constraint permits exactly this —
+	// "Parallelism may only split independent outputs across workers/registers —
+	// heads, ..." — and attendBatchedHeads's own comment records that the nH query
+	// heads are fully independent (disjoint ctx writes, no shared mutable state).
+	// Each worker owns its own scratch slot. Bit-identity is gated by
+	// TestPrefillAttnPoolInvariance, not assumed.
+	//
+	// The pool is BUDGETED, not simply maxAttnWorkers: a slot's scores buffer is
+	// K*nKeys floats, quadratic in prompt length, so the worker count falls back
+	// toward serial on long prompts rather than the allocation growing without
+	// bound (prefillAttnWorkers).
+	attnPool := newHeadWorkerPool(prefillAttnWorkers(K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd)
 	// f32 scratch for the assembled local window (ring history + new rows) AND for
 	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
 	// Allocated when the model has ring layers or an int8 cache.

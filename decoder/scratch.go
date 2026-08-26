@@ -1,6 +1,11 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"os"
+	"strconv"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // decodeScratch holds the per-stream float buffers the single-token forward
 // reuses across decode steps, so steady-state decode allocates ~nothing per
@@ -138,6 +143,42 @@ type headWorkerScratch struct {
 // not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of
 // work — docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md).
 const maxAttnWorkers = 6
+
+// prefillAttnScratchBudget caps the TOTAL per-head scratch a single batched
+// (prefill) sweep may hold across its worker pool. It exists because the
+// dominant slot buffer, `scores`, is K*nKeys floats — QUADRATIC in prompt
+// length. At K=nKeys=3020 one slot is ~42 MB, so an unbudgeted fan-out to
+// maxAttnWorkers would hold ~255 MB there and ~1.5 GB at an 8k prompt. Trading
+// quadratic memory for a constant-factor speedup is not a trade this makes
+// silently, so the worker count falls back toward serial as the prompt grows
+// rather than the allocation growing without bound.
+const prefillAttnScratchBudget = 256 << 20 // 256 MiB
+
+// prefillAttnWorkers sizes the head-parallel pool for a K>1 (prefill) sweep:
+// the P-core cap, the head count, and the scratch budget above, whichever binds
+// first. Returns 1 (serial, the pre-G16 behavior) when even two slots would not
+// fit.
+//
+// GOINFER_PREFILL_ATTN_WORKERS overrides it — an A/B handle and an escape
+// hatch. 1 restores the exact pre-G16 serial path.
+func prefillAttnWorkers(K, nKeys, hd, nH int) int {
+	if v := os.Getenv("GOINFER_PREFILL_ATTN_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			return min(n, maxAttnWorkers)
+		}
+	}
+	if nH < 1 {
+		return 1
+	}
+	// Per slot, in bytes: scores (K*nKeys) + kh + vt (nKeys*hd each) + qh + ch
+	// (K*hd each), all float32. avAcc is hd float64 — noise beside these.
+	perSlot := 4 * (K*nKeys + 2*nKeys*hd + 2*K*hd)
+	if perSlot <= 0 {
+		return 1
+	}
+	n := prefillAttnScratchBudget / perSlot
+	return max(1, min(n, min(maxAttnWorkers, nH)))
+}
 
 // headWorkerPool returns n (capped at maxAttnWorkers) independent per-head
 // scratch sets sized for this call's K/nKeys/hd, growing each slot's backing

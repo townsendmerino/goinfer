@@ -133,8 +133,60 @@ actual lever — thread prefill attention's heads under A1's bit-identity constr
 explicitly permits splitting independent outputs across workers (*"Parallelism may only split
 independent outputs across workers/registers — heads, …"*), so the guarantee is not in the way.
 
-**Ceiling if it is real:** ~4-5x on CPU prefill, which would move the Tier-0 CPU recipe from
-impossible back to viable and is plausibly the best CPU-lane lever currently queued.
+**LEVER LANDED 2026-08-26.** Prefill attention's heads now run in parallel, bit-identical to the
+serial path (`TestPrefillAttnPoolInvariance`: exact float equality at K=64/512/1200, serial vs 6
+workers — not a tolerance, which would silently accept the reassociation A1 exists to prevent).
+The pool is BUDGETED because a slot's `scores` buffer is K*nKeys floats, quadratic in prompt length.
+
+**Measured, dense 1.5B `int8int8`, K=4096, M1 Pro:**
+
+| workers | elapsed | rate | vs serial |
+|---|---|---|---|
+| 1 (the pre-G16 path) | 596.9s | 6.9 tok/s | — |
+| 3 (what the 256 MiB budget grants at this K) | 250.2s | 16.4 tok/s | 2.39x |
+| 6 (forced past the budget) | **180.4s** | **22.7 tok/s** | **3.31x** |
+
+**Read the absolute numbers with suspicion and the 6-vs-3 comparison with confidence.** The serial
+arm ran at ambient load 4.06 on a swapping box, so 3.31x is likely flattering and must be
+re-measured on an idle machine before it is quoted anywhere. The 6-vs-3 gap is robust in the
+opposite direction: the 6-worker arm ran at the HIGHEST ambient load of the three (7.92, rising to
+10.43) and still won by 1.39x, so an idle box can only widen it.
+
+**Owed:** a clean re-measure of the headline number on an idle box, and the 1520/3020 arms (their
+first attempt was correctly refused by the instrument's own idle guard).
+
+**The budget's edge, stated because it is where the motivating case sits.** At 256 MiB the pool is
+6 workers through K=3020 and falls to **1** at K=8192 — one slot alone is 272 MB there. So this
+speeds up short and mid prompts and does nothing for the ~8k agent transcripts that motivated G16.
+That is the honest scope of what landed. See G20.
+
+## G20 · Tile prefill attention's `scores` over K so long prompts can parallelize — QUEUED, filed 2026-08-26
+
+**Substantiated by measurement, not assumed.** G16's lever is capped by memory, not by diminishing
+returns: at K=4096, going from 3 workers to 6 bought a further **1.39x** (250.2s → 180.4s) — and
+did so while handicapped by higher ambient load. The win has not saturated, so the memory budget is
+the binding constraint on it, which is exactly the condition that makes tiling worth building.
+
+**The problem:** `headWorkerScratch.scores` is `K*nKeys` floats — quadratic in prompt length. Per
+slot that is 40.7 MB at K=3020, **272 MB at K=8192**, 4.2 GB at 32k. So `prefillAttnWorkers` must
+collapse to one worker exactly where parallelism would pay most.
+
+**The change:** compute attention in tiles over the K (query) dimension so a slot's scratch is
+`tile*nKeys` rather than `K*nKeys`, making per-slot cost linear in nKeys and independent of prompt
+length. Then the worker count is bounded by cores, not by prompt size.
+
+**The constraint that governs it:** A1's bit-identity guarantee. Tiling the QUERY dimension splits
+independent outputs (each query row's attention is its own reduction over keys), which is what A1
+permits — *"Parallelism may only split independent outputs across workers/registers — heads, layers'
+KV groups, individual QK scores, individual AV dims"*. It must NOT tile the KEY dimension, which
+would re-associate the softmax denominator and the AV fold — the exact thing acc64 exists to
+prevent. `TestPrefillAttnPoolInvariance` extends to cover it: same prompt, tiled vs untiled,
+bit-identical.
+
+**Not urgent, and not a prerequisite for anything shipped.** G16's lever stands on its own for short
+and mid prompts.
+
+
 
 ## G17 · `prefill path: batched` advertises a speedup it does not deliver — FIXED 2026-08-25
 
@@ -1073,7 +1125,7 @@ makes 34 unreachable. A9 ran **before A5 landed**, so no override was needed. Re
 at the new cap would simply pass and look like confirmation, leaving no trace of the loss.
 
 **P1 · KV re-gather and V re-transpose on every decode token** — **LANDED `97f824a`, 2026-08-15**.
-Was `decoder/forwardn.go:592` (retargeted 2026-08-24 after later edits shifted the line).
+Was `decoder/forwardn.go:603` (retargeted 2026-08-24 after later edits shifted the line).
 
 Was estimated ~10–15% of per-token traffic at 4k+ context — the largest single item in the group.
 
@@ -1259,7 +1311,7 @@ argument is needed; the tree already contains one.
 
 **Concurrent decode streams DO exist**, and W8A8 has **no latent race**. `decodeScratch`'s own doc
 settles it: *"One lives on each KVCache — a cache is one generation stream, so the buffers are never
-shared concurrently."* The Workspace W8A8 reuses (`ws *linalg.Workspace`, `decoder/scratch.go:40`)
+shared concurrently."* The Workspace W8A8 reuses (`ws *linalg.Workspace`, `decoder/scratch.go:45`)
 lives inside that per-stream struct, so W8A8's "fix" was never a *shared* Workspace — it is a
 **per-stream** one, race-free by the same property that makes every other scratch buffer safe.
 
