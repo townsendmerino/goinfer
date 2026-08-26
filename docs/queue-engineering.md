@@ -1280,6 +1280,32 @@ marks where else the same class may live.
 
 ### C. Verification surfaces never exercised
 
+**G20 · `TestMoERouteDemandThreshold`'s WARM branch has been unreachable since 2026-08-21** —
+unclaimed. Found 2026-08-26 while re-deriving the pins for P16's re-anchor; recorded rather than
+fixed in the same change, because changing what a gate asserts and re-anchoring its constants in one
+commit makes neither reviewable.
+
+The discriminator is `warm := firstPass.freeBefore < pinnedDeviceFloor`. In the warm regime the
+demand IS the residual, so that condition can only hold when **the floor exceeds the residual**.
+That was true when the floor was 151,191,552 (> 138,412,032 residual) and has been false ever
+since — 54,263,808 from 2026-08-21, and 1,769,472 from the 2026-08-26 re-anchor. So:
+
+- the WARM branch is now dead code, and
+- a warm run does not skip the check, it takes the COLD branch and goes **red**, reporting a broken
+  demand identity when nothing is broken.
+
+It has never fired because the drain group always runs this test cold, in its own process. That is
+the shape this section exists for: not a check that cannot fail, but a check whose *other* branch
+cannot be reached, so the gate silently covers one regime while claiming two. It is also the same
+class as `TestMoERouteFirstLaunchReservation`'s unstated must-run-first precondition (A12 resolution,
+`e682eb2`) — a test whose correctness depends on process state that nothing asserts.
+
+**Do not "fix" it by widening the comparison until it passes.** The question is what a warm regime
+actually costs now that the floor is 1.7 MB, which is an empirical question needing a warm
+measurement — run the launch with another CUDA context already alive and see what `freeBefore`
+reads. If the warm and cold demands are no longer distinguishable at this floor, the honest fix may
+be to delete the regime split and say so, not to repair it.
+
 **D1 · Trace tap and the launch-site coverage table** — `linux`, before D2's migration
 
 For each of the 48 launch sites, two columns: which traces observed it, **and is it covered by any

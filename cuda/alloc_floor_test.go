@@ -77,16 +77,43 @@ func TestAllocFloor(t *testing.T) {
 	// Pinned to a WINDOW, not a byte: this is a machine property, and a byte-exact pin on a machine
 	// property is what made the demand pin brittle in the first place. Re-derive on a new box or a
 	// driver change — and when you do, re-check the demand identity, which is downstream of this.
+	//
+	// RE-DERIVED 2026-08-26 for the driver/distro re-anchor (P16): 54,263,808 -> 1,769,472. The box
+	// went Nobara 43 -> 44 overnight, carrying NVIDIA 595.58.03 -> 595.91.07, kernel 7.0.5 -> 7.2.0
+	// and glibc with it, so this is the "driver change" the paragraph above anticipated. Measured
+	// three times in three separate processes, byte-identical each time. The instruction that
+	// paragraph gives was followed rather than skipped: the demand identity was re-checked and it
+	// CLOSES TO THE BYTE against the new floor —
+	//
+	//	1,769,472 (floor) + 138,412,032 (residual) = 140,181,504 = the measured demand
+	//
+	// — with the residual independently re-measured and UNCHANGED (TestMoERouteFirstLaunchReservation
+	// PASSES at 138,412,032). So a component moved and the downstream pin follows it; the kernel did
+	// not move, and A1/A5/A7/A9 do not need re-deriving. Safety direction is the same one as
+	// 2026-08-21 and it is checked, not assumed: a SMALLER floor means less memory is reported free
+	// but unallocatable, so there is MORE headroom than the cap analysis assumed. The floor is now
+	// small enough that the window's lower edge falls below zero — the bottom is guarded by the
+	// `floor <= 0` fatal above, and "moved" can now only mean "grew".
 	const (
-		pinnedFloor = 54263808  // measured 2026-08-21, RTX 2070 SUPER, driver 595.58.03
-		floorWindow = 16 << 20  // generous: the quantity is a driver reserve, not a program's
-		previousPin = 151191552 // what it was until 2026-08-21, kept so a REVERSION is recognisable
+		pinnedFloor = 1769472 // measured 2026-08-26, RTX 2070 SUPER, driver 595.91.07 / Nobara 44
+		floorWindow = 4 << 20 // the quantity is a driver reserve, not a program's
 	)
+	// Kept so a REVERSION is recognisable rather than reading as a move somewhere new. Both prior
+	// values were measured on THIS box: the machine has now produced three different floors without
+	// the tree changing once.
+	previous := []struct {
+		val   int64
+		label string
+	}{
+		{54263808, "the 2026-08-21 value (54,263,808), i.e. the pre-re-anchor driver 595.58.03 behaviour"},
+		{151191552, "the pre-2026-08-21 value (151,191,552)"},
+	}
 	if floor < pinnedFloor-floorWindow || floor > pinnedFloor+floorWindow {
 		hint := ""
-		if floor > previousPin-floorWindow && floor < previousPin+floorWindow {
-			hint = " — this is the PREVIOUS pinned value (151,191,552), so the machine has gone back " +
-				"to its pre-2026-08-21 behaviour rather than moving somewhere new"
+		for _, p := range previous {
+			if floor > p.val-floorWindow && floor < p.val+floorWindow {
+				hint = " — this is " + p.label + ", so the machine has gone BACK rather than moving somewhere new"
+			}
 		}
 		t.Errorf("the device allocation floor moved: measured %d B, pinned %d±%d B%s. This is a "+
 			"MACHINE property (driver, display stack, device state), not a property of this repo, so "+

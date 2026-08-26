@@ -401,9 +401,31 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	// margin clears it by 332.2 MiB (slotMarginBytes 402,653,184 vs floor 54,263,808). A1/A5/A7/A9's
 	// conclusions are unaffected in the safe direction; the 33-slot cap stays safe and the 34-slot
 	// cap stays unsafe for the residual reason, which did not move.
+	// RE-DERIVED 2026-08-26 (P16, the driver/distro re-anchor): pinnedDeviceFloor 54,263,808 ->
+	// 1,769,472. This is the SECOND time this pin has moved for a reason outside the repo, and the
+	// second time the procedure the message below prescribes has been followed to the letter — with
+	// the same answer. Both components were re-measured independently before anything here was
+	// touched: the residual PASSES unchanged at 138,412,032, the floor is 1,769,472 (three separate
+	// processes, byte-identical), and
+	//
+	//	1,769,472 + 138,412,032 = 140,181,504 = the measured demand, to the byte.
+	//
+	// A COMPONENT moved; the kernel did not. Step (2) below — the branch that would require
+	// re-deriving A1/A5/A7/A9 — is NOT what happened, and must not be read as if it were. The cause
+	// is the 2026-08-25 Nobara 43 -> 44 upgrade (NVIDIA 595.58.03 -> 595.91.07, kernel 7.0.5 ->
+	// 7.2.0, glibc, CUDA 13.2). Safety direction unchanged and again in the safe sense: a smaller
+	// floor means MORE headroom, and the margin now clears the worst-regime demand by 250.3 MiB
+	// (slotMarginBytes 402,653,184 vs 140,181,504) where it cleared by 200.2 MiB before.
+	//
+	// KNOWN LATENT DEFECT, recorded here rather than fixed in the same change: the `warm`
+	// discriminator below reads `freeBefore < pinnedDeviceFloor`, which can only be true when the
+	// FLOOR EXCEEDS THE RESIDUAL. That held when the floor was 151,191,552 and has been false since
+	// 2026-08-21, so the WARM branch is now unreachable and a warm run would go red claiming a
+	// broken identity. The drain group always runs this cold, which is why it has never fired. See
+	// P16 in docs/queue-performance.md.
 	const (
 		pinnedResidual    = 138412032 // moe_route's steady-state reservation (TestMoERouteFirstLaunchReservation)
-		pinnedDeviceFloor = 54263808  // the reserve a fresh context pays (TestAllocFloor, which now PINS it)
+		pinnedDeviceFloor = 1769472   // the reserve a fresh context pays (TestAllocFloor, which PINS it)
 		// The bisection stops at a 2 MiB quantum and the launch's peak is a further ~1-3 MiB above
 		// its residual (the transient the log below names), so the identity is asserted to a window
 		// rather than to the byte. A byte-exact pin here is what made the old one brittle.

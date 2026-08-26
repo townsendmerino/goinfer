@@ -1,0 +1,284 @@
+
+[1m== provenance ==[0m
+  repo        8f45599
+  date (UTC)  2026-08-26T12:00:38Z
+  host        Linux x86_64
+  backend     cuda
+  models      /home/francis/models
+  gpu         NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB
+
+[1m== 0. clean GPU ==[0m
+  processes holding the GPU:
+    21283, 18 MiB, /usr/bin/kwin_wayland
+  [32mPASS[0m  no stray goinfer processes (616 MiB in use by others)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==[0m
+  [32mPASS[0m  cuda kernel-level suite
+      ok  	github.com/townsendmerino/goinfer/cuda	8.942s
+      skipped within it: 6 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestAttnBatchedBandwidth
+        · TestGemvBatchedBandwidth
+        · TestGemvRNBandwidth
+        · TestGemvStagedBandwidth
+        · TestRealWeightGemvParity
+        · TestResidentSpecServe
+
+[1m== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==[0m
+  [32mPASS[0m  resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)
+      ok  	github.com/townsendmerino/goinfer/cuda	52.681s
+
+[1m== 2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; ~28 min) ==[0m
+      partition (derived from drainsDevice() in cuda/drain_marker_test.go):
+        package total     183 test(s)   [go test -list '.*']
+        drain group        4 test(s)   TestA10FloorIsPerProcessOrPerDevice TestA10ReportingGap TestAllocFloor TestMoERouteDemandThreshold
+        main group         179 test(s)   [complement, by construction]
+      streaming (one line per test):
+        · SKIP: TestA13_LoadModuleOnResidentExecutor
+        · SKIP: TestA13_MultiModelUnloadPoisons
+        · SKIP: TestA13_PrefillChurnPoisons
+        · SKIP: TestA13_SingleFailedAllocPoisons
+        · SKIP: TestAllocFloor
+        · SKIP: TestA10ReportingGap
+        · SKIP: TestA10FloorIsPerProcessOrPerDevice
+        · SKIP: TestA10CtxHolder
+        · PASS: TestAllocGranularity
+        · PASS: TestSmallAllocPool
+        · PASS: TestArgmaxTieBreak
+        · PASS: TestAttnBatched_bitIdentical
+        · PASS: TestAttnBlockFull_nonCausal
+        · PASS: TestAttnBlockFull_cost
+        · PASS: TestAttnBatchedBandwidth
+        · PASS: TestAttention_TailPoison
+        · PASS: TestAttention_HeadDimWidths
+        · PASS: TestAttnSink_matchesReference
+        · PASS: TestB2DenseFlagship
+        · PASS: TestBackendResidentWired
+        · PASS: TestProdThroughput
+        · PASS: TestGreedyFastPathIdentical
+        · PASS: TestBatchedVsDecodeGap
+        · PASS: TestGenerateBlockSpec_production
+        · PASS: TestBlockSpecStream
+        · PASS: TestResidentCloseSettleTime
+        · PASS: TestDecodeAttn2048Probe
+        · PASS: TestDecodeDepthThroughput
+        · PASS: TestDecodeTokProjection
+        · PASS: TestDefaultVerifyWidth_sweep
+        · PASS: TestDeltaNetKernels_cpuParity
+        · PASS: TestDeltaNorm_zeroHead
+        · PASS: TestDFlashDispatchAmortization
+        · PASS: TestDFlashCaptureSeamCost
+        · PASS: TestDFlashRoundComposition
+        · PASS: TestDFlashCompositionResidual
+        · PASS: TestDFlashVerifyHeadCost
+        · PASS: TestPrefillLastNArgmax_matchesPerRow
+        · PASS: TestDFlashDraftCostProbe
+        · PASS: TestDFlashLoop_lossless
+        · PASS: TestDFlashLoop_gate3
+        · PASS: TestResidentDrafter_fuseParity
+        · PASS: TestResidentDrafter_extendContext
+        · PASS: TestResidentDrafter_blockParity
+        · PASS: TestBatchedCapture_matchesPerToken
+        · PASS: TestDrafterVsOff_perSuite
+        · PASS: TestE2EDecodeThroughput_synthetic
+        · PASS: TestE2EDecodeInt4Throughput_synthetic
+        · PASS: TestRunJob_recoversPanic
+        · PASS: TestRunJob_passesThroughNormalResults
+        · PASS: TestSlotBytesPerLayer_densePrefix
+        · PASS: TestSlotBytesPerLayer_outOfRange
+        · PASS: TestF32ToF16_C15
+        · PASS: TestLayerFusable_M23
+        · PASS: TestGemma4_26B_1bBound
+        · PASS: TestGemma4_26B_cache_B
+        · PASS: TestGemma4DenseScaled_residentParity
+        · SKIP: TestGemma4Graphs_bitExact_tiny
+        · SKIP: TestGemma4Graphs_bitExact_tinyCache
+        · SKIP: TestGemma4Graphs_bitExact_tinyCacheReuse
+        · SKIP: TestGemma4Graphs_sameModelUnderLoad
+        · PASS: TestGemma4Graphs_offVsOffControl
+        · SKIP: TestGemma4Graphs_bitExact_scaled
+        · PASS: TestGemma4MoE_cacheExpertsBitExact_tiny
+        · PASS: TestGemma4MoE_cacheReuse_tiny
+        · PASS: TestGemma4MoE_cacheExpertsBitExact_scaled
+        · PASS: TestGemma4MoE_cacheReuse_scaled
+        · PASS: TestGemma4MoE_localize
+        · PASS: TestGemma4MoE_residentParity
+        · PASS: TestGemma4MoEScaled_residentParity
+        · PASS: TestGemma4Router_residentIdxParity
+        · PASS: TestGemma4_perExpertScaleFold
+        · PASS: TestGemma4Expert_geluTanhChain
+        · PASS: TestGemma4_rmsnormNW_scaleVec
+        · PASS: TestGemma4DenseTwoGeom_residentParity
+        · PASS: TestGemmaBOSBuild
+        · PASS: TestGemmaOutlierTrace
+        · PASS: TestGemma3ResidentParity
+        · PASS: TestDenseResidentParity
+        · PASS: TestGemmaSublayerCUDA
+        · PASS: TestGemmaContextCUDA
+        · PASS: TestGemvBatchedBandwidth
+        · PASS: TestGemvW8A8Bandwidth
+        · PASS: TestGemvRN_bitIdentical
+        · PASS: TestGemvRNBandwidth
+        · PASS: TestGemvStaged_bitIdentical
+        · PASS: TestGemvStagedBandwidth
+        · PASS: TestGemvW4A8Batched_bitIdentical
+        · PASS: TestGemvW8A8Batched_bitIdentical
+        · PASS: TestGeometryPortIsLive
+        · PASS: TestGLMResidentParity
+        · PASS: TestGocudrvLayerA
+        · PASS: TestGptOssAct_matchesReference
+        · PASS: TestRouteGptOss_matchesReference
+        · PASS: TestCUDA_graphReplayBound
+        · SKIP: TestGemma4Graphs_locateDivergence
+        · PASS: TestCUDA_graphLiveNoSyncOrdering
+        · PASS: TestCUDA_graphSegAIsolated
+        · PASS: TestCUDA_graphSharedMemHazard
+        · PASS: TestGraphsSafeGate
+        · PASS: TestGraphsDecodeSpeedup
+        · PASS: TestResidentHiddenCapture
+        · PASS: TestKernelFMALint
+        · PASS: TestKernelFMALint_coversEmbeddedPTX
+        · PASS: TestKernelLocalMemoryCensus
+        · PASS: TestKVOnlyPrefill_byteIdentical_tiny
+        · PASS: TestCUDA_launchCost
+        · PASS: TestResidentCloseFreesVRAM_7B
+        · PASS: TestResidentCloseFreesVRAM
+        · PASS: TestMLALatentReuse_prototype
+        · PASS: TestMoEIndexedGemv
+        · PASS: TestPackWeightStack
+        · PASS: TestPackWeightStack_rejectsRagged
+        · PASS: TestMoEResidentParity
+        · SKIP: TestMoERouteDemandThresholdChild
+        · SKIP: TestMoERouteDemandThreshold
+        · SKIP: TestMoERouteFirstLaunchReservation
+        · PASS: TestMoERoute
+        · PASS: TestMoeSwigluWiring_C15
+        · PASS: TestOptFwd_bitIdenticalStream
+        · PASS: TestOptFwd_lowTempHighHitRate
+        · PASS: TestPipelineLint_boundKernelsAreLaunched
+        · PASS: TestPrefillCrossover
+        · PASS: TestPrefillDecomp
+        · PASS: TestPrefillDivergenceRate
+        · PASS: TestPrefillLast_e2e
+        · PASS: TestPrefillLast_gemma3
+        · PASS: TestPrefillLast_qwen3
+        · PASS: TestPrefillTTFT
+        · PASS: TestPrefillPath_int8Batched
+        · PASS: TestPrefillPath_nativeDeclinesNamed
+        · PASS: TestPrefillPath_int4Batched
+        · PASS: TestPrefillPath_matchesPrefillCore
+        · PASS: TestPrefillPath_mixedInt4Int8Batches
+        · PASS: TestQuantVec_scaleIsExactMaxabs
+        · PASS: TestGluQuant_scaleIsExactMaxabs
+        · PASS: TestQuantVecBatched_scaleIsExactMaxabs
+        · SKIP: TestQwen35ResidentParityCUDA
+        · SKIP: TestQwen35ResidentDecodeRateCUDA
+        · PASS: TestQwen36_35B_cache
+        · PASS: TestRealForwardParity
+        · PASS: TestRealWeightGemvParity
+        · PASS: TestCudaResidentCheckCap
+        · PASS: TestCudaResidentCheckCap_zeroValueRefuses
+        · PASS: TestResolveCtxCap
+        · PASS: TestKVBytesForCap
+        · PASS: TestCheckKVFits_explicitFailsHard_defaultDeclines
+        · PASS: TestResidentSpecServe
+        · SKIP: TestResidentLaunchVRAMProbe
+        · SKIP: TestResidentSlotConsumption
+        · PASS: TestRmsnormBatched_bitIdentical
+        · PASS: TestRopePartial
+        · PASS: TestGemvShapeSweep
+        · PASS: TestGemvShapeSweep_coversTheOOBGeometry
+        · PASS: TestSlotAllocation_matchesGranularityForm
+        · PASS: TestSlotCapArithmetic
+        · PASS: TestSlotCapArithmetic_search
+        · PASS: TestSlotCapArithmetic_mutation
+        · PASS: TestApplySoftcap_bitIdentical
+        · PASS: TestApplySoftcap_disabled
+        · PASS: TestApplySoftcap_mutation
+        · PASS: TestSpecDecodeCurve
+        · PASS: TestSpecVerifyCeiling
+        · PASS: TestSpecDecode
+        · PASS: TestSplitKV_bitIdentical
+        · PASS: TestSplitKV_bitIdentical_gemma3
+        · PASS: TestSplitKVCrossover
+        · PASS: TestSplitKVGate_measuredGeometries
+        · PASS: TestSplitKVGate_neverClassIsUnreachable
+        · PASS: TestSplitKVGate_conservativeDefault
+        · PASS: TestRecordUpload_capturesFirstError
+        · PASS: TestQKNorm_widths
+        · PASS: TestVNorm_scaleless
+        · PASS: TestGemvW4A8Fast
+        · PASS: TestGemvW4A8Coal
+        · PASS: TestGemvW4A8V4
+        · PASS: TestGemvW4A8Coal2
+        · PASS: TestGemvW4A8Coal3
+        · PASS: TestGemvW4A8Coal4
+        · PASS: TestGemvW4A8
+        · PASS: TestSlidingWindowLongContext
+        · PASS: TestSlidingWindowAttention
+        · SKIP: TestZZ_A12ContextBaseline
+      drain group, separate process:
+        · FAIL: TestAllocFloor
+        · PASS: TestA10ReportingGap
+        · PASS: TestA10FloorIsPerProcessOrPerDevice
+        · FAIL: TestMoERouteDemandThreshold
+      reconciliation: marked=4  skipped-in-main=4  ran-in-drain=4
+  [31mFAIL[0m  drain group (4 test(s), separate process)
+      --- FAIL: TestAllocFloor (0.23s)
+      --- FAIL: TestMoERouteDemandThreshold (4.32s)
+      full output: /tmp/gate_gpu_cuda-drain.json
+  [32mPASS[0m  heavy tier (real models) — 2758s
+      ok  	github.com/townsendmerino/goinfer/cuda	2751.992s
+      ran 249 tests, skipped 22
+        · TestA13_LoadModuleOnResidentExecutor
+        · TestA13_MultiModelUnloadPoisons
+        · TestA13_PrefillChurnPoisons
+        · TestA13_SingleFailedAllocPoisons
+        · TestAllocFloor
+        · TestA10ReportingGap
+        · TestA10FloorIsPerProcessOrPerDevice
+        · TestA10CtxHolder
+        · TestGemma4Graphs_bitExact_tiny
+        · TestGemma4Graphs_bitExact_tinyCache
+        · TestGemma4Graphs_bitExact_tinyCacheReuse
+        · TestGemma4Graphs_sameModelUnderLoad
+        · TestGemma4Graphs_bitExact_scaled
+        · TestGemma4Graphs_locateDivergence
+        · TestMoERouteDemandThresholdChild
+        · TestMoERouteDemandThreshold
+        · TestMoERouteFirstLaunchReservation
+        · TestQwen35ResidentParityCUDA
+        · TestQwen35ResidentDecodeRateCUDA
+        · TestResidentLaunchVRAMProbe
+        · TestResidentSlotConsumption
+        · TestZZ_A12ContextBaseline
+
+[1m== 2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1) ==[0m
+  [32mPASS[0m  graphs replay == live launches, FORCED capture (7 tests, 0 skipped)
+
+[1m== 3. cgo-free (the whole premise — verify, never assume) ==[0m
+  [32mPASS[0m  serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)
+
+[1m== 4. PTX reproduces from source, each at the NVRTC it records ==[0m
+  toolchains available: 12.6.85 12.9.86
+  [32mPASS[0m  24/24 PTX regenerate byte-identically at their recorded NVRTC
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  [33mSKIP[0m  8 darwin-only CI hygiene step(s) — wrong platform for this host
+  [32mPASS[0m  15 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+[1m== verdict ==[0m
+  check groups: 9 declared -> 9 reported   |   verdicts within them: 10 pass, 1 skip, 1 fail
+  of which: kernel-level suite = reported   |   resident PARITY gates (forward asserted) = reported
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - heavy tier skipped 22 test(s) — see the 2c census for which
+    - graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).
+    - SKIPPED: 8 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  [31mFAIL[0m — cuda on Linux @ 8f45599. Do not tag.
+exit status 1

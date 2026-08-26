@@ -279,6 +279,34 @@ boot on it.**
 loader moved with it, so CPU-side dispatch and scheduling are in scope, not only the GPU rows. The
 re-anchor decision does not change — the list of what must be re-measured does.
 
+**STAGE 1 (parity) RESULT, 2026-08-26 — the JIT is CLEAN; two allocation pins moved.** The gate ran
+48 min and came back **RED on exactly two tests**, both allocation-accounting pins, and **green on
+everything that asserts a forward**: the heavy tier (real models, 249 tests, 2758s) PASSED, CUDA
+graphs replay is bit-exact under forced capture, and **24/24 PTX regenerate byte-identically** at
+their recorded NVRTC. So the driver's new compiler did not move the numerics — which is the question
+that had to be answered before any tok/s, and it is answered.
+
+The two reds were `TestAllocFloor` and `TestMoERouteDemandThreshold`, and they are **one finding**:
+
+| component | pinned | re-measured 2026-08-26 | |
+|---|---|---|---|
+| device floor (`TestAllocFloor`) | 54,263,808 | **1,769,472** | MOVED (3 processes, byte-identical) |
+| moe_route residual (`TestMoERouteFirstLaunchReservation`) | 138,412,032 | **138,412,032** | unchanged, PASSES |
+| demand (balloon bisection) | — | **140,181,504** | = floor + residual, **to the byte** |
+
+`1,769,472 + 138,412,032 = 140,181,504`. The identity CLOSES, so per A11's own recorded instruction
+a **component** moved and the demand pin is downstream of it — update the component, not the number.
+This is explicitly **not** the branch that would require re-deriving A1/A5/A7/A9. Both pins
+re-derived and now green; the safety direction is the same as 2026-08-21 and in the safe sense — a
+smaller floor means MORE headroom, and the margin clears the worst-regime demand by 250.3 MiB where
+it cleared by 200.2 MiB before.
+
+Worth noting as a result in its own right: the new driver hands back ~52.5 MB of VRAM that the old
+one reported free and would not allocate. On an 8 GB card carrying a 26B, that is not noise.
+
+Found while re-deriving and filed separately as **G20**: the demand gate's WARM branch has been
+unreachable since 2026-08-21.
+
 **Do the parity half FIRST, before any tok/s.** The `cuda/` backend is **driver-JIT**: the driver
 compiles the frozen PTX at load, so this upgrade changed the *compiler*, not just the runtime. A
 throughput re-measure on a stack whose bit-identity has not been re-established measures the wrong
