@@ -364,7 +364,15 @@ kernels, which f32 slices would have had to become anyway.
 
 ## In flight
 
-**G23 · Attention A3 — an f32 attention path IS worth its divergence flag** — `mac`, **DONE 2026-08-26.**
+**G24 · Attention A3 — an f32 attention path IS worth its divergence flag** — `mac`, **DONE 2026-08-26.**
+
+> **Renumbered from G23 on 2026-08-26.** Two entries briefly held G23: this one, claimed at
+> `53e1c6d`, and `queue-engineering.md`'s T3-cosine-bar item, written concurrently on the other
+> box. IDs are meant to be globally addressable — "see G23" must resolve to one place — so this
+> one moved. It moved rather than the other because the other is cited from a PUSHED commit body
+> (`dc35a31`), which can never be corrected, while every reference to this one was in files that
+> could be updated in a single pass. Commits before this point cite it as G23; the artifacts are
+> `decoder/g24_attnkernel_test.go` and `docs/measurements/attention-a3-kernel-ratio-2026-08-26.md`.
 
 **Answer: 2.28× end-to-end at K=8192** (602.9s → 264.6s), from an 8.14× kernel ratio; divergence
 cosine 0.9976, stable across depth. Shipped as `--cpu-fast-attention`, off by default, MoE refused,

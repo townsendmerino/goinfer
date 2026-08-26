@@ -2,10 +2,10 @@
 
 **Answer: yes.** The acc64 attention kernels are **8.14× slower than f32** at long-context prefill
 shapes, which is ~2.2× worse than the "~3.7×" the code comments assume. At the 70% attention share
-measured in the K=8192 profile, that is **~2.59× end-to-end prefill**. Queue entry **G23**.
+measured in the K=8192 profile, that is **~2.59× end-to-end prefill**. Queue entry **G24**.
 
 **Box:** M1 Pro, dense qwen2.5-coder-1.5b shapes, goinfer `53e1c6d`. Instrument:
-`decoder/g23_attnkernel_test.go` (`GOINFER_G23=1`), best-of-5.
+`decoder/g23_attnkernel_test.go` (`GOINFER_G24=1`), best-of-5.
 
 ## The number
 
@@ -52,7 +52,7 @@ worker pool). Reported so the two effects are not silently conflated into a head
 
 ## What this does and does not license
 
-It clears the bar fixed **before** the measurement was taken (G23: "near 3.7× the flag's surface is
+It clears the bar fixed **before** the measurement was taken (G24: "near 3.7× the flag's surface is
 earned, near 1.3× it is not"). It does **not** license shipping f32 attention as a default: A1's
 guarantees — spec-decode verify == sequential greedy, and decode == prefill — hold only for acc64,
 which is why A3 is an off-by-default, documented divergence in the `--metal-fast-prefill` mould.

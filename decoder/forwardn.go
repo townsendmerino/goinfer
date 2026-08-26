@@ -11,7 +11,7 @@ import (
 )
 
 // cpuFastAttention reports whether the operator opted into A3's f32 prefill
-// attention (G23). Read here only; every consumer receives it as an explicit
+// attention (G24). Read here only; every consumer receives it as an explicit
 // argument so no path can pick it up by accident — see runLayersFromEmbedN.
 //
 // Enabling it gives up two of acc64's three guarantees for this model:
@@ -145,7 +145,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// Batched per-head attention scratch (reused across layers; nKeys = startPos+K
 	// is the same for every layer in this sweep). See attendBatchedHeads.
 	maxKeys := startPos + K
-	// A3 (G23): OPT-IN f32 attention for prefill. Off unless asked for, and
+	// A3 (G24): OPT-IN f32 attention for prefill. Off unless asked for, and
 	// never for MoE.
 	//
 	// The acc64 path is 8.14x slower than f32 at long-context shapes (measured,

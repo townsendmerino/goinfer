@@ -13,7 +13,7 @@ import (
 
 func sqrt(f float64) float64 { return math.Sqrt(f) }
 
-// G23 — how much would an f32 attention path actually recover?
+// G24 — how much would an f32 attention path actually recover?
 //
 // At K=8192 prefill, acc64 attention is ~70% of the time (MatmulAVAcc64 51.1% +
 // MatmulQKAcc64 18.7%). The acc64 comment calls f64 "~3.7× slower than f32", and
@@ -29,9 +29,9 @@ func sqrt(f float64) float64 { return math.Sqrt(f) }
 //     Both arms here are single-threaded, which is the like-for-like comparison.
 //
 // Shapes are the ones G20's tiling actually calls at an 8k prompt.
-func TestG23AttnKernelRatio(t *testing.T) {
-	if os.Getenv("GOINFER_G23") == "" {
-		t.Skip("set GOINFER_G23=1 to run the A3 kernel comparison")
+func TestG24AttnKernelRatio(t *testing.T) {
+	if os.Getenv("GOINFER_G24") == "" {
+		t.Skip("set GOINFER_G24=1 to run the A3 kernel comparison")
 	}
 	const (
 		kt    = 256  // query rows per tile (attnRowTile at K=8192)
@@ -82,7 +82,7 @@ func TestG23AttnKernelRatio(t *testing.T) {
 	linalg.SetParallelThreshold(1 << 62)
 	defer linalg.SetParallelThreshold(origThreshold)
 
-	fmt.Fprintf(os.Stderr, "G23 attention kernels at kt=%d hd=%d nKeys=%d (best of %d), MatmulBT forced SERIAL\n", kt, hd, nKeys, reps)
+	fmt.Fprintf(os.Stderr, "G24 attention kernels at kt=%d hd=%d nKeys=%d (best of %d), MatmulBT forced SERIAL\n", kt, hd, nKeys, reps)
 
 	// CORRECTNESS FIRST. A ratio between two kernels that compute different things
 	// is worthless, and the first version of this benchmark already produced one

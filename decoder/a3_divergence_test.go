@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// A3 (G23) ships a DOCUMENTED DIVERGENCE, so the divergence must be a measured
+// A3 (G24) ships a DOCUMENTED DIVERGENCE, so the divergence must be a measured
 // number, not an adjective. This reports what a user gives up by enabling
 // GOINFER_CPU_FAST_ATTENTION, at the prompt depths the flag is for.
 //
