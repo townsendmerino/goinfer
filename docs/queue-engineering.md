@@ -1386,6 +1386,33 @@ marks where else the same class may live.
 
 ### C. Verification surfaces never exercised
 
+**G23 · The T3 cosine bar is calibrated for int8 and there is now an int4 T3 under it** —
+unclaimed. Filed 2026-08-26 from `qwen3_next`'s first real-checkpoint run.
+
+`decoder/real_oracle_test.go` gates every `real-model-oracle` family on one hardcoded threshold,
+and the comment beside it names its population: `if cos < 0.99 { // int8 W8A8 vs bf16 — same bar as
+the deepseek real gates }`. Every family under it so far has been int8.
+
+`qwen3_next` cannot be. 80B at int8 is ~80 GB against 62 GB of RAM, so its precision is **forced by
+capacity**; it ran int4 weights / f32 activations and measured **0.989876** — 0.000124 under a bar
+set for a strictly gentler quantization, with **argmax and all six continuation tokens exact**. The
+evidence that this is quant noise and not a defect is in
+`docs/measurements/qwen3next-t3-int4-2026-08-26.md`: the same checkpoint through the same loader at
+**f32** scores cosine **1.00000000**.
+
+**The question is what the int4 bar should be, and it must not be answered by this family alone.**
+One data point, from the family that benefits from a looser answer, is how a threshold gets set to
+wherever the number landed. Candidates for a second: `nemotron3nano` (already characterised at two
+precisions, 0.978 int8int8 vs 0.9977 int8) and any family that fits int4 *and* int8 so both can be
+measured on the same weights — that comparison is what actually calibrates the offset, rather than
+inferring it.
+
+**A second defect this exposed, and it belongs with the first.** `emitParityRow` is a no-op when the
+gate fails, so a run that misses the bar records **nothing** — right for a failing gate, wrong for a
+*calibration* miss, where the measured number is exactly what the next decision needs. As it stands
+the only trace of a 0.989876 is a log file somebody has to know to look for. Whoever sets the bar
+should decide whether a below-bar run should record a row marked as such.
+
 **G21 · The bench-disk rule is enforced in the two shell/python harnesses and NOT in `cmd/gate`** —
 unclaimed. Filed 2026-08-26 when the rule was consolidated.
 

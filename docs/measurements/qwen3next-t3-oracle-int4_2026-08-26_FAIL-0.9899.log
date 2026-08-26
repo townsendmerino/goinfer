@@ -1,0 +1,8 @@
+=== RUN   TestQwen3NextReal_oracle
+    qwen3next_oracle_test.go:43: qwen3_next parity: argmax got=12095 want=12095 | logit cosine=0.989876
+    qwen3next_oracle_test.go:43: last-logit cosine 0.989876 < 0.99
+    qwen3next_oracle_test.go:43: qwen3_next continuation got=[12095 13 576 6722 315 9856] want=[12095 13 576 6722 315 9856]
+--- FAIL: TestQwen3NextReal_oracle (841.53s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	846.992s
+FAIL

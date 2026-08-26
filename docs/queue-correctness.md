@@ -285,7 +285,37 @@ deliverable. A cliff, or a curve that cannot recover, = a loader or forward defe
 file** — the work order puts a fix and its own validation outside this task, and E2's precedent is
 that four "demotion judgments" were really two loader bugs. Floor the **mean**, not min-over-N.
 
-**STATUS: the full checkpoint is downloading** to `~/models` (NOT `/srv/models`), 41 shards /
+**RESULT 2026-08-26 — the method works; the number misses a bar it was never calibrated against.**
+Full write-up: `docs/measurements/qwen3next-t3-int4-2026-08-26.md`.
+
+    argmax        got=12095 want=12095            EXACT
+    continuation  [12095 13 576 6722 315 9856]    EXACT, all 6 tokens ("  Paris. The capital of Germany")
+    logit cosine  0.989876  against the gate's 0.99   FAIL by 0.000124
+
+**The co-residency blocker is retired, and not only for this family.** A full bf16 reference forward
+of the 163 GB model completed on this 62 GB box in **26 minutes** (11 layers CPU / 41 disk, 1179 s
+to load and place, 70 s for the prompt forward). Any family whose reference will not co-reside can
+now have a real T3 instead of a slice.
+
+**The gap is quantization, established by evidence rather than argued.** The family's slice oracle
+loads the SAME real checkpoint at **f32** and gets **cosine 1.00000000** — same loader, same tensor
+layout, same fused `in_proj_qkvz` split — so the loader and forward are exact on these weights. The
+full run differs by depth (48 vs 4 layers) and int4, and every discrete check stayed exact. A defect
+does not survive six argmax decisions intact.
+
+**Row stays `experimental`, and the reason is a bar-calibration question, not a numerics one.** The
+threshold is `if cos < 0.99 { // int8 W8A8 vs bf16 }` — an **int8** bar, and this is the repo's first
+**int4** T3, forced by capacity (80B at int8 ≈ 80 GB against 62 GB RAM). The pre-registered rule
+above said ≥0.98; the gate says 0.99; **quoting the looser one after seeing the number is what
+pre-registration exists to prevent**, so the stricter committed standard governs. Filed as **G23**.
+
+**The manifest was not hand-edited.** `emitParityRow` no-ops on failure, so `EMIT_MANIFEST` will not
+write this run, and the work order's rule is rows-by-measurement-never-by-hand. The row still reads
+`tiny-golden`, which is conservative and true. `decoder/qwen3next_oracle_test.go` is likewise still
+absent from `own:`: adding it moves `deps_hash`, and refreshing that hash while the row carries the
+old metrics would re-bless an unmeasured row. Both move together, once the bar exists.
+
+**STATUS: the full checkpoint downloaded** to `~/models` (NOT `/srv/models`), 41 shards /
 162.6 GB, resumable, detached; 6 shards were already present from the 2026-08-17 slice pull.
 **Feasibility of the offloaded reference is REASONED, not yet measured** — it is verified when a
 reference forward actually completes, and if it does not, that is the finding and the row stays

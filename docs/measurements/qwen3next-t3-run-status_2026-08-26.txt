@@ -1,0 +1,27 @@
+=== machine state at T3 task start ===
+2026-08-26T22:03:30Z
+loadavg: 0.04 0.08 0.05 1/767 4930
+mem: 62 GB total, 58 GB available
+595.91.07, 46, 361 MiB
+gpu compute apps: 1 (1 = compositor)
+repo: b6335bf
+2026-08-26T22:03:30Z  PULL start -> /home/francis/models/qwen3next-80b-partial (41 shards, 162.6 GB total; 6 present)
+2026-08-26T22:03:30Z    disk free before: 502G
+2026-08-26T22:17:30Z  T3 run 20260826T221730Z (pid 9155) at 3b7facd
+2026-08-26T22:20:59Z  PULL exit 0
+2026-08-26T22:20:59Z    shards now: 41/41  size: 152G
+2026-08-26T22:20:59Z    disk free after: 403G
+2026-08-26T22:20:59Z  COMPLETE — all 41 shards present
+2026-08-26T22:21:30Z  checkpoint COMPLETE: 41/41 shards, 152G
+2026-08-26T22:21:30Z    machine: loadavg 0.39 0.88 0.71 · mem avail 58GB · free disk 400G
+2026-08-26T22:21:30Z  STAGE 2 pin bf16 reference -> /home/francis/qwen3next-t3/pin_reference_20260826T221730Z.log
+2026-08-26T22:48:09Z  STAGE 2 exit 0 after 26m
+2026-08-26T22:48:09Z    argmax=12095 cont=[12095, 13, 576, 6722, 315, 9856] -> ' Paris. The capital of Germany'
+2026-08-26T22:48:09Z  STAGE 3 goinfer int4 oracle -> /home/francis/qwen3next-t3/oracle_20260826T221730Z.log
+2026-08-26T23:02:19Z  STAGE 3 exit 1 after 14m
+    qwen3next_oracle_test.go:43: qwen3_next parity: argmax got=12095 want=12095 | logit cosine=0.989876
+    qwen3next_oracle_test.go:43: last-logit cosine 0.989876 < 0.99
+    qwen3next_oracle_test.go:43: qwen3_next continuation got=[12095 13 576 6722 315 9856] want=[12095 13 576 6722 315 9856]
+--- FAIL: TestQwen3NextReal_oracle (841.53s)
+2026-08-26T23:02:19Z  DONE. A SKIP IS NOT A PASS — check the line above says PASS or FAIL, not ok.
+2026-08-26T23:02:20Z        Do NOT write the manifest row until the number is checked against G5's pre-registered rule.

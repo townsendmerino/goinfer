@@ -1,0 +1,14 @@
+prompt_ids = [785, 6722, 315, 9625, 374]
+[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d
+
+Some parameters are on the meta device because they were offloaded to the cpu and disk.
+loaded in 1179s
+placement: {'cpu': 11, 'disk': 41}
+prompt forward 70s
+  step 1/6 -> 12095 (6s)
+  step 2/6 -> 13 (12s)
+  step 3/6 -> 576 (73s)
+  step 4/6 -> 6722 (81s)
+  step 5/6 -> 315 (83s)
+  step 6/6 -> 9856 (88s)
+argmax=12095 cont=[12095, 13, 576, 6722, 315, 9856] -> ' Paris. The capital of Germany'
