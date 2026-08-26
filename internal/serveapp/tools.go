@@ -80,11 +80,44 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		}
 	}
 	var sb strings.Builder
+
+	// G21: stream prose INCREMENTALLY where the family allows it, instead of
+	// holding the whole generation. Only families whose ParseToolCalls computes
+	// lead as a raw untrimmed prefix qualify (Template.ToolCallOpener); the rest
+	// keep the G19 behavior exactly — buffered, with heartbeats.
+	//
+	// The invariant: every byte emitted here must be a prefix of the lead the
+	// parser computes below. StreamableLen guarantees it by holding back any
+	// suffix that could still grow into the opener, and `toolStarted` stops the
+	// stream for good once the opener appears — everything after it belongs to a
+	// call, not to prose.
+	opener, incremental := "", false
+	if f != nil && lm.tmpl != nil {
+		opener, incremental = lm.tmpl.ToolCallOpener()
+	}
+	var streamed strings.Builder // exactly what left as content deltas
+	var prose *chat.ProseStreamer
+	if incremental {
+		prose = chat.NewProseStreamer(opener)
+	}
+
 	var stopBeat func()
 	if f != nil {
+		// Heartbeats still run: on an incremental family they cover the silence
+		// before the first token and inside a tool call, and on the others they
+		// cover the whole generation as before.
 		stopBeat = sseHeartbeat(w, f)
 	}
-	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+		sb.WriteString(t)
+		if prose == nil {
+			return
+		}
+		if out := prose.Push(t); out != "" {
+			streamed.WriteString(out)
+			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: out}, nil))
+		}
+	})
 	if stopBeat != nil {
 		stopBeat() // joins the ticker goroutine before anything else writes to w
 	}
@@ -114,13 +147,37 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}
 
 	if req.Stream {
-		// One delta carrying the whole message, then the finish — valid SSE, just
-		// not incremental (tool calls are decided from the full output).
+		// Whatever prose already left as deltas (G21) must not be sent twice, and
+		// the parser's view is authoritative: emit only the REMAINDER of it here.
+		// On a non-incremental family `already` is empty and this is exactly the
+		// G19 behavior — one delta carrying the whole message.
+		already := streamed.String()
+		full := ""
+		if c, ok := msg["content"].(string); ok {
+			full = c
+		} else if lead != "" {
+			full = lead // tool-call case: content is nil, the prose is the lead
+		}
+		if !strings.HasPrefix(full, already) {
+			// Unreachable by construction — StreamableLen only releases bytes that
+			// precede the opener, and lead is the raw prefix before it. If it ever
+			// fires, bytes were sent that the parser does not agree are prose, and
+			// they cannot be recalled: say so loudly rather than emit a stream that
+			// silently disagrees with itself.
+			sseErr(w, f, "internal: streamed prose diverged from the parsed lead; the tool-call "+
+				"stream for this family is not prefix-safe (G21)")
+			sseDone(w, f)
+			return
+		}
 		d := map[string]any{"role": "assistant"}
 		if _, ok := msg["tool_calls"]; ok {
 			d["tool_calls"] = streamToolCalls(calls)
+			if rest := full[len(already):]; rest != "" {
+				// Prose that preceded the call and was still held back.
+				sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: rest}, nil))
+			}
 		} else {
-			d["content"] = msg["content"]
+			d["content"] = full[len(already):]
 		}
 		sseSend(w, f, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})

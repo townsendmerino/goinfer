@@ -157,3 +157,71 @@ func TestNonStreamingToolPathKeepsStatusCodes(t *testing.T) {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
 }
+
+// G21 end-to-end. What this asserts is bounded by the model available: the 1.5B
+// used here emits a tool call for EVERY prompt tried (prose, arithmetic, "say one
+// word") and never any prose, so "prose arrives before the generation ends"
+// cannot be observed through it. That property is gated where it can be proven
+// exhaustively instead — chat.TestProseStreamerMatchesParser drives every
+// streamable family's real parser one byte at a time.
+//
+// What IS observable here is the failure mode that actually matters: with the
+// incremental path live, no part of a tool call may leak out as a content delta.
+// A leaked delta cannot be unsent, so this is the corruption case, and a model
+// that always calls a tool is an ideal probe for it.
+func TestToolStreamNeverLeaksCallAsProse(t *testing.T) {
+	ts := newToolsTestServer(t)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(toolsStreamBody))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var contentDeltas, toolDeltas int
+	var assembled strings.Builder
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 0, 1<<20), 1<<20)
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		if payload == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   string `json:"content"`
+					ToolCalls []any  `json:"tool_calls"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal([]byte(payload), &chunk) != nil || len(chunk.Choices) == 0 {
+			continue
+		}
+		d := chunk.Choices[0].Delta
+		if d.Content != "" {
+			contentDeltas++
+			assembled.WriteString(d.Content)
+		}
+		if len(d.ToolCalls) > 0 {
+			toolDeltas++
+		}
+	}
+
+	if toolDeltas != 1 {
+		t.Errorf("tool_calls deltas = %d, want exactly 1", toolDeltas)
+	}
+	// The model emits only a call, so the lead is empty: any content delta here is
+	// tool-call syntax that escaped as prose.
+	if got := assembled.String(); strings.TrimSpace(got) != "" {
+		t.Errorf("content leaked from a call-only generation: %q — the streamer released bytes the "+
+			"parser does not consider prose, and a delta cannot be unsent", got)
+	}
+	t.Logf("call-only generation: content deltas=%d (assembled %q), tool_calls deltas=%d",
+		contentDeltas, assembled.String(), toolDeltas)
+}

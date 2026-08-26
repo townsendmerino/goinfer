@@ -17,8 +17,8 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
-**G21 · Incremental tool-call-aware streaming (Finding 1, stage 2)** — `mac`, **CLAIMED 2026-08-26,
-IN FLIGHT.** The real fix behind G19's heartbeats.
+**G21 · Incremental tool-call-aware streaming (Finding 1, stage 2)** — `mac`, **DONE 2026-08-26.**
+The real fix behind G19's heartbeats.
 
 G19 stopped the tool path from being *silent* (comment frames while it buffers). It did not make it
 *incremental*: the whole generation is still buffered, so a client sees no prose until the model
@@ -47,10 +47,41 @@ family's opener literal; emit everything before it. On seeing the opener, stop e
 to buffering for the rest of the generation. `ParseToolCalls` still runs over the FULL buffer at the
 end, unchanged — this changes only *when* prose leaves, never how calls are parsed.
 
-**Gates:** the prefix property asserted directly (what was streamed must be a prefix of the parsed
-`lead`), including openers split across chunk boundaries one byte at a time; a tool call still
-parses identically; the non-streamable families still buffer; and no content delta may precede a
-tool call whose opener has been seen.
+**THE SURVEY WAS WRONG IN ONE PLACE, AND THE CONTRACT TEST CAUGHT IT BEFORE ANY BYTE SHIPPED.**
+The table above says `chatml`/`gemma4` compute `lead` as a raw untrimmed prefix. They do not — both
+return `strings.TrimSpace(lead)`. A streamer built on the raw-prefix assumption would have emitted
+leading and trailing whitespace the parser discards, breaking the byte-exact prefix property in the
+one direction that cannot be repaired. `TestToolCallOpenerMatchesParser` asserted the contract
+against the real parsers rather than trusting the switch statement, and failed on the first run.
+
+The design absorbed it: `chat.ProseStreamer` normalizes exactly as the parsers do — never emits
+leading whitespace, holds a trailing whitespace run until a non-space follows, drops it if the
+opener arrives instead, and holds any partial opener at the tail (`StreamableLen`).
+
+**Landed:** `Template.ToolCallOpener` (the per-family contract), `chat.StreamableLen` (hold-back),
+`chat.ProseStreamer` (the normalizing streamer), and the chat tool path emitting prose deltas as
+they generate, with the final send emitting only the REMAINDER of the lead. `ParseToolCalls` still
+runs over the full buffer, unchanged — this changes *when* prose leaves, never how calls are parsed.
+
+**Gates:**
+
+| gate | where |
+|---|---|
+| streamed bytes are a prefix of the parsed `lead`, byte-at-a-time, every streamable family, incl. whitespace shapes | `chat.TestProseStreamerMatchesParser` |
+| hold-back releases exactly the prose before the opener under bytewise chunking | `chat.TestStreamableLen_bytewiseNeverOverruns` |
+| partial openers held; opener at 0; empty opener | `chat.TestStreamableLen_holdsBackPartialOpeners` |
+| non-streamable families stay non-streamable | same contract test |
+| a call-only generation leaks NO content delta | `serveapp.TestToolStreamNeverLeaksCallAsProse` |
+| tool call still parses; `[DONE]` still terminates; non-streaming unchanged | the G19 tests, still green |
+
+Mutation-checked: removing the hold-back fails all three chat gates.
+
+**Limit of the end-to-end coverage, stated.** The 1.5B available here emits a tool call for *every*
+prompt tried — prose requests, arithmetic, "say one word" — and never any prose, so "prose arrives
+before the generation ends" cannot be observed through it. That property is proven exhaustively at
+the `chat` level instead, byte-at-a-time against the real parsers, which is stronger evidence than
+one model's behavior. The serveapp test asserts the corruption case that model IS ideal for: with a
+call-only generation, zero content deltas.
 
 **G19 · Tool-path streaming is SILENT while it buffers — SSE heartbeats (Finding 1, stage 1)** —
 `mac`, **DONE 2026-08-25. Ships in v0.15.0** (decision:

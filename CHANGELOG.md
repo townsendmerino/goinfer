@@ -60,6 +60,12 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
 
 ### Changed
 
+- **Streaming tool calls stream their prose incrementally** on the ChatML/Qwen, Mellum2 and Gemma 4
+  families, instead of arriving in one delta at the end. Only families whose tool-call parser
+  derives its prose as a prefix of the output qualify; Mistral and Llama-3 normalize theirs, so
+  they keep the buffered behavior. Nothing about tool-call parsing changes — the full output is
+  still parsed as before, so what a client finally receives is identical; only *when* the prose
+  arrives is different.
 - **Streaming tool calls now emit SSE keep-alives instead of going silent — and a streaming
   generation error is now an SSE error event, not a 500.** The tool paths must buffer the whole
   generation before a tool call can be parsed, so `stream: true` with `tools` sent **zero bytes

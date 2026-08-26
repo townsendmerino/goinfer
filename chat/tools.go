@@ -357,3 +357,129 @@ func normalizeArgs(raw json.RawMessage) json.RawMessage {
 	}
 	return raw
 }
+
+// ToolCallOpener reports the literal that bounds the prose lead for this family,
+// and whether prose may be streamed INCREMENTALLY before the generation ends
+// (G21).
+//
+// The contract is exact and narrow: ok is true only when ParseToolCalls computes
+// its lead as the RAW, UNTRIMMED prefix of the output up to the first occurrence
+// of the returned literal. That is what lets a caller emit text early and still
+// guarantee the bytes it sent are a prefix of the lead the parser will compute —
+// a delta cannot be unsent, so an over-eager emit is unrecoverable corruption.
+//
+//   - chatml/mellum2, gemma4: lead is strings.Cut(out, opener) — a raw prefix. ok.
+//   - mistral: lead is TrimSpace(before "[TOOL_CALLS]"). The trim means streamed
+//     bytes need not equal the lead. NOT ok.
+//   - llama3: the output is TrimSpace'd, a "<|python_tag|>" prefix is stripped, and
+//     a lead exists only if the JSON at the first "{" actually parses — nothing is
+//     known until then. NOT ok.
+//
+// A family added here must have its parser checked against this contract, not
+// assumed to match: the two that fail it fail it for different reasons.
+func (t *Template) ToolCallOpener() (string, bool) {
+	switch t.name {
+	case "chatml", "mellum2":
+		return "<tool_call>", true
+	case "gemma4":
+		return "<|tool_call>", true
+	}
+	return "", false
+}
+
+// StreamableLen returns how many bytes of pending may be emitted now without
+// risking that a later tool-call opener makes them part of a call rather than
+// prose.
+//
+// Three cases, in order:
+//   - the opener is already present: everything before it is prose and may go; the
+//     caller must then stop streaming for the rest of the generation.
+//   - pending ends with a proper prefix of the opener: that suffix is held back,
+//     because the next chunk may complete the opener. This is what makes an opener
+//     split across chunk boundaries safe.
+//   - neither: all of pending is prose.
+//
+// It never returns more than len(pending), and holds back at most len(opener)-1
+// bytes, so prose is delayed by a bounded amount and never dropped.
+func StreamableLen(pending, opener string) int {
+	if opener == "" {
+		return len(pending)
+	}
+	if i := strings.Index(pending, opener); i >= 0 {
+		return i
+	}
+	maxHold := min(len(opener)-1, len(pending))
+	for k := maxHold; k > 0; k-- {
+		if strings.HasSuffix(pending, opener[:k]) {
+			return len(pending) - k
+		}
+	}
+	return len(pending)
+}
+
+// ProseStreamer releases the prose part of a tool-capable generation as it
+// arrives, holding back exactly what could still turn out not to be prose (G21).
+//
+// It exists because the safety property is subtler than "split at the opener".
+// Every family's ParseToolCalls returns strings.TrimSpace(lead), so a streamer
+// that emitted the raw prefix would send leading and trailing whitespace the
+// parser later discards — and a delta cannot be unsent. So this normalizes the
+// SAME way the parsers do:
+//
+//   - leading whitespace is never emitted (dropped until the first non-space),
+//   - a trailing whitespace run is held back until a non-space byte follows it,
+//     and is dropped entirely if the opener arrives instead,
+//   - a partial opener at the tail is held (StreamableLen).
+//
+// The guarantee, asserted by TestProseStreamerMatchesParser against every
+// streamable family: the concatenation of everything Push returns is always a
+// PREFIX of the lead ParseToolCalls will compute over the full output.
+type ProseStreamer struct {
+	opener  string
+	pending strings.Builder
+	started bool // a non-space byte has been emitted
+	done    bool // the opener was seen; nothing after it is prose
+}
+
+// NewProseStreamer returns a streamer for a family's opener (Template.ToolCallOpener).
+func NewProseStreamer(opener string) *ProseStreamer { return &ProseStreamer{opener: opener} }
+
+// Done reports whether the opener has been seen, after which nothing more is prose.
+func (p *ProseStreamer) Done() bool { return p.done }
+
+// Push feeds the next generated chunk and returns the text that is safe to emit
+// now — possibly empty.
+func (p *ProseStreamer) Push(chunk string) string {
+	if p.done {
+		return ""
+	}
+	p.pending.WriteString(chunk)
+	buf := p.pending.String()
+
+	n := StreamableLen(buf, p.opener)
+	safe, rest := buf[:n], buf[n:]
+	if strings.Contains(buf, p.opener) {
+		p.done = true
+		rest = "" // everything from the opener on belongs to the call
+	}
+
+	if !p.started {
+		safe = strings.TrimLeft(safe, " \t\r\n")
+		if safe != "" {
+			p.started = true
+		}
+	}
+	if p.done {
+		// The parser trims the lead's tail; so must we, and there is no later
+		// chunk that could turn this whitespace back into interior text.
+		safe = strings.TrimRight(safe, " \t\r\n")
+	} else if tail := len(safe) - len(strings.TrimRight(safe, " \t\r\n")); tail > 0 {
+		// Might become interior whitespace once more text arrives — hold it.
+		rest = safe[len(safe)-tail:] + rest
+		safe = safe[:len(safe)-tail]
+	}
+
+	p.pending.Reset()
+	p.pending.WriteString(rest)
+	return safe
+}
