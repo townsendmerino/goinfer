@@ -23,6 +23,43 @@
 > vision-in only — no audio, CPU-slow — 11 architectures) for a static binary that
 > boots in ~0.5 s.
 
+> **⚠ RE-ANCHOR PENDING (2026-08-26) — every number measured on the `linux` box is STALE until re-measured.**
+> The box's whole OS and driver stack was replaced on **2026-08-25 22:28 PDT** (dnf transactions 96-102,
+> a Nobara **43 → 44** upgrade, ~7,100 packages altered), and **2026-08-26 04:44 PDT was the first boot
+> on it**. What moved:
+>
+> | | was (anchor of the rows below) | is |
+> |---|---|---|
+> | NVIDIA driver | `595.58.03-1.fc43` | **`595.91.07-2.fc44`** (dnf txn 99) |
+> | CUDA version reported by the driver | *(not recorded)* | **13.2** |
+> | running kernel | `7.0.5-200.nobara.fc43` | **`7.2.0-202.nobara.fc44`** (txn 98) |
+> | glibc | fc43 | **`2.43-8.fc44`** |
+> | distro | Nobara 43 | **Nobara 44** |
+>
+> Per this repo's rule, a driver change invalidates comparability and requires a **deliberate
+> re-anchor, not a silent carry-forward**. The rows below are therefore kept, dated and marked —
+> **not** carried forward as current, and **not** edited to match a new number.
+>
+> **The scope is wider than the driver.** The decision to re-anchor was taken on the driver bump
+> alone (2026-08-25); the transaction log shows it arrived inside a distro major upgrade, so kernel,
+> libc and the graphics stack moved with it. Anything that touches CPU-side dispatch, scheduling or
+> the loader is in scope too, not only the GPU rows.
+>
+> **It is also not only a throughput question.** The `cuda/` backend is **driver-JIT**: the driver
+> compiles the frozen PTX at load, so this upgrade changed the *compiler*, not just the runtime.
+> Bit-identical and parity claims across the bump must be re-verified on their own, ahead of any
+> tok/s number.
+>
+> **Scope — 78 data rows in seven anchored sections**: §B (2), §B2 (6), §B4 (8), §B5 (19), the
+> v0.11.0 qualification (2), §B6 (16), §B7 (25). Rows already marked RETIRED or HISTORICAL in §B2
+> stay that way — this box does not revive them. **§A** (Apple Silicon CPU) and **§B3** (Metal) are
+> measured on the MacBook and are **unaffected**.
+>
+> **Until the re-measure lands:** no row in those sections may be quoted as a current claim (README,
+> CHANGELOG, release qualification, capability matrix). Re-measure with `scripts/bench_peer.py`
+> (peer Ollama v0.32.5 at `~/ollama-0325`, both sides over HTTP, interleaved) — **not**
+> `bench_compare.sh`, which by its own design note never drives the peer.
+
 ---
 
 ## Methodology (non-negotiable — applies to every number on this page)
@@ -279,6 +316,10 @@ naive f32 — a tiled GEMM there is the next lever (`docs/completed/task-gpu-vis
 
 ### B. GPU residency vs native CUDA, at equal quant
 
+> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
+> this page for what moved and what replaces it.
+
 Rig: **RTX 2070 SUPER / Ryzen 7 3700X**, warm (`ollama ps` 100% GPU), greedy. goinfer
 WebGPU residency (`-tags gpu`), bit-exact vs CPU decode on the first tokens. Source &
 lab notebook: `docs/completed/gpu-assessment.md` §0.0 (goinfer commit `eaf9a6c`, **2026-06-08**);
@@ -297,6 +338,10 @@ gpu-assessment — cited there.
 > before/after of the same thing.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
+
+> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
+> this page for what moved and what replaces it.
 
 > **⚠ RETIRED (2026-08-09) — the 0.5B pair and its 1.78× are withdrawn, not corrected.**
 > The two halves were produced by **different methods**: `scripts/bench_compare.sh` measures
@@ -630,6 +675,10 @@ the occupancy/latency rewrite, not KV-quant; q8 on Metal buys VRAM/reachability,
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
+> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
+> this page for what moved and what replaces it.
+
 > **⚠ RE-VERIFIED against current Ollama (v0.32.5) — the "peers fail to load it" claim was
 > false and has been retracted.** On the same RTX 2070 SUPER, Ollama **v0.32.5 loads and runs**
 > Gemma 4 26B-A4B (google QAT q4_0 GGUF) by **splitting it 42% GPU (6.35 GB VRAM) / 58% CPU-RAM**,
@@ -739,6 +788,10 @@ GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 ---
 
 ## B5 — Anchored re-measure, 2026-08-09 (goinfer `686c9f8` vs Ollama v0.32.6)
+
+> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
+> this page for what moved and what replaces it.
 
 One binary for every cell. Supersedes the sampled rows in the README's G11 section; the older rows
 elsewhere on this page keep their own binary and peer version and are NOT updated in place.
@@ -867,6 +920,10 @@ explanation should be read with this 2026-08-09 caveat rather than trusted as-is
 
 ## v0.11.0 release qualification (2026-08-10) — go/no-go vs these anchors
 
+> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
+> this page for what moved and what replaces it.
+
 The v0.11.0 tag's delta from the last code commit (`6edd1ca`) is **docs-only** (README wording), so no
 resident cell's numerics changed and the §B6/§B7 (CUDA) and §B3 (Metal) anchors below **are** the
 v0.11.0 numbers — the sweep is a no-regression confirmation, not a re-measure.
@@ -883,6 +940,10 @@ a fresh box run; the strongest no-regression guarantee is that the code did not 
 The GPU gate's CUDA pass is the owner's confirmation before the tag ships.
 
 ## B6 — Split-KV decode attention, re-gated (2026-08-09, P6a)
+
+> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
+> this page for what moved and what replaces it.
 
 §B5 above flagged the split-KV gate as a follow-up. It turned out to be worse than "characterized on
 one model": **the shipped constant `splitkvMinKeys = 256` was wrong on the geometry it was
@@ -1017,6 +1078,10 @@ threshold on a stock binary (0 ⇒ always split) so re-characterization no longe
 needing one is part of why a refuted number survived.
 
 ## B7 — Deep context: 8k/16k/32k decode (2026-08-09, cap-raise leg)
+
+> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
+> this page for what moved and what replaces it.
 
 §B5 recorded that every depth curve this project had published stopped just under 4096 because
 `cudaCtxCap` was a compile-time constant — infrastructure, not a chosen depth. The cap is now
@@ -1174,6 +1239,14 @@ known geometry, **not an ncu profile** — a profile could refine the number, no
   it was sampled greedily or with temperature+top_p (the two can differ by an order of magnitude
   on the same engine). Any existing row that does not state one is marked **sampling: unrecorded**
   and must **not** be assumed greedy.
+- **A host-stack change re-anchors; it never carries forward.** The NVIDIA driver is already a
+  required per-row field, and the rule extends to what sits under it: **kernel, libc and distro**.
+  When any of them moves, mark every affected row STALE *the same day* — before any re-measurement
+  exists — and record what moved from the package manager's own log (`dnf history info <id>`), not
+  from memory. A stale row that still reads as current is the failure mode this page exists to
+  prevent, and the window between "the stack moved" and "the numbers are back" is exactly where it
+  happens. Re-measure with `scripts/bench_peer.py`; `bench_compare.sh` does not drive the peer and
+  cannot produce a comparison.
 - **Re-run `scripts/bench_compare.sh` at each tag.** A number more than one minor
   version stale is re-measured or struck — never silently carried forward.
 - **Re-verify the capability matrix against peer release notes at each tag** (cheap —

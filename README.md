@@ -24,7 +24,8 @@ and runs them **in-process**. What makes it different — you don't have to choo
   (SIMD-accelerated, NEON / AVX2). Opt into a GPU backend and it *stays* `CGO_ENABLED=0`:
   **native CUDA** (cgo-free, driver-only — no toolkit; **14.6 MB** of binary against a bundled
   toolkit's gigabytes, decoding qwen2.5-coder-1.5B at **217.8 tok/s** at short context — measured
-  numbers and the peer comparison below), **native Metal** on Apple Silicon,
+  on the pre-2026-08-25 driver stack, re-measure pending; numbers and the peer comparison
+  below), **native Metal** on Apple Silicon,
   and a portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
   bigger-than-VRAM MoE weights). Going fast never costs you the single binary.
 - **~20 architectures, one binary.** All four attention / sequence-mixing families —
@@ -84,7 +85,8 @@ weights once to a `.giw` bundle and it reloads in ~13 s
 *And bigger still — **Gemma 4 26B-A4B** (a 26B MoE whose ~11.4 GB of int4 experts **do not
 fit 8 GB even at 4-bit**) decodes coherently on the same card, running **fully GPU-resident** —
 every expert executes on the GPU, streamed from host RAM into a VRAM cache over the cgo-free CUDA
-backend. Rate depends on how much of that cache fits: **11.3 tok/s at 16 slots/layer**, and
+backend. Rate depends on how much of that cache fits (all rates below are on the pre-2026-08-25
+driver stack, re-measure pending): **11.3 tok/s at 16 slots/layer**, and
 **16.98 tok/s** was measured once at 38 — a configuration not currently reproducible on this card
 (see the note below, and read the slot count as part of the claim).
 (Current Ollama also runs this 26B on 8 GB, but by offloading 58% to the CPU, at ~24.5 tok/s;
@@ -518,7 +520,8 @@ first-run compile, at the cost of size — a real engineering tradeoff, not wast
 a **one-time JIT at startup**, and makes you depend on the driver's compiler rather than a pinned
 toolkit, so a driver upgrade can change generated code where a bundled toolkit is reproducible.
 Measured (RTX 2070 SUPER, driver 595.58.03, qwen2.5-coder-0.5B, process start → `/health`,
-median of 3 at `8b6aa1f`):
+median of 3 at `8b6aa1f`) — **on the pre-2026-08-25 driver stack; the JIT cost in particular is a
+property OF the driver's compiler, so this table re-measures with the rest**:
 
 | | time to ready |
 |---|---|
@@ -529,6 +532,15 @@ The JIT costs **~0.85 s, once**: the driver caches the result (916 KB) and later
 Both engines need an NVIDIA driver; neither needs a CUDA toolkit at build or run time.
 
 ### Measured throughput — goinfer
+
+> **⚠ STALE — re-measure pending (2026-08-26).** Every CUDA figure in this README was measured on
+> the RTX 2070 SUPER under driver **`595.58.03`** / Nobara 43, a stack this box replaced on
+> **2026-08-25** (now driver **`595.91.07`**, kernel `7.2.0-202.fc44`, CUDA 13.2). This matters more
+> here than for a bundled-toolkit engine, for the reason stated two sections up: goinfer ships PTX
+> and **depends on the driver's compiler**, so a driver upgrade can change the generated code. The
+> numbers are kept and dated rather than carried forward as current; they are being re-measured
+> against the same peer (Ollama v0.32.5) on the new stack. Scope, provenance and the seven affected
+> sections: [docs/benchmarks.md](docs/benchmarks.md), re-anchor box at the top.
 
 **Decode-only; prefill excluded.** Inter-token rate, timed client-side from the first streamed
 token onward, over HTTP. Prefill is a separate axis and goinfer is **behind** on it (~4.7× at last

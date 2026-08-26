@@ -264,6 +264,45 @@ kernels, which f32 slices would have had to become anyway.
 
 ## In flight
 
+**P16 · Re-anchor every `linux`-box measurement to the Nobara 44 / driver 595.91.07 stack** —
+`linux`, **CLAIMED 2026-08-26, IN FLIGHT.** Stale-marking done and committed; the re-measure is the
+open half.
+
+**What moved, from `dnf history` (transactions 96-102, 2026-08-25 22:2x PDT), not from memory:**
+a Nobara **43 → 44** upgrade of ~7,100 packages that carried the NVIDIA driver
+`595.58.03-1.fc43` → **`595.91.07-2.fc44`** (txn 99), the running kernel
+`7.0.5-200.nobara.fc43` → **`7.2.0-202.nobara.fc44`** (txn 98), glibc → **`2.43-8.fc44`**, and the
+whole graphics stack. `nvidia-smi` now reports **CUDA 13.2**. **2026-08-26 04:44 PDT was the first
+boot on it.**
+
+**The decision was taken on the driver alone (2026-08-25); the scope is wider.** Kernel, libc and
+loader moved with it, so CPU-side dispatch and scheduling are in scope, not only the GPU rows. The
+re-anchor decision does not change — the list of what must be re-measured does.
+
+**Do the parity half FIRST, before any tok/s.** The `cuda/` backend is **driver-JIT**: the driver
+compiles the frozen PTX at load, so this upgrade changed the *compiler*, not just the runtime. A
+throughput re-measure on a stack whose bit-identity has not been re-established measures the wrong
+thing. Smoke-checked already on 2026-08-26: `TestGemvW4A8Batched_bitIdentical` passes at M=1/8/13/100
+(a real `--- PASS`, not an `ok` over skips) — that is one kernel, not the gate.
+
+**Scope of the marked rows — 78, in seven sections of `docs/benchmarks.md`:** §B (2), §B2 (6),
+§B4 (8), §B5 (19), the v0.11.0 qualification (2), §B6 (16), §B7 (25). Rows already RETIRED or
+HISTORICAL in §B2 stay that way. §A (Apple Silicon CPU) and §B3 (Metal) are `mac` rows and are
+**unaffected** — do not touch them.
+
+**Harness:** `scripts/bench_peer.py`, peer Ollama **v0.32.5** at `~/ollama-0325` (client confirmed
+0.32.5 on 2026-08-26), both engines over their own HTTP server, decode-only, interleaved cell by
+cell with a server restart between cells. **Not `bench_compare.sh`** — it never drives the peer, and
+that is exactly the defect that retired the old §B2 ratio.
+
+**Gate on re-entering a row:** the full Methodology provenance — machine, checkpoint+quant, greedy
+or explicit sampling, pinned versions, **the new driver AND distro/kernel**, date, thermal note,
+local-disk path under `~/models` (**never `/Volumes/`**). Peer comparisons same-session interleaved;
+drift between sessions is ~3.5% on this box.
+
+**Do not re-baseline a floor because a number moved.** If a row lands materially below its
+pre-upgrade value, that is a finding to be explained by mechanism, not a new baseline to bless.
+
 **A11 · moe_route's demand threshold — RESOLVED 2026-08-12. The identity now CLOSES; the old pin was
 the outlier** — `linux`, **CLOSED**, and it merges with A9-RESID
 
