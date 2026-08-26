@@ -1297,7 +1297,8 @@ Ollama reproduced its 2026-08-09 numbers cell for cell:
 | 1.5B @2048 | 179.5 | 179.2 | −0.2% |
 | 1.5B @3900 | 174.3 | 174.2 | −0.1% |
 
-Seven cells, every one inside 0.6%, on a box whose documented between-session drift is ~3.5%. Two
+Seven cells, every one inside **0.7%** (largest deviation 0.63%, at 0.5B @512), on a box whose
+documented between-session drift is ~3.5%. Two
 things follow, and only two. **The stack upgrade did not move decode throughput** for an engine that
 did not change. And **the harness and the box are stable enough that a goinfer-side delta of more
 than ~1% is attributable** rather than dismissible as session noise.

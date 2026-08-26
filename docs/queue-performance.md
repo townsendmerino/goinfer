@@ -351,8 +351,8 @@ upgrade: 0.5B **1.24×** and 1.5B **1.13×** at 128, parity at 7B/128 (**1.00×*
 to **0.71×** at 3900 on every model.
 
 **The peer was the control, and it held to <0.5%.** Across a distro major upgrade, Ollama
-reproduced its 2026-08-09 greedy numbers in all seven comparable cells within 0.6% (0.5B@2048 to the
-decimal), on a box whose documented between-session drift is ~3.5%. So the stack did not move decode
+reproduced its 2026-08-09 greedy numbers in all seven comparable cells within 0.7% (largest 0.63%;
+0.5B@2048 to the decimal), on a box whose documented between-session drift is ~3.5%. So the stack did not move decode
 throughput for an engine that did not change, and a goinfer-side delta above ~1% is attributable
 rather than dismissible. goinfer's own cells moved +0.7% to +4.3% except the two @512 cells —
 **not claimed as a speedup**: that cell carries the set's widest spread and the old 0.5B row was

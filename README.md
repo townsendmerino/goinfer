@@ -607,7 +607,7 @@ cost is scoped as **D6** in `docs/ollama-chase.md`.
 > 33/33 cells. The rows in this section are against **v0.32.6** on the old stack and are kept
 > because they carry the sampled configurations and the per-cell annotations §B8 does not have.
 > **Do not mix the two**: different peer version, different OS. §B8 records that Ollama itself
-> reproduced its 2026-08-09 greedy numbers to within 0.6% across the upgrade, which is why the
+> reproduced its 2026-08-09 greedy numbers to within 0.7% across the upgrade, which is why the
 > goinfer-side deltas there are attributable.
 
 Secondary, and annotated — read the absolute numbers above and the cgo-free property first. Same
