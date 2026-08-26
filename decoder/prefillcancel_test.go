@@ -51,7 +51,7 @@ func TestPrefillCancelledBeforeStart(t *testing.T) {
 	cancel()
 
 	start := time.Now()
-	_, err := m.forwardLayersN(ctx, ids, cache)
+	_, err := m.forwardLayersN(ctx, ids, cache, false)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, context.Canceled) {
@@ -81,7 +81,7 @@ func TestPrefillCancelMidFlight(t *testing.T) {
 	}()
 
 	start := time.Now()
-	_, err := m.forwardLayersN(ctx, ids, cache)
+	_, err := m.forwardLayersN(ctx, ids, cache, false)
 	elapsed := time.Since(start)
 
 	if !errors.Is(err, context.Canceled) {

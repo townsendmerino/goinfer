@@ -163,7 +163,7 @@ func TestG15PrefillProfile(t *testing.T) {
 		t.Fatalf("start profile: %v", err)
 	}
 	start := time.Now()
-	_, err = m.forwardLayersN(context.Background(), ids, cache)
+	_, err = m.forwardLayersN(context.Background(), ids, cache, cpuFastAttention())
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	if err != nil {

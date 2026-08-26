@@ -150,7 +150,7 @@ func (h *cpuDrafterHost) PrefillLastNArgmax(embeddings [][]float32, startPos int
 	} else {
 		h.cache.captureLayers = nil
 	}
-	out, err := h.m.runLayersFromEmbedN(context.TODO(), flat, h.cache)
+	out, err := h.m.runLayersFromEmbedN(context.TODO(), flat, h.cache, false) // block-spec verify: never fast
 	if err != nil {
 		return nil, err
 	}

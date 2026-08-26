@@ -4,10 +4,22 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
+
+// cpuFastAttention reports whether the operator opted into A3's f32 prefill
+// attention (G23). Read here only; every consumer receives it as an explicit
+// argument so no path can pick it up by accident — see runLayersFromEmbedN.
+//
+// Enabling it gives up two of acc64's three guarantees for this model:
+// spec-decode verify == sequential greedy (structurally prevented from applying
+// there anyway), and decode == prefill. Measured divergence at dense 1.5B:
+// cosine ~0.9976, and a measured 2.28x on an 8k prefill
+// (docs/measurements/attention-a3-kernel-ratio-2026-08-26.md).
+func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") == "1" }
 
 // attnHeadsParThreshold gates A1 move (a)'s head-parallel fan-out: below this
 // many MACs' worth of per-call work (K*nKeys, the QKᵀ/AV size driver), the
@@ -78,8 +90,8 @@ func (m *Model) specRollbackSafe() bool {
 // reused across the K rows (aikit's column-blocked W8A8 kernel); attention stays
 // per-position and causal. Bit-identical to K sequential forwards. Assumes
 // canBatchN(len(ids)) — callers check.
-func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache) ([]float32, error) {
-	return m.runLayersFromEmbedN(reqCtx, m.embedN(ids), cache)
+func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([]float32, error) {
+	return m.runLayersFromEmbedN(reqCtx, m.embedN(ids), cache, fastAttn)
 }
 
 // embedN returns the [K*HiddenDim] embedding rows for ids (the per-row token embed
@@ -107,7 +119,7 @@ func (m *Model) embedN(ids []int) []float32 {
 // must already carry the embedding scale; injected vision rows are raw (HF's
 // masked_scatter overwrites the scaled placeholder embed). Returns the [K,
 // HiddenDim] post-final-norm hidden states (the LM head is the caller's).
-func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache) ([]float32, error) {
+func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -133,6 +145,28 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// Batched per-head attention scratch (reused across layers; nKeys = startPos+K
 	// is the same for every layer in this sweep). See attendBatchedHeads.
 	maxKeys := startPos + K
+	// A3 (G23): OPT-IN f32 attention for prefill. Off unless asked for, and
+	// never for MoE.
+	//
+	// The acc64 path is 8.14x slower than f32 at long-context shapes (measured,
+	// docs/measurements/attention-a3-kernel-ratio-2026-08-26.md — note that is
+	// more than double the "~3.7x" the kernel comment assumes), and attention is
+	// ~70% of an 8k prefill. It exists to hold three guarantees, and enabling this
+	// gives up two of them for the model that enables it: spec-decode verify ==
+	// sequential greedy, and decode == prefill. The third — MoE router stability —
+	// is NOT negotiable at any flag setting, because an f32 QK reassociation flips
+	// a top-k expert at a near-tie and cascades, so MoE is excluded here rather
+	// than trusted to the operator.
+	//
+	// Same shape as --metal-fast-prefill: default off, divergence documented, and
+	// the caller opts in knowingly.
+	// fastAttn is the CALLER's statement that this sweep may diverge. It is a
+	// parameter rather than a global read because the guard has to be structural:
+	// spec-decode verify runs through forwardN and MUST keep acc64, or "verify ==
+	// sequential greedy" silently stops holding. A runtime check could not tell
+	// the two callers apart; a parameter cannot get it wrong.
+	useAcc64 := !(fastAttn && arch.MoE == nil)
+
 	// G16: prefill attention runs its heads in PARALLEL, budget permitting.
 	//
 	// A1 deferred this ("no M>1-specific work here") and implemented the deferral
@@ -258,15 +292,15 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		// a K>W batch can't evict in-batch history. Global layers read append-forever.
 		if isLocal {
 			base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
-			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, true, attnPool)
+			attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 			cache.commitBatch(l, startPos, K, k, v)
 		} else if cache.quant == kvI8 {
 			// int8 global: the Append loop above already quantized the new K/V into
 			// the layer; dequant the full history into f32 scratch for the matmul.
 			nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
-			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, true, attnPool)
+			attendBatchedHeads(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 		} else {
-			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, true, attnPool)
+			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 		}
 		// Laguna output gating, per row, BEFORE o_proj — the batched twin of the K=1
 		// call in causalAttention, sharing applyGateRow so the two cannot diverge.
@@ -730,7 +764,8 @@ func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][
 		}
 		return out, nil
 	}
-	h, err := m.forwardLayersN(reqCtx, ids, cache)
+	// forwardN backs speculative verify: never fast, whatever the operator asked for.
+	h, err := m.forwardLayersN(reqCtx, ids, cache, false)
 	if err != nil {
 		return nil, err
 	}
@@ -769,7 +804,7 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 		}
 		return m.forward(prompt[len(prompt)-1], cache)
 	}
-	h, err := m.forwardLayersN(ctx, prompt, cache)
+	h, err := m.forwardLayersN(ctx, prompt, cache, cpuFastAttention())
 	if err != nil {
 		return nil, err
 	}
@@ -800,7 +835,7 @@ func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []fl
 	h := m.embedN(ids)
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale
 	cache.SetImageBlocks([][2]int{{imgPos, imgPos + imgLen}})
-	hN, err := m.runLayersFromEmbedN(ctx, h, cache)
+	hN, err := m.runLayersFromEmbedN(ctx, h, cache, cpuFastAttention())
 	if err != nil {
 		return nil, err
 	}
@@ -834,7 +869,7 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageFeats) // raw merged features, no embed scale
 	cache.mropePos = mropePos                                 // ropeAt switches to m-RoPE for this prefill
 	cache.mropeDelta = mropeDelta(mropePos, len(ids))         // decode past the prefill rotates at seqPos+delta
-	hN, err := m.runLayersFromEmbedN(ctx, h, cache)
+	hN, err := m.runLayersFromEmbedN(ctx, h, cache, cpuFastAttention())
 	if err != nil {
 		return nil, err
 	}

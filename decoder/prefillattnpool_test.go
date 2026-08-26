@@ -36,7 +36,7 @@ func TestPrefillAttnPoolInvariance(t *testing.T) {
 		run := func(workers string) []float32 {
 			t.Helper()
 			t.Setenv("GOINFER_PREFILL_ATTN_WORKERS", workers)
-			out, err := m.forwardLayersN(context.Background(), ids, m.NewCache(K+8))
+			out, err := m.forwardLayersN(context.Background(), ids, m.NewCache(K+8), false)
 			if err != nil {
 				t.Fatalf("K=%d workers=%s: %v", K, workers, err)
 			}
@@ -135,7 +135,7 @@ func TestPrefillAttnRowTileInvariance(t *testing.T) {
 			t.Helper()
 			t.Setenv("GOINFER_ATTN_ROW_TILE", tile)
 			t.Setenv("GOINFER_PREFILL_ATTN_WORKERS", "1") // isolate tiling from fan-out
-			out, err := m.forwardLayersN(context.Background(), ids, m.NewCache(K+8))
+			out, err := m.forwardLayersN(context.Background(), ids, m.NewCache(K+8), false)
 			if err != nil {
 				t.Fatalf("K=%d tile=%s: %v", K, tile, err)
 			}
