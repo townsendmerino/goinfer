@@ -50,6 +50,23 @@ echo "   model          : $MODEL"
 echo "   NOTE: plug in, run 2–3×, take the median; record thermal state."
 echo "═══════════════════════════════════════════════════════════════════════"
 
+# A timed run must read its checkpoint from the local bench set, never from the archive. Both
+# roots are checked because neither catches the other: /Volumes/ does not exist on Linux, and
+# /srv/models is a LOCAL mount on the box that measures every CUDA row, so "benchmark from local
+# disk" reads as permission for it. Reading the 5400 rpm SMR archive does not error -- it returns
+# a plausible, wrong number. realpath, so a symlink from ~/models into the archive is caught too.
+# Authority: docs/benchmarks.md, "Model storage".
+REAL_MODEL="$(realpath "$MODEL" 2>/dev/null || echo "$MODEL")"
+case "$REAL_MODEL" in
+  /srv/models/*|/Volumes/*)
+    echo "!! REFUSED: $MODEL resolves to $REAL_MODEL, which is on the ARCHIVE."
+    echo "!! The archive is a 5400 rpm SMR disk and is a bench surface for neither machine."
+    echo "!! A run off it measures that disk, not the engine, and does NOT error."
+    echo "!! Copy to the local bench set first (models-pull <name>) and re-run."
+    exit 2
+    ;;
+esac
+
 if [ ! -e "$MODEL" ]; then
   echo "!! model not found: $MODEL — set GOINFER_PREQUANT_GGUF. Skipping Go benches."
 else

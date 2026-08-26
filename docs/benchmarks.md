@@ -127,6 +127,11 @@ are correctly measured and unchanged.
 
 ## Model storage — archive remote, benchmark local
 
+> **This section is the authority on where a measurement may read its checkpoint from.**
+> `CLAUDE.md` states the rule and the two forbidden roots and points here; nothing else should
+> restate the detail. Consolidated 2026-08-26 after the rule was found in three places, complete
+> in only this one.
+
 **Models are stored on the Linux box and benchmarked from local disk only. Nothing that
 produces a number is ever read over the network mount.** Paged decode over SMB turns
 weight loading into network round-trips at arbitrary times during the run, so the result
@@ -142,6 +147,14 @@ class of bad row the Methodology gate above exists to reject.
 
 Note the Linux box benches from its **own NVMe `~/models`**, not from `/srv/models`. The
 archive is storage on both machines, never a read path for a timed run.
+
+**`/srv/models` needs saying out loud, because the `/Volumes/` rule does not reach it.** On the
+MacBook the archive is only ever a network mount, so "don't benchmark over the network" and "don't
+benchmark from the archive" are the same sentence. On the Linux box they are not: `/srv/models` is
+a local mount point on the very machine that measures every CUDA row, so a reader applying "measure
+from local disk" can satisfy it and still be reading the 5400 rpm SMR archive. Same wrong number,
+no network involved, and no rule violated as the older phrasing was written. Both roots are
+therefore named wherever the rule appears.
 
 ### Working from the archive
 
@@ -162,8 +175,10 @@ They honour `MODELS_HOST` (default `nobara`), `MODELS_ARCHIVE` (`/srv/models`) a
 
 **Mount the share only to browse it, and unmount when done.** It is deliberately not
 automounted: a permanently-present `/Volumes/models` is precisely how a checkpoint path on
-the mount ends up in a benchmark by accident. If a row's model path ever starts with
-`/Volumes/`, the row is void — re-measure it after a `models-pull`.
+the mount ends up in a benchmark by accident. **If a row's model path starts with `/Volumes/`
+or with `/srv/models`, the row is void** — re-measure it from the local bench set (on the
+MacBook, after a `models-pull`; on the Linux box the file is already on the NVMe, so this is a
+path mistake rather than a missing copy).
 
 ---
 

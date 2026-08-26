@@ -418,7 +418,8 @@ that is exactly the defect that retired the old §B2 ratio.
 
 **Gate on re-entering a row:** the full Methodology provenance — machine, checkpoint+quant, greedy
 or explicit sampling, pinned versions, **the new driver AND distro/kernel**, date, thermal note,
-local-disk path under `~/models` (**never `/Volumes/`**). Peer comparisons same-session interleaved;
+local-disk path under `~/models` (**never `/Volumes/`, and never `/srv/models` — the archive is not
+a bench surface on the box it is local to either**). Peer comparisons same-session interleaved;
 drift between sessions is ~3.5% on this box.
 
 **`bench_peer.py` does NOT re-anchor everything — its 33 cells cover the §B/§B2/§B5-style peer

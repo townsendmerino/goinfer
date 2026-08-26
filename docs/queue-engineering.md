@@ -1315,6 +1315,27 @@ marks where else the same class may live.
 
 ### C. Verification surfaces never exercised
 
+**G21 · The bench-disk rule is enforced in the two shell/python harnesses and NOT in `cmd/gate`** —
+unclaimed. Filed 2026-08-26 when the rule was consolidated.
+
+`scripts/bench_peer.py` and `scripts/bench_compare.sh` now REFUSE a checkpoint that resolves under
+`/srv/models` or `/Volumes/` (realpath, so a symlink out of `~/models` is caught). `cmd/gate` reads
+`GOINFER_GATE_MODELS` in two places — `cmd/gate/configs.go:14` and `cmd/gate/gpu.go:208`, both defaulting to
+`$HOME/models` — and accepts whatever it is given.
+
+Correctness tests do not care what disk they read from, so this is not urgent. The throughput tests
+in the same packages do: `TestProdThroughput`, `TestE2EDecodeThroughput_synthetic`,
+`TestDecodeDepthThroughput` and the bandwidth tests all report rates, and a rate measured off a
+5400 rpm SMR disk is wrong without being an error. **Whoever takes this should check first whether
+those tests are actually disk-sensitive** — a fully-resident decode may touch the checkpoint only at
+load — and enforce only where a number depends on it. An unnecessary guard on a correctness runner
+is worse than none, because it makes the rule look arbitrary.
+
+Related: the rule's prose was consolidated the same day (`CLAUDE.md` states it and names both
+roots; `docs/benchmarks.md` § "Model storage" is the authority). It had lived in three places and
+was complete in one — the other two named only `/Volumes/`, which does not exist on Linux, while
+`/srv/models` is a local mount on the box that measures every CUDA row.
+
 **G20 · `TestMoERouteDemandThreshold`'s WARM branch has been unreachable since 2026-08-21** —
 unclaimed. Found 2026-08-26 while re-deriving the pins for P16's re-anchor; recorded rather than
 fixed in the same change, because changing what a gate asserts and re-anchoring its constants in one

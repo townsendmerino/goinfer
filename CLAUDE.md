@@ -1,37 +1,29 @@
 # goinfer — agent notes
 
-## Models: stored remote, benchmarked local
+## Models: stored in the archive, benchmarked from local disk
 
-Model weights live on the Linux box in `/srv/models` (5.5 TB), shared to the LAN as
-`//192.168.1.240/models`. Each machine benchmarks from its **own local disk**, never
-from the archive.
+**Every timed run reads its checkpoint from `~/models` on the machine doing the timing.
+The archive is storage, never a read path for a measurement — on either machine.**
 
-| machine | bench set (measure here) | archive access |
+| | bench set — the ONLY place a row may be measured from | the archive, which is NOT a bench surface |
 |---|---|---|
-| `nobara-pc` (amd64/CUDA) | `~/models` on NVMe | `/srv/models` is local — no pull needed |
-| MacBook (arm64/Metal) | `~/models` on internal SSD | `models-pull` from the archive |
+| `nobara-pc` (amd64/CUDA) | `~/models` on NVMe | **`/srv/models`** — local, but a 5400 rpm SMR disk |
+| MacBook (arm64/Metal) | `~/models` on internal SSD | **`/Volumes/…`** — the SMB mount of the same disk |
 
-**Never benchmark a path under `/Volumes/`.** That is the SMB mount; a run that reads
-its checkpoint over the network measures the LAN and the server's 5400 rpm SMR disk
-instead of the engine. It does not error — it returns a plausible, wrong number. Any
-row whose model path starts with `/Volumes/` is void and must be re-measured.
+Both forbidden roots are named above because **neither prohibition catches the other**.
+`/srv/models` is *local storage on the box that measures CUDA*, so "benchmark from local
+disk" reads as permission for it; `/Volumes/` is the only path the older phrasing named,
+and it does not exist on Linux. A run off either one measures a 5400 rpm SMR disk — over
+the LAN as well, in the `/Volumes/` case — instead of the engine. **It does not error.** It
+returns a plausible, wrong number. Any row whose model path starts with `/srv/models` or
+`/Volumes/` is void and must be re-measured after a `models-pull`.
 
-### Getting a model on the MacBook
-
-```sh
-models-pull -l                          # list the archive
-models-pull -l qwen                     # filtered
-models-pull qwen3.6-35b-a3b-int4.giw    # archive -> ~/models, resumable
-models-push my-new-download.gguf        # ~/models -> archive, size-verified
-```
-
-`models-push` refuses to report success unless byte counts match both sides — archive a
-new download *before* deleting the local copy. Both scripts ride rsync over SSH and honour
-`MODELS_HOST` (default `nobara`), `MODELS_ARCHIVE`, `MODELS_LOCAL`.
-
-Preconditions: **must be on the LAN.** Tailscale SSH intercepts port 22 and will hang, so
-`models-pull` does not work off-LAN. The box must be awake. Check free space first — the
-35B Q8_0 is 37.8 GB.
+The full storage table, the `models-pull` / `models-push` usage, and the reason the share is
+deliberately not automounted live in `docs/benchmarks.md` § "Model storage" — **that section
+is the authority; do not restate its details here.** Enough to work from: `models-pull <name>`
+copies archive → `~/models` (resumable, rsync over SSH, must be on the LAN — Tailscale SSH
+intercepts port 22 and hangs), `models-push <name>` goes the other way and refuses to claim
+success unless byte counts match both sides.
 
 ## Benchmarking
 

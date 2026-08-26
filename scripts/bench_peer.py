@@ -81,6 +81,27 @@ NRUNS = 2          # runs per cell        (>= 2 required, spread reported)
 # mostly this harness's own servers, so a high figure there is expected and means nothing. The
 # idle question is only answerable BEFORE any work starts, which is what preflight() gates.
 
+ARCHIVE_ROOTS = ("/srv/models", "/Volumes/")
+
+def check_bench_disk(paths):
+    """A timed run must read its checkpoint from the local bench set, never from the archive.
+
+    Prose could not carry this one. The rule lived in three documents and was complete in one:
+    the other two named only /Volumes/, which does not exist on Linux -- and /srv/models is a
+    LOCAL mount on the very box that measures every CUDA row, so "benchmark from local disk" reads
+    as permission for it. Reading a checkpoint off the 5400 rpm SMR archive does not error; it
+    returns a plausible, wrong number, and the resulting row is indistinguishable afterwards from
+    a good one. So the check goes where the path is used, not only where the rule is written."""
+    bad = [p for p in paths
+           if any(os.path.realpath(p).startswith(r) or p.startswith(r) for r in ARCHIVE_ROOTS)]
+    if bad:
+        sys.exit("REFUSED: these checkpoints are on the ARCHIVE, which is not a bench surface on "
+                 "either machine:\n  " + "\n  ".join(bad) +
+                 "\nThe archive is a 5400 rpm SMR disk (and over SMB from the MacBook). A run that "
+                 "reads it measures that disk, not the engine, and does so WITHOUT ERRORING. "
+                 "Copy to the local bench set first (`models-pull <name>`) and re-run. "
+                 "See docs/benchmarks.md, 'Model storage'.")
+
 def _sh(cmd, default=""):
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout.strip() or default
@@ -160,6 +181,7 @@ def preflight():
         sys.exit(f"REFUSED: 1-min load average {la[0]:.2f} exceeds {cap:.2f}. The box is not idle, "
                  f"and a number measured on a busy box is not distinguishable afterwards from a "
                  f"number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.")
+    check_bench_disk([p for p, _ in MODELS.values()])
     apps = _gpu_compute_apps()
     if len(apps) > 1:
         sys.exit("REFUSED: %d compute processes already hold the GPU (1 = the compositor, expected):\n  %s"
