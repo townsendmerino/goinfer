@@ -91,10 +91,24 @@ func (g *gpuGate) skip(format string, a ...any) {
 // neither "--- FAIL" nor a "file.go:N:" line — only "FAIL <pkg> <secs>" — so every filter reported
 // an EMPTY explanation for exactly the failures that are hardest to reproduce.
 func (g *gpuGate) detail(out string, re *regexp.Regexp) {
+	// A process death is reported FIRST and on its own terms. It has no
+	// `--- FAIL` to match, and its stack head names the test that died — which a
+	// tail-based excerpt would bury under a register dump.
+	if ex := crashExcerpt(out); len(ex) > 0 {
+		fmt.Fprintf(g.w, "      PROCESS DIED — no test-level failure was reported. Crash head:\n")
+		for _, ln := range ex {
+			fmt.Fprintf(g.w, "      | %s\n", strings.TrimRight(ln, "\r"))
+		}
+		return
+	}
 	var hits []string
-	for _, ln := range strings.Split(out, "\n") {
-		if re.MatchString(ln) {
-			hits = append(hits, ln)
+	if re.String() == failLineRe.String() {
+		hits = failureLines(out)
+	} else {
+		for _, ln := range strings.Split(out, "\n") {
+			if re.MatchString(ln) {
+				hits = append(hits, ln)
+			}
 		}
 	}
 	if len(hits) > 0 {
@@ -185,7 +199,81 @@ func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
 
 var okLineRe = regexp.MustCompile(`^ok\s`)
 
-var failLineRe = regexp.MustCompile(`^--- FAIL|\.go:[0-9]+:`)
+// failLineRe matches a test-level failure header. It deliberately does NOT match
+// bare `file.go:N:` lines: every passing t.Log emits one, and when this pattern
+// included them a crashed run reported a dozen `cosine=1.0000000 — PARITY` lines
+// as its "failure detail" while the actual SIGSEGV went unshown — the breadth
+// defeated detail()'s own crash fallback, which only fires when nothing matches.
+// Assertion lines are still shown, but only the ones BELOW a failing test (see
+// failureLines).
+var failLineRe = regexp.MustCompile(`^(---|    ---) FAIL`)
+
+// assertionLineRe is a test's own `file.go:N: …` output. Shown only while inside
+// a failing test.
+var assertionLineRe = regexp.MustCompile(`^\s*[\w./-]+\.go:[0-9]+:`)
+
+// testBoundaryRe ends a failing test's block: anything that starts a new test or
+// closes the package.
+var testBoundaryRe = regexp.MustCompile(`^(=== RUN|=== CONT|=== PAUSE|(---|    ---) (PASS|SKIP)|ok\s|PASS$|FAIL\s)`)
+
+// crashHeadRe is a process death: a signal, a panic, or a runtime fatal. These
+// carry no `--- FAIL`, which is exactly why detail() must recognize them.
+var crashHeadRe = regexp.MustCompile(`^(SIGSEGV|SIGBUS|SIGABRT|SIGILL|panic:|fatal error:)|signal arrived during`)
+
+// registerDumpRe is the tail of a Go crash report — `r14  0x8000…`, `pc 0x…`.
+// Machine state, useless for identifying WHICH test died, and long enough to push
+// the part that matters off the end of a fixed-size excerpt.
+var registerDumpRe = regexp.MustCompile(`^(r[0-9]+|x[0-9]+|sp|pc|lr|fp|fault)\s+0x`)
+
+// failureLines picks the lines that explain a failure: every test-level FAIL
+// header, the assertion lines belonging to it, and nothing from tests that
+// passed.
+func failureLines(out string) []string {
+	var hits []string
+	inFail := false
+	for _, ln := range strings.Split(out, "\n") {
+		switch {
+		case failLineRe.MatchString(ln):
+			inFail = true
+			hits = append(hits, ln)
+		case testBoundaryRe.MatchString(ln):
+			inFail = false
+		case inFail && assertionLineRe.MatchString(ln):
+			hits = append(hits, ln)
+		}
+	}
+	return hits
+}
+
+// crashExcerpt returns the head of a process-death report: the signal line and
+// the frames just below it, which name the test that died. It stops at the
+// register dump — for the Metal `fault 0x10` tail the last 15 lines are
+// registers, so a tail-based excerpt shows machine state and hides the answer.
+func crashExcerpt(out string) []string {
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	start := -1
+	for i, ln := range lines {
+		if crashHeadRe.MatchString(ln) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return nil
+	}
+	var ex []string
+	for _, ln := range lines[start:] {
+		if registerDumpRe.MatchString(ln) {
+			break
+		}
+		ex = append(ex, ln)
+		if len(ex) >= 24 {
+			break
+		}
+	}
+	return ex
+}
+
 var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
 
 // detectBackend: nvidia-smi ⇒ cuda, darwin ⇒ metal, else none.

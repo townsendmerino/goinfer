@@ -223,3 +223,73 @@ func TestGPU_ptxVersionComesFromTheArtifact(t *testing.T) {
 		t.Fatalf("recordedNVRTC = %q, want empty for an unversioned artifact", got)
 	}
 }
+
+// The Metal gate reported a FAIL and then printed a dozen PASSING parity lines as
+// its "detail", because failLineRe matched every `file.go:N:` line a t.Log emits.
+// The real cause — a SIGSEGV in objc_msgSend — appeared nowhere, and detail()'s
+// own crash fallback never fired because the filter had already matched. This
+// pins both halves against the shape of the run that exposed it.
+func TestGPU_detailNamesTheCrashingTest(t *testing.T) {
+	// Abbreviated from a real captured run: passing t.Log lines, then the crash.
+	out := `=== RUN   TestAttention_GQA
+    attention_test.go:132: GQA online-softmax attention on Metal GPU vs CPU: cosine=1.0000000 — PARITY
+--- PASS: TestAttention_GQA (0.30s)
+=== RUN   TestSAQVFusion_correctnessAndThroughput
+SIGSEGV: segmentation violation
+PC=0x1803d3c60 m=0 sigcode=2 addr=0x10
+signal arrived during cgo execution
+
+goroutine 2523 gp=0x303cfba82780 m=0 mp=0x1008af6a0 [syscall]:
+github.com/ebitengine/purego/objc.ID.Send(...)
+github.com/townsendmerino/aikit/gpu.(*Encoder).End(0x303d7f73a840)
+github.com/townsendmerino/goinfer/metal.TestSAQVFusion_correctnessAndThroughput(0x303d8c1ba248)
+	/x/metal/sa_qv_fusion_test.go:173 +0xc5c
+r14     0x8000000000000000
+r15     0x1ed2965b8
+fault   0x10
+FAIL	github.com/townsendmerino/goinfer/metal	119.290s
+`
+	var buf strings.Builder
+	g := &gpuGate{w: &buf}
+	g.detail(out, failLineRe)
+	got := buf.String()
+
+	if !strings.Contains(got, "PROCESS DIED") {
+		t.Errorf("a signal death was not reported as one:\n%s", got)
+	}
+	if !strings.Contains(got, "TestSAQVFusion_correctnessAndThroughput") {
+		t.Errorf("the detail does not NAME the test that died — the whole point:\n%s", got)
+	}
+	if strings.Contains(got, "PARITY") || strings.Contains(got, "cosine=1.0000000") {
+		t.Errorf("passing t.Log lines were reported as failure detail:\n%s", got)
+	}
+	if strings.Contains(got, "r14") || strings.Contains(got, "0x8000000000000000") {
+		t.Errorf("the excerpt ran into the register dump instead of stopping at it:\n%s", got)
+	}
+}
+
+// Assertion lines still belong to the failure they came from — and only to it.
+func TestGPU_detailKeepsFailingAssertionsAndDropsPassingLogs(t *testing.T) {
+	out := `=== RUN   TestGood
+    good_test.go:11: cosine=1.0000000 all fine
+--- PASS: TestGood (0.10s)
+=== RUN   TestBad
+    bad_test.go:42: cosine 0.31 vs golden
+--- FAIL: TestBad (0.20s)
+FAIL	github.com/x/metal	1.000s
+`
+	var buf strings.Builder
+	g := &gpuGate{w: &buf}
+	g.detail(out, failLineRe)
+	got := buf.String()
+
+	if !strings.Contains(got, "--- FAIL: TestBad") {
+		t.Errorf("the FAIL header is missing:\n%s", got)
+	}
+	if strings.Contains(got, "all fine") {
+		t.Errorf("a passing test's log was reported as failure detail:\n%s", got)
+	}
+	if strings.Contains(got, "NO ASSERTION LINE MATCHED") {
+		t.Errorf("a real test failure took the crash/unknown path:\n%s", got)
+	}
+}
