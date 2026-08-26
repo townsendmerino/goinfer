@@ -299,3 +299,23 @@ whose prefill cost stays predictable as an agent transcript grows.
 1200s ceiling and aborted. That is not a second cliff: extrapolating int8int8's own n^1.86 from the
 3020-token point predicts **~1216s** at 6020 tokens, so a timeout just past 1200s sits *on* the
 smooth curve. int4's cliff remains the only discontinuity in either dataset.
+
+
+---
+
+# Disposition of the three findings (updated 2026-08-25)
+
+This file is the evidence, not the tracker — but a cold reader should not have to guess whether any
+of it was acted on.
+
+| finding | disposition |
+|---|---|
+| **1 — tool path buffers, so streaming is silent** | **Stage 1 SHIPPED** (`43a3fdb`, queue G19, v0.15.0): SSE comment frames while the buffer holds; 71 heartbeats before the first data frame, mutation-checked. Stage 2 (incremental tool-call-aware streaming) queued, deliberately out of the release. |
+| **2 — abandoned prefill keeps running** | **FIXED** (`3a16a4b`, queue G18, v0.15.0): context threaded through the prefill chain, checked per layer. Bound is one layer (~12.3 s at 3072 tokens), not immediate — stated as such. |
+| **3 — CPU prefill cliff** | **INT4-SPECIFIC** (queue G15, in flight). Not fixed and not blocking the release; the CHANGELOG now tells long-prompt CPU workloads to prefer `int8int8`. The parallelism half is G16, whose two documentation halves shipped (`0c84d1d`). |
+
+**What this run cost and bought.** One end-to-end session with a real consumer surfaced three
+defects no gate had caught — two of them shipped fixes the same day, and the third produced a
+measured curve, three eliminated hypotheses, and a corrected recommendation in the release notes.
+The recipe still is not written, because the qualifying run still has not happened. That ordering is
+the point: the gate held.
