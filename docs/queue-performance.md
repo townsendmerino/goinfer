@@ -47,6 +47,20 @@ therefore unremarkable. int4 goes to n^4 over the same step. The int8 advantage 
 (1.36→1.07) through the smooth regime and then *explodes* to 4.74x exactly at the cliff, which is
 the same fact seen from the other side.
 
+**n^4.03 is a SECANT between two points, not a law.** A clean quartic mechanism is hard even to
+construct. Far more likely is a threshold crossed somewhere inside that octave — a size-class
+boundary, a staging buffer outgrowing something, an unpacking path whose cost structure flips —
+which then grows quadratically like everything else. Expect the pprof diff to show a mechanism that
+looks *discontinuous*, not a uniformly steeper curve; do not go looking for a quartic term. The
+diff-first design is right either way, and int4-vs-int8 at the same M is exactly the differential
+question.
+
+**Residual lesson, recorded because it cost a prediction.** The int8 advantage decayed
+1.36x → 1.24x → 1.07x, and that decay was a *real fact about the smooth regime*. It was then
+extrapolated across a regime boundary to predict a quant-independent cliff, and it inverted to
+4.74x instead. **An extrapolation carries the regime it was measured in** — the same class of error
+as `benchmarks.md`'s own standing warning not to extrapolate its ratios to 7B.
+
 **Do NOT file a mechanism — the discriminating instruments are cheap.** (The repo has already paid
 for this lesson five times on the GEMV.) Two hypotheses were raised and BOTH are weakened by the
 quant-specificity, because `runLayersFromEmbedN`'s ten K-sized scratch buffers and the
@@ -92,6 +106,42 @@ K-row batch through ONE aikit matmul dispatch per head", and explicitly scopes t
 attention's heads OUT ("A1 move (a)... explicitly out of scope"). So the non-parallelism may be
 deliberate and merely undocumented at the serve layer — establish that first; it changes this from
 a bug to a roadmap item.
+
+**BOUNDED QUESTION ANSWERED 2026-08-25 (mac, no hardware needed). Resolution: deliberate then,
+never surfaced — a roadmap-plus-surfacing item, not a bug.**
+
+It splits cleanly in two, and only one half is serial:
+
+1. **Prefill ATTENTION heads are serial BY DESIGN, and the design is documented** — but in a
+   *design doc*, as a deferral. `runLayersFromEmbedN` constructs `newHeadWorkerPool(1, K, maxKeys,
+   hd)` and says so outright: *"this stays serial by construction (pool len 1 always takes
+   attendBatchedHeads's serial branch)"*, citing
+   `docs/prompts/attention-a1-bit-identical-restructure.md`'s scope-out. That doc's wording is a
+   deferral, not a rejection: *"Prefill/verify (M=K) fast-pathing beyond what (b)/(c) give for free
+   — they share the kernels, and that shared speedup is welcome, but **no M>1-specific work
+   here**."* A1 declined to do it, not to have it.
+2. **The weight matmuls DO parallelize.** aikit's `MatmulBTW8A8Batch` fans out over the
+   concatenated column space via `ws.parallel(totalN, …)` above the MAC threshold (and `MatmulBT`
+   is row-parallel above `SetParallelThreshold`). So the qkv and gate/up groups are threaded
+   already.
+
+**That reconciles the CPU fingerprint exactly**, and explains the falling rate in BOTH quants
+without appealing to the cliff: the ~100% floor is the serial attention, the 270%/168% bursts are
+the parallel matmul groups, and since serial attention is O(K²) while the parallel matmuls are
+O(K), attention's share grows with prompt length — so effective tok/s falls as K rises in int4 and
+int8int8 alike. (Strongly indicated by code + fingerprint; the same G15 pprof confirms or kills it
+for free, so it is not worth a separate measurement.)
+
+**Never surfaced anywhere a user could see it.** Grepped `README.md`, `docs/ARCHITECTURE.md`,
+`docs/benchmarks.md`, `docs/env-vars.md`, `docs/api-tiers.md` for any single-threaded/serial
+disclosure: **zero hits**. The decision lives only in a design doc and a code comment, while
+`/health` advertised "batched" — which is precisely the gap G17 just closed at the serve layer.
+
+**So this item becomes two cheap things and one real one:** surface the fact (the G17 pattern,
+already built); record in the A1 campaign doc that the deferral has a measured cost; and then the
+actual lever — thread prefill attention's heads under A1's bit-identity constraint, which
+explicitly permits splitting independent outputs across workers (*"Parallelism may only split
+independent outputs across workers/registers — heads, …"*), so the guarantee is not in the way.
 
 **Ceiling if it is real:** ~4-5x on CPU prefill, which would move the Tier-0 CPU recipe from
 impossible back to viable and is plausibly the best CPU-lane lever currently queued.
