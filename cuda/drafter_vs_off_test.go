@@ -1,12 +1,15 @@
 //go:build cuda && goinfer_testhooks
 
-// Ship-gates for the adaptive verify-width controller (docs/prompts/adaptive-speculation.md
-// Phase 1). Runs the REAL BlockSpec path on a CUDA-resident target, not a reimplemented loop:
+// Per-suite drafter-vs-OFF comparison, including the mixed-content suite.
+//
+// Born as the adaptive-width ship-gates; the adaptive arm and its gates came out when Phase 2's
+// premise died and took the controller with it. What remains is the part that earned its keep:
+// every static width scored against running NO drafter at all, per traffic class. Runs the REAL BlockSpec path on a CUDA-resident target, not a reimplemented loop:
 // cuda/drafter_loop_test.go's dflashLoop is a standalone copy of the round loop and would
 // measure a controller that is not in it.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
-//	  -run TestAdaptiveWidth -v -timeout 4h
+//	  -run TestDrafterVsOff -v -timeout 4h
 package cuda
 
 import (
@@ -111,7 +114,7 @@ func mean(xs []float64) float64 {
 	return s / float64(len(xs))
 }
 
-func TestAdaptiveWidth_shipGates(t *testing.T) {
+func TestDrafterVsOff_perSuite(t *testing.T) {
 	requireHeavyModel(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
@@ -198,13 +201,13 @@ func TestAdaptiveWidth_shipGates(t *testing.T) {
 					r := run(fmt.Sprintf("static%d", w), decoder.BlockSpecOptions{VerifyWidth: w})
 					results[r.label] = append(results[r.label], r.tokPerSec/offRate)
 				}
-				ad := run("adaptive", decoder.BlockSpecOptions{
-					VerifyWidth: 8, Adaptive: true, MinWidth: 2, MaxWidth: blockSize,
-				})
-				results["adaptive"] = append(results["adaptive"], ad.tokPerSec/offRate)
+				// The mixed suite's per-round trace is kept: it is how Finding 2 was found
+				// and how the next drafter change gets checked against it. Recorded at the
+				// widest arm, since that is where a transition shows most.
 				if suite == "mixed" {
-					ad.label = promptText
-					mixedTraces = append(mixedTraces, ad)
+					tr := run("trace", decoder.BlockSpecOptions{VerifyWidth: blockSize})
+					tr.label = promptText
+					mixedTraces = append(mixedTraces, tr)
 				}
 			}
 
@@ -226,19 +229,13 @@ func TestAdaptiveWidth_shipGates(t *testing.T) {
 					bestStatic, bestStaticLabel = r.ratio, r.label
 				}
 			}
-			adv := mean(results["adaptive"])
-
-			// GATE 1: adaptive >= best static, per suite.
-			if adv < bestStatic-0.02 {
-				t.Errorf("GATE(best-static): adaptive %.3fx < best static %s %.3fx — the controller "+
-					"does not earn its place on %s; widthHeadroom is the first thing to suspect",
-					adv, bestStaticLabel, bestStatic, suite)
-			}
-			// GATE 2: beating every static width is meaningless if OFF wins.
-			if adv < 1.0 {
-				t.Errorf("GATE(off): adaptive %.3fx < 1.0x on %s — plain decoding with NO drafter is "+
-					"faster, so the guard's binary stop was encoding something real here and "+
-					"default-off must stay, with this number as the documented reason", adv, suite)
+			// THE SURVIVING GATE: does the drafter beat NO drafter at all on this suite?
+			// The adaptive arm and its two gates were removed with the controller (Phase 2's
+			// premise died, so nothing was left to reuse it) — but `off` as a competitor is
+			// the part that earned its keep, and it stays.
+			if bestStatic < 1.0 {
+				t.Logf("NOTE: no width beats OFF on %s (best %s %.3fx) — block drafting does not "+
+					"pay on this traffic class with this pairing", suite, bestStaticLabel, bestStatic)
 			}
 
 			// THE WINDOW. A cumulative average weights round N at 1/N, so at a mid-generation

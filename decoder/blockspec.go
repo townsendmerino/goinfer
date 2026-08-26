@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 )
 
 // errBlockSpecUnsupported is returned when the backend cannot host a block drafter, so a caller
@@ -90,20 +89,6 @@ type BlockSpecOptions struct {
 	// MaxTokens caps generation; 0 means unlimited (the caller stops on EOS).
 	MaxTokens int
 
-	// Adaptive turns VerifyWidth into a STARTING width that the controller may move within
-	// [MinWidth, MaxWidth] between rounds, instead of a constant for the whole generation.
-	//
-	// DEFAULT-OFF ON PURPOSE. It is not a strictly safer guard: the binary guard DISABLES a
-	// workload whose cumulative average sits below break-even, where the controller first
-	// NARROWS it — so chat, which the guard turns off at 0.92x, instead runs on at width ~4
-	// (its measured optimum, 11aeed4). That may well be better, and it is exactly the
-	// comparison the ship-gates demand; until those pass on real pairings this stays opt-in
-	// so no existing `--drafter` user's behaviour moves underneath them.
-	Adaptive bool
-	// MinWidth / MaxWidth bound the controller. 0 selects defaults: MinWidth 2 (below which
-	// there is no draft to verify) and MaxWidth the drafter's own block size.
-	MinWidth, MaxWidth int
-
 	// OnRound, if non-nil, is called after each completed round with the verify width that
 	// round used and the tokens it committed (accepted drafts plus the target's own token).
 	//
@@ -112,13 +97,6 @@ type BlockSpecOptions struct {
 	// cumulative-average signal lags, and an aggregate number hides that — and `serve` owes
 	// per-request accept-rate and tok/verify in its response metadata regardless.
 	OnRound func(width, committed int)
-
-	// widthSchedule forces an exact per-round width sequence, cycling if generation outlasts
-	// it. TEST-ONLY, and it exists for one reason: the losslessness gate must exercise a
-	// CHANGING schedule. A controller that happens to hold one width all run would pass a
-	// lossless test while proving nothing about width transitions, which is where a wrong
-	// rollback or a stale position would actually live.
-	widthSchedule []int
 }
 
 // defaultVerifyWidth is 8 — measured as the optimum for math (1.79x), within 2% of code's
@@ -187,12 +165,6 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	if width < 2 {
 		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d is too narrow", width)
 	}
-	// The controller's ceiling is the drafter's own block size: the target must never be asked
-	// to verify positions the drafter did not draft.
-	maxW := opt.MaxWidth
-	if maxW <= 0 || maxW > dw.BlockSize() {
-		maxW = dw.BlockSize()
-	}
 	if err := host.SetBatchedCapture(s.taps); err != nil {
 		return nil, 0, err
 	}
@@ -244,13 +216,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	}
 
 	maskID := dw.MaskTokenID()
-	// Adaptive off (the default) pins the controller to a single width, so observe() reduces
-	// to the guard's own rule and the shipped path is behaviourally unchanged.
-	ctlMin, ctlMax := width, width
-	if opt.Adaptive || len(opt.widthSchedule) > 0 {
-		ctlMin, ctlMax = opt.MinWidth, maxW
-	}
-	guard := newWidthController(width, ctlMin, ctlMax, opt.widthSchedule)
+	var guard acceptanceGuard
 	seamOff := false
 	for opt.MaxTokens <= 0 || len(out) < opt.MaxTokens {
 		if eos[anchor] {
@@ -300,10 +266,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			}
 			continue
 		}
-		rw := guard.width()
-		blockIn := make([][]float32, rw)
+		blockIn := make([][]float32, width)
 		blockIn[0] = m.embedResident(anchor)
-		for i := 1; i < rw; i++ {
+		for i := 1; i < width; i++ {
 			blockIn[i] = m.embedResident(maskID)
 		}
 		trunk, e := rd.DraftBlock(blockIn)
@@ -369,7 +334,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		}
 		anchor = next
 		if opt.OnRound != nil {
-			opt.OnRound(rw, 1+accepted)
+			opt.OnRound(width, 1+accepted)
 		}
 		guard.observe(1 + accepted)
 	}
@@ -512,125 +477,3 @@ func (g *acceptanceGuard) observe(committed int) bool {
 	}
 	return true
 }
-
-// widthHeadroom is the +2 in "target width = committed-per-round + 2".
-//
-// DERIVED FROM THE MEASURED OPTIMA, not tuned. 11aeed4 swept all three suites and found the
-// optimum verify width TRACKS acceptance: math 8, code 7, chat 4. Against the tok/round those
-// suites actually commit, one line fits all three:
-//
-//	chat   1.96 tok/round + 2 = 3.96  -> 4   (measured optimum 4)
-//	math   5.88 tok/round + 2 = 7.88  -> 8   (measured optimum 8)
-//	code   between the two            -> 7   (measured optimum 7)
-//
-// The +2 has a reading beyond the fit: a round commits the accepted drafts PLUS the target's
-// own token at the first disagreement, so drafting exactly as many as you expect to accept
-// leaves nothing for the disagreement to land in, and one more position buys the chance that
-// the run was better than average.
-//
-// THREE POINTS ARE NOT A LAW. This is a hypothesis the ship-gates exist to confirm or kill;
-// if adaptive fails to beat the best static width per suite, this target function is the
-// first thing to suspect, ahead of the hysteresis constants.
-const widthHeadroom = 2
-
-// growPatience is how many consecutive rounds must ask for a WIDER block before granting one.
-//
-// The asymmetry is the same one the guard's own comments derive, applied to width instead of
-// on/off: a too-wide draft wastes draft+verify on tail positions that rarely land (positions
-// 12-15 gained 0.09 accepted tokens BETWEEN them while costing 9.4 ms/round, docs/spec/08),
-// while a too-narrow one merely leaves throughput on the table. So round toward the cheap
-// error: shrink on the first round that asks, grow only on sustained evidence.
-const growPatience = 3
-
-// widthController subsumes acceptanceGuard: it moves the verify width inside [min,max] and
-// treats "at min and still not paying" as the guard's stop.
-//
-// The signal is the guard's own CUMULATIVE average, deliberately. A fast loop chasing
-// per-round acceptance is not a new idea here — it was tried as the 6->3 window and it
-// BACKFIRED, costing 42% on math by reacting to a slow opening that the whole-generation
-// average (5.88 tok/round) hides. Same damping, same warmup window, one extra output.
-type widthController struct {
-	min, max, cur  int
-	rounds, tokens int
-	grow           int
-	stopped        bool
-	sched          []int // test-only forced schedule; nil in production
-}
-
-func newWidthController(start, minW, maxW int, sched []int) *widthController {
-	if minW < 2 {
-		minW = 2
-	}
-	if maxW < minW {
-		maxW = minW
-	}
-	if start < minW {
-		start = minW
-	}
-	if start > maxW {
-		start = maxW
-	}
-	return &widthController{min: minW, max: maxW, cur: start, sched: sched}
-}
-
-// width reports the width to draft THIS round.
-func (c *widthController) width() int {
-	if len(c.sched) > 0 {
-		return c.sched[c.rounds%len(c.sched)]
-	}
-	return c.cur
-}
-
-// observe records a round's committed tokens and reports whether to keep drafting.
-func (c *widthController) observe(committed int) bool {
-	if c.stopped {
-		return false
-	}
-	c.rounds++
-	c.tokens += committed
-	if len(c.sched) > 0 {
-		return true // a forced schedule is the test's to control, not the controller's
-	}
-	if c.rounds < guardWindow {
-		return true // the proven warmup: judging earlier is what cost math 42%
-	}
-	avg := float64(c.tokens) / float64(c.rounds)
-
-	// THE FLOOR CASE IS THE OLD GUARD. At min width a round can commit at most min tokens,
-	// which is below breakEvenTokensPerRound by construction for min=2 — so arriving at min
-	// IS the decision to stop, and the threshold keeps the meaning it was measured with.
-	if c.cur <= c.min && avg < breakEvenTokensPerRound {
-		c.stopped = true
-		return false
-	}
-	// A drafter committing barely more than one token per round has essentially nothing
-	// accepted, and no width can fix that: the round still pays a draft and a verify to
-	// produce what one plain decode would. Narrowing is for MARGINAL workloads, not dead
-	// ones, so dead ones still stop outright rather than idling at width 3 forever.
-	if avg < deadDrafterCommit {
-		c.stopped = true
-		return false
-	}
-
-	target := int(math.Round(avg)) + widthHeadroom
-	target = min(max(target, c.min), c.max)
-	switch {
-	case target < c.cur:
-		c.cur = target // shrink FAST, all the way, on the first round that asks
-		c.grow = 0
-	case target > c.cur:
-		c.grow++
-		if c.grow >= growPatience {
-			c.cur++ // grow SLOW: one position, on sustained evidence
-			c.grow = 0
-		}
-	default:
-		c.grow = 0
-	}
-	return true
-}
-
-// deadDrafterCommit is the average below which no width pays. A round that commits ~1 token
-// accepted nothing: it bought one target token for a draft plus a batched verify, which is
-// strictly worse than the single decode that would have produced it.
-const deadDrafterCommit = 1.35
