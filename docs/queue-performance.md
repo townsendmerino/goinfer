@@ -364,6 +364,44 @@ kernels, which f32 slices would have had to become anyway.
 
 ## In flight
 
+**G23 · Attention A3 — is an f32 attention path worth its divergence flag? MEASURE FIRST** — `mac`,
+**CLAIMED 2026-08-26, IN FLIGHT.**
+
+`docs/task-attention-decode-cost.md` closed A2/A3 with a named reopening trigger: *"the 32k regime
+is where A3 might still earn its keep (revisit with A1's long-context numbers in hand)."* **Those
+numbers now exist**, from the G20 work — K=8192 prefill, dense 1.5B, M1 Pro:
+
+| function | flat |
+|---|---|
+| `MatmulAVAcc64` | **51.1%** |
+| `MatmulQKAcc64` | **18.7%** |
+| `dotI8SDOT` (weight matmul) | 12.7% |
+
+**~70% of long-context prefill is attention in the acc64 (f64) path**, whose own comment calls it
+"~3.7× slower than f32". That is the trigger firing.
+
+**What is NOT yet established, and is this item's whole job:** how much of that an f32 path actually
+recovers. Two reasons the naive estimate is wrong:
+
+1. **acc64 skips work f32 must do.** `MatmulQK/AVAcc64` read K/V *directly* by stride, "skipping a
+   kh gather entirely" and "skipping a vt gather+transpose". The f32 branch pays both. So the
+   end-to-end delta is smaller than the kernel ratio, by an amount nobody has measured.
+2. **The f32 branch is single-threaded BY CONSTRUCTION.** Its per-kv-group `kh`/`vt` gather is
+   shared mutable state — "this stays single-threaded (the gather itself is shared, mutable state a
+   concurrent split would race on)" — so it runs through `pool[0]` alone. An end-to-end A/B would
+   compare parallel-acc64 against serial-f32 and measure the confound, not the kernel.
+
+**So: measure the KERNELS at the real tiled shapes** (kt=256, hd=128, nKeys=8192 — what G20's tiling
+actually calls), and derive the ceiling from the profile share rather than running a rigged race.
+
+**Decision rule, fixed before the number arrives.** A3 costs a permanently-supported,
+not-bit-identical `--cpu-fast-attention` flag (the `--metal-fast-prefill` precedent) and it breaks
+A1's stated guarantees — spec-decode verify == sequential greedy, and decode == prefill — for
+anything that enables it. Near the 3.7× kernel ratio, that surface is earned. Near 1.3×, it is not,
+and this item closes as a measured negative. **If it is built, the f32 path must also be made to
+fan out** (gather once per kv-group, then split the group's query heads across workers reading it) —
+otherwise a faster kernel loses to parallel acc64 anyway.
+
 **P16 · Re-anchor every `linux`-box measurement to the Nobara 44 / driver 595.91.07 stack** —
 `linux`, **CLAIMED 2026-08-26, IN FLIGHT.** Stale-marking done and committed; the re-measure is the
 open half.
