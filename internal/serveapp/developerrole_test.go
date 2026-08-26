@@ -2,6 +2,8 @@ package serveapp
 
 import (
 	"encoding/json"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -179,38 +181,109 @@ func TestDeveloperRoleIsNotGeneralRoleTolerance(t *testing.T) {
 	}
 }
 
-// TestAnthropicDeveloperRoleStaysUser pins /v1/messages, where the alias is
-// DELIBERATELY not applied — a documented decision, not an omission.
+// TestAnthropicRejectsIllegalRoles is the G12 pin, FLIPPED by G13.
 //
-// The task doc assumed a developer-role message was structurally impossible on
-// this surface because Anthropic carries `system` as a top-level field. It is
-// not impossible: anthropicMessage.Role is a free string and anthropicRole maps
-// everything that is not "assistant" to a user turn, so "developer" is demoted
-// here exactly as it was on the OpenAI surfaces — and there is no role
-// validation anywhere in serveapp to catch it first.
+// It used to assert that /v1/messages silently demoted a developer-role message
+// to a user turn — pinned deliberately, so the behavior was visible rather than
+// silent while the decision was pending. The decision came out the other way:
+// the Anthropic Messages API accepts only "user" and "assistant" and rejects
+// anything else, so demote-vs-alias was the wrong menu for this surface and
+// rejection is the faithful answer.
 //
-// It is left demoted anyway. The Anthropic Messages API has no developer role,
-// so honoring one would invent behavior upstream does not have on a surface
-// whose compatibility bar is "works for the apps that matter"; and nothing sends
-// it here, because a client speaking this shape puts its system prompt in the
-// top-level field. This test exists so the behavior is pinned rather than
-// silent: if it ever starts to matter, it fails here first.
-func TestAnthropicDeveloperRoleStaysUser(t *testing.T) {
+// The class matters more than the instance. "developer" was never special here —
+// ANY typo'd or invented role was folded into the conversation, restructuring
+// what the model saw. Each case below is a shape that used to be swallowed.
+func TestAnthropicRejectsIllegalRoles(t *testing.T) {
+	for _, role := range []string{
+		"developer", // the instance that exposed the class
+		"system",    // the likeliest mistake: system is a top-level field on this API
+		"Assistant", // case matters
+		"USER",      //
+		"sytem",     // a plain typo
+		"tool",      // legal on the OpenAI surface, not this one
+		"",          // omitted entirely
+		"function",  //
+	} {
+		req := &anthropicReq{
+			System:   json.RawMessage(`"TOP LEVEL SYSTEM"`),
+			Messages: []anthropicMessage{{Role: role, Content: rawStr("SCAFFOLD")}},
+		}
+		_, _, aerr := anthropicTurns(req)
+		if aerr == nil {
+			t.Errorf("role %q was accepted; it must be a clean 400, not folded into the conversation", role)
+			continue
+		}
+		if aerr.code != http.StatusBadRequest || aerr.kind != "invalid_request_error" {
+			t.Errorf("role %q: got (%d, %q), want (400, invalid_request_error)", role, aerr.code, aerr.kind)
+		}
+		if !strings.Contains(aerr.msg, role) && role != "" {
+			t.Errorf("role %q: error does not name the offending role: %s", role, aerr.msg)
+		}
+	}
+}
+
+// The legal roles must still work, including the shapes Claude Code actually
+// sends — otherwise the validation above is a compatibility break wearing a
+// correctness costume.
+func TestAnthropicAcceptsLegalRoles(t *testing.T) {
 	req := &anthropicReq{
-		System:   json.RawMessage(`"TOP LEVEL SYSTEM"`),
-		Messages: []anthropicMessage{{Role: "developer", Content: rawStr("SCAFFOLD")}, {Role: "user", Content: rawStr("hi")}},
+		System: json.RawMessage(`"TOP LEVEL SYSTEM"`),
+		Messages: []anthropicMessage{
+			{Role: "user", Content: rawStr("q1")},
+			{Role: "assistant", Content: rawStr("a1")},
+			{Role: "user", Content: json.RawMessage(`[{"type":"text","text":"q2","cache_control":{"type":"ephemeral"}}]`)},
+		},
 	}
 	system, turns, aerr := anthropicTurns(req)
 	if aerr != nil {
-		t.Fatalf("anthropicTurns: %+v", aerr)
+		t.Fatalf("legal roles rejected: %+v", aerr)
 	}
 	if system != "TOP LEVEL SYSTEM" {
-		t.Errorf("system = %q, want the top-level field %q", system, "TOP LEVEL SYSTEM")
+		t.Errorf("system = %q, want the top-level field", system)
 	}
-	if len(turns) == 0 || turns[0].Role != "user" {
-		t.Fatalf("turns = %+v, want the developer message pinned as a user turn", turns)
+	if len(turns) != 3 {
+		t.Fatalf("got %d turns, want 3: %+v", len(turns), turns)
 	}
-	if system == "SCAFFOLD" {
-		t.Error("the alias must not be applied on /v1/messages")
+	for i, want := range []string{"user", "assistant", "user"} {
+		if turns[i].Role != want {
+			t.Errorf("turn %d role = %q, want %q", i, turns[i].Role, want)
+		}
+	}
+}
+
+// An illegal role must surface as a real HTTP 400 with the Anthropic error body,
+// on /v1/messages AND on /v1/messages/count_tokens — validating inside
+// anthropicTurns is what makes both true, and a test at the function alone would
+// not have shown it.
+func TestAnthropicIllegalRoleIsHTTP400(t *testing.T) {
+	ts := newAnthropicTestServer(t)
+	defer ts.Close()
+
+	for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens"} {
+		body := `{"model":"test-model","max_tokens":8,"messages":[{"role":"developer","content":"x"}]}`
+		resp, err := http.Post(ts.URL+path, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("post %s: %v", path, err)
+		}
+		var got struct {
+			Type  string `json:"type"`
+			Error struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&got)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", path, resp.StatusCode)
+		}
+		if got.Error.Type != "invalid_request_error" {
+			t.Errorf("%s: error.type = %q, want invalid_request_error", path, got.Error.Type)
+		}
+		if !strings.Contains(got.Error.Message, "developer") {
+			t.Errorf("%s: message does not name the offending role: %q", path, got.Error.Message)
+		}
+		t.Logf("%s -> %d %s: %s", path, resp.StatusCode, got.Error.Type, got.Error.Message)
 	}
 }

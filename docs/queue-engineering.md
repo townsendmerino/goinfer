@@ -1463,7 +1463,22 @@ just the function.
 ### G. New capability, scoped but not started
 
 **G13 · `/v1/messages` silently restructures the conversation for ANY illegal role — validate and
-reject instead** — `mac`, **CLAIMED 2026-08-26, IN FLIGHT.** Small. Does not block Tier 0 of
+reject instead** — `mac`, **DONE 2026-08-26.**
+
+**Landed:** `anthropicTurns` rejects any role that is not `user`/`assistant` with a
+`400 invalid_request_error` naming the offending role and pointing at the top-level `system` field
+(the likeliest mistake). Validating there rather than in the handler covers `/v1/messages`,
+`/v1/messages/count_tokens` and the vision path at once — all three already surfaced the `*apiErr`.
+
+**Gates:** eight illegal shapes rejected (`developer`, `system`, `Assistant`, `USER`, `sytem`,
+`tool`, `""`, `function`), each asserted to be a 400 that names the role; legal roles still accepted
+including a `cache_control`-bearing block array (the shape Claude Code actually sends), so the
+validation is not a compatibility break in disguise; and an HTTP-level test proving the 400 reaches
+the wire on BOTH routes — a function-level test alone would not have shown that.
+Mutation-checked: removing the check fails the rejection test.
+
+`anthropicRole`'s doc comment now records that its "everything else is a user turn" fallback is no
+longer load-bearing, so nobody reads it as a license to accept new roles silently. Small. Does not block Tier 0 of
 `docs/scoping-dsh-goinfer.md`; the interim state is visible (pinned), which is the point.
 
 **Before-state, already recorded as a passing test** — `TestAnthropicDeveloperRoleStaysUser` in

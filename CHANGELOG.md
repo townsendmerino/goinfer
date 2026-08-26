@@ -72,6 +72,14 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
   failure now arrives as a mid-stream `error` event on a 200 response rather than as a 500. This
   matches what the non-tool streaming paths already did (a status code is no longer available once
   headers are flushed). **Non-streaming requests are unchanged and still return 500.**
+- **`/v1/messages` now validates message roles** — the array accepts only `user` and `assistant`,
+  as the upstream Anthropic API does, and anything else is a `400 invalid_request_error` naming the
+  offending role. Previously **any** unrecognized role — a typo, an invented name, or `system`
+  (which is a top-level field on this API, not a message role) — was silently folded into the
+  conversation as a *user* turn, restructuring what the model saw with no error anywhere. Real
+  Anthropic-shape clients only ever send legal roles, so this costs them nothing; everyone else now
+  gets a loud failure instead of a quiet mangling. Applies to `/v1/messages/count_tokens` and the
+  vision path too, which share the same conversion.
 - **`role: "developer"` is accepted as an alias for `role: "system"`** on the OpenAI-compatible
   routes — same position, same last-one-wins precedence two `system` messages already have.
   OpenAI's newer APIs send the system prompt under that role for reasoning-class models and agent

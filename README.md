@@ -327,8 +327,13 @@ content blocks (`text`, `tool_use`/`tool_result` replay), `tools` (note:
 `input_schema`), `tool_choice` (`auto`/`any`/`tool` — `any`/`tool` ride the same
 constrained decoding, so a malformed tool call is impossible), `stop_sequences`,
 and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
-→ `message_delta` → `message_stop`, no `[DONE]`). Point Claude Code at it — all
-three env vars are required:
+→ `message_delta` → `message_stop`, no `[DONE]`).
+
+The `messages` array accepts **only `user` and `assistant`**, as upstream does; any
+other role is a `400 invalid_request_error` naming the offending role. In particular
+`system` is **not** a message role on this API — it is the top-level `system` field —
+and `developer` (accepted as a `system` alias on the OpenAI-compatible routes) is not
+one either. Point Claude Code at it — all three env vars are required:
 
 ```bash
 go run ./cmd/serve --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf

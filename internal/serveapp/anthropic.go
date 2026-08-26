@@ -185,6 +185,22 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 	toolNames := map[string]string{} // tool_use id → name, to label tool-result turns
 	var turns []chat.Turn
 	for mi, m := range req.Messages {
+		// G13: the Anthropic Messages API accepts exactly two roles in this array.
+		// Reject anything else instead of folding it into the conversation.
+		//
+		// Before this check, anthropicRole mapped everything that is not "assistant"
+		// to a USER turn and nothing validated, so a typo'd, invented, or wrong-API
+		// role ("developer", "Assistant", "sytem") did not fail — it silently
+		// restructured what the model saw. That is a worse outcome than a 400 for
+		// every caller: a real Anthropic-shape client only ever sends legal roles, so
+		// rejection costs it nothing, while anything else gets a loud failure instead
+		// of a quiet mangling. It is also what upstream does, which is the
+		// compatibility bar this surface is held to.
+		if m.Role != "user" && m.Role != "assistant" {
+			return "", nil, badReq("message %d: role must be %q or %q, got %q "+
+				"(the system prompt is the top-level \"system\" field on this API, not a message role)",
+				mi, "user", "assistant", m.Role)
+		}
 		// Plain-string content: the common case.
 		var s string
 		if json.Unmarshal(m.Content, &s) == nil {
@@ -261,6 +277,11 @@ func anthropicImages(req *anthropicReq) ([]imageRef, error) {
 
 // anthropicRole maps the wire role to an internal turn role (assistant passes
 // through; everything else is a user turn).
+//
+// Since G13 the caller validates first, so "everything else" can only be "user"
+// here — the fallback is no longer load-bearing and must not be treated as a
+// license to accept new roles silently. Widening what reaches this function
+// means widening the validation above, deliberately.
 func anthropicRole(role string) string {
 	if role == "assistant" {
 		return "assistant"
