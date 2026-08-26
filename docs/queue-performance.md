@@ -75,7 +75,7 @@ number. This artifact survived three documents and several hours of reasoning be
 arrived with no context to contradict it. Retroactive reconstruction was only possible because the
 sequence happened to be re-runnable.
 
-## G16 · CPU batched prefill is single-threaded — ~4-5x left on the pure-Go lane — `mac`, **LEVER CLAIMED 2026-08-26, IN FLIGHT** (both documentation halves already done)
+## G16 · CPU batched prefill is single-threaded — ~4-5x left on the pure-Go lane — `mac`, **DONE 2026-08-26** (surfacing + lever; see G20 for the long-prompt half)
 
 **Independent of G15 and true pre-cliff**, which is why it is filed separately: at 170 tokens,
 int8int8 prefills at 51.5 tok/s while **five performance cores sit idle**.

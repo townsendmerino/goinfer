@@ -106,8 +106,10 @@ This repo's measurements are the product, so the standards are load-bearing:
   same input, pooled means carry between-input variance that swamps the effect. Measured here:
   the same data read pooled gave sd 10–35 tok/s against an ~8% effect, and read paired gave sd
   5.5–8.7 with 11/12 pairs. They disagreed about whether an effect existed. Recorded as rule 7
-  of aikit's internal measuring-performance notes (not cited as a path here — a cross-repo
-  gitignored file is unresolvable from any other clone, which is the trap two bullets down).
+  of aikit's internal measuring-performance notes (described, not cited as a path — a cross-repo
+  path does not resolve from any other clone, which is the trap two bullets down. Note the file is
+  TRACKED in aikit, not gitignored as this line used to claim; the advice is unchanged, the reason
+  was wrong).
 - **Include the do-nothing arm.** "Beats every configuration" means nothing if *off* wins. A
   speculation suite was found where no verify width beat running no drafter at all — only
   visible because `off` was a competitor.
