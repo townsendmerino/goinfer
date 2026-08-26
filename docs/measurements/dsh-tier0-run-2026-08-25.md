@@ -151,3 +151,81 @@ least one of those" — goinfer now rejects none.
    has 32k and cannot hold a tool loop. The recipe should say what a model must *do* (return a
    tool call AND then answer from its result), and say that a model which re-calls the same tool is
    the model's limit, not the server's — with the render check above as how to tell.
+
+---
+
+# The agent run FAILED, and the failure is ours. Three findings.
+
+The headless agent task (`"List the files in the current directory, then tell me how many there
+are."`) never produced an answer. dsh's own session transcript
+(`$DSH_HOME/sessions/*/session-*/session.jsonl.zstd`, zstd-compressed JSONL) gives the timeline:
+
+| t | event |
+|---|---|
+| 0.1s | agent request sent — 4214-char system prompt, **25 tool declarations**, `maxTokens: 2048` |
+| 3.7s | **session-title LLM call SUCCEEDS** — a small request answers fine |
+| 300.1s | agent request: `pi-ai stream idle timeout after 300000ms`, **zero bytes received** |
+| 300.6s | retry 1/5 (`TIMEOUT` is in dsh's retryable set) → times out again at 600.6s |
+| 601.6s | retry 2/5 → killed by the harness wall clock |
+
+The session-title call succeeding at 3.7s is the control that makes the rest diagnosable: goinfer
+answers a small request promptly, so nothing is wedged.
+
+## Finding 1 — the tool path buffers even when streaming, so a slow generation is INVISIBLE
+
+`internal/serveapp/tools.go`, stated in its own comment: *"Tool decisions need the whole output, so
+buffer (even when streaming)."* The whole generation is accumulated into a `strings.Builder`, and
+only then is SSE opened and the entire message sent as one delta plus a finish. This is correct for
+tool-call parsing and it is honest SSE — but it means **`stream: true` with tools declared emits
+zero bytes until the generation completes**.
+
+dsh's default `streamIdleTimeoutMs` is **300000ms**, and `TIMEOUT` is in its retry set. Any
+generation slower than five minutes therefore cannot succeed through dsh, no matter how correct the
+output is.
+
+**Replayed the exact request** (same system prompt, same 25 tools translated to OpenAI function
+tools, `stream: true`, 32887 request bytes) against a freshly restarted server:
+
+```
+FIRST BYTE at 1682.6s
+TOTAL 1682.6s, 495 bytes
+```
+
+Every byte arrived at the end. 28 minutes to first byte against a 5-minute client timeout.
+
+## Finding 2 — an abandoned request keeps running; PREFILL is not cancellable
+
+`tools.go` passes `r.Context()` into `lm.drive`, so cancellation is wired correctly at the seam.
+It does not help, because the time is spent in prefill, and prefill is one long call that does not
+observe the context.
+
+Measured twice, unambiguously:
+
+- After dsh was killed, goinfer kept a core saturated and climbed from **14:59 → 19:53 → 22:01** of
+  CPU time with no client attached.
+- After a second client (the replay) was killed, goinfer was still burning at **47:38** of
+  accumulated CPU.
+
+Each of dsh's five retries opens a *new* generation while the abandoned one keeps prefilling, so a
+single agent turn can pin the server for far longer than any client is waiting. **This is
+reachable from an ordinary client that gives up** — no hostile input required.
+
+## Finding 3 — CPU prefill is superlinear, and is not delivering a batched speedup
+
+The server advertises `prefill path: batched (CPU forwardLayersN, one weight stream for the whole
+prompt)`. Measured (system prompt of N filler words, `max_tokens: 1`, so the number is prefill plus
+one token):
+
+| prompt_tokens | prefill+1tok | effective |
+|---|---|---|
+| 170 | 4.5s | 37.7 tok/s |
+| 620 | 24.4s | 25.4 tok/s |
+
+Two things are wrong here. The absolute rate (~38 tok/s at best) is **the same order as this
+model's decode rate** — batched prefill is not buying the speedup the label implies. And the rate
+*falls* as the prompt grows, i.e. cost is superlinear in prompt length (~n^1.3 over this range).
+Extrapolating that exponent to the agent request's ~8k-token prompt predicts ~700s, which is
+consistent with the >600s a `max_tokens: 1` request actually took.
+
+**This is the root cause of the whole failure.** Findings 1 and 2 are what turn a slow prefill into
+a silent, uncancellable, retry-amplified one.
