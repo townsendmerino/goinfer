@@ -244,3 +244,53 @@ against it exceeded 600s.
 
 **This is the root cause of the whole failure.** Findings 1 and 2 are what turn a slow prefill into
 a silent, uncancellable, retry-amplified one.
+
+
+---
+
+# Experiment 1 (int8int8 comparison) — the cliff is INT4-SPECIFIC, and the prediction was wrong
+
+The decisions doc named a cheap first experiment: re-run the prefill points at `-quant int8int8`,
+on the theory that int4's per-token nibble unpacking was the suspect. It also registered a
+prediction — that the 3020-token int8int8 point would land in the same ~1500s class as int4,
+because the *decaying* int8 advantage (1.36x → 1.24x → 1.07x) said the dominant term at depth was
+quant-independent.
+
+**The prediction is refuted, and the reasoning behind it inverted at the last point.**
+
+| prompt_tokens | `-quant int4` | `-quant int8int8` | int8 advantage |
+|---|---|---|---|
+| 170 | 4.5s (37.8 tok/s) | 3.3s (51.5 tok/s) | 1.36x |
+| 620 | 24.4s (25.4 tok/s) | 19.7s (31.5 tok/s) | 1.24x |
+| 1520 | 99.9s (15.2 tok/s) | 93.2s (16.3 tok/s) | 1.07x |
+| 3020 | **1587.1s (1.9 tok/s)** | **334.9s (9.0 tok/s)** | **4.74x** |
+
+| step | int4 | int8int8 |
+|---|---|---|
+| 170→620 | n^1.31 | n^1.38 |
+| 620→1520 | n^1.57 | n^1.73 |
+| 1520→3020 | **n^4.03** | n^1.86 |
+
+int8int8 shows **no cliff**: it converges on ~n^2, which is simply what attention costs. int4 goes
+to n^4 across the same step. The decaying advantage was real but was a fact about the *smooth*
+regime only; it reversed into a 4.74x explosion precisely where int4 falls over.
+
+**Both branches of the experiment were half right.** int8int8 is faster — but by a shrinking
+constant, not multiples, through the smooth regime; and it is **also single-threaded**, which is the
+escalation branch. But the cliff, the thing that actually made the agent run impossible, is int4's
+alone.
+
+**Two mechanism hypotheses died on this data**, both raised from the CPU-sample fingerprint and the
+RSS: allocation-rate-driven GC, and per-head attention scores spilling L2/SLC. `runLayersFromEmbedN`
+allocates the same ten K-sized buffers and the same K×(startPos+K) attention scratch **regardless of
+quant**, so either story predicts a quant-independent cliff. There isn't one.
+
+**Filed as three separable items** rather than one, so the cheap fixes do not wait on the hard
+investigation: **G15** (the int4 cliff — profile first, no mechanism filed), **G16** (the missing
+parallelism — independent of the cliff, true pre-cliff, ~4-5x on the pure-Go lane), **G17** (the
+`prefill path: batched` label — fixed same day, gated on neither).
+
+**What this does NOT change:** the pass-2 GPU re-scope stands. It only explains the long-prompt
+penalty from the inside — and it adds one line to the eventual recipe that could not have been
+written before: on the CPU backend, `int8int8` is not merely the fast lane, it is the only quant
+whose prefill cost stays predictable as an agent transcript grows.

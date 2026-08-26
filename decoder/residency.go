@@ -714,7 +714,14 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 		if !m.canBatchN(2) {
 			return false, "sequential — this arch has its own per-token forward (no batched CPU prefill)"
 		}
-		return true, "batched (CPU forwardLayersN, one weight stream for the whole prompt)"
+		// The word "batched" here names the SHAPE (weights stream once per prompt at
+		// M=K instead of once per token), not a throughput claim. Measured on an M1
+		// Pro, dense 1.5B: the CPU prefill path is single-threaded and its best
+		// observed rate is the same order as the model's DECODE rate, so a reader who
+		// hears "batched" as "fast" is being misled by this string (queue G17; the
+		// missing parallelism is G16). Say what it is and what it is not.
+		return true, "batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — " +
+			"describes weight streaming, not throughput; this path is single-threaded"
 	}
 	if os.Getenv("GOINFER_BATCHED_PREFILL") == "0" {
 		return false, "sequential — GOINFER_BATCHED_PREFILL=0 forces the per-token loop"

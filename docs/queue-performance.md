@@ -18,6 +18,90 @@ Throughput, latency, kernels, residency, memory. Anything whose success criterio
 
 
 
+
+## G15 · CPU prefill falls off an INT4-SPECIFIC cliff at ~1.5k-3k tokens — `mac`, QUEUED, filed 2026-08-25
+
+Found by the dsh Tier-0 run (`docs/measurements/dsh-tier0-run-2026-08-25.md`), which it made
+impossible: an 8k-token agent prompt could not be prefilled inside any harness timeout.
+
+**Both curves, dense qwen2.5-coder-1.5b, CPU backend, M1 Pro, `max_tokens: 1` so the number is
+prefill + 1 token. Same script, same box, freshly restarted server per run.**
+
+| prompt_tokens | `-quant int4` | `-quant int8int8` | int8 advantage |
+|---|---|---|---|
+| 170 | 4.5s (37.8 tok/s) | 3.3s (51.5 tok/s) | 1.36x |
+| 620 | 24.4s (25.4 tok/s) | 19.7s (31.5 tok/s) | 1.24x |
+| 1520 | 99.9s (15.2 tok/s) | 93.2s (16.3 tok/s) | 1.07x |
+| 3020 | **1587.1s (1.9 tok/s)** | **334.9s (9.0 tok/s)** | **4.74x** |
+
+Per-step exponents:
+
+| step | int4 | int8int8 |
+|---|---|---|
+| 170→620 | n^1.31 | n^1.38 |
+| 620→1520 | n^1.57 | n^1.73 |
+| 1520→3020 | **n^4.03** | n^1.86 |
+
+**int8int8 has NO cliff** — it converges smoothly on ~n^2, which is what attention costs and is
+therefore unremarkable. int4 goes to n^4 over the same step. The int8 advantage *decays*
+(1.36→1.07) through the smooth regime and then *explodes* to 4.74x exactly at the cliff, which is
+the same fact seen from the other side.
+
+**Do NOT file a mechanism — the discriminating instruments are cheap.** (The repo has already paid
+for this lesson five times on the GEMV.) Two hypotheses were raised and BOTH are weakened by the
+quant-specificity, because `runLayersFromEmbedN`'s ten K-sized scratch buffers and the
+K×(startPos+K) per-head attention scratch are **identical between quants**, so any GC-rate or
+cache-residency story predicts a quant-independent cliff and we do not have one:
+
+- ~~allocation-rate-driven GC going nonlinear~~ — predicts quant-independence
+- ~~per-head attention scores crossing L2/SLC (9→36 MB)~~ — predicts quant-independence
+
+**First diagnostics, before any hypothesis:**
+1. A 30s pprof CPU profile taken *during* an int4 3020-token prefill — names the unit directly.
+   The discriminating question is now specifically "what does int4 do at M=3020 that int8int8 does
+   not", so profile both and diff.
+2. `GODEBUG=gctrace=1` on an int4 1520-vs-3020 pair — splits GC share of wall time in one rerun
+   each, and settles the GC hypothesis rather than arguing it.
+
+**Ruled out already:** a silent fallback from batched to sequential forwards. `canBatchN`
+(`decoder/forwardn.go`) has **no size threshold** — only `K > 1` plus family exclusions — and
+qwen2.5 is a plain gated-MLP family, so batching stays engaged at every K.
+
+**Context worth carrying:** `demo/chat`'s docs call int8int8 the CPU fast lane and note the int4
+path pays per-token nibble unpacking; `ARCHITECTURE.md`'s dispatch table promises int4 only "the
+same kernel at every M" — i.e. possibly no amortization at M=len. That is a *lead for the profile
+to confirm or kill*, not a finding.
+
+## G16 · CPU batched prefill is single-threaded — ~4-5x left on the pure-Go lane — QUEUED, filed 2026-08-25
+
+**Independent of G15 and true pre-cliff**, which is why it is filed separately: at 170 tokens,
+int8int8 prefills at 51.5 tok/s while **five performance cores sit idle**.
+
+CPU sampled every 2s during a large int8int8 prefill: `99.6 111.0 270.2 99.7 168.4 99.1 102.5` on a
+box with **8 logical / 6 performance cores**. Predominantly one core with brief bursts. int4 is the
+same (~105% throughout). This is the exact lane the pure-Go, single-binary pitch lives on.
+
+**The bounded question:** did the batched-prefill matmuls simply never get the parallel dispatch the
+decode path has? `runLayersFromEmbedN`'s own comment says the batched path runs "each layer's whole
+K-row batch through ONE aikit matmul dispatch per head", and explicitly scopes threading batched
+attention's heads OUT ("A1 move (a)... explicitly out of scope"). So the non-parallelism may be
+deliberate and merely undocumented at the serve layer — establish that first; it changes this from
+a bug to a roadmap item.
+
+**Ceiling if it is real:** ~4-5x on CPU prefill, which would move the Tier-0 CPU recipe from
+impossible back to viable and is plausibly the best CPU-lane lever currently queued.
+
+## G17 · `prefill path: batched` advertises a speedup it does not deliver — FIXED 2026-08-25
+
+C2 class: a claim readers hear as "fast" that names only a shape. `/health` and `/v1/models`
+reported `batched (CPU forwardLayersN, one weight stream for the whole prompt)` while the measured
+best-case CPU rate is the same order as the model's DECODE rate, on one thread.
+
+**Fixed** in `decoder/residency.go`'s `PrefillPath`: the string now says it describes weight
+streaming and not throughput, and that the path is single-threaded. Deliberately not gated on G15
+or G16 — the wording is wrong today regardless of how either investigation lands.
+
+
 ## P14 — the CPU gap to llama.cpp is KERNEL ARITHMETIC, not threading and not quant format (2026-08-19)
 
 aikit pushed back on "kernel quality" as too vague and proposed a specific, well-founded
