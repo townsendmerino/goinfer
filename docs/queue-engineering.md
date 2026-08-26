@@ -17,6 +17,32 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
+**G18 · Prefill ignores cancellation — an abandoned client leaves a core burning** — `mac`,
+**CLAIMED 2026-08-25, IN FLIGHT. Ships in v0.14.0** (decision:
+`docs/measurements/dsh-tier0-decisions.md`).
+
+Correctness / consumer-trust class, **not** perf — the class C4-soak exists to catch, found early
+by a real harness instead (the dsh Tier-0 run). Measured before-state, twice: goinfer climbed
+**14:59 → 19:53 → 22:01** of CPU with no client attached, and reached **47:38** after a second
+killed client. A retrying harness stacks generations — dsh retries a `TIMEOUT` five times, and each
+retry opens a new prefill while the abandoned one keeps running.
+
+**The seam is already right and that is the trap.** `internal/serveapp/tools.go` passes
+`r.Context()` into `lm.drive`, so the cancellation looks wired at review. It does not reach the
+work: `generateInto` has the ctx but calls `m.prefillLogits(prompt[prefillFrom:], cache)`
+(`decoder/model.go:907`) without it, and `prefillLogits` / `forwardLayersN` /
+`runLayersFromEmbedN` take no context at all. The resident prefill loop in `generateInto`
+(`for i, id := range prompt`) does not check it either.
+
+**Change:** thread ctx through the prefill chain and check it per layer in the batched path, per
+token in the sequential fallback and the resident loop. At ~28 layers the check is free (the
+decisions doc: "at 25 tok/s the check is free") and bounds wasted work to one layer.
+
+**Gates (from the decision):** an abandoned-client test bounding CPU-after-disconnect; the same for
+a client killed mid-queue (the retry-storm shape — a retry must not inherit a zombie's slot);
+and **confirm decode's existing cancellation behavior while there**, so the fix's scope statement is
+checked rather than assumed.
+
 **G14 · Tier 0 — the tested "Use goinfer with DeepSeek Harness" recipe** — `mac`, **CLAIMED
 2026-08-25, IN FLIGHT.** Scope, tiers and the standing "nothing in goinfer may depend on dsh" rule
 are in `docs/scoping-dsh-goinfer.md`; this is its Tier 0 only.
