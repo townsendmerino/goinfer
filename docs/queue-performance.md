@@ -345,6 +345,33 @@ boot on it.**
 loader moved with it, so CPU-side dispatch and scheduling are in scope, not only the GPU rows. The
 re-anchor decision does not change — the list of what must be re-measured does.
 
+**STAGE 2 (timing) DONE, 2026-08-26 — 33/33 cells, zero errors, landed as `benchmarks.md` §B8.**
+Gate PASS at `a161bd6` 13:44Z, sweep 13:44→14:23Z. The competitive picture is unchanged by the
+upgrade: 0.5B **1.24×** and 1.5B **1.13×** at 128, parity at 7B/128 (**1.00×**), losing with depth
+to **0.71×** at 3900 on every model.
+
+**The peer was the control, and it held to <0.5%.** Across a distro major upgrade, Ollama
+reproduced its 2026-08-09 greedy numbers in all seven comparable cells within 0.6% (0.5B@2048 to the
+decimal), on a box whose documented between-session drift is ~3.5%. So the stack did not move decode
+throughput for an engine that did not change, and a goinfer-side delta above ~1% is attributable
+rather than dismissible. goinfer's own cells moved +0.7% to +4.3% except the two @512 cells —
+**not claimed as a speedup**: that cell carries the set's widest spread and the old 0.5B row was
+non-monotonic (512 read *below* 2048), so the honest reading is that the old 512 cells were suspect.
+
+**STILL STALE, and none of it is discharged by this run:** §B (WebGPU int8/q8_0 — §B8 is q4_K_M),
+§B4, §B6, §B7, the v0.11.0 qualification, and §B5's sampled / phi3-mini / gemma3-1b cells.
+
+**A harness defect this run exposed, now fixed.** `bench_peer.py` stamped NO provenance into its
+results file — no driver, no commit, no load average, nothing but the numbers. The page it feeds is
+provenance-gated, and the re-anchor this task exists to perform was needed *because* a driver
+version had not been attached to the numbers it governed; the instrument could not attach it either.
+It now writes a header (driver, distro, kernel, commit + tree-dirty, peer version, binary mtimes)
+plus load average and GPU temperature at every cell, and **refuses to start on a non-idle box**
+rather than warning — a warning inside a 39-minute detached run is read, if at all, after the
+numbers already exist and have been believed. This run's own machine state is therefore **attested
+by the operator, not instrument-read**; its archived results header is marked `RECONSTRUCTED` and
+separates the two field by field. Decision (Francis, 2026-08-26): keep the numbers, fix the harness.
+
 **STAGE 1 (parity) RESULT, 2026-08-26 — the JIT is CLEAN; two allocation pins moved.** The gate ran
 48 min and came back **RED on exactly two tests**, both allocation-accounting pins, and **green on
 everything that asserts a forward**: the heavy tier (real models, 249 tests, 2758s) PASSED, CUDA

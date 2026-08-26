@@ -55,10 +55,18 @@
 > stay that way — this box does not revive them. **§A** (Apple Silicon CPU) and **§B3** (Metal) are
 > measured on the MacBook and are **unaffected**.
 >
-> **Until the re-measure lands:** no row in those sections may be quoted as a current claim (README,
-> CHANGELOG, release qualification, capability matrix). Re-measure with `scripts/bench_peer.py`
-> (peer Ollama v0.32.5 at `~/ollama-0325`, both sides over HTTP, interleaved) — **not**
-> `bench_compare.sh`, which by its own design note never drives the peer.
+> **PARTIALLY DISCHARGED, 2026-08-26.** Parity was re-established first (`gate gpu` PASS at
+> `a161bd6`: real-model heavy tier green, CUDA graphs bit-exact, **24/24 PTX byte-identical** — the
+> driver's new compiler did not move the numerics), and the greedy peer sweep then re-anchored the
+> §B2/§B5-style rows into **§B8**. What that run does **not** cover remains STALE and may not be
+> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M), **§B4** (26B host↔VRAM
+> streaming), **§B6** (split-KV), **§B7** (deep context), the v0.11.0 qualification, and §B5's
+> sampled / phi3-mini / gemma3-1b cells. Each is a separate leg with its own procedure;
+> `bench_peer.py` does not produce any of them.
+>
+> Re-measure with `scripts/bench_peer.py` (peer Ollama v0.32.5 at `~/ollama-0325`, both sides over
+> HTTP, interleaved) — **not** `bench_compare.sh`, which by its own design note never drives the
+> peer.
 
 ---
 
@@ -339,9 +347,11 @@ gpu-assessment — cited there.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
-> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
-> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
-> this page for what moved and what replaces it.
+> **⚠ SUPERSEDED for greedy peer rows — measured before the 2026-08-25 re-anchor** (driver
+> `595.58.03`, Nobara 43, kernel `7.0.5-200.fc43`). The current anchor is **§B8**, re-measured
+> 2026-08-26 on driver 595.91.07 / Nobara 44. What §B8 does **not** cover stays STALE and is not a
+> current claim: the sampled (`temp` / `temp+top_p`) rows, and every phi3-mini and gemma3-1b cell —
+> that sweep was greedy-only and qwen2.5-coder-only.
 
 > **⚠ RETIRED (2026-08-09) — the 0.5B pair and its 1.78× are withdrawn, not corrected.**
 > The two halves were produced by **different methods**: `scripts/bench_compare.sh` measures
@@ -789,9 +799,11 @@ GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 
 ## B5 — Anchored re-measure, 2026-08-09 (goinfer `686c9f8` vs Ollama v0.32.6)
 
-> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
-> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
-> this page for what moved and what replaces it.
+> **⚠ SUPERSEDED for greedy peer rows — measured before the 2026-08-25 re-anchor** (driver
+> `595.58.03`, Nobara 43, kernel `7.0.5-200.fc43`). The current anchor is **§B8**, re-measured
+> 2026-08-26 on driver 595.91.07 / Nobara 44. What §B8 does **not** cover stays STALE and is not a
+> current claim: the sampled (`temp` / `temp+top_p`) rows, and every phi3-mini and gemma3-1b cell —
+> that sweep was greedy-only and qwen2.5-coder-only.
 
 One binary for every cell. Supersedes the sampled rows in the README's G11 section; the older rows
 elsewhere on this page keep their own binary and peer version and are NOT updated in place.
@@ -1203,6 +1215,99 @@ head's bytes (×7 on the 0.5B, ×6 on the 1.5B), Ollama would sit at **147–190
 impossible**. So the bytes are read ~once. Even under that falsified upper bound goinfer never exceeds
 59% of peak, so the conclusion survives either model. This is arithmetic from measured throughput plus
 known geometry, **not an ncu profile** — a profile could refine the number, not flip the sign.
+
+## B8 — RE-ANCHORED to the Nobara 44 / driver 595.91.07 stack (2026-08-26, goinfer `a161bd6`)
+
+**This section is the current anchor for goinfer-vs-Ollama greedy CUDA decode.** It supersedes the
+peer rows in §B2 and §B5. §B4, §B6 and §B7 are **not** re-anchored by it and stay marked STALE —
+`bench_peer.py` does not produce them, and marking them off this run would bless rows nothing
+measured. The sampled (`temp` / `temp+top_p`) rows and the phi3-mini / gemma3-1b cells in §B5 are
+likewise **not** covered: this sweep is greedy-only, qwen2.5-coder-only.
+
+**Provenance, every row below:** goinfer **`a161bd6`** · peer **Ollama v0.32.5** (`~/ollama-0325`) ·
+RTX 2070 SUPER, **driver 595.91.07**, **Nobara 44 / kernel 7.2.0-202.fc44 / glibc 2.43-8**, CUDA
+13.2 reported by the driver · Ryzen 7 3700X · qwen2.5-coder **0.5B / 1.5B / 7B** at **q4_K_M**, same
+weights both sides, from local NVMe under `~/models` · **2026-08-26** · **greedy** (`temperature 0`
+sent explicitly to both; peer also `seed 1`) · **decode-only, prefill excluded** (inter-token rate
+timed client-side from the first streamed token) · servers restarted per cell, **interleaved cell by
+cell** · 64 tokens × 8 completions × 2 runs per cell, spread shown · **33/33 cells, zero errors** ·
+GPU exclusive at start (the supervisor refuses to launch if anything beyond the compositor holds the
+card) · **parity established first**: `gate gpu` PASS at the same sha, 39 minutes before the sweep.
+
+> **Machine state on this row-set is ATTESTED, not instrument-read, and that is a defect being
+> retired rather than a convention.** `bench_peer.py` recorded no load average until the change
+> committed alongside these numbers; the operator attests the box was idle for the duration, and the
+> GPU-exclusivity above *was* machine-enforced. Later runs carry a real header (driver, distro,
+> kernel, commit, tree-dirty, peer version, binary mtimes, and load average + GPU temperature at
+> every cell) and the harness now **refuses to start** on a non-idle box. Do not read this
+> attestation as equivalent to that record — the archived results JSON marks the header
+> `RECONSTRUCTED` and separates instrument-read from attested fields, field by field.
+
+### Greedy decode by KV depth — the anchor table
+
+| depth | goinfer 0.5B | Ollama 0.5B | goinfer 1.5B | Ollama 1.5B | goinfer 7B | Ollama 7B |
+|---|---|---|---|---|---|---|
+| 128 | **332.7** ±4.9 | 268.7 ±0.9 | **220.8** ±1.0 | 195.8 ±0.1 | **73.1** ±0.0 | 72.8 ±0.1 |
+| 512 | **304.0** ±10.7 ᵍ | 267.9 ±0.5 | **196.5** ±1.9 | 171.2 ±14.8 ʰ | 69.6 ±0.1 | 72.3 ±0.0 |
+| 2048 | 253.3 ±0.1 | 266.4 ±0.4 | 159.3 ±0.3 | 179.2 ±0.2 | 58.4 ±0.1 | 70.9 ±0.0 |
+| 3900 | 202.5 ±0.2 | 258.6 ±0.0 | 123.1 ±0.3 | 174.2 ±0.3 | 49.0 ±0.0 | 69.5 ±0.1 |
+
+| depth | 0.5B | 1.5B | 7B |
+|---|---|---|---|
+| 128 | **1.24×** | **1.13×** | 1.00× |
+| 512 | **1.13×** | **1.15×** | 0.96× |
+| 2048 | 0.95× | 0.89× | 0.82× |
+| 3900 | 0.78× | 0.71× | 0.71× |
+
+ᵍ 3.5% spread — the widest cell in the set and the only one near this page's 5% threshold. Indicative.
+ʰ 8.6% spread on the PEER side, reproducing the instability §B5 recorded at this exact cell
+(spread 27.0 there, 146–182 over ten runs in the campaign before it). Three campaigns, three
+binaries, two OS stacks, same cell: this is a property of Ollama at 1.5B/512 on this card, not of a
+session. Treat the 1.15× at that cell as indicative.
+
+**The picture is unchanged by the upgrade**: a real win on tiny models at short context, parity at
+7B/128, and a widening loss with depth on every model. Depth still stops at 3900 (`cudaCtxCap`).
+
+### The backend table, 128 context, greedy
+
+| model | goinfer CPU | Ollama CPU | goinfer CUDA | Ollama CUDA | goinfer WebGPU ⁱ |
+|---|---|---|---|---|---|
+| 0.5B | 23.5 ±0.1 | 57.9 ±0.1 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
+| 1.5B | 17.6 ±0.0 | 24.2 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
+| 7B | 4.9 ±0.0 | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 | 46.1 ±0.0 |
+
+ⁱ **Cross-backend, not a peer cell.** Ollama has no WebGPU build, so this column has no counterpart
+and must never be presented as a like-for-like comparison. It is here to place goinfer's portable
+backend against its own native one: WebGPU runs at **38 / 41 / 63%** of goinfer's own CUDA at 0.5B /
+1.5B / 7B — the gap narrows as the model grows, which is what a dispatch-overhead story predicts.
+
+### The peer is the control, and it held to <0.5%
+
+The point of re-measuring both sides is that the peer becomes a control on everything that is not
+goinfer. Across a **distro major upgrade** — new driver, new kernel, new libc, new graphics stack —
+Ollama reproduced its 2026-08-09 numbers cell for cell:
+
+| cell | Ollama 2026-08-09 (driver 595.58.03) | Ollama 2026-08-26 (driver 595.91.07) | Δ |
+|---|---|---|---|
+| 0.5B @128 | 269.4 | 268.7 | −0.3% |
+| 0.5B @512 | 269.6 | 267.9 | −0.6% |
+| 0.5B @2048 | 266.4 | 266.4 | 0.0% |
+| 0.5B @3900 | 259.8 | 258.6 | −0.5% |
+| 1.5B @128 | 195.4 | 195.8 | +0.2% |
+| 1.5B @2048 | 179.5 | 179.2 | −0.2% |
+| 1.5B @3900 | 174.3 | 174.2 | −0.1% |
+
+Seven cells, every one inside 0.6%, on a box whose documented between-session drift is ~3.5%. Two
+things follow, and only two. **The stack upgrade did not move decode throughput** for an engine that
+did not change. And **the harness and the box are stable enough that a goinfer-side delta of more
+than ~1% is attributable** rather than dismissible as session noise.
+
+goinfer's own cells moved **+0.7% to +4.3%** against 2026-08-09 at every depth except 0.5B @512
+(243.2 → 304.0) and 1.5B @512 (181.9 → 196.5). Those two are not claimed as a speedup here: the
+0.5B @512 cell carries this set's widest spread, the old 0.5B row was **non-monotonic** (512 read
+*below* 2048, 243.2 vs 244.0, which a depth curve should not do), and the binaries differ — so the
+honest reading is that the old 512 cells were suspect, not that something got 25% faster. **The
+comparison in this subsection is cross-session and indicative; the anchor is the table above it.**
 
 ## Measurement notes worth keeping
 

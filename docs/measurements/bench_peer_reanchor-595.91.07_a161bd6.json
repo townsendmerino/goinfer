@@ -1,0 +1,763 @@
+[
+ {
+  "kind": "provenance",
+  "RECONSTRUCTED": true,
+  "reconstructed_note": "This run PREDATES the machine-state capture added to bench_peer.py on 2026-08-26; the harness emitted no provenance at all. These fields were reconstructed afterwards from the supervisor's STATUS file, the gate log, dnf history and the binaries on disk. Every field below is either INSTRUMENT-READ (recorded by a program at the time) or ATTESTED (asserted afterwards by a person). The distinction is kept because it is the whole point: an attested value cannot be argued with later, which is why the capture now exists. Runs after this one carry the real thing and should not be compared to this header as if it were equivalent.",
+  "utc_run_start": "2026-08-26T13:44:18Z",
+  "utc_run_end": "2026-08-26T14:23:39Z",
+  "host": "nobara-pc",
+  "instrument_read": {
+   "goinfer_commit": "a161bd6",
+   "gpu_driver": "595.91.07",
+   "gpu": "NVIDIA GeForce RTX 2070 SUPER, 8192 MiB",
+   "source": "supervisor STATUS line written at stage start; gate log provenance block at the same sha",
+   "gpu_exclusive_at_start": "the supervisor refuses to start if more than one compute process holds the card; it started, so only the compositor did",
+   "parity_precondition": "gate gpu PASS at a161bd6, 2026-08-26T13:44:18Z, immediately before this sweep"
+  },
+  "attested": {
+   "by": "operator (Francis), 2026-08-26",
+   "claim": "the box was totally quiet for the duration of this run",
+   "loadavg": null,
+   "why_not_measured": "bench_peer.py recorded no load average until the change committed alongside this file"
+  },
+  "environment": {
+   "distro": "Nobara Linux 44",
+   "kernel": "7.2.0-202.nobara.fc44.x86_64",
+   "glibc": "2.43-8.fc44",
+   "cuda_reported_by_driver": "13.2",
+   "cpu": "AMD Ryzen 7 3700X",
+   "cpu_count": 16,
+   "note": "first measurements on this stack; the 43->44 upgrade landed 2026-08-25 22:28 PDT"
+  },
+  "peer": {
+   "engine": "ollama",
+   "version": "0.32.5",
+   "bin": "/home/francis/ollama-0325/bin/ollama"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-reanchor/serve-cpu",
+    "built": "2026-08-25T23:00 PDT (goinfer d8c64f5; every commit since is docs-only)"
+   },
+   "cuda": {
+    "path": "/home/francis/bench-reanchor/serve-cuda",
+    "built": "2026-08-25T23:00 PDT (goinfer d8c64f5; every commit since is docs-only)"
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-reanchor/serve-webgpu",
+    "built": "2026-08-25T23:00 PDT (goinfer d8c64f5; every commit since is docs-only)"
+   }
+  },
+  "method": "decode-only, timed client-side from the first streamed token; interleaved cell by cell with a server restart between cells; 64 tokens x 8 completions x 2 runs per cell; sampling sent explicitly (see each record's `sent`)",
+  "scope": "re-anchors the B/B2/B5-style PEER rows only. B4 (26B host<->VRAM), B6 (split-KV) and B7 (deep context) are separate legs and remain STALE.",
+  "cells": 33
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   23.51341471572219,
+   23.451350388089615
+  ],
+  "error": null,
+  "secs": 93.6,
+  "mean": 23.5,
+  "spread": 0.1
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cpu",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   57.89492786041937,
+   57.8231202552173
+  ],
+  "error": null,
+  "secs": 35.0,
+  "mean": 57.9,
+  "spread": 0.1
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   330.2267585590637,
+   335.16675252220887
+  ],
+  "error": null,
+  "secs": 11.1,
+  "mean": 332.7,
+  "spread": 4.9
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   268.2216010658062,
+   269.08105968570123
+  ],
+  "error": null,
+  "secs": 75.5,
+  "mean": 268.7,
+  "spread": 0.9
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "webgpu",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   128.12831116877203,
+   127.09728117315068
+  ],
+  "error": null,
+  "secs": 26.7,
+  "mean": 127.6,
+  "spread": 1.0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   17.565152385524996,
+   17.584232948497224
+  ],
+  "error": null,
+  "secs": 137.0,
+  "mean": 17.6,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cpu",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   24.245401011669692,
+   24.214485328693435
+  ],
+  "error": null,
+  "secs": 60.1,
+  "mean": 24.2,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   220.32129009532807,
+   221.3668884961052
+  ],
+  "error": null,
+  "secs": 17.0,
+  "mean": 220.8,
+  "spread": 1.0
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   195.8128287232593,
+   195.73440221884582
+  ],
+  "error": null,
+  "secs": 22.7,
+  "mean": 195.8,
+  "spread": 0.1
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "webgpu",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   89.8477894761665,
+   90.26299646107799
+  ],
+  "error": null,
+  "secs": 36.1,
+  "mean": 90.1,
+  "spread": 0.4
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   4.874602337718194,
+   4.8762221464529425
+  ],
+  "error": null,
+  "secs": 424.1,
+  "mean": 4.9,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cpu",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   5.973104248416313,
+   5.96113628565931
+  ],
+  "error": null,
+  "secs": 180.5,
+  "mean": 6.0,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   73.1085386628989,
+   73.10159738227922
+  ],
+  "error": null,
+  "secs": 48.4,
+  "mean": 73.1,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   72.85317139782343,
+   72.78994998426694
+  ],
+  "error": null,
+  "secs": 26.8,
+  "mean": 72.8,
+  "spread": 0.1
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "webgpu",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   46.06549269247197,
+   46.04517632507203
+  ],
+  "error": null,
+  "secs": 88.9,
+  "mean": 46.1,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   298.68917049763576,
+   309.4011281936341
+  ],
+  "error": null,
+  "secs": 13.8,
+  "mean": 304.0,
+  "spread": 10.7
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   267.68062218431396,
+   268.15266746698626
+  ],
+  "error": null,
+  "secs": 18.2,
+  "mean": 267.9,
+  "spread": 0.5
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   253.1908995573129,
+   253.30989900929367
+  ],
+  "error": null,
+  "secs": 29.8,
+  "mean": 253.3,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   266.23281283663846,
+   266.61938121603146
+  ],
+  "error": null,
+  "secs": 17.8,
+  "mean": 266.4,
+  "spread": 0.4
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   202.37029725840924,
+   202.5960341655109
+  ],
+  "error": null,
+  "secs": 60.0,
+  "mean": 202.5,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   258.5656117508579,
+   258.5925509734625
+  ],
+  "error": null,
+  "secs": 18.6,
+  "mean": 258.6,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   195.5781560425744,
+   197.4927503911554
+  ],
+  "error": null,
+  "secs": 20.2,
+  "mean": 196.5,
+  "spread": 1.9
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   178.57152907841018,
+   163.77036546146647
+  ],
+  "error": null,
+  "secs": 14.7,
+  "mean": 171.2,
+  "spread": 14.8
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   159.47403896776115,
+   159.1703149790817
+  ],
+  "error": null,
+  "secs": 54.7,
+  "mean": 159.3,
+  "spread": 0.3
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   179.31299872149327,
+   179.12306703008974
+  ],
+  "error": null,
+  "secs": 20.5,
+  "mean": 179.2,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   123.23583899833714,
+   122.925178325508
+  ],
+  "error": null,
+  "secs": 113.7,
+  "mean": 123.1,
+  "spread": 0.3
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   174.07156783825044,
+   174.36370095349787
+  ],
+  "error": null,
+  "secs": 20.6,
+  "mean": 174.2,
+  "spread": 0.3
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   69.62367880117759,
+   69.49713643332043
+  ],
+  "error": null,
+  "secs": 68.3,
+  "mean": 69.6,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   72.29857641580742,
+   72.26922362725563
+  ],
+  "error": null,
+  "secs": 27.5,
+  "mean": 72.3,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   58.39243364669596,
+   58.31204004474063
+  ],
+  "error": null,
+  "secs": 172.1,
+  "mean": 58.4,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   70.87221295781472,
+   70.86762075078396
+  ],
+  "error": null,
+  "secs": 31.1,
+  "mean": 70.9,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   48.9990893844069,
+   49.002258381934304
+  ],
+  "error": null,
+  "secs": 343.0,
+  "mean": 49.0,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   69.43790223530353,
+   69.5158822861845
+  ],
+  "error": null,
+  "secs": 32.6,
+  "mean": 69.5,
+  "spread": 0.1
+ }
+]

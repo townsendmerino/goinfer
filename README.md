@@ -23,8 +23,8 @@ and runs them **in-process**. What makes it different — you don't have to choo
 - **Fast when you want it — still cgo-free.** The default build is pure-Go CPU
   (SIMD-accelerated, NEON / AVX2). Opt into a GPU backend and it *stays* `CGO_ENABLED=0`:
   **native CUDA** (cgo-free, driver-only — no toolkit; **14.6 MB** of binary against a bundled
-  toolkit's gigabytes, decoding qwen2.5-coder-1.5B at **217.8 tok/s** at short context — measured
-  on the pre-2026-08-25 driver stack, re-measure pending; numbers and the peer comparison
+  toolkit's gigabytes, decoding qwen2.5-coder-1.5B at **220.8 tok/s** at short context — measured
+  2026-08-26 on driver 595.91.07; numbers and the peer comparison
   below), **native Metal** on Apple Silicon,
   and a portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
   bigger-than-VRAM MoE weights). Going fast never costs you the single binary.
@@ -86,7 +86,8 @@ weights once to a `.giw` bundle and it reloads in ~13 s
 fit 8 GB even at 4-bit**) decodes coherently on the same card, running **fully GPU-resident** —
 every expert executes on the GPU, streamed from host RAM into a VRAM cache over the cgo-free CUDA
 backend. Rate depends on how much of that cache fits (all rates below are on the pre-2026-08-25
-driver stack, re-measure pending): **11.3 tok/s at 16 slots/layer**, and
+driver stack and are NOT re-anchored — the 26B host↔VRAM leg has its own procedure, which the
+2026-08-26 greedy sweep does not run): **11.3 tok/s at 16 slots/layer**, and
 **16.98 tok/s** was measured once at 38 — a configuration not currently reproducible on this card
 (see the note below, and read the slot count as part of the claim).
 (Current Ollama also runs this 26B on 8 GB, but by offloading 58% to the CPU, at ~24.5 tok/s;
@@ -533,30 +534,41 @@ Both engines need an NVIDIA driver; neither needs a CUDA toolkit at build or run
 
 ### Measured throughput — goinfer
 
-> **⚠ STALE — re-measure pending (2026-08-26).** Every CUDA figure in this README was measured on
-> the RTX 2070 SUPER under driver **`595.58.03`** / Nobara 43, a stack this box replaced on
-> **2026-08-25** (now driver **`595.91.07`**, kernel `7.2.0-202.fc44`, CUDA 13.2). This matters more
-> here than for a bundled-toolkit engine, for the reason stated two sections up: goinfer ships PTX
-> and **depends on the driver's compiler**, so a driver upgrade can change the generated code. The
-> numbers are kept and dated rather than carried forward as current; they are being re-measured
-> against the same peer (Ollama v0.32.5) on the new stack. Scope, provenance and the seven affected
-> sections: [docs/benchmarks.md](docs/benchmarks.md), re-anchor box at the top.
+> **⚠ RE-ANCHORED 2026-08-26 — read which table you are looking at.** This box replaced its whole
+> OS and driver stack on 2026-08-25 (Nobara 43 → 44, driver **`595.58.03` → `595.91.07`**, kernel
+> `7.2.0-202.fc44`, CUDA 13.2). That matters more here than for a bundled-toolkit engine, for the
+> reason stated two sections up: goinfer ships PTX and **depends on the driver's compiler**. Parity
+> was re-established before any timing (real-model gate green, 24/24 PTX byte-identical — the new
+> compiler did not move the numerics), and **greedy decode is re-measured below on the new stack**.
+> **Still on the old stack and NOT current:** the sampling-configuration table, and the time-to-ready
+> table above. Full scope: [docs/benchmarks.md](docs/benchmarks.md) §B8.
 
 **Decode-only; prefill excluded.** Inter-token rate, timed client-side from the first streamed
 token onward, over HTTP. Prefill is a separate axis and goinfer is **behind** on it (~4.7× at last
 measurement, `docs/benchmarks.md` §B2); nothing here captures it.
 
-**Provenance, every figure below:** qwen2.5-coder **0.5B / 1.5B**, **q4_K_M** · goinfer **v0.10.3**,
-except the KV-depth rows which are **`2693dce`** (post-v0.10.3, labelled at each table) · RTX 2070
-SUPER, driver **595.58.03** · **2026-08-09** · servers restarted per cell, ≥8 completions per run, ≥2
-runs per cell, spread shown · sampling sent explicitly (never assumed).
+**Provenance, the current anchor:** qwen2.5-coder **0.5B / 1.5B / 7B**, **q4_K_M** · goinfer
+**`a161bd6`** · RTX 2070 SUPER, driver **595.91.07**, Nobara 44 / kernel 7.2.0-202.fc44 ·
+**2026-08-26** · servers restarted per cell and interleaved against the peer · 64 tokens × 8
+completions × 2 runs per cell, spread shown · sampling sent explicitly (never assumed).
 
-**Decode by KV depth — greedy (`temperature 0`)** (re-measured 2026-08-09 on goinfer `2693dce`,
-post-v0.10.3 — see the note below):
+**Decode by KV depth — greedy (`temperature 0`)** — the current anchor:
+
+| context | 0.5B | 1.5B | 7B |
+|---|---|---|---|
+| 128 | **332.7** ±4.9 | **220.8** ±1.0 | **73.1** ±0.0 |
+| 512 | 304.0 ±10.7 | 196.5 ±1.9 | 69.6 ±0.1 |
+| 2048 | 253.3 ±0.1 | 159.3 ±0.3 | 58.4 ±0.1 |
+| 3900 | 202.5 ±0.2 | 123.1 ±0.3 | 49.0 ±0.0 |
+
+Decode still slows with KV depth: **−39% (0.5B), −44% (1.5B), −33% (7B)** from 128 to 3900. Closing
+that is scoped as long-context attention work in `docs/ollama-chase.md`.
+
+<details><summary><b>Previous anchor — 2026-08-09, goinfer <code>2693dce</code>, driver 595.58.03</b> (kept for the split-KV finding it records)</summary>
 
 | context | 0.5B | 1.5B |
 |---|---|---|
-| 128 | **320.9** ±0.0 | **218.5** ±0.9 |
+| 128 | 320.9 ±0.0 | 218.5 ±0.9 |
 | 512 | 286.6 ±2.4 | 195.0 ±0.8 |
 | 2048 | 250.2 ±1.0 | 157.0 ±0.6 |
 | 3900 | 200.8 ±0.0 | 122.1 ±0.2 |
@@ -568,10 +580,10 @@ now gated per geometry and per layer (`2693dce`). Output is byte-identical eithe
 2048 rows are the ones that changed; 128 and 3900 re-measured unchanged, which is the control.
 Derivation and the full 48-cell table: [docs/benchmarks.md](docs/benchmarks.md) §B6.
 
-Decode still slows with KV depth: −37% (0.5B) and −44% (1.5B) from 128 to 3900. Closing that is scoped
-as long-context attention work in `docs/ollama-chase.md`.
+</details>
 
-**Decode by sampling configuration — 128 context** (goinfer **v0.10.3**; the greedy row is this
+**Decode by sampling configuration — 128 context** — ⚠ **still on the pre-2026-08-25 stack; not
+re-anchored** (the 2026-08-26 sweep was greedy-only) (goinfer **v0.10.3**; the greedy row is this
 campaign's measurement of the same cell the depth table above re-measured on `2693dce` — 320.1 vs
 320.9 and 217.8 vs 218.5 is run-to-run noise, not a discrepancy: the split-KV gate does not engage at
 128 context in either build):
@@ -589,6 +601,14 @@ and is its slowest path. Passing `top_k` recovers most of the difference. The re
 cost is scoped as **D6** in `docs/ollama-chase.md`.
 
 ### Compared with Ollama v0.32.6
+
+> **⚠ The current peer anchor is [docs/benchmarks.md](docs/benchmarks.md) §B8** — re-measured
+> 2026-08-26 on driver 595.91.07 against **Ollama v0.32.5**, greedy, three models, four depths,
+> 33/33 cells. The rows in this section are against **v0.32.6** on the old stack and are kept
+> because they carry the sampled configurations and the per-cell annotations §B8 does not have.
+> **Do not mix the two**: different peer version, different OS. §B8 records that Ollama itself
+> reproduced its 2026-08-09 greedy numbers to within 0.6% across the upgrade, which is why the
+> goinfer-side deltas there are attributable.
 
 Secondary, and annotated — read the absolute numbers above and the cgo-free property first. Same
 measurements as the tables above, with the peer measured **identically**: both engines driven over
