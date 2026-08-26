@@ -347,3 +347,57 @@ API surface was green and its engine was not — stands on the corrected numbers
 **What it cost.** A single contaminated number survived into three documents and a release note
 before a disagreeing instrument caught it. The instrument was doubted first, because a microbench
 that fails to reproduce the real path is usually the microbench's fault. Here it was not.
+
+
+---
+
+# Pass 2, non-CUDA half: the network + `-api-key` path is VERIFIED (2026-08-25)
+
+The qualifying CUDA run is blocked on the linux box (below), but the other half the decisions doc
+wanted from it — "dsh across the LAN, which exercises the non-loopback `-api-key` hard-fail" —
+needs no GPU and is now done, on the mac with serve bound to its LAN address.
+
+**The hard-fail fires, and names both remedies:**
+
+```
+$ goinfer-serve --addr 192.168.86.26:8080 ...      # no key
+error: -addr 192.168.86.26:8080 is not loopback-only — requires -api-key
+       (or $GOINFER_API_KEY), or bind to 127.0.0.1 instead
+```
+
+**Auth is enforced over the network**, with `GOINFER_API_KEY` set and serve bound to the LAN address:
+
+| request | result |
+|---|---|
+| no credential | **401** |
+| wrong key | **401** |
+| `Authorization: Bearer <key>` | **200** |
+| `x-api-key: <key>` | **200** |
+
+**dsh authenticates through its `apiKeyEnv` seam, and fails legibly when it cannot.** With
+`apiKeyEnv: GOINFER_API_KEY` in the provider block and `baseURL` pointed at the non-loopback
+address:
+
+- wrong key → `dsh: AUTH: 401: {"message":"missing or invalid API key","type":"invalid_request_error"}`
+  — the harness surfaces goinfer's own error verbatim, so a misconfigured key is self-diagnosing.
+  Worth stating in the recipe: this is the error you get, and it means the env var, not the URL.
+- correct key → gets past auth into generation.
+
+**For the recipe:** `apiKeyEnv` is required for a hand-declared dsh route (see the provider-seam
+section above), and a non-loopback goinfer requires `-api-key`. Those two requirements meet exactly
+here, so the remote configuration is actually *simpler* to document than the loopback one — the key
+is mandatory on both sides instead of being an unused field.
+
+## The linux box, corrected — read this before planning the CUDA run
+
+An earlier draft of this section reported three blockers. **Two were wrong**, and the errors were
+mine (wrong environment assumptions, not wrong machine):
+
+| claimed | actual |
+|---|---|
+| ~~No Go toolchain~~ | `/usr/local/go/bin/go` exists; it is simply not on `PATH` in an ssh shell. `GOTOOLCHAIN=auto`, so inside the repo `go version` resolves to **go1.27.0** even though the on-disk toolchain is 1.26.5. Not a blocker. |
+| ~~No goinfer checkout~~ | It is at **`/home/francis/mycode/goinfer`** — `mycode`, not `tmcode`. The search used mac-shaped paths and never ran a `find`. Currently at `d8c64f5`, behind main; needs a pull. |
+| CUDA broken | **True, and self-resolving.** Running module `595.58.03`, on-disk module and userspace both `595.91.07`; the DKMS build landed 13 minutes after boot, so the boot loaded the old module. A second reboot clears it — no root repair, no akmod rebuild. |
+
+**Lesson worth keeping:** a remote environment report is only as good as its search. Two of three
+"blockers" were artifacts of assuming the mac's directory layout and an ssh `PATH`.
