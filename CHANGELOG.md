@@ -106,7 +106,14 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
   gate moved 0.99298 → 0.98740 and coherent prompts 8/10 → 7/10. If you run qwen3_5 and care more
   about the last fraction of accuracy than about decode rate, that is the trade you are now taking.
 
-  > **On long prompts, note that CPU prefill is single-threaded and superlinear in prompt length**
+  > **CPU prefill now runs attention's heads in parallel** (v0.15.0, G16), bit-identical to the
+  > serial path: measured M1 Pro, dense 1.5B `int8int8`, **1520 tok 89.7 s → 33.8 s (2.65x)** and
+  > **3020 tok 333.3 s → 101.6 s (3.28x)**. The fan-out is budgeted against per-slot scratch that
+  > grows with the square of prompt length, so it steps down toward serial on very long prompts —
+  > at the default budget it is serial again by ~8k tokens, which is the case `docs/queue-performance.md`
+  > G20 addresses. `GOINFER_PREFILL_ATTN_WORKERS=1` restores the old behavior.
+  >
+  > **Prefill remains superlinear in prompt length**
   > — roughly n^1.85 for *both* quants (measured M1 Pro, dense 1.5B: 170 tok 4.1 s · 620 tok 22.5 s ·
   > 1520 tok 100.3 s · 3020 tok 355.5 s at int4; int8int8 within ~5% at every point). That is
   > attention's own cost curve, not a quantization effect, and it is why a multi-thousand-token

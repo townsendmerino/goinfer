@@ -152,8 +152,22 @@ re-measured on an idle machine before it is quoted anywhere. The 6-vs-3 gap is r
 opposite direction: the 6-worker arm ran at the HIGHEST ambient load of the three (7.92, rising to
 10.43) and still won by 1.39x, so an idle box can only widen it.
 
-**Owed:** a clean re-measure of the headline number on an idle box, and the 1520/3020 arms (their
-first attempt was correctly refused by the instrument's own idle guard).
+**The owed 1520/3020 arms, measured (and these are the numbers to quote):**
+
+| K | workers=1 (serial) | workers=6 (what the budget grants here — the shipped default) | speedup |
+|---|---|---|---|
+| 1520 | 89.7s (16.9 tok/s) | **33.8s (44.9 tok/s)** | **2.65x** |
+| 3020 | 333.3s (9.1 tok/s) | **101.6s (29.7 tok/s)** | **3.28x** |
+
+**These are the trustworthy pair, and the reason is the baseline.** The serial K=3020 arm came back
+at **333.3s**, matching three independent prior measurements of the same thing (335.5s via serve,
+337.4s direct int8int8, 348.9s direct int4) — the very quantity the withdrawn G15 cliff put at
+1587.1s. A speedup is only as good as what it is measured against, and this denominator has now
+been confirmed four times. Both `workers=6` arms also ran at HIGHER ambient load than their serial
+counterparts (3.84→6.41 vs 1.39→2.70), so the ratios are conservative.
+
+The K=4096 arms above stand as the worker-count sweep (they answer G20's go/no-go); the K=3020 pair
+is the headline.
 
 **The budget's edge, stated because it is where the motivating case sits.** At 256 MiB the pool is
 6 workers through K=3020 and falls to **1** at K=8192 — one slot alone is 272 MB there. So this
