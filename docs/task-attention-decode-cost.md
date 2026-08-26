@@ -545,6 +545,42 @@ more (attention is the dominant cost by depth 2048+ already), so the natural tri
 long-context work landing after the W4A8 item-3 kernel, not this campaign continuing further on
 its own.
 
+## The prefill deferral has a MEASURED cost (added 2026-08-25, queue G16)
+
+A1's scope-out — *"Prefill/verify (M=K) fast-pathing beyond what (b)/(c) give for free … no M>1-specific
+work here"* — was the right call for A1 and is recorded here as the *cost* of that call, not as a
+reversal. It is the discipline this doc already applies to its own negatives.
+
+`runLayersFromEmbedN` implements the deferral literally: `newHeadWorkerPool(1, K, maxKeys, hd)`,
+with the comment *"this stays serial by construction (pool len 1 always takes attendBatchedHeads's
+serial branch)"*. Decode got A1's fan-out; prefill did not.
+
+**What that costs, measured on an M1 Pro (dense qwen2.5-coder-1.5b, prefill + 1 token,
+`docs/queue-performance.md` G15/G16):**
+
+| prompt_tokens | `int8int8` prefill | effective |
+|---|---|---|
+| 170 | 3.3 s | 51.5 tok/s |
+| 620 | 19.7 s | 31.5 tok/s |
+| 1520 | 93.2 s | 16.3 tok/s |
+| 3020 | 334.9 s | 9.0 tok/s |
+
+CPU sampled every 2 s during a large prefill: `99.6 111.0 270.2 99.7 168.4 99.1 102.5` on a box with
+**8 logical / 6 performance cores**. The ~100% floor is this deferral; the bursts are aikit's
+`MatmulBTW8A8Batch`, which *does* fan out over the concatenated column space. So the weight matmuls
+are threaded and attention is not — and because serial attention is O(K²) while the parallel matmuls
+are O(K), attention's share **grows with prompt length**, which is why effective tok/s falls as the
+prompt grows in both quants.
+
+**The consequence, in one line:** an agent-shaped prompt (a 4 KB system prompt plus 25 tool schemas
+≈ 8k tokens) could not be prefilled inside any harness's idle timeout on CPU. That is what surfaced
+this — a real consumer session, not a benchmark.
+
+**A1's own constraint does not forbid the fix.** *"Parallelism may only split independent outputs
+across workers/registers — heads, layers' KV groups, individual QK scores, individual AV dims"* —
+heads are named first. Threading prefill attention's heads is inside the bit-identity guarantee, not
+a renegotiation of it. Estimated ceiling ~4–5×; tracked as G16, not opened here.
+
 ## Non-goals
 
 - **Norms, sampler, KV-append.** Measured noise-level (probe 1); the KV-append number
@@ -556,6 +592,9 @@ its own.
 - **The W4A8 kernel items.** Other doc; the only coupling is the acceptance table above.
 - **Changing what `acc64` guarantees.** A1 preserves it outright; A2/A3 renegotiate it only
   through their own gates, never silently.
+- **Prefill/verify (M=K) fast-pathing.** Still out of scope *for A1*, as originally written — but
+  see "The prefill deferral has a MEASURED cost" above before quoting this bullet as a standing
+  decision. It deferred work that is now measured at ~4–5× on the CPU lane (G16).
 - **Tiling the long-context cache-tier drift.** A1(c)'s memory-order fix should recover some of
   the measured ~19.5% per-key cost rise past L2, as a side effect. Whatever residual remains after
   (c) ships and gets re-measured is a genuine flash-attention-style tiling question — real, but

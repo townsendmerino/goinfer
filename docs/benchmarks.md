@@ -244,7 +244,19 @@ read-only image, not heap-copied.
 
 **Prefill (relative, CPU):** vectorizing prefill attention onto the SIMD path gave
 **~3.4× dense prompt prefill** and **~1.7× Gemma 4** (M1 Pro; `CHANGELOG` v0.5.0,
-`7fa82c2`/`88b7aaa`). Sparse-MoE prefill is now batched too — **2.4×** on Mellum2
+`7fa82c2`/`88b7aaa`).
+
+> **Read those as RELATIVE speedups over their own predecessor — they are not a rate, and CPU
+> prefill is SINGLE-THREADED.** Both facts are compatible and both were true when written; the
+> second was simply never stated anywhere a reader could see it (added 2026-08-25, queue G16).
+> Absolute numbers on an M1 Pro (dense 1.5B, `int8int8`, prefill + 1 token): **170 tok 3.3 s
+> (51.5 tok/s) · 620 tok 19.7 s · 1520 tok 93.2 s · 3020 tok 334.9 s (9.0 tok/s)** — the best-case
+> rate is the same order as this model's *decode* rate, and it falls as the prompt grows because
+> the attention half is serial (aikit's weight matmuls do fan out; attention's heads do not — A1's
+> deferral, `docs/task-attention-decode-cost.md`). On a 6-performance-core box the process sits at
+> ~100% CPU through a large prefill. **Practical consequence:** long prompts on the CPU backend are
+> much slower than "3.4× faster prefill" suggests — size expectations from the absolute table, not
+> the speedup. GPU backends do not share this (`PrefillLast` is batched on-device). Sparse-MoE prefill is now batched too — **2.4×** on Mellum2
 12B-A2.5B (**3.36 → 8.11 tok/s** at a 1024-token prompt), measured on the RTX-box CPU
 (**Ryzen 7 3700X**, `08acc11`, 2026-06-10) — a *different* rig, listed separately so it
 isn't conflated with the M1 numbers above.
