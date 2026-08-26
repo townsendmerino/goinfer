@@ -364,8 +364,12 @@ kernels, which f32 slices would have had to become anyway.
 
 ## In flight
 
-**G23 · Attention A3 — is an f32 attention path worth its divergence flag? MEASURE FIRST** — `mac`,
-**CLAIMED 2026-08-26, IN FLIGHT.**
+**G23 · Attention A3 — an f32 attention path IS worth its divergence flag** — `mac`, **DONE 2026-08-26.**
+
+**Answer: 2.28× end-to-end at K=8192** (602.9s → 264.6s), from an 8.14× kernel ratio; divergence
+cosine 0.9976, stable across depth. Shipped as `--cpu-fast-attention`, off by default, MoE refused,
+speculative verify structurally excluded. Full record:
+`docs/measurements/attention-a3-kernel-ratio-2026-08-26.md`.
 
 `docs/task-attention-decode-cost.md` closed A2/A3 with a named reopening trigger: *"the 32k regime
 is where A3 might still earn its keep (revisit with A1's long-context numbers in hand)."* **Those

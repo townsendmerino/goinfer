@@ -60,6 +60,14 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
 
 ### Changed
 
+- **`--cpu-fast-attention`** — opt-in f32 prompt attention on the CPU backend. **2.28× faster
+  prefill on an 8k prompt** (dense 1.5B, M1 Pro: 602.9 s → 264.6 s): attention is ~70% of a long
+  prefill and the f64-accumulating kernel is ~8× slower than f32 at those shapes. **Not
+  bit-identical** — measured cosine 0.9976 against the default, stable across 256/1024/2048-token
+  prompts — so a long-prompt response can differ from the default even at temperature 0. Off by
+  default; decode is unaffected. **Speculative decoding is never affected** (its verify pass always
+  uses the exact kernel, structurally, or verify would stop matching greedy), and **MoE is refused
+  at any setting** because an f32 reassociation can flip a top-k expert at a near-tie and cascade.
 - **Streaming tool calls stream their prose incrementally** on the ChatML/Qwen, Mellum2 and Gemma 4
   families, instead of arriving in one delta at the end. Only families whose tool-call parser
   derives its prose as a prefix of the output qualify; Mistral and Llama-3 normalize theirs, so
