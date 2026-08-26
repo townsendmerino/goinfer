@@ -1463,7 +1463,7 @@ just the function.
 ### G. New capability, scoped but not started
 
 **G13 · `/v1/messages` silently restructures the conversation for ANY illegal role — validate and
-reject instead** — either box, **QUEUED, filed 2026-08-25.** Small. Does not block Tier 0 of
+reject instead** — `mac`, **CLAIMED 2026-08-26, IN FLIGHT.** Small. Does not block Tier 0 of
 `docs/scoping-dsh-goinfer.md`; the interim state is visible (pinned), which is the point.
 
 **Before-state, already recorded as a passing test** — `TestAnthropicDeveloperRoleStaysUser` in
