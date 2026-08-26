@@ -88,6 +88,7 @@ var parityRealckptGates = []gateCheck{
 	{"phi3-mini-oracle", "TestPhi3MiniReal_gate"},
 	{"phi3-gguf", "TestPhi3GGUFReal_gate"},
 	{"llama4-scout-gguf", "TestLlama4Real_gate"},
+	{"qwen3next-oracle", "TestQwen3NextReal_oracle"},
 }
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -100,6 +101,7 @@ var emitGates = []gateCheck{
 	{"qwen3_5_moe", "TestQwen35Real_gate2FullModel"},
 	{"cohere", "TestCohereAyaReal_gate"},
 	{"cohere2", "TestCohere2R7bReal_gate"},
+	{"qwen3_next", "TestQwen3NextReal_oracle"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation

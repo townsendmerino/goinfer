@@ -314,6 +314,21 @@
       "note": "z-lab/gemma-4-26B-A4B-it-DFlash (apache-2.0, 0.86 GB) \u2014 pairs with our local gemma-4-26b-a4b-it (hidden 2816, 30 layers, vocab 262144, all exact)."
     },
     {
+      "env": "GOINFER_QWEN3NEXT_HF",
+      "kind": "dir",
+      "members": [
+        "config.json",
+        "model.safetensors.index.json"
+      ],
+      "candidates": [
+        "$MODELS/qwen3next-80b-partial"
+      ],
+      "used_by": [
+        "TestQwen3NextReal_oracle"
+      ],
+      "note": "Qwen/Qwen3-Next-80B-A3B-Instruct (41 shards / 162.6 GB bf16) \u2014 the family's T3 oracle. The FULL checkpoint, not the 6-shard slice pulled 2026-08-17: a slice proves real weights at real distributions but not depth, and the T3 claim is about the whole model. goinfer loads it at int4 (~40 GB); int8 would be ~80 GB against 62 GB of RAM, so the quant is forced by capacity rather than chosen. The bf16 reference is NOT co-resident \u2014 scripts/pin_qwen3next_real.py pins it to testdata/qwen3next_real_golden.json first, through accelerate disk offload."
+    },
+    {
       "env": "GOINFER_NEMOTRON3NANO_HF",
       "kind": "dir",
       "members": [
