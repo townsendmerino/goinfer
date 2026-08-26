@@ -212,9 +212,32 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	defer lm.exit()
 	inTok := len(gr.promptIDs)
+	// G19: same buffered-and-therefore-silent shape as the chat tools path — start
+	// SSE first and keep the stream alive with comment frames while the buffer
+	// fills, so a slow generation is not indistinguishable from a dead server. See
+	// tools.go for the full rationale and the 500-vs-sseErr consequence.
+	var f http.Flusher
+	if req.Stream {
+		var ok bool
+		if f, ok = sseStart(w); !ok {
+			return
+		}
+	}
 	var sb strings.Builder
+	var stopBeat func()
+	if f != nil {
+		stopBeat = sseHeartbeat(w, f)
+	}
 	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	if stopBeat != nil {
+		stopBeat() // joins the ticker goroutine before anything else writes to w
+	}
 	if gerr != nil {
+		if f != nil {
+			sseErr(w, f, "generation failed: "+gerr.Error())
+			sseDone(w, f)
+			return
+		}
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
 	}
@@ -241,10 +264,6 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	// "incomplete", not "completed" (audit R-16 — the N-15 residual in the tools branch).
 	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
 	if req.Stream {
-		f, ok := sseStart(w)
-		if !ok {
-			return
-		}
 		sseEvent(w, f, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		sseEvent(w, f, "response.completed", map[string]any{"type": "response.completed", "response": resp})
 		sseDone(w, f)

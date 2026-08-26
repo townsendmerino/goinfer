@@ -186,6 +186,46 @@ func sseErr(w http.ResponseWriter, f http.Flusher, msg string) {
 	sseSend(w, f, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
 }
 
+// sseHeartbeatInterval is how often a buffered generation emits a keep-alive
+// comment frame. A package var, not a const, so tests can drive the mechanism
+// without waiting on wall-clock. 10s is far inside every harness idle timeout we
+// know of (dsh's default is 300s) and costs 8 bytes per tick.
+var sseHeartbeatInterval = 10 * time.Second
+
+// sseHeartbeat keeps a stream alive while the handler is producing nothing to
+// send (G19). The tool paths must buffer the whole generation before they can
+// parse a tool call, so they would otherwise send zero bytes for the entire
+// generation — measured at 1682.6s against a client whose idle timeout was 300s.
+//
+// A COMMENT frame (":" + text) is the right instrument: it is protocol-legal,
+// carries no data, and every SSE parser drops it, so nothing downstream can
+// mistake a keep-alive for content. The buffering guarantee is untouched.
+//
+// The returned stop JOINS the goroutine before returning, so the caller can
+// resume writing to w with no risk of interleaving two writers on one
+// ResponseWriter.
+func sseHeartbeat(w http.ResponseWriter, f http.Flusher) (stop func()) {
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		t := time.NewTicker(sseHeartbeatInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				fmt.Fprint(w, ": ping\n\n")
+				f.Flush()
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-finished
+	}
+}
+
 type delta struct {
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content,omitempty"`

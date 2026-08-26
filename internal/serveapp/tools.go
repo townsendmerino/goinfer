@@ -60,9 +60,40 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	created := time.Now().Unix()
 
 	// Tool decisions need the whole output, so buffer (even when streaming).
+	//
+	// G19: when streaming, SSE now starts BEFORE the generation and a keep-alive
+	// comment frame ticks while the buffer fills. Without it this path sent zero
+	// bytes for the whole generation — measured at 1682.6s to first byte against a
+	// harness whose idle timeout was 300s, which no output can survive however
+	// correct it is. The buffering itself is unchanged, and comment frames carry no
+	// data, so tool-call parsing sees exactly what it saw before.
+	//
+	// The cost of starting SSE early: a generation error can no longer be a 500 on
+	// the streaming path, because the headers are already flushed. That is the M1
+	// convention sseErr exists for and what the non-tool streaming paths already do.
+	// The non-streaming path below keeps its 500 unchanged.
+	var f http.Flusher
+	if req.Stream {
+		var ok bool
+		if f, ok = sseStart(w); !ok {
+			return
+		}
+	}
 	var sb strings.Builder
+	var stopBeat func()
+	if f != nil {
+		stopBeat = sseHeartbeat(w, f)
+	}
 	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
-	if gerr != nil { // headers not yet sent (SSE starts below), so a 500 is still valid for both modes
+	if stopBeat != nil {
+		stopBeat() // joins the ticker goroutine before anything else writes to w
+	}
+	if gerr != nil {
+		if f != nil {
+			sseErr(w, f, "generation failed: "+gerr.Error())
+			sseDone(w, f)
+			return
+		}
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
 	}
@@ -83,10 +114,6 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}
 
 	if req.Stream {
-		f, ok := sseStart(w)
-		if !ok {
-			return
-		}
 		// One delta carrying the whole message, then the finish — valid SSE, just
 		// not incremental (tool calls are decided from the full output).
 		d := map[string]any{"role": "assistant"}
