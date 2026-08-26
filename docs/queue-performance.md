@@ -174,7 +174,7 @@ is the headline.
 speeds up short and mid prompts and does nothing for the ~8k agent transcripts that motivated G16.
 That is the honest scope of what landed. See G20.
 
-## G20 · Tile prefill attention's `scores` over K so long prompts can parallelize — QUEUED, filed 2026-08-26
+## G20 · Tile prefill attention's `scores` over K so long prompts can parallelize — `mac`, **CLAIMED 2026-08-26, IN FLIGHT**
 
 **Substantiated by measurement, not assumed.** G16's lever is capped by memory, not by diminishing
 returns: at K=4096, going from 3 workers to 6 bought a further **1.39x** (250.2s → 180.4s) — and
