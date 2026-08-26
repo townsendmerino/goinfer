@@ -300,6 +300,16 @@ or explicit sampling, pinned versions, **the new driver AND distro/kernel**, dat
 local-disk path under `~/models` (**never `/Volumes/`**). Peer comparisons same-session interleaved;
 drift between sessions is ~3.5% on this box.
 
+**`bench_peer.py` does NOT re-anchor everything — its 33 cells cover the §B/§B2/§B5-style peer
+rows only.** §B4 (26B host↔VRAM streaming), §B6 (split-KV) and §B7 (deep context) are separate legs
+with their own procedures. **Do not mark those re-anchored off this run**; they stay STALE until
+their own leg is re-run. (Carried from the pre-reboot handoff note in `~/bench-reanchor/`.)
+
+**Row-count reconciliation.** That handoff note counts ~74 rows over nine sections; the box now in
+`benchmarks.md` counts 78 over seven. Same rows, two conventions: this count includes four
+blockquoted §B2 rows the other skips, folds §B6.1/§B6.2 into §B6 and §B7.1 into §B7, and draws the
+§B5 header boundary one row differently. Neither is wrong — do not "fix" one to match the other.
+
 **Do not re-baseline a floor because a number moved.** If a row lands materially below its
 pre-upgrade value, that is a finding to be explained by mechanism, not a new baseline to bless.
 

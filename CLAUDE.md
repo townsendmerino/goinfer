@@ -38,8 +38,12 @@ Preconditions: **must be on the LAN.** Tailscale SSH intercepts port 22 and will
 `docs/benchmarks.md` is provenance-gated: a number enters a table only with machine,
 checkpoint+quant, greedy/seed, pinned versions, date, thermal note, and local-disk path.
 Read its Methodology section before adding or changing any measurement, and reproduce via
-`scripts/bench_compare.sh`. Peer comparisons must be same-session interleaved — drift
-between sessions is ~3.5% on this box and silently corrupts ratios.
+`scripts/bench_peer.py` — **not** `scripts/bench_compare.sh`, which runs in-process Go benchmarks and
+by its own design note drives no peer. Putting its output beside a peer number divides a kernel
+throughput by an end-to-end one; that is what produced the retired "0.5B 1.78×" claim.
+`bench_compare.sh` is still the right tool for goinfer-vs-goinfer work, and only that. Peer
+comparisons must be same-session interleaved — drift between sessions is ~3.5% on this box and
+silently corrupts ratios.
 
 CUDA rows are anchored to a specific NVIDIA driver version. Changing the driver invalidates
 comparability and requires a deliberate re-anchor, not a silent carry-forward.
