@@ -21,6 +21,10 @@ import argparse, json, os, signal, socket, subprocess, sys, time, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUT = os.path.join(HERE, "prompts.json")
 PORT = int(os.environ.get("CALIB_PORT", "8099"))
+# A deep probe on a COLD server pays PTX JIT, workspace allocation and deep-KV setup on top of the
+# prefill itself. 180s was enough for shallow depths and silently not enough at 8000+, which
+# surfaced as a bare socket TimeoutError with nothing calibrated.
+CALIB_TIMEOUT = int(os.environ.get("CALIB_TIMEOUT", "900"))
 
 
 def wait_port(port, timeout=180):
@@ -40,7 +44,7 @@ def prompt_tokens(text):
     req = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/chat/completions",
                                  data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    with urllib.request.urlopen(req, timeout=CALIB_TIMEOUT) as resp:
         return json.load(resp)["usage"]["prompt_tokens"]
 
 
@@ -101,6 +105,13 @@ def main():
         try:
             if not wait_port(PORT):
                 sys.exit(f"calibrate: server for {key} never came up")
+            # Warm the server with a TINY request before any deep probe. wait_port only proves the
+            # socket is listening; the first request still pays one-time initialisation, and paying
+            # it inside a 32k prefill is what made this look like a hang.
+            try:
+                prompt_tokens(make(8))
+            except Exception as e:
+                print(f"  warmup for {key} failed ({e}) — continuing", flush=True)
             for target, (words, tokens) in calibrate(args.depth).items():
                 existing[f"{key}:{target}"] = {"words": words, "tokens": tokens,
                                                "text": make(words)}
