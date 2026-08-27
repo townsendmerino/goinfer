@@ -62,12 +62,15 @@
 > stay that way — this box does not revive them. **§A** (Apple Silicon CPU) and **§B3** (Metal) are
 > measured on the MacBook and are **unaffected**.
 >
+> **§B6 (split-KV) DISCHARGED 2026-08-27** — re-measured on this stack with a committed harness
+> (`scripts/bench_splitkv.py`); the ratios did not move, most cells agreeing to ±0.005. See §B6.3.
+>
 > **PARTIALLY DISCHARGED, 2026-08-26.** Parity was re-established first (`gate gpu` PASS at
 > `a161bd6`: real-model heavy tier green, CUDA graphs bit-exact, **24/24 PTX byte-identical** — the
 > driver's new compiler did not move the numerics), and the greedy peer sweep then re-anchored the
 > §B2/§B5-style rows into **§B8**. What that run does **not** cover remains STALE and may not be
 > quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M), **§B4** (26B host↔VRAM
-> streaming), **§B6** (split-KV), **§B7** (deep context), the v0.11.0 qualification, and §B5's
+> streaming), **§B7** (deep context), the v0.11.0 qualification, and §B5's
 > sampled / phi3-mini / gemma3-1b cells. Each is a separate leg with its own procedure;
 > `bench_peer.py` does not produce any of them.
 >
@@ -1043,9 +1046,13 @@ The GPU gate's CUDA pass is the owner's confirmation before the tag ships.
 
 ## B6 — Split-KV decode attention, re-gated (2026-08-09, P6a)
 
-> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
-> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
-> this page for what moved and what replaces it.
+> **RE-ANCHORED 2026-08-27 on the Nobara 44 / driver `595.91.07` stack. The ratios did not move.**
+> Re-measured with `scripts/bench_splitkv.py` — a harness that did not exist when the table below
+> was made; the original 48 cells were driven ad hoc into a scratchpad that has since been cleared,
+> so this section could be read but not reproduced. Raw cells and logs are now committed beside it:
+> `b6-splitkv-force-6fa487f.json`, `b6-splitkv-bb42106.json` (+ `_run.log` each) in
+> `docs/measurements/`. The re-anchored tables are in **§B6.3** below; the 2026-08-09 table that
+> follows is kept as the record it was, on driver `595.58.03` / Nobara 43.
 
 §B5 above flagged the split-KV gate as a follow-up. It turned out to be worse than "characterized on
 one model": **the shipped constant `splitkvMinKeys = 256` was wrong on the geometry it was
@@ -1178,6 +1185,69 @@ Turing part. On a much wider GPU, nH=32 would be starved and phi3's "never" woul
 per device class; do not rescale these on paper. `GOINFER_SPLITKV_MIN_KEYS=<n>` now overrides the
 threshold on a stock binary (0 ⇒ always split) so re-characterization no longer needs a rebuild —
 needing one is part of why a refuted number survived.
+
+### B6.3 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
+
+**Provenance.** RTX 2070 SUPER · driver `595.91.07` · Nobara 44 · 2026-08-27 · int4 q4_K_M,
+greedy, `max_tokens=64`, one warm request discarded then 2 blocks of 8, decode-only rate timed
+client-side from the first streamed token · a freshly started `serve` per cell · prompts
+token-calibrated per model against `usage.prompt_tokens` · arms **paired** per (geometry, depth)
+and adjacent in time, with arm order alternating so a first-cell effect cannot land on the same
+arm every time · `scripts/bench_splitkv.py`, 48 cells per mode, ~53 min each.
+
+**The binary is the anchor, not the commit field.** Both modes ran against one binary built from
+`bb42106` (`serve-cuda-bb42106`, built once and reused). The JSON's `goinfer_commit` reads
+`d1d3505` / `30a63f7` with `goinfer_tree_dirty: true`, because HEAD moved under the runs during
+unrelated release work that day. Those fields record the working tree at write time and are **not**
+what was measured; the pinned binary is.
+
+**Two modes, because `GOINFER_SPLITKV_ATTN=1` does not force the split path** — it enables the
+gate, which then decides per geometry from the table this section produced. Conflating the two
+yields a table of 1.000s that looks like a null result.
+
+**Mode `force` — split-KV itself (`GOINFER_SPLITKV_MIN_KEYS=0`) ÷ off.** This is the question the
+2026-08-09 table asked, and the comparison against it is direct at 256+:
+
+| geometry | 128 | 256 | 512 | 1024 | 2048 | 3900 |
+|---|---|---|---|---|---|---|
+| qwen2.5-coder-0.5b | 0.858 | 0.843 | 0.824 | 0.825 | 0.967 | 1.111 |
+| qwen2.5-coder-1.5b | 0.933 | 0.943 | 0.948 | 1.080 | 1.189 | 1.282 |
+| gemma3-1b (win 512) | 0.915 | 0.888 | 0.900 | 0.935 | 0.959 | 1.090 |
+| phi3-mini (MHA) | 0.990 | 0.992 | 0.968 | 0.915 | 0.814 | 0.746 |
+
+Against 2026-08-09, cell by cell at 256+: 0.5B `0.843/0.824/0.825/0.967/1.111` vs
+`0.839/0.819/0.869/0.955/1.197`; 1.5B `0.943/0.948/1.080/1.189/1.282` vs
+`0.941/0.939/1.078/1.191/1.280`; gemma3-1b `0.888/0.900/0.935/0.959/1.090` vs
+`0.890/0.909/0.919/0.941/1.084`; phi3-mini `0.992/0.968/0.915/0.814/0.746` vs
+`0.993/0.969/0.919/0.815/0.754`. **The driver, kernel, libc and distro upgrade did not move these
+ratios** — most cells agree to ±0.005, and phi3-mini's monotone decline to ~0.75 reproduces almost
+exactly. The two visible gaps are 0.5B at 1024 and 3900.
+
+**The 128 column is NOT comparable and is new information.** In 2026-08-09 it was a control: the
+old gate fired only from 256 up, so its "ON" arm did not split at 128 and read ~1.000 by
+construction. Forcing the split path at 128 costs 7–14% on three of the four geometries — the
+shallow cost the control could not show.
+
+**Mode `gate` — the shipped default ÷ off.** Not a re-anchor of anything; it asks whether the
+per-geometry table now in `cuda/resident.go` costs anything against not splitting at all. **~1.000
+is the pass condition here, not a null result.**
+
+| geometry | 128 | 256 | 512 | 1024 | 2048 | 3900 |
+|---|---|---|---|---|---|---|
+| qwen2.5-coder-0.5b | 1.020 | 0.981 | 1.020 | 0.999 | 0.995 | 1.114 |
+| qwen2.5-coder-1.5b | 1.008 | 0.984 | 1.009 | 1.083 | 1.193 | 1.281 |
+| gemma3-1b (win 512) | 1.001 | 1.020 | 0.974 | 0.996 | 0.994 | 1.150 |
+| phi3-mini (MHA) | 1.000 | 1.000 | 1.001 | 0.999 | 1.000 | 1.000 |
+
+**Every regression the 2026-08-09 table recorded is gone, and the wins are kept.** phi3-mini's
+`0.919 / 0.815 / 0.754` at 1024/2048/3900 — a −25% loss at depth, paid in production under the old
+one-constant gate — is now flat `1.000` across the row: the "never" class declines to split, so
+both arms run the same kernel. gemma3-1b's `0.890/0.909/0.919/0.941` return to ~1.0. And 1.5B's
+wins survive intact: `1.083 / 1.193 / 1.281` against the forced arm's `1.080 / 1.189 / 1.282`,
+because the gate correctly takes the split path exactly where it pays.
+
+The three cells reading 0.974–0.984 (0.5B and 1.5B at 256, gemma3-1b at 512) are small and sit
+near the crossover; they are recorded, not explained.
 
 ## B7 — Deep context: 8k/16k/32k decode (2026-08-09, cap-raise leg)
 

@@ -1,0 +1,84 @@
+# preflight OK: loadavg [0.21337890625, 0.74609375, 1.02783203125] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 50, 'mem_used_mib': 501, 'mem_total_mib': 8192} · compute apps ['1777, 16 MiB']
+# 48 cells: 4 geometries x 6 depths x 2 arms
+  [1/48] 0.5B:128 on: 280.64 tok/s (spread 1.12) · elapsed 0.2m eta 9.2m
+  [2/48] 0.5B:128 off: 327.20 tok/s (spread 0.56) · elapsed 0.4m eta 8.8m
+      -> ratio 0.858
+  [3/48] 0.5B:256 on: 255.67 tok/s (spread 2.29) · elapsed 0.6m eta 9.0m
+  [4/48] 0.5B:256 off: 303.16 tok/s (spread 5.34) · elapsed 0.8m eta 8.8m
+      -> ratio 0.843
+  [5/48] 0.5B:512 on: 249.08 tok/s (spread 9.67) · elapsed 1.0m eta 9.0m
+  [6/48] 0.5B:512 off: 302.22 tok/s (spread 3.15) · elapsed 1.3m eta 8.9m
+      -> ratio 0.824
+  [7/48] 0.5B:1024 on: 247.06 tok/s (spread 2.24) · elapsed 1.6m eta 9.3m
+  [8/48] 0.5B:1024 off: 299.29 tok/s (spread 2.14) · elapsed 1.9m eta 9.4m
+      -> ratio 0.825
+  [9/48] 0.5B:2048 on: 246.79 tok/s (spread 6.32) · elapsed 2.4m eta 10.3m
+  [10/48] 0.5B:2048 off: 255.22 tok/s (spread 0.47) · elapsed 2.9m eta 11.0m
+      -> ratio 0.967
+  [11/48] 0.5B:3900 on: 202.30 tok/s (spread 0.47) · elapsed 3.9m eta 13.1m
+  [12/48] 0.5B:3900 off: 182.15 tok/s (spread 0.11) · elapsed 4.9m eta 14.7m
+      -> ratio 1.111
+  [13/48] 1.5B:128 off: 220.65 tok/s (spread 1.26) · elapsed 5.2m eta 14.0m
+  [14/48] 1.5B:128 on: 205.93 tok/s (spread 1.46) · elapsed 5.5m eta 13.3m
+      -> ratio 0.933
+  [15/48] 1.5B:256 off: 212.84 tok/s (spread 0.59) · elapsed 5.8m eta 12.8m
+  [16/48] 1.5B:256 on: 200.70 tok/s (spread 0.37) · elapsed 6.1m eta 12.3m
+      -> ratio 0.943
+  [17/48] 1.5B:512 off: 196.13 tok/s (spread 0.97) · elapsed 6.5m eta 11.8m
+  [18/48] 1.5B:512 on: 185.96 tok/s (spread 4.88) · elapsed 6.8m eta 11.4m
+      -> ratio 0.948
+  [19/48] 1.5B:1024 off: 170.97 tok/s (spread 0.15) · elapsed 7.4m eta 11.2m
+  [20/48] 1.5B:1024 on: 184.70 tok/s (spread 1.26) · elapsed 7.9m eta 11.0m
+      -> ratio 1.080
+  [21/48] 1.5B:2048 off: 133.43 tok/s (spread 0.01) · elapsed 8.8m eta 11.3m
+  [22/48] 1.5B:2048 on: 158.60 tok/s (spread 0.07) · elapsed 9.7m eta 11.5m
+      -> ratio 1.189
+  [23/48] 1.5B:3900 off: 95.95 tok/s (spread 0.02) · elapsed 11.7m eta 12.7m
+  [24/48] 1.5B:3900 on: 123.05 tok/s (spread 0.01) · elapsed 13.6m eta 13.6m
+      -> ratio 1.282
+  [25/48] gemma3-1b:128 on: 154.11 tok/s (spread 7.06) · elapsed 13.8m eta 12.7m
+  [26/48] gemma3-1b:128 off: 168.51 tok/s (spread 2.55) · elapsed 14.0m eta 11.9m
+      -> ratio 0.915
+  [27/48] gemma3-1b:256 on: 156.86 tok/s (spread 0.17) · elapsed 14.3m eta 11.1m
+  [28/48] gemma3-1b:256 off: 176.66 tok/s (spread 4.27) · elapsed 14.6m eta 10.4m
+      -> ratio 0.888
+  [29/48] gemma3-1b:512 on: 149.84 tok/s (spread 1.99) · elapsed 14.9m eta 9.7m
+  [30/48] gemma3-1b:512 off: 166.40 tok/s (spread 0.47) · elapsed 15.1m eta 9.1m
+      -> ratio 0.900
+  [31/48] gemma3-1b:1024 on: 158.08 tok/s (spread 1.24) · elapsed 15.6m eta 8.5m
+  [32/48] gemma3-1b:1024 off: 169.13 tok/s (spread 1.69) · elapsed 16.0m eta 8.0m
+      -> ratio 0.935
+  [33/48] gemma3-1b:2048 on: 151.49 tok/s (spread 2.50) · elapsed 16.5m eta 7.5m
+  [34/48] gemma3-1b:2048 off: 157.94 tok/s (spread 2.96) · elapsed 17.1m eta 7.0m
+      -> ratio 0.959
+  [35/48] gemma3-1b:3900 on: 157.09 tok/s (spread 1.17) · elapsed 18.0m eta 6.7m
+  [36/48] gemma3-1b:3900 off: 144.11 tok/s (spread 0.17) · elapsed 19.0m eta 6.3m
+      -> ratio 1.090
+  [37/48] phi3-mini:128 off: 124.77 tok/s (spread 0.07) · elapsed 19.4m eta 5.8m
+  [38/48] phi3-mini:128 on: 123.56 tok/s (spread 0.04) · elapsed 19.8m eta 5.2m
+      -> ratio 0.990
+  [39/48] phi3-mini:256 off: 120.41 tok/s (spread 0.11) · elapsed 20.4m eta 4.7m
+  [40/48] phi3-mini:256 on: 119.48 tok/s (spread 0.10) · elapsed 20.9m eta 4.2m
+      -> ratio 0.992
+  [41/48] phi3-mini:512 off: 112.63 tok/s (spread 0.06) · elapsed 21.6m eta 3.7m
+  [42/48] phi3-mini:512 on: 109.01 tok/s (spread 0.07) · elapsed 22.3m eta 3.2m
+      -> ratio 0.968
+  [43/48] phi3-mini:1024 off: 98.29 tok/s (spread 0.16) · elapsed 23.6m eta 2.7m
+  [44/48] phi3-mini:1024 on: 89.95 tok/s (spread 0.12) · elapsed 25.0m eta 2.3m
+      -> ratio 0.915
+  [45/48] phi3-mini:2048 off: 78.15 tok/s (spread 0.14) · elapsed 28.7m eta 1.9m
+  [46/48] phi3-mini:2048 on: 63.65 tok/s (spread 0.00) · elapsed 32.4m eta 1.4m
+      -> ratio 0.814
+  [47/48] phi3-mini:3900 off: 56.23 tok/s (spread 0.01) · elapsed 42.8m eta 0.9m
+  [48/48] phi3-mini:3900 on: 41.96 tok/s (spread 0.00) · elapsed 53.4m eta 0.0m
+      -> ratio 0.746
+
+# ratios (split-KV forced on / off)  [53.4 min]
+| geometry | 128 | 256 | 512 | 1024 | 2048 | 3900 |
+|---|---|---|---|---|---|---|
+| 0.5B | 0.858 | 0.843 | 0.824 | 0.825 | 0.967 | 1.111 |
+| 1.5B | 0.933 | 0.943 | 0.948 | 1.080 | 1.189 | 1.282 |
+| gemma3-1b | 0.915 | 0.888 | 0.900 | 0.935 | 0.959 | 1.090 |
+| phi3-mini | 0.990 | 0.992 | 0.968 | 0.915 | 0.814 | 0.746 |
+
+raw cells: docs/measurements/b6-splitkv-force-6fa487f.json

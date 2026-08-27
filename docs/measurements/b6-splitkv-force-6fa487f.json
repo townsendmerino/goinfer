@@ -1,0 +1,678 @@
+{
+ "cells": {
+  "0.5B:1024": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     300.3560379959519,
+     298.21918778038145
+    ],
+    "mean": 299.2876128881667,
+    "spread": 2.136850215570462
+   },
+   "on": {
+    "blocks": [
+     248.17461930833247,
+     245.93646275111143
+    ],
+    "mean": 247.05554102972195,
+    "spread": 2.238156557221032
+   },
+   "prompt_tokens": 1024,
+   "ratio_on_over_off": 0.8254786713208808
+  },
+  "0.5B:128": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     326.9154683039931,
+     327.47853494403546
+    ],
+    "mean": 327.1970016240143,
+    "spread": 0.5630666400423365
+   },
+   "on": {
+    "blocks": [
+     281.19572978873646,
+     280.07939960721103
+    ],
+    "mean": 280.63756469797374,
+    "spread": 1.1163301815254272
+   },
+   "prompt_tokens": 129,
+   "ratio_on_over_off": 0.8577021283968166
+  },
+  "0.5B:2048": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     255.45540306002687,
+     254.9896445879356
+    ],
+    "mean": 255.22252382398125,
+    "spread": 0.46575847209126664
+   },
+   "on": {
+    "blocks": [
+     249.95134549649012,
+     243.63177990578063
+    ],
+    "mean": 246.79156270113538,
+    "spread": 6.319565590709487
+   },
+   "prompt_tokens": 2060,
+   "ratio_on_over_off": 0.9669662340277599
+  },
+  "0.5B:256": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     305.8338320019699,
+     300.4919097525646
+    ],
+    "mean": 303.1628708772672,
+    "spread": 5.341922249405286
+   },
+   "on": {
+    "blocks": [
+     256.81375183162254,
+     254.5239664070877
+    ],
+    "mean": 255.66885911935512,
+    "spread": 2.2897854245348412
+   },
+   "prompt_tokens": 256,
+   "ratio_on_over_off": 0.843338296604469
+  },
+  "0.5B:3900": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     182.2012565223521,
+     182.09306057070071
+    ],
+    "mean": 182.1471585465264,
+    "spread": 0.10819595165139617
+   },
+   "on": {
+    "blocks": [
+     202.06713067359377,
+     202.53344824792507
+    ],
+    "mean": 202.30028946075942,
+    "spread": 0.46631757433129906
+   },
+   "prompt_tokens": 3912,
+   "ratio_on_over_off": 1.110642027441154
+  },
+  "0.5B:512": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     303.7932398982693,
+     300.6391703062694
+    ],
+    "mean": 302.2162051022693,
+    "spread": 3.154069591999871
+   },
+   "on": {
+    "blocks": [
+     253.9085679333511,
+     244.24157077794445
+    ],
+    "mean": 249.07506935564777,
+    "spread": 9.666997155406648
+   },
+   "prompt_tokens": 512,
+   "ratio_on_over_off": 0.8241618587969539
+  },
+  "1.5B:1024": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     171.04262797907975,
+     170.89756888132086
+    ],
+    "mean": 170.97009843020032,
+    "spread": 0.1450590977588888
+   },
+   "on": {
+    "blocks": [
+     184.06317558759477,
+     185.32793313036035
+    ],
+    "mean": 184.69555435897757,
+    "spread": 1.2647575427655795
+   },
+   "prompt_tokens": 1024,
+   "ratio_on_over_off": 1.0802798621209238
+  },
+  "1.5B:128": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     221.2783201177691,
+     220.0194588970853
+    ],
+    "mean": 220.6488895074272,
+    "spread": 1.2588612206838263
+   },
+   "on": {
+    "blocks": [
+     205.20239912579692,
+     206.65743219652603
+    ],
+    "mean": 205.9299156611615,
+    "spread": 1.4550330707291153
+   },
+   "prompt_tokens": 129,
+   "ratio_on_over_off": 0.9332923275565804
+  },
+  "1.5B:2048": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     133.42995555394347,
+     133.43850648324045
+    ],
+    "mean": 133.43423101859196,
+    "spread": 0.008550929296973209
+   },
+   "on": {
+    "blocks": [
+     158.5678924724618,
+     158.63757828595828
+    ],
+    "mean": 158.60273537921006,
+    "spread": 0.06968581349647707
+   },
+   "prompt_tokens": 2060,
+   "ratio_on_over_off": 1.188621047001884
+  },
+  "1.5B:256": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     213.1341933153987,
+     212.54657053097537
+    ],
+    "mean": 212.84038192318704,
+    "spread": 0.5876227844233313
+   },
+   "on": {
+    "blocks": [
+     200.88184966852808,
+     200.50926556013482
+    ],
+    "mean": 200.69555761433145,
+    "spread": 0.37258410839325506
+   },
+   "prompt_tokens": 256,
+   "ratio_on_over_off": 0.9429392853033002
+  },
+  "1.5B:3900": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     95.95770629498318,
+     95.93944275693136
+    ],
+    "mean": 95.94857452595727,
+    "spread": 0.018263538051826345
+   },
+   "on": {
+    "blocks": [
+     123.04469231977312,
+     123.0551397143194
+    ],
+    "mean": 123.04991601704626,
+    "spread": 0.010447394546275746
+   },
+   "prompt_tokens": 3912,
+   "ratio_on_over_off": 1.2824569476408134
+  },
+  "1.5B:512": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     196.6102232022593,
+     195.63998055861694
+    ],
+    "mean": 196.12510188043814,
+    "spread": 0.970242643642365
+   },
+   "on": {
+    "blocks": [
+     183.52184897714716,
+     188.4015677175166
+    ],
+    "mean": 185.96170834733186,
+    "spread": 4.879718740369441
+   },
+   "prompt_tokens": 512,
+   "ratio_on_over_off": 0.9481790273878247
+  },
+  "gemma3-1b:1024": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     168.2874002004701,
+     169.97564331772378
+    ],
+    "mean": 169.13152175909693,
+    "spread": 1.688243117253677
+   },
+   "on": {
+    "blocks": [
+     158.70048789236486,
+     157.46266110284802
+    ],
+    "mean": 158.08157449760643,
+    "spread": 1.2378267895168449
+   },
+   "prompt_tokens": 1024,
+   "ratio_on_over_off": 0.9346665414787106
+  },
+  "gemma3-1b:128": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     169.78440692584206,
+     167.23256482896912
+    ],
+    "mean": 168.50848587740558,
+    "spread": 2.551842096872946
+   },
+   "on": {
+    "blocks": [
+     157.63755616373282,
+     150.57565732018298
+    ],
+    "mean": 154.1066067419579,
+    "spread": 7.061898843549841
+   },
+   "prompt_tokens": 129,
+   "ratio_on_over_off": 0.914533211425771
+  },
+  "gemma3-1b:2048": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     159.41719477078257,
+     156.45477367888574
+    ],
+    "mean": 157.93598422483416,
+    "spread": 2.962421091896829
+   },
+   "on": {
+    "blocks": [
+     152.74033849703937,
+     150.240826486121
+    ],
+    "mean": 151.4905824915802,
+    "spread": 2.49951201091838
+   },
+   "prompt_tokens": 2061,
+   "ratio_on_over_off": 0.9591897833486862
+  },
+  "gemma3-1b:256": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     174.52524502538154,
+     178.79250494732221
+    ],
+    "mean": 176.65887498635186,
+    "spread": 4.267259921940678
+   },
+   "on": {
+    "blocks": [
+     156.77791345275762,
+     156.9476822152011
+    ],
+    "mean": 156.86279783397936,
+    "spread": 0.16976876244348205
+   },
+   "prompt_tokens": 256,
+   "ratio_on_over_off": 0.8879417909012389
+  },
+  "gemma3-1b:3900": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     144.19144784809737,
+     144.02586297059605
+    ],
+    "mean": 144.1086554093467,
+    "spread": 0.1655848775013169
+   },
+   "on": {
+    "blocks": [
+     157.67588293735542,
+     156.504727816049
+    ],
+    "mean": 157.09030537670222,
+    "spread": 1.1711551213064126
+   },
+   "prompt_tokens": 3913,
+   "ratio_on_over_off": 1.0900823752083495
+  },
+  "gemma3-1b:512": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     166.63073635612253,
+     166.16060039416138
+    ],
+    "mean": 166.39566837514195,
+    "spread": 0.47013596196114804
+   },
+   "on": {
+    "blocks": [
+     148.84105376407035,
+     150.8305791133495
+    ],
+    "mean": 149.8358164387099,
+    "spread": 1.9895253492791483
+   },
+   "prompt_tokens": 512,
+   "ratio_on_over_off": 0.9004790683667464
+  },
+  "phi3-mini:1024": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=32 nKV=32 hd=96 L=32 MHA \u2014 never crosses over",
+   "off": {
+    "blocks": [
+     98.36573692810997,
+     98.20739756012681
+    ],
+    "mean": 98.28656724411839,
+    "spread": 0.15833936798316017
+   },
+   "on": {
+    "blocks": [
+     90.00861936821488,
+     89.89351597571591
+    ],
+    "mean": 89.9510676719654,
+    "spread": 0.11510339249896617
+   },
+   "prompt_tokens": 1031,
+   "ratio_on_over_off": 0.9151918740691212
+  },
+  "phi3-mini:128": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=32 nKV=32 hd=96 L=32 MHA \u2014 never crosses over",
+   "off": {
+    "blocks": [
+     124.79857282507771,
+     124.73332028591975
+    ],
+    "mean": 124.76594655549873,
+    "spread": 0.06525253915796725
+   },
+   "on": {
+    "blocks": [
+     123.57906564959941,
+     123.53908076360334
+    ],
+    "mean": 123.55907320660137,
+    "spread": 0.03998488599607697
+   },
+   "prompt_tokens": 128,
+   "ratio_on_over_off": 0.990326901031761
+  },
+  "phi3-mini:2048": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=32 nKV=32 hd=96 L=32 MHA \u2014 never crosses over",
+   "off": {
+    "blocks": [
+     78.2175087910343,
+     78.08148261457141
+    ],
+    "mean": 78.14949570280285,
+    "spread": 0.1360261764628916
+   },
+   "on": {
+    "blocks": [
+     63.64632535996402,
+     63.648934228369015
+    ],
+    "mean": 63.64762979416652,
+    "spread": 0.002608868404998077
+   },
+   "prompt_tokens": 2055,
+   "ratio_on_over_off": 0.8144342995662323
+  },
+  "phi3-mini:256": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=32 nKV=32 hd=96 L=32 MHA \u2014 never crosses over",
+   "off": {
+    "blocks": [
+     120.46139499200186,
+     120.35219708236629
+    ],
+    "mean": 120.40679603718408,
+    "spread": 0.10919790963556864
+   },
+   "on": {
+    "blocks": [
+     119.53518752702682,
+     119.43064317683312
+    ],
+    "mean": 119.48291535192996,
+    "spread": 0.10454435019370578
+   },
+   "prompt_tokens": 256,
+   "ratio_on_over_off": 0.9923270054875574
+  },
+  "phi3-mini:3900": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=32 nKV=32 hd=96 L=32 MHA \u2014 never crosses over",
+   "off": {
+    "blocks": [
+     56.22500437574094,
+     56.23846149387648
+    ],
+    "mean": 56.231732934808704,
+    "spread": 0.01345711813554118
+   },
+   "on": {
+    "blocks": [
+     41.954119380751436,
+     41.956069436327766
+    ],
+    "mean": 41.9550944085396,
+    "spread": 0.0019500555763301008
+   },
+   "prompt_tokens": 3907,
+   "ratio_on_over_off": 0.7461106428496437
+  },
+  "phi3-mini:512": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=32 nKV=32 hd=96 L=32 MHA \u2014 never crosses over",
+   "off": {
+    "blocks": [
+     112.65592203435739,
+     112.59453619356553
+    ],
+    "mean": 112.62522911396147,
+    "spread": 0.06138584079185705
+   },
+   "on": {
+    "blocks": [
+     109.04463667254656,
+     108.9721099715366
+    ],
+    "mean": 109.00837332204158,
+    "spread": 0.07252670100996284
+   },
+   "prompt_tokens": 512,
+   "ratio_on_over_off": 0.9678859184538473
+  }
+ },
+ "config": {
+  "arms": {
+   "off": {
+    "GOINFER_SPLITKV_ATTN": "0"
+   },
+   "on": {
+    "GOINFER_SPLITKV_MIN_KEYS": "0"
+   }
+  },
+  "backend": "cuda",
+  "mode": "force",
+  "ncomp": 8,
+  "ngen": 64,
+  "nruns": 2,
+  "quant": "int4"
+ },
+ "machine": {
+  "gpu": {
+   "driver": "595.91.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 501,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 60
+  },
+  "loadavg": [
+   0.92431640625,
+   1.0400390625,
+   1.20654296875
+  ]
+ },
+ "provenance": {
+  "cpu_count": 16,
+  "distro": "Nobara Linux 44",
+  "goinfer_commit": "d1d3505",
+  "goinfer_tree_dirty": true,
+  "gpu": {
+   "driver": "595.91.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 501,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 60
+  },
+  "gpu_compute_apps_at_start": [
+   "1777, 16 MiB"
+  ],
+  "host": "nobara-pc",
+  "kind": "provenance",
+  "loadavg_at_start": [
+   0.92431640625,
+   1.0400390625,
+   1.20654296875
+  ],
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "serve_binaries": {
+   "cpu": {
+    "mtime": "2026-08-22T18:18:03Z",
+    "path": "/home/francis/bench-v0.15.0/serve-cpu"
+   },
+   "cuda": {
+    "mtime": "2026-08-27T13:42:12Z",
+    "path": "/home/francis/bench-v0.15.0/serve-cuda-bb42106"
+   },
+   "webgpu": {
+    "mtime": "2026-08-22T18:17:55Z",
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu"
+   }
+  },
+  "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64",
+  "utc": "2026-08-27T15:43:28Z"
+ }
+}
