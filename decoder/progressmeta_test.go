@@ -145,3 +145,32 @@ func TestIORateSurvivesTheItemRateWindow(t *testing.T) {
 		t.Error("cumulative total must always print")
 	}
 }
+
+// The ETA is built from the recent rate. That matters when counted work follows a long UNCOUNTED
+// phase: the qwen3next oracle spends ~13 minutes loading an 80B checkpoint before its first
+// countable token, and a cumulative estimate divided that whole span by one finished item and
+// announced eta=2h20m for work that took six minutes. The recent window has to dominate.
+func TestRateTracksRecentWindowNotAllHistory(t *testing.T) {
+	p := newProgress(t, "eta", 11)
+	t0 := time.Now()
+	p.Step(1)
+	p.ratePerMin(t0) // establish the window
+
+	p.Step(1)
+	slow, ok := p.ratePerMin(t0.Add(14 * time.Minute)) // 1 item across the load
+	if !ok {
+		t.Fatal("no rate after the slow interval")
+	}
+	p.Step(2)
+	fast, ok := p.ratePerMin(t0.Add(15 * time.Minute)) // 2 items in the next minute
+	if !ok {
+		t.Fatal("no rate after the fast interval")
+	}
+	if fast <= slow*10 {
+		t.Errorf("recent rate %.3f/min barely moved from %.3f/min — the window is averaging over "+
+			"all history, so the ETA will stay poisoned by the load phase", fast, slow)
+	}
+	if want := 2.0; fast < want*0.9 || fast > want*1.1 {
+		t.Errorf("recent rate = %.3f/min, want ~%.1f (2 items in 1 minute)", fast, want)
+	}
+}

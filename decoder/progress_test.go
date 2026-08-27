@@ -76,11 +76,12 @@ type progress struct {
 
 	// Guards the sliding-rate window. emit() runs from the ticker goroutine AND from Phase() on
 	// the test's own goroutine, so these are shared state, not ticker-local.
-	mu       sync.Mutex
-	lastAt   time.Time
-	lastDone int64
-	lastIO   int64
-	lastIOAt time.Time // SEPARATE from lastAt on purpose — see ioProgress
+	mu         sync.Mutex
+	lastAt     time.Time
+	lastDone   int64
+	lastIO     int64
+	lastIOAt   time.Time // SEPARATE from lastAt on purpose — see ioProgress
+	lastPerMin float64   // most recent items/minute, so eta and rate agree
 }
 
 // newProgress starts the heartbeat and registers its own shutdown, so a test that fails early
@@ -162,10 +163,15 @@ func (p *progress) emit(tag string) {
 	if d := p.done.Load(); p.total > 0 {
 		line += fmt.Sprintf(" %d/%d", d, p.total)
 		if d > 0 && d < p.total && !p.uneven {
-			// Linear extrapolation, valid only where items cost the same. Uneven() turns it off
-			// rather than printing an ETA that climbs every tick and teaches nobody anything.
-			eta := time.Duration(float64(el) / float64(d) * float64(p.total-d)).Round(time.Second)
-			line += fmt.Sprintf(" eta=%s", eta)
+			// From the RECENT rate, not from total elapsed over total done. A test whose counted
+			// work follows a long uncounted phase — an 80B checkpoint load, say — otherwise
+			// divides 14 minutes by one finished item and reports eta=2h20m for work that took
+			// six. Measured on exactly that run. Uneven() still turns it off entirely where the
+			// items differ in cost and no window makes the projection honest.
+			if perMin, ok := p.peekRatePerMin(); ok && perMin > 0 {
+				eta := time.Duration(float64(p.total-d) / perMin * float64(time.Minute)).Round(time.Second)
+				line += fmt.Sprintf(" eta=%s", eta)
+			}
 		}
 	} else if d := p.done.Load(); d > 0 {
 		line += fmt.Sprintf(" %d done", d)
@@ -193,23 +199,32 @@ func (p *progress) emit(tag string) {
 
 // rate returns items/minute since the previous emit, and false on the first one (no window yet).
 func (p *progress) rate(now time.Time) (string, bool) {
+	perMin, ok := p.ratePerMin(now)
+	if !ok {
+		return "", false
+	}
+	if perMin >= 10 {
+		return fmt.Sprintf("%.0f/min", perMin), true
+	}
+	return fmt.Sprintf("%.1f/min", perMin), true
+}
+
+func (p *progress) ratePerMin(now time.Time) (float64, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	d := p.done.Load()
 	prevAt, prevDone := p.lastAt, p.lastDone
 	p.lastAt, p.lastDone = now, d
 	if prevAt.IsZero() || d <= prevDone {
-		return "", false
+		return 0, false
 	}
 	dt := now.Sub(prevAt).Seconds()
 	if dt <= 0 {
-		return "", false
+		return 0, false
 	}
-	per := float64(d-prevDone) / dt * 60
-	if per >= 10 {
-		return fmt.Sprintf("%.0f/min", per), true
-	}
-	return fmt.Sprintf("%.1f/min", per), true
+	// Already holding p.mu — do NOT relock here.
+	p.lastPerMin = float64(d-prevDone) / dt * 60
+	return p.lastPerMin, true
 }
 
 // procReadBytes reports bytes this process has read from storage. Linux-only: /proc/self/io does
@@ -270,4 +285,12 @@ func humanBytes(n int64) string {
 	default:
 		return fmt.Sprintf("%dKB", n/1024)
 	}
+}
+
+// peekRatePerMin reports the last computed items/minute WITHOUT advancing the window, so the ETA
+// and the rate on one line always describe the same interval.
+func (p *progress) peekRatePerMin() (float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastPerMin, p.lastPerMin > 0
 }
