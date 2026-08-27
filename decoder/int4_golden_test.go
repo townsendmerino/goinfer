@@ -238,15 +238,24 @@ func TestInt4_forwardParity(t *testing.T) {
 	// documented to do this to real checkpoints. Holding gpt2 to the same tight per-sample
 	// absolute gate as the tiny fixtures was never appropriate; argmax-exactness + a floor on
 	// centered cosine similarity (the same bar TestGPT2_forwardParity's f32 golden uses) is.
-	// Mutation-checked (gate mutation, 2026-08-22): int4GroupSize 32->64 moves individual samples
-	// by up to 7.39 (the old 5e-3 absolute gate would have caught it by ~1500x) while argmax stays
-	// unchanged. That mutation drops centered cosine to 0.9938 on BOTH boxes (arm64 Mac and the
-	// Linux box independently), while the real cross-arch baseline sits at 0.9995 on both — a 20x
-	// margin. 0.99 (the first cut of this floor) had ~20x MORE headroom than the natural cross-arch
-	// variation, wide enough to let that mutation slip through undetected. 0.999 sits between the
-	// two with room on both sides: passes the measured baseline (0.9995 Mac, ~0.9995 Linux) and
-	// fails the group-size mutation (0.9938) on both.
-	const gpt2CosFloor = 0.999
+	// Mutation-checked (int4GroupSize 32->64, decoder/weightmat.go): that mutation moves individual
+	// samples by up to 7.39 while argmax stays unchanged, so only a cosine floor catches it.
+	//
+	// Re-calibrated 2026-08-26. The previous calibration ("baseline 0.9995 on both, mutation 0.9938",
+	// 2026-08-22) was measured against goldens that a11c56b REPLACED the next day, when the int4 LM
+	// head moved weight-only-Q8 -> full W8A8. The current goldens are arm64-baked, so amd64 carries a
+	// fixed FMA-contraction offset and the stale 0.999 floor failed a HEALTHY Linux box. All four
+	// numbers below re-measured at c5ae3c1 on both boxes, golden restored after every run:
+	//
+	//	                arm64 (Mac)     amd64 (Linux)
+	//	  healthy       1.0000000000    0.9977745721   <- golden is arm64-baked, so exact there
+	//	  32->64 mut.   0.9761066556    0.9761066320   <- mutation dwarfs the cross-arch offset
+	//
+	// argmax is unaffected by the cross-arch offset (16 on both) and is gated separately above.
+	// 0.995 sits between with balanced margin: 2.2x the healthy amd64 deficit (2.23e-3), and it fails
+	// the mutation by 4.8x (2.39e-2). Do NOT raise this toward 0.999 without baking per-arch goldens
+	// first -- 0.999 is BELOW the natural cross-arch baseline and fails a correct build.
+	const gpt2CosFloor = 0.995
 	ran := 0
 	for _, d := range dirs {
 		name := filepath.Base(d)

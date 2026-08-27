@@ -443,6 +443,14 @@ knows what it should say.
   `TestInt4_forwardParity/gpt2` gap, unrelated to Metal. **Worth a look on its own:** an int4 forward
   parity failing on arm64 and not amd64 is the shape of the recorded-but-unmeasured Mac-vs-Linux FMA
   divergence (`bb98e92`), and nobody has connected the two. Stated as a question, not a finding.
+  **Answered 2026-08-26:** confirmed — it is exactly that divergence, and the question was the right
+  one. The direction has since flipped: `a11c56b` (2026-08-23) re-baked the int4 goldens on arm64, so
+  the Mac now reads exact (cosine 1.0) and the Linux box carries the offset (0.9977745721). Measured
+  on both boxes at `c5ae3c1`, golden restored after every run; argmax is unchanged (16) either way, so
+  only the cosine gate ever saw it. The 0.999 floor was calibrated 2026-08-22 against the goldens that
+  `a11c56b` replaced the next day, leaving it BELOW the natural cross-arch baseline — it was failing a
+  healthy box, not catching a regression. Re-floored to 0.995, which still fails the group-size
+  mutation (0.9761) on both arches. No int4 forward regression exists.
 - **A process error, caught and corrected by the operator:** a `census` run (which also runs
   `go test ./metal/...`) briefly overlapped a `gate gpu` run, violating the sequential-only rule.
   Caught via `ps aux`, confirmed nothing overlapped afterwards, re-run in verified isolation.
