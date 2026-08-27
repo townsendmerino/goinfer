@@ -80,6 +80,7 @@ type progress struct {
 	lastAt   time.Time
 	lastDone int64
 	lastIO   int64
+	lastIOAt time.Time // SEPARATE from lastAt on purpose — see ioProgress
 }
 
 // newProgress starts the heartbeat and registers its own shutdown, so a test that fails early
@@ -238,9 +239,18 @@ func (p *progress) ioProgress(now time.Time) (total, rate string, ok bool) {
 	if !ok {
 		return "", "", false
 	}
+	return p.ioProgressFrom(now, cur)
+}
+
+// ioProgressFrom is the rate arithmetic, split from the /proc read so it can be driven with known
+// values on any platform. The bug it now covers only showed on a real 162GB load.
+func (p *progress) ioProgressFrom(now time.Time, cur int64) (total, rate string, ok bool) {
+	// Its own timestamp, NOT lastAt. emit() calls rate() first, which sets lastAt = now, so
+	// reusing it here made dt zero every time and the io rate never printed once — visible only
+	// on a real 162GB load, where the field showed a total and never a rate.
 	p.mu.Lock()
-	prev, prevAt := p.lastIO, p.lastAt
-	p.lastIO = cur
+	prev, prevAt := p.lastIO, p.lastIOAt
+	p.lastIO, p.lastIOAt = cur, now
 	p.mu.Unlock()
 	total = humanBytes(cur)
 	if prev > 0 && cur > prev && !prevAt.IsZero() {

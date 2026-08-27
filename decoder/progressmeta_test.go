@@ -117,3 +117,31 @@ func TestIOProgressMatchesPlatform(t *testing.T) {
 		t.Errorf("off linux ioProgress must report nothing; got ok=%v total=%q", ok, total)
 	}
 }
+
+// emit() calls rate() before ioProgress(), and rate() stamps its own window. When both read the
+// same timestamp field, ioProgress always saw dt == 0 and silently never printed a rate — the
+// total appeared, the rate never did, and it took a 162GB load to notice. The windows are separate
+// now, and this drives the arithmetic with known values so the regression cannot return unseen.
+func TestIORateSurvivesTheItemRateWindow(t *testing.T) {
+	p := newProgress(t, "io-rate", 0)
+	t0 := time.Now()
+	if _, rate, _ := p.ioProgressFrom(t0, 1<<30); rate != "" {
+		t.Errorf("first sample cannot have a rate, got %q", rate)
+	}
+	// The interleaving that broke it: rate() stamps lastAt between the two io samples.
+	p.Step(1)
+	_, _ = p.rate(t0.Add(30 * time.Second))
+	total, rate, ok := p.ioProgressFrom(t0.Add(30*time.Second), 1<<30+30*(1<<20))
+	if !ok {
+		t.Fatal("ioProgressFrom returned !ok")
+	}
+	if rate == "" {
+		t.Error("io rate was suppressed — the io window is sharing rate()'s timestamp again")
+	}
+	if want := "1MB/s"; rate != want {
+		t.Errorf("rate = %q, want %q (30MB over 30s)", rate, want)
+	}
+	if total == "" {
+		t.Error("cumulative total must always print")
+	}
+}
