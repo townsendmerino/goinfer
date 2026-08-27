@@ -33,7 +33,9 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // testEvent is the `go test -json` record (cmd/test2json). Only the fields the gates
@@ -84,6 +86,13 @@ type results struct {
 	// maps, so reading them would be a data race. These two are the only things it reads.
 	liveDone atomic.Int64
 	liveLast atomic.Value // string — the most recent test to reach a terminal action
+	// liveRun holds the tests that have started and not yet finished, keyed by name, valued by
+	// start time. "Last finished" alone cannot answer the question a stalled run actually raises:
+	// during the v0.15.0 sweep the count sat at 430 for four minutes while the line kept naming a
+	// test that had already completed, which says nothing about what is holding the cell up.
+	// sync.Map for the same reason the two atomics above exist — the heartbeat goroutine reads
+	// this while consume() writes it.
+	liveRun sync.Map // string -> time.Time
 
 	// outAll is every output line in stream order — the reconstruction of what `go test -v` would
 	// have printed. The GPU gate's failure explainer needs it: a run killed by a signal, an OOM or a
@@ -162,9 +171,12 @@ func (r *results) add(ev testEvent) {
 		}
 		r.out[key] = append(r.out[key], ev.Output)
 		r.noteOutput(ev.Output)
+	case "run":
+		r.liveRun.Store(ev.Test, time.Now())
 	case "pass", "fail", "skip":
 		r.liveDone.Add(1)
 		r.liveLast.Store(ev.Test)
+		r.liveRun.Delete(ev.Test)
 		if _, ok := r.out[key]; !ok && r.final[key] == "" {
 			r.noteOrder(key)
 		}
@@ -262,4 +274,25 @@ func (r *results) ranCount() int {
 		}
 	}
 	return n
+}
+
+// inFlight returns the test that has been running longest without finishing, and for how long.
+// The oldest is the useful one: when a parent test is slow its subtests come and go beneath it,
+// and the parent is the name worth printing. Returns ok=false when nothing is in flight.
+func (r *results) inFlight() (name string, since time.Duration, ok bool) {
+	var oldest time.Time
+	r.liveRun.Range(func(k, v any) bool {
+		t, isTime := v.(time.Time)
+		if !isTime {
+			return true
+		}
+		if oldest.IsZero() || t.Before(oldest) {
+			oldest, name, ok = t, k.(string), true
+		}
+		return true
+	})
+	if ok {
+		since = time.Since(oldest).Round(time.Second)
+	}
+	return name, since, ok
 }

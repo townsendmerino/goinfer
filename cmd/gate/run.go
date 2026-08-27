@@ -114,8 +114,12 @@ func startCellHeartbeat(cell string, res *results, t0 time.Time) (stop func()) {
 				if last == "" {
 					last = "(no test has finished yet)"
 				}
-				fmt.Fprintf(os.Stderr, "   ... %s: %s elapsed, %d tests finished, last: %s\n",
+				line := fmt.Sprintf("   ... %s: %s elapsed, %d tests finished, last: %s",
 					cell, time.Since(t0).Round(time.Second), res.liveDone.Load(), last)
+				if name, since, ok := res.inFlight(); ok {
+					line += fmt.Sprintf(" | in flight: %s (%s)", name, since)
+				}
+				fmt.Fprintln(os.Stderr, line)
 			}
 		}
 	}()

@@ -68,3 +68,52 @@ func TestCellHeartbeatCanBeSilenced(t *testing.T) {
 		t.Errorf("GOINFER_GATE_HEARTBEAT=0 still printed:\n%s", out)
 	}
 }
+
+// The count of finished tests answers "is it moving?" but not "what is holding it up?" — and
+// during the v0.15.0 sweep those diverged: the count sat at 430 for four minutes while the line
+// kept naming a test that had already completed. So the heartbeat must name what is IN FLIGHT,
+// and must prefer the longest-running one, because a slow parent's subtests churn beneath it and
+// the parent is the name worth printing.
+func TestCellHeartbeatNamesLongestRunningTest(t *testing.T) {
+	old := cellHeartbeatInterval
+	cellHeartbeatInterval = 20 * time.Millisecond
+	defer func() { cellHeartbeatInterval = old }()
+	t.Setenv("GOINFER_GATE_HEARTBEAT", "")
+
+	res := newResults()
+	res.cur = "cell"
+	// Two tests started, the slow one first; a third started and already finished.
+	res.add(testEvent{Action: "run", Package: "p", Test: "TestSlowParent"})
+	time.Sleep(30 * time.Millisecond)
+	res.add(testEvent{Action: "run", Package: "p", Test: "TestRecentlyStarted"})
+	res.add(testEvent{Action: "run", Package: "p", Test: "TestAlreadyDone"})
+	res.add(testEvent{Action: "pass", Package: "p", Test: "TestAlreadyDone"})
+
+	r, w, _ := os.Pipe()
+	origErr := os.Stderr
+	os.Stderr = w
+	stop := startCellHeartbeat("cell", res, time.Now())
+	time.Sleep(80 * time.Millisecond)
+	stop()
+	w.Close()
+	os.Stderr = origErr
+	got, _ := io.ReadAll(r)
+	out := string(got)
+
+	if !strings.Contains(out, "in flight: TestSlowParent") {
+		t.Errorf("heartbeat must name the longest-running in-flight test:\n%s", out)
+	}
+	if strings.Contains(out, "in flight: TestRecentlyStarted") {
+		t.Errorf("named the newer test instead of the longest-running one:\n%s", out)
+	}
+	if strings.Contains(out, "in flight: TestAlreadyDone") {
+		t.Errorf("a finished test is not in flight — it was not cleared:\n%s", out)
+	}
+
+	// And once everything terminal-s, there is nothing in flight to report.
+	res.add(testEvent{Action: "pass", Package: "p", Test: "TestSlowParent"})
+	res.add(testEvent{Action: "pass", Package: "p", Test: "TestRecentlyStarted"})
+	if name, _, ok := res.inFlight(); ok {
+		t.Errorf("inFlight() = %q after every test finished, want none", name)
+	}
+}
