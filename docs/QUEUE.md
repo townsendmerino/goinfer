@@ -336,7 +336,9 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0221d32` | docs: the developer-role task is NOT a blocker -- it is silent-wrong, which is worse |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
+| `20fc6e6` | gate: the qwen3next oracle was unreachable, not unrunnable |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
+| `3b7facd` | test(qwen3next): wire the T3 oracle -- gate, asset registry, and the sweep cell |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `4ca19e9` | fix(serve): accept `role: "developer"` as an alias for `system` (G12) |
@@ -344,6 +346,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
+| `a877b0a` | fix(decoder): int4 gpt2 floor sat below its own cross-arch baseline |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
@@ -510,6 +513,8 @@ than papered over.
 
 | file | repo |
 |---|---|
+| `decoder/int4_golden_test.go` | goinfer |
+| `decoder/real_oracle_test.go` | goinfer |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
 | `internal/serveapp/openai.go` | goinfer |
