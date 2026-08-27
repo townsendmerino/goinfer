@@ -187,3 +187,8 @@ decoder/testdata/mellum-*-slice/
 
 # repowise index — generated codebase-intelligence artifacts, never committed
 .repowise/
+
+# build artifacts from `go build ./cmd/<x>` run in the repo root
+/gate
+/prequant
+/serve
