@@ -1,0 +1,123 @@
+# Attach binaries to a release. The README tells people to "grab a binary from the latest
+# release"; every release from v0.6.0 to v0.15.0 had ZERO assets, so that instruction dead-ended.
+# demo/chat/RELEASE_TEMPLATE.md documented this build by hand and nobody ran it.
+#
+# Two kinds of asset, because the README makes two different promises:
+#   goinfer-chat-<os>-<arch>          ~5 MB   the runtime; bring your own GGUF (--model)
+#   goinfer-chat-0.5b-<os>-<arch>     ~600 MB runtime + model in ONE file, the actual pitch
+#
+# The 1.5B tier is opt-in: six targets at ~1.7 GB is ~10 GB of assets per release.
+name: release assets
+
+on:
+  push:
+    tags: ['v*']          # root tags only; submodule tags are cuda/v*, gpu/v* and do not match
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and attach assets to (e.g. v0.15.0)'
+        required: true
+      tier_1_5b:
+        description: 'Also build the 1.5B tier (~10 GB of assets)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  plain:
+    name: runtime binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: 'go.mod' }
+      - name: cross-compile six targets
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for t in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            os="${t%/*}"; arch="${t#*/}"
+            out="dist/goinfer-chat-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
+            echo "building $t"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -ldflags="-s -w" -trimpath -o "$out" ./demo/chat
+          done
+          ls -lh dist
+      - uses: actions/upload-artifact@v4
+        with: { name: plain, path: dist/ }
+
+  embedded:
+    name: model-in-binary (${{ matrix.tier }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tier: 0.5b
+            url: https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+          - tier: 1.5b
+            url: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
+      - name: skip 1.5B unless asked
+        id: gate
+        run: |
+          if [ "${{ matrix.tier }}" = "1.5b" ] && [ "${{ github.event.inputs.tier_1_5b }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "1.5B tier not requested — skipping (~10 GB of assets)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@v5
+        if: steps.gate.outputs.skip == 'false'
+        with: { go-version-file: 'go.mod' }
+      - name: fetch the model
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --retry-delay 5 -o model.gguf "${{ matrix.url }}"
+          ls -lh model.gguf
+      - name: build embedded binaries
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          # The committed script, not a reimplementation of it: it stages the prequant .giw next to
+          # the //go:embed directive in internal/chatapp and picks the right build tag. Prequant
+          # (its default) is what makes the README's "instant boot, <100 MB heap" true — the raw
+          # --gguf mode quantizes at launch instead.
+          ./demo/chat/build-embed.sh --name "goinfer-chat-${{ matrix.tier }}" model.gguf \
+            darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
+          ls -lh demo/chat/dist
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.skip == 'false'
+        with: { name: 'embedded-${{ matrix.tier }}', path: demo/chat/dist/ }
+
+  publish:
+    name: attach to the release
+    needs: [plain, embedded]
+    if: always() && needs.plain.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: staged }
+      - name: collect + checksum
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find staged -type f -exec mv -n {} dist/ \;
+          cd dist && sha256sum goinfer-chat-* > checksums.txt
+          ls -lh
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # --clobber so a re-run replaces assets instead of failing on the second attempt.
+          gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
+          echo "attached to $TAG:"; gh release view "$TAG" --json assets \
+            --jq '.assets[] | "  \(.name)  \(.size)"' --repo "${{ github.repository }}"
