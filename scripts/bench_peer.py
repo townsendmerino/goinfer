@@ -383,6 +383,19 @@ def plan_models():
     return picked
 
 
+def plan_configs():
+    """Sampling configurations to sweep, beyond greedy. EMPTY by default, so the release sweep is
+    unchanged: adding a phase that runs by default would silently make every future sweep longer."""
+    raw = os.environ.get("BENCH_CONFIGS", "").strip()
+    if not raw:
+        return []
+    picked = [c.strip() for c in raw.split(",") if c.strip()]
+    unknown = [c for c in picked if c not in CONFIGS]
+    if unknown:
+        sys.exit(f"BENCH_CONFIGS: unknown config(s) {unknown}; known: {sorted(CONFIGS)}")
+    return picked
+
+
 def main():
     """Plan. Phase A is the headline BACKEND table -- every backend at one depth, so the
     cross-backend row is apples-to-apples. Phase B is the depth curve, CUDA only, because
@@ -438,6 +451,17 @@ def main():
         for d in [512, 2048, 3900]:
             for eng in ["goinfer", "ollama"]:
                 plan.append(("B", eng, "cuda", mk, d, "greedy"))
+
+    # Phase C is the SAMPLING axis, and it is empty unless asked for. §B5's stale set is "the
+    # sampled (temp / temp+top_p) rows"; CONFIGS has carried those definitions all along but no
+    # phase ever scheduled them, so those rows had no reproducible path — which is why they could
+    # not simply be re-run after the 2026-08-25 re-anchor.
+    #
+    #     BENCH_CONFIGS=temp0.8_topp0.95,temp0.8_topk40 python3 scripts/bench_peer.py ...
+    for cfg in plan_configs():
+        for mk in plan_models():
+            for eng in ["goinfer", "ollama"]:
+                plan.append(("C", eng, "cuda", mk, 128, cfg))
 
     print(f"# {len(plan)} cells planned, {len(done)} already done", flush=True)
     for phase, engine, backend, mk, depth, cfg in plan:
