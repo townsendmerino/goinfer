@@ -292,6 +292,15 @@ CONFIGS = {
         "ollama": {"temperature": 0.8, "top_p": 0.95, "seed": 1},
         "note": "temperature=0.8, top_p=0.95 both sides",
     },
+    # §B5's "temp-only" rows: temperature 1.0 with NO truncation, which is goinfer's own default.
+    # Sent EXPLICITLY to both sides rather than relying on own_defaults, because the two engines'
+    # defaults differ — own_defaults measures "each side's default", which is a different question
+    # and would not reproduce the §B5 row.
+    "temp1.0_notrunc": {
+        "goinfer": {"temperature": 1.0},
+        "ollama": {"temperature": 1.0, "seed": 1},
+        "note": "temperature=1.0, no truncation, both sides",
+    },
     "temp0.8_topk40": {
         "goinfer": {"temperature": 0.8, "top_k": 40, "seed": 1},
         "ollama": {"temperature": 0.8, "top_k": 40, "seed": 1},
