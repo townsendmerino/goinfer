@@ -15,11 +15,18 @@
 > peer-independent: pure-Go/no-native-dep, model-in-binary, bit-identical decode, and running a 26B
 > **fully GPU-resident** on an 8 GB card (§B4 — current Ollama also runs it on 8 GB, but via CPU
 > offload and faster; goinfer's distinction is all-experts-on-GPU, not that peers can't run it). The Go *bindings*
-> (gollama.cpp, yzma) reach llama.cpp's speed but still ship its native `.so`; the
-> pure-Go *ports* (llama2.go lineage) are archived toys. Among the peers surveyed,
-> goinfer is the only maintained runtime that executes production-scope weights in
-> pure Go with **no native dependency** — and the only one that can compile the model
-> **into** the binary. It trades peak throughput and breadth (no continuous batching,
+> (gollama.cpp, yzma) reach llama.cpp's speed but still ship its native `.so`.
+> **The pure-Go lane is occupied.** `goccy/go-llama` (MIT, active) runs llama.cpp in-process with
+> no cgo, no shared library and no wasm runtime at execution time, by compiling it to
+> `wasm64-wasip1` and transpiling that to Go (`goccy/llamawasm2go` v0.2.4, llama.cpp base b10223 /
+> `11924d4c`). It inherits llama.cpp's kernels and model coverage. Its engine is single-threaded —
+> no `pthread_create` and no ggml threadpool symbols in the bundle, `ContextParams.NThreads`
+> (`llama.go`) documents the clamp to 1, and its own `scripts/bench-compare.sh` runs native
+> `llama-bench` with `-t 1` to match — GGUF-only, with no GPU backend. What separates goinfer is
+> narrower than the lane: it implements the forward pass rather than inheriting one, which is what
+> carries multi-threaded CPU decode, a GPU backend, checkpoint formats beyond GGUF (safetensors,
+> GPTQ, AWQ), and compiling the model **into** the binary. No head-to-head numbers exist in either
+> direction; neither project has published any. It trades peak throughput and breadth (no continuous batching,
 > vision-in only — no audio, CPU-slow — 11 architectures) for a static binary that
 > boots in ~0.5 s.
 
@@ -186,33 +193,56 @@ path mistake rather than a missing copy).
 
 Durable, mostly-boolean axes. goinfer's `✗` stay in the table. Legend: **✓** yes ·
 **✗** no · **~** partial / caveated · **—** not verified or N/A. Peer cells verified
-against each project's repo/docs on **2026-06-10** (citations in *Sources*); re-verify
-at each goinfer tag.
+against each project's repo/docs on **2026-06-10** (citations in *Sources*); the `go-llama`
+column on **2026-08-27**; re-verify at each goinfer tag. Its `—` cells are unchecked, not
+absent — this pass read the engine and packaging, not the library surface.
 
-| Capability | **goinfer** | llama.cpp | Ollama | mistral.rs | vLLM | Go bindings¹ (gollama.cpp · yzma) | pure-Go ports² (llama2.go) |
-|---|---|---|---|---|---|---|---|
-| Runs weights in-process, **no native dep** | ✓ pure Go, no cgo ᵃ | ✗ *is* the C/C++ lib | ✗ spawns native `llama-server` (GGUF) + MLX ᵇ | ✗ Rust; GPU links CUDA/Metal | ✗ Python + PyTorch + CUDA | ✗ dlopen prebuilt llama.cpp `.so/.dll/.dylib` ᶜ | ✓ genuinely pure Go |
-| Single static binary, zero install | ✓ ᵃ | ~ standalone binary, model separate | ~ binary + `llama-server` companion ᵇ | ~ one CLI binary; GPU needs CUDA/Metal | ✗ pip / Python env | ✗ needs the native lib ᶜ | ✓ (but toy) |
-| Model **embeddable in the binary** | ✓ `.giw` mapped from the image ᵈ | ✗ | ✗ | — | ✗ | ✗ | ✗ |
-| HF logit-parity gate (a contract) | ✓ ᵉ | — | — | — | — | — | — |
-| Constrained / structured decode | ✓ **struct-derived** grammar ᶠ | ✓ GBNF + JSON-schema | ✓ JSON schema | ✓ grammar + strict schema | ✓ xgrammar / `guided_json` | — | ✗ |
-| OpenAI-compatible server | ✓ pure stdlib ᵍ | ✓ `llama-server` | ✓ | ✓ (+ Anthropic) | ✓ (heavy deps) | ✗ (library only) | ✗ |
-| LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ |
-| GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only |
-| Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ |
-| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`**, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ |
-| Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy |
+| Capability | **goinfer** | llama.cpp | Ollama | mistral.rs | vLLM | Go bindings¹ (gollama.cpp · yzma) | pure-Go ports² (llama2.go) | go-llama³ (goccy) |
+|---|---|---|---|---|---|---|---|---|
+| Runs weights in-process, **no native dep** | ✓ pure Go, no cgo ᵃ | ✗ *is* the C/C++ lib | ✗ spawns native `llama-server` (GGUF) + MLX ᵇ | ✗ Rust; GPU links CUDA/Metal | ✗ Python + PyTorch + CUDA | ✗ dlopen prebuilt llama.cpp `.so/.dll/.dylib` ᶜ | ✓ genuinely pure Go | ✓ pure Go, transpiled wasm ᵏ |
+| Single static binary, zero install | ✓ ᵃ | ~ standalone binary, model separate | ~ binary + `llama-server` companion ᵇ | ~ one CLI binary; GPU needs CUDA/Metal | ✗ pip / Python env | ✗ needs the native lib ᶜ | ✓ (but toy) | ✓ (bundle ~126 MB) ᵏ |
+| Model **embeddable in the binary** | ✓ `.giw` mapped from the image ᵈ | ✗ | ✗ | — | ✗ | ✗ | ✗ | — |
+| HF logit-parity gate (a contract) | ✓ ᵉ | — | — | — | — | — | — | — |
+| Constrained / structured decode | ✓ **struct-derived** grammar ᶠ | ✓ GBNF + JSON-schema | ✓ JSON schema | ✓ grammar + strict schema | ✓ xgrammar / `guided_json` | — | ✗ | — |
+| OpenAI-compatible server | ✓ pure stdlib ᵍ | ✓ `llama-server` | ✓ | ✓ (+ Anthropic) | ✓ (heavy deps) | ✗ (library only) | ✗ | — |
+| LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ | — |
+| GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only | ✗ no GPU backend ᵏ |
+| Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ | — |
+| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`**, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
+| Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
+| Multi-threaded CPU decode | ✓ | — | — | — | — | — | — | ✗ single-threaded ᵏ |
 
-**Reading it:** goinfer wins cleanly on *no-native-dep pure-Go execution* and
-*model-in-binary* (no surveyed peer does either at production scope), and on
+**Reading it:** *no-native-dep pure-Go execution* is no longer goinfer's alone — `go-llama`
+reaches it by transpiling llama.cpp, and what separates the two is where the forward pass lives
+(implemented vs inherited), which is what carries threading, GPU and non-GGUF formats. goinfer is
+still alone here on *model-in-binary*, and on
 cold-start/footprint (Table 2). It ties on the library surface (constrained decode,
 LoRA, OpenAI server). It **loses**, honestly, on GPU breadth, continuous batching,
 multimodal, and model coverage — those are the native engines' and vLLM's turf.
 
 ¹ Go *bindings*: "no CGO" (purego/ffi) but still download/bundle and `dlopen` a native
-llama.cpp shared library — not pure-Go inference. ² The one genuinely pure-Go,
-in-process port (nikolaydubina/llama2.go) is **archived (2024-11-30)**, CPU-only,
-Llama-2-in-`llama2.c`-format, ~0.87 tok/s on 7B — educational, not production.
+llama.cpp shared library — not pure-Go inference. ² nikolaydubina/llama2.go, the
+in-process port this column was built around, is **archived (2024-11-30)**, CPU-only,
+Llama-2-in-`llama2.c`-format, ~0.87 tok/s on 7B. That column described the pure-Go
+lane when it was written; ³ is why it no longer describes the lane.
+
+³ **`goccy/go-llama`** (MIT, active) with `goccy/llamawasm2go` v0.2.4: llama.cpp built for
+`wasm64-wasip1` and transpiled to Go by `goccy/wasm2go`, so the engine is ordinary Go — no cgo, no
+shared library, and no wasm runtime at execution time. Base llama.cpp b10223 (`11924d4c`).
+
+ᵏ go-llama cells, read from the two repos on 2026-08-27. **Single-threaded:** no `pthread_create`
+and no ggml threadpool symbols anywhere in the ~126 MB bundle; `ContextParams.NThreads` (`llama.go`)
+documents the clamp to 1; `scripts/bench-compare.sh` runs native `llama-bench` with `-t 1` "to match
+the engine's single-threaded wasm build". **Bundle:** p0 46 MB + p1 45 MB + p2 35 MB, including
+~15 MB `arm64.s` and ~14 MB `amd64.s`. Hand-spliced arm64 assembly covers **q8_0 only**
+(`DbgGemvQ8_0_4x4` / `DbgGemmQ8_0_4x4` in `llamawasm2go/wasm2go.go`, exercised by
+`go-llama/internal/gemv_repack_numeric_test.go`); q4 takes the generic transpiled path. **No
+published numbers** in either repo — a harness exists (`bench_test.go`: `BenchmarkDecode`,
+`BenchmarkPromptEval`, plus `bench-compare.sh`) but no results, so every performance cell here is
+*not measured* rather than unfavourable. Note go-llama's README still describes a wasm32 4 GiB
+ceiling and a ~3B-at-Q4 limit; the shipped bundle is wasm64 (int64 pointers, `MaxMem` is `uint64`,
+and `WithMaxMemory` documents a 64 GiB default of reserved address space), so that text is stale
+and is not repeated here.
 
 Cell provenance: ᵃ `README.md` (pure Go, no cgo, cross-compiled static binary) ·
 ᵇ Ollama PR #16031 (CGO runner removed → upstream `llama-server` for GGUF + MLX for
@@ -247,7 +277,7 @@ without the reader having to guess what that means:
 | machine | MacBook Pro `MacBookPro18,3` (14", 2021) | desktop |
 | CPU | Apple M1 Pro — **8 cores: 6 performance + 2 efficiency** | Ryzen 7 3700X — 8c/16t |
 | RAM | **16 GB** unified | **62 GB** |
-| GPU | integrated (Metal) | RTX 2070 SUPER, **8 GB** |
+| GPU | integrated (Metal) | RTX 2070 SUPER, **8 GB** | ✗ no GPU backend ᵏ |
 | OS at the time of writing | macOS 26.6.2 | Nobara 44, kernel 7.2.0, CUDA 13.2 |
 
 **Several numbers on this page are properties of those rigs, not of the code, and the
@@ -1369,6 +1399,108 @@ goinfer's own cells moved **+0.7% to +4.3%** against 2026-08-09 at every depth e
 *below* 2048, 243.2 vs 244.0, which a depth curve should not do), and the binaries differ — so the
 honest reading is that the old 512 cells were suspect, not that something got 25% faster. **The
 comparison in this subsection is cross-session and indicative; the anchor is the table above it.**
+
+## B9 — tables relocated from the README front page (2026-08-27)
+
+> **⚠ STALE — measured against Ollama v0.32.6 on the pre-2026-08-25 stack.** Not a current claim.
+> §B8 above supersedes the greedy decode rows with the same models on the re-anchored stack, and
+> its tables carry the peer columns these ones do. Kept because two things here exist nowhere else:
+> the **sampling-configuration table** (goinfer's non-greedy paths against the peer's), which §B8
+> does not cover, and the v0.32.6-era decode figures the sampling rows were taken beside.
+>
+> Relocated verbatim while shortening the README; nothing was re-measured, re-derived or edited.
+
+### Compared with Ollama v0.32.6
+
+> **⚠ The current peer anchor is [docs/benchmarks.md](benchmarks.md) §B8** — re-measured
+> 2026-08-26 on driver 595.91.07 against **Ollama v0.32.5**, greedy, three models, four depths,
+> 33/33 cells. The rows in this section are against **v0.32.6** on the old stack and are kept
+> because they carry the sampled configurations and the per-cell annotations §B8 does not have.
+> **Do not mix the two**: different peer version, different OS. §B8 records that Ollama itself
+> reproduced its 2026-08-09 greedy numbers to within 0.7% across the upgrade, which is why the
+> goinfer-side deltas there are attributable.
+
+Secondary, and annotated — read the absolute numbers above and the cgo-free property first. Same
+measurements as the tables above, with the peer measured **identically**: both engines driven over
+their own HTTP server, client-timed inter-token rate, **interleaved cell-by-cell with a server
+restart between cells**, the **same weights** on both sides — verified **per tensor** by
+`scripts/gguf_same_weights.py`, *not* by file md5 (see below) — sampling sent
+explicitly to each. Peer: **Ollama v0.32.6** (`OLLAMA_FLASH_ATTENTION:false`, its default), except
+the one row footnoted ᵇ, which is carried from the earlier v0.32.5 campaign and labelled as such.
+
+**Greedy, by KV depth** (re-measured 2026-08-09, goinfer `2693dce` vs Ollama **v0.32.6**,
+`OLLAMA_FLASH_ATTENTION:false`, `num_ctx` verified per cell, interleaved with a server restart per
+cell):
+
+| context | goinfer 0.5B | Ollama | | goinfer 1.5B | Ollama | |
+|---|---|---|---|---|---|---|
+| 128 | 320.9 ±0.0 | 269.4 ±0.4 | goinfer 1.19× | 218.5 ±0.9 | 195.4 ±0.0 | goinfer 1.12× |
+| 512 | 286.6 ±2.4 | 269.6 ±0.3 | **goinfer 1.06×** | 195.0 ±0.8 | 176.6 ±27.0 ᵃ | goinfer 1.10× |
+| 2048 | 250.2 ±1.0 | 266.4 ±1.4 | Ollama 1.06× | 157.0 ±0.6 | 179.5 ±0.3 | Ollama 1.14× |
+| 3900 | 200.8 ±0.0 | 259.8 ±0.2 | Ollama 1.29× | 122.1 ±0.2 | 174.3 ±0.1 | Ollama 1.43× |
+
+ᵃ The peer's rate in this one cell varied widely (spread 27.0, and 146–182 across ten runs in the
+previous campaign) — wider than the gap between the engines. Treat that cell as indicative only.
+
+**What changed from the previously published rows, in both directions.** The 0.5B 512 cell **changes
+sign** — it read `Ollama 1.06×` and is now `goinfer 1.06×`; the 0.5B 2048 gap narrows from
+`Ollama 1.11×` to `Ollama 1.06×`; the 1.5B 512 lead is essentially unchanged (1.11× → 1.10×). Going
+the other way, the **1.5B 3900 deficit widens slightly, 1.42× → 1.43×**, and 128/2048 on the 1.5B and
+128/3900 on the 0.5B are unchanged. The improvements are goinfer's own regression being removed
+(`2693dce`), not the peer moving; the peer columns are a fresh v0.32.6 measurement, which is why they
+differ slightly from the v0.32.5 numbers these rows previously carried.
+
+Still ahead at short context, behind at long, the gap widening with depth: Ollama's flash attention
+holds nearly flat (269 → 260 on 0.5B) while goinfer decays (321 → 201).
+
+> **Why not md5, and why these rows are pending a refresh (2026-08-25, v0.15.0).**
+>
+> **The md5 guarantee these tables used to claim was unsatisfiable and never held.** `ollama create`
+> repacks a GGUF in a different **tensor order**: metadata keys and values identical, tensor names,
+> shapes and types identical, every **offset** different. So the file hash — and any tail slice of
+> it — differs even when the weights are bit-identical, for every model, always. It is replaced by
+> a per-tensor comparison at each file's own offsets (`scripts/gguf_same_weights.py`), which is what
+> fairness actually rests on and which **does** pass: **339/339**, **339/339** and **291/291**
+> tensors identical for the three models now used.
+>
+> **The numbers above predate this release's CPU and attention work and are NOT re-measured for
+> v0.15.0.** A 2026-08-22 run at `5b040f2` against the same Ollama v0.32.6 reproduced the 1.5B row
+> and the depth-3900 rows closely, but read **0.5B @128 = 284.3 tok/s (goinfer 1.08×)** against the
+> **320.9 (1.19×)** published here. One cell moving while its neighbours hold is more often a
+> measurement artifact than a regression, and it was **not** confirmed by a second run — so neither
+> figure is being promoted over the other here. Then the A1 attention restructure (2.4–2.8×), the
+> W4A8 row4 repack and the int4-mode LM head all landed, which moves the goinfer column again.
+> **Treat this section as v0.14.0-era until a fresh interleaved run is done at the v0.15.0 tag.**
+> Method and raw data: `docs/measurements/bench-peer-v0.15.0-2026-08-22.md`,
+> `docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`.
+
+**By sampling configuration, 128 context** (re-measured 2026-08-09, goinfer `686c9f8` vs Ollama
+**v0.32.6**, `OLLAMA_FLASH_ATTENTION:false`, `num_ctx` verified per cell):
+
+| configuration | goinfer 0.5B | Ollama | goinfer gemma3-1b | Ollama |
+|---|---|---|---|---|
+| greedy (`temperature 0`) | 318.9 | 269.4 | — | — |
+| `temperature 0.8` + `top_k 40` | 268.8 ᵇ | 284.7 ᵇ | — | — |
+| `temperature 1.0`, no truncation (goinfer's default) | 219.2 | 269.0 | 131.7 ᵈ | 149.1 ᵈ |
+| `temperature 0.8` + `top_p 0.95` | 190.3 | 266.2 | 115.2 ᵈ | 149.6 ᵈ |
+
+ᵇ `top_k` row carried from the previous campaign (Ollama v0.32.5) — not re-measured in this pass.
+
+ᵈ gemma3-1b cells **re-measured 2026-08-09** with both engines interleaved in one session (the
+original pair was measured by separate scripts, which is not a valid engine comparison — see
+`docs/benchmarks.md` §B5). The verdicts barely moved (1.12× → 1.13×, 1.28× → 1.30×).
+
+**Where this leaves sampled decoding.** goinfer is **1.08–1.40× behind** the peer under sampled
+configurations, down from 2.1–2.9× before the parallel-normalization work (`686c9f8`): the qwen0.5b
+`top_p` figure went 92.8 → 190.3 tok/s while the peer was unchanged (266.6 → 266.2). Greedy and
+`top_k` remain the fastest paths — see the sampling note above. phi3-mini's previously held `top_p`
+cell has been **re-measured and published** (99.4 ±0.6, a 0.6% spread against the 5% threshold —
+Ollama 1.22×), together with its `temp-only` row, as a fresh same-session interleaved pair;
+`docs/benchmarks.md` §B5 records the re-measure and what the original row got wrong.
+
+Absolute tok/s are **not** comparable across the CUDA and Metal sections — that would compare two
+graphics cards, not two engines. Method, hardware and history:
+[docs/benchmarks.md](benchmarks.md).
 
 ## Measurement notes worth keeping
 

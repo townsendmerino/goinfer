@@ -23,9 +23,13 @@ other sources cannot reach.
 - It **owns the full forward pass in pure Go**, so exposing the target's hidden
   states (the head's input) is a clean internal seam, not a hack — unlike wrapping a
   closed runtime.
-- "Pure-Go EAGLE-3 in a single static binary" is a position no other maintained
-  runtime occupies; it pairs with the [03 router](./03-router-tree.md) and tree
-  verification already specified.
+- Pure-Go EAGLE-3 in a single static binary is unusual, though the claim wants care now that
+  the pure-Go lane has another occupant: `goccy/go-llama` runs llama.cpp in Go by transpiling it
+  (`docs/benchmarks.md`, footnote ³), so it inherits llama.cpp's draft-model speculative decoding
+  rather than carrying an EAGLE-3 head of its own. The difference is where the head would live —
+  a seam goinfer owns because it owns the forward pass — not a claim about what any other runtime
+  could add. It pairs with the [03 router](./03-router-tree.md) and tree verification already
+  specified.
 - The head is tiny (roughly one transformer layer) — feasible to run on the existing
   SIMD / WebGPU matmul paths without new heavy dependencies.
 

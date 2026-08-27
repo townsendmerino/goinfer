@@ -194,3 +194,65 @@ Orthogonal to coverage: the **perf** levers (DP4A/`dot4I8Packed`, GPU speculativ
 decode) are tracked separately in
 [`gpu-next-levers-assessment.md`](gpu-next-levers-assessment.md), and the real
 big-model runs need a bigger-VRAM box or int4-expert residency.
+
+## Which architectures run resident — summary table
+
+Moved here from the README (2026-08-27), unchanged. This is a CAPABILITY table, not a measured
+one, which is why it landed here beside the per-family scoping rather than in the
+provenance-gated `benchmarks.md`.
+
+### What runs on the GPU
+
+GPU-resident decode covers a subset of architectures. **Everything else runs on the
+pure-Go CPU path automatically.** A shared feature taxonomy checks each model's required
+features against what the backend implements; an unsupported architecture is *declined at
+load and falls back to CPU* rather than run with a feature quietly dropped.
+
+| Family | CUDA | Metal |
+|---|---|---|
+| Qwen2 · Qwen3 · Llama | ✅ resident | ✅ resident |
+| Mistral · Phi-3-mini-4k | ✅ resident | ✅ resident¹ |
+| Gemma 3 | ✅ resident³ | ✅ resident³ |
+| MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | ✅ resident⁴ | ✅ resident² |
+| Gemma 4 (dense + MoE) | ✅ resident⁵ | ✅ resident⁵ |
+| MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
+
+The full per-family × 4-backend (CPU · WebGPU · CUDA · Metal) table is **generated** from the
+residency predicate (`decoder.ResidentEligible`) and freshness-gated in CI, so it can never drift
+from what a backend actually admits: [docs/hardware-matrix.md](hardware-matrix.md).
+
+¹ Metal Mistral-7B needs > 16 GB unified memory (int8 + int4). Both backends implement
+qk-norm + sliding-window; Metal also does partial rotary, so a partial-rotary Phi
+variant is resident on Metal but falls back on CUDA.
+
+³ Gemma 3 (both backends) covers the sandwich-norm block, GeGLU, the (1+w) RMS offset, the
+√hidden embedding scale, and Gemma's dual RoPE base — validated on a real gemma-3-4b-it against
+the CPU path. Metal parity was gated on a GELU-tanh overflow fix (the `<bos>` massive-activation
+gate drove `tanh`'s argument past its internal `exp` range → NaN; clamped).
+
+⁵ Gemma 4 (both the dense variants and the `enable_moe_block` MoE) runs resident on CUDA and
+Metal. It was opt-in behind `GOINFER_GEMMA4_RESIDENT` through the bring-up and is now
+unconditional; the variable is inert and can be removed from any script that sets it. WebGPU
+still declines — it lacks the four Gemma kernels — and **E-models (E2B/E4B, per-layer
+embeddings) decline on every backend**, since none implements the PLE branch and admitting one
+would silently skip it. Both are the feature gate's answer, not a hardcoded row, and both are
+asserted (`TestGemma4Admission_unconditional`, `TestGemma4EModel_realDeclinesResident`).
+
+⁴ CUDA MoE runs Mixtral and GLM-MoE resident (on-GPU router, row-stacked int4 experts, ungated
+shared expert). Qwen2-MoE / Qwen3-MoE decline to CPU on CUDA — their gated shared expert
+(sigmoid-scaled) isn't built yet.
+
+² Metal MoE (router + stacked experts + shared expert) is validated by assembly
+equivalence (identical experts ≡ the dense FFN, cosine 1.0) + per-kernel parity vs CPU;
+a real MoE checkpoint needs a Mac with enough unified memory (Qwen1.5-MoE-A2.7B is 14.3B
+≈ 14 GB at int8 load), so the real-model e2e cross-check runs on the CUDA box. The
+DeltaNet/Llama-4/Gemma hybrids stay on CPU (declined before residency).
+
+An unlisted or unsupported model still runs — in pure Go on the CPU. The portable
+WebGPU backend (`-tags gpu`) covers a broader resident set (MoE, MLA, SSM, YaRN); see
+[docs/capability-matrix.md](capability-matrix.md) for the full map.
+
+> **Note:** in `cmd/serve`, a GPU-resident model skips prompt-prefix KV reuse and
+> speculative decoding — the resident decode path is fast enough that the per-request
+> session optimization isn't worth it. The OpenAI API is stateless (clients resend the
+> whole conversation), so this is a throughput trade, not a correctness change.

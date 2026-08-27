@@ -252,3 +252,52 @@ the loader internals and the residency seam as Experimental *explicitly*, so
 "still moving" is a stated exclusion rather than an unstated risk. That is also
 why the `.giw` format carries a version guard (a stale bundle triggers a safe
 rebuild via the GGUF path, never a crash).
+
+## Modules and packages
+
+Moved here from the README (2026-08-27) so the front page stays short; the content is unchanged.
+
+### Modules
+
+goinfer ships as **four Go modules**. The three GPU backends are separate modules so their
+dependencies (`cogentcore/webgpu` and its cgo, `eitamring/gocudrv`, `ebitengine/purego`)
+never enter the dependency graph of a build that doesn't ask for them.
+
+| Module path | Contents |
+|---|---|
+| `github.com/townsendmerino/goinfer` | everything in the Packages table below except the three backends |
+| `github.com/townsendmerino/goinfer/gpu` | WebGPU backend (`-tags gpu`) |
+| `github.com/townsendmerino/goinfer/cuda` | native CUDA backend (`-tags cuda`) |
+| `github.com/townsendmerino/goinfer/metal` | native Metal backend (`-tags metal`) |
+
+**You normally name only the root.** Its `go.mod` requires the other three at versions known
+to work with it, so `go get github.com/townsendmerino/goinfer` brings all four and a
+`-tags cuda` build resolves without further action. Naming a backend module explicitly is
+only needed to pin, vendor, or audit it:
+
+```bash
+go get github.com/townsendmerino/goinfer/cuda@latest
+```
+
+**The backend modules are versioned independently of the root and of each other** — they are
+not in lockstep, since a root-only release doesn't retag them. Backend tags carry the module
+path as a prefix (`gpu/vX.Y.Z`, `cuda/vX.Y.Z`, `metal/vX.Y.Z`), which is how Go's module proxy
+resolves a submodule tag; the bare `vX.Y.Z` tags are the root's. Check the
+[releases page](https://github.com/townsendmerino/goinfer/releases) for what is current — and
+when in doubt, take the root's requirement rather than picking a backend version yourself.
+
+## Packages
+
+| Package | Purpose | Deps beyond stdlib |
+|---|---|---|
+| `decoder` | generic decoder-only forward pass; f32/bf16/f16 + int8/int4; safetensors/GGUF/GPTQ/AWQ; KV-cache; samplers | `aikit/embed`, `aikit/linalg`, `goinfer/tokenizer` |
+| `tokenizer` | BPE tokenizers the decoder LLMs ship — byte-level + SentencePiece byte-fallback, from `tokenizer.json` or a bare `.gguf`; HF-exact id parity | `aikit/embed`, `golang.org/x/text` |
+| `constrain` | constrained / structured decoding — a logit mask that forces output to satisfy a grammar; streaming JSON grammar + JSON Schema (and Go-struct) compiler | — |
+| `chat` | chat-template detection + byte-exact native renderers (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral) and per-family tool calling (render + parse) | — |
+| `gpu` (opt-in, `-tags gpu`) | WebGPU compute backend for matmul (Metal / Vulkan / DX12) | `cogentcore/webgpu` (cgo), `aikit/encoder`, `goinfer/decoder` |
+| `cuda` (opt-in, `-tags cuda`) | cgo-free native CUDA decode backend — dlopen libcuda + NVRTC, dense residency, `CGO_ENABLED=0` | `eitamring/gocudrv`, `goinfer/decoder` |
+| `metal` (opt-in, `-tags metal`) | cgo-free native Metal decode backend — purego / Obj-C, MSL compiled at runtime, dense residency, darwin, `CGO_ENABLED=0` | `ebitengine/purego`, `goinfer/decoder` |
+
+The cgo WebGPU dependency is confined to the `gpu` submodule; the two native GPU
+backends (`cuda`, `metal`) are **cgo-free**. Either way the default build is pure Go,
+no cgo — a backend is compiled only when you pass its build tag.

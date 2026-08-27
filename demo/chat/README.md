@@ -207,3 +207,33 @@ already image-mapped.)
   embeddability* — one dependency-free file that runs everywhere — not tokens/sec.
 - **GPU doesn't help this build.** The quantized path is CPU-only; `-tags gpu`
   (WebGPU) only accelerates unquantized models. The demo is CPU by design.
+
+## Run Gemma 4 (pure Go, no cgo)
+
+Moved here from the repository README (2026-08-27) when the front page was shortened;
+unchanged.
+
+is applied automatically):
+
+```bash
+# E2B (~3 GB Q4_0) — the small one; E4B and the 12B dense work the same way
+go run ./demo/chat --model ~/models/gemma-4-E2B_q4_0-it.gguf
+```
+
+```
+you> What is the capital of France?
+The capital of France is Paris.
+```
+
+Every Gemma 4 forward is parity-gated against the HuggingFace bf16 reference
+(argmax-exact + logit cosine). Text models only — the 26B-A4B MoE and 31B
+multimodal vision towers are out of scope.
+
+See [`demo/chat/README.md`](demo/chat/README.md) for commands, canned demos, and
+how the single-file binary is built.
+
+## A Go struct the model cannot violate
+
+Derive a JSON Schema from a Go struct, constrain generation to it, and
+`json.Unmarshal` the result — the model **physically cannot** emit JSON that
+doesn't fit the struct. The constraint is a logit mask over goinfer's incremental

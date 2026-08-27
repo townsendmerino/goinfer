@@ -141,3 +141,90 @@ either threshold.
 See [`task-cuda-cgofree-spike.md`](task-cuda-cgofree-spike.md) for the full evidence
 (ldd/driver-only proof, the measured executor tax, the kernel tuning), and
 [`task-cuda-b-ship-checklist.md`](task-cuda-b-ship-checklist.md) for the release plan.
+
+## Running on a GPU — the user-facing summary
+
+Moved here from the README (2026-08-27), unchanged. How to select a backend, what each one needs,
+and what ships in the released binaries.
+
+## Running on a GPU
+
+The default build is pure-Go CPU. Three **opt-in** GPU backends accelerate decode.
+Each lives in its own submodule with its own binaries under `<submodule>/cmd/` — the
+pure-Go root module never imports them, so `go install …/cmd/serve` and any SBOM of the
+root stay free of webgpu/purego/gocudrv (audit M-19). The `serve` and `chat` binaries
+exist in each flavor:
+
+| Backend | Binary (server / REPL) | Platform | cgo |
+|---|---|---|---|
+| WebGPU | `./gpu/cmd/serve`, `./gpu/cmd/chat` (`-tags gpu`) | any GPU (Metal / Vulkan / DX12) | yes (confined to the `gpu` submodule) |
+| CUDA | `./cuda/cmd/serve`, `./cuda/cmd/chat` (`-tags cuda`) | NVIDIA — Linux / Windows x86-64 | **no** — `CGO_ENABLED=0`, dlopens the driver |
+| Metal | `./metal/cmd/serve`, `./metal/cmd/chat` | Apple Silicon | **no** — `CGO_ENABLED=0`, purego / Obj-C |
+
+The native **CUDA** and **Metal** backends need only the platform's GPU driver —
+**no CUDA toolkit, no Xcode, no Python, no cgo** — and are selected at runtime with
+`--backend`.
+
+> **Upgrading from ≤ v0.9.x?** The old `go build -tags cuda …/cmd/serve` (the *root*
+> command) no longer enables a backend — since v0.10.0 the root is pure-Go and the tag is a
+> no-op. Build the **submodule entrypoint** instead (the commands below). Passing a backend
+> tag to the root now fails the build with a message pointing here, rather than silently
+> producing a CPU binary.
+
+**Out-of-tree** (you `go get` goinfer, no checkout) — build the submodule entrypoint by its
+full module path; nothing else is needed:
+
+```bash
+# CUDA server / REPL
+CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve
+CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/chat
+# WebGPU (cgo)
+go build -tags gpu   github.com/townsendmerino/goinfer/gpu/cmd/serve
+# Metal (darwin; the module is darwin-gated, so no -tags)
+go build             github.com/townsendmerino/goinfer/metal/cmd/serve
+```
+
+**In-tree** (a checkout) — run straight from the submodule; its `go.mod` resolves the root
+via a `replace`, so no workspace setup is needed:
+
+```bash
+# NVIDIA — cgo-free native CUDA
+cd cuda && CGO_ENABLED=0 go run -tags cuda ./cmd/serve --backend cuda \
+    --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf     # or ./cmd/chat for the REPL
+
+# Apple Silicon — cgo-free native Metal (darwin-gated; no -tags needed)
+cd metal && CGO_ENABLED=0 go run ./cmd/serve --backend metal --quant int8int8 \
+    --model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+```
+
+### What ships
+
+goinfer's CUDA backend is `CGO_ENABLED=0` with **driver-only linkage**: it dlopens `libcuda` and
+carries **932 KB of embedded PTX**. It ships no cuBLAS, no cuDNN, no CUDA runtime — `ldd` on the
+binary lists no CUDA library at all.
+
+| | ships | on disk |
+|---|---|---|
+| goinfer (`cuda/cmd/serve`) | one static binary | **14.6 MB** |
+| Ollama v0.32.5 (linux-amd64) | binary + bundled CUDA v12 **and** v13 toolchains | **2.1 GB** (1.42 GB download) |
+
+**Why one small artifact covers every card: goinfer ships PTX, not SASS.** PTX is
+architecture-portable, and the driver compiles it for whatever GPU is present. Precompiled kernels
+must ship per GPU architecture *and* per toolkit version — most of the peer's bulk is exactly that
+(`libcublasLt` alone is 752 MB, fat-binaried across compute capabilities).
+
+**What each side pays for it.** Bundling a toolkit buys ahead-of-time-tuned kernels and no
+first-run compile, at the cost of size — a real engineering tradeoff, not waste. Shipping PTX costs
+a **one-time JIT at startup**, and makes you depend on the driver's compiler rather than a pinned
+toolkit, so a driver upgrade can change generated code where a bundled toolkit is reproducible.
+Measured (RTX 2070 SUPER, driver 595.58.03, qwen2.5-coder-0.5B, process start → `/health`,
+median of 3 at `8b6aa1f`) — **on the pre-2026-08-25 driver stack; the JIT cost in particular is a
+property OF the driver's compiler, so this table re-measures with the rest**:
+
+| | time to ready |
+|---|---|
+| cold — CUDA JIT cache cleared | **4.94 s** |
+| warm — cache present | **4.09 s** |
+
+The JIT costs **~0.85 s, once**: the driver caches the result (916 KB) and later starts pay nothing.
+Both engines need an NVIDIA driver; neither needs a CUDA toolkit at build or run time.
