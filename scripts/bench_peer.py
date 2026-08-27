@@ -79,8 +79,16 @@ NRUNS = 2          # runs per cell        (>= 2 required, spread reported)
 
 
 def gen_params():
-    """(tokens per completion, completions per run, runs) — deep cells use 128 x 2 x 2."""
-    return (128, 2, 2) if DEEP_CTX else (NGEN, NCOMP, NRUNS)
+    """(tokens per completion, completions per run, runs) — deep cells use 128 x 2 x 2.
+
+    BENCH_RUNS overrides the run count, which is how a cell gets compared against an anchor that
+    used a different one. §B5's phi3-mini rows were taken at 5 runs x 8 completions while this
+    harness defaults to 2 x 8, and that cell is recorded moving 112.4 -> 116.6 on re-measurement
+    alone — so a 2-run figure and a 5-run figure are not the same measurement (G26)."""
+    ngen, ncomp, nruns = (128, 2, 2) if DEEP_CTX else (NGEN, NCOMP, NRUNS)
+    if v := os.environ.get("BENCH_RUNS", "").strip():
+        nruns = int(v)
+    return (ngen, ncomp, nruns)
 
 # --- MACHINE STATE ---------------------------------------------------------------------------
 # Added 2026-08-26. docs/benchmarks.md requires a "verified-idle box, with the machine state
