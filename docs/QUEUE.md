@@ -51,6 +51,23 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
+**G26 · phi3-mini lost 5.8% at `temperature 1.0`, and only phi3-mini** — either box. Measured
+2026-08-27 in the §B5 re-anchor (`docs/benchmarks.md` §B5.1): 116.6 → **109.8** tok/s on CUDA at
+depth 128, against an Ollama side that read 125.6 both times. Well outside the old ±0.5 spread.
+
+**What makes it worth a look rather than a shrug:** the same configuration *gained* on the other
+two models in the same sweep — qwen2.5-coder-0.5b 219.2 → 237.7 (+8.4%) and gemma3-1b 131.7 → 143.7
+(+9.1%). A uniform sampler change cannot produce that split, so it is model-specific.
+
+**Do not guess the cause from the numbers.** Two anchors differ by more than one thing: goinfer
+moved several releases, and the driver/distro moved on 2026-08-25. The greedy phi3-mini CUDA cell
+is *unchanged* across the same pair (124.9 vs Ollama 125.9, parity), which points at the sampling
+path rather than the forward — but that is a lead, not a finding.
+
+Raw cells: `docs/measurements/b5-reanchor-61b1e03.json`. Reproduce with
+`BENCH_MODELS=phi3-mini BENCH_CONFIGS=temp1.0_notrunc python3 scripts/bench_peer.py <out>`.
+
+
 **G25 · Does the oracle bar need a sparsity axis, or is per-precision enough?** — PARKED with a
 trigger, 2026-08-27. Either box, desk work first.
 
@@ -345,6 +362,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `4ca19e9` | fix(serve): accept `role: "developer"` as an alias for `system` (G12) |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
+| `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |
 | `8f003f2` | parity: v0.15.0 sweep GREEN at bd085de; qwen3_next validated by real oracle |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |

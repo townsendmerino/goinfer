@@ -62,6 +62,9 @@
 > stay that way — this box does not revive them. **§A** (Apple Silicon CPU) and **§B3** (Metal) are
 > measured on the MacBook and are **unaffected**.
 >
+> **§B5 (sampled + phi3-mini/gemma3-1b) DISCHARGED 2026-08-27** — five of six comparable cells
+> improved, three by 8–19%; phi3-mini at temperature 1.0 lost 5.8% and is filed. See §B5.1.
+>
 > **§B4 (26B host↔VRAM) DISCHARGED 2026-08-27** — the throughput did not move (11.42 vs 11.3 at
 > the same 16 slots); the grantable slot cap did, 38 → 30. See §B4.1.
 >
@@ -72,8 +75,7 @@
 > `a161bd6`: real-model heavy tier green, CUDA graphs bit-exact, **24/24 PTX byte-identical** — the
 > driver's new compiler did not move the numerics), and the greedy peer sweep then re-anchored the
 > §B2/§B5-style rows into **§B8**. What that run does **not** cover remains STALE and may not be
-> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M), **§B7** (deep context), the v0.11.0 qualification, and §B5's
-> sampled / phi3-mini / gemma3-1b cells. Each is a separate leg with its own procedure;
+> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M), **§B7** (deep context), and the v0.11.0 qualification. Each is a separate leg with its own procedure;
 > `bench_peer.py` does not produce any of them.
 >
 > Re-measure with `scripts/bench_peer.py` (peer Ollama v0.32.5 at `~/ollama-0325`, both sides over
@@ -940,6 +942,12 @@ distinction here is all-experts-on-GPU, which is an architecture difference rath
 > 2026-08-26 on driver 595.91.07 / Nobara 44. What §B8 does **not** cover stays STALE and is not a
 > current claim: the sampled (`temp` / `temp+top_p`) rows, and every phi3-mini and gemma3-1b cell —
 > that sweep was greedy-only and qwen2.5-coder-only.
+>
+> **RE-ANCHORED 2026-08-27 — see §B5.1 below.** Those rows are now re-measured on driver
+> `595.91.07` / Nobara 44. The sampled paths moved, mostly upward: **+19.4%** on the 0.5B at
+> `temp+top_p`, +8–9% on the 0.5B and gemma3-1b elsewhere, against an Ollama side that did not
+> move. One went the other way and is recorded rather than explained: **phi3-mini at
+> `temperature 1.0` lost 5.8%**. The rows below stay as the `595.58.03` / v0.32.6 record they are.
 
 One binary for every cell. Supersedes the sampled rows in the README's G11 section; the older rows
 elsewhere on this page keep their own binary and peer version and are NOT updated in place.
@@ -1086,6 +1094,60 @@ v1.0's sweep **iff** the code delta between the two tags stays zero (v1.0 is pla
 delta — see the v1.0 doc). **Judgment call flagged:** the CUDA half is carry-over-by-code-identity, not
 a fresh box run; the strongest no-regression guarantee is that the code did not change, but a box
 The GPU gate's CUDA pass is the owner's confirmation before the tag ships.
+
+### B5.1 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
+
+**Provenance.** RTX 2070 SUPER · driver `595.91.07` · Nobara 44 · 2026-08-27 · harness
+`scripts/bench_peer.py` at goinfer `61b1e03`, serve binaries **built from `74718c2`** (cpu / cuda /
+webgpu — the binaries are what was measured, not the harness commit) · peer **Ollama v0.32.5**
+(`~/ollama-0325`); the superseded rows above used **v0.32.6** · both sides over HTTP, interleaved,
+servers restarted per cell · 64 tokens × 8 completions × 2 runs, spread shown · sampling sent
+explicitly to both sides, never assumed · int4 / q4_K_M · raw cells `b5-reanchor-61b1e03.json`
+(34 cells) and `b5-reanchor-05b-61b1e03.json` (15), zero errors.
+
+**Sampled configurations, depth 128, CUDA** — the rows §B5 could not carry forward:
+
+| config | model | goinfer | Ollama v0.32.5 | verdict | old goinfer |
+|---|---|---|---|---|---|
+| temp 1.0, no truncation | qwen2.5-coder-0.5b | 237.7 | 268.7 | Ollama 1.13× | 219.2 → **+8.4%** |
+| temp 1.0, no truncation | gemma3-1b | 143.7 | 148.2 | Ollama 1.03× | 131.7 → **+9.1%** |
+| temp 1.0, no truncation | phi3-mini | 109.8 | 125.6 | Ollama 1.14× | 116.6 → **−5.8%** |
+| temp 0.8 + top_p 0.95 | qwen2.5-coder-0.5b | 227.2 | 265.2 | Ollama 1.17× | 190.3 → **+19.4%** |
+| temp 0.8 + top_p 0.95 | gemma3-1b | 124.7 | 148.2 | Ollama 1.19× | 115.2 → **+8.2%** |
+| temp 0.8 + top_p 0.95 | phi3-mini | 102.1 | 125.7 | Ollama 1.23× | 99.4 → +2.7% |
+| temp 0.8 + top_k 40 | gemma3-1b | **156.4** | 148.0 | **goinfer 1.06×** | — (new cell) |
+| temp 0.8 + top_k 40 | phi3-mini | 112.1 | 125.7 | Ollama 1.12× | — (new cell) |
+
+**The peer did not move, so the goinfer-side deltas are attributable.** Ollama reads 125.6 → 125.6
+on phi3-mini and 149.1 → 148.2 on gemma3-1b across the two anchors, despite the point-release
+difference. Five of six comparable cells improved, three of them by 8–19%.
+
+**One regression, recorded rather than explained: phi3-mini at `temperature 1.0` is down 5.8%**
+(116.6 → 109.8), well outside the old ±0.5 spread — while gemma3-1b and the 0.5B *gained* 8–9% on
+the same configuration. That rules out a uniform sampler change and makes it model-specific. No
+cause is offered here: guessing one in the same sitting as the measurement is how a wrong
+explanation gets attached to a right number.
+
+**Greedy backends, depth 128** (the other cells §B5 could not carry):
+
+| model | goinfer CPU | Ollama CPU | goinfer CUDA | Ollama CUDA | goinfer WebGPU |
+|---|---|---|---|---|---|
+| phi3-mini | 8.5 ±0.0 | 10.8 ±0.0 | 124.9 ±0.1 | 125.9 ±0.1 | 10.0 ±0.0 |
+| gemma3-1b | 23.9 ±0.0 | 29.8 ±0.0 | **170.7** ±0.6 | 149.1 ±0.5 | 15.3 ±0.0 |
+
+**Depth curve, CUDA greedy — it splits by architecture, which is the useful part:**
+
+| depth | goinfer phi3-mini | Ollama | goinfer gemma3-1b | Ollama |
+|---|---|---|---|---|
+| 512 | 112.6 | 113.5 (Ollama 1.01×) | **164.3** | 148.4 (goinfer 1.11×) |
+| 2048 | 78.3 | 92.2 (Ollama 1.18×) | **159.0** | 147.3 (goinfer 1.08×) |
+| 3900 | 56.2 | 73.3 (Ollama 1.30×) | **165.1** | 147.9 (goinfer 1.12×) |
+
+phi3-mini degrades with depth exactly as §B8 records for the dense qwen models — parity at 512,
+then 1.18× and 1.30× behind. **gemma3-1b does not degrade at all**: 164 / 159 / 165, ahead at every
+depth. Its sliding window is 512, so attention stops growing past it and the decode-depth penalty
+never arrives. Stated as the mechanism rather than a general claim: goinfer's depth problem is a
+property of full attention over a growing KV, and a windowed model does not have one.
 
 ## B6 — Split-KV decode attention, re-gated (2026-08-09, P6a)
 
