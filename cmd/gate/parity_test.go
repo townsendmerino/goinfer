@@ -47,7 +47,7 @@ func TestParity_fourOutcomesCarryDifferentWeights(t *testing.T) {
 		}
 		return "CONFIRMED"
 	}
-	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledger)
+	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledger, oneUnfilteredCell)
 
 	// fail(CONFIRMED) + fail(SOURCE-CHANGED) + skip + missing = 4 blockers; the FIRST-RUN failure
 	// is an ITEM, not a blocker.
@@ -77,7 +77,7 @@ func TestParity_missingGateBlocksEvenThoughNothingFailed(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestPasses": "pass"})
 	_, blockers, _, _ := classifyChecks(res,
 		[]gateCheck{{"a", "TestPasses"}, {"b", "TestRenamedAway"}},
-		func(string) string { return "CONFIRMED" })
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
 	if blockers != 1 {
 		t.Fatalf("blockers=%d, want 1 — a gate that never ran must block", blockers)
 	}
@@ -106,7 +106,7 @@ func TestParity_assetNeverBuiltIsAGapNotABlocker(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestNoAssetAnywhere": "skip", "TestOtherSkip": "skip"})
 	_, blockers, gaps, _ := classifyChecks(res,
 		[]gateCheck{{"a", "TestNoAssetAnywhere"}, {"b", "TestOtherSkip"}},
-		func(string) string { return "CONFIRMED" })
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
 	if blockers != 1 || gaps != 1 {
 		t.Fatalf("blockers=%d gaps=%d, want 1/1 — the listed gate is a gap, the unlisted skip blocks", blockers, gaps)
 	}
@@ -118,7 +118,7 @@ func TestParity_assetNeverBuiltIsAGapNotABlocker(t *testing.T) {
 func TestParity_unreachableLedgerKeepsFailuresBlocking(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestFails": "fail"})
 	_, blockers, _, firstRuns := classifyChecks(res, []gateCheck{{"a", "TestFails"}},
-		func(string) string { return "CONFIRMED" }) // what ledgerClassify returns when python3 errors
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell) // what ledgerClassify returns when python3 errors
 	if blockers != 1 || firstRuns != 0 {
 		t.Fatalf("blockers=%d firstRuns=%d, want 1/0", blockers, firstRuns)
 	}
@@ -314,4 +314,48 @@ func TestBaseCellIsUnfiltered(t *testing.T) {
 		t.Errorf("base cell -run = %q, want empty; a filter here would silently drop required "+
 			"gates the same way the realckpt filter dropped the qwen3next oracle", cells[0].Run)
 	}
+}
+
+// oneUnfilteredCell stands in for a normal sweep cell in the classifier tests: unfiltered, so every
+// gate is reachable and "no result" means the test really did not report.
+var oneUnfilteredCell = []cell{{Name: "./decoder/", Pkgs: []string{"./decoder/"}}}
+
+// The two causes of "no result" are fixed in different places and used to read identically. A gate
+// no -run pattern selects cannot be made to run by any asset or machine; one that IS selected and
+// still reported nothing is a build failure, an absent asset, or a dead cell. TestQwen3NextReal_oracle
+// was the first kind and the report implied the second, which sent three sessions after a 163 GB
+// checkpoint that was fine.
+func TestParity_missingGateSaysWhichCause(t *testing.T) {
+	res := parityResults(t, map[string]string{"TestPasses": "pass"})
+	checks := []gateCheck{{"a", "TestPasses"}, {"b", "TestQwen3NextReal_oracle"}}
+
+	// Filtered cell that cannot match the oracle — the real bug.
+	rows, _, _, _ := classifyChecks(res, checks, func(string) string { return "CONFIRMED" },
+		[]cell{{Name: "realckpt", Run: "Qwen35|Real_gate"}})
+	got := rowFor(t, rows, "TestQwen3NextReal_oracle")
+	if !strings.Contains(got, "UNREACHABLE") {
+		t.Errorf("an unselectable gate must say so; got %q", got)
+	}
+
+	// Same gate, a cell that DOES select it: a different cause, and it must not say UNREACHABLE.
+	rows, _, _, _ = classifyChecks(res, checks, func(string) string { return "CONFIRMED" },
+		[]cell{{Name: "realckpt", Run: "Real_gate|Real_oracle"}})
+	got = rowFor(t, rows, "TestQwen3NextReal_oracle")
+	if strings.Contains(got, "UNREACHABLE") {
+		t.Errorf("a selectable gate that reported nothing is not unreachable; got %q", got)
+	}
+	if !strings.Contains(got, "reported nothing") {
+		t.Errorf("want the other cause named; got %q", got)
+	}
+}
+
+func rowFor(t *testing.T, rows []checkRow, test string) string {
+	t.Helper()
+	for _, r := range rows {
+		if r.Test == test {
+			return r.Mark
+		}
+	}
+	t.Fatalf("no row for %s", test)
+	return ""
 }

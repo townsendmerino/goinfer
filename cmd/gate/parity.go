@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -271,7 +272,7 @@ func runParity(w io.Writer, logDir string) int {
 		checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
 	}
 
-	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledgerClassify)
+	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledgerClassify, cfg.Cells)
 	var checked []string
 	fmt.Fprintf(w, "\n%-20s %-34s %s\n", "FAMILY", "GATE", "RESULT")
 	fmt.Fprintln(w, strings.Repeat("-", 72))
@@ -332,7 +333,7 @@ type checkRow struct{ Family, Test, Mark string }
 // classifyChecks applies the sweep's four-outcome decision to the named gates. Split out from
 // runParity so the decision — which is the entire gate — is mutation-testable without a real sweep.
 // ledger is injected for the same reason.
-func classifyChecks(res *results, checks []gateCheck, ledger func(string) string) (rows []checkRow, blockers, gaps, firstRuns int) {
+func classifyChecks(res *results, checks []gateCheck, ledger func(string) string, cells []cell) (rows []checkRow, blockers, gaps, firstRuns int) {
 	for _, g := range checks {
 		act, seen := res.lookupTop(g.Test)
 		var mark string
@@ -341,7 +342,7 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 			// THE OUTCOME A TALLY CANNOT SEE. A required gate that produced no result at all — a
 			// renamed test, a -run filter that stopped matching, a package that failed to build —
 			// leaves a pass/skip/fail count entirely undisturbed. It is a blocker.
-			mark = "⛔ DID NOT RUN (blocker)"
+			mark = "⛔ DID NOT RUN (blocker) — " + whyNoResult(g.Test, cells)
 			blockers++
 		case act == "pass":
 			mark = "✅ pass"
@@ -495,4 +496,35 @@ func sortedSet(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// whyNoResult distinguishes the two causes of "no result" that look identical in a report and are
+// fixed in completely different places.
+//
+// This exists because the distinction cost five weeks. TestQwen3NextReal_oracle was reported as
+// "DID NOT RUN (blocker)" sweep after sweep; the realckpt cell selected on -run "Qwen35|Real_gate"
+// and the test is named ...Real_oracle, so no pattern could ever select it. The wording implied a
+// missing asset, so that is where three sessions looked — one of them verifying all 41 shards of a
+// 163 GB checkpoint that was present and resolving the whole time.
+//
+// A gate no pattern selects cannot be fixed by any machine, asset or environment. A gate that IS
+// selected and still produced nothing is a different problem entirely. Saying which halves the
+// search.
+func whyNoResult(test string, cells []cell) string {
+	for _, c := range cells {
+		if c.Run == "" {
+			return fmt.Sprintf("selected by cell %q (unfiltered) but reported nothing — "+
+				"asset absent, build failure, or the cell died before reaching it", c.Name)
+		}
+		re, err := regexp.Compile(c.Run)
+		if err != nil {
+			return fmt.Sprintf("cell %q has an invalid -run %q: %v", c.Name, c.Run, err)
+		}
+		if re.MatchString(test) {
+			return fmt.Sprintf("selected by cell %q (-run %q) but reported nothing — "+
+				"asset absent, build failure, or the cell died before reaching it", c.Name, c.Run)
+		}
+	}
+	return "UNREACHABLE: no cell's -run pattern selects this test, so no asset, machine or " +
+		"environment could make it run. Fix the pattern or the test name, not the box."
 }
