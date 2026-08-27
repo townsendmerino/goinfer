@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync/atomic"
 )
 
 // testEvent is the `go test -json` record (cmd/test2json). Only the fields the gates
@@ -77,6 +78,12 @@ type results struct {
 
 	// cur is the cell currently being consumed; it stamps every key so cells cannot collide.
 	cur string
+
+	// Live progress, for the heartbeat in runCell. ATOMIC, and separate from the maps above
+	// on purpose: the heartbeat runs on its own goroutine while consume() is writing those
+	// maps, so reading them would be a data race. These two are the only things it reads.
+	liveDone atomic.Int64
+	liveLast atomic.Value // string — the most recent test to reach a terminal action
 
 	// outAll is every output line in stream order — the reconstruction of what `go test -v` would
 	// have printed. The GPU gate's failure explainer needs it: a run killed by a signal, an OOM or a
@@ -156,6 +163,8 @@ func (r *results) add(ev testEvent) {
 		r.out[key] = append(r.out[key], ev.Output)
 		r.noteOutput(ev.Output)
 	case "pass", "fail", "skip":
+		r.liveDone.Add(1)
+		r.liveLast.Store(ev.Test)
 		if _, ok := r.out[key]; !ok && r.final[key] == "" {
 			r.noteOrder(key)
 		}

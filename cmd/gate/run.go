@@ -84,6 +84,44 @@ type cellResult struct {
 // fatal error: a cell that fails to start is a red cell, not an abandoned matrix. That property —
 // run every cell, keep every count — is the one `set -e` would have broken, and here it is the
 // shape of the code rather than a comment asking you not to add `-e`.
+// cellHeartbeatInterval is how often a running cell reports progress. A var so tests can drive
+// it; GOINFER_GATE_HEARTBEAT overrides it (e.g. "0" to silence it in a noisy CI log).
+var cellHeartbeatInterval = 60 * time.Second
+
+// startCellHeartbeat prints one progress line per interval until the returned stop is called.
+// stop JOINS the goroutine, so nothing prints after the cell's own summary.
+func startCellHeartbeat(cell string, res *results, t0 time.Time) (stop func()) {
+	every := cellHeartbeatInterval
+	if v := os.Getenv("GOINFER_GATE_HEARTBEAT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			every = d
+		}
+	}
+	if every <= 0 {
+		return func() {}
+	}
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				last, _ := res.liveLast.Load().(string)
+				if last == "" {
+					last = "(no test has finished yet)"
+				}
+				fmt.Fprintf(os.Stderr, "   ... %s: %s elapsed, %d tests finished, last: %s\n",
+					cell, time.Since(t0).Round(time.Second), res.liveDone.Load(), last)
+			}
+		}
+	}()
+	return func() { close(done); <-finished }
+}
+
 func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	args := []string{"test", "-json", "-count=1"}
 	if len(c.Tags) > 0 {
@@ -134,9 +172,21 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	if err := cmd.Start(); err != nil {
 		return cellResult{Cell: c, RC: -1, Err: err, Fail: 1, Hidden: true}
 	}
+	// HEARTBEAT while the cell runs (~/.claude/rules/long-tests.md). `go test -json` reports a
+	// cell only when it finishes, and the realckpt cells run 55-90 minutes — so without this a
+	// reader cannot tell a working gate from a hung one without ps'ing the box, which is exactly
+	// what happened on 2026-08-26. Prints elapsed, tests finished so far, and the most recent
+	// test name. There is no done-of-TOTAL because `go test` never announces a total; claiming
+	// one would be inventing it.
+	//
+	// stderr, not the report writer: the report is a verdict document and a progress line is not
+	// part of it. Interval is env-tunable per the rule's "make it configurable rather than
+	// removing it" — 0 or a bad value disables.
+	stopBeat := startCellHeartbeat(c.Name, res, t0)
 	// Tee: the raw stream survives on disk (a panic that kills test2json mid-line still leaves
 	// evidence) while being parsed in one pass.
 	res.consume(io.TeeReader(stdout, logf))
+	stopBeat()
 	waitErr := cmd.Wait()
 	dur := time.Since(t0)
 
