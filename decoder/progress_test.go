@@ -72,6 +72,12 @@ type progress struct {
 	stop   chan struct{}
 	once   sync.Once
 	wg     sync.WaitGroup
+
+	// Guards the sliding-rate window. emit() runs from the ticker goroutine AND from Phase() on
+	// the test's own goroutine, so these are shared state, not ticker-local.
+	mu       sync.Mutex
+	lastAt   time.Time
+	lastDone int64
 }
 
 // newProgress starts the heartbeat and registers its own shutdown, so a test that fails early
@@ -86,7 +92,7 @@ func newProgress(t *testing.T, label string, total int) *progress {
 	if iv <= 0 {
 		return p // silenced — the mutators below stay valid, they just never print
 	}
-	fmt.Fprintf(os.Stderr, "[%s] start%s\n", p.label, p.totalSuffix())
+	fmt.Fprintf(os.Stderr, "%s [%s] start%s\n", time.Now().Format("15:04:05"), p.label, p.totalSuffix())
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -140,12 +146,16 @@ func (p *progress) Done() {
 }
 
 func (p *progress) emit(tag string) {
-	el := time.Since(p.start).Round(time.Second)
+	now := time.Now()
+	el := now.Sub(p.start).Round(time.Second)
 	ph, _ := p.phase.Load().(string)
 	if tag != "" {
 		ph = tag
 	}
-	line := fmt.Sprintf("[%s] %s elapsed=%s", p.label, ph, el)
+	// Absolute time first: an archived log read a day later has to answer WHEN a run stalled, so
+	// it can be lined up against dmesg, a thermal event, or the other machine's log. Elapsed
+	// alone cannot do that, and these logs are kept as evidence.
+	line := fmt.Sprintf("%s [%s] %s elapsed=%s", now.Format("15:04:05"), p.label, ph, el)
 	if d := p.done.Load(); p.total > 0 {
 		line += fmt.Sprintf(" %d/%d", d, p.total)
 		if d > 0 && d < p.total && !p.uneven {
@@ -157,5 +167,33 @@ func (p *progress) emit(tag string) {
 	} else if d := p.done.Load(); d > 0 {
 		line += fmt.Sprintf(" %d done", d)
 	}
+	// Rate over the LAST interval, not the whole run. A cumulative average is still digesting
+	// cold-cache page-ins minutes in -- measured here: mellum2's cumulative eta read 31m, 25m,
+	// 22m, 20m on successive ticks while the machine had not actually changed speed that much. A
+	// recent rate tracks what it is doing NOW, and stays honest on uneven work where an ETA cannot.
+	if r, ok := p.rate(now); ok {
+		line += fmt.Sprintf(" rate=%s", r)
+	}
 	fmt.Fprintln(os.Stderr, line)
+}
+
+// rate returns items/minute since the previous emit, and false on the first one (no window yet).
+func (p *progress) rate(now time.Time) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	d := p.done.Load()
+	prevAt, prevDone := p.lastAt, p.lastDone
+	p.lastAt, p.lastDone = now, d
+	if prevAt.IsZero() || d <= prevDone {
+		return "", false
+	}
+	dt := now.Sub(prevAt).Seconds()
+	if dt <= 0 {
+		return "", false
+	}
+	per := float64(d-prevDone) / dt * 60
+	if per >= 10 {
+		return fmt.Sprintf("%.0f/min", per), true
+	}
+	return fmt.Sprintf("%.1f/min", per), true
 }
