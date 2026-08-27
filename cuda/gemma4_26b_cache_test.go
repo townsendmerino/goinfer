@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,17 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 	// The 11.4 GB pinned-host allocation happens here (cuMemAllocHost + copy from the packed
 	// weights). Time it: a slow load is expected (non-pageable, large), not a hang.
 	t0 := time.Now()
-	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+	opts := decoder.Options{Backend: "cuda", Quant: "int4"}
+	// GOINFER_26B_CTX trades resident KV for expert-cache slots, which is the only knob that moves
+	// the slot count on a card this size: KV is allocated BEFORE the cache is sized, so every
+	// position costs 480 KB (30 layers x 8 kv heads x 256 head_dim x 2 x 4 B) that the cache then
+	// cannot have. At the 4096 default that is 2.0 GB of the 8 GB card.
+	if v, err := strconv.Atoi(os.Getenv("GOINFER_26B_CTX")); err == nil && v > 0 {
+		opts.ResidentContext = v
+		t.Logf("resident KV capped to %d positions (GOINFER_26B_CTX) — %.2f GB of KV",
+			v, float64(v)*480*1024/1e9)
+	}
+	m, err := decoder.Load(dir, opts)
 	if err != nil {
 		t.Fatalf("Load(26B, cuda int4): %v", err)
 	}
