@@ -37,15 +37,38 @@ GEOMETRIES = {
                   "nH=32 nKV=32 hd=96 L=32 MHA — never crosses over"),
 }
 DEPTHS = [128, 256, 512, 1024, 2048, 3900]
-ARMS = (("on", "1"), ("off", "0"))  # GOINFER_SPLITKV_ATTN
+
+# TWO DIFFERENT QUESTIONS, and conflating them silently produces a table of 1.000s.
+#
+# GOINFER_SPLITKV_ATTN=1 does NOT force the split path. It ENABLES the gate, which then decides per
+# geometry (cuda/backend.go: `r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != "0"`). Since the
+# gate now ships a measured per-geometry table, "ATTN=1 vs ATTN=0" compares the shipped default
+# against off — and where the gate correctly declines to split, BOTH arms run the same kernel and
+# the ratio is 1.000 by construction. That is a real result, but it is not §B6's.
+#
+# §B6 characterised split-KV ITSELF at every depth, against a gate that no longer exists. Its
+# force-on arm is GOINFER_SPLITKV_MIN_KEYS=0 — "always take the split path" (cuda/resident.go).
+MODES = {
+    # Reproduces §B6's question: does the split path help, at this geometry and depth?
+    "force": {"on": {"GOINFER_SPLITKV_MIN_KEYS": "0"},
+              "off": {"GOINFER_SPLITKV_ATTN": "0"}},
+    # Validates what actually ships: does the gate's decision cost anything against off?
+    # Ratios near 1.000 here are the PASS condition, not a null result.
+    "gate":  {"on": {},
+              "off": {"GOINFER_SPLITKV_ATTN": "0"}},
+}
 
 
-def run_arm(path, prompt, arm_value, backend, quant):
+def run_arm(path, prompt, arm_env, backend, quant):
     """One cell: a FRESHLY started serve, so the arm is a process-level setting.
 
     Never a mid-process toggle — the shipped gate is read per layer at request time, and flipping it
     inside a live process would measure a state no deployment is ever in."""
-    env = dict(os.environ, GOINFER_SPLITKV_ATTN=arm_value)
+    env = dict(os.environ)
+    # Clear both knobs first: inheriting one from the caller would silently redefine the arm.
+    env.pop("GOINFER_SPLITKV_ATTN", None)
+    env.pop("GOINFER_SPLITKV_MIN_KEYS", None)
+    env.update(arm_env)
     proc = subprocess.Popen(
         [bp.SERVE[backend], "-model", f"bench={path}", "-backend", backend,
          "-addr", f"127.0.0.1:{bp.GPORT}", "-quant", quant],
@@ -91,6 +114,8 @@ def main():
     ap.add_argument("--quant", default="int4")
     ap.add_argument("--geometry", action="append", help="repeatable; default all four")
     ap.add_argument("--depth", action="append", type=int, help="repeatable; default all six")
+    ap.add_argument("--mode", choices=sorted(MODES), default="force",
+                    help="force = split-KV itself (reproduces §B6); gate = the shipped default")
     args = ap.parse_args()
 
     geoms = {k: v for k, v in GEOMETRIES.items() if not args.geometry or k in args.geometry}
@@ -113,10 +138,12 @@ def main():
             prompt = bp.prompt_for_depth(depth, gkey)
             # Alternate which arm goes first, so a systematic first-cell effect cannot land on the
             # same arm every time and masquerade as the split-KV difference.
-            arms = ARMS if (gi + depth) % 2 == 0 else tuple(reversed(ARMS))
+            arm_env = MODES[args.mode]
+            order = ("on", "off") if (gi + depth) % 2 == 0 else ("off", "on")
+            arms = tuple((name, arm_env[name]) for name in order)
             pair = {}
-            for arm_name, arm_value in arms:
-                blocks, err = run_arm(path, prompt, arm_value, args.backend, args.quant)
+            for arm_name, arm_cfg in arms:
+                blocks, err = run_arm(path, prompt, arm_cfg, args.backend, args.quant)
                 done += 1
                 el = time.time() - t0
                 eta = (el / done) * (total - done)
@@ -139,11 +166,14 @@ def main():
             cells[key] = pair
             # Written after every pair: a run this long must survive being interrupted.
             json.dump({"provenance": bp.provenance(), "machine": bp.machine_state(),
-                       "config": {"backend": args.backend, "quant": args.quant,
+                       "config": {"mode": args.mode, "arms": MODES[args.mode],
+                                  "backend": args.backend, "quant": args.quant,
                                   "ngen": bp.NGEN, "ncomp": bp.NCOMP, "nruns": bp.NRUNS},
                        "cells": cells}, open(args.out, "w"), indent=1, sort_keys=True)
 
-    print(f"\n# ratios (ON / OFF; >1 means split-KV wins)  [{(time.time()-t0)/60:.1f} min]")
+    label = ("split-KV forced on / off" if args.mode == "force"
+             else "shipped gate / off — ~1.000 is the PASS, not a null result")
+    print(f"\n# ratios ({label})  [{(time.time()-t0)/60:.1f} min]")
     hdr = "| geometry | " + " | ".join(str(d) for d in depths) + " |"
     print(hdr + "\n|" + "---|" * (len(depths) + 1))
     for gkey in geoms:
