@@ -51,39 +51,42 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
-**G25 · Decide an int4 T3 bar, deliberately and not from this number** — either box (desk work
-first). `docs/measurements/qwen3next-t3-int4-2026-08-26.md` says this was "filed as its own queue
-item"; it was not — this entry is that filing, made 2026-08-26 after the section was found empty.
+**G25 · Does the oracle bar need a sparsity axis, or is per-precision enough?** — PARKED with a
+trigger, 2026-08-27. Either box, desk work first.
 
-The assertion in `decoder/real_oracle_test.go` reads `if cos < 0.99 { // int8 W8A8 vs bf16 — same
-bar as the deepseek real gates`. `qwen3_next` is the repo's **first int4 T3**, and its precision is
-forced by capacity (80B at int8 is ~80 GB against 62 GB of RAM), so it is measured against a bar
-calibrated on a population it is not in. It misses by 0.000124.
+**The precision half is DONE** (`c62f2b7`). `decoder/real_oracle_test.go` had one bar, 0.99, whose
+own comment said it was the int8 W8A8 number — and `qwen3_next` was measured against it as the
+repo's first int4 T3, missing by 0.000124. Now `int8int8`/`int8` keep 0.99, `int4` takes 0.98 (G5,
+pre-registered before the checkpoint finished downloading), and an unregistered precision fails hard
+rather than inheriting someone else's bar. The oracle passes at its measured 0.989876 and the
+`qwen3_next` manifest row is `validated` / `real-model-oracle` (`8f003f2`).
 
-**The trap, and it is the whole reason this is a queue item rather than a patch.** G5 pre-registered
-≥0.98 as passing, so the looser standard is *already written down and predates the run*. It is still
-not available: two standards existed beforehand, and picking the more permissive one after seeing
-0.989876 is what pre-registration exists to prevent. The stricter committed bar governs until a new
-one is set on a basis that does not reference this measurement.
+**What is still open is the SHAPE, not the number.** A scalar bar per precision assumes precision is
+the only thing that moves the cosine. In a sparse MoE it is not: quantization can change *which*
+experts fire, a discrete flip no averaging smooths, so divergence should track sparsity too.
 
-**What a defensible int4 bar would be built from** — none of it this run's number:
-- gpt2's int4 forward goldens, where int4-vs-f32 relative hidden-state error is already 5–10% at
-  layer 0 on a real trained checkpoint (`decoder/int4_golden_test.go`, bisected 2026-08-22).
-- `nemotron3nano` at 6/128 experts: **0.978** with int8 activations against **0.9977** with f32.
-- The cross-arch int4 work of 2026-08-26 (`a877b0a`), which measured how far a *healthy* int4 result
-  sits from its own golden — 0.99777 on amd64 against an arm64 bake.
-- Sparsity belongs in the bar: 10/512 is 1.95% active, sparsest in the table by 2×, and the
-  expert-flip cliff is discrete, so a single scalar bar across all MoE densities may be the actual
-  error.
+| family | routing | active | measured |
+|---|---|---|---|
+| `qwen3_next` | 10/512 | 1.95% | 0.98988 at int4 |
+| `nemotron3nano` | 6/128 | 4.7% | 0.978 at int8 activations, 0.9977 at f32 |
+| dense families | — | — | no expert flipping at all |
 
-**A side effect to fix with it:** `emitParityRow` is a no-op when a gate fails, so a calibration
-miss records nothing in the manifest at all. Correct for a real failure, wrong for this — the
-informative near-miss leaves no trace, and the row still reads `tiny-golden`.
+Three families at one precision could each want a different bar; `int4 = 0.98` may be loose for a
+dense model and tight for something sparser still.
 
-**Independently reproduced 2026-08-26 at `20fc6e6`** (the earlier run was `3b7facd`): argmax 12095
-exact, all six continuation tokens exact, cosine **0.989876** — identical to sixteen digits. The
-number is not in question; only the bar is.
+**Parked rather than solved, deliberately.** There is exactly ONE int4 T3 family today, so any
+sparsity rule derived now would be fitted to n=1 — and this queue's own standard is that a bar moves
+only with a mechanism, not with a number. Fitting a curve through a single point is the same error
+wearing a lab coat.
 
+**Trigger to re-open — any one of:**
+1. A **second** int4 T3 family lands, giving a real second point.
+2. An int4 gate fails within ~0.005 of 0.98, where the bar's shape starts deciding outcomes rather
+   than merely being defensible.
+3. A dense family is added at int4 — the case where 0.98 is most likely too loose, since it has no
+   expert-flip term at all.
+
+Until one fires, the per-precision split is correct and sufficient, and nothing is mis-gated.
 
 ## Struck — decided against, kept so the decision is visible
 
@@ -336,21 +339,20 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0221d32` | docs: the developer-role task is NOT a blocker -- it is silent-wrong, which is worse |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
-| `20fc6e6` | gate: the qwen3next oracle was unreachable, not unrunnable |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
-| `3b7facd` | test(qwen3next): wire the T3 oracle -- gate, asset registry, and the sweep cell |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `4ca19e9` | fix(serve): accept `role: "developer"` as an alias for `system` (G12) |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
+| `8f003f2` | parity: v0.15.0 sweep GREEN at bd085de; qwen3_next validated by real oracle |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
-| `a877b0a` | fix(decoder): int4 gpt2 floor sat below its own cross-arch baseline |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c3e43c8` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
+| `c62f2b7` | test(decoder): give the real-model oracles a bar per precision |
 | `cda8cfe` | docs: re-declare the freeze as a proof requirement; clear G2 for amd64 alone |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
@@ -513,7 +515,6 @@ than papered over.
 
 | file | repo |
 |---|---|
-| `decoder/int4_golden_test.go` | goinfer |
 | `decoder/real_oracle_test.go` | goinfer |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
