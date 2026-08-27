@@ -28,8 +28,10 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
 
 - **Gated-DeltaNet is GPU-resident on WebGPU *and* CUDA** — `qwen3_5` dense, its MoE sibling and
   `qwen3_next` all resolve to a real runner instead of a feature-gate decline. **15.9× CPU decode**
-  on CUDA at released width; resident-vs-CPU worst cosine 0.999919, replay-after-Reset self-cosine
-  1.000000000.
+  on CUDA at released width, measured 2026-08-20 on the pre-2026-08-25 driver stack and NOT
+  re-anchored since (driver `595.91.07` / Nobara 44); the correctness gates were re-verified across
+  that bump, the throughput figure was not. Resident-vs-CPU worst cosine 0.999919,
+  replay-after-Reset self-cosine 1.000000000.
 - **Qwen3.6-35B-A3B decodes RESIDENT on an 8 GB card** — ~20 GB of int4 experts against 8 GB of
   VRAM, via C′ host→VRAM expert streaming. Raising the C′ slot default to `8*topK` is worth
   **1.59×** on the 35B and **2.6×** on the 26B.
@@ -39,9 +41,10 @@ with no error at write, load, or run time. If you built a `.giw` for gpt-oss on 
 
 #### Loaders and formats
 
-- **Qwen3.8 GGUF loader (arch `qwen35`)** — **55.6 GB bf16 → 16.5 GB** on disk (3.4×), and it
-  decodes **1.69× faster** than the safetensors path. Real 16.5 GB Q4_K_M gate passes: 64 layers,
-  correct geometry, distinct-trigram 0.847.
+- **Qwen3.8 GGUF loader (arch `qwen35`)** — **55.6 GB bf16 → 16.5 GB** on disk (3.4×). A 1.69×
+  decode difference against the safetensors path was also measured, but only with 46.8 GB of 62 GB
+  already resident, and its own record says not to assume it transfers — so it is recorded, not
+  claimed. Real 16.5 GB Q4_K_M gate passes: 64 layers, correct geometry, distinct-trigram 0.847.
 - **`.giw` v6 — every registered family is representable and `canSerialize` is now EMPTY.** The
   tail writes `GProj` (Laguna), `AttnSinks` and per-expert biases (gpt-oss), the MLA sub-struct
   (DeepSeek/Kimi) and the Mamba-2 sub-struct (Granite/Nemotron). The tail is UNCONDITIONAL rather
