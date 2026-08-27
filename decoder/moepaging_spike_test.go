@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"container/list"
-	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -55,7 +54,7 @@ func TestMoEPagingSpike(t *testing.T) {
 	defer func() { moeSelTrace = nil }()
 	prompt := []int{785, 264, 6573, 311, 1438, 279, 2038, 25} // valid Qwen ids; the 200 generated tokens drive realistic decode-time routing
 	prog.Phase("generate (drives real decode-time routing)")
-	ch, g := m.Generate(context.Background(), prompt, gen, SamplingParams{Temperature: 0})
+	ch, g := m.Generate(deadlineCtx(t), prompt, gen, SamplingParams{Temperature: 0})
 	n := 0
 	for range ch {
 		n++

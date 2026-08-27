@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -39,6 +40,23 @@ func progressInterval() time.Duration {
 		return time.Duration(n) * time.Second
 	}
 	return defaultProgressInterval
+}
+
+// deadlineCtx derives a context from the test binary's OWN -timeout, expiring 30s early so that a
+// hung call fails here — naming this test and the phase it was in — instead of surfacing 30s later
+// as a package-wide timeout panic whose goroutine dump names no test at all. Falls back to a plain
+// cancellable context when the runner was given no timeout.
+func deadlineCtx(t *testing.T) context.Context {
+	t.Helper()
+	parent := context.Background()
+	if d, ok := t.Deadline(); ok {
+		ctx, cancel := context.WithDeadline(parent, d.Add(-30*time.Second))
+		t.Cleanup(cancel)
+		return ctx
+	}
+	ctx, cancel := context.WithCancel(parent)
+	t.Cleanup(cancel)
+	return ctx
 }
 
 // progress is a heartbeat for a test expected to exceed ~2 minutes. The zero value is not usable;

@@ -123,6 +123,7 @@ func TestPrefillAttnRowTileInvariance(t *testing.T) {
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
+	ctx := deadlineCtx(t)
 	prog := newProgress(t, t.Name(), 3*5).Uneven() // 3 context lengths x (untiled + 4 tiles); cost grows with K
 	for _, K := range []int{64, 512, 1200} {
 		prog.Phase(fmt.Sprintf("K=%d", K))
@@ -137,7 +138,7 @@ func TestPrefillAttnRowTileInvariance(t *testing.T) {
 			t.Helper()
 			t.Setenv("GOINFER_ATTN_ROW_TILE", tile)
 			t.Setenv("GOINFER_PREFILL_ATTN_WORKERS", "1") // isolate tiling from fan-out
-			out, err := m.forwardLayersN(context.Background(), ids, m.NewCache(K+8), false)
+			out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), false)
 			if err != nil {
 				t.Fatalf("K=%d tile=%s: %v", K, tile, err)
 			}

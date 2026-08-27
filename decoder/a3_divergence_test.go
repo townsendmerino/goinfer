@@ -22,6 +22,7 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
+	ctx := deadlineCtx(t)
 	prog := newProgress(t, t.Name(), 3).Uneven() // cost grows with K
 	for _, K := range []int{256, 1024, 2048} {
 		prog.Phase(fmt.Sprintf("K=%d (acc64 vs f32 prefill)", K))
@@ -35,7 +36,7 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 		run := func(fast string) []float32 {
 			t.Helper()
 			t.Setenv("GOINFER_CPU_FAST_ATTENTION", fast)
-			out, err := m.forwardLayersN(context.Background(), ids, m.NewCache(K+8), cpuFastAttention())
+			out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), cpuFastAttention())
 			if err != nil {
 				t.Fatalf("K=%d fast=%s: %v", K, fast, err)
 			}

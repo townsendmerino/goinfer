@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -42,7 +41,7 @@ func TestNgramSpecMLA_parity(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 	const n = 32
-	ctx := context.Background()
+	ctx := deadlineCtx(t)
 	greedy := SamplingParams{Temperature: 0}
 
 	prog := newProgress(t, t.Name(), 0)
