@@ -132,10 +132,16 @@ func parityCells(env map[string]string, realckpt bool, timeout string) []cell {
 	cells := []cell{base}
 	if realckpt {
 		cells = append(cells, cell{
-			Name:    "realckpt real-model gates",
-			Pkgs:    []string{"./decoder/"},
-			Tags:    []string{"realckpt"},
-			Run:     "Qwen35|Real_gate",
+			Name: "realckpt real-model gates",
+			Pkgs: []string{"./decoder/"},
+			Tags: []string{"realckpt"},
+			// Real_oracle is here because TestQwen3NextReal_oracle matched NEITHER alternative and
+			// was therefore unreachable: the sweep reported it "DID NOT RUN (blocker)" for weeks
+			// and every diagnosis went looking at the 163GB asset, which was present and resolving
+			// the whole time. A -run filter that cannot reach a REQUIRED gate is not a skip, it is
+			// a gate that silently does not exist. TestRealckptCellCanReachEveryGate now fails if
+			// this pattern and parityRealckptGates ever disagree again.
+			Run:     "Qwen35|Real_gate|Real_oracle",
 			Timeout: timeout,
 			Env:     env,
 		})

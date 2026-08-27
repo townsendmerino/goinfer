@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -270,5 +271,47 @@ func TestComposition_loaderAxisComesFromTheName(t *testing.T) {
 		if got := loaderOf(name); got != want {
 			t.Errorf("loaderOf(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// A required gate that the cell's -run filter cannot match never executes, and the sweep reports
+// it as DID NOT RUN — indistinguishable from a missing asset. That is exactly what happened to
+// TestQwen3NextReal_oracle: named "Real_oracle" while the filter accepted only "Qwen35|Real_gate",
+// so it was unreachable by construction while every investigation hunted the 163GB checkpoint.
+func TestRealckptCellCanReachEveryGate(t *testing.T) {
+	cells := parityCells(nil, true, "1m")
+	var rc *cell
+	for i := range cells {
+		for _, tag := range cells[i].Tags {
+			if tag == "realckpt" {
+				rc = &cells[i]
+			}
+		}
+	}
+	if rc == nil {
+		t.Fatal("no realckpt cell built with realckpt=true")
+	}
+	re, err := regexp.Compile(rc.Run)
+	if err != nil {
+		t.Fatalf("realckpt cell -run %q does not compile: %v", rc.Run, err)
+	}
+	for _, g := range parityRealckptGates {
+		if !re.MatchString(g.Test) {
+			t.Errorf("required gate %s (%s) is UNREACHABLE: -run %q never matches it, so the sweep "+
+				"can only ever report it as DID NOT RUN", g.Test, g.Family, rc.Run)
+		}
+	}
+}
+
+// The base cell must stay unfiltered: every non-realckpt required gate lives in ./decoder/ or
+// ./tokenizer/ and is reached only because nothing narrows it.
+func TestBaseCellIsUnfiltered(t *testing.T) {
+	cells := parityCells(nil, false, "1m")
+	if len(cells) != 1 {
+		t.Fatalf("realckpt=false built %d cells, want 1", len(cells))
+	}
+	if cells[0].Run != "" {
+		t.Errorf("base cell -run = %q, want empty; a filter here would silently drop required "+
+			"gates the same way the realckpt filter dropped the qwen3next oracle", cells[0].Run)
 	}
 }
