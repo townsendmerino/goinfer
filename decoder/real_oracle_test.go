@@ -82,8 +82,9 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 	if gotArg != g.Argmax {
 		t.Errorf("last argmax = %d, want %d", gotArg, g.Argmax)
 	}
-	if cos < 0.99 { // int8 W8A8 vs bf16 — same bar as the deepseek real gates
-		t.Errorf("last-logit cosine %.6f < 0.99", cos)
+	floor := oracleCosFloor(t, quant)
+	if cos < floor {
+		t.Errorf("last-logit cosine %.6f < %.4g (the %s bar)", cos, floor, quant)
 	}
 
 	got := make([]int, 0, g.NNew)
@@ -104,4 +105,35 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 		}
 	}
 	emitParityRow(t, family, "real-model-oracle", reference, 100.0, float64(cos), float64(cos))
+}
+
+// oracleCosFloor is the last-logit cosine bar for a T3 real-model oracle, BY PRECISION.
+//
+// There was one bar for a long time, 0.99, and its comment said what it was: "int8 W8A8 vs bf16 —
+// same bar as the deepseek real gates". That was fine while every real oracle was int8. It stopped
+// being fine when qwen3_next arrived at int4 — not by choice but by capacity, since 80B at int8 is
+// ~80 GB against 62 GB of RAM — and was measured against a bar calibrated on a population it is
+// not in. int4 is a coarser grid than int8; holding both to one number is the same category of
+// error as holding gpt2's int4 goldens to the tiny fixtures' absolute gate.
+//
+// An UNREGISTERED precision is a hard failure rather than a default. Silently inheriting a bar
+// belonging to some other precision is exactly how the int4 gate ended up judged by an int8 number,
+// and a default would let the next precision repeat it without anyone deciding anything.
+func oracleCosFloor(t *testing.T, quant string) float64 {
+	t.Helper()
+	switch quant {
+	case "int8int8", "int8":
+		// Calibrated on the deepseek real gates. int8 weights with f32 or int8 activations.
+		return 0.99
+	case "int4":
+		// Pre-registered in docs/queue-correctness.md G5 BEFORE the qwen3_next checkpoint had
+		// finished downloading and before any number existed — which is what makes it usable.
+		// It is not the int8 bar relaxed after a near miss; it is the bar written down in advance
+		// for the precision the run was always going to use.
+		return 0.98
+	default:
+		t.Fatalf("no oracle cosine bar registered for quant %q — decide one deliberately in "+
+			"oracleCosFloor rather than letting it inherit another precision's", quant)
+		return 0
+	}
 }
