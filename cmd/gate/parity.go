@@ -69,6 +69,11 @@ var parityGates = []gateCheck{
 	{"gptq", "TestGPTQ_parity"},
 	{"awq", "TestAWQ_parity"},
 	{"w4a8-int4", "TestW4A8DecodeParity"},
+	// The int4 FORWARD gate (23 fixtures / 16 architectures) is the broadest quant check here, and
+	// it was missing from this list until 2026-08-26 -- so when it went red in the v0.15.0-prep
+	// sweep it surfaced only as an anonymous "1 fail" with no gate name, and attributing it took
+	// hours. A required gate that is not named here is a gate whose failure nobody can read.
+	{"int4-forward", "TestInt4_forwardParity"},
 	{"tok-gemma", "TestEncodeDecode_goldenParity"},
 	{"tok-qwen3", "TestByteLevel_qwen3GoldenParity"},
 	{"tok-llama3", "TestByteLevel_llama3GoldenParity"},
