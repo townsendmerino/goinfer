@@ -929,6 +929,27 @@ it is not an option worth taking: granting a cap one step past what fits is exac
 **Hit rate scales with slots as the mechanism predicts** — 57.3% at 16, 76.1% at 30, 81.6% at 38
 historically — and tok/s tracks it, since each hit is one expert DMA not paid.
 
+**Why the cap moved, established by experiment rather than inferred.** The resident KV cache is
+allocated BEFORE the expert cache is sized, and at the `cudaCtxCapDefault` of 4096 positions it
+takes 2.01 GB of the card (30 layers × 8 kv heads × 256 head_dim × 2 × 4 B = 480 KB per position).
+Halving the context to 2048 should therefore free ~1.0 GB, and at ~0.103 GB per slot buy ~9–10 more
+of them. **Predicted 39–40 before running it; measured 40:**
+
+| `GOINFER_26B_CTX` | KV | free VRAM | slots granted | hit rate | ms/tok | tok/s |
+|---|---|---|---|---|---|---|
+| 4096 (default) | 2.01 GB | 3.6 GB | 30 | 76.1% | 62 | 16.12 |
+| **2048** | 1.01 GB | 4.5 GB | **40** | 82.2% | 57 | **17.62** |
+
+So **the host↔VRAM path is not slower than it was on `595.58.03`; the default context starves the
+cache.** 40 slots overshoots the historical 38, at a hit rate that brackets it (82.2% vs 81.6%),
+and 17.62 tok/s sits above the 16.98 recorded there. Trading half the resident context for 33% more
+slots is worth 9.3% of decode rate on this card.
+
+That makes context-vs-slots a real knob rather than a footnote, and it is the *only* one that moves
+the slot count here: everything else in the 8 GB is either the model core (~1.3 GB), the CUDA
+context and allocator overhead, or the desktop. `GOINFER_26B_CTX` (test-only) and
+`Options.ResidentContext` / `--ctx` (shipping) are the same lever.
+
 **Still a capability number, not a benchmark.** The gate's own docstring says so: this is a
 correctness-plus-latency run over a synchronous H2D path, with ~714 MB/token crossing PCIe. Both
 runs pass their coherence floor (distinct-trigram 0.789 against a 0.70 bar). Current Ollama runs
