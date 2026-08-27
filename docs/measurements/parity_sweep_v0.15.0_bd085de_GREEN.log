@@ -1,0 +1,237 @@
+== asset preflight — 30 registered asset(s), models root /home/francis/models ==
+   predicate: testdata/assets.json (kind/members/min_bytes) — the SAME one the gates apply
+   GOINFER_PREQUANT_GGUF        resolved  /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+   GOINFER_QWEN35_GGUF          resolved  /home/francis/models/qwen3.6-35b-a3b-Q8_0.gguf
+   GOINFER_QWEN35_GOLDEN        resolved  /home/francis/models/qwen35_real_golden
+   GOINFER_QWEN35_REAL          resolved  /home/francis/models/qwen3.6-35b-a3b
+   GOINFER_DEEPSEEK_V2LITE      resolved  /home/francis/models/deepseek-v2-lite
+   GOINFER_DEEPSEEK_MOONLIGHT   resolved  /home/francis/models/moonlight-16b
+   GOINFER_DEEPSEEK_GGUF        resolved  /home/francis/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf
+   GOINFER_PHI3_MINI            resolved  /home/francis/models/phi3-mini-4k
+   GOINFER_PHI3_GGUF            resolved  /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+   GOINFER_LLAMA4_GGUF          resolved  /home/francis/models/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf
+   GOINFER_GRANITE_HF           resolved  /home/francis/models/granite-hf
+   GOINFER_NEMOTRON_HF          resolved  /home/francis/models/nemotron-hf
+   GOINFER_DFLASH_35B           resolved  /home/francis/models/qwen36-35b-dflash
+   GOINFER_DSPARK_F32           resolved  /home/francis/models/dspark-qwen3-4b-f32
+   GOINFER_QWEN3_4B             resolved  /home/francis/models/qwen3-4b
+   GOINFER_DFLASH_F32           resolved  /home/francis/models/qwen3-4b-dflash-f32
+   GOINFER_DFLASH_GPTOSS        resolved  /home/francis/models/gptoss-20b-dflash
+   GOINFER_DFLASH_GEMMA4        resolved  /home/francis/models/gemma4-26b-dflash
+   GOINFER_QWEN3NEXT_HF         resolved  /home/francis/models/qwen3next-80b-partial
+   GOINFER_NEMOTRON3NANO_HF     resolved  /home/francis/models/nemotron3nano-30b-bf16
+   GOINFER_NEMOTRON3NANO_GGUF   resolved  /home/francis/models/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf
+   GOINFER_LAGUNA_XS2           resolved  /home/francis/models/laguna-xs2
+   GOINFER_LAGUNA_GGUF          resolved  /home/francis/models/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf
+   GOINFER_LAGUNA_DFLASH        resolved  /home/francis/models/laguna-xs2-dflash
+   GOINFER_GPTOSS_ST            resolved  /home/francis/models/gpt-oss-20b-hf
+   GOINFER_GPTOSS_GGUF          resolved  /home/francis/models/gpt-oss-20b-MXFP4.gguf
+   GOINFER_QWEN38               resolved  /home/francis/models/qwen3.8-27b
+   GOINFER_W4A8_INT4            resolved  /home/francis/models/qwen15-w4a8-int4.giw
+   GOINFER_W4A8_INT8            resolved  /home/francis/models/qwen15-w4a8-int8.giw
+   GOINFER_QWEN38_GGUF          resolved  /home/francis/models/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf
+   all 30 registered assets resolved — a blocker below is about the TREE, not the invocation
+   GOINFER_HEAVY_TESTS=1 set by this gate — the release sweep loads real checkpoints
+
+== EMIT_MANIFEST=1: real-oracle gates will record measured rows into the manifest ==
+
+[1m== parity sweep provenance ==[0m
+  repo        bd085de +dirty
+  date (UTC)  2026-08-27T05:28:13Z
+  host        Linux x86_64
+  realckpt    true
+  timeout     120m
+  emit        true
+  NOTE: working tree DIRTY — this verdict does not describe a committed state.
+  COMPOSITION of the release gate — 42 gates over 42 family labels
+    quant :  f32=25  int4=1  int4/int8=11  int8int8=5
+    loader:  gguf=12  safetensors=30
+
+  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):
+    gate parity       : f32 int4 int8 int8int8
+    forward goldens   : f32 int4 int8 int8int8
+    -> the two gates span the same quantizations.
+
+  CROSS-GATE loader coverage:
+    gate parity       : gguf safetensors
+    forward goldens   : gguf safetensors
+    -> the two gates span the same loaders.
+-- running ./decoder/ ./tokenizer/ ...
+   ... ./decoder/ ./tokenizer/: 2m0s elapsed, 136 tests finished, last: FuzzParseTokenizerJSON | in flight: TestA3FastAttentionDivergence (1m58s)
+   ... ./decoder/ ./tokenizer/: 4m0s elapsed, 191 tests finished, last: TestDSpark_referenceParity | in flight: TestDSpark_targetEndToEnd (6s)
+   ... ./decoder/ ./tokenizer/: 6m0s elapsed, 194 tests finished, last: TestDSpark_targetEndToEnd | in flight: TestEagleAcceptedLength (1m37s)
+   ... ./decoder/ ./tokenizer/: 8m0s elapsed, 196 tests finished, last: TestEagleAlpha | in flight: TestEagleAgreementSweep (20s)
+   ... ./decoder/ ./tokenizer/: 10m0s elapsed, 249 tests finished, last: TestGemma3VL_imageParity | in flight: TestGemma4_12B_logitParity (32s)
+   ... ./decoder/ ./tokenizer/: 12m0s elapsed, 287 tests finished, last: TestGGUF_Q4_K_S_parity | in flight: TestGGUF_int8_resident (0s)
+   ... ./decoder/ ./tokenizer/: 14m0s elapsed, 351 tests finished, last: TestKVI8_genParity | in flight: TestKVI8_batchedPrefill (18s)
+   ... ./decoder/ ./tokenizer/: 16m0s elapsed, 412 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (1m12s)
+   ... ./decoder/ ./tokenizer/: 18m0s elapsed, 412 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (3m12s)
+   ... ./decoder/ ./tokenizer/: 20m0s elapsed, 412 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (5m12s)
+   ... ./decoder/ ./tokenizer/: 22m0s elapsed, 412 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (7m12s)
+   ... ./decoder/ ./tokenizer/: 24m0s elapsed, 412 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (9m12s)
+   ... ./decoder/ ./tokenizer/: 26m0s elapsed, 412 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (11m12s)
+   ... ./decoder/ ./tokenizer/: 28m0s elapsed, 412 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (13m12s)
+   ... ./decoder/ ./tokenizer/: 30m0s elapsed, 422 tests finished, last: TestMetalCoverageFlags | in flight: TestMistral_forwardParity (3s)
+   ... ./decoder/ ./tokenizer/: 32m0s elapsed, 430 tests finished, last: TestResidentMoECap_pinsKernelConstant | in flight: TestMoEPagingSpike (2m0s)
+   ... ./decoder/ ./tokenizer/: 34m0s elapsed, 430 tests finished, last: TestResidentMoECap_pinsKernelConstant | in flight: TestMoEPagingSpike (4m0s)
+   ... ./decoder/ ./tokenizer/: 36m0s elapsed, 430 tests finished, last: TestResidentMoECap_pinsKernelConstant | in flight: TestMoEPagingSpike (6m0s)
+   ... ./decoder/ ./tokenizer/: 38m0s elapsed, 430 tests finished, last: TestResidentMoECap_pinsKernelConstant | in flight: TestMoEPagingSpike (8m0s)
+   ... ./decoder/ ./tokenizer/: 40m0s elapsed, 430 tests finished, last: TestResidentMoECap_pinsKernelConstant | in flight: TestMoEPagingSpike (10m0s)
+   ... ./decoder/ ./tokenizer/: 42m0s elapsed, 430 tests finished, last: TestResidentMoECap_pinsKernelConstant | in flight: TestMoEPagingSpike (12m0s)
+   ... ./decoder/ ./tokenizer/: 44m0s elapsed, 459 tests finished, last: TestPrefillAttnWorkerBudget | in flight: TestPrefillAttnRowTileInvariance (22s)
+   ... ./decoder/ ./tokenizer/: 46m0s elapsed, 459 tests finished, last: TestPrefillAttnWorkerBudget | in flight: TestPrefillAttnRowTileInvariance (2m22s)
+   ... ./decoder/ ./tokenizer/: 48m0s elapsed, 478 tests finished, last: TestGiwRecordsResolvedQuant | in flight: TestGiwInt4LabelNotMix (1s)
+   ... ./decoder/ ./tokenizer/: 50m0s elapsed, 611 tests finished, last: TestSerializeGemma4MoE_roundTrip | in flight: TestSerializeGemma4E2B_roundTrip (36s)
+   ... ./decoder/ ./tokenizer/: 52m0s elapsed, 636 tests finished, last: TestGrammarForcedFraction | in flight: TestNgramSpecHarness (31s)
+   ... ./decoder/ ./tokenizer/: 54m0s elapsed, 638 tests finished, last: TestForwardCaptureSeam | in flight: TestNgramSpecMLA_parity (1m50s)
+   ... ./decoder/ ./tokenizer/: 56m0s elapsed, 669 tests finished, last: TestTreeMaskLinearParity | in flight: TestW4A8DecodeParity (1s)
+   366 pass / 24 skip / 0 fail (go rc 0, 56m55s)  log: /tmp/gate_parity___decoder____tokenizer.json
+-- running realckpt real-model gates ...
+   ... realckpt real-model gates: 2m0s elapsed, 728 tests finished, last: TestDeepseekV2LiteReal_gate | in flight: TestDeepseekMoonlightReal_gate (9s)
+   ... realckpt real-model gates: 4m0s elapsed, 731 tests finished, last: TestGemma3Real_gate | in flight: TestGptOssReal_gate (29s)
+   ... realckpt real-model gates: 6m0s elapsed, 734 tests finished, last: TestGraniteReal_oracle | in flight: TestLagunaReal_gate (41s)
+   ... realckpt real-model gates: 8m0s elapsed, 734 tests finished, last: TestGraniteReal_oracle | in flight: TestLagunaReal_gate (2m41s)
+   ... realckpt real-model gates: 10m0s elapsed, 735 tests finished, last: TestLagunaReal_gate | in flight: TestLlama4Real_gate (1m17s)
+   ... realckpt real-model gates: 12m21s elapsed, 735 tests finished, last: TestLagunaReal_gate | in flight: TestLlama4Real_gate (3m50s)
+   ... realckpt real-model gates: 14m0s elapsed, 735 tests finished, last: TestLagunaReal_gate | in flight: TestLlama4Real_gate (5m17s)
+   ... realckpt real-model gates: 16m0s elapsed, 735 tests finished, last: TestLagunaReal_gate | in flight: TestLlama4Real_gate (7m17s)
+   ... realckpt real-model gates: 18m0s elapsed, 735 tests finished, last: TestLagunaReal_gate | in flight: TestLlama4Real_gate (9m17s)
+   ... realckpt real-model gates: 20m0s elapsed, 735 tests finished, last: TestLagunaReal_gate | in flight: TestLlama4Real_gate (11m17s)
+   ... realckpt real-model gates: 22m0s elapsed, 738 tests finished, last: TestMistralReal_gate | in flight: TestNemotron3NanoReal_oracle (21s)
+   ... realckpt real-model gates: 24m0s elapsed, 739 tests finished, last: TestNemotron3NanoReal_oracle | in flight: TestNemotron3NanoMoEReal_gate (1m4s)
+   ... realckpt real-model gates: 26m0s elapsed, 744 tests finished, last: TestPhi3GGUFReal_gate | in flight: TestQwen2Real_gate (1s)
+   ... realckpt real-model gates: 28m0s elapsed, 746 tests finished, last: TestQwen35_forwardParity | in flight: TestQwen35Real_gate2FullModel (1m59s)
+   ... realckpt real-model gates: 30m0s elapsed, 746 tests finished, last: TestQwen35_forwardParity | in flight: TestQwen35Real_gate2FullModel (3m59s)
+   ... realckpt real-model gates: 32m0s elapsed, 746 tests finished, last: TestQwen35_forwardParity | in flight: TestQwen35Real_gate2FullModel (5m59s)
+   ... realckpt real-model gates: 34m0s elapsed, 746 tests finished, last: TestQwen35_forwardParity | in flight: TestQwen35Real_gate2FullModel (7m59s)
+   ... realckpt real-model gates: 36m0s elapsed, 746 tests finished, last: TestQwen35_forwardParity | in flight: TestQwen35Real_gate2FullModel (9m59s)
+   ... realckpt real-model gates: 38m0s elapsed, 746 tests finished, last: TestQwen35_forwardParity | in flight: TestQwen35Real_gate2FullModel (11m59s)
+   ... realckpt real-model gates: 40m0s elapsed, 746 tests finished, last: TestQwen35_forwardParity | in flight: TestQwen35Real_gate2FullModel (13m59s)
+   ... realckpt real-model gates: 42m0s elapsed, 747 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestQwen35GGUF_gate (22s)
+   ... realckpt real-model gates: 44m0s elapsed, 747 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestQwen35GGUF_gate (2m22s)
+   ... realckpt real-model gates: 46m0s elapsed, 747 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestQwen35GGUF_gate (4m22s)
+   ... realckpt real-model gates: 48m0s elapsed, 747 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestQwen35GGUF_gate (6m22s)
+   ... realckpt real-model gates: 50m0s elapsed, 747 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestQwen35GGUF_gate (8m22s)
+   ... realckpt real-model gates: 52m0s elapsed, 747 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestQwen35GGUF_gate (10m22s)
+   ... realckpt real-model gates: 54m0s elapsed, 747 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestQwen35GGUF_gate (12m22s)
+   ... realckpt real-model gates: 56m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (1m32s)
+   ... realckpt real-model gates: 58m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (3m32s)
+   ... realckpt real-model gates: 1h0m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (5m32s)
+   ... realckpt real-model gates: 1h2m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (7m32s)
+   ... realckpt real-model gates: 1h4m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (9m32s)
+   ... realckpt real-model gates: 1h6m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (11m32s)
+   ... realckpt real-model gates: 1h8m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (13m32s)
+   ... realckpt real-model gates: 1h10m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (15m32s)
+   ... realckpt real-model gates: 1h12m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (17m32s)
+   ... realckpt real-model gates: 1h14m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (19m32s)
+   ... realckpt real-model gates: 1h16m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (21m32s)
+   ... realckpt real-model gates: 1h18m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (23m32s)
+   ... realckpt real-model gates: 1h20m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (25m32s)
+   ... realckpt real-model gates: 1h22m0s elapsed, 749 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestQwen35GGUF_vsSafetensors (27m32s)
+   ... realckpt real-model gates: 1h24m0s elapsed, 758 tests finished, last: TestResolveQwen35_rejectsBadConfig | in flight: TestQwen38Real_gate (26s)
+   ... realckpt real-model gates: 1h26m0s elapsed, 758 tests finished, last: TestResolveQwen35_rejectsBadConfig | in flight: TestQwen38Real_gate (2m25s)
+   ... realckpt real-model gates: 1h28m0s elapsed, 760 tests finished, last: TestQwen3Real_gate | in flight: TestQwen3NextReal_oracle (32s)
+   ... realckpt real-model gates: 1h30m0s elapsed, 760 tests finished, last: TestQwen3Real_gate | in flight: TestQwen3NextReal_oracle (2m32s)
+   ... realckpt real-model gates: 1h32m1s elapsed, 760 tests finished, last: TestQwen3Real_gate | in flight: TestQwen3NextReal_oracle (4m33s)
+   ... realckpt real-model gates: 1h34m0s elapsed, 760 tests finished, last: TestQwen3Real_gate | in flight: TestQwen3NextReal_oracle (6m32s)
+   ... realckpt real-model gates: 1h36m0s elapsed, 760 tests finished, last: TestQwen3Real_gate | in flight: TestQwen3NextReal_oracle (8m32s)
+   ... realckpt real-model gates: 1h38m0s elapsed, 760 tests finished, last: TestQwen3Real_gate | in flight: TestQwen3NextReal_oracle (10m32s)
+   ... realckpt real-model gates: 1h40m0s elapsed, 760 tests finished, last: TestQwen3Real_gate | in flight: TestQwen3NextReal_oracle (12m32s)
+   32 pass / 4 skip / 1 fail (go rc 1, 1h40m45s)  log: /tmp/gate_parity_realckpt_real-model_gates.json
+
+FAMILY               GATE                               RESULT
+------------------------------------------------------------------------
+gemma3               TestGGUF_gemma3_parity             ✅ pass
+gemma3-forward       TestForward_logitParity            ✅ pass
+gemma3-sliding       TestForward_slidingWindowParity    ✅ pass
+gemma4-E2B/E4B       TestGemma4_logitParity             ✅ pass
+gemma4-12B           TestGemma4_12B_logitParity         ✅ pass
+qwen2                TestQwen2_forwardParity            ✅ pass
+qwen2-gguf           TestGGUF_qwen2_parity              ✅ pass
+qwen3                TestQwen3_forwardParity            ✅ pass
+qwen3-gguf           TestGGUF_qwen3_parity              ✅ pass
+qwen2moe             TestQwen2Moe_forwardParity         ✅ pass
+llama                TestLlama_forwardParity            ✅ pass
+llama3.2             TestLlama32_forwardParity          ✅ pass
+mistral              TestMistral_forwardParity          ✅ pass
+mixtral              TestMixtral_forwardParity          ✅ pass
+mellum2              TestMellum2_logitParity            ✅ pass
+mellum2-window       TestMellum2_windowParity           ✅ pass
+gpt2                 TestGPT2_forwardParity             ✅ pass
+qwen3_5_moe-tiny     TestQwen35_forwardParity           ✅ pass
+deltanet             TestGatedDeltaNet_parity           ✅ pass
+deepseek-tiny        TestDeepseek_textParity            ✅ pass
+kimi-tiny            TestKimi_textParity                ✅ pass
+phi3-tiny            TestPhi3_textParity                ✅ pass
+llama4-tiny          TestLlama4_textParity              ✅ pass
+nemotron-tiny        TestNemotron_textParity            ✅ pass
+nemotron3nano-tiny   TestNemotron3NanoMoE_textParity    ✅ pass
+gguf-Q8_0            TestGGUF_Q8_0_parity               ✅ pass
+gguf-Q4_0            TestGGUF_Q4_0_parity               ✅ pass
+gguf-Q4_K_M          TestGGUF_Q4_K_M_parity             ✅ pass
+gguf-Q4_K_S          TestGGUF_Q4_K_S_parity             ✅ pass
+gguf-Q5_K_M          TestGGUF_Q5_K_M_parity             ✅ pass
+gguf-Q6_K            TestGGUF_Q6_K_parity               ✅ pass
+gguf-Q3_K_M          TestGGUF_Q3_K_M_parity             ✅ pass
+gguf-Q2_K            TestGGUF_Q2_K_parity               ✅ pass
+gptq                 TestGPTQ_parity                    ✅ pass
+awq                  TestAWQ_parity                     ✅ pass
+w4a8-int4            TestW4A8DecodeParity               ✅ pass
+int4-forward         TestInt4_forwardParity             ✅ pass
+tok-gemma            TestEncodeDecode_goldenParity      ✅ pass
+tok-qwen3            TestByteLevel_qwen3GoldenParity    ✅ pass
+tok-llama3           TestByteLevel_llama3GoldenParity   ✅ pass
+tok-mellum2          TestByteLevel_mellum2GoldenParity  ✅ pass
+tok-tinyllama        TestLoadGGUF_tinyllamaParity       ✅ pass
+qwen3.6-gguf-gate    TestQwen35GGUF_gate                ✅ pass
+qwen3.6-weightdiff   TestQwen35GGUF_weightDiff          ✅ pass
+qwen3.6-gate2        TestQwen35Real_gate2FullModel      ✅ pass
+deepseek-v2lite      TestDeepseekV2LiteReal_gate        ✅ pass
+deepseek-moonlight   TestDeepseekMoonlightReal_gate     ✅ pass
+deepseek-gguf        TestDeepseekGGUFReal_gate          ✅ pass
+phi3-mini-oracle     TestPhi3MiniReal_gate              ✅ pass
+phi3-gguf            TestPhi3GGUFReal_gate              ✅ pass
+llama4-scout-gguf    TestLlama4Real_gate                ✅ pass
+qwen3next-oracle     TestQwen3NextReal_oracle           ✅ pass
+
+-- catch-all: other *Parity / *gate tests that SKIPPED (review) --
+   skipped: TestDeltaNetTiming_gate0Split
+   skipped: TestParityManifest_merge
+   skipped: TestSpeculativeGreedyParity_draftTarget
+
+-- EMIT_MANIFEST: merging measured PARITY_ROW lines into testdata/parity_manifest.json --
+   merged 22 row(s); families recorded: cohere cohere2 deepseek_v2 deepseek_v3 gemma3 glm4_moe gpt2 granitemoehybrid llama mellum mistral mixtral nemotron_h phi3 qwen2 qwen2_5_vl qwen2_moe qwen3 qwen3_5_moe qwen3_next
+-- re-rendering docs/capability-matrix.{md,json} from the manifest --
+   matrix + manifest re-rendered
+-- emitter coverage (numeric-oracle gates) --
+   TestPhi3MiniReal_gate              ✅ recorded row (phi3)
+   TestDeepseekV2LiteReal_gate        ✅ recorded row (deepseek_v2)
+   TestDeepseekMoonlightReal_gate     ✅ recorded row (deepseek_v3)
+   TestQwen35Real_gate2FullModel      ✅ recorded row (qwen3_5_moe)
+   TestCohereAyaReal_gate             ✅ recorded row (cohere)
+   TestCohere2R7bReal_gate            ✅ recorded row (cohere2)
+   TestQwen3NextReal_oracle           ✅ recorded row (qwen3_next)
+
+  gate ledger: 47 confirmed entr(ies) — testdata/gate_ledger.json
+    FIRST-RUN (5): no confirmed prior result, so a failure here has no delta to compute — reported, never a blocker
+      TestInt4_forwardParity
+      TestNemotron3NanoMoE_textParity
+      TestNemotron_textParity
+      TestQwen3NextReal_oracle
+      TestW4A8DecodeParity
+    CONFIRMED BEFORE THE GATE LAST CHANGED (11) — WARNING, does not block.
+      The assertion moved since the confirming commit, so the recorded value may be a confirmation of different semantics.
+      TestDeepseekGGUFReal_gate  (confirmed at 679c9e5)
+      TestDeepseekMoonlightReal_gate  (confirmed at 679c9e5)
+      TestDeepseekV2LiteReal_gate  (confirmed at 679c9e5)
+      TestGPT2_forwardParity  (confirmed at 679c9e5)
+      TestGatedDeltaNet_parity  (confirmed at 679c9e5)
+      TestLlama4Real_gate  (confirmed at 679c9e5)
+      TestPhi3GGUFReal_gate  (confirmed at 679c9e5)
+      TestPhi3MiniReal_gate  (confirmed at 679c9e5)
+      TestQwen35GGUF_gate  (confirmed at 679c9e5)
+      TestQwen35GGUF_weightDiff  (confirmed at 679c9e5)
+      TestQwen35Real_gate2FullModel  (confirmed at 679c9e5)
+== bd085de: ALL REQUIRED GATES GREEN ==
+full log: /tmp/gate_parity___decoder____tokenizer.json
+full log: /tmp/gate_parity_realckpt_real-model_gates.json

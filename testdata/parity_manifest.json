@@ -48,15 +48,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (Aya-Expanse-8B, CohereForCausalLM)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "cohere2": {
@@ -68,15 +68,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (Command-R7B, Cohere2ForCausalLM)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "deepseek_v2": {
@@ -91,8 +91,8 @@
       ],
       "deps_hash": "sha256:d1cbd5ea11d4e29db700455bb962ec9019ea3d639e58e1cbeca5e73adeca30bf",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
@@ -114,8 +114,8 @@
       ],
       "deps_hash": "sha256:d1cbd5ea11d4e29db700455bb962ec9019ea3d639e58e1cbeca5e73adeca30bf",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF bf16 (Moonlight-16B-A3B; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
@@ -134,8 +134,8 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (gemma-3-4b-it, text)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
@@ -177,15 +177,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "experimental",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (glm-tiny seeded fixture)",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "gpt-oss": {
@@ -223,15 +223,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (GPT-2 small, 124M)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "granitemoehybrid": {
@@ -247,8 +247,8 @@
       ],
       "deps_hash": "sha256:559461726c8d70015e1ad419bdc5c2042fae04f09445878e6bdbad277ea79727",
       "status": "validated",
-      "validated_at": "c3e43c8",
-      "date": "2026-08-15",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF bf16 (Granite-4.0-H-Tiny 7B-A1B; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
@@ -338,15 +338,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (TinyLlama-1.1B-Chat)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "llama4_text": {
@@ -385,9 +385,9 @@
       ],
       "deps_hash": "sha256:c57bea32d5bd4b4881e1bc1a22b18f501e8374efefb8d8dc095a725f39e57d1b",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
-      "reference": "HF bf16 (Mellum2-12B-A2.5B-Instruct) full-model forward goldens (scripts/pin_mellum2.py), PLUS a REAL-WEIGHT 4-layer slice oracle added for G11 (decoder/mellum_slice_test.go): HF f32 reference on the first 4 layers of the released checkpoint -- argmax exact, logit cosine 1.00000000 on BOTH the sequential and the batched-prefill path, greedy continuation exact. The slice spans both attention kinds (3 sliding + the first full_attention layer at index 3, which is the one carrying YaRN mscale 1.2772588722239782), so it is the real-weight evidence Metal residency was missing.",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
+      "reference": "HF bf16 (Mellum2-12B-A2.5B-Instruct)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {
@@ -405,15 +405,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (TinyMistral-248M)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "mixtral": {
@@ -426,15 +426,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "experimental",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (mixtral-tiny seeded fixture, 8x top-2)",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "nemotron_h": {
@@ -449,18 +449,15 @@
       ],
       "deps_hash": "sha256:17f917c30d2c15747bc9699a666c0e6ef3c85d4d6c13c1dcc5fca06bad945f69",
       "status": "validated",
-      "validated_at": "c3e43c8",
-      "date": "2026-08-15",
-      "reference": "HF bf16 \u2014 dense NVIDIA-Nemotron-Nano-9B-v2 (int8 resident) AND MoE NVIDIA-Nemotron-3-Nano-30B-A3B (int8 weights, f32 activations)",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
+      "reference": "HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)",
       "machine": "linux-62gb",
       "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 0.99574,
-        "cosine_mean": 0.99574,
-        "moe_cosine_min": 0.997668,
-        "moe_argmax_pct": 100.0,
-        "moe_continuation_exact": true
+        "cosine_mean": 0.99574
       }
     },
     "phi3": {
@@ -472,15 +469,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (Phi-3-mini-4k-instruct 3.8B)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "qwen2": {
@@ -492,15 +489,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (Qwen2.5-0.5B)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "qwen2_5_vl": {
@@ -512,9 +509,9 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "experimental",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
-      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder\u2192decoder)",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
+      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
@@ -533,15 +530,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "experimental",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (qwen2_moe seeded fixture)",
       "machine": "linux-62gb",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "qwen3": {
@@ -553,15 +550,15 @@
       "own": [],
       "deps_hash": "sha256:47ecee5d6084f56fb2083509fcaf026b735e3e1e5d40de3839a7884edaa4fda3",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
       "reference": "HF f32 (Qwen3-1.7B)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "qwen3_5": {
@@ -603,9 +600,9 @@
       ],
       "deps_hash": "sha256:06fdb9845e6ba535ee97bce32b63be4a209ec7f34722c2a1270ba8b78d787525",
       "status": "validated",
-      "validated_at": "ff80959",
-      "date": "2026-08-22",
-      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder; int8-vs-bf16). RE-VALIDATED 2026-08-19 after the DeltaNet/softmax projections became quantizable (they were f32 regardless of Options.Quant): argmax 62/80 (77.5%), full-vocab cosine min 0.99069 / mean 0.99644, worst divergence gap 0.0073 of range, all divergences near-ties. THE METRICS MOVED AND THAT IS THE POINT OF RECORDING THEM: the previous run measured 66/80, min 0.99333, mean 0.99837, worst gap 0.0045 \u2014 with attention held at f32 while only the FFN was quantized. Quantizing attention costs a little agreement with bf16 and buys 1.60x decode / 7.4x TTFT on the 27.8B sibling (Qwen3.8). Still well inside the >=0.98 floor and the 3% near-tie rule.",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
+      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder)",
       "machine": "linux-62gb",
       "method": "full-forward-oracle",
       "metrics": {
@@ -632,16 +629,16 @@
         "scripts/pin_slice_oracle.py"
       ],
       "deps_hash": "sha256:28cb99a7696baa1120049c6e4275baca095441ee390bafec7d619e6349c43f06",
-      "status": "experimental",
-      "validated_at": "10751bf",
-      "date": "2026-08-17",
-      "reference": "HF f32 tiny golden (transformers 5.15.0 Qwen3NextForCausalLM, real forward, seed 0) + a REAL-WEIGHT 4-layer slice of Qwen/Qwen3-Next-80B-A3B-Instruct (cosine 1.00000000, argmax and greedy continuation exact) \u2014 rides qwen3_5_moe's own forward_qwen35.go/deltanet.go unchanged; the two real config deltas (computed layer_types via full_attention_interval, top-level partial_rotary_factor with no rope_parameters) and the fused DeltaNet in_proj_qkvz/in_proj_ba tensor packing are each exercised by the fixture and split at load in decoder/qwen3next.go.",
-      "machine": "mac-m1pro",
-      "method": "tiny-golden",
+      "status": "validated",
+      "validated_at": "bd085de",
+      "date": "2026-08-27",
+      "reference": "HF bf16 (Qwen/Qwen3-Next-80B-A3B-Instruct, full model via accelerate disk offload; int4 weights, f32 activations)",
+      "machine": "linux-62gb",
+      "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 0.98988,
+        "cosine_mean": 0.98988
       }
     }
   }

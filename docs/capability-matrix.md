@@ -20,7 +20,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Qwen3-Next | `qwen3_next` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| Qwen3-Next | `qwen3_next` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | real-oracle 100.0%/0.98988 |
 | Qwen3.5-MoE | `qwen3_5_moe`, `qwen3_5_moe_text` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 77.5%/0.99069 |
 | Qwen3.8 | `qwen3_5`, `qwen3_5_text` | dense | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 +coherent |
 
