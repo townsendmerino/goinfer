@@ -67,9 +67,20 @@ SERVE = {
     "webgpu": os.environ.get("GOINFER_SERVE_WEBGPU", "/home/francis/bench-v0.15.0/serve-webgpu"),
 }
 GPORT, OPORT = 8099, 11499
+# DEEP CONTEXT (§B7). BENCH_DEEP_CTX sets the resident/served context cap in positions; 0 keeps
+# the shallow protocol untouched. A 32k prefill costs orders of magnitude more than the decode being
+# measured, so deep cells deliberately use FEWER requests with MORE decode tokens each — the same
+# protocol difference §B7 recorded, not a shortcut.
+DEEP_CTX = int(os.environ.get("BENCH_DEEP_CTX", "0"))
+
 NGEN = 64          # tokens generated per completion
 NCOMP = 8          # completions per run  (>= 8 required)
 NRUNS = 2          # runs per cell        (>= 2 required, spread reported)
+
+
+def gen_params():
+    """(tokens per completion, completions per run, runs) — deep cells use 128 x 2 x 2."""
+    return (128, 2, 2) if DEEP_CTX else (NGEN, NCOMP, NRUNS)
 
 # --- MACHINE STATE ---------------------------------------------------------------------------
 # Added 2026-08-26. docs/benchmarks.md requires a "verified-idle box, with the machine state
@@ -266,7 +277,8 @@ def prompt_tokens(depth, model_key):
     return _PROMPTS[f"{model_key}:{depth}"]["tokens"]
 
 def goinfer_payload(model_path, prompt, cfg):
-    p = {"model": "bench", "stream": True, "max_tokens": NGEN,
+    ngen, _, _ = gen_params()
+    p = {"model": "bench", "stream": True, "max_tokens": ngen,
          "messages": [{"role": "user", "content": prompt}]}
     p.update(cfg.get("goinfer", {}))
     return p
@@ -274,7 +286,7 @@ def goinfer_payload(model_path, prompt, cfg):
 def ollama_payload(tag, prompt, cfg, backend="cuda"):
     p = {"model": tag, "stream": True,
          "messages": [{"role": "user", "content": prompt}],
-         "options": {"num_predict": NGEN, "num_ctx": 4096}}
+         "options": {"num_predict": gen_params()[0], "num_ctx": DEEP_CTX or 4096}}
     if backend == "cpu":
         p["options"]["num_gpu"] = 0     # force CPU; ollama defaults to CUDA when present
     p["options"].update(cfg.get("ollama", {}))
@@ -327,7 +339,8 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         if engine == "goinfer":
             proc = subprocess.Popen(
                 [SERVE[backend], "-model", f"bench={path}", "-backend", backend,
-                 "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"],
+                 "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
+                + (["-ctx", str(DEEP_CTX)] if DEEP_CTX else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
             port, url, parse, mk = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", parse_openai, \
@@ -335,6 +348,10 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         else:
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS,
                        OLLAMA_HOST=f"127.0.0.1:{OPORT}")
+            if DEEP_CTX:
+                # §B7's recorded peer configuration. Flash attention OFF because that is what the
+                # anchor used; leaving it default would compare against a different engine.
+                env["OLLAMA_FLASH_ATTENTION"] = "false"
             proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                     preexec_fn=os.setsid)
@@ -348,10 +365,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         except Exception as e:
             return None, f"warmup failed: {e}"
 
+        _, ncomp, nruns = gen_params()
         run_rates = []
-        for _ in range(NRUNS):
+        for _ in range(nruns):
             rates = []
-            for _ in range(NCOMP):
+            for _ in range(ncomp):
                 n, tf, tl = post_stream(url, mk(), parse)
                 if n >= 2 and tf and tl and tl > tf:
                     rates.append(n / (tl - tf))
@@ -390,6 +408,14 @@ def plan_models():
     if unknown:
         sys.exit(f"BENCH_MODELS: unknown model key(s) {unknown}; known: {sorted(MODELS)}")
     return picked
+
+
+def plan_depths():
+    """Phase B depths. BENCH_DEPTHS overrides; default is the shallow curve."""
+    raw = os.environ.get("BENCH_DEPTHS", "").strip()
+    if not raw:
+        return [512, 2048, 3900]
+    return [int(d) for d in raw.split(",") if d.strip()]
 
 
 def plan_configs():
@@ -457,7 +483,7 @@ def main():
             plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, CUDA only, both engines
     for mk in plan_models():
-        for d in [512, 2048, 3900]:
+        for d in plan_depths():
             for eng in ["goinfer", "ollama"]:
                 plan.append(("B", eng, "cuda", mk, d, "greedy"))
 
