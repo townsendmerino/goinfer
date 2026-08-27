@@ -46,6 +46,16 @@ MODELS = {
     # because CPU dispatch overlaps GPU compute once the model is big enough. A peer number
     # published off 0.5B/1.5B alone does not transfer.
     "7B":   (os.path.expanduser("~/models/qwen2.5-7b-instruct-q4_k_m.gguf"), "q7b"),
+    # phi3-mini and gemma3-1b carry §B5's STALE cells (the sampled rows, and every cell of these
+    # two), so re-anchoring §B5 after the 2026-08-25 driver/distro upgrade needs them addressable
+    # here. Both were already in the peer store as tags p3m/g31b; only this table was missing them,
+    # which is why the §B5 re-measure looked like it needed new assets and did not.
+    #
+    # gemma3-1b's GGUF is the ollama blob copied into ~/models under a real name. It was in neither
+    # ~/models nor the archive: the geometry is not optional -- its sliding window is the case that
+    # exposed the split-KV gate testing nKeys instead of the window-clamped nWin.
+    "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m"),
+    "gemma3-1b":  (os.path.expanduser("~/models/gemma3-1b-q4_k_m.gguf"), "g31b"),
 }
 
 # One goinfer binary per backend. Ollama has no WebGPU build, so the webgpu row is compared
@@ -353,6 +363,26 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                     pass
             time.sleep(3)  # let VRAM settle before the next engine loads
 
+def plan_models():
+    """The models the sweep runs. DEFAULTS TO THE HISTORICAL LIST, unchanged.
+
+    BENCH_MODELS overrides it, which is how §B5's stale cells get re-measured: those are the
+    sampled rows plus every phi3-mini and gemma3-1b cell, and both models are in MODELS but were
+    never in the plan. Parameterised rather than edited so the release sweep keeps producing the
+    same rows by default -- silently widening a release sweep is not a thing a re-measure should do.
+
+        BENCH_MODELS=phi3-mini,gemma3-1b python3 scripts/bench_peer.py ...
+    """
+    raw = os.environ.get("BENCH_MODELS", "").strip()
+    if not raw:
+        return ["0.5B", "1.5B", "7B"]
+    picked = [m.strip() for m in raw.split(",") if m.strip()]
+    unknown = [m for m in picked if m not in MODELS]
+    if unknown:
+        sys.exit(f"BENCH_MODELS: unknown model key(s) {unknown}; known: {sorted(MODELS)}")
+    return picked
+
+
 def main():
     """Plan. Phase A is the headline BACKEND table -- every backend at one depth, so the
     cross-backend row is apples-to-apples. Phase B is the depth curve, CUDA only, because
@@ -398,13 +428,13 @@ def main():
     # A) the backend table, greedy, one depth. goinfer on all three backends; ollama on the
     #    two it actually has. webgpu has NO ollama counterpart -- it is scored against the
     #    ollama CUDA row and labelled cross-backend in the writeup, never as a peer cell.
-    for mk in ["0.5B", "1.5B", "7B"]:
+    for mk in plan_models():
         for eng, be in [("goinfer","cpu"), ("ollama","cpu"),
                         ("goinfer","cuda"), ("ollama","cuda"),
                         ("goinfer","webgpu")]:
             plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, CUDA only, both engines
-    for mk in ["0.5B", "1.5B", "7B"]:
+    for mk in plan_models():
         for d in [512, 2048, 3900]:
             for eng in ["goinfer", "ollama"]:
                 plan.append(("B", eng, "cuda", mk, d, "greedy"))
