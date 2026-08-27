@@ -73,6 +73,8 @@ def main():
     ap.add_argument("--depth", action="append", type=int, required=True, help="repeatable")
     ap.add_argument("--backend", default="cuda")
     ap.add_argument("--quant", default="int4")
+    ap.add_argument("--ctx", type=int, default=0,
+                    help="pass -ctx to serve; required to calibrate depths past the default cap")
     ap.add_argument("--out", default=DEFAULT_OUT)
     args = ap.parse_args()
 
@@ -93,7 +95,8 @@ def main():
             sys.exit(f"calibrate: {path} is under the archive — copy it to ~/models first")
         proc = subprocess.Popen(
             [args.serve, "-model", f"bench={path}", "-backend", args.backend,
-             "-addr", f"127.0.0.1:{PORT}", "-quant", args.quant],
+             "-addr", f"127.0.0.1:{PORT}", "-quant", args.quant]
+            + (["-ctx", str(args.ctx)] if args.ctx else []),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
         try:
             if not wait_port(PORT):
