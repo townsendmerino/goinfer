@@ -257,7 +257,22 @@ _MODCACHE = None
 def modcache_root():
     global _MODCACHE
     if _MODCACHE is None:
-        r = subprocess.run(["go", "env", "GOMODCACHE"], capture_output=True, text=True, cwd=str(ROOT))
+        try:
+            r = subprocess.run(["go", "env", "GOMODCACHE"], capture_output=True, text=True, cwd=str(ROOT))
+        except FileNotFoundError:
+            # A non-zero exit was handled from the start; a MISSING toolchain was not, and it
+            # raised a traceback out of the pre-push hook that read like a citation failure. It is
+            # not one — and it must not degrade to a red either: without the module cache every
+            # cross-repo aikit citation becomes unresolvable, so a silent fallback would report
+            # correct citations as broken. Refuse, and say what to do.
+            sys.exit(
+                "queue_citation_lint: `go` is not on PATH.\n"
+                "  This lint resolves cross-repo citations through the Go module cache, so without\n"
+                "  the toolchain it would report perfectly good aikit citations as unresolvable.\n"
+                "  Refusing to run rather than printing a misleading red.\n"
+                "  Non-interactive shells often lack it (ssh, or a hook invoked from one):\n"
+                "      PATH=$PATH:/usr/local/go/bin git push\n"
+            )
         _MODCACHE = pathlib.Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else pathlib.Path("")
     return _MODCACHE
 
