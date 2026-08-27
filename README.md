@@ -26,8 +26,12 @@ and runs them **in-process**. What makes it different — you don't have to choo
   toolkit's gigabytes, decoding qwen2.5-coder-1.5B at **220.8 tok/s** at short context — measured
   2026-08-26 on driver 595.91.07; numbers and the peer comparison
   below), **native Metal** on Apple Silicon,
-  and a portable **WebGPU** backend (~60–70% of native, but runs on *any* GPU and streams
-  bigger-than-VRAM MoE weights). Going fast never costs you the single binary.
+  and a portable **WebGPU** backend (runs on *any* GPU and streams bigger-than-VRAM MoE weights).
+  Its standing ~60–70%-of-native figure is narrower and older than it reads: **dense-Qwen2/Llama
+  residency decode only**, measured 2026-06-08 against a 2025-era peer, so it is not a current
+  ratio and does not describe the families added since — residency requires dense attention, and
+  Granite, Nemotron, DeepSeek, GLM, Kimi and Gemma 4 are all ineligible for it
+  (`docs/benchmarks.md` §B). Going fast never costs you the single binary.
 - **~20 architectures, one binary.** All four attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV (MLA) — plus dense
   and sparse-MoE, across ~20 architectures (Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral,

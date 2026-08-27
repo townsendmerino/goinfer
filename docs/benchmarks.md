@@ -369,6 +369,24 @@ naive f32 — a tiled GEMM there is the next lever (`docs/completed/task-gpu-vis
 > **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
 > `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
 > this page for what moved and what replaces it.
+>
+> **AND THIS ONE IS NOT A RE-ANCHOR JOB — it is a new measurement.** The other stale sections need
+> the same run on a new driver. This section's *method* is one this page has since rejected: its
+> peer figures were not measured beside goinfer in the same session (the 7B peer is quoted from
+> `CHANGELOG.md` v0.5.0), and cross-session drift on this box is ~3.5%, which is a large fraction
+> of the gap being reported. The peers have also moved out from under it — Ollama 0.5.7 (2025-01)
+> and llama.cpp as of v0.5.0, against today's Ollama v0.32.5.
+>
+> **Re-running goinfer alone would not fix it, and would look like it had.** goinfer's side is
+> expected to land in the same place: dense WebGPU decode is at the WGSL wall (~90 tok/s int8,
+> megakernel inexpressible in WGSL — `docs/task-benchmark-refresh.md`), and nothing since
+> 2026-06-08 touches that path. What has actually changed is the *peer*, so the ratio can move
+> without goinfer moving at all. Redo it as one same-session interleaved pair at int8/q8_0, or
+> retire the section — do not carry the ratio forward.
+>
+> **Scope, which the README used to omit:** these are dense-Qwen2/Llama **residency** decode rows.
+> Residency is dense-only (`decodeRunnerEligible`), so every family added since — Granite,
+> Nemotron, DeepSeek, GLM, Kimi, Gemma 4 — is ineligible and is NOT described by this figure.
 
 Rig: **RTX 2070 SUPER / Ryzen 7 3700X**, warm (`ollama ps` 100% GPU), greedy. goinfer
 WebGPU residency (`-tags gpu`), bit-exact vs CPU decode on the first tokens. Source &
