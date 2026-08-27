@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -81,5 +82,38 @@ func TestProgressCanBeSilenced(t *testing.T) {
 	})
 	if got != "" {
 		t.Errorf("TEST_PROGRESS_INTERVAL=0 still printed:\n%s", got)
+	}
+}
+
+func TestHumanBytes(t *testing.T) {
+	for _, c := range []struct {
+		n    int64
+		want string
+	}{
+		{162_700_000_000, "151.5GB"},
+		{5 << 20, "5MB"},
+		{2048, "2KB"},
+	} {
+		if got := humanBytes(c.n); got != c.want {
+			t.Errorf("humanBytes(%d) = %s, want %s", c.n, got, c.want)
+		}
+	}
+}
+
+// The io= field is Linux-only. Assert the contract in BOTH directions rather than only where this
+// happens to run: on the Linux box it must actually produce a number (that box is where the 162GB
+// loads happen and where the field earns its keep), and on darwin it must degrade silently rather
+// than print a zero that reads like "no progress".
+func TestIOProgressMatchesPlatform(t *testing.T) {
+	p := newProgress(t, "io", 0)
+	total, _, ok := p.ioProgress(time.Now())
+	if runtime.GOOS == "linux" {
+		if !ok || total == "" {
+			t.Errorf("on linux ioProgress must report bytes; got ok=%v total=%q", ok, total)
+		}
+		return
+	}
+	if ok {
+		t.Errorf("off linux ioProgress must report nothing; got ok=%v total=%q", ok, total)
 	}
 }

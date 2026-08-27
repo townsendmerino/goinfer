@@ -53,6 +53,11 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 		t.Fatalf("parse golden: %v", err)
 	}
 
+	// The load is the opaque part: for the qwen3_next 80B it streams 162.7GB of bf16 off disk and
+	// quantizes it, taking ~10 minutes during which the test emits nothing at all. Counting is not
+	// possible from out here, so the phase name plus the io= field carries it.
+	prog := newProgress(t, t.Name(), len(g.PromptIDs)+g.NNew)
+	prog.Phase("load " + quant + " (streams + quantizes the full checkpoint)")
 	m, err := Load(ckpt, Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", ckpt, err)
@@ -64,10 +69,12 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 
 	cache := m.NewCache(len(g.PromptIDs) + g.NNew)
 	var logits []float32
+	prog.Phase("prefill the golden prompt")
 	for _, id := range g.PromptIDs {
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("forward: %v", err)
 		}
+		prog.Step(1)
 	}
 	gotArg := argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
@@ -80,12 +87,14 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 	}
 
 	got := make([]int, 0, g.NNew)
+	prog.Phase("greedy continuation")
 	for range g.NNew {
 		id := argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)
 		}
+		prog.Step(1)
 	}
 	t.Logf("%s continuation got=%v want=%v", family, got, g.ContinuationIDs)
 	for i := range g.ContinuationIDs {

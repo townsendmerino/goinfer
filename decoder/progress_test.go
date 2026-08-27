@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -78,6 +79,7 @@ type progress struct {
 	mu       sync.Mutex
 	lastAt   time.Time
 	lastDone int64
+	lastIO   int64
 }
 
 // newProgress starts the heartbeat and registers its own shutdown, so a test that fails early
@@ -174,6 +176,17 @@ func (p *progress) emit(tag string) {
 	if r, ok := p.rate(now); ok {
 		line += fmt.Sprintf(" rate=%s", r)
 	}
+	// Bytes read by this process. A phase with nothing to count -- loading a 162GB checkpoint, say
+	// -- otherwise produces a heartbeat that proves only that the process is ALIVE, not that it is
+	// getting anywhere, and those are the two states the reader needs to tell apart. This is the
+	// exact signal that had to be dug out of /proc/PID/io by hand while the qwen3next oracle sat
+	// silent for ten minutes. Linux-only; absent elsewhere, and simply omitted there.
+	if io, rate, ok := p.ioProgress(now); ok {
+		line += fmt.Sprintf(" io=%s", io)
+		if rate != "" {
+			line += fmt.Sprintf(" (%s)", rate)
+		}
+	}
 	fmt.Fprintln(os.Stderr, line)
 }
 
@@ -196,4 +209,55 @@ func (p *progress) rate(now time.Time) (string, bool) {
 		return fmt.Sprintf("%.0f/min", per), true
 	}
 	return fmt.Sprintf("%.1f/min", per), true
+}
+
+// procReadBytes reports bytes this process has read from storage. Linux-only: /proc/self/io does
+// not exist on darwin, and the caller simply omits the field there rather than faking one.
+func procReadBytes() (int64, bool) {
+	b, err := os.ReadFile("/proc/self/io")
+	if err != nil {
+		return 0, false
+	}
+	for _, ln := range strings.Split(string(b), "\n") {
+		rest, ok := strings.CutPrefix(ln, "read_bytes:")
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+	return 0, false
+}
+
+// ioProgress returns cumulative bytes read and the rate since the previous emit.
+func (p *progress) ioProgress(now time.Time) (total, rate string, ok bool) {
+	cur, ok := procReadBytes()
+	if !ok {
+		return "", "", false
+	}
+	p.mu.Lock()
+	prev, prevAt := p.lastIO, p.lastAt
+	p.lastIO = cur
+	p.mu.Unlock()
+	total = humanBytes(cur)
+	if prev > 0 && cur > prev && !prevAt.IsZero() {
+		if dt := now.Sub(prevAt).Seconds(); dt > 0 {
+			rate = humanBytes(int64(float64(cur-prev)/dt)) + "/s"
+		}
+	}
+	return total, rate, true
+}
+
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1fGB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.0fMB", float64(n)/(1<<20))
+	default:
+		return fmt.Sprintf("%dKB", n/1024)
+	}
 }
