@@ -108,6 +108,16 @@ hardware, text-only, parity-gateable against HF, weights in safetensors/GGUF. Qu
   `decoder/mxfp4.go`'s (gpt-oss-derived) packing. Re-check the arch when weights actually drop;
   default assumption is DeepSeek-V3-shaped (alias-first) only until proven otherwise.
 
+- **Qwen3.8-Flash-Next (Qwen4 architecture preview)** — 180B on disk / 6B active, explicitly
+  previews Qwen4's shape: Gated DeltaNet + a new sparse-attention mixer (QSA) + a 4-branch gated
+  residual stream + a 20M-entry n-gram embedding table + a native MTP head. The checkpoint itself
+  doesn't fit either rig — bigger than `Qwen3-Next-80B-A3B`, which already can't get a full
+  reference forward on the 62GB box (G5). Scoped in
+  [`docs/scoping-qwen38-flash-next.md`](scoping-qwen38-flash-next.md): the GDN and
+  MoE-expert-paging pieces ride substrate already shipped and parity-gated; QSA, the gated
+  residual, and the n-gram embed are the real new work, sized there for a synthetic-tiny bring-up
+  rather than the 180B itself. Revisit when a real Qwen4 checkpoint ships at a size that fits.
+
 ## The framing: families are no longer the high-leverage work
 
 *(Historical — the two action items below predate this doc's 2026-08-17 update and are believed
