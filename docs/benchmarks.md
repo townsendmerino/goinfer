@@ -62,6 +62,9 @@
 > stay that way — this box does not revive them. **§A** (Apple Silicon CPU) and **§B3** (Metal) are
 > measured on the MacBook and are **unaffected**.
 >
+> **§B4 (26B host↔VRAM) DISCHARGED 2026-08-27** — the throughput did not move (11.42 vs 11.3 at
+> the same 16 slots); the grantable slot cap did, 38 → 30. See §B4.1.
+>
 > **§B6 (split-KV) DISCHARGED 2026-08-27** — re-measured on this stack with a committed harness
 > (`scripts/bench_splitkv.py`); the ratios did not move, most cells agreeing to ±0.005. See §B6.3.
 >
@@ -69,8 +72,7 @@
 > `a161bd6`: real-model heavy tier green, CUDA graphs bit-exact, **24/24 PTX byte-identical** — the
 > driver's new compiler did not move the numerics), and the greedy peer sweep then re-anchored the
 > §B2/§B5-style rows into **§B8**. What that run does **not** cover remains STALE and may not be
-> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M), **§B4** (26B host↔VRAM
-> streaming), **§B7** (deep context), the v0.11.0 qualification, and §B5's
+> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M), **§B7** (deep context), the v0.11.0 qualification, and §B5's
 > sampled / phi3-mini / gemma3-1b cells. Each is a separate leg with its own procedure;
 > `bench_peer.py` does not produce any of them.
 >
@@ -778,9 +780,13 @@ the occupancy/latency rewrite, not KV-quant; q8 on Metal buys VRAM/reachability,
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
-> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
-> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
-> this page for what moved and what replaces it.
+> **RE-ANCHORED 2026-08-27 on driver `595.91.07` / Nobara 44 — see §B4.1 below.** The throughput did
+> not move: at the same 16 slots/layer this stack measures **11.42 tok/s** against the 11.3 recorded
+> here, and the hit rate is identical at 57.3%. What DID move is what the card will grant — the same
+> `GOINFER_MOE_CACHE_SLOTS=48` request now caps to **30** slots where it once reached 38, so the
+> **16.98 tok/s @ 38 figure below is not reproducible on this stack because that configuration is no
+> longer grantable**, not because the path got slower. The rows below are kept as the
+> `595.58.03` record they are.
 
 > **⚠ RE-VERIFIED against current Ollama (v0.32.5) — the "peers fail to load it" claim was
 > false and has been retracted.** On the same RTX 2070 SUPER, Ollama **v0.32.5 loads and runs**
@@ -889,6 +895,43 @@ GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
 ```
 
 ---
+
+### B4.1 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
+
+**Provenance.** RTX 2070 SUPER 8 GB · driver `595.91.07` · Nobara 44 · 2026-08-27 · goinfer
+`d559c82` · Gemma 4 26B-A4B int4 (128 experts, top-8), checkpoint in `~/models/gemma-4-26b-a4b-it`
+· `GOINFER_HEAVY_TESTS=1`, `-tags "cuda goinfer_testhooks"`, `TestGemma4_26B_cache_B` · 64 greedy
+tokens, capture OFF, synchronous H2D · logs `b4-26b-cache-slots48_d559c82.log`,
+`b4-26b-cache-slots16_d559c82.log`.
+
+| `GOINFER_MOE_CACHE_SLOTS` | slots granted | ms/tok | tok/s | cache hit rate | load |
+|---|---|---|---|---|---|
+| 16 | 16 | 88 | **11.42** | 57.3% (12524 / 9316) | 4m56s |
+| 48 | **30** (capped) | 62 | **16.12** | 76.1% (16611 / 5229) | 3m57s |
+
+**The like-for-like row reproduces.** 16 slots gives 11.42 tok/s against the 11.3 recorded on
+`595.58.03`, with the hit rate landing on 57.3% both times. The host↔VRAM streaming path is
+unchanged by the driver, kernel, libc and distro move.
+
+**What changed is the cap, not the throughput.** The cache sizes itself against free VRAM, and on
+this stack the driver reports less of it:
+
+    C′ cache: 48 slots/layer would need 4.9 GB VRAM but only 3.6 GB free — capping to 30 (3.1 GB)
+
+38 slots is therefore not requestable here, which is the specific reason **16.98 tok/s is not
+reproducible** — the configuration cannot be granted, rather than the path having regressed. Forcing
+it is not an option worth taking: granting a cap one step past what fits is exactly the A1 defect
+(`TestSlotAllocation_matchesGranularityForm`), where the forward died in a routing kernel with
+189.6 MiB still nominally free.
+
+**Hit rate scales with slots as the mechanism predicts** — 57.3% at 16, 76.1% at 30, 81.6% at 38
+historically — and tok/s tracks it, since each hit is one expert DMA not paid.
+
+**Still a capability number, not a benchmark.** The gate's own docstring says so: this is a
+correctness-plus-latency run over a synchronous H2D path, with ~714 MB/token crossing PCIe. Both
+runs pass their coherence floor (distinct-trigram 0.789 against a 0.70 bar). Current Ollama runs
+this model faster on the same card by CPU-offloading 58% of it (~24.5 tok/s, §B4 above); goinfer's
+distinction here is all-experts-on-GPU, which is an architecture difference rather than a rate win.
 
 ## B5 — Anchored re-measure, 2026-08-09 (goinfer `686c9f8` vs Ollama v0.32.6)
 

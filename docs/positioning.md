@@ -90,10 +90,11 @@ weights once to a `.giw` bundle and it reloads in ~13 s
 fit 8 GB even at 4-bit**) decodes coherently on the same card, running **fully GPU-resident** —
 every expert executes on the GPU, streamed from host RAM into a VRAM cache over the cgo-free CUDA
 backend. Rate depends on how much of that cache fits (all rates below are on the pre-2026-08-25
-driver stack and are NOT re-anchored — the 26B host↔VRAM leg has its own procedure, which the
-2026-08-26 greedy sweep does not run): **11.3 tok/s at 16 slots/layer**, and
-**16.98 tok/s** was measured once at 38 — a configuration not currently reproducible on this card
-(see the note below, and read the slot count as part of the claim).
+driver stack; re-anchored on `595.91.07` / Nobara 44 on 2026-08-27, `benchmarks.md` §B4.1):
+**11.42 tok/s at 16 slots/layer**, reproducing the 11.3 measured on the old stack at the same slot
+count. **16.98 tok/s at 38 slots** stands as a record rather than a current claim — the card now
+grants at most 30 slots for the same request, so that configuration is no longer available here;
+at 30 it measures 16.12. Read the slot count as part of the claim.
 (Current Ollama also runs this 26B on 8 GB, but by offloading 58% to the CPU, at ~24.5 tok/s;
 goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 [docs/task-moe-streaming.md](task-moe-streaming.md).)*
