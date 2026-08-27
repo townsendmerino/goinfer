@@ -51,6 +51,40 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
+**G25 · Decide an int4 T3 bar, deliberately and not from this number** — either box (desk work
+first). `docs/measurements/qwen3next-t3-int4-2026-08-26.md` says this was "filed as its own queue
+item"; it was not — this entry is that filing, made 2026-08-26 after the section was found empty.
+
+The assertion in `decoder/real_oracle_test.go` reads `if cos < 0.99 { // int8 W8A8 vs bf16 — same
+bar as the deepseek real gates`. `qwen3_next` is the repo's **first int4 T3**, and its precision is
+forced by capacity (80B at int8 is ~80 GB against 62 GB of RAM), so it is measured against a bar
+calibrated on a population it is not in. It misses by 0.000124.
+
+**The trap, and it is the whole reason this is a queue item rather than a patch.** G5 pre-registered
+≥0.98 as passing, so the looser standard is *already written down and predates the run*. It is still
+not available: two standards existed beforehand, and picking the more permissive one after seeing
+0.989876 is what pre-registration exists to prevent. The stricter committed bar governs until a new
+one is set on a basis that does not reference this measurement.
+
+**What a defensible int4 bar would be built from** — none of it this run's number:
+- gpt2's int4 forward goldens, where int4-vs-f32 relative hidden-state error is already 5–10% at
+  layer 0 on a real trained checkpoint (`decoder/int4_golden_test.go`, bisected 2026-08-22).
+- `nemotron3nano` at 6/128 experts: **0.978** with int8 activations against **0.9977** with f32.
+- The cross-arch int4 work of 2026-08-26 (`a877b0a`), which measured how far a *healthy* int4 result
+  sits from its own golden — 0.99777 on amd64 against an arm64 bake.
+- Sparsity belongs in the bar: 10/512 is 1.95% active, sparsest in the table by 2×, and the
+  expert-flip cliff is discrete, so a single scalar bar across all MoE densities may be the actual
+  error.
+
+**A side effect to fix with it:** `emitParityRow` is a no-op when a gate fails, so a calibration
+miss records nothing in the manifest at all. Correct for a real failure, wrong for this — the
+informative near-miss leaves no trace, and the row still reads `tiny-golden`.
+
+**Independently reproduced 2026-08-26 at `20fc6e6`** (the earlier run was `3b7facd`): argmax 12095
+exact, all six continuation tokens exact, cosine **0.989876** — identical to sixteen digits. The
+number is not in question; only the bar is.
+
+
 ## Struck — decided against, kept so the decision is visible
 
 - ~~**Default `top_k`**~~ — truncating the distribution changes which tokens are reachable, which is

@@ -93,3 +93,29 @@ near-miss leaves no manifest trace at all. That is right for a failing gate and 
 `qwen3next-t3-reference-pin_2026-08-26.log` (progress bars stripped) ·
 `qwen3next-t3-oracle-int4_2026-08-26_FAIL-0.9899.log` · `qwen3next-t3-run-status_2026-08-26.txt` ·
 golden at `testdata/qwen3next_real_golden.json` (1.6 MB, committed; weights are not).
+
+## Independently reproduced, and the gate could not have run
+
+**2026-08-26, goinfer `20fc6e6`** (this write-up's run was `3b7facd`), same box, same checkpoint in
+`~/models`, run directly rather than through `gate parity`:
+
+    argmax        got=12095  want=12095                   EXACT
+    continuation  [12095 13 576 6722 315 9856] == want    EXACT, all 6
+    logit cosine  0.989876                                identical to 16 digits
+    --- FAIL: TestQwen3NextReal_oracle (1147.08s)
+
+Log: `qwen3next-t3-oracle-int4_2026-08-26_repro-20fc6e6.log`. Two different commits producing a
+bit-identical cosine is worth more than the single run was: the number is a property of the
+checkpoint and the int4 path, not of a particular build.
+
+**Separately — the reason this gate reported DID NOT RUN in the release sweep was NOT the asset.**
+The realckpt cell selected tests with `-run "Qwen35|Real_gate"`, and this test is named
+`...Real_oracle`, matching neither alternative. It was unreachable by construction: of the ten gates
+in `parityRealckptGates` it was the only one the filter missed. So the sweep's blocker and this
+write-up's calibration miss were two different problems wearing one label — and the sweep's wording
+("DID NOT RUN") pointed every investigation at the 163 GB checkpoint, which was present and
+resolving the whole time. Fixed at `20fc6e6`, with `TestRealckptCellCanReachEveryGate` asserting the
+cell's actual `-run` pattern matches every required gate so the two definitions cannot drift again.
+
+The bar question is now filed as **G25** in `docs/QUEUE.md` — it genuinely was not filed before,
+despite the note above saying so.
