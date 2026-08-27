@@ -6,7 +6,7 @@ schema-constrained structured output. No Python, no llama.cpp, no CUDA toolkit.
 
 ![goinfer chat — an entire LLM in one file](docs/assets/demo.gif)
 
-*An entire LLM in one file — instant boot (~0.4 s), <100 MB heap, runs offline. Writes correct
+*An entire 1.5B LLM in one file — instant boot (~0.4 s), <100 MB heap, runs offline. Writes correct
 generic Go and **cannot** emit invalid JSON. No cgo, no Python, no model download.*
 
 <sub>Recorded on an Apple M1 Pro (the visible `linux-amd64` filename is a leftover from the tape's
@@ -23,10 +23,11 @@ Two kinds of binary on the [latest release](https://github.com/townsendmerino/go
 |---|---|---|
 | `goinfer-chat-<os>-<arch>` | ~5 MB | the runtime; point it at your own GGUF |
 | `goinfer-chat-0.5b-<os>-<arch>` | ~615 MB | runtime **and** model in one file — no download, no install |
+| `goinfer-chat-1.5b-<os>-<arch>` | ~1.7 GB | same, with the 1.5B coder model |
 
 ```bash
 # model included — nothing else to fetch
-./goinfer-chat-0.5b-darwin-arm64
+./goinfer-chat-1.5b-darwin-arm64
 
 # or bring your own GGUF
 ./goinfer-chat-darwin-arm64 --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf

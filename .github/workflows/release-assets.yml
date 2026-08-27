@@ -20,7 +20,7 @@ on:
       tier_1_5b:
         description: 'Also build the 1.5B tier (~10 GB of assets)'
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -66,7 +66,11 @@ jobs:
       - name: skip 1.5B unless asked
         id: gate
         run: |
-          if [ "${{ matrix.tier }}" = "1.5b" ] && [ "${{ github.event.inputs.tier_1_5b }}" != "true" ]; then
+          # On a tag push there are no inputs, so the empty string must mean BUILD IT: the README's
+          # headline is "an entire 1.5B LLM in one file", and a release without that asset makes the
+          # front page's main claim dead on arrival — which is the state every release before
+          # v0.15.0 shipped in.
+          if [ "${{ matrix.tier }}" = "1.5b" ] && [ "${{ github.event.inputs.tier_1_5b }}" = "false" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "1.5B tier not requested — skipping (~10 GB of assets)"
           else
