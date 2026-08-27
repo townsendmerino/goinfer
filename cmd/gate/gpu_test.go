@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -291,5 +292,54 @@ FAIL	github.com/x/metal	1.000s
 	}
 	if strings.Contains(got, "NO ASSERTION LINE MATCHED") {
 		t.Errorf("a real test failure took the crash/unknown path:\n%s", got)
+	}
+}
+
+// A filtered cell whose -run matches nothing is not a pass: zero tests ran, so it proves nothing,
+// and the aggregate ran==0 check cannot see it once any other cell has run. This is the same shape
+// as the qwen3next oracle, whose -run pattern could not match a required gate and reported
+// "DID NOT RUN" for five weeks while the investigation went after a 163GB asset.
+func TestGPUGate_emptyFilteredCellIsNotAPass(t *testing.T) {
+	var buf bytes.Buffer
+	g := &gpuGate{w: &buf, logDir: t.TempDir()}
+	// A pattern that cannot match anything in ./cmd/gate/ — the rename case, exactly.
+	g.run(cell{Name: "phantom", Pkgs: []string{"./"}, Run: "TestNoSuchTestNameExists_xyzzy"}, false)
+
+	if len(g.emptyCells) != 1 {
+		t.Fatalf("emptyCells = %v, want the phantom cell recorded", g.emptyCells)
+	}
+	if out := buf.String(); !strings.Contains(out, "MATCHED NO TESTS") {
+		t.Errorf("an empty cell must say so loudly; got:\n%s", out)
+	}
+}
+
+// The guard must not fire on a cell that legitimately ran something, and must not fire on an
+// UNFILTERED cell either (an empty -run means "everything", so emptiness there is a different bug).
+//
+// Driven through the results directly rather than by running a real cell: pointing a cell at "./"
+// from inside cmd/gate makes `go test` re-run this very suite, which re-runs the cell, which... The
+// first draft of this test did exactly that and sat there for ten minutes.
+func TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged(t *testing.T) {
+	var buf bytes.Buffer
+	g := &gpuGate{w: &buf, logDir: t.TempDir()}
+
+	populated := newResults()
+	populated.add(testEvent{Action: "run", Package: "p", Test: "TestSomething"})
+	populated.add(testEvent{Action: "pass", Package: "p", Test: "TestSomething"})
+	g.noteIfEmpty(cell{Name: "real", Run: "TestSomething"}, populated)
+
+	g.noteIfEmpty(cell{Name: "unfiltered", Run: ""}, newResults())
+
+	if len(g.emptyCells) != 0 {
+		t.Errorf("flagged a populated or unfiltered cell: %v", g.emptyCells)
+	}
+	if s := buf.String(); strings.Contains(s, "MATCHED NO TESTS") {
+		t.Errorf("printed the empty-cell warning wrongly:\n%s", s)
+	}
+
+	// And the real case still fires.
+	g.noteIfEmpty(cell{Name: "phantom", Run: "TestGone"}, newResults())
+	if len(g.emptyCells) != 1 {
+		t.Errorf("a filtered cell with no results must be flagged, got %v", g.emptyCells)
 	}
 }

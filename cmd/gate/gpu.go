@@ -52,7 +52,12 @@ type gpuGate struct {
 	cur     string
 
 	pass, fail, skipped, ran int
-	notes                    []string
+
+	// emptyCells are filtered cells whose -run matched no test at all. Tracked separately from
+	// `fail` because nothing failed: the cell simply did not exist, which the aggregate ran==0
+	// check cannot see once any other cell has run.
+	emptyCells []string
+	notes      []string
 }
 
 func (g *gpuGate) grp(name string) { g.cur = name }
@@ -170,7 +175,30 @@ func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 		}
 	}
 	cr := runCell(c, cfg, res, g.logDir)
+	// A FILTERED CELL THAT MATCHED NOTHING IS NOT A PASS, and the aggregate `g.ran == 0` check at
+	// the end cannot see it: one empty cell among several full ones leaves g.ran > 0, so the cell
+	// reports clean and its coverage is simply gone. Every -run pattern in this file is a literal
+	// test-name prefix or alternation, so renaming a test silently empties its cell — the same
+	// shape as the qwen3next oracle, where a -run pattern that could not match a required gate
+	// produced "DID NOT RUN" for five weeks (docs/task-verification-surface-audit.md).
+	g.noteIfEmpty(c, res)
 	return res, cr, res.text()
+}
+
+// noteIfEmpty records a FILTERED cell that matched no test at all. Split out from run so it can be
+// tested without spawning `go test`: pointing a cell at "./" from inside cmd/gate re-runs this very
+// suite, which re-runs the cell, and the first draft of that test sat for ten minutes.
+//
+// An unfiltered cell is exempt — an empty -run means "everything", so emptiness there is a
+// different bug (no packages, or a build failure) that runCell's own policies already cover.
+func (g *gpuGate) noteIfEmpty(c cell, res *results) {
+	if c.Run == "" || len(res.final) > 0 {
+		return
+	}
+	fmt.Fprintf(g.w, "\n  !! CELL MATCHED NO TESTS: %s  -run %q\n"+
+		"     Zero tests ran, so this cell proves nothing. Usually a test was renamed out from\n"+
+		"     under the pattern. Not a pass.\n", c.Name, c.Run)
+	g.emptyCells = append(g.emptyCells, fmt.Sprintf("%s (-run %q)", c.Name, c.Run))
 }
 
 // skipCensus lists the skips INSIDE a passing run, by name. "ok" hides them, and a skip is not a
@@ -1162,6 +1190,14 @@ func (g *gpuGate) verdict() int {
 	}
 	if g.ran == 0 {
 		fmt.Fprintf(g.w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", red, off)
+		return 1
+	}
+	if len(g.emptyCells) > 0 {
+		fmt.Fprintf(g.w, "\n  %sEMPTY CELL(S)%s — a -run pattern matched no test, so that coverage is gone:\n", red, off)
+		for _, c := range g.emptyCells {
+			fmt.Fprintf(g.w, "    - %s\n", c)
+		}
+		fmt.Fprintf(g.w, "    Nothing FAILED; the tests were not there to run. Fix the pattern or the name.\n")
 		return 1
 	}
 	host := "?"
