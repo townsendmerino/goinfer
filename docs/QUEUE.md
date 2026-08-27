@@ -92,9 +92,40 @@ footnote ᵈ records the phi3-mini rows as **5 runs × 8 completions**; the re-a
 (+3.7%) purely from re-measurement. So the recorded values are **112.4, 116.6, 109.8 across three
 protocols** — a spread of the same magnitude as the "regression".
 
-**Next step is a protocol-matched re-measure, not a code hunt:** phi3-mini at `temp1.0_notrunc` with
-5 runs against the 2-run figure. If 109.8 moves toward 116.6, there is nothing here. Until then this
-is an unestablished delta, and §B5.1's wording should be read with that in mind.
+**2026-08-27, protocol-matched re-measure: the regression is REAL.** phi3-mini,
+`temp1.0_notrunc`, 5 runs x 8 completions — the anchor's own protocol:
+
+    goinfer  109.7   runs [108.1, 110.5, 107.8, 110.8, 111.2]
+    ollama   125.2   runs [125.5, 125.3, 125.1, 125.2, 125.1]
+
+109.7 against the anchor's 116.6 at matched protocol: **-5.9%**, and essentially identical to the
+2-run 109.8, so it was never a protocol artifact. The peer is unchanged (125.2 vs 125.6), so it is
+goinfer-side. Promoted from unestablished to confirmed.
+
+**Two corrections to the analysis above, both mine.**
+
+*The "greedy is at parity" argument was unsupported.* There is no historical greedy phi3-mini cell
+— §B5 carries only the two sampled rows — so parity with Ollama today says nothing about whether
+greedy moved since the anchor. It cannot be used to localise the fault.
+
+*The P10 elimination measured the wrong function.* `benchFilter` exercises `topFilterLogits`, the
+**top_p** path; temp-only with no truncation goes through `sampleChunked`/`expChunked` instead. That
+matters because P10 touched both, and the two configs moved in OPPOSITE directions on this model
+(top_p +2.7%, temp-only -5.9%) — exactly the split those two paths would produce. Re-measured on
+the correct path (`BenchmarkExpChunked{Fresh,Reuse}*`): P10 is **+23.1% at 32k**, +20.9% at 152k,
++21.8% at 262k. Uniformly a win. **P10 is eliminated on both paths.**
+
+**The more useful result is a bound on where the cause can be.** At 116 tok/s a token costs ~8.6 ms;
+`expChunked` at 32k costs ~96 us. Even counting the whole sampler generously, sampling is a
+low-single-digit percentage of per-token time — so **no sampler change can move the end-to-end
+figure by 5.9% in either direction**. The cause is in the decode path or the stack beneath it, not
+the sampler. That also means the top_p/temp-only split is probably not the signal it looks like.
+
+**What is left, and what is not worth doing.** The driver/distro upgrade is a candidate but moved
+the other two models the other way (+8-9%). The goinfer range between `ca29d6c` and HEAD is the
+other. Bisecting a 5.9% end-to-end delta across that range costs a 40-minute peer sweep per point;
+before spending that, get a phi3-mini GREEDY number at the anchor commit — if greedy regressed too,
+this is a decode-path question and the sampled framing has been a distraction from the start.
 
 
 **G25 · Does the oracle bar need a sparsity axis, or is per-precision enough?** — PARKED with a
@@ -401,6 +432,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c3e43c8` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
 | `c62f2b7` | test(decoder): give the real-model oracles a bar per precision |
+| `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cda8cfe` | docs: re-declare the freeze as a proof requirement; clear G2 for amd64 alone |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |

@@ -195,3 +195,36 @@ func TestChunkedSoftmax_NaNFallsBack(t *testing.T) {
 	s := &Sampler{p: SamplingParams{Temperature: 1}, rng: rand.New(rand.NewSource(1))}
 	_ = s.sampleChunked(logits, 1.0, 0.5) // must not panic
 }
+
+// G26. The temp-only draw (no truncation) goes through sampleChunked, NOT topFilterLogits — so the
+// P10 benchmarks in sampler_selection_test.go measure the top_p path and say nothing about this one.
+// phi3-mini regressed 5.9% at temperature 1.0 while gaining 2.7% at temp+top_p, which is the split
+// those two paths would produce. P10 is the only functional change to this file since the anchor.
+//
+// Isolates the buffer: `out` fresh per call (pre-P10) against reused (post-P10).
+func benchExpChunked(b *testing.B, V int, reuse bool) {
+	r := rand.New(rand.NewSource(1))
+	logits := randLogits(V, r)
+	var maxv float64
+	for _, v := range logits {
+		if float64(v) > maxv {
+			maxv = float64(v)
+		}
+	}
+	shared := make([]float64, V)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out := shared
+		if !reuse {
+			out = make([]float64, V)
+		}
+		_ = expChunked(logits, out, maxv, 1.0)
+	}
+}
+
+func BenchmarkExpChunkedFresh32k(b *testing.B)  { benchExpChunked(b, 32064, false) }
+func BenchmarkExpChunkedReuse32k(b *testing.B)  { benchExpChunked(b, 32064, true) }
+func BenchmarkExpChunkedFresh152k(b *testing.B) { benchExpChunked(b, 152064, false) }
+func BenchmarkExpChunkedReuse152k(b *testing.B) { benchExpChunked(b, 152064, true) }
+func BenchmarkExpChunkedFresh262k(b *testing.B) { benchExpChunked(b, 262144, false) }
+func BenchmarkExpChunkedReuse262k(b *testing.B) { benchExpChunked(b, 262144, true) }
