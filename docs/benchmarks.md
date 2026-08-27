@@ -239,6 +239,33 @@ RTX section is the GPU-residency story. Peer columns are filled **only** from
 same-machine/same-quant runs; where we have none, the cell is `—` and the script +
 peer commands are how you fill it.
 
+**The two rigs, precisely** — stated once here so rows can say "M1 Pro" or "the Ryzen box"
+without the reader having to guess what that means:
+
+| | `apple-m1pro` | `linux-62gb` / `nobara-pc` |
+|---|---|---|
+| machine | MacBook Pro `MacBookPro18,3` (14", 2021) | desktop |
+| CPU | Apple M1 Pro — **8 cores: 6 performance + 2 efficiency** | Ryzen 7 3700X — 8c/16t |
+| RAM | **16 GB** unified | **62 GB** |
+| GPU | integrated (Metal) | RTX 2070 SUPER, **8 GB** |
+| OS at the time of writing | macOS 26.6.2 | Nobara 44, kernel 7.2.0, CUDA 13.2 |
+
+**Several numbers on this page are properties of those rigs, not of the code, and the
+distinction is easy to lose.** The clearest cases:
+
+- **`maxAttnWorkers = 6`** is the M1 Pro's *performance*-core count, not `GOMAXPROCS`; the 2
+  efficiency cores measured harmful for this class of work. A part with more P-cores has more
+  headroom than any speedup here shows.
+- **The 16 GB** is why prefill scratch had to be budgeted and then tiled at all (G16/G20): six
+  workers × an untiled 8k `scores` buffer is ~1.6 GB on a machine that was already swapping.
+  On a 64 GB part the untiled version would simply have worked, and the tiling would read as
+  premature.
+- **The 8 GB card** is what makes "a 35B decodes resident" a story rather than a footnote.
+
+So a *larger* Apple Silicon part should show **bigger** parallel speedups and hit the tiling
+threshold later — the CPU rows here are a floor for that family, not a ceiling. Re-measuring on a
+different Mac is a new rig and a new row, not an update to these.
+
 ### A. Apple Silicon CPU (the pure-Go lane)
 
 Rig: **Apple M1 Pro** (6P+2E), prequant `.giw` int8, greedy + fixed prompt/seed,
