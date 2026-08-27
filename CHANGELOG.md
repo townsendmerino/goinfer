@@ -13,7 +13,7 @@ serialization plumbing are named Experimental — explicitly, not by omission.
 **That split takes effect at the v1.0 tag.** Until then goinfer is pre-1.0 and
 any surface may still change.
 
-## [v0.15.0] — 2026-08-25
+## [v0.15.0] — 2026-08-27
 
 **CPU decode roughly doubled on Apple Silicon, the Gated-DeltaNet family went GPU-resident on two
 backends, and a 35B runs on an 8 GB card.** 183 commits since v0.14.0, in six days. The one users
