@@ -8,6 +8,13 @@
 # fire: the failure is at the moment, not in the knowledge, and a rule that needs remembering at the
 # moment is the weakest kind.
 #
+# SECOND CHECK ADDED 2026-08-26, same disease. Three times in one session a decoder/ edit was pushed
+# without running the parity staleness gate, and CI went red each time: G18, G20, and a renumber
+# whose entire decoder/ diff was TWO COMMENT LINES. The staleness gate keys on a whole-file content
+# hash — deliberately, so it can never miss a numeric change — so "was this edit numeric?" is the
+# wrong question and asking it is how the step gets skipped. The gate runs in well under a second,
+# so the hook runs it ALWAYS rather than trying to detect whether a change "counts".
+#
 # The hook removes the step where a human has to remember. It is LOCAL ONLY and deliberately so —
 # CI remains the enforcement, and nothing here can be relied upon by anyone else's clone.
 #
@@ -52,11 +59,33 @@ if [ "$status" -ne 0 ]; then
     exit 1
 fi
 
+# The parity staleness gate. Run UNCONDITIONALLY: it costs well under a second, and every attempt
+# to run it "only when the edit is core" has failed — most recently on a two-comment diff, which no
+# one would have classified as core. Same invocation CI runs; no reimplementation to drift.
+parity="$(go test ./decoder/ -run TestParityManifest_fresh -count=1 2>&1)"
+pstatus=$?
+
+if [ "$pstatus" -ne 0 ]; then
+    echo "" >&2
+    echo "pre-push REFUSED: TestParityManifest_fresh exits $pstatus." >&2
+    echo "" >&2
+    printf '%s\n' "$parity" | head -20 >&2
+    echo "" >&2
+    echo "  A decoder/ edit re-stales every validated family — the gate hashes whole files, so a" >&2
+    echo "  COMMENT is enough. That is the gate working, not a false positive." >&2
+    echo "  Numeric change:      re-run T3 (go run ./cmd/gate parity), then -update." >&2
+    echo "  Provably non-numeric: scripts/refresh_parity_hashes.sh — it runs the forward goldens" >&2
+    echo "                        as independent proof and REFUSES if any fail." >&2
+    echo "  Deliberate push over a red gate: git push --no-verify" >&2
+    exit 1
+fi
+
 exit 0
 HOOK
 
 chmod +x "$hook"
 echo "installed $hook"
+echo "checks: queue_citation_lint.py, then TestParityManifest_fresh"
 echo "verifying it fires and that it passes on a clean tree:"
 if bash "$hook" >/dev/null 2>&1; then
     echo "  clean tree -> hook exits 0 (push allowed)"
