@@ -22,7 +22,9 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
+	prog := newProgress(t, t.Name(), 3).Uneven() // cost grows with K
 	for _, K := range []int{256, 1024, 2048} {
+		prog.Phase(fmt.Sprintf("K=%d (acc64 vs f32 prefill)", K))
 		if !m.canBatchN(K) {
 			t.Skipf("model has no batched prefill at K=%d", K)
 		}
@@ -65,6 +67,7 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "  A3 divergence K=%-5d cosine=%.9f maxAbs=%.3g%s\n", K, cos, maxAbs,
 			map[bool]string{true: "  (IDENTICAL — flag had no effect, check the guard)", false: ""}[identical])
 
+		prog.Step(1)
 		if identical {
 			t.Errorf("K=%d: enabling the flag changed nothing — either the knob is not wired or this arch is excluded", K)
 		}

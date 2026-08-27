@@ -45,7 +45,10 @@ func TestNgramSpecMLA_parity(t *testing.T) {
 	ctx := context.Background()
 	greedy := SamplingParams{Temperature: 0}
 
+	prog := newProgress(t, t.Name(), 0)
+	prog.Phase("reference greedy (32 tok)")
 	ref := collectTokens(first(m.Generate(ctx, ids, n, greedy)))
+	prog.Phase("n-gram speculative (32 tok)")
 	ch, g, err := m.GenerateNgramSpeculative(ctx, ids, n, &NgramDrafter{}, 8, greedy)
 	if err != nil {
 		t.Fatalf("GenerateNgramSpeculative: %v", err)

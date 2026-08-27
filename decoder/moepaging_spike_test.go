@@ -31,6 +31,9 @@ func TestMoEPagingSpike(t *testing.T) {
 		t.Skipf("no 35B MoE GGUF at %s (set GOINFER_MOE35): %v", path, err)
 	}
 
+	const gen = 200
+	prog := newProgress(t, t.Name(), gen)
+	prog.Phase("load 35B MoE GGUF (int8int8)")
 	t.Logf("loading %s (int8int8)…", path)
 	m, err := Load(path, Options{Quant: "int8int8"})
 	if err != nil {
@@ -51,12 +54,14 @@ func TestMoEPagingSpike(t *testing.T) {
 	moeSelTrace = make([][]int, 0, 1<<16)
 	defer func() { moeSelTrace = nil }()
 	prompt := []int{785, 264, 6573, 311, 1438, 279, 2038, 25} // valid Qwen ids; the 200 generated tokens drive realistic decode-time routing
-	const gen = 200
+	prog.Phase("generate (drives real decode-time routing)")
 	ch, g := m.Generate(context.Background(), prompt, gen, SamplingParams{Temperature: 0})
 	n := 0
 	for range ch {
 		n++
+		prog.Step(1)
 	}
+	prog.Phase("de-interleave + replay page trace")
 	if g.Err() != nil {
 		t.Fatalf("generate: %v", g.Err())
 	}

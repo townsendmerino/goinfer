@@ -46,6 +46,8 @@ func TestEagleAcceptedLength(t *testing.T) {
 
 	// Capture the target's fused feature at EVERY position (whole prompt + M greedy
 	// continuation), so the head can prefill its KV over the full context.
+	prog := newProgress(t, t.Name(), len(prompt)+M)
+	prog.Phase("capture fused target features")
 	cache := base.NewCache(len(prompt) + M + 4)
 	var toks []int        // token at each absolute position (from 0)
 	var feats [][]float32 // fused target feature at each position
@@ -60,6 +62,7 @@ func TestEagleAcceptedLength(t *testing.T) {
 		}
 		toks = append(toks, tok)
 		feats = append(feats, head.Fuse(base.be, h3))
+		prog.Step(1)
 		return argmax(logits)
 	}
 	var next int

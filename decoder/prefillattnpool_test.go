@@ -123,7 +123,9 @@ func TestPrefillAttnRowTileInvariance(t *testing.T) {
 	if err != nil {
 		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
 	}
+	prog := newProgress(t, t.Name(), 3*5).Uneven() // 3 context lengths x (untiled + 4 tiles); cost grows with K
 	for _, K := range []int{64, 512, 1200} {
+		prog.Phase(fmt.Sprintf("K=%d", K))
 		if !m.canBatchN(K) {
 			t.Skipf("model has no batched prefill at K=%d", K)
 		}
@@ -143,8 +145,10 @@ func TestPrefillAttnRowTileInvariance(t *testing.T) {
 		}
 		// A tile equal to K is the untiled shape: one pass, exactly as before G20.
 		untiled := run(fmt.Sprint(K))
+		prog.Step(1)
 		for _, tile := range []string{"1", "7", "64", "333"} {
 			got := run(tile)
+			prog.Step(1)
 			if len(got) != len(untiled) {
 				t.Fatalf("K=%d tile=%s: length %d vs %d", K, tile, len(got), len(untiled))
 			}

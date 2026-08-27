@@ -29,6 +29,8 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
+	prog := newProgress(t, t.Name(), len(g.IDs)-1)
+	prog.Phase("load 12B checkpoint")
 	path := os.Getenv("HOME") + "/models/mellum2-unq"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no Mellum2 checkpoint (%v)", err)
@@ -42,11 +44,14 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 	}
 
 	cache := m.NewCache(len(g.IDs))
+	prog.Phase("prefill")
 	for _, id := range g.IDs[:len(g.IDs)-1] {
 		if _, err := m.runLayers(id, cache); err != nil {
 			t.Fatalf("runLayers: %v", err)
 		}
+		prog.Step(1)
 	}
+	prog.Phase("final forward")
 	logits, err := m.forward(g.IDs[len(g.IDs)-1], cache)
 	if err != nil {
 		t.Fatalf("forward: %v", err)
