@@ -67,6 +67,35 @@ path rather than the forward — but that is a lead, not a finding.
 Raw cells: `docs/measurements/b5-reanchor-61b1e03.json`. Reproduce with
 `BENCH_MODELS=phi3-mini BENCH_CONFIGS=temp1.0_notrunc python3 scripts/bench_peer.py <out>`.
 
+**2026-08-27, two findings — and the second demotes this from "regression" to "not established".**
+
+**1. P10 is NOT the cause, and the obvious argument for it was backwards.** `4da116d` (P10) is the
+only sampler change between the anchors, and it removes a per-token full-vocab allocation whose size
+scales with vocab — so the tempting story is that phi3-mini's 32k vocab gains least. Its benchmark
+population was only 152k and 262k, so the small vocab was genuinely never measured, which made this
+look like the int8-bar-on-int4 shape: a change validated on one population, shipped for another.
+
+Measured it instead of arguing it. `BenchmarkFilterFresh*` (added here) is the pre-P10 shape — a
+fresh buffer per call — paired against the reused-scratch path, `-count 5`:
+
+| vocab | pre-P10 | post-P10 | P10 effect |
+|---|---|---|---|
+| 32k | 220,801 ns | 200,779 ns | **+9.1% faster** |
+| 152k | 989,363 ns | 908,777 ns | +8.1% faster |
+| 262k | 2,800,565 ns | 2,687,574 ns | +4.0% faster |
+
+P10 helps **most** at 32k. It cannot be the cause. The vocab-scaling intuition was exactly wrong.
+
+**2. The baseline is a different protocol, and this cell is known to move under one.** §B5's
+footnote ᵈ records the phi3-mini rows as **5 runs × 8 completions**; the re-anchor used
+`bench_peer`'s default **2 runs × 8**. The same footnote records this cell moving **112.4 → 116.6**
+(+3.7%) purely from re-measurement. So the recorded values are **112.4, 116.6, 109.8 across three
+protocols** — a spread of the same magnitude as the "regression".
+
+**Next step is a protocol-matched re-measure, not a code hunt:** phi3-mini at `temp1.0_notrunc` with
+5 runs against the 2-run figure. If 109.8 moves toward 116.6, there is nothing here. Until then this
+is an unestablished delta, and §B5.1's wording should be read with that in mind.
+
 
 **G25 · Does the oracle bar need a sparsity axis, or is per-precision enough?** — PARKED with a
 trigger, 2026-08-27. Either box, desk work first.
@@ -360,6 +389,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `4ca19e9` | fix(serve): accept `role: "developer"` as an alias for `system` (G12) |
+| `4da116d` | perf(decoder): P10 — reuse Sampler's full-vocab scratch buffer across draws |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |

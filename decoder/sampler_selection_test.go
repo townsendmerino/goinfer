@@ -346,6 +346,32 @@ func benchFilter(b *testing.B, V int, useRef bool) {
 }
 
 func BenchmarkFilterRef152k(b *testing.B) { benchFilter(b, 152064, true) }
+
+// 32k is phi3-mini's vocab, and it was NOT in this benchmark's population when P10 (4da116d)
+// reused the full-vocab scratch buffer: only 152k and 262k were measured. The §B5 re-anchor then
+// found phi3-mini DOWN 5.8% at temperature 1.0 while the 152k and 262k models gained 8-9% on the
+// same configuration (G26). A change validated on two large vocabs and shipped for all of them
+// needs the small one measured too.
+func BenchmarkFilterRef32k(b *testing.B) { benchFilter(b, 32064, true) }
+func BenchmarkFilterNew32k(b *testing.B) { benchFilter(b, 32064, false) }
+
+// benchFilterFreshScratch is the PRE-P10 shape: a fresh full-vocab buffer per call, which is what
+// sampleChunked/chunkedZ did before 4da116d. Paired against benchFilter's reused scratch this
+// isolates P10 itself, rather than the optimized path as a whole — the existing Ref/New pair
+// compares two different algorithms and cannot answer the G26 question.
+func benchFilterFreshScratch(b *testing.B, V int) {
+	r := rand.New(rand.NewSource(1))
+	logits := randLogits(V, r)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = topFilterLogits(logits, 0.8, 0, 0.95, 0, make([]float64, V))
+	}
+}
+
+func BenchmarkFilterFresh32k(b *testing.B)  { benchFilterFreshScratch(b, 32064) }
+func BenchmarkFilterFresh152k(b *testing.B) { benchFilterFreshScratch(b, 152064) }
+func BenchmarkFilterFresh262k(b *testing.B) { benchFilterFreshScratch(b, 262144) }
+
 func BenchmarkFilterNew152k(b *testing.B) { benchFilter(b, 152064, false) }
 func BenchmarkFilterRef262k(b *testing.B) { benchFilter(b, 262144, true) }
 func BenchmarkFilterNew262k(b *testing.B) { benchFilter(b, 262144, false) }
