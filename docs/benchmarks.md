@@ -101,6 +101,26 @@ A measurement enters a table **only if it satisfies all of**:
 - **Date** of the run, and a **thermal note** (plugged in, warm, repeated runs, median).
 - **Local disk only** — the checkpoint is read from local NVMe/SSD. A model read from the
   SMB archive mount is **not a measurement**; see *Model storage* below.
+- **COUNT TOKENS FROM THE ENGINE'S OWN `usage`, NEVER BY COUNTING SSE FRAMES — AND THE ERROR DOES
+  NOT CANCEL IN A RATIO.** A chunk is not a token: streams hold bytes back for UTF-8 continuation and
+  stop-string matching, so several tokens can share one frame and frame-counting under-reads, always
+  downward. The tempting argument is that a peer ratio is safe because both sides are biased the same
+  way. **Measured 2026-08-27/28 across 130 recorded cells, they are not:**
+
+  | engine | tok/chunk range | worst single cell |
+  |---|---|---|
+  | goinfer | 1.0000 – 1.0456 | phi3-mini T=0.6 |
+  | Ollama | 1.0000 – **1.0909** | 1.5B T=0.4 |
+
+  On the SAME cell the two engines differ by up to **9 points** — goinfer at 1.0000 where Ollama
+  reads 1.0909 — so a chunk-counted paired difference carries a residual in the peer's favour rather
+  than cancelling. `bench_peer.py` now takes each side's reported `usage` where the engine gives one
+  and records `tokens_per_chunk` per cell, so this is a checked number and not an assumption. **Read
+  that column on every peer run.**
+
+  Those same rows exposed a second thing worth checking for: Ollama returned **576 tokens where 3072
+  were requested** on one cell (1.5B, T=0.4), i.e. its completions terminated early. A cell that
+  generated a fifth of the requested tokens is not the cell it claims to be, whatever its rate says.
 - **`scripts/prompts.json` IS CALIBRATED FOR TOKEN DEPTH AND IS NOT VALID INPUT FOR ANY
   CONTENT-DEPENDENT MEASUREMENT.** Every prompt in it has **four unique words**
   (`"Continue this text. the the the ... the"`). For throughput that is correct and deliberate —

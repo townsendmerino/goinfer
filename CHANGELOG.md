@@ -13,6 +13,33 @@ serialization plumbing are named Experimental — explicitly, not by omission.
 **That split takes effect at the v1.0 tag.** Until then goinfer is pre-1.0 and
 any surface may still change.
 
+## [Unreleased]
+
+### Fixed
+
+- **`stream_options: {"include_usage": true}` is now honoured on the OpenAI-compatible streaming
+  surface**, emitting the spec's final usage-only chunk (empty `choices`, populated `usage`) after
+  the finish chunk. Previously the field was accepted and silently dropped, so a streaming client had
+  **no way to obtain a token count from goinfer at all** — it either guessed or counted SSE frames.
+  This is an OpenAI spec conformance point, not a convenience: clients use it for cost accounting,
+  rate display and context-budget tracking, and its absence is the kind of thing that reads as
+  "goinfer does not support usage" rather than as a bug worth reporting.
+
+  **The practical consequence for anyone who worked around it: counting SSE chunks under-reads
+  goinfer's token rate, and only ever downward.** A chunk is not a token — the stream holds bytes
+  back for UTF-8 continuation and for stop-string matching, so several tokens can arrive in one
+  frame. Measured across 92 goinfer cells on this fix: chunks equal tokens exactly at temperature 0,
+  and diverge with sampling to as much as **1.046 tokens per chunk (a 4.4% under-read)** on
+  phi3-mini at T=0.6. A client measuring that way sees goinfer as slower than it is, silently and
+  with no error to notice.
+
+### Changed
+
+- `scripts/bench_peer.py` now takes its token count from each engine's own reported `usage` where
+  the engine provides one, falling back to frame counting only where it does not, and records a
+  `tokens_per_chunk` diagnostic per cell so the assumption is a recorded number rather than an
+  inherited belief.
+
 ## [v0.15.0] — 2026-08-27
 
 **CPU decode roughly doubled on Apple Silicon, the Gated-DeltaNet family went GPU-resident on two
