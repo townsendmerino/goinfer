@@ -328,6 +328,26 @@ sampler.** The test is therefore not a curve fit:
   ±0.1 in T and the window-CV floor limits how much better that gets. A tighter criterion would be
   claiming resolution the measurement does not have.
 
+**THE 7B MOVES MORE THAN SHARE, AND THE READING MUST NOT PRETEND OTHERWISE.** Against the 1.5B it
+also changes memory-bandwidth pressure, cache behaviour, and how much of the decode step is
+weight-streaming — all of which travel with parameter count. So there is a THIRD outcome, and it is
+not a failure of the run:
+
+- Lands **with phi3-mini** → clean support for share, since vocab is held fixed and only share moved.
+- Lands **with the 1.5B** → share is not the driver; vocab or family is. Reject, and the cap stays.
+- Lands **BETWEEN them** → **AMBIGUOUS, and report it as ambiguous.** The confound is size, not a
+  refuted hypothesis, and forcing a middling result into the accept/reject binary is exactly the
+  motivated reading this page exists to prevent. Resolving it would need a fourth point that moves
+  share without moving parameter count — a different quantization of the SAME model is the obvious
+  candidate, since it changes the decode step while holding vocab, family and architecture fixed.
+
+**THE 2x BAND TRAVELS WITH THE NUMBER, WHEREVER THE NUMBER GOES.** Whatever `c_miss / c_decode` comes
+out at, it is located to about ±0.1 in T against a CV floor, and it is loose for that reason. It must
+never be quoted bare — **this ratio is what would go on to set the gate's constants**, so a figure
+that arrives without its band will be read as tight by whoever sets them. Label it at the point of
+writing, not at the point of use; this repo has already recorded that numbers travel out of their
+regime when the caveat lives somewhere else.
+
 **Resolution decided in advance: ±0.1 in T is enough to tell "tracks share" from "scatters", and the
 run stops there.** Chasing ±0.02 would cost a night against a CV floor for a distinction that changes
 no decision.

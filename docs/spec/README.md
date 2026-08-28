@@ -110,6 +110,22 @@ Why this fits goinfer specifically:
 | 09 | [MTP / NextN heads](./09-mtp-heads.md) | Checkpoint-shipped multi-token-prediction heads (DeepSeek-V3 layout) on families already on disk: a head trained jointly with its own target, against 05's imported general head. | Med (loader + one block) | Higher α than an imported head, if joint training is the lever | ✅ Gate 0 + **Gate 1 PASSED** (0.8B: code 2.02 / math 2.91 / chat 2.48 tok/verify vs 05's cross-target 1.60) — **MECHANISM only**; Gate 2 not evaluable at that scale; returns for a separate decision |
 | 10 | [Gating optimistic forward](./10-optfwd-gate.md) | Not a new drafter: when the SHIPPED optimistic-forward overlap should run. Measured unconditional-on, it wins up to 7.4% on large-vocab models and loses up to 6.8% on small ones, and no temperature constant fits both. | Low–Med (decision logic only) | Recovers ~6% on small-vocab sampled decode without giving up the large-vocab win | 📋 design (cut 2026-08-27), **awaiting sign-off — no code**; kill-gated on window-level variance |
 
+**WHO CANNOT SPECULATE AT ALL, before you design anything for them.** `specRollbackSafe`
+(`decoder/forwardn.go:60`) refuses whole families, and it gates EVERY scheme on this page plus the
+optimistic-forward overlap (10) — not one experiment:
+
+- **recurrent / gated-DeltaNet state** — granite, nemotron, **qwen35**. State is not
+  position-truncatable, so a rollback cannot restore it.
+- **sliding-window attention** (`SlidingWindow > 0`) — **Gemma-3 local, Mistral**. A staged ring that
+  has wrapped cannot restore evicted positions on a >1-position rollback, so the verify reads stale
+  history and the lossless guarantee breaks. Refused unconditionally rather than per-path, because
+  three of four speculative loops use the staged ring even when a resident backend is present.
+
+Both are LOSSLESSNESS constraints, not performance ones, so no measurement can argue past them. This
+is why Gemma-3 could not serve as 10's third model despite being the obvious different-family
+large-vocab candidate — worth knowing before picking a family for an experiment, since the
+alternative is discovering it after the checkpoint is downloaded.
+
 Build order: **00 first** (nothing is testable until verify + rollback +
 instrumentation exist), then 01 and 02 (cheapest wins, and they generate the
 acceptance data that powers everything else), then 04, then 03, then 05.
