@@ -161,4 +161,21 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 		r.cacheSlots, len(gen), tr, mspt, 1000/mspt, capNote, text)
 	t.Logf("C′ cache: %d hits / %d misses = %.1f%% hit rate (each hit is one skipped expert DMA; nSlots=%d, "+
 		"topK=%d, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse", hits, misses, hitRate*100, r.cacheSlots, r.topK)
+
+	// PRICE THE ROUTING ROUND TRIP. cacheProf has existed and been read by nothing; this wires it
+	// up. It decomposes loadRoutedExperts into the three things it actually does per MoE layer per
+	// token — the pipeline drain, the host-side slot bookkeeping, and the expert DMAs — which is the
+	// number that decides whether speculative prefetch is worth its complexity (G30, spec/10's
+	// standing verdict). Zero unless GOINFER_MOE_CACHE_PROF is set.
+	if stall, host, dma, calls := r.CacheProfForTest(); calls > 0 {
+		tot := stall + host + dma
+		nsPerTok := float64(genDur) / float64(len(gen)) // ns per token
+		pct := func(d time.Duration) float64 { return float64(d) / float64(genDur) * 100 }
+		t.Logf("C′ ROUND TRIP over %d calls: stall %v (%.1f%% of decode) + host %v (%.1f%%) + dma %v (%.1f%%) "+
+			"= %v (%.1f%%); per call %v; per token %.2f ms of a %.2f ms token",
+			calls, stall.Round(time.Millisecond), pct(stall), host.Round(time.Millisecond), pct(host),
+			dma.Round(time.Millisecond), pct(dma), tot.Round(time.Millisecond), pct(tot),
+			(tot / time.Duration(calls)).Round(time.Microsecond),
+			float64(tot)/float64(len(gen))/1e6, nsPerTok/1e6)
+	}
 }

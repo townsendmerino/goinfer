@@ -1147,3 +1147,53 @@ first run was unauditable after the fact, which is why the rerun added a 15-seco
 `loadRoutedExperts`'s Sync → D2H → H2D round trip, which is the drain that absorbs everything. That
 is the item the standing Metal verdict addresses — *synchronous MoE paging is dead and speculative
 prefetch is the path* — and it is a substantially larger piece of work than an on-stream memset.
+
+## G31 · the C′ round trip PRICED: the sync is 0.4%, the expert DMA is 45–60% of decode
+
+Measured 2026-08-28 on the 26B (`TestGemma4_26B_cache_B`, `GOINFER_MOE_CACHE_PROF=1`, load-checked
+starts). **`cacheProf` had existed and been read by NOTHING** — `CacheProfForTest()` had no callers,
+so the instrument was built and never wired. Raw `docs/measurements/g31-cprime-roundtrip.log`.
+
+| | 30 slots (48 req) | 16 slots | ratio |
+|---|---|---|---|
+| **stall** (the `Sync` at `resident.go:887`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
+| **host** (slot bookkeeping) | 107 ms (2.7%) | 108 ms (2.0%) | 1.01 |
+| **dma** (expert transfers) | 1.808 s (**45.1%**) | 3.227 s (**59.9%**) | **1.785** |
+| misses | 5229 | 9316 | **1.782** |
+| per token | 30.14 ms of 62.60 | 52.35 ms of 84.17 | |
+
+**THE SYNC IS 0.4% OF DECODE.** That is the whole explanation for G30's null result, and it retires
+the standing audit item: *"an on-stream memset/zero kernel removes an H2D (and its implicit
+null-stream sync) per MoE layer per token"* targets **0.4%**, so no implementation of it — memset,
+`UploadAsync`, or the new `CopyDevice` from aikit v0.31.0 — can pay. **Stop trying to remove syncs
+from this path.**
+
+**THE COST IS THE DMA, AND IT OBEYS AN EXACT LAW.** DMA time scales 1.785× against a 1.782× miss
+increase: **346 µs per expert miss in both configurations**, to three digits. Stall and host are
+constant because calls (2730 = ~43 MoE layers × 64 tokens) do not depend on slot count.
+
+    per-token ms  ≈  32.1 (compute)  +  1.9 (round-trip overhead)  +  0.346 × misses_per_token
+
+**Compute is constant at 32.5 / 31.8 ms across the two configurations, as it must be — so EVERY
+tok/s difference between slot counts is DMA, nothing else.** That also re-explains the ctx-vs-slots
+result: more slots raise the hit rate, which buys throughput purely by removing 346 µs transfers.
+
+### What this says about speculative prefetch
+
+**The prize is now quantified rather than inherited.** If the expert DMA were fully hidden behind
+compute, token time would fall to `max(compute, dma)`:
+
+| config | today | perfect overlap | ceiling |
+|---|---|---|---|
+| 30 slots | 15.97 tok/s | 30.81 tok/s | **+93%** |
+| 16 slots | 11.88 tok/s | 19.10 tok/s | **+61%** |
+
+**Perfect overlap is unattainable** — routing for layer L+1 is not known until layer L computes,
+which is the serial dependency that makes the paging synchronous in the first place, and the reason
+the Metal verdict says *speculative* prefetch rather than plain async. But the gap between 30 ms of
+transfer and 32 ms of compute per token is close to ideal for hiding: there is almost exactly enough
+compute to cover the transfers, if the transfers can be started early enough.
+
+**This is the first quantitative case for that work.** Everything before it was a standing verdict
+carried from Metal. The scoping should now be judged against a measured ~1.9× ceiling at 30 slots
+and a 346 µs-per-miss cost model, not against "misses are on the critical path".
