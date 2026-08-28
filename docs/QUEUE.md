@@ -1059,3 +1059,42 @@ THROUGHPUT, never for ACCEPTANCE.** Now recorded in benchmarks.md Methodology.
 
 **Not chased here.** Re-measuring (2) and (3) is real work and neither currently gates a decision;
 optFwd was re-measured only because it had just shipped a behaviour change.
+
+## G29 · gate-runner reachability — AUDITED AND CLOSED 2026-08-28, no work needed
+
+Carried from the untracked July audit as "census, heavy, composition, selector, mutation are
+unchecked for reachability; mechanical, ~1 hour, the pattern is already written
+(`TestRealckptCellCanReachEveryGate`)". **Audited instead of implemented, and the premise does not
+hold.**
+
+**The specific bug — a `-run` filter that cannot match a required gate — needs a filter to exist.**
+Only three non-test files in `cmd/gate` carry `Run:` at all: `parity.go`, `gpu.go`, `configs.go`.
+Census, composition, selector and mutation narrow nothing, so nothing can be unreachable by filter
+there. Copying the parity test to them would assert a property they cannot violate.
+
+**The GENERAL failure — "ran nothing, reported green" — is already covered everywhere, by five
+different mechanisms. That is why it reads as unaudited:**
+
+| runner | guard |
+|---|---|
+| parity | static: `TestRealckptCellCanReachEveryGate`, `TestBaseCellIsUnfiltered` |
+| gpu | runtime: `noteIfEmpty`, with `TestGPUGate_emptyFilteredCellIsNotAPass` |
+| heavy | `ZeroPolicy: "no-pass"` — zero PASSES is red even if tests ran and skipped |
+| census | `ZeroPolicy: "no-tests"` — zero test events is red |
+| composition | `len(parityGates) == 0` → "composition derived from nothing" |
+| selector | `len(selS) == 0`, `len(rows) == 0` |
+| mutation | baseline-must-be-green, plus asserting the mutation actually CHANGED something |
+
+**`mutation.go`'s header is the best statement of this bug class in the repo** and records two prior
+instances *inside the mechanism built to prevent it*: a `command -v staticcheck && staticcheck …`
+whose `&&` short-circuited so the check "evaluated to nothing, and it was reported as clean", and a
+`… | head -3; echo "exit=$?"` that read `head`'s status instead of the lint's. Its own words:
+**"G-01 inside the mechanism built to prevent G-01."**
+
+**A third instance landed the same day, on me** — `~/go/bin/staticcheck` was version-skewed against
+the Go 1.27 toolchain, analysed NOTHING, and exited; a U1000 then held CI red across three pushes.
+Same shape as that first bullet, years apart, in a different tool. The countermeasure is in CLAUDE.md
+(run CI's pinned `go run …@v0.8.0`, and check CI after pushing).
+
+**The real gap was legibility, not coverage: nobody could tell the property was covered without
+redoing this audit.** That is what this entry fixes. **Closed — no code change.**
