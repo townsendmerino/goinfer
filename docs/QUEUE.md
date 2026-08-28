@@ -392,6 +392,27 @@ hit-rate curve, which is model- and prompt-dependent; a second model is needed b
 ships. Shipping a gate off one model would repeat precisely the error that put this feature on by
 default.
 
+**SECOND MODEL RUNNING (2026-08-27), and it is chosen to TEST the mechanism rather than just add a
+point.** qwen2.5-coder-1.5B, vocab **151936** against phi3-mini's 32064. optFwd's benefit is bounded
+by how much sampler the overlap can hide, and that share differs by 3.4x between the two (both from
+today's HEAD, optFwd OFF):
+
+| model | vocab | decode step | sampler | sampler share of the sampled token |
+|---|---|---|---|---|
+| phi3-mini | 32064 | 8.026 ms | 0.457 ms | **5.4%** |
+| 1.5B | 151936 | 4.535 ms | 1.009 ms | **18.2%** |
+
+**Prediction, fixed before the run: the 1.5B's crossover should sit at a HIGHER temperature than
+phi3-mini's 0.26.** More sampler to hide means the overlap keeps paying at hit rates that would
+already be uneconomic on phi3-mini. The reasoning is falsifiable in both directions and the outcomes
+decide the SHAPE of the gate, not merely its constant:
+
+| outcome | what it means for the gate |
+|---|---|
+| crossover moves HIGHER, as predicted | The mechanism story holds and the crossover is **model-dependent**. A single temperature constant is then the wrong shape — it must be conservative enough for the WORST model, giving up most of the win on the best. Argues for the hit-rate-adaptive gate. |
+| crossover lands at ~0.26 again | Temperature alone predicts the crossover across a 4.7x vocab range. A constant threshold is defensible and much simpler; ship T ≤ 0.2. |
+| crossover moves LOWER | The sampler-share reasoning is wrong and something else drives it. Do not gate on either axis until that is understood. |
+
 **Temperature is a PROXY and the ladder should not be mistaken for the mechanism.** What determines
 the feature's value is the realized hit rate, which `OptFwdStats{Guessed, Hit}` already measures per
 run; temperature only predicts it. A hit-rate-adaptive gate is strictly better-targeted than a
