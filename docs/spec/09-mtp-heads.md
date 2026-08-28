@@ -640,6 +640,13 @@ COMPOUND) interleaved with everything else the model allocated, so there is far 
 A figure measured through a primitive on synthetic buffers is not an integration cost — here the
 gap was 2.6×, not a rounding difference.
 
+**Read that as a caution about synthetic buffer probes generally, not a fact about this snapshot.**
+Anything measured on purpose-allocated buffers inherits a layout the real workload will not have:
+consecutive allocation is the best case for coalescing, adjacency and locality alike, and a real
+allocator's output is not. The probe was still the right thing to run — it converted "plausibly
+tenths of a millisecond" into a number and decided whether the passthrough was worth requesting —
+but its output is a bound on what the primitive can do, never a prediction of what a caller gets.
+
 ### Results, three paired runs per path, alternated in one session
 
 | path | snapshot+restore | traffic | paired ratio p50 (spread) |
@@ -663,18 +670,31 @@ The earlier "~18×" from the probe overstated it, for the same buffer-layout rea
 own reading; here the *treatment* perturbs the *control variable*. A ratio is only safe when its
 denominator is independent of the arm.
 
-### Where the answer actually lands
+### Verdict: the narrow snapshot does NOT pay on its own, on the evidence available here
 
-**11.0% of a resident decode step.** Under the K-step framing that is **2.75% at K=4** and **1.57%
-at K=7** — the **1–5% band**, and near its top rather than its middle. But a batched verify on a
-bandwidth-bound decode costs nearer *one* decode step than K, and under that reading the figure is
-**5.5–11%**, i.e. the **">5%, does not pay on its own"** band.
+**11.0% of a resident decode step.** The pre-registered rule reads **">5% — the narrow version does
+not pay on its own. Report and stop."** This clears that bar only under the K-step framing (2.75% at
+K=4, 1.57% at K=7), and that framing was already recorded above as the **favourable** reading rather
+than the neutral one: a batched verify on a bandwidth-bound decode costs nearer *one* decode step
+than K, which puts the figure at **5.5–11%**. Applying the rule as written, to the more realistic of
+the two readings: **it does not pay.**
 
-**So the passthrough moved this from impossible to arguable, not from impossible to cheap.** Before
-it, a snapshot cost more than a whole decode step and no acceptance rate recovers that. After it,
-whether this pays depends on α — which is what the pre-registered rule said should happen in this
-band, and it is a real decision rather than a formality.
+Returning it alongside α is procedurally right and is not the same as it being open. **The α needed
+to overcome an 11% standing per-round cost is high, and nothing measured points that way** —
+Gate 1's acceptance is 2.02–2.91 tokens per verify on one prompt per suite at n=1, with the third
+digit already established as noise.
 
-**And the 0.8B resident denominator still does not transfer.** int4 and int8 land on top of each
-other here, so this decode step is not weight-bandwidth-bound; a 27B resident trunk plausibly is.
-Both terms move on a bigger model and neither direction is measured.
+**The one thing that could rescue it is the one thing this box cannot measure.** int4 and int8 land
+on top of each other here, so a 0.8B resident decode is *not* weight-bandwidth-bound. A 27B resident
+trunk plausibly is, which would make its decode step slower, the denominator larger, and the
+fraction smaller. That is the rescue — and it requires a resident 27B or 80B, neither of which fits
+an 8 GB card. **So the remaining case for this track rests entirely on a regime for which no
+hardware here can produce a number**, and that is a cleaner place to stop than "pending α".
+
+**What is not conditional:** the aikit passthrough was worth writing regardless. 13.0× on a
+device-to-device copy is real, it is in `aikit/gpu` v0.31.0, and it is available to anything that
+needs to move bytes between device buffers — independent of whether this track ever resumes.
+
+**If it resumes**, the entry condition is a resident measurement on a 27B-class trunk, not a better
+α on a small one. Everything else — the sizes, the `convWin` requirement, the buffer-reuse and
+coalescing notes — is recorded and does not need re-deriving.
