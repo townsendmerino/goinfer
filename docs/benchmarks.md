@@ -80,7 +80,8 @@
 > `a161bd6`: real-model heavy tier green, CUDA graphs bit-exact, **24/24 PTX byte-identical** — the
 > driver's new compiler did not move the numerics), and the greedy peer sweep then re-anchored the
 > §B2/§B5-style rows into **§B8**. What that run does **not** cover remains STALE and may not be
-> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M) and the v0.11.0 qualification. Each is a separate leg with its own procedure;
+> quoted as current: ~~**§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M)~~ **— §B was RETIRED 2026-08-27
+> rather than re-measured, so the only leg still owing a run is the v0.11.0 qualification.** Each is a separate leg with its own procedure;
 > `bench_peer.py` does not produce any of them.
 >
 > Re-measure with `scripts/bench_peer.py` (peer Ollama v0.32.5 at `~/ollama-0325`, both sides over

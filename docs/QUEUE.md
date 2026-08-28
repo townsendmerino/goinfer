@@ -51,7 +51,10 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
-**G26 · phi3-mini lost 5.8% at `temperature 1.0`, and only phi3-mini** — either box. Measured
+**G26 · phi3-mini lost 5.8% at `temperature 1.0`, and only phi3-mini** — **CLOSED 2026-08-27: the
+cause is optimistic forward (`6a4e0ae`), a net loss above T ≈ 0.26; about half the headline was the
+anchor's own spread. Full result at the end of this entry — the investigation below is left intact,
+including two findings it had to retract.** Measured
 2026-08-27 in the §B5 re-anchor (`docs/benchmarks.md` §B5.1): 116.6 → **109.8** tok/s on CUDA at
 depth 128, against an Ollama side that read 125.6 both times. Well outside the old ±0.5 spread.
 
