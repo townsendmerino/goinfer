@@ -130,7 +130,7 @@ this is a decode-path question and the sampled framing has been a distraction fr
 **2026-08-27, running: the anchor commit BUILT AND MEASURED TODAY, which separates the two
 confounded causes instead of bisecting into them.** The reason the greedy number was missing is
 that it never existed historically; the reason it was expensive is that a targeted cell used to
-drag a ~40-minute sweep behind it. Both are now fixed — `bench_peer.py` gained `BENCH_BACKENDS`
+drag a ~40-minute sweep behind it. Both are now fixed — `scripts/bench_peer.py` gained `BENCH_BACKENDS`
 and `BENCH_DEPTHS=none`, so this question costs **4 cells** rather than 13, and `ca29d6c` is built
 from a worktree with the aikit its own `go.mod` pins (**v1.16.0**, against HEAD's v1.28.0).
 
@@ -338,7 +338,7 @@ remains unexplained and is now a separate open question**, not a side effect of 
 **Follow-up 1 RUNNING (2026-08-27): the temperature ladder, and how it will be read.** T ∈ {0.2,
 0.4, 0.6, 0.8, 1.0}, temp-only/no-truncation, optFwd ON vs OFF on the same HEAD binary, n=6,
 phi3-mini/CUDA, peer kept in both arms as drift control. Raw: `g26-tsweep-optfwd-{on,off}.json`.
-Configs added to `bench_peer.py` as a ladder because two endpoints cannot locate a crossover.
+Configs added to `scripts/bench_peer.py` as a ladder because two endpoints cannot locate a crossover.
 
 Read Δ = (OFF − ON)/ON at each T. **Δ > 0 means the feature LOSES at that temperature** (turning it
 off is faster); Δ < 0 means it wins.
@@ -693,6 +693,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |
+| `6a4e0ae` | decoder: optimistic next-token forward for sampled decode (Metal-verified, CUDA untested) |
 | `8f003f2` | parity: v0.15.0 sweep GREEN at bd085de; qwen3_next validated by real oracle |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
@@ -716,6 +717,8 @@ supports.
 
 | doc \| path:line | repo | line content |
 |---|---|---|
+| `docs/QUEUE.md|cuda/resident.go:2230` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
+| `docs/QUEUE.md|cuda/softcap.go:25` | goinfer | `// This runs on the SAMPLING path only. ForwardArgmax reduces the argmax on-device and r` |
 | `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `_ decoder.ResidentGreedy  = (*cudaResident)(nil)` |
 | `docs/cuda-megakernel-spec.md|gpu/attention.go:17` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:807` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
@@ -878,6 +881,7 @@ than papered over.
 
 | file | repo |
 |---|---|
+| `decoder/g26_sampler_bench_test.go` | goinfer |
 | `decoder/real_oracle_test.go` | goinfer |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
@@ -887,8 +891,6 @@ than papered over.
 | `scripts/refresh_parity_hashes.sh` | goinfer |
 
 <!-- /CITATION-INDEX -->
-
-
 ## RETRACTION, 2026-08-27 — the "152k sampler crossover" was a microbenchmark artifact
 
 Raw: `docs/measurements/g26-152k-{anchor,head}.json`, log `g26-152k_run.log`.
