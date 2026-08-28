@@ -235,7 +235,7 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:2259`
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:2265`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
 > back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
@@ -785,7 +785,7 @@ supports.
 
 | doc \| path:line | repo | line content |
 |---|---|---|
-| `docs/QUEUE.md|cuda/resident.go:2259` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
+| `docs/QUEUE.md|cuda/resident.go:2265` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
 | `docs/QUEUE.md|cuda/softcap.go:25` | goinfer | `// This runs on the SAMPLING path only. ForwardArgmax reduces the argmax on-device and r` |
 | `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `_ decoder.ResidentGreedy  = (*cudaResident)(nil)` |
 | `docs/cuda-megakernel-spec.md|gpu/attention.go:17` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
@@ -820,10 +820,10 @@ supports.
 | `docs/multimodal.md|decoder/config.go:1039` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:358` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
-| `docs/ollama-chase.md|cuda/resident.go:1265` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
-| `docs/ollama-chase.md|cuda/resident.go:412` | goinfer | `g4x1, g4x2, g4rn Buffer` |
+| `docs/ollama-chase.md|cuda/resident.go:1270` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
+| `docs/ollama-chase.md|cuda/resident.go:417` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:42` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
-| `docs/ollama-chase.md|cuda/resident.go:661` | goinfer | `// declined to the staged/CPU path upstream.` |
+| `docs/ollama-chase.md|cuda/resident.go:666` | goinfer | `// declined to the staged/CPU path upstream.` |
 | `docs/ollama-chase.md|decoder/gguf.go:631` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1001` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
@@ -832,7 +832,7 @@ supports.
 | `docs/ollama-chase.md|decoder/residency.go:731` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:244` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
-| `docs/parity-coverage-policy.md|cuda/resident.go:1057` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
+| `docs/parity-coverage-policy.md|cuda/resident.go:1062` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:57` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:446` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
@@ -855,7 +855,7 @@ supports.
 | `docs/queue-engineering.md|cuda/backend.go:1115` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:266` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
-| `docs/queue-engineering.md|cuda/resident.go:475` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
+| `docs/queue-engineering.md|cuda/resident.go:480` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/features_test.go:193` | goinfer | `want, ok := admissionGolden[name]` |
 | `docs/queue-engineering.md|decoder/forwardn.go:721` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
@@ -1317,3 +1317,61 @@ no more. There is no slack for a two-layer pipeline.
 Tier 1: ~10 lines of dump code, one ~5 min capture run, then offline analysis. **Tier 1 is cheap
 enough that it should happen before any further CUDA work on this path**, because a COLD-dominated
 answer retires the largest remaining item on the page.
+
+## G33 RESULT · prefetch is aimed at the wrong 10% — the misses are CAPACITY, not prediction
+
+Tier 1 ran 2026-08-28. Trace `docs/measurements/g33-routing-trace.json` (2730 decisions, 30 MoE
+layers x 91 positions = 27 prompt + 64 generated), replay `scripts/g33_replay.py`.
+
+**VALIDATION GATE PASSED EXACTLY.** The offline per-layer LRU replay reproduces **16611 hits / 5229
+misses / 76.1%** — the measured hardware figures, to the token. The cache is a plain per-layer LRU
+and the model of it is right, so everything below is trustworthy. (Positive-controlled first on
+synthetic traces: constant routing → all-cold, no evictions; 40 experts through 16 slots → 87.5%
+evicted at age 5.)
+
+**COLD IS A STARTUP ARTIFACT.** The headline split — cold 2239 (42.8%) vs evicted 2990 (57.2%) —
+inverts once read against position:
+
+| positions | cold | evicted | cold % |
+|---|---|---|---|
+| 0–12 | 1232 | 34 | **97.3%** |
+| 26–38 | 233 | 481 | 32.6% |
+| 52–64 | 106 | 470 | 18.4% |
+| 78–90 | 65 | 698 | **8.5%** |
+
+Cold misses are FIRST TOUCH of a (layer, expert) pair. In a 91-position window they cannot amortize;
+by the last bucket they are 8.5%. **In steady state ~90% of misses are EVICTIONS.**
+
+**THE SLOT CURVE, and it saturates at the cold floor:**
+
+| slots | hit rate | misses | DMA/token |
+|---|---|---|---|
+| 16 | 57.3% | 9316 | 35.4 ms |
+| **30 (today, VRAM-capped)** | **76.1%** | **5229** | **19.9 ms** |
+| 48 (requested) | 85.5% | 3170 | 12.1 ms |
+| 64 | 88.7% | 2466 | 9.4 ms |
+| 96 / 128 | 89.7% | **2239** | 8.5 ms |
+
+**2239 is exactly the cold count.** With every expert resident the only misses left are unavoidable
+first touch; everything above that floor is capacity.
+
+### The conclusion, which retires Tier 2
+
+**Speculation can only attack COLD misses — and those are the floor, already the small half in steady
+state.** Capacity attacks the ~90% that are evictions. **Prefetch is aimed at the wrong 10%**, and
+the early-router scheme scoped in Tier 2 is not worth building: even perfect prediction of new
+routing cannot beat simply keeping the expert resident, and it would spend saturated bandwidth to do
+worse.
+
+**The lever is VRAM, and it is now priced exactly** at 346 µs per miss avoided:
+
+- 30 → 48 slots: **7.8 ms/token saved, +14% throughput**
+- 30 → 64 slots: **10.5 ms/token, +20%**
+- beyond 96: nothing, the floor is reached
+
+That makes the existing **ctx-vs-slots trade** (`GOINFER_26B_CTX`) the actionable lever rather than a
+curiosity: it converts resident KV into expert slots, and this curve gives the exchange rate. **Cost
+a context reduction against the hit-rate curve before spending any effort on prediction.**
+
+**Tier 2 is CLOSED, not parked.** The saturated-link precision gate that worried G32 turns out not to
+matter — the question it guarded was never the binding one.

@@ -333,6 +333,11 @@ type cudaResident struct {
 	g4cap                               bool
 	g4capRn, g4capWgt, g4capX1, g4capX2 [][]float32
 	g4capIdx                            [][]uint32 // APPEND order (token-outer, layer-inner), matching the CPU routerCaptureBuf — for the per-POSITION routing-agreement check (a top-k flip at pos N reads like accumulation in a cosine)
+	// g4capLayer is g4capIdx's layer index, recorded in parallel so a consumer does not have to
+	// INFER the (token, layer) shape from the append order and a divisor. G33 needs to replay the
+	// trace through a per-layer cache, and a decisions-count that does not divide evenly by the
+	// layer count (2730 over 64 tokens) is exactly the kind of thing an inference gets wrong.
+	g4capLayer []int
 
 	// Per-sublayer contribution capture (diagnostic; off in production, zero cost). When subCap
 	// is set, launchToken copies the sandwich-normed o-proj output (attention contribution) and
@@ -1820,6 +1825,7 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int) error {
 			return err
 		}
 		r.g4capIdx = append(r.g4capIdx, idx) // append order = CPU routerCaptureBuf order (per-position routing check)
+		r.g4capLayer = append(r.g4capLayer, l)
 	}
 
 	// --- JOIN (Phase-1a ordering, get it EXACT): sum x1+x2 BEFORE the joint norm; add the residual h

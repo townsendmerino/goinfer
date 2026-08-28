@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -99,7 +100,7 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 	// Greedy continuation through the REAL chat template (the deliverable + the routing-through-
 	// generation the tiny fixtures couldn't exercise).
 	r := rf.(*cudaResident)
-	r.g4capIdx = nil
+	r.g4capIdx, r.g4capLayer = nil, nil
 	t1 := time.Now()
 	out, _ := m.Generate(context.Background(), ids, 64, decoder.SamplingParams{})
 	gen := make([]int, 0, 64)
@@ -110,6 +111,35 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 	if len(gen) == 0 {
 		t.Fatal("no tokens generated")
 	}
+	// G33 Tier 1: dump the routing trace so the cache replay can run offline. Only when asked —
+	// the file is a few MB and the capture itself already inflates ms/tok (it syncs per layer and
+	// disables CUDA graphs), so a run that writes this is NOT a timing run.
+	if dst := os.Getenv("GOINFER_G4_TRACE_OUT"); dst != "" && len(r.g4capIdx) > 0 {
+		type dec struct {
+			Layer int      `json:"layer"`
+			Idx   []uint32 `json:"idx"`
+		}
+		out := struct {
+			TopK      int   `json:"topK"`
+			NE        int   `json:"nE"`
+			Slots     int   `json:"slots"`
+			Tokens    int   `json:"tokens"`
+			Decisions []dec `json:"decisions"`
+		}{r.topK, 128, r.cacheSlots, len(gen), make([]dec, 0, len(r.g4capIdx))}
+		for i := range r.g4capIdx {
+			out.Decisions = append(out.Decisions, dec{r.g4capLayer[i], r.g4capIdx[i]})
+		}
+		b, e := json.Marshal(out)
+		if e != nil {
+			t.Fatalf("trace marshal: %v", e)
+		}
+		if e := os.WriteFile(dst, b, 0o644); e != nil {
+			t.Fatalf("trace write: %v", e)
+		}
+		t.Logf("G33 trace: %d decisions over %d tokens, topK=%d slots=%d -> %s (%d bytes)",
+			len(out.Decisions), len(gen), r.topK, r.cacheSlots, dst, len(b))
+	}
+
 	text, err := tk.Decode(gen)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
