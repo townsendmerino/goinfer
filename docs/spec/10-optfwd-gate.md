@@ -163,6 +163,35 @@ A gate is correct only if it reproduces both, without per-model constants:
 **T=0.6 is the discriminating cell**: the two models require opposite decisions at the same
 temperature, so any rule keyed on temperature alone fails it by construction.
 
+## CORRECTION (2026-08-28): AN ADAPTIVE GATE ALREADY EXISTS. This page designed one anyway.
+
+**`optFwdGate` in `decoder/spec_optfwd.go` is a trailing hit-rate EMA with hysteresis — EnableAt
+0.90, DisableAt 0.75, λ 0.95 — and it shipped with the feature.** Design B, as specified below, is
+substantially that. I wrote this page after reading `OptFwdStats` in the same file and never scrolled
+to the gate underneath it. **The design work was largely redundant and the page is left standing
+only because the arithmetic in it is not.**
+
+**What the existing gate gets wrong is its CONSTANTS, and the mistake is the one this whole item is
+about.** Its own comment records the calibration: *"pinned to the WORST measured break-even across
+depth (90.9% at a shallow qwen2.5-coder-0.5b context)"* — a **152k-vocab** model. Break-even hit rate
+is not model-independent: it rises as the sampler share falls, so on phi3-mini (5.4% share against
+the 1.5B's 18.2%) the true break-even sits ABOVE 0.90 and the dead band lies entirely below it. The
+gate cannot fire in the regime where the feature loses. **A mechanism calibrated on one model and
+applied to all — the same error, one layer down.**
+
+**A second defect, filed separately: the hysteresis is a ONE-WAY LATCH in the wiring.** `Observe` is
+called only from `optFwdStep`, which the caller invokes only when `Should()` is true. So once the
+gate turns off, no further outcomes are observed, α freezes, and the `α ≥ EnableAt` re-enable branch
+is unreachable for the rest of that Generate. `TestOptFwdGate_hysteresis` passes because it calls
+`Observe` in an unconditional loop — valid for the component, defeated by the composition.
+
+**None of this changes what shipped.** The T ≤ 0.2 cap means the overlap does not run above 0.2 at
+all, so both the mis-calibrated thresholds and the latch stop mattering in the losing regime. It also
+means the cap is doing a job the existing gate was supposed to do, which is worth knowing if anyone
+later fixes the constants: **the right long-term fix is probably a break-even threshold that scales
+with the sampler share — computable at LOAD time, no probing** — and that is exactly what the third
+model is being run to test.
+
 ## The do-nothing arm is a FIXED T ≤ 0.2 THRESHOLD, and that is what B must beat
 
 **Not the always-on default.** A one-line constant is a real, measured, well-understood alternative:

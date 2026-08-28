@@ -999,3 +999,28 @@ split is not reliable and should not be quoted.** What is unaffected: the optFwd
 rests entirely on an end-to-end A/B (`GOINFER_NO_OPTFWD=1`, n=15, plus the five-point ladder) and
 never depended on the microbenchmark at all. `decoder/g26_sampler_bench_test.go` is kept, but its
 doc comment should be read with this retraction attached.
+
+## G27 · optFwdGate's hysteresis is a one-way latch, and its thresholds are calibrated on one model
+
+Found 2026-08-28 while shipping the T ≤ 0.2 cap. Two independent defects in `decoder/spec_optfwd.go`,
+neither of which the shipped cap depends on — it makes both moot in the losing regime — but both of
+which matter if anyone re-enables the overlap more widely.
+
+**1. The re-enable branch is unreachable.** `Observe` is called only from `optFwdStep`; the caller
+invokes `optFwdStep` only when `Should()` is true. Once α drops below DisableAt the gate turns off,
+no further outcomes are observed, α freezes, and `α ≥ EnableAt` can never be reached again within
+that Generate. The documented dead band is one-way in practice.
+`TestOptFwdGate_hysteresis` does not catch it because it calls `Observe` in an unconditional loop —
+a unit test that is correct about the component while the composition defeats it. **A test at the
+wiring level would have caught what a test at the component level could not.**
+
+**2. EnableAt/DisableAt (0.90/0.75) are model-independent constants fitted on one model.** The
+comment names it: the 90.9% worst-case break-even was measured on qwen2.5-coder-0.5b, a 152k-vocab
+model. Break-even rises as the sampler share falls, so on phi3-mini (5.4% share vs 18.2%) the true
+break-even is above 0.90 and the whole dead band sits below it — the gate cannot turn off in the
+regime where the feature loses 2.8-6.8%.
+
+**Not fixed, deliberately.** Fixing (2) properly means knowing whether break-even tracks a static
+property like sampler share, which is the open question the third-model run addresses. Fixing (1) is
+small and self-contained but pointless while the overlap is capped at T ≤ 0.2, where the gate barely
+runs. Both should be revisited together if the cap is ever raised.
