@@ -73,7 +73,9 @@ GPORT, OPORT = 8099, 11499
 # protocol difference §B7 recorded, not a shortcut.
 DEEP_CTX = int(os.environ.get("BENCH_DEEP_CTX", "0"))
 
-NGEN = 64          # tokens generated per completion
+NGEN = int(os.environ.get("BENCH_NGEN", "64"))  # tokens generated per completion
+# BENCH_NGEN exists for spec/10's window-variance question: one completion IS a decode window at
+# ~fixed KV depth, so the window size under test is the completion length. Default unchanged.
 NCOMP = 8          # completions per run  (>= 8 required)
 NRUNS = 2          # runs per cell        (>= 2 required, spread reported)
 
@@ -402,6 +404,38 @@ CONFIGS = {
     },
 }
 
+def gate_cell_idle():
+    """Re-check that the box is idle, BEFORE EVERY CELL. Returns nothing; exits on failure.
+
+    preflight() checks once at sweep start, and that is not enough: a sweep runs for tens of
+    minutes, and load arriving at minute ten is invisible to a gate that fired at minute zero.
+    MEASURED 2026-08-27 -- a window-variance sweep passed preflight at loadavg 0.75, then ran five
+    cells at 1.00-2.43 because another job started on the box. Every cell was contaminated and the
+    sweep had to be discarded. The per-cell machine state recorded in each row is what caught it;
+    this gate is so it does not have to be caught after the fact.
+
+    ON TIMEOUT THIS REFUSES RATHER THAN PROCEEDING, which is the whole design. A settle loop that
+    gives up and measures anyway is WORSE than no loop at all: it produces numbers that look
+    entirely normal and are silently taken on a loaded box. Refusing loses a sweep; proceeding
+    loses the ability to tell which rows were real.
+    """
+    cap = float(os.environ.get("BENCH_MAX_LOADAVG", "1.0"))
+    waited, limit = 0, int(os.environ.get("BENCH_IDLE_WAIT", "600"))
+    while True:
+        la = _loadavg()
+        if not la or la[0] <= cap:
+            return
+        if waited >= limit:
+            sys.exit(f"REFUSED mid-sweep: 1-min load average {la[0]:.2f} still exceeds {cap:.2f} "
+                     f"after waiting {waited}s. Another job is on the box. NOT measuring anyway — "
+                     f"a cell measured under contention is indistinguishable afterwards from a "
+                     f"clean one, which is how a whole sweep gets silently voided. Re-run when the "
+                     f"box is free, or raise BENCH_MAX_LOADAVG deliberately.")
+        print(f"# cell gate: loadavg {la[0]:.2f} > {cap:.2f}, waiting ({waited}/{limit}s)", flush=True)
+        time.sleep(20)
+        waited += 20
+
+
 def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     """Restart the server, do NRUNS runs of NCOMP completions, return per-run rates.
 
@@ -443,7 +477,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             return None, f"warmup failed: {e}", None
 
         _, ncomp, nruns = gen_params()
-        run_rates, tok_total, chunk_total = [], 0, 0
+        run_rates, comp_rates, tok_total, chunk_total = [], [], 0, 0
         for _ in range(nruns):
             rates = []
             for _ in range(ncomp):
@@ -461,8 +495,13 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 chunk_total += chunks
             if rates:
                 run_rates.append(statistics.mean(rates))
+                # Keep the per-completion rates too. Each is a decode WINDOW of NGEN tokens at
+                # ~fixed depth, and spec/10's kill gate turns on their spread -- which this loop has
+                # always computed and then discarded, reporting only the mean of 8.
+                comp_rates.extend(rates)
         ratio = (tok_total / chunk_total) if chunk_total else None
-        return run_rates, None, {"tokens": tok_total, "chunks": chunk_total, "tokens_per_chunk": ratio}
+        return run_rates, None, {"tokens": tok_total, "chunks": chunk_total, "tokens_per_chunk": ratio,
+                                 "completion_rates": comp_rates, "ngen": gen_params()[0]}
     except Exception as e:
         return None, str(e), None
     finally:
@@ -507,6 +546,23 @@ def plan_depths():
     if raw.lower() == "none":
         return []
     return [int(d) for d in raw.split(",") if d.strip()]
+
+
+def plan_engines():
+    """Engines to run. BENCH_ENGINES narrows them; default is both.
+
+    For an INTERNAL A/B — the same binary against itself under an env flag — the peer cell measures
+    nothing and doubles the sweep. USING THIS FORFEITS THE DRIFT CONTROL, which is the whole reason
+    a peer cell sits in a comparison, so it is legitimate ONLY where no cross-engine claim is being
+    made. Never use it for a row that quotes a ratio."""
+    raw = os.environ.get("BENCH_ENGINES", "").strip()
+    if not raw:
+        return ["goinfer", "ollama"]
+    picked = [e.strip() for e in raw.split(",") if e.strip()]
+    unknown = [e for e in picked if e not in ("goinfer", "ollama")]
+    if unknown:
+        sys.exit(f"BENCH_ENGINES: unknown engine(s) {unknown}; known: ['goinfer', 'ollama']")
+    return picked
 
 
 def plan_backends():
@@ -593,16 +649,16 @@ def main():
     #    two it actually has. webgpu has NO ollama counterpart -- it is scored against the
     #    ollama CUDA row and labelled cross-backend in the writeup, never as a peer cell.
     for mk in plan_models():
-        bes = plan_backends()
+        bes, engs = plan_backends(), plan_engines()
         for eng, be in [("goinfer","cpu"), ("ollama","cpu"),
                         ("goinfer","cuda"), ("ollama","cuda"),
                         ("goinfer","webgpu")]:
-            if be in bes:
+            if be in bes and eng in engs:
                 plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, CUDA only, both engines
     for mk in plan_models():
         for d in plan_depths():
-            for eng in ["goinfer", "ollama"]:
+            for eng in plan_engines():
                 plan.append(("B", eng, "cuda", mk, d, "greedy"))
 
     # Phase C is the SAMPLING axis, and it is empty unless asked for. §B5's stale set is "the
@@ -613,7 +669,7 @@ def main():
     #     BENCH_CONFIGS=temp0.8_topp0.95,temp0.8_topk40 python3 scripts/bench_peer.py ...
     for cfg in plan_configs():
         for mk in plan_models():
-            for eng in ["goinfer", "ollama"]:
+            for eng in plan_engines():
                 plan.append(("C", eng, "cuda", mk, 128, cfg))
 
     print(f"# {len(plan)} cells planned, {len(done)} already done", flush=True)
@@ -622,6 +678,7 @@ def main():
         if key in done:
             print(f"# skip (done): {key}", flush=True)
             continue
+        gate_cell_idle()
         t0 = time.time()
         machine = machine_state()
         rates, err, counts = run_cell(engine, mk, depth, cfg, backend)
