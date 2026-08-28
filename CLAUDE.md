@@ -55,9 +55,19 @@ and `go vet -tags 'cuda goinfer_testhooks' ./cuda/` are cheap; run the ones your
 **`gofmt -l .` is a CI gate and nothing here auto-formats.** Run it across every module you
 touched before committing.
 
-**`staticcheck` is also a CI gate, and the LOCAL BINARY IS PROBABLY LYING TO YOU.** Run CI's exact
-pinned version instead — `go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./...`, plus the tagged
-variants (`-tags 'cuda goinfer_testhooks' ./cuda/...`, `-tags 'gpu goinfer_testhooks' ./gpu/...`).
+**`staticcheck` is also a CI gate, and a LOCAL RUN CAN SILENTLY CHECK NOTHING.** Install CI's pinned
+version once — `go install honnef.co/go/tools/cmd/staticcheck@v0.8.0` — then run the tagged variants
+(`-tags 'cuda goinfer_testhooks' ./cuda/...`, `-tags 'gpu goinfer_testhooks' ./gpu/...`).
+
+**Do NOT combine `go run …@v0.8.0` with `GOOS=linux`.** `go run` then builds a LINUX staticcheck and
+fails to exec it on darwin — `exec format error`, **and the shell still reports exit 0**. Use an
+INSTALLED native binary and set `GOOS` only for the analysis target:
+`GOOS=linux GOARCH=amd64 CGO_ENABLED=0 ~/go/bin/staticcheck -tags cuda ./...`.
+
+**An empty staticcheck result is indistinguishable from one that never ran, so prove the gate can go
+red.** A four-line throwaway package with an unused struct field must print
+`field deadField is unused (U1000)`. That is the exact defect that held CI red across three pushes on
+2026-08-28, and the same class `cmd/gate/mutation.go` was built to prevent.
 A `staticcheck` on PATH can be years older than the toolchain and then fails to analyse ANYTHING,
 emitting only `internal error in importing "internal/cpu" (unsupported version: 4)` — which looks
 like a broken tool rather than an unrun gate, and exits without checking your code. Measured
