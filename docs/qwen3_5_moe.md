@@ -116,6 +116,38 @@ is not position-truncatable, for `qwen3_5_moe`:
 - speculative decoding's `TruncateTo` is **disabled**.
 Optimizing those for hybrid models (state checkpoints) is a later track.
 
+**Two design notes for whoever picks that track up**, both measured 2026-08-28 and both the kind of
+thing that gets rediscovered the hard way. Full working:
+`docs/spec/09-mtp-heads.md`, "Pricing the narrow state snapshot".
+
+1. **Reuse one snapshot buffer; do not allocate per round.** Allocating fresh more than doubles the
+   cost and the penalty is regime-sensitive — measured 2.9 ms reused against 3.2 ms allocating at
+   f32, and 2.9 ms against **5.2–6.2 ms** at int8, on the same model and the same bytes. The
+   obvious implementation allocates, and the resulting slowdown shows up later as a mysterious
+   regression that does not correlate with anything in the decode path.
+2. **A snapshot must copy `convWin`, not only `S`.** `gatedDeltaNetStep` reads the conv window as
+   its left context and slides it every token, so with `ConvKernel = 4` (window = 3) **any verify
+   of width K ≥ 4 replaces the window entirely.** Restoring `S` alone leaves every conv tap holding
+   a rejected token's mixed vector — wrong logits, no error. The window is only 6.6% of the
+   per-layer bytes, which is exactly why it looks skippable.
+
+3. **Make the conv windows contiguous, or copy them as one.** On the resident CUDA path the
+   snapshot is 36 separate device copies (18 layers × `dnWin` + `dnState`) and that composition
+   costs **2× the primitive**: 174 GB/s against 347 GB/s for one contiguous copy of the same
+   bytes. The 18 `dnWin` copies are 73 KB each against ~9 µs of dispatch and are
+   overhead-dominated; the `dnState` copies at 1 MiB are not. Batching the windows recovers most
+   of the penalty — roughly 446 µs → 250 µs. A design note, not a thing to chase before the
+   passthrough exists.
+
+Note also that snapshot size does **not** track model size: it is
+`linear_num_value_heads × linear-layer count`, so the 27B needs 149.6 MiB against the 80B's
+75.4 MiB.
+
+**And on the resident path there is no device-to-device copy to make the snapshot with.**
+`aikit/gpu` exposes only `Upload`/`Download`, so state that is already on the device has to cross
+PCIe twice — measured at ~100% of a decode step, i.e. a token per round. `gocudrv` has
+`memcpyDtoD` one layer down; the gap is plumbing, worth ~18×, and it blocks this whole track.
+
 ## Plan (parity-first, matches the Gemma 4 bring-up)
 
 > **STATUS: shipped.** Steps 1–4 landed in v0.4.0 (descriptor, DeltaNet forward

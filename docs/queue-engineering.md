@@ -1386,6 +1386,33 @@ marks where else the same class may live.
 
 ### C. Verification surfaces never exercised
 
+**G25 · The idle guard is now written twice, in two languages, from two independent
+rediscoveries** — unclaimed. Filed 2026-08-28.
+
+Within one day the same guard was arrived at twice, by different work, without either knowing about
+the other: `gate_cell_idle()` in `scripts/bench_peer.py:407` (re-check before every cell, refuse on
+timeout), and a `settle()` in the snapshot-cost driver on the `linux` box. Both started as
+check-once-at-start, both were found insufficient the same way, and **both converged on the same
+non-obvious rule: refuse rather than proceed.**
+
+That rule is the part worth centralising, because it is counter-intuitive enough to be re-litigated
+by whoever writes the third one. A loop that waits and then measures anyway does not fail loudly —
+it launders a contaminated run into a plausible-looking one. Measured both times: the contaminated
+snapshot-cost run gave 0.544% against the clean 0.531–0.537%, close enough to have been believed and
+published. **Contamination that produces obviously-wrong numbers is harmless; contamination that
+produces plausible numbers is the dangerous kind, and only the second kind survives review.**
+
+Shape, if taken: one helper carrying (a) the loadavg cap and its env override, (b) wait-then-REFUSE
+rather than wait-then-proceed, (c) the per-cell re-check rather than start-only, and (d) recording
+the observed loadavg into the artifact regardless of outcome — the recording is what caught the
+2026-08-27 contamination that the start-only gate missed. `scripts/` has no shared library module
+today, so this is partly a question of where such a thing lives.
+
+**Do not fold in the goinfer-side settle loops without checking they want the same policy.** A gate
+that refuses is right for a measurement; it is not obviously right for a long-running sweep where
+refusing discards hours of completed cells. `bench_peer.py` is resumable and can afford to refuse;
+that is a property of that harness, not a universal one.
+
 **G23 · The T3 cosine bar is calibrated for int8 and there is now an int4 T3 under it** —
 unclaimed. Filed 2026-08-26 from `qwen3_next`'s first real-checkpoint run.
 

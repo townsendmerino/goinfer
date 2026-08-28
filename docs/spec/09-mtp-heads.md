@@ -357,3 +357,324 @@ seam blocks deployment and not measurement.
   llama.cpp 10–11 → 17–19 tok/s with MTP drafting) is n=2 per condition, one machine, subjective
   composite scoring, no variance. It is a reason to measure and not a number to cite, and it is not
   carried into any table on this page.
+
+## Pricing the narrow state snapshot (MEASURED 2026-08-28, `linux`)
+
+**Measurement only. Nothing was built.** `specRollbackSafe` is untouched, no snapshot or restore is
+wired into any decode path, and the harness that produced these numbers
+(`decoder/deltanet_snapshot_cost_test.go`) is called from nothing else.
+
+### What is being priced, and why it is not the deferred track
+
+The refusal above traces to `decoder/deltanet.go:150` — `deltaState` holds a running recurrent
+matrix plus a conv window, and the comment at `decoder/deltanet.go:147` records that it is fixed
+size, independent of sequence length, and **not position-truncatable**. A verify advances that
+state by K tokens; a partial rejection needs it as of an earlier token, which no truncation or
+inversion recovers. `decoder/speculative.go:92` is where that refusal is applied.
+
+`docs/qwen3_5_moe.md:117` defers a remedy — *"optimizing those for hybrid models (state
+checkpoints) is a later track"* — but that entry was scoped for **cross-call prefix reuse**:
+restore to an arbitrary earlier position, later, possibly across requests
+(`docs/qwen3_5_moe.md:114`). Speculation needs something much weaker: snapshot immediately before
+the verify, restore on rejection, discard. **One buffer, one round deep, lifetime of
+milliseconds.** The two were bundled because they share a root cause, not because they are the
+same size of problem.
+
+**The narrow version is a strict subset, and a cheap result here does not authorise the broader
+track.** Arbitrary-position restore needs state retained across calls and indexed by position;
+none of that is priced below.
+
+### Snapshot size, computed from config and checked against the live cache
+
+`bytes = NumValueHeads·KeyHeadDim·ValueHeadDim` f32 for `s`, plus `(ConvKernel−1)` vectors of
+`2·KeyHeadDim·NumKeyHeads + ValueHeadDim·NumValueHeads` f32 for `convWin`, per linear layer. The
+harness asserts each of those against what the loaded model actually allocates, so the table is not
+a paper calculation.
+
+| model | layers | linear | full | layer split from | bytes/layer | total snapshot |
+|---|---|---|---|---|---|---|
+| qwen3.5-0.8b | 24 | 18 | 6 | `layer_types` | 1,122,304 | **19.3 MiB** |
+| qwen3.6-35b-a3b | 40 | 30 | 10 | `layer_types` | 2,195,456 | **62.8 MiB** |
+| qwen3next-80b | 48 | 36 | 12 | **computed, `full_attention_interval=4`** | 2,195,456 | **75.4 MiB** |
+| qwen3.8-27b | 64 | 48 | 16 | `layer_types` | 3,268,608 | **149.6 MiB** |
+
+**The 3:1 interleave was read per model, not assumed, and one model has no `layer_types` at all** —
+`qwen3next-80b` declares only `full_attention_interval`, so its 36/12 split is synthesized. It does
+land on 3:1, by computation.
+
+**The snapshot does not scale with model size, and the ordering is not the one anybody would
+guess.** Per-layer size varies **2.9×** across these four because `linear_num_value_heads` runs
+16 / 32 / 32 / 48, and the totals invert against parameter count: the **27B needs 149.6 MiB, the
+80B needs 75.4 MiB** — the smaller model carries twice the state. Snapshot cost is set by
+`num_value_heads × linear layer count`, which is a config choice, not a size proxy. This is the
+second reason the projections above carry no percentages: neither numerator nor denominator can be
+extrapolated from a model's parameter count.
+
+### Copy cost and the denominator — MEASURED, qwen3.5-0.8b only
+
+**REGIME: qwen3.5-0.8b, CPU backend, single sequence, 30 paired rounds per run, 3 settled runs per
+quant. These figures are NOT transferable to a 27B/35B/80B trunk.** Snapshot and decode are timed
+in the same loop on the same cache, so machine drift moves both together instead of landing on one.
+
+| regime | decode step (median of 3 runs) | snapshot+restore | % of one decode step | % of K=4 round | % of K=7 round |
+|---|---|---|---|---|---|
+| f32 weights | 135.58 – 135.76 ms | 2.881 – 2.911 ms | 2.122 – 2.146% | **0.531 – 0.537%** | **0.303 – 0.307%** |
+| int8 weights, f32 activations | 74.92 – 75.24 ms | 2.946 – 2.990 ms | 3.933 – 3.974% | **0.983 – 0.994%** | **0.562 – 0.568%** |
+
+Spread is across three runs, each started on a box settled below loadavg 0.30; ranges are given
+rather than a point value.
+
+**The copy is bandwidth-sensible, which is what stops it reading as an artifact.** Snapshot+restore
+moves 40.4 MB and runs at **13.5 – 14.0 GB/s** in situ. The decode step is itself
+bandwidth-bound at a comparable rate, so the time ratio tracks the byte-count ratio rather than
+reflecting anything structural about the copy.
+
+**Tight-loop control agrees with the in-situ figure.** A back-to-back copy loop with no decode
+between rounds gives 14.3 – 14.6 GB/s, an in-situ/tight ratio of **1.04 – 1.07×** — the in-situ
+number is marginally slower, the expected direction given the decode's cache pressure. There is no
+disagreement to record here; had there been one, the in-situ figure would govern.
+
+**Reuse the buffer.** Allocating a fresh snapshot each round costs 3.24 – 3.30 ms at f32 and
+**5.21 – 6.23 ms at int8** — allocator behaviour is regime-sensitive and can more than double the
+cost. The measured figures above are for one reused buffer, which is what the narrow scheme
+implies.
+
+### Projected copy cost for the models not timed
+
+**Projected, not measured** — from the measured 13.9 GB/s, scaled by snapshot bytes.
+
+| model | snapshot bytes | copy cost (PROJECTED) |
+|---|---|---|
+| qwen3.6-35b-a3b | 65,863,680 | 9.5 ms |
+| qwen3next-80b | 79,036,416 | 11.4 ms |
+| qwen3.8-27b | 156,893,184 | 22.6 ms |
+
+**No percentage is given for these, and none should be inferred.** A ratio needs a decode step;
+decode time scales with weights, not with snapshot bytes, so dividing one projection by another
+would produce a figure with no measurement under it. Their bands are **unknown**.
+
+### Bands
+
+| regime (qwen3.5-0.8b, CPU) | K=4 | K=7 | band |
+|---|---|---|---|
+| f32 | 0.531 – 0.537% | 0.303 – 0.307% | **< 1% — cheap** |
+| int8 | 0.983 – 0.994% | 0.562 – 0.568% | **< 1% — cheap, with almost no margin at K=4** |
+| qwen3.6-35b-a3b, qwen3next-80b, qwen3.8-27b | — | — | **unknown, denominator not measured** |
+
+**The int8 K=4 cell sits about 1% of the boundary value below the 1% line, and the direction is
+systematic rather than noise.** The snapshot is fixed at 20.2 MB; only the denominator moved. Going
+f32 → int8 shrank the decode step 1.80× and pushed K=4 from 0.53% to 0.99% — two regimes on one
+model span nearly the whole cheap band. **A faster decode step is what makes this expensive**, and
+this is the slowest backend available. Where a third regime lands is not measured and is not
+projected here.
+
+**A device-side copy has different economics and is unmeasured.** No CUDA or Metal work was done.
+The CPU figures must not be read as a bound on a GPU-resident path in either direction.
+
+### The snapshot must cover `convWin`, not just `s` — and at K≥4 the whole window is stale
+
+This one is answerable from the code rather than by measurement, and the answer is not "probably".
+`gatedDeltaNetStep` reads `convWin` as the depthwise conv's left context every step
+(`decoder/deltanet.go:184`, taps `j = 0..K-2`) and mutates it every step, appending the current
+mixed vector and sliding to the last `K-1`. A verify of width K advances that window by K tokens.
+
+**With `ConvKernel = 4` the window is 3 vectors, so any verify of width K ≥ 4 replaces it
+entirely.** A restore that recovers `s` and misses `convWin` does not leave a slightly stale
+window — it leaves one in which *every* tap is a rejected token's mixed vector, feeding the conv of
+the next accepted token. The logits would be wrong and nothing would report it.
+
+`convWin` is **73,728 B of 1,122,304 B per layer — 6.6%**, which is exactly what makes it
+skippable-looking. Every figure in this section already includes it; an implementation that drops
+it to save 6.6% would be measuring something cheaper than what it needs.
+
+### What this does not settle
+
+**Cost is the easier half.** A restore has to reproduce the state **bit-exactly**, or the lossless
+invariant every scheme in `docs/spec` is gated on breaks. A clone and write-back of plain
+`[]float32` should be exact by construction — but that is an assumption, and it is untested here.
+Nothing in this section measured correctness.
+
+Also unpriced: what a rejection costs *beyond* the restore, whether one buffer suffices under
+batching, and every model in the table above except the 0.8B.
+
+### Measurement note
+
+The first attempt at these numbers was discarded. Its settle loop timed out after 10 minutes and
+measured anyway, at loadavg 1.75, while an unrelated benchmark held the box — a loop that gives up
+and proceeds launders a contaminated run into a plausible-looking one. The loop now refuses. The
+same conclusion was reached independently for `scripts/bench_peer.py` in `ebb1e3e`. The discarded
+run gave 0.544% at K=4 against the clean 0.531 – 0.537%: close enough to have been believed, which
+is the point.
+
+## Step 1 — the resident CUDA cost, and why the CPU number was answering a different question
+
+**MEASURED 2026-08-28, `linux`. Measurement only** — `specRollbackSafe` untouched, nothing wired
+into a decode path. Harness: `cuda/deltanet_snapshot_cuda_test.go`.
+
+### The three paths, all measured, all labelled
+
+Same logical operation — snapshot 20.2 MiB of DeltaNet state and put it back — across two orders of
+magnitude, decided entirely by which copy primitive is available.
+
+| path | cost | vs one decode step | what kind of measurement |
+|---|---|---|---|
+| host memcpy, CPU decode | 2.9 ms | 2.1 – 4.0% | in situ, real state, real decode |
+| **PCIe round trip, resident CUDA (today's only option)** | **8.1 ms** | **~100% ± 13 pp** | in situ, real state, real decode |
+| DtoD, real 36-copy shape (needs a passthrough) | ~446 µs | ~5.5% | **through the PRIMITIVE, not an implemented snapshot** |
+
+**The third row is not the same kind of number as the first two** and must not be quoted as an
+observed integration cost. It was measured outside goinfer entirely — a standalone `gocudrv` program
+copying synthetic buffers of the same sizes — because the wrapper offers no device-to-device copy
+to measure through. It is the right number for the decision and the wrong number to cite as "the
+snapshot costs 5.5%".
+
+### The conclusion is about the primitive, not the approach
+
+**"The narrow snapshot does not pay on resident CUDA" would be the wrong sentence to carry
+forward.** What is measured is that it does not pay *through the copy primitive currently
+available*. Those read identically today and diverge completely once a passthrough exists.
+
+`aikit/gpu` exposes `Upload` and `Download` and no device-to-device copy, so a snapshot of state
+that is *already on the device* (`cuda/resident.go:240` — `dnWin`, `dnState`) has to cross PCIe to
+the host and come back: measured **5.0 GB/s**, about a third of the host memcpy rate. The primitive
+exists one layer down — `gocudrv`'s `memcpyDtoD` / `memcpyDtoDAsync`. The gap is plumbing, and the
+plumbing is worth ~18×.
+
+### The paired ratio, and why the ratio of medians could not be corrected for
+
+Six settled runs, ratio formed **per round** rather than as median(cost)/median(decode):
+
+| quant | min | p50 | max | mean | sd |
+|---|---|---|---|---|---|
+| int4 | 76.8% | 100.4% | 134.9% | 102.3% | 13.5 pp |
+| int4 | 74.9% | 100.5% | 166.3% | 106.5% | 24.5 pp |
+| int4 | 83.9% | 107.9% | 132.8% | 107.1% | 12.1 pp |
+| int8 | 82.0% | 98.6% | 158.2% | 100.7% | 14.5 pp |
+| int8 | 71.1% | 99.4% | 124.5% | 98.9% | 13.8 pp |
+| int8 | 73.7% | 100.7% | 147.5% | 103.4% | 16.1 pp |
+
+**≈100% ± 13 pp.** The components are noisier than the ratio — the decode step alone spans 2.0×
+within a run while the ratio spans ~1.6× — so pairing recovers real precision rather than
+relabelling it.
+
+**The argument for pairing is not that the ratio of medians is biased.** A fixed bias could be
+corrected. Here it disagreed with the paired form by **7.6 pp in one run and under 1 pp in others** —
+unpredictably, run to run. That is what makes it uncorrectable, and it is the reason to form the
+ratio per round rather than a preference about statistics.
+
+### The 0.8B resident denominator is not a proxy for a 27B resident denominator
+
+**int4 and int8 land on top of each other** — medians interleave across the six runs with no
+separation by quant, and the decode step is 8.06 ms against 8.01 ms. So resident decode at 0.8B on
+this card **is not weight-bandwidth-bound**: the lever that spanned most of the cheap band on CPU
+(f32 → int8, 1.80×) does nothing here.
+
+That has a consequence beyond this table. The denominator measured here is set by something other
+than weight traffic — dispatch, launch geometry, the DeltaNet chain's serial structure — and it will
+not scale the way the CPU figures would suggest. A 27B resident trunk is plausibly weight-bound
+where this is not, so **neither the ratio nor its direction transfers**. Do not extrapolate either
+way; measure it there.
+
+### An impossible number, caught by a physical bound
+
+**This is the most transferable thing in this section.** The first device-to-device reading was
+4.96 µs — **8145 GB/s** on a card whose VRAM peak is 448 GB/s. Not a suspicious result: an
+impossible one.
+
+The cause was a call named `CopyToDevice`, dispatching the **synchronous** `memcpyDtoD` rather than
+the Async form, that nonetheless returns before the transfer completes. Timed without a synchronize
+it measures dispatch (~9 µs) instead of transfer (~116 µs). Every part of that combination points
+the wrong way, and the resulting number is entirely plausible if you have no bound to check it
+against.
+
+**Where a physical ceiling exists, checking against it should be routine rather than incidental.**
+Almost every other instrument failure this week produced numbers that were wrong but plausible —
+a settle loop measuring at loadavg 1.75 and giving 0.544% against a clean 0.531%; a sampler
+microbenchmark inverting a sign; a harness counting chunks instead of tokens. None of those had a
+hardware bound available to violate. This one did, and impossibility is a far sharper instrument
+than suspicion. The probe now **derives** the ceiling from the device
+(`MemoryClockRate × BusWidth × 2` → 448 GB/s, matching spec) and asserts against it, so the check
+travels to other cards instead of carrying a stale constant. Its dispatch-only figure stays in the
+output beside the real one, so the trap is self-documenting for whoever runs it next.
+
+### The composition costs 2× the primitive
+
+One contiguous 20.2 MiB DtoD runs at **347 GB/s (78% of peak)**. The real shape — 18 layers ×
+(`dnWin` + `dnState`) = 36 separate copies — runs at **174 GB/s (39% of peak)**, taking 223 µs
+against 116 µs. The 18 `dnWin` copies are 73 KB each against ~9 µs of dispatch and are
+overhead-dominated; the 18 `dnState` copies at 1 MiB are not.
+
+A single contiguous copy would have reported 347 GB/s and been believed. **Isolation proves the
+primitive, never the composition** — the same lesson the hysteresis test produced the same day, in
+a different subsystem, from the opposite direction.
+
+**Design note, not a chase:** if the conv windows were contiguous, or issued as one copy, most of
+the 2× penalty disappears. That moves ~446 µs toward ~250 µs. Recorded in `docs/qwen3_5_moe.md`
+beside the buffer-reuse and `convWin` notes.
+
+### Where this leaves the decision
+
+Nothing to build yet, and the blocking item is not in goinfer. A snapshot implemented today costs
+about a token per round, and no acceptance rate rescues that. After a passthrough it is ~5.5% of a
+decode step on this trunk — the **1–5% band** under the K-step framing, which returns alongside α
+rather than being settled here. And since a batched verify on a bandwidth-bound decode costs nearer
+one step than K, the K-step framing is the favourable reading, not the neutral one.
+
+## Step 1, concluded — measured through the real primitive (aikit/gpu v0.31.0, 2026-08-28)
+
+The passthrough exists. `aikit/gpu` v0.31.0 adds `CopyDevice`, `CopyDeviceBatch` (one synchronize
+for many copies) and a coalescing pass; goinfer's `cuda` module is bumped to it. **This replaces the
+synthetic-buffer projection above with an in-situ measurement, and the projection was optimistic.**
+
+### The projection was wrong by 2.6× on bandwidth, and that is the point of measuring in situ
+
+| | synthetic probe | in situ |
+|---|---|---|
+| snapshot+restore | ~446 µs | **623 µs** |
+| effective traffic, identical 36-copy shape | 174 GB/s | **65 GB/s** |
+
+Same call, same byte counts, same number of copies. The difference is **buffer layout**: the probe
+allocated its 36 buffers consecutively, so aikit's coalescing had adjacent pairs to merge. The real
+`dnWin`/`dnState` live at bind offsets inside the resident arena (`cuda/resident.go:233` calls them
+COMPOUND) interleaved with everything else the model allocated, so there is far less to coalesce.
+A figure measured through a primitive on synthetic buffers is not an integration cost — here the
+gap was 2.6×, not a rounding difference.
+
+### Results, three paired runs per path, alternated in one session
+
+| path | snapshot+restore | traffic | paired ratio p50 (spread) |
+|---|---|---|---|
+| device-to-device (`CopyDeviceBatch`) | **623 µs** | 65 GB/s | **11.0%** (10.8 / 11.3 / 10.8; sd 2.0–2.9 pp) |
+| PCIe round trip (pre-v0.31.0 control) | **8080 µs** | 5.0 GB/s | 103.2% (97.6 / 108.2 / 103.7; sd 13.5–21.6 pp) |
+
+**Quote the cost ratio, 13.0×, not the ratio-of-ratios.** The two paths do not share a denominator:
+the resident decode step measures **5.69 ms in the D2D runs and 7.92 ms in the PCIe runs**, with no
+overlap across three runs each — **the snapshot path perturbs the decode step it is being measured
+against**, by 1.39×. Plausibly L2 eviction (40 MB of traffic against a 4 MB L2) plus the
+synchronization the PCIe path forces per buffer, but the mechanism is not established here and the
+number does not depend on it.
+
+Two consequences. The PCIe ratio is **flattered** by its own contamination: against the clean
+denominator it is **142% of a decode step**, not 103%. And the honest statement of what the
+passthrough bought is the **cost** ratio — 8080 µs → 623 µs, **13.0×** — which is denominator-free.
+The earlier "~18×" from the probe overstated it, for the same buffer-layout reason as above.
+
+**This is the same class as the async-copy trap, one level up.** There the instrument perturbed its
+own reading; here the *treatment* perturbs the *control variable*. A ratio is only safe when its
+denominator is independent of the arm.
+
+### Where the answer actually lands
+
+**11.0% of a resident decode step.** Under the K-step framing that is **2.75% at K=4** and **1.57%
+at K=7** — the **1–5% band**, and near its top rather than its middle. But a batched verify on a
+bandwidth-bound decode costs nearer *one* decode step than K, and under that reading the figure is
+**5.5–11%**, i.e. the **">5%, does not pay on its own"** band.
+
+**So the passthrough moved this from impossible to arguable, not from impossible to cheap.** Before
+it, a snapshot cost more than a whole decode step and no acceptance rate recovers that. After it,
+whether this pays depends on α — which is what the pre-registered rule said should happen in this
+band, and it is a real decision rather than a formality.
+
+**And the 0.8B resident denominator still does not transfer.** int4 and int8 land on top of each
+other here, so this decode step is not weight-bandwidth-bound; a 27B resident trunk plausibly is.
+Both terms move on a bigger model and neither direction is measured.

@@ -872,6 +872,7 @@ supports.
 | `docs/queue-engineering.md|metal/model.go:1048` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|metal/model.go:927` | goinfer | `r.residencyBufs = pinned` |
 | `docs/queue-engineering.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
+| `docs/queue-engineering.md|scripts/bench_peer.py:407` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/backend.go:1115` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-performance.md|cuda/backend.go:586` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
 | `docs/queue-performance.md|cuda/backend.go:714` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
@@ -891,12 +892,18 @@ supports.
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:1883` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:44` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,      // the text-only checkpoint's model_type` |
+| `docs/spec/09-mtp-heads.md|cuda/resident.go:233` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
+| `docs/spec/09-mtp-heads.md|cuda/resident.go:240` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/spec/09-mtp-heads.md|decoder/blockspec.go:399` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/spec/09-mtp-heads.md|decoder/deltanet.go:147` | goinfer | `// head). Fixed size — independent of sequence length, and NOT position-` |
+| `docs/spec/09-mtp-heads.md|decoder/deltanet.go:150` | goinfer | `type deltaState struct {` |
+| `docs/spec/09-mtp-heads.md|decoder/deltanet.go:184` | goinfer | `win := st.convWin` |
 | `docs/spec/09-mtp-heads.md|decoder/forwardn.go:60` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf.go:631` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/spec/09-mtp-heads.md|decoder/model.go:709` | goinfer | `if a.granite != nil \|\| a.nemotron != nil \|\| a.mla != nil \|\| a.llama4 != nil {` |
 | `docs/spec/09-mtp-heads.md|decoder/registry.go:1027` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
+| `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:60` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:455` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
