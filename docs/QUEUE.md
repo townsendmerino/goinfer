@@ -413,6 +413,50 @@ decide the SHAPE of the gate, not merely its constant:
 | crossover lands at ~0.26 again | Temperature alone predicts the crossover across a 4.7x vocab range. A constant threshold is defensible and much simpler; ship T ≤ 0.2. |
 | crossover moves LOWER | The sampler-share reasoning is wrong and something else drives it. Do not gate on either axis until that is understood. |
 
+**SECOND-MODEL RESULT (2026-08-27): PREDICTION CONFIRMED — the crossover moves 0.26 -> 0.95, and a
+single temperature constant is therefore the WRONG SHAPE for the gate.** Raw:
+`g26-tsweep15-optfwd-{on,off}.json`, log `g26-tsweep15_run.log`. n=6, CUDA, depth 128.
+
+| T | phi3-mini (vocab 32064) | 1.5B (vocab 151936) |
+|---|---|---|
+| 0.2 | −1.1% **wins** | **−7.4% wins** |
+| 0.4 | +2.8% loses | **−6.0% wins** |
+| 0.6 | +6.3% loses | **−5.1% wins** |
+| 0.8 | +6.8% loses | −0.9% no effect |
+| 1.0 | +5.5% loses | −0.9% no effect |
+| **crossover** | **≈ 0.26** | **≈ 0.95** |
+
+The sampler-share reasoning predicted both the direction and roughly the size: 18.2% of the sampled
+token available to hide on the 1.5B against 5.4% on phi3-mini. **On the 1.5B optFwd is never a
+significant loss anywhere in the measured range** — win or neutral throughout. The harm is
+concentrated on SMALL-VOCAB models, which is the opposite of where a reader would look for it.
+
+**A SINGLE TEMPERATURE THRESHOLD IS PROVABLY WRONG IN BOTH DIRECTIONS, and this is what the second
+model was run to establish:**
+
+- Set it safe for phi3-mini (T ≤ 0.2) and the 1.5B forfeits **6.0% at T=0.4 and 5.1% at T=0.6** —
+  real wins, thrown away.
+- Set it for the 1.5B (T ≤ 0.95) and phi3-mini pays **2.8 / 6.3 / 6.8 / 5.5%** across T=0.4–1.0.
+
+There is no constant that is right for both, and they differ by only a vocab size.
+
+**REFINEMENT ON WHAT I PRE-REGISTERED, because "gate on hit rate" is not quite sufficient either.**
+The pre-registration said this outcome argues for a hit-rate-adaptive gate. That is the right
+direction but an incomplete rule: the feature's value is roughly
+
+    value  ~=  p_hit * c_sampler  -  (1 - p_hit) * c_miss
+
+so hit rate alone does not decide it — **`c_sampler` is the other term, and it is exactly what
+differs between these two models.** A hit-rate threshold tuned on phi3-mini would still be wrong on
+the 1.5B, for the same reason a temperature threshold is. The gate needs both, and both are
+measurable at runtime: `OptFwdStats{Guessed, Hit}` already gives the hit rate, and the sampler's
+share is the greedy-vs-sampled step cost, which the decode loop can time directly.
+
+**RECOMMENDATION (not implemented — this is a design change and wants sign-off): do not ship a
+temperature constant.** The defensible interim is that the current unconditional default is wrong on
+small-vocab models and should not stay as-is. Two models is enough to rule out the constant; it is
+not enough to fit the two-term rule, which needs points spanning `c_sampler` rather than two of them.
+
 **Temperature is a PROXY and the ladder should not be mistaken for the mechanism.** What determines
 the feature's value is the realized hit rate, which `OptFwdStats{Guessed, Hit}` already measures per
 run; temperature only predicts it. A hit-rate-adaptive gate is strictly better-targeted than a
