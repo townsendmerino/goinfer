@@ -277,12 +277,19 @@ type cudaResident struct {
 	profStall      time.Duration
 	profHost       time.Duration
 	profDMA        time.Duration
-	profCalls      uint64
-	graphs         bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
-	graphsSync     bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
-	graphMask      string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
-	layerCap       bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
-	layerCapBuf    [][]float32
+	// Phase 0 (G31 follow-up): split the expert DMA into the BIG weight copy and the TINY scale
+	// copy, with bytes and call counts for each. If a ~4 KB scale upload costs nearly as much as a
+	// ~600 KB weight upload, the path is PER-CALL-OVERHEAD bound rather than bandwidth bound, and
+	// the fix is batching rather than anything cleverer. Zero cost when cacheProf is off.
+	profWTime, profSTime   time.Duration
+	profWBytes, profSBytes uint64
+	profWCalls, profSCalls uint64
+	profCalls              uint64
+	graphs                 bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
+	graphsSync             bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
+	graphMask              string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
+	layerCap               bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
+	layerCapBuf            [][]float32
 
 	// hidCap is the PRODUCTION hidden-state seam (P10 / docs/spec/08): the resident
 	// analogue of decoder.Model.ForwardCapture, which exists only on the CPU forward. A
@@ -856,10 +863,26 @@ func (r *cudaResident) loadExpertSlot(w *cudaWQ, e, slot int) error {
 	srcW, srcS := w.srcW.Bytes(), w.srcS.Bytes()
 	wOff, wLen := e*w.perExpertW*4, w.perExpertW*4
 	sOff, sLen := e*w.perExpertS*2, w.perExpertS*2
+	var t0 time.Time
+	if r.cacheProf {
+		t0 = time.Now()
+	}
 	if err := gpu.Upload(w.W.At(slot*w.perExpertW*4), srcW[wOff:wOff+wLen]); err != nil {
 		return err
 	}
-	return gpu.Upload(w.ws16.At(slot*w.perExpertS*2), srcS[sOff:sOff+sLen])
+	if r.cacheProf {
+		r.profWTime += time.Since(t0)
+		r.profWBytes += uint64(wLen)
+		r.profWCalls++
+		t0 = time.Now()
+	}
+	err := gpu.Upload(w.ws16.At(slot*w.perExpertS*2), srcS[sOff:sOff+sLen])
+	if r.cacheProf {
+		r.profSTime += time.Since(t0)
+		r.profSBytes += uint64(sLen)
+		r.profSCalls++
+	}
+	return err
 }
 
 // loadRoutedExperts reads back the router's idx (device→host — C′'s acknowledged per-layer sync),
@@ -929,6 +952,12 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 // count. Zero unless GOINFER_MOE_CACHE_PROF is set.
 func (r *cudaResident) CacheProfForTest() (stall, host, dma time.Duration, calls uint64) {
 	return r.profStall, r.profHost, r.profDMA, r.profCalls
+}
+
+// UploadProfForTest reports the expert-DMA split: the big weight copies vs the tiny scale copies,
+// each with elapsed time, bytes moved and call count. Zero unless GOINFER_MOE_CACHE_PROF is set.
+func (r *cudaResident) UploadProfForTest() (wT, sT time.Duration, wB, sB, wC, sC uint64) {
+	return r.profWTime, r.profSTime, r.profWBytes, r.profSBytes, r.profWCalls, r.profSCalls
 }
 
 // expIdx is the idx argument the expert GEMVs bind: the constant slot ids [0..topK-1] when caching

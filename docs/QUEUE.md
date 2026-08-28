@@ -235,7 +235,7 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:2230`
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:2259`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
 > back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
@@ -785,7 +785,7 @@ supports.
 
 | doc \| path:line | repo | line content |
 |---|---|---|
-| `docs/QUEUE.md|cuda/resident.go:2230` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
+| `docs/QUEUE.md|cuda/resident.go:2259` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
 | `docs/QUEUE.md|cuda/softcap.go:25` | goinfer | `// This runs on the SAMPLING path only. ForwardArgmax reduces the argmax on-device and r` |
 | `docs/benchmarks.md|cuda/resident.go:28` | goinfer | `_ decoder.ResidentGreedy  = (*cudaResident)(nil)` |
 | `docs/cuda-megakernel-spec.md|gpu/attention.go:17` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
@@ -820,10 +820,10 @@ supports.
 | `docs/multimodal.md|decoder/config.go:1039` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:358` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
-| `docs/ollama-chase.md|cuda/resident.go:1236` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
-| `docs/ollama-chase.md|cuda/resident.go:405` | goinfer | `g4x1, g4x2, g4rn Buffer` |
+| `docs/ollama-chase.md|cuda/resident.go:1265` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
+| `docs/ollama-chase.md|cuda/resident.go:412` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:42` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
-| `docs/ollama-chase.md|cuda/resident.go:654` | goinfer | `// declined to the staged/CPU path upstream.` |
+| `docs/ollama-chase.md|cuda/resident.go:661` | goinfer | `// declined to the staged/CPU path upstream.` |
 | `docs/ollama-chase.md|decoder/gguf.go:631` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1001` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
@@ -832,7 +832,7 @@ supports.
 | `docs/ollama-chase.md|decoder/residency.go:731` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:244` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
-| `docs/parity-coverage-policy.md|cuda/resident.go:1028` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
+| `docs/parity-coverage-policy.md|cuda/resident.go:1057` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:57` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:446` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
@@ -855,7 +855,7 @@ supports.
 | `docs/queue-engineering.md|cuda/backend.go:1115` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:266` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
-| `docs/queue-engineering.md|cuda/resident.go:468` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
+| `docs/queue-engineering.md|cuda/resident.go:475` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/features_test.go:193` | goinfer | `want, ok := admissionGolden[name]` |
 | `docs/queue-engineering.md|decoder/forwardn.go:721` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
@@ -1197,3 +1197,55 @@ compute to cover the transfers, if the transfers can be started early enough.
 **This is the first quantitative case for that work.** Everything before it was a standing verdict
 carried from Metal. The scoping should now be judged against a measured ~1.9× ceiling at 30 slots
 and a 346 µs-per-miss cost model, not against "misses are on the critical path".
+
+## G32 · Phase 0: the expert DMA is BANDWIDTH-bound at line rate — batching is dead, overlap is the only lever
+
+Measured 2026-08-28, 26B at 30 slots, `GOINFER_MOE_CACHE_PROF=1`. Raw
+`docs/measurements/g31-phase0-upload-split.log`. Each miss issues **four** blocking null-stream
+uploads (weights + scales, for `expGU` and `expDown`), so the aggregate rate hides two populations:
+
+| | calls | bytes | time | rate | per call |
+|---|---|---|---|---|---|
+| **weights** | 10458 | 15.55 GB | 1.427 s | **10.90 GB/s** | 136 µs over 1.49 MB |
+| **scales** | 10458 | 1.94 GB | 0.384 s | 5.06 GB/s | 37 µs over 186 KB |
+
+**THE WEIGHT COPIES RUN AT LINE RATE.** 10.90 GB/s is PCIe 3.0 x16 practical throughput on this
+board. They are not overhead-bound, and no batching, pinning or stream trick makes them faster.
+
+**This refutes the Phase 0 hypothesis, which was mine.** The aggregate figure from G31 — 346 µs per
+miss over 2.40 MB = 6.95 GB/s — looked like a ~40% overhead gap. It is not: it is a weighted average
+of large efficient copies (89% of bytes, at line rate) and small inefficient ones (11% of bytes, at
+half rate). **An aggregate rate over a mixed size distribution is not a rate.**
+
+**Batching is therefore nearly worthless.** Bringing the scale copies up to the weight copies' rate
+saves 206 ms of 1814 ms DMA — **11.3% of DMA, 5.2% of decode**, and that is the ceiling, not an
+estimate. Phase 1 as proposed is dropped.
+
+**THE PATH MOVES 273 MB PER TOKEN**, sustained 4.44 GB/s across the whole decode, at a link that
+tops out near 11. The volume is the cost, and it is irreducible at this hit rate.
+
+### What survives, and the constraint that changes the prefetch design
+
+Two levers remain, and only one is large:
+
+1. **Move less** — a higher hit rate. Slots are VRAM-capped at 30 of a requested 48 on an 8 GB card,
+   and §B4.1's slot sweep was already saturating. Little headroom.
+2. **Overlap** — hide ~30 ms of transfer behind ~32 ms of compute. This is the whole prize (G31's
+   ~1.9x ceiling), and it is now the ONLY large lever, because the transfers cannot be made faster
+   and the volume cannot be much reduced.
+
+**A CONSTRAINT ON SPECULATION THAT THE METAL VERDICT DOES NOT CARRY: THE LINK IS SATURATED.** A
+mispredicted prefetch consumes the exact resource that is the bottleneck. That is unlike speculative
+COMPUTE, where a wrong guess wastes idle cycles — here a wrong guess displaces a transfer that real
+work is waiting on. **Prediction accuracy is therefore a kill gate, not a tuning parameter**, and a
+prefetch scheme that is right 60% of the time may be a net LOSS rather than a smaller win.
+
+**And the obvious predictor is already spent.** The Metal note proposes prefetching *last token's
+experts*; a 30-slot LRU cache retaining 8 routed experts per layer already IS a last-token predictor,
+and its hit rate is the 76%. **The 24% that miss are precisely the experts a last-token predictor
+gets wrong.** Any CUDA prefetch must predict NEW routing — e.g. running layer L's router early on an
+approximate residual — which is a different and harder proposition than the verdict implies.
+
+**Next step, before any prefetch code: measure whether routing is predictable at all.** Offline, from
+captured routing indices — how often does a router run on the pre-MoE residual agree with the true
+top-8? That number, against the saturated-link constraint above, decides whether Phase 2 exists.

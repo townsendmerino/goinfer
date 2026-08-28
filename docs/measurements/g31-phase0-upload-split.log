@@ -1,0 +1,13 @@
+=== 17:18:08 startload=0.04 0.37 1.11 2/756 159996 ===
+=== RUN   TestGemma4_26B_cache_B
+[cuda] C′ cache: 48 slots/layer would need 4.9 GB VRAM but only 3.6 GB free — capping to 30 (3.1 GB)
+    gemma4_26b_cache_test.go:87: loaded 26B resident + C′ staging in 3m34s (11.4 GB experts host-pinned; ~0.7 GB slots + ~1.3 GB core in VRAM)
+    gemma4_26b_cache_test.go:159: B′ OK — 26B resident via C′ (30 slots/layer): 64 tok, distinct-trigram 0.789, 62 ms/tok (16.24 tok/s — capture OFF; sync H2D; informative capability number, NOT a same-machine benchmark)
+          cont: "The capital of France is **Paris**.\n\nIt is famous for its-\n* **Iconic Landmarks:** It is home to world-famous landmarks like the Eiffel Tower, the Louvre Museum, the Arc de Triomphes, and the Notre-Dामe.\n* **Culture and Art:** It is a"
+    gemma4_26b_cache_test.go:162: C′ cache: 16611 hits / 5229 misses = 76.1% hit rate (each hit is one skipped expert DMA; nSlots=30, topK=8, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse
+    gemma4_26b_cache_test.go:174: C′ ROUND TRIP over 2730 calls: stall 16ms (0.4% of decode) + host 105ms (2.7%) + dma 1.814s (46.0%) = 1.935s (49.1%); per call 709µs; per token 30.23 ms of a 61.57 ms token
+    gemma4_26b_cache_test.go:198: C′ UPLOAD SPLIT: weights 10458 calls, 15549.5 MB, 1.427s (10.90 GB/s, 136µs/call) | scales 10458 calls, 1943.7 MB, 384ms (5.06 GB/s, 37µs/call)
+--- PASS: TestGemma4_26B_cache_B (221.31s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	224.422s
+=== 17:21:55 DONE ===
