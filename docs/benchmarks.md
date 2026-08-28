@@ -69,6 +69,9 @@
 >
 > **§B5 (sampled + phi3-mini/gemma3-1b) DISCHARGED 2026-08-27** — five of six comparable cells
 > improved, three by 8–19%; phi3-mini at temperature 1.0 lost 5.8% and is filed. See §B5.1.
+> **That loss is RESOLVED (G26, 2026-08-28): about half of it was the anchor cell's own spread, the
+> real effect is −2.6%, the cause is optimistic forward, and it is fixed in `c9a79b4`. See the
+> resolution box in §B5.1 — the −5.8% figure should not be quoted forward.**
 >
 > **§B4 (26B host↔VRAM) DISCHARGED 2026-08-27** — the throughput did not move (11.42 vs 11.3 at
 > the same 16 slots); the grantable slot cap did, 38 → 30. See §B4.1.
@@ -1219,6 +1222,30 @@ difference. Five of six comparable cells improved, three of them by 8–19%.
 the same configuration. That rules out a uniform sampler change and makes it model-specific. No
 cause is offered here: guessing one in the same sitting as the measurement is how a wrong
 explanation gets attached to a right number.
+
+> **RESOLVED 2026-08-28 (G26) — the cause is optimistic forward, and HALF THE MAGNITUDE WAS THE
+> ANCHOR'S OWN SPREAD.** Leaving the paragraph above as written: declining to guess was right, and
+> the number it reports is a real measurement at its protocol. Both halves of it need amending.
+>
+> **The −5.8% overstates it by about 2x.** Re-measured at n=15, the anchor build's own temp1.0 cell
+> spans **109.6 → 116.9**, and the 116.6 recorded above is the 14th of 15 sorted values — roughly its
+> **90th percentile**. It was compared against a low-to-central draw of the newer build. Built from
+> the same toolchain on the same driver and measured together, the two differ by **−2.6%**
+> (114.40 ± 2.07 → 111.40 ± 0.55), not −5.8%.
+>
+> **The cause is `6a4e0ae`, optimistic forward**, gated `!fastGreedy` so it runs on sampled decode and
+> never on greedy — which is why greedy was unaffected across 746 commits (−0.15%). A kill-switch A/B
+> settles it: disabling the feature is worth **+5.8%** on that cell, landing HEAD 3.0% above the
+> anchor. The sampler itself is exonerated — it is 12% *faster* at this vocab.
+>
+> **Fixed in `c9a79b4`**: the overlap is now capped at T ≤ 0.2, below the lowest measured break-even.
+> **This row is therefore historical for a second reason** — it measures a binary whose sampled-decode
+> behaviour has since changed.
+>
+> **And a caveat that outlives this row:** these cells use `scripts/prompts.json`, in which every
+> prompt has four unique words. Correct for throughput, wrong for anything content-dependent. On a
+> realistic prose prompt the same A/B moves by up to **9.4 points** on one cell. See
+> `docs/spec/10-optfwd-gate.md` and G28.
 
 **Greedy backends, depth 128** (the other cells §B5 could not carry):
 
