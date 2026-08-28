@@ -57,7 +57,8 @@
 > Bit-identical and parity claims across the bump must be re-verified on their own, ahead of any
 > tok/s number.
 >
-> **Scope — 78 data rows in seven anchored sections**: §B (2), §B2 (6), §B4 (8), §B5 (19), the
+> **Scope — 76 data rows in six anchored sections** (was 78 in seven; §B's 2 were RETIRED
+> 2026-08-27, not re-measured): §B2 (6), §B4 (8), §B5 (19), the
 > v0.11.0 qualification (2), §B6 (16), §B7 (25). Rows already marked RETIRED or HISTORICAL in §B2
 > stay that way — this box does not revive them. **§A** (Apple Silicon CPU) and **§B3** (Metal) are
 > measured on the MacBook and are **unaffected**.
@@ -407,9 +408,28 @@ naive f32 — a tiled GEMM there is the next lever (`docs/completed/task-gpu-vis
 
 ### B. GPU residency vs native CUDA, at equal quant
 
+> **⚠ RETIRED (2026-08-27) — both rows are withdrawn, not corrected. This box is retained as the
+> record of what was claimed.** What stood here: Qwen2.5-Coder-1.5B int8 vs q8_0 at **111.6 tok/s**
+> against Ollama-CUDA **147** (**76%**), and Qwen2.5-7B int4 vs q4 at **51.7 tok/s** *(pre-coalescing)*
+> against llama.cpp-CUDA **72.8** (**71%**). Neither is reproducible by this page's current rules and
+> neither may be quoted.
+>
+> **Why withdrawn rather than re-measured.** The decision was taken deliberately after costing the
+> alternative. The **7B row is unsalvageable**: its peer figure came from `CHANGELOG.md` v0.5.0 —
+> a different engine (llama.cpp), a different session, and no interleaving — so nothing short of a
+> full new run could rescue it, and a new run against Ollama would be a different row answering a
+> different question. The **1.5B row is repairable but not worth it now**: it needs an int8/q8_0
+> pair this repo does not hold (the archive carries only q4_K_M for this model), a WebGPU build, and
+> a quant axis in `bench_peer.py`, which hardcodes `-quant int4`. It describes **dense-only**
+> residency (`decodeRunnerEligible`) on a path untouched since **2026-06-08** and at the WGSL wall,
+> so it covers none of the families added since — Granite, Nemotron, DeepSeek, GLM, Kimi, Gemma 4.
+> **If a WebGPU claim is wanted later it should be measured fresh against current assets, not
+> repaired.**
+>
+> The original staleness note follows, because the reasoning in it is what led here.
+>
 > **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
-> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
-> this page for what moved and what replaces it.
+> `7.0.5-200.fc43`).
 >
 > **AND THIS ONE IS NOT A RE-ANCHOR JOB — it is a new measurement.** The other stale sections need
 > the same run on a new driver. This section's *method* is one this page has since rejected: its
@@ -436,10 +456,7 @@ final corrected numbers only. The 1.5B row (89.7 / 147 / 61%) is from gpu-assess
 the **7B row's peer figure (72.8 / 71%) is from `CHANGELOG.md` v0.5.0**, not
 gpu-assessment — cited there.
 
-| model · quant (same card, warm, greedy) | goinfer (WebGPU) | peer (native CUDA) | goinfer vs peer |
-|---|---|---|---|
-| Qwen2.5-Coder-1.5B · int8 vs q8_0 (~1.55 GB/tok) | **111.6 tok/s** | Ollama-CUDA **147** | **76%** (equal int8) |
-| Qwen2.5-7B · int4 vs q4 | 51.7 tok/s *(pre-coalescing, stale)* | llama.cpp-CUDA **72.8** | 71% (equal 4-bit) |
+*(Both rows retired 2026-08-27 — see the box above, which preserves the figures.)*
 
 > **These WebGPU rows are int8/q8_0 and are NOT comparable to the cgo-free CUDA rows
 > below**, which are 4-bit on both sides. Two different backends, two different quants,
