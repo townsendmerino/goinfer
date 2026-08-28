@@ -55,6 +55,18 @@ and `go vet -tags 'cuda goinfer_testhooks' ./cuda/` are cheap; run the ones your
 **`gofmt -l .` is a CI gate and nothing here auto-formats.** Run it across every module you
 touched before committing.
 
+**`staticcheck` is also a CI gate, and the LOCAL BINARY IS PROBABLY LYING TO YOU.** Run CI's exact
+pinned version instead — `go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./...`, plus the tagged
+variants (`-tags 'cuda goinfer_testhooks' ./cuda/...`, `-tags 'gpu goinfer_testhooks' ./gpu/...`).
+A `staticcheck` on PATH can be years older than the toolchain and then fails to analyse ANYTHING,
+emitting only `internal error in importing "internal/cpu" (unsupported version: 4)` — which looks
+like a broken tool rather than an unrun gate, and exits without checking your code. Measured
+2026-08-28: a dead struct field (U1000) shipped in `decoder/mtp.go` and held CI red across **three
+pushes**, because `gofmt` and `go vet` were run and staticcheck was not.
+
+**Check CI after pushing.** `gh run list --limit 5`. Red does not announce itself, and a break rides
+along under every subsequent push until someone looks.
+
 **Never `git add -A` / `git add .`.** It sweeps generated fixture metadata into git, which makes
 dir-only skip-guards think a fixture exists and flips skips into failures. Stage explicit paths.
 
