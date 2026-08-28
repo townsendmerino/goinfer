@@ -366,6 +366,30 @@ CONFIGS = {
         "ollama": {"temperature": 1.0, "seed": 1},
         "note": "temperature=1.0, no truncation, both sides",
     },
+    # G26 follow-up: the temp-only ladder. optimistic forward (6a4e0ae) runs on sampled decode only
+    # and its hit rate falls with temperature (98% at T=0.2, 55.6% at T=1.0 by its own gates), so
+    # its on/off value is a FUNCTION of temperature and two endpoints cannot locate the crossover.
+    # Same shape as temp1.0_notrunc -- temperature only, no truncation, sent explicitly to both.
+    "temp0.2_notrunc": {
+        "goinfer": {"temperature": 0.2},
+        "ollama": {"temperature": 0.2, "seed": 1},
+        "note": "temperature=0.2, no truncation, both sides",
+    },
+    "temp0.4_notrunc": {
+        "goinfer": {"temperature": 0.4},
+        "ollama": {"temperature": 0.4, "seed": 1},
+        "note": "temperature=0.4, no truncation, both sides",
+    },
+    "temp0.6_notrunc": {
+        "goinfer": {"temperature": 0.6},
+        "ollama": {"temperature": 0.6, "seed": 1},
+        "note": "temperature=0.6, no truncation, both sides",
+    },
+    "temp0.8_notrunc": {
+        "goinfer": {"temperature": 0.8},
+        "ollama": {"temperature": 0.8, "seed": 1},
+        "note": "temperature=0.8, no truncation, both sides",
+    },
     "temp0.8_topk40": {
         "goinfer": {"temperature": 0.8, "top_k": 40, "seed": 1},
         "ollama": {"temperature": 0.8, "top_k": 40, "seed": 1},
@@ -474,11 +498,40 @@ def plan_models():
 
 
 def plan_depths():
-    """Phase B depths. BENCH_DEPTHS overrides; default is the shallow curve."""
+    """Phase B depths. BENCH_DEPTHS overrides; default is the shallow curve. BENCH_DEPTHS=none
+    drops phase B entirely, which a targeted single-cell investigation wants and a release sweep
+    never does -- there was previously no way to express "no depth curve" short of editing this."""
     raw = os.environ.get("BENCH_DEPTHS", "").strip()
     if not raw:
         return [512, 2048, 3900]
+    if raw.lower() == "none":
+        return []
     return [int(d) for d in raw.split(",") if d.strip()]
+
+
+def plan_backends():
+    """Phase A backends. BENCH_BACKENDS narrows them; default is all three, so the release sweep's
+    backend table is unchanged.
+
+    This exists because phase A is where a targeted re-measure spends its time without learning
+    anything: the CPU cell alone runs ~550 s and webgpu adds another, so isolating ONE cuda cell
+    used to cost a ~40-minute sweep dominated by cells the question does not touch. That cost is
+    what deterred bisecting G26.
+
+        BENCH_BACKENDS=cuda BENCH_DEPTHS=none BENCH_MODELS=phi3-mini python3 scripts/bench_peer.py ...
+
+    NARROWING THE PLAN IS NOT NARROWING THE PROTOCOL. Each cell that does run is measured exactly
+    as it would be in a full sweep -- same warmup, same interleaving, same run count. A cell
+    measured under this filter is comparable to the same cell from a release sweep; what is NOT
+    comparable is a cross-BACKEND claim, since the backends the filter drops were never run."""
+    raw = os.environ.get("BENCH_BACKENDS", "").strip()
+    if not raw:
+        return ["cpu", "cuda", "webgpu"]
+    picked = [b.strip() for b in raw.split(",") if b.strip()]
+    unknown = [b for b in picked if b not in SERVE]
+    if unknown:
+        sys.exit(f"BENCH_BACKENDS: unknown backend(s) {unknown}; known: {sorted(SERVE)}")
+    return picked
 
 
 def plan_configs():
@@ -540,10 +593,12 @@ def main():
     #    two it actually has. webgpu has NO ollama counterpart -- it is scored against the
     #    ollama CUDA row and labelled cross-backend in the writeup, never as a peer cell.
     for mk in plan_models():
+        bes = plan_backends()
         for eng, be in [("goinfer","cpu"), ("ollama","cpu"),
                         ("goinfer","cuda"), ("ollama","cuda"),
                         ("goinfer","webgpu")]:
-            plan.append(("A", eng, be, mk, 128, "greedy"))
+            if be in bes:
+                plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, CUDA only, both engines
     for mk in plan_models():
         for d in plan_depths():
