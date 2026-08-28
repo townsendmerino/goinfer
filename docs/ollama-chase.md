@@ -1034,6 +1034,13 @@ do not have the heads.
 > no work downstream of them. It also records the constraint that actually binds, which is not
 > availability: `specRollbackSafe` refuses four of the five MTP-bearing checkpoints on grounds that
 > predate MTP entirely.
+>
+> **Gate 1 answered 2026-08-27: α PASSES on all three suites** — `qwen3.5-0.8b`, greedy, K=6:
+> code 2.02, math 2.91, chat 2.48 tok/verify against 05's cross-target 1.60. Per 09's
+> pre-registered reading this is a pass on **mechanism only**: economics are unanswered, Gate 2 was
+> not evaluated and is not evaluable at 0.8B, and **no larger run is authorised by the number**.
+> D2 remains not-a-build; it returns for a separate decision. Detail, caveats and the ~10%
+> prompt-form sensitivity are in 09 § "Gate 1 result".
 
 ### D3. Continuous batching / server-side concurrency
 

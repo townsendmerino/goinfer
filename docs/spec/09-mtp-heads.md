@@ -265,6 +265,80 @@ expensive runs.**
    decode, as every scheme in this directory is. For the qwen35 line and qwen3_next that additionally
    requires the seam to admit them, which today it does not.
 
+## Gate 1 result — PASSED on all three suites (2026-08-27)
+
+Measured on `qwen3.5-0.8b` (safetensors, f32), greedy, RTX 2070S box, `TestMTP_acceptedLength`
+in `decoder/mtp_head_test.go`. Method is `TestEagleAcceptedLength`'s, unchanged: prefill the head
+over the realized prefix, draft K=6, count the leading run matching the target's own greedy
+continuation, over M=48 continuation tokens → 42 draft positions per suite.
+
+| suite | mean accepted | tok/verify | histogram (accepted 0..6) |
+|---|---|---|---|
+| code | 1.024 | **2.024** | `[23 3 9 6 1 0 0]` |
+| math | 1.905 | **2.905** | `[11 6 10 9 4 1 1]` |
+| chat | 1.476 | **2.476** | `[17 6 8 5 5 1 0]` |
+| *05 EAGLE-3 reference* | *0.64* | *1.60* | *— (**CROSS-TARGET**, Qwen3-1.7B)* |
+
+Gate 1 asked for two of three; all three clear. **Gate 1 PASSES.**
+
+**Read exactly as the table above pre-registered it: α > 1.6 is a pass on MECHANISM — a
+jointly-trained head predicts its own target better than an imported general head does. Economics
+are UNANSWERED, not favourable-by-implication. Gate 2 was not evaluated and is not evaluable at
+this scale. No larger run is authorised by this result; it returns for a separate decision with the
+number in hand.**
+
+**Precision of these numbers, stated so they are not over-read.** Each is one prompt, 42 positions,
+no repeats and no variance estimate — the same shape as the 1.60 it is screened against, which is
+also a single prompt. Two independent reasons to treat the third digit as noise:
+
+- **Prompt form alone moved the code suite ~10%.** The first run used a bare completion prompt and
+  got **2.238**; wrapping the identical text in the `<|im_start|>` chat template (matching 05's
+  form, which is why it was changed) gave **2.024**. A formatting choice, not a model change.
+- **n=1 prompt per suite.** The spread across suites (2.02 → 2.91) is larger than any of the gaps
+  being read, so "math drafts better than code" is a plausible reading of this data and not a
+  finding it establishes.
+
+What the result does support is the direction, which is what the screen was for: every suite clears
+the reference, the worst by 26% and the best by 82%, and the histograms show a real tail (drafts of
+4–6 accepted tokens occur in all three) rather than a mean propped up by a few outliers.
+
+**Cost diagnostic — NOT a break-even.** `c_head` 3.51 ms vs `c_decode` 137.2 ms, ratio **0.025**,
+stable to ±0.001 across the three runs. Per the pre-registration this is recorded and labelled
+**non-transferable**: it is a one-block head against a 24-block trunk with a tied 248320-row
+embedding, and it will not resemble a 424M head against a 27B dense trunk. It is not an input to
+Gate 2, which needs `c_capture` and `c_verify` measured on the pairing an actual build would use.
+
+**What was built to get here**, kept to the minimum the probe needed: `decoder/mtp.go` — a
+load-time read plus a single-block forward (`LoadMTPHead`, `MTPPrefill`, `MTPStep`,
+`MTPDraftFrom`), reusing the target's own `qwen35Attention` and `gatedMLP`. `numLayers` and every
+existing forward path are untouched, no serving/router/guard/P15 surface is touched, and nothing is
+wired into the speculative seam — consistent with the seam analysis above, which holds that the
+seam blocks deployment and not measurement.
+
+**Two correctness checks the number depends on, both verified rather than assumed:**
+
+- **The head is fed an UNNORMED hidden state, which is what it expects.** The head carries its own
+  `pre_fc_norm_hidden`, so feeding it a post-`model.norm` tensor would double-norm and understate α.
+  `captureResidual`'s stated contract is "the residual stream AFTER layer l is complete", so
+  capturing at `NumLayers-1` yields the pre-final-norm residual. Correct as fed.
+- **Drafting does not mutate the target's KV.** `mtpProject` borrows the trunk's output projection
+  and touches only `cache.scr`, never keys or values — which is what lets the probe draft 42 times
+  against a cache the target already filled. It does, however, return the target's **shared logits
+  scratch**: an integration that interleaves drafting with target forwards would have its target
+  logits silently overwritten. The probe is safe because it captures every feature up front and
+  only then drafts. Noted in the code at the function.
+
+**Two loader notes worth keeping**, both silent-wrong hazards rather than errors:
+
+- **Head detection has two paths and this checkpoint needs the second.** `config.json` declares
+  nothing (no `num_nextn_predict_layers`); the head is found only by the presence of `mtp.*`
+  tensors in the safetensors index. A detector keyed on config alone reports "no MTP head" on a
+  checkpoint that has one.
+- **`q_proj` is `[4096, 1024]`, not `[2048, 1024]`.** Qwen3.5's output-gated attention emits
+  `[query ‖ gate]` interleaved per head, so the head's projection is `2*qDim`. Asserting the
+  un-gated shape rejects a valid head. The norms ship BF16 and need `TensorF32`, not
+  `Tensor().Float32s()`.
+
 ## Risks / open questions
 
 - **One checkpoint is a bad basis for a family-general claim, in either direction.** That is the
