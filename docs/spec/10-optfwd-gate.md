@@ -354,3 +354,92 @@ no decision.
 
 **The shipped T ≤ 0.2 cap does not wait on this.** It beats always-on by a wide margin at any value
 in range, and refining the number later is a one-line change.
+
+## Third-model RESULT (2026-08-28): vocab is rejected, share is supported, and the mechanism is two numbers
+
+**THE HEADLINE IS THE SAMPLER-COST DECOMPOSITION, because it explains why vocab looked like the
+driver for two models running.** Same vocabulary, different model:
+
+| model | vocab | sampler COST | decode step | sampler SHARE of the token |
+|---|---|---|---|---|
+| 1.5B | 151936 | **1.009 ms** | 4.535 ms | **18.2%** |
+| 7B | 151936 | **1.102 ms** | 13.685 ms | **7.5%** |
+
+**Vocab sets the sampler's ABSOLUTE cost (1.009 vs 1.102 ms — a 9% difference across a 4.6x model);
+the DECODE STEP sets what fraction of the token that cost is.** Share is the product of the two, and
+it is share that the overlap can repay. Across the first two models vocab and share moved together,
+so vocab was an adequate proxy and looked causal. It is not.
+
+**7B ladder** (n=6, CUDA, depth 128, `GOINFER_OPTFWD_MAX_TEMP=2.0` so the shipped cap does not
+silently turn the ON arm into a second OFF arm). Raw `g27-7b-optfwd-{on,off}.json`:
+
+| T | ON | OFF | Δ |
+|---|---|---|---|
+| 0.2 | 67.12 ± 0.39 | 67.82 ± 0.09 | **+1.0% loses** |
+| 0.4 | 64.92 ± 0.87 | 67.83 ± 0.07 | +4.5% loses |
+| 0.6 | 63.45 ± 0.98 | 67.69 ± 0.20 | +6.7% loses |
+| 0.8 | 62.22 ± 0.79 | 67.63 ± 0.11 | +8.7% loses |
+| 1.0 | 61.69 ± 1.10 | 67.62 ± 0.13 | +9.6% loses |
+
+| model | vocab | share | crossover |
+|---|---|---|---|
+| phi3-mini | 32064 | 5.4% | ~0.26 |
+| 1.5B | **151936** | **18.2%** | **~0.95** |
+| 7B | **151936** | **7.5%** | **< 0.2** |
+
+**The confound is controlled in BOTH directions, which is what makes three points carry this.**
+7B vs 1.5B holds vocab and family fixed while share and size move — behaviour FLIPS. 7B vs phi3-mini
+differs in vocab, family AND size while share is similar — behaviour AGREES. Low share is the only
+common factor. **Vocab is rejected as the driver.**
+
+### What is NOT established, stated rather than smoothed over
+
+**The pre-registered quantitative criterion could not be evaluated.** It required `c_miss/c_decode`
+within 2x, and `c_miss` needs α_be, which the α ladder failed to deliver (below). So the mechanism is
+supported QUALITATIVELY and unconfirmed QUANTITATIVELY — and the missing number is exactly the one
+the gate's constants would be derived from. **The constants therefore cannot be derived yet.** No
+substitute criterion is offered after the fact; that is how 0.90 was set from one model.
+
+**The ordering is NON-MONOTONIC between the two low-share models.** Share 5.4% → crossover 0.26, but
+7.5% → below 0.2. Higher share should raise the crossover; these invert. Both sit inside the ±0.1
+resolution pre-registered, so it is noise-consistent — **but it is equally what would be seen if
+share does not determine the crossover alone and something else travels with model size. Both
+readings fit these three points.** The safe consequence is the one taken: **share predicts WHICH SIDE
+of the cap a model lands on, not a fine ordering, and nothing is fitted to three points.**
+
+### Three models, three different right answers for the cap
+
+phi3-mini WINS 1.1% at T=0.2; the 7B LOSES 1.0% there; the 1.5B wants the cap at ~0.95. **The shipped
+T ≤ 0.2 constant is therefore slightly wrong for the 7B on the third model examined** — small, and
+inside that cell's noise, but the point is not the mistuning. **Three models produced three different
+correct constants. That is evidence a per-model CONSTANT is the wrong SHAPE, not that this one needs
+tuning.**
+
+### Where this points: a BINARY at load time, not a threshold
+
+If share cannot give a fine ordering but does sort models into "the overlap can pay here" and "it
+cannot", then the load-time calculation is **a binary, not a continuous rule**: compute the sampler
+share when the model loads, and either **enable the existing `optFwdGate` EMA** (letting it adapt
+within the profitable regime) or **disable optFwd outright**. That is a far smaller target than
+deriving a continuous threshold, and it is what these three points actually support — two models
+plainly in "cannot", one plainly in "can".
+
+**It is downstream of fixing the α measurement**, because choosing the share boundary needs
+break-even α, which needs the junk-prompt and latch problems fixed first (G27).
+
+### The α ladder failed, and G27 is why
+
+`TestOptFwd_hitRateLadder` ran on all three models and produced nothing usable, for two independent
+reasons:
+
+- **The prompt is degenerate** — `[]int{1, 7, 42}`. phi3-mini returned α = 1.0000 (200/200) at T=0.8
+  where its throughput ladder measured optFwd LOSING 6.8%; the 1.5B returned α = 0.61 at T=0.6 where
+  its ladder measured it WINNING 5.1%. **Neither α reconciles with its own throughput**, so the
+  prompt is unrepresentative in both directions rather than biased one way. α measured here cannot be
+  paired with crossovers measured on real prompts at depth 128.
+- **The latch truncates exactly the measurements needed.** Guess counts collapse from 200 to 6 / 10 /
+  14 / 18 as soon as α falls — the gate turns off, stops observing, and low hit rates become
+  unmeasurable. Observed on **all three models**.
+
+**G27 has now cost twice: once as an unreachable re-enable branch, once as a blocked measurement on
+the critical path to the binary gate. It is no longer latent.**

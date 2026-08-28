@@ -1021,6 +1021,14 @@ model. Break-even rises as the sampler share falls, so on phi3-mini (5.4% share 
 break-even is above 0.90 and the whole dead band sits below it — the gate cannot turn off in the
 regime where the feature loses 2.8-6.8%.
 
+**ESCALATED 2026-08-28 — G27 is no longer latent, it is blocking.** The latch stopped a measurement,
+not just a code path: `TestOptFwd_hitRateLadder` cannot estimate low hit rates because the gate turns
+off and stops observing (guess counts collapse to 6-18 on all three models). Break-even α is the
+input the binary load-time gate needs (spec/10), so the latch now sits on the critical path. Fixing
+it also needs the test's degenerate `[]int{1, 7, 42}` prompt replaced with a realistic one at depth
+128 — measured on that prompt, phi3-mini reports α=1.00 where its throughput says optFwd loses 6.8%,
+and the 1.5B reports α=0.61 where its throughput says it wins 5.1%; neither reconciles.
+
 **Not fixed, deliberately.** Fixing (2) properly means knowing whether break-even tracks a static
 property like sampler share, which is the open question the third-model run addresses. Fixing (1) is
 small and self-contained but pointless while the overlap is capped at T ≤ 0.2, where the gate barely
