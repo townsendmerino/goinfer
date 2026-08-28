@@ -7,6 +7,30 @@ import (
 	"testing"
 )
 
+// SAMPLER MICROBENCHMARKS IN THIS PACKAGE MAY NOT PRODUCE QUOTABLE FIGURES.
+//
+// They are a tool for deciding WHERE TO LOOK. No number they emit belongs in a doc, a queue item, a
+// commit message, or a comparison between two commits. This is a standing prohibition, not advice,
+// and it was earned twice in a single investigation (G26, 2026-08-27):
+//
+//   1. BenchmarkExpChunked's ~96 us was used to argue that "sampling is a low-single-digit
+//      percentage of per-token time, so no sampler change can move end-to-end by 5.9%." The real
+//      in-situ sampled tail is 703-950 us — 7-10x larger. The bound retired the correct hypothesis
+//      for two rounds.
+//   2. A whole-path Sampler.Sample benchmark reported HEAD 23% SLOWER at 152k vocab. Measured
+//      end-to-end on a 151936-vocab model, HEAD is 31% FASTER. Not a mis-scaled magnitude — an
+//      INVERTED SIGN, and it had already been filed as a finding before the end-to-end run.
+//
+// WHY the loop lies here specifically: it keeps the vocab-sized scratch hot in cache and the
+// allocator warm in its free-list, whereas decode runs one draw per token behind an ~8 ms forward
+// that evicts both. The benchmark measures a cache state that never occurs.
+//
+// MEASURE IT IN SITU INSTEAD, which costs nothing extra: the same-build end-to-end greedy vs
+// temp1.0 difference, with GOINFER_NO_OPTFWD=1 so the optimistic-forward overlap cannot confound
+// it. On CUDA that difference is the whole sampled tail (greedy takes ForwardArgmax's on-device
+// path and never reads back the logit vector), not the sampler alone — but it is measured where the
+// code runs, and both times the two disagreed, the microbenchmark was the one that was wrong.
+
 // refChunked is the SEQUENTIAL implementation of the same chunked spec: same chunk boundaries, same
 // per-chunk ascending-id summation, same ascending-chunk fold, same `t < cum` comparator. It is the
 // gate target — the parallel path must reproduce it bit-for-bit, which is what proves the

@@ -127,6 +127,275 @@ other. Bisecting a 5.9% end-to-end delta across that range costs a 40-minute pee
 before spending that, get a phi3-mini GREEDY number at the anchor commit — if greedy regressed too,
 this is a decode-path question and the sampled framing has been a distraction from the start.
 
+**2026-08-27, running: the anchor commit BUILT AND MEASURED TODAY, which separates the two
+confounded causes instead of bisecting into them.** The reason the greedy number was missing is
+that it never existed historically; the reason it was expensive is that a targeted cell used to
+drag a ~40-minute sweep behind it. Both are now fixed — `bench_peer.py` gained `BENCH_BACKENDS`
+and `BENCH_DEPTHS=none`, so this question costs **4 cells** rather than 13, and `ca29d6c` is built
+from a worktree with the aikit its own `go.mod` pins (**v1.16.0**, against HEAD's v1.28.0).
+
+Measuring the anchor *today* holds the driver fixed at `595.91.07` and varies only goinfer, which
+the original anchor-vs-re-anchor comparison could not do — those two differed by both at once.
+Both goinfer builds are compiled today with the same toolchain; ollama runs in both sweeps as the
+drift control.
+
+**Reading, fixed before the numbers land.** HEAD today reads greedy **124.6** and temp1.0 **109.7**;
+the anchor recorded temp1.0 **116.6**. Let *A* be the anchor build's temp1.0 measured now:
+
+| A | reading |
+|---|---|
+| ≈ 116.6 (matches its own record) | The regression lives in `ca29d6c..HEAD`. **Driver exonerated**, bisect is then justified and cheap. |
+| ≈ 109.7 (matches HEAD) | goinfer's commit range is **exonerated**; the 116.6 was an old-driver number and the delta is environmental. G26 closes as environment, not code. |
+| between, or neither | **Ambiguous → parked**, not argued either way. The band exists because both endpoints are ~6% apart and a middling value supports whichever story the reader brought. |
+
+And independently, on greedy — the question the queue actually asked for:
+
+- **anchor greedy ≈ 124.6** → greedy did not move; the effect is confined to the sampled path,
+  which sits awkwardly with the arithmetic bound above (no sampler change can move end-to-end by
+  5.9%). That combination is a finding to explain, not to wave through.
+- **anchor greedy materially > 124.6** → greedy regressed too, the sampled framing was a
+  distraction from the start, and this is a decode-path question.
+
+**2026-08-27, RESULT at n=5 — greedy is clean, and the sampled cell turns out to be UNSTABLE on the
+anchor build.** Both binaries built today from the same toolchain (anchor from a worktree at its own
+pinned aikit v1.16.0; HEAD at v1.28.0), same driver `595.91.07`, ollama in both sweeps as the drift
+control. Raw: `docs/measurements/g26-anchor.json`, `docs/measurements/g26-head.json`, log
+`g26-anchor-vs-head_run.log`.
+
+| cell | anchor `ca29d6c` | HEAD | Δ |
+|---|---|---|---|
+| **greedy** | 124.61 ± 0.12 | 124.85 ± 0.04 | +0.2% |
+| **temp1.0_notrunc** | 114.17 ± **2.63** | 111.05 ± 0.45 | −2.7% |
+| *ollama greedy* | *125.73* | *125.74* | *0.0%* |
+| *ollama temp1.0* | *125.52* | *125.63* | *0.1%* |
+
+**The drift control is as good as this box gets** (≤0.1% on both ollama cells across two sweeps), so
+the goinfer-side comparison is sound rather than session noise.
+
+**1. Greedy did not move — the decode path is clean.** 124.61 vs 124.85 at sd ≤ 0.12. That answers
+the question this item was parked on, and it answers it the *other* way: the sampled framing was not
+a distraction hiding a decode regression. Nothing in `ca29d6c..HEAD` (746 commits) moved greedy
+phi3-mini at depth 128.
+
+**2. The anchor's temp1.0 cell has 6× the variance of anything else measured here** — sd 2.63,
+runs spanning **110.8 → 116.9**, against HEAD's sd 0.45 and every other cell on this page at sd
+≤ 0.15. **The recorded anchor value of 116.6 sits essentially at the top of that build's own range,
+and 109.7/109.8 sit near the bottom of HEAD's.** A large part of the original "5.9% regression" is
+therefore a high draw compared against a low one, across protocols that never repeated the cell
+enough to see its spread.
+
+**3. What survives is at most −2.7%, and at n=5 that is not established.** Welch on the two run
+sets gives t ≈ 2.6, p ≈ 0.06 — inside the band this item pre-registered as **ambiguous → parked**.
+Per that rule the conclusion is parked and NOT argued in either direction.
+
+**Parking the conclusion is not the same as shelving the question, and this cell is now cheap.**
+`BENCH_BACKENDS` + `BENCH_DEPTHS=none` cut it from 13 cells to 4, so the correct response to an
+ambiguous result is more of it rather than a shelf: **n=15 on both builds is running**, sweep order
+reversed (anchor first) so an order or thermal effect shows up as disagreement with the pair above
+rather than hiding inside it. Raw will be `g26-anchor-n15.json` / `g26-head-n15.json`.
+
+**Do not bisect yet.** A bisect over 746 commits searches for a step change; if the effect is
+substantially cell variance, every step reads as noise and the search converges on whichever commit
+happened to draw high. Variance first, then bisect only if a real step survives it.
+
+## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
+
+Raw: `docs/measurements/g26-anchor-n15.json`, `g26-head-n15.json`, log `g26-n15_run.log`.
+Sweep order reversed from the n=5 pair (anchor first) as an order/thermal control; ollama held
+within 0.15% of itself across all four sweeps.
+
+| cell | anchor `ca29d6c` | HEAD | Δ |
+|---|---|---|---|
+| greedy | 124.41 ± 0.20 | 124.60 ± 0.13 | **−0.15%** (nil) |
+| temp1.0_notrunc | 114.40 ± **2.07** | 111.40 ± 0.55 | **+2.7%**, t = 5.42, 95% CI [+1.91, +4.08] |
+
+**1. The regression is real but roughly HALF what was recorded.** −2.7%, not −5.8/−5.9%. The
+missing half is a sampling artifact of the original comparison: at n=15 the anchor build's temp1.0
+cell spans **109.6 → 116.9**, and the recorded **116.6 is the 14th of 15 sorted values — the ~90th
+percentile of that build's own distribution.** The anchor figure was a high draw; 109.7/109.8 were
+low-to-central draws of HEAD's. Comparing them measured the spread as much as the change.
+
+**2. Greedy did not move at all** (−0.15% at sd ≤ 0.20, n=15), across 746 commits. The decode path
+is clean and the question this item was parked on is answered negatively.
+
+**3. THE COST IS ON THE SAMPLED PATH, and the arithmetic that eliminated the sampler was wrong.**
+Because greedy and temp1.0 differ only in the sampling config and generate identical token counts
+(2560 every cell, verified), the same-build gap between them isolates the sampled-path tail:
+
+| build | greedy | temp1.0 | sampling step | share of token |
+|---|---|---|---|---|
+| anchor | 8.038 ms/tok | 8.741 ms/tok | **0.703 ms** | 8.0% |
+| HEAD | 8.026 ms/tok | 8.976 ms/tok | **0.950 ms** | 10.6% |
+
+That tail got **+35% more expensive**, and the +0.247 ms/token accounts for **2.8%** of end-to-end
+against the **2.7%** observed — the effect is fully explained with nothing left over.
+
+> **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
+> alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:2230`
+> documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
+> back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
+> the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
+> family has it. So the 0.703 → 0.950 ms gap is **the whole sampled-path tail**: the full-vocab
+> device→host readback that greedy skips entirely, plus any softcap, plus `Sampler.Sample`.
+>
+> The arithmetic below still refutes the recorded "sampler is too small" bound — the tail *is*
+> 8–10.6% of the token, not low-single-digit. What it does not do is name which component moved.
+> For scale, phi3-mini's 32064 logits are ~128 KB, which is tens of microseconds of PCIe, not 700 —
+> so readback bandwidth alone does not explain the tail's size either. Attributing the +0.247 ms
+> requires measuring the components, which is what the next step does.
+
+**This refutes the bound recorded above**, which read: *"Even counting the whole sampler generously,
+sampling is a low-single-digit percentage of per-token time — so no sampler change can move the
+end-to-end figure by 5.9%. The cause is in the decode path or the stack beneath it, not the
+sampler."* **That is wrong.** It was built from `expChunked`'s ~96 µs microbenchmark, but the real
+end-to-end sampling step costs **703–950 µs — seven to ten times more.** The microbenchmark measures
+one function; the config's actual path costs an order of magnitude more than it. The lesson is the
+one this repo already writes down elsewhere: a sub-component measurement does not bound the total,
+and here it under-bounded it by ~10x and retired the correct hypothesis for two rounds.
+
+**4. A second, unexplained effect: HEAD is 4x more STABLE and slower** (sd 0.55 vs 2.07). Whatever
+changed made the sampling step both costlier and more consistent. Note P10 — the one sampler change
+between the anchors — was measured *faster* on both paths, so something else in the range more than
+cancelled it; P10's elimination stands, the conclusion drawn from it does not.
+
+**Next step, now cheap and well-aimed: do NOT bisect end-to-end.** The signal is a 0.247 ms/token
+step in the sampled-path tail. Split it before bisecting:
+
+1. **Host-side `Sampler.Sample`, whole path** (not `expChunked` alone — that is the error above), at
+   phi3-mini's 32064 vocab, at both commits. `decoder/g26_sampler_bench_test.go` does this, with a
+   greedy arm as the control so it decomposes exactly as the end-to-end numbers did. Minutes.
+2. **Whatever Sample does not account for is above it** — the readback/sync path, which greedy's
+   on-device argmax never touches. That is a different search, in `cuda/`, not `decoder/`.
+
+Note for reading step 1: those logits are SYNTHETIC. If the regression is data-dependent, a flat
+result there is evidence about the cause's shape rather than its absence — this repo has the
+matching rule already, that a synthetic reproduces shape and not pressure.
+
+## G26 CAUSE FOUND, 2026-08-27 — optimistic forward is a NET LOSS at temperature 1.0
+
+Both steps above ran. Raw: `docs/measurements/g26-sampler-bench.log` (host sampler, both commits),
+`g26-head-nooptfwd-n15.json` (the A/B), plus the n=15 pair already cited.
+
+**Step 1 exonerated the host sampler, in the opposite direction.** `Sampler.Sample` over phi3-mini's
+32064 vocab, `-count 5`, at both commits:
+
+| benchmark | `ca29d6c` | HEAD | Δ |
+|---|---|---|---|
+| Sample, temp 1.0, 32k | 627.6 us | 552.6 us | **−11.9% (HEAD FASTER)** |
+| Sample, greedy, 32k | 25.6 us | 18.0 us | −29.9% |
+| Sample, temp 1.0, 152k | 1358.1 us | 1676.1 us | **+23.4% (HEAD slower)** |
+
+HEAD's sampler is *faster* at the vocab that regressed, so it cannot be the cause; the remainder
+(tail − Sample) went 75 us → 397 us, putting the whole move above the sampler. **Recorded separately
+because it is a real finding and not this item's: the sampler CROSSES OVER with vocab — HEAD is
+−12% at 32k and +23% at 152k.** That is not what P10's "uniformly faster" microbenchmarks predicted,
+and the 152k regression is unexamined.
+
+**Step 2 identified it: `6a4e0ae`, optimistic next-token forward.** It is in HEAD, absent from the
+anchor, and gated `useGPU && !fastGreedy && optFwdEligible(sp) && GOINFER_NO_OPTFWD == ""` — so it
+runs on **sampled decode only and never on greedy**, which is precisely the observed signature. It
+overlaps the CPU sampler with a speculative next forward; on a miss that forward is discarded.
+
+A/B on the same HEAD binary, n=15, phi3-mini, temp1.0, CUDA:
+
+| arm | mean | sd |
+|---|---|---|
+| HEAD, optFwd ON (the default) | 111.40 | 0.55 |
+| HEAD, optFwd OFF (`GOINFER_NO_OPTFWD=1`) | **117.84** | 0.16 |
+| anchor `ca29d6c` (predates the feature) | 114.40 | 2.07 |
+
+**Turning the feature off is worth +5.8%** — `+0.491 ms/token`. And it lands HEAD **+3.0% above the
+anchor**, so the accounting is: the other 745 commits made sampled decode ~3% faster, optFwd gave
+back ~5.8%, and −2.6% net is exactly what the peer sweep measured. Greedy is unmoved in every arm,
+as the `!fastGreedy` gate requires.
+
+**Why it loses here.** The feature's own gates record the hit rate collapsing with temperature —
+98.0% at T=0.2, **55.6% at T=1.0**. Near-greedy it nearly always hits and the overlap is close to
+free; at T=1.0 roughly half the speculative forwards are discarded, and contending for the GPU costs
+more than the ~0.55 ms of host sampler the overlap hides. **This is the do-nothing-arm rule in the
+repo's own words: the feature was validated where it wins and shipped enabled for every sampled
+config.** It is not a bug and the mechanism is sound — the default is what is wrong.
+
+**SCOPE, so this is not over-read.** One model, one temperature, one depth, CUDA, greedy-comparable
+protocol. It does NOT show optFwd is a loss generally; at T=0.2 the same evidence suggests it wins.
+What is established is that **at T=1.0 on this pairing it costs 5.8%**, and that the on/off decision
+is currently made without reference to temperature.
+
+**A PREDICTION I MADE AND GOT WRONG, recorded because it was pre-registered.** I predicted that
+disabling optFwd would restore the anchor's *spread* as well as its mean — the story being that
+overlap hides the sampler's data-dependent cost. It does not: HEAD-no-optFwd has **sd 0.16**, tighter
+than either other arm. The variance story is refuted. **The anchor build's sd 2.07 on this cell
+remains unexplained and is now a separate open question**, not a side effect of this one.
+
+**Follow-ups, none of them started:**
+1. **Gate optFwd on temperature or on realized hit rate.** `OptFwdStats{Guessed, Hit}` already
+   tracks it per run, so an adaptive gate has its input. Needs a sweep across T before a rule.
+2. ~~**The 152k sampler crossover** (+23.4%)~~ — **RETRACTED 2026-08-27, measured end-to-end and
+   the microbenchmark had the DIRECTION WRONG.** See the retraction below.
+3. **The anchor's temp1.0 variance** (sd 2.07 vs 0.16-0.55) — mechanism unknown.
+
+**Follow-up 1 RUNNING (2026-08-27): the temperature ladder, and how it will be read.** T ∈ {0.2,
+0.4, 0.6, 0.8, 1.0}, temp-only/no-truncation, optFwd ON vs OFF on the same HEAD binary, n=6,
+phi3-mini/CUDA, peer kept in both arms as drift control. Raw: `g26-tsweep-optfwd-{on,off}.json`.
+Configs added to `bench_peer.py` as a ladder because two endpoints cannot locate a crossover.
+
+Read Δ = (OFF − ON)/ON at each T. **Δ > 0 means the feature LOSES at that temperature** (turning it
+off is faster); Δ < 0 means it wins.
+
+| outcome | reading, fixed in advance |
+|---|---|
+| Δ < −1% at low T, > +1% at high T | A real crossover. Gate optFwd on temperature, with the threshold set BELOW the measured crossover, not at it. |
+| Δ > +1% at every T | The feature does not pay on this pairing at all. Default should be off pending a config where it wins — its 98%-hit-rate case is T=0.2, so a null there is the strong result. |
+| Δ < −1% at every T | T=1.0's 5.8% is not temperature-driven and the mechanism story above is wrong; reopen. |
+| \|Δ\| < 1% throughout | No effect to gate; the T=1.0 result needs re-examining before anything is changed. |
+
+**LADDER RESULT (2026-08-27), n=6, phi3-mini/CUDA/depth 128 — a real crossover at T ≈ 0.26.**
+Raw: `g26-tsweep-optfwd-{on,off}.json`, log `g26-tsweep_run.log`.
+
+| T | optFwd ON | optFwd OFF | Δ = (OFF−ON)/ON | verdict |
+|---|---|---|---|---|
+| 0.2 | 119.34 ± 1.17 | 118.03 ± 0.15 | **−1.1%** | optFwd **wins** |
+| 0.4 | 114.80 ± **3.51** | 118.00 ± 0.13 | +2.8% | loses |
+| 0.6 | 111.23 ± 1.26 | 118.20 ± 0.17 | +6.3% | loses |
+| 0.8 | 110.34 ± 0.76 | 117.80 ± 0.17 | +6.8% | loses |
+| 1.0 | 111.72 ± 0.44 | 117.89 ± 0.12 | +5.5% | loses |
+
+**The OFF arm is FLAT** — 117.80 to 118.20, a 0.40 tok/s spread across the whole range — which is
+what makes it a baseline rather than a second variable: the sampler's work does not depend on
+temperature, only the drawn tokens do. Every movement in the table is the feature's.
+
+**Reading it by the rule fixed above: a real crossover, so gate on temperature with the threshold
+set BELOW the measured 0.26 — T ≤ 0.2 on this evidence.** Note the payoff is badly asymmetric: the
+win is **1.1%** and the losses run to **6.8%**, so a threshold placed at the crossover risks ~6x what
+it gains if the crossover moves on another model. That asymmetry, not the crossover, is the argument
+for a conservative default.
+
+**What the current default costs.** optFwd is on for ALL sampled decode. Typical chat sampling sits
+at T = 0.7–1.0, which is squarely the losing regime, so goinfer's default sampled decode on this
+pairing is **~5.5–6.8% slower than simply turning the feature off**. That is the practical result of
+this whole item, and it is larger than the regression that started it.
+
+**Second-order, and it is the hit-rate lottery made visible: the ON arm's VARIANCE peaks mid-ladder**
+(sd 3.51 at T=0.4, against 0.12–0.17 everywhere on the OFF arm). At T=0.2 the guess nearly always
+hits and at T≥0.6 it nearly always misses; in between, each run draws a different hit rate. So the
+feature adds unpredictability as well as cost in the middle of its range — and this, not the anchor
+build, is where an overlap-related variance story actually holds. **The anchor's sd 2.07 is still
+unexplained**; my earlier attempt to attribute it to overlap was refuted (HEAD-no-optFwd is the
+tightest arm measured, sd 0.16).
+
+**SCOPE — n=1 model.** phi3-mini, depth 128, CUDA, one card. The crossover is a property of the
+hit-rate curve, which is model- and prompt-dependent; a second model is needed before a threshold
+ships. Shipping a gate off one model would repeat precisely the error that put this feature on by
+default.
+
+**Temperature is a PROXY and the ladder should not be mistaken for the mechanism.** What determines
+the feature's value is the realized hit rate, which `OptFwdStats{Guessed, Hit}` already measures per
+run; temperature only predicts it. A hit-rate-adaptive gate is strictly better-targeted than a
+temperature threshold and has its input available today — but it can only be *evaluated* against a
+ladder like this one, which is why the ladder comes first. **One model, one depth: a gate shipped
+off n=1 model would repeat exactly the mistake that put this feature on by default.**
+
 
 **G25 · Does the oracle bar need a sparsity axis, or is per-precision enough?** — PARKED with a
 trigger, 2026-08-27. Either box, desk work first.
@@ -618,3 +887,45 @@ than papered over.
 | `scripts/refresh_parity_hashes.sh` | goinfer |
 
 <!-- /CITATION-INDEX -->
+
+
+## RETRACTION, 2026-08-27 — the "152k sampler crossover" was a microbenchmark artifact
+
+Raw: `docs/measurements/g26-152k-{anchor,head}.json`, log `g26-152k_run.log`.
+
+I filed a finding that HEAD's sampler regressed +23.4% at 152k vocab, from
+`BenchmarkG26SampleTemp1_152k`. **It does not reproduce end-to-end, and the sign is opposite.**
+Tested on qwen2.5-coder-1.5B (vocab **151936** — the standard bench model already sits at the vocab
+in question), `GOINFER_NO_OPTFWD=1` in BOTH arms so the optFwd effect cannot contaminate it, n=8:
+
+| | anchor `ca29d6c` | HEAD | |
+|---|---|---|---|
+| greedy (control) | 219.81 ± 0.91 | 220.51 ± 1.36 | +0.3% |
+| temp1.0_notrunc | 166.22 ± 2.31 | 180.37 ± 2.21 | **+8.5% HEAD FASTER** |
+| **production sampling step** | **1467 us** | **1009 us** | **−31%** |
+| *microbenchmark claimed* | *1358 us* | *1676 us* | *+23%* |
+
+**In production HEAD's sampler is 31% FASTER at 152k. P10 delivered what it claimed.** There is no
+sampler regression at any vocab measured: −35% at phi3-mini's 32064 (0.703 → 0.457 ms, from the
+optFwd-OFF arms) and −31% at 151936.
+
+**THE METHODOLOGICAL POINT, which is the durable part.** A tight-loop microbenchmark of the sampler
+is not representative of decode, and this is the second time in ONE investigation that a sampler
+microbenchmark produced a wrong conclusion — the first was `BenchmarkExpChunked`'s ~96 us
+under-bounding the real tail by 7–10x. In a tight loop the scratch buffer stays hot and the
+allocator serves from a warm free-list; in decode the same buffer is cold behind an ~8 ms forward.
+The loop does not merely mis-scale the number, it **inverted the comparison**.
+
+**Use the in-situ measurement instead, which is available and costs nothing extra: the same-build
+greedy-vs-temp1.0 end-to-end difference, with `GOINFER_NO_OPTFWD=1` so overlap cannot confound it.**
+Greedy's on-device argmax means that difference is the whole sampled tail rather than the sampler
+alone — but it is measured where the code actually runs, and both times it disagreed with a
+microbenchmark it was the microbenchmark that was wrong.
+
+**Consequently the tail decomposition recorded above is DOWNGRADED.** Its "remainder 75 → 397 us"
+split subtracted microbenchmark `Sample` figures from in-situ tails, and those figures are now known
+to be unrepresentative — at 32k the microbenchmark says 553 us where production says 457 us. **The
+split is not reliable and should not be quoted.** What is unaffected: the optFwd conclusion, which
+rests entirely on an end-to-end A/B (`GOINFER_NO_OPTFWD=1`, n=15, plus the five-point ladder) and
+never depended on the microbenchmark at all. `decoder/g26_sampler_bench_test.go` is kept, but its
+doc comment should be read with this retraction attached.

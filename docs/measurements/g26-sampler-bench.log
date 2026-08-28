@@ -1,0 +1,45 @@
+=== 02:15:55 TREE /home/francis/g26-anchor (ca29d6c) ===
+BenchmarkG26SampleTemp1_32k-16      	    4299	    618601 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1898	    624381 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1827	    637390 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1854	    633249 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1952	    624362 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   44973	     26197 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   48511	     25128 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   48274	     26145 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   42458	     24902 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   48394	     25666 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     770	   1407140 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     928	   1334980 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     867	   1370936 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     910	   1338261 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     906	   1339050 ns/op
+BenchmarkG26SampleGreedy_152k-16    	    9590	    122096 ns/op
+BenchmarkG26SampleGreedy_152k-16    	    9668	    120553 ns/op
+BenchmarkG26SampleGreedy_152k-16    	    9919	    121959 ns/op
+BenchmarkG26SampleGreedy_152k-16    	    9490	    122649 ns/op
+BenchmarkG26SampleGreedy_152k-16    	    9583	    123582 ns/op
+ok  	github.com/townsendmerino/goinfer/decoder	30.189s
+=== 02:16:27 TREE /home/francis/mycode/goinfer (f9f8833) ===
+BenchmarkG26SampleTemp1_32k-16      	    3700	    524347 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1856	    564536 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1882	    548332 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1924	    550206 ns/op
+BenchmarkG26SampleTemp1_32k-16      	    1824	    575725 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   62576	     17486 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   68068	     17746 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   59134	     18084 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   58027	     18036 ns/op
+BenchmarkG26SampleGreedy_32k-16     	   57373	     18443 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     741	   1656341 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     697	   1685981 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     718	   1707874 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     705	   1683957 ns/op
+BenchmarkG26SampleTemp1_152k-16     	     728	   1646267 ns/op
+BenchmarkG26SampleGreedy_152k-16    	   13616	     87397 ns/op
+BenchmarkG26SampleGreedy_152k-16    	   13934	     87014 ns/op
+BenchmarkG26SampleGreedy_152k-16    	   13603	     85073 ns/op
+BenchmarkG26SampleGreedy_152k-16    	   13570	     85521 ns/op
+BenchmarkG26SampleGreedy_152k-16    	   14077	     85409 ns/op
+ok  	github.com/townsendmerino/goinfer/decoder	29.778s
+=== 02:17:00 DONE ===
