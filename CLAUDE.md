@@ -68,6 +68,16 @@ someone else's in-flight work — commit *your* hunks, leave theirs in the tree.
 green line in 0.02s usually means "no assets, nothing ran". Confirm with `-v` and read for
 `--- PASS`, not `ok`.
 
+**A UNIT TEST THAT SUPPLIES ITS OWN CALLING CONVENTION PROVES THE UNIT WORKS WHEN CALLED THAT WAY —
+NOT THAT ANYTHING CALLS IT THAT WAY.** It is the microbenchmark trap one level up: same failure, in
+composition rather than in cost. Measured here (G27): `optFwdGate` documents a two-way hysteresis
+band, and `TestOptFwdGate_hysteresis` confirms it by driving `Observe` in an unconditional loop. But
+production calls `Observe` only from inside the branch that `Should()` guards, so once the gate turns
+off nothing is observed again, the estimate freezes, and the re-enable half of the band is
+unreachable. The component test passes, is correct, and vouches for behaviour the system cannot
+produce. **When a component's contract depends on HOW OFTEN or UNDER WHAT CONDITION it is called,
+test it through its caller, or the test is asserting your assumption back at you.**
+
 **`go test -v ./a/ ./b/` prints nothing until `./a/` finishes.** Output is buffered per package.
 Run one package per invocation and `tee` if you need to watch progress.
 

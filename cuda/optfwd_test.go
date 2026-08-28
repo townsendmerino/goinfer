@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"testing"
@@ -137,5 +138,40 @@ func TestOptFwd_lowTempHighHitRate(t *testing.T) {
 	t.Logf("hit rate: T=0.2 -> %.1f%%, T=1.0 -> %.1f%%", 100*low, 100*high)
 	if low <= high {
 		t.Errorf("expected T=0.2's hit rate (%.1f%%) to exceed T=1.0's (%.1f%%), matching the design-phase measurement", 100*low, 100*high)
+	}
+}
+
+// TestOptFwd_hitRateLadder measures the REALIZED hit rate across the same temperature ladder the
+// throughput sweeps use, for whichever model GOINFER_CUDA_MODEL names.
+//
+// WHY alpha AND NOT CROSSOVER TEMPERATURE. optFwdGate's thresholds are set in alpha (EnableAt 0.90 /
+// DisableAt 0.75), and break-even in alpha is what the mechanism actually determines: the overlap
+// pays back the sampler it hides and loses a contended forward on a miss. Crossover temperature is
+// one step downstream of that and model-specific in an uninteresting way. Pairing this ladder with
+// the ON/OFF throughput ladder gives alpha AT the crossover -- which IS the break-even hit rate for
+// that model, measured rather than inferred (G27, docs/spec/10-optfwd-gate.md).
+//
+// Run with -v; prints one line per temperature.
+func TestOptFwd_hitRateLadder(t *testing.T) {
+	t.Setenv("GOINFER_OPTFWD_MAX_TEMP", "2.0") // the ladder deliberately goes above the shipped cap
+	m := loadOptFwdModel(t)
+	defer m.Close()
+	ctx := context.Background()
+	prompt := []int{1, 7, 42}
+	const n = 200 // more than the 100 the pass/fail test uses: this is an estimate, not a threshold
+
+	for _, temp := range []float64{0.2, 0.4, 0.6, 0.8, 1.0} {
+		sp := decoder.SamplingParams{Temperature: temp, Seed: 7} // temp-only, matching the sweeps
+		ch, g := m.Generate(ctx, prompt, n, sp)
+		for range ch {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("T=%.1f: %v", temp, err)
+		}
+		if g.OptFwd == nil || g.OptFwd.Guessed == 0 {
+			t.Fatalf("T=%.1f: optFwd did not engage -- cap not raised, or model ineligible", temp)
+		}
+		fmt.Fprintf(os.Stderr, "HITRATE T=%.1f alpha=%.4f (%d/%d)\n",
+			temp, g.OptFwd.HitRate(), g.OptFwd.Hit, g.OptFwd.Guessed)
 	}
 }

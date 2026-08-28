@@ -70,6 +70,14 @@ func (s *OptFwdStats) HitRate() float64 {
 // optFwdGate is a binary (speculate / don't) trailing-hit-rate switch, the same EMA shape as
 // AdaptiveDepth (spec_adaptive.go) but for an on/off decision rather than a continuous depth.
 //
+// THESE THRESHOLDS ARE FITTED ON ONE MODEL AND ARE WRONG FOR SMALL-VOCAB ONES (G27). Break-even
+// hit rate is not a constant: it rises as the sampler share falls, because the overlap can only pay
+// back the sampler it hides. The 90.9% below was measured on qwen2.5-coder-0.5b — 152k vocab, a
+// LARGE sampler share. On phi3-mini (32k, 5.4% share against the 1.5B's 18.2%) the true break-even
+// sits ABOVE 0.90, so the entire 0.90/0.75 dead band lies below it and this gate cannot turn off in
+// the regime where the feature loses 2.8-6.8%. That is why the loss needed a temperature cap
+// (optFwdMaxTemp) rather than being caught here.
+//
 // The enable threshold is pinned to the WORST measured break-even across depth (90.9% at a
 // shallow qwen2.5-coder-0.5b context, rounding down to 0.90) rather than a depth-aware curve:
 // break-even only rises with depth (toward ~97% at 2048), so a fixed threshold at the shallow
@@ -118,6 +126,21 @@ func (g *optFwdGate) ensure() {
 }
 
 // Should reports whether this step should attempt the optimistic guess.
+//
+// THE HYSTERESIS ABOVE IS A ONE-WAY LATCH IN PRACTICE, AND THE DEAD BAND'S UPPER HALF IS DEAD CODE
+// (G27). Observe is called ONLY from optFwdStep, and the caller in model.go invokes optFwdStep only
+// when Should() is true. So the moment alpha falls below DisableAt and this returns false, no
+// further outcomes are ever observed: alpha freezes, and the `alpha >= EnableAt` re-enable branch in
+// Observe cannot be reached again for the rest of that Generate. It reads as a two-way band and
+// behaves as a latch.
+//
+// TestOptFwdGate_hysteresis DOES NOT CATCH THIS and actively vouches for the two-way reading,
+// because it drives Observe in an unconditional loop — a calling convention production never uses.
+// It is correct about the component and blind to the composition.
+//
+// Left as-is deliberately: since T > 0.2 no longer reaches the overlap at all (optFwdMaxTemp), the
+// gate barely runs and the latch is unreachable in the regime that mattered. Fix it together with
+// the thresholds, not before — see G27 in docs/QUEUE.md.
 func (g *optFwdGate) Should() bool {
 	g.ensure()
 	return g.on

@@ -277,3 +277,60 @@ gate found, that errors are cheapest exactly where deciding is hardest.
 Changing what optFwd *does*, the lossless invariant (non-negotiable and untouched), any
 serving/router surface, and MTP/EAGLE drafting. This page is only about when the existing feature
 should run.
+
+## Third model — PRE-REGISTERED before the run (2026-08-28)
+
+**The question changed with the G27 discovery, and the run is built for the new one.** Not "does
+crossover track vocab" — vocab was only ever a proxy. **Does BREAK-EVEN HIT RATE track SAMPLER
+SHARE?** That is mechanistic rather than correlational: the overlap can only repay the sampler it
+hides, and loses a contended forward on a miss, so share is what sets break-even. If it holds, the
+existing gate's thresholds become computable **at load time with no probing** — which fixes G27's
+real defect and retires design B rather than building it.
+
+**The third model is `qwen2.5-7b`, and NOT another large-vocab model from a different family.** The
+brief asked for different-family/similar-vocab, but the reframing inverts that: **the 7B holds vocab
+CONSTANT at 151936 — identical to the 1.5B — while its far larger decode step makes the sampler
+share much smaller.** That is the controlled comparison the hypothesis needs, because it separates
+the two variables that are confounded in the existing points:
+
+| model | vocab | sampler share | what it tests |
+|---|---|---|---|
+| phi3-mini | 32064 | 5.4% | small vocab, small share |
+| 1.5B | 151936 | 18.2% | large vocab, large share |
+| **7B** | **151936** | **expected SMALL** | **large vocab, small share — the discriminator** |
+
+**If crossover tracks vocab, the 7B behaves like the 1.5B. If it tracks share, the 7B behaves like
+phi3-mini despite sharing the 1.5B's vocabulary.** One run separates them; a different-family
+large-vocab model would have added a point without resolving the confound. (Gemma-3 was the obvious
+different-family candidate and is ineligible anyway: sliding-window attention, which
+`specRollbackSafe` refuses.)
+
+**What is measured, per model:** the ON/OFF throughput ladder (crossover in T), greedy-vs-sampled
+step cost (sampler share), and — new — the realized hit rate across the same ladder
+(`TestOptFwd_hitRateLadder`), giving **α at the crossover, which IS that model's break-even hit
+rate**, measured rather than inferred through a temperature proxy.
+
+**WHAT "HOLDS" MEANS, fixed before seeing the numbers.** Three points lie on some curve; a criterion
+after the fact is how 0.90 got set from one model. From the value model, break-even satisfies
+
+    c_miss  =  c_sampler · α_be / (1 − α_be)
+
+so the mechanism's real claim is that **`c_miss` is a property of the DECODE STEP, not of the
+sampler.** The test is therefore not a curve fit:
+
+- **HOLDS if `c_miss / c_decode` is within a factor of 2 across all three models.** Then break-even
+  is computable at load time from the sampler share alone, and the gate's constants can be derived
+  rather than fitted.
+- **REJECTED if it varies by more than 2x**, or if the 7B's crossover lands with the 1.5B's despite
+  a small share. Then break-even is not predictable from static properties, B's premise gets real
+  support, and the fixed T ≤ 0.2 cap stays as the shipped answer.
+- **A factor of 2 is deliberately loose**, because α_be is read off a crossover located to about
+  ±0.1 in T and the window-CV floor limits how much better that gets. A tighter criterion would be
+  claiming resolution the measurement does not have.
+
+**Resolution decided in advance: ±0.1 in T is enough to tell "tracks share" from "scatters", and the
+run stops there.** Chasing ±0.02 would cost a night against a CV floor for a distinction that changes
+no decision.
+
+**The shipped T ≤ 0.2 cap does not wait on this.** It beats always-on by a wide margin at any value
+in range, and refining the number later is a one-line change.
