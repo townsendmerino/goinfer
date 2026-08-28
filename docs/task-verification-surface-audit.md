@@ -62,6 +62,33 @@ the compare** — and the justification usually sits above the enclosing `if cos
 non-comment line further up. The committed script uses a 6-line window. Recorded because a
 verification audit that miscounts is the thing it is auditing.
 
+## Finding 3 — numbers travel out of their regime, and the fix is a label
+
+Three instances in one day, which makes it a property of how measurements move through these docs
+rather than three slips:
+
+| a number from | got applied to | cost |
+|---|---|---|
+| an int8 W8A8 bar (`realLogitOracleQuant`) | the repo's first int4 T3 | five weeks of a blocker, resolved as G25 |
+| a block drafter's break-even, `decoder/blockspec.go:399` | an MTP round, whose draft term scales with K | caught in review, before it reached a gate |
+| a 0.8B `c_head/c_decode` ratio | *would have been* read as a break-even for a 27B trunk | caught pre-emptively in `docs/spec/09-mtp-heads.md` |
+
+The first cost real time. The second and third were caught by someone asking which population a
+number came from — which is not a mechanism, it is luck plus attention.
+
+**The convention that generalises: label a number's regime AT THE POINT OF RECORDING, not at the
+point of reading.** Every one of these was recoverable from context by a reader who happened to
+check; none announced itself. Concretely, a recorded measurement carries the population it was taken
+on — precision, geometry, model scale, the pairing — in the same line or table cell as the value, and
+a number that cannot be evaluated in a regime says so where it is written rather than where it is
+quoted. 09's `c_head/c_decode` is the worked example: measured, recorded, and labelled
+**non-transferable** in the same breath.
+
+This is the same defect as Finding 2 seen from the other end. Finding 2 counts bars whose basis was
+never written down; this one is what happens next, when a bar outlives the population it was
+calibrated on and nothing on the line says so. `scripts/audit_gate_bars.py` inventories the first;
+the convention above is what would stop the second.
+
 ## Method for continuing
 
 1. **Reachability.** For every checkset, prove each named gate can be selected. Done for parity;
