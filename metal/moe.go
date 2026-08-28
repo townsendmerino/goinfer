@@ -319,6 +319,12 @@ type moeResident struct {
 	paged    bool
 	slots    int
 	idxZeros Buffer
+
+	// giwFile is the re-opened .giw for pread-staging; nil ⇒ the mmap byte-copy path. Shared
+	// read-only fd across every layer's pool; closed by resident.Close. Same knob and default as
+	// gemma4_moe.go's (GOINFER_MOE_PREAD=0 opts out) — deliberately the same env var, since it is
+	// the same mechanism generalized.
+	giwFile *os.File
 }
 
 // buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a
@@ -405,6 +411,25 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 			mo.idxZeros = NewBufferUint32s(d, make([]uint32, k))
 		}
 	}
+	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of byte-copying
+	// off the mmap — the refinement gemma4_moe.go measured (cold A/B: 1892→1488 ms/tok, 1.26×; major
+	// faults 92.8→0.0/stage, the demand-fault page-in gone) applied to this shape. DEFAULT ON; needs a
+	// .giw-mmap'd model, since the offsets are into that file. Re-opened once, shared across layers.
+	// GOINFER_MOE_PREAD=0 opts out (the mmap byte-copy baseline, kept for the A/B). If the open fails
+	// or the model isn't .giw-backed, buildMoELayer falls back to the byte-copy.
+	//
+	// GOINFER_MOE_NOCACHE is deliberately NOT wired here: gemma4 measured it and DECLINED (no effect,
+	// and its motivating evidence was an ordering confound — see buildGemma4MoEResident). Porting a
+	// declined flag would re-open a settled question.
+	if mo.paged && os.Getenv("GOINFER_MOE_PREAD") != "0" {
+		if p := m.GiwPath(); p != "" {
+			if f, err := os.Open(p); err == nil {
+				mo.giwFile = f
+			} else {
+				fmt.Fprintf(os.Stderr, "metal MoE: open(%s) failed (%v) — using mmap byte-copy\n", p, err)
+			}
+		}
+	}
 	return mo, nil
 }
 
@@ -446,6 +471,67 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 			return guBytes, guScales, dw, ds
 		}
 		ml.pool = newExpertPool(d, mo.slots, nGuW, nGuS, len(dw0), len(ds0), stage)
+		// pread staging: resolve each expert's nibble file offsets within the .giw mmap (pure pointer
+		// arithmetic — MmapByteOffset does NOT touch the pages), then stage by pread'ing straight into
+		// the slot's UMA words. Zero mmap faults, one large sequential read per projection.
+		//
+		// Three reads per expert, not gemma4's two: this shape keeps gate and up as SEPARATE tensors
+		// (gemma4's bundle hands over one already-fused gate|up span), so the slot's fused gate|up
+		// buffer is filled in two ranges — gate at byte 0, up at byte len(gate) — exactly reproducing
+		// the byte-copy path's append(gw, uw...) and hence the stacked layout gemv_w4a8_moe reads.
+		// Scales stay f32→f16 from the heap-resident q4s (giwReader.f32 COPIES them, so reading them
+		// never faults the mmap).
+		//
+		// Falls back to the byte-copy path if the fd is absent or ANY expert's nibbles aren't
+		// .giw-mmap-backed (e.g. a requantized HF/safetensors load): every offset must resolve for
+		// pread to be correct, so this is all-or-nothing per layer, never per expert.
+		if mo.giwFile != nil {
+			type expertSpan struct {
+				gOff, uOff, dOff int64
+				gLen, uLen, dLen int
+			}
+			spans := make([]expertSpan, len(experts))
+			resolved := true
+			for ei := range experts {
+				gq, _, _, okg := experts[ei].Gate.Int4()
+				uq, _, _, oku := experts[ei].Up.Int4()
+				dq, _, _, okd := experts[ei].Down.Int4()
+				if !okg || !oku || !okd {
+					resolved = false
+					break
+				}
+				gOff, ok1 := m.MmapByteOffset(gq)
+				uOff, ok2 := m.MmapByteOffset(uq)
+				dOff, ok3 := m.MmapByteOffset(dq)
+				if !ok1 || !ok2 || !ok3 {
+					resolved = false
+					break
+				}
+				spans[ei] = expertSpan{gOff, uOff, dOff, len(gq), len(uq), len(dq)}
+			}
+			if resolved {
+				fd := int(mo.giwFile.Fd())
+				ml.pool.stagePread = func(ei int, sl expertSlot) {
+					sp := spans[ei]
+					if err := preadRangeIntoU32Buf(fd, sl.guW, 0, sp.gOff, sp.gLen); err != nil {
+						panic(fmt.Sprintf("metal MoE pread gate expert %d: %v", ei, err))
+					}
+					if err := preadRangeIntoU32Buf(fd, sl.guW, sp.gLen, sp.uOff, sp.uLen); err != nil {
+						panic(fmt.Sprintf("metal MoE pread up expert %d: %v", ei, err))
+					}
+					if err := preadRangeIntoU32Buf(fd, sl.dW, 0, sp.dOff, sp.dLen); err != nil {
+						panic(fmt.Sprintf("metal MoE pread down expert %d: %v", ei, err))
+					}
+					_, gs, _ := int4DirectBytes(&experts[ei].Gate) // f16 scales from heap q4s (no mmap fault)
+					_, us, _ := int4DirectBytes(&experts[ei].Up)
+					_, ds, _ := int4DirectBytes(&experts[ei].Down)
+					guS := sl.guS.U16s()
+					copy(guS, gs)
+					copy(guS[len(gs):], us)
+					copy(sl.dS.U16s(), ds)
+				}
+			}
+		}
 	} else {
 		guMats := make([]*linalg.WeightMat, 0, 2*len(lw.Experts))
 		for e := range lw.Experts {

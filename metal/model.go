@@ -1207,6 +1207,10 @@ func (r *resident) Close() error {
 		_ = r.g4moe.giwFile.Close() // the pread-staging fd (GOINFER_MOE_PREAD)
 		r.g4moe.giwFile = nil
 	}
+	if r.moe != nil && r.moe.giwFile != nil {
+		_ = r.moe.giwFile.Close() // the generic-MoE path's twin (moe.go)
+		r.moe.giwFile = nil
+	}
 	if r.d != nil {
 		r.d.ReleaseAll()     // every MTLBuffer
 		r.d.ReleaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice (M24b)

@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"fmt"
 	"io"
 	"syscall"
 	"time"
@@ -53,6 +54,11 @@ type expertPool struct {
 	lru        []int       // slot indices, most-recently-used at front
 	stage      stageFn
 
+	// preads counts miss-stages served by the pread fast path (0 ⇒ the mmap byte-copy path ran).
+	// It lets a test PROVE pread engaged: a byte-identity check passes just as well when the offset
+	// resolution silently fell back, which would leave the fast path green but unexercised.
+	preads int
+
 	stages     int   // miss-stages performed (telemetry + isolation-test oracle)
 	hits       int   // ensureResident calls that found the expert already resident (same-expert-reuse)
 	coldStarts int   // stages into a previously-free slot (pool not yet full)
@@ -82,19 +88,38 @@ type expertPool struct {
 // here. Loops on short reads.
 func preadIntoU32Buf(fd int, dst Buffer, off int64) error {
 	d := dst.U32s()
-	if len(d) == 0 {
+	return preadRangeIntoU32Buf(fd, dst, 0, off, len(d)*4)
+}
+
+// preadRangeIntoU32Buf is preadIntoU32Buf over a SUB-RANGE of the destination: it reads n bytes from
+// file offset off into the slot buffer's contents starting at byte offset dstOff. The generic-MoE
+// paged path needs this because a layer's gate and up projections are SEPARATE tensors (separate
+// .giw spans) that the slot's fused gate|up buffer concatenates — gate at dstOff 0, up at dstOff
+// len(gateBytes) — whereas gemma4's bundle hands over one already-fused gate|up span that fills the
+// whole buffer. Group-32 int4 makes every span a multiple of 16 bytes, so the up half always starts
+// word-aligned and the concatenation matches the stacked layout byte-for-byte.
+//
+// dstOff/n outside the destination is a programming error in the offset resolution, not a runtime
+// condition — it would silently stage a truncated expert, so it returns an error rather than
+// clamping. Loops on short reads.
+func preadRangeIntoU32Buf(fd int, dst Buffer, dstOff int, off int64, n int) error {
+	d := dst.U32s()
+	if n == 0 {
 		return nil
 	}
-	db := unsafe.Slice((*byte)(unsafe.Pointer(&d[0])), len(d)*4)
+	if dstOff < 0 || n < 0 || dstOff+n > len(d)*4 {
+		return fmt.Errorf("pread range [%d,%d) outside %d-byte slot buffer", dstOff, dstOff+n, len(d)*4)
+	}
+	db := unsafe.Slice((*byte)(unsafe.Pointer(&d[0])), len(d)*4)[dstOff : dstOff+n]
 	for done := 0; done < len(db); {
-		n, err := syscall.Pread(fd, db[done:], off+int64(done))
+		r, err := syscall.Pread(fd, db[done:], off+int64(done))
 		if err != nil {
 			return err
 		}
-		if n == 0 {
+		if r == 0 {
 			return io.ErrUnexpectedEOF
 		}
-		done += n
+		done += r
 	}
 	return nil
 }
@@ -154,6 +179,7 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 		// pread path: one syscall reads nibbles straight into the slot's UMA words (fetch+copy fused).
 		p.stagePread(e, p.slots[s])
 		p.fetchNanos += time.Since(t0).Nanoseconds()
+		p.preads++
 	} else {
 		guW, guS, dW, dS := p.stage(e) // mmap-aliased nibble bytes + f16 scales (no reconstruction/alloc)
 		t1 := time.Now()
