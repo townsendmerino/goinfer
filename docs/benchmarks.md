@@ -101,6 +101,25 @@ A measurement enters a table **only if it satisfies all of**:
 - **Date** of the run, and a **thermal note** (plugged in, warm, repeated runs, median).
 - **Local disk only** — the checkpoint is read from local NVMe/SSD. A model read from the
   SMB archive mount is **not a measurement**; see *Model storage* below.
+- **A longer measurement window does NOT reliably buy precision — check before spending on it.**
+  The intuition is that averaging over N tokens shrinks the spread as 1/sqrt(N), so a noisy cell can
+  be fixed by measuring for longer. **Measured 2026-08-27, it does not hold here.** Per-window
+  coefficient of variation over decode windows of 64 / 128 / 256 tokens:
+
+  | model | 64 | 128 | 256 | 1/sqrt(N) would predict at 256 |
+  |---|---|---|---|---|
+  | phi3-mini (sampled) | 3.29% | 2.59% | 1.75% | 1.65% |
+  | 1.5B (sampled) | 7.86% | 6.40% | **6.89%** | 3.93% |
+
+  The 1.5B gets **worse** from 128 to 256. There is a persistent per-window component that averaging
+  cannot touch, so past some length a longer window costs more tokens for the *same* confidence —
+  total cost scales as CV²·N, and CV stops falling while N keeps rising. In that case 64-token
+  windows were **3.3x cheaper** than 256 for equal power.
+
+  **The general rule: treat "measure for longer" as a hypothesis to test on two window lengths, not
+  a lever you can pull.** Where the noise is a property of the mechanism rather than of sampling —
+  a speculative hit/miss lottery here — it survives averaging and the floor is where you land.
+  Raw: `docs/measurements/g26-winvar-*.json`; the reasoning it fed is `docs/spec/10-optfwd-gate.md`.
 - **Verified-idle box, with the machine state recorded beside the number** — load average at the
   start of the run, and nothing else of ours running. Added 2026-08-25 after this list failed to
   catch a bad number: a 3020-token prefill timing came back **1587.1 s** where three later

@@ -163,6 +163,74 @@ A gate is correct only if it reproduces both, without per-model constants:
 **T=0.6 is the discriminating cell**: the two models require opposite decisions at the same
 temperature, so any rule keyed on temperature alone fails it by construction.
 
+## The do-nothing arm is a FIXED T ≤ 0.2 THRESHOLD, and that is what B must beat
+
+**Not the always-on default.** A one-line constant is a real, measured, well-understood alternative:
+no probing, no hysteresis, no persistence, no state, nothing to converge. **If this page compares B
+only against today's unconditional default, B wins by being the thing that got built.** So the
+comparison is fixed here, against the ladders, before any code exists.
+
+Value against the always-on baseline, per measured cell (+ve = the policy gains):
+
+| model | T | fixed T ≤ 0.2 | oracle | B's headroom over fixed |
+|---|---|---|---|---|
+| phi3-mini | 0.4 | **+2.8%** | +2.8% | 0.0% |
+| phi3-mini | 0.6 | **+6.3%** | +6.3% | 0.0% |
+| phi3-mini | 0.8 | **+6.8%** | +6.8% | 0.0% |
+| phi3-mini | 1.0 | **+5.5%** | +5.5% | 0.0% |
+| 1.5B | 0.4 | **−6.0%** | 0.0% | **+6.0%** |
+| 1.5B | 0.6 | **−5.1%** | 0.0% | **+5.1%** |
+| 1.5B | 0.8 | −0.9% | 0.0% | +0.9% |
+| 1.5B | 1.0 | −0.9% | 0.0% | +0.9% |
+
+**The fixed threshold captures ALL of phi3-mini's available value and none of the 1.5B's — and in
+the 1.5B's mid-band it is actively WORSE than shipping nothing at all**, turning a 6.0% win into a
+6.0% loss. **B's entire advantage over the do-nothing arm is that band. There is no other cell where
+B is worth anything.**
+
+**Do not read a single average here.** Meaning over these ten cells (fixed +0.85%, oracle +2.14%,
+headroom +1.29%) weights every cell equally, which is a statement about the sweep and not about
+traffic. The real number depends on how much serving actually happens on large-vocab models at
+T = 0.4–0.8, and this repo has no traffic data. **If that band is rare, the fixed threshold is the
+better engineering choice and B should not be built.**
+
+## Probe tax — the number, before the implementation
+
+| model | windows/arm | probe cost | lost in the worse arm | over 10k tok | over 100k tok |
+|---|---|---|---|---|---|
+| phi3-mini | 2 | 256 tok | ~8.1 token-equivalents | 0.081% | 0.008% |
+| 1.5B | 11 | 1408 tok | ~35.9 token-equivalents | 0.359% | 0.036% |
+
+**The tax is only standing if the probe is on a TIMER, and it must not be.** The decision is keyed on
+(model, sampling config) — both known inputs, not things to poll for — so the design probes **once
+per unseen key** and never again. That makes the cost one-time and amortising: 0.036% worst case
+over 100k tokens on a key, falling with every token after.
+
+**If a periodic re-probe is added anyway** — as a safety net against drift — it must be no more
+frequent than **every ~36k tokens** on the 1.5B to hold a standing tax ≤ 0.1%. Recorded so that
+number exists before someone picks a convenient interval in code.
+
+**The residual risk this leaves, stated plainly: prompt distribution is NOT in the key.** Hit rate
+depends on what is being generated — code versus prose — so a key probed on one traffic type can
+carry a wrong answer into another. Keying more finely is not obviously possible; accepting the error
+is the likely answer, but it is an accepted error rather than an absent one.
+
+## Pre-registered decision rule
+
+**B ships only if it beats the fixed T ≤ 0.2 threshold on the validation set by more than its probe
+tax.** Concretely, on the two ladders:
+
+- **B must reach ≥ +4% over fixed at 1.5B/T=0.4 and T=0.6** (against the +6.0/+5.1% oracle headroom,
+  allowing for probe error), **and lose nothing beyond the tax anywhere else.**
+- **If B cannot, ship the fixed threshold** — it is one line, has no failure modes, and captures
+  phi3-mini's entire win.
+- **If B's probe misidentifies either 1.5B mid-band cell**, that is a fail, not a tuning exercise:
+  those two cells are the only reason B exists.
+
+Where the effect is near zero (1.5B at T=0.8/1.0, ±0.9%) the probe will be inconclusive, and that is
+acceptable **because the cost of guessing wrong there is also ±0.9%** — the same property the kill
+gate found, that errors are cheapest exactly where deciding is hardest.
+
 ## Risks, and the do-nothing arm
 
 - **Include the do-nothing arm.** The gate must be measured against *no gate at all*, both arms
