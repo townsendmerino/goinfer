@@ -228,27 +228,50 @@ def wait_port(port, timeout=180):
     return False
 
 def post_stream(url, payload, parse):
-    """POST a streaming request; return (n_tokens, t_first, t_last)."""
+    """POST a streaming request; return (intervals, t_first, t_last, chunks, reported).
+
+    COUNTS COME FROM THE ENGINE, NOT FROM THE STREAM. This used to increment once per SSE event
+    and call the result n_tokens, which is a CHUNK count — and chunks are not tokens on goinfer's
+    side: `streamTokens` (internal/serveapp/openai.go) emits only when `end > printed`, so a token
+    held back for an incomplete UTF-8 rune or a trailing partial stop-string match produces no
+    chunk at all, and the token that resolves the holdback produces one chunk carrying several
+    tokens' bytes. chunks <= tokens, always in that direction, and only on our side of a paired
+    comparison — so the error under-reported goinfer's own decode rate.
+
+    `reported` is the engine's own completion-token count (OpenAI usage.completion_tokens via
+    stream_options.include_usage; Ollama eval_count on the done message). `chunks` is kept so the
+    tokens/chunks ratio can be recorded per cell as evidence rather than assumption.
+
+    Timing is unchanged and still client-side: `intervals` counts INTER-event gaps for the t_first
+    .. t_last window. Empty deltas are no longer discarded for timing — an empty delta is still a
+    stream event and still marks an interval, and the holdback path is exactly what produces one.
+    """
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
-    n, t_first, t_last = 0, None, None
+    intervals, chunks, t_first, t_last, reported = 0, 0, None, None, None
     with urllib.request.urlopen(req, timeout=600) as r:
         for raw in r:
             line = raw.decode("utf-8", "replace").strip()
             if not line:
                 continue
-            tok = parse(line)
-            if tok is None:
+            ev = parse(line)
+            if ev is None:
+                continue            # not a stream event at all (framing, [DONE])
+            if ev.get("count") is not None:
+                reported = ev["count"]      # terminal report; not an inter-token interval
                 continue
+            if ev.get("text"):
+                chunks += 1
             now = time.perf_counter()
             if t_first is None:
                 t_first = now
             else:
-                n += 1          # count INTER-token intervals only
+                intervals += 1      # count INTER-token intervals only
                 t_last = now
-    return n, t_first, t_last
+    return intervals, t_first, t_last, chunks, reported
 
 def parse_openai(line):
+    """-> {"text": str} for a stream event, {"count": int} for the usage chunk, or None."""
     if not line.startswith("data:"):
         return None
     body = line[5:].strip()
@@ -256,20 +279,41 @@ def parse_openai(line):
         return None
     try:
         d = json.loads(body)
-        c = d.get("choices", [{}])[0].get("delta", {}).get("content")
-        return c if c else None
     except Exception:
         return None
+    u = d.get("usage")
+    if u and u.get("completion_tokens") is not None:
+        return {"count": u["completion_tokens"]}    # stream_options.include_usage final chunk
+    ch = d.get("choices") or []
+    if not ch:
+        return None
+    c0 = ch[0]
+    # FRAMING vs TOKEN EVENTS. The opening role chunk and the closing finish_reason chunk are
+    # protocol framing, not token boundaries: counting them would add two spurious intervals and,
+    # worse, put t_last on the finish chunk and stretch the timing window past the last token.
+    if c0.get("finish_reason") is not None:
+        return None
+    dl = c0.get("delta", {})
+    if dl.get("role") is not None and not dl.get("content"):
+        return None
+    # An EMPTY content delta that is NOT framing is a real token boundary — it is what the UTF-8 /
+    # stop-string holdback produces — so it is kept rather than dropped.
+    return {"text": dl.get("content") or ""}
 
 def parse_ollama(line):
+    """-> {"text": str} for a stream event, {"count", "eval_ns"} for the done message, or None."""
     try:
         d = json.loads(line)
-        if d.get("done"):
-            return None
-        c = d.get("message", {}).get("content")
-        return c if c else None
     except Exception:
         return None
+    if d.get("done"):
+        # The done message carries eval_count / eval_duration and used to be discarded outright.
+        # eval_count is the peer's own token count; eval_duration is kept as a cross-check against
+        # our client-side timing.
+        if d.get("eval_count") is not None:
+            return {"count": d["eval_count"], "eval_ns": d.get("eval_duration")}
+        return None
+    return {"text": d.get("message", {}).get("content") or ""}
 
 _PROMPTS = json.load(open(os.environ.get("BENCH_PROMPTS",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts.json"))))
@@ -287,6 +331,7 @@ def prompt_tokens(depth, model_key):
 def goinfer_payload(model_path, prompt, cfg):
     ngen, _, _ = gen_params()
     p = {"model": "bench", "stream": True, "max_tokens": ngen,
+         "stream_options": {"include_usage": True},   # authoritative completion_tokens
          "messages": [{"role": "user", "content": prompt}]}
     p.update(cfg.get("goinfer", {}))
     return p
@@ -366,26 +411,36 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
                 (lambda: ollama_payload(tag, prompt, cfg, backend))
         if not wait_port(port):
-            return None, "server did not come up"
+            return None, "server did not come up", None
         # warm: one discarded completion (model load + first-run outlier)
         try:
             post_stream(url, mk(), parse)
         except Exception as e:
-            return None, f"warmup failed: {e}"
+            return None, f"warmup failed: {e}", None
 
         _, ncomp, nruns = gen_params()
-        run_rates = []
+        run_rates, tok_total, chunk_total = [], 0, 0
         for _ in range(nruns):
             rates = []
             for _ in range(ncomp):
-                n, tf, tl = post_stream(url, mk(), parse)
-                if n >= 2 and tf and tl and tl > tf:
-                    rates.append(n / (tl - tf))
+                intervals, tf, tl, chunks, reported = post_stream(url, mk(), parse)
+                if intervals < 2 or not tf or not tl or tl <= tf:
+                    continue
+                # Numerator is the ENGINE's count where it gives one; the interval count is the
+                # fallback and is what the old code always used. Timing is untouched.
+                n = reported if reported else intervals
+                # reported counts all generated tokens; the window starts at the FIRST event, so
+                # one token precedes it.
+                n = n - 1 if reported else n
+                rates.append(n / (tl - tf))
+                tok_total += (reported or 0)
+                chunk_total += chunks
             if rates:
                 run_rates.append(statistics.mean(rates))
-        return run_rates, None
+        ratio = (tok_total / chunk_total) if chunk_total else None
+        return run_rates, None, {"tokens": tok_total, "chunks": chunk_total, "tokens_per_chunk": ratio}
     except Exception as e:
-        return None, str(e)
+        return None, str(e), None
     finally:
         if proc:
             try:
@@ -514,13 +569,22 @@ def main():
             continue
         t0 = time.time()
         machine = machine_state()
-        rates, err = run_cell(engine, mk, depth, cfg, backend)
+        rates, err, counts = run_cell(engine, mk, depth, cfg, backend)
         rec = {"phase": phase, "engine": engine, "backend": backend, "model": mk,
                "depth": depth, "prompt_tokens": prompt_tokens(depth, mk),
                "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
                "machine": machine,
                "secs": round(time.time() - t0, 1)}
+        if counts:
+            # tokens/chunks is the DIAGNOSTIC for the chunk-counting bug: 1.000 means chunking cost
+            # this cell nothing and the old numbers were right here; >1 means the old harness
+            # under-counted, and by how much.
+            rec["counts"] = counts
+            r = counts.get("tokens_per_chunk")
+            if r:
+                print(f"#   tokens/chunks = {r:.4f}  ({counts['tokens']} tok / {counts['chunks']} chunks)",
+                      flush=True)
         if rates:
             rec["mean"] = round(statistics.mean(rates), 1)
             rec["spread"] = round(max(rates) - min(rates), 1)

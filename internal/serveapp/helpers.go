@@ -238,6 +238,16 @@ func chatChunk(id string, created int64, model string, d delta, finish *string) 
 	}
 }
 
+// usageChunk is the final streaming chunk when stream_options.include_usage is set: empty choices,
+// a usage object. Matches OpenAI, so a client that already understands their stream needs no
+// goinfer-specific handling.
+func usageChunk(id string, created int64, model string, u usage) map[string]any {
+	return map[string]any{
+		"id": id, "object": "chat.completion.chunk", "created": created, "model": model,
+		"choices": []any{}, "usage": u,
+	}
+}
+
 func completionChunk(id string, created int64, model, text string, finish *string) map[string]any {
 	return map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": model,

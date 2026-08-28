@@ -356,9 +356,17 @@ type respFormat struct {
 }
 
 type chatReq struct {
-	Model      string          `json:"model"`
-	Messages   []chatMessage   `json:"messages"`
-	Stream     bool            `json:"stream"`
+	Model    string        `json:"model"`
+	Messages []chatMessage `json:"messages"`
+	Stream   bool          `json:"stream"`
+	// StreamOptions follows OpenAI's shape: with include_usage, a FINAL chunk is sent carrying an
+	// empty choices array and a usage object. It exists because a streaming client otherwise has
+	// no token count at all — and counting SSE chunks is not a substitute, since a token held back
+	// for an incomplete UTF-8 rune or a partial stop-string match emits no chunk, and the token
+	// that resolves the holdback emits one chunk covering several tokens' bytes.
+	StreamOptions *struct {
+		IncludeUsage bool `json:"include_usage"`
+	} `json:"stream_options"`
 	Tools      []toolSpec      `json:"tools"`
 	ToolChoice json.RawMessage `json:"tool_choice"` // "auto"|"none"|{"type":"function","function":{"name":…}}
 	sampling
@@ -519,7 +527,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(w, f, role)
-		finish, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
@@ -528,6 +536,13 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			return
 		}
 		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
+		if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
+			// OpenAI's shape: an extra chunk AFTER the finish chunk, with empty choices, carrying
+			// the authoritative counts. nComp is len(ids) from streamTokens — the tokens actually
+			// generated, which is what a chunk count cannot report.
+			sseSend(w, f, usageChunk(id, created, lm.name,
+				usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}))
+		}
 		sseDone(w, f)
 		return
 	}
