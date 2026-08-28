@@ -898,6 +898,7 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/model.go:709` | goinfer | `if a.granite != nil \|\| a.nemotron != nil \|\| a.mla != nil \|\| a.llama4 != nil {` |
 | `docs/spec/09-mtp-heads.md|decoder/registry.go:1027` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
+| `docs/spec/README.md|decoder/forwardn.go:60` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:455` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:524` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:624` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
