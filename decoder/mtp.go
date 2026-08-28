@@ -45,10 +45,6 @@ type MTPHead struct {
 	// plausible-but-wrong acceptance number gets produced.
 	lw *LayerWeights
 
-	// attnLayer is an index into the target's arch chosen so isLinearLayer(i) is FALSE — the MTP
-	// block is a softmax-attention block, and the index selects the RoPE config the forward reads.
-	attnLayer int
-
 	st *embed.SafetensorsFile
 }
 
