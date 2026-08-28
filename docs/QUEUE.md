@@ -1098,3 +1098,45 @@ Same shape as that first bullet, years apart, in a different tool. The counterme
 
 **The real gap was legibility, not coverage: nobody could tell the property was covered without
 redoing this audit.** That is what this entry fixes. **Closed — no code change.**
+
+## G30 · the g4x2 clear's sync is REDUNDANT, not expensive — negative result, change NOT shipped
+
+`docs/ollama-chase.md` lists, as a verified small win: *"CUDA g4x2 accumulator clear: H2D per MoE
+layer per token … An on-stream memset/zero kernel removes an H2D (and its implicit null-stream sync)
+per MoE layer per token."* **Built the cheapest form of that and measured it. It buys nothing.**
+
+**What was built** (kept only in a scratchpad; reverted, not committed): replace the
+`r.stream.Sync()` + `gpu.Upload(r.g4x2, r.g4zero)` pair in `layerTail` with a single
+`r.stream.UploadAsync` from a pinned zero buffer. Same bytes, issued ON `r.stream`, so stream order
+supplies the guarantee the Sync was buying and the drain becomes unnecessary.
+
+**Measured on the 26B (`TestGemma4_26B_cache_B`), paired same-session, load-sampled every 15s:**
+
+| arm | slots | ms/tok | tok/s | hits/misses | continuation |
+|---|---|---|---|---|---|
+| baseline | 48→30 | 65 | 15.44 | 16611/5229 | — |
+| g4zero | 48→30 | 64 | **15.51 (+0.45%)** | 16611/5229 | **identical** |
+| baseline | 16 | 86 | 11.61 | 12524/9316 | — |
+| g4zero | 16 | 86 | **11.67 (+0.52%)** | 12524/9316 | **identical** |
+
+**WHY IT BUYS NOTHING, which is the useful part.** In the cached configuration the clear is
+immediately followed by `loadRoutedExperts`, which performs its own **Sync → D2H routing indices →
+H2D expert misses**. Removing the clear's drain only relocates the stall into the next one. The
+audit item is factually correct — there IS an H2D and an implicit sync per MoE layer per token — and
+economically empty, because a second drain follows it unconditionally.
+
+**Not shipped.** It trades away an `r.stream.Sync()` that guards a documented data race (audit R-03:
+the null-stream DMA landing mid-`segC(l-1)` and zeroing the previous layer's expert contribution) for
+0.5%, which is noise. Correctness risk for no gain.
+
+**A CAUTION ABOUT THE FIRST MEASUREMENT, because it nearly shipped this.** An earlier unpaired-ish run
+showed **+6.2%** (15.27 → 16.22) and I began writing it up as a win. It did not reproduce: two clean
+load-audited pairs give +0.45% and +0.52%. The outlier was the g4zero arm, not a contaminated
+baseline as I first guessed. A `go test` records no machine state — unlike `bench_peer` — so the
+first run was unauditable after the fact, which is why the rerun added a 15-second load sampler.
+**Two paired runs and per-arm load sampling turned a 6.2% "win" into noise.**
+
+**WHERE THE EFFORT SHOULD GO INSTEAD.** The same audit entry names the real target one bullet down:
+`loadRoutedExperts`'s Sync → D2H → H2D round trip, which is the drain that absorbs everything. That
+is the item the standing Metal verdict addresses — *synchronous MoE paging is dead and speculative
+prefetch is the path* — and it is a substantially larger piece of work than an on-stream memset.
