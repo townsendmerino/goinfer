@@ -98,12 +98,58 @@ across requests. **This is an extrapolation from RUN-level variance to WINDOW-le
 has not been measured** — and per this repo's own experience today, a number extrapolated out of its
 regime is exactly what needs checking rather than assuming.
 
+## Kill gate result (2026-08-27): **PASSES**
+
+Measured, not extrapolated. 12 cells, 32 windows each, T=0.6, CUDA, goinfer-only, **every cell at
+loadavg <= 1.00** (see the contamination note below). Raw `docs/measurements/g26-winvar-*.json`.
+Windows/arm is for t = 2 on the model's own measured effect at T=0.6.
+
+| model | ngen | CV_on | CV_off | effect | windows/arm | tokens to decide |
+|---|---|---|---|---|---|---|
+| phi3-mini | **64** | 3.29% | 0.32% | 6.3% | **2** | **256** |
+| phi3-mini | 128 | 2.59% | 0.23% | 6.3% | 1 | 256 |
+| phi3-mini | 256 | 1.75% | 0.49% | 6.3% | 1 | 512 |
+| 1.5B | **64** | 7.86% | 2.99% | 5.1% | **11** | **1408** |
+| 1.5B | 128 | 6.40% | 2.32% | 5.1% | 8 | 2048 |
+| 1.5B | 256 | 6.89% | 2.83% | 5.1% | 9 | 4608 |
+
+**Worst case 1408 tokens.** Affordable for a decision persisted per (model, sampling config), and
+infeasible per generation — which is the design's reason for persisting it, now quantified rather
+than asserted.
+
+**USE 64-TOKEN WINDOWS. Larger ones are strictly worse, and the reason matters.** CV does not fall
+as 1/sqrt(ngen); it FLOORS OUT, and on the 1.5B it gets worse from 128 to 256 (6.40% -> 6.89%).
+There is a persistent per-window component that averaging cannot remove, so doubling the window buys
+less than the sqrt(2) needed to break even and total tokens rise. **The design assumed longer windows
+would help and the measurement inverted it.**
+
+**The models that most need the gate are the cheapest to gate.** phi3-mini — the one losing 6.3% —
+decides in 256 tokens because its OFF arm is nearly noiseless (CV 0.32%). The costly case is the
+1.5B, where the feature WINS and being slow to decide costs least. The gate's error budget therefore
+falls where the errors are cheapest.
+
+**Where the earlier estimate landed.** This page predicted ~4-8 windows (512-1024 tokens) from
+run-level variance and flagged it as an extrapolation needing checking. It was right in magnitude and
+wrong in spread: 2 windows/256 tokens on phi3-mini, 11/1408 on the 1.5B. A single figure would have
+been wrong for both.
+
+**A contamination the first attempt suffered, kept because it is the reason to trust these numbers.**
+The first run of this sweep passed preflight at loadavg 0.75, then ran five cells at 1.00-2.43
+because another job started on the box ten minutes in. All five were discarded. Worse here than for
+most measurements: contention adds variance, and variance is the quantity under test. I predicted the
+contaminated CVs were inflated and the true values lower — **measured clean, they are slightly
+HIGHER** (3.29 vs 2.71, 7.86 vs 7.45), so this variance is the feature's own hit/miss lottery and not
+the neighbouring job. `bench_peer.py` now re-checks idle before every cell and REFUSES on timeout
+rather than measuring anyway.
+
 ## What must be measured before building
 
-1. **Window-level tok/s variance** at 64 / 128 / 256 tokens, both arms, both models. This decides
-   the window size, the number of windows, and whether B clears its kill gate at all. Cheap — it is
-   a re-slice of the sweep already in the harness.
+1. ~~**Window-level tok/s variance**~~ — **DONE, see above. Gate passes; window size is 64.**
 2. Nothing else. In particular **`c_miss` is not needed for B**, which is a large part of B's appeal.
+
+**Nothing now blocks building B.** The open work is design detail rather than measurement:
+hysteresis, the re-probe interval and its standing tax, what happens when a server sees mixed
+sampling configs, and the do-nothing arm in the risks section below.
 
 ## Validation — the two ladders are the test set, and they disagree
 
