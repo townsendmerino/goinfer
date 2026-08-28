@@ -1,5 +1,45 @@
 package decoder
 
+import (
+	"os"
+	"strconv"
+)
+
+// optFwdMaxTemp is the temperature at or below which the optimistic-forward overlap is allowed to
+// run. ABOVE IT THE FEATURE IS A MEASURED LOSS, and it used to run unconditionally.
+//
+// WHY A FIXED THRESHOLD, AND WHY 0.2. The overlap can only pay back the sampler cost it hides, and
+// its hit rate falls with temperature. Both halves are model-dependent, so the break-even
+// temperature is too: MEASURED 2026-08-27 at T ~ 0.26 on phi3-mini (vocab 32064) and T ~ 0.95 on
+// qwen2.5-coder-1.5B (151936). 0.2 sits below the LOWER of the two, which is the only safe place
+// for a single constant: at the higher crossover phi3-mini pays 2.8-6.8%.
+//
+// WHAT THIS COSTS, RECORDED SO IT IS NOT REDISCOVERED AS A BUG. On large-vocab models the overlap
+// still wins between 0.2 and their own crossover — 6.0% at T=0.4 and 5.1% at T=0.6 on the 1.5B —
+// and this threshold forfeits that. An adaptive per-model gate was designed to recover it
+// (docs/spec/10-optfwd-gate.md) and DELIBERATELY NOT BUILT: its whole value was those two cells,
+// resting on a model-dependence generalised from two models, which is the same shape of error that
+// shipped this feature unconditionally in the first place. Revisit if a third model's crossover
+// lands somewhere this gate gets badly wrong; 10's pre-registered bar stands.
+//
+// TRUNCATED SAMPLING IS UNMEASURED. The ladders were temperature-only with no truncation. top_k /
+// top_p cut the candidate set, which should RAISE the hit rate and push the crossover up, so this
+// gate is probably conservative there — forfeiting a possible win rather than taking a measured
+// loss, which is the correct direction to be wrong in until it is measured.
+//
+// GOINFER_OPTFWD_MAX_TEMP overrides it, for MEASUREMENT rather than tuning: moving this number
+// without a ladder behind it is how the original default happened.
+const optFwdMaxTemp = 0.2
+
+func optFwdTempCap() float64 {
+	if v := os.Getenv("GOINFER_OPTFWD_MAX_TEMP"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return optFwdMaxTemp
+}
+
 // optFwdEligible reports whether sampled decode may attempt the optimistic-forward overlap:
 // resident GPU decode only (the argmax guess needs a Forward call it can race against the real
 // sampler; the staged CPU path has no such concurrency-safe primitive), Temperature>0 (T<=0
@@ -9,7 +49,8 @@ package decoder
 // specRollbackSafe (a miss redoes Forward at the same position; recurrent/DeltaNet state and
 // wrapped sliding-window rings can't be corrected that way — see forwardn.go).
 func (m *Model) optFwdEligible(sp SamplingParams) bool {
-	return m.resident != nil && sp.Temperature > 0 && sp.LogitProcessor == nil && m.specRollbackSafe()
+	return m.resident != nil && sp.Temperature > 0 && sp.Temperature <= optFwdTempCap() &&
+		sp.LogitProcessor == nil && m.specRollbackSafe()
 }
 
 // OptFwdStats accumulates optimistic-forward telemetry for one Generate run (mirrors SpecStats).

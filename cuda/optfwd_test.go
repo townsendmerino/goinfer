@@ -61,6 +61,10 @@ func TestOptFwd_bitIdenticalStream(t *testing.T) {
 		if disable {
 			t.Setenv("GOINFER_NO_OPTFWD", "1")
 		}
+		// The shipped optFwd cap is 0.2 (decoder/spec_optfwd.go): above it the overlap is a measured
+		// loss and does not run. This test EXERCISES the overlap, so it must raise the cap — otherwise
+		// it passes with the feature switched off, which is a pass that proves nothing.
+		t.Setenv("GOINFER_OPTFWD_MAX_TEMP", "2.0")
 		sp := decoder.SamplingParams{Temperature: 0.7, TopP: 0.9, Seed: 1234, Logprobs: true}
 		ch, g := m.Generate(ctx, prompt, n, sp)
 		var toks []int
@@ -105,6 +109,9 @@ func TestOptFwd_bitIdenticalStream(t *testing.T) {
 // which device produced the logits — so this ordering is one of the few things that SHOULD be
 // identical to Metal's, and a disagreement here would point at the port rather than at the hardware.
 func TestOptFwd_lowTempHighHitRate(t *testing.T) {
+	// Sweeps temperatures ABOVE the shipped 0.2 cap by design — measuring how the hit rate falls
+	// is the point — so it must raise the cap or the high-T arms would report zero guesses.
+	t.Setenv("GOINFER_OPTFWD_MAX_TEMP", "2.0")
 	m := loadOptFwdModel(t)
 	defer m.Close()
 	ctx := context.Background()
