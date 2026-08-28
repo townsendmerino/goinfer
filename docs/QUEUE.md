@@ -1249,3 +1249,71 @@ approximate residual — which is a different and harder proposition than the ve
 **Next step, before any prefetch code: measure whether routing is predictable at all.** Offline, from
 captured routing indices — how often does a router run on the pre-MoE residual agree with the true
 top-8? That number, against the saturated-link constraint above, decides whether Phase 2 exists.
+
+## G33 · SCOPE — is expert routing predictable at all? (decides whether prefetch exists)
+
+Scoped 2026-08-28 off G31/G32. **No code written.** G32 left overlap as the only large lever
+(~1.9x ceiling) and named two constraints the inherited Metal verdict does not carry. This scopes
+the measurement that decides whether any prefetch scheme can work on CUDA.
+
+### The structural fact that shapes everything
+
+**Each layer owns its own bank of 128 experts** (`expGU`/`expDown` are fields on `cudaLayer`).
+Expert 37 at layer 5 is a different tensor from expert 37 at layer 6. **Therefore cross-layer
+prediction is meaningless** — there is no "the same expert" to prefetch — and the only predictors
+that can exist are TEMPORAL: same layer, across tokens.
+
+**But the 30-slot LRU cache IS a temporal predictor**, and its accuracy is the measured 76.1% hit
+rate. So a prefetcher built on temporal correlation is competing with the cache using the same
+signal, and can only win where the cache's policy — not its signal — falls short.
+
+### Tier 1 — trace-only, and it may end the whole item
+
+**The trace is free.** `GOINFER_G4_CAPTURE=1` already fills `g4capIdx [][]uint32` in "APPEND order
+(token-outer, layer-inner)". Only a dump-to-file is missing (~10 lines in the test). One capture run
+on the box, then all analysis is offline Python.
+
+**Step 1 — validate the simulator before trusting it.** Replay the trace through a 30-slot per-layer
+LRU and check it reproduces the measured **16611 hits / 5229 misses / 76.1%**. If the simulation does
+not match, the model of the cache is wrong and nothing downstream means anything. This is the
+do-nothing arm for the analysis itself.
+
+**Step 2 — decompose the 5229 misses into COLD vs EVICTED.**
+
+- **EVICTED**: the expert WAS used at that layer within the last K tokens, and the cache pushed it
+  out. A better policy (or more slots) recovers it. Prefetch is then cache-policy work.
+- **COLD**: the expert has not been used at that layer recently at all. **No temporal predictor can
+  see it coming**, because there is no signal to predict from.
+
+**PRE-REGISTERED READING, fixed before the run:**
+
+| result | conclusion |
+|---|---|
+| mostly EVICTED | The signal exists and the policy wastes it. Try policy first (LFU, frequency-aware admission, layer-aware slot allocation) — cheaper and safer than speculation. |
+| mostly COLD | **No temporal scheme can help, and that includes every prefetcher built on the routing history.** Prefetch as the Metal verdict describes it is dead on CUDA. Only Tier 2 remains. |
+| split | Report the split and size each half against the 346 µs/miss cost model before choosing. |
+
+### Tier 2 — early-router speculation, only if Tier 1 says COLD dominates
+
+The only way to anticipate a cold expert is to COMPUTE the routing early, not predict it: run
+layer L's router on an approximation of its input (the residual before layer L-1's MoE contribution
+is joined), start the transfers, and correct on mismatch. This needs new instrumentation — the
+router is small (hidden x 128), so the compute is cheap; the question is purely whether the
+approximate input yields the same top-8.
+
+**THE PRECISION GATE, and it is unusually strict because the link is SATURATED (G32).** A mispredicted
+prefetch spends the bottleneck resource itself. With gain ≈ p·(transfer hidden) and cost ≈
+(1−p)·(transfer wasted), and both at the same 346 µs, break-even sits near **p = 0.5 before any
+discount for imperfect overlap** — so the real bar is higher, call it **p > 0.6**. A 60%-accurate
+scheme that would be a clear win for speculative COMPUTE can be a net LOSS here.
+
+**Lead-time requirement, for sizing:** a layer's transfers are ~1.9 misses x 346 µs ≈ 660 µs against
+~755 µs of per-layer compute (32.5 ms / 43 layers). **Roughly one full layer of lead is needed to
+hide a layer's transfers** — which is exactly the horizon the early-router approach would buy, and
+no more. There is no slack for a two-layer pipeline.
+
+### Cost
+
+Tier 1: ~10 lines of dump code, one ~5 min capture run, then offline analysis. **Tier 1 is cheap
+enough that it should happen before any further CUDA work on this path**, because a COLD-dominated
+answer retires the largest remaining item on the page.
