@@ -62,6 +62,10 @@
 > stay that way — this box does not revive them. **§A** (Apple Silicon CPU) and **§B3** (Metal) are
 > measured on the MacBook and are **unaffected**.
 >
+> **§B7 (deep context) DISCHARGED 2026-08-27** — goinfer unchanged (39.1 vs 39.0 at the
+> depth-matched 32000 cell); the peer is 40% slower there, so the improved ratio is the peer
+> moving, not a goinfer win. See §B7.1.
+>
 > **§B5 (sampled + phi3-mini/gemma3-1b) DISCHARGED 2026-08-27** — five of six comparable cells
 > improved, three by 8–19%; phi3-mini at temperature 1.0 lost 5.8% and is filed. See §B5.1.
 >
@@ -75,7 +79,7 @@
 > `a161bd6`: real-model heavy tier green, CUDA graphs bit-exact, **24/24 PTX byte-identical** — the
 > driver's new compiler did not move the numerics), and the greedy peer sweep then re-anchored the
 > §B2/§B5-style rows into **§B8**. What that run does **not** cover remains STALE and may not be
-> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M), **§B7** (deep context), and the v0.11.0 qualification. Each is a separate leg with its own procedure;
+> quoted as current: **§B** (WebGPU at int8/q8_0 — §B8 is q4_K_M) and the v0.11.0 qualification. Each is a separate leg with its own procedure;
 > `bench_peer.py` does not produce any of them.
 >
 > Re-measure with `scripts/bench_peer.py` (peer Ollama v0.32.5 at `~/ollama-0325`, both sides over
@@ -1377,9 +1381,13 @@ near the crossover; they are recorded, not explained.
 
 ## B7 — Deep context: 8k/16k/32k decode (2026-08-09, cap-raise leg)
 
-> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
-> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
-> this page for what moved and what replaces it.
+> **RE-ANCHORED 2026-08-27 — see §B7.1 below, and read the direction before quoting the ratio.**
+> goinfer's deep-context decode did **not** move: at the depth-matched 32000 cell it reads **39.1**
+> against the **39.0** recorded here. The peer did — Ollama is **40% slower** at that same depth
+> (128.4 vs 215.9). So the headline ratio improving from **Ollama 5.54× to 3.28×** is the peer
+> moving, not goinfer closing a gap, and quoting it as a goinfer win would be wrong. Note the peer
+> is a DIFFERENT VERSION on the two anchors (v0.32.6 then, v0.32.5 now). The rows below stay as the
+> `595.58.03` / v0.32.6 record they are.
 
 §B5 recorded that every depth curve this project had published stopped just under 4096 because
 `cudaCtxCap` was a compile-time constant — infrastructure, not a chosen depth. The cap is now
@@ -1501,6 +1509,49 @@ head's bytes (×7 on the 0.5B, ×6 on the 1.5B), Ollama would sit at **147–190
 impossible**. So the bytes are read ~once. Even under that falsified upper bound goinfer never exceeds
 59% of peak, so the conclusion survives either model. This is arithmetic from measured throughput plus
 known geometry, **not an ncu profile** — a profile could refine the number, not flip the sign.
+
+## B7.1 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
+
+**Provenance.** RTX 2070 SUPER · driver `595.91.07` · Nobara 44 · 2026-08-27 · goinfer `444b9a9`,
+serve binaries built from `74718c2` · peer **Ollama v0.32.5** (`~/ollama-0325`) — the superseded
+rows used **v0.32.6** · `-ctx 32768` on goinfer, `num_ctx 32768` and `OLLAMA_FLASH_ATTENTION=false`
+on the peer, matching §B7's recorded configuration · deep protocol as §B7 defined it (`num_predict`
+128, 1 warm + 2×2, not the shallow 17 completions) · token-calibrated prompts · decode-only,
+client-timed from the first streamed token · 11 cells, zero errors · raw cells
+`b7-deep-444b9a9.json`.
+
+| depth | goinfer | Ollama v0.32.5 | verdict | goinfer 2026-08-09 | Ollama 2026-08-09 |
+|---|---|---|---|---|---|
+| 8000 ᵃ | 127.1 | 223.1 | Ollama 1.76× | 124.4 (@8192) | 259.1 (@8192) |
+| 16000 ᵃ | 72.3 | 175.7 | Ollama 2.43× | 70.6 (@16384) | 239.7 (@16384) |
+| **32000** | **39.1** | **128.4** | Ollama 3.28× | **39.0** | 215.9 |
+
+ᵃ **Depth mismatch, stated rather than smoothed:** the anchor used 8192 / 16384; these prompts were
+calibrated at 8000 / 16000. At the observed slope that is worth about 1% on the goinfer side and
+under 1% on the peer's, so it does not carry the comparison — but **32000 is depth-matched exactly**
+and is the row to read.
+
+**goinfer did not move.** 39.1 against 39.0 at identical depth, and the two mismatched rows are
+within ~2% once the depth difference is allowed for. The driver, kernel, libc and distro upgrade did
+nothing to deep-context decode, which is the same answer §B4 and §B6 gave.
+
+**The peer moved, hard: −40% at 32000** (215.9 → 128.4), −27% at ~16k, −14% at ~8k. That is a
+different Ollama version (v0.32.6 → v0.32.5, i.e. the current bench peer is the OLDER build) on a
+new driver stack, so the cause is not isolated here and is not attributed.
+
+**Read the ratio in that light.** Ollama 5.54× → 3.28× at 32000 looks like goinfer halving a gap.
+It is not: goinfer's number is the same to within 0.3%. Every part of the change is on the peer's
+side. A ratio has two operands and this page has been bitten before by moving one and reporting the
+quotient.
+
+**Shallow backends at depth 128** (Phase A, same run, deep-ctx protocol): goinfer CPU 22.4, Ollama
+CPU 57.4; goinfer CUDA **339.6**, Ollama CUDA 258.3 (goinfer 1.31×); goinfer WebGPU 126.9. The CUDA
+row is consistent with §B8's 332.7 at the same depth on the same stack.
+
+**Scope kept as the original set it.** The 1.5B/32000 cell is still skipped — 45–70 minutes for a
+cell whose own note says no decision turns on it, and the 0.5B 32000 pair is the bend-detection
+probe. It shows no second regime change past 16k: the goinfer curve continues its established
+decline rather than bending.
 
 ## B8 — RE-ANCHORED to the Nobara 44 / driver 595.91.07 stack (2026-08-26, goinfer `a161bd6`)
 
