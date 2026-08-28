@@ -443,3 +443,59 @@ reasons:
 
 **G27 has now cost twice: once as an unreachable re-enable branch, once as a blocked measurement on
 the critical path to the binary gate. It is no longer latent.**
+
+## THE PROMPT WAS THE CONFOUND (2026-08-28) — and removing it retires most of this page
+
+**Every measurement above ran on `scripts/prompts.json`, in which EVERY prompt has FOUR UNIQUE
+WORDS**: `"Continue this text. the the the ... the"`. That file is calibrated for token DEPTH, which
+is exactly right for peer throughput rows — decode cost per token is content-independent, and filler
+gives exact token counts. It is exactly wrong for optFwd, whose entire value is *how predictable the
+generated text is*.
+
+Re-ran both ladders against a 127-token prose paragraph (raw `g28-realprompt-*.json`):
+
+| T | phi3-mini filler → real | 1.5B filler → real |
+|---|---|---|
+| 0.2 | −1.1% → **+0.2%** | −7.4% → **−4.8%** |
+| 0.4 | +2.8% → +2.8% | −6.0% → **+0.9%** |
+| 0.6 | +6.3% → +7.6% | −5.1% → **+4.3%** |
+| 0.8 | +6.8% → +8.5% | −0.9% → +4.2% |
+| 1.0 | +5.5% → **+9.2%** | −0.9% → +3.8% |
+
+(+ve = optFwd loses. OFF baselines flat in all four ladders: 117.98 / 118.44 / 181.84 / 184.13.)
+
+**The 1.5B's crossover moves 0.95 → 0.37. phi3-mini's stays below 0.2.** The swing runs
+systematically against optFwd, and it is **largest exactly where design B's entire case lived**:
++9.4 points at the 1.5B's T=0.6, a 5.1% win that is really a 4.3% loss. **B existed to capture two
+cells. Both were prompt artifacts.**
+
+### What this retires
+
+- **The binary load-time gate, the sampler-share calculation, and design B are all unnecessary** —
+  not refuted, but aimed at a problem that does not exist on realistic input.
+- **"Three models, three different right answers for the cap" was mostly the prompt.** On real prose
+  every crossover sits at or below ~0.37 and **the shipped `T ≤ 0.2` constant is approximately
+  optimal for all three**: neutral for phi3-mini at 0.2, capturing the 1.5B's remaining 4.8% win
+  there, and avoiding every loss above it.
+- **The share hypothesis survives but stops mattering.** Ordering still holds (18.2% → 0.37,
+  5.4% → <0.2), but the spread collapses from [0.26, 0.95] to [<0.2, 0.37] — narrow enough that one
+  constant covers it, which is why no per-model machinery is needed.
+- **G27's urgency drops back to latent.** It was escalated because α was on the critical path to the
+  binary gate; there is no binary gate. The latch and the model-fitted thresholds are still real
+  defects and still unfixed, but nothing waits on them.
+
+### What it does NOT retire, and is worse than it looks
+
+**`scripts/prompts.json` silently invalidates ANY content-dependent measurement**, and speculation is
+entirely content-dependent. In scope, unaudited:
+
+- **optFwd's own `EnableAt = 0.90`**, whose comment sources it to a "90.9% worst-case break-even
+  measured on qwen2.5-coder-0.5b" — plausibly on this prompt set, since it is the only one in the
+  repo.
+- **02's n-gram drafter "wins on copy-heavy traffic"** — a claim about content, and a repetitive
+  filler prompt is maximally copy-heavy.
+- **05/06's EAGLE acceptance figures**, and 09's MTP Gate 1, though 09 used its own suite prompts
+  rather than this file.
+
+**Filed as its own item rather than chased here.** The rule going in is simple: a prompt file
+calibrated for depth may be used for throughput, never for acceptance.

@@ -1033,3 +1033,29 @@ and the 1.5B reports α=0.61 where its throughput says it wins 5.1%; neither rec
 property like sampler share, which is the open question the third-model run addresses. Fixing (1) is
 small and self-contained but pointless while the overlap is capped at T ≤ 0.2, where the gate barely
 runs. Both should be revisited together if the cap is ever raised.
+
+## G28 · every bench prompt has four unique words, and speculation numbers were measured on them
+
+Found 2026-08-28 while re-checking optFwd. `scripts/prompts.json` is calibrated for token DEPTH —
+correct and deliberate for throughput, where decode cost is content-independent — but every entry is
+`"Continue this text. the the the ... the"`. Anything whose value depends on what gets GENERATED was
+measured on a regime the engine never serves.
+
+**Demonstrated cost on the one case re-run:** the optFwd A/B moved up to **9.4 points** on a single
+cell between filler and a 127-token prose paragraph, converting a 5.1% win into a 4.3% loss and
+moving a model's break-even temperature from 0.95 to 0.37. That artifact was the entire case for an
+adaptive gate (spec/10), which it retired.
+
+**Unaudited and in scope**, all content-dependent:
+1. **optFwd's `EnableAt = 0.90`** — sourced to a "90.9% worst-case break-even on qwen2.5-coder-0.5b",
+   plausibly measured on this prompt set, since it is the only one in the repo (see G27).
+2. **02's n-gram drafter, "wins on copy-heavy traffic"** — a claim about content, tested on a prompt
+   that is maximally copy-heavy. Direction of the bias is obvious and favourable to the drafter.
+3. **05/06 EAGLE acceptance (~1.6 tok/verify)**, and anything derived from it — including 09's Gate 1
+   comparison, though 09 ran its own suite prompts rather than this file.
+
+**The rule, cheap to apply going forward: a prompt file calibrated for DEPTH may be used for
+THROUGHPUT, never for ACCEPTANCE.** Now recorded in benchmarks.md Methodology.
+
+**Not chased here.** Re-measuring (2) and (3) is real work and neither currently gates a decision;
+optFwd was re-measured only because it had just shipped a behaviour change.

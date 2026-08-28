@@ -101,6 +101,16 @@ A measurement enters a table **only if it satisfies all of**:
 - **Date** of the run, and a **thermal note** (plugged in, warm, repeated runs, median).
 - **Local disk only** — the checkpoint is read from local NVMe/SSD. A model read from the
   SMB archive mount is **not a measurement**; see *Model storage* below.
+- **`scripts/prompts.json` IS CALIBRATED FOR TOKEN DEPTH AND IS NOT VALID INPUT FOR ANY
+  CONTENT-DEPENDENT MEASUREMENT.** Every prompt in it has **four unique words**
+  (`"Continue this text. the the the ... the"`). For throughput that is correct and deliberate —
+  decode cost per token does not depend on which tokens they are, and filler hits exact token
+  counts. For anything whose value depends on WHAT IS GENERATED — speculation acceptance, drafter
+  hit rates, optimistic-forward overlap — it measures a regime the engine never serves.
+  **Measured 2026-08-27/28:** the same optFwd A/B on filler vs a 127-token prose paragraph moved by
+  up to **9.4 percentage points on one cell**, turning a measured 5.1% WIN into a 4.3% LOSS and
+  shifting a model's break-even temperature from 0.95 to 0.37. Use a realistic prompt and say which
+  one; `docs/spec/10-optfwd-gate.md` has the procedure and the raw cells.
 - **A longer measurement window does NOT reliably buy precision — check before spending on it.**
   The intuition is that averaging over N tokens shrinks the spread as 1/sqrt(N), so a noisy cell can
   be fixed by measuring for longer. **Measured 2026-08-27, it does not hold here.** Per-window
