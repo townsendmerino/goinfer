@@ -484,10 +484,14 @@ supports.
 | `docs/ollama-chase.md|cuda/resident.go:405` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:42` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
 | `docs/ollama-chase.md|cuda/resident.go:654` | goinfer | `// declined to the staged/CPU path upstream.` |
+| `docs/ollama-chase.md|decoder/gguf.go:631` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
+| `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1001` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
+| `docs/ollama-chase.md|decoder/registry.go:1027` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:731` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:244` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
+| `docs/ollama-chase.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1028` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:57` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
@@ -547,6 +551,13 @@ supports.
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:1883` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:44` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,      // the text-only checkpoint's model_type` |
+| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:399` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/spec/09-mtp-heads.md|decoder/forwardn.go:60` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/spec/09-mtp-heads.md|decoder/gguf.go:631` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
+| `docs/spec/09-mtp-heads.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
+| `docs/spec/09-mtp-heads.md|decoder/model.go:709` | goinfer | `if a.granite != nil \|\| a.nemotron != nil \|\| a.mla != nil \|\| a.llama4 != nil {` |
+| `docs/spec/09-mtp-heads.md|decoder/registry.go:1027` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
+| `docs/spec/09-mtp-heads.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:455` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:524` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:624` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |

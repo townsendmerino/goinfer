@@ -1017,6 +1017,24 @@ gates shipping.
 Same family as D1, without a separate draft model. Requires model support; most checkpoints
 do not have the heads.
 
+> **SUPERSEDED 2026-08-27 — the availability premise no longer holds. See
+> [`docs/spec/09-mtp-heads.md`](spec/09-mtp-heads.md).** The text above is left as written: it was
+> true when written, and the record of why we thought it is the useful part.
+>
+> What changed is our own loader. `decoder/gguf.go:631`, `decoder/gguf_qwen35.go:33`,
+> `decoder/weights.go:489` and `decoder/registry.go:1027` detect these heads, name them, and skip
+> them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
+> checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
+> (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the
+> heads" is no longer the reason to decline.
+>
+> D2 is **not** thereby reopened as a build. 09 reopens exactly one question — whether α for a
+> jointly-trained head materially exceeds the ~1.6 tok/verify
+> [05](spec/05-eagle3-head.md) measured for an imported EAGLE-3 head — with pre-registered gates and
+> no work downstream of them. It also records the constraint that actually binds, which is not
+> availability: `specRollbackSafe` refuses four of the five MTP-bearing checkpoints on grounds that
+> predate MTP entirely.
+
 ### D3. Continuous batching / server-side concurrency
 
 Improves throughput under concurrent load, not single-stream latency. Different axis from
