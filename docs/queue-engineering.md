@@ -234,8 +234,16 @@ goinfer.
 list gets found cheaply; then the QUALIFYING multi-turn run on `gemma4-26b-int4` (15 GB, closest to
 the bar on disk, and the one that actually exercises the resident re-prefill trade-off the recipe
 warns about). The recipe rests on the second run. If the recipe ends up quoting the 1.5B for
-anything, that must be said in the recipe. `Qwen3.5-35B-A3B` is on disk and is NOT a candidate —
-paged MoE at ~1.2-1.4 tok/s makes an agent loop impractical.
+anything, that must be said in the recipe. `Qwen3.5-35B-A3B` is on disk and was ruled out here on a
+figure that has since been superseded TWICE — see the correction below before reusing this call.
+
+**CORRECTION (2026-08-28).** The "~1.2-1.4 tok/s" that disqualified `Qwen3.5-35B-A3B` was already
+withdrawn in `task-zeno-compare.md` (noise-contaminated, superseded by 1.605 CPU-paged) before this
+line was written, and is now superseded again by direct measurement: the CPU pager runs it at
+**1.52-1.73 tok/s**, and the Metal expert pager at **1.97-2.02 tok/s**
+(`task-metal-expert-streaming-at-scale.md`). Whether ~2 tok/s makes an agent loop practical is a
+judgement this doc should make deliberately — but it should not keep making it on a retracted number.
+The two-pass decision above is otherwise untouched; only its exclusion premise was stale.
 
 **A12 · The CUDA heavy tier does not fit in 8 GB in one process — the gate cannot pass here** —
 `linux`, **CLOSED `e682eb2` (2026-08-13). No capacity/leak issue ever existed — see the resolution

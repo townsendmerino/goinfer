@@ -88,7 +88,17 @@ ahead when memory-matched — but it is not the step change the lane's framing a
 
 Even with pread, **staging is still 62% of a token**. The remaining cost is no longer fault
 latency — that is gone — it is *stage count*: 13508 stages against a 64.8% hit rate. The lever is
-therefore residency policy (more slots, better retention), not faster staging. Note that prior art
+therefore residency policy (more slots, better retention), not faster staging.
+
+**And the sweep is bounded before it starts.** The non-staging residual is 0.508 s x (1 - 0.62) =
+0.193 s/token, so **even if staging went to ZERO the ceiling is ~5.2 tok/s** — the N-sweep can move
+2.0 toward at most 5.2, and only by raising the 64.8% hit rate. That bound is worth carrying into
+the sweep so it can be stopped early: slots cost RAM on a box that has 16 GB total, and the headroom
+is finite and now known rather than assumed.
+
+Note also that **pread itself is saturated** — major faults are at 0.0/stage, and you cannot
+eliminate faults more than completely. Its 3.23x is the favourable end of what the mechanism offers
+on THIS shape (many small experts); it is not a lever with more left in it. Note that prior art
 already closed the obvious version of that: `task-moe-streaming.md` measured LRU/LFU/LFU-aging on a
 real 35B trace and found plain LRU wins at every realistic budget. So the honest next question is
 **how many slots fit**, not **which policy** — an N-sweep, which this harness takes via
