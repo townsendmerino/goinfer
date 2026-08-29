@@ -281,15 +281,23 @@ type cudaResident struct {
 	// copy, with bytes and call counts for each. If a ~4 KB scale upload costs nearly as much as a
 	// ~600 KB weight upload, the path is PER-CALL-OVERHEAD bound rather than bandwidth bound, and
 	// the fix is batching rather than anything cleverer. Zero cost when cacheProf is off.
-	profWTime, profSTime   time.Duration
 	profWBytes, profSBytes uint64
 	profWCalls, profSCalls uint64
-	profCalls              uint64
-	graphs                 bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
-	graphsSync             bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
-	graphMask              string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
-	layerCap               bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
-	layerCapBuf            [][]float32
+	// The batch that replaced them. profWCalls/profSCalls still count logical COPIES (so the
+	// per-token copy count is unchanged and comparable across the change); profSyncCalls counts
+	// the SYNCHRONIZES, which is the quantity batching actually moves — ~240/token to ~40.
+	// Per-kind timing is gone rather than kept at ~0: with the copies merely appended here and
+	// issued together later, a "weight upload took Xµs" figure would name something that no
+	// longer happens.
+	expBatch      []gpu.HostCopy
+	profBatchTime time.Duration
+	profSyncCalls uint64
+	profCalls     uint64
+	graphs        bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
+	graphsSync    bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
+	graphMask     string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
+	layerCap      bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
+	layerCapBuf   [][]float32
 
 	// hidCap is the PRODUCTION hidden-state seam (P10 / docs/spec/08): the resident
 	// analogue of decoder.Model.ForwardCapture, which exists only on the CPU forward. A
@@ -862,32 +870,34 @@ func (c *expertCache) admit(e uint32) (slot int, hit bool) {
 	return victim, false
 }
 
-// loadExpertSlot DMAs one expert's weight+scales from the pinned host source into device slot `slot`.
-// Synchronous H2D (gocudrv v0.2.0); the async-overlap bump rides C′ step 2's perf work, not this.
-func (r *cudaResident) loadExpertSlot(w *cudaWQ, e, slot int) error {
+// appendExpertSlot QUEUES one expert's weight+scales copy from the pinned host source into device
+// slot `slot`. It does not upload: loadRoutedExperts submits the layer's whole batch with a single
+// gpu.UploadBatch, so one synchronize covers every miss in the layer instead of two per miss.
+//
+// Why the change is the sync count and not the copy. Each gpu.Upload ends in a full device
+// Synchronize — right for per-request uploads, wrong here: a MoE decode token loads ~120 slots at
+// two uploads each, so ~240 synchronizes land on one token. Measured on an RTX 2070 SUPER that is
+// ~3.6 ms of a 64 ms token (5.6%), paid for nothing, since the bytes are already in flight and one
+// sync at the end covers them all.
+//
+// The correctness property is PRESERVED, not weakened. UploadBatch still synchronizes before it
+// returns, so the guarantee is identical to Upload's and the race that sync was added for
+// (non-blocking streams unordered against the null stream) stays covered. Nothing moves into a
+// caller's hands — that is the whole difference from the declined async variant.
+func (r *cudaResident) appendExpertSlot(w *cudaWQ, e, slot int) {
 	srcW, srcS := w.srcW.Bytes(), w.srcS.Bytes()
 	wOff, wLen := e*w.perExpertW*4, w.perExpertW*4
 	sOff, sLen := e*w.perExpertS*2, w.perExpertS*2
-	var t0 time.Time
+	r.expBatch = append(r.expBatch,
+		gpu.HostCopy{Dst: w.W.At(slot * w.perExpertW * 4), Src: srcW[wOff : wOff+wLen]},
+		gpu.HostCopy{Dst: w.ws16.At(slot * w.perExpertS * 2), Src: srcS[sOff : sOff+sLen]},
+	)
 	if r.cacheProf {
-		t0 = time.Now()
-	}
-	if err := gpu.Upload(w.W.At(slot*w.perExpertW*4), srcW[wOff:wOff+wLen]); err != nil {
-		return err
-	}
-	if r.cacheProf {
-		r.profWTime += time.Since(t0)
 		r.profWBytes += uint64(wLen)
 		r.profWCalls++
-		t0 = time.Now()
-	}
-	err := gpu.Upload(w.ws16.At(slot*w.perExpertS*2), srcS[sOff:sOff+sLen])
-	if r.cacheProf {
-		r.profSTime += time.Since(t0)
 		r.profSBytes += uint64(sLen)
 		r.profSCalls++
 	}
-	return err
 }
 
 // loadRoutedExperts reads back the router's idx (device→host — C′'s acknowledged per-layer sync),
@@ -923,6 +933,7 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		return e
 	}
 	c := L.expCache
+	r.expBatch = r.expBatch[:0] // reused across layers; the slice keeps its capacity
 	for j := 0; j < r.topK; j++ {
 		e := r.hostIdx[j]
 		slot, hit := c.admit(e)
@@ -933,16 +944,31 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 				r.profHost += time.Since(t0)
 				td = time.Now()
 			}
-			if err := r.loadExpertSlot(&L.expGU, int(e), slot); err != nil {
-				return err
-			}
-			if err := r.loadExpertSlot(&L.expDown, int(e), slot); err != nil {
-				return err
-			}
+			r.appendExpertSlot(&L.expGU, int(e), slot)
+			r.appendExpertSlot(&L.expDown, int(e), slot)
 			if r.cacheProf {
 				r.profDMA += time.Since(td)
 				t0 = time.Now()
 			}
+		}
+	}
+	// One synchronize for every miss in this layer. All destinations are slot buffers on the one
+	// resident context, so UploadBatch's mixed-context refusal should never fire here — if it does,
+	// something about the layer's buffers is not what this code believes.
+	if len(r.expBatch) > 0 {
+		var tb time.Time
+		if r.cacheProf {
+			r.profHost += time.Since(t0)
+			tb = time.Now()
+		}
+		if err := gpu.UploadBatch(r.expBatch); err != nil {
+			return err
+		}
+		if r.cacheProf {
+			r.profBatchTime += time.Since(tb)
+			r.profSyncCalls++
+			r.profDMA += time.Since(tb)
+			t0 = time.Now()
 		}
 	}
 	e := gpu.Upload(r.slotIdx, r.hostSlot[:r.topK])
@@ -960,9 +986,22 @@ func (r *cudaResident) CacheProfForTest() (stall, host, dma time.Duration, calls
 }
 
 // UploadProfForTest reports the expert-DMA split: the big weight copies vs the tiny scale copies,
-// each with elapsed time, bytes moved and call count. Zero unless GOINFER_MOE_CACHE_PROF is set.
-func (r *cudaResident) UploadProfForTest() (wT, sT time.Duration, wB, sB, wC, sC uint64) {
-	return r.profWTime, r.profSTime, r.profWBytes, r.profSBytes, r.profWCalls, r.profSCalls
+// by bytes moved and COPY count. Zero unless GOINFER_MOE_CACHE_PROF is set.
+//
+// The per-kind ELAPSED TIMES this used to return are gone, deliberately. The copies are now queued
+// by appendExpertSlot and issued together by one UploadBatch, so there is no longer a per-kind
+// upload to time; returning the append cost under the old names would have been an accessor whose
+// name promised a measurement it no longer makes. The transfer+sync time is BatchProfForTest's.
+func (r *cudaResident) UploadProfForTest() (wB, sB, wC, sC uint64) {
+	return r.profWBytes, r.profSBytes, r.profWCalls, r.profSCalls
+}
+
+// BatchProfForTest reports the batched-upload cost: total time inside gpu.UploadBatch and the
+// number of SYNCHRONIZES it performed (one per layer with at least one miss). This is the quantity
+// the batching change moves — copy count is unchanged, sync count is not. Zero unless
+// GOINFER_MOE_CACHE_PROF is set.
+func (r *cudaResident) BatchProfForTest() (batchTime time.Duration, syncCalls uint64) {
+	return r.profBatchTime, r.profSyncCalls
 }
 
 // expIdx is the idx argument the expert GEMVs bind: the constant slot ids [0..topK-1] when caching

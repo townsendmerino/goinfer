@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -208,11 +209,14 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 			(tot / time.Duration(calls)).Round(time.Microsecond),
 			float64(tot)/float64(len(gen))/1e6, nsPerTok/1e6)
 
-		// PHASE 0: is the expert DMA bandwidth-bound or per-call-overhead bound? Each miss issues
-		// FOUR blocking null-stream uploads (weights+scales, for expGU and expDown). If the tiny
-		// scale copy costs a comparable per-call time to the big weight copy, the path is dominated
-		// by fixed per-call cost and BATCHING is the fix -- not speculation, not a faster link.
-		wT, sT, wB, sB, wC, sC := r.UploadProfForTest()
+		// PHASE 0 ANSWERED IT, AND THE FIX IS IN. The question was whether the expert DMA is
+		// bandwidth-bound or per-call-overhead bound: each miss used to issue FOUR blocking
+		// null-stream uploads, and the tiny scale copy costing comparable per-call time to the big
+		// weight copy would mean fixed per-call cost dominated. It did, so the copies are now
+		// QUEUED and issued per layer by one gpu.UploadBatch. Copy count is therefore unchanged
+		// and sync count is what moved, which is why the two are reported separately below.
+		wB, sB, wC, sC := r.UploadProfForTest()
+		batchTime, syncCalls := r.BatchProfForTest()
 		rate := func(b uint64, d time.Duration) float64 {
 			if d == 0 {
 				return 0
@@ -225,9 +229,14 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 			}
 			return (d / time.Duration(c)).Round(time.Microsecond)
 		}
-		t.Logf("C′ UPLOAD SPLIT: weights %d calls, %.1f MB, %v (%.2f GB/s, %v/call) | "+
-			"scales %d calls, %.1f MB, %v (%.2f GB/s, %v/call)",
-			wC, float64(wB)/1e6, wT.Round(time.Millisecond), rate(wB, wT), per(wT, wC),
-			sC, float64(sB)/1e6, sT.Round(time.Millisecond), rate(sB, sT), per(sT, sC))
+		t.Logf("C′ UPLOAD SPLIT: weights %d copies, %.1f MB | scales %d copies, %.1f MB",
+			wC, float64(wB)/1e6, sC, float64(sB)/1e6)
+		// THE GATE FOR THE BATCHING CHANGE. Copies unchanged; synchronizes down from one per copy
+		// (wC+sC) to one per layer-with-a-miss. Printed as a RATIO so it reads the same whatever
+		// the generation length, and so a regression to per-copy syncs is obvious rather than
+		// buried in a duration.
+		t.Logf("C′ UPLOAD BATCHING: %d copies -> %d synchronizes (%.1fx fewer), %v total (%.2f GB/s, %v/sync)",
+			wC+sC, syncCalls, float64(wC+sC)/math.Max(float64(syncCalls), 1),
+			batchTime.Round(time.Millisecond), rate(wB+sB, batchTime), per(batchTime, syncCalls))
 	}
 }
