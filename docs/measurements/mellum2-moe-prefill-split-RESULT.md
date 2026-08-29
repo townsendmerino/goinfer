@@ -170,6 +170,49 @@ was load-bearing: every number in the section above it is right, and the conclus
 them was wrong. A caveat that names the axis a measurement cannot reach is worth more than the
 measurement.
 
+### EXTENDED 2026-08-29 — the two things that closed it
+
+**Token level: the divergence never reaches the output.** Full 28-layer Mellum2, K=2048, 48 greedy
+tokens, arms differing only in prefill (`decoder/a3_moe_tokenlevel_test.go`):
+
+    continuations are IDENTICAL (48/48 tokens agree)
+
+That was the last real objection. Cosine on hidden states is not what a user sees, and MoE's error
+is discontinuous where dense's is smooth, so equal cosines did not have to mean equal behaviour.
+They did.
+
+**A properly MATCHED divergence pair, on the third attempt.** The earlier comparisons were each
+matched on one axis and disagreed about the sign:
+
+| pairing | dense | MoE | ratio |
+|---|---|---|---|
+| K-matched only | 0.5B, 24 layers, K=2048: 1.631e-3 | 28L, K=2048: 2.126e-3 | 1.30x WORSE |
+| depth-matched only | 1.5B, 28 layers, K=8192: 2.400e-3 | 28L, K=2048: 2.126e-3 | 0.89x better |
+| **both matched** | **1.5B, 28 layers, K=2048: 2.352e-3** | **28L, K=2048: 2.126e-3** | **0.90x better** |
+
+The habit worth naming: each time, the pairing that happened to be available got called "matched".
+Only the third is. It confirms the original direction — but it was not entitled to be believed
+until it existed.
+
+**The exclusion is dropped.** `useAcc64 := !fastAttn`; the probe seam is deleted as dead code, and
+`a3_divergence_test.go`'s comment — which claimed to pin "MoE excluded" while asserting nothing of
+the sort — is corrected to describe what its body actually checks.
+
+**What the speedup actually is, stated as a range because it varies by an order of magnitude:**
+
+| machine | model | K | f32 speedup |
+|---|---|---|---|
+| Ryzen 3700X | full 28-layer | 2048 | **1.08x** |
+| M1 Pro | 4-layer slice | 1024 | 1.35x |
+| M1 Pro | 4-layer slice | 2048 | 1.54x |
+| M1 Pro | 4-layer slice | 8192 | **3.11x** |
+
+Never a slowdown; the win grows with K and is larger on arm64. **The 3.11x quoted throughout the
+earlier sections is the best cell — arm64, 4-layer slice, K=8192 — and was repeatedly used as if it
+were the model-level number.** The full-model long-K cell is measured on NEITHER machine and is the
+one a user would actually care about. The flag remains OFF by default, so extending removes a
+refusal rather than turning anything on.
+
 ### The caveat that decides whether this is actionable
 
 **A 4-layer slice was the one thing that could not test the cascade claim — and the depth run

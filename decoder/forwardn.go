@@ -145,18 +145,40 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// Batched per-head attention scratch (reused across layers; nKeys = startPos+K
 	// is the same for every layer in this sweep). See attendBatchedHeads.
 	maxKeys := startPos + K
-	// A3 (G24): OPT-IN f32 attention for prefill. Off unless asked for, and
-	// never for MoE.
+	// A3 (G24): OPT-IN f32 attention for prefill. Off unless asked for — and as of
+	// 2026-08-29, available to MoE as well, which it was not.
 	//
 	// The acc64 path is 8.14x slower than f32 at long-context shapes (measured,
 	// docs/measurements/attention-a3-kernel-ratio-2026-08-26.md — note that is
 	// more than double the "~3.7x" the kernel comment assumes), and attention is
-	// ~70% of an 8k prefill. It exists to hold three guarantees, and enabling this
-	// gives up two of them for the model that enables it: spec-decode verify ==
-	// sequential greedy, and decode == prefill. The third — MoE router stability —
-	// is NOT negotiable at any flag setting, because an f32 QK reassociation flips
-	// a top-k expert at a near-tie and cascades, so MoE is excluded here rather
-	// than trusted to the operator.
+	// ~70% of an 8k dense prefill and 97.1% of an 8k MoE one. It exists to hold three
+	// guarantees, and enabling this gives up two of them for the model that enables
+	// it: spec-decode verify == sequential greedy, and decode == prefill.
+	//
+	// THE THIRD GUARANTEE — MoE router stability — USED TO EXCLUDE MoE OUTRIGHT, on
+	// the argument that an f32 QK reassociation flips a top-k expert at a near-tie and
+	// cascades. That argument was never measured; it is now, and it is half right.
+	// The mechanism is REAL: at 28 layers, 14.5% of moeMLP calls select a different
+	// expert set, and removing the routing term recovers 70.1% of the divergence. What
+	// is NOT supported is the categorical refusal:
+	//
+	// MATCHED on both depth and prompt length — 28 layers and K=2048 on each side,
+	// which took three tries to get right; the two earlier pairings were matched on
+	// one axis each and disagreed about the SIGN:
+	//
+	//	1 - cosine   dense qwen2.5-coder-1.5b  2.352e-3
+	//	             MoE   Mellum2             2.126e-3   (0.90x dense)
+	//	greedy continuation, 48 tokens          IDENTICAL, 48/48
+	//
+	// So the case the flag forbade diverges slightly LESS than the case it permits,
+	// and never reaches the output at all. Both sit ~4x inside the >= 0.99 bar.
+	// Refusing one while shipping the other was not a defensible line. Record:
+	// docs/measurements/mellum2-moe-prefill-split-RESULT.md.
+	//
+	// WHAT THE EVIDENCE COVERS, because it is one family: Mellum2, 28 layers, 21 of
+	// them sliding-attention at window 1024 — which CAPS nKeys, and so caps how much
+	// reassociation error a layer can accumulate. A full-attention MoE stresses this
+	// harder and is unmeasured. Do not read the numbers above as "MoE in general".
 	//
 	// Same shape as --metal-fast-prefill: default off, divergence documented, and
 	// the caller opts in knowingly.
@@ -165,11 +187,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// spec-decode verify runs through forwardN and MUST keep acc64, or "verify ==
 	// sequential greedy" silently stops holding. A runtime check could not tell
 	// the two callers apart; a parameter cannot get it wrong.
-	// moeFastAttnProbe is a compile-time false in every shipping build (see
-	// moefastattn_prod.go), so this reads exactly as `!(fastAttn && arch.MoE == nil)`
-	// there. Under -tags goinfer_testhooks a measurement can force the MoE case on,
-	// to put a NUMBER on the exclusion the paragraph above argues for.
-	useAcc64 := !(fastAttn && (arch.MoE == nil || moeFastAttnProbe))
+	useAcc64 := !fastAttn
 
 	// G16: prefill attention runs its heads in PARALLEL, budget permitting.
 	//

@@ -12,11 +12,25 @@ import (
 // number, not an adjective. This reports what a user gives up by enabling
 // GOINFER_CPU_FAST_ATTENTION, at the prompt depths the flag is for.
 //
-// It also pins the two guarantees that do NOT bend:
+// WHAT THIS FILE ACTUALLY ASSERTS, stated to match the body rather than to flatter it.
+// It loads the DENSE bench checkpoint, so every assertion below is about dense:
 //   - default OFF: with the env unset, output is bit-identical to acc64;
-//   - MoE excluded: the flag cannot turn f32 attention on for a MoE arch at all,
-//     because an f32 QK reassociation flips a top-k expert at a near-tie and
-//     cascades — that is a different class of error from a small numeric drift.
+//   - explicit "0" is identical to unset;
+//   - the divergence clears the kernel comment's own >= 0.99 bar.
+//
+// It used to claim, here, that it also pinned "MoE excluded: the flag cannot turn f32
+// attention on for a MoE arch at all". It never did — `MoE` appeared exactly once in
+// this file, in that sentence, and `arch.MoE` zero times. The exclusion it advertised
+// as pinned had never been measured on a MoE at all, and an auditor reading the promise
+// and matching it to a test name would have stopped there. That is the failure recorded
+// as its own rule in CLAUDE.md; this comment is the correction.
+//
+// The exclusion itself was dropped on 2026-08-29 after it WAS measured: the mechanism is
+// real (14.5% of moeMLP calls flip their top-k at 28 layers, 70.1% of the divergence) but
+// the magnitude does not support a categorical refusal — 1-cosine 2.126e-3 for MoE against
+// 2.400e-3 for the dense case this flag already ships, depth-matched, with a 48/48
+// IDENTICAL greedy continuation. Those assertions live where the models are:
+// a3_moe_exclusion_test.go, a3_moe_routeflip_test.go, a3_moe_tokenlevel_test.go.
 func TestA3FastAttentionDivergence(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {

@@ -71,8 +71,6 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 
 	run := func(probe bool) ([]float32, time.Duration) {
 		t.Helper()
-		moeFastAttnProbe = probe
-		defer func() { moeFastAttnProbe = false }()
 		t.Setenv("GOINFER_CPU_FAST_ATTENTION", map[bool]string{true: "1", false: "0"}[probe])
 		start := time.Now()
 		out, err := m.forwardLayersN(deadlineCtx(t), ids, m.NewCache(K+8), cpuFastAttention())
