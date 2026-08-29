@@ -124,11 +124,57 @@ p90 0.0960, max 0.1147 (against 0.125 for a uniform top-8). Those are not vanish
 the realized effect is ~1.4e-4, far below what a 0.077 weight would permit, which is itself
 evidence that the swapped experts produce similar outputs. That is what a near-tie predicts.
 
+### The depth run — and it OVERTURNS the magnitude claim above
+
+Same test, same K, same prompt, on the FULL 28-layer Mellum2 (nobara-pc, 62 GB, idle;
+2026-08-28 21:12-22:03 PDT, 3023 s):
+
+| | 4-layer slice | 28-layer full |
+|---|---|---|
+| moeMLP calls | 8,192 | 57,344 |
+| top-k flips | 211 (2.576%) | **8,303 (14.479%)** |
+| cos(A,B) total | 0.999788085 | **0.997874393** |
+| cos(A,C) routing removed | 0.999931014 | 0.999364978 |
+| routing explains | 67.4% | 70.1% |
+
+**Divergence grew exactly 10.0x on 7x the layers** (1-cos: 2.12e-4 -> 2.13e-3). The flip rate
+rose 5.6x, roughly proportional to depth, and the routing term's SHARE held flat at ~70%. So the
+mechanism is depth-invariant in character and compounds in magnitude — which is precisely what
+the guard's word "cascades" asserted.
+
+**The "order of magnitude safer than dense" reading is retracted.** It was an extrapolation from
+4 layers and it was wrong by 10x. At full depth:
+
+| | 1 - cosine |
+|---|---|
+| dense, which the flag ALREADY ships | 2.400e-3 |
+| 28-layer MoE | 2.126e-3 |
+
+MoE is **0.89x** dense — parity, not an order of magnitude. Both clear the kernel comment's own
+>= 0.99 bar with room to spare.
+
+**What survives, and what does not.**
+
+- SURVIVES: the exclusion is not supported as a CATEGORICAL refusal. At full depth MoE diverges
+  slightly LESS than the dense case the flag permits, so "NOT negotiable at any flag setting" is
+  still stronger than the evidence carries.
+- DOES NOT SURVIVE: any claim that MoE is comfortably safer. The margin is parity. A decision to
+  extend the flag to MoE is now a close call to be argued on the >= 0.99 bar, not a formality.
+- **DO NOT EXTRAPOLATE TO DEEPER MoEs.** Divergence tracked depth almost linearly here, and
+  Qwen3.5-35B-A3B has 40 layers. The obvious multiplication is exactly the move that just failed:
+  this section exists because a 4-layer extrapolation was off by 10x. A deeper family needs its
+  own run, not arithmetic.
+
+**Method note.** The 4-layer slice was correctly labelled as unable to test depth, and that label
+was load-bearing: every number in the section above it is right, and the conclusion drawn from
+them was wrong. A caveat that names the axis a measurement cannot reach is worth more than the
+measurement.
+
 ### The caveat that decides whether this is actionable
 
-**A 4-layer slice is the one thing that cannot test the cascade claim — and the flip measurement
-raises the stakes on that rather than settling them.** A live 2.576% flip rate per call is exactly
-the input a cascade argument needs; the open question is how it compounds over 7x the depth. The mechanism the guard
+**A 4-layer slice was the one thing that could not test the cascade claim — and the depth run
+above has now answered it.** Retained as the reasoning that led to running it, because it was
+right: the flip rate was the input a cascade needed, and over 7x the depth it compounded 10x. The mechanism the guard
 names is compounding: a flipped expert perturbs the hidden state, which perturbs the next layer's
 routing. That is a phenomenon in DEPTH, and the slice preserves the layer-type *ratio* while
 discarding 24 of 28 layers — exactly the axis the argument lives on. The flat cosine across K
