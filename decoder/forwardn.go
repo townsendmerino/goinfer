@@ -165,7 +165,11 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// spec-decode verify runs through forwardN and MUST keep acc64, or "verify ==
 	// sequential greedy" silently stops holding. A runtime check could not tell
 	// the two callers apart; a parameter cannot get it wrong.
-	useAcc64 := !(fastAttn && arch.MoE == nil)
+	// moeFastAttnProbe is a compile-time false in every shipping build (see
+	// moefastattn_prod.go), so this reads exactly as `!(fastAttn && arch.MoE == nil)`
+	// there. Under -tags goinfer_testhooks a measurement can force the MoE case on,
+	// to put a NUMBER on the exclusion the paragraph above argues for.
+	useAcc64 := !(fastAttn && (arch.MoE == nil || moeFastAttnProbe))
 
 	// G16: prefill attention runs its heads in PARALLEL, budget permitting.
 	//
@@ -351,8 +355,28 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			}
 			// Sparse MoE (Mellum / Mixtral): the router selects different experts per
 			// token, so the FFN isn't batchable across K — run the existing per-token
-			// moeMLP for each row (bit-identical to the sequential path). The prefill
-			// hotspot (attention) is already batched above; this is the residual ~17%.
+			// moeMLP for each row (bit-identical to the sequential path).
+			//
+			// THIS RESIDUAL SHRINKS WITH PROMPT LENGTH, and the "~17%" that stood here
+			// was a K≈1k-era figure quoted as if it were constant. It also over-attributed:
+			// it named the expert matmuls, but the profile bucket it came from holds the
+			// q/k/v/o projections too. Measured 2026-08-28 (Mellum2 4-layer slice,
+			// int8int8, M1 Pro, real routing — a constant-id prompt collapses the top-k
+			// and understates this), as a share of prefill work:
+			//
+			//	K       attention   ALL weight matmul (an UPPER bound on the FFN)
+			//	1024      77.3%       22.7%
+			//	2048      88.8%       11.2%
+			//	4096      93.9%        6.1%
+			//	8192      97.1%        2.9%
+			//
+			// So batching this FFN expert-major (task-moe-streaming.md Lever 4) is not a
+			// compute lever at agentic prompt lengths: an upper bound on what it could
+			// return was measured at 4.6-5.1% at K=1-2k and was NOT RESOLVABLE above
+			// run-to-run spread at K>=4096. Its case has to be made on streaming I/O,
+			// where the same expert is re-fetched per row, and measured there.
+			// Record: docs/measurements/mellum2-moe-prefill-split-RESULT.md.
+			//
 			// GLM's dense prefix layers (Experts nil) fall through to the dense FFN below.
 			for i := range K {
 				// nil scr: this batched-prefill path builds its own per-K-batch scratch
