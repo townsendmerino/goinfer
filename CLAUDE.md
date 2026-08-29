@@ -100,6 +100,20 @@ unreachable. The component test passes, is correct, and vouches for behaviour th
 produce. **When a component's contract depends on HOW OFTEN or UNDER WHAT CONDITION it is called,
 test it through its caller, or the test is asserting your assumption back at you.**
 
+**A DOC COMMENT CLAIMING COVERAGE IS NOT COVERAGE, AND IT IS WORSE THAN SILENCE.** This is
+NOT the rule above — that one is about a calling convention the test supplies for itself.
+This one is about a comment asserting something the assertions never touch, which turns the
+test into a trap for whoever audits the claim later: they read the promise, match it to a
+test name that fits, and stop. Measured 2026-08-28: `a3_divergence_test.go`'s
+`TestA3FastAttentionDivergence` opens by saying it pins *"MoE excluded: the flag cannot turn
+f32 attention on for a MoE arch at all"*; the body loads the DENSE bench checkpoint and
+asserts nothing about MoE anywhere. The `--cpu-fast-attention` MoE exclusion it advertised as
+pinned had in fact never been measured on a MoE — no MoE appears in its kernel-ratio record
+either — while the excluded term was 97.1% of an 8k MoE prefill. **The check: for any doc
+comment that asserts coverage, the body must contain an assertion naming the thing.** Both
+this and the rule above defeat the same defence — reading the test NAME instead of the test
+BODY — which is why neither is caught by running the suite.
+
 **`go test -v ./a/ ./b/` prints nothing until `./a/` finishes.** Output is buffered per package.
 Run one package per invocation and `tee` if you need to watch progress.
 
