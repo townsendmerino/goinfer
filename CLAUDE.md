@@ -109,7 +109,9 @@ test name that fits, and stop. Measured 2026-08-28: `a3_divergence_test.go`'s
 f32 attention on for a MoE arch at all"*; the body loads the DENSE bench checkpoint and
 asserts nothing about MoE anywhere. The `--cpu-fast-attention` MoE exclusion it advertised as
 pinned had in fact never been measured on a MoE — no MoE appears in its kernel-ratio record
-either — while the excluded term was 97.1% of an 8k MoE prefill. **The check: for any doc
+either — while the excluded term was 97.1% of an 8k MoE prefill (a 4-layer-slice figure;
+the full model is lower, and the win it was blocking measured 1.52x, not the slice's 3.11x —
+which is its own lesson about quoting a slice as a model). **The check: for any doc
 comment that asserts coverage, the body must contain an assertion naming the thing.** Both
 this and the rule above defeat the same defence — reading the test NAME instead of the test
 BODY — which is why neither is caught by running the suite.

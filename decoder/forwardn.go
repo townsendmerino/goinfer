@@ -151,7 +151,8 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// The acc64 path is 8.14x slower than f32 at long-context shapes (measured,
 	// docs/measurements/attention-a3-kernel-ratio-2026-08-26.md — note that is
 	// more than double the "~3.7x" the kernel comment assumes), and attention is
-	// ~70% of an 8k dense prefill and 97.1% of an 8k MoE one. It exists to hold three
+	// ~70% of an 8k dense prefill and 97.1% of an 8k MoE one ON A 4-LAYER SLICE —
+	// which OVERSTATES the full model, see the speedup note below. It exists to hold three
 	// guarantees, and enabling this gives up two of them for the model that enables
 	// it: spec-decode verify == sequential greedy, and decode == prefill.
 	//
@@ -170,6 +171,13 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	//	             MoE   Mellum2             2.126e-3   (0.90x dense)
 	//	greedy continuation, 48 tokens          IDENTICAL, 48/48
 	//
+	// THAT 0.90x IS A K=2048 STATEMENT AND DOES NOT SURVIVE TO LONG CONTEXT. At
+	// K=8192 on the full model MoE is 2.777e-3 against dense's recorded 2.400e-3 —
+	// about 1.16x, i.e. marginally WORSE, and that dense figure is cross-session so
+	// the direction is not load-bearing. Both remain ~4x inside the >= 0.99 bar
+	// (1e-2), which is what the decision rests on; "MoE diverges less than dense" is
+	// not something to repeat unqualified.
+	//
 	// So the case the flag forbade diverges slightly LESS than the case it permits,
 	// and never reaches the output at all. Both sit ~4x inside the >= 0.99 bar.
 	// Refusing one while shipping the other was not a defensible line. Record:
@@ -179,6 +187,21 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// them sliding-attention at window 1024 — which CAPS nKeys, and so caps how much
 	// reassociation error a layer can accumulate. A full-attention MoE stresses this
 	// harder and is unmeasured. Do not read the numbers above as "MoE in general".
+	//
+	// WHAT IT ACTUALLY BUYS, measured on the FULL 28-layer model at K=8192 — both
+	// earlier figures came from configurations nobody runs (3.11x on a 4-layer slice
+	// at K=8192, 1.08x on the full model at K=2048):
+	//
+	//	Ryzen 3700X  int8int8  8411.6s -> 5540.1s   1.52x
+	//	M1 Pro       int4      3935.2s -> 2480.5s   1.59x  (paged; ratio corroborates)
+	//
+	// ~1.5x, not 3.11x. Two architectures, two quants and very different memory
+	// conditions agreeing within 0.07x is better evidence than either alone. The
+	// slice almost certainly overstated because its 1.6 GB of weights fit in cache,
+	// so weight matmul was cheap and attention read as 97.1% of the work; the full
+	// model's 6-12 GB is bandwidth-bound, attention's share falls, and an
+	// attention-only swap buys less. That mechanism is UNVERIFIED — confirming it
+	// needs a profile at K=8192 on the full model.
 	//
 	// Same shape as --metal-fast-prefill: default off, divergence documented, and
 	// the caller opts in knowingly.
@@ -380,7 +403,9 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			// it named the expert matmuls, but the profile bucket it came from holds the
 			// q/k/v/o projections too. Measured 2026-08-28 (Mellum2 4-layer slice,
 			// int8int8, M1 Pro, real routing — a constant-id prompt collapses the top-k
-			// and understates this), as a share of prefill work:
+			// and understates this), as a share of prefill work. NOTE THE SLICE: its
+			// weights fit in cache, so these OVERSTATE attention's share on the full
+			// model, where weight matmul is bandwidth-bound:
 			//
 			//	K       attention   ALL weight matmul (an UPPER bound on the FFN)
 			//	1024      77.3%       22.7%

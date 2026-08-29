@@ -200,18 +200,17 @@ the sort — is corrected to describe what its body actually checks.
 
 **What the speedup actually is, stated as a range because it varies by an order of magnitude:**
 
-| machine | model | K | f32 speedup |
-|---|---|---|---|
-| Ryzen 3700X | full 28-layer | 2048 | **1.08x** |
-| M1 Pro | 4-layer slice | 1024 | 1.35x |
-| M1 Pro | 4-layer slice | 2048 | 1.54x |
-| M1 Pro | 4-layer slice | 8192 | **3.11x** |
+| machine | model | quant | K | f32 speedup |
+|---|---|---|---|---|
+| M1 Pro | 4-layer slice | int8int8 | 1024 | 1.35x |
+| M1 Pro | 4-layer slice | int8int8 | 2048 | 1.54x |
+| M1 Pro | 4-layer slice | int8int8 | 8192 | 3.11x |
+| Ryzen 3700X | full 28-layer | int8int8 | 2048 | 1.08x |
+| **Ryzen 3700X** | **full 28-layer** | **int8int8** | **8192** | **1.52x** |
+| **M1 Pro** | **full 28-layer** | **int4** | **8192** | **1.59x** |
 
-Never a slowdown; the win grows with K and is larger on arm64. **The 3.11x quoted throughout the
-earlier sections is the best cell — arm64, 4-layer slice, K=8192 — and was repeatedly used as if it
-were the model-level number.** The full-model long-K cell is measured on NEITHER machine and is the
-one a user would actually care about. The flag remains OFF by default, so extending removes a
-refusal rather than turning anything on.
+**THE ANSWER IS ~1.5x, NOT 3.11x** — see the full-model section below. Never a slowdown. The flag
+remains OFF by default, so extending removes a refusal rather than turning anything on.
 
 ### The caveat that decides whether this is actionable
 
@@ -232,8 +231,9 @@ not yet **refuted**. What would settle it, in order:
    weights; a flip at a real margin is the thing the guard is right about.
 3. Token-level divergence over a greedy continuation, which is what a user actually experiences.
 
-If those hold, extending G24 to MoE is a **3.11×** lever against 97% of long-context prefill
-cost — dominating anything Lever 4 could have returned against the remaining 3%.
+Extending G24 to MoE was worth **1.52×** on the full model at K=8192 (measured below), against
+Lever 4's sub-5%. Still the right call by a wide margin — but the 3.11× that appears above is a
+4-layer-slice figure and was quoted as the model-level number until it was checked.
 
 ## Scope limits
 
@@ -244,3 +244,50 @@ cost — dominating anything Lever 4 could have returned against the remaining 3
 3. **CPU only, M1 Pro.** Says nothing about Metal or CUDA.
 4. The full checkpoint (12 GB at int8int8) would not fit against 8.1 GB of swap already in use;
    swap was recorded before and after every run and stayed flat, so nothing paged.
+
+---
+
+## The full model at long K — the cell neither machine had (2026-08-29)
+
+Both earlier speedup figures came from configurations nobody runs: **3.11× on a 4-layer slice at
+K=8192**, **1.08× on the full model at K=2048**. This is the cell that decides whether the MoE
+extension matters in practice. Run on both machines simultaneously, full 28-layer Mellum2, K=8192,
+`TestA3MoEExclusionIsMeasured`:
+
+| machine | quant | commit | acc64 | f32 | speedup | 1 − cosine |
+|---|---|---|---|---|---|---|
+| Ryzen 3700X, 62 GB | int8int8 | `9fa307c` | 8411.6 s | 5540.1 s | **1.52×** | 2.777e-3 |
+| M1 Pro, 16 GB | int4 | `03908c6` | 3935.2 s | 2480.5 s | **1.59×** | 6.370e-3 |
+
+**~1.5×, and the slice overstated by about 2×.** The strongest evidence here is not either number
+but their *convergence*: two architectures, two quants, and very different memory conditions landing
+within 0.07× of each other.
+
+**Why the slice lied — leading explanation, UNVERIFIED.** The slice's ~1.6 GB of weights fit in
+cache, so weight matmul was cheap and attention read as 97.1% of prefill work at K=8192. The full
+model's 6–12 GB does not fit; weight matmul becomes bandwidth-bound, attention's share falls, and an
+attention-only kernel swap buys correspondingly less. Confirming this needs a profile at K=8192 on
+the full model — another multi-hour run, not done.
+
+**The Mac arm paged and its absolute times are inflated.** Swapouts rose 304,524,379 → 307,177,129
+(+2.65M pages ≈ 43 GB) and macOS grew the swap file from 8 GB to 13 GB mid-run. Pre-flight checked
+the machine *at rest* and correctly found no active paging — but the run itself creates the
+pressure, so the pre-flight tested the wrong condition. Both arms paged alike and the ratio matches
+the clean box run, so it is kept as corroboration; **the citable figure is the Ryzen 1.52×.**
+
+### A correction this run forces on the divergence claim
+
+"MoE diverges 0.90× dense" was a **K=2048** statement and does not survive to long context:
+
+| K | MoE (full 28L, int8int8) | dense (28L) | ratio |
+|---|---|---|---|
+| 2048 | 2.126e-3 | 2.352e-3 | 0.90× — MoE better |
+| 8192 | 2.777e-3 | 2.400e-3 (recorded) | **1.16× — MoE marginally worse** |
+
+Both remain ~4× inside the ≥ 0.99 bar, which is what the extension decision rests on. But the dense
+K=8192 figure is cross-session, so the *direction* is not load-bearing, and **"MoE diverges less
+than dense" should not be repeated unqualified** — it was true of the one K where it was measured.
+
+The int4 arm's 6.370e-3 is the largest divergence recorded for this flag on any model. Still inside
+the bar, but int4 + f32 attention is the worst combination measured and deserves its own line in any
+future scoping.

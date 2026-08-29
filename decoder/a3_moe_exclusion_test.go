@@ -23,7 +23,9 @@ import (
 //
 // That matters now because the term the exclusion protects is the one that
 // dominates. On a Mellum2 slice, attention is 83.2% of prefill work at K=1024 and
-// 97.1% at K=8192 — so the excluded lever is aimed at ~97% of the cost while
+// 97.1% at K=8192 (ON A 4-LAYER SLICE — the full model is lower, and the measured
+// full-model win is 1.52x/1.59x, not the slice's 3.11x) — so the excluded lever is
+// aimed at most of the cost while
 // expert-major batching competes for what is left.
 //
 // This measures BOTH halves of the trade at once:
