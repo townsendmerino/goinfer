@@ -147,3 +147,50 @@ Written before any run, so the decision rule could not be fitted to the result.
 
 Rule 3 is why a CPU arm was measured rather than the 1.3–1.4 figure being borrowed — and doing so
 is what turned the expected ~1.4–1.5× into the actual ~1.2–1.4×.
+
+---
+
+# Slot-count sweep — PRE-REGISTRATION (committed 2026-08-28, before any sweep run)
+
+Committed before the sweep executed, so the stopping rule provably was not fitted to the curve.
+Same box, checkpoint, decode trajectory and harness as above; only `GOINFER_PAGED_N` varies.
+
+## Ladder and ordering
+
+N ∈ {8, 16, 32, 64, 128}. N=8 is the floor (must be ≥ topK=8, and at N=8 every token evicts its
+own working set). Two runs per point, ordered **ascending then descending**
+(8,16,32,64,128,128,64,32,16,8) so every N gets one early and one late slot — the same
+counterbalance the pread A/B used, generalized, because the 22.1 GB file exceeds the 16 GB box and
+page-cache warmth drifts monotonically through a session.
+
+## Resolution floor — stated before the first run
+
+The pread pair above gives the run-to-run spread directly: 1.967 vs 2.022, **2.8%**. So:
+
+- **A difference between adjacent N is called REAL only if it exceeds 5%** (≈2× the observed
+  spread) **and** exceeds the observed spread of the two points being compared.
+- Anything smaller is reported as **"below resolution"** — not as a small win. Adding points cannot
+  fix this: it is a persistent per-run component (page-cache state, thermal, load), not sampling
+  noise that averages away, so a longer sweep buys no precision against it.
+
+## Stopping rule — the marginal one, not just the ceiling
+
+Stop at the FIRST of:
+
+1. **A doubling of N buys < 5% median tok/s.** Slots are the cost and RAM is the budget; a doubling
+   that lands below the resolution floor has bought nothing measurable.
+2. **RSS-after-build > 10 GB.** Beyond that the 16 GB box has too little left for OS + page cache,
+   and cache starvation would confound the very thing being measured.
+3. **N ≥ 256** (= nE, fully resident). Unreachable here: 256 slots × 40 layers × ~1.5 MB ≈ 15.4 GB
+   of slots alone. Listed so the ladder's top is a stated bound, not an omission.
+
+The absolute ceiling remains **~5.2 tok/s** (staging → 0, derived above). If the curve asymptotes
+well below it, the residual is stage cost that slots cannot buy back, and the sweep is done.
+
+## Prediction, recorded before the run
+
+Prior art (`task-moe-streaming.md`) measured the routing skew: hottest 10% of experts absorb 72% of
+accesses, hottest 25% absorb 94%. N=32 is 12.5% of 256 and delivered a 64.8% hit rate. If that skew
+holds here, **N=64 (25%) should be the big step** and N=128 should be into diminishing returns.
+Recording it so the sweep can disconfirm it — a prediction that only gets written down after the
+curve is known is not a prediction.
