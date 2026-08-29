@@ -50,7 +50,18 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 			t.Fatalf("GOINFER_MELLUM_K=%q: %v", v, err)
 		}
 	}
-	m, err := Load(path, Options{Quant: "int8int8"})
+	// Quant is an axis here, not a detail. The full 28-layer Mellum2 is ~12 GB at
+	// int8int8 and does not fit the 16 GB Mac at all, but ~6 GB at int4 does — and
+	// int4 is what mellum2-resident.md actually runs. The attention swap under test
+	// is quant-INDEPENDENT (acc64 vs f32 accumulation), but its SHARE is not: int4's
+	// faster weight matmul raises attention's fraction of prefill and so raises the
+	// speedup. So an int4 number is the operator-facing one and an int8int8 number is
+	// the one comparable to this file's earlier runs; label which you quote.
+	quant := os.Getenv("GOINFER_BENCH_QUANT")
+	if quant == "" {
+		quant = "int8int8"
+	}
+	m, err := Load(path, Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -101,7 +112,7 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 			"drawn from this run would be about a test that did not run", K)
 	}
 	fmt.Fprintf(os.Stderr,
-		"A3-MoE-exclusion: K=%d cosine=%.9f maxAbs=%.4g | acc64 %.1fs -> f32 %.1fs (%.2fx)\n"+
+		"A3-MoE-exclusion: quant=%s K=%d cosine=%.9f maxAbs=%.4g | acc64 %.1fs -> f32 %.1fs (%.2fx)\n"+
 			"  dense ships at cosine 0.9976 behind this same flag\n",
-		K, cos, maxAbs, tBase.Seconds(), tFast.Seconds(), tBase.Seconds()/tFast.Seconds())
+		quant, K, cos, maxAbs, tBase.Seconds(), tFast.Seconds(), tBase.Seconds()/tFast.Seconds())
 }
