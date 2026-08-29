@@ -154,6 +154,23 @@ This repo's measurements are the product, so the standards are load-bearing:
   `01-grammar-fused.md`'s α ≈ 0.20 is a verdict on the grammar-automaton drafter, in its own
   words, *not* on grammar speculation in principle. Treating it as settled would have killed a
   live question with the wrong evidence.
+- **A marginal stopping rule encodes an unstated assumption about CURVE SHAPE.** "Stop when a
+  doubling buys < X%" is valid only where the curve is known to be monotone-diminishing. Measured
+  2026-08-28 (Metal MoE slot sweep): 8→16 bought +4.1%, under a pre-registered 5% bar, so the rule
+  as written stops at N=16 — and the only resolvable win was **+14.8% at N=64, two doublings
+  later**. Plateau-then-step is the normal shape wherever a resource threshold gets crossed, which
+  is exactly what N=64 was. If you do not know the shape, run the full ladder; that is what buys
+  the right to stop early *next* time. **Corollary: pre-register two things that can disagree.**
+  The ladder and the stop rule answer different questions, so the wrong one got caught by the right
+  one. After a rule fails the instinct is to write a better rule; the more reliable fix is a second,
+  independent pre-registration.
+- **A guard that INVERTS under the condition it exists for is worse than no guard** — it actively
+  reassures. Same sweep: an RSS-based memory ceiling, written specifically to catch the N=128
+  slot-pressure cliff, reported **263–426 MB at N=128 against 1154 MB at N=8** — *less* memory at
+  the failure point than at the baseline. Darwin's UBC reclaims under pressure, so RSS reports what
+  survived, not what was asked for. Key a budget guard on a quantity you compute yourself
+  (allocated slot bytes = `N × layers × per-expert`, known at build), never on the OS's account of
+  what remains.
 - **A RETRACTION IS NOT DONE UNTIL IT REACHES EVERY PAGE QUOTING THE FIGURE.** When you strike a
   number, `grep` for *the figure with its unit* right then and fix every instance, at the retraction
   site, while you still have the context. Recording the correction where it was found is not enough:
