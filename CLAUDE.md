@@ -154,6 +154,18 @@ This repo's measurements are the product, so the standards are load-bearing:
   `01-grammar-fused.md`'s α ≈ 0.20 is a verdict on the grammar-automaton drafter, in its own
   words, *not* on grammar speculation in principle. Treating it as settled would have killed a
   live question with the wrong evidence.
+- **A RETRACTION IS NOT DONE UNTIL IT REACHES EVERY PAGE QUOTING THE FIGURE.** When you strike a
+  number, `grep` for *the figure with its unit* right then and fix every instance, at the retraction
+  site, while you still have the context. Recording the correction where it was found is not enough:
+  measured 2026-08-28, `~1.2-1.4 tok/s` was withdrawn in `task-zeno-compare.md` and went on
+  disqualifying `Qwen3.5-35B-A3B` from a qualifying agent-loop run in `queue-engineering.md` for
+  months, on a figure that direct measurement then put at 1.52-1.73 (CPU) / 1.97-2.02 (Metal).
+  Grep the figure WITH its unit: the bare digits matched six unrelated quantities (ms, kernel
+  ratios, KV-quant multipliers), the number plus `tok/s` matched only the real ones. This is a
+  convention on purpose, not a lint — the check the lint already documents as out of scope (see its
+  own `aikit v1.16.0 (go.mod:6)` example) was scoped out deliberately, and one incident is not
+  grounds to overturn that. Note the reach limit either way: figures also propagate into published
+  artifacts outside the repo, which no repo-side tooling can ever see.
 
 ## Releases
 
