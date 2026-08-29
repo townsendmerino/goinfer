@@ -194,3 +194,68 @@ accesses, hottest 25% absorb 94%. N=32 is 12.5% of 256 and delivered a 64.8% hit
 holds here, **N=64 (25%) should be the big step** and N=128 should be into diminishing returns.
 Recording it so the sweep can disconfirm it — a prediction that only gets written down after the
 curve is known is not a prediction.
+
+---
+
+# Slot-count sweep — RESULT (2026-08-28)
+
+Ten runs, ladder 8/16/32/64/128, two passes ascending then descending, per the pre-registration
+above. Hit rate is fully deterministic (identical across both passes at every N), so the arms are
+matched: only cache/thermal state differs between passes.
+
+| N | tok/s (a, b) | mean | spread | hit-rate | staging share | major faults/stage | Δ vs prev | verdict |
+|--:|---|--:|--:|--:|--:|--:|--:|---|
+| 8 | 1.840, 1.876 | 1.858 | 1.9% | 29.5% | 67% | 0.0 | — | — |
+| 16 | 1.940, 1.929 | 1.934 | 0.6% | 50.0% | 65% | 0.0 | +4.1% | below resolution |
+| 32 | 1.898, 1.920 | 1.909 | 1.2% | 64.8% | 64% | 0.0 | −1.3% | below resolution |
+| **64** | 2.158, 2.224 | **2.191** | 3.0% | 76.9% | 58% | 0.0 | **+14.8%** | **REAL** |
+| 128 | 1.748, 1.419 | 1.583 | **20.8%** | 85.5% | 32% | 0.0 | **−27.7%** | REAL (a regression) |
+
+**The optimum is N=64 at 2.191 tok/s.** That is +14.8% over the N=32 default, and **1.35×** the CPU
+pager's 6 GB arm (up from 1.23×). It is 42% of the ~5.2 tok/s ceiling — and the rest is *not*
+reachable by slots, because beyond 64 the curve reverses. **The slot lever is closed.**
+
+## The N=128 cliff — the sub-bucket got better and the total got worse
+
+At N=128 every staging metric improves: hit rate is the best of the ladder (85.5%), staging falls
+from 58% of a token to 32%, faults stay at 0.0/stage. **And throughput collapses 27.7%.** The cost
+did not disappear; it moved into the residual. 128 slots × 40 layers × ~1.5 MB ≈ 7.7 GB of resident
+Metal buffers on a 16 GB box crowds out the page cache the rest of the model is streaming through.
+The 20.8% run-to-run spread — an order of magnitude worse than any other point — is the thrashing
+signature.
+
+This is the repo's own rule earning its keep: *when you optimize a measured sub-bucket, gate on the
+TOTAL.* Judged on staging share alone, N=128 is the best configuration on the ladder.
+
+## Two failures in the pre-registration itself, recorded because they nearly cost the result
+
+**1. The marginal stop rule would have stopped at N=16 and missed the only real win.** Rule 1 said
+stop when a doubling buys < 5%. The 8→16 step bought **+4.1%** — under the bar. Applied as written
+the sweep halts at N=16 and never sees the +14.8% at N=64. The rule silently assumed *diminishing
+returns*, and this curve is a plateau followed by a step: 8→16→32 is flat (both steps below
+resolution, and 16→32 even inverts), then 64 jumps. What saved the result was the *other*
+pre-registered element — the full ladder — which said run all five points regardless. A stop rule
+premised on monotone diminishing returns should not be used on a curve nobody has seen yet.
+
+**2. The RSS stop rule could never have fired, because the instrument does not measure what the rule
+assumed.** Rule 2 said stop when RSS-after-build exceeds 10 GB. Measured RSS at N=128 was **263–426
+MB — LOWER than at N=8 (1154 MB)**. RSS does not track slot allocation here: darwin's UBC reclaims
+under pressure, so RSS reports what survived reclaim, not what was asked for. The guard written
+specifically to catch the N=128 memory cliff was blind to it; the cliff announced itself in
+throughput and in run-to-run spread instead. Any future budget guard on this box must be written
+against *allocated* slot bytes (`N × layers × per-expert`, computable at build), never against RSS.
+
+## Prediction scored
+
+Predicted before the run, from prior art's skew (hottest 25% of experts absorb 94% of accesses):
+*N=64 is the big step, N=128 diminishing.* **Half right.** N=64 is indeed the big step, and the only
+resolvable one. N=128 is not diminishing — it is a **regression**. The skew model predicts hit rate
+correctly (85.5% at N=128, duly the best) and says nothing about memory pressure, which is what
+actually decides the top of the ladder.
+
+## Recommendation
+
+Default `GOINFER_METAL_MOE_SLOTS` to **64** for this model class on a 16 GB box, and treat the knob
+as settled: below 32 nothing is resolvable, above 64 it regresses. The remaining distance to the
+5.2 tok/s ceiling is stage *cost* at a fixed ~77% hit rate, not stage count — a different lever, and
+not obviously a cheap one.
