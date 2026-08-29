@@ -90,9 +90,45 @@ the total.
 **Cosine is flat across depth** — 0.999788 at K=2048, 0.999787 at K=8192 — which is the direct
 counter to the cascade argument as it applies to prompt LENGTH.
 
+### The mechanism, measured — and it is REAL
+
+A cosine cannot tell a routing flip from ordinary numeric drift, and the guard is a claim about
+routing specifically. `decoder/a3_moe_routeflip_test.go` decomposes it with three arms on one
+prompt, using the existing `moeSelOverride` replay seam:
+
+| arm | attention | routing | cosine vs A |
+|---|---|---|---|
+| A | acc64 | natural (recorded) | — |
+| B | f32 | natural | 0.999788085 |
+| C | f32 | **A's, replayed** | 0.999931014 |
+
+**211 of 8192 moeMLP calls (2.576%) flip their top-k set, and removing the routing term recovers
+67.4% of the divergence.** The mechanism `forwardn.go` names is not hypothetical: flips happen,
+and they are the DOMINANT contributor to what divergence there is.
+
+**This corrects the earlier reading of the cosine alone.** "The exclusion looks over-conservative"
+was the right conclusion from the wrong evidence. The correct statement is narrower and more
+useful:
+
+- the guard is **right in kind** — routing flips are real, and they dominate;
+- the guard is **not supported in degree** — with the flips included, MoE still diverges an order
+  of magnitude LESS than the dense case the flag already permits (0.999788 vs 0.9976). The
+  kernel comment's own bar for shipping f32 attention is cosine ≥ 0.99.
+
+So "NOT negotiable at any flag setting" is stronger than the evidence carries. What the evidence
+supports is that MoE needs its own bar and its own measurement, not that it needs a categorical
+refusal.
+
+The flip-impact figures are a BOUND, not a margin: the smallest kept top-k weight is p50 0.0768,
+p90 0.0960, max 0.1147 (against 0.125 for a uniform top-8). Those are not vanishing weights — but
+the realized effect is ~1.4e-4, far below what a 0.077 weight would permit, which is itself
+evidence that the swapped experts produce similar outputs. That is what a near-tie predicts.
+
 ### The caveat that decides whether this is actionable
 
-**A 4-layer slice is the one thing that cannot test the cascade claim.** The mechanism the guard
+**A 4-layer slice is the one thing that cannot test the cascade claim — and the flip measurement
+raises the stakes on that rather than settling them.** A live 2.576% flip rate per call is exactly
+the input a cascade argument needs; the open question is how it compounds over 7x the depth. The mechanism the guard
 names is compounding: a flipped expert perturbs the hidden state, which perturbs the next layer's
 routing. That is a phenomenon in DEPTH, and the slice preserves the layer-type *ratio* while
 discarding 24 of 28 layers — exactly the axis the argument lives on. The flat cosine across K
