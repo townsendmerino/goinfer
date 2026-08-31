@@ -123,6 +123,16 @@ func TestSpecResidentPrefillRegression(t *testing.T) {
 	// Measured on this box: 2.66 ms/prompt-token with the bug, 0.12 ms/prompt-token after
 	// wiring genNgramInto to residentPrefillSeed. The bar sits between them, nearer the
 	// fixed value, so a regression has to be a real return of per-token prefill to trip it.
+	//
+	// THIS BAR IS CUDA-CALIBRATED AND IS NOT PORTABLE. CUDA's exposure was DOUBLE and every
+	// other backend's is at most single: it is the only backend implementing ForwardNoLogits,
+	// so even when batched prefill declined its fallback was KV-only while the speculative
+	// path did full-logits — a second asymmetry no one else has. Metal, measured on the
+	// MacBook the same day, showed the same defect roughly 2x HARDER (5.313 ms/prompt-token,
+	// R^2 0.9999) but ONLY under --metal-fast-prefill; at its default it declines batched
+	// prefill, both paths take the per-token loop, and the slope is 0.110 (R^2 0.42) with no
+	// asymmetry to find. A port of this gate must re-derive its own bar from its own
+	// defect/fixed pair rather than inheriting 0.50.
 	slope := leastSquaresSlope(toks, deltas)
 	t.Logf("gap-vs-prompt-length slope = %.3f ms/prompt-token (bar 0.50; 2.66 was the defect, 0.12 is fixed)", slope)
 	if slope > 0.50 {
