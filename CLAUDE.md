@@ -119,6 +119,35 @@ BODY — which is why neither is caught by running the suite.
 **`go test -v ./a/ ./b/` prints nothing until `./a/` finishes.** Output is buffered per package.
 Run one package per invocation and `tee` if you need to watch progress.
 
+**A MINIMAL REPRO CAN BE MINIMAL IN EXACTLY THE DIMENSION THAT HIDES THE BUG.** Shrinking an
+input to isolate a defect is right, but each thing you remove can also remove a defect's only
+symptom — and the repro then reports GREEN on broken code, which is worse than not having run
+it. Measured 2026-08-31 bringing up LFM2: a single-token prompt was used deliberately to
+eliminate conv-window history, and it worked — it isolated a zeroed `NormEps`. But **softmax
+over one element is 1.0 at any scale**, so that same repro certified an attention path whose
+`AttnScale` was 0 and which returned a uniform average of the whole context. It took ≥2 tokens
+to see at all. Before trusting a shrunk case, ask which effects are IDENTICALLY ZERO at that
+size — n=1 kills every interaction term, any softmax/normalisation over the reduced axis
+becomes the identity, and any per-position table (RoPE at pos 0) becomes trivial.
+
+**PREFER DIFFERENCING PER LAYER OVER REASONING FROM FINAL LOGITS.** HF's
+`output_hidden_states=True` gives a per-layer reference; comparing against it names the exact
+first divergent layer in ONE run. In the same bring-up, guessing from the final logits had
+already burned several hypotheses — the conv split order and tap indexing were both suspected
+and both were correct, measuring cosine 1.00000000 / max|diff| 0.000000 the first time they
+were tested directly. Two cautions: HF appends the last hidden state AFTER the final norm, so
+the last row compares normed against un-normed unless you account for it (that artifact read as
+a catastrophic 0.50 cosine and was NOT a bug); and a matching argmax means nothing — both LFM2
+bugs held argmax while the logit cosine was 0.897.
+
+**A STRUCT LITERAL BUILT BY HAND PER FAMILY WILL EVENTUALLY OMIT A FIELD, AND ZERO USUALLY
+LOOKS LEGAL.** Both LFM2 bugs were that one shape (`NormEps` read from the wrong JSON key,
+`AttnScale` simply absent). The fix that generalises is a check at the single chokepoint every
+family passes through — `resolveArchitecture` → `validateResolved()` — not a per-adapter fix,
+because the point is to cover the families nobody has written yet. Note the family validator may
+fire first for any given family, so test the chokepoint guard DIRECTLY or its branch is never
+exercised.
+
 Heavy tests need `GOINFER_HEAVY_TESTS=1` and their assets; `testdata/assets.json` is the
 registry and `go run ./cmd/gate` is the runner (`census`, `heavy`, `parity`, `composition`,
 `selector`, `gpu`, `mutation`).
