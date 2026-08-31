@@ -1,0 +1,462 @@
+# Gated-DeltaNet residency — the plan, and why WebGPU proves it first
+
+**Status: DONE AND MEASURED — 2026-08-19.** The family is RESIDENT on WebGPU, gated end-to-end
+against the CPU forward for both siblings AND at the released head geometry, at **11.4–12.2×
+CPU decode**. Getting a real-width number surfaced a blocker that the tiny fixtures had hidden
+completely — see "The head_dim 256 wall" below. Written at Phase 0 so the phases, the reuse claims and the kill criteria were on record
+before any shader was.
+
+## Why this, why now
+
+Every Gated-DeltaNet hybrid — `qwen3_5_moe` (Qwen3.5/3.6), `qwen3_next`, `qwen3_5` (Qwen3.8) — is
+**CPU-only on every backend**, and honestly labelled as such: `decodeRunnerEligible` refuses the
+whole `arch.qwen35 != nil` family up front because no backend implements the mixer. That is the
+correct posture for a missing capability and a bad one to keep forever.
+
+It is now also the last big lever for this family. The projections were quantized on 2026-08-19
+(1.60× decode, 7.4× TTFT — P12), which leaves the CPU path within ~2.55× of llama.cpp on a kernel
+question that belongs to aikit (P14). Residency is a different axis entirely.
+
+## Why WebGPU first, not CUDA
+
+**CUDA has no recurrent state at all.** Its 24 `.cu` files are attention, GEMV, MoE and glue —
+nothing stateful. Building DeltaNet there means inventing per-layer device state, a conv window, a
+gated norm AND the delta rule, with no in-backend precedent.
+
+**WebGPU already runs a recurrent mixer.** It is the only backend declaring `FeatSSM`, and
+`gpu/mamba.go` carries the whole engine:
+
+| DeltaNet needs | Mamba-2 engine already has |
+|---|---|
+| depthwise causal conv over a K-wide window, SiLU | `ensureMambaConv` — same shape, in-place `win [(K-1)*convDim]` |
+| persistent per-layer state updated in place per token | the `ssm` storage buffer + `DecodeRunner` state plumbing |
+| gated RMSNorm × SiLU(z) | `ensureMambaGNorm` (semantics differ slightly — see Phase 2) |
+| per-head scalars (β, decay) | `headP [nHeads*3]` packing precedent (Aexp/dtBias/D) |
+| **the delta-rule update** | **nothing — this is the new kernel** |
+
+**And the threading model transfers exactly.** `mambaSSM` gives each thread one `(head, pi)` owning
+a contiguous state row: dot, in-place update, dot. The delta rule has the same shape *if the state
+is stored transposed relative to the CPU layout* — `[headV][hv][hk]` instead of `[headV][hk][hv]` —
+so thread `(headV, vd)` owns a contiguous `S[vd][0:hk]`:
+
+```
+kv         = Σ_kd S[vd][kd]·k[kd]      // contiguous dot
+S[vd][kd] += k[kd]·delta               // contiguous axpy
+o          = Σ_kd S[vd][kd]·q[kd]      // contiguous dot
+```
+
+The CPU reference walks that state column-wise with stride `hv` and makes two passes; the GPU
+layout fixes both, which is a reason to expect the port to be *faster than* a transliteration, not
+merely equivalent.
+
+CUDA follows once the design is settled here.
+
+## The 8 GB problem, and the house answer to it
+
+No hybrid model fits this card at int4 — Qwen3.8-27B ≈ 15.3 GB, Qwen3.6-35B-A3B ≈ 19.2 GB,
+Qwen3-Next-80B ≈ 44 GB, against 8 GB of VRAM. Qwen3.8 is DENSE, so the C′ expert-cache streaming
+that rescues big MoEs does not apply.
+
+**This does not block the work**, because it is the same problem gemma4 residency had and the repo
+already has the answer: a SCALED fixture with real head geometry at reduced depth
+(`scripts/pin_gemma4_moe_scaled.py` → `TestGemma4MoEScaled_residentParity`). Real `head_dim`,
+`linear_*_head_dim`, `num_*_heads` and conv kernel; fewer layers. That is what makes the kernel
+provable on this box rather than on a promise.
+
+## Phases
+
+**Phase 1 — the fixture. REFRAMED, and NOT the blocker it was scoped as.** The plan assumed
+nothing downstream could be gated without a real-geometry scaled checkpoint. That was wrong in a
+useful way: the KERNELS are gated at real head geometry with no checkpoint at all (Phase 2 drives
+them from synthetic weights through the CPU reference), and the WIRING is gated by the existing
+tiny fixtures, because a wiring error in a recurrent model shows as cosine DRIFT rather than as a
+width-dependent numeric gap. All four wiring mutations were caught on a 64-hidden fixture.
+
+What a scaled fixture would still buy is the quantization-at-width question — whether int4/int8
+DeltaNet projections hold up at hidden 5120 the way they do at 64 — which is a QUALITY question,
+not a correctness one, and is the honest remaining gap. Original scope: `scripts/pin_qwen35_scaled.py`: real DeltaNet geometry (key/value head
+dim 128, 16 key heads, 48 value heads, conv 4, head_dim 256), reduced layers and hidden, both mixer
+kinds present (3 linear + 1 full at minimum), seeded weights, CPU golden. Nothing downstream can be
+gated without it.
+
+**Phase 2 — the kernel, unit-tested before it is wired. DONE.** `deltaRuleShaderWGSL` (thread owns
+a contiguous transposed state row) + `deltaNormShaderWGSL` (per key head, one pass). Gated in
+`gpu/deltanet_test.go` against the CPU `gatedDeltaNetStep` through a new `deltaCapHook` seam — the
+same arrangement `mambaCapHook` has, because the recurrence output is a local that the gated norm
+overwrites in place.
+
+- **Result:** cosine 1.000000000, worst maxAbs/rms 6.2e-6 over 64 tokens at hk=hv=128, nk=16,
+  nv=48. The error does not grow with step count (2.2e-6 at step 1, 3.2e-6 at step 64), which is
+  the signature of reassociation noise rather than state drift.
+- **Non-vacuity, by mutation:** breaking the GVA head mapping, dropping the decay, and un-transposing
+  the state row each fail the gate. Dropping the l2-norm epsilon does NOT — at ordinary magnitudes
+  1e-6 is below f32 resolution — so `TestDeltaNorm_cpuParity` covers that case separately with an
+  all-zero head, where `inverseSqrt(0)` poisons the state with NaN and the reference does not.
+- **The gated norm DOES need its own kernel** — `ensureMambaGNorm` is not reusable, and the
+  first version of this line said it was. The two spell the same words and compute different
+  functions: mamba normalizes the GATED PRODUCT (`g = y·silu(z); out = w·g/rms(g)`), DeltaNet
+  normalizes the recurrence output and gates AFTERWARDS (`out = core/rms(core)·w·silu(z)`).
+  Substituting one measures cosine 0.986 and 12× RMS error — a plausible tensor of the right shape
+  with the wrong values, which is exactly the failure a shape-only reuse argument cannot see.
+  `deltaGNorm` is ~20 lines and, because DeltaNet's `[hv]` weight is indexed by `vd`, needs no
+  load-time tiling either — so the correction costs less than the reuse would have.
+- **Four kernels, not two, and they are gated CHAINED.** `deltaGates` (β and the decay, on device —
+  the alternative is a round-trip per layer per token) and `deltaGNorm` join the two above. The gate
+  runs them composed, each consuming the previous one's real GPU output, per the A′ post-mortem's
+  "isolation proves the primitive, never the composition"; each stage is scored separately so a
+  failure names the culprit. Worst over 64 steps: gates 2.3e-7, rule 6.0e-6, gnorm 1.3e-5 maxAbs/rms,
+  all at cosine 1.000000000.
+- **Still reused, unchanged:** `ensureMambaConv` covers the causal conv exactly — same shape, same
+  SiLU, same ring window; DeltaNet is bias-free, so it binds an all-zero `convB` (the `moeZeroBias`
+  precedent).
+
+**Phase 3 — wire it. DONE.** `lw.isDeltaNet` beside `lw.isMamba`, `dnetRunParams`, per-layer
+`{mambaWin, dnState}`, `FeatDeltaNet` declared for webgpu only, and the blanket `arch.qwen35`
+refusal replaced by a fall-through so the decline moves to the feature gate. CUDA and Metal decline
+there, which is what the hardware matrix now records.
+
+**The plan MISSED half the work, and it is worth naming.** It scoped the mixer and nothing else.
+But the family's *softmax* layers are not ordinary GQA either: `attn_output_gate` makes `q_proj`
+double width, `[query ‖ gate]` interleaved PER HEAD, with the context scaled by `sigmoid(gate)`
+before `o_proj`. Nothing in any backend had that. Two extra kernels (`deltaQSplit`,
+`deltaAttnGate`) — the split happens on the ACTIVATION, not the weight, because slicing rows out
+of a quantized `WeightMat` with its per-group scales is real surgery while splitting a 6144-float
+activation is a copy. Reading the fused weight as an ordinary `q_proj` measures cosine 0.90 with a
+drifting signature: plausible logits from the wrong tensor.
+
+**Phase 4 — end-to-end. DONE.** `TestQwen35ResidentParity`, resident vs the CPU `runLayersQwen35`
+at matched weight quant, over 128 tokens:
+
+| fixture | worst cosine | drift | argmax |
+|---|---|---|---|
+| `qwen3_5-tiny` (dense) | 0.999919 | 0.0001 | 127/128 |
+| `qwen3_5_moe-tiny` (sparse) | 0.995883 | 0.0041 | 127/128 |
+
+Both siblings, because the MoE one composes the DeltaNet mixer with the sparse router + stacked
+experts + shared expert in the same layer and NOTHING gated that pairing — mixer+MoE is gated for
+Mamba-2, the mixer alone by the dense fixture, neither for this. The MoE fixture is new
+(`pin_qwen3_5_forward.py --moe`) and its CPU forward is gated against transformers 5.12 at cosine
+1.000000, so the chain is resident ≡ CPU ≡ HF for both.
+
+Checked by mutation, all caught: the GVA head map inverted, the `v` slice offset dropped, the
+attention output gate not applied, the q/gate split read as two blocks instead of per-head, and the
+recurrent state never reset. The last one needed three attempts to catch — comparing generation 2
+against the CPU does NOT see it (the decay gate shrinks stale state faster than 16 tokens of
+comparison notices), so the check became a REPLAY: same tokens after `Reset`, the resident must
+reproduce its own logits to f32 determinism.
+
+Two things the drift check earned separately from the absolute floor: a recurrence that is merely
+coarse sits flat and low, one that is wired wrong decays. Every wiring mutation above was caught by
+the DRIFT bound, several of them while still above the cosine floor.
+
+**Phase 4 (original scope) — `residentParity` on the scaled fixture against the CPU forward, then
+the admission tests and the hardware matrix regenerate themselves.** The admission tests and both
+matrices did regenerate themselves, as scoped.
+
+## The head_dim 256 wall — what asking for tok/s found
+
+Chasing the speed number produced a 4-layer fixture at fully released width, and it declined
+residency on the first run:
+
+    gpu: resident decode declines head_dim=256 > 128 (attention kernel workgroup is 128-wide)
+
+**Every released model in this family is head_dim 256** — Qwen3.8-27B, Qwen3.6-35B-A3B and
+Qwen3-Next-80B, read from their configs. The single-query attention kernels put one lane on each
+head dim at `@workgroup_size(128)`, and `attnHeadDimSupported` correctly refuses anything wider
+rather than dot only the first half. So the residency landed above was real, gated, and unable to
+run a single released checkpoint — for a reason with nothing to do with DeltaNet.
+
+The tiny fixtures use head_dim 32. Nothing in the correctness work could have found this; only
+asking a performance question at real width did. **That is the argument for the real-width fixture,
+and it is a different argument than the one Phase 1 originally made** (which was about numerics).
+
+**Fixed properly, not raised one notch.** The first cut widened the workgroup to 256, which would
+have covered this family and hit the same wall again at Gemma 4's head_dim-512 global layers —
+and 256 is WebGPU's guaranteed `maxComputeInvocationsPerWorkgroup`, so one-lane-per-dim has
+nowhere further to go. The shipped version instead gives each lane a **stride** of dims (`d0`,
+`d0+WG`, `d0+2·WG`, …), so a fixed 256-wide workgroup covers any head_dim up to
+`attnWGWide × attnMaxPerLane` = 2048. head_dim stopped being a reason to decline.
+
+The narrow kernels are untouched and still serve head_dim ≤ 128: striding costs a per-lane array
+and two extra loops, and every ordinary model would pay that for nothing. The wide variants are
+built from ONE template (`attnWideTemplateWGSL`) with three small per-precision fetch expressions
+(f32 / f16-unpack / int8-unpack-and-scale) — the online-softmax algorithm is the part that is easy
+to get subtly wrong and hard to notice, and three copies of it is three places for a fix to land
+in two.
+
+Gated against `refAttn`, the same Go reference `TestAttnBlock_parity` already uses, at head_dim
+64, 128, 256, **257**, 512 and 1024 — cosine 1.000000000 at every one. The list is chosen for the
+striding boundaries, not for the model: 256 is `nper=1`, the degenerate case where a stride bug
+hides completely, and 257 is the ragged case where lane 0 owns two dims and the rest own one. A
+test that ran only 256 would pass with the stride loop entirely broken. It also asserts no output
+element is exactly 0, because a lane that stops early leaves whole dim ranges untouched and a
+cosine over a mostly-correct vector will not notice.
+
+## Measured: 11.4–12.2× CPU decode at released width
+
+`TestQwen35ResidentDecodeRate`, same box, matched weight quant, warm:
+
+| fixture | quant | resident | CPU | ratio |
+|---|---|---|---|---|
+| 4 layers @ released width (hidden 5120, hd 256, inter 17408) | int8int8 | 177.3 tok/s (1.410 ms/layer) | 14.6 tok/s (17.172 ms/layer) | **12.18×** |
+| same | int4 | 235.1 tok/s (1.06 ms/layer) | 20.6 tok/s (12.12 ms/layer) | **11.40×** |
+| `qwen3_5-tiny` (hidden 64) | int8int8 | 2529 tok/s | 5746 tok/s | 0.44× |
+| `qwen3_5_moe-tiny` (hidden 64) | int8int8 | 1283 tok/s | 3764 tok/s | 0.34× |
+
+The tiny rows are in the table on purpose. They are dispatch-bound — roughly 20 GPU dispatches per
+DeltaNet layer against microseconds of arithmetic — and they are what a casual "run the benchmark"
+would have reported. Publishing only the flattering row is how a 0.34× becomes a footnote.
+
+**The kill criterion is answered.** This is not the CUDA-graphs 1.01× that had to be relabelled a
+safety improvement; residency is a real decode win for this family.
+
+**Quote the RATIO, not an extrapolated absolute.** ms/layer × 64 gives ~15 tok/s resident and
+~1.3 tok/s CPU for the 27B, but the CPU half of that is about 2× faster than the 0.656 tok/s
+actually measured on the real 27B — the fixture omits the 248320-row LM head (~5% of real
+per-token MACs) and runs a short context. The ratio is robust because both arms omit the same
+things; the absolute is not.
+
+## What is NOT done
+
+- **The released 27B has not been run resident, and cannot be on this box.** It needs 15.3 GB at
+  int4 against 8 GB of VRAM. Everything above is real geometry at reduced DEPTH.
+- **Quantization at width is measured for speed, not quality.** The parity gate at released width
+  (4 layers, int8int8) holds cosine 0.995 with drift 0.0015, which is reassuring but is 4 layers,
+  not 64 — and error in a recurrent stack compounds with depth. Separately the resident path
+  quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
+  the write/decay gates, where the recurrence is most precision-sensitive).
+- **Metal.** Declines at the feature gate, correctly.
+- **The next lever is compute/launch, not the routing readback.** Measured (below): the round trip
+  is 42% of generation and is 78% DMA, ~5% stall. The readback SYNC costs almost nothing; the
+  remaining ~58% of the token is kernels and launches.
+
+## CUDA: DONE for the dense sibling — 15.9× at released width
+
+Ported 2026-08-20. Seven kernels in `cuda/deltanet.cu` (own module; audited `moe.ptx`/`glue.ptx`
+untouched), wired into the resident runner, `FeatDeltaNet` declared for cuda.
+
+CUDA had NO recurrent state — no SSM, conv-ring or scan among its 24 kernels — so unlike WebGPU
+this could not sit on an existing engine: the causal conv and the state plumbing are new code too.
+What ported for free was the DESIGN: the transposed state layout, the five-stage split, norm-then-gate
+ordering, and the whole mutation-tested gate suite.
+
+| gate | result |
+|---|---|
+| kernel chain vs CPU, 64 steps @ real geometry | cosine 1.000000000 on all five stages |
+| `qwen3_5-tiny` resident vs CPU, 128 tokens | worst cosine 0.999919, drift 0.0001 |
+| 4 layers @ released width, 24 tokens | worst cosine 0.994835, drift 0.0016 |
+| replay after Reset | self-cosine 1.000000000 |
+
+**Decode rate, 4 layers at released width:**
+
+| quant | resident | CPU | ratio | vs WebGPU |
+|---|---|---|---|---|
+| int8int8 | 215.8 tok/s (1.158 ms/layer) | 14.6 tok/s | **14.79×** | 12.18× |
+| int4 | 321.6 tok/s (0.777 ms/layer) | 20.2 tok/s | **15.90×** | 11.40× |
+
+CUDA is 1.37× faster than WebGPU at int4, which is the expected direction (its W4A8 GEMV is the
+more tuned one) but was worth measuring rather than assuming.
+
+**No head_dim wall here.** CUDA never had WebGPU's 128-lane limit — its attention kernels are not
+one-lane-per-dim — so the released geometry ran on first contact. That asymmetry is why the same
+question produced a kernel rewrite on one backend and nothing on the other.
+
+**CUDA graphs decline for this family**, deliberately: the mixer runs live (its buffers ARE the
+per-token state), so capturing the three static segments would leave 3 of every 4 layers outside
+the graph and the benefit is gone. Graphs measured 1.01× on this backend anyway.
+
+**FeatMoEGatedShared followed (2026-08-20), and it was not a kernel.** `moe.cu`'s
+`shared_gate_combine` has carried an `ungated` flag since it was written, with its comment naming
+the gated case "Qwen-MoE". What CUDA lacked was the `[1,hidden]` gate weight in the build. The
+feature table said "CUDA implements only the ungated combine" — true of the wiring, false of the
+kernel, and nothing reconciled the two. So all three siblings admit on CUDA now, and `qwen2_moe`
+does too as a documented side effect (its MoE block IS the one qwen3_5_moe derives from; no
+qwen2_moe fixture exists here, so that admission rests on the inheritance).
+
+**The fixture had to be fixed before the feature could be declared.** The first attempt gated it
+through `qwen3_5_moe-tiny` and BOTH mutations passed — combining ungated scored cosine 0.983,
+comfortably inside the floor. Default init leaves `shared_expert_gate·h` near zero, so
+`sigmoid(gl) ≈ 0.5`, and at 0.5 the gated and ungated combines differ by a factor of two on a
+contribution already small next to the routed experts and the residual. A fixture that cannot
+distinguish the feature it is the only coverage of is not coverage — this is C-15's recorded
+lesson ("a cosine floor over a RANDOM-weight MoE fixture can't gate gate/up ordering") in a new
+costume. Amplifying the gate weight ×20 in the generator drives `sigmoid` to saturate per token;
+both mutations now fail at 0.9527 with drift 0.0319. Fixing the FIXTURE rather than tightening the
+floor, because a threshold tuned to catch one known bug catches only that bug.
+
+## THE PAYOFF: Qwen3.6-35B-A3B decodes on an 8 GB card
+
+2026-08-20. The whole CUDA track was for this one combination, and it lands:
+
+    loaded 35B resident + C′ staging in 9m18s (decode path cuda-resident (int4))
+    prompt: 22 tokens via the "chatml" template
+    generated 48 tokens in 7s (6.77 tok/s)
+    "The capital of France is **Paris**. Paris is famous for numerous cultural, historical,
+     and architectural landmarks, including: 1. **The Eiffel Tower**: The most iconic symbol
+     of Paris and one of the most"
+
+~20 GB of int4 experts against 8 GB of VRAM. It needed three things that did not exist the day
+before — the DeltaNet kernels, their wiring, and FeatMoEGatedShared — plus C′ expert staging.
+WebGPU can decode this family faster per layer than the CPU but cannot host this model at all; the
+dense Qwen3.8-27B is the mirror image (portable, but 15.3 GB of dense int4 fits nowhere here and
+C′ does nothing for it).
+
+**CORRECTION (2026-08-20):** this section originally said C′ is a capability "CUDA alone has". That
+is wrong about Metal, which ships its own per-layer LRU expert pager (`metal/expertpool.go`) built
+for the same gemma4-26B problem — currently wired to the `g4moe` path rather than generic MoE, so a
+qwen3_5_moe model would not use it as-is, but the mechanism exists and generalizing it is a smaller
+job than inventing one. WebGPU is the backend with no equivalent.
+
+**C′ step 2's LRU was already implemented — its DEFAULT defeats it.** `cacheSlots` defaults to
+`topK`, so each token's 8 routed experts evict the previous token's 8 and the cache never hits.
+Raising it (`--moe-cache-slots` / `GOINFER_MOE_CACHE_SLOTS`) is the whole lever:
+
+| slots/layer | tok/s | hit rate | expert DMA/token |
+|---|---|---|---|
+| 8 (`topK`, the default) | 6.77 | ~0% | ~630 MB |
+| 48 | **10.09** | 71.1% | 265 MB |
+| 76 (capped from a 112 request) | 10.32 | 77.7% | 205 MB |
+
+**1.49× from the first step and 1.02× from the second, which is the useful part of the result.**
+Cutting DMA 630→265 MB bought half again the throughput; cutting it 265→205 bought nothing. So
+expert streaming stops being the bottleneck around 48 slots, and more VRAM spent on slots is
+wasted — the remaining cost is elsewhere (most likely the 40 per-layer D2H routing readbacks).
+A sweep that stopped at "more slots is faster" would have missed that.
+
+The cap works as designed: a 112-slot request needed 8.0 GB against 5.9 GB free and degraded to
+76 rather than OOM-ing. And the continuation is BYTE-IDENTICAL across all three slot counts, which
+is the property a cache has to have — reuse must not be observable in the output.
+
+**THE DEFAULT WAS RAISED (2026-08-20) to `min(nE, 8*topK)`** — the "change about defaults" the code
+had parked once its safety precondition (fix the margin, prove it on the 26B) was met by A5/A7.
+Bounded rather than the documented "ask for all, cap to VRAM", because the sweep shows the knee and
+because "all" caps to the largest thing the margin thinks fits — which is precisely the edge the
+previous attempt died on (it capped 128→34 at 3.4 GB of 3.8 GB free, then OOM'd in the warm
+forward).
+
+    35B, no env var:  64 slots   10.74 tok/s   75.5% hit    (was 6.77 at the topK default)
+    26B, no env var:  64 → capped to 32 (3.3 GB of 3.8 GB)  12.91 tok/s  77.5% hit  — PASSES
+
+The 26B is the test that binds, and note how close 3.3 GB sits to the 3.4 GB that failed before:
+what makes it safe is the margin fix, and the passing run is the evidence. Asking for "all" would
+land back on that edge.
+
+## Where the remaining time actually goes — and a hypothesis that was wrong
+
+`GOINFER_MOE_CACHE_PROF` times the one host round trip on the decode path (once per MoE layer per
+token — 2800 calls for a 48-token 35B run), split three ways because each implies a different fix:
+
+    stall 226ms (12% of the round trip)   the stream drain waiting for the router
+    host  185ms (10%)                     LRU bookkeeping
+    dma   1.457s (78%)                    H2D of missed experts
+    total 1.867s of 4.498s generation (42%)
+
+**The prediction that the 40 per-layer readbacks serialize the token was WRONG.** The sync is ~5%
+of token time. The DMA inside the round trip is ~33%, and the other ~58% is kernels and launches —
+which is where a further win has to come from. Removing the round trip entirely (device-side slot
+mapping) would buy at most that 5%, and A′ zero-copy is already a recorded dead end.
+
+Splitting that ~58% needed only the dispatch counter the runner already keeps and the
+11.8 µs/launch `TestCUDA_launchCost` measures through the purego FFI: **2555 launches/token**
+(64/layer — the expert loop is topK×3 on its own), ≈ 26% of generation. So the token was
+~26% dispatch, ~28% blocking expert DMA, ~8% stall+LRU, ~38% GPU.
+
+## CUDA graphs for this family: 1.47×, and my decline was wrong
+
+Declining graphs for Gated-DeltaNet models (recorded above) rested on "the mixer's buffers ARE the
+per-token recurrent state, so it cannot be captured". **That is wrong.** A replay reads CURRENT
+buffer contents — which is exactly why the MoE routing, different every token, already flows
+through a captured `segC`. Capture fixes POINTERS and launch geometry, not values. And the mixer
+has no rope, no attention and no positional uniform at all, so it is the most graph-static layer
+kind in the runner, not the least.
+
+`captureGraphs` now takes mixer + FFN-pre as ONE segment for a DeltaNet layer:
+
+    dispatch   2555 → 32 launches/token   (80×; 26% of generation → 1%)
+    throughput 10.67 → 15.69 tok/s        (1.47×)
+
+Parity is bit-identical to the live path (0.999919 dense / 0.991053 MoE, the same figures as
+without graphs), and the continuation is unchanged.
+
+**Two bugs found on the way, both invisible without a recurrent model:**
+
+1. `graphsSelfTest` runs the same token twice and requires identical logits. That premise holds for
+   attention — writing K/V at position 0 is idempotent — and is FALSE for a recurrent mixer, which
+   advances its state on every call. It reported "graph replay diverged from live" for every
+   DeltaNet model and declined graphs on a false positive. It now resets first (a no-op elsewhere).
+2. `Reset` hops to the executor via `r.do`, and `graphsSelfTest` already RUNS on the executor —
+   so the fix above deadlocked instead of failing. Split into `resetState` for on-thread callers.
+
+## Where it stops: ~15.7 tok/s is near the structural ceiling on this card
+
+With dispatch collapsed, the token is ~48% expert DMA, ~26% stall (GPU work surfacing behind the
+routing sync), ~20% GPU, ~6% LRU host. The DMA is the only large item, and it is **transfer-bound,
+not overhead-bound**:
+
+    236 MB/token in 30.5 ms   = 7.56 GB/s effective
+    PCIe 3.0 x16 practical    ≈ 11–12 GB/s
+    240 Upload calls/token    ≈ 3.6 ms of sync overhead (5.6% of a 64 ms token)
+
+Even at a perfect 11 GB/s the whole token goes 64 → 54.5 ms, i.e. **1.18×**. And the transfer
+VOLUME is set by the cache hit rate, which is VRAM-bound — the slot sweep already showed that lever
+saturating. So the remaining levers are small, and the honest reading is that this model on this
+card is close to done.
+
+The one identified inefficiency is real but modest and lives in a dependency: aikit's
+`Buffer.upload` ends in a FULL DEVICE SYNC, so C′ pays ~240 of them per token. aikit's own comment
+predicted this exact request ("worth doing if profiling ever shows this on a hot path") and both
+preconditions it names — pinned source, queue-aware caller — are already met. gocudrv's existing
+`CopyFromHostAsync` cannot express it because it is whole-buffer and an expert slot load is a
+sub-range on both sides. Written up with the measurement and the 1.18× ceiling in
+`docs/prompts/aikit-subrange-async-upload.md`, including the case for declining it.
+
+**THE CAVEAT THAT MATTERS: this is measured under `GOINFER_CUDA_GRAPHS_UNSAFE`.** The tenancy gate
+declines graphs under DEFAULT compute mode because replay is bit-exact only under EXCLUSIVE_PROCESS
+or MPS, and that gate is not being weakened for a speed number. A dedicated inference box can set
+the compute mode and collect the 1.47×; a shared one cannot, and gets 10.67. The self-test still
+runs either way, which is what caught (1).
+
+**MEASUREMENT HYGIENE, learned the hard way here.** One profiled run scored 5.46 tok/s against
+10.74 for identical work (byte-identical hits/misses), because an `rsync --server` was competing
+for memory bandwidth — the expert DMA reads from pinned host RAM, so unrelated I/O load lands
+squarely on the thing being measured. Re-run clean it was 10.67. Every single-run number in the
+slot sweep above carries that same uncertainty; treat the 1.49× as real (it is far outside the
+spread) and the 1.02× as indistinguishable from noise.
+
+**Four obstacles on the way, none of them the mixer:**
+
+1. Both prebuilt `.giw` bundles are unusable — one is inner-version 2 (this build reads 3..6),
+   the other is TRUNCATED. The "rebuild per minor" policy, biting.
+2. The 67 GB bf16 safetensors path ran the box to 59/62 GB with VRAM still untouched (P13's
+   resident-mapping problem at 35B scale) and had to be killed. The Q8_0 GGUF is mmap-backed and
+   loads in ~9 min.
+3. `qwen35` cannot use the streaming GGUF→.giw transcode — the code says "dedicated-loader
+   families can't stream; they fit resident", which is true on a big box and false here.
+4. **The actual blocker was one line, and it had nothing to do with this family's mixer.**
+   `r.gO, r.uO = r.af(I), r.af(I)` allocates DENSE-FFN scratch unconditionally, and a model whose
+   every layer is routed reports `intermediate_size` 0 — Qwen3.6's config omits the key entirely.
+   A 0-byte device allocation, which the driver rejects. No previously-resident MoE hit it
+   (Mixtral/GLM/Mellum all have a real dense width), and the tiny `qwen3_5_moe` fixture does not
+   either, because HF defaults `intermediate_size` in — so the fixture is LESS pure-MoE than the
+   model it stands for. Recorded in the code as a fixture-fidelity gap rather than papered over.
+
+Localizing (4) took four ~9-minute load cycles against "device allocation failed (0 bytes)" with
+no frame, so the executor's recovered panic now carries `debug.Stack()`. A decline printed once
+per model load can afford a few KB.
+
+**Two wiring mutations gated:** removing Reset's DeltaNet arm (caught by the replay check, self-cosine
+0.9897 — the CPU comparison does NOT catch it), and never applying the attention output gate
+(0.9225, caught by the drift bound).
+
+## Kill criteria, stated up front
+
+- **The delta-rule kernel cannot match the CPU reference to the resident-path tolerance** (the other
+  resident gates use 0.95 cosine against int4/int8 noise; f32-vs-f32 should be far tighter). A
+  recurrence that drifts is worse than no kernel — stop and report rather than loosening a floor.
+- **Residency is admitted but not faster.** The CUDA-graphs precedent applies: a capability that
+  measures 1.01× is a safety improvement, not a speed one, and should be labelled that way rather
+  than shipped as a win. Measure decode on the scaled fixture resident-vs-CPU before declaring
+  anything.
+- **The blanket `arch.qwen35` refusal cannot be made conditional safely** — e.g. if `qwen3_next`'s
+  fused-projection variant or the MoE siblings need paths this work does not cover. Then the feature
+  is declared for the dense family only, or held.

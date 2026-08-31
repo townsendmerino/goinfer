@@ -220,7 +220,10 @@ no user-facing serve path yet (P4–P5 remain).
   KV-memory program below (`task-turboquant-spike.md` — pointed at KV, not
   weights, with a written go/no-go bar).
 - Continuous batching / PagedAttention — unchanged deferral. Multimodal —
-  no longer deferred: P0–P3 landed (`docs/multimodal.md`), P4–P5 open.
+  no longer deferred: **P0–P4 landed** (`docs/multimodal.md`); P4 shipped the serve vision API
+  and agent image input. **P5 is half-landed**: the Qwen2.5-VL second family with m-RoPE is in
+  the generated `docs/capability-matrix.md` at experimental tiny-oracle parity, but safetensors
+  only — the GGUF half is still open.
 
 ## v0.6 candidate program: KV-cache memory reduction (scoped 2026-06-11)
 

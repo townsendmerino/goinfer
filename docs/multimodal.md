@@ -13,8 +13,9 @@
 > Both serve (`--backend webgpu`) and `demo/agent` (`--vision-backend webgpu`)
 > run on the GPU encoder. Remaining (all optional / new scope): a **tiled
 > attention GEMM** to push the GPU path below 18.8 s (attention QKᵀ/scores·V are
-> still naive f32); and **P5** (Qwen2.5-VL second family + m-RoPE + GGUF
-> `mmproj`). (This is the doc `benchmarks.md` references.)
+> still naive f32); and **P5, now HALF-LANDED** — the Qwen2.5-VL second family with m-RoPE is in
+> the generated `docs/capability-matrix.md` at experimental tiny-oracle parity 100.0%/0.99998,
+> but **safetensors only, so the GGUF `mmproj` half is still open**. (This is the doc `benchmarks.md` references.)
 > Drafted 2026-06-10 (vscode session), revised after external review (Claude
 > app): added the bidirectional-mask forward-path item, the serve security
 > surface, usage accounting, and firm recommendations on the five open
