@@ -417,6 +417,10 @@ structure change has to be justified by *what it finds*, not by *how fast it fin
 un-capped; scoring is bounded below the build bar by an oracle; scope is already being served by the
 prompt on a surface that re-sends it.
 
+> **And on Metal the park is stronger than "not worth it".** Its Theta ≈ 1.0 (below) means a verify
+> node costs a full decode step, so *no* drafter — n-gram, suffix tree or otherwise — can pay there
+> until `ForwardN` is genuinely batched. On that backend this is not a question about drafters at all.
+
 **PARK item 3 as well.** An earlier draft of this section called it "unanswered" because the agent
 trace was excluded. That was over-hedged: the exclusion costs the *magnitude*, not the answer, and
 the answer does not depend on it.
@@ -576,7 +580,38 @@ turning speculation OFF entirely (D=0) on cells where the GPU would still profit
 last two rows are the interesting ones: those are exactly the traces where `off` beat the drafter on
 CPU, and on CUDA's cost structure the correct depth is not zero.
 
-**Theta is depth-dependent, and the two backends move in OPPOSITE directions.** CPU falls with depth
+### Metal: Theta ≈ 1.0 — and that is not a mistuned constant, it is a missing premise
+
+Measured on the MacBook (`metal/theta_probe_test.go`, `8ef4d69`), completing the table:
+
+| backend | Theta | vs the shipped 0.5 |
+|---|---|---|
+| CPU (staged) | 0.456 (d128) → 0.304 (d512) | ≈ right at shallow depth |
+| CUDA resident | 0.155 – 0.251 | **2–3× too high** → under-drafts |
+| **Metal resident** | **0.995 – 1.046** | **2× too LOW** → over-drafts |
+
+Metal's value is **flat** across depth 128/512 and across 0.5B/1.5B, with the ladder linear out to
+n=16 (16.57). The mechanism was predicted from the dispatch and then measured: **`metal/backend.go`'s
+`ForwardN` is a plain loop of single-token `Forward` calls, not a batched kernel.** There is no block
+to amortise the weight stream over, so the *n*-th verify node costs a full step.
+
+**The consequence is larger than a constant.** At Theta ≈ 1, verifying K drafted tokens costs exactly
+what decoding those K tokens would have cost — so the trade speculative decoding is built on does not
+exist on this backend. It is not that the depth rule is mistuned; it is that **no depth is
+profitable** until `ForwardN` is genuinely batched. Two independent measurements agree: post-fix at an
+839-token prompt, Metal speculation is **1836 ms against `off`'s 1709 ms** — still behind, with the
+prefill bug gone.
+
+**It also retires an open puzzle on this page.** `gpu/spec_ngram_resident_test.go` has been printing
+~0.3× speedups and asserting nothing about them. That was read here as a symptom of the corpus and of
+the missing gate; on a backend whose Theta is 1.0 it is the *expected* result, and the harness was
+faithfully reporting a real absence of a win nobody read.
+
+**Not filed as a queue item** — batching Metal's `ForwardN` is a roadmap call, not a defect ticket,
+and the number is the useful part. Recorded here so the next person to ask "why is speculation slow
+on Metal" finds the answer rather than re-deriving it.
+
+**Theta is depth-dependent on CPU and CUDA, and the two move in OPPOSITE directions.** CPU falls with depth
 (0.456 → 0.304: `T(1)` grows with attention faster than the marginal node does), CUDA rises
 (0.155 → 0.177, 0.235 → 0.251: the resident single-token step is nearly flat in depth — 4585 → 4533 µs
 on the 0.5B — while each extra verify node attends over a longer context). A single scalar cannot be
@@ -757,18 +792,38 @@ decline is deliberate and correct. With the batched path declined *and* no KV-on
 helper degenerates to the plain per-token full-logits loop — **byte-for-byte what the old
 `genNgramInto` did.** So on default Metal this change alters nothing.
 
-**This matters for a Metal measurement taken the same day** (MacBook, relayed): the `off`-vs-
-speculative gap there grows at **5.313 ms per prompt token, R² 0.9999** — roughly 2× CUDA's 2.66, with
-speculation 3.6× slower at 839 tokens. **That cannot be this bug**, since the fix is inert on that
-path and both arms prefill identically. Something else scales with prompt length on the speculative
-side only; the first thing to check is whether `genNgramInto` is taking the resident branch at all on
-Metal (`cache == nil && resident != nil && DecodeRunnerEligible()`), since falling to the staged CPU
-path would produce exactly this shape. **Not diagnosed here, and speculation should not be disabled on
-Metal until it is** — that would hide the symptom and leave a possible resident decline unexamined.
+**RETRACTED — I wrote "that cannot be this bug" and it was this bug.** On the Metal measurement
+relayed the same day (5.313 ms/prompt-token, R² 0.9999, 3.6× slower at 839 tokens) I argued: the fix
+is inert on default Metal, both arms prefill identically there, therefore the gap must be something
+else. **The premise was an assumption I did not check — that the measurement was taken at Metal's
+default.** It was taken under `--metal-fast-prefill`, where `PrefillLast` is *not* declined, the
+asymmetry is real, and it is exactly this bug. Struck rather than edited, because the reasoning
+failed in an instructive way: I had just corrected one unchecked assumption about Metal (implements ≠
+takes) and immediately made a second one in the same paragraph, about which configuration a number
+came from. **A measurement's configuration is part of the measurement.**
 
-**The lesson is the one this page keeps re-learning:** an interface check told me *which backends
-could* be affected and I read it as *which backends were*. The declining branch was two lines away in
-the same file.
+**Metal, measured** (MacBook, `metal/spec_prefill_regression_test.go`, commit `8ef4d69`):
+
+| configuration | slope (ms/prompt-token) | R² | gate |
+|---|---|---|---|
+| unfixed, `--metal-fast-prefill` | **5.313** | 0.9999 | FAIL |
+| unfixed, Metal **default** (control) | 0.110 | 0.4214 | pass |
+| **fixed**, `--metal-fast-prefill` | **0.075** | 0.4211 | pass |
+
+**The fix works on Metal**: 839-token prompt **6180 → 1836 ms (3.37×)**, and the gate was proven red
+*and* green, so it is not stuck-red. The control row is what proves the mechanism instead of arguing
+it: with batched prefill off, the speculative arm barely moves (6180 → 6064) while `off` collapses
+(1714 → 5936) — plain generation coming down to meet the per-token loop speculation was always taking.
+
+**Scope, correctly stated at last:** Metal is affected **only under `--metal-fast-prefill`**; its
+`PrefillLast` declines by default and it does not implement `ResidentPrefillKV`. So **CUDA had two
+asymmetries and Metal has one, behind an opt-in flag.**
+
+**The lesson, twice over on this page:** an interface check told me *which backends could* be
+affected and I read it as *which backends were* — the declining branch was two lines away in the same
+file. Then, correcting that, I read a number without asking which configuration produced it. Both
+errors are the same shape: treating a property of the system as settled when only part of it had been
+looked at.
 
 ### After the fix: speculation wins 6 of 6 where it lost 6 of 6
 
