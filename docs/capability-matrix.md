@@ -76,7 +76,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3** — Alibaba Qwen3 dense (QK-norm, no bias)
 
-> **gpt-oss** — OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts). **Loaders: safetensors AND GGUF** — the safetensors MXFP4 path is `decoder/gptoss_safetensors.go`, cross-validated against the T3-validated GGUF reader on the real 20b checkpoint (argmax 244 vs 244, logit cosine 0.999058, 2026-08-31). **GPU-resident on Metal only**: `FeatAttnSink`/`FeatOutBias`/`FeatRopeMscale` are declared for `metal` and NOT for `cuda`, so a CUDA run declines to the staged path
+> **gpt-oss** — OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares none of FeatAttnSink/FeatOutBias/FeatRopeMscale)
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -98,7 +98,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | experimental: tiny-oracle 100.0%/0.99998 |
 | Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
-| gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes (Metal) | real-oracle 100.0%/0.99843 |
+| gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99843 |
 
 ## state-space hybrid (Mamba-2)
 

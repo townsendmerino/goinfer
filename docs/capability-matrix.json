@@ -491,7 +491,7 @@
       "gpt_oss"
     ],
     "display_name": "gpt-oss",
-    "description": "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts, CPU-only)",
+    "description": "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares none of FeatAttnSink/FeatOutBias/FeatRopeMscale)",
     "coverage_axis": "softmax-GQA",
     "moe": "sparse, no-shared",
     "sliding_window": "interleave",
@@ -500,7 +500,7 @@
     "norm": "RMSNorm, pre-norm",
     "activation": "SwiGLU",
     "tied_lm_head": false,
-    "loaders": "GGUF",
+    "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
     "parity": "real-oracle 100.0%/0.99843"

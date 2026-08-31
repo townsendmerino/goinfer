@@ -91,7 +91,12 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 - **Loaders** — GGUF, safetensors, GPTQ, AWQ, and prequantized
   [`.giw` bundles](docs/giw-bundles.md).
 - **Quantization** — f32, int8, int8int8, int4 (W4A8), with a HuggingFace logit-parity gate per
-  family.
+  family. **What a given parity run proves is scoped to the fixtures that machine has**, and a
+  missing fixture skips silently rather than failing — a run reading `28 ran / 20 skipped / 0
+  failed` is a pass. Measured on a MacBook 2026-08-31, all eleven GGUF-quant gates skipped for want
+  of a local checkpoint while int4 and one of three int8×int8 goldens ran. Quote a run's counts, not
+  the word "green": `docs/parity-coverage-policy.md` §"Scoped: a goldens green names the
+  quantizations that actually RAN".
 - **GPU** — WebGPU everywhere, plus cgo-free CUDA and Metal for dense and MoE models; anything
   unsupported declines at load and falls back to CPU rather than dropping a feature silently.
   See [docs/cuda-backend.md](docs/cuda-backend.md) and

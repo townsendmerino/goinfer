@@ -165,7 +165,16 @@ The pre-tag campaigns (spec tree-attention in `forwardn.go`, the Cohere `lmHeadN
 path, gemma4_text merges) and the audit fixes touched hashed-core files. Before the tag:
 - `go test ./decoder -run ParityManifest` must be green. Non-numeric refreshes use
   `scripts/refresh_parity_hashes.sh` (goldens-gated, `validated_at` preserved) — those prove
-  only the paths the *committed* fixtures exercise. **It runs on EITHER machine** (it ran on
+  only the paths the *committed* fixtures exercise.
+
+  **Quote the script's COUNTS, not the fact that it passed, and record the machine.** A refresh's
+  green is exactly as wide as the fixtures that machine has, and skips are silent — they are
+  missing assets, not failures, and the run still reads PASS. Measured on the MacBook 2026-08-31:
+  **28 ran / 20 skipped / 0 failed**, and among the skips were **all eleven GGUF quant gates**
+  (`no GGUF at ../testdata/tinyllama-gguf/…`) plus two of the three int8×int8 goldens. int4 and one
+  int8×int8 golden did run. The same script on the box proves a different set. See
+  `docs/parity-coverage-policy.md` §"Scoped: a goldens green names the quantizations that actually
+  RAN". **It runs on EITHER machine** (it ran on
   `linux-62gb` repeatedly on 2026-08-12), not the mac — earlier text here calling it "the Mac
   tool" was wrong. **Its proof trailer records the goldens count but NOT the execution arch**
   (now `arch=` — see the script), so a *past* refresh with only `goldens=N` cannot tell you whether

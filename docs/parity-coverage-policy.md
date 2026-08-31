@@ -310,6 +310,37 @@ Structural options exist (typed per-kernel wrappers mirroring each `.cu` signatu
 `cuKernelGetParamInfo`, CUDA 12.4+, to check arity against the module at load). **Not funded —
 recorded so the next signature change knows what is and isn't holding the line.**
 
+### Scoped: a goldens green names the quantizations that actually RAN, not the ones that exist
+
+Runnable, falsifiable and relevant are about whether a gate counts. This one is about **how far its
+green reaches** — because the forward goldens are the release valve for a hashed-core edit
+(`scripts/refresh_parity_hashes.sh`), and what they prove is decided by which fixtures the machine
+happens to have.
+
+**Measured on the MacBook, 2026-08-31**, running the refresh script's own selector
+(`(_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parity$`) with `GOINFER_HEAVY_TESTS=1`:
+
+| quantization | gates that ran | gates that skipped |
+|---|---|---|
+| f32 (family forward/text parity) | ~26 | 7 |
+| **int4 (W4A8)** | **1** — `TestInt4_forwardParity` | 0 |
+| **int8×int8** | **1** — `TestMellum2_logitParity` | 2 — `TestGemma4_logitParity`, `TestGemma4_12B_logitParity` |
+| **GGUF quant formats** | **0** | **11** — every one: Q2_K, Q3_K_M, Q4_0, Q4_K_M, Q4_K_S, Q5_K_M, Q6_K, Q8_0, gemma3, qwen2, qwen3 |
+
+**28 ran, 20 skipped, 0 failed — and that is a PASS.** Every skip is a missing asset, not a
+failure: the GGUF eleven all skip on `no GGUF at ../testdata/tinyllama-gguf/…`. So the same script,
+same commit, on the box instead, proves a materially different set.
+
+**Two consequences, and the second is the one that bites.**
+
+1. A refresh's green is only as wide as its *counts*. The script prints them for exactly this
+   reason; quote the counts, not the fact that it passed.
+2. **The claim "the parity suite covers X" is unfalsifiable without naming the machine.** It was
+   once true that every golden that ran was f32 — the selector has since gained the GGUF gates and
+   defaults `GOINFER_HEAVY_TESTS=1`, which is why int4 and int8×int8 now run *here*. That fix does
+   not travel to a machine without the fixtures. **Coverage is a property of the run, not of the
+   repo.**
+
 ### Sibling drift: the fix lands on one member of a pair
 
 Adjacent to G-01 and distinct from it. G-01 is a gate pointed at the wrong path. This one is a
