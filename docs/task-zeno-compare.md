@@ -49,7 +49,7 @@ than the whole resident model... The dedicated qwen35/gemma4 loaders fall back t
 inside StreamTranscodeGGUF (**those models fit**)." **That assumption is what broke**: it held for
 every qwen35-family model tried before now (all smaller), and for gemma4 26B-A4B on a bigger box —
 a 35B-A3B on a 16 GB Mac is the first case where it doesn't. The generic loader path already proves
-per-layer stream-and-free works on this codebase (`streamQuantized`, `decoder/weightmat.go:123` —
+per-layer stream-and-free works on this codebase (`streamQuantized`, `decoder/weightmat.go:125` —
 "the whole model never sits resident"); qwen35's dedicated loader was written before that pattern
 existed and was never migrated onto it. This is a genuine, fixable bring-up gap, not an inherent
 MoE or quantization-format limit. The separately-known P12 finding (qwen35 family running f32

@@ -243,6 +243,19 @@ that decision.
   still open and untried. **Items 1+2 in isolation, as scoped for this pass, are a closed
   question; item 3's repack is still the one real lever Gate 0 identified, unattempted.**
 
+  > **UPDATE 2026-08-30 — item 3 is no longer unattempted, on amd64.** Built as
+  > `dotW4A8SplitHalfAVX2` (aikit, **1.12x** on the kernel, hot and cold) and wired into
+  > goinfer's int4 load path. End-to-end it is worth **+2.10% decode** on Qwen2.5-Coder-1.5B —
+  > real (the arms' ranges do not overlap) but under the +4% pre-registered as the price of the
+  > ~80% growth in int4 weight bytes, so it ships **default-OFF**, opt-in via
+  > `GOINFER_W4A8_SPLITHALF=1`. Full A/B:
+  > `docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`;
+  > wiring: `docs/queue-performance.md` "Item 3 — WIRED IN".
+  >
+  > **The arm64 half of the sentence still stands.** This was the AVX2 port; NEON has row4
+  > instead, and nothing here re-opens the arm64 question or the folding-centering-into-the-
+  > repack idea above it, which remains open and untried.
+
 ### Acceptance math, revised (2026-08-23) — two co-equal levers, not one kernel
 
 Running the recomputation the Gate 0 verdict asked for, with Gate 0's own numbers (1.5B int4:

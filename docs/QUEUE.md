@@ -833,7 +833,7 @@ supports.
 | `docs/ollama-chase.md|decoder/model.go:831` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
 | `docs/ollama-chase.md|decoder/registry.go:1027` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:731` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
-| `docs/ollama-chase.md|decoder/weightmat.go:244` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
+| `docs/ollama-chase.md|decoder/weightmat.go:336` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:536` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1101` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
@@ -848,7 +848,7 @@ supports.
 | `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:691` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
 | `docs/prompts/goinfer-w4a8-opsperbyte-citations.md|linalg/quant.go:206` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/sampler_chunked.go:111` | goinfer | `workers := min(runtime.GOMAXPROCS(0), numChunks)` |
-| `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:270` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
+| `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:365` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:281` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
 | `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:358` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
 | `docs/queue-correctness.md|decoder/parity_manifest_test.go:197` | goinfer | `func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {` |
@@ -948,7 +948,7 @@ supports.
 | `docs/task-zeno-compare.md|decoder/gguf.go:1414` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1517` | goinfer | `if g.Has("output.weight") {` |
 | `docs/task-zeno-compare.md|decoder/serialize.go:170` | goinfer | `anchor: func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error)` |
-| `docs/task-zeno-compare.md|decoder/weightmat.go:123` | goinfer | `func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) ` |
+| `docs/task-zeno-compare.md|decoder/weightmat.go:125` | goinfer | `func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) ` |
 | `docs/task-zeno-compare.md|internal/prequant/prequant.go:65` | goinfer | `// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a` |
 
 ## Bare file index

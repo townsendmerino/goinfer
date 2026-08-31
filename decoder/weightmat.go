@@ -1,8 +1,10 @@
 package decoder
 
 import (
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -145,7 +147,7 @@ func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []f
 			}
 			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
 		}
-		return repackW4A8Row4IfEligible(maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))), nil
+		return repackW4A8IfEligible(maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))), nil
 	default: // quantNone — no quant target, keep the full f32
 		f32 := make([]float32, rows*cols)
 		for r := range rows {
@@ -175,7 +177,7 @@ func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 		if fakeQuantScheme != "" { // DIAGNOSTIC (default-off, single load-time env read): see fakequant.go
 			return fakeInt4WM(f32, w.Rows(), w.Cols(), fakeQuantScheme)
 		}
-		return repackW4A8Row4IfEligible(maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))) // GOINFER_INT4_F16_SCALES diagnostic
+		return repackW4A8IfEligible(maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))) // GOINFER_INT4_F16_SCALES diagnostic
 	default:
 		return w
 	}
@@ -220,6 +222,96 @@ func repackW4A8Row4IfEligible(wm linalg.WeightMat) linalg.WeightMat {
 // differently-built binary.
 var w4a8Row4RepackEnabled = true
 
+// repackW4A8SplitHalfIfEligible is the amd64 counterpart to
+// repackW4A8Row4IfEligible: it opts wm into the split-half W4A8 nibble layout
+// (byte i holds weight i's low nibble and weight i+16's high nibble, so the
+// AVX2 kernel's two per-group VPUNPCK{L,H}BW disappear — docs/queue-
+// performance.md P14 item 3, measured 1.12x hot AND cold on Zen 2). A no-op on
+// non-int4 WeightMats, on non-amd64 builds, on CPUs without AVX2, and on any
+// shape the repack rejects, so it is always safe to call unconditionally.
+//
+// ALSO a no-op on hosts WITH AVX-512 VNNI, which is the surprising one: aikit's
+// canonical W4A8 dot prefers its VNNI tier there and split-half exists only at
+// AVX2, so the layout would swap a faster kernel for a slower one. aikit
+// declines rather than pessimize. The consequence here is that this repack —
+// and the +2.10% below — applies to AVX2-WITHOUT-VNNI hosts only, which is a
+// narrower audience than "amd64".
+//
+// Wired into exactly the same two call sites as the row4 repack and for the
+// same reason — see that function's comment for why the .giw loader is
+// deliberately excluded. The constraint is identical here: the repack
+// ALLOCATES a second buffer and never writes through the canonical bytes,
+// which for a .giw kind=3 tensor are a zero-copy mmap alias of the file.
+// Rewriting them in place would silently misdecode every existing bundle, with
+// no error and wrong numbers; aikit's TestWeightMatSplitHalf_canonicalUntouched
+// pins that it does not.
+//
+// MEMORY: this is a second copy of every eligible tensor's nibbles, and
+// canonical is NOT dropped. The cost, the measurement that priced it, and why
+// it is default-off live on w4a8SplitHalfRepackEnabled below — deliberately in
+// ONE place, so the figures cannot drift apart from each other.
+func repackW4A8SplitHalfIfEligible(wm linalg.WeightMat) linalg.WeightMat {
+	if !w4a8SplitHalfRepackEnabled {
+		return wm
+	}
+	if wm.RepackInt4SplitHalf() {
+		w4a8SplitHalfRepacked.Add(1)
+		// What the second copy actually cost, asked of the layout's owner rather
+		// than re-derived from rows x ceil(cols/2) out here — the memory half of
+		// this trade has to be a quantity we compute, not one we estimate, and
+		// duplicating aikit's arithmetic is how it would drift from the truth.
+		w4a8SplitHalfBytes.Add(int64(wm.SplitHalfBytes()))
+	} else {
+		w4a8SplitHalfSkipped.Add(1)
+	}
+	return wm
+}
+
+// w4a8SplitHalfRepacked / w4a8SplitHalfSkipped count what the repack actually
+// did, at LOAD only (one atomic add per weight tensor, never in a hot loop).
+//
+// They exist because the repack is otherwise SILENT: it returns a bool nobody
+// reads, and a wiring that quietly repacked nothing — wrong quant, wrong load
+// path, a shape rule that rejects every tensor — would produce a benchmark that
+// confidently measures no difference and gets written down as "flat". That is
+// the same failure mode loadBenchModel's own quant comment warns about, one
+// layer down. An A/B against this repack MUST read these first and confirm the
+// repacked count is non-zero, or its result means nothing.
+var w4a8SplitHalfRepacked, w4a8SplitHalfSkipped, w4a8SplitHalfBytes atomic.Int64
+
+// w4a8SplitHalfRepackEnabled is DEFAULT-OFF, and that is a measured decision,
+// not caution. Set GOINFER_W4A8_SPLITHALF=1 to opt in.
+//
+// The A/B is recorded in docs/measurements/w4a8-splithalf-decode-ab-
+// PREREGISTERED.md: on Qwen2.5-Coder-1.5B at int4, Ryzen 7 3700X, interleaved,
+// same binary both arms, the repack is worth **+2.10% decode tok/s** — real
+// (floor 0.75%, and the two arms' sample ranges do not overlap at all), but
+// short of the +4% that was pre-registered as the bar for accepting its memory
+// cost. It landed in the band the pre-registration named in advance as
+// AMBIGUOUS -> PARKED, so it parks, with the code and the wiring kept intact.
+//
+// The cost it is short against: a second copy of every eligible tensor's
+// nibbles, +0.5 bytes/weight on top of the 0.625 an int4 tensor already pays,
+// so int4 weight bytes grow ~80%. MEASURED on that 1.5B model, not estimated:
+// 196 tensors repacked, **+624.8 MiB** of duplicate nibbles, taking its int4
+// weights from 781 MiB to 1.37 GiB.
+// Canonical is never dropped — M>1 prefill and every non-AVX2 path read it.
+//
+// Turning this on is defensible where decode latency outranks resident memory
+// and the machine is amd64 with AVX2 and NO AVX-512 VNNI (aikit declines on
+// VNNI hosts — see above). It is not defensible as a default, which is why it
+// is not one. Re-open the decision if the kernel gets faster than
+// 1.12x, or if canonical can be dropped for a build that only ever decodes.
+var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""
+
+// repackW4A8IfEligible applies whichever ISA-specific W4A8 layout THIS build
+// has a kernel for: row4 on arm64, split-half on amd64. Each is a no-op off its
+// own architecture, so both are called unconditionally and the two stay
+// symmetric — a third layout gets added here and nowhere else.
+func repackW4A8IfEligible(wm linalg.WeightMat) linalg.WeightMat {
+	return repackW4A8SplitHalfIfEligible(repackW4A8Row4IfEligible(wm))
+}
+
 // isW8A8 reports whether w uses the int8×int8 (W8A8) path — the only one with a
 // zero-alloc Workspace + batched-dispatch kernel.
 func isW8A8(w *linalg.WeightMat) bool {
@@ -261,9 +353,12 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		// the old per-call ws, just with its buffers surviving between calls.
 		//
 		// w.MatmulBTW4A8Into (not the raw linalg.MatmulBTW4A8Into free function) so the
-		// arm64 split-half + 4-row-interleave repack (docs/task-w4a8-neon-bandwidth.md),
-		// when RepackInt4Row4 populated it at load time, actually gets used here — the
-		// repack alone does nothing without this call using it.
+		// load-time layout repacks actually get used here — the repack alone does
+		// nothing without this call using it. BOTH arches depend on this one line:
+		// arm64's split-half + 4-row-interleave (RepackInt4Row4, docs/task-w4a8-neon-
+		// bandwidth.md) and amd64's split-half (RepackInt4SplitHalf, queue-performance
+		// P14 item 3). Neither has a dispatch of its own — aikit picks the layout
+		// inside this method, at M=1 only, whenever the repack populated it.
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(int4ParThreshold)

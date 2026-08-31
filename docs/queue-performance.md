@@ -357,7 +357,7 @@ depending on clock — already at that floor, so breaking a 5-cycle chain frees 
 is 128-bit natively and pays no such split, which is also the leading explanation for its 1.47×
 advantage on the same algorithm.
 
-### Item 3 ported to AVX2 — 1.12×, hot AND cold (2026-08-31)
+### Item 3 ported to AVX2 — 1.12×, hot AND cold (2026-08-30)
 
 Built (`dotW4A8SplitHalfAVX2`, aikit `7e1af80`). The split-half layout deletes the two
 `VPUNPCK` shuffles per group — one 16-byte load yields two contiguous 16-weight halves with no
@@ -388,12 +388,16 @@ AVX2 is port-bound, so the accumulator fix does nothing and the prologue fix wor
 amd64-behind-arm64 gap 1.47× → 1.31×. P14 established this kernel *is* the end-to-end CPU decode
 bottleneck (whole-decode weight throughput ~90% of the kernel's isolated rate), so most of the 12%
 should transfer — **should**, not does: that is an end-to-end measurement nobody has run.
+**RUN 2026-08-30: it transfers, at +2.10% decode, below the bar that would have paid for it — see
+"Item 3 — WIRED IN" below.**
 
-**Not wired into dispatch, and the reason is a hard constraint.** `packed` must be split-half, and
-the canonical packer feeds `.giw` kind=3's zero-copy mmap load path — changing it would silently
-misdecode existing bundles, no error, wrong numbers. Production needs a load-time repack, the
-pattern arm64 and the GPU backends already use, plus the memory trade that carries (a second
-in-memory copy per int4 tensor, or freeing the canonical one after repack).
+**Not wired into dispatch, and the reason is a hard constraint.** ~~Not wired~~ — **SUPERSEDED
+2026-08-30, see "Item 3 — WIRED IN" below; the constraint below is still exactly right and is how
+it was built.** `packed` must be split-half, and the canonical packer feeds `.giw` kind=3's
+zero-copy mmap load path — changing it would silently misdecode existing bundles, no error, wrong
+numbers. Production needs a load-time repack, the pattern arm64 and the GPU backends already use,
+plus the memory trade that carries (a second in-memory copy per int4 tensor, or freeing the
+canonical one after repack).
 
 **So the AVX2 lever is fewer instructions per group — the unpack prologue — not chain depth.**
 That is what the split-half repack attacks, and `docs/task-w4a8-neon-bandwidth.md` already names
@@ -406,6 +410,95 @@ peer ratio is end-to-end and is not restated by any ratio here. One box each; th
 1.89 rather than idle, though its int8 baseline landing within 2.5% of the Ryzen's argues against
 meaningful contamination. And this does **not** separate nibble unpack from per-group scale within
 the 2×; that split needs a kernel variant, which is what item 3 would build.
+
+### Item 3 — WIRED IN and MEASURED end-to-end, 2026-08-30. Verdict: real, parked, default OFF.
+
+The end-to-end measurement the section above called "nobody has run" has now been run, and the
+"not wired into dispatch" paragraph is superseded — it is wired, and the constraint it names was
+handled rather than hit.
+
+**aikit `db03fd2`** adds `RepackW4A8SplitHalf` (portable), a `q4SplitHalf` field, an opt-in
+`RepackInt4SplitHalf()` gated on amd64 + AVX2 + group=32 + cols%32==0, and an amd64
+`MatmulBTW4A8Into` that dispatches to the split-half kernel **at M=1 only**. Scales are NOT
+repacked: split-half permutes nibbles *within* a group and never reorders groups, so one scale
+array serves both layouts. **goinfer** calls it from `repackW4A8IfEligible`, at exactly the two
+sites the arm64 row4 repack already used (`quantizeWM` / `streamQuantized`) — the
+GGUF/safetensors paths, never the `.giw` loader, for the reason that function's comment gives.
+
+**The `.giw` kind=3 constraint was met by construction, not avoided.** The repack allocates a
+second buffer and never writes through the canonical bytes, which for a kind=3 tensor are a
+zero-copy mmap alias of the file; rewriting them in place would silently misdecode every
+existing bundle. `TestWeightMatSplitHalf_canonicalUntouched` pins both halves of that (bytes
+unchanged, and the new layout is a distinct allocation).
+
+**Result — `docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`.** Qwen2.5-Coder-1.5B
+int4, Ryzen 7 3700X, `BenchmarkDecode`, interleaved ON/OFF/ON/OFF in one session, **same binary
+both arms**:
+
+```
+  ON  median 18.685 tok/s   range 18.61-18.77
+  OFF median 18.300 tok/s   range 18.23-18.41     ranges DO NOT overlap
+  effect +2.10%             floor 0.75%   pre-registered ship bar 4%
+```
+
+**+2.10% is real and is not enough.** It clears the floor with no overlap between arms, so the
+1.12× kernel win does survive composition — it just arrives at the token level as ~2%, because
+the kernel is ~half of decode. The pre-registration fixed +4% in advance as the price of the
+memory, so this lands in the band it had already named AMBIGUOUS → PARKED. Default is **OFF**,
+opt-in with `GOINFER_W4A8_SPLITHALF=1`; kernel, repack, wiring and tests all stay.
+
+**A narrowing found after the fact, by CI rather than by the A/B.** aikit's canonical W4A8 dot
+prefers its AVX-512 VNNI tier (added aikit v1.29.0) and the split-half kernel is AVX2-only, so on
+a VNNI host the repack would swap a faster kernel for a slower one — a pessimization that nothing
+would have failed on, since the AVX2 kernel is correct, only slower. `RepackInt4SplitHalf` now
+declines on VNNI hosts (aikit `8fed687`). The Ryzen 7 3700X above is Zen 2 (AVX2, no VNNI), so
+the +2.10% stands as measured — but it describes **AVX2-without-VNNI hosts**, not amd64 at large.
+The equivalence test caught it as a numeric divergence (rel 1.09e-4 on a VNNI runner, passing at
+every shape on the box); the divergence was the symptom and the downgrade was the actual bug.
+
+**The memory it is short against, computed rather than read off RSS:** 196 tensors repacked, 0
+skipped, **+624.8 MiB** of duplicate nibbles — 781 MiB → 1.37 GiB of int4 weights on that model,
++80%. Canonical is never dropped, because M>1 prefill and every non-AVX2 path still read it.
+
+**Two guards worth reusing.** `TestW4A8SplitHalfFires_onBenchModel` fails on *zero tensors
+repacked* — without it, a wrong quant or a wrong load path gives two identical arms and a
+confident "flat" that measures nothing. And `TestW4A8SplitHalfWiring_matchesCanonical` drives
+the repack through `quantizeWM` + `matmul()` rather than calling the kernel directly, because
+aikit's own kernel test cannot show that goinfer's load path reaches the repack at all.
+
+**The aikit bump this needed carries a numerics exposure that is NOT this change's, and is owed
+to T3.** Reaching `RepackInt4SplitHalf` meant moving goinfer from aikit v1.28.0 to v1.30.0, which
+crosses **v1.29.0 — the release that added the AVX-512 VNNI tier** for the int8/W4A8 kernels.
+aikit validates VNNI against its scalar oracle at a **1e-5 relative tolerance, not exactly**, and
+the AVX2 tier is validated the same way, so the two tiers are not bit-identical to each other. On
+a VNNI host, goinfer's kernels therefore now accumulate differently than they did at v1.28.0.
+
+Nothing measured in this repo is affected — the bench box is Zen 2 and the MacBook is arm64,
+neither has VNNI — and the deps_hash refresh below is proof only on arm64, where the VNNI path
+cannot execute. So this is **unproven rather than disproven**, and it belongs to the owed T3
+re-validation rather than to this entry. Noted here because the bump is what introduced it and
+that would otherwise be invisible.
+
+Related and pre-existing: the manifest's `aikit_version` reads **v1.19.0** against a `go.mod` that
+said v1.28.0 before this and v1.30.0 after — the exact hand-maintained-literal drift
+`parity-coverage-policy.md` documents. Deliberately NOT corrected here: `aikit_version` is mixed
+into `deps_hash`, so editing it re-stales every family and demands the full T3 run, and
+hand-editing it before a refresh is the recorded mistake the refresh script's pre-flight exists to
+abort.
+
+**Reopen if** the kernel beats 1.12×, or if a decode-only build can drop canonical — that would
+turn an ~80% increase into roughly zero and change the answer, not the measurement.
+
+**An inconsistency this exposed, recorded rather than resolved.** The arm64 row4 repack sitting
+at the same two call sites costs MORE memory — it duplicates the scales as well as the nibbles,
++0.625 B/weight (~100%) against split-half's +0.5 (~80%) — and it ships **default-ON**, having
+never been put to a memory bar like the +4% this one was held to. Both cannot be right. Either
+row4 owes the same end-to-end A/B and the same explicit trade (it has a load-time/RSS delta
+recorded, but no "is the tok/s worth the bytes" verdict), or +4% is the wrong bar and this
+result was parked against a number that is too strict. **Not resolved here, and deliberately not
+resolved by adjusting the bar after seeing the result** — that is precisely the move the
+pre-registration exists to prevent. It is a question about row4, and it should be answered by
+measuring row4, not by re-reading this.
 
 ## P13 — the safetensors loader keeps the whole source mapping resident (FOUND 2026-08-19)
 
