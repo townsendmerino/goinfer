@@ -85,6 +85,21 @@ jobs:
       - name: queue citation lint
         run: python3 scripts/queue_citation_lint.py
 
+      # The book links into this repo's own source with ABSOLUTE GitHub blob URLs,
+      # because docs/book/ is also published to Pages where the Jekyll build flattens
+      # the directory and a relative ../../decoder/model.go resolves to nothing. Those
+      # links rot on rename, silently and with no syntax error to notice.
+      #
+      # It runs HERE rather than in book-pages.yml on purpose: that workflow triggers on
+      # `docs/book/**` only, so a rename in decoder/ would never fire it and the book
+      # would keep publishing green with dead links. The break originates outside the
+      # book, so the check has to live where every push runs.
+      #
+      # Fails on a vacuous scan too — a link checker that matches nothing looks exactly
+      # like one that found nothing wrong.
+      - name: book link lint
+        run: python3 scripts/book_link_lint.py
+
       # Core promise: the cgo WebGPU/CUDA/Metal deps must never enter the runtime's
       # module graph. They live only in the opt-in ./gpu, ./cuda, ./metal submodules,
       # reached through their own cmd/ entrypoints (audit M-19) — never blank-imported

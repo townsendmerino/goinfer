@@ -76,7 +76,7 @@ nonsense, because ID 3797 means something different in each vocabulary.
 
 goinfer implements two tokenizer schemes, in the `tokenizer/` package:
 
-**Byte-level BPE** (`bytelevel.go`) — used by the GPT-2 and Llama lineages. Byte-level BPE maps
+**Byte-level BPE** ([`bytelevel.go`](https://github.com/townsendmerino/goinfer/blob/main/tokenizer/bytelevel.go)) — used by the GPT-2 and Llama lineages. Byte-level BPE maps
 every input byte to a starting symbol, then applies a learned list of merge rules repeatedly:
 "these two adjacent symbols become this one symbol." The merge rules were learned during
 training by repeatedly merging whichever pair of symbols was most frequent in the training
@@ -96,12 +96,12 @@ The "byte-level" part matters: because byte-level BPE starts from raw bytes, not
 unrepresentable. Emoji, malformed UTF-8, a binary blob pasted into a prompt — all of it
 tokenizes, possibly into many tokens, but never into an error.
 
-**SentencePiece** (`sentencepiece.go`) — used by Google's Gemma family among others. Same
+**SentencePiece** ([`sentencepiece.go`](https://github.com/townsendmerino/goinfer/blob/main/tokenizer/sentencepiece.go)) — used by Google's Gemma family among others. Same
 outcome, different construction: SentencePiece scores candidate segmentations of the input
 against a learned unigram model and picks the best-scoring segmentation, rather than applying
 merge rules in a fixed order.
 
-The `tokenizer/` package also holds `added.go`, for tokens bolted on after training — the
+The `tokenizer/` package also holds [`added.go`](https://github.com/townsendmerino/goinfer/blob/main/tokenizer/added.go), for tokens bolted on after training — the
 special markers like `<|im_end|>` that chat templates use to delimit turns — and `gguf.go`,
 which reads a vocabulary out of a GGUF checkpoint, since GGUF files carry their tokenizer
 inside them.
@@ -181,7 +181,7 @@ Chapter 2 follows a single forward pass from those integer IDs to those *V* scor
 ---
 
 *Sources: `tokenizer/` (`bytelevel.go`, `sentencepiece.go`, `added.go`, `gguf.go`),
-`docs/how-inference-works.md` §Step 1, `internal/serveapp/openai.go` and
-`internal/serveapp/openai_stream_usage_test.go` (streaming hold-back), `CHANGELOG.md`
+[`docs/how-inference-works.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/how-inference-works.md) §Step 1, [`internal/serveapp/openai.go`](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/openai.go) and
+[`internal/serveapp/openai_stream_usage_test.go`](https://github.com/townsendmerino/goinfer/blob/main/internal/serveapp/openai_stream_usage_test.go) (streaming hold-back), [`CHANGELOG.md`](https://github.com/townsendmerino/goinfer/blob/main/CHANGELOG.md)
 (the 1.046 tokens-per-chunk measurement across 92 cells),
-`docs/QUEUE.md` and `docs/spec/10-optfwd-gate.md` (sampler-share measurements).*
+[`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md) and [`docs/spec/10-optfwd-gate.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/10-optfwd-gate.md) (sampler-share measurements).*

@@ -37,13 +37,12 @@ exponentiation:
              → exp() magnifies the gaps → the top token dominates → nearly greedy
   T large  → dividing by a large number SQUASHES the scores together
              → the gaps shrink → the distribution flattens → unlikely tokens get a chance
-
-  three scores [4.0, 3.0, 1.0], as probabilities:
-
-     T = 0.2    0.993   0.007   0.000      almost always the same token
-     T = 0.7    0.798   0.191   0.011      the normal chat range
-     T = 1.5    0.607   0.311   0.082      the third token is now live
 ```
+
+![The same three scores at three temperatures, drawn as probability bars. At T=0.2 the top token
+takes 99.3% and the others are effectively unreachable. At T=0.7 the split is 79.8%, 19.1% and
+1.1%. At T=1.5 it is 60.7%, 31.1% and 8.2%, and the third token becomes a live
+option.](./03-fig-temperature.svg)
 
 The divisor is applied to the scores, not to the probabilities, which is why a small change in
 temperature can move behaviour a lot: the exponential amplifies whatever the division did.
@@ -148,5 +147,5 @@ from redoing all the work of every token before it.
 
 ---
 
-*Sources: `decoder/spec_optfwd.go`, `docs/QUEUE.md` (G26 ladder, sampler-share and crossover
-measurements, the prompt-confound retraction), `scripts/prompts.json`.*
+*Sources: [`decoder/spec_optfwd.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/spec_optfwd.go), [`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md) (G26 ladder, sampler-share and crossover
+measurements, the prompt-confound retraction), [`scripts/prompts.json`](https://github.com/townsendmerino/goinfer/blob/main/scripts/prompts.json).*

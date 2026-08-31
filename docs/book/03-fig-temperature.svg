@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 306" width="700" height="306" role="img" aria-labelledby="t5 d5">
+<title id="t5">How temperature reshapes the sampling distribution</title>
+<desc id="d5">Three scores of 4.0, 3.0 and 1.0 turned into probabilities at three temperatures. At T=0.2 the top token takes 99.3 percent and the rest are effectively unreachable. At T=0.7 the split is 79.8, 19.1 and 1.1 percent. At T=1.5 it is 60.7, 31.1 and 8.2 percent, and the third token becomes a live option.</desc>
+<rect x="0" y="0" width="700" height="306" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1" rx="6"/>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+<text x="20" y="28" font-size="15" font-weight="bold" fill="#1f2328">the same three scores, three temperatures</text>
+<text x="20" y="47" font-size="11.5" fill="#57606a">scores [4.0, 3.0, 1.0] &#8212; bar width is probability</text>
+<rect x="20" y="60" width="10" height="10" rx="2" fill="#0969da"/>
+<text x="36" y="69" font-size="11" fill="#57606a">token A</text>
+<rect x="136" y="60" width="10" height="10" rx="2" fill="#8250df"/>
+<text x="152" y="69" font-size="11" fill="#57606a">token B</text>
+<rect x="252" y="60" width="10" height="10" rx="2" fill="#cf222e"/>
+<text x="268" y="69" font-size="11" fill="#57606a">token C</text>
+<text x="20" y="108" font-size="12" font-weight="bold" fill="#1f2328">T = 0.2</text>
+<rect x="92.0" y="92" width="427.0" height="22" fill="#0969da" opacity="0.85"/>
+<rect x="519.0" y="92" width="3.0" height="22" fill="#8250df" opacity="0.85"/>
+<rect x="92" y="92" width="430" height="22" fill="none" stroke="#8c959f" stroke-width="0.8"/>
+<text x="534" y="108" font-size="10.5" fill="#57606a">99.3% &#183; 0.7% &#183; 0.0%</text>
+<text x="92" y="130" font-size="10.5" fill="#57606a">almost always the same token</text>
+<text x="20" y="170" font-size="12" font-weight="bold" fill="#1f2328">T = 0.7</text>
+<rect x="92.0" y="154" width="343.1" height="22" fill="#0969da" opacity="0.85"/>
+<rect x="435.1" y="154" width="82.1" height="22" fill="#8250df" opacity="0.85"/>
+<rect x="517.3" y="154" width="4.7" height="22" fill="#cf222e" opacity="0.85"/>
+<rect x="92" y="154" width="430" height="22" fill="none" stroke="#8c959f" stroke-width="0.8"/>
+<text x="534" y="170" font-size="10.5" fill="#57606a">79.8% &#183; 19.1% &#183; 1.1%</text>
+<text x="92" y="192" font-size="10.5" fill="#57606a">the normal chat range</text>
+<text x="20" y="232" font-size="12" font-weight="bold" fill="#1f2328">T = 1.5</text>
+<rect x="92.0" y="216" width="261.0" height="22" fill="#0969da" opacity="0.85"/>
+<rect x="353.0" y="216" width="133.7" height="22" fill="#8250df" opacity="0.85"/>
+<rect x="486.7" y="216" width="35.3" height="22" fill="#cf222e" opacity="0.85"/>
+<rect x="92" y="216" width="430" height="22" fill="none" stroke="#8c959f" stroke-width="0.8"/>
+<text x="534" y="232" font-size="10.5" fill="#57606a">60.7% &#183; 31.1% &#183; 8.2%</text>
+<text x="92" y="254" font-size="10.5" fill="#57606a">the third token is now live</text>
+<rect x="20" y="268" width="660" height="26" rx="3" fill="#fff1e5" stroke="#d4a72c"/>
+<text x="32" y="285" font-size="11" fill="#7d4e00">temperature adds no randomness &#8212; it scales the model's own uncertainty</text>
+</g></svg>

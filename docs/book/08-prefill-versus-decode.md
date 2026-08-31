@@ -70,7 +70,7 @@ More importantly, look at the scaling with prompt length:
   earlier position — exactly what Chapter 2's attention diagram showed.
 ```
 
-Against peers, this is the weakest lane. `docs/benchmarks.md` records Ollama at roughly 4–5×
+Against peers, this is the weakest lane. [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) records Ollama at roughly 4–5×
 faster per prefill token. Decode is competitive; prefill is not.
 
 ---
@@ -155,7 +155,7 @@ constraint.
 
 ---
 
-*Sources: `docs/queue-performance.md` (G16/G20 prefill baselines), `docs/benchmarks.md`
-(peer prefill ratio), `docs/measurements/mellum2-moe-prefill-split-RESULT.md` (attention share,
-the slice-versus-model correction, and the 3.11×/1.52× figures), `CLAUDE.md` (measurement
+*Sources: [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (G16/G20 prefill baselines), `docs/benchmarks.md`
+(peer prefill ratio), [`docs/measurements/mellum2-moe-prefill-split-RESULT.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/mellum2-moe-prefill-split-RESULT.md) (attention share,
+the slice-versus-model correction, and the 3.11×/1.52× figures), [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (measurement
 discipline).*

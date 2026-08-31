@@ -184,7 +184,7 @@ separately, ahead of any throughput number.
 happened here.
 
 The three backends are not equivalent, and the capability matrix in
-`docs/capability-matrix.md` exists because "does model X run on backend Y" has a genuinely
+[`docs/capability-matrix.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/capability-matrix.md) exists because "does model X run on backend Y" has a genuinely
 complicated answer. Adding an architecture means implementing that architecture once per
 backend, which is the standing tax of owning the forward pass rather than inheriting one.
 
@@ -192,7 +192,7 @@ backend, which is the standing tax of owning the forward pass rather than inheri
 
 ## How it stands against the peers
 
-Against current Ollama, this repo's own summary in `docs/benchmarks.md` is that goinfer is at
+Against current Ollama, this repo's own summary in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) is that goinfer is at
 parity or slower almost everywhere. The cgo-free CUDA backend holds a real edge only on
 tiny-model dense 4-bit decode — about 1.7× at 0.5B, where launch overhead dominates and Go's
 cheaper dispatch shows — and reaches parity at 1.5B. It loses on long-context decode and
@@ -223,7 +223,7 @@ llama.cpp/Ollama-CUDA at equal 4-bit quantization on a GPU, in a static binary w
 dependency that boots in about half a second.
 
 That 60–70% needs its scope attached, because the figure is narrower and older than the figure
-reads. `docs/positioning.md` records it as **dense-Qwen2/Llama residency decode only**, measured
+reads. [`docs/positioning.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/positioning.md) records it as **dense-Qwen2/Llama residency decode only**, measured
 **2026-06-08 against a 2025-era peer** — so it is not a current ratio, and it does not describe
 the model families added since, because GPU residency requires dense attention and several
 newer families are ineligible for residency entirely. Quoting 60–70% as a present-tense,
@@ -240,9 +240,9 @@ Chapter 11 is about how you know any of these numbers are real.
 ---
 
 *Sources: `docs/benchmarks.md` (lane statement, peer standings, re-anchor banner),
-`docs/capability-matrix.md`, `docs/cuda-backend.md`, `docs/hardware-matrix.md`,
-`docs/queue-performance.md` (P14 item 3: the 1.12× kernel result, the AVX2 accumulator
+`docs/capability-matrix.md`, [`docs/cuda-backend.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/cuda-backend.md), [`docs/hardware-matrix.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/hardware-matrix.md),
+[`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (P14 item 3: the 1.12× kernel result, the AVX2 accumulator
 refutation, and the wiring),
-`docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md` (the +2.10% A/B, its floor, the
+[`docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md) (the +2.10% A/B, its floor, the
 profile-vs-wall-clock bound, and the 4% bar fixed in advance),
-`docs/task-w4a8-neon-bandwidth.md` (the arm64 side, where the same idea shipped).*
+[`docs/task-w4a8-neon-bandwidth.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/task-w4a8-neon-bandwidth.md) (the arm64 side, where the same idea shipped).*

@@ -50,14 +50,14 @@ The drafter proposes; the model decides. A bad drafter costs speed and never cos
 If you've written optimistic concurrency, this is that. Guess, do the work, validate, roll
 back on conflict. Chapter 3's optimistic forward was a one-token version of the same bet.
 
-In this repo it's the `docs/spec/` series, with `decoder/speculative.go` and
-`decoder/blockspec.go` as the implementation.
+In this repo it's the `docs/spec/` series, with [`decoder/speculative.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/speculative.go) and
+[`decoder/blockspec.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/blockspec.go) as the implementation.
 
 ---
 
 ## Where drafts come from
 
-`docs/spec/00-core.md` treats the drafter as a plugin behind one interface — grammar, n-gram,
+[`docs/spec/00-core.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/00-core.md) treats the drafter as a plugin behind one interface — grammar, n-gram,
 model, head are all just different sources of a proposal.
 
 **A smaller model.** Run a 0.5B model to draft for a 7B model. Simple, and a smaller model pays
@@ -137,7 +137,7 @@ people stop reading the gate. Three limits, all recorded before the measurement:
   this would require the state-checkpoint work first, which is a materially larger build than
   wiring up a drafter.
 
-This is also why `docs/spec/README.md` states the scheme as a scorecard rather than a
+This is also why [`docs/spec/README.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/README.md) states the scheme as a scorecard rather than a
 recommendation: a model drafter translates only when the target step is expensive enough.
 Chapter 3's rule shows up again — the fraction is set by the denominator.
 
@@ -189,7 +189,7 @@ they operate under.
 
 ---
 
-*Sources: `docs/spec/00-core.md`, `docs/spec/02-cache-ngram.md`, `docs/spec/05-eagle3-head.md`,
-`docs/spec/09-mtp-heads.md` §"Gate 1 result" (the MTP numbers, their pre-registered reading, and
-the precision caveats), `decoder/mtp_head_test.go` (`TestMTP_acceptedLength`),
-`decoder/speculative.go:89-93`, `decoder/deltanet.go:145-153`, `CLAUDE.md` (do-nothing arm).*
+*Sources: `docs/spec/00-core.md`, [`docs/spec/02-cache-ngram.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/02-cache-ngram.md), [`docs/spec/05-eagle3-head.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/05-eagle3-head.md),
+[`docs/spec/09-mtp-heads.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/09-mtp-heads.md) §"Gate 1 result" (the MTP numbers, their pre-registered reading, and
+the precision caveats), [`decoder/mtp_head_test.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/mtp_head_test.go) (`TestMTP_acceptedLength`),
+`decoder/speculative.go:89-93`, `decoder/deltanet.go:145-153`, [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (do-nothing arm).*

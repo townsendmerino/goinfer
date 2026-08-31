@@ -107,7 +107,7 @@ memory.
 
 **The KV cache can be quantized too.** Store keys and values in 8 bits instead of 16 and the
 KV cache halves. Quantizing the KV cache is an accuracy trade like any other, and — as
-`docs/ollama-chase.md` notes — KV quantization is not compatible with this repo's bit-identical
+[`docs/ollama-chase.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/ollama-chase.md) notes — KV quantization is not compatible with this repo's bit-identical
 determinism contract in the way some other optimizations are. Chapter 11 explains why that
 determinism contract is worth protecting.
 
@@ -132,7 +132,7 @@ first N entries of the list.
 
 Gated DeltaNet layers — used in several recent Qwen models — keep a **running total** instead.
 Each token folds into a single fixed-size matrix that is updated in place. `deltaState` in
-`decoder/deltanet.go` is that running total, and `deltaState`'s comment says plainly that the
+[`decoder/deltanet.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/deltanet.go) is that running total, and `deltaState`'s comment says plainly that the
 running total is fixed size, independent of sequence length, and *not position-truncatable*.
 
 ```
@@ -159,6 +159,54 @@ Chapter 9 picks that up.
 
 ---
 
+## More than one caller
+
+Everything so far describes one conversation. A server has several, and the cache is what makes
+that awkward: it is per-conversation state, sized to a context window, and it belongs to the
+sequence that built it. Two callers cannot share one.
+
+The Go instinct is to hand each request a goroutine and let the scheduler sort it out. goinfer
+does that for most of a request and then stops, deliberately. The path splits in two:
+
+![A served request runs in two stages. JSON decoding, tokenization, template rendering and image
+encoding run concurrently, bounded globally by --max-inflight which returns 503 when full. The
+request then waits in a bounded queue for a single decode worker guarded by a mutex; a full queue
+returns 429 with a Retry-After. Only one generation runs at a time, and the parallelism is spent
+inside one request rather than across many.](./04-fig-serving-lanes.svg)
+
+Before decode, requests really are concurrent, and that stage is capped globally so a burst of
+large bodies cannot exhaust memory before anything has been generated. Generation itself is
+serialized by a mutex whose comment says what it is — *the single decode worker*. Waiting
+requests hold a slot in a bounded queue; when the queue is full the server returns **429 with a
+`Retry-After`** rather than accepting work it cannot start.
+
+goinfer does not do continuous batching — the interleaving of many sequences into one forward
+pass that a throughput-oriented server is built around. The source says so in as many words:
+*honest backpressure, not continuous batching*. That is a stated position, not an omission, and
+it is worth understanding why a Go engineer might choose it.
+
+**The scarce resource is not goroutines.** Goroutines are nearly free, but a second concurrent
+generation needs a second KV cache, and it competes for the same weights and the same arithmetic
+units. Running two at once on one machine does not make either faster; it makes both slower and
+doubles the cache memory. So the parallelism gets spent *inside* one request instead —
+Chapter 8's 3.28× from six workers is goroutines fanning out across one matrix multiply, not
+across six users.
+
+**A queue that accepts everything lies.** The alternative to a 429 is unbounded admission, where
+every client is accepted and every client gets slower, and no client can tell whether the server
+is busy or broken. Bounded queue plus an explicit refusal is the answer a caller can act on.
+
+What survives across requests is not the loop but the cache's *contents*: a prefix-keyed LRU
+lets a follow-up turn that shares a prompt prefix skip the prefill it already paid for. That is
+the same reuse this chapter has been about, moved up a layer.
+
+The cost is throughput at scale, and it is real. One generation at a time means concurrent users
+queue rather than share a batch, and a server built to saturate a GPU with many streams will beat
+this by a wide margin. Chapter 10 states the same trade from the kernel side: if you are serving
+a model to many users at once, this is the wrong engine.
+
+---
+
 ## What it costs
 
 The KV cache's value is hard to state as a single number, because without the KV cache the
@@ -174,5 +222,5 @@ Chapter 5 turns to the other memory problem: the weights themselves.
 
 ---
 
-*Sources: `decoder/deltanet.go:145-153`, `docs/qwen3_5_moe.md`, `docs/ollama-chase.md`,
-`docs/api-tiers.md` (`.giw-kv`), `docs/queue-performance.md` (prefill baselines).*
+*Sources: `internal/serveapp/openai.go` (the decode mutex, the bounded queue, the 429), `internal/serveapp/main.go` (`--max-queue`, `--max-inflight`), `decoder/deltanet.go:145-153`, [`docs/qwen3_5_moe.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/qwen3_5_moe.md), `docs/ollama-chase.md`,
+[`docs/api-tiers.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/api-tiers.md) (`.giw-kv`), [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (prefill baselines).*

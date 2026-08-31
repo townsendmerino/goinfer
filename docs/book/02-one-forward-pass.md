@@ -12,7 +12,7 @@ Give the model the token IDs so far. The model returns one number per vocabulary
 score saying how good that vocabulary entry would be as the next token. That computation is
 the **forward pass**, so called because data flows forward through the network with no loops.
 
-In this repo the forward pass is `Model.forward` in `decoder/model.go`, a thin wrapper that
+In this repo the forward pass is `Model.forward` in [`decoder/model.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/model.go), a thin wrapper that
 runs the layer stack (`runLayers`) and then projects the layer stack's result to scores
 (`logitsFromHidden`). Under those two calls is essentially all of the work this book is about.
 
@@ -187,5 +187,5 @@ generating tokens runs around 39–41 per second, while processing a 3,020-token
 ---
 
 *Sources: `decoder/model.go` (`forward`, `runLayers`, `logitsFromHidden`),
-`docs/how-inference-works.md` §Step 2, `docs/benchmarks.md` (decode-only, greedy, depth 128,
-quiet box), `docs/queue-performance.md` (G16/G20 prefill).*
+[`docs/how-inference-works.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/how-inference-works.md) §Step 2, [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) (decode-only, greedy, depth 128,
+quiet box), [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (G16/G20 prefill).*

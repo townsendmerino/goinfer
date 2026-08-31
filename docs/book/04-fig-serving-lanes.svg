@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 330" width="700" height="330" role="img" aria-labelledby="t4 d4">
+<title id="t4">The two stages of a served request: concurrent prepare, serialized decode</title>
+<desc id="d4">Incoming requests run their JSON decode, tokenization, template render and vision encoding concurrently, bounded globally by max-inflight, which returns 503 when full. They then queue for a single decode worker guarded by a mutex, bounded by max-queue, which returns 429 with a Retry-After when full. Only one generation runs at a time.</desc>
+
+<rect x="0" y="0" width="700" height="330" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1" rx="6"/>
+
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#1f2328">one server, many callers, one generation at a time</text>
+
+  <!-- requests -->
+  <g fill="#ffffff" stroke="#8c959f" stroke-width="1">
+    <rect x="20" y="52" width="96" height="26" rx="3"/>
+    <rect x="20" y="86" width="96" height="26" rx="3"/>
+    <rect x="20" y="120" width="96" height="26" rx="3"/>
+  </g>
+  <g font-size="11.5" fill="#57606a" text-anchor="middle">
+    <text x="68" y="69">request</text>
+    <text x="68" y="103">request</text>
+    <text x="68" y="137">request</text>
+  </g>
+
+  <!-- concurrent stage -->
+  <rect x="146" y="52" width="242" height="94" rx="4" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="267" y="72" font-size="12.5" fill="#0969da" text-anchor="middle" font-weight="bold">CONCURRENT</text>
+  <text x="267" y="90" font-size="11" fill="#0969da" text-anchor="middle">JSON decode &#183; tokenize</text>
+  <text x="267" y="105" font-size="11" fill="#0969da" text-anchor="middle">template render</text>
+  <text x="267" y="120" font-size="11" fill="#0969da" text-anchor="middle">image preprocess + encode</text>
+  <text x="267" y="138" font-size="10.5" fill="#57606a" text-anchor="middle">--max-inflight &#8594; 503 when full</text>
+
+  <!-- arrows -->
+  <g stroke="#57606a" stroke-width="1.5" fill="none">
+    <path d="M116 65 L142 90"/>
+    <path d="M116 99 L142 99"/>
+    <path d="M116 133 L142 108"/>
+    <path d="M388 99 L414 99"/>
+  </g>
+  <path d="M414 99 l-8 -4 v8 z" fill="#57606a"/>
+
+  <!-- queue -->
+  <rect x="418" y="66" width="70" height="66" rx="4" fill="#eaeef2" stroke="#8c959f"/>
+  <text x="453" y="88" font-size="11.5" fill="#57606a" text-anchor="middle">queue</text>
+  <text x="453" y="105" font-size="10.5" fill="#57606a" text-anchor="middle">bounded</text>
+  <text x="453" y="120" font-size="10.5" fill="#57606a" text-anchor="middle">wait</text>
+
+  <g stroke="#57606a" stroke-width="1.5" fill="none"><path d="M488 99 L514 99"/></g>
+  <path d="M514 99 l-8 -4 v8 z" fill="#57606a"/>
+
+  <!-- decode worker -->
+  <rect x="518" y="60" width="162" height="78" rx="4" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="599" y="82" font-size="12.5" fill="#1a7f37" text-anchor="middle" font-weight="bold">decode worker</text>
+  <text x="599" y="100" font-size="11" fill="#1a7f37" text-anchor="middle">mu.Lock()</text>
+  <text x="599" y="116" font-size="11" fill="#1a7f37" text-anchor="middle" font-weight="bold">ONE at a time</text>
+  <text x="599" y="131" font-size="10.5" fill="#57606a" text-anchor="middle">holds the KV cache</text>
+
+  <!-- rejection paths -->
+  <text x="418" y="160" font-size="10.5" fill="#cf222e">queue full &#8594; 429 + Retry-After</text>
+
+  <line x1="20" y1="182" x2="680" y2="182" stroke="#d0d7de" stroke-width="1"/>
+
+  <!-- where the parallelism goes -->
+  <text x="20" y="206" font-size="12.5" font-weight="bold" fill="#1f2328">the parallelism is spent INSIDE one request, not across many</text>
+
+  <rect x="20" y="218" width="322" height="58" rx="4" fill="#ffffff" stroke="#8c959f"/>
+  <text x="32" y="238" font-size="11.5" fill="#1f2328">goroutines fan out across ONE matmul</text>
+  <text x="32" y="255" font-size="11.5" fill="#1a7f37" font-weight="bold">3.28&#215; from six workers (Ch. 8)</text>
+  <text x="32" y="270" font-size="10.5" fill="#57606a">the arithmetic units are the scarce thing</text>
+
+  <rect x="358" y="218" width="322" height="58" rx="4" fill="#ffffff" stroke="#8c959f"/>
+  <text x="370" y="238" font-size="11.5" fill="#1f2328">a 2nd concurrent generation needs</text>
+  <text x="370" y="255" font-size="11.5" fill="#1f2328">a 2nd KV cache, same weights</text>
+  <text x="370" y="270" font-size="10.5" fill="#57606a">both get slower; memory doubles</text>
+
+  <rect x="20" y="288" width="660" height="28" rx="3" fill="#fff1e5" stroke="#d4a72c"/>
+  <text x="32" y="306" font-size="11" fill="#7d4e00">deliberate: the source says &#8220;honest backpressure, not continuous batching&#8221;</text>
+
+</g>
+</svg>

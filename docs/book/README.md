@@ -28,13 +28,25 @@ that produced the number.
 
 ## The shorter version, and the code map
 
-`docs/how-inference-works.md` covers this same material in about 2,300 words instead of 15,000.
+[`docs/how-inference-works.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/how-inference-works.md) covers this same material in about 2,300 words instead of 15,000.
 It is the better starting point if you want the whole arc in ten minutes, and it is the better
 reference if your question is *"where does this live in the source?"* — it anchors concepts to
-specific lines in `decoder/`, which these chapters mostly do not.
+specific LINES in `decoder/`, where these chapters link whole files.
 
-**The two overlap heavily and can drift.** A number corrected here belongs there too, and the
-reverse. Neither page's tooling can see the other's prose.
+**They overlap, but they carry different things, and only one direction can drift.** The
+summary carries no measured figures at all — its two ratios (4× for int8 KV, 8× for 4-bit
+weights) are definitional arithmetic about bit widths, not benchmark results, so they cannot
+go stale. Every measured number in this material lives in these chapters. **A figure corrected
+here therefore has nowhere else on that page to be wrong**, which is a narrower obligation
+than "check both", and a true one.
+
+What both pages do carry is references into the source, and both are now tooling-checked
+rather than trusted: the summary's line anchors are maintained by
+[`scripts/queue_citation_lint.py`](https://github.com/townsendmerino/goinfer/blob/main/scripts/queue_citation_lint.py)
+(which re-keys them by content when code moves), and these chapters' file links by
+[`scripts/book_link_lint.py`](https://github.com/townsendmerino/goinfer/blob/main/scripts/book_link_lint.py)
+(which fails CI on a rename). The remaining overlap is prose explaining the same mechanism
+twice, which no tool can reconcile — and which is a duplication cost, not a correctness one.
 
 ## Reading order
 
@@ -52,5 +64,5 @@ Every figure is traced to a repo document. Where a number is regime-specific —
 one backend, one model size, or a model slice rather than a whole model — the text says so,
 because the alternative is how a non-transferable number loses its label and becomes folklore.
 
-Some numbers in `docs/benchmarks.md` are currently marked stale pending re-anchor after a
+Some numbers in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) are currently marked stale pending re-anchor after a
 driver and distro upgrade on the Linux box. Nothing in these chapters depends on those rows.

@@ -71,7 +71,7 @@ is easiest to run.
 ## Half two: how a measurement lies
 
 This half of the chapter is the part with no Go analogue, and this half is where most of the
-repo's hard-won material lives. `CLAUDE.md`'s measurement-discipline section is the
+repo's hard-won material lives. [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md)'s measurement-discipline section is the
 accumulated list. Here are the failure modes worth internalizing, each failure mode recorded
 because it actually happened in this tree.
 
@@ -294,7 +294,7 @@ tested. The real win was smaller than the profile promised, and the real win is 
 win worth having.
 
 The cost of this discipline is that things take longer and some sessions end with a number
-and no feature. The return is that the numbers in `docs/benchmarks.md` can be traced to a
+and no feature. The return is that the numbers in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) can be traced to a
 commit, a date, and a machine — and that when the machine's driver stack changed underneath
 them, the page could say so and mark the affected rows stale rather than quietly carrying
 them forward.
@@ -305,4 +305,4 @@ that it is fast is indistinguishable from an inference engine that is wrong.
 ---
 
 *Sources: `CLAUDE.md` (measurement discipline, tests), `docs/benchmarks.md` (provenance rule,
-re-anchor banner), `docs/parity-coverage-policy.md`, `docs/QUEUE.md` (retraction record).*
+re-anchor banner), [`docs/parity-coverage-policy.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/parity-coverage-policy.md), [`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md) (retraction record).*

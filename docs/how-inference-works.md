@@ -9,9 +9,15 @@
 > eleven chapters at roughly seven times the length, for a reader who knows Go and
 > not machine learning, and each chapter there ends in a measured number. This page
 > is the one that ties concepts to specific SOURCE LINES; the book is the one that
-> explains why inference works the way it does. **The two overlap heavily, so a
-> number corrected in one belongs in the other** — check both before assuming a
-> figure has been retired.
+> explains why inference works the way it does.
+>
+> **The drift between them is one-directional, and it is not this page.** This page
+> carries no measured figures — the only ratios here (4× for int8 KV, 8× for 4-bit
+> weights) are definitional arithmetic about bit widths and cannot go stale. So a
+> retired benchmark number never needs correcting here; it needs correcting in the
+> book and wherever else the repo quotes it. What this page does carry is line-anchored
+> citations, and those are maintained by `scripts/queue_citation_lint.py`, which
+> re-keys them by content when the code moves.
 
 ## The one-sentence version
 

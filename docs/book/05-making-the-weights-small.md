@@ -63,6 +63,11 @@ weight. To use a weight, multiply that weight's integer by the block's scale.
   for every weight in that block
 ```
 
+![One group of 32 weights as it sits in memory: 32 four-bit integers (16 bytes) plus one f32
+scale (4 bytes), so 20 bytes for 32 weights — 5.0 bits per weight rather than 4. The scale is
+amortized over the group, so a smaller group costs more per weight: group 16 is 6.0 bits, 32 is
+5.0, 64 is 4.5, against 32 for f32 and about 8 for int8.](./05-fig-block-layout.svg)
+
 Block size is the tuning knob. Smaller blocks track local variation better and cost more scale
 factors; larger blocks are more compact and lose more precision where one block spans very
 different magnitudes. Note that the scale factors are themselves stored, so a "4-bit" format
@@ -90,7 +95,7 @@ Measured after a fix to how the LM head is quantized:
 | 1.5B | 39.1–40.7 tok/s | 37.56 tok/s |
 
 **int4 now matches or beats int8int8 at both sizes, at half the weight RAM.** The current
-guidance in `docs/benchmarks.md` is that int4 is the right default on Apple Silicon CPU
+guidance in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) is that int4 is the right default on Apple Silicon CPU
 decode.
 
 What is instructive is what `docs/benchmarks.md` does with the *old* advice, which said the
@@ -163,5 +168,5 @@ you do when the model does not fit.
 
 ---
 
-*Sources: `docs/benchmarks.md` §int4/int8int8 comparison, `docs/task-w4a8-neon-bandwidth.md`,
-`cmd/gate` (parity runner), `docs/api-tiers.md` (`.giw`).*
+*Sources: `docs/benchmarks.md` §int4/int8int8 comparison, [`docs/task-w4a8-neon-bandwidth.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/task-w4a8-neon-bandwidth.md),
+`cmd/gate` (parity runner), [`docs/api-tiers.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/api-tiers.md) (`.giw`).*

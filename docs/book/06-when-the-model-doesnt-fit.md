@@ -130,7 +130,7 @@ worse.
 
 ## Two guard rails that failed
 
-Both failures are recorded in `CLAUDE.md` and both generalize past this feature.
+Both failures are recorded in [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) and both generalize past this feature.
 
 **The stopping rule stopped too early.** The sweep was pre-registered to stop when a doubling
 of slots bought less than 5%. From 8 to 16 bought 4.1% — under the bar. Applied as written,
@@ -173,5 +173,5 @@ Chapter 7 explains why Mixture-of-Experts models are the ones where all this wor
 
 ---
 
-*Sources: `docs/task-metal-expert-streaming-at-scale.md`, `docs/task-moe-streaming.md`,
-`CLAUDE.md` (measurement discipline), `docs/benchmarks.md` §B4.*
+*Sources: [`docs/task-metal-expert-streaming-at-scale.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/task-metal-expert-streaming-at-scale.md), [`docs/task-moe-streaming.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/task-moe-streaming.md),
+`CLAUDE.md` (measurement discipline), [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) §B4.*

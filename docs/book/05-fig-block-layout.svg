@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 296" width="700" height="296" role="img" aria-labelledby="t6 d6">
+<title id="t6">Where the bits go in group-wise int4 quantization</title>
+<desc id="d6">One group of 32 weights stores 32 four-bit integers, which is 16 bytes, plus one 32-bit float scale, which is 4 bytes: 20 bytes for 32 weights, or 5.0 bits per weight rather than 4. The scale is amortized over the group, so a smaller group costs more per weight: group of 16 is 6.0 bits, 32 is 5.0, 64 is 4.5, 128 is 4.25. Against 32 bits for float32 and about 8 for int8.</desc>
+<rect x="0" y="0" width="700" height="296" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1" rx="6"/>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+<text x="20" y="28" font-size="15" font-weight="bold" fill="#1f2328">4-bit weights cost 5 bits</text>
+<text x="20" y="47" font-size="11.5" fill="#57606a">one group of 32, as it sits in memory</text>
+<rect x="20.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="34.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="48.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="62.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="76.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="90.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="104.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="118.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="132.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="146.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="160.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="174.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="188.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="202.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="216.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="230.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="244.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="258.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="272.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="286.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="300.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="314.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="328.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="342.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="356.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="370.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="384.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="398.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="412.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="426.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="440.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="454.0" y="62" width="12" height="26" rx="2" fill="#ddf4ff" stroke="#0969da" stroke-width="0.8"/>
+<rect x="476.0" y="62" width="94" height="26" rx="3" fill="#fff1e5" stroke="#d4a72c"/>
+<text x="523.0" y="79" font-size="11" fill="#7d4e00" text-anchor="middle">f32 scale</text>
+<text x="244" y="106" font-size="11" fill="#0969da" text-anchor="middle">32 weights &#215; 4 bits = 16 bytes</text>
+<text x="523.0" y="106" font-size="11" fill="#7d4e00" text-anchor="middle">+ 4 bytes</text>
+<text x="20" y="128" font-size="12" fill="#1f2328"><tspan font-weight="bold">20 bytes for 32 weights</tspan> &#8212; 5.0 bits/weight, not 4</text>
+<line x1="20" y1="152" x2="680" y2="152" stroke="#d0d7de" stroke-width="1"/>
+<text x="20" y="174" font-size="12" font-weight="bold" fill="#1f2328">the scale is amortized, so the GROUP SIZE sets the real cost</text>
+<text x="20" y="199" font-size="11" fill="#1f2328">f32</text>
+<rect x="150" y="186" width="416.0" height="17" rx="2" fill="#8c959f" opacity="0.8"/>
+<text x="574.0" y="199" font-size="11" fill="#57606a">32 bits/weight  </text>
+<text x="20" y="221" font-size="11" fill="#1f2328">int8 (per row)</text>
+<rect x="150" y="208" width="104.0" height="17" rx="2" fill="#8c959f" opacity="0.8"/>
+<text x="262.0" y="221" font-size="11" fill="#57606a">8 bits/weight  </text>
+<text x="20" y="243" font-size="11" fill="#1f2328">int4 group 16</text>
+<rect x="150" y="230" width="78.0" height="17" rx="2" fill="#cf222e" opacity="0.8"/>
+<text x="236.0" y="243" font-size="11" fill="#57606a">6 bits/weight  +2.0 for scales</text>
+<text x="20" y="265" font-size="11" fill="#1f2328">int4 group 32</text>
+<rect x="150" y="252" width="65.0" height="17" rx="2" fill="#1a7f37" opacity="0.8"/>
+<text x="223.0" y="265" font-size="11" fill="#57606a">5 bits/weight  +1.0  &#8592; shipped</text>
+<text x="20" y="287" font-size="11" fill="#1f2328">int4 group 64</text>
+<rect x="150" y="274" width="58.5" height="17" rx="2" fill="#0969da" opacity="0.8"/>
+<text x="216.5" y="287" font-size="11" fill="#57606a">4.5 bits/weight  +0.5</text>
+</g></svg>
