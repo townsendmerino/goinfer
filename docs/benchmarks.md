@@ -87,6 +87,11 @@
 > rather than re-measured, so the only leg still owing a run is the v0.11.0 qualification.** Each is a separate leg with its own procedure;
 > `bench_peer.py` does not produce any of them.
 >
+> **CLOSED 2026-08-31 — no leg still owes a run.** The v0.11.0 qualification was RETIRED rather
+> than re-measured (see its own box), on the same basis §B was: its numbers were §B6/§B7 by
+> code-identity, and both are now re-anchored. Every section this banner listed is therefore either
+> re-anchored (§B4.1/§B4.2, §B5.1, §B6.3, §B7.1, §B8) or deliberately withdrawn (§B, v0.11.0).
+>
 > Re-measure with `scripts/bench_peer.py` (peer Ollama v0.32.5 at `~/ollama-0325`, both sides over
 > HTTP, interleaved) — **not** `bench_compare.sh`, which by its own design note never drives the
 > peer.
@@ -1253,9 +1258,24 @@ explanation should be read with this 2026-08-09 caveat rather than trusted as-is
 
 ## v0.11.0 release qualification (2026-08-10) — go/no-go vs these anchors
 
-> **⚠ STALE — measured before the 2026-08-25 re-anchor** (driver `595.58.03`, Nobara 43, kernel
-> `7.0.5-200.fc43`). Not a current claim until re-measured; see the re-anchor box at the top of
-> this page for what moved and what replaces it.
+> **⚠ RETIRED 2026-08-31 — withdrawn, not re-measured, and the decision is costed below.** It was
+> measured before the 2026-08-25 re-anchor (driver `595.58.03`, Nobara 43, kernel
+> `7.0.5-200.fc43`) and may not be quoted as current.
+>
+> **Why withdrawn rather than re-anchored.** This was a go/no-go for a tag that shipped on
+> 2026-08-10, and its numbers were **never independent**: the table says so itself — "the §B6/§B7
+> (CUDA) and §B3 (Metal) anchors below **are** the v0.11.0 numbers", carried by code-identity. Both
+> of those anchors have since been re-anchored on the current stack (§B6.3, §B7.1). Re-running this
+> leg would produce a fresh no-regression statement about a three-week-old tag, derived from
+> anchors that are already current. There is no claim it would make quotable that §B6.3/§B7.1 do
+> not already make.
+>
+> **⛔ AND THE FORWARD-LOOKING CLAUSE BELOW IS VOID — this is the load-bearing half of the
+> retirement.** The table said it "doubles as v1.0's sweep **iff** the code delta between the two
+> tags stays zero". **It has not stayed zero, by four orders of magnitude:** v0.11.0 → HEAD is
+> **802 commits, 467 Go files changed, +48,477 / −2,066 lines**. Anyone reusing this table as v1.0's
+> qualification would be qualifying a release against a codebase that no longer exists. v1.0 needs
+> its own sweep; this table cannot stand in for one.
 
 The v0.11.0 tag's delta from the last code commit (`6edd1ca`) is **docs-only** (README wording), so no
 resident cell's numerics changed and the §B6/§B7 (CUDA) and §B3 (Metal) anchors below **are** the

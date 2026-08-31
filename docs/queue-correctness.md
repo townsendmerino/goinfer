@@ -429,7 +429,7 @@ Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §3. Softmax-GQ
 SWA/global attention 3:1, the interleave pattern already handled for Gemma/Mellum2/gpt-oss) —
 softplus attention gating and per-layer RoPE scales are the genuinely new primitives, otherwise
 cheap. Strategic tie-in: ships with **official DFlash draft models**, which makes it the natural
-flagship demo for P10 (`P10`, `docs/queue-performance.md:1135`) once that lands — vendor-blessed
+flagship demo for P10 (now owned by `docs/spec/08-dspark-dflash.md` — the performance queue closed 2026-08-31) once that lands — vendor-blessed
 drafters instead of self-trained ones. XS 2.1 is the consumer-hardware entry point (33B/3B
 active); S 2.1 targets the 96-128 GB Mac crowd.
 

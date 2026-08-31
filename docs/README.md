@@ -38,7 +38,7 @@ exactly one queue, keyed by *the question it answers*:
 
 | queue | the question |
 |---|---|
-| [queue-performance.md](queue-performance.md) | how fast, how much memory |
+| [queue-performance.md](queue-performance.md) | how fast, how much memory — **empty as of 2026-08-31**; the closed record is [completed/queue-performance.md](completed/queue-performance.md) |
 | [queue-correctness.md](queue-correctness.md) | does it compute the right thing |
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
@@ -58,7 +58,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (61)
+## Archive — `completed/` (62)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation

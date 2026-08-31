@@ -169,6 +169,16 @@ below is declaring it (§3), not proving it.
   to `scripts/heavy_gate.sh`) run on the RC with its log **committed or archived** — C1a's lesson: a `mktemp` log is a verdict nobody can
   re-check.
 
+- [ ] **REQUIRED · v1.0 gets its OWN benchmark sweep. It cannot inherit v0.11.0's.** Added
+  2026-08-31 because the plan it replaces was silently void. `benchmarks.md`'s v0.11.0
+  qualification claimed to "double as v1.0's sweep **iff** the code delta between the two tags
+  stays zero" — a reasonable plan when written, and false since: v0.11.0 → HEAD is **802 commits,
+  467 Go files, +48,477 / −2,066 lines**. Reusing it would qualify v1.0 against a codebase that no
+  longer exists. That clause is now struck at its own site, and this line is what replaces it, so
+  the obligation is recorded rather than merely the old plan removed. Scope: the same legs the
+  2026-08-27 re-anchor covered (§B4.1/§B4.2, §B5.1, §B6.3, §B7.1, §B8) re-run at the RC commit, on
+  `scripts/bench_peer.py` — **not** `bench_compare.sh`, which drives no peer.
+
 ## 3. API freeze and compatibility — the declaration §0 says is owed
 
 - [x] **REQUIRED · The tier declaration — `docs/api-tiers.md`, SIGNED OFF 2026-08-18 (decider:

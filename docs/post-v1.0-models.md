@@ -48,7 +48,7 @@ hardware, text-only, parity-gateable against HF, weights in safetensors/GGUF. Qu
    softmax-GQA territory: mixed SWA/global attention in a 3:1 ratio (the interleave pattern already
    handled for Gemma/Mellum2/gpt-oss) — softplus attention gating and per-layer RoPE scales are the
    genuinely new primitives. Two reasons it ranks this high: (a) official GGUF conversions ship
-   alongside **official DFlash draft models** — P10 (`docs/queue-performance.md:1135`) just queued
+   alongside **official DFlash draft models** — P10 (now owned by `docs/spec/08-dspark-dflash.md`; the performance queue closed 2026-08-31) just queued
    DSpark/DFlash block drafters, and Laguna would be the flagship demo with vendor-blessed
    drafters instead of self-trained ones; (b) XS 2.1 (33B/3B active) is the consumer-hardware entry
    point, S 2.1 (118B/8.5B active) targets the 96–128 GB Mac crowd, so one family covers two

@@ -876,14 +876,6 @@ supports.
 | `docs/queue-engineering.md|metal/model.go:927` | goinfer | `r.residencyBufs = pinned` |
 | `docs/queue-engineering.md|metal/snapshot_golden_test.go:77` | goinfer | `func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:407` | goinfer | `def gate_cell_idle():` |
-| `docs/queue-performance.md|cuda/backend.go:1115` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-performance.md|cuda/backend.go:586` | goinfer | `if r.dev, e = CreateSystemDefaultDevice(); e != nil {` |
-| `docs/queue-performance.md|cuda/backend.go:714` | goinfer | `load(&r.bRopeKV, pbmod, "rope_kv_batched")` |
-| `docs/queue-performance.md|decoder/forwardn.go:723` | goinfer | `for kvh := range nKV {` |
-| `docs/queue-performance.md|decoder/mlp.go:91` | goinfer | `func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeSc` |
-| `docs/queue-performance.md|decoder/sampler_chunked.go:188` | goinfer | `return drawChunked(e, sums, z, r)` |
-| `docs/queue-performance.md|decoder/scratch.go:45` | goinfer | `ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)` |
-| `docs/queue-performance.md|linalg/quant.go:138` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/scoping-lfm2.md|decoder/arch.go:168` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:97` | goinfer | `if arch.QKNorm {` |
 | `docs/scoping-lfm2.md|decoder/config.go:832` | goinfer | `case c.UseQKNorm:` |
