@@ -110,6 +110,33 @@ Measured here, an EAGLE-3 head reached about 1.6 tokens per verify — genuinely
 nothing, and a net wall-clock *loss* on CPU because the draft itself was not free enough. The
 conclusion recorded was that the binding constraint is α, not the verification machinery.
 
+An MTP head — the kind that ships inside the checkpoint, because the model was trained with the
+head — was measured against that 1.6 on a 0.8B target, drafting K=6:
+
+```
+  suite    tokens per verify        vs the 1.6 reference
+  code           2.024                     above
+  math           2.905                     above
+  chat           2.476                     above
+
+  the gate asked for two suites of three; all three cleared
+```
+
+**Read that pass as narrowly as it was pre-registered**, because a good result is exactly when
+people stop reading the gate. Three limits, all recorded before the measurement:
+
+- **It is a pass on MECHANISM, not on economics.** What it establishes is that a head trained
+  jointly with its own target predicts that target better than an imported general head does. The
+  break-even gate was *not evaluated*, because a 0.8B target is precisely the regime where the
+  denominator in the inequality above is too small for the economics to mean anything.
+- **The third digit is noise.** One prompt per suite, 42 draft positions, no repeats. Changing the
+  prompt's *formatting* — wrapping the identical text in a chat template — moved the code suite
+  from 2.238 to 2.024 on its own. The spread across suites is larger than any gap being read.
+- **A pass authorises nothing.** The models carrying MTP heads are the Qwen families, which are
+  exactly the families the rollback seam refuses for the reason the next section gives. Shipping
+  this would require the state-checkpoint work first, which is a materially larger build than
+  wiring up a drafter.
+
 This is also why `docs/spec/README.md` states the scheme as a scorecard rather than a
 recommendation: a model drafter translates only when the target step is expensive enough.
 Chapter 3's rule shows up again — the fraction is set by the denominator.
@@ -163,5 +190,6 @@ they operate under.
 ---
 
 *Sources: `docs/spec/00-core.md`, `docs/spec/02-cache-ngram.md`, `docs/spec/05-eagle3-head.md`,
-`docs/spec/09-mtp-heads.md`, `decoder/speculative.go:89-93`, `decoder/deltanet.go:145-153`,
-`CLAUDE.md` (do-nothing arm).*
+`docs/spec/09-mtp-heads.md` §"Gate 1 result" (the MTP numbers, their pre-registered reading, and
+the precision caveats), `decoder/mtp_head_test.go` (`TestMTP_acceptedLength`),
+`decoder/speculative.go:89-93`, `decoder/deltanet.go:145-153`, `CLAUDE.md` (do-nothing arm).*
