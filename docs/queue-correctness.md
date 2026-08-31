@@ -82,7 +82,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > | piece | CUDA, verified in code today |
 > |---|---|
 > | `FeatRopeMscale` | **DONE** — shipped earlier today; declared after measurement (see the box above) |
-> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1536` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
+> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1538` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
 > | `FeatOutBias` | **ABSENT ENTIRELY on CUDA** — no kernel, no wiring; `grep` for `OBias`/`out_bias` across `cuda/*.go` returns nothing. This, not the sink, is the real remaining code |
 >
 > **`decoder/features.go`'s note that CUDA's kernels are "LOADED … but never DISPATCHED into a
@@ -97,8 +97,35 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > genuinely tight, and Metal wires the mmap pages a command buffer touches, so whole-model
 > residency at that size is the known-hard case, not a formality.
 >
-> **So the remaining work is: (1) a CUDA o_proj-bias kernel + wiring, (2) ONE real gpt-oss forward
-> on a resident path, (3) then declare.** Step 2 is the gate, and `2224441` is the precedent for
+> **(1) IS DONE, AND NEEDED NO KERNEL — that part of the estimate was wrong too (2026-08-31).**
+> Metal needed a genuinely new `gemv_w4a8_sa_bias_resid` because no SA GEMV there combined
+> bias-add with residual-accumulate. **CUDA's GEMVs have done both all along**: aikit's
+> `gemv_quant.cu` computes `val = fma(facc, aScale, bias?bias[n]:0)` and then
+> `dst[n] = accum ? dst[n]+val : val`, and goinfer's batched `gemv_w4a8_rn.cu:117` is identical.
+> `doG` was already threading a `bias` argument through — every o_proj call site was simply
+> passing `nullBias`. So FeatOutBias on CUDA was pure wiring: capture `lw.OBias`, upload it,
+> and pass it.
+>
+> **FOUR launch sites, not two.** Decode has two (sandwich / non-sandwich) and PREFILL has two
+> more (`cuda/prefill.go`, via `bGemvB`). Wiring only decode would apply the bias to some
+> positions and not others — drift partway through a sequence once decode takes over from
+> prefill, which `sinkArg`'s own comment already warns is much harder to attribute than a term
+> missing everywhere. This is the same shape as the mscale half's miss (2 of 9 rope sites), so
+> the sites were enumerated first and the argument centralised in `oBiasArg`.
+>
+> **NOT DECLARED, and it changes nothing on its own.** `FeatOutBias` alone unlocks no family on
+> CUDA: GPT-2 needs `LayerNorm` + `NonGatedMLP` + `LearnedPos` too, of which CUDA declares NONE
+> (Metal built three kernels for them), and gpt-oss additionally needs `FeatAttnSink` and is
+> VRAM-blocked. So there is no reachable checkpoint that EXERCISES this code on CUDA today —
+> it is written, verified not to regress, and unexercised, exactly like the sink. `2224441` is
+> the precedent for not declaring on that basis.
+>
+> Verified on the box (RTX 2070 SUPER, real CUDA): build + vet + staticcheck + gofmt clean,
+> full `./cuda/...` suite **100 PASS / 90 SKIP / 0 FAIL in 58.6 s** — a no-op for every family
+> without an `OBias`, which is what a plumbing change must prove when it cannot yet prove more.
+>
+> **So the remaining work is: (2) ONE real gpt-oss forward on a resident path, (3) then declare
+> FeatAttnSink + FeatOutBias together.** Step 2 is the gate, and `2224441` is the precedent for
 > why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
 >
 > **STEP 2 WAS ATTEMPTED ON METAL 2026-08-31 AND FAILED — and the failure found a missing guard.**

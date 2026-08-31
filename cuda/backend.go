@@ -150,12 +150,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	type hlayer struct {
 		q, k, v, o, g, u, d       hostW
 		qb, kb, vb                []float32
+		ob                        []float32 // attention output-projection bias (GPT-2 / gpt-oss)
 		preNorm, postNorm         []float32
 		qNorm, kNorm              []float32
 		postAttnNorm, postMLPNorm []float32 // Gemma sandwich (nil unless the arch declares it)
 		invFreq                   []float32 // per-layer RoPE table
 		window                    int32
 		hasBias                   bool
+		hasOBias                  bool
 
 		// MoE, per layer: GLM/DeepSeek run dense for the first FirstKDense layers and route
 		// after, so this is keyed off the layer's own Experts (as decoder/mlp.go does), not
@@ -450,6 +452,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		if lw.QBias != nil {
 			hl.qb, hl.kb, hl.vb, hl.hasBias = lw.QBias, lw.KBias, lw.VBias, true
+		}
+		// Captured INDEPENDENTLY of QBias: the two travel together in Qwen2 but not in general —
+		// GPT-2 carries an o_proj bias, and gpt-oss carries one with no q/k/v bias at all, so
+		// folding this into the branch above would silently drop it for exactly the families
+		// FeatOutBias exists for.
+		if lw.OBias != nil {
+			hl.ob, hl.hasOBias = lw.OBias, true
 		}
 		hls[l] = hl
 	}
@@ -912,6 +921,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// its nil slices would become 0-byte allocations (a hard error, not a no-op).
 			if h.hasBias && !h.isDeltaNet {
 				L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
+			}
+			if h.hasOBias && !h.isDeltaNet {
+				L.ob, L.hasOBias = r.up32(h.ob), true
 			}
 			if r.qkNorm && !h.isDeltaNet {
 				L.qNorm, L.kNorm = r.up32(h.qNorm), r.up32(h.kNorm)

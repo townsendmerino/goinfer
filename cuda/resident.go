@@ -177,6 +177,8 @@ type cudaLayer struct {
 	idx                 int // this layer's index, for per-layer side tables (gpt-oss sinks / expert biases)
 	q, k, v, o, g, u, d cudaWQ
 	qb, kb, vb          Buffer // QKV bias (absent ⇒ none)
+	ob                  Buffer // attention output-projection bias (GPT-2 c_proj, gpt-oss o_proj); absent ⇒ none
+	hasOBias            bool
 	qNorm, kNorm        Buffer // per-head QK-norm weights (absent ⇒ arch has none)
 	window              int32  // sliding-window span for THIS layer; 0 = full causal
 	// Per-layer attention geometry (9a-P2, own-forward residency bridge). Uniform families
@@ -1663,6 +1665,24 @@ func (r *cudaResident) sinkArg(l int) gpu.KernelArg {
 	return ArgNull()
 }
 
+// oBiasArg returns layer Ly's attention output-projection bias, or null when the family has
+// none. Centralized for exactly the reason sinkArg above is: the DECODE and the PREFILL o_proj
+// launches must not disagree. A bias applied on one path and not the other does not read as a
+// wrong answer — it reads as drift partway through a sequence, once decode takes over from
+// prefill, which is far harder to attribute than a term missing everywhere.
+//
+// Note there is NO new kernel here. Both GEMV pairs already fold the bias into the value BEFORE
+// the accumulate select (aikit gemv_quant.cu: `val = fma(facc, aScale, bias?bias[n]:0);
+// dst[n] = accum ? dst[n]+val : val`, and goinfer's batched gemv_w4a8_rn.cu:117 identically), so
+// bias-plus-residual is one instruction on this backend. That is where CUDA differs from Metal,
+// which needed a genuinely new gemv_w4a8_sa_bias_resid because no SA GEMV there combined the two.
+func (r *cudaResident) oBiasArg(Ly *cudaLayer) gpu.KernelArg {
+	if Ly != nil && Ly.hasOBias {
+		return Arg(Ly.ob)
+	}
+	return ArgNull()
+}
+
 // launchGluSplitExpert is launchGluSplit with the routed-expert context the gpt-oss epilogue
 // needs. bias is that layer's [nExpert·2·inter] gate‖up table and slot is the top-k position
 // whose expert is running; the KERNEL does biasRow = idx[slot]*2*inter, because which expert
@@ -1983,7 +2003,6 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 // the router readback — the whole dense MLP for a dense layer (no readback gap, segC is nil), or the
 // MoE pre-readback half (moeMLPPre / gemma4MoeMLPPre) for a routed layer.
 func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
-	nullBias := ArgNull()
 	if Ly.qGate { // ctx *= sigmoid(gate), before o_proj (matches the CPU qwen35Attention)
 		if err := r.launch(r.dnAttnGate, g1cfg(Ly.qDim, 256),
 			Arg(r.cctx), Arg(r.dnAGate), gpu.ArgValue(int32(Ly.qDim))); err != nil {
@@ -1994,7 +2013,7 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 		return err
 	}
 	if r.sandwich {
-		if err := r.doG(Ly.o, r.cq, r.cSc, nullBias, r.oO, 0); err != nil {
+		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
 			return err
 		}
 		if err := r.normF32(r.oO, Ly.postAttnNorm); err != nil {
@@ -2007,7 +2026,7 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 			return err
 		}
 	} else {
-		if err := r.doG(Ly.o, r.cq, r.cSc, nullBias, r.x, 1); err != nil {
+		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.x, 1); err != nil {
 			return err
 		}
 	}

@@ -335,7 +335,7 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 			if r.sandwich {
 				// o-proj → temp (accum=0), Gemma post-attn RMSNorm per row, then add to residual.
 				// Mirrors segB's decode sandwich path (o-proj → normF32 → residual) exactly, per row.
-				if e := r.bGemvB(Ly.o, cqB, cScB, ArgNull(), sbB, M, 0); e != nil {
+				if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), sbB, M, 0); e != nil {
 					return e
 				}
 				if e := r.bNormF32B(sbB, Ly.postAttnNorm, hidden, M); e != nil {
@@ -345,7 +345,7 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 					Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
 					return e
 				}
-			} else if e := r.bGemvB(Ly.o, cqB, cScB, ArgNull(), xB, M, 1); e != nil {
+			} else if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), xB, M, 1); e != nil {
 				return e
 			}
 			r.profToc(gemvCat, t)
