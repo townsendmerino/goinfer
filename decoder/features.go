@@ -385,6 +385,22 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// record. This admits the DENSE sibling only: qwen3_5_moe and qwen3_next additionally
 		// need FeatMoEGatedShared, which CUDA still does not implement.
 		FeatDeltaNet: true,
+		// FeatRopeMscale: YaRN's attention_factor, folded into cos/sin by rope / rope_kv /
+		// rope_kv_batched (cuda/glue.cu, gemv_fwd.cu, prefill_batched.cu) and threaded per LAYER
+		// from Model.RopeMscaleLayer via cudaLayer.mscale. Proven in isolation first by
+		// TestRopeMscale (scale=1 reproduces the unscaled rotation to 8.9e-08; scale=0.85 matches
+		// the scaled reference AND is provably different from unscaled), then end-to-end on real
+		// weights by TestMellumResidentParityCUDA — in that order, because the kernels took NO
+		// scale parameter at all until 2026-08-31 and declaring this on them would have admitted
+		// families onto a path that silently drops the factor.
+		//
+		// DECLARING THIS ADMITS MELLUM, which is not a side effect but the point of validating it
+		// first: mellumArchitecture needs exactly {FeatMoE, FeatPerLayerRoPE, FeatQKNorm,
+		// FeatRopeMscale, FeatSlidingWindow} and CUDA already declared the other four, so this
+		// single flag is the whole admission. Metal hit the identical coupling (G10) and resolved
+		// it by an explicit call because no Mellum checkpoint was reachable there; here one is, so
+		// it was measured instead.
+		FeatRopeMscale: true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.

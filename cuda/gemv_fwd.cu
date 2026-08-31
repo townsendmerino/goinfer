@@ -39,8 +39,13 @@ extern "C" __global__ void kv_store(const float* __restrict__ src, float* __rest
 extern "C" __global__ void rope_kv(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
-    int nH, int nKV, int hd, int pos, int rhalf)
+    int nH, int nKV, int hd, int pos, int rhalf, float mscale)
 {
+    // mscale is YaRN's attention_factor, folded into cos/sin exactly as decoder/rope.go's
+    // applyRoPE does it (c = cos(theta)*scale; s = sin(theta)*scale) — NOT applied to the
+    // rotated output afterward, which is a different and wrong place to put it. 1.0 for every
+    // family without YaRN, so this is a no-op multiply on every existing dispatch rather than
+    // a new branch. Metal's rope carries the same parameter for the same reason.
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int tail = hd - 2 * rhalf; // un-rotated elements per head; 0 when rotary is full
     int qn = nH * rhalf, kn = nKV * rhalf, tn = nKV * tail;
@@ -48,7 +53,7 @@ extern "C" __global__ void rope_kv(
     if (idx < qn) {
         int h = idx / rhalf, d = idx % rhalf;
         float ang = pos * invFreq[d];
-        float c = cosf(ang), s = sinf(ang);
+        float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
         float* base = q + h * hd;
         float a = base[d], b = base[d + rhalf];
         base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s));
@@ -57,7 +62,7 @@ extern "C" __global__ void rope_kv(
         int j = idx - qn;
         int h = j / rhalf, d = j % rhalf;
         float ang = pos * invFreq[d];
-        float c = cosf(ang), s = sinf(ang);
+        float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
         float* base = k + h * hd;
         float a = base[d], b = base[d + rhalf];
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));

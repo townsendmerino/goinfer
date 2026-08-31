@@ -897,6 +897,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			} else {
 				L.q, L.k, L.o = r.upW(h.q), r.upW(h.k), r.upW(h.o) // v below (K=V layers have none)
 				L.invF = r.up32(h.invFreq)
+				L.mscale = float32(m.RopeMscaleLayer(l)) // YaRN attention_factor; 1.0 for every family without it
 				L.qGate = h.qGate
 			}
 			if !h.isMoE {

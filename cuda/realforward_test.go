@@ -263,8 +263,8 @@ func TestRealForwardParity(t *testing.T) {
 			doG(Ly.q, aq, aSc, qbias, qB)
 			doG(Ly.k, aq, aSc, kbias, kB)
 			doG(Ly.v, aq, aSc, vbias, vB)
-			L(fRope, g1(nH*half, 256), gc.Arg(qB), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
-			L(fRope, g1(nKV*half, 64), gc.Arg(kB), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
+			L(fRope, g1(nH*half, 256), gc.Arg(qB), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)), gc.ArgValue(float32(1)))
+			L(fRope, g1(nKV*half, 64), gc.Arg(kB), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)), gc.ArgValue(float32(1)))
 			L(kvStore, g1(kvDim, 128), gc.Arg(kB), gc.Arg(kc[l]), gc.ArgValue(int32(pos)), gc.ArgValue(int32(kvDim)))
 			L(kvStore, g1(kvDim, 128), gc.Arg(vB), gc.Arg(vc[l]), gc.ArgValue(int32(pos)), gc.ArgValue(int32(kvDim)))
 			nKeys := pos + 1

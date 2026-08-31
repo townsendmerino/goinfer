@@ -121,13 +121,17 @@ __global__ void quant_vec(const float* __restrict__ x, int N, int* __restrict__ 
 // rope: rotate pairs (d, d+half) of each head vector by theta = pos * invFreq[d]. In place.
 // vec is [nHeads * hd]; rotaryDim == hd (full RoPE, Qwen2/Llama). One thread per (head,d<half).
 __global__ void rope(float* __restrict__ vec, const float* __restrict__ invFreq,
-                     int nHeads, int hd, int pos) {
+                     int nHeads, int hd, int pos, float mscale) {
+    // mscale: YaRN attention_factor folded into cos/sin (see rope_kv in gemv_fwd.cu). This
+    // kernel is exercised only by tests today — production decode/prefill go through
+    // rope_kv / rope_kv_batched — but it carries the parameter so it cannot silently drop
+    // the factor if something later dispatches it.
     int half = hd / 2;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nHeads * half) return;
     int h = idx / half, d = idx % half;
     float ang = pos * invFreq[d];
-    float c = cosf(ang), s = sinf(ang);
+    float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
     float* base = vec + h * hd;
     float a = base[d], b = base[d + half];
     base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s));

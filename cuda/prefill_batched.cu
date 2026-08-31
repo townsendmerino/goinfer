@@ -119,7 +119,7 @@ extern "C" __global__ void qk_norm_batched(
 __global__ void rope_kv_batched(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
-    int nH, int nKV, int hd, int startPos, int rhalf, int M)
+    int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale)
 {
     int m = blockIdx.y; if (m >= M) return;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -132,13 +132,13 @@ __global__ void rope_kv_batched(
     const float* vm = v + (long)m * kvDim;
     if (idx < qn) {
         int h = idx / rhalf, d = idx % rhalf;
-        float ang = pos * invFreq[d]; float c = cosf(ang), s = sinf(ang);
+        float ang = pos * invFreq[d]; float c = cosf(ang) * mscale, s = sinf(ang) * mscale; // YaRN attention_factor; 1.0 elsewhere
         float* base = qm + h * hd;
         float a = base[d], b = base[d + rhalf];
         base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s)); base[d + rhalf] = __fmaf_rn(a, s, __fmul_rn(b, c));
     } else if (idx < qn + kn) {
         int j = idx - qn; int h = j / rhalf, d = j % rhalf;
-        float ang = pos * invFreq[d]; float c = cosf(ang), s = sinf(ang);
+        float ang = pos * invFreq[d]; float c = cosf(ang) * mscale, s = sinf(ang) * mscale; // YaRN attention_factor; 1.0 elsewhere
         float* base = km + h * hd;
         float a = base[d], b = base[d + rhalf];
         float r0 = __fmaf_rn(a, c, -__fmul_rn(b, s)), r1 = __fmaf_rn(a, s, __fmul_rn(b, c));

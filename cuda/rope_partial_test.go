@@ -153,7 +153,7 @@ func TestRopePartial(t *testing.T) {
 			if e := fn.LaunchOn(bg, stream, gc.LaunchConfig1D(n, 256),
 				gc.Arg(dq), gc.Arg(dk), gc.Arg(dv), gc.Arg(dinv), gc.Arg(dkc), gc.Arg(dvc),
 				gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
-				gc.ArgValue(int32(c.pos)), gc.ArgValue(int32(rhalf))); e != nil {
+				gc.ArgValue(int32(c.pos)), gc.ArgValue(int32(rhalf)), gc.ArgValue(float32(1))); e != nil { // mscale 1.0 = unscaled
 				t.Fatalf("launch: %v", e)
 			}
 			if e := stream.Synchronize(bg); e != nil {

@@ -146,8 +146,8 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 		for range nLayers {
 			L(fRms, one(256, rmsShared), gc.Arg(x), gc.Arg(rmsA), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(aq), gc.Arg(aSc))
 			doGemv(Wqkv, aq, sQkv, qkvR, H, qkv)
-			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)))
-			L(fRope, cfg1D(nKV*half, 64), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos))) // (offset into k slice handled below in real backend; here just work)
+			L(fRope, cfg1D(nH*half, 256), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nH)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)), gc.ArgValue(float32(1)))
+			L(fRope, cfg1D(nKV*half, 64), gc.Arg(qkv), gc.Arg(invF), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)), gc.ArgValue(float32(1))) // (offset into k slice handled below in real backend; here just work)
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 				gc.Arg(qkv), gc.Arg(kc), gc.Arg(vc), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(scale), gc.ArgValue(int32(0)), gc.Arg(cctx))
 			L(fQuant, one(256, 256*4), gc.Arg(cctx), gc.ArgValue(int32(qDim)), gc.Arg(cq), gc.Arg(cSc))

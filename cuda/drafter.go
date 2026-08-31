@@ -320,7 +320,11 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 				BlockX: 256, BlockY: 1, BlockZ: 1},
 				Arg(d.ctxQ2), Arg(d.ctxKB), Arg(d.ctxVB), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
-				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(n))); e != nil {
+				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(n)),
+				// Drafters build from a geometry (no decoder.Model), which carries no YaRN
+				// attention_factor — so 1.0, not a value fetched from nowhere. A YaRN drafter
+				// would have to thread RopeMscaleLayer through geo first; this is where it lands.
+				gpu.ArgValue(float32(1))); e != nil {
 				return e
 			}
 		}
@@ -434,7 +438,8 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 				BlockX: 256, BlockY: 1, BlockZ: 1},
 				Arg(s.q), Arg(s.k), Arg(s.v), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
-				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(M))); e != nil {
+				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(M)),
+				gpu.ArgValue(float32(1))); e != nil { // no YaRN on a drafter geometry — see the note above
 				return e
 			}
 			// THE one kernel that is not the target's: uniform nKeys, so every block row

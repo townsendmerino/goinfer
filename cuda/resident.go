@@ -195,7 +195,13 @@ type cudaLayer struct {
 	// the residual add, not to a GEMV input.
 	postAttnNorm, postMLPNorm Buffer
 	invF                      Buffer // per-layer RoPE inv-freq (local vs global base)
-	hasBias                   bool
+	// mscale: YaRN's attention_factor for THIS layer (decoder.Model.RopeMscaleLayer). 1.0 for
+	// every family without YaRN, and 1.0 on a YaRN family's non-scaled layers — Mellum carries
+	// 1.2772588722239782 on its full-attention layers and 1.0 on the sliding ones, so this is
+	// per-layer and not per-model. Passed to rope_kv / rope_kv_batched, which fold it into
+	// cos/sin. Metal and WebGPU both carry the same per-layer value for the same reason.
+	mscale  float32
+	hasBias bool
 
 	// Sparse MoE FFN. Per LAYER, not per model: GLM/DeepSeek's first_k_dense_replace makes the
 	// first FirstKDense layers plain dense MLPs while the rest route, so the two blocks coexist
@@ -2205,7 +2211,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
 			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf))); err != nil {
+			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)), gpu.ArgValue(Ly.mscale)); err != nil {
 			return err
 		}
 		nKeys := pos + 1

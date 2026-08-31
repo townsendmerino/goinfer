@@ -346,7 +346,7 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 			doG(Ly.v, aq, aSc, vb, vB, 0)
 			L(ropeKV, g1(nH*half+nKV*half, 256), gc.Arg(qB), gc.Arg(kB), gc.Arg(vB), gc.Arg(invF), gc.Arg(kc[l]), gc.Arg(vc[l]),
 				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)),
-				gc.ArgValue(int32(half)))
+				gc.ArgValue(int32(half)), gc.ArgValue(float32(1))) // mscale 1.0 = unscaled
 			nKeys := pos + 1
 			L(fAttn, gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 				gc.Arg(qB), gc.Arg(kc[l]), gc.Arg(vc[l]), gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(nKeys)), gc.ArgValue(attnScale), gc.ArgValue(int32(0)), gc.Arg(cctx))

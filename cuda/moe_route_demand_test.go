@@ -188,12 +188,12 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 		// invFreq[0] only. 64-float buffers are far larger than anything reachable.
 		lerr = q.Launch(pRope, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc),
 			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(2)),
-			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)))
+			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)), gpu.ArgValue(float32(1))) // mscale 1.0 = unscaled
 	}
 	if census && lerr == nil {
 		lerr = q.Launch(pRopeB, one, Arg(rq), Arg(rk), Arg(rv), Arg(rInv), Arg(rKc), Arg(rVc),
 			gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(2)),
-			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)))
+			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(float32(1)))
 	}
 	serr := q.Sync()
 	after := read()
