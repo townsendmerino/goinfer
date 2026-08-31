@@ -201,7 +201,23 @@ repos for `fp8|e4m3|e5m2|float8` outside tests: the only hits are `simdgroup_flo
 type, not the fp8 numeric format**. Worth writing down, because that name collision makes a casual
 grep look like fp8 support already exists.
 
-**Q3 · fp8 e4m3 reader** — `any`, **NOT STARTED. Hard prerequisite for G8; useful independently.**
+**Q3 · fp8 e4m3 reader** — **DONE 2026-08-31** (`dec0604`, with aikit v1.31.0 for the dtype half).
+Unblocks G8; useful independently.
+
+> Shipped as scoped, in the three pieces below. Dtype recognition landed in aikit
+> (`embed/safetensors.go` widens `Uint8s()` to `F8_E4M3`/`F8_E5M2`, pinned by a test that also
+> asserts the REFUSALS, so the widening cannot quietly grow); the decode is the 256-entry table
+> this entry predicted (`decoder/fp8.go`), gated against a PyTorch-generated oracle of all 256
+> values — negative zero included, which needed `math.Copysign(0,-1)` because Go folds a `-0.0`
+> literal to `0`; and the blockwise scale plumbing reads `*.weight_scale_inv` over 2-D 128x128
+> blocks, with `parseQuantConfig` refusing `e5m2` and per-tensor fp8 rather than mis-reading them.
+>
+> Validated the way this queue prefers: not against my own arithmetic but against a VALIDATED
+> READER OF THE SAME WEIGHTS — the fp8 and bf16 releases of one checkpoint, which must agree.
+>
+> **This header said "NOT STARTED" for the whole of the day it shipped.** Recorded because it is
+> the fourth instance of the defect this queue documents: the work is done, the body would have
+> told you so, and the sentence a scanner stops at said otherwise.
 
 Three pieces, and only the middle one is novel:
 
