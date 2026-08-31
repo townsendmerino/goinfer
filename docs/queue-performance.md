@@ -327,6 +327,42 @@ in the call cost real time. Centering is a closed question; item 3's split-half 
 that page identifies. The arm64 number here reproduces that page's 24.50 GMAC/s within 2.4%
 (204.1 ns vs 209 ns), which is a free validation that both measurements describe the same kernel.
 
+### The AVX2 term, attacked and REFUTED (2026-08-31) — the serial fold is not the ceiling
+
+The obvious candidate for the 1.5× AVX2-specific term was the fold's **single accumulator**:
+`dotW4A8FoldAVX2` ends each iteration in `VFMADD231PS Y11, Y9, Y10`, reading the previous
+iteration's `Y10`, so one ~5-cycle dependency chain spans the whole row. aikit's
+`TestW4A8IssueWidthProbe` reports idle issue slots — the signature of a latency-bound chain — and
+the identical change on arm64 (`dotW4A8FoldSDOT2Acc`) is on record as a **real 1.4–1.75× win**.
+
+Built (`dotW4A8Fold2AccAVX2`, aikit `231f989`) and **measured negative**:
+
+| Ryzen 7 3700X, K=5120, order-alternated | pass 1 | pass 2 |
+|---|---|---|
+| 1Acc `dotW4A8FoldAVX2` | 17.26 | 17.38 GMAC/s |
+| 2Acc `dotW4A8Fold2AccAVX2` | 17.45 | 17.41 GMAC/s |
+
+~0.5%, inside noise. Correctness clean against the scalar oracle (~1e-7 across nGroups
+2–160), so this is a refuted hypothesis and not a broken kernel.
+
+**Why it was still right to build it.** aikit's priors note records the issue-width probe as *"a
+hint, never load-bearing"*, and cites this very mechanism as the fix a mistrusted "not
+issue-limited" reading would have talked someone out of. The probe motivated a cheap attempt; it
+did not get to substitute for the A/B.
+
+**Leading explanation, UNVERIFIED — no uop counters were read.** ~20 vector instructions per
+32-MAC group, and Zen 2 cracks every 256-bit AVX2 op into two 128-bit uops ⇒ ~40 uops/group, a
+6.7–10 cycle/group floor at 4–6 uops/cycle. The measurement is 1.854 ns/group = 6.7–8.2 cycles
+depending on clock — already at that floor, so breaking a 5-cycle chain frees nothing. arm64 NEON
+is 128-bit natively and pays no such split, which is also the leading explanation for its 1.47×
+advantage on the same algorithm.
+
+**So the AVX2 lever is fewer instructions per group — the unpack prologue — not chain depth.**
+That is what the split-half repack attacks, and `docs/task-w4a8-neon-bandwidth.md` already names
+item 3's repack as "the one real lever Gate 0 identified, unattempted". This result reaches the
+same conclusion from the amd64 side by a different route, which is the strongest form the
+recommendation has had.
+
 **Limits.** Micro-benchmarks, so they prove the primitive and never the composition — P14's 2.4×
 peer ratio is end-to-end and is not restated by any ratio here. One box each; the M1 Pro ran at load
 1.89 rather than idle, though its int8 baseline landing within 2.5% of the Ryzen's argues against
