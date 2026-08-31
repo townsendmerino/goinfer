@@ -147,10 +147,19 @@ var admissionGolden = map[string][]string{
 	"internlm2":        {"cuda", "metal", "webgpu"},
 	"internlm3":        {"cuda", "metal", "webgpu"},
 	"llama4_text":      {"cuda", "metal", "webgpu"},
-	// mellum's Metal admission is a documented SIDE EFFECT of gpt-oss's FeatRopeMscale (G10), not
-	// its own gate — G11 (docs/queue-correctness.md) tracks getting Mellum a real-weight Metal
-	// proof; until then this is here because it IS what the code does, not because it's trusted.
-	"mellum":     {"metal", "webgpu"},
+	// mellum reaches cuda and metal by the SAME coupling and with VERY DIFFERENT evidence, so
+	// the two are not interchangeable rows:
+	//   - cuda (added 2026-08-31, G7): FeatRopeMscale was declared for gpt-oss's YaRN, and
+	//     mellumArchitecture needs exactly {MoE, PerLayerRoPE, QKNorm, RopeMscale, SlidingWindow}
+	//     — the other four were already declared, so the fifth admitted Mellum for free. That
+	//     coupling was PRE-REGISTERED as a trap and then discharged by measurement rather than
+	//     waived: TestMellumResidentParityCUDA on a real 4-layer slice gives 7/11 argmax-exact,
+	//     0 hard fails, min cosine 0.994600. Mellum on CUDA is a MEASURED admission.
+	//   - metal: still the undischarged version of that same side effect (G10) — no Mellum
+	//     checkpoint was reachable there, so it was resolved by an owner call. G11 tracks the
+	//     real-weight Metal proof. It is here because it IS what the code does, not because it
+	//     is trusted.
+	"mellum":     {"cuda", "metal", "webgpu"},
 	"mistral":    {"cuda", "metal", "webgpu"},
 	"mixtral":    {"cuda", "metal", "webgpu"},
 	"nemotron_h": {"webgpu"},
@@ -217,13 +226,18 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
 		// cgo-free CUDA: dense + QK-norm + sliding window + the Gemma set + partial rotary + MoE
 		// (routed via mixtral-tiny, ungated shared expert via glm-tiny) + the FINAL-logit softcap
-		// (host-side tanh in step(), 9a-P2 — Gemma 4). Still no per-layer rotary WIDTH, no YaRN
-		// mscale, no ATTENTION softcap (FeatAttnLogitSoftcap — a per-layer kernel), no MLA/SSM, and
-		// no GATED shared expert (Qwen2-MoE) — now expressed as FeatMoEGatedShared (which CUDA does
-		// NOT declare), so the Qwen2-MoE decline is in the shared taxonomy, not a hand-coded check.
+		// (host-side tanh in step(), 9a-P2 — Gemma 4). FeatRopeMscale landed 2026-08-31 (G7): the
+		// YaRN attention_factor is folded into cos/sin inside all three rope kernels (glue.cu,
+		// gemv_fwd.cu, prefill_batched.cu) with per-layer wiring from RopeMscaleLayer, and it is
+		// gated by TestRopeMscale plus a real-weight TestMellumResidentParityCUDA (4-layer slice:
+		// 7/11 argmax-exact, 0 hard fails, min cosine 0.994600) — evidence first, declaration
+		// after. Still no per-layer rotary WIDTH, no ATTENTION softcap (FeatAttnLogitSoftcap — a
+		// per-layer kernel), no MLA/SSM, and no GATED shared expert (Qwen2-MoE) — now expressed as
+		// FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE decline is in the
+		// shared taxonomy, not a hand-coded check.
 		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
 			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
-			FeatDeltaNet, FeatMoEGatedShared},
+			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,

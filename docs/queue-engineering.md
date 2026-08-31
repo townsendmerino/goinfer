@@ -1627,7 +1627,7 @@ content-keyed citation added to each, so the next sweep is the lint rather than 
 
 | gate | state | anchor |
 |---|---|---|
-| G-01 `TestResidentAdmission_matrix` tautological | **fixed** — compares against a reviewed golden and errors on any family missing a row | `decoder/features_test.go:193` |
+| G-01 `TestResidentAdmission_matrix` tautological | **fixed** — compares against a reviewed golden and errors on any family missing a row | `decoder/features_test.go:202` |
 | G-02 Metal snapshot golden applies no embed scale | **fixed** — `Forward`/`ForwardArgmax` apply the arch scale, with a named regression gate | `metal/snapshot_golden_test.go:77` |
 | G-03 `buildMatrix` env-pinning | already closed | — |
 | G-04 `case "slots"` doesn't assign `residencyBufs` | **fixed** — the switch populates `pinned` and it is assigned after | `metal/model.go:927` |
