@@ -136,13 +136,25 @@ Prefer committed increments that survive interruption over one big commit at the
 
 ## Citations and the pre-push hook
 
-`scripts/queue_citation_lint.py` runs **as a pre-push hook and REFUSES the push** on a red. Two
+`scripts/queue_citation_lint.py` runs **as a pre-push hook and REFUSES the push** on a red. Four
 traps worth knowing before you hit them:
 
 - A backtick-quoted concrete path under a **gitignored** directory (`docs/internal/…`) is a
   FORBIDDEN DESTINATION — *including in another repo*, since nobody else can resolve it.
   Describe the record in prose instead; that is what `c494c62` did.
 - A stale `path:line` index is fixed with `--update`, not by deleting the citation.
+- **A missing MODULE reads as a broken lint but is a missing download.** The lint validates
+  citations that point into `aikit`, and treats an unresolvable module as a hard failure on
+  purpose — calling it a skip "would make the green cover nothing". So when `go.mod`'s pinned
+  aikit is not in `~/go/pkg/mod` it refuses the push with `CANNOT SEARCH — no module cache and
+  no checkout for: github.com/townsendmerino/aikit`. Fix with `go mod download`, **not**
+  `--no-verify` and not `--update`. It fires after every aikit bump you have not built since,
+  and on every fresh `git worktree` (which has no `go.work`). Measured 2026-08-31: a docs-only
+  push refused because `origin/main` had moved v1.30.0 → v1.31.0.
+- **Read its exit code DIRECTLY, never through a pipe.** `python3 scripts/queue_citation_lint.py
+  | tail -6; echo $?` reports **tail's** status, so a red lint looks green — the script prints a
+  long green-scope epilogue either way, which is exactly what makes the misread easy. Redirect to
+  a file and check `$?`, or the hook will be the first thing that tells you.
 
 `git push --no-verify` exists and is almost never the right answer — the lint is usually right.
 
