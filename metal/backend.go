@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	"golang.org/x/sys/unix"
 )
 
 func init() {
@@ -63,6 +64,22 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprintf(os.Stderr, "[metal] declined — unimplemented features: %v\n", missing)
 		return nil, false, nil
 	}
+	// FITS-IN-MEMORY GUARD. Metal's unified memory IS host RAM, and it WIRES the mmap pages a
+	// command buffer touches, so a model whose weights exceed RAM does not merely run slowly —
+	// it pages until swap is exhausted. Measured 2026-08-31 on a 16 GB MacBook with gpt-oss-20b
+	// (11.28 GB of weights): swap went to 35.98 GB of 36 GB, the process sat in uninterruptible
+	// I/O wait with RSS creeping 1.8 -> 2.0 GB over 12 minutes, and the load NEVER completed and
+	// never declined. Declining is strictly better than that, and there was no check at all: the
+	// only size guard here caps the KV CONTEXT (checkCap, above), not the weights.
+	//
+	// Keyed on two quantities WE compute — the model's own weight bytes and the machine's
+	// physical RAM — never on the OS's account of what is free. Darwin's UBC reclaims under
+	// pressure, so "available" reports what survived rather than what can be asked for; an
+	// RSS-keyed ceiling once reported LESS memory at a known failure point than at baseline,
+	// which is a guard that inverts exactly when it is needed.
+	if !residentFitsMemory(m) {
+		return nil, false, nil
+	}
 	res, e := buildResident(m)
 	if e != nil {
 		fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", e)
@@ -70,6 +87,54 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	}
 	b.resident = &metalResident{r: res, hidden: res.H}
 	return b.resident, true, nil
+}
+
+// residentMemFraction is the share of physical RAM the WEIGHTS alone may occupy. The remainder
+// is not slack: the KV cache, per-layer scratch, the command buffers, and the rest of the system
+// all live in the same unified memory.
+//
+// 0.70 is set from ONE measured failure (11.28 GB of 16 GB = 70.5% thrashed to swap exhaustion)
+// and is therefore a threshold, not a curve — it is honestly a single point, and a machine that
+// would in fact have fit can override with GOINFER_NO_RESIDENT_MEM_GUARD=1 rather than be told
+// no by a number nobody has swept. What it must not do is silently pass the case it was written
+// for, which is why the bar sits just below that measurement rather than at a rounder 0.75.
+const residentMemFraction = 0.70
+
+// fitsResidentBudget is the arithmetic alone, split out so it can be driven with the numbers
+// from the measurement instead of requiring a 12 GB checkpoint to exercise the guard.
+func fitsResidentBudget(need int64, ram uint64) bool {
+	if need <= 0 || ram == 0 {
+		return true // unknown ⇒ do not refuse
+	}
+	return uint64(need) <= uint64(float64(ram)*residentMemFraction)
+}
+
+// residentFitsMemory reports whether this model's weights fit the machine, declining loudly when
+// they do not. True (proceed) whenever the answer is unknown — an unreadable hw.memsize or a
+// model reporting zero bytes must not silently disable residency for everyone.
+func residentFitsMemory(m *decoder.Model) bool {
+	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		return true
+	}
+	need := m.ResidentWeightBytes()
+	if need <= 0 {
+		return true // nothing to compare against; not a reason to refuse
+	}
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if err != nil || ram == 0 {
+		return true
+	}
+	if fitsResidentBudget(need, ram) {
+		return true
+	}
+	budget := uint64(float64(ram) * residentMemFraction)
+	const gb = 1 << 30
+	fmt.Fprintf(os.Stderr, "[metal] declined — weights %.2f GB exceed %.0f%% of %.1f GB RAM "+
+		"(budget %.2f GB). Metal wires the pages it touches, so loading this would page to swap "+
+		"exhaustion rather than run; continuing on the CPU/staged path. Override with "+
+		"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",
+		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb)
+	return false
 }
 
 func (b *metalBackend) Close() error {

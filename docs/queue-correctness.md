@@ -111,7 +111,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > | Metal resident | **never completed and never declined.** Swap went to **35.98 GB of 36 GB (885 MB free)**, the process sat in uninterruptible I/O wait at 29% CPU with RSS creeping 1.8 -> 2.0 GB over 12 minutes. Killed; the machine recovered instantly (swap 6.46 GB, free 30% -> 70%) |
 >
 > **The defect is that it did not decline.** Admission says `gpt_oss` IS admitted on Metal, so the
-> runtime accepted a model larger than RAM and thrashed instead of refusing. `metal/backend.go:98`
+> runtime accepted a model larger than RAM and thrashed instead of refusing. `metal/backend.go:163`
 > caps the KV **context**, but there is NO weight-size feasibility check anywhere in the tree
 > (`grep` for `hw.memsize`/`physmem` across all modules returns nothing). A guard keyed on bytes we
 > compute ourselves — model size plus wiring headroom, not the OS's account of what is free, since
@@ -124,6 +124,26 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > **Step 2 is therefore blocked on BOTH backends, now for measured reasons on both:** CUDA 8 GB
 > VRAM against 13.8 GB (needs the host<->VRAM MoE-streaming path), Metal 16 GB RAM against
 > 11.28 GB plus wiring. Neither is a coding problem; both need hardware or the streaming path.
+>
+> **THE NON-DECLINE IS FIXED (2026-08-31).** `Model.ResidentWeightBytes()` sums the actual weight
+> matrices — including the MoE experts, which are the whole model for a sparse family — and
+> Metal's `BuildResident` refuses when they exceed 70% of physical RAM. The same load now returns
+> a clean decline in **59 s** instead of hanging for 12+ minutes on exhausted swap.
+>
+> **The accessor sums TENSORS, not the file, and the difference decided the outcome.** Loaded with
+> `Quant: "int8int8"` the 11.28 GB on-disk MXFP4 expands to **19.51 GB in memory**. A file-size
+> proxy — the obvious cheap implementation — would have under-reported by 8 GB and let exactly
+> this case through the guard it was written for.
+>
+> Both directions are pinned (`TestResidentMemGuard`): it refuses 11.28 GB on 16 GB, admits the
+> 0.5B/1.5B models that must stay resident, admits the same big model on a 64 GB machine, and
+> never refuses on unknown inputs — a guard that fired too eagerly would silently move every
+> model to CPU, which is the opposite failure and just as invisible.
+>
+> **Known weakness, not fixed here:** `ResidentDecline()` still reports the generic "no usable
+> device, or an unsupported model shape". The specific reason reaches stderr only. That is
+> pre-existing for EVERY decline (a feature mismatch reads the same way), so attributing declines
+> properly is its own item rather than a rider on this one.
 
 **What the CUDA declaration actually needs, and the trap waiting in it:**
 

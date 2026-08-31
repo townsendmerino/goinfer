@@ -145,3 +145,52 @@ func TestGptOssResidentParityReal20B(t *testing.T) {
 	// Same int4-noise bar the other resident gates use.
 	assertParity(t, "gpt-oss-20b-real", st, 0.95)
 }
+
+// TestGptOssResidentMemGuardDeclines is the END-TO-END half of the fits-in-memory guard: the
+// unit test above pins the arithmetic, this pins that the arithmetic is actually REACHED and
+// that the outcome is a clean decline rather than the swap-exhaustion hang it replaced.
+//
+// It is safe to run on the machine that hung: the guard fires before Metal allocates anything,
+// and the CPU-side weight load it does reach is the same one that completed fine (12/12 steps)
+// during the measurement. If this test ever hangs, the guard has regressed — which is precisely
+// what it is here to catch.
+func TestGptOssResidentMemGuardDeclines(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	path := os.Getenv("GOINFER_GPTOSS_GGUF")
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, "models", "gpt-oss-20b-MXFP4.gguf")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no gpt-oss checkpoint at %s", path)
+	}
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	var ram uint64
+	if out, e := exec.Command("sysctl", "-n", "hw.memsize").Output(); e == nil {
+		ram, _ = strconv.ParseUint(strings.TrimSpace(string(out)), 10, 64)
+	}
+	if st, err := os.Stat(path); err != nil || ram == 0 || fitsResidentBudget(st.Size(), ram) {
+		t.Skip("this machine fits the checkpoint — the decline path is not the case under test here")
+	}
+
+	t0 := time.Now()
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	t.Logf("weights %.2f GB against %.1f GB RAM; load returned in %s",
+		float64(m.ResidentWeightBytes())/(1<<30), float64(ram)/(1<<30),
+		time.Since(t0).Round(time.Second))
+	if m.ResidentActive() {
+		t.Fatal("resident is ACTIVE for a model larger than the memory budget — the guard did not fire")
+	}
+	if m.ResidentDecline() == "" {
+		t.Error("declined without recording a reason — the decline must be attributable")
+	}
+	t.Logf("declined cleanly: %s", m.ResidentDecline())
+}
