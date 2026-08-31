@@ -109,6 +109,7 @@ to read if you only read one.
 
 | page | what's in it |
 |---|---|
+| [docs/README.md](docs/README.md) | **the map of the docs** — what each kind of page is, and which ones are current claims |
 | [docs/book/](docs/book/) · [read online](https://townsendmerino.github.io/goinfer/) | the inference primer — concepts from zero, tied to measured numbers |
 | [docs/how-inference-works.md](docs/how-inference-works.md) | the same ground in ten minutes, anchored to specific source lines |
 | [docs/server.md](docs/server.md) | the HTTP surface: OpenAI, Anthropic, multi-model, vision, embeddings, admin |
