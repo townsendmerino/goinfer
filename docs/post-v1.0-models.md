@@ -16,7 +16,8 @@ Superseding the Tier A/B/C ordering below for near-term work. Read through
 `docs/capability-matrix.md` first before picking one up — it's the source of truth for what's
 actually landed, not this doc. Filtered for goinfer's niche: single-user, batch-1, consumer
 hardware, text-only, parity-gateable against HF, weights in safetensors/GGUF. Queued as
-`G4`-`G8` in `docs/queue-correctness.md`.
+`G7`/`G8` in `docs/queue-correctness.md`; `G4`-`G6` closed and archived to
+`docs/completed/queue-correctness.md` on 2026-08-31.
 
 1. **Nemotron 3 Nano (30B-A3B) — best payoff per unit of work (`G4`).** Hybrid Mamba-Transformer
    (Nemotron-H shape) with the FFN layers replaced by sparse MoE: sigmoid-gated router, shared

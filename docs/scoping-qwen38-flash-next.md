@@ -48,7 +48,7 @@ before it feeds any download or hardware estimate.
 ## Why not this checkpoint
 
 The 62 GB Linux box already has a direct precedent at almost this scale: **Qwen3-Next-80B-A3B**
-(163 GB bf16) can't get a full reference forward there at all — G5 (`docs/queue-correctness.md:188-193`)
+(163 GB bf16) can't get a full reference forward there at all — G5 (`docs/completed/queue-correctness.md`, archived 2026-08-31)
 only cleared a 4-layer slice oracle (cosine 1.00000000, argmax + greedy exact) for exactly that
 reason, and stays `experimental` because "no full reference forward of a 163GB bf16 model fits
 62GB." Qwen3.8-Flash-Next is 180B — bigger than the model that already couldn't be fully
