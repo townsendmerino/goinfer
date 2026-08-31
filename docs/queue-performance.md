@@ -869,7 +869,39 @@ Known and durable: driver quantum is **2 MiB** (not next-power-of-two — 5→6,
 measured); sub-quantum requests are pool-served but **not free**. Both asserted in
 `cuda/allocgran_test.go` with their measurements.
 
-**A2 · 26B documentation correction** — `linux`, **unblocked by A1**
+**A2 · 26B documentation correction** — `linux`, **DONE 2026-08-31.** Published as
+`docs/benchmarks.md` §B4.2. The pre-registered prediction at the bottom of this entry **resolved,
+and it half-missed** — see the verdict below.
+
+> **THE PREDICTION RESOLVED WITHOUT ANYONE NOTICING, which is the part worth recording.** This
+> entry pre-registered *"~74-78% hit rate, ~15.0-15.8 tok/s"* for 30 slots. §B4.1's re-anchor run
+> measured exactly that configuration on 2026-08-27 — 76.1% hit rate, **16.12 tok/s** — and the
+> result was never carried back here. It sat for four days as an open pre-registration whose
+> answer was already in the repo.
+>
+> | | pre-registered | measured @30 | verdict |
+> |---|---|---|---|
+> | hit rate | 74-78% | **76.1%** | **in band** |
+> | decode | 15.0-15.8 tok/s | **16.12** | **ABOVE band, by ~2%** |
+>
+> **Half-confirmed, and the half that missed is the informative one.** The hit-rate curve was
+> predicted well, so the LRU model behind it is sound. Throughput came in above the band, which
+> means the prediction implicitly assumed decode scales with hit rate more weakly than it does —
+> the interpolation from 16 slots (57.3%, 11.42) to 38 (81.6%, 16.98) was treated as closer to
+> linear in slots than it is. Recorded as a miss rather than rounded into a hit: 16.12 is outside
+> 15.0-15.8, and a band you widen after seeing the number is not a band.
+
+> **AND THE CAP MOVED, so this entry's headline figure was stale before it was published.** "The
+> corrected cap is 33" is keyed to A1's machine state — free 3,847,880,704 B on driver
+> `595.58.03`. The current stack (`595.91.07`, Nobara 44) reports less free and caps the same
+> 48-slot request at **30**. The closed form is unchanged and still exact; the number it produces
+> is a function of free VRAM, which is not a constant of the codebase. §B4.2 therefore publishes
+> the requirement column and the free-VRAM threshold per slot count, and names the cap PER STACK
+> rather than as a single number.
+
+**Original entry follows.**
+
+**A2 (original) · 26B documentation correction** — `linux`, **unblocked by A1**
 
 38 slots is unreachable with correct accounting. The published 16.98 tok/s was measured at a cap
 that shouldn't have been granted — it worked with ~133 MB leftover, equal to the forward's demand

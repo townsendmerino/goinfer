@@ -1030,6 +1030,88 @@ runs pass their coherence floor (distinct-trigram 0.789 against a 0.70 bar). Cur
 this model faster on the same card by CPU-offloading 58% of it (~24.5 tok/s, §B4 above); goinfer's
 distinction here is all-experts-on-GPU, which is an architecture difference rather than a rate win.
 
+### B4.2 — What the expert-cache cap actually is, and why 38 was never safe
+
+**This section is arithmetic plus already-published measurements — it adds no new timing row.** The
+closed form is A1's (`docs/queue-performance.md`); the measured caps and rates are §B4 and §B4.1.
+
+The cache asks for `GOINFER_MOE_CACHE_SLOTS` slots per layer and the runtime caps the request to
+what free VRAM allows. **The cap is not a property of the card or of the build** — it is a function
+of free VRAM at the moment `allocSlots` runs, and that number moves with the driver, the distro, and
+the resident KV cache. A slot count is therefore only meaningful with the free-VRAM figure beside it.
+
+Per slot, per layer, the backend allocates four buffers of `123,904 × {1, 2, 8, 16}` bytes, and the
+driver rounds **each independently** up to its 2 MiB quantum. So the cost is a step function, not a
+line:
+
+```
+  x   = n × 123,904 / 2,097,152
+  Q(n) = ceil(x) + ceil(2x) + ceil(8x) + ceil(16x)          quanta per layer
+  requirement(n) = 30 layers × Q(n) × 2,097,152
+  grantable      when  requirement(n) + 402,653,184 ≤ free   (the margin)
+```
+
+**The form predicts the runtime's own log lines exactly, on a stack it was not derived on.** It was
+fitted on driver `595.58.03`; these are `595.91.07`:
+
+| the runtime printed | the form gives |
+|---|---|
+| "48 slots/layer would need **4.9 GB**" | requirement(48) = 4,907,335,680 |
+| "capping to 30 (**3.1 GB**)" | requirement(30) = 3,145,728,000 |
+| capped to 30 at "**3.6 GB** free" | cap 30 ⟺ free ∈ [3,548,381,184 , 3,611,295,744) |
+| capped to 40 at "**4.5 GB** free" | cap 40 ⟺ free ∈ [4,492,099,584 , 4,617,928,704) |
+
+Both bracket checks contain the logged figure, so the form survived a driver and distro major
+upgrade without refitting.
+
+| slots/layer | Q(n) | requirement | free needed (= req + 384 MiB margin) |
+|---|---|---|---|
+| 8 (default) | 14 | 880,803,840 | 1,283,457,024 |
+| 16 | 27 | 1,698,693,120 | 2,101,346,304 |
+| **30** | 50 | 3,145,728,000 | 3,548,381,184 |
+| 31 | 51 | 3,208,642,560 | 3,611,295,744 |
+| 33 | 54 | 3,397,386,240 | 3,800,039,424 |
+| 34 | 58 | 3,649,044,480 | 4,051,697,664 |
+| 38 | 62 | 3,900,702,720 | 4,303,355,904 |
+| **40** | 65 | 4,089,446,400 | 4,492,099,584 |
+| 48 | 78 | 4,907,335,680 | 5,309,988,864 |
+
+Note 33 → 34: four quanta at once, because at n = 34 all four buffers cross a boundary together. 34
+is the worst step in the range, and it is the value that was once recommended.
+
+**What each stack actually granted, with the leftover column that distinguishes safe from lucky:**
+
+| stack | context | free at `allocSlots` | cap | leftover after `allocSlots` | hit rate | tok/s |
+|---|---|---|---|---|---|---|
+| `595.58.03` | 4096 | 3,847,880,704 | **33** | 450,494,464 | *not measured* | *not measured* |
+| `595.91.07` | 4096 | ~3.6 GB | **30** | 402,653,184 – 465,567,744 | 76.1% | **16.12** |
+| `595.91.07` | 2048 | ~4.5 GB | **40** | 402,653,184 – 528,482,304 | 82.2% | **17.62** |
+
+**Leftover is what the 38-slot figure was missing.** `16.98 tok/s @ 38 slots` (§B4) is recorded as
+**measured-but-unsafe, not retracted** — it ran, and it produced coherent output. It was granted by
+the old, quantum-blind cap, which sized the request without rounding each of the four buffers up
+independently and so believed 38 fit.
+
+**Two records of that run disagree, and the disagreement is left visible rather than resolved by
+choosing.** `queue-performance.md`'s A2 records it surviving on *~133 MB of leftover*; the closed
+form puts requirement(38) at 3,900,702,720, which already exceeds the 3,847,880,704 free recorded for that machine state, before the 384 MiB margin is even considered.
+Both cannot be exact. The likeliest reading is that the ~133 MB was observed at a free-VRAM figure
+that was never written down and differed from the one A1 later used to derive the form, which is
+precisely why free VRAM now appears as a column here instead of being assumed. **The safety verdict
+does not depend on which is right**: under either reading 38 was granted without the margin the cap
+exists to preserve, and 34 — one step below it — is the worst quantum boundary in the whole range.
+
+**The current best configuration is not 38 and is not on the historical stack.** Halving the
+resident KV context frees ~1 GB, which buys ten more slots, which is worth more than the context
+was: **40 slots at 17.62 tok/s** beats the old 16.98 outright. So the honest statement of this
+row's history is that the peak was never reproduced *at 38* and did not need to be — the
+configuration that beats it is a different, and safe, one.
+
+**Operating guidance.** Request generously and let the cap decide (`GOINFER_MOE_CACHE_SLOTS=48`
+grants whatever fits); the default of 8 is **inert** on this model, because top-8 routing fills it
+exactly and nothing survives to the next token. If you want more slots, the lever is the resident
+context, not the request.
+
 ## B5 — Anchored re-measure, 2026-08-09 (goinfer `686c9f8` vs Ollama v0.32.6)
 
 > **⚠ SUPERSEDED for greedy peer rows — measured before the 2026-08-25 re-anchor** (driver
