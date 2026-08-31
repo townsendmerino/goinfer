@@ -399,7 +399,42 @@ most this many*, notes that the runtime lowers it and logs what it chose, and no
 **The goldens run is still owed, on a fixture-bearing checkout** — see the finding below. Merging is
 the next action.
 
-**D3b · Should the expert-cache default rise above `topK`?** — `linux`, **unblocked, now a real question**
+**D3b · Should the expert-cache default rise above `topK`?** — `linux`, **DONE — SHIPPED
+2026-08-20 in `8f3c5e7`.** Answer: yes, to a bounded `8 × topK`, VRAM-capped.
+
+> **THIS ENTRY SAID "BLOCKED" FOR ELEVEN DAYS AFTER THE CHANGE SHIPPED, and the reason is worth
+> more than the fix.** The entry contains its own resolution — one paragraph reads *"D3b's
+> blocker is **resolved on that basis**, and A10 is now **fully decomposed**"* — and then
+> concludes, two paragraphs later, **"reopen when A10 is attributed, not before."** A10 *is*
+> attributed, and says so directly above. The conclusion was written at the 2026-08-12
+> precondition read; the resolution was appended later; nobody deleted the conclusion. A reader
+> scanning for a verdict finds the stale sentence, because it is the one in verdict position.
+>
+> **What shipped** (`cuda/backend.go`, `8f3c5e7` — "1.59x on the 35B, 2.6x on the 26B"): the
+> default is `8 × topK`, floored at `topK`, capped to `nE`, and still passed through
+> `allocSlots`' free-VRAM cap — so it can only ever ask for LESS than the reverted "ask for all"
+> default that OOM'd on 2026-08-11.
+>
+> **Why a bound rather than "ask for all"**, from the sweep in the code's own comment
+> (Qwen3.6-35B-A3B, nE=256, topK=8): 8 slots → 6.77 tok/s at ~0% hit; **48 → 10.09 at 71.1%**;
+> 76 → 10.32 at 77.7%. The knee is near 48 — cutting DMA 630→265 MB bought 1.49×, cutting it
+> 265→205 bought 1.02×. Past the knee slots consume GB for nothing and add exposure to the
+> deferred local-memory reservations that made "ask for all" fail. `8 × topK` sits just above the
+> knee and is recorded in the source as a **heuristic from one sweep, not a derived constant**.
+>
+> **Both halves of the stated precondition are met.** "Fixing the margin" (deriving it, not
+> checking it) — the single-context derivation, `151,191,552 + 137,822,208 = 289,013,760` against
+> the shipped `402,653,184`, with A10 now fully decomposed into `44,236,800` once-per-device plus
+> `106,954,752` per context. "Proving it on the 26B" — A7, and now `benchmarks.md` §B4.1: 30
+> slots at 76.1% / 16.12 tok/s, 40 slots at 82.2% / 17.62 tok/s.
+>
+> **Standing precondition, unchanged:** revisit if goinfer ever creates a second CUDA context, or
+> if a dependency gains `cuCtxCreate` and something uses it. The derivation is scoped to
+> single-context and is not a per-device result.
+
+**Original entry follows.**
+
+**D3b (original) · Should the expert-cache default rise above `topK`?** — `linux`, **unblocked, now a real question**
 
 `topK` degenerates to re-fetching every routed expert every token (~5 tok/s against ~17 at 38 slots on
 the 26B). It was set there because the cap could not be trusted; A5 fixed the cap and A7 proved it on
@@ -455,9 +490,14 @@ and A10 is now **fully decomposed**, so there is no longer a residue to worry ab
 44,236,800 B once per device plus 106,954,752 B per context, summing exactly. The derivation used the
 *measured gap* and did not depend on the decomposition — it is simply better founded for having it.
 
-**So: D3b is unblocked as a question and blocked as a change.** The precondition's second half
+**So: D3b is unblocked as a question and blocked as a change.**
+*(**SUPERSEDED — this sentence is the stale verdict.** It was true on 2026-08-12 and false from
+2026-08-20, when `8f3c5e7` landed the change. Marked rather than deleted because it is preserved
+history, but marked HERE because verdict position is where a scanning reader stops.)*
+The precondition's second half
 ("proving it on the 26B") is met — A7 did that. The first half is not. Recorded here so the next
 person does not re-decide it; **reopen when A10 is attributed**, not before.
+*(A10 was attributed 2026-08-12 and D3b shipped 2026-08-20 — both discharged.)*
 
 **Historical framing: out of the release, and the first question was not a merge question.**
 

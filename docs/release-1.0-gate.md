@@ -275,10 +275,15 @@ below is declaring it (§3), not proving it.
 - [ ] **REQUIRED · The supported-vs-experimental line in the README**, stated once and generated
   where possible: supported = current-T3 manifest row; experimental = named list. The number in
   the launch copy comes from this line and nowhere else.
-- [ ] **D3b — the expert-cache default.** The blocker's derivation basis is recorded
-  (single-context margin: 289,013,760 ≤ 402,653,184, revisit if goinfer ever creates a second
-  CUDA context); landing still needs the 26B run + a hit-rate figure. Decide: land before 1.0 or
-  explicitly defer post-1.0. Either is fine; it must not ride in silently with the RC.
+- [x] **D3b — the expert-cache default. LANDED 2026-08-20 in `8f3c5e7`**, before this line was
+  written and while it still read as pending: the default is a bounded `8 × topK`, floored at
+  `topK` and still VRAM-capped by `allocSlots`. The two things this line asked for both exist —
+  the 26B run (`benchmarks.md` §B4.1: 30 slots, 76.1% hit, 16.12 tok/s; 40 slots, 82.2%, 17.62)
+  and the hit-rate figure. Derivation basis unchanged and still scoped to a single CUDA context
+  (289,013,760 ≤ 402,653,184); revisit if goinfer ever creates a second.
+  **It did not ride in silently** — `8f3c5e7` is a standalone default change with its sweep in the
+  commit subject, which is what this line was guarding against. What went wrong was the record,
+  not the landing.
 - [ ] **aikit branch protection** — the struck entry says "revisit at v1.0." Revisit, decide,
   record (the gate ritual may remain the enforcement; then say so).
 - [ ] **E7 · no-Python** (decided 2026-08-12): the sweep done, with the `pin_*` reference-tensor

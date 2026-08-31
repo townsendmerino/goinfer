@@ -1166,13 +1166,21 @@ What this run did establish: with the reservation paid up front, the decrement a
 **0 at every cap tested**, so post-sizing consumption is genuinely nil and the margin is not covering
 launch growth. Its remaining job is whatever the next item names.
 
-**A10 · The ~150 MiB driver allocation floor** — `linux`, **THE OPEN CUDA ITEM — and now SCHEDULED,
-not merely interesting: D3b is blocked on it.**
+**A10 · The ~150 MiB driver allocation floor** — `linux`, **CLOSED 2026-08-12 — fully decomposed,
+nothing unattributed.** `44,236,800 B` once per device + `106,954,752 B` per context =
+`151,191,552 B`, exactly. See "RESOLVED 2026-08-12" below.
+
+> **The header used to read "THE OPEN CUDA ITEM" and the body has said RESOLVED since 2026-08-12.**
+> Corrected 2026-08-31. Same defect as D3b's: the resolution was appended and the verdict line was
+> left, so the item read as open to anyone who did not scroll. **D3b, which this entry said it
+> blocked, shipped on 2026-08-20** (`8f3c5e7`) — so the dependency below was already discharged
+> twice over by the time anyone read it as live.
 
 Raising the expert-cache default above `topK` requires `cuda/backend.go`'s stated precondition,
 "fixing the margin FIRST" — read as *derived rather than asserted*. **A10 is 151,191,552 B of the
 402,653,184 B margin, 37% of it, unattributed**, and no derivation can be written while more than a
 third of what the margin covers is unexplained. So A10 is on D3b's critical path.
+**(Historical — both are closed: A10 was decomposed 2026-08-12 and D3b shipped 2026-08-20.)**
 
 **FIRST DISCRIMINATOR RUN 2026-08-12 — the floor is NOT local-memory backing.**
 
@@ -1263,7 +1271,7 @@ single-context premise is therefore enforced by the dependency, not merely by cu
 **Original entry follows.**
 
 **A10 (original) · The ~150 MiB driver allocation floor** — `linux`, **THE OPEN CUDA ITEM.** Mechanism measured,
-cause unattributed.
+cause unattributed. *(Historical — superseded by the decomposition above.)*
 
 **Status: measured, not explained.** ~150 MiB that `cuMemGetInfo` reports as free and `cuMemAlloc`
 will not hand out — 150,601,728 B at `MOE_MAX_E=512`, 151,191,552 B at 256, i.e. **constant across
