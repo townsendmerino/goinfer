@@ -177,7 +177,7 @@ place: a **full-token on-GPU residency forward** wins. Shipped:
   This is a footprint/capability win, not a speed record. *(The "~71% of
   llama.cpp-CUDA" / "1.5B 102 tok/s ~55%" figures are WebGPU-backend numbers
   measured for v0.5.0 (~2026-06) and are stale; the cgo-free CUDA backend and the
-  current Ollama v0.32.5 re-anchor supersede them — see `benchmarks.md` §B2.)*
+  current Ollama v0.32.5 re-anchor supersede them — see `benchmarks.md` **§B8**.)*
   int8 decode peaks ~89.7 tok/s on the 1.5B (3.5× the staged hybrid).
 
 Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
@@ -323,8 +323,9 @@ v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverag
   = 1.96× WebGPU** on the 2070 SUPER (int4/W4A8, 80% peak bandwidth; executor-path
   number incl. the 0.34% channel-hop tax). *(The original "1.47× Ollama" here was vs
   **Ollama 0.5.7 (2025-01)**, ~18 months stale; against current **v0.32.5 (2026-07)**
-  the 1.5B edge is short-ctx parity (~1.19×) and a long-ctx loss — see `benchmarks.md`
-  §B2. The 1.96× WebGPU ratio is peer-independent and stands.)* cgo-free proven on the
+  the 1.5B edge is a small short-ctx win (**1.13×** at 128, 1.15× at 512) and a long-ctx
+  loss (0.71× by 3900) — see `benchmarks.md` **§B8**, the current anchor. *(An earlier
+  `~1.19×` here came from the pre-re-anchor §B2 box and is withdrawn.)* The 1.96× WebGPU ratio is peer-independent and stands.)* cgo-free proven on the
   actual binary (`ldd`: no libnvrtc/toolkit, `CGO_ENABLED=0`), argmax equivalence a
   committed hard gate (`TestRealForwardParity`, mutation-proven to bite). Scoped
   **dense-only cgo-free-CUDA residency backend (B)** now in last-mile packaging

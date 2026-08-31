@@ -128,7 +128,8 @@ cooperative launch (§5).**
 Per `task-cuda-cgofree-spike.md`: CUDA-event-timed, warm, ≥3 runs, equal quant, same
 2070 SUPER. **First step on the box: re-measure current *coalesced* WebGPU decode tok/s**
 — the `benchmarks.md §B` baseline (89.7 int8 / 51.7 int4) predates the coalescing win
-(`f8ef42b`/`5c3777f`) and is stale; the 1.3× GO bar keys off the fresh number.
+(`f8ef42b`/`5c3777f`) and is stale (**§B was RETIRED 2026-08-27** and now lives in
+`benchmarks-archive.md`; §B8 has current WebGPU-vs-own-CUDA rows); the 1.3× GO bar keys off the fresh number.
 Report: CUDA tok/s vs fresh WebGPU + llama.cpp-CUDA (72.8, 7B int4); JIT cold-start;
 channel-hop tax at the layer's launch count; confirm `CGO_ENABLED=0` + single static
 binary on a driver-only box. **GO = ≥1.3× fresh-WebGPU, cgo-free holds, cold-start OK.**

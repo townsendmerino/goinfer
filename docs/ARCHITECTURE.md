@@ -168,8 +168,9 @@ residency** (v0.4.0+): the *entire token forward* runs on the GPU through
 This is the headline: a **7B int4 fits and decodes pure-GPU on an 8 GB card**
 (~51 tok/s — the model class that does *not* fit at int8). *(The old "~71% of
 llama.cpp-CUDA" figure is the WebGPU-backend 7B row measured for v0.5.0 (~2026-06,
-51.7 vs 72.8); it is stale and pre-coalescing — see `benchmarks.md` §B for current
-peer numbers against Ollama v0.32.5.)* v1 residency limits: stateless `Generate` only
+51.7 vs 72.8); it is stale and pre-coalescing. **§B was RETIRED 2026-08-27** — withdrawn,
+not re-measured, and archived in `benchmarks-archive.md`. Current peer numbers against
+Ollama v0.32.5: `benchmarks.md` **§B8**.)* v1 residency limits: stateless `Generate` only
 (Session/prefix-reuse fall back to staged), 16k context (f32 KV) — or **~32k with
 the opt-in f16 KV cache (`--kv f16`, v0.5.0) / ~64k with int8 KV (v0.6.0)** at the
 same VRAM.

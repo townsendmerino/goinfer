@@ -25,7 +25,9 @@
 The 60–70% figure is **GPU-residency decode, dense Qwen2/Llama, equal quant**:
 Qwen2.5-1.5B int8 = 89.7 tok/s = **61%** of Ollama-CUDA 147; Qwen2.5-7B int4 =
 51.7 = **71%** of llama.cpp-CUDA 72.8 (`benchmarks.md §B`, peer figure from
-CHANGELOG v0.5.0). Two facts constrain any "re-benchmark with new families":
+CHANGELOG v0.5.0). **Both rows were RETIRED 2026-08-27** — withdrawn rather than
+corrected, and archived in `benchmarks-archive.md`; this doc's premise is the refresh
+that retirement now requires. Two facts constrain any "re-benchmark with new families":
 
 1. **GPU residency is dense-Qwen2/Llama-only.** `decodeRunnerEligible` =
    `MoE==nil && gemma4==nil && qwen35==nil && SlidingWindow==0 && …`. So **every
