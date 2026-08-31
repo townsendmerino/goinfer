@@ -1,7 +1,7 @@
 # goinfer
 
 **Run open-weight LLMs in pure Go — one cgo-free static binary, portable by default and
-native-GPU-fast when you want it.** ~20 model architectures, HuggingFace-parity-gated, with
+native-GPU-fast when you want it.** 27 model families, HuggingFace-parity-gated, with
 schema-constrained structured output. No Python, no llama.cpp, no CUDA toolkit.
 
 ![goinfer chat — an entire LLM in one file](docs/assets/demo.gif)
@@ -82,7 +82,8 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 
 ## What it runs
 
-- **~20 architectures** — Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
+- **27 model families** (counted from the generated `docs/capability-matrix.md`, which the
+  `decoder` registry produces) — Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
   GLM, Kimi, Granite, Nemotron, Mellum and more. Full generated map:
   [docs/capability-matrix.md](docs/capability-matrix.md).
 - **All four sequence-mixing families** — softmax·GQA, gated-linear (DeltaNet), state-space
@@ -100,8 +101,16 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 
 ## Docs
 
+**New to how any of this works?** [**An inference primer for Go engineers**](https://townsendmerino.github.io/goinfer/)
+— eleven chapters on how a language model actually runs, written for someone who knows Go and does
+not know machine learning. Each chapter ends in a measured number from this repo. Source in
+[docs/book/](docs/book/); chapter 11, on how measurements in this tree have gone wrong, is the one
+to read if you only read one.
+
 | page | what's in it |
 |---|---|
+| [docs/book/](docs/book/) · [read online](https://townsendmerino.github.io/goinfer/) | the inference primer — concepts from zero, tied to measured numbers |
+| [docs/how-inference-works.md](docs/how-inference-works.md) | the same ground in ten minutes, anchored to specific source lines |
 | [docs/server.md](docs/server.md) | the HTTP surface: OpenAI, Anthropic, multi-model, vision, embeddings, admin |
 | [docs/benchmarks.md](docs/benchmarks.md) | every measured number, each with machine, checkpoint, quant and date |
 | [docs/capability-matrix.md](docs/capability-matrix.md) | generated per-architecture support map |

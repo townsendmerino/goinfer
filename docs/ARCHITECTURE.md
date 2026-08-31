@@ -259,9 +259,10 @@ Moved here from the README (2026-08-27) so the front page stays short; the conte
 
 ### Modules
 
-goinfer ships as **four Go modules**. The three GPU backends are separate modules so their
-dependencies (`cogentcore/webgpu` and its cgo, `eitamring/gocudrv`, `ebitengine/purego`)
-never enter the dependency graph of a build that doesn't ask for them.
+goinfer ships as **five Go modules**. The three GPU backends are separate modules so their
+dependencies (`cogentcore/webgpu` and its cgo, `eitamring/gocudrv`, `ebitengine/purego`) never
+enter the dependency graph of a build that doesn't ask for them, and `demo/agent` is separate for
+the same reason — it keeps the MCP SDK out of the root's dependency-light `go.mod`.
 
 | Module path | Contents |
 |---|---|
@@ -269,6 +270,12 @@ never enter the dependency graph of a build that doesn't ask for them.
 | `github.com/townsendmerino/goinfer/gpu` | WebGPU backend (`-tags gpu`) |
 | `github.com/townsendmerino/goinfer/cuda` | native CUDA backend (`-tags cuda`) |
 | `github.com/townsendmerino/goinfer/metal` | native Metal backend (`-tags metal`) |
+| `github.com/townsendmerino/goinfer/demo/agent` | the local RAG coding agent — separate so the MCP SDK stays out of the root |
+
+**Four of the five are the ones you build against**; `demo/agent` is a demo, not a surface, and is
+not covered by `docs/api-tiers.md`. It is listed here because `go.work` and the release ritual both
+treat it as a module — `RELEASING.md` tags five, and a cross-module change that forgets it fails
+there rather than here.
 
 **You normally name only the root.** Its `go.mod` requires the other three at versions known
 to work with it, so `go get github.com/townsendmerino/goinfer` brings all four and a

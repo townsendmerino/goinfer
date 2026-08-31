@@ -27,9 +27,11 @@ and runs them **in-process**. What makes it different — you don't have to choo
   ratio and does not describe the families added since — residency requires dense attention, and
   Granite, Nemotron, DeepSeek, GLM, Kimi and Gemma 4 are all ineligible for it
   (`docs/benchmarks.md` §B). Going fast never costs you the single binary.
-- **~20 architectures, one binary.** All four attention / sequence-mixing families —
+- **27 model families, one binary.** All four attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV (MLA) — plus dense
-  and sparse-MoE, across ~20 architectures (Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral,
+  and sparse-MoE, across 27 model families — the count is generated, not maintained by hand:
+  `docs/capability-matrix.md` is emitted from the `decoder` registry, so it cannot drift from the
+  code (Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral,
   Qwen-MoE, GLM-4.5/4.6, DeepSeek-V2/V3 + Kimi, Phi-3/4, Granite-4.0-H, Nemotron-H, GPT-2,
   Mellum2). From safetensors, GGUF, GPTQ, or AWQ; f32 / bf16 / f16 + int8 / int4.
 - **Parity-gated against the reference implementation.** Every forward pass is parity-gated
