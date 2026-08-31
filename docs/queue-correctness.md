@@ -21,7 +21,49 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > [`docs/completed/queue-correctness.md`](completed/queue-correctness.md) — G4, G5, G6, G9, G10,
 > G11 and Q2. What is below is the open work, and it is all of it.
 
-**G7 · gpt-oss residency upgrade (safetensors + MXFP4 loader, GPU residency)** — `any`
+**G7 · gpt-oss residency upgrade (safetensors + MXFP4 loader, GPU residency)** — `any`,
+**HALF DONE: piece (a) is finished and verified; only the CUDA declaration is left.**
+
+> **Status established 2026-08-31 by running it, not by reading the entry.**
+>
+> **(a) the safetensors MXFP4 loader — DONE, and now verified at real scale.**
+> `decoder/gptoss_safetensors.go` (195 lines) has been wired at `decoder/weights.go:521` since
+> 2026-08-18. `TestGptOssSafetensors_vsGGUF` ran today on the real 20b pair — **argmax 244 vs 244,
+> logit cosine 0.999058**, 742.6 s — cross-checking it against the already-T3-validated GGUF
+> reader. So the loader is not merely present, it agrees with a validated reader on a full model.
+>
+> **(b) GPU residency — Metal DECLARED, CUDA NOT.** Read from `decoder/features.go`'s
+> `residentBackendFeatures`, which is the authority: `metal` declares `FeatAttnSink`,
+> `FeatOutBias` and `FeatRopeMscale`; `cuda` declares none of the three. That is the whole
+> remaining gap.
+>
+> **Three records disagreed with the code and are now corrected.** `metal/model.go` said
+> "FeatAttnSink, not yet declared" in two comments; `capability-matrix.md` described gpt-oss as
+> "MXFP4 experts, **CPU-only**" and listed its Loaders as **GGUF** only. All three predate the
+> Metal declaration and the safetensors loader landing.
+>
+> **The 2026-08-18 resource blocker is discharged.** This entry says real-checkpoint validation is
+> impossible on both machines. Both assets are in fact on the box — `~/models/gpt-oss-20b-hf`
+> (13 GB, `quant_method: mxfp4`, 24 layers / 32 experts / top-4) and `gpt-oss-20b-MXFP4.gguf` —
+> which is how the run above happened. The Mac's disk blocker is gone too: **76 GiB free** now,
+> against the ~12 GB that made the checkpoint undownloadable.
+
+**What the CUDA declaration actually needs, and the trap waiting in it:**
+
+- Wire the resident bridge (`cuda/backend.go`) the way Metal's was, then declare `FeatAttnSink` +
+  `FeatOutBias` + `FeatRopeMscale` for `cuda`. The kernels already exist
+  (`cuda/gptoss_act.cu`'s `glu_quant_gptoss` et al).
+- **`FeatRopeMscale` will silently admit Mellum on CUDA — verified, not suspected.**
+  `mellumArchitecture` requires `{FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale,
+  FeatSlidingWindow}` and **CUDA already declares four of those five**; `FeatRopeMscale` is the
+  only one missing. Declaring it for gpt-oss's YaRN therefore admits Mellum on CUDA with **zero
+  CUDA validation of Mellum**. This is exactly the coupling G10 hit on Metal — where the answer
+  was an explicit user call, not an accident. Decide it deliberately here too.
+- **End-to-end CUDA validation is still genuinely constrained**: gpt-oss-20b MXFP4 is ~13 GB
+  against the box's **8 GB VRAM**, so a resident CUDA run needs the host↔VRAM MoE-streaming path,
+  which couples two hard things at once. That is a real remaining obstacle — unlike the loader
+  blocker, which was only ever stale text.
+
 
 Full scoping and reasoning: `docs/post-v1.0-models.md` "Next up" §4. Not a new family — `gpt_oss`
 already has real-oracle parity (`docs/capability-matrix.md:89`) — but it is **GGUF-only,

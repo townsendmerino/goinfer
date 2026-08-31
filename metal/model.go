@@ -84,7 +84,7 @@ type residLayer struct {
 	preNormBias, postNormBias Buffer
 	upW, upS                  Buffer
 	oBias, upBias, downBias   Buffer
-	// gpt-oss (FeatAttnSink, not yet declared): attnSinks is the per-head learned sink logit
+	// gpt-oss (FeatAttnSink, DECLARED for metal — decoder/features.go): attnSinks is the per-head learned sink logit
 	// [nH]; uHasSink is a 0/1 flag mirroring layerNormBias's pattern. Unused for every other family.
 	attnSinks, uHasSink Buffer
 	geom                *attnGeom // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
@@ -130,7 +130,7 @@ type resident struct {
 	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
 
-	// gpt-oss (FeatAttnSink, not yet declared — kernels exist, not wired end-to-end).
+	// gpt-oss (FeatAttnSink, DECLARED for metal — kernels wired end-to-end; TestGptOssResidentParity).
 	attnSink                 bool    // arch.gptoss != nil
 	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
 
