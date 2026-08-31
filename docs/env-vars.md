@@ -21,6 +21,7 @@ is grep-derivable and enumerated at the bottom.
 
 | Var | Purpose |
 |---|---|
+| `GOINFER_P13_OFF` | Keep the safetensors SOURCE mapping resident for the model's life, as the loader did before P13. The loader now closes it at end of load when no tensor dtype can alias it (BF16/F16 widen on read; anything else may be a zero-copy view). Set this only to diagnose a suspected use-after-free, or to reproduce the old memory profile — it is the control arm the P13 measurement used. |
 | `GOINFER_NO_RESIDENCY` | Force the staged (non-resident) GPU path — disables whole-model device residency. |
 | `GOINFER_GEMMA4_RESIDENT` | Opt Gemma-4 into the resident path (bring-up gate; now default, kept as an override). |
 | `GOINFER_MOE_CACHE_SLOTS` / `GOINFER_MOE_CACHE_EXPERTS` | Size the resident MoE expert-slot cache (VRAM ↔ per-token DMAs trade). |

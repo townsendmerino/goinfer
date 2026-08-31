@@ -818,11 +818,11 @@ supports.
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2252` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:246` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1030` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:497` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:897` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:544` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:944` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
 | `docs/multimodal.md|decoder/config.go:1039` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
-| `docs/multimodal.md|decoder/weights.go:358` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
+| `docs/multimodal.md|decoder/weights.go:405` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
 | `docs/ollama-chase.md|cuda/resident.go:1309` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
 | `docs/ollama-chase.md|cuda/resident.go:42` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
 | `docs/ollama-chase.md|cuda/resident.go:425` | goinfer | `g4x1, g4x2, g4rn Buffer` |
@@ -834,7 +834,7 @@ supports.
 | `docs/ollama-chase.md|decoder/registry.go:1027` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:731` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:244` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
-| `docs/ollama-chase.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
+| `docs/ollama-chase.md|decoder/weights.go:536` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1101` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:57` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
@@ -907,7 +907,7 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/model.go:709` | goinfer | `if a.granite != nil \|\| a.nemotron != nil \|\| a.mla != nil \|\| a.llama4 != nil {` |
 | `docs/spec/09-mtp-heads.md|decoder/registry.go:1027` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
-| `docs/spec/09-mtp-heads.md|decoder/weights.go:489` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
+| `docs/spec/09-mtp-heads.md|decoder/weights.go:536` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:60` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:522` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:591` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |

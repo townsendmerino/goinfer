@@ -317,6 +317,46 @@ small enough that copying them is free.
 On a machine with room to spare, the dead mapping costs address space and page-cache pressure but
 may cost little wall-clock. Re-measure after the fix rather than claiming the number.
 
+### DONE 2026-08-31 — released at end of load, and the aliasing fear was mostly unfounded
+
+**The precondition resolved better than the entry expected.** The gate was "whether any tensor still
+ALIASES the mapping", with f32 norms/biases/DeltaNet gates named as the candidates. The rule turns
+out to be a dtype rule, taken from aikit's reader rather than from inspecting checkpoints: **BF16 and
+F16 are widened into fresh storage on read** ("the result then does not alias the file"), while every
+other dtype is served by `reinterpretLE`, which takes a zero-copy view when aligned — the common case.
+
+Measured across five real checkpoints, **modern HF checkpoints are BF16 throughout**:
+
+| checkpoint | size | F32 bytes (the aliasing set) |
+|---|---|---|
+| qwen3.8-27b (the one P13 measured) | 55.6 GB | **0** |
+| qwen3.6-35b-a3b | 71.9 GB | **0** |
+| gemma-4-26b-a4b-it | 51.6 GB | **0** |
+| mellum2-unq | 24.3 GB | **0** |
+| qwen3.5-0.8b | 1.7 GB | 0.01 MB (`linear_attn.A_log`) |
+
+So on the checkpoints that matter there is nothing to copy first. `loadWeights` now closes the source
+at end of load when `mmapAliasRisk` finds no risky dtype; `GOINFER_P13_OFF=1` restores the old
+behaviour.
+
+**Measured, paired, same checkpoint** (Mellum2 4-layer slice, 4.25 GB bf16 source, int8int8):
+
+| arm | RSS after load | mapping retained |
+|---|---|---|
+| release ON | **1.22 GB** | no |
+| release OFF (old) | 3.12 GB | yes |
+
+**1.90 GB freed, 61% less resident after load.** The decode-throughput half of the original finding
+is deliberately NOT restated: 1.69x came from a box at 46.8 GB of 62 GB, and this arm ran with room
+to spare, so it measures the mapping and not the pressure. Whether throughput moves on a loaded box
+is a separate run.
+
+**The gate is tested, not assumed** (`decoder/p13_mmap_release_test.go`): a table-driven dtype
+classification so a new dtype must be classified deliberately rather than inheriting "safe", plus an
+end-to-end check that the mapping is gone AND a forward pass still succeeds — a wrongly-released
+mapping is a use-after-free that would surface as garbage output far from the loader, not as a load
+error.
+
 ## P12 — the qwen35 family's projections were f32 at every quant (FIXED 2026-08-19)
 
 **Found by benchmarking Qwen3.8-27B against Ollama on the same box**, which goinfer lost 4.07x. The

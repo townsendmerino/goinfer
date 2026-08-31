@@ -343,7 +343,7 @@ func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter)
 	if err != nil {
 		return nil, err
 	}
-	// buildWeightsFromSafetensors retains st (the WeightMats alias its mmap) ONLY on success —
+	// buildWeightsFromSafetensors retains st (the WeightMats MAY alias its mmap) ONLY on success —
 	// on any of its ~40 error returns st would otherwise leak the mapping + fd. A serve process
 	// probing candidate dirs, or retrying a load of a checkpoint with one missing tensor,
 	// accumulates GBs of address space — the exact leak Model.Close exists to avoid (audit M-08).
@@ -352,7 +352,54 @@ func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter)
 		_ = st.Close()
 		return nil, err
 	}
+	// P13: release the SOURCE mapping now when nothing can alias it, instead of holding it for
+	// the model's whole life. The mapping is the bf16 checkpoint — 55.6 GB for a 27B — and the
+	// quantized weights the decode actually reads are a separate, much smaller allocation. Holding
+	// the source means dead pages compete with hot weights for page cache: measured 46.8 GB RSS
+	// against GGUF's 24.5 GB for an IDENTICAL 17.9 GB Go heap, and 1.69x slower decode.
+	if why := mmapAliasRisk(st); why == "" && os.Getenv("GOINFER_P13_OFF") == "" {
+		_ = st.Close()
+		w.st = nil
+	}
 	return w, nil
+}
+
+// mmapAliasRisk reports the first tensor whose dtype could leave a slice ALIASING the mapping,
+// or "" when none can and the source is therefore safe to close at end of load.
+//
+// The rule comes from aikit's reader, not from inspection of checkpoints. BF16 and F16 are widened
+// into a fresh slice by TensorF32/SubF32 — aikit's own comment: "the result then does not alias the
+// file". Every other dtype is served by reinterpretLE, which takes a "zero-copy view" whenever the
+// payload is aligned, and alignment is the common case. So a checkpoint of BF16/F16 tensors leaves
+// nothing pointing into the mapping, and any other dtype might.
+//
+// Deliberately conservative in two ways. It keys on what the FILE holds rather than on which
+// tensors this load happened to read, and it does not try to reason about quant mode — int8/int4
+// drop the f32 after quantizing while quantNone keeps it (see streamExperts), and encoding that
+// interaction here would put a second, subtler rule in a second place. A false "risky" costs the
+// old behaviour; a false "safe" is a use-after-free.
+func mmapAliasRisk(st *embed.SafetensorsFile) string {
+	for _, n := range st.Names() {
+		t, err := st.Tensor(n)
+		if err != nil {
+			return n // header entry we cannot classify: assume the worst
+		}
+		if riskyDType(t.DType) {
+			return n
+		}
+	}
+	return ""
+}
+
+// riskyDType reports whether a stored dtype can be handed back as a slice aliasing the mapping.
+// BF16/F16 are always widened into fresh storage; every other dtype may be a zero-copy view.
+func riskyDType(dt string) bool {
+	switch dt {
+	case "BF16", "F16":
+		return false
+	default:
+		return true
+	}
 }
 
 const shardIndexFile = "model.safetensors.index.json"

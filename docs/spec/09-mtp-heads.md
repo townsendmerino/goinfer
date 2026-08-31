@@ -26,7 +26,7 @@ written. Our own loader now contradicts it — we detect these heads, name them,
 |---|---|
 | `decoder/gguf_qwen35.go:33` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
 | `decoder/gguf.go:631` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
-| `decoder/weights.go:489` | "MTP heads (`mtp.*`) are simply never requested" |
+| `decoder/weights.go:536` | "MTP heads (`mtp.*`) are simply never requested" |
 | `decoder/registry.go:1027` | `num_nextn_predict_layers` MTP head is dropped |
 
 ## Gate 0 — inventory (RUN 2026-08-27, PASSED on availability)
