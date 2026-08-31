@@ -852,6 +852,7 @@ supports.
 | `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:358` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
 | `docs/queue-correctness.md|cuda/resident.go:1536` | goinfer | `Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf)` |
 | `docs/queue-correctness.md|decoder/weights.go:526` | goinfer | `return buildGptOssWeights(cfg, arch, st, quant)` |
+| `docs/queue-correctness.md|metal/backend.go:98` | goinfer | `return fmt.Errorf("metal: KV position %d(+%d) exceeds resident context cap %d — use the ` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:340` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |

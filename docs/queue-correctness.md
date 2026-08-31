@@ -100,6 +100,30 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > **So the remaining work is: (1) a CUDA o_proj-bias kernel + wiring, (2) ONE real gpt-oss forward
 > on a resident path, (3) then declare.** Step 2 is the gate, and `2224441` is the precedent for
 > why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
+>
+> **STEP 2 WAS ATTEMPTED ON METAL 2026-08-31 AND FAILED — and the failure found a missing guard.**
+> With the disk blocker gone (61 GB free), the 11.28 GB MXFP4 GGUF was pulled from the archive to
+> `~/models` and `TestGptOssResidentParityReal20B` run on a 16 GB MacBook:
+>
+> | arm | result |
+> |---|---|
+> | CPU | **12/12 steps OK** — 1m22s load, then ~6-8 s/step. The forward itself is fine at real scale |
+> | Metal resident | **never completed and never declined.** Swap went to **35.98 GB of 36 GB (885 MB free)**, the process sat in uninterruptible I/O wait at 29% CPU with RSS creeping 1.8 -> 2.0 GB over 12 minutes. Killed; the machine recovered instantly (swap 6.46 GB, free 30% -> 70%) |
+>
+> **The defect is that it did not decline.** Admission says `gpt_oss` IS admitted on Metal, so the
+> runtime accepted a model larger than RAM and thrashed instead of refusing. `metal/backend.go:98`
+> caps the KV **context**, but there is NO weight-size feasibility check anywhere in the tree
+> (`grep` for `hw.memsize`/`physmem` across all modules returns nothing). A guard keyed on bytes we
+> compute ourselves — model size plus wiring headroom, not the OS's account of what is free, since
+> Darwin's UBC reclaims under pressure and reports what survived — would turn a machine-hanging
+> load into a clean decline, and that is the same lesson the N=128 slot-pressure guard taught.
+>
+> The test is committed WITH that guard (it skips at 11.28 GB needing ~16.9 GB against 16.0 GB
+> RAM), so it is safe to leave in the tree and will run unchanged on a machine that fits.
+>
+> **Step 2 is therefore blocked on BOTH backends, now for measured reasons on both:** CUDA 8 GB
+> VRAM against 13.8 GB (needs the host<->VRAM MoE-streaming path), Metal 16 GB RAM against
+> 11.28 GB plus wiring. Neither is a coding problem; both need hardware or the streaming path.
 
 **What the CUDA declaration actually needs, and the trap waiting in it:**
 
