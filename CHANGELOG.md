@@ -15,6 +15,71 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **`--cpu-fast-attention` now covers Mixture-of-Experts architectures.** The flag previously
+  refused MoE outright, on the argument that an f32 QKᵀ reassociation flips a top-k expert at a
+  near-tie and cascades. That argument had **never been measured on a MoE** — no MoE appears in the
+  A3 kernel-ratio record, and both G24 divergence tests load the dense bench checkpoint, including
+  the one whose doc comment claimed it pinned the exclusion and whose body asserted nothing about
+  MoE at all.
+
+  Measured, the argument is **half right**. The mechanism is real: at 28 layers, 14.5% of `moeMLP`
+  calls select a different expert set, and replaying the acc64 routing recovers 70.1% of the
+  divergence. The magnitude does not carry a categorical refusal — matched on depth *and* prompt
+  length (28 layers, K=2048 both sides), MoE diverges **2.126e-3** against dense's **2.352e-3**,
+  and a 48-token greedy continuation is **identical**. Both sit ~4× inside the ≥0.99 bar the flag
+  already ships behind.
+
+  **What it buys, on the full model rather than a slice: 1.52×** (Ryzen 3700X, int8int8, 28-layer
+  Mellum2, K=8192, 8411.6 s → 5540.1 s), corroborated at 1.59× on an M1 Pro at int4. Earlier
+  figures of 3.11× came from a **4-layer slice** and were quoted as if they were model-level
+  numbers; they are not. The flag remains **off by default** — this removes a refusal, it does not
+  turn anything on. Record: `docs/measurements/mellum2-moe-prefill-split-RESULT.md`.
+
+- **Optimistic forward is gated at T ≤ 0.2** (previously enabled for all sampled decode). It is a
+  measured loss of **5.5–6.8%** at the T = 0.7–1.0 range typical of chat, against a best case of
+  1.1% at T = 0.2 — an asymmetry that settles the question independently of exactly where the
+  crossover sits.
+
+### Performance
+
+- **CUDA C′ expert cache batches its uploads** through `gpu.UploadBatch` (aikit `gpu/v0.32.0`),
+  submitting one batch per layer instead of two synchronizes per admitted expert:
+  **20,916 copies → 2,038 synchronizes (10.3× fewer)**, worth **+9.3% tok/s** on
+  gemma-4-26b-a4b-it int4 at 30 slots/layer (14.55 → 15.90 tok/s, arms interleaved in one session,
+  two passes each, `-count=1`). H2D time falls 10.2% = **2.98 ms/token**, against the ask's
+  predicted "~3.0 ms". Bit-exact: batching changes *when* copies are issued, never what is copied.
+
+- **Metal `pread` expert staging** for the generic `qwen3_5_moe`-class MoE path, replacing the
+  mmap byte-copy: **3.23×** (0.595/0.641 → 1.967/2.022 tok/s) on a 35B-A3B, M1 Pro 16 GB, by
+  eliminating major page faults (98.5 per staging operation → essentially zero). Note the honest
+  denominator: against the **CPU pager** measured in the same session the Metal path's advantage is
+  **1.23×**, not 3.23× — the byte-copy arm was not the shippable alternative.
+
+### Added
+
+- **MTP / NextN self-draft head loader** (`decoder/mtp.go`) — reads the head that every existing
+  load path skips, by two detection routes because the formats disagree (GGUF declares a count in
+  arch-prefixed metadata; the safetensors Qwen checkpoints declare nothing and are discoverable only
+  by tensor presence). **Measurement adapter only**: nothing is wired into serving, the router or any
+  generation path.
+
+### Measured and NOT shipped
+
+- **Expert-major MoE prefill batching is parked.** Its ceiling was measured at **under 5%** at
+  K=1–2k and was **not resolvable above run-to-run spread** at K ≥ 4096 — the two passes disagreed
+  in sign at K=8192. Attention runs **77.3% → 97.1%** of MoE prefill work from K=1024 to K=8192
+  while all weight matmul falls to 2.9%, so the two levers scale in opposite directions. The case
+  for it has to be made on streaming I/O, not compute, and measured there.
+
+- **MTP acceptance (spec/09 Gate 1) passes on all three suites** — 2.024 / 2.905 / 2.476 tokens per
+  verify on code / math / chat against a 1.60 cross-target reference, on a 0.8B target. Read as
+  pre-registered: a pass on **mechanism**, not economics. Gate 2 was not evaluated and is not
+  evaluable at that scale, one prompt per suite makes the third digit noise, and the MTP-bearing
+  families are exactly the ones `specRollbackSafe` refuses — so shipping would require the
+  state-checkpoint track first.
+
 ### Fixed
 
 - **`stream_options: {"include_usage": true}` is now honoured on the OpenAI-compatible streaming

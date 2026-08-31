@@ -127,9 +127,11 @@ That is not a hypothetical. goinfer's streaming server holds bytes back until a 
 is available, so a token that completes no new character emits nothing, and the next token
 emits several tokens' worth of text at once. The number of streamed chunks is therefore always
 less than or equal to the number of tokens generated, and anyone counting streamed chunks to
-compute tokens per second undercounts. Stop-sequence matching adds a second reason to hold
-bytes back, so the undercount is not confined to multi-byte characters. The fix is to read the
-token count the server reports rather than counting streamed chunks. Chapter 11 has more on why
+compute tokens per second undercounts — measured at up to **1.046 tokens per chunk, a 4.4%
+under-read**, across 92 cells. Stop-sequence matching adds a second reason to hold bytes back, so
+the undercount is not confined to multi-byte characters, and it only ever runs one way: a client
+counting chunks sees the engine as slower than it is, silently and with no error to notice. The
+fix is to read the token count the server reports rather than counting streamed chunks. Chapter 11 has more on why
 plausible-looking measurements are the dangerous kind.
 
 **The vocabulary size reaches into the hot loop.** After the model computes its answer, the
@@ -180,5 +182,6 @@ Chapter 2 follows a single forward pass from those integer IDs to those *V* scor
 
 *Sources: `tokenizer/` (`bytelevel.go`, `sentencepiece.go`, `added.go`, `gguf.go`),
 `docs/how-inference-works.md` §Step 1, `internal/serveapp/openai.go` and
-`internal/serveapp/openai_stream_usage_test.go` (streaming hold-back),
+`internal/serveapp/openai_stream_usage_test.go` (streaming hold-back), `CHANGELOG.md`
+(the 1.046 tokens-per-chunk measurement across 92 cells),
 `docs/QUEUE.md` and `docs/spec/10-optfwd-gate.md` (sampler-share measurements).*
