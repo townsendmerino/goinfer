@@ -107,7 +107,7 @@ is wrong for this family).
   a harder blocker than the RAM tightness itself. Neither box can currently reach the real
   end-to-end gate without freeing real resources first.
 
-**G8 · DeepSeek V4-Flash as a new family — blocked on fp8 support, post-1.0** — `any`
+**G8 · DeepSeek V4-Flash as a new family — blocked on fp8 support, post-1.0** — `any`. **The fp8 blocker is now FILED as its own item (`Q3`, below) with an estimate, per this entry's own instruction; G8 itself is unchanged and still lowest priority.**
 
 Scoping already done: `docs/completed/task-model-family-deepseek-v4-kimi-k3.md`'s Phase 0 verdict.
 **Not** a `deepseekArchitecture` alias — eight new primitives (DSA sparse attention over a learned
@@ -121,7 +121,91 @@ converging — building the DSA/compressor path once plausibly buys the next sev
 frontier releases, which is the strategic case for filing this now even though it's not a
 near-term ship. Lowest priority of the five items filed alongside this one (`G4`-`G7`).
 
-**G1 · LFM2.5-2.6B as an experimental family** — `linux`
+---
+
+**The fp8 prerequisite, filed as its own work per this entry's own instruction (2026-08-31).**
+
+**The "no fp8 anywhere in the tree" claim is VERIFIED, not carried forward on trust.** Searched both
+repos for `fp8|e4m3|e5m2|float8` outside tests: the only hits are `simdgroup_float8x8` in
+`metal/prefill.go` and aikit's `gpu/metal_vit.go`, which is **Metal's 8×8 SIMD-group float TILE
+type, not the fp8 numeric format**. Worth writing down, because that name collision makes a casual
+grep look like fp8 support already exists.
+
+**Q3 · fp8 e4m3 reader** — `any`, **NOT STARTED. Hard prerequisite for G8; useful independently.**
+
+Three pieces, and only the middle one is novel:
+
+1. **Dtype recognition (aikit).** `embed/safetensors.go` widens `F32`/`BF16`/`F16` and nothing else,
+   so an fp8 checkpoint cannot currently be read at all. Add `F8_E4M3` (and `F8_E5M2` while there —
+   the header parse is shared).
+2. **The decode itself.** e4m3 is byte-aligned with 256 representable values, so the whole format is
+   a **256-entry float32 lookup table** — strictly simpler per element than the existing
+   `decoder/mxfp4.go` (137 lines), which has to unpack nibbles. The catch is the OCP e4m3 special
+   cases: bias 7, **no infinities**, `S.1111.111` is NaN, max finite 448.
+3. **Blockwise scales, which MXFP4 does NOT have an analogue for.** MXFP4 carries its e8m0 scale
+   **inline, one per 32-element block**. DeepSeek's fp8 keeps scales in a **separate tensor**
+   (`*.weight_scale_inv`) over 2-D blocks, so this needs block-index arithmetic and a second tensor
+   fetched alongside each weight — new plumbing in `decoder/weights.go`, not a copy of mxfp4.go.
+
+**Estimate: ~150–250 lines**, anchored on mxfp4.go's 137 for a comparable format decoder, plus the
+2-D scale addressing that has no precedent here. Novel logic is small; the risk is all in (3).
+
+**Verification is not optional and has a precedent to copy.** mxfp4.go's header records that its
+layout was *"NOT inferred — it is transcribed from the reference `gguf` Python library … and
+verified bit-for-bit against it on a real checkpoint"*. **Do the same for e4m3**: transcribe from a
+reference implementation and gate it bit-for-bit, rather than deriving the table from the spec and
+hoping. A quietly wrong dequant table is exactly the failure class this repo keeps naming — it
+produces plausible output, not an error.
+
+**Sequencing.** Q3 does not need G8 and should not wait for it: fp8 checkpoints are increasingly
+common (DeepSeek V3/V3.2/V4, and others), so the reader has value on its own. G8 stays post-1.0 and
+lowest priority; Q3 is the piece that could be picked up any time.
+
+**G1 · LFM2.5-2.6B as an experimental family** — `linux`, **SCOPED AND ESTIMATED; ready to build,
+not started.**
+
+A fifth sequence-mixing family: interleaved gated short-convolution blocks and GQA, `layer_types`
+controlling the pattern, `conv_L_cache` 3, per-head **RMSNorm** QK-norm, FFN dim stated (10752). The
+conv layers carry a rolling conv state instead of a KV cache.
+
+> **This entry was stale in four ways and is rewritten above; the old text is kept below because
+> one of the four was a factual error, not just an out-of-date status.**
+>
+> It said the estimate "turns on two questions" plus one "unestablished" — all three were answered
+> in [`docs/scoping-lfm2.md`](scoping-lfm2.md) on 2026-08-11, the same day the scoping ran:
+>
+> | question the entry called open | scoping doc's answer |
+> |---|---|
+> | is Mamba-2's causal depthwise `conv1d` factored out or inlined? | **§B: inlined** — three verbatim copies (`mamba2.go`, `mamba2_chunked.go`, `deltanet.go`); the 3-way dup argues for extracting a shared helper |
+> | does the cache carry mixed per-layer state types? | **§C: yes** — `KVCache` already holds parallel per-layer arrays; LFM2's conv state is a strict subset of `mamba2State` |
+> | is LFM2.5 architecturally the same as LFM2? | **§A: yes, a scaled retrain** — topology byte-identical; differences are scale only (vocab **128,000** not 65,536; rope_theta 1e7) |
+>
+> **And the error: "LayerNorm QK-norm (not RMSNorm)" is wrong.** It repeats the original brief,
+> which §E corrected — the reference `modeling_lfm2.py` uses `Lfm2RMSNorm(head_dim)` per-head, and
+> `scripts/pin_lfm2_tiny.py`'s header (written against the real config) independently says "per-head
+> Q/K RMSNorm". §E flags this exact field as "the 'quiet wrong answer' risk", and the wrong answer
+> was sitting in the queue. It matters concretely: RMSNorm means **zero new code** (goinfer's
+> existing hardcoded QK-norm path); LayerNorm would mean ~25 lines plus `.bias` plumbing.
+>
+> **The freeze gate is also gone** — lifted 2026-08-18/19, thirteen days before this was read.
+
+**Estimate (from the scoping doc):** ≈350–500 new lines, of which only ~15–40 are novel logic (the
+gated short-conv step). safetensors-first, CPU-only, experimental tier; GGUF deferred (llama.cpp
+supports arch `lfm2` natively and an official `LFM2.5-2.6B-GGUF` exists, so it is a straightforward
+follow-on).
+
+**What actually gates it now is cost, not permission.** The surface touches
+`registry.go`/`config.go`/`arch.go`/`weights.go`/`kvcache.go` — core+loaders — so it re-stales
+`deps_hash` for all 19 enforced families and forces a goldens re-validation. **Batch it with other
+core-touching family work** so that re-validation is paid once rather than per family.
+
+**One confirmation still owed, and it is cheap:** weight-level proof that no
+`q_layernorm.bias`/`k_layernorm.bias` tensor exists in the real checkpoint. That is a tensor-name
+check at load, not an experiment — but no LFM2 checkpoint is on either box today.
+
+**Original entry follows.**
+
+**G1 (original) · LFM2.5-2.6B as an experimental family** — `linux`
 
 Scoping prompt written. A fifth sequence-mixing family: interleaved gated short-convolution blocks
 and GQA, `layer_types` controlling the pattern, `conv_L_cache` 3, LayerNorm QK-norm (not RMSNorm),

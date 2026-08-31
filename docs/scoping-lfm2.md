@@ -1,14 +1,18 @@
 # Scoping: LFM2.5-2.6B as an EXPERIMENTAL family
 
-**Status:** scoping only — NOT started. Freeze-gated (see §G): the wiring cannot land until the v1.0
-tag lifts the core-numerics freeze. This doc + `scripts/pin_lfm2_tiny.py` are the freeze-safe prep.
+**Status (updated 2026-08-31):** scoping COMPLETE, build NOT started, and **no longer
+freeze-gated — the core-numerics freeze was LIFTED 2026-08-18/19** (`docs/ollama-chase.md`
+§"Formerly freeze-blocked"). This page said "cannot land until the v1.0 tag lifts the freeze" for
+thirteen days after it had been lifted; core edits have shipped repeatedly since.
+
+**What that changes and what it does not.** The prohibition is gone; the **cost is not**. §G's blast
+radius is unchanged — a realistic LFM2 surface edits `registry.go`/`config.go`/`arch.go`/
+`weights.go`/`kvcache.go`, which re-stales `deps_hash` for all 19 enforced families and forces a
+goldens re-validation. That was always the real content of the "freeze" objection, and it is now a
+**scheduling cost to be paid deliberately** rather than a gate that forbids the work.
 
 **Verdict:** architecturally ~80% composition of operators goinfer already has — no new numeric
-kernel, no new correctness frontier. The blocker is not complexity, it's the **freeze**: a realistic
-LFM2 surface edits `registry.go`/`config.go`/`arch.go`/`weights.go`/`kvcache.go` (core+loaders, used
-by every family), the maximum blast radius, forcing a goldens re-validation across all 19 enforced
-families. **Post-v1.0 / planned-goldens-run item.** Investigated 2026-08-11 via 5 parallel code+web
-sweeps.
+kernel, no new correctness frontier. Investigated 2026-08-11 via 5 parallel code+web sweeps.
 
 ## A. Same architecture as LFM2? — Yes, a scaled retrain
 
@@ -109,11 +113,19 @@ it composes existing ones.
 
 ## Sequencing
 
-1. **Cannot land under the freeze** — max blast radius. A **v1.0-unfreeze item**, batched with the
-   goldens re-validation run (same batch as `v1-unfreeze-perf-worklist`).
-2. **Freeze-safe prep to do now:** `scripts/pin_lfm2_tiny.py` + the T1 tiny-golden (done alongside this
-   doc); optionally draft `forward_lfm2.go` in isolation (can't be wired/run until frozen files change).
-3. **Confirm E** — verify QK-norm is RMSNorm in `modeling_lfm2.py`. The one open architectural risk.
+1. ~~**Cannot land under the freeze**~~ — **superseded 2026-08-31, the freeze is lifted.** Still
+   max blast radius, so it should be **batched with a goldens re-validation run** rather than landed
+   on its own: the re-validation is the cost, and paying it once for several families beats paying it
+   per family.
+2. **Prep already done:** `scripts/pin_lfm2_tiny.py` + the T1 tiny-golden (committed alongside this
+   doc). Drafting `forward_lfm2.go` in isolation is no longer necessary as a freeze workaround — the
+   wiring can now be written directly.
+3. **Confirm E** — **partly discharged.** Two independent in-tree sources now say RMSNorm: §E's read
+   of `modeling_lfm2.py` (`Lfm2RMSNorm(head_dim)` per-head) and `scripts/pin_lfm2_tiny.py`'s own
+   header, written against the real `LFM2.5-2.6B` config, which states "per-head Q/K RMSNorm". What
+   is still owed is **weight-level** confirmation — that no `q_layernorm.bias`/`k_layernorm.bias`
+   tensor exists in the real checkpoint — which is a tensor-name check at load, not an experiment.
+   No LFM2 checkpoint is present on either box, so it cannot be done from here today.
 4. safetensors-first, CPU-only, experimental tier; GGUF deferred (llama.cpp `lfm2` GGUFs exist and are
    first-class, so it's a straightforward follow-on).
 
