@@ -290,6 +290,49 @@ of `dotW4A8FoldAVX2` on ONE projection shape against its own theoretical ops/byt
 handling, nibble unpack, accumulator width — before anyone redesigns a format. A format change is
 the expensive answer to a question that has not been asked yet.
 
+### P14 ops/byte RESULT (2026-08-31) — the penalty splits in two, and only HALF of it is the format
+
+The question is asked. `aikit/linalg` gained the benchmark on both architectures
+(`p14_w4a8_opsperbyte_bench_test.go`, `..._arm64_test.go`): `dotI8AVX2`/`dotI8SDOT` is the same MAC
+count on the same activations with no unpack and no per-group scale, so the gap is a **difference,
+not an estimate**. L1-resident, at the real Qwen3.8-27B projection dims.
+
+| K=5120 (hidden) | int8 | W4A8 | penalty per MAC |
+|---|---|---|---|
+| arm64, M1 Pro | 50.07 GMAC/s | **25.09** | **2.00×** |
+| amd64, Ryzen 3700X | 51.33 GMAC/s | **17.04** | **3.01×** |
+
+Consistent across K=768 / 5120 / 17408 (arm64 1.99–2.00×, amd64 2.71–3.01×). **int8 matches across
+both machines at ~50 GMAC/s**, so the baselines are sound and the W4A8 difference is real.
+
+**Two independent costs, and the split is the finding:**
+
+1. **~2× is inherent to W4A8** — a nibble unpack and a per-group scale fold against a MAC that is
+   otherwise one instruction. arm64 pays it after two rounds of tuning, so it is not slack.
+2. **A further ~1.5× is AVX2-specific.** arm64's W4A8 is **1.47× faster than amd64's** at the same
+   shape on near-identical int8 baselines. That is kernel headroom, not a format problem.
+
+**This sharpens P14's conclusion rather than overturning it.** A Q4_K-style format change targets
+term 1, which is real but is the *smaller, harder* half and is already well-tuned on one
+architecture. Term 2 needs no format change at all — and **amd64 is where P14's peer gap was
+measured** (goinfer 11.7 GB/s of weights vs ollama 27.6). Bringing AVX2's W4A8 to arm64's ratio is
+~+47% on the kernel that P14 showed *is* the end-to-end bottleneck: goinfer's whole-decode weight
+throughput (11.7 GB/s) sits at ~90% of this kernel's isolated rate (10.65 GB/s), so there is
+almost no composition overhead left — the kernel is the ceiling.
+
+**Prior art incorporated rather than re-derived** (`docs/task-w4a8-neon-bandwidth.md`): that page's
+Gate 1 items 1+2 already measured **dropping the centering subtract as a 3% REGRESSION** on arm64
+(v1 209 ns/call vs v2 215 ns), because the kernel is **issue-limited** — instructions added anywhere
+in the call cost real time. Centering is a closed question; item 3's split-half repack is the lever
+that page identifies. The arm64 number here reproduces that page's 24.50 GMAC/s within 2.4%
+(204.1 ns vs 209 ns), which is a free validation that both measurements describe the same kernel.
+
+**Limits.** Micro-benchmarks, so they prove the primitive and never the composition — P14's 2.4×
+peer ratio is end-to-end and is not restated by any ratio here. One box each; the M1 Pro ran at load
+1.89 rather than idle, though its int8 baseline landing within 2.5% of the Ryzen's argues against
+meaningful contamination. And this does **not** separate nibble unpack from per-group scale within
+the 2×; that split needs a kernel variant, which is what item 3 would build.
+
 ## P13 — the safetensors loader keeps the whole source mapping resident (FOUND 2026-08-19)
 
 **Measured while adding the Qwen3.8 GGUF loader**, by loading the SAME model both ways and reading
