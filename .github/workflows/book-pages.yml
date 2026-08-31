@@ -38,6 +38,17 @@ jobs:
           set -euo pipefail
           mkdir -p _book_src
           cp docs/book/*.md _book_src/
+          # Figures. The book's diagrams are .svg FILES referenced with ![](),
+          # not inline <svg> and not mermaid, because the book is read in two
+          # places that disagree: GitHub's markdown sanitizer strips inline
+          # <svg>, and Pages has no mermaid plugin (only jekyll-relative-links
+          # is enabled below), so a ```mermaid fence renders here as a code
+          # block. A referenced .svg is the one form that renders in both.
+          # Without this copy the figures 404 on Pages while looking fine on
+          # GitHub — which is the failure mode that would ship unnoticed.
+          if compgen -G "docs/book/*.svg" > /dev/null; then
+            cp docs/book/*.svg _book_src/
+          fi
           # The chapter table is the front page.
           mv _book_src/README.md _book_src/index.md
           cat > _book_src/_config.yml <<'CFG'

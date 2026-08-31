@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 340" width="700" height="340" role="img" aria-labelledby="t2 d2">
+<title id="t2">Runtime tier dispatch for one quantized dot product</title>
+<desc id="d2">On amd64 the canonical W4A8 dot picks the first available tier in order: AVX-512 VNNI, then AVX2, then a portable scalar fallback. On arm64 it picks NEON. The split-half layout only has an AVX2 kernel, so it is only the fastest choice on a host that has AVX2 but no VNNI; on a VNNI host it would be a downgrade, and the repack declines there.</desc>
+
+<rect x="0" y="0" width="700" height="340" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1" rx="6"/>
+
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#1f2328">one quantized dot &#8212; which kernel actually runs</text>
+  <text x="20" y="47" font-size="12" fill="#57606a">runtime CPU feature detection, first match wins</text>
+
+  <!-- amd64 ladder -->
+  <text x="20" y="76" font-size="13" font-weight="bold" fill="#1f2328">amd64</text>
+
+  <g transform="translate(20,86)">
+    <rect x="0" y="0" width="200" height="38" rx="4" fill="#ffffff" stroke="#8c959f"/>
+    <text x="12" y="17" font-size="12" fill="#1f2328">hasAVX512VNNIVL</text>
+    <text x="12" y="32" font-size="11" fill="#57606a">dotW4A8FoldAVX512VNNI</text>
+
+    <text x="212" y="24" font-size="14" fill="#57606a">&#8594;</text>
+
+    <rect x="232" y="0" width="200" height="38" rx="4" fill="#ffffff" stroke="#8c959f"/>
+    <text x="244" y="17" font-size="12" fill="#1f2328">hasAVX2</text>
+    <text x="244" y="32" font-size="11" fill="#57606a">dotW4A8FoldAVX2</text>
+
+    <text x="444" y="24" font-size="14" fill="#57606a">&#8594;</text>
+
+    <rect x="464" y="0" width="196" height="38" rx="4" fill="#ffffff" stroke="#8c959f"/>
+    <text x="476" y="17" font-size="12" fill="#1f2328">default</text>
+    <text x="476" y="32" font-size="11" fill="#57606a">dotW4A8Scalar</text>
+  </g>
+
+  <!-- arm64 -->
+  <text x="20" y="156" font-size="13" font-weight="bold" fill="#1f2328">arm64</text>
+  <g transform="translate(20,166)">
+    <rect x="0" y="0" width="200" height="38" rx="4" fill="#ffffff" stroke="#8c959f"/>
+    <text x="12" y="17" font-size="12" fill="#1f2328">hasDotProd</text>
+    <text x="12" y="32" font-size="11" fill="#57606a">NEON + row4 layout</text>
+  </g>
+
+  <!-- the opt-in -->
+  <line x1="20" y1="224" x2="680" y2="224" stroke="#d0d7de" stroke-width="1"/>
+  <text x="20" y="246" font-size="13" font-weight="bold" fill="#1f2328">where the split-half layout is allowed to sit</text>
+
+  <g transform="translate(20,256)">
+    <rect x="0" y="0" width="322" height="62" rx="4" fill="#dafbe1" stroke="#1a7f37"/>
+    <text x="12" y="20" font-size="12" fill="#1a7f37" font-weight="bold">AVX2 and NO VNNI</text>
+    <text x="12" y="37" font-size="11.5" fill="#1a7f37">dotW4A8SplitHalfAVX2 &#8212; 1.12&#215; over AVX2</text>
+    <text x="12" y="54" font-size="10.5" fill="#57606a">the repack is the fastest thing here</text>
+
+    <rect x="338" y="0" width="322" height="62" rx="4" fill="#ffebe9" stroke="#cf222e"/>
+    <text x="350" y="20" font-size="12" fill="#cf222e" font-weight="bold">VNNI present &#8212; repack DECLINES</text>
+    <text x="350" y="37" font-size="11.5" fill="#cf222e">it would replace VNNI with AVX2</text>
+    <text x="350" y="54" font-size="10.5" fill="#57606a">correct, but slower &#8212; nothing would fail</text>
+  </g>
+
+</g>
+</svg>

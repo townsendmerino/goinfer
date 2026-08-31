@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 400" width="700" height="400" role="img" aria-labelledby="t1 d1">
+<title id="t1">Canonical versus split-half int4 nibble layout</title>
+<desc id="d1">Canonical packing puts weights 2k and 2k+1 in byte k, so masking the low nibbles yields the even weights and shifting yields the odd ones — interleaved, needing two unpack shuffles to restore order. Split-half packing puts weight i and weight i+16 in byte i, so the same mask and shift yield weights 0 to 15 and 16 to 31 already contiguous, and the two shuffles disappear.</desc>
+
+<rect x="0" y="0" width="700" height="400" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1" rx="6"/>
+
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+
+  <!-- ================= PANEL A : canonical ================= -->
+  <text x="20" y="30" font-size="15" font-weight="bold" fill="#1f2328">CANONICAL (interleaved)</text>
+  <text x="20" y="50" font-size="12" fill="#57606a">byte k holds weights 2k and 2k+1</text>
+
+  <g transform="translate(20,62)">
+    <g fill="#ffffff" stroke="#8c959f" stroke-width="1">
+      <rect x="0"   y="0" width="76" height="40" rx="3"/>
+      <rect x="82"  y="0" width="76" height="40" rx="3"/>
+      <rect x="164" y="0" width="76" height="40" rx="3"/>
+      <rect x="246" y="0" width="76" height="40" rx="3"/>
+      <rect x="410" y="0" width="76" height="40" rx="3"/>
+    </g>
+    <g font-size="12" text-anchor="middle">
+      <text x="38"  y="17" fill="#0969da">hi w1</text>  <text x="38"  y="33" fill="#1a7f37">lo w0</text>
+      <text x="120" y="17" fill="#0969da">hi w3</text>  <text x="120" y="33" fill="#1a7f37">lo w2</text>
+      <text x="202" y="17" fill="#0969da">hi w5</text>  <text x="202" y="33" fill="#1a7f37">lo w4</text>
+      <text x="284" y="17" fill="#0969da">hi w7</text>  <text x="284" y="33" fill="#1a7f37">lo w6</text>
+      <text x="366" y="26" fill="#57606a">. . .</text>
+      <text x="448" y="17" fill="#0969da">hi w31</text> <text x="448" y="33" fill="#1a7f37">lo w30</text>
+    </g>
+    <g font-size="11" fill="#57606a" text-anchor="middle">
+      <text x="38" y="53">byte 0</text><text x="120" y="53">byte 1</text>
+      <text x="202" y="53">byte 2</text><text x="284" y="53">byte 3</text>
+      <text x="448" y="53">byte 15</text>
+    </g>
+  </g>
+
+  <g transform="translate(20,132)" font-size="12.5">
+    <text x="0"   y="14" fill="#1a7f37">AND 0x0F  &#8594;</text>
+    <text x="112" y="14" fill="#1f2328">w0  w2  w4  w6 . . . w30</text>
+    <text x="0"   y="34" fill="#0969da">SHR 4     &#8594;</text>
+    <text x="112" y="34" fill="#1f2328">w1  w3  w5  w7 . . . w31</text>
+  </g>
+
+  <rect x="20" y="180" width="660" height="26" rx="3" fill="#fff1e5" stroke="#d4a72c" stroke-width="1"/>
+  <text x="30" y="197" font-size="12.5" fill="#7d4e00">every other weight &#8212; 2 &#215; VPUNPCK{L,H}BW per group to put them back in order</text>
+
+  <line x1="20" y1="222" x2="680" y2="222" stroke="#d0d7de" stroke-width="1"/>
+
+  <!-- ================= PANEL B : split-half ================= -->
+  <text x="20" y="248" font-size="15" font-weight="bold" fill="#1f2328">SPLIT-HALF</text>
+  <text x="20" y="268" font-size="12" fill="#57606a">byte i holds weight i and weight i+16</text>
+
+  <g transform="translate(20,280)">
+    <g fill="#ffffff" stroke="#8c959f" stroke-width="1">
+      <rect x="0"   y="0" width="76" height="40" rx="3"/>
+      <rect x="82"  y="0" width="76" height="40" rx="3"/>
+      <rect x="164" y="0" width="76" height="40" rx="3"/>
+      <rect x="246" y="0" width="76" height="40" rx="3"/>
+      <rect x="410" y="0" width="76" height="40" rx="3"/>
+    </g>
+    <g font-size="12" text-anchor="middle">
+      <text x="38"  y="17" fill="#0969da">hi w16</text> <text x="38"  y="33" fill="#1a7f37">lo w0</text>
+      <text x="120" y="17" fill="#0969da">hi w17</text> <text x="120" y="33" fill="#1a7f37">lo w1</text>
+      <text x="202" y="17" fill="#0969da">hi w18</text> <text x="202" y="33" fill="#1a7f37">lo w2</text>
+      <text x="284" y="17" fill="#0969da">hi w19</text> <text x="284" y="33" fill="#1a7f37">lo w3</text>
+      <text x="366" y="26" fill="#57606a">. . .</text>
+      <text x="448" y="17" fill="#0969da">hi w31</text> <text x="448" y="33" fill="#1a7f37">lo w15</text>
+    </g>
+    <g font-size="11" fill="#57606a" text-anchor="middle">
+      <text x="38" y="53">byte 0</text><text x="120" y="53">byte 1</text>
+      <text x="202" y="53">byte 2</text><text x="284" y="53">byte 3</text>
+      <text x="448" y="53">byte 15</text>
+    </g>
+  </g>
+
+  <g transform="translate(20,350)" font-size="12.5">
+    <text x="0"   y="0"  fill="#1a7f37">AND 0x0F  &#8594;</text>
+    <text x="112" y="0"  fill="#1f2328">w0  w1  w2  w3 . . . w15</text>
+    <text x="0"   y="20" fill="#0969da">SHR 4     &#8594;</text>
+    <text x="112" y="20" fill="#1f2328">w16 w17 w18 w19 . . . w31</text>
+    <text x="330" y="0"  fill="#1a7f37" font-weight="bold">already contiguous</text>
+    <text x="330" y="20" fill="#1a7f37" font-weight="bold">&#8212; both shuffles gone</text>
+  </g>
+
+</g>
+</svg>

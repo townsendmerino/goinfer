@@ -77,6 +77,93 @@ more than instruction selection.
 machinery, and Chapter 8's 3.28× from six workers is goroutine parallelism working. Getting the
 same parallelism in C means a thread pool you wrote or a dependency you took.
 
+### Layout, concretely
+
+"Layout" sounds like housekeeping, so here is a real one, at the size a kernel sees it.
+
+The int4 weights of Chapter 5 arrive in groups of 32, packed two per byte. The obvious packing
+puts weights 0 and 1 in byte 0, weights 2 and 3 in byte 1, and so on. It is the obvious packing
+because it is how you would write the number down. It is also the wrong one for the kernel.
+
+Masking the low nibbles of 16 such bytes gives you every *even* weight; shifting right by four
+gives you every *odd* one. The kernel wants 32 consecutive weights, so it has to interleave the
+two halves back together — two shuffle instructions, every group, forever.
+
+Rearranging so that byte *i* holds weight *i* and weight *i+16* changes nothing about the data
+and removes both instructions: the mask now yields weights 0–15 in order, the shift yields 16–31
+in order, and each half is already what the kernel wanted.
+
+![Canonical interleaved int4 packing versus split-half packing. In the canonical layout byte k
+holds weights 2k and 2k+1, so masking gives the even weights and shifting gives the odd ones,
+requiring two unpack shuffles per group. In split-half, byte i holds weight i and weight i+16, so
+the mask and shift each yield a contiguous run and both shuffles
+disappear.](./10-fig1-nibble-layout.svg)
+
+Measured on Zen 2, that is **1.12× on the dot product** — and 1.12× both hot in L1 and cold from
+memory, which is what says it is an instruction-count win rather than a cache effect.
+
+**The neighbouring idea failed, and the pair is the interesting part.** The obvious companion
+optimization — give the kernel more independent accumulator chains so the FMA latency overlaps —
+was tried on AVX2 twice, and measured **negative both times** (~0.5% slower). So on this kernel,
+removing instructions pays and hiding latency does not.
+
+Two results are not a microarchitectural proof, but together they point one way: if deepening the
+dependency chain buys nothing while deleting two shuffles buys 12%, the loop was not waiting on
+FMA latency — it was short of shuffle throughput. That is a hypothesis the numbers support rather
+than a counter this repo read, and it is worth holding loosely. What it is not is portable: the
+arm64 kernel is a different shape with a different bottleneck, and the layout work there took a
+different form again (a four-row interleave on top of the same split-half trick). **"SIMD
+optimization" is a claim about one machine until you have measured the other.**
+
+### Which kernel runs is a runtime decision
+
+Because there are no intrinsics, there is no compiler deciding this for you. You write a kernel
+per instruction-set tier, detect the CPU's features at startup, and dispatch to the first tier
+the machine supports.
+
+![Runtime tier dispatch. On amd64 the canonical quantized dot tries AVX-512 VNNI first, then
+AVX2, then a portable scalar fallback; on arm64 it uses NEON with the row4 layout. The split-half
+layout has an AVX2 kernel only, so it is the fastest choice only on a host with AVX2 and no VNNI,
+and the repack declines on VNNI hosts.](./10-fig2-tier-ladder.svg)
+
+That ladder contains a trap worth naming, because this repo walked into it. The split-half layout
+above has an **AVX2 kernel only**. Gating it on "does this CPU have AVX2?" is the natural check
+and it is wrong: a newer CPU has AVX2 *and* VNNI, the canonical path already prefers VNNI, and so
+the layout would replace a faster kernel with a slower one — a pessimization that appears
+precisely on the best hardware.
+
+Nothing would have failed. The AVX2 kernel is correct; it is only slower. It surfaced because the
+two tiers also round differently, so an equivalence test that passed on every shape on a Zen 2 box
+failed on a VNNI CI runner by one part in ten thousand. The numeric difference was the symptom;
+the wasted hardware was the bug. **A capability check answers "can this run here?", which is not
+the question. The question is "is this the fastest thing here?"**
+
+### And what a kernel win is worth
+
+1.12× on the kernel is not 1.12× on anything a user experiences. Wiring the layout into the model
+loader and measuring decode end to end — same binary, both arms, interleaved in one session —
+gives **+2.10%**.
+
+![The profile attributes 50.6% of CPU samples to the quantized dot, which predicts +5.7%. The
+measured A/B gives +2.10%, implying the kernel is only about 19% of wall clock. The gap is because
+the kernel is the fan-out-parallel part of a token, so it accrues CPU-seconds per core while
+serial work accrues one.](./10-fig3-kernel-to-token.svg)
+
+Two things are worth taking from that gap. The first is ordinary Amdahl: the kernel is a fraction
+of a token, and the rest — attention, normalization, RoPE, the KV cache, the sampler — did not get
+faster. The second is sharper, and it is why the profile and the stopwatch disagree by more than
+you would guess. **A CPU profile counts samples, not seconds.** The dot product is the part that
+fans out across goroutines, so it banks roughly one CPU-second per core per wall-second while
+serial work banks one. Sample share flatters anything parallel. Read 50.6% as a ceiling, not an
+estimate — which is exactly how it was written down, before the A/B ran, rather than after the
+numbers disagreed.
+
+And the win did not ship. The repack keeps the original layout as well, so int4 weight memory
+grows about **80%** — 781 MiB to 1.37 GiB on a 1.5B model. Against a bar of 4% fixed in advance,
++2.10% does not buy that, so the layout is opt-in and off by default. A real speedup, correctly
+measured, that is not worth its price is still a result; Chapter 11 is about why the bar has to be
+written down first.
+
 ---
 
 ## Three backends
@@ -154,4 +241,8 @@ Chapter 11 is about how you know any of these numbers are real.
 
 *Sources: `docs/benchmarks.md` (lane statement, peer standings, re-anchor banner),
 `docs/capability-matrix.md`, `docs/cuda-backend.md`, `docs/hardware-matrix.md`,
-`docs/queue-performance.md`.*
+`docs/queue-performance.md` (P14 item 3: the 1.12× kernel result, the AVX2 accumulator
+refutation, and the wiring),
+`docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md` (the +2.10% A/B, its floor, the
+profile-vs-wall-clock bound, and the 4% bar fixed in advance),
+`docs/task-w4a8-neon-bandwidth.md` (the arm64 side, where the same idea shipped).*

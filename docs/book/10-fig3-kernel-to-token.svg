@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 334" width="700" height="334" role="img" aria-labelledby="t3 d3">
+<title id="t3">A profile's CPU-sample share overstates a parallel kernel's wall-clock share</title>
+<desc id="d3">A CPU profile attributes 50.6 percent of samples to the quantized dot product, which predicts that making it 1.12 times faster would speed a token up by 5.7 percent. The measured interleaved A/B gives 2.10 percent instead. Working backwards, that implies the kernel is only about 19 percent of wall clock. The gap is because the kernel is the fan-out-parallel part of a token, so it accrues roughly one CPU-second per core per wall-second while serial work accrues one.</desc>
+
+<rect x="0" y="0" width="700" height="334" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1" rx="6"/>
+
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#1f2328">the profile said 50.6%. the A/B said 19%.</text>
+  <text x="20" y="47" font-size="11.5" fill="#57606a">one decode token &#183; Qwen2.5-Coder-1.5B int4 &#183; Ryzen 7 3700X</text>
+
+  <!-- profile bar -->
+  <text x="20" y="78" font-size="12" font-weight="bold" fill="#1f2328">CPU samples &#8212; what the profile shows</text>
+  <g transform="translate(20,86)">
+    <rect x="0"   y="0" width="238" height="34" rx="3" fill="#ddf4ff" stroke="#0969da"/>
+    <rect x="238" y="0" width="232" height="34" rx="3" fill="#eaeef2" stroke="#8c959f"/>
+    <text x="119" y="21" font-size="11.5" fill="#0969da" text-anchor="middle" font-weight="bold">W4A8 dot 50.6%</text>
+    <text x="354" y="21" font-size="11" fill="#57606a" text-anchor="middle">everything else</text>
+    <text x="482" y="21" font-size="11.5" fill="#0969da">predicts +5.7%</text>
+  </g>
+
+  <!-- wall clock bar -->
+  <text x="20" y="152" font-size="12" font-weight="bold" fill="#1f2328">wall clock &#8212; what the measurement implies</text>
+  <g transform="translate(20,160)">
+    <rect x="0"  y="0" width="90"  height="34" rx="3" fill="#dafbe1" stroke="#1a7f37"/>
+    <rect x="90" y="0" width="380" height="34" rx="3" fill="#eaeef2" stroke="#8c959f"/>
+    <text x="45"  y="21" font-size="11.5" fill="#1a7f37" text-anchor="middle" font-weight="bold">~19%</text>
+    <text x="280" y="21" font-size="11" fill="#57606a" text-anchor="middle">everything else</text>
+    <text x="482" y="21" font-size="11.5" fill="#1a7f37">measured +2.10%</text>
+  </g>
+
+  <!-- mechanism -->
+  <rect x="20" y="216" width="660" height="60" rx="3" fill="#ffffff" stroke="#8c959f"/>
+  <text x="32" y="235" font-size="11.5" fill="#1f2328">the dot is the FAN-OUT-PARALLEL part of a token. It banks ~1 CPU-second</text>
+  <text x="32" y="252" font-size="11.5" fill="#1f2328">per core per wall-second; serial work banks 1. Sample share flatters it,</text>
+  <text x="32" y="269" font-size="11.5" fill="#1f2328">so 50.6% is a CEILING, not an estimate.</text>
+
+  <rect x="20" y="286" width="660" height="30" rx="3" fill="#fff1e5" stroke="#d4a72c"/>
+  <text x="32" y="305" font-size="11" fill="#7d4e00">pre-registered as an upper bound BEFORE the A/B ran, so the gap read as expected</text>
+
+</g>
+</svg>
