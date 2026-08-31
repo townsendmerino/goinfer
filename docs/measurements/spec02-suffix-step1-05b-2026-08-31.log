@@ -1,0 +1,13 @@
+=== RUN   TestSuffixProbe_step1
+    spec_suffix_probe_test.go:188: === copy density (4-gram) of each corpus, drafter-independent ===
+    spec_suffix_probe_test.go:194:   specWorkloads      codeedit     copy_density_4 = 0.257  (117 tok)
+    spec_suffix_probe_test.go:194:   specWorkloads      rag-copy     copy_density_4 = 0.263  (61 tok)
+    spec_suffix_probe_test.go:194:   specWorkloads      agent-json   copy_density_4 = 0.429  (46 tok)
+    spec_suffix_probe_test.go:254: code-continue      copy4=0.060 tri=0.715 | rounds= 77 drafted=247 accepted= 86 acc=0.348 evalacc=0.768 tok/v=2.08 alpha=0.786 | off=21349ms fixed=20047ms(1.06x) ada=17921ms(1.19x)
+    spec_suffix_probe_test.go:254: code-continue-2    copy4=0.067 tri=0.854 | rounds= 26 drafted=160 accepted=136 acc=0.850 evalacc=0.978 tok/v=6.15 alpha=0.995 | off=16654ms fixed=11583ms(1.44x) ada=12239ms(1.36x)
+    spec_suffix_probe_test.go:217: agent-loop-turn2   EXCLUDED as looping (distinct-trigram 0.297 < 0.70)
+    spec_suffix_probe_test.go:217: prose-doc          EXCLUDED as looping (distinct-trigram 0.570 < 0.70)
+    spec_suffix_probe_test.go:265: step-1 artifact (step-2 replay input) → /tmp/claude-1000/-home-francis-mycode-goinfer/3d2eca72-c822-4aaa-9c0a-6f6825d59fbf/scratchpad/step1.json
+--- PASS: TestSuffixProbe_step1 (149.12s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	149.135s

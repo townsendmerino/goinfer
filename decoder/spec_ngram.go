@@ -285,11 +285,13 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		var seedLogits []float32
 		var err error
 		if resident {
-			for i, id := range prompt {
-				if seedLogits, err = target.resident.Forward(target.embedResident(id), i); err != nil {
-					g.err = err
-					return
-				}
+			// Shared with generateInto (model.go). This used to be its own per-token
+			// Forward loop, which is how it missed batched prefill entirely when that
+			// landed in c36698a — 6.3x per prompt token, and `off` beating speculation
+			// 3-4.5x on realistic prompts. See residentPrefillSeed's comment.
+			if seedLogits, err = target.residentPrefillSeed(ctx, prompt); err != nil {
+				g.err = err
+				return
 			}
 		} else {
 			if seedLogits, err = target.prefillLogits(ctx, prompt[prefillFrom:], tc); err != nil {

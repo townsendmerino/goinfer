@@ -1438,8 +1438,8 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:747`) does
-  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1016/977`)
-  can't reroute without breaking the batch caller `decoder/model.go:846`
+  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1037/1013`)
+  can't reroute without breaking the batch caller `decoder/model.go:916`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
 - **MoE `moeMLP` allocates MB/token — DONE, P8.** `moeMLP` now takes an optional `*decodeScratch`,

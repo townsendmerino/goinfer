@@ -825,6 +825,76 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 	return out, g
 }
 
+// residentPrefillSeed ingests the whole prompt into the resident KV and returns the
+// LAST token's logits — the seed for decode. Both resident generation paths call it:
+// generateInto (plain) and genNgramInto (speculative).
+//
+// IT IS SHARED ON PURPOSE. These were two copies, and they drifted: batched prefill
+// was wired into generateInto by c36698a (2026-07-16) and NOT into the speculative
+// twin, which had carried its own per-token loop since 0fd54e8 (2026-06-20). The
+// speculative path therefore prefilled one token at a time on every backend that
+// implements Prefiller, measured at +2.66 ms per prompt token (R^2 0.9977) against
+// the batched path's 0.42 — a 6.3x per-token penalty that made `serve --spec ngram`
+// on resident CUDA 3-4.5x SLOWER than no drafter at all on realistic prompts. It went
+// unseen for six weeks because the only GPU speculative harness used 36-74 token
+// prompts and logged its speedup without asserting on it (docs/spec/02). One
+// function, so the next optimisation cannot land on one path and miss the other.
+//
+// Batched prefill (optional Prefiller) ingests the prompt in one pass — much faster
+// TTFT for long prompts. It declines (falls back) past the backend's cap, is absent
+// for backends without a batched forward (WebGPU implements no Prefiller; CUDA and
+// Metal do), and is skipped for tiny prompts.
+//
+// DEFAULT ON — bit-identical to sequential decode again (restored 2026-08-04). It was
+// briefly default-off after an 84% token-stream divergence traced to a compiler
+// fma-vs-mul+add contraction difference between the separately-compiled batched and
+// decode GEMV/RMS kernels. FIXED: every float MAC in both paths is now an explicit
+// __fmaf_rn (no compiler discretion), enforced at build time by cuda.TestKernelFMALint.
+// The decode-side half shipped in aikit/gpu@v0.25.0 (gemv_w4a8_fwd); with the dep
+// bumped, TestPrefillDivergenceRate is 0/50 on the real 1.5B (was 42/50), gap
+// byte-identical. GOINFER_BATCHED_PREFILL=0 force-disables.
+// See docs/task-batched-prefill-bitidentity.md.
+func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int) ([]float32, error) {
+	if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(prompt) >= 8 {
+		if pf, ok := m.resident.(Prefiller); ok {
+			embs := make([][]float32, len(prompt))
+			for i, id := range prompt {
+				embs[i] = m.embedResident(id)
+			}
+			if lg, perr := pf.PrefillLast(embs, 0); perr == nil {
+				return lg, nil
+			}
+		}
+	}
+	// KV-only prefill: prompt[:-1] tokens need only their K/V in the cache — skip the LM head
+	// (a big-vocab matmul + ~1 MB readback + softcap) on every prefill token but the last, whose
+	// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
+	// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
+	kvOnly, hasKV := m.resident.(ResidentPrefillKV)
+	useKV := hasKV && os.Getenv("GOINFER_NO_KVONLY_PREFILL") == ""
+	var logits []float32
+	var err error
+	for i, id := range prompt {
+		// G18: the resident prefill loop is the GPU-side twin of the batched CPU
+		// path's per-layer check. Same failure without it — an abandoned client
+		// leaves the whole prompt streaming through the device.
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
+		emb := m.embedResident(id)
+		if useKV && i < len(prompt)-1 {
+			if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if logits, err = m.resident.Forward(emb, i); err != nil {
+			return nil, err
+		}
+	}
+	return logits, nil
+}
+
 // generateInto is the shared prefill+decode loop behind Model.Generate and
 // Session.Generate. It assumes cache already holds prompt[:prefillFrom] (0 for a
 // fresh generation), prefills prompt[prefillFrom:] (always ≥1 token — the seed,
@@ -871,60 +941,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	var logits []float32
 	var err error
 	if useGPU {
-		prefilled := false
-		// Batched prefill (optional Prefiller): ingest the whole prompt in one pass — much faster
-		// TTFT for long prompts. Declines (falls back) for prompts past the backend's cap; absent
-		// for backends without a batched forward, and skipped for tiny prompts.
-		//
-		// DEFAULT ON — bit-identical to sequential decode again (restored 2026-08-04). It was briefly
-		// default-off after an 84% token-stream divergence traced to a compiler fma-vs-mul+add
-		// contraction difference between the separately-compiled batched and decode GEMV/RMS kernels.
-		// FIXED: every float MAC in both paths is now an explicit __fmaf_rn (no compiler discretion),
-		// enforced at build time by cuda.TestKernelFMALint. The decode-side half shipped in
-		// aikit/gpu@v0.25.0 (gemv_w4a8_fwd); with the dep bumped, TestPrefillDivergenceRate is 0/50 on
-		// the real 1.5B (was 42/50), gap byte-identical. GOINFER_BATCHED_PREFILL=0 force-disables.
-		// See docs/task-batched-prefill-bitidentity.md.
-		useBatchedPrefill := os.Getenv("GOINFER_BATCHED_PREFILL") != "0"
-		if pf, ok := m.resident.(Prefiller); ok && useBatchedPrefill && len(prompt) >= 8 {
-			embs := make([][]float32, len(prompt))
-			for i, id := range prompt {
-				embs[i] = m.embedResident(id)
-			}
-			if lg, perr := pf.PrefillLast(embs, 0); perr == nil {
-				logits, prefilled = lg, true
-				gpuPos = len(prompt)
-			}
+		if logits, err = m.residentPrefillSeed(ctx, prompt); err != nil {
+			g.err = err
+			return
 		}
-		if !prefilled {
-			// KV-only prefill: prompt[:-1] tokens need only their K/V in the cache — skip the LM head
-			// (a big-vocab matmul + ~1 MB readback + softcap) on every prefill token but the last, whose
-			// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
-			// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
-			kvOnly, hasKV := m.resident.(ResidentPrefillKV)
-			useKV := hasKV && os.Getenv("GOINFER_NO_KVONLY_PREFILL") == ""
-			for i, id := range prompt {
-				// G18: the resident prefill loop is the GPU-side twin of the batched CPU
-				// path's per-layer check. Same failure without it — an abandoned client
-				// leaves the whole prompt streaming through the device.
-				if err = ctx.Err(); err != nil {
-					g.err = err
-					return
-				}
-				emb := m.embedResident(id)
-				if useKV && i < len(prompt)-1 {
-					if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
-						g.err = err
-						return
-					}
-					continue
-				}
-				if logits, err = m.resident.Forward(emb, i); err != nil {
-					g.err = err
-					return
-				}
-			}
-			gpuPos = len(prompt)
-		}
+		gpuPos = len(prompt)
 	} else {
 		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
 			g.err = err

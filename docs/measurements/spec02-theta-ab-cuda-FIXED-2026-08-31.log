@@ -1,0 +1,12 @@
+=== RUN   TestThetaAB
+    theta_ab_test.go:176: 0.5b       code-continue     | off    1039ms (vs off 1.00x, vs ada@0.5  +7.2%) | fixed-8    1127ms (vs off 0.92x, vs ada@0.5  -1.1%) | ada@0.5    1114ms (vs off 0.93x, vs ada@0.5  +0.0%) | ada@measured     913ms (vs off 1.14x, vs ada@0.5 +22.0%) | ada@0.30    1127ms (vs off 0.92x, vs ada@0.5  -1.2%) 
+    theta_ab_test.go:176: 0.5b       code-continue-2   | off     797ms (vs off 1.00x, vs ada@0.5 -27.6%) | fixed-8     543ms (vs off 1.47x, vs ada@0.5  +6.3%) | ada@0.5     577ms (vs off 1.38x, vs ada@0.5  +0.0%) | ada@measured     539ms (vs off 1.48x, vs ada@0.5  +7.1%) | ada@0.30     572ms (vs off 1.39x, vs ada@0.5  +0.9%) 
+    theta_ab_test.go:176: 0.5b       agent-loop-turn2  | off     631ms (vs off 1.00x, vs ada@0.5  +8.5%) | fixed-8     624ms (vs off 1.01x, vs ada@0.5  +9.8%) | ada@0.5     684ms (vs off 0.92x, vs ada@0.5  +0.0%) | ada@measured     664ms (vs off 0.95x, vs ada@0.5  +3.0%) | ada@0.30     634ms (vs off 1.00x, vs ada@0.5  +8.0%) 
+    theta_ab_test.go:113: 0.5b       prose-doc         EXCLUDED by the pre-registered loop rule (distinct-trigram 0.335)
+    theta_ab_test.go:176: 1.5b       code-continue     | off    1507ms (vs off 1.00x, vs ada@0.5  -9.9%) | fixed-8    1418ms (vs off 1.06x, vs ada@0.5  -4.2%) | ada@0.5    1359ms (vs off 1.11x, vs ada@0.5  +0.0%) | ada@measured    1301ms (vs off 1.16x, vs ada@0.5  +4.4%) | ada@0.30    1281ms (vs off 1.18x, vs ada@0.5  +6.1%) 
+    theta_ab_test.go:176: 1.5b       code-continue-2   | off    1447ms (vs off 1.00x, vs ada@0.5 -36.3%) | fixed-8     918ms (vs off 1.58x, vs ada@0.5  +0.4%) | ada@0.5     922ms (vs off 1.57x, vs ada@0.5  +0.0%) | ada@measured     920ms (vs off 1.57x, vs ada@0.5  +0.2%) | ada@0.30     941ms (vs off 1.54x, vs ada@0.5  -2.0%) 
+    theta_ab_test.go:176: 1.5b       agent-loop-turn2  | off    1688ms (vs off 1.00x, vs ada@0.5 -24.1%) | fixed-8    1283ms (vs off 1.32x, vs ada@0.5  -0.1%) | ada@0.5    1282ms (vs off 1.32x, vs ada@0.5  +0.0%) | ada@measured    1235ms (vs off 1.37x, vs ada@0.5  +3.8%) | ada@0.30    1232ms (vs off 1.37x, vs ada@0.5  +4.0%) 
+    theta_ab_test.go:113: 1.5b       prose-doc         EXCLUDED by the pre-registered loop rule (distinct-trigram 0.373)
+--- PASS: TestThetaAB (114.98s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	115.060s

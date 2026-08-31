@@ -1,0 +1,40 @@
+=== RUN   TestThetaProbe_CUDA
+    theta_probe_test.go:110: CUDA qwen2.5-coder-0.5b-instruct-q4_k_m.gguf depth= 128  T(1)=   4585 µs  slope=  712.5 µs/node  THETA=0.155
+    theta_probe_test.go:113:      n= 1  T=    4585 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:113:      n= 2  T=    5305 µs  (T(n)/T(1)= 1.16)
+    theta_probe_test.go:113:      n= 3  T=    6234 µs  (T(n)/T(1)= 1.36)
+    theta_probe_test.go:113:      n= 4  T=    6412 µs  (T(n)/T(1)= 1.40)
+    theta_probe_test.go:113:      n= 6  T=    7725 µs  (T(n)/T(1)= 1.68)
+    theta_probe_test.go:113:      n= 8  T=    8716 µs  (T(n)/T(1)= 1.90)
+    theta_probe_test.go:113:      n=12  T=   12003 µs  (T(n)/T(1)= 2.62)
+    theta_probe_test.go:113:      n=16  T=   15633 µs  (T(n)/T(1)= 3.41)
+    theta_probe_test.go:110: CUDA qwen2.5-coder-0.5b-instruct-q4_k_m.gguf depth= 512  T(1)=   4533 µs  slope=  801.3 µs/node  THETA=0.177
+    theta_probe_test.go:113:      n= 1  T=    4533 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:113:      n= 2  T=    5518 µs  (T(n)/T(1)= 1.22)
+    theta_probe_test.go:113:      n= 3  T=    5525 µs  (T(n)/T(1)= 1.22)
+    theta_probe_test.go:113:      n= 4  T=    6060 µs  (T(n)/T(1)= 1.34)
+    theta_probe_test.go:113:      n= 6  T=    7469 µs  (T(n)/T(1)= 1.65)
+    theta_probe_test.go:113:      n= 8  T=    9089 µs  (T(n)/T(1)= 2.01)
+    theta_probe_test.go:113:      n=12  T=   12864 µs  (T(n)/T(1)= 2.84)
+    theta_probe_test.go:113:      n=16  T=   16573 µs  (T(n)/T(1)= 3.66)
+    theta_probe_test.go:110: CUDA qwen2.5-coder-1.5b-instruct-q4_k_m.gguf depth= 128  T(1)=   5357 µs  slope= 1259.8 µs/node  THETA=0.235
+    theta_probe_test.go:113:      n= 1  T=    5357 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:113:      n= 2  T=    6023 µs  (T(n)/T(1)= 1.12)
+    theta_probe_test.go:113:      n= 3  T=    7038 µs  (T(n)/T(1)= 1.31)
+    theta_probe_test.go:113:      n= 4  T=    8417 µs  (T(n)/T(1)= 1.57)
+    theta_probe_test.go:113:      n= 6  T=   11075 µs  (T(n)/T(1)= 2.07)
+    theta_probe_test.go:113:      n= 8  T=   13462 µs  (T(n)/T(1)= 2.51)
+    theta_probe_test.go:113:      n=12  T=   18664 µs  (T(n)/T(1)= 3.48)
+    theta_probe_test.go:113:      n=16  T=   23876 µs  (T(n)/T(1)= 4.46)
+    theta_probe_test.go:110: CUDA qwen2.5-coder-1.5b-instruct-q4_k_m.gguf depth= 512  T(1)=   5709 µs  slope= 1431.9 µs/node  THETA=0.251
+    theta_probe_test.go:113:      n= 1  T=    5709 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:113:      n= 2  T=    6867 µs  (T(n)/T(1)= 1.20)
+    theta_probe_test.go:113:      n= 3  T=    7923 µs  (T(n)/T(1)= 1.39)
+    theta_probe_test.go:113:      n= 4  T=    9377 µs  (T(n)/T(1)= 1.64)
+    theta_probe_test.go:113:      n= 6  T=   12207 µs  (T(n)/T(1)= 2.14)
+    theta_probe_test.go:113:      n= 8  T=   15022 µs  (T(n)/T(1)= 2.63)
+    theta_probe_test.go:113:      n=12  T=   21050 µs  (T(n)/T(1)= 3.69)
+    theta_probe_test.go:113:      n=16  T=   26968 µs  (T(n)/T(1)= 4.72)
+--- PASS: TestThetaProbe_CUDA (19.72s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	19.779s

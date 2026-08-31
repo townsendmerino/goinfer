@@ -1,0 +1,26 @@
+    spec_suffix_probe_test.go:262: code-continue      copy4=0.060 tri=0.759 | rounds= 93 drafted=288 accepted= 69 acc=0.240 evalacc=0.676 tok/v=1.72 alpha=0.420 | off=28473ms fixed=34312ms(0.83x) ada=28930ms(0.98x)
+    spec_suffix_probe_test.go:262: code-continue-2    copy4=0.067 tri=0.880 | rounds= 34 drafted=176 accepted=133 acc=0.756 evalacc=0.950 tok/v=4.71 alpha=0.492 | off=26495ms fixed=23012ms(1.15x) ada=22689ms(1.17x)
+    spec_suffix_probe_test.go:225: agent-loop-turn2   EXCLUDED as looping (distinct-trigram 0.671 < 0.70)
+    spec_suffix_probe_test.go:225: prose-doc          EXCLUDED as looping (distinct-trigram 0.665 < 0.70)
+ok  	github.com/townsendmerino/goinfer/decoder	230.790s
+=== step2 on 1.5B traces ===
+    spec_suffix_replay_test.go:281:   [loop guards code-continue] distinct-trigram=0.759 (bar 0.70, passes) | no tail cycle
+    spec_suffix_replay_test.go:297:   [cross-check code-continue] live accepted=69 rounds=93 | replay accepted=67 rounds=93
+    spec_suffix_replay_test.go:309: code-continue      most-recent      93   0.387    0.233     0.720           
+    spec_suffix_replay_test.go:309: code-continue      frequency        92   0.380    0.243     0.739      +2.6%
+    spec_suffix_replay_test.go:309: code-continue      deep-cap64       93   0.387    0.233     0.720        +0%
+    spec_suffix_replay_test.go:309: code-continue      oracle           89   0.360    0.277     0.798     +10.7%
+    spec_suffix_replay_test.go:312: code-continue      match-len histogram (most-recent): map[2:26 3:5 4:3 5:1 12:1]
+    spec_suffix_replay_test.go:281:   [loop guards code-continue-2] distinct-trigram=0.880 (bar 0.70, passes) | no tail cycle
+    spec_suffix_replay_test.go:297:   [cross-check code-continue-2] live accepted=133 rounds=34 | replay accepted=126 rounds=34
+    spec_suffix_replay_test.go:309: code-continue-2    most-recent      34   0.647    0.716     3.706           
+    spec_suffix_replay_test.go:309: code-continue-2    frequency        34   0.647    0.716     3.706        +0%
+    spec_suffix_replay_test.go:309: code-continue-2    deep-cap64       34   0.647    0.716     3.706        +0%
+    spec_suffix_replay_test.go:309: code-continue-2    oracle           33   0.636    0.756     3.848      +3.8%
+    spec_suffix_replay_test.go:312: code-continue-2    match-len histogram (most-recent): map[2:7 3:1 6:1 11:1 16:12]
+    spec_suffix_replay_test.go:281:   [loop guards agent-loop-turn2] distinct-trigram=0.671 (bar 0.70, EXCLUDES) | no tail cycle
+    spec_suffix_replay_test.go:281:   [loop guards prose-doc] distinct-trigram=0.665 (bar 0.70, EXCLUDES) | no tail cycle
+    spec_suffix_replay_test.go:391: code-continue      ctx≈902  Draft =     16.9 µs   target step =  177955.7 µs   drafter share = 0.0095%
+    spec_suffix_replay_test.go:391: code-continue-2    ctx≈816  Draft =      3.2 µs   target step =  165595.5 µs   drafter share = 0.0019%
+
+[exited with code 0]

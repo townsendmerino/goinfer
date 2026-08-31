@@ -1,0 +1,10 @@
+=== RUN   TestSpecResidentPrefillRegression
+    spec_prefill_regression_test.go:75:   prompt  tokens |       off      spec |    ratio  abs delta
+    spec_prefill_regression_test.go:110:      150      33 |      207ms      315ms |    0.66x      +108ms
+    spec_prefill_regression_test.go:110:      400      96 |      253ms      241ms |    1.05x       -12ms
+    spec_prefill_regression_test.go:110:     1000     253 |      296ms      281ms |    1.05x       -15ms
+    spec_prefill_regression_test.go:110:     2000     562 |      420ms      515ms |    0.82x       +95ms
+    spec_prefill_regression_test.go:110:     3000     839 |      542ms      680ms |    0.80x      +138ms
+--- PASS: TestSpecResidentPrefillRegression (15.86s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	15.942s
