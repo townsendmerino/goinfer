@@ -26,7 +26,11 @@ func TestLoadWeights_shardedChecksums(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadWeights(sharded): %v", err)
 	}
-	defer w.st.Close() // munmaps every shard
+	defer func() {
+		if w.st != nil { // nil when P13 released the mapping at end of load
+			w.st.Close() // munmaps every shard
+		}
+	}()
 
 	// Same checksum bar the single-file M1 test uses; tensors are spread across
 	// shards by the round-robin split, so this exercises cross-shard resolution.

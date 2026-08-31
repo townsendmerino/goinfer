@@ -60,19 +60,53 @@ func TestLoadWeights_goldenChecksums(t *testing.T) {
 			gemmaModelDir, gemmaModelDir)
 	}
 
-	w, err := LoadWeights(gemmaModelDir)
-	if err != nil {
-		t.Fatalf("LoadWeights: %v", err)
+	// Run BOTH sides of P13, because they answer different questions and only
+	// one of them existed before P13 did.
+	//
+	//   p13_off     — the source mapping is retained, so every assertion below
+	//                 runs, INCLUDING the stored-dtype check that proves the
+	//                 BF16 widen path ran. That check reads w.st, which P13
+	//                 closes by default, so without this arm it would quietly
+	//                 stop running rather than fail.
+	//   p13_default — the shipped path, where the mapping is released at end of
+	//                 load. The checksums here are what says that releasing it
+	//                 did not corrupt the weights already loaded out of it,
+	//                 which is the one thing P13 could plausibly break and the
+	//                 exact risk mmapAliasRisk is guarding.
+	//
+	// P13 closing w.st is also why this test panicked rather than failed when it
+	// was first run against a checkpoint: the Mac skips it for want of the asset,
+	// so the nil deref only ever appeared on the box.
+	for _, tc := range []struct {
+		name   string
+		p13Off bool
+	}{{"p13_off", true}, {"p13_default", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.p13Off {
+				t.Setenv("GOINFER_P13_OFF", "1")
+			}
+			w, err := LoadWeights(gemmaModelDir)
+			if err != nil {
+				t.Fatalf("LoadWeights: %v", err)
+			}
+			defer func() {
+				if w.st != nil { // nil under P13's default: already closed at end of load
+					w.st.Close()
+				}
+			}()
+
+			// Cross-check the parsed config against the golden's config dict, so a
+			// config-field drift fails here rather than as a mystery shape error.
+			assertConfigInt(t, g, "num_hidden_layers", w.Cfg.NumLayers)
+			assertConfigInt(t, g, "hidden_size", w.Cfg.HiddenDim)
+			assertConfigInt(t, g, "vocab_size", w.Cfg.VocabSize)
+
+			if tc.p13Off && w.st == nil {
+				t.Fatal("GOINFER_P13_OFF=1 but the source mapping was released anyway — this arm exists to keep the dtype assertion running, and it just stopped running")
+			}
+			checkSampledChecksums(t, w, g)
+		})
 	}
-	defer w.st.Close() // release the mmap (in-package access)
-
-	// Cross-check the parsed config against the golden's config dict, so a
-	// config-field drift fails here rather than as a mystery shape error.
-	assertConfigInt(t, g, "num_hidden_layers", w.Cfg.NumLayers)
-	assertConfigInt(t, g, "hidden_size", w.Cfg.HiddenDim)
-	assertConfigInt(t, g, "vocab_size", w.Cfg.VocabSize)
-
-	checkSampledChecksums(t, w, g)
 }
 
 // checkSampledChecksums verifies the loaded weights reproduce the golden's
@@ -99,8 +133,13 @@ func checkSampledChecksums(t *testing.T, w *Weights, g *gemmaGolden) {
 			continue
 		}
 		// Stored dtype — confirms we actually exercised the BF16/F16 path,
-		// not an accidental F32 checkpoint.
-		if tn, err := w.st.Tensor(name); err == nil && tn.DType != want.DType {
+		// not an accidental F32 checkpoint. Needs the source mapping, which P13
+		// releases at end of load, so it can only run on the retained arm. Logged
+		// rather than silently passed over: an assertion that stops running looks
+		// exactly like an assertion that passes.
+		if w.st == nil {
+			t.Logf("%s: dtype check skipped — source mapping released (P13); the p13_off arm covers it", name)
+		} else if tn, err := w.st.Tensor(name); err == nil && tn.DType != want.DType {
 			t.Errorf("%s: dtype %q, golden %q", name, tn.DType, want.DType)
 		}
 
