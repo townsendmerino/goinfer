@@ -31,6 +31,16 @@ demo/chat/dist/
 !testdata/cohere-tiny/model.safetensors
 !testdata/cohere2-tiny/
 !testdata/cohere2-tiny/model.safetensors
+# EXCEPTION: lfm2-tiny is a 708 KB deterministic random-weight conv/attention hybrid
+# (scripts/pin_lfm2_tiny.py). Committed on purpose so the LFM2/LFM2.5 forward-parity gate
+# is a real T1 — runnable in CI without a per-machine asset — rather than a golden that
+# skips because its checkpoint is gitignored. Same rationale and size class as cohere-tiny
+# above; see docs/parity-coverage-policy.md, "A gate must be able to run, and able to fail".
+# It matters more than usual here: the two bugs this family shipped with (norm_eps read from
+# the wrong key, AttnScale left at 0) BOTH held a matching argmax, so the logit-cosine
+# assertion in TestLFM2_textParity is the only thing that would catch either coming back.
+!testdata/lfm2-tiny/
+!testdata/lfm2-tiny/model.safetensors
 
 # EXCEPTION: the DFlash reference trace (2.6 MB, scripts/pin_dflash_trace.py). It is the
 # upstream implementation's OWN per-layer output, not weights — the oracle P10's kill-gate 1
