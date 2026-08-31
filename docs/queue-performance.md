@@ -357,6 +357,44 @@ depending on clock — already at that floor, so breaking a 5-cycle chain frees 
 is 128-bit natively and pays no such split, which is also the leading explanation for its 1.47×
 advantage on the same algorithm.
 
+### Item 3 ported to AVX2 — 1.12×, hot AND cold (2026-08-31)
+
+Built (`dotW4A8SplitHalfAVX2`, aikit `7e1af80`). The split-half layout deletes the two
+`VPUNPCK` shuffles per group — one 16-byte load yields two contiguous 16-weight halves with no
+interleave to undo — taking the prologue from 8 shuffle/logic ops to 6.
+
+| Ryzen 7 3700X, K=5120, order-alternated | canonical | split-half | ratio |
+|---|---|---|---|
+| hot (L1-resident) | 17.09 / 17.11 | **19.20 / 19.23** | **1.12×** |
+| cold (17,408 distinct rows, ~45 MB, past L3) | 16.19 / 16.35 | **18.41 / 18.22** | **1.11–1.14×** |
+
+Cold is decode's real pattern — one weight row per output, never reused within a token — so the
+win is not a hot-only artifact. Correctness gated against the scalar oracle reading the
+**canonical** layout, so a repack bug and a kernel bug cannot cancel (rel-err ≤ 3.7e-07).
+
+**The two ISAs disagree exactly as their diagnosed bottlenecks predict**, which is the strongest
+evidence either diagnosis has:
+
+| lever | arm64 | amd64 AVX2 |
+|---|---|---|
+| accumulator chains | **1.41–1.47×** | ~1% and ~0.5% — two dead ends |
+| split-half prologue | **flat 1.000×** alone | **1.12×** |
+| both together | 1.60–1.75×, shipped via `.giw` kind 4 | — |
+
+arm64 is latency-bound, so shortening the prologue was invisible until 2Acc removed the stall.
+AVX2 is port-bound, so the accumulator fix does nothing and the prologue fix works.
+
+**Where it leaves the numbers:** the W4A8-vs-int8 penalty falls 3.01× → 2.69×, and the
+amd64-behind-arm64 gap 1.47× → 1.31×. P14 established this kernel *is* the end-to-end CPU decode
+bottleneck (whole-decode weight throughput ~90% of the kernel's isolated rate), so most of the 12%
+should transfer — **should**, not does: that is an end-to-end measurement nobody has run.
+
+**Not wired into dispatch, and the reason is a hard constraint.** `packed` must be split-half, and
+the canonical packer feeds `.giw` kind=3's zero-copy mmap load path — changing it would silently
+misdecode existing bundles, no error, wrong numbers. Production needs a load-time repack, the
+pattern arm64 and the GPU backends already use, plus the memory trade that carries (a second
+in-memory copy per int4 tensor, or freeing the canonical one after repack).
+
 **So the AVX2 lever is fewer instructions per group — the unpack prologue — not chain depth.**
 That is what the split-half repack attacks, and `docs/task-w4a8-neon-bandwidth.md` already names
 item 3's repack as "the one real lever Gate 0 identified, unattempted". This result reaches the
