@@ -50,6 +50,29 @@ the entries here were a second, thinner copy that could drift from it. The spec 
 - **P15 · DFlash 2.** Filed 2026-08-20, **gates before code**, not started. Sequenced to land
   **before** P10's gate-4 width router — doing gate 4 first would mean redoing it.
 
+- **P17 · `TestSamplingThroughputGate` has ~1% headroom on arm64 and fails under suite load** —
+  `macbook-arm64`, **OBSERVED 2026-08-31, not diagnosed, NOT actioned.** Filed as an observation
+  because the honest thing to do with a marginal gate is record it, not retune it.
+
+  Measured while landing G1, on a tree whose diff contains **no sampler file** — the benchmarked
+  code is byte-identical to `main`, so this is not a regression from that work:
+
+  | context | V=262144 temp+top_p ÷ temp-only | vs gate 5.0x |
+  |---|---|---|
+  | inside the full `./decoder/` suite | **5.13x** | **FAIL** |
+  | isolated, `-count=1`, four runs | 4.81 / 4.95 / 4.79 / 4.97 | pass, by 0.6-4% |
+
+  So the gate passes alone and fails under concurrent load, with a mean margin under 3%. Two
+  traps worth naming before anyone picks this up:
+
+  - **`go test` CACHES a passing result.** The first three "repeats" here returned byte-identical
+    timings (566997 / 2759883 ns/op) because only the first actually ran. Any repeat-measurement
+    of this gate needs `-count=1`, or it measures nothing and looks stable while doing it.
+  - **Do NOT raise the bar to 5.5x to make this green.** Re-baselining because a number moved is
+    how a regression gets blessed; a bar moves only with a mechanism. The open question is whether
+    full-vocab selection is genuinely load-sensitive (a cache-pressure story) or whether the gate
+    was set with no headroom on this machine class in the first place. Answer that first.
+
 ## Filing a new item
 
 Read `docs/completed/queue-performance.md` first — it is 2,245 lines of what was already tried,

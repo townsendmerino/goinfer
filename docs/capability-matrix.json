@@ -265,6 +265,26 @@
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
+    "name": "lfm2",
+    "model_types": [
+      "lfm2"
+    ],
+    "display_name": "LFM2.5",
+    "description": "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "laguna",
     "model_types": [
       "laguna"
@@ -491,7 +511,7 @@
       "gpt_oss"
     ],
     "display_name": "gpt-oss",
-    "description": "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares none of FeatAttnSink/FeatOutBias/FeatRopeMscale)",
+    "description": "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares FeatRopeMscale since G7 but still neither FeatAttnSink nor FeatOutBias)",
     "coverage_axis": "softmax-GQA",
     "moe": "sparse, no-shared",
     "sliding_window": "interleave",

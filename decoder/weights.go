@@ -90,6 +90,11 @@ type LayerWeights struct {
 	delta *deltaNetWeights
 	qattn *qwenAttnWeights
 
+	// LFM2 gated short-convolution mixer weights, set ONLY on the conv layers (the
+	// attention layers use QProj/KProj/VProj/OProj above and leave this nil). nil for
+	// every other family.
+	shortConv *shortConvWeights
+
 	// Granite-4.0-H Mamba-2 mixer weights, set only on the mamba layers (the
 	// attention layers use QProj/KProj/VProj/OProj above). nil for every other
 	// family. Stored f32 (parity-first, like the qwen35 hybrid).
@@ -686,7 +691,16 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		// qwen3_5_moe: per-layer kind decides the attention tensor set (Gated
 		// DeltaNet vs gated softmax); both share the MoE FFN loaded below. Stored
 		// f32 (parity-first forward). Other families take the generic path.
-		if arch.qwen35 != nil {
+		if arch.lfm2 != nil && arch.isConvLayer(i) {
+			// LFM2 conv layer: the gated short-conv mixer REPLACES attention, so there is
+			// no q/k/v/o and no QK-norm to load — reading them would fail on tensors the
+			// checkpoint does not contain. The FFN below is shared with the attention
+			// layers and still loads. Attention layers fall through to the generic path,
+			// which lfm2TensorSchema already describes.
+			if err = loadLFM2Conv(st, i, l, arch, hd, tn); err != nil {
+				return err
+			}
+		} else if arch.qwen35 != nil {
 			if err = loadQwen35Attn(st, i, l, arch, hd, tn, loadMatQ, quant); err != nil {
 				return err
 			}
@@ -1221,6 +1235,35 @@ type tensorSchema struct {
 	// no shared expert.
 	SharedGate, SharedUp, SharedDown string
 	SharedExpertGate                 string
+}
+
+// lfm2TensorSchema: LFM2/LFM2.5. Tied head, Pre2 norms under LFM2's own names
+// (operator_norm before the mixer, ffn_norm before the FFN), per-head RMSNorm on Q and K,
+// SwiGLU under llama's w1/w2/w3 naming, and attention output as out_proj rather than o_proj.
+//
+// The attention entries apply to the 8 attention layers only; the 22 conv layers have none of
+// them and instead carry conv.{in_proj,conv,out_proj}, which this schema cannot express (it has
+// no conv roles) and buildLFM2Weights loads directly — the same division Granite uses for its
+// Mamba tensors.
+//
+// FinalNorm is embedding_norm, not model.norm: LFM2 normalises before the tied LM head under a
+// name no other family here uses, so a copy-paste of "model.norm.weight" would fail to load
+// rather than load the wrong thing — which is the better failure, but worth naming.
+var lfm2TensorSchema = tensorSchema{
+	Embed:       "model.embed_tokens.weight",
+	LMHead:      "", // tied (tie_word_embeddings true on every released checkpoint)
+	FinalNorm:   "model.embedding_norm.weight",
+	QProj:       "self_attn.q_proj.weight",
+	KProj:       "self_attn.k_proj.weight",
+	VProj:       "self_attn.v_proj.weight",
+	OProj:       "self_attn.out_proj.weight",
+	QNorm:       "self_attn.q_layernorm.weight",
+	KNorm:       "self_attn.k_layernorm.weight",
+	PreAttnNorm: "operator_norm.weight",
+	GateProj:    "feed_forward.w1.weight",
+	UpProj:      "feed_forward.w3.weight",
+	DownProj:    "feed_forward.w2.weight",
+	PreMLPNorm:  "ffn_norm.weight",
 }
 
 // gemma3TensorSchema: tied head, 4-norm sandwich, QK-norm.

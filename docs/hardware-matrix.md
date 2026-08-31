@@ -22,6 +22,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Granite-4.0-H | ✅ | CPU | CPU | CPU |
 | InternLM2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Kimi K2 | ✅ | ✅ resident | CPU | CPU |
+| LFM2.5 | ✅ | CPU | CPU | CPU |
 | Laguna | ✅ | CPU | CPU | CPU |
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Llama 4 | ✅ | CPU | CPU | CPU |

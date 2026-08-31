@@ -272,6 +272,38 @@ type Config struct {
 	// this is the authoritative source when present (see IsGlobalLayer).
 	LayerTypes []string `json:"layer_types"`
 
+	// LFM2 (model_type lfm2): the gated short-convolution block's geometry. Its
+	// per-layer pattern rides on LayerTypes above ("conv" | "full_attention").
+	//
+	// ConvLCache is the conv KERNEL WIDTH (3), named for the rolling state it implies
+	// rather than for the filter — upstream calls it conv_L_cache. ConvDim is the
+	// channel count the block operates on, which equals hidden_size on every released
+	// checkpoint but is configured separately, so it is read rather than assumed.
+	// ConvBias is false on the released weights and there is no bias tensor to load;
+	// a true here is refused rather than silently ignored.
+	//
+	// ConvDim is OPTIONAL and often absent. Upstream Lfm2ShortConv builds its Conv1d and
+	// in_proj on config.HIDDEN_SIZE and never reads conv_dim at all, so hidden_size is the
+	// authority: the released LFM2.5-2.6B config.json carries conv_dim (2048, equal to
+	// hidden_size), while a checkpoint written by Lfm2Config.save_pretrained carries no
+	// conv_dim key whatsoever. Absent ⇒ default to hidden_size (what the reference uses);
+	// present-and-different ⇒ refused, because the reference would ignore it and we would
+	// not, which is a silent divergence rather than a shape error.
+	// NormEps is LFM2's RMSNorm epsilon. IT HAS ITS OWN JSON KEY: LFM2 writes
+	// "norm_eps" where every other RMSNorm family here writes "rms_norm_eps", so
+	// reading cfg.RMSNormEps for this family yields 0, not the checkpoint's 1e-5.
+	// That is not a rounding difference. Measured 2026-08-31 on LFM2.5-2.6B: eps=0
+	// scaled the first operator_norm output by a uniform 1.0185x (the embedding's
+	// variance is ~2.9e-4, so rsqrt(v)/rsqrt(v+1e-5) is a visible factor), and the
+	// error compounded through 61 norms into logits at cosine 0.897 vs HF -- with a
+	// MATCHING argmax, so a greedy-decode smoke test would have called it correct.
+	// The checkpoint also carries "block_norm_eps"; upstream Lfm2Config reads
+	// norm_eps, so that one is deliberately not used.
+	ConvLCache int     `json:"conv_L_cache"`
+	ConvBias   bool    `json:"conv_bias"`
+	ConvDim    int     `json:"conv_dim"`
+	NormEps    float64 `json:"norm_eps"`
+
 	// EOSTokenID is the checkpoint's end-of-sequence id(s). HF stores it as
 	// either a scalar or a list, so it's kept raw and decoded by EOSIDs.
 	// omitempty: nil must not round-trip through .giw as the literal `null`.
@@ -536,6 +568,45 @@ func (c *Config) validateDeepseek() error {
 // list covering every layer (mamba | attention), a valid Mamba-2 geometry, and a
 // routed+shared MoE (num_local_experts / num_experts_per_tok / intermediate_size /
 // shared_intermediate_size).
+// validateLFM2 checks the LFM2/LFM2.5 shape before anything is loaded.
+//
+// Each case is a real way a checkpoint can differ rather than a shape assertion for its
+// own sake: layer_types drives which mixer every layer runs, conv_L_cache is the kernel
+// width the rolling state is sized from, and conv_bias true would need a bias tensor that
+// no released checkpoint ships — accepting it silently would drop a term.
+func (c *Config) validateLFM2() error {
+	switch {
+	case len(c.LayerTypes) != c.NumLayers:
+		return fmt.Errorf("decoder(lfm2): layer_types has %d entries, want %d", len(c.LayerTypes), c.NumLayers)
+	case c.ConvLCache <= 0:
+		return fmt.Errorf("decoder(lfm2): conv_L_cache=%d must be >0 (kernel width / rolling-window depth)", c.ConvLCache)
+	case c.ConvDim != 0 && c.ConvDim != c.HiddenDim:
+		// Not a tolerance: upstream builds the conv on hidden_size and never reads this key,
+		// so honouring a different value would compute a different model than the reference.
+		return fmt.Errorf("decoder(lfm2): conv_dim=%d != hidden_size=%d (upstream Lfm2ShortConv uses hidden_size; a differing conv_dim cannot be honoured)", c.ConvDim, c.HiddenDim)
+	case c.ConvBias:
+		// Refused rather than ignored: the loader has no bias tensor to read, so honouring
+		// the flag would mean silently computing a different block than the config asks for.
+		return fmt.Errorf("decoder(lfm2): conv_bias=true unsupported (no released checkpoint sets it; the loader reads no bias tensor)")
+	case c.NumHeads <= 0 || c.NumKVHeads <= 0 || c.NumHeads%c.NumKVHeads != 0:
+		return fmt.Errorf("decoder(lfm2): bad GQA (heads=%d kv_heads=%d)", c.NumHeads, c.NumKVHeads)
+	case c.IntermediateDim <= 0:
+		return fmt.Errorf("decoder(lfm2): intermediate_size=%d must be >0", c.IntermediateDim)
+	case c.NormEps <= 0:
+		// Every other RMSNorm family validates its eps >0 right here, and this family
+		// did not until an eps of 0 shipped a silently-wrong forward. LFM2 spells the
+		// key "norm_eps"; a checkpoint that omits it (or a parse that looks for
+		// rms_norm_eps) must fail loudly rather than normalise by rsqrt(variance).
+		return fmt.Errorf("decoder(lfm2): norm_eps=%v must be >0 (LFM2 spells it norm_eps, not rms_norm_eps)", c.NormEps)
+	}
+	for i, t := range c.LayerTypes {
+		if t != "conv" && t != "full_attention" {
+			return fmt.Errorf("decoder(lfm2): layer_types[%d]=%q (have: conv, full_attention)", i, t)
+		}
+	}
+	return nil
+}
+
 func (c *Config) validateGranite() error {
 	switch {
 	case len(c.LayerTypes) != c.NumLayers:

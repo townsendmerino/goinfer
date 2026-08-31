@@ -430,6 +430,18 @@ func (m *Model) NewCache(capHint int) *KVCache {
 			}
 		}
 	}
+	if a.lfm2 != nil {
+		// Hybrid cache: KV for the 8 attention layers + a rolling conv window for each of
+		// the 22 conv layers. manualPos because the conv layers never Append, so position
+		// cannot be inferred from the KV length.
+		c.manualPos = true
+		c.conv = make([]*shortConvState, a.NumLayers)
+		for l := 0; l < a.NumLayers; l++ {
+			if a.isConvLayer(l) {
+				c.conv[l] = newShortConvState()
+			}
+		}
+	}
 	if a.granite != nil {
 		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for
 		// each mamba layer. manualPos because the mamba layers never Append.
@@ -494,6 +506,9 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	if arch.qwen35 != nil { // qwen3_5_moe: Gated DeltaNet / softmax hybrid — own path.
 		return m.runLayersQwen35(id, cache)
+	}
+	if arch.lfm2 != nil { // lfm2: gated short-conv / softmax hybrid — own path.
+		return m.runLayersLFM2(id, cache)
 	}
 	if arch.granite != nil { // granitemoehybrid: Mamba-2 / softmax hybrid — own path.
 		return m.runLayersGranite(id, cache)

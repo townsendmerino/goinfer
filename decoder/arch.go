@@ -108,7 +108,16 @@ type Architecture struct {
 	// LogitScale (logits_scaling) divides the final logits; 0/1 = none.
 	granite      *graniteParams
 	layerIsMamba func(i int) bool
-	LogitScale   float64
+
+	// lfm2, when non-nil, marks an LFM2/LFM2.5 hybrid: every layer has a SwiGLU FFN,
+	// and its mixer is either a gated short convolution (layerIsConv true, 22 of 30 on
+	// LFM2.5-2.6B) or GQA softmax attention with per-head RMSNorm on Q and K.
+	//
+	// The conv layers carry a rolling per-channel window instead of a KV cache, which
+	// is why this is a cache-shape fact and not only a forward one.
+	lfm2        *lfm2Params
+	layerIsConv func(i int) bool
+	LogitScale  float64
 
 	// nemotron, when non-nil, marks a Nemotron-H single-op-block hybrid. nil for
 	// every other family.
@@ -198,6 +207,20 @@ func (p *mlaParams) qkHeadDim() int { return p.QKNopeHeadDim + p.QKRopeHeadDim }
 // layers; the attention layers use the uniform Architecture fields) and the three
 // in-block scalar multipliers. The fourth Granite scalar, logits_scaling, lives on
 // Architecture.LogitScale (it's applied at the shared head, not per layer).
+// lfm2Params carries the gated short-convolution geometry for an LFM2/LFM2.5 model's
+// conv layers. The attention layers use the uniform Architecture fields; only the conv
+// layers read these.
+//
+// ConvDim channels, a KERNEL of ConvLCache taps (3), and no bias on any released
+// checkpoint. The block is in_proj -> split into three ConvDim gates (B, C, x) ->
+// Bx = B*x -> depthwise causal conv, NO activation -> y = C*conv -> out_proj. The
+// missing activation is a real difference from Mamba-2's conv, which applies SiLU:
+// upstream passes activation=None here, so adding one would be a plausible, wrong model.
+type lfm2Params struct {
+	ConvDim    int // channels the conv block operates on (hidden_size on released weights)
+	ConvLCache int // kernel width / rolling-window depth (3)
+}
+
 type graniteParams struct {
 	NHeads, HeadDim, DState, NGroups, DConv int     // Mamba-2 dims
 	EmbMul, ResidMul                        float32 // embedding scale, residual-add scale (attention scale is Architecture.AttnScale)
@@ -453,6 +476,13 @@ func (a *Architecture) isGlobalLayer(i int) bool {
 // layers carry RoPE. False when no per-layer function is set (every layer ropes).
 func (a *Architecture) isNoPELayer(i int) bool {
 	return a.layerNoPE != nil && a.layerNoPE(i)
+}
+
+// isConvLayer reports whether layer i is an LFM2 gated short-convolution layer
+// rather than softmax attention. False when no per-layer function is set (every
+// non-LFM2 family), so callers can ask unconditionally.
+func (a *Architecture) isConvLayer(i int) bool {
+	return a.layerIsConv != nil && a.layerIsConv(i)
 }
 
 // isLinearLayer reports whether layer i is a Gated DeltaNet (linear-attention)

@@ -86,7 +86,7 @@ layout and llama.cpp's kernels amortize the unpack differently than W4A8 does. M
 Check, in this order, cheapest first:
 
 1. **Thread count actually used.** goinfer derives workers from `GOMAXPROCS` (see
-   `decoder/weights.go:281`, `decoder/sampler_chunked.go:111`). Confirm what it really runs with on
+   `decoder/weights.go:286`, `decoder/sampler_chunked.go:111`). Confirm what it really runs with on
    the Mac and what ollama runs with — llama.cpp defaults to physical cores and Apple Silicon's
    P/E-core split makes "all cores" the wrong answer. **An E-core-inclusive thread count that
    ollama avoids and goinfer does not would produce exactly this shape of result.**

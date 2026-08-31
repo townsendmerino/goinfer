@@ -54,6 +54,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **InternLM2** — InternLM2 dense — llama math, renamed tensors + grouped fused wqkv
 
+> **LFM2.5** — Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)
+
 > **Laguna** — poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads
 
 > **Llama** — Meta Llama 2/3 dense (single-base RoPE)
@@ -76,7 +78,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3** — Alibaba Qwen3 dense (QK-norm, no bias)
 
-> **gpt-oss** — OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares none of FeatAttnSink/FeatOutBias/FeatRopeMscale)
+> **gpt-oss** — OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares FeatRopeMscale since G7 but still neither FeatAttnSink nor FeatOutBias)
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -87,6 +89,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/0.99128 |
 | InternLM2 | `internlm2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| LFM2.5 | `lfm2` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | yes | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | Laguna | `laguna` | sparse +shared | interleave | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | Llama | `internlm3`, `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | full-oracle 100.0%/1.00000 |
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 +coherent |

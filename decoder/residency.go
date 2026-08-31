@@ -195,6 +195,22 @@ func (a *Architecture) decodeRunnerEligible() bool {
 		// additionally need FeatMoE, which they get from the ordinary MoE checks below.
 	case a.llama4 != nil:
 		return false // own forward, not yet bridged
+	case a.lfm2 != nil:
+		// LFM2/LFM2.5: own forward (runLayersLFM2), not bridged. Declining HERE and not only
+		// via FeatShortConv is deliberate — the two gates answer different questions and this
+		// one is the honest answer to THIS question. decodeRunnerEligible is an ARCH-SHAPE
+		// predicate, and 22 of 30 layers run a gated short convolution with a rolling window
+		// that no uniform-layer runner can express at all; that is a property of the family,
+		// not of any backend's kernel coverage.
+		//
+		// It also stops the capability matrix publishing a falsehood: the GPU-resident column
+		// is generated from exactly this predicate, and without this case LFM2 falls through
+		// every switch arm to ropeResidentCompatible(), whose local/global tables are equal
+		// length (one base), so it returned TRUE. The matrix then read "GPU-resident: yes" for
+		// a family no backend can run — caught 2026-08-31 by reading the generated row instead
+		// of trusting the column name, which is the G10 question about this column's semantics
+		// arriving as a concrete case.
+		return false
 	}
 	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
 	// attention), so it bypasses the standard GQA gates below. Guarded during the

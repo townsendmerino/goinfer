@@ -229,7 +229,7 @@ shrink it:
 - **Ring buffers for sliding-window layers** — some layers only ever need the
   last *W* tokens, so the cache for them is a fixed-size circular buffer that
   overwrites old entries instead of growing forever
-  ([decoder/kvcache.go:126-141](../decoder/kvcache.go#L126-L141)).
+  ([decoder/kvcache.go:132-141](../decoder/kvcache.go#L126-L141)).
 
 ### Quantization — making the *weights* small too
 

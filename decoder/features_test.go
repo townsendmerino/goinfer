@@ -69,6 +69,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"gpt_oss":          {FeatAttnSink, FeatMoE, FeatOutBias, FeatRopeMscale, FeatSlidingWindow},
 	"nemotron_h":       {FeatNonGatedMLP, FeatSSM},
 	"granitemoehybrid": {FeatLogitScale, FeatMoE, FeatSSM},
+	// LFM2/LFM2.5: FeatShortConv is what keeps this CPU-only. Strip it and the profile is
+	// {FeatQKNorm} — which every resident backend implements, so all three would admit a
+	// family none of them can run. Same shape as laguna's FeatAttnOutputGate above.
+	"lfm2":             {FeatQKNorm, FeatShortConv},
 	"qwen3_5_moe_text": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	// Gemma — VERIFIED against the real checkpoints via RequiredResidentFeatures (an earlier
 	// hand-written guess here was wrong on three counts: it missed per-layer-rope / qk-norm /
@@ -138,7 +142,10 @@ var admissionGolden = map[string][]string{
 	// query-head count are unimplemented everywhere, and both are silent failures if
 	// skipped (the gate multiplies the whole attention context; a wrong head count
 	// mis-shapes q/o). CPU-only until a bridge lands.
-	"laguna":           {},
+	"laguna": {},
+	// lfm2: no resident backend implements the gated short conv (FeatShortConv) or its
+	// rolling window, so every one declines. CPU-only until a bridge lands.
+	"lfm2":             {},
 	"gpt2":             {"metal"},
 	"gpt_oss":          {"metal"},
 	"granitemoehybrid": {"webgpu"},

@@ -93,6 +93,12 @@ type KVCache struct {
 	// is the recurrent half of the hybrid cache — see docs/qwen3_5_moe.md.
 	delta []*deltaState
 
+	// conv holds the LFM2 gated short-convolution rolling window for the conv layers
+	// (nil entry on attention layers, nil slice on every other family). The LFM2
+	// analogue of delta/mamba below, and the smallest of the three: a window of
+	// K-1 vectors per layer and no recurrent matrix at all.
+	conv []*shortConvState
+
 	// mamba holds the Mamba-2 recurrent state ({conv window, SSM state}) for
 	// Granite-4.0-H's mamba layers (nil entry on attention layers, nil slice on
 	// every other family). The Granite analogue of delta.
@@ -381,6 +387,14 @@ func (c *KVCache) Pos() int { return c.pos }
 // SSM/linear-attn state) so a reused cache doesn't leak the prior sequence's recurrence
 // into a fresh one (audit C-01). No-op on non-recurrent families (nil slices).
 func (c *KVCache) resetRecurrent() {
+	// LFM2's conv window is recurrent state in exactly the sense audit C-01 is about:
+	// leaving it would let the previous sequence's last K-1 tokens bleed into the first
+	// K-1 of the next one, which is a small, fluent, entirely wrong prefix.
+	for _, st := range c.conv {
+		if st != nil {
+			st.convWin = nil
+		}
+	}
 	for _, st := range c.mamba {
 		if st != nil {
 			st.convWin = nil

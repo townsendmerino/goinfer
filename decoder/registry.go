@@ -48,6 +48,7 @@ var registry = map[string]archAdapter{
 	"glm4_moe":         glm4moeArchitecture,     // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
 	"laguna":           lagunaArchitecture,      // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
 	"granitemoehybrid": graniteArchitecture,     // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
+	"lfm2":             lfm2Architecture,        // LFM2 / LFM2.5: gated short-conv + GQA hybrid (layer_types), tied head, per-head RMSNorm QK-norm
 	"nemotron_h":       nemotronhArchitecture,   // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
 	"deepseek_v2":      deepseekArchitecture,    // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
 	"deepseek_v3":      deepseekArchitecture,    // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
@@ -70,7 +71,35 @@ func resolveArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, err
 	}
 	arch.finalizeRoPE() // precompute inv-freq tables (base + scaling + rotary dim)
+	if err := arch.validateResolved(); err != nil {
+		return nil, nil, err
+	}
 	return arch, schema, nil
+}
+
+// validateResolved catches descriptor fields an adapter left at their zero value when zero
+// is not a legal setting. Every adapter builds an Architecture by hand from a struct
+// literal, so a field simply omitted is a compile-clean, load-clean, silently-wrong model.
+//
+// Both fields here were live bugs in lfm2Architecture, found 2026-08-31 against HF:
+//
+//   - AttnScale 0 makes every q·k score 0, so softmax returns a UNIFORM average over the
+//     context. Invisible at one token (softmax of a single element is 1.0 whatever the
+//     scale) and invisible in any greedy smoke test that only reads argmax, which matched
+//     HF anyway. It showed up as cosine 0.928 at five tokens.
+//   - NormEps 0 divides by rsqrt(variance) with no floor. Not merely imprecise: on a small
+//     first-layer variance it scaled the norm output by a uniform 1.0185x.
+//
+// Checked here rather than in each adapter because the point is to cover the families
+// nobody has written yet. An arch that genuinely wants no attention scaling sets 1.0.
+func (a *Architecture) validateResolved() error {
+	switch {
+	case a.AttnScale <= 0:
+		return fmt.Errorf("decoder(%s): AttnScale=%v must be >0 (adapter omitted it; 1/sqrt(head_dim) is the usual value, 1.0 means deliberately unscaled)", a.Name, a.AttnScale)
+	case a.Norm == NormRMS && a.NormEps <= 0:
+		return fmt.Errorf("decoder(%s): NormEps=%v must be >0 (adapter omitted it, or read the wrong config key)", a.Name, a.NormEps)
+	}
+	return nil
 }
 
 func knownModelTypes() string {
@@ -1114,6 +1143,70 @@ func nopePredicate(kind string) func(int) bool {
 		return func(int) bool { return true }
 	}
 	return nil
+}
+
+// lfm2Architecture expresses LFM2 / LFM2.5 (model_type lfm2): a gated-short-convolution +
+// softmax-attention hybrid. Every layer has a SwiGLU FFN; layer_types decides whether its
+// mixer is a conv block (22 of 30 on LFM2.5-2.6B) or GQA attention with per-head RMSNorm on
+// Q and K (8 of 30, at 2/5/9/13/17/21/24/27).
+//
+// It is EXPERIMENTAL tier: validated against the HF reference on a real checkpoint, not
+// against a full-model T3.
+//
+// Three facts here were checked against the released LFM2.5-2.6B rather than inherited from
+// the original scoping brief, and two of them contradicted it:
+//
+//   - QK-norm is RMSNorm, not LayerNorm. The brief said LayerNorm; the reference uses
+//     Lfm2RMSNorm(head_dim) per head, and the checkpoint carries q_layernorm.weight with NO
+//     bias tensor anywhere in its 266. That is the difference between reusing the existing
+//     hardcoded QK-norm path and writing a bias-carrying LayerNorm variant.
+//   - vocab is 128,000 (the brief said 65,536, which is the older LFM2-2.6B tokenizer), and
+//     rope_theta is 1e7 (was 1e6).
+//   - intermediate_size is STATED (10752), not computed from block_multiple_of — so the
+//     block_ffn_dim_multiplier / block_multiple_of machinery is inert here and is not read.
+func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := cfg.validateLFM2(); err != nil {
+		return nil, nil, err
+	}
+	hd := cfg.HeadDim
+	if hd == 0 {
+		hd = cfg.HiddenDim / cfg.NumHeads
+	}
+	// rope_parameters is nested on every released LFM2.5 checkpoint (rope_type "default", no
+	// scaling), but accept the flat form too — the same shape granite/deepseek/phi3 use, and
+	// the tiny fixture is built by a different transformers version than the release.
+	base, scaling, err := ropeBaseFlatOrNested(cfg, "lfm2")
+	if err != nil {
+		return nil, nil, err
+	}
+	types := cfg.LayerTypes
+	return &Architecture{
+		Name:            "lfm2",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		NormEps:         cfg.NormEps,                 // "norm_eps", NOT rms_norm_eps -- see Config.NormEps
+		AttnScale:       math.Pow(float64(hd), -0.5), // Lfm2Attention: self.scaling = head_dim**-0.5
+		NormPlacement:   NormPre2,                    // operator_norm before the mixer, ffn_norm before the FFN
+		Act:             ActSiLU,                     // SwiGLU (block_use_swiglu true)
+		QKVBias:         false,
+		QKNorm:          true, // per-head RMSNorm over head_dim — see the note above
+		RoPELocalBase:   base,
+		RoPEGlobalBase:  base,
+		ropeScaling:     scaling,
+		RotaryDim:       0, // full rotary
+		TiedLMHead:      true,
+		// conv_dim is optional and absent from Lfm2Config-written checkpoints; hidden_size is
+		// what upstream's Lfm2ShortConv actually uses. validateLFM2 has already refused any
+		// non-zero conv_dim that disagrees with hidden_size, so this is a default, not a guess.
+		lfm2:        &lfm2Params{ConvDim: cfg.HiddenDim, ConvLCache: cfg.ConvLCache},
+		layerIsConv: func(i int) bool { return i < len(types) && types[i] == "conv" },
+	}, &lfm2TensorSchema, nil
 }
 
 // graniteArchitecture expresses Granite-4.0-H (model_type granitemoehybrid): a

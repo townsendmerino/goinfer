@@ -271,6 +271,19 @@ func representativeConfig(modelType string) *Config {
 			EmbeddingMultiplier: 12.0, AttentionMultiplier: 0.5, ResidualMultiplier: 0.22, LogitsScaling: 6.0,
 			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000.0}`),
 		}
+	case "lfm2":
+		// LFM2/LFM2.5: a conv/attention hybrid whose per-layer kind rides on LayerTypes.
+		// 4 layers with both kinds present so the conv path and the attention path are each
+		// exercised. NormEps (NOT RMSNormEps) is the eps this family reads -- see
+		// Config.NormEps; a representative config that set rms_norm_eps here would resolve to
+		// eps 0 and reproduce the exact bug validateResolved now rejects.
+		return &Config{
+			ModelType: "lfm2", HiddenDim: 64, NumLayers: 4, NumHeads: 4, NumKVHeads: 2,
+			HeadDim: 16, VocabSize: 256, IntermediateDim: 128, NormEps: 1e-5,
+			ConvLCache: 3, ConvDim: 64, ConvBias: false,
+			LayerTypes:     []string{"conv", "conv", "full_attention", "conv"},
+			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000000.0}`),
+		}
 	case "nemotron_h":
 		return &Config{
 			ModelType: "nemotron_h", HiddenDim: 64, NumLayers: 5, NumHeads: 4, NumKVHeads: 2,
@@ -402,7 +415,8 @@ var familyDocs = map[string]familyDoc{
 	"kimi_k2":          {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
 	"phi3":             {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
 	"llama4_text":      {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
-	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares none of FeatAttnSink/FeatOutBias/FeatRopeMscale)", "safetensors, GGUF", "text"},
+	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on Metal only — CUDA declares FeatRopeMscale since G7 but still neither FeatAttnSink nor FeatOutBias)", "safetensors, GGUF", "text"},
+	"lfm2":             {"LFM2.5", "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)", "safetensors", "text"},
 }
 
 // capabilityRow is one family's row in the matrix (alias group → one row). All

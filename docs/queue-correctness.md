@@ -27,7 +27,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > **Status established 2026-08-31 by running it, not by reading the entry.**
 >
 > **(a) the safetensors MXFP4 loader — DONE, and now verified at real scale.**
-> `decoder/gptoss_safetensors.go` (195 lines) has been wired at `decoder/weights.go:521` since
+> `decoder/gptoss_safetensors.go` (195 lines) has been wired at `decoder/weights.go:526` since
 > 2026-08-18. `TestGptOssSafetensors_vsGGUF` ran today on the real 20b pair — **argmax 244 vs 244,
 > logit cosine 0.999058**, 742.6 s — cross-checking it against the already-T3-validated GGUF
 > reader. So the loader is not merely present, it agrees with a validated reader on a full model.
@@ -231,8 +231,77 @@ produces plausible output, not an error.
 common (DeepSeek V3/V3.2/V4, and others), so the reader has value on its own. G8 stays post-1.0 and
 lowest priority; Q3 is the piece that could be picked up any time.
 
-**G1 · LFM2.5-2.6B as an experimental family** — `linux`, **SCOPED AND ESTIMATED; ready to build,
-not started.**
+**G1 · LFM2.5-2.6B as an experimental family** — **DONE 2026-08-31 (macbook-arm64).** Shipped
+CPU-only at the experimental tier: `tiny-golden`, argmax 100.0%, cosine 1.00000.
+
+> **The forward RAN AND WAS WRONG for two hours before it was right, and both bugs were silent.**
+> This is the part worth keeping. The model loaded the real 5 GB checkpoint, decoded, and produced
+> fluent-looking logits whose **argmax matched HF** — while the logit vector was at cosine 0.897.
+> A smoke test, a greedy decode, and an eyeball would all have passed it.
+>
+> | # | bug | why it was invisible | found by |
+> |---|---|---|---|
+> | 1 | `NormEps` = 0 — LFM2 spells the key **`norm_eps`**, and the adapter read `cfg.RMSNormEps` | not a rounding error: with the embedding's variance ~2.9e-4, `rsqrt(v)` vs `rsqrt(v+1e-5)` is a **uniform 1.0185x** scale, compounded through 61 norms | per-layer diff vs HF: layer 0 was the first divergence |
+> | 2 | `AttnScale` = 0 — the `Architecture` literal simply omitted it | every q·k score becomes 0, so softmax returns a **uniform average** over the context. **Invisible at one token** (softmax of a single element is 1.0 at any scale) — needs >=2 tokens | 5-token bisect: layers 0-1 (conv) exact, layer 2 (first attention) diverged |
+>
+> **The bisection is the transferable part, not the bugs.** Differencing per layer against
+> `output_hidden_states` named the exact layer in one run each; guessing from the final logits had
+> already cost several wrong hypotheses (the conv split order and tap indexing were both suspected
+> and both were correct all along — the conv block measured **cosine 1.00000000, max|diff| 0.000000**
+> on B, C, x and its output the first time it was tested directly).
+>
+> **One-token testing structurally cannot find bug 2.** The single-token case was used deliberately
+> to remove conv-window history, and it worked — it isolated bug 1. But softmax over one element is
+> scale-invariant, so it *certified* an attention path that was completely broken. A minimal
+> repro can be minimal in exactly the dimension that hides the defect.
+>
+> **Systemic fix, not just a patch:** both bugs are one shape — an `Architecture` struct literal
+> silently omitting a field, where zero is a legal-looking value. Every adapter builds one by hand,
+> so the same hole is open for every family not yet written. `validateResolved()` now runs at the
+> single chokepoint (`resolveArchitecture`) and rejects `AttnScale <= 0` and RMS-norm `NormEps <= 0`.
+> It is mutation-tested in `TestResolveArchitecture_guardFiresRed` — three red cases and one green,
+> because a guard that never fires is indistinguishable from one that does not work.
+>
+> **A third finding, from the fixture rather than the model:** `conv_dim` is OPTIONAL. Upstream
+> `Lfm2ShortConv` builds on `config.hidden_size` and never reads `conv_dim`; the released 2.6B
+> carries it (=2048=hidden_size) but a `Lfm2Config.save_pretrained` checkpoint carries no such key.
+> The original `conv_dim > 0` check therefore rejected a legitimate checkpoint. Now: absent =>
+> default to `hidden_size`; present-and-different => refused, since the reference would ignore it
+> and we would not.
+>
+> **What is proven and what is not.** The committed gate is the tiny seeded fixture
+> (`TestLFM2_textParity`, cosine 1.000000) — sub-T3, hence `experimental`, correctly NOT counted as
+> supported. The released LFM2.5-2.6B was differenced against HF by hand during bring-up and is
+> **bit-exact end-to-end** (all 30 layers cosine 1.00000000; 5-token logits cosine 1.00000000,
+> max|diff| 0.0000), but that ran off a 5 GB local checkpoint with no committed gate, so the
+> manifest does not claim it. Note also that the tiny fixture's greedy continuation is degenerate
+> (all 88s) — the 256-wide logit cosine is the load-bearing assertion, and the test says so.
+>
+> **The owed confirmation is discharged**, by weight-level check rather than by argument: the real
+> checkpoint has **0 `.bias` tensors of any kind** across all 266, and `q_layernorm`/`k_layernorm`
+> carry `.weight` only. Per-head RMSNorm, no bias plumbing — as `docs/scoping-lfm2.md` §E predicted
+> and the old entry below got wrong.
+>
+> **A fourth finding, in a GENERATED doc: the matrix published a falsehood.** With everything above
+> fixed, `docs/capability-matrix.md` still rendered **`GPU-resident: yes`** for LFM2.5 — a family no
+> backend can run. The column is generated from `decodeRunnerEligible()`, an ARCH-SHAPE predicate,
+> and LFM2 fell through every arm of its switch to `ropeResidentCompatible()`, which compares the
+> local/global inv-freq table LENGTHS — equal, since LFM2 has one base — and returned true. Nothing
+> was functionally broken (admission also needs the feature gate, and `FeatShortConv` fails it), so
+> no test was red; the defect was purely in what the published table asserted. Fixed by declaring
+> the family in that switch alongside `llama4`/`granite`/`nemotron`, which is the honest answer to
+> the question the predicate actually asks. **This is G10's open question about that column's
+> semantics arriving as a concrete case** — and it was caught by reading the generated ROW against
+> what the family can do, not by trusting the column NAME.
+>
+> **CPU-only is enforced, not assumed:** the new `FeatShortConv` is declared by no resident backend,
+> so CUDA/Metal/WebGPU all decline. Without it LFM2's profile is `{FeatQKNorm}` — which every
+> backend implements, so all three would have admitted a family none of them can run and silently
+> treated its 22 conv layers as attention. Same trap as laguna's `FeatAttnOutputGate`.
+
+**Original scoping entry follows.**
+
+**G1 (scoped) · LFM2.5-2.6B as an experimental family** — `linux`, scoped and estimated.
 
 A fifth sequence-mixing family: interleaved gated short-convolution blocks and GQA, `layer_types`
 controlling the pattern, `conv_L_cache` 3, per-head **RMSNorm** QK-norm, FFN dim stated (10752). The
