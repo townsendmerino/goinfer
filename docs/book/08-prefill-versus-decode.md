@@ -130,6 +130,68 @@ a decision about what users want, not about what the measurement says.
 
 ---
 
+## The tensor-core wall
+
+Everything above is CPU. On CUDA the story gets a third character: **tensor cores**, purpose-built
+matrix hardware that Ollama's prefill runs on and this repo's does not — and the reason is not that
+nobody got to it.
+
+goinfer's int4 weights carry a 16-bit floating-point scale per 32-element group, which forces a
+floating-point accumulation every 8 values. Floating-point addition is not associative — `(a + b) +
+c` and `a + (b + c)` can round to different bits — so a tensor core, which accumulates in whatever
+order its hardware tiling dictates, rounds differently than the scalar path that respects the
+scale-group boundaries. Move to one scale per row instead, and there is no mid-accumulation rescale
+to do: the whole dot product accumulates in exact int32, and the single float multiply happens once,
+at the end — which is why a tensor-core GEMM under per-row scales would be bit-identical **by
+construction**. Group-scale granularity, not bit-identity itself, is what tensor cores can't get
+past.
+
+So the fork is: keep the format goinfer ships, or pay a parity refresh to move to per-row scales and
+open the door to tensor cores. It was scoped, and it was measured before it was decided.
+
+**Phase 0** quantized real weights both ways and compared each to the unquantized original. Naive
+per-row scales were 1.73× worse than shipped; the best per-row scale search this repo could run was
+still 1.24× worse.
+
+**Phase 0b** ran that 1.24×-worse format through 28 layers of an actual forward pass and checked
+what came out the other end:
+
+```
+  build                       perplexity     top-1 agreement
+  shipped (per-group)             28.5             76.7%
+  per-row, best scale found      108.0             68.6%
+
+  a 1.24× error in the weights becomes a roughly 4× error in the output.
+  small errors don't stay small once they cross a discrete line — the
+  same lesson Chapter 7 drew from routing, applied here to argmax over
+  the vocabulary.
+```
+
+---
+
+## Why the fork stays closed
+
+There was a third option: keep the format, but relax the *contract* instead — stop requiring
+bit-identical output and require only that prefill and decode land on the same tokens, gated on the
+first 64. It sounds like a reasonable compromise, and it fails for the same reason Phase 0b just
+demonstrated. Token selection is `argmax` over a vocabulary — a discrete decision — and this repo
+has now measured, twice, that discrete decisions here flip on margins near zero. A tolerance gate
+built on that assumption would pass on most prompts and diverge on whichever ones happened to land
+near a tie: a gate that's red 5% of the time at random is harder to trust than one that's always red
+or never red, and it is exactly the kind of thing that would surface months later on a model family
+nobody happened to be testing against.
+
+So tensor cores are not pursued, **as a decision, not an omission** — recorded 2026-08-04. The
+format stays group-scaled int4.
+
+That leaves the 4–5× prefill gap this chapter measured as two problems wearing one number. Part of
+it is this fork: dp4a, the integer path GEMV actually runs on, tops out around a third of what
+tensor cores could reach on this hardware, full stop, without opening the fork above. But goinfer's
+GEMV is only at 54% of the dp4a ceiling it's already allowed to reach today — which costs nothing in
+bit-identity, isn't blocked by anything in this section, and is still on the table.
+
+---
+
 ## What it costs
 
 The concrete version, for a user: a 3,020-token prompt takes 101.6 seconds to process at the
@@ -157,5 +219,6 @@ constraint.
 
 *Sources: [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (G16/G20 prefill baselines), `docs/benchmarks.md`
 (peer prefill ratio), [`docs/measurements/mellum2-moe-prefill-split-RESULT.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/mellum2-moe-prefill-split-RESULT.md) (attention share,
-the slice-versus-model correction, and the 3.11×/1.52× figures), [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (measurement
+the slice-versus-model correction, and the 3.11×/1.52× figures), [`docs/ollama-chase.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/ollama-chase.md)
+(§7, the bit-identity fork — Phase 0/0b and the tensor-core decision), and [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (measurement
 discipline).*

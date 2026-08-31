@@ -808,6 +808,24 @@ campaign. Profile the unit first (§11).
 
 ## 7. The bit-identity fork — the strategic decision
 
+**Reading this because you asked "why not chase prefill more?"** Short answer: the 4.7× gap
+(§3b) splits into a format-imposed piece and an unfinished-work piece, and this section is only
+the first. dp4a — the integer path GEMV actually runs on — tops out around 1/3 of IMMA throughput
+on Turing; that ceiling only moves if the fork below is opened. Getting today's 54%-of-dp4a-peak
+GEMV up to 100% of that ceiling is separate, ordinary work, costs nothing in bit-identity, and
+isn't gated by anything below.
+
+The fork itself closed by measurement, not by default. The incompatibility is specific —
+group-scale granularity, not bit-identity in general, is what breaks tensor-core associativity —
+so the real question was never "give up bit-identity or don't," it was "is the per-row-scale
+quality cost low enough to pay." Phase 0 said maybe (1.24× weight-space error, best case, down
+from 1.73× naive). Phase 0b said no: that 1.24× becomes a ~4× perplexity blowup through 28 layers
+(28.5→108) — the same class of failure as the MoE routing-sensitivity finding, which is also why
+`--cpu-fast-attention` stays cautious around experts (the public primer's Chapter 8 draws this
+parallel directly, in `docs/book/08-prefill-versus-decode.md`). The tolerance-gated middle path
+below fails for the identical reason: argmax is discrete, and this repo has now measured twice
+that discrete decisions here flip on near-zero margins.
+
 > **DECISION (2026-08-04): DEFERRED — tensor cores are not pursued.** Both halves of the fork are now
 > measured, and neither justifies opening it: the CHEAP path (per-row scales via an MSE scale search,
 > no rotation) is dead — Phase 0b showed the 1.24× weight-space error blows perplexity up ~4× at the
