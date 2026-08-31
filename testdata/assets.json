@@ -476,6 +476,22 @@
         "TestQwen38GGUF_gate"
       ],
       "note": "unsloth/Qwen3.8-27B-GGUF UD-Q4_K_M, 16.5 GB \u2014 the dense qwen35 GGUF. 3.4x smaller than the 55.6 GB bf16 safetensors the same model ships as, and it loads without re-quantizing."
+    },
+    {
+      "env": "GOINFER_QWEN3_FP8",
+      "kind": "dir",
+      "members": ["config.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen3-0.6b-fp8"],
+      "used_by": ["TestFP8Qwen3_vsBF16"],
+      "note": "Block-quantized fp8: F8_E4M3 payload + BF16 weight_scale_inv at weight_block_size [128,128] — the SAME layout DeepSeek V3/V4 ship, at 0.6B instead of 671B. members names model.safetensors because a per-tensor/per-channel fp8 checkpoint also has a config.json and is a DIFFERENT format the loader must refuse rather than misread."
+    },
+    {
+      "env": "GOINFER_QWEN3_BF16",
+      "kind": "dir",
+      "members": ["config.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen3-0.6b-bf16"],
+      "used_by": ["TestFP8Qwen3_vsBF16"],
+      "note": "The bf16 TWIN of the fp8 asset above — same weights, unquantized. It is the reference half of the gate: qwen3 is a full-oracle family, so this side is read by an already-validated loader and any disagreement is attributable to the fp8 reader."
     }
   ]
 }

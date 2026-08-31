@@ -627,6 +627,10 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if derr == nil && lora.has(name) {
 				data = append([]float32(nil), data...)
 			}
+		case qc.method == "fp8":
+			// Block-quantized fp8 keeps the full tensor NAME (scales are name+"_scale_inv"),
+			// unlike gptq/awq which trim ".weight" and rebuild from a family of suffixes.
+			data, derr = fp8Reconstruct(st, name, in, out, qc.blockR, qc.blockC)
 		case qc.method == "awq":
 			data, derr = awqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
 		default:

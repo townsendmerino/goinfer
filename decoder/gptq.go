@@ -23,11 +23,16 @@ import (
 // safetensors checkpoint (GPTQ or AWQ — both 4-bit group-quant int4, differing
 // only in how the codes are packed; see gptqReconstruct / awqReconstruct).
 type quantConfig struct {
-	method    string // "gptq" | "awq"
+	method    string // "gptq" | "awq" | "fp8"
 	bits      int
 	groupSize int
 	descAct   bool // gptq act-order
 	sym       bool // gptq symmetric
+	// fp8 only: the 2-D weight block a single scale covers (config.json's
+	// weight_block_size, [128,128] for DeepSeek V3/V4 and Qwen3-FP8). Unlike gptq/awq's
+	// 1-D groupSize this needs both dims, because the scale grid is
+	// [ceil(rows/blockR), ceil(cols/blockC)] rather than a per-row run.
+	blockR, blockC int
 }
 
 // parseQuantConfig reads config.json's quantization_config. Returns nil for a
@@ -43,12 +48,32 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 		GroupSize   int    `json:"group_size"`
 		DescAct     bool   `json:"desc_act"`
 		Sym         *bool  `json:"sym"`
+		Fmt         string `json:"fmt"`               // fp8: "e4m3" | "e5m2"
+		WeightBlock []int  `json:"weight_block_size"` // fp8: [blockR, blockC]
 	}
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("quantization_config: %w", err)
 	}
+	// fp8 returns EARLY: it shares none of the gptq/awq shape below. It carries no `bits`
+	// and no 1-D `group_size` (the checks beneath would reject it on both), and its format
+	// is a dtype in the safetensors header rather than a packing this code unpacks.
+	if obj.QuantMethod == "fp8" {
+		if obj.Fmt != "" && obj.Fmt != "e4m3" {
+			// e5m2 is a different exponent/mantissa split, so the decode table in fp8.go
+			// is simply wrong for it. Refuse rather than produce plausible numbers.
+			return nil, fmt.Errorf("quantization_config(fp8): fmt %q unsupported (have: e4m3)", obj.Fmt)
+		}
+		if len(obj.WeightBlock) != 2 || obj.WeightBlock[0] <= 0 || obj.WeightBlock[1] <= 0 {
+			// A per-tensor or per-channel fp8 checkpoint (compressed-tensors style) has no
+			// weight_block_size. It is a REAL format, just not this one, and loading it with
+			// block arithmetic would misread every scale — so say which one is missing.
+			return nil, fmt.Errorf("quantization_config(fp8): weight_block_size %v unsupported "+
+				"(need a 2-element block, e.g. [128,128]); per-tensor/per-channel fp8 is a different layout", obj.WeightBlock)
+		}
+		return &quantConfig{method: "fp8", blockR: obj.WeightBlock[0], blockC: obj.WeightBlock[1]}, nil
+	}
 	if obj.QuantMethod != "gptq" && obj.QuantMethod != "awq" {
-		return nil, fmt.Errorf("quantization_config: method %q unsupported (have: gptq, awq)", obj.QuantMethod)
+		return nil, fmt.Errorf("quantization_config: method %q unsupported (have: gptq, awq, fp8)", obj.QuantMethod)
 	}
 	if obj.Bits != 4 {
 		return nil, fmt.Errorf("quantization_config(%s): %d-bit unsupported (have: 4-bit)", obj.QuantMethod, obj.Bits)

@@ -819,7 +819,7 @@ supports.
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:246` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1030` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:544` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:944` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:948` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
 | `docs/multimodal.md|decoder/config.go:1039` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:405` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
