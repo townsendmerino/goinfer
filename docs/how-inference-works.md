@@ -4,6 +4,14 @@
 > concepts up from zero, then ties each one to where it actually lives in this
 > repo. Reads as both a general "how does LLM inference work" primer and a map of
 > goinfer's specific architecture.
+>
+> **This is the ten-minute version.** `docs/book/` covers the same ground in
+> eleven chapters at roughly seven times the length, for a reader who knows Go and
+> not machine learning, and each chapter there ends in a measured number. This page
+> is the one that ties concepts to specific SOURCE LINES; the book is the one that
+> explains why inference works the way it does. **The two overlap heavily, so a
+> number corrected in one belongs in the other** — check both before assuming a
+> figure has been retired.
 
 ## The one-sentence version
 

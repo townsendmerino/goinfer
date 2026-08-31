@@ -1,0 +1,76 @@
+# Publishes docs/book/ — and ONLY docs/book/ — to GitHub Pages.
+#
+# WHY A WORKFLOW RATHER THAN "deploy from branch /docs": serving /docs would publish
+# every tracked file under it — ~220 of them, including docs/measurements/ (104),
+# docs/completed/ (59), docs/prompts/ (24) and docs/spec/ (13). The repo is public so
+# that is not a disclosure problem, but it would make the front door of the site a
+# directory listing of internal working documents instead of an eleven-chapter primer.
+# This job stages the book into a clean directory and builds only that.
+name: book-pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/book/**'
+      - '.github/workflows/book-pages.yml'
+  workflow_dispatch:
+
+# Least privilege: read the repo, write Pages, and mint the OIDC token deploy-pages needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; do not cancel a running deploy half-way.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage only the book
+        run: |
+          set -euo pipefail
+          mkdir -p _book_src
+          cp docs/book/*.md _book_src/
+          # The chapter table is the front page.
+          mv _book_src/README.md _book_src/index.md
+          cat > _book_src/_config.yml <<'CFG'
+          title: An inference primer for Go engineers
+          description: How a language model actually runs, for someone who knows Go and not machine learning.
+          theme: jekyll-theme-primer
+          # jekyll-relative-links ships enabled in the github-pages gem and rewrites the
+          # README's ./NN-chapter.md links to their built .html permalinks. Without it,
+          # every chapter link on the index page 404s.
+          plugins:
+            - jekyll-relative-links
+          relative_links:
+            enabled: true
+            collections: false
+          CFG
+          echo "staged $(ls _book_src/*.md | wc -l) markdown files:"
+          ls _book_src
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./_book_src
+          destination: ./_site
+
+      - uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

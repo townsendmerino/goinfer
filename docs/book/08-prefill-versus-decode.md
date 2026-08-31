@@ -1,0 +1,161 @@
+# Chapter 8 — Prefill versus decode
+
+*The same forward pass, run two ways, produces two completely different performance problems.
+Confusing them is the most common mistake in reasoning about inference cost.*
+
+---
+
+## The split
+
+**Prefill** processes the prompt. Every token of the prompt exists already, so the whole prompt
+can go through the model at once. The matrix multiplies are large, the hardware is well used,
+and the limit is arithmetic throughput.
+
+**Decode** generates the reply. One token at a time, because Chapter 4's loop cannot be
+unrolled — token N+1 needs token N. The matrices are skinny: a single position against the full
+weight set. The hardware is mostly idle, waiting on memory.
+
+Same code path. Opposite bottlenecks.
+
+| | prefill | decode |
+|---|---|---|
+| positions per pass | many | one |
+| limited by | compute | memory bandwidth |
+| parallelism | plenty | almost none |
+| user experience | wait before first word | speed of words appearing |
+
+Most of this book so far has been about decode, because decode is where quantization
+(Chapter 5), paging (Chapter 6) and the KV cache (Chapter 4) do their work. This chapter is
+about prefill, and about why prefill matters more than prefill used to.
+
+---
+
+## Why prefill got important
+
+For a chat with a short question, prefill is a rounding error. You type twenty tokens and
+generate five hundred.
+
+Agentic workloads invert that ratio. An agent sends a system prompt, tool definitions, file
+contents, and a conversation history — thousands of tokens — and gets back a short tool call.
+Then the agent does it again, with the history one turn longer. The ratio flips: mostly prompt,
+little generation, repeated every turn.
+
+That is why prefill is where this repo's widest gap against peers sits, and it is why
+Chapter 4's prefix reuse matters so much for this workload.
+
+---
+
+## What prefill costs here
+
+Measured on CPU, with the number of workers as the variable:
+
+| prompt tokens | 1 worker | 6 workers (shipped default) | speedup |
+|---|---|---|---|
+| 1,520 | 89.7 s (16.9 tok/s) | **33.8 s (44.9 tok/s)** | 2.65× |
+| 3,020 | 333.3 s (9.1 tok/s) | **101.6 s (29.7 tok/s)** | 3.28× |
+
+Two things stand out.
+
+The parallel speedup is good but sublinear — 3.28× from six workers. Prefill has real
+parallelism available, and 3.28× is a respectable fraction of six.
+
+More importantly, look at the scaling with prompt length:
+
+```
+  prompt tokens    1,520  →  3,020        2.0× more tokens
+  time (6 workers)  33.8s → 101.6s        3.0× more time
+
+  if prefill were linear in prompt length, 2× the tokens would cost 2×
+  the time. It costs 3×, because each position compares against every
+  earlier position — exactly what Chapter 2's attention diagram showed.
+```
+
+Against peers, this is the weakest lane. `docs/benchmarks.md` records Ollama at roughly 4–5×
+faster per prefill token. Decode is competitive; prefill is not.
+
+---
+
+## Where the time actually goes
+
+Profiling long-context prefill shows the answer is not spread around.
+
+On a 4-layer slice of a Mixture-of-Experts model, attention accounted for **97.1%** of an
+8,192-token prefill, and attention's share climbs with context length:
+
+```
+  prompt tokens    attention    everything else
+       1,024          83.2%          16.8%
+       2,048          89.7%          10.3%
+       4,096          94.9%           5.1%
+       8,192          97.1%           2.9%
+
+  the same quadratic story as the stopwatch above, showing up in a profile
+```
+
+Two kernels dominate: the query-key comparison and the attention-value mixing. On an 8k
+profile they were 51.1% and 18.7% respectively, in the higher-precision path.
+
+Those figures come with a warning attached, and the warning is a Chapter 11 warning. **97.1%
+is a 4-layer-slice number.** The slice was used because the full model did not fit in available
+memory, and the slice is representative for that model specifically because that model's layer
+pattern repeats every four layers. But a slice is not a model, and quoting a slice figure as a
+model figure is exactly the kind of regime error this repo has a convention against.
+
+The consequence showed up immediately. A fast-attention optimization measured **3.11×** on
+the slice and **1.52×** on the full model. Both are real numbers; only one answers the
+question anyone was asking.
+
+---
+
+## The flag
+
+`--cpu-fast-attention` runs attention in lower precision. On dense models it measured 2.28×
+at 8k context, behind a cosine similarity of 0.9976 — a small, stated, opted-into divergence
+rather than a bit-identical result.
+
+For a long time `--cpu-fast-attention` refused Mixture-of-Experts architectures. The reasoning
+was Chapter 7's: routing is discontinuous, so a small numerical shift can flip an expert
+selection, which is a much bigger change than a slightly different number. The reasoning was
+plausible, and the reasoning was never measured — behind a test whose comment said the
+exclusion was pinned and whose body tested only a dense model.
+
+When the exclusion was finally measured, the mechanism turned out to be real in kind but not in
+magnitude, and `--cpu-fast-attention` now covers Mixture-of-Experts models. The full-model win
+is **1.52×**.
+
+That leaves a live product question rather than a technical one. A third off prefill on the
+most common agentic shape is a large saving, and `--cpu-fast-attention` is off by default
+because `--cpu-fast-attention` is not bit-identical. Whether the bit-exactness contract should be opt-in or opt-out on this path is
+a decision about what users want, not about what the measurement says.
+
+---
+
+## What it costs
+
+The concrete version, for a user: a 3,020-token prompt takes 101.6 seconds to process at the
+shipped CPU default. With fast attention at 1.52×, roughly 67 seconds. In an agent loop
+resending a growing context every turn without prefix reuse, that difference compounds over
+every turn.
+
+Set against decode on the same class of machine — around 39–41 tok/s on a 1.5B model — the
+asymmetry is stark:
+
+```
+  generating a 500-token reply     500 / 40 tok/s   ≈   12 seconds
+  reading the 3,020-token prompt   measured         =  101.6 seconds
+
+  the prompt costs roughly 8× the reply, and the user waits for the
+  prompt before seeing a single word
+```
+
+That is the shape of the problem, and it's why prefill is where the work is.
+
+Chapter 9 turns to the one technique that attacks decode's fundamental sequential
+constraint.
+
+---
+
+*Sources: `docs/queue-performance.md` (G16/G20 prefill baselines), `docs/benchmarks.md`
+(peer prefill ratio), `docs/measurements/mellum2-moe-prefill-split-RESULT.md` (attention share,
+the slice-versus-model correction, and the 3.11×/1.52× figures), `CLAUDE.md` (measurement
+discipline).*
