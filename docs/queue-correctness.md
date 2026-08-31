@@ -48,6 +48,34 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > which is how the run above happened. The Mac's disk blocker is gone too: **76 GiB free** now,
 > against the ~12 GB that made the checkpoint undownloadable.
 
+> **PROGRESS 2026-08-31 — `FeatRopeMscale` is DONE for CUDA; the Mellum trap below was resolved by
+> MEASUREMENT, not by a judgement call.** The list beneath this box was written before that work
+> and is superseded in its first two bullets; the third still stands.
+>
+> **The trap was worse than the list said.** CUDA's three RoPE kernels took **no scale parameter at
+> all** — `glue.cu`'s `rope`, `gemv_fwd.cu`'s `rope_kv`, `prefill_batched.cu`'s `rope_kv_batched`.
+> "The kernels already exist" was true of gpt-oss's *activation* kernels and false of YaRN, so
+> declaring `FeatRopeMscale` would have admitted **both** families onto a path that silently drops
+> the attention_factor. Mellum carries **1.2772588722239782** on its full-attention layers: wrong
+> arithmetic, no error, plausible logits.
+>
+> Done instead, in this order — implement, prove in isolation, validate on real weights, THEN
+> declare:
+>
+> | step | result |
+> |---|---|
+> | mscale in all three kernels + per-layer wiring from `RopeMscaleLayer` | PTX regenerated (control: an untouched kernel reproduced byte-identically first) |
+> | `TestRopeMscale` — isolation | scale=1 reproduces unscaled to **8.9e-08**; scale=0.85 matches the scaled reference to **6.0e-08** and is provably ≠ unscaled |
+> | `TestMellumResidentParityCUDA` — real 4-layer slice | **7/11 argmax-exact, 0 hard fails, min cosine 0.994600**, admitted as `[moe per-layer-rope qk-norm sliding-window yarn-mscale]` |
+> | `FeatRopeMscale: true` for `cuda` | declared only after the above |
+>
+> **So Mellum on CUDA is no longer an untested admission — it is a measured one.** Metal resolved
+> the identical coupling by an owner call because no Mellum checkpoint was reachable there; one is
+> reachable here, so it was measured.
+>
+> **STILL OPEN for G7: `FeatAttnSink` + `FeatOutBias`, and the gpt-oss resident bridge itself.**
+> That is the remaining half and it is the larger one.
+
 **What the CUDA declaration actually needs, and the trap waiting in it:**
 
 - Wire the resident bridge (`cuda/backend.go`) the way Metal's was, then declare `FeatAttnSink` +
