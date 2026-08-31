@@ -79,10 +79,20 @@ const (
 	// a half-declared feature set.
 	//
 	// CUDA has all three as gated KERNELS (cuda/gptoss_act.cu, plus the sink argument on both
-	// attention kernels) but does not declare this either: those kernels are LOADED
-	// (cuda/backend.go's gptOssSw/gptOssSinks/gptOssExpBias) but never DISPATCHED into a forward
-	// pass yet — kernel-level parity is not end-to-end parity. WebGPU has none of this.
-	FeatAttnSink       ResidentFeature = "attn-sink"        // see above: CPU-only until the bridge and an end-to-end gate exist
+	// attention kernels) and does not declare this either — but NOT for the reason this comment
+	// used to give. It said the kernels were "LOADED but never DISPATCHED into a forward pass",
+	// which the code contradicts: sinkArg is threaded into BOTH attention launches
+	// (cuda/resident.go:1536 split-KV, :2243 decode) and launchGluSplitExpert is dispatched from
+	// the MoE expert loop (:1720, :1844). The bridge is WRITTEN. What has never happened is a
+	// real gpt-oss forward EXECUTING it, because the 20b MXFP4 checkpoint (~13.8 GB) does not fit
+	// the CUDA box's 8 GB VRAM without the host<->VRAM MoE-streaming path. Written-but-unexercised
+	// is a different, smaller gap than not-yet-attempted, and the distinction is the estimate.
+	//
+	// The genuinely missing CUDA piece is FeatOutBias: no o_proj-bias kernel and no wiring exists
+	// there at all (grep OBias/out_bias across cuda/*.go). Kernel-level parity is still not
+	// end-to-end parity — 2224441 declared on kernel evidence and was correctly reverted, which
+	// is why neither flag is set here. WebGPU has none of this.
+	FeatAttnSink       ResidentFeature = "attn-sink"        // see above: CPU-only until FeatOutBias exists on CUDA and ONE real gpt-oss forward has run resident
 	FeatAttnOutputGate ResidentFeature = "attn-output-gate" // Laguna: ctx *= softplus(g_proj·h) applied BEFORE o_proj, plus a per-layer QUERY head count. CPU-only — no resident backend implements either, so CUDA/Metal/WebGPU all decline. Without this the family needs nothing CUDA lacks and would be ADMITTED-but-mis-run: the resident path would skip the gate entirely and still produce plausible logits.
 	FeatShortConv      ResidentFeature = "short-conv"       // LFM2/LFM2.5: the gated short-convolution mixer that replaces attention on 22 of 30 layers (B,C,x = in_proj(h); conv = depthwise_causal_conv(B*x), no activation; out_proj(C*conv)), carrying a per-layer rolling window of the last K-1 inputs. CPU-only — no resident backend implements the conv OR its recurrent state. Declared for the SAME reason as FeatAttnOutputGate above: LFM2 is otherwise a plain GQA+QK-norm+SwiGLU model that needs nothing CUDA lacks, so without this it would be ADMITTED and then mis-run, with the resident path treating every conv layer as attention. The window also makes it stateful, so a resident runner would need the state plumbing FeatSSM/FeatDeltaNet have and this has not.
 	FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.

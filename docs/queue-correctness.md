@@ -76,6 +76,31 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > **STILL OPEN for G7: `FeatAttnSink` + `FeatOutBias`, and the gpt-oss resident bridge itself.**
 > That is the remaining half and it is the larger one.
 
+> **STATE RE-ESTABLISHED 2026-08-31 (second pass) BY READING THE CUDA DISPATCH, and it is
+> SMALLER than the bullets below say. Two records were misleading:**
+>
+> | piece | CUDA, verified in code today |
+> |---|---|
+> | `FeatRopeMscale` | **DONE** — shipped earlier today; declared after measurement (see the box above) |
+> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1536` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
+> | `FeatOutBias` | **ABSENT ENTIRELY on CUDA** — no kernel, no wiring; `grep` for `OBias`/`out_bias` across `cuda/*.go` returns nothing. This, not the sink, is the real remaining code |
+>
+> **`decoder/features.go`'s note that CUDA's kernels are "LOADED … but never DISPATCHED into a
+> forward pass yet" is not what the code says.** The dispatch exists. The TRUE statement is
+> narrower and more useful: the bridge is WRITTEN BUT NEVER EXECUTED, because no gpt-oss
+> checkpoint has ever fit the box. That distinction changes the estimate — "not yet attempted"
+> implies writing a bridge; "written, unexercised" implies running one. Wording corrected there.
+>
+> **The DISK half of the end-to-end blocker is stale.** The bullets below say this Mac had
+> "~12GB free DISK … the checkpoint cannot even be downloaded here" (2026-08-18). Measured
+> 2026-08-31: **61 GB free**. The RAM half stands — 16 GB total against a ~13.8 GB checkpoint is
+> genuinely tight, and Metal wires the mmap pages a command buffer touches, so whole-model
+> residency at that size is the known-hard case, not a formality.
+>
+> **So the remaining work is: (1) a CUDA o_proj-bias kernel + wiring, (2) ONE real gpt-oss forward
+> on a resident path, (3) then declare.** Step 2 is the gate, and `2224441` is the precedent for
+> why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
+
 **What the CUDA declaration actually needs, and the trap waiting in it:**
 
 - Wire the resident bridge (`cuda/backend.go`) the way Metal's was, then declare `FeatAttnSink` +
