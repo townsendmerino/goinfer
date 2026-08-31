@@ -1377,3 +1377,60 @@ a context reduction against the hit-rate curve before spending any effort on pre
 
 **Tier 2 is CLOSED, not parked.** The saturated-link precision gate that worried G32 turns out not to
 matter — the question it guarded was never the binding one.
+## G34 RESULT · block verify pays, but the SLOT BUDGET caps the width — not acceptance
+
+Scoped and measured 2026-08-31 off the rev-9 framing: *block verify attacks the expert-DMA term by
+batching real, already-decided work across tokens rather than guessing routing ahead, so G33's kill
+of routing-PREDICTION prefetch does not rule it out.* That framing is correct, and the mechanism is
+genuinely different — but the answer is not the one the framing implies.
+
+**Method.** Offline replay of `docs/measurements/g33-routing-trace.json` (91 positions × 30 MoE
+layers, topK 8, 30 slots) through G33's per-layer LRU, which reproduces the measured 76.1% hit rate
+— that validation gate is why these numbers mean anything. A block verify of width K runs the target
+over K draft positions in ONE pass, so at layer L all K positions' routing is computed together and
+the **union** is requested at once. Script: `scripts/g34_blockverify_replay.py`.
+
+**Result 1 — batching does NOT reduce misses. It increases them.**
+
+| K | union per layer | fits 30 slots | misses vs serial |
+|---|---|---|---|
+| 2 | 16 | yes | 1.007× |
+| 3 | 24 | yes | 1.017× |
+| 4 | **32** | **NO** | 1.026× |
+| 6 | 48 | NO | 1.069× |
+| 8 | 64 | NO | 1.187× |
+
+**The reason is the same shape as G33's: the predictor is already spent.** A 30-slot LRU already
+retains recent experts, so the cross-token reuse block verify would batch is reuse the cache was
+*already* converting into hits. Unioning captures nothing new and perturbs eviction. Worse, a block
+needs K×topK experts resident **simultaneously** where serial decode needs 8 — so past K=3 the
+block's working set exceeds the slot budget and the cache thrashes.
+
+**Result 2 — block verify still pays, via compute amortization, and the width cap is the finding.**
+Under G31's model (`32.1 compute + 1.9 overhead + 0.346 × misses`), with compute amortized over α
+accepted tokens and DMA scaling with *verified* positions:
+
+| K | α=1.6 | α=2.0 | α=2.5 | α=3.0 |
+|---|---|---|---|---|
+| serial | | **18.56 tok/s** | | |
+| 2 | 21.62 | **27.02** | — | — |
+| 3 | 16.90 | 21.13 | **26.41** | 31.69 |
+| 4 | 13.84 | 17.30 | 21.63 | 25.96 |
+| 6 | 9.90 | 12.38 | 15.47 | 18.57 |
+
+**K=4 at α=2.0 is 17.30 — BELOW the 18.56 serial baseline.** The cliff sits exactly where
+K×topK = 32 crosses the 30-slot budget. So the verify width here is capped by **VRAM slots, not by
+acceptance** — the opposite of the usual speculative-decoding constraint, and not something the
+Metal-derived framing anticipated.
+
+**Where that lands against measured α.** MTP Gate 1 gave 2.02–2.91 (`docs/spec/09-mtp-heads.md`);
+EAGLE-3 gave 1.60. So the operating point is **K=2–3**, and both pay: +46% at K=2/α=2.0, +42% at
+K=3/α=2.5. Note the DMA per *accepted* token is flat when α ≈ K and rises as α falls below K — the
+win is entirely compute amortization, and the DMA term is a drag that grows with the gap between K
+and α.
+
+**Limits, stated.** One trace, 64 generated tokens, gemma-4-26b at 30 slots on the 2070S; G31's
+constants come from the same box and configuration. Rollback cost on rejection is not modelled. And
+the slot budget is the binding constraint, so **a card with more VRAM moves the cliff** — 30 slots
+was itself a cap on a requested 48 (G32), which makes this a finding about an 8 GB card rather than
+about block verify in general.
