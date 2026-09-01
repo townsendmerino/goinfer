@@ -29,7 +29,7 @@ the explicit-FMA contraction fix, which changes instruction counts everywhere):
 | 512 | **207.3** | 191.7 | **goinfer 1.08×** |
 | 2048 | 160.1 (was 97; A1 + split-KV) | 186.6 | Ollama 1.17× |   ← re-measured 2026-08-09: 157.6 vs 179.2 (Ollama 1.14×)
 | 3900 | 123.5 | 180.7 | Ollama 1.46× |
-| prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |
+| prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |  ⚠ NOT re-anchored — see the box below
 
 **Parity across context lengths is NOT real** — goinfer is ahead ≤ ~512 ctx and behind at 2048+, the
 gap widening with depth. Ollama's flash attention holds ~flat (197 → 181 over 128→3900) while goinfer
@@ -151,7 +151,18 @@ then showed the bound **moved off memory-coalescing onto occupancy**: 12 blocks 
 0.04, 11.9% occupancy — the fix is **split-KV parallelism**, not a KV relayout, and it converges with
 B1 (bit-identical tiled attention). Campaign A stays open on that build.
 
-### 3b. Prefill — 4.7× behind
+### 3b. Prefill — 4.7× behind *(2026-08-04; the one peer row §B8 does not cover)*
+
+> **This is the only peer figure on the current stack that was never re-anchored, and
+> `benchmarks.md` hedges it to ~4–5× rather than 4.7× for that reason.** §B8 (2026-08-26,
+> driver 595.91.07 / Nobara 44) is **decode-only, prefill excluded** — `bench_peer.py` excludes
+> prefill on *both* sides by construction, timing the inter-token rate from the first streamed
+> token, and no peer-prefill harness is committed. So re-anchoring this row is not a re-run; it
+> needs the harness built first. Until then the figure stands on the **previous** driver stack
+> (595.58.03 / Nobara 43) while every decode number beside it is the new one, and goinfer's own
+> prefill has moved since: batched prefill re-enabled `aa712a7` (aug 4), qwen3/gemma3 joined the
+> batched lane `80f754c`/`57e9afd`, int8 batched prefill `7e50faf` (aug 7). The component split
+> below (61% GEMV / 39% attention) is from the same 2026-08-04 profile and carries the same date.
 
 At 2048 tokens, after the prefill campaign: **61% GEMV, 39% attention**, ~1% glue.
 
@@ -808,8 +819,8 @@ campaign. Profile the unit first (§11).
 
 ## 7. The bit-identity fork — the strategic decision
 
-**Reading this because you asked "why not chase prefill more?"** Short answer: the 4.7× gap
-(§3b) splits into a format-imposed piece and an unfinished-work piece, and this section is only
+**Reading this because you asked "why not chase prefill more?"** Short answer: the ~4–5× gap
+(§3b — 2026-08-04, not re-anchored) splits into a format-imposed piece and an unfinished-work piece, and this section is only
 the first. dp4a — the integer path GEMV actually runs on — tops out around 1/3 of IMMA throughput
 on Turing; that ceiling only moves if the fork below is opened. Getting today's 54%-of-dp4a-peak
 GEMV up to 100% of that ceiling is separate, ordinary work, costs nothing in bit-identity, and
