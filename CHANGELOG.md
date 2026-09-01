@@ -62,7 +62,13 @@ any surface may still change.
     them on every prefill all along, including the acc64 path that never touches them), so the
     fan-out needed no new allocation. `GOINFER_PREFILL_ATTN_WORKERS=1` restores the previous
     single-worker shape.
-  - Measurement, method and the retraction: `docs/measurements/a3-f32-attention-fanout-2026-09-01.md`.
+  - **SCOPE, measured after the fact and worth reading before quoting the number:** the 1.92× is a
+    0.5B *dense* model at K=4096. On the full 28-layer Mellum2 **MoE** at K=8192 the fan-out adds
+    nothing resolvable — 1.597× against the 1.59× that f32 alone already delivered — because at
+    that size attention is ~70% of the work under acc64 and the f32 kernel swap alone collapses
+    most of it. Do not quote these figures for large-MoE prefill.
+  - Measurement, method and the retraction: `docs/measurements/a3-f32-attention-fanout-2026-09-01.md`,
+    `docs/measurements/mellum2-fullmodel-profile-RESULT.md`.
 
 ### Changed
 
