@@ -413,6 +413,35 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// it by an explicit call because no Mellum checkpoint was reachable there; here one is, so
 		// it was measured instead.
 		FeatRopeMscale: true,
+		// gpt-oss's two remaining departures, declared TOGETHER on 2026-08-31 because the family
+		// needs both and neither admits anything on its own:
+		//
+		//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU
+		//                 expert, and the router whose bias reaches the selection WEIGHT. Kernels
+		//                 in cuda/gptoss_act.cu; sinkArg threaded into BOTH attention launches
+		//                 (decode + prefill) and launchGluSplitExpert dispatched from the MoE
+		//                 expert loop.
+		//   FeatOutBias   the o_proj bias. NO new kernel was needed: aikit's gemv_quant.cu and
+		//                 goinfer's batched gemv_w4a8_rn already fold bias into the value BEFORE
+		//                 the accumulate select, so bias-plus-residual is one instruction here.
+		//                 It was pure wiring, at four launch sites (two decode, two prefill).
+		//
+		// DECLARED ONLY AFTER A REAL gpt-oss-20b FORWARD RAN ON THIS PATH — the thing G7 had been
+		// blocked on since 2026-08-18, and the reason 2224441's earlier declaration was reverted:
+		// kernel-level parity is not end-to-end parity. TestGptOssResidentParityCUDA on the real
+		// 20B, resident on an 8 GB card via --moe-cache-experts: 7/8 argmax-exact, min cosine
+		// 0.996392. For scale, the same harness measures 0.982 on a 40-layer qwen3.6-35b-a3b and
+		// 0.974 on a 24-layer dense 0.5B, so this is at the top of the range, not scraping a bar.
+		//
+		// Getting there took THREE silent defects, none of which any kernel test could see,
+		// because each was a term the wiring dropped rather than a kernel computing it wrongly:
+		//   d9829ce  the gate‖up bias table indexed by SLOT id under expert caching
+		//   610ce7f  the per-expert DOWN bias never applied at all (0.750 -> 0.9993 on the tiny)
+		//   this     route_gptoss never LOADED, so the router fell back to moe.cu's moe_route,
+		//            which takes the mixing weight from the UNBIASED score. Same experts
+		//            selected, different weights (0.895 -> 0.9964 on the real 20B).
+		FeatAttnSink: true,
+		FeatOutBias:  true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.

@@ -751,6 +751,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					}
 				}
 				loadG(&r.gptOssSw, "glu_quant_gptoss")
+				// gpt-oss's ROUTER. moe.cu's moe_route means something different by "bias" —
+				// it steers SELECTION only and takes the weight from the UNBIASED score, which
+				// is right for DeepSeek/GLM and wrong here: gpt-oss softmaxes over the SELECTED
+				// BIASED logits. Its own kernel comment calls running gpt-oss through moe_route
+				// "plausible mixing weights that are simply not this model's — a silent quality
+				// loss, not a crash". The kernel shipped 2026-08-18 and was never loaded, so
+				// that is exactly what the resident path has been doing.
+				loadG(&r.gptOssRoute, "route_gptoss")
 				r.gptOssAlpha, r.gptOssLimit = alpha, limit
 			}
 		}

@@ -387,6 +387,7 @@ type cudaResident struct {
 	dnet                                     *dnetParams
 
 	gptOssSw                                                Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
+	gptOssRoute                                             Pipeline // route_gptoss — top-k + softmax over the BIASED logits (moe_route's contract is wrong for this family)
 	gptOssAlpha, gptOssLimit                                float32
 	gptOssSinks                                             []Buffer     // [layer] → [nH] learned per-head attention sink logits
 	gptOssDownBias                                          []Buffer     // [layer] → [nExpert*hidden] per-expert down-projection bias
@@ -1646,6 +1647,15 @@ func (r *cudaResident) moeMLPPre(Ly *cudaLayer) error {
 	// transposition at this site a COMPILE error. They do not verify that the values are the
 	// right way round — a wrong value of the right kind still compiles. See the reciprocal trap
 	// at decoder/features.go's cuda entry, and docs/parity-coverage-policy.md § "Relevant".
+	// gpt-oss routes through its OWN kernel: moe_route takes the mixing weight from the
+	// UNBIASED score (bias steers selection only), while gpt-oss softmaxes over the SELECTED
+	// BIASED logits. Same selection, different weights — which is why the wrong one produces
+	// plausible output rather than an error.
+	if r.gptOssRoute != (Pipeline{}) {
+		return r.launch(r.gptOssRoute, onecfg(1, 0),
+			Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
+			gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)))
+	}
 	return r.launch(r.fRoute, onecfg(1, 0),
 		Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
 		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(r.moeSigmoid),

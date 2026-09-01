@@ -21,8 +21,41 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > [`docs/completed/queue-correctness.md`](completed/queue-correctness.md) — G4, G5, G6, G9, G10,
 > G11 and Q2. What is below is the open work, and it is all of it.
 
-**G7 · gpt-oss residency upgrade (safetensors + MXFP4 loader, GPU residency)** — `any`,
-**HALF DONE: piece (a) is finished and verified; only the CUDA declaration is left.**
+**G7 · gpt-oss residency upgrade (safetensors + MXFP4 loader, GPU residency)** — **DONE
+2026-08-31.** gpt-oss is GPU-resident on CUDA as well as Metal, declared after a real 20B forward:
+**7/8 argmax-exact, min cosine 0.996392** (`TestGptOssResidentParityCUDA`), resident on an **8 GB
+card** via the pre-existing `--moe-cache-experts` streaming.
+
+> **The gate everything hinged on had never been run, and running it found THREE silent defects —
+> none of which any kernel test could see, because each was a term the WIRING dropped rather than
+> a kernel computing it wrongly.**
+>
+> | fix | what was wrong | effect |
+> |---|---|---|
+> | `d9829ce` | the gate‖up bias table indexed by SLOT id under expert caching | correct with caching off, wrong with it on — the only mode that fits this model on this card |
+> | `610ce7f` | the per-expert DOWN bias never applied at all (needed a new kernel, `gemv_w4a8_moe_wacc_bias`) | tiny fixture 0.750 → 0.9993 |
+> | this | `route_gptoss` never LOADED — the router fell back to `moe_route`, which takes the mixing weight from the UNBIASED score | real 20B 0.895 → **0.9964** |
+>
+> The last one is the sharpest lesson in the set. The kernel had existed since 2026-08-18 and its
+> own comment predicted the exact symptom: running gpt-oss through `moe_route` yields "plausible
+> mixing weights that are simply not this model's — a silent quality loss, not a crash, and
+> invisible to any check that only asks whether the output is finite." It was written, committed,
+> documented — and never wired. **A kernel that is not dispatched is indistinguishable from a
+> kernel that was never written, and only an end-to-end run can tell them apart.**
+>
+> `2224441` declared `FeatAttnSink` once on kernel-level evidence and was correctly reverted. The
+> difference this time is not better kernels; it is that the whole model ran.
+>
+> **Calibration matters for reading 0.9964.** The same harness measures 0.982 on a 40-layer
+> qwen3.6-35b-a3b (MoE + streaming) and 0.974 on a 24-layer dense 0.5B, so gpt-oss now sits at the
+> TOP of this path's real-weight range rather than scraping a bar — and the 0.895 it sat at before
+> was genuinely anomalous, not the floor.
+>
+> Also worth recording: **the tiny fixture stopped being able to find the last bug.** It was
+> 0.9993 while the real 20B was 0.895, so the final ablation had to run at 20B (~2.5 min a probe).
+> A fixture that passes is not a fixture that covers.
+
+**G7 (original scoping) · the state before this closed**
 
 > **Status established 2026-08-31 by running it, not by reading the entry.**
 >
@@ -82,7 +115,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > | piece | CUDA, verified in code today |
 > |---|---|
 > | `FeatRopeMscale` | **DONE** — shipped earlier today; declared after measurement (see the box above) |
-> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1560` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
+> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1561` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
 > | `FeatOutBias` | **ABSENT ENTIRELY on CUDA** — no kernel, no wiring; `grep` for `OBias`/`out_bias` across `cuda/*.go` returns nothing. This, not the sink, is the real remaining code |
 >
 > **`decoder/features.go`'s note that CUDA's kernels are "LOADED … but never DISPATCHED into a

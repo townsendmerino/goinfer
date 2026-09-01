@@ -145,9 +145,15 @@ var admissionGolden = map[string][]string{
 	"laguna": {},
 	// lfm2: no resident backend implements the gated short conv (FeatShortConv) or its
 	// rolling window, so every one declines. CPU-only until a bridge lands.
-	"lfm2":             {},
-	"gpt2":             {"metal"},
-	"gpt_oss":          {"metal"},
+	"lfm2": {},
+	"gpt2": {"metal"},
+	// gpt_oss reaches BOTH backends on real end-to-end evidence now, which is not how it looked
+	// for most of G7's life. metal declared on the tiny fixture (TestGptOssResidentParity, cosine
+	// 0.9989); cuda declared 2026-08-31 on the REAL 20B, resident on an 8 GB card through
+	// --moe-cache-experts (7/8 argmax-exact, min cosine 0.996392). The cuda half is the stronger
+	// evidence of the two — an odd inversion worth noting, since the tiny fixture stopped
+	// reproducing the last defect it had to catch.
+	"gpt_oss":          {"cuda", "metal"},
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"webgpu"},
 	"llama":            {"cuda", "metal", "webgpu"},
@@ -238,13 +244,18 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// gemv_fwd.cu, prefill_batched.cu) with per-layer wiring from RopeMscaleLayer, and it is
 		// gated by TestRopeMscale plus a real-weight TestMellumResidentParityCUDA (4-layer slice:
 		// 7/11 argmax-exact, 0 hard fails, min cosine 0.994600) — evidence first, declaration
-		// after. Still no per-layer rotary WIDTH, no ATTENTION softcap (FeatAttnLogitSoftcap — a
-		// per-layer kernel), no MLA/SSM, and no GATED shared expert (Qwen2-MoE) — now expressed as
-		// FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE decline is in the
-		// shared taxonomy, not a hand-coded check.
+		// after. FeatAttnSink + FeatOutBias joined 2026-08-31 (G7), and ONLY after a real
+		// gpt-oss-20b forward ran resident on an 8 GB card via --moe-cache-experts: 7/8
+		// argmax-exact, min cosine 0.996392 (TestGptOssResidentParityCUDA). 2224441 declared
+		// FeatAttnSink once on kernel-level evidence and was correctly reverted; the difference
+		// this time is the end-to-end run, which found three silent wiring defects no kernel test
+		// could see. Still no per-layer rotary WIDTH, no ATTENTION softcap (FeatAttnLogitSoftcap —
+		// a per-layer kernel), no MLA/SSM, and no GATED shared expert (Qwen2-MoE)... which is now
+		// expressed as FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE decline
+		// is in the shared taxonomy, not a hand-coded check.
 		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
 			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
-			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale},
+			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias},
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,
