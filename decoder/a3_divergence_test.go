@@ -60,16 +60,43 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 		off := run("0")  // explicitly off
 		fast := run("1") // opted in
 
-		// Default and explicit-off must both be EXACTLY the acc64 path.
+		// THE DEFAULT FLIPPED 2026-08-31, so what "unset" must equal now depends on K.
+		// Below fastAttnMinPrompt the f32 path is floored off and unset is still exactly acc64;
+		// at or above it, unset IS the f32 path. Asserting both halves pins the floor itself,
+		// not just the default — a floor set to 0 or to MaxInt would fail here rather than
+		// silently change what every short request returns.
+		want, wantName := off, `"0" (acc64)`
+		if K >= fastAttnMinPrompt {
+			want, wantName = fast, `"1" (f32)`
+		}
 		for i := range base {
-			if base[i] != off[i] {
-				t.Fatalf("K=%d: '0' is not identical to unset at index %d", K, i)
+			if base[i] != want[i] {
+				t.Fatalf("K=%d (floor %d): unset is not identical to %s at index %d",
+					K, fastAttnMinPrompt, wantName, i)
+			}
+		}
+		// And the two explicit settings must still DIFFER above the floor, or the flag has
+		// silently stopped doing anything and every divergence number here is measuring noise.
+		if K >= fastAttnMinPrompt {
+			same := true
+			for i := range off {
+				if off[i] != fast[i] {
+					same = false
+					break
+				}
+			}
+			if same {
+				t.Fatalf("K=%d: '0' and '1' produced identical output — the f32 path is not running", K)
 			}
 		}
 
+		// COMPARE off VS fast, not base vs fast. Until 2026-08-31 `base` (unset) WAS the acc64
+		// path, so base-vs-fast measured the trade; with the default flipped, unset IS fast and
+		// that pair is now fast-vs-fast — it reported cosine 1.000000000 and tripped this test's
+		// own "flag had no effect" guard, which was right to fire and pointing at the test.
 		var dot, na, nb, maxAbs float64
-		for i := range base {
-			a, b := float64(base[i]), float64(fast[i])
+		for i := range off {
+			a, b := float64(off[i]), float64(fast[i])
 			dot += a * b
 			na += a * a
 			nb += b * b
@@ -78,17 +105,27 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 			}
 		}
 		cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
-		identical := cos == 1.0 && maxAbs == 0
+		// BIT-IDENTITY IS maxAbs == 0, not `cos == 1.0 && maxAbs == 0`. cos is a float64 quotient
+		// of sums; for two bit-identical vectors it lands NEAR 1.0 and need not equal it, so the
+		// old conjunction could read "not identical" for vectors that were. It never fired before
+		// 2026-08-31 because the two arms always differed, so the weaker half was never load-
+		// bearing — until the floor made them agree below 512 and the inverse assertion ran.
+		identical := maxAbs == 0
 		fmt.Fprintf(os.Stderr, "  A3 divergence K=%-5d cosine=%.9f maxAbs=%.3g%s\n", K, cos, maxAbs,
 			map[bool]string{true: "  (IDENTICAL — flag had no effect, check the guard)", false: ""}[identical])
 
 		prog.Step(1)
-		if identical {
+		// Below the floor the two settings are SUPPOSED to agree — that is the floor working,
+		// not the knob being unwired.
+		if identical && K >= fastAttnMinPrompt {
 			t.Errorf("K=%d: enabling the flag changed nothing — either the knob is not wired or this arch is excluded", K)
+		}
+		if !identical && K < fastAttnMinPrompt {
+			t.Errorf("K=%d is below the floor (%d) but the settings differ — the floor is not being applied", K, fastAttnMinPrompt)
 		}
 		// The flag is a speed/accuracy trade, not a correctness hole. The kernel
 		// comment's own bar for dense f32 attention is cosine >= 0.99.
-		if cos < 0.99 {
+		if cos < 0.99 && K >= fastAttnMinPrompt {
 			t.Errorf("K=%d: cosine %.9f is below the 0.99 bar the kernel comment sets for dense f32 attention — "+
 				"this is too large to ship behind a speed flag", K, cos)
 		}

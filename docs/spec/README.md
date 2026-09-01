@@ -111,7 +111,7 @@ Why this fits goinfer specifically:
 | 10 | [Gating optimistic forward](./10-optfwd-gate.md) | Not a new drafter: when the SHIPPED optimistic-forward overlap should run. Measured unconditional-on, it wins up to 7.4% on large-vocab models and loses up to 6.8% on small ones, and no temperature constant fits both. | Low–Med (decision logic only) | Recovers ~6% on small-vocab sampled decode without giving up the large-vocab win | 📋 design (cut 2026-08-27), **awaiting sign-off — no code**; kill-gated on window-level variance |
 
 **WHO CANNOT SPECULATE AT ALL, before you design anything for them.** `specRollbackSafe`
-(`decoder/forwardn.go:60`) refuses whole families, and it gates EVERY scheme on this page plus the
+(`decoder/forwardn.go:116`) refuses whole families, and it gates EVERY scheme on this page plus the
 optimistic-forward overlap (10) — not one experiment:
 
 - **recurrent / gated-DeltaNet state** — granite, nemotron, **qwen35**. State is not

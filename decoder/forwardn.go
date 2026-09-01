@@ -19,7 +19,63 @@ import (
 // there anyway), and decode == prefill. Measured divergence at dense 1.5B:
 // cosine ~0.9976, and a measured 2.28x on an 8k prefill
 // (docs/measurements/attention-a3-kernel-ratio-2026-08-26.md).
-func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") == "1" }
+// DEFAULT ON since 2026-08-31 (operator decision). GOINFER_CPU_FAST_ATTENTION=0 turns it off,
+// which is what --cpu-exact-prefill sets. The variable was previously opt-IN ("1" enabled it), so
+// the sense of an EXPLICIT "1" is unchanged and only the unset case moved.
+//
+// What flipping the default costs, stated plainly because it is now the shipped behaviour: a long
+// prompt can produce a different response than the same prompt did before this change, at
+// temperature 0, on the CPU backend. Measured divergence is cosine ~0.9976 at dense 1.5B, stable
+// across 256/1024/2048-token prompts. Decode is untouched; this is prefill only. Speculative
+// verify is structurally excluded (it passes fastAttn=false, not a runtime check).
+//
+// WHAT IT GIVES UP IS BIGGER THAN "prefill != decode", and the help text understated it until
+// 2026-08-31: f32 attention is not SPLIT-INVARIANT. The f64 accumulator makes a prompt's KV
+// independent of how the prompt was chunked; f32 reassociation does not. So a SESSION — which
+// prefills a warm prefix and then a divergent suffix, two chunks — stops matching a one-shot
+// generate over the same tokens. Measured: TestSessionNgramSpecParity fails with the flag on and
+// passes with it off, and it failed that way BEFORE this became the default, so it is a latent
+// property of the flag rather than of defaulting it.
+//
+// That divergence is ACCEPTED as of 2026-08-31 (operator decision) rather than excluded, because
+// excluding sessions does not restore the equality — it only moves the disagreement from the
+// split to the kernel — and it costs measurably: 1.43x on a cold 2048-token turn (+18.3s) and
+// 1.32x on a warm 2048+128 suffix, since a suffix still attends over the whole prefix.
+// TestSessionFastAttnDivergence pins the new behaviour; the equality is still gated, under the
+// exact kernel, by TestSessionNgramSpecParity.
+//
+// IT IS FLOORED BY PROMPT LENGTH — see fastAttnMinPrompt. The win scales with K; the divergence
+// does not, so below the floor the default would trade a different answer for nothing.
+//
+// MoE IS *NOT* EXCLUDED, and that is deliberate: 66d0a05 removed the exclusion after measuring it
+// (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case this already ships, depth-matched,
+// 48/48 identical greedy continuation). --help still claims "REFUSED for MoE models at any
+// setting"; that text is STALE, not a description of a guard, and is corrected there. That exclusion used to exist only in --help and
+// in prose; with this flag defaulting ON it would otherwise apply to every MoE user who never
+// asked for it, so it is now enforced in code.
+func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") != "0" }
+
+// fastAttnMinPrompt is the prompt length below which f32 prefill attention is NOT used, even
+// when enabled. Attention is O(K·nKeys), so the win grows with K while the divergence does not:
+// a short prompt gets a different answer and buys almost nothing for it.
+//
+// Measured 2026-08-31 (qwen2.5-coder-1.5b int4, M1 Pro, cold prefill, f32 vs f64-accum):
+//
+//	K=512   8.59s vs  9.90s   1.15x
+//	K=1024 19.29s vs 23.66s   1.23x
+//	K=2048 42.83s vs 61.08s   1.43x
+//	K=8192 (from the flag's own record)  2.28x
+//
+// Against that, an 8-TOKEN prompt diverged at the THIRD generated token of 24 and never
+// re-converged — full divergence, no measurable win. Without this floor, flipping the default
+// would have changed the output of every short request in exchange for nothing, which is not the
+// trade the flag documents or the one it was turned on for.
+//
+// 512 IS A JUDGEMENT, NOT A MEASUREMENT: it is the smallest K measured with a win over ~15%, and
+// nothing here identifies a crossover point. A sweep that found one should move this and say so.
+// It is deliberately NOT configurable — a knob here would be a third way for prefill numerics to
+// vary between two runs of the same build.
+const fastAttnMinPrompt = 512
 
 // attnHeadsParThreshold gates A1 move (a)'s head-parallel fan-out: below this
 // many MACs' worth of per-call work (K*nKeys, the QKᵀ/AV size driver), the
@@ -210,6 +266,13 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// spec-decode verify runs through forwardN and MUST keep acc64, or "verify ==
 	// sequential greedy" silently stops holding. A runtime check could not tell
 	// the two callers apart; a parameter cannot get it wrong.
+	// Both exclusions are applied HERE, at the single point where the decision becomes
+	// arithmetic, rather than at each caller: three call sites pass cpuFastAttention() and a
+	// fourth (speculative verify) passes false, so a per-caller guard would be three chances to
+	// forget and one already-correct site that looks the same.
+	if fastAttn && K < fastAttnMinPrompt {
+		fastAttn = false
+	}
 	useAcc64 := !fastAttn
 
 	// G16: prefill attention runs its heads in PARALLEL, budget permitting.
