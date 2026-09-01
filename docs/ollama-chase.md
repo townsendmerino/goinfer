@@ -29,7 +29,7 @@ the explicit-FMA contraction fix, which changes instruction counts everywhere):
 | 512 | **207.3** | 191.7 | **goinfer 1.08×** |
 | 2048 | 160.1 (was 97; A1 + split-KV) | 186.6 | Ollama 1.17× |   ← re-measured 2026-08-09: 157.6 vs 179.2 (Ollama 1.14×)
 | 3900 | 123.5 | 180.7 | Ollama 1.46× |
-| prefill | 0.66 ms/tok | 0.14 ms/tok | **4.7× behind** |  ⚠ NOT re-anchored — see the box below
+| prefill | *(retired)* | *(retired)* | **RE-ANCHORED 2026-09-01 — see §3b; there is no single ratio** |
 
 **Parity across context lengths is NOT real** — goinfer is ahead ≤ ~512 ctx and behind at 2048+, the
 gap widening with depth. Ollama's flash attention holds ~flat (197 → 181 over 128→3900) while goinfer
@@ -153,8 +153,12 @@ B1 (bit-identical tiled attention). Campaign A stays open on that build.
 
 ### 3b. Prefill — 4.7× behind *(2026-08-04; the one peer row §B8 does not cover)*
 
-> **This is the only peer figure on the current stack that was never re-anchored, and
-> `benchmarks.md` hedges it to ~4–5× rather than 4.7× for that reason.** §B8 (2026-08-26,
+> **RE-ANCHORED 2026-09-01 — the paragraphs below are superseded; read the box at the end of §3b.**
+> The text kept here is the pre-re-anchor record, retained because the reasoning it drove (the
+> §7 tensor-core fork) was taken on it.
+>
+> **This was the only peer figure on the current stack that was never re-anchored, and
+> `benchmarks.md` hedged it to ~4–5× rather than 4.7× for that reason.** §B8 (2026-08-26,
 > driver 595.91.07 / Nobara 44) is **decode-only, prefill excluded** — `bench_peer.py` excludes
 > prefill on *both* sides by construction, timing the inter-token rate from the first streamed
 > token, and no peer-prefill harness is committed. So re-anchoring this row is not a re-run; it
@@ -172,6 +176,33 @@ At 2048 tokens, after the prefill campaign: **61% GEMV, 39% attention**, ~1% glu
 
 So the prefill gap is part format-imposed (tensor cores unreachable — see §7) and part
 unfinished work that bit-identity does not block at all.
+
+> ## RE-ANCHOR, 2026-09-01 — there is no single prefill ratio
+>
+> Measured on the §B8 stack (driver `595.91.07`, Nobara 44, goinfer `fb43caf`, Ollama v0.32.5)
+> with the new `scripts/bench_peer_prefill.py`. Full record:
+> `docs/measurements/cuda-prefill-reanchor-2026-09-01.md`.
+>
+> **The ratio crosses over with depth.** TTFT rate, 0.5B / 1.5B: **0.13× / 0.27×** at K=128,
+> **0.51× / 0.91×** at K=512, 1.06× / 1.76× at K=1024, 2.33× / 3.37× at K=2048, **4.82× / 6.13×**
+> at K=3900. Below ~1024 (0.5B) and ~600 (1.5B) prompt tokens **goinfer is faster to first token**
+> — a win this document never recorded because it only ever held one number.
+>
+> **The 4.7× was not wrong at its depth; it was a point published as a constant.** K=3900 brackets
+> it. What it got wrong was omitting the axis.
+>
+> **And on throughput the deficit is bigger, not smaller.** TTFT carries Ollama's 340–356 ms fixed
+> request floor, which flatters it at depth and penalises it at K=128. Overhead-free, marginal cost
+> per prefill token is 0.377 → 0.932 ms/tok on goinfer across the ladder (**2.5× growth** — the
+> O(K²) signature) against Ollama's **flat** 0.064 → 0.063. At the deepest interval: **14.8×
+> (0.5B) / 12.7× (1.5B) behind**.
+>
+> **What this does to §7's fork.** The DEFERRED decision below was taken partly on "prefill cannot
+> reach parity". That holds and is now better supported — the deficit at depth is larger than the
+> figure the decision used. But the *shape* is new: the deficit is in how prefill SCALES, not a
+> flat constant, so the lever it points at is tiled/flash-style prefill attention (a scaling fix)
+> rather than the format/tensor-core question (a constant-factor fix). §7's conclusion is
+> unchanged; its reasoning should not be quoted as though the gap were uniform.
 
 ---
 
@@ -819,8 +850,10 @@ campaign. Profile the unit first (§11).
 
 ## 7. The bit-identity fork — the strategic decision
 
-**Reading this because you asked "why not chase prefill more?"** Short answer: the ~4–5× gap
-(§3b — 2026-08-04, not re-anchored) splits into a format-imposed piece and an unfinished-work piece, and this section is only
+**Reading this because you asked "why not chase prefill more?"** Short answer (⚠ written against
+the retired figure; §3b's 2026-09-01 re-anchor makes the deficit LARGER at depth and shows goinfer
+AHEAD below ~600–1000 prompt tokens, so read that box first): the ~4–5× gap
+(§3b — 2026-08-04, since re-anchored) splits into a format-imposed piece and an unfinished-work piece, and this section is only
 the first. dp4a — the integer path GEMV actually runs on — tops out around 1/3 of IMMA throughput
 on Turing; that ceiling only moves if the fork below is opened. Getting today's 54%-of-dp4a-peak
 GEMV up to 100% of that ceiling is separate, ordinary work, costs nothing in bit-identity, and

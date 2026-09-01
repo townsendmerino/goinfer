@@ -21,7 +21,7 @@ re-anchor never scoped; they are marked stale rather than quietly carried.
 | **CUDA decode, short context** (≤512 tok) | **goinfer wins on small models** — 0.5B **1.24×**, 1.5B **1.13×**; **parity at 7B** (1.00×) | §B8 |
 | **CUDA decode, deep context** (2048+) | **Ollama wins, and the gap widens with depth** — goinfer 0.95×→0.78× (0.5B), 0.89×→0.71× (1.5B), 0.82×→0.71× (7B) by 3900 | §B8 |
 | ↳ *unless the model is windowed* | gemma3-1b **does not degrade at all** — goinfer ahead 1.06–1.12× at *every* depth. The depth loss is a property of full attention over a growing KV, not of the engine | §B5.1 |
-| **Prefill** | **Ollama wins, ~4–5× faster per token.** ⚠ **The only figure here not re-anchored** — `bench_peer.py` is decode-only and no peer-prefill harness exists, so this is the 2026-08-04 reading on the *previous* driver stack | §B2 |
+| **Prefill** | **Depth-dependent, and it crosses over.** goinfer is FASTER to first token below ~600–1000 prompt tokens (0.13× at K=128) and slower above, reaching 4.8×/6.1× behind at K=3900 (0.5B/1.5B). On overhead-free *throughput* the deficit is larger: marginal cost per token is **12–15× behind at depth**, and it GROWS with K while Ollama's is flat. **Re-anchored 2026-09-01** on the §B8 stack | §B2 |
 | **Total request time** | goinfer wins prompts up to **~320 tokens** at 1.5B, loses beyond — decode edge vs prefill cost. Also pre-re-anchor | archive §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
@@ -466,17 +466,45 @@ embedded, no toolkit at build or run time — `ldd` shows no `libcuda`/`libnvrtc
 an architecture only when it implements every feature that architecture needs, else declines to the
 staged/CPU path (`decoder/features.go`, the authoritative set).
 
-**Prefill: Ollama is ~4–5× faster per token** (~0.14 ms/tok against goinfer's ~0.66 at 1.5B).
+**Prefill: RE-ANCHORED 2026-09-01** on the §B8 stack (driver `595.91.07`, Nobara 44, goinfer
+`fb43caf`, Ollama v0.32.5), via the new `scripts/bench_peer_prefill.py`. Full record:
+[`docs/measurements/cuda-prefill-reanchor-2026-09-01.md`](measurements/cuda-prefill-reanchor-2026-09-01.md).
 
-> **⚠ This is the one figure on the page that is NOT re-anchored, and the reason is structural.**
-> `scripts/bench_peer.py` excludes prefill on both sides *by construction* — it times the
-> inter-token rate from the first streamed token — and no peer-prefill harness is committed. So the
-> 2026-08-26/27 sweeps could not re-measure it, and this reading stands at **2026-08-04, driver
-> `595.58.03`, Nobara 43**. It is quoted here as a direction with a known sign, not as a current
-> rate. Re-anchoring it requires building the harness first; that is not a re-run of something that
-> exists.
+**There is no single ratio. It crosses over.** TTFT rate (`prompt_tokens / TTFT`), medians of 6
+distinct prompts per cell, engines interleaved with a server restart between:
 
-**Consequence for total request time**, on the same pre-re-anchor stack: with a small short-context
+| K | 0.5B | 1.5B |
+|---|---|---|
+| 128 | **0.13×** | **0.27×** |
+| 512 | **0.51×** | **0.91×** |
+| 1024 | 1.06× | 1.76× |
+| 2048 | 2.33× | 3.37× |
+| 3900 | **4.82×** | **6.13×** |
+
+(<1 means goinfer is faster.) goinfer wins below ~1024 prompt tokens at 0.5B and ~600 at 1.5B.
+
+> **TTFT RATE IS NOT PREFILL THROUGHPUT, AND THE GAP IS WORSE THAN THE TABLE.** TTFT carries each
+> engine's fixed per-request overhead, and that overhead is not common-mode: Ollama's fitted floor
+> is **340–356 ms** against goinfer's tens of ms. That floor is most of why goinfer "wins" at
+> K=128, and it flatters Ollama's rate at depth. Overhead-free, the **marginal cost per prefill
+> token** is 0.377 → 0.932 ms on goinfer across the ladder (**2.5× growth**, the O(K²) attention
+> signature) against Ollama's flat 0.064 → 0.063. At the deepest interval that is **14.8× (0.5B)
+> and 12.7× (1.5B) behind** — the honest number for a prefill-speed claim.
+>
+> The retired `4.7×` was not wrong at the depth it was taken; it was one point on a curve running
+> 0.13× → 6.13×, published without a depth. It also hid a real win: goinfer is 2–8× faster to
+> first token on short prompts, which this page had never said.
+
+> **METHOD NOTE — Ollama caches prompts and goinfer does not** (repeat/fresh 0.53 vs 1.00,
+> measured). Reusing one prompt per cell, as the decode harness does, would have compared our
+> prefill against the peer's cache lookup and reported ~6.3× where that cell reads ~3.4×. Every
+> request in this sweep carries a unique prefix; the check is recorded per cell in the results.
+
+**Consequence for total request time** — ⚠ the paragraph below is computed from the RETIRED
+pre-re-anchor prefill figure and its crossover numbers have not been recomputed against the
+2026-09-01 sweep. The direction survives (a decode edge cannot cover a per-token prefill deficit at
+depth) but the specific token counts should be treated as stale until re-derived, and the re-anchor
+moves them in goinfer's favour at the short end. On the same pre-re-anchor stack: with a small short-context
 decode edge and ~4–5× slower prefill, goinfer wins *total* time only up to **~320-token prompts**
 at 1.5B (~128 before the batched-prefill campaign, ~230 mid-campaign). Past that Ollama wins. At 7B
 the crossover is **below 128 tokens** — the ~10% decode edge there cannot cover a 5–7× per-token
