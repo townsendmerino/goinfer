@@ -1,7 +1,7 @@
 # An inference primer for Go engineers
 
 Eleven chapters on how a language model actually runs, written for someone who knows Go and
-does not know ML.
+does not know ML, plus a glossary.
 
 The assumption throughout is that you understand goroutines, memory layout, cache behaviour
 and profiling, and that you have never met a transformer. So the explanation budget goes to
@@ -25,6 +25,7 @@ that produced the number.
 | 9 | [Guessing ahead](./09-guessing-ahead.md) | Speculative decoding, acceptance rate, and rollback |
 | 10 | [Kernels and backends](./10-kernels-and-backends.md) | CPU, CUDA, Metal, and what refusing cgo costs |
 | 11 | [Knowing you're right](./11-knowing-youre-right.md) | Parity gating, bit-exactness, and how a measurement lies |
+| 12 | [Glossary](./12-glossary.md) | Every term above in one line each, linked to the chapter that explains it |
 
 ## The shorter version, and the code map
 
@@ -51,7 +52,8 @@ twice, which no tool can reconcile — and which is a duplication cost, not a co
 ## Reading order
 
 One through eleven works. If you're here for the engineering rather than the concepts,
-chapters 8, 6 and 11 stand alone reasonably well.
+chapters 8, 6 and 11 stand alone reasonably well. Chapter 12 is a glossary, not a chapter — look
+things up in it, don't read it.
 
 Chapter 11 is the one to read if you only read one. It is about how measurements in this
 repo have gone wrong — instruments returning plausible numbers for the wrong reason, tests
@@ -64,5 +66,8 @@ Every figure is traced to a repo document. Where a number is regime-specific —
 one backend, one model size, or a model slice rather than a whole model — the text says so,
 because the alternative is how a non-transferable number loses its label and becomes folklore.
 
-Some numbers in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) are currently marked stale pending re-anchor after a
-driver and distro upgrade on the Linux box. Nothing in these chapters depends on those rows.
+The driver and distro upgrade that had left parts of
+[`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md)
+marked stale was re-anchored and **closed on 2026-08-31** — that page's own top matter carries the
+"no leg still owes a run" line, and names the three rows deliberately left out of scope rather than
+quietly carried. Nothing in these chapters depended on those rows either way.
