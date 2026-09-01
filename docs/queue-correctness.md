@@ -181,7 +181,40 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > not exonerating. `int8int8` additionally DECLINES the resident path on this family, unexplained.
 >
 > Both tests are committed and skip until the features are declared, so the next attempt starts
-> from a reproduction instead of a rebuild. Step 2 is the gate, and `2224441` is the precedent for
+> from a reproduction instead of a rebuild.
+>
+> **ROOT CAUSE FOUND THE SAME DAY, BY DIFFERENTIAL PROBING: CUDA NEVER APPLIES gpt-oss's
+> PER-EXPERT DOWN-PROJECTION BIAS.**
+>
+> `Model.GptOssExpertDownBiasResident` exists and is exported FOR a backend to consume; its own
+> comment names the kernel that should (`gemv_w4a8_moe_wacc_bias`). Nothing in `cuda/*.go` or
+> `cuda/*.cu` references either. CUDA computes `dst = Down·h` and drops `+ downBias` for every
+> expert, every layer, every token.
+>
+> | CPU variant vs the CUDA resident | min cosine |
+> |---|---|
+> | real down bias | 0.749844 |
+> | **down bias zeroed** | **0.996630** |
+>
+> CUDA behaves as if the term is absent, and zeroing it on the CPU side recovers nearly all of
+> the gap — which is the confirmation, not an inference from reading code.
+>
+> **Method worth reusing:** the CPU-side ablation. `ForwardSubCapture` is not wired for gpt-oss
+> (own runLayers), so the per-layer diff that cracked LFM2 was unavailable. Instead each gpt-oss
+> departure was DISABLED ON THE CPU IN TURN and re-compared: if the GPU already drops a term,
+> removing it from the reference must IMPROVE the match. Sink (0.750 → 0.723) and router bias
+> (0.750 → 0.701) both got WORSE, exonerating them; the down bias went to 0.997. It needs no
+> capture seam and no reference implementation, only a knob per suspect.
+>
+> Two controls make that readable: CPU int4 vs CPU f32 is **0.999470** on this fixture, so the
+> reference is sound and the gap was never quantization; and removing the o_proj bias wiring
+> makes things far worse (0.750 → 0.069), so `14b3a66` was necessary and correct.
+>
+> **THE FIX NEEDS A NEW KERNEL, unlike the o_proj bias.** `moe.cu` has `gemv_w4a8_moe_wacc` and
+> no bias variant, and a post-hoc add would be WRONG: the bias belongs INSIDE the expert, before
+> the router weight scales it — `out += w·(Down·h + bias)`, not `out += w·(Down·h) + bias`. So:
+> write `gemv_w4a8_moe_wacc_bias`, regenerate the PTX (NVRTC, on the box), upload the table
+> per layer, dispatch it, then re-run the gate. Step 2 is the gate, and `2224441` is the precedent for
 > why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
 >
 > **STEP 2 WAS ATTEMPTED ON METAL 2026-08-31 AND FAILED — and the failure found a missing guard.**
