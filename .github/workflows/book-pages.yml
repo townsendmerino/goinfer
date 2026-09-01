@@ -67,6 +67,21 @@ jobs:
           echo "staged $(ls _book_src/*.md | wc -l) markdown files:"
           ls _book_src
 
+      # Client-side search. GitHub Pages runs Jekyll in safe mode with a short plugin allowlist
+      # and no search plugin on it, so this is a generated JSON index plus a small browser-side
+      # UI rather than a plugin. The include is the theme's OWN extension point —
+      # jekyll-theme-primer's _layouts/default.html ends its <head> with
+      # `{% include head-custom.html %}` — so nothing here forks the layout.
+      - name: Build the search index and inject the UI
+        run: |
+          set -euo pipefail
+          mkdir -p _book_src/_includes
+          cp docs/book-search/head-custom.html _book_src/_includes/head-custom.html
+          python3 scripts/build_search_index.py _book_src _book_src/search-index.json
+          # Non-vacuity: an empty or trivially small index would still deploy and would still
+          # render a search box that finds nothing, which looks like a working feature.
+          test "$(python3 -c 'import json,sys;print(len(json.load(open("_book_src/search-index.json"))))')" -ge 50
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/jekyll-build-pages@v1

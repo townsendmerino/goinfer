@@ -1,0 +1,137 @@
+<!-- Client-side search for the book site.
+
+     WHY THIS FILE IS AN INCLUDE AND NOT A LAYOUT OVERRIDE. jekyll-theme-primer's
+     _layouts/default.html ends its <head> with `{% include head-custom.html %}` — a documented
+     extension point. Copying the whole layout in order to add two tags would fork it, and the
+     fork would silently stop tracking the theme. Verified against the theme source rather than
+     assumed: pages-themes/primer, _layouts/default.html.
+
+     WHY THE UI IS BUILT FROM SCRIPT RATHER THAN MARKUP. head-custom is inside <head>, so there is
+     no body to attach to yet; the box is created on DOMContentLoaded and inserted at the top of
+     .markdown-body, which is the container primer wraps every page in. -->
+
+<style>
+  .bk-search { margin: 0 0 1.5rem; }
+  .bk-search input {
+    width: 100%; padding: .5rem .65rem; font-size: 1rem;
+    border: 1px solid #d0d7de; border-radius: 6px; box-sizing: border-box;
+  }
+  .bk-search input:focus { outline: none; border-color: #0969da; box-shadow: 0 0 0 3px rgba(9,105,218,.15); }
+  .bk-results { margin: .5rem 0 0; padding: 0; list-style: none; }
+  .bk-results li { padding: .5rem 0; border-bottom: 1px solid #eaeef2; }
+  .bk-results a { font-weight: 600; text-decoration: none; }
+  .bk-ch { color: #57606a; font-size: .85rem; margin-left: .4rem; font-weight: 400; }
+  .bk-snip { display: block; color: #57606a; font-size: .9rem; margin-top: .15rem; }
+  .bk-snip mark { background: #fff8c5; padding: 0 .1em; }
+  .bk-note { color: #57606a; font-size: .9rem; padding: .5rem 0; }
+  @media (prefers-color-scheme: dark) {
+    .bk-search input { background: #0d1117; color: #e6edf3; border-color: #30363d; }
+    .bk-results li { border-bottom-color: #21262d; }
+    .bk-ch, .bk-snip, .bk-note { color: #8b949e; }
+    .bk-snip mark { background: #bb8009; color: #0d1117; }
+  }
+</style>
+
+<script>
+(function () {
+  // relative_url alone, quoted here, rather than `| jsonify`: this is the only Liquid in the file
+  // and it is the one line no local build could exercise (Jekyll would not install on either
+  // machine — a native extension in its livereload dependency fails to compile). One well-known
+  // filter producing a path with nothing to escape is the smallest thing that can go wrong, and
+  // if it did, Jekyll fails the build loudly on an unknown filter rather than shipping a page
+  // that 404s silently in the browser.
+  var INDEX_URL = "{{ '/search-index.json' | relative_url }}";
+
+  // Ranking is deliberately crude and explainable: a heading hit outranks a body hit, and more
+  // matched terms outrank fewer. Every query term must appear somewhere in the record (AND, not
+  // OR) — with 90 sections over one subject, OR returns most of the book for two common words.
+  function search(records, query) {
+    var terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return [];
+    var out = [];
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      var hay = (r.heading + ' ' + r.text).toLowerCase();
+      var head = r.heading.toLowerCase();
+      var score = 0, all = true;
+      for (var t = 0; t < terms.length; t++) {
+        if (hay.indexOf(terms[t]) === -1) { all = false; break; }
+        score += head.indexOf(terms[t]) !== -1 ? 10 : 1;
+      }
+      if (all) out.push({ r: r, score: score });
+    }
+    out.sort(function (a, b) { return b.score - a.score; });
+    return out.slice(0, 20).map(function (x) { return x.r; });
+  }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { search: search }; return; }
+
+  function esc(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  // Show the query in context rather than the first 150 characters of the section, which for a
+  // book this discursive is usually preamble that does not contain the term.
+  function snippet(text, terms) {
+    var low = text.toLowerCase(), at = -1;
+    for (var i = 0; i < terms.length && at === -1; i++) at = low.indexOf(terms[i]);
+    if (at === -1) at = 0;
+    var start = Math.max(0, at - 60);
+    var frag = (start ? '…' : '') + text.slice(start, start + 180) + (text.length > start + 180 ? '…' : '');
+    var html = esc(frag);
+    terms.forEach(function (t) {
+      if (!t) return;
+      html = html.replace(new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>');
+    });
+    return html;
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var host = document.querySelector('.markdown-body');
+    if (!host) return;
+    var box = document.createElement('div');
+    box.className = 'bk-search';
+    box.innerHTML = '<input type="search" placeholder="Search the book…  (press / to focus)" ' +
+                    'aria-label="Search the book" autocomplete="off"><ul class="bk-results"></ul>';
+    // After the site-title <h1> the theme injects, so the box does not displace the masthead.
+    var h1 = host.querySelector('h1');
+    if (h1 && h1.nextSibling) host.insertBefore(box, h1.nextSibling); else host.insertBefore(box, host.firstChild);
+
+    var input = box.querySelector('input');
+    var list = box.querySelector('.bk-results');
+    var records = null, pending = null;
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); }
+      if (e.key === 'Escape' && document.activeElement === input) { input.value = ''; render(); }
+    });
+
+    function render() {
+      var q = input.value.trim();
+      list.innerHTML = '';
+      if (!q) return;
+      if (!records) { list.innerHTML = '<li class="bk-note">loading…</li>'; return; }
+      var hits = search(records, q);
+      if (!hits.length) { list.innerHTML = '<li class="bk-note">No matches.</li>'; return; }
+      var terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      hits.forEach(function (r) {
+        var li = document.createElement('li');
+        li.innerHTML = '<a href="' + esc(r.url) + '">' + esc(r.heading) + '</a>' +
+                       '<span class="bk-ch">' + esc(r.chapter) + '</span>' +
+                       '<span class="bk-snip">' + snippet(r.text, terms) + '</span>';
+        list.appendChild(li);
+      });
+    }
+
+    // Fetched on first keystroke, not on load: the index is ~90 KB and most readers never search.
+    function load() {
+      if (records || pending) return;
+      pending = fetch(INDEX_URL).then(function (r) { return r.json(); })
+        .then(function (j) { records = j; render(); })
+        .catch(function () { list.innerHTML = '<li class="bk-note">Search index unavailable.</li>'; });
+    }
+    input.addEventListener('input', function () { load(); render(); });
+    input.addEventListener('focus', load);
+  });
+})();
+</script>
