@@ -1,10 +1,22 @@
 <!-- Client-side search for the book site.
 
      WHY THIS FILE IS AN INCLUDE AND NOT A LAYOUT OVERRIDE. jekyll-theme-primer's
-     _layouts/default.html ends its <head> with `{% include head-custom.html %}` — a documented
+     _layouts/default.html ends its <head> by including this file by name — a documented
      extension point. Copying the whole layout in order to add two tags would fork it, and the
      fork would silently stop tracking the theme. Verified against the theme source rather than
      assumed: pages-themes/primer, _layouts/default.html.
+
+     DO NOT WRITE THAT INCLUDE TAG OUT IN FULL ANYWHERE IN THIS FILE, not even in a comment.
+     Liquid is evaluated before HTML comments mean anything, so an include tag inside <!-- -->
+     is still executed — and since this file IS head-custom.html, naming itself makes it include
+     itself. The first version of this comment did exactly that and the build died with
+     "stack level too deep ... 10124 levels" pointing at the THEME's layout, which is the last
+     place you would look for a bug you introduced.
+
+     The same trap catches the fix: the escape hatch for a literal tag is Liquid's raw/endraw
+     pair, and writing THAT out here would be another live tag. So this comment names neither.
+     If a literal tag is ever genuinely needed in this file, wrap it in that pair rather than
+     describing it.
 
      WHY THE UI IS BUILT FROM SCRIPT RATHER THAN MARKUP. head-custom is inside <head>, so there is
      no body to attach to yet; the box is created on DOMContentLoaded and inserted at the top of

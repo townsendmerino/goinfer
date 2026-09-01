@@ -76,6 +76,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _book_src/_includes
+          # GUARD: the include must contain no Liquid TAGS ({%...%}), only output ({{...}}).
+          # Liquid is evaluated before HTML comments mean anything, so a tag written inside
+          # <!-- --> still runs — and because this file IS head-custom.html, a comment naming
+          # its own include tag made it include itself. That shipped: the build died with
+          # "stack level too deep ... 10124 levels" blaming the THEME's layout. One grep is
+          # cheaper than re-deriving that from a stack trace.
+          if grep -q '{%' docs/book-search/head-custom.html; then
+            echo "::error::head-custom.html contains a Liquid tag ({%...%}). Even inside an HTML"
+            echo "::error::comment it is executed; a self-include here recurses until the build dies."
+            grep -n '{%' docs/book-search/head-custom.html
+            exit 1
+          fi
           cp docs/book-search/head-custom.html _book_src/_includes/head-custom.html
           python3 scripts/build_search_index.py _book_src _book_src/search-index.json
           # Non-vacuity: an empty or trivially small index would still deploy and would still
