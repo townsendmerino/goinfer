@@ -15,6 +15,26 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Speculative decode's `Theta` could not express Metal, so Metal drafted when it should not
+  draft at all.** `AdaptiveDepth.Theta` was documented and enforced in `[0,1)` and reset anything
+  outside that to 0.5. Metal measures **1.006–1.048** (two models, two depths), so every value
+  Metal actually has was rejected and replaced by 0.5 — and because depth is
+  `floor(ln Theta / ln alpha)`, a *smaller* Theta drafts *deeper*, so the substitute was the most
+  over-drafting setting available. Measured effect on Metal: speculation was **1.07× slower than
+  not speculating**; wiring the measured value recovers it (**~6%**) by declining to draft.
+  - `Theta >= 1` is now legal and means what it measures — a verify node costing at least a whole
+    target step, which no acceptance rate repays.
+  - The periodic probe that forces `D>=1` to refresh a stale estimate is skipped under
+    `Theta >= 1`, where it can never change the answer and is pure wasted draft work.
+  - **Theta is now wired per backend from the probes** (CPU 0.5, CUDA 0.251, Metal 1.02) instead of
+    every backend running the CPU constant. It keys on *resident vs staged*, not on the requested
+    backend, because a declined-residency model verifies on the CPU path.
+  - The CUDA constant is measured but its end-to-end effect is not yet validated on the box; the
+    conservative end of its measured range is wired meanwhile. See
+    `docs/measurements/theta-per-backend-2026-09-01.md`.
+
 ### Performance
 
 - **f32 prefill attention now fans out over query heads — 1.58× at K=2048 and 1.92× at K=4096
