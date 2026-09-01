@@ -221,3 +221,91 @@ func loadMoEBitIdentModel(t *testing.T) (*Model, error) {
 	}
 	return Load(path, Options{Quant: "int4"})
 }
+
+// TestMoEExpertMajor_endToEnd is P18's decision measurement.
+//
+// The microbenchmark says the expert matmul is 1.55x-2.13x cheaper per row when
+// batched. It says nothing about the GATHER/SCATTER cost of collecting an
+// expert's scattered rows, which is the whole open question — and multiplying
+// the microbenchmark by moeMLP's profile share is precisely the projection this
+// repo retracted twice on 2026-09-01.
+//
+// So this times the real forward with the flag on and off, paired and
+// interleaved with alternating lead, at the depth the pre-registered rule names.
+//
+// PRE-REGISTERED DECISION RULE (docs/queue-performance.md P18, committed before
+// this ran): fund if the net is >=15% end-to-end at K>=4096; park if <8%;
+// 8-15% is AMBIGUOUS and parks pending a second mechanism.
+func TestMoEExpertMajor_endToEnd(t *testing.T) {
+	if os.Getenv("GOINFER_MOE_BATCH_E2E") == "" {
+		t.Skip("set GOINFER_MOE_BATCH_E2E=1")
+	}
+	m, err := loadMoEBitIdentModel(t)
+	if err != nil {
+		t.Skipf("no MoE model (%v)", err)
+	}
+	ctx := deadlineCtx(t)
+	K := 4096
+	if v := os.Getenv("GOINFER_MOE_BATCH_K"); v != "" {
+		fmt.Sscanf(v, "%d", &K)
+	}
+	pairs := 2
+	if v := os.Getenv("GOINFER_MOE_BATCH_PAIRS"); v != "" {
+		fmt.Sscanf(v, "%d", &pairs)
+	}
+	if !m.canBatchN(K) {
+		t.Skip("no batched prefill")
+	}
+	ids := make([]int, K)
+	for i := range ids {
+		ids[i] = 700 + i%97
+	}
+	start := time.Now()
+	fmt.Fprintf(os.Stderr, "P18 e2e: start %s  K=%d pairs=%d\n", start.Format("15:04:05"), K, pairs)
+
+	run := func(on string) time.Duration {
+		t.Helper()
+		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
+		before := atomic.LoadInt64(&moeExpertMajorRuns)
+		t0 := time.Now()
+		if _, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true); err != nil {
+			t.Fatalf("forward: %v", err)
+		}
+		d := time.Since(t0)
+		ran := atomic.LoadInt64(&moeExpertMajorRuns) - before
+		if on == "1" && ran == 0 {
+			t.Fatal("expert-major never ran — this timing measures nothing")
+		}
+		if on == "0" && ran != 0 {
+			t.Fatalf("expert-major ran %d chunks with the flag OFF", ran)
+		}
+		return d
+	}
+	run("0") // warm, discarded
+	var ratios []float64
+	var onD, offD []time.Duration
+	for p := range pairs {
+		var dOn, dOff time.Duration
+		if p%2 == 0 {
+			dOff, dOn = run("0"), run("1")
+		} else {
+			dOn, dOff = run("1"), run("0")
+		}
+		onD, offD = append(onD, dOn), append(offD, dOff)
+		ratios = append(ratios, float64(dOff)/float64(dOn))
+		fmt.Fprintf(os.Stderr, "  pair %d/%d  per-row %7.1fs  expert-major %7.1fs  %.3fx  [elapsed %s]\n",
+			p+1, pairs, dOff.Seconds(), dOn.Seconds(), float64(dOff)/float64(dOn),
+			time.Since(start).Round(time.Second))
+	}
+	r := medianDur(offD).Seconds() / medianDur(onD).Seconds()
+	gain := 100 * (r - 1)
+	verdict := "AMBIGUOUS -> parked pending a second mechanism"
+	switch {
+	case gain >= 15:
+		verdict = "FUND"
+	case gain < 8:
+		verdict = "PARK"
+	}
+	fmt.Fprintf(os.Stderr, "\n  K=%d  per-row %.1fs  expert-major %.1fs  ratio %.3fx  (%+.1f%%)  -> %s\n",
+		K, medianDur(offD).Seconds(), medianDur(onD).Seconds(), r, gain, verdict)
+}
