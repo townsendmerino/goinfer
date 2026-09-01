@@ -13,7 +13,7 @@
 
 ## What is open
 
-- **P19 · Fused (FlashAttention-style) tiled attention — STEP 0 ANSWERED, item stays OPEN.**
+- **P19 · Fused (FlashAttention-style) tiled attention — CLOSED 2026-09-01 for the portable form; the CUDA form is untested and NOT closed.**
   *(Filed as P19, not P17: this queue already has a P17. The item arrived carrying that number
   from outside the repo; renumbered here rather than shadowing an existing entry.)*
 
@@ -58,10 +58,34 @@
   (A3 fan-out: each worker gathers into its own buffers). And its sequencing condition, "A3 first",
   is satisfied: A3's kernel measurement and its end-to-end result both landed.
 
-  **Not yet known, and what decides funding:** no fused kernel exists, so the 2.22× is an Amdahl
-  ceiling from a measured share, not a measured win — the exact distinction this repo retracted
-  twice on 2026-09-01. Next step is a prototype fused kernel measured against the materialized one
-  at matched precision, so the fusion win is attributable separately from A3's.
+  **THE PROTOTYPE WAS BUILT AND MEASURED THE SAME DAY, AND IT LOSES**
+  (`docs/measurements/p19-fused-attention-2026-09-01.md`). At production shapes (kt=256, hd=128,
+  nKeys=8192), f32 both arms so the schedule is the only variable:
+
+  | | materialized | best fused | ratio |
+  |---|---|---|---|
+  | serial (stable) | 52.9 ms | 51.3 ms | **1.031×** |
+  | parallel (as shipped) | 37.4 ms | 54.1 ms | **0.690×** |
+
+  Pre-registered bar was ≥1.30× clears / <1.10× closes. **It closes.** Correctness was never the
+  problem — cosine 1.000000000, max|diff| ~1e-8.
+
+  **Why, established by a control rather than guessed.** The serial arm was run because this repo
+  has already published a kernel ratio that was mostly core count (G24's first pass: 17.6× against
+  a documented ~3.7×). `MatmulBT` fans out over N output columns; materialized presents N=8192,
+  fused presents N=kb (128–1024). Serially the schedule is a **wash** (1.031×) — on CPU the 8 MiB
+  score block is streamed well enough that avoiding it buys nothing. In parallel, materialized
+  gains 1.41× and fused gains nothing, because fusion forfeits column parallelism *by construction*.
+
+  **What is NOT closed, stated so nobody reads this as more than it is:**
+  - **The CUDA form.** The 55%-of-prefill share that made this interesting is a CUDA measurement,
+    where the score matrix goes to HBM and the trade is different. Nothing here refutes a fused
+    CUDA kernel — it refutes the *cheap portable* win, which is what the item was filed on
+    ("the portable claim is the I/O schedule, not the kernels").
+  - **An implementation that does not sit on `MatmulBT`.** This prototype composes fusion out of
+    the general blocked matmul and therefore inherits its parallelism model. A hand-written fused
+    inner kernel parallelised over QUERY ROWS would not forfeit parallelism the same way. That is
+    a real limit on the strength of this negative, and a much larger piece of work.
 
 - **P18 · Expert-major MoE prefill batching — REOPENED 2026-09-01, and the reason it was parked
   does not apply to it.** Scoped, not funded: the next step is a cost measurement, not a rewrite.
