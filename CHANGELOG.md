@@ -17,6 +17,24 @@ any surface may still change.
 
 ### Changed
 
+- **`--cpu-fast-attention` is now ON BY DEFAULT, floored at 512 prompt tokens, with
+  `--cpu-exact-prefill` as the opt-out.** Prompt attention on the CPU backend runs in f32 unless
+  you ask otherwise; the opt-out wins if both flags are passed. **This changes output.** Above the
+  floor, prefill is no longer bit-identical to decode, and a long-prompt response can differ from
+  what the same build produced before, at temperature 0.
+  - **The floor is the part that makes it safe to default.** Attention cost grows with the square
+    of the prompt, so the saving grows with length while the divergence does not — an eight-token
+    prompt was measured diverging at the third generated token while buying nothing measurable
+    (1.15× at 512, 1.43× at 2048, 2.28× at 8192). Below 512 tokens the exact kernel runs
+    regardless, which is why every pre-existing forward golden still passes untouched.
+  - **It is not reproducible across architectures.** The same prompt on the same checkout produces
+    a different first token on arm64 than on amd64 — the compiler fuses multiply-add on one and not
+    the other, and f32 has no wider accumulator to absorb it. `--cpu-exact-prefill` is the way to
+    get a byte-comparable transcript between machines, and exists for that reason rather than as a
+    courtesy.
+  - Decode is unaffected either way, and speculative verify is structurally excluded (it passes the
+    exact kernel as a parameter, not a runtime check).
+
 - **`--cpu-fast-attention` now covers Mixture-of-Experts architectures.** The flag previously
   refused MoE outright, on the argument that an f32 QKᵀ reassociation flips a top-k expert at a
   near-tie and cascades. That argument had **never been measured on a MoE** — no MoE appears in the

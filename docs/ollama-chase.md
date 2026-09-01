@@ -820,9 +820,12 @@ group-scale granularity, not bit-identity in general, is what breaks tensor-core
 so the real question was never "give up bit-identity or don't," it was "is the per-row-scale
 quality cost low enough to pay." Phase 0 said maybe (1.24× weight-space error, best case, down
 from 1.73× naive). Phase 0b said no: that 1.24× becomes a ~4× perplexity blowup through 28 layers
-(28.5→108) — the same class of failure as the MoE routing-sensitivity finding, which is also why
-`--cpu-fast-attention` stays cautious around experts (the public primer's Chapter 8 draws this
-parallel directly, in `docs/book/08-prefill-versus-decode.md`). The tolerance-gated middle path
+(28.5→108) — the same class of failure as the MoE routing-sensitivity finding (the public primer's Chapter 8
+draws this parallel directly, in `docs/book/08-prefill-versus-decode.md`). Note the parallel is in
+the MECHANISM, not in the verdict: `--cpu-fast-attention` used to refuse experts for this reason
+and no longer does — measured 2026-08-29, the routing flips are real but an order of magnitude
+smaller than the dense divergence the flag already shipped, so the categorical refusal was dropped.
+This sentence said "stays cautious around experts" for three days after that. The tolerance-gated middle path
 below fails for the identical reason: argmax is discrete, and this repo has now measured twice
 that discrete decisions here flip on near-zero margins.
 
