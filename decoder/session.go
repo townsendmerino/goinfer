@@ -157,6 +157,9 @@ func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt [
 	if ad == nil {
 		ad = &AdaptiveDepth{}
 	}
+	if ad.Theta <= 0 { // unset by the caller: take this model's measured verify cost
+		ad.Theta = s.m.verifyTheta()
+	}
 	ad.ensure()
 	return s.genSpec(ctx, prompt, maxTokens, drafter, ad.MaxDraft, sp, ad)
 }
