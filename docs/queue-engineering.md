@@ -111,6 +111,41 @@ version are all still there after the underlying module has been evicted. So the
 exactly the "returns success and does nothing" shape, and it explains every observation at once:
 identical launch arguments, all calls succeeding, full card, zeros out.
 
+## `gate gpu` is RED on nobara for an environmental reason, and its message misdirects
+
+**Measured 2026-09-01.** `go run ./cmd/gate gpu` exits rc=1 with 170 PASS / 4 FAIL:
+`TestAllocFloor` and `TestMoERouteDemandThreshold` (plus their child/marker pair), in the drain
+group.
+
+**It is not a regression.** The identical failure, with the identical measured byte value,
+reproduces at `82dda2a` — before any of the 2026-09-01 changes. Verified by checkout, not assumed.
+
+**The cause is a foreign CUDA context, and the arithmetic names it exactly:**
+
+```
+measured demand   156,958,720 B
+expected          140,181,504 B   (residual 138,412,032 + cold floor 1,769,472)
+difference         16,777,216 B   = exactly 16 MiB
+```
+
+`nvidia-smi --query-compute-apps` reports **pid 1777, `/usr/bin/kwin_wayland`, 16 MiB** — the KDE
+Plasma compositor. The test's COLD regime means *"this launch is the first context on the device
+and pays the reserve itself"*, and that premise is false while the compositor holds a context.
+
+**Why this is worth a note rather than a shrug.** The failure message is otherwise excellent — it
+tells you to check components first — but it ends with *"ONLY if the identity does not close has
+the KERNEL's launch requirement moved … and then docs/QUEUE.md A1/A5/A7/A9 need re-deriving"*.
+Someone reading a red gate on a desktop session would be pointed at re-deriving four pinned
+allocation figures, when the whole discrepancy is one compositor's 16 MiB. **Do not edit those
+pins on the strength of this failure.**
+
+Options, none taken here: run the gate from a TTY with the compositor stopped; teach the COLD
+regime to subtract foreign contexts' reported usage; or have the gate refuse to start (as
+`bench_peer.py` does for load) rather than fail deep inside. The third is probably right — §B8's
+own provenance says "GPU exclusive at start (the supervisor refuses to launch if anything beyond
+the compositor holds the card)", so the *benchmark* supervisor already treats exclusivity as a
+precondition while this gate does not.
+
 ## A13 — THE TAG ARGUMENT, AS ONE ENUMERABLE CLAIM
 
 > **No shipped path drives the device to refusal and then continues using the context.**
