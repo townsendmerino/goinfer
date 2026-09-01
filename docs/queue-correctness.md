@@ -149,9 +149,39 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > Verified for now only as a non-regression: box gates clean, `./cuda/...` 100 PASS / 90 SKIP /
 > 0 FAIL.
 >
-> **So the remaining work is: (2) ONE real gpt-oss forward on a resident path — now believed
-> reachable via `--moe-cache-experts`, with the A/B above as its first assertion — and (3) then
-> declare FeatAttnSink + FeatOutBias together.** Step 2 is the gate, and `2224441` is the precedent for
+> **(2) WAS RUN FOR THE FIRST TIME ON 2026-08-31 — AND IT FAILED. G7 STAYS OPEN.**
+>
+> The run itself is the milestone: gpt-oss-20b DID build a resident CUDA path on an 8 GB card
+> (1m20s) via `--moe-cache-experts`, which is the thing this entry has called blocked since
+> 2026-08-18. It decoded. It was WRONG.
+>
+> | step | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+> |---|---|---|---|---|---|---|---|---|
+> | cosine vs CPU | 0.932 | 0.939 | 0.933 | 0.900 | 0.797 | 0.794 | 0.681 | 0.761 |
+>
+> **3/8 argmax-exact, min cosine 0.681 against a 0.95 bar. FeatAttnSink and FeatOutBias were NOT
+> declared** — they were declared locally to make the run possible and then reverted, which is the
+> whole point of `2224441`'s precedent.
+>
+> **What the failure is NOT, established by measurement rather than narrowed by guessing:**
+>
+> | ruled out | evidence |
+> |---|---|
+> | expert streaming | `TestGptOssExpertCacheAB`: cached ≡ uncached BIT-IDENTICAL with slots=2 |
+> | model scale | the 2-layer TINY fixture fails too — min cosine 0.750, step 0 already 0.778 |
+> | the o_proj bias wiring | removing it makes things far WORSE: min cosine 0.750 → **0.069** |
+> | the kernels in isolation | full `./cuda/...` suite is 100 PASS, including the gptoss_act gates |
+>
+> So it is a COMPOSITION bug in the gpt-oss CUDA forward — kernels right, wiring wrong — which is
+> precisely the failure class 2224441 was reverted for. Two clues for whoever picks it up:
+> **step 1 is already 0.932 at the 20B and 0.778 at the tiny**, and attention over ONE key is
+> trivial, so a per-token term is wrong before position can matter; and it then DEGRADES with
+> position, which is a second, accumulating error on top. Nulling the sink barely moves the tiny
+> number (0.778 → 0.790), but that fixture is random-init so its sinks are small — inconclusive,
+> not exonerating. `int8int8` additionally DECLINES the resident path on this family, unexplained.
+>
+> Both tests are committed and skip until the features are declared, so the next attempt starts
+> from a reproduction instead of a rebuild. Step 2 is the gate, and `2224441` is the precedent for
 > why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
 >
 > **STEP 2 WAS ATTEMPTED ON METAL 2026-08-31 AND FAILED — and the failure found a missing guard.**
