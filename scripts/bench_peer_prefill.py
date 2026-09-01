@@ -357,10 +357,33 @@ def main():
                 continue
             slope = (n * sxy - sx * sy) / den          # seconds per token
             intercept = (sy - slope * sx) / n          # seconds of fixed overhead
+            # LOCAL slopes between adjacent depths. A single global slope assumes
+            # the cost per token is CONSTANT, and for goinfer it is not -- prefill
+            # attention is O(K^2), so the marginal token gets more expensive as the
+            # prompt grows. Reporting one number for that is the same class of error
+            # as quoting one ratio for a curve.
+            local = []
+            for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+                if x1 > x0:
+                    ms = (y1 - y0) / (x1 - x0) * 1000
+                    local.append({"from": x0, "to": x1, "ms_per_token": round(ms, 4),
+                                  "tok_s": round(1000.0 / ms, 1) if ms > 0 else None})
             if slope > 0:
-                marg[f"{name}:{mk}"] = {"marginal_tok_s": round(1.0 / slope, 1),
-                                        "ms_per_token": round(slope * 1000, 4),
-                                        "fixed_overhead_ms": round(intercept * 1000, 1)}
+                entry = {"marginal_tok_s": round(1.0 / slope, 1),
+                         "ms_per_token": round(slope * 1000, 4),
+                         "fixed_overhead_ms": round(intercept * 1000, 1),
+                         "local": local}
+                # A NEGATIVE fitted intercept is physically impossible -- no engine
+                # answers before the request arrives. It is the signature of fitting
+                # a straight line to convex data, i.e. of superlinear scaling, and it
+                # is therefore a built-in detector for "the linear model does not
+                # describe this engine". Measured 2026-09-01: goinfer -226/-438 ms
+                # (O(K^2) attention), ollama +357/+344 ms (near-linear, fit sound).
+                if intercept < 0:
+                    entry["LINEAR_FIT_INVALID"] = (
+                        "negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s "
+                        "is not a constant for this engine -- read `local` instead")
+                marg[f"{name}:{mk}"] = entry
     for mk in a.models.split(","):
         gk, ok = f"goinfer:{mk}", f"ollama:{mk}"
         if gk in marg and ok in marg:
