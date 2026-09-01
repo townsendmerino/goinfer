@@ -13,11 +13,29 @@ WHAT IT MEASURES
     prefill tok/s = prompt_tokens / TTFT
 
 where TTFT is client-timed from just before the request is written to the first
-streamed content event. TTFT includes prefill plus one sampling step plus HTTP
-and scheduling overhead. That overhead is common-mode — both engines are driven
-identically over their own HTTP server — so the RATIO is the defensible
-quantity and the absolute rate is an upper-bound-flavoured figure. Stated here
-rather than left for a reader to infer.
+streamed content event.
+
+AND THAT NUMBER IS NOT PREFILL THROUGHPUT. TTFT = fixed per-request overhead +
+prefill + one sampling step, and the overhead is NOT common-mode: measured
+2026-09-01 at K=128, goinfer's TTFT is 39-89 ms while Ollama's is 343-380 ms.
+Charging that ~340 ms floor to "prefill" makes Ollama read 457 tok/s at K=128
+and 6721 tok/s at K=3900 -- neither of which is its prefill speed; it is the
+floor being amortised over more tokens. It also hands goinfer a flattering 0.13x
+at K=128 that is a low-overhead server, not a fast prefill.
+
+So this reports TWO quantities and labels them apart:
+
+  ttft_tok_s      prompt_tokens / TTFT. USER-VISIBLE time-to-first-token, which
+                  is a real thing to care about and is what an interactive
+                  caller feels. Includes each engine's request overhead.
+  marginal_tok_s  1 / (dTTFT/dK), from a least-squares fit across the swept
+                  depths. The fixed overhead cancels, so this is the engine's
+                  actual prefill THROUGHPUT -- and it is the honest number for a
+                  "how fast is prefill" claim.
+
+They can disagree sharply and did: at K=3900 the TTFT ratio reads 4.8x while the
+marginal ratio is ~14x. Quoting either one alone, unlabelled, is how the old
+single "4.7x behind" figure came to stand for a curve.
 
 THE TRAP THIS EXISTS TO AVOID, MEASURED BEFORE THE HARNESS WAS WRITTEN.
 bench_peer.py sends the SAME prompt for every completion in a cell. Harmless for
@@ -285,14 +303,14 @@ def main():
                     cell[name] = {"ttft_ms_median": round(med * 1000, 1),
                                   "ttft_ms_all": [round(t * 1000, 1) for t in ts],
                                   "prompt_tokens": tok,
-                                  "prefill_tok_s": round(tok / med, 1),
+                                  "ttft_tok_s": round(tok / med, 1),
                                   "spread_pct": round(100 * (max(ts) - min(ts)) / med, 1)}
             if "goinfer" in cell and "ollama" in cell and "error" not in cell["goinfer"] and "error" not in cell["ollama"]:
-                cell["peer_over_goinfer"] = round(
-                    cell["ollama"]["prefill_tok_s"] / cell["goinfer"]["prefill_tok_s"], 2)
+                cell["ttft_peer_over_goinfer"] = round(
+                    cell["ollama"]["ttft_tok_s"] / cell["goinfer"]["ttft_tok_s"], 2)
             results.append(cell)
-            g = cell.get("goinfer", {}).get("prefill_tok_s")
-            o = cell.get("ollama", {}).get("prefill_tok_s")
+            g = cell.get("goinfer", {}).get("ttft_tok_s")
+            o = cell.get("ollama", {}).get("ttft_tok_s")
             print(f"{mk:6s} K={depth:<6d} goinfer {g!s:>9} tok/s   ollama {o!s:>9} tok/s   "
                   f"ratio {cell.get('peer_over_goinfer')}")
 
@@ -321,11 +339,41 @@ def main():
                       f"Prefill scales with length and a cache lookup does not, so these "
                       f"are lookups, not prefills.")
                 sys.exit(2)
+    # MARGINAL prefill throughput: least-squares slope of TTFT against prompt
+    # tokens, which cancels each engine's fixed per-request overhead. This is the
+    # number to quote for "how fast is prefill"; ttft_tok_s is what a caller feels.
+    marg = {}
+    for name in ("goinfer", "ollama"):
+        for mk in a.models.split(","):
+            pts = [(c[name]["prompt_tokens"], c[name]["ttft_ms_median"] / 1000.0)
+                   for c in results if c["model"] == mk and name in c and "error" not in c[name]]
+            if len(pts) < 3:
+                continue
+            n = len(pts)
+            sx = sum(x for x, _ in pts); sy = sum(y for _, y in pts)
+            sxx = sum(x * x for x, _ in pts); sxy = sum(x * y for x, y in pts)
+            den = n * sxx - sx * sx
+            if den == 0:
+                continue
+            slope = (n * sxy - sx * sy) / den          # seconds per token
+            intercept = (sy - slope * sx) / n          # seconds of fixed overhead
+            if slope > 0:
+                marg[f"{name}:{mk}"] = {"marginal_tok_s": round(1.0 / slope, 1),
+                                        "ms_per_token": round(slope * 1000, 4),
+                                        "fixed_overhead_ms": round(intercept * 1000, 1)}
+    for mk in a.models.split(","):
+        gk, ok = f"goinfer:{mk}", f"ollama:{mk}"
+        if gk in marg and ok in marg:
+            marg[f"ratio:{mk}"] = round(marg[ok]["marginal_tok_s"] / marg[gk]["marginal_tok_s"], 2)
+    for k, v in sorted(marg.items()):
+        print(f"  [marginal] {k:16s} {v}" if isinstance(v, dict) else f"  [marginal] {k:16s} {v}x")
+
     for k, v in scaling.items():
         print(f"  [scaling] {k:16s} {v['depths'][0]}->{v['depths'][1]} tok  "
               f"{v['ttft_ms'][0]:.0f}->{v['ttft_ms'][1]:.0f} ms  ({v['ttft_growth']}x over {v['depth_growth']}x depth)")
 
-    json.dump({"header": hdr, "cache_check": cachechk, "scaling_check": scaling, "cells": results},
+    json.dump({"header": hdr, "cache_check": cachechk, "scaling_check": scaling,
+               "marginal": marg, "cells": results},
               open(a.out, "w"), indent=2)
     print(f"\nwrote {a.out}")
 
