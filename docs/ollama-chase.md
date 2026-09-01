@@ -151,7 +151,7 @@ then showed the bound **moved off memory-coalescing onto occupancy**: 12 blocks 
 0.04, 11.9% occupancy — the fix is **split-KV parallelism**, not a KV relayout, and it converges with
 B1 (bit-identical tiled attention). Campaign A stays open on that build.
 
-### 3b. Prefill — 4.7× behind *(2026-08-04; the one peer row §B8 does not cover)*
+### 3b. Prefill — RE-ANCHORED 2026-09-01: 0.13× to 6.13×, depending on depth
 
 > **RE-ANCHORED 2026-09-01 — the paragraphs below are superseded; read the box at the end of §3b.**
 > The text kept here is the pre-re-anchor record, retained because the reasoning it drove (the
