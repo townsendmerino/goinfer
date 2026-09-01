@@ -27,20 +27,20 @@
   row picks the same experts) vs `varied`. **Both arms call `moeMLP` per row at M=1**, so that
   experiment varies *which weights are touched* — the bandwidth/locality axis — and holds the
   M=1→M=N axis fixed. Measured 2026-09-01 at real Mellum2 expert shapes with int4 weights and
-  locality already perfect (i.e. under the parked ceiling's own condition): **1.32× at N=8 rising
-  to 1.67× at N=256, still falling at the right edge**
+  locality already perfect (i.e. under the parked ceiling's own condition): **1.55× at N=8 rising
+  to 2.13× at N=256**
   (`docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md`). Real N is ~10³ rows per expert
   per layer at K=8192.
 
   **What is NOT yet known, and is the whole item.** The gather/scatter cost of collecting an
   expert's scattered rows is unmeasured, and it is the most likely reason the real win lands below
-  1.67×. Uneven routing puts small groups at the left of that table (1.32×), not the right. And
+  2.13×. Uneven routing puts small groups at the left of that table (1.55×), not the right. And
   the microbenchmark is cache-warm on three matrices while the real forward ran with swap growing
   to 18 GB — a benchmark that omits the real pressure can promote a mechanism as easily as
   exonerate one ([[synthetic-reproduces-shape-not-pressure]] is about the same trap in the other
   direction).
 
-  **No end-to-end speedup is claimed.** Multiplying 39% by 1.67× is the projection this repo
+  **No end-to-end speedup is claimed.** Multiplying 39% by 2.13× is the projection this repo
   retracted twice on 2026-09-01. **Decision rule, pre-registered here:** measure permutation cost
   against batching win on the real forward at K≥4096; **fund if the net is ≥15% end-to-end,
   park if <8%, and treat 8–15% as ambiguous → parked pending a second mechanism.**

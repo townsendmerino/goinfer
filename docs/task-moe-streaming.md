@@ -31,7 +31,7 @@ this is on the critical path for that number, not a nice-to-have.
 | `layerPager` — dense windowed prefetch, `WILLNEED` L+1 while computing L | `decoder/layerpaging.go` |
 | generic span residency + budget | `aikit/mmap.SpanCache`, `mmap.Advise`, `mmap.AutoBudget` |
 | bit-exactness by read-only re-fault | `TestMadvise_dontneedRefaultsIntact`, `TestExpertPaging_bitExact`, `TestLayerPaging_bitExact` |
-| the demand-signal seam | `moeMLP` top-k → `pager.touch` (`decoder/mlp.go:81`) |
+| the demand-signal seam | `moeMLP` top-k → `pager.touch` (`decoder/mlp.go:83`) |
 | an access trace + cost model for the real 35B-A3B | `decoder/moepaging_spike_test.go` |
 
 Validated 2026-06-13 on the real Qwen3.6-35B-A3B: 512 MB expert cache against ~16 GB of
@@ -229,8 +229,7 @@ becomes the binding constraint after the batched GEMV lands.
 > Its ceiling was `uniform` (all rows pick the same experts) vs `varied`, and **both arms call
 > `moeMLP` per row at M=1**. That varies *which weights are touched* (bandwidth/locality) and
 > holds M=1→M=N fixed. Measured directly, under the parked ceiling's own perfect-locality
-> condition, batching the expert matmul over rows is **1.32× at N=8 → 1.67× at N=256** and still
-> falling at the right edge — see `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md`.
+> condition, batching the expert matmul over rows is **1.55× at N=8 → 2.13× at N=256** — see `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md`.
 > The "≤5%, not a compute lever" result stands for what it measured (routing diversity costs
 > little, independently confirmed by the 2026-09-01 profile at 1.7% of `moeMLP`); it does not
 > bound this. Tracked as **P18** in `docs/queue-performance.md`. The gather/scatter cost is still
@@ -570,7 +569,7 @@ lever for long prompts.
 
 In-repo: `docs/ideas-weight-memory.md` §2 (shipped 2026-06-13; skew and hit-rate/latency
 tables; the "unhideable" claim) and §4 (dense layer streaming), `decoder/moepaging.go`,
-`decoder/layerpaging.go`, `decoder/moepaging_spike_test.go`, `decoder/mlp.go:81`,
+`decoder/layerpaging.go`, `decoder/moepaging_spike_test.go`, `decoder/mlp.go:83`,
 `decoder/forwardn.go:94`/`:228`, `decoder/residency.go:130`, `go.mod:6`,
 `docs/completed/task-gemma4-moe.md`, `docs/benchmarks.md`.
 aikit: `mmap/spancache.go`, `mmap/madvise_darwin.go` (the darwin no-op eviction),

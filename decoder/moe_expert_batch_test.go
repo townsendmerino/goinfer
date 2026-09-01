@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,10 +50,18 @@ func TestMoEExpertBatching_M1vsMN(t *testing.T) {
 	if os.Getenv("GOINFER_MOE_BATCH_PROBE") == "" {
 		t.Skip("set GOINFER_MOE_BATCH_PROBE=1")
 	}
-	// Mellum2: hidden 2304, intermediate 7168, 64 experts (config.json).
+	// Mellum2 config.json: hidden_size 2304, **moe_intermediate_size 896**,
+	// 64 experts, top-k 8.
+	//
+	// 896 IS THE EXPERT WIDTH AND 7168 IS THE DENSE ONE. The first version of
+	// this benchmark used 7168 -- `intermediate_size`, which the DENSE FFN uses
+	// -- and so measured expert matmuls 8x wider than the ones swiGLUExpert
+	// actually issues (it is called with moe.IntermediateDim). Wider matmuls
+	// amortise per-call overhead better, so that error understated the batching
+	// win rather than inventing one, but it was still the wrong shape.
 	const (
 		hidden = 2304
-		inter  = 7168
+		inter  = 896
 		group  = 32
 	)
 	be, err := NewBackend("cpu")
@@ -122,4 +131,93 @@ func TestMoEExpertBatching_M1vsMN(t *testing.T) {
 		perN := float64(dN.Microseconds()) / float64(N)
 		fmt.Fprintf(os.Stderr, "%-8d %11.1f µs %11.1f µs %9.2fx\n", N, per1, perN, per1/perN)
 	}
+}
+
+// TestMoEExpertMajor_bitIdentical is the gate that decides whether P18's
+// expert-major path is usable at all.
+//
+// The win is worthless if it changes results: the whole point of running the
+// MoE FFN expert-major is that it is a REORDERING of the same arithmetic, not
+// a different computation. Two things have to survive, and a tolerance test
+// would let both fail quietly:
+//
+//   - the matmuls must be M-invariant (a row computed alone equals the same row
+//     computed inside a batch), which linalg documents as a contract; and
+//   - the per-row fold must run in ROUTING RANK order, because float addition
+//     is not associative and expert-major visits experts in a different order.
+//
+// So this asserts `!=` on every logit, through the real forward, with the flag
+// on and off over the same tokens.
+func TestMoEExpertMajor_bitIdentical(t *testing.T) {
+	m, err := loadMoEBitIdentModel(t)
+	if err != nil {
+		t.Skipf("no MoE model (%v)", err)
+	}
+	ctx := deadlineCtx(t)
+	const K = 600 // > moeExpertMajorChunk, so the chunk boundary is exercised
+	if !m.canBatchN(K) {
+		t.Skip("model has no batched prefill")
+	}
+	ids := make([]int, K)
+	for i := range ids {
+		ids[i] = 700 + i%97
+	}
+	run := func(on string) []float32 {
+		t.Helper()
+		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
+		out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), false)
+		if err != nil {
+			t.Fatalf("forward (expert-major=%q): %v", on, err)
+		}
+		return out
+	}
+	off := run("0")
+	before := atomic.LoadInt64(&moeExpertMajorRuns)
+	on := run("1")
+	// NON-VACUITY: moeMLPBatch refuses for several legitimate reasons, and a
+	// refusal makes both arms take the identical per-row path -- this test would
+	// then pass while proving nothing about the batched path.
+	if ran := atomic.LoadInt64(&moeExpertMajorRuns) - before; ran == 0 {
+		t.Fatal("expert-major path never ran (moeMLPBatch refused) — this comparison proves nothing")
+	} else {
+		t.Logf("expert-major chunks executed: %d", ran)
+	}
+	if len(off) != len(on) {
+		t.Fatalf("length %d vs %d", len(off), len(on))
+	}
+	diff := 0
+	for i := range off {
+		if off[i] != on[i] {
+			if diff == 0 {
+				t.Errorf("first divergence at logit %d: off=%v on=%v", i, off[i], on[i])
+			}
+			diff++
+		}
+	}
+	if diff != 0 {
+		t.Fatalf("expert-major is NOT bit-identical: %d/%d logits differ", diff, len(off))
+	}
+	// Non-vacuity: two buffers of zeros would satisfy the loop above perfectly.
+	nz := 0
+	for _, v := range off {
+		if v != 0 {
+			nz++
+		}
+	}
+	if nz < len(off)/2 {
+		t.Fatalf("output is mostly zeros (%d/%d) — the arms agree because nothing ran", nz, len(off))
+	}
+}
+
+// loadMoEBitIdentModel resolves a real MoE checkpoint for the gate above.
+func loadMoEBitIdentModel(t *testing.T) (*Model, error) {
+	t.Helper()
+	path := os.Getenv("GOINFER_MELLUM_CKPT")
+	if path == "" {
+		path = os.Getenv("HOME") + "/models/mellum2-unq"
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	return Load(path, Options{Quant: "int4"})
 }

@@ -3,6 +3,8 @@ package decoder
 import (
 	"fmt"
 	"math"
+	"os"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -405,4 +407,148 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		applyLoRA(lora.down, gate, out, scr)
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// P18 — expert-major MoE prefill batching.
+//
+// moeMLP runs one row at a time and swiGLUExpert issues its three matmuls at
+// M=1, so an expert's weights are re-read for every token that routes to it. At
+// K=8192 that is ~10^3 re-reads per expert per layer. Measured at real Mellum2
+// shapes with locality already perfect, converting M=1 -> M=N is worth 1.32x at
+// N=8 rising to 1.67x at N=256 and still falling
+// (docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md).
+//
+// BIT-IDENTITY IS THE CONSTRAINT, AND IT IS ACHIEVABLE. Two things must hold:
+//
+//  1. the matmuls must be M-invariant. linalg.MatmulBT documents this as a
+//     contract ("a row computed alone (M=1) equals the same row computed inside
+//     a batch"), and weightmat.go says the same of the int4 W4A8 kernel, so a
+//     row's expert output does not depend on how many rows shared the call.
+//  2. the per-row ACCUMULATION ORDER must be preserved. moeMLP folds the k
+//     experts as `for j, e := range idx { out += wts[j]*expOut }` -- in ROUTING
+//     RANK order. Float addition is not associative, so summing expert-major
+//     would change the result. This computes every (row, rank) expert output
+//     first and then folds each row in rank order, which keeps the sequence
+//     identical.
+//
+// (2) is why this holds a [rows][k][hidden] buffer and therefore why it runs in
+// CHUNKS rather than over the whole prompt: at K=8192, k=8, hidden=2304 that
+// would be 604 MB.
+const moeExpertMajorChunk = 512
+
+// moeExpertMajor reports whether the expert-major prefill path is enabled.
+// Default OFF while P18 is being measured -- the gather/scatter cost is the
+// open question, and until it is measured on the real forward this must not be
+// the shipping path.
+func moeExpertMajor() bool { return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") == "1" }
+
+// moeExpertMajorRuns counts chunks that actually took the expert-major path.
+// It exists so the bit-identity gate can prove it is not vacuous: moeMLPBatch
+// REFUSES for several legitimate reasons (shared expert, live pager, test
+// seams), and a refusal makes both arms take the identical per-row path, so the
+// test would pass while proving nothing.
+var moeExpertMajorRuns int64
+
+// moeMLPBatch runs the MoE FFN over `rows` ([n, hidden]) expert-major, writing
+// n*hidden results into dst. Bit-identical to calling moeMLP per row.
+//
+// It refuses (returns false) for the cases whose observable behaviour is
+// ORDER-dependent rather than value-dependent, because those cannot be made
+// identical by preserving the accumulation order alone:
+//   - moeSelOverride / moeSelTrace: test seams keyed on per-call forward order.
+//   - a live pager: `touch` order is the demand signal that drives eviction, so
+//     reordering it changes which experts are resident. Expert-major is very
+//     likely BETTER for paging, but "different" is not "better" until measured,
+//     and this item is about compute.
+func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager, dst []float32) (bool, error) {
+	moe := arch.MoE
+	if moe == nil || len(lw.Experts) == 0 || moeSelOverride != nil || moeSelTrace != nil || pager != nil {
+		return false, nil
+	}
+	if arch.Act != ActSiLU {
+		return false, nil
+	}
+	// The shared expert is added AFTER the routed fold in moeMLP. Refusing here
+	// rather than after the work, so a fall-back costs nothing: a partial
+	// implementation that silently dropped it would change results, not speed.
+	if moe.SharedIntermediateDim > 0 {
+		return false, nil
+	}
+	hidden, nE, k := arch.HiddenDim, moe.NumExperts, moe.TopK
+	inter := moe.IntermediateDim
+
+	// Router for the whole chunk in ONE matmul (M=n). This is separately worth
+	// something: the profile put the per-row router matmul at 22.4 s and the
+	// per-row `make([]float32, nE)` at 46.2 s of a 1443 s moeMLP.
+	logits := make([]float32, n*nE)
+	matmul(be, &lw.Router, rows, logits, n)
+
+	idxs := make([][]int, n)
+	wtss := make([][]float32, n)
+	// expert -> the (row, rank) pairs that selected it
+	type slot struct{ row, rank int }
+	byExpert := make([][]slot, nE)
+	for r := range n {
+		idx, wts := routeExperts(logits[r*nE:(r+1)*nE], lw.RouterBias, k,
+			moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
+		idxs[r], wtss[r] = idx, wts
+		for j, e := range idx {
+			byExpert[e] = append(byExpert[e], slot{r, j})
+		}
+	}
+
+	// Every (row, rank) expert output, so the fold below can run in rank order.
+	perRank := make([]float32, n*k*hidden)
+	maxRows := 0
+	for _, s := range byExpert {
+		if len(s) > maxRows {
+			maxRows = len(s)
+		}
+	}
+	if maxRows == 0 {
+		return false, nil
+	}
+	gathered := make([]float32, maxRows*hidden)
+	gate := make([]float32, maxRows*inter)
+	up := make([]float32, maxRows*inter)
+	outBuf := make([]float32, maxRows*hidden)
+
+	for e, slots := range byExpert {
+		if len(slots) == 0 {
+			continue
+		}
+		m := len(slots)
+		for i, s := range slots { // GATHER this expert's rows
+			copy(gathered[i*hidden:(i+1)*hidden], rows[s.row*hidden:(s.row+1)*hidden])
+		}
+		ex := &lw.Experts[e]
+		matmul(be, &ex.Gate, gathered[:m*hidden], gate[:m*inter], m)
+		matmul(be, &ex.Up, gathered[:m*hidden], up[:m*inter], m)
+		for i := range m * inter {
+			gate[i] = silu(gate[i]) * up[i]
+		}
+		matmul(be, &ex.Down, gate[:m*inter], outBuf[:m*hidden], m)
+		for i, s := range slots { // SCATTER into (row, rank)
+			copy(perRank[(s.row*k+s.rank)*hidden:(s.row*k+s.rank+1)*hidden], outBuf[i*hidden:(i+1)*hidden])
+		}
+	}
+
+	atomic.AddInt64(&moeExpertMajorRuns, 1)
+	// Fold each row in ROUTING RANK order -- the sequence moeMLP uses, which is
+	// what makes this bit-identical rather than merely close.
+	for r := range n {
+		o := dst[r*hidden : (r+1)*hidden]
+		for i := range o {
+			o[i] = 0
+		}
+		for j := range idxs[r] {
+			w := wtss[r][j]
+			p := perRank[(r*k+j)*hidden : (r*k+j+1)*hidden]
+			for i := range o {
+				o[i] += w * p[i]
+			}
+		}
+	}
+	return true, nil
 }

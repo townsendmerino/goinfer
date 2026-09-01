@@ -484,13 +484,44 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			// Record: docs/measurements/mellum2-moe-prefill-split-RESULT.md.
 			//
 			// GLM's dense prefix layers (Experts nil) fall through to the dense FFN below.
+			// P18 (opt-in, GOINFER_MOE_EXPERT_MAJOR=1): run the routed experts
+			// EXPERT-MAJOR in chunks instead of one row at a time, so each expert's
+			// weights are read once per chunk rather than once per token. Refuses
+			// and falls through for the order-dependent cases (test seams, a live
+			// pager, a shared expert) -- see moeMLPBatch. Bit-identical when it
+			// runs: TestMoEExpertMajor_bitIdentical.
+			emDone := make([]bool, K)
+			var emOut []float32
+			if moeExpertMajor() {
+				emOut = make([]float32, K*hidden)
+				for c0 := 0; c0 < K; c0 += moeExpertMajorChunk {
+					c1 := min(c0+moeExpertMajorChunk, K)
+					ok, err := moeMLPBatch(norm[c0*hidden:c1*hidden], c1-c0, lw, arch, be, m.pager,
+						emOut[c0*hidden:c1*hidden])
+					if err != nil {
+						return nil, err
+					}
+					if !ok {
+						break // refused: leave every row to the per-row path below
+					}
+					for i := c0; i < c1; i++ {
+						emDone[i] = true
+					}
+				}
+			}
 			for i := range K {
 				// nil scr: this batched-prefill path builds its own per-K-batch scratch
 				// above and has no cache.scr in scope; moeMLP falls back to allocating,
 				// amortized over K tokens (not the flagged single-token decode hot path).
-				ff, err := moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)
-				if err != nil {
-					return nil, err
+				var ff []float32
+				if emDone[i] {
+					ff = emOut[i*hidden : (i+1)*hidden]
+				} else {
+					var err error
+					ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)
+					if err != nil {
+						return nil, err
+					}
 				}
 				if sandwich {
 					normalize(arch, ff, lw.PostMLPNorm, nil, hidden)
