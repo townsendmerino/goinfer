@@ -154,7 +154,14 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 		t.Skipf("no MoE model (%v)", err)
 	}
 	ctx := deadlineCtx(t)
-	const K = 600 // > moeExpertMajorChunk, so the chunk boundary is exercised
+	K := 600 // > moeExpertMajorChunk, so the chunk boundary is exercised
+	// Overridable because the e2e measurement returned ~4x at K=4096 -- far more
+	// than batching the matmuls can explain -- and a speedup that comes partly
+	// from doing LESS work would look exactly like that. The identity must be
+	// checked at the depth the claim is made at, not only at the cheap one.
+	if v := os.Getenv("GOINFER_MOE_BATCH_K"); v != "" {
+		fmt.Sscanf(v, "%d", &K)
+	}
 	if !m.canBatchN(K) {
 		t.Skip("model has no batched prefill")
 	}
@@ -265,7 +272,17 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 
 	run := func(on string) time.Duration {
 		t.Helper()
-		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
+		// "scr" is the ATTRIBUTION arm: scratch reuse only, no expert-major. It
+		// changes no arithmetic, so any time it buys is allocation/GC cost that
+		// the expert-major arm ALSO removes — which is how the two mechanisms get
+		// separated instead of credited to whichever one was implemented.
+		if on == "scr" {
+			t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "0")
+			t.Setenv("GOINFER_MOE_PREFILL_SCRATCH", "1")
+		} else {
+			t.Setenv("GOINFER_MOE_PREFILL_SCRATCH", "0")
+			t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
+		}
 		before := atomic.LoadInt64(&moeExpertMajorRuns)
 		t0 := time.Now()
 		if _, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true); err != nil {
@@ -276,27 +293,30 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 		if on == "1" && ran == 0 {
 			t.Fatal("expert-major never ran — this timing measures nothing")
 		}
-		if on == "0" && ran != 0 {
-			t.Fatalf("expert-major ran %d chunks with the flag OFF", ran)
+		if on != "1" && ran != 0 {
+			t.Fatalf("expert-major ran %d chunks in the %q arm", ran, on)
 		}
 		return d
 	}
 	run("0") // warm, discarded
-	var ratios []float64
-	var onD, offD []time.Duration
+	var onD, offD, scrD []time.Duration
 	for p := range pairs {
-		var dOn, dOff time.Duration
+		var dOn, dOff, dScr time.Duration
 		if p%2 == 0 {
-			dOff, dOn = run("0"), run("1")
+			dOff, dScr, dOn = run("0"), run("scr"), run("1")
 		} else {
-			dOn, dOff = run("1"), run("0")
+			dOn, dScr, dOff = run("1"), run("scr"), run("0")
 		}
-		onD, offD = append(onD, dOn), append(offD, dOff)
-		ratios = append(ratios, float64(dOff)/float64(dOn))
-		fmt.Fprintf(os.Stderr, "  pair %d/%d  per-row %7.1fs  expert-major %7.1fs  %.3fx  [elapsed %s]\n",
-			p+1, pairs, dOff.Seconds(), dOn.Seconds(), float64(dOff)/float64(dOn),
-			time.Since(start).Round(time.Second))
+		onD, offD, scrD = append(onD, dOn), append(offD, dOff), append(scrD, dScr)
+		fmt.Fprintf(os.Stderr, "  pair %d/%d  per-row %7.1fs  scratch-only %7.1fs (%.2fx)  expert-major %7.1fs (%.2fx)  [elapsed %s]\n",
+			p+1, pairs, dOff.Seconds(), dScr.Seconds(), float64(dOff)/float64(dScr),
+			dOn.Seconds(), float64(dOff)/float64(dOn), time.Since(start).Round(time.Second))
 	}
+	rScr := medianDur(offD).Seconds() / medianDur(scrD).Seconds()
+	fmt.Fprintf(os.Stderr, "\n  ATTRIBUTION: scratch-reuse alone %.2fx, expert-major %.2fx — "+
+		"so batching the matmuls contributes %.2fx ON TOP of not allocating per row\n",
+		rScr, medianDur(offD).Seconds()/medianDur(onD).Seconds(),
+		medianDur(scrD).Seconds()/medianDur(onD).Seconds())
 	r := medianDur(offD).Seconds() / medianDur(onD).Seconds()
 	gain := 100 * (r - 1)
 	verdict := "AMBIGUOUS -> parked pending a second mechanism"

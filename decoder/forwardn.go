@@ -319,6 +319,19 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	if m.layerPager != nil {
 		defer m.layerPager.finishLayers()
 	}
+	// P18 attribution arm (GOINFER_MOE_PREFILL_SCRATCH=1): moeMLP is called with a
+	// nil scratch on this path, so it ALLOCATES ~5 slices per row per layer --
+	// 114,688 calls at K=4096 x 28 layers. The K=8192 profile recorded 339,293 GCs
+	// and 20.9 GB allocated, with `make([]float32, nE)` alone at 46.2 s.
+	//
+	// This exists to ATTRIBUTE the expert-major win rather than assume it: that
+	// path both batches the matmuls AND stops allocating per row, and the measured
+	// ~4x is far more than batching alone predicts (~1.26x by Amdahl on the
+	// microbenchmark). Reusing one scratch across the row loop is safe because
+	// moeMLP's return aliases scr.moeOut and the caller consumes it before the
+	// next call.
+	var moePrefillScr *decodeScratch
+
 	for l := 0; l < arch.NumLayers; l++ {
 		// G18: an abandoned client must not leave this loop running. Prefill is where
 		// the time goes (a 3k-token prompt is minutes), and before this check a client
@@ -518,7 +531,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 					ff = emOut[i*hidden : (i+1)*hidden]
 				} else {
 					var err error
-					ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)
+					if moePrefillScratch() && moePrefillScr == nil {
+						moePrefillScr = newDecodeScratch(arch)
+					}
+					ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, moePrefillScr, m.pager)
 					if err != nil {
 						return nil, err
 					}
