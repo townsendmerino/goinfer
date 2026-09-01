@@ -62,6 +62,12 @@ per-kv-group `kh`/`vt` gather is shared mutable state). A3 must gather once per 
 fan the group's query heads across workers reading it, or a kernel 8× faster still loses to
 parallel acc64.
 
+> **⚠ WRONG — see the retraction below.** The f32 branch was measured at **1.67× utilization**, not
+> 1.0×: `MatmulBT` already fans out over output columns. And the fix does NOT need to "gather once
+> per kv-group and share it" — every worker slot already owns a full-size `kh`/`vt` pair, budgeted
+> by `prefillAttnWorkers` all along, so each worker gathers privately and shares nothing. Built and
+> measured 2026-09-01: 1.92× end-to-end at K=4096.
+
 ---
 
 ## Reproduced 2026-09-01, and what is left after it
@@ -110,6 +116,40 @@ So the f32 path is leaving ~3.8× on the QK side because its per-kv-group gather
 state and cannot be split as written. Feeding that back through the profile share moves the ceiling
 2.61× → 2.93×, i.e. **~13% more end-to-end**, not another 3.8×. Worth knowing before anyone funds
 the gather rework expecting the kernel number.
+
+> ## ⚠ RETRACTED 2026-09-01 — the three paragraphs above are wrong, and the rework measured 1.92×
+>
+> **`~13% more end-to-end` is withdrawn. `3.81× forfeited today` is withdrawn. The
+> `2.61× → 2.93×` ceiling pair is withdrawn.** The fan-out was built and measured:
+> **1.40× at K=1024, 1.58× at K=2048, 1.92× at K=4096**, end-to-end, bit-identical
+> — `docs/measurements/a3-f32-attention-fanout-2026-09-01.md`.
+>
+> **The defect is one line above: `QK f32 + gather, PARALLEL MatmulBT  2.7 ms`.** That row was
+> read as a hypothetical the shipping path forfeits. It is not hypothetical — it is what already
+> ships. `MatmulBT` fans out internally over its N output columns (`parallelCols`) above
+> `parThreshold = 1<<24` MACs; the tile shape here is ~268M MACs and nothing in goinfer moves that
+> threshold. The 10.3 ms arm is the ARTIFICIAL one, produced by this page's own
+> `SetParallelThreshold(1<<62)` control. So the "3.81× forfeited" was a comparison between the real
+> path and a control, labelled as a comparison between today and tomorrow.
+>
+> Measured directly rather than inferred (utilization = CPU time ÷ wall time, which no Amdahl
+> argument can talk past): f32 as shipped **1.67×**, acc64 **4.75×**, f32 with linalg forced serial
+> **1.00×**. The "single-threaded by construction" line at the top of this section is therefore also
+> wrong, and was wrong when written — it is true of the HEAD LOOP, not of the work.
+>
+> **The `2.28× measured vs 2.61× ceiling — 87% of it` agreement above is a coincidence, and that is
+> the part worth carrying.** The ceiling was computed from a SERIAL-vs-SERIAL kernel ratio; the
+> 2.28× was measured on the PARALLEL production path. Two different parallelism states either side
+> of one division sign. The agreement then read as confirmation that "there is no large unexplained
+> term hiding between the kernel and the wall clock" — when in fact ~58% of the f32 arm was serial
+> code (gather, per-row softmax, scatter) that no amount of column-level fan-out could reach. A
+> close agreement between a model and a measurement is not evidence the model is right when the two
+> are not measuring the same configuration.
+>
+> This is the same shape as `bench_compare.sh` output divided by a peer number, and the same shape
+> as the 4-layer slice that read 3.11× and measured 1.52× at full depth. Third instance; the
+> pattern is *a ratio measured under one set of controls, projected onto a system running under
+> another*.
 
 ### Status note
 

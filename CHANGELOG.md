@@ -15,6 +15,29 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Performance
+
+- **f32 prefill attention now fans out over query heads — 1.58× at K=2048 and 1.92× at K=4096
+  end-to-end, with byte-identical output.** CPU only; CUDA and Metal attention are separate
+  implementations and are untouched. Applies to the f32 prefill path, i.e. prompts above the
+  512-token floor with the default `--cpu-fast-attention`.
+  - **It is bit-identical, so nothing about the output changes** — this is the same computation on
+    more cores. The committed long-prompt golden, which pins real token ids through this exact
+    path, passes unchanged, and the A/B asserts the two arms' logits match bitwise before timing
+    anything.
+  - **The item was costed at ~13% and the estimate was wrong for an instructive reason.** It rested
+    on "the f32 branch is single-threaded by construction". That is true of the head loop but not
+    of the work: `MatmulBT` already fanned out internally over output columns, so the path was
+    running at 1.67× utilization, not 1.0×. The ~13% came from feeding a *serial-vs-serial* kernel
+    ratio into an Amdahl model built on a *parallel-path* profile share. What was actually left on
+    the table was the ~58% of the arm outside any matmul — the K/V gather, the per-row softmax and
+    the scatter — which only head-level fan-out reaches.
+  - Every worker slot already owned a full-size `kh`/`vt` pair (`prefillAttnWorkers` had budgeted
+    them on every prefill all along, including the acc64 path that never touches them), so the
+    fan-out needed no new allocation. `GOINFER_PREFILL_ATTN_WORKERS=1` restores the previous
+    single-worker shape.
+  - Measurement, method and the retraction: `docs/measurements/a3-f32-attention-fanout-2026-09-01.md`.
+
 ### Changed
 
 - **`--cpu-fast-attention` is now ON BY DEFAULT, floored at 512 prompt tokens, with
