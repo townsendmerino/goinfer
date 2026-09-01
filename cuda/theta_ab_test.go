@@ -142,6 +142,22 @@ func TestThetaAB(t *testing.T) {
 					return out, g.Err()
 				}},
 			}
+			// ada@wired constructs AdaptiveDepth EXACTLY as production does --
+			// Theta left unset -- so it exercises the per-backend default
+			// (verifyTheta -> thetaFor("cuda")) rather than a value this test
+			// supplies. Every other adaptive arm below hardcodes its Theta, which
+			// makes them a parameter sweep: right for CHOOSING the constant, but
+			// they would all pass unchanged if the production wiring were absent
+			// or wrong. This arm is the one that fails if it is.
+			arms = append(arms, arm{"ada@wired", func() ([]int, error) {
+				ad := &decoder.AdaptiveDepth{MaxDraft: 8} // Theta unset on purpose
+				ch, g, err := m.GenerateNgramSpeculativeAdaptive(ctx, prompt, maxTok, &decoder.NgramDrafter{}, ad, greedy)
+				if err != nil {
+					return nil, err
+				}
+				out := collectToks(ch)
+				return out, g.Err()
+			}})
 			for _, th := range []struct {
 				label string
 				theta float64
