@@ -5,7 +5,6 @@ package cuda
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -42,11 +41,11 @@ func TestGptOssResidentParityCUDA(t *testing.T) {
 	if !decoder.ResidentBackendFeatures("cuda")[decoder.FeatAttnSink] {
 		t.Skip("cuda does not declare FeatAttnSink/FeatOutBias — the gate below is what must pass first")
 	}
-	path := os.Getenv("GOINFER_GPTOSS_GGUF")
-	if path == "" {
-		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, "models", "gpt-oss-20b-MXFP4.gguf")
-	}
+	// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF and
+	// TestAssetRegistry_noDirectReads fails any second resolution of it, so the gate and the sweep
+	// preflight cannot drift apart on which checkpoints count as present. That gate is a regex
+	// over SOURCE TEXT, so it fires on the call spelled out in a comment too -- as this one did.
+	path := modelPath("gpt-oss-20b-MXFP4.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no gpt-oss checkpoint at %s", path)
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,11 +39,11 @@ func TestGptOssResidentParityReal20B(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model from ~/models)")
 	}
-	path := os.Getenv("GOINFER_GPTOSS_GGUF")
-	if path == "" {
-		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, "models", "gpt-oss-20b-MXFP4.gguf")
-	}
+	// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF and
+	// TestAssetRegistry_noDirectReads fails any second resolution of it, so the gate and the sweep
+	// preflight cannot drift apart on which checkpoints count as present. That gate is a regex
+	// over SOURCE TEXT, so it fires on the call spelled out in a comment too -- as this one did.
+	path := modelPath("gpt-oss-20b-MXFP4.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no gpt-oss checkpoint at %s: %v", path, err)
 	}
@@ -158,11 +157,7 @@ func TestGptOssResidentMemGuardDeclines(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
 	}
-	path := os.Getenv("GOINFER_GPTOSS_GGUF")
-	if path == "" {
-		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, "models", "gpt-oss-20b-MXFP4.gguf")
-	}
+	path := modelPath("gpt-oss-20b-MXFP4.gguf") // see the note in the parity gate above
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no gpt-oss checkpoint at %s", path)
 	}
