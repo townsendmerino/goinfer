@@ -31,9 +31,15 @@ any surface may still change.
   - **Theta is now wired per backend from the probes** (CPU 0.5, CUDA 0.251, Metal 1.02) instead of
     every backend running the CPU constant. It keys on *resident vs staged*, not on the requested
     backend, because a declined-residency model verifies on the CPU path.
-  - The CUDA constant is measured but its end-to-end effect is not yet validated on the box; the
-    conservative end of its measured range is wired meanwhile. See
-    `docs/measurements/theta-per-backend-2026-09-01.md`.
+  - **Validated end-to-end on the RTX 2070 SUPER** (driver 595.91.07): on two of four cells the
+    shipped 0.5 was *slower than not speculating at all* (0.91× and 0.92× of no-drafter), and the
+    wired value returns both to parity (+9.3%, +6.0%) while leaving the already-winning cells
+    unchanged. Zero lossless violations. The conservative 0.251 lands within ~1% of the true
+    measured 0.155/0.235 on every cell, so under-claiming the win cost nothing here — a result,
+    not a guarantee.
+  - **Read the size honestly: this buys back a regression rather than adding a speedup**, on both
+    Metal and CUDA. See `docs/measurements/theta-per-backend-2026-09-01.md` and
+    `docs/measurements/theta-cuda-ab-2026-09-01.md`.
 
 ### Performance
 
