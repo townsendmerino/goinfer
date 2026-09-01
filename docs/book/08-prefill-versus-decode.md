@@ -123,10 +123,32 @@ When the exclusion was finally measured, the mechanism turned out to be real in 
 magnitude, and `--cpu-fast-attention` now covers Mixture-of-Experts models. The full-model win
 is **1.52×**.
 
-That leaves a live product question rather than a technical one. A third off prefill on the
-most common agentic shape is a large saving, and `--cpu-fast-attention` is off by default
-because `--cpu-fast-attention` is not bit-identical. Whether the bit-exactness contract should be opt-in or opt-out on this path is
-a decision about what users want, not about what the measurement says.
+That left a live product question rather than a technical one: a third off prefill on the most
+common agentic shape is a large saving, and the path is not bit-identical, so should the
+bit-exactness contract be opt-in or opt-out?
+
+It was settled in favour of speed. `--cpu-fast-attention` is now **on by default**, and
+`--cpu-exact-prefill` is the way back to the bit-identical kernel — it wins if both are passed,
+because between a speed request and a correctness request the correctness one is the safe way to
+read a contradiction the user did not know they had expressed.
+
+Two things made that defensible rather than merely faster.
+
+The first is a floor. Attention cost grows with the square of the prompt, so the saving grows with
+length — but the divergence does not. A short prompt would have paid the full change in output for
+almost none of the speed: an eight-token prompt was measured diverging at the third generated token
+and never re-converging, at a length where the win is nil. So the fast path is floored at 512 prompt
+tokens; below that the exact kernel runs regardless of the flag. Every existing golden in the repo
+uses a shorter prompt than that, which is why flipping the default left all of them passing
+untouched — and also why a new golden had to be written above the floor, since otherwise nothing
+tested the path that had just become the default.
+
+The second is what the default costs, stated rather than implied. Prefill and decode no longer agree
+bit-for-bit above the floor. Nor do two machines: the same prompt on the same checkout produced a
+different first token on Apple Silicon than on x86, because the compiler fuses multiply-add on one
+and not the other and there is no wider accumulator to absorb the difference. That is a real
+property to know about before diffing outputs across machines, and it is the reason
+`--cpu-exact-prefill` exists rather than being a courtesy.
 
 ---
 
