@@ -88,6 +88,26 @@ jobs:
             grep -n '{%' docs/book-search/head-custom.html
             exit 1
           fi
+          # GUARD 2: exactly one HTML comment open and one close in the whole file.
+          #
+          # The guard above stops the build from DYING. This one stops it from succeeding while
+          # rendering garbage, which is worse because nothing reports it. The file's leading
+          # comment explained the Liquid trap by writing an empty HTML comment inline to
+          # illustrate "inside a comment" — and that inline close ENDED the real comment there,
+          # so seventeen lines of prose about Liquid escaping rendered as visible text at the
+          # top of every page of the book. It deployed green.
+          #
+          # Counting opens against closes would NOT have caught it: that file had two of each,
+          # perfectly balanced. The invariant that actually holds for this file is that it
+          # carries exactly ONE comment, so any second delimiter of either kind is the bug.
+          opens=$(grep -o -- '<!--' docs/book-search/head-custom.html | wc -l | tr -d ' ')
+          closes=$(grep -o -- '-->' docs/book-search/head-custom.html | wc -l | tr -d ' ')
+          if [ "$opens" != "1" ] || [ "$closes" != "1" ]; then
+            echo "::error::head-custom.html must contain exactly one HTML comment: found $opens open(s), $closes close(s)."
+            echo "::error::A second delimiter closes the leading comment early and its prose renders on every page."
+            grep -n -- '<!--\|-->' docs/book-search/head-custom.html
+            exit 1
+          fi
           cp docs/book-search/head-custom.html _book_src/_includes/head-custom.html
           python3 scripts/build_search_index.py _book_src _book_src/search-index.json
           # Non-vacuity: an empty or trivially small index would still deploy and would still
