@@ -40,7 +40,7 @@ From the campaign doc (Gate A0, closed GO, reproduced within noise):
   `int4ParThreshold` bug class. **The fix is NOT lowering that threshold** (over-parallelizing
   tiny calls is the already-learned failure mode); it is parallelizing across the 672
   independent per-head calls per token — move (a).
-- AV reads `vals` with element stride `kvDim` (decoder/forwardn.go:754) — one cache line per f64 MAC.
+- AV reads `vals` with element stride `kvDim` (decoder/forwardn.go:761) — one cache line per f64 MAC.
 - Depth curve (before-baseline, keep for the after-comparison): depth 128 → 10.93 ms; 8192 →
   858.8 ms (attention = 95% of decode, ~1.15 tok/s). Per-key cost drifts +19.5% over that
   range (cache-tier effect).
