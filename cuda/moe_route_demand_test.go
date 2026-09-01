@@ -431,12 +431,40 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 		// rather than to the byte. A byte-exact pin here is what made the old one brittle.
 		demandWindow = 6 << 20
 	)
-	warm := firstPass.freeBefore < int64(pinnedDeviceFloor)
-	wantDemand, regime := int64(pinnedResidual), "WARM (another CUDA context alive — the device reserve is already paid)"
-	if !warm {
-		wantDemand = int64(pinnedDeviceFloor) + int64(pinnedResidual)
-		regime = "COLD (this launch is the first context on the device and pays the reserve itself)"
+	// REGIME, asked of the device rather than inferred from a number.
+	//
+	// This used to read `warm := firstPass.freeBefore < pinnedDeviceFloor`, which
+	// can only be true when the floor EXCEEDS the residual. That stopped being
+	// true on 2026-08-21 and the comment above has carried the consequence as a
+	// KNOWN LATENT DEFECT since: the warm branch was unreachable, and a warm run
+	// would go red claiming a broken identity. On 2026-09-01 it did exactly that,
+	// on a desktop session where KDE's compositor held a context.
+	//
+	// The identity was never the problem. It closed to the byte in that very run
+	// once the floor was measured rather than assumed:
+	//
+	//	18,546,688 (measured floor) + 138,412,032 (residual) = 156,958,720 = demand
+	//
+	// What is NOT pinned is the floor in the presence of a foreign context (it was
+	// 16 MiB higher there). So when one exists this SKIPS rather than asserting a
+	// number nobody has pinned — a skip is not a pass, and the gate reports it as
+	// uncovered, which is the honest outcome. Asserting the cold pin anyway is
+	// what sent a reader toward re-deriving A1/A5/A7/A9 over a compositor.
+	foreign, known := foreignCUDAContexts()
+	if !known {
+		t.Skip("cannot determine whether another CUDA context is alive (no nvidia-smi): " +
+			"the expected demand depends on that, and guessing it is what this check replaced")
 	}
+	if len(foreign) > 0 {
+		t.Skipf("another CUDA context is alive on the device — %s. The device reserve, and so the "+
+			"expected demand, is not pinned for that case (measured 16 MiB higher on 2026-09-01). "+
+			"Run this with an exclusive device (e.g. from a TTY with the compositor stopped). "+
+			"NOTE: the demand IDENTITY held there — measured floor + residual equalled the measured "+
+			"demand to the byte — so a failure here is about the environment, NOT the kernel, and "+
+			"docs/QUEUE.md A1/A5/A7/A9 do not need re-deriving.", describeForeign(foreign))
+	}
+	wantDemand := int64(pinnedDeviceFloor) + int64(pinnedResidual)
+	regime := "COLD (this launch is the first context on the device and pays the reserve itself)"
 	t.Logf("REGIME: %s — expected demand %d B, measured %d B", regime, wantDemand, firstPass.freeBefore)
 	if firstPass.freeBefore < wantDemand || firstPass.freeBefore > wantDemand+demandWindow {
 		// CHECK THE COMPONENTS BEFORE BLAMING THE KERNEL. An earlier revision of this message

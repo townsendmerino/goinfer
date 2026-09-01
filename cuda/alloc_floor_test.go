@@ -29,6 +29,27 @@ func TestAllocFloor(t *testing.T) {
 	}
 	read := func() int64 { f, _, _ := dev.Context().MemInfo(); return int64(f) }
 	var hold []gpu.Buffer
+	// FREE THE DRAIN, ON EVERY EXIT PATH. This test deliberately allocates until the device
+	// refuses a 2 MiB request — that is what it measures — and every buffer stays reachable in
+	// `hold` so the GC cannot reclaim one mid-measurement. Without an explicit release the
+	// process then carries an EXHAUSTED device into every later test in the package.
+	//
+	// That is not hypothetical: it made TestAllocGranularity fail with CUDA_ERROR_OUT_OF_MEMORY
+	// on a 5 MiB allocation whenever it ran after this test, and the GPU gate reported it as
+	// "a CUDA forward moved" — a numerics-sounding verdict for a bookkeeping leak. Bisected:
+	// TestAllocFloor+TestAllocGranularity fails, TestA10Floor...+TestAllocGranularity passes.
+	//
+	// THIS IS A defer RATHER THAN A TAIL BLOCK because the function can now exit early: the
+	// foreign-CUDA-context skip below returns via runtime.Goexit and would jump straight past a
+	// trailing release. Adding that skip reintroduced the exact leak this comment documents —
+	// TestMoERouteDemandThreshold went from a 3.8 s bisection to a 0.02 s failure on a drained
+	// device — which is why the cleanup is now structural instead of positional.
+	defer func() {
+		for _, b := range hold {
+			dev.ReleaseBuf(b)
+		}
+		hold = nil
+	}()
 	alloc := func(n int) (ok bool) {
 		defer func() {
 			if recover() != nil {
@@ -115,6 +136,31 @@ func TestAllocFloor(t *testing.T) {
 				hint = " — this is " + p.label + ", so the machine has gone BACK rather than moving somewhere new"
 			}
 		}
+		// The pin is a property of an EXCLUSIVE device. A foreign CUDA context
+		// raises this floor (measured +16 MiB for KDE's compositor, 2026-09-01),
+		// so asserting the exclusive number against a desktop session reports a
+		// machine change that has not happened -- and this gate's failure text
+		// then sends the reader toward TestMoERouteDemandThreshold and the
+		// A1/A5/A7/A9 pins over a window manager.
+		//
+		// So: SKIP rather than fail, and say exactly why. A skip is not a pass --
+		// `gate gpu` lists it as uncovered, which is the honest report -- whereas
+		// a red that everyone learns to expect on a desktop is a gate nobody
+		// reads.
+		foreign, known := foreignCUDAContexts()
+		if !known {
+			t.Skipf("floor measured %d B, but cannot determine whether another CUDA context is "+
+				"alive (no nvidia-smi). The pin is only meaningful on an exclusive device, and "+
+				"guessing that is what this check replaced.", floor)
+		}
+		if len(foreign) > 0 {
+			t.Skipf("floor measured %d B against a pin of %d B, but ANOTHER CUDA CONTEXT IS ALIVE "+
+				"— %s. A foreign context RAISES this floor (+16 MiB measured for KDE's compositor "+
+				"on 2026-09-01, and the demand identity still closed to the byte against the "+
+				"measured floor), so this is not a machine change. Re-run with an exclusive device "+
+				"— e.g. from a TTY with the compositor stopped — to test the pin.",
+				floor, int64(pinnedFloor), describeForeign(foreign))
+		}
 		t.Errorf("the device allocation floor moved: measured %d B, pinned %d±%d B%s. This is a "+
 			"MACHINE property (driver, display stack, device state), not a property of this repo, so "+
 			"the first question is what changed underneath rather than what changed in the tree. "+
@@ -154,17 +200,4 @@ func TestAllocFloor(t *testing.T) {
 	t.Logf("margin check: slotMarginBytes %d >= floor %d, clear by %d B (%.1f MiB)",
 		int64(slotMarginBytes), floor, int64(slotMarginBytes)-floor,
 		float64(int64(slotMarginBytes)-floor)/(1<<20))
-	// FREE THE DRAIN. This test deliberately allocates until the device refuses a 2 MiB
-	// request — that is what it measures — and every buffer stays reachable in `hold` so the
-	// GC cannot reclaim one mid-measurement. Without an explicit release the process then
-	// carries an EXHAUSTED device into every later test in the package.
-	//
-	// That is not hypothetical: it made TestAllocGranularity fail with CUDA_ERROR_OUT_OF_MEMORY
-	// on a 5 MiB allocation whenever it ran after this test, and scripts/gpu_gate.sh reported it
-	// as "a CUDA forward moved" — a numerics-sounding verdict for a bookkeeping leak. Bisected:
-	// TestAllocFloor+TestAllocGranularity fails, TestA10Floor...+TestAllocGranularity passes.
-	for _, b := range hold {
-		dev.ReleaseBuf(b)
-	}
-	hold = nil
 }
