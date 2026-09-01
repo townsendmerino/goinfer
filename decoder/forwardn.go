@@ -608,14 +608,17 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	scale := arch.AttnScale
 	nKeys := len(keys) / kvDim
 	// MoE routing is discontinuous: the f32 QKᵀ reassociation (~4.6e-5) flips a
-	// top-k expert at a near-tie and cascades, changing the output. MatmulBTAcc64
-	// accumulates the dot in f64 (bit-identical to the sequential f64 reference),
-	// killing that perturbation — ~3.7× slower than f32 but still ≫ the scalar
-	// path. Dense MLPs tolerate the f32 error (cosine ≥0.99), so they keep MatmulBT.
-	matmul := linalg.MatmulBT
-	if useAcc64 {
-		matmul = linalg.MatmulBTAcc64
-	}
+	// top-k expert at a near-tie and cascades, changing the output. The acc64
+	// kernels accumulate each dot in f64 (bit-identical to the sequential f64
+	// reference), killing that perturbation — slower than f32 but still ≫ the
+	// scalar path. Dense MLPs tolerate the f32 error (cosine ≥0.99).
+	//
+	// There is no shared `matmul` variable: the acc64 path calls MatmulQKAcc64 /
+	// MatmulAVAcc64 directly (strided, no gather), and the f32 path is handed its
+	// matmul per head — package-level MatmulBT when the head loop is serial, the
+	// worker's serial Workspace when it is not. A single variable could not
+	// express that, and the one that used to sit here was reachable only from the
+	// f32 branches anyway.
 
 	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into
 	// ctx, using ws's scratch. A1 move (a): this is what runs concurrently across
@@ -623,7 +626,11 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	// it, or what order heads finish in, since every head's own math (moves b/c's
 	// unchanged per-output reduction order) and its ctx write (a disjoint qhead*hd
 	// slice — no two heads ever touch the same bytes) are exactly as before.
-	attendOneHead := func(qhead int, ws *headWorkerScratch) {
+	// mm is the f32 matmul this head should use: the package-level MatmulBT
+	// (column-parallel) on the serial arm, or the worker's own serial
+	// Workspace on the head-parallel arm. Unused on the acc64 path, which
+	// calls MatmulQKAcc64/MatmulAVAcc64 directly.
+	attendOneHead := func(qhead int, ws *headWorkerScratch, mm func(a, b, dst []float32, M, K, N int)) {
 		kvh := qhead / group
 		qh, scores, ch, avAcc := ws.qh, ws.scores, ws.ch, ws.avAcc
 		// G20: walk the query rows in TILES. Every step below is row-wise — the Q
@@ -664,7 +671,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			if useAcc64 {
 				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
 			} else {
-				matmul(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
+				mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
 			}
 			// Scaled, masked softmax per query row; zero the out-of-range entries
 			// so they contribute nothing to the scores·V matmul below.
@@ -766,7 +773,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			if useAcc64 {
 				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
 			} else {
-				matmul(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
+				mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
 			}
 			for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
 				b := (t0+i)*qDim + qhead*hd
@@ -776,14 +783,15 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	}
 
 	if !useAcc64 {
-		// f32 fallback: test-only in practice (every live caller passes
-		// useAcc64=true — see the comment above). Runs through pool[0] alone,
-		// with the per-kvh kh/vt gather ORIGINAL attendBatchedHeads did before
-		// A1 move (a) — every query head in a kv group still reuses the SAME
-		// gathered kh/vt, so this stays single-threaded (the gather itself is
-		// shared, mutable state a concurrent split would race on).
-		ws := &pool[0]
-		for kvh := range nKV {
+		// f32 path — the DEFAULT for prefill above fastAttnMinPrompt since
+		// 2026-08-31, not the test-only fallback it was written as.
+		//
+		// gatherKV fills ws's kh/vt for one kv head. Deterministic: a pure
+		// function of (keys, vals, kvh), so two workers gathering the same kvh
+		// into their own buffers produce identical bytes — which is why the
+		// serial and fan-out arms below are BIT-IDENTICAL, not merely close
+		// (TestAttendF32Fanout_bitIdentical).
+		gatherKV := func(ws *headWorkerScratch, kvh int) {
 			for s := range nKeys {
 				kvBase := s*kvDim + kvh*hd
 				copy(ws.kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])
@@ -792,10 +800,71 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					ws.vt[d*nKeys+s] = vrow[d]
 				}
 			}
-			for g := range group {
-				attendOneHead(kvh*group+g, ws)
-			}
 		}
+		// A3: fan out over QUERY heads, exactly as the acc64 path does. The old
+		// code walked kv-major and reused one gather across a kv group, and its
+		// comment read that sharing as a reason the path "stays single-threaded
+		// (the gather itself is shared, mutable state a concurrent split would
+		// race on)". The sharing is real; the conclusion did not follow. Every
+		// pool slot ALREADY owns a full-size kh/vt pair (prefillAttnWorkers has
+		// budgeted 2*nKeys*hd per slot all along), so a worker gathers into its
+		// own buffers and nothing is shared at all.
+		//
+		// MEASURED, and the reason this was worth doing: the claim that the f32
+		// path was single-threaded was checked and came back 1.68x utilization,
+		// not 1.0x — MatmulBT fans out internally over output columns, so the
+		// matmuls were already parallel while the gather, the softmax and the
+		// scatter were not. That left ~58% of the arm serial, which is what
+		// head-level fan-out converts and column-level fan-out cannot reach.
+		// See docs/measurements/a3-f32-attention-fanout-2026-09-01.md.
+		//
+		// Heads are assigned in CONTIGUOUS runs so a worker walks whole kv
+		// groups: it re-gathers only when kvh changes, so the total gather count
+		// is at most nKV + workers rather than nH. That is the cost of dropping
+		// the sharing, and it is bounded and small.
+		workers := 1
+		if len(pool) > 1 && nH > 1 && K*nKeys >= attnHeadsParThreshold {
+			workers = min(len(pool), nH)
+		}
+		if workers <= 1 {
+			// Serial arm: one slot, and the matmul keeps its OWN column-level
+			// fan-out (package-level MatmulBT) since no head-level fan-out is
+			// competing with it. This is the pre-A3 behaviour exactly.
+			ws := &pool[0]
+			for kvh := range nKV {
+				gatherKV(ws, kvh)
+				for g := range group {
+					attendOneHead(kvh*group+g, ws, linalg.MatmulBT)
+				}
+			}
+			return
+		}
+		var wg sync.WaitGroup
+		headsPer := (nH + workers - 1) / workers
+		for w := range workers {
+			h0, h1 := w*headsPer, min((w+1)*headsPer, nH)
+			if h0 >= h1 {
+				continue
+			}
+			wg.Add(1)
+			go func(w, h0, h1 int) {
+				defer wg.Done()
+				ws := &pool[w]
+				lastKVH := -1
+				for qhead := h0; qhead < h1; qhead++ {
+					if kvh := qhead / group; kvh != lastKVH {
+						gatherKV(ws, kvh)
+						lastKVH = kvh
+					}
+					// Serial matmul: the fan-out is at the head level here, and
+					// nesting MatmulBT's column fan-out inside it would
+					// oversubscribe. Bit-identical to the column-parallel form
+					// by MatmulBT's width contract.
+					attendOneHead(qhead, ws, ws.mmWS.MatmulBT)
+				}
+			}(w, h0, h1)
+		}
+		wg.Wait()
 		return
 	}
 
@@ -811,7 +880,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	if len(pool) <= 1 || nH <= 1 || K*nKeys < attnHeadsParThreshold {
 		ws := &pool[0]
 		for qhead := range nH {
-			attendOneHead(qhead, ws)
+			attendOneHead(qhead, ws, nil)
 		}
 		return
 	}
@@ -828,7 +897,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			defer wg.Done()
 			ws := &pool[w]
 			for qhead := h0; qhead < h1; qhead++ {
-				attendOneHead(qhead, ws)
+				attendOneHead(qhead, ws, nil)
 			}
 		}(w, h0, h1)
 	}

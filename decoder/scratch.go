@@ -130,13 +130,40 @@ func (s *decodeScratch) gateBuf(n int) []float32 {
 
 // headWorkerScratch holds one worker's per-head attention scratch: qh/scores/ch
 // (+ avAcc, A1 move c) for the acc64 path's independent per-head compute, and
-// kh/vt for the f32-fallback's shared-per-kvh gather (test-only in practice —
-// every live caller passes useAcc64=true, so kh/vt sit unused there; kept so
-// the fallback keeps working through the same pool rather than a second
-// scratch scheme).
+// kh/vt for the f32 path's per-kvh K/V gather.
+//
+// This comment used to say the f32 path was "test-only in practice — every live
+// caller passes useAcc64=true, so kh/vt sit unused". That stopped being true on
+// 2026-08-31, when f32 prefill attention became the DEFAULT above
+// fastAttnMinPrompt: kh/vt are now touched on every prefill of a real prompt,
+// and each worker gathers into its own pair (A3 fan-out). The budget in
+// prefillAttnWorkers already charged 2*nKeys*hd per slot for them throughout,
+// so the fan-out needed no new allocation — it needed this sentence to stop
+// being believed.
 type headWorkerScratch struct {
 	qh, kh, vt, scores, ch []float32
 	avAcc                  []float64
+	// mmWS is this slot's private matmul Workspace, threshold pinned so high
+	// that MatmulBT through it is always SERIAL. The f32 attention path fans
+	// out over query heads (A3); MatmulBT ALSO fans out internally over its
+	// output columns. Nesting them oversubscribes — 6 head workers each
+	// spawning GOMAXPROCS column goroutines — so the head-parallel arm takes
+	// its matmul through here and keeps the fan-out at exactly one level.
+	// Numerically inert: MatmulBT's per-element result is independent of
+	// fan-out width by contract (aikit TestParallelWidth_bitIdentical), so
+	// serial-through-Workspace is BIT-IDENTICAL to column-parallel, which is
+	// what lets the two arms share one golden.
+	mmWS *linalg.Workspace
+}
+
+// serialMMWorkspace returns a Workspace whose matmuls never fan out. 1<<62 is
+// far above any reachable MAC count, so parallelCols always takes its serial
+// branch. (SetWorkers(1) would not do: the spawn path still allocates and
+// joins one goroutine per call.)
+func serialMMWorkspace() *linalg.Workspace {
+	ws := &linalg.Workspace{}
+	ws.SetThreshold(1 << 62)
+	return ws
 }
 
 // maxAttnWorkers caps A1 move (a)'s head-parallel fan-out at the P-core count,
@@ -227,6 +254,9 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int) []headWorkerScratch 
 	}
 	for i := range s.headPool[:n] {
 		p := &s.headPool[i]
+		if p.mmWS == nil {
+			p.mmWS = serialMMWorkspace()
+		}
 		if c := K * hd; cap(p.qh) < c {
 			p.qh = make([]float32, c)
 			p.ch = make([]float32, c)
@@ -267,6 +297,7 @@ func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
 	pool := make([]headWorkerScratch, n)
 	for i := range pool {
 		pool[i] = headWorkerScratch{
+			mmWS:   serialMMWorkspace(),
 			qh:     make([]float32, t*hd),
 			kh:     make([]float32, nKeys*hd),
 			vt:     make([]float32, nKeys*hd),
