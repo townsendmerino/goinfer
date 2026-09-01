@@ -233,11 +233,40 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > sits at 0.9993 while the 20B sits at 0.895, so whatever is left does not reproduce on a 2-layer
 > random-weight model. Per-step cosines no longer degrade monotonically (0.980 0.972 0.922 0.955
 > 0.967 0.895 0.938 0.936), which argues against simple compounding: 0.9993 over 24 layers would
-> be ~0.983, not 0.895. Candidates not yet separated: int4 requantization of REAL MXFP4 weights
-> (the CPU reference requantizes too, but possibly with a different group layout), expert-slot
-> EVICTION at 32 experts (the A/B's slots=2 on a 2-layer fixture may never evict), and gpt-oss's
-> alternating sliding/full attention over 24 layers, which 8 tokens on 2 layers barely exercises.
-> The A/B cannot be run at 20B on this card — without caching the model does not fit at all. Step 2 is the gate, and `2224441` is the precedent for
+> be ~0.983, not 0.895. 
+>
+> **THE INSTRUMENT WAS CALIBRATED AND THE 0.895 IS CONFIRMED ANOMALOUS.** The 0.95 bar came from
+> TINY-fixture gates, and nothing had ever measured what this comparison scores on a REAL
+> checkpoint — the 35B streaming test asserts no cosine at all, and Mellum's 0.9946 is a 4-layer
+> DENSE slice. Measured with one harness (`cuda/parity_floor_control_test.go`):
+>
+> | model | layers | kind | min cosine |
+> |---|---|---|---|
+> | qwen2.5-coder-0.5b | 24 | dense | 0.973926 |
+> | qwen2.5-coder-1.5b | 28 | dense | 0.993496 |
+> | qwen3.6-35b-a3b | 40 | **MoE + expert streaming** | **0.982171** |
+> | **gpt-oss-20b** | 24 | MoE + expert streaming | **0.895287** |
+>
+> The 35B row is load-bearing: same path, same card, sparse, streamed, and DEEPER, at 0.982. So
+> MoE-plus-streaming is healthy and gpt-oss is the outlier — the earlier hedge that the bar might
+> simply be too tight is RETRACTED. The 0.5B also has the SAME 24 layers, controlling for
+> depth-compounding: 0.974 vs 0.895 at equal depth.
+>
+> **Two candidates are now CLOSED.** Requantization: ruled out — CUDA reads the same
+> `linalg.WeightMat.Int4()` the CPU does, so both arms share identical quantized values.
+> Expert-slot eviction: ruled out — the tiny fixture has a 32-expert shape and the A/B ran at
+> slots=2, evicting constantly, and was bit-identical.
+>
+> **Leading remaining hypothesis: EXPERT-SELECTION DIVERGENCE** — a small router-logit difference
+> flipping which of 32 experts wins, which fits the non-monotonic per-step fluctuation
+> (0.980 0.972 0.922 0.955 0.967 0.895 0.938 0.936) far better than smooth accumulation. Untested:
+> CPU-side routing is not visible from the cuda package (`moeSelTrace` is decoder-private and
+> gpt-oss uses its own forward). Also unverified: that the clamped-SwiGLU `alpha`/`limit` VALUES
+> agree across the two paths — the clamp SHAPES were read and do match.
+>
+> **Ablate at 20B, not on the tiny fixture.** The CPU-ablation technique that found the down bias
+> still works, but the tiny fixture now sits at 0.9993 and NO LONGER REPRODUCES the residual
+> defect, so each probe costs a ~2.5 min real-weight run. Step 2 is the gate, and `2224441` is the precedent for
 > why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
 >
 > **STEP 2 WAS ATTEMPTED ON METAL 2026-08-31 AND FAILED — and the failure found a missing guard.**
