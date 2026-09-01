@@ -13,8 +13,43 @@
 
 ## What is open
 
-One item, and it is an OBSERVATION rather than a work item — nothing here is claimed as a
-bottleneck to go fix.
+- **P18 · Expert-major MoE prefill batching — REOPENED 2026-09-01, and the reason it was parked
+  does not apply to it.** Scoped, not funded: the next step is a cost measurement, not a rewrite.
+
+  **Why it is back.** The full-model K=8192 profile
+  (`docs/measurements/mellum2-fullmodel-profile-RESULT.md`) moved the target after A3 collapsed
+  attention: `moeMLP` is now **42.1%** of prefill against attention's 17.4%, and inside it
+  `swiGLUExpert` is **93.1%** — so the expert weight matmuls are **~39% of prefill and the largest
+  single bucket**. `routeExperts` is 1.7% of `moeMLP`; routing is not the cost and never was.
+
+  **Why the existing verdict does not close it.** `task-moe-streaming.md` Lever 4 is parked on
+  "expert-major MoE prefill batching is NOT a compute lever", whose ceiling was `uniform` (every
+  row picks the same experts) vs `varied`. **Both arms call `moeMLP` per row at M=1**, so that
+  experiment varies *which weights are touched* — the bandwidth/locality axis — and holds the
+  M=1→M=N axis fixed. Measured 2026-09-01 at real Mellum2 expert shapes with int4 weights and
+  locality already perfect (i.e. under the parked ceiling's own condition): **1.32× at N=8 rising
+  to 1.67× at N=256, still falling at the right edge**
+  (`docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md`). Real N is ~10³ rows per expert
+  per layer at K=8192.
+
+  **What is NOT yet known, and is the whole item.** The gather/scatter cost of collecting an
+  expert's scattered rows is unmeasured, and it is the most likely reason the real win lands below
+  1.67×. Uneven routing puts small groups at the left of that table (1.32×), not the right. And
+  the microbenchmark is cache-warm on three matrices while the real forward ran with swap growing
+  to 18 GB — a benchmark that omits the real pressure can promote a mechanism as easily as
+  exonerate one ([[synthetic-reproduces-shape-not-pressure]] is about the same trap in the other
+  direction).
+
+  **No end-to-end speedup is claimed.** Multiplying 39% by 1.67× is the projection this repo
+  retracted twice on 2026-09-01. **Decision rule, pre-registered here:** measure permutation cost
+  against batching win on the real forward at K≥4096; **fund if the net is ≥15% end-to-end,
+  park if <8%, and treat 8–15% as ambiguous → parked pending a second mechanism.**
+
+  Structural note for whoever picks it up: `canBatchN`'s comment states the per-row design as a
+  deliberate constraint ("the MoE FFN itself stays per-row"), so this is a restructuring of the
+  prefill loop, not a kernel swap.
+
+An observation rather than a work item — nothing below is claimed as a bottleneck to go fix.
 
 - **P17 · `TestSamplingThroughputGate` has ~1% headroom on arm64 and fails under suite load** —
   **DIAGNOSED AND FIXED 2026-08-31. The bar was NOT moved.**

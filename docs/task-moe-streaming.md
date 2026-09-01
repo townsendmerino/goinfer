@@ -225,6 +225,17 @@ becomes the binding constraint after the batched GEMV lands.
 
 ## Lever 4 — expert-major prefill batching
 
+> **⚠ REOPENED 2026-09-01 — the parked verdict measured a different axis than this lever.**
+> Its ceiling was `uniform` (all rows pick the same experts) vs `varied`, and **both arms call
+> `moeMLP` per row at M=1**. That varies *which weights are touched* (bandwidth/locality) and
+> holds M=1→M=N fixed. Measured directly, under the parked ceiling's own perfect-locality
+> condition, batching the expert matmul over rows is **1.32× at N=8 → 1.67× at N=256** and still
+> falling at the right edge — see `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md`.
+> The "≤5%, not a compute lever" result stands for what it measured (routing diversity costs
+> little, independently confirmed by the 2026-09-01 profile at 1.7% of `moeMLP`); it does not
+> bound this. Tracked as **P18** in `docs/queue-performance.md`. The gather/scatter cost is still
+> unmeasured and is what decides the item.
+
 `decoder/forwardn.go:94` states it plainly: batched prefill vectorizes attention but "the
 MoE FFN itself stays per-row (router picks different experts per token)" — the per-row call
 is `decoder/forwardn.go:442`. Under streaming that is the worst case: the same expert can be
