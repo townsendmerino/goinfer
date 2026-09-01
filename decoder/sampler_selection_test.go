@@ -318,15 +318,40 @@ func TestSamplingThroughputGate(t *testing.T) {
 	}
 }
 
+// benchSample times one sampling configuration, taking the BEST of three runs rather than one.
+//
+// WHY BEST-OF-N AND NOT A SINGLE MEAN. testing.Benchmark's NsPerOp is a mean over b.N, and a mean
+// tracks scheduling jitter upward — it has a floor but no ceiling. Measured 2026-08-31 on x86,
+// three consecutive isolated runs of the temp-only arm at V=262144: 1.356 / 1.694 / 1.994 ms, a
+// 47% spread, while the temp+top_p arm over the same runs moved only 6% (6.54 / 6.72 / 6.93 ms).
+// The RATIO those produce swings 3.48-4.83 — and none of that motion is the sampler.
+//
+// The minimum is the right estimator here because the quantity is floored: the fastest observed
+// run is the one least contaminated by whatever else the machine was doing. It cuts the x86
+// spread from 1.35x to 0.39x (3.48-4.83 becomes 3.85-4.24) and leaves arm64 where it was
+// (4.81-4.85).
+//
+// IT DOES NOT MAKE THE RATIO MACHINE-INDEPENDENT, and an earlier draft of this comment claimed
+// it would — predicted, not measured, and the measurement refuted it. x86 settles near 4.0 and
+// arm64 near 4.83: a real 0.7x gap between machines, on the same code. So the bound below is
+// effectively set by whichever machine runs hottest on this ratio, which is arm64, at ~3% margin.
+// That is a property of the RATIO design (see the note on the bound), not something a better
+// estimator fixes.
 func benchSample(logits []float32, p SamplingParams) int64 {
-	res := testing.Benchmark(func(b *testing.B) {
-		s := NewSampler(p)
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = s.SampleWithInfo(logits)
+	best := int64(0)
+	for i := 0; i < 3; i++ {
+		res := testing.Benchmark(func(b *testing.B) {
+			s := NewSampler(p)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = s.SampleWithInfo(logits)
+			}
+		})
+		if ns := res.NsPerOp(); best == 0 || ns < best {
+			best = ns
 		}
-	})
-	return res.NsPerOp()
+	}
+	return best
 }
 
 // --- before/after selection cost, reported in the commit message ---

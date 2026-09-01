@@ -17,8 +17,40 @@ One item, and it is an OBSERVATION rather than a work item — nothing here is c
 bottleneck to go fix.
 
 - **P17 · `TestSamplingThroughputGate` has ~1% headroom on arm64 and fails under suite load** —
-  `macbook-arm64`, **OBSERVED 2026-08-31, not diagnosed, NOT actioned.** Filed as an observation
-  because the honest thing to do with a marginal gate is record it, not retune it.
+  **DIAGNOSED AND FIXED 2026-08-31. The bar was NOT moved.**
+
+  **The question was: is full-vocab selection genuinely load-sensitive, or was the gate set with no
+  headroom on this machine class? Neither, quite.** The gate is a RATIO, and both its level and its
+  variance come from the DENOMINATOR (temp-only) — which is not the thing under test. Measured, three
+  consecutive isolated runs at V=262144:
+
+  | | temp-only (denominator) | temp+top_p (numerator) | ratio |
+  |---|---|---|---|
+  | x86 | 1.356 / 1.694 / 1.994 ms — **47% spread** | 6.54 / 6.72 / 6.93 ms — 6% | 4.83 / 3.97 / 3.48 |
+  | arm64 | 558.7 / 564.6 / 558.6 µs — 1% | 2.682 / 2.685 / 2.680 ms — **0.2%** | 4.80 / 4.76 / 4.80 |
+
+  The numerator — the "full-vocab selection" the gate claims to protect — is the most stable
+  quantity in the measurement, on both machines. The ratio moves because the baseline moves, which
+  is what the gate's own comment already warned it does ("a gate whose baseline moves is measuring
+  two things at once", written when P2b made that denominator 4.7x faster and the bound had to be
+  raised).
+
+  **Fix: best-of-3 instead of a single `testing.Benchmark` mean.** A mean tracks jitter upward — it
+  has a floor but no ceiling — and the quantity is floored, so the minimum is the right estimator.
+  Under full-suite load, the exact condition that produced the original failure: **5.13x FAIL →
+  4.82x PASS.** x86 run-to-run spread cut from 1.35x to 0.39x.
+
+  **A prediction I made and the measurement refuted**, recorded because the correction is the
+  useful part: I expected best-of-N to make the ratio machine-independent (predicted x86 4.83 vs
+  arm64 4.80). It does not — x86 settles near 4.0 and arm64 near 4.83, a real 0.7x gap on the same
+  code. The comment in the test said the wrong thing for one commit and now says the measured one.
+
+  **Residual, NOT fixed:** the bound is effectively set by whichever machine runs hottest on this
+  ratio (arm64, ~3% margin), and the denominator remains an optimization target — any future
+  speedup to temp-only re-tightens this gate for everyone. The structural answer is to gate the
+  NUMERATOR, which is stable to 0.2%; the reason that was not done here is that an absolute
+  numerator bound is machine-dependent (2.7 ms arm64 vs 6.5 ms x86), which is the problem the ratio
+  was chosen to avoid. Filing that trade rather than resolving it.
 
   Measured while landing G1, on a tree whose diff contains **no sampler file** — the benchmarked
   code is byte-identical to `main`, so this is not a regression from that work:
