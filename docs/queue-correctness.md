@@ -82,7 +82,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > | piece | CUDA, verified in code today |
 > |---|---|
 > | `FeatRopeMscale` | **DONE** — shipped earlier today; declared after measurement (see the box above) |
-> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1558` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
+> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1560` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
 > | `FeatOutBias` | **ABSENT ENTIRELY on CUDA** — no kernel, no wiring; `grep` for `OBias`/`out_bias` across `cuda/*.go` returns nothing. This, not the sink, is the real remaining code |
 >
 > **`decoder/features.go`'s note that CUDA's kernels are "LOADED … but never DISPATCHED into a
@@ -210,11 +210,34 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > reference is sound and the gap was never quantization; and removing the o_proj bias wiring
 > makes things far worse (0.750 → 0.069), so `14b3a66` was necessary and correct.
 >
-> **THE FIX NEEDS A NEW KERNEL, unlike the o_proj bias.** `moe.cu` has `gemv_w4a8_moe_wacc` and
-> no bias variant, and a post-hoc add would be WRONG: the bias belongs INSIDE the expert, before
-> the router weight scales it — `out += w·(Down·h + bias)`, not `out += w·(Down·h) + bias`. So:
-> write `gemv_w4a8_moe_wacc_bias`, regenerate the PTX (NVRTC, on the box), upload the table
-> per layer, dispatch it, then re-run the gate. Step 2 is the gate, and `2224441` is the precedent for
+> **THE FIX NEEDED A NEW KERNEL, unlike the o_proj bias — WRITTEN AND LANDED 2026-08-31.**
+> `gemv_w4a8_moe_wacc_bias` (`cuda/moe.cu`): the bias goes INSIDE the router-weight product,
+> `out += w·(Down·h + bias)`, never `out += w·(Down·h) + bias` — the latter is wrong by a factor
+> of w AND would let every one of the k routed experts add the term instead of each contributing
+> its own scaled copy. It takes TWO index arrays (`idx` = where the weights live, a slot id under
+> caching; `bidx` = which expert is running) for the reason d9829ce records.
+>
+> | | before | after |
+> |---|---|---|
+> | tiny fixture, CPU-vs-resident | 0.750 | **0.999309** |
+> | real 20B gate | 0.681 | **0.895287** |
+> | expert-cache A/B | bit-identical | bit-identical |
+>
+> Added as a SEPARATE kernel rather than by extending `gemv_w4a8_moe_wacc`'s signature, so every
+> other family's validated path is byte-identical to before. PTX regenerated on the box with the
+> control the mscale work established: the untouched `glue.ptx` reproduced BYTE-IDENTICALLY,
+> `moe.ptx` changed. Full `./cuda/...` suite green; gofmt/vet/staticcheck clean.
+>
+> **G7 STILL DOES NOT CLOSE: the 20B gate is 0.895 against a 0.95 bar, and the features are still
+> NOT declared.** The remaining gap is a DIFFERENT defect from this one — the tiny fixture now
+> sits at 0.9993 while the 20B sits at 0.895, so whatever is left does not reproduce on a 2-layer
+> random-weight model. Per-step cosines no longer degrade monotonically (0.980 0.972 0.922 0.955
+> 0.967 0.895 0.938 0.936), which argues against simple compounding: 0.9993 over 24 layers would
+> be ~0.983, not 0.895. Candidates not yet separated: int4 requantization of REAL MXFP4 weights
+> (the CPU reference requantizes too, but possibly with a different group layout), expert-slot
+> EVICTION at 32 experts (the A/B's slots=2 on a 2-layer fixture may never evict), and gpt-oss's
+> alternating sliding/full attention over 24 layers, which 8 tokens on 2 layers barely exercises.
+> The A/B cannot be run at 20B on this card — without caching the model does not fit at all. Step 2 is the gate, and `2224441` is the precedent for
 > why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
 >
 > **STEP 2 WAS ATTEMPTED ON METAL 2026-08-31 AND FAILED — and the failure found a missing guard.**

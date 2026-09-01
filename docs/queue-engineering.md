@@ -1211,7 +1211,7 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:1128` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `cuda/backend.go:1136` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
 - `cuda/resident.go:274` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
@@ -1643,7 +1643,7 @@ rather than struck, because "substantially fixed" is a different state from "fix
 |---|---|---|
 | C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
-| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:496` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:498` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |

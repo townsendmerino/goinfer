@@ -389,12 +389,14 @@ type cudaResident struct {
 	gptOssSw                                                Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
 	gptOssAlpha, gptOssLimit                                float32
 	gptOssSinks                                             []Buffer     // [layer] → [nH] learned per-head attention sink logits
+	gptOssDownBias                                          []Buffer     // [layer] → [nExpert*hidden] per-expert down-projection bias
 	gptOssExpBias                                           []Buffer     // [layer] → [nExpert·2·moeInter] gate‖up biases, indexed on-device by the router
 	splitkvAttn                                             bool         // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
 	skMinKeys                                               int          // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
 	prefillReady                                            bool         // batched kernels loaded; PrefillLast usable
 	prof                                                    *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
+	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
 	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)
 
 	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
@@ -1674,6 +1676,17 @@ func (r *cudaResident) expBiasArg(Ly *cudaLayer) Buffer {
 	return Buffer{}
 }
 
+// expDownBiasArg returns layer Ly's per-expert down-projection bias table, or the zero Buffer
+// when the family has none. A per-layer SIDE TABLE like the sinks and the gate‖up biases, not a
+// cudaLayer field: these are uploaded in the gpt-oss block that runs BEFORE r.layers is
+// allocated, so a cudaLayer field there writes into a nil slice.
+func (r *cudaResident) expDownBiasArg(Ly *cudaLayer) Buffer {
+	if l := Ly.idx; l >= 0 && l < len(r.gptOssDownBias) {
+		return r.gptOssDownBias[l]
+	}
+	return Buffer{}
+}
+
 // sinkArg returns layer l's attention-sink argument, or null when the family has none.
 // Centralized so the DECODE and PREFILL attention launches cannot disagree — a sink applied
 // on one path and not the other presents as drift partway through a sequence, which is much
@@ -1764,7 +1777,20 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 			return e
 		}
 		// down-proj, weight-accumulating into the residual: x += wgt[j] * (Down_e · act).
-		if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
+		// gpt-oss adds its per-expert down bias INSIDE that product (x += wgt[j] * (Down_e·act +
+		// downBias_e)) via its own kernel; every other family keeps the untouched wacc, so their
+		// numerics are byte-identical to before this branch existed.
+		if db := r.expDownBiasArg(Ly); db != (Buffer{}) && r.fMoEWaccBias != (Pipeline{}) {
+			if e := r.launch(r.fMoEWaccBias, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
+				BlockX: 256, BlockY: 1, BlockZ: 1},
+				Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc),
+				Arg(r.expIdx()), Arg(r.expertBiasIdx()), Arg(db), Arg(r.rWgt),
+				gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),
+				gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
+				Arg(r.x)); e != nil {
+				return e
+			}
+		} else if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1},
 			Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc),
 			Arg(r.expIdx()), Arg(r.rWgt), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),

@@ -794,6 +794,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}{
 				{&r.fRoute, "moe_route"}, {&r.fRouterGemv, "gemv_f32_a8"},
 				{&r.fMoEGemv, "gemv_w4a8_moe"}, {&r.fMoEWacc, "gemv_w4a8_moe_wacc"},
+				{&r.fMoEWaccBias, "gemv_w4a8_moe_wacc_bias"},
 				{&r.fSharedCombine, "shared_gate_combine"},
 			} {
 				if *f.dst, e = r.dev.NewComputePipeline(mmod, f.name); e != nil {
@@ -834,12 +835,19 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
 			r.gptOssSinks = make([]Buffer, nLayers)
 			r.gptOssExpBias = make([]Buffer, nLayers)
+			r.gptOssDownBias = make([]Buffer, nLayers)
 			for l := range nLayers {
 				if sk := m.GptOssSinksResident(l); len(sk) > 0 {
 					r.gptOssSinks[l] = r.up32(sk)
 				}
 				if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
 					r.gptOssExpBias[l] = r.up32(gb)
+				}
+				// The per-expert DOWN bias. Uploaded here with the others because it is a weight,
+				// not an activation; consumed by gemv_w4a8_moe_wacc_bias INSIDE the router-weight
+				// product. Never wired until 2026-08-31, which cost min cosine 0.75 vs 0.997.
+				if db := m.GptOssExpertDownBiasResident(l); len(db) > 0 {
+					r.gptOssDownBias[l] = r.up32(db)
 				}
 			}
 		}

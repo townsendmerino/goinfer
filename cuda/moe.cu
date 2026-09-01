@@ -216,6 +216,65 @@ __global__ void gemv_w4a8_moe_wacc(const unsigned int* __restrict__ W, const int
     if (lane == 0) dst[row] += wgt[slot] * (facc * aScale);
 }
 
+// gemv_w4a8_moe_wacc_bias: gemv_w4a8_moe_wacc plus gpt-oss's PER-EXPERT DOWN-PROJECTION BIAS.
+//
+//   dst[row] += wgt[slot] * (Down_e · act + downBias[e][row])
+//
+// THE BIAS IS INSIDE THE PARENTHESES AND THAT IS THE WHOLE POINT. The router weight scales the
+// expert's OUTPUT, and the bias is part of that output — decoder/forward_gptoss.go computes
+// `dst = Down·h + downBias` per expert and only then `out += w·dst`. Adding it after the scale
+// (dst += w*(Down·h) + bias) would be wrong by a factor of w, and wrong AGAIN because every one
+// of the k routed experts would add it rather than each contributing its own scaled copy.
+//
+// TWO INDEX ARRAYS, NOT ONE, and they differ only when expert caching is on:
+//   idx[slot]  WHERE THE WEIGHTS LIVE   → a SLOT id under caching (the weight row moved)
+//   bidx[slot] WHICH EXPERT IS RUNNING  → always the EXPERT id (this table never moves)
+// Binding one for the other is the defect fixed in d9829ce for the gate‖up bias table; it is
+// silent, because the two coincide whenever caching is off. bias == nullptr disables the term,
+// so a family without per-expert down biases can share this kernel.
+__global__ void gemv_w4a8_moe_wacc_bias(const unsigned int* __restrict__ W, const int* __restrict__ a,
+                                        const __half* __restrict__ gs, const float* __restrict__ aScalePtr,
+                                        const unsigned int* __restrict__ idx, const unsigned int* __restrict__ bidx,
+                                        const float* __restrict__ bias, const float* __restrict__ wgt,
+                                        int slot, int rowsPerExpert, int N, int Kwords, int Kgroups,
+                                        float* __restrict__ dst) {
+    int row = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
+    if (row >= N) return;
+    int lane = threadIdx.x & 31;
+    long wrow = (long)idx[slot] * rowsPerExpert + row;
+    const unsigned int* wr = W + wrow * Kwords;
+    const __half* sr = gs + wrow * Kgroups;
+    float aScale = *aScalePtr;
+    float facc = 0.f;
+    int base = 0;
+    for (; base + 64 <= Kwords; base += 64) {
+        int wi = base + lane, wj = wi + 32;
+        unsigned int w0 = wr[wi], w1 = wr[wj];
+        int p0 = 0, p1 = 0;
+        p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), a[2 * wi], p0);
+        p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), a[2 * wi + 1], p0);
+        p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), a[2 * wj], p1);
+        p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), a[2 * wj + 1], p1);
+        facc += (float)p0 * __half2float(sr[wi >> 2]) + (float)p1 * __half2float(sr[wj >> 2]);
+    }
+    for (; base < Kwords; base += 32) {
+        int wi = base + lane;
+        if (wi < Kwords) {
+            unsigned int word = wr[wi];
+            int p = 0;
+            p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), a[2 * wi], p);
+            p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), a[2 * wi + 1], p);
+            facc += (float)p * __half2float(sr[wi >> 2]);
+        }
+    }
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+    if (lane == 0) {
+        float b = bias ? bias[(long)bidx[slot] * N + row] : 0.f;
+        dst[row] += wgt[slot] * (facc * aScale + b);
+    }
+}
+
 // shared_gate_combine: the always-on shared expert's contribution.
 //   gated   (Qwen-MoE):     dst[i] += sigmoid(gl[0]) * shDown[i]
 //   ungated (GLM/DeepSeek): dst[i] += shDown[i]
