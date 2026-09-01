@@ -13,6 +13,56 @@
 
 ## What is open
 
+- **P19 · Fused (FlashAttention-style) tiled attention — STEP 0 ANSWERED, item stays OPEN.**
+  *(Filed as P19, not P17: this queue already has a P17. The item arrived carrying that number
+  from outside the repo; renumbered here rather than shadowing an existing entry.)*
+
+  **Step 0 asked whether G20's tile loop fuses the softmax or materializes per-tile scores, and
+  said the item closes at zero cost if already fused. It is NOT fused.** The tile is over QUERY
+  ROWS only — `scores` is `tile × nKeys`, the full key extent per row — and `attendBatchedHeads`
+  forbids the fused schedule explicitly: *"No key-dimension split happens here and none may: that
+  would re-associate the softmax denominator and the AV fold, the exact thing acc64 exists to
+  prevent."* G20's own stated purpose is *"The point is memory, not speed"* — bounding scratch so
+  the worker pool can still fan out. So the N-wide score row makes three trips through memory per
+  tile, which is the traffic a fused schedule removes. **Written down because nobody knew.**
+
+  **The prize, measured rather than assumed** (`docs/measurements/cuda-prefill-attention-share-2026-09-01.md`).
+  Attention's share of CUDA prefill, dense 1.5B int4, RTX 2070 SUPER:
+
+  | K | 128 | 512 | 2048 | 3900 |
+  |---|---|---|---|---|
+  | attention % | 5.3% | 14.3% | **39.0%** | **55.0%** |
+
+  K=2048 reproduces the 2026-08-04 figure of 39% exactly, across a driver/distro re-anchor — the
+  instrument validated itself before the new cell was read. Amdahl at K=3900: a perfect fusion caps
+  at **2.22×**, a plausible 2.5× on the attention term gives **~1.49×**.
+
+  **THE DECIDING VARIABLE IS MODEL CLASS, NOT BACKEND**, and getting that wrong nearly killed the
+  item. A first pricing used the 2026-09-01 full-model profile's **17.4%** attention share and
+  concluded a 1.21× ceiling — but that is **Mellum2, a MoE**, whose expert FFN takes 42.1%. Dense
+  models at depth run ~70% (Mac CPU acc64, K=8192) and 55% (CUDA, K=3900). Attention dominates at
+  depth on dense on BOTH backends; the 17.4% is a property of the model, not of prefill.
+
+  **It coheres with the CUDA prefill re-anchor.** That measured goinfer's marginal cost per prefill
+  token RISING with depth (0.377 → 0.932 ms/tok) while Ollama's stays FLAT (0.064 → 0.063). A
+  rising marginal cost is the O(K²) attention term; a flat one is what a tiled/fused attention
+  produces. Three independent measurements today point at the same mechanism.
+
+  **Cost, unchanged from the filing:** the running-max rescale re-associates, so a fused path is
+  NOT bit-identical — same category as `--cpu-fast-attention`, breaking the same A1 guarantees
+  (spec-decode verify == sequential greedy, decode == prefill).
+
+  **Two notes on the item's own text, now stale.** Its confound warning — *"the f32 gather branch
+  is single-threaded by construction (shared mutable kh/vt state), so any end-to-end A/B that moves
+  both precision and fusion at once measures the parallelism confound"* — was fixed on 2026-09-01
+  (A3 fan-out: each worker gathers into its own buffers). And its sequencing condition, "A3 first",
+  is satisfied: A3's kernel measurement and its end-to-end result both landed.
+
+  **Not yet known, and what decides funding:** no fused kernel exists, so the 2.22× is an Amdahl
+  ceiling from a measured share, not a measured win — the exact distinction this repo retracted
+  twice on 2026-09-01. Next step is a prototype fused kernel measured against the materialized one
+  at matched precision, so the fusion win is attributable separately from A3's.
+
 - **P18 · Expert-major MoE prefill batching — REOPENED 2026-09-01, and the reason it was parked
   does not apply to it.** Scoped, not funded: the next step is a cost measurement, not a rewrite.
 
