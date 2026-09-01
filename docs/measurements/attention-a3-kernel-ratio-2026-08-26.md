@@ -61,3 +61,64 @@ which is why A3 is an off-by-default, documented divergence in the `--metal-fast
 per-kv-group `kh`/`vt` gather is shared mutable state). A3 must gather once per kv-group and then
 fan the group's query heads across workers reading it, or a kernel 8× faster still loses to
 parallel acc64.
+
+---
+
+## Reproduced 2026-09-01, and what is left after it
+
+Re-run on the same machine (M1 Pro), same shapes (`kt=256, hd=128, nKeys=8192`), same controls —
+both arms serial, the f32 arm paying the `kh` and `vt` gathers acc64 skips:
+
+| | acc64 | f32 + gathers | ratio |
+|---|---|---|---|
+| QK | 55.3 ms | 10.3 ms | 5.37× |
+| AV | 140.5 ms | 13.1 ms | 10.73× |
+| **combined** | **195.8 ms** | **23.4 ms** | **8.37×** |
+
+**8.37× against 8.14× recorded** — the finding is stable across a week and across the changes since.
+The QK arms still agree at cosine 1.000000000, so the ratio is still between two computations that
+produce the same answer.
+
+### The decision rule was not close
+
+Pre-registered: *near 3.7× the surface is earned, near 1.3× it is not.* 8.37× is not near the
+boundary — it is 2.3× past the upper anchor. Nothing about this measurement is a judgement call.
+
+### The ceiling, derived from the profile share rather than raced
+
+Attention is ~70% of long-context prefill (K=8192, dense 1.5B: `MatmulAVAcc64` 51.1% +
+`MatmulQKAcc64` 18.7%). Amdahl on that share:
+
+| f32 configuration | attention speedup | end-to-end ceiling |
+|---|---|---|
+| serial (what ships) | 8.37× | **2.61×** |
+| + intra-matmul fan-out | ~16.7× | **2.93×** |
+
+**Measured end-to-end was 2.28×**, against a 2.61× ceiling for the serial path — 87% of it. That
+agreement is the useful part: it says the profile share is right and there is no large unexplained
+term hiding between the kernel and the wall clock.
+
+### The remaining lever, now quantified
+
+The entry's closing condition said "if it is built, the f32 path must also be made to fan out —
+otherwise a faster kernel loses to parallel acc64 anyway". That is measured here:
+
+    QK f32 + gather, serial MatmulBT     10.3 ms
+    QK f32 + gather, PARALLEL MatmulBT    2.7 ms    → 3.81× forfeited today
+
+So the f32 path is leaving ~3.8× on the QK side because its per-kv-group gather is shared mutable
+state and cannot be split as written. Feeding that back through the profile share moves the ceiling
+2.61× → 2.93×, i.e. **~13% more end-to-end**, not another 3.8×. Worth knowing before anyone funds
+the gather rework expecting the kernel number.
+
+### Status note
+
+A3's question is ANSWERED and was answered on 2026-08-26; this is a reproduction, not a first
+measurement. The G24 entry in `docs/completed/queue-performance.md` carries its answer at the top
+and its pre-registration below, so reading it downward reads as "waiting on a measurement" — which
+is how it was re-opened. The answer is the first line of that entry.
+
+Also overtaken: the rule weighed whether a *permanently-supported, non-bit-identical flag* was
+earned. `82dda2a` (2026-08-31) made f32 prefill the DEFAULT above a 512-token floor, so that cost is
+now paid by default and the question this measurement settles is how much it buys, not whether to
+pay it.
