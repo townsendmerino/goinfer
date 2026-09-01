@@ -645,8 +645,37 @@ architecturally the same as LFM2** — the transformers docs cover only LFM2.
 Blast radius matters: anything touching shared `decoder/` core re-stales all 19 enforced families.
 Answer that before estimating.
 
-**Q1 · The forward goldens prove f32 ONLY — no quantized path has a golden that runs** — `linux`,
-**NEW. G-01 at the largest scale it has appeared.**
+**Q1 · The forward goldens prove f32 ONLY — no quantized path has a golden that runs** —
+**DONE 2026-08-31; the headline above is the ORIGINAL finding and is no longer true.**
+
+> **Both halves of the ask have landed, and the premise itself has been overtaken.** The selector
+> gained the GGUF gates and defaults `GOINFER_HEAVY_TESTS=1`, so quantized goldens now RUN.
+> Measured today with the refresh script's own selector:
+>
+> | machine | passed | skipped | int4 | int8×int8 |
+> |---|---|---|---|---|
+> | MacBook | 29 | 20 | `TestInt4_forwardParity` ✅ | `TestMellum2_logitParity` ✅ |
+> | **nobara-pc** | **49** | **0** | ✅ | ✅ (all three) |
+>
+> So "no quantized path has a golden that runs" is FALSE as of today on both machines — the
+> original 2026-08-12 measurement (19 ran, every one f32) has been superseded by the selector
+> change, not by anything this entry did.
+>
+> **The retroactive scoping asked for is in place** in all the named locations:
+> `docs/parity-coverage-policy.md` § "Scoped: a goldens green names the quantizations that actually
+> RAN", `RELEASING.md` §C1, and the README's quantization line. And
+> `scripts/refresh_parity_hashes.sh` now prints the QUANTIZATION breakdown, warns when skips exceed
+> passes, and says outright when a refresh proved f32 only.
+>
+> **What this pass added:** the box side of the comparison. The policy doc asserted that the same
+> script on the box "proves a materially different set" without ever running it there; it is now
+> 49/0/0 against the MacBook's 29/20/0. Same code, same commit, both print PASS. That is the
+> sharpest available statement of the residual risk — **coverage is a property of the RUN, not of
+> the repo** — and it is why a refresh cited as the proof of record belongs on the box.
+>
+> **Residual, deliberately not closed:** nothing FORCES a refresh onto a fixture-complete machine.
+> The script notes and warns; it does not refuse, and refusing would block legitimate refreshes on
+> fixture-poor checkouts. That trade is recorded rather than resolved.
 
 > **The "14 quantized" composition figure, resolved by enumeration rather than by authority
 > (2026-08-12).** Two classifiers disagreed — an ad-hoc name grep said **7**, the refresh script's

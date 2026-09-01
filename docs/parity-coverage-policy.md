@@ -328,8 +328,21 @@ happens to have.
 | **GGUF quant formats** | **0** | **11** — every one: Q2_K, Q3_K_M, Q4_0, Q4_K_M, Q4_K_S, Q5_K_M, Q6_K, Q8_0, gemma3, qwen2, qwen3 |
 
 **28 ran, 20 skipped, 0 failed — and that is a PASS.** Every skip is a missing asset, not a
-failure: the GGUF eleven all skip on `no GGUF at ../testdata/tinyllama-gguf/…`. So the same script,
-same commit, on the box instead, proves a materially different set.
+failure: the GGUF eleven all skip on `no GGUF at ../testdata/tinyllama-gguf/…`.
+
+**And the box was then measured too, so the comparison is a number rather than an expectation
+(2026-08-31, same selector, same commit, `nobara-pc`):**
+
+| machine | passed | skipped | failed |
+|---|---|---|---|
+| MacBook | 29 | 20 | 0 |
+| **nobara-pc** | **49** | **0** | **0** |
+
+Same code, same script: **49 goldens proved on one machine and 29 on the other**, and both print
+"PASS". The eleven GGUF gates and the two remaining int8×int8 ones all run there. This is the
+concrete form of the claim below — coverage is a property of the RUN. It also means the box is the
+place to take a refresh you intend to cite as the proof of record, which `RELEASING.md` §C1 already
+requires for its own reasons.
 
 **Two consequences, and the second is the one that bites.**
 
