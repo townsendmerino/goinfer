@@ -1012,14 +1012,34 @@ func (r *cudaResident) BatchProfForTest() (batchTime time.Duration, syncCalls ui
 	return r.profBatchTime, r.profSyncCalls
 }
 
-// expIdx is the idx argument the expert GEMVs bind: the constant slot ids [0..topK-1] when caching
-// (slot j holds routed expert j), else the router's real rIdx (fully-resident path).
+// THERE ARE TWO INDEX SPACES HERE AND THEY DIVERGE ONLY WHEN EXPERT CACHING IS ON. Keeping them
+// as two named accessors rather than one is the whole guard: with caching off they return the
+// same buffer, so a site that binds the wrong one is correct in every configuration anyone has
+// run, and wrong — silently, with plausible logits — in the one configuration that needs it.
+//
+//	expIdx        WHERE the weights live  → slot ids when caching, expert ids otherwise
+//	expertBiasIdx WHICH expert is running → ALWAYS expert ids
+//
+// expIdx is the idx argument the expert GEMVs bind: the slot ids when caching (slot j holds
+// routed expert j), else the router's real rIdx (fully-resident path).
 func (r *cudaResident) expIdx() Buffer {
 	if r.cacheExperts {
 		return r.slotIdx
 	}
 	return r.rIdx
 }
+
+// expertBiasIdx is the index for PER-EXPERT TABLES that are uploaded ONCE for all experts and
+// indexed on the device — today only gpt-oss's [nExpert][2*I] gate‖up bias table. It is always
+// the router's real expert ids, NEVER the slot ids: the table is expert-indexed and does not
+// move when an expert is streamed into a slot.
+//
+// Binding expIdx here instead was a live defect (fixed 2026-08-31, never shipped in a run):
+// glu_quant_gptoss does `biasGU + idx[slot]*2*I`, so with caching on it would have selected the
+// bias row by SLOT id — the wrong expert's gate/up biases, no error, plausible output. It could
+// not be caught by any test that exists because gpt-oss has never been admitted on CUDA, and
+// expert caching is exactly the path gpt-oss needs to fit an 8 GB card at all.
+func (r *cudaResident) expertBiasIdx() Buffer { return r.rIdx }
 
 func u32bytes(v []uint32) []byte {
 	if len(v) == 0 {
@@ -1697,7 +1717,10 @@ func (r *cudaResident) launchGluSplitExpert(gu Buffer, inter int, outQ, outSc, o
 	// rather than nil — the same test resident.go already uses for the optional split-KV
 	// pipelines (r.skScores != (Pipeline{})).
 	if r.gptOssSw != (Pipeline{}) {
-		idx := Arg(r.expIdx())
+		// expertBiasIdx, NOT expIdx: this kernel uses idx ONLY to pick a row of the per-expert
+		// bias table (it consumes already-computed gate/up activations and runs no GEMV), so it
+		// needs the expert id even when the weights it followed were read from a cache slot.
+		idx := Arg(r.expertBiasIdx())
 		bArg := ArgNull()
 		if bias != (Buffer{}) {
 			bArg = Arg(bias)

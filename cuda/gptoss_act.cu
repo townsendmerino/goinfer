@@ -32,9 +32,16 @@
 // THE BIASES ARE PER-EXPERT and selected on the DEVICE, so they cannot be passed as a row
 // pointer: which expert runs is decided by the router, and the launch geometry must stay
 // identical regardless (that is what makes the MoE path graph-static). So the kernel takes
-// the whole [nExpert][2*I] table plus the routing index and does the same arithmetic
-// gemv_w4a8_moe does — biasRow = idx[slot] * 2*I — with gate at +0 and up at +I, matching
-// the gate‖up packing the weights already use. Passing biasGU == nullptr disables biases.
+// the whole [nExpert][2*I] table plus the routing index and does the arithmetic
+// biasRow = idx[slot] * 2*I, with gate at +0 and up at +I, matching the gate‖up packing the
+// weights already use. Passing biasGU == nullptr disables biases.
+//
+// THE idx BOUND HERE IS NOT THE ONE gemv_w4a8_moe BINDS, and the difference is load-bearing.
+// That GEMV is indexed by WHERE THE WEIGHTS LIVE, which under expert caching is a SLOT id. This
+// table is indexed by WHICH EXPERT IS RUNNING and never moves, so it needs the router's EXPERT
+// id. The two coincide whenever caching is off, which is what makes binding the wrong one a
+// silent, configuration-dependent wrong answer rather than an obvious break. The caller passes
+// cudaResident.expertBiasIdx() for this reason; see its comment.
 extern "C" __global__ void glu_quant_gptoss(const float* __restrict__ g, const float* __restrict__ u,
                                  int gOff, int uOff, int I,
                                  const float* __restrict__ biasGU, const int* __restrict__ idx, int slot,

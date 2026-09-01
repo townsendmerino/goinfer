@@ -82,7 +82,7 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > | piece | CUDA, verified in code today |
 > |---|---|
 > | `FeatRopeMscale` | **DONE** — shipped earlier today; declared after measurement (see the box above) |
-> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1538` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
+> | `FeatAttnSink` | **kernels AND bridge already wired.** `sinkArg` is threaded into BOTH attention launches (`cuda/resident.go:1558` split-KV, `:2243` decode — centralised precisely so the two cannot disagree), and `launchGluSplitExpert` is dispatched from the MoE expert loop (`:1720`, `:1844`) with a fallback to `fSw` that keeps every other family bit-identical |
 > | `FeatOutBias` | **ABSENT ENTIRELY on CUDA** — no kernel, no wiring; `grep` for `OBias`/`out_bias` across `cuda/*.go` returns nothing. This, not the sink, is the real remaining code |
 >
 > **`decoder/features.go`'s note that CUDA's kernels are "LOADED … but never DISPATCHED into a
@@ -124,8 +124,34 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > full `./cuda/...` suite **100 PASS / 90 SKIP / 0 FAIL in 58.6 s** — a no-op for every family
 > without an `OBias`, which is what a plumbing change must prove when it cannot yet prove more.
 >
-> **So the remaining work is: (2) ONE real gpt-oss forward on a resident path, (3) then declare
-> FeatAttnSink + FeatOutBias together.** Step 2 is the gate, and `2224441` is the precedent for
+> **A LATENT BUG WAS FOUND ON THE ROUTE TO (2) AND FIXED FIRST (2026-08-31).** The host<->VRAM
+> MoE-streaming path that gpt-oss needs to fit an 8 GB card is NOT new work — it already exists
+> (`--moe-cache-experts`, per-layer LRU slot residency) and is already proven on a THIRTY-FIVE
+> BILLION parameter model on that same card (`cuda/qwen35moe_35b_cache_test.go`). But gpt-oss
+> plus that path had never been run, and it had an index-space bug:
+>
+> `expIdx()` returns SLOT ids when caching is on and EXPERT ids otherwise. That is right for the
+> weight GEMV — it selects where the weights live. `glu_quant_gptoss` was binding the same buffer
+> to index gpt-oss's `[nExpert][2*I]` gate‖up bias table, which is uploaded ONCE for all experts
+> and never moves. With caching on it would have selected the bias row by SLOT id: the wrong
+> expert's biases, no error, plausible logits.
+>
+> **The two index spaces coincide whenever caching is off**, which is what made this invisible —
+> correct in every configuration anyone has ever run, wrong only in the one gpt-oss requires.
+> Fixed by splitting them into two named accessors (`expIdx` = where the weights live,
+> `expertBiasIdx` = which expert is running) so a future site has to choose deliberately.
+>
+> **The numeric proof is OWED, not claimed.** A device-free unit test cannot discriminate here:
+> `gpu.Buffer`'s fields are unexported, so two zero buffers compare equal and such a test would
+> pass on the buggy code too. The discriminating test is a `--moe-cache-experts` ON-vs-OFF A/B on
+> the tiny gpt-oss fixture — caching must not change numerics — and that needs gpt-oss admitted
+> on CUDA, which is step (3). So it rides with the validation run rather than preceding it.
+> Verified for now only as a non-regression: box gates clean, `./cuda/...` 100 PASS / 90 SKIP /
+> 0 FAIL.
+>
+> **So the remaining work is: (2) ONE real gpt-oss forward on a resident path — now believed
+> reachable via `--moe-cache-experts`, with the A/B above as its first assertion — and (3) then
+> declare FeatAttnSink + FeatOutBias together.** Step 2 is the gate, and `2224441` is the precedent for
 > why it is not skippable: a declaration was made on kernel-level parity and correctly reverted.
 >
 > **STEP 2 WAS ATTEMPTED ON METAL 2026-08-31 AND FAILED — and the failure found a missing guard.**

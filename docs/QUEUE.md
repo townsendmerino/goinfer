@@ -235,7 +235,7 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:2329`
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:2352`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
 > back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
@@ -785,7 +785,7 @@ supports.
 
 | doc \| path:line | repo | line content |
 |---|---|---|
-| `docs/QUEUE.md|cuda/resident.go:2329` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
+| `docs/QUEUE.md|cuda/resident.go:2352` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
 | `docs/QUEUE.md|cuda/softcap.go:25` | goinfer | `// This runs on the SAMPLING path only. ForwardArgmax reduces the argmax on-device and r` |
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
@@ -822,7 +822,7 @@ supports.
 | `docs/multimodal.md|decoder/config.go:1110` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:410` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
-| `docs/ollama-chase.md|cuda/resident.go:1317` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
+| `docs/ollama-chase.md|cuda/resident.go:1337` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
 | `docs/ollama-chase.md|cuda/resident.go:42` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
 | `docs/ollama-chase.md|cuda/resident.go:433` | goinfer | `g4x1, g4x2, g4rn Buffer` |
 | `docs/ollama-chase.md|cuda/resident.go:682` | goinfer | `// declined to the staged/CPU path upstream.` |
@@ -834,7 +834,7 @@ supports.
 | `docs/ollama-chase.md|decoder/residency.go:747` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:336` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:541` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
-| `docs/parity-coverage-policy.md|cuda/resident.go:1109` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
+| `docs/parity-coverage-policy.md|cuda/resident.go:1129` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:58` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:446` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
@@ -850,7 +850,7 @@ supports.
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:365` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:286` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
 | `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:358` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
-| `docs/queue-correctness.md|cuda/resident.go:1538` | goinfer | `Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf)` |
+| `docs/queue-correctness.md|cuda/resident.go:1558` | goinfer | `Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf)` |
 | `docs/queue-correctness.md|decoder/weights.go:526` | goinfer | `return buildGptOssWeights(cfg, arch, st, quant)` |
 | `docs/queue-correctness.md|metal/backend.go:163` | goinfer | `return fmt.Errorf("metal: KV position %d(+%d) exceeds resident context cap %d — use the ` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
