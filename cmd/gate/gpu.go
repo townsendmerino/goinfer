@@ -606,9 +606,28 @@ func (g *gpuGate) cudaHeavy() {
 	fmt.Fprintf(g.w, "        main group         %d test(s)   [complement, by construction]\n", total-len(drain))
 
 	fmt.Fprintf(g.w, "      streaming (one line per test):\n")
+	// TIMEOUT 90m, RAISED FROM 60m ON 2026-09-01 BECAUSE 60m HAD NO MARGIN LEFT.
+	// Two runs of this tier on the same box, the same day, at adjacent commits:
+	//
+	//	11:48 run   3320 s (55.3 min)   PASSED, by 4.7 min
+	//	13:48 run   3612 s (60.2 min)   PROCESS DIED — "panic: test timed out after 1h0m0s"
+	//
+	// Nothing about the tier changed between them; it simply drifted across the
+	// line. A timeout that close reports a HANG when what happened was a slow
+	// afternoon, and it reports it as a dead process with no test-level failure —
+	// the most expensive kind of red to diagnose, because the crash head names
+	// whichever test was merely unlucky enough to be running (TestSplitKVCrossover,
+	// 31 s in, entirely innocent).
+	//
+	// This is the same fragility the retired scripts/heavy_gate.sh hit and fixed by
+	// going to 120m — measured there as "the decoder tier loads ~15+ big real
+	// checkpoints sequentially and needs ~50-60 min". cmd/gate did not inherit that
+	// lesson when it replaced the script. 90m is ~50% headroom over the observed
+	// 60.2 min, which is enough for drift without letting a genuine hang sit for
+	// two hours.
 	mainRes, mainCR, mainOut := g.run(cell{
 		Name: "cuda-heavy", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "60m",
+		Serial: true, Timeout: "90m",
 		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},
 	}, true)
 
