@@ -249,7 +249,7 @@ func (c *Context) softmaxRowsHost(x []float32, rows, n int, scale float32) ([]fl
 	if err := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, xd.buf, []uint32{uint32(rows), uint32(n), math.Float32bits(scale), 0}, rows); err != nil {
 		return nil, err
 	}
-	return c.Readback(&DeviceBuffer{buf: xd.buf, n: rows * n})
+	return c.Readback(newDeviceBuffer(xd.buf, rows*n))
 }
 
 func (c *Context) geluHost(x []float32) ([]float32, error) {
@@ -264,7 +264,7 @@ func (c *Context) geluHost(x []float32) ([]float32, error) {
 	if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, xd.buf, []uint32{uint32(len(x)), 0, 0, 0}, (len(x)+63)/64); err != nil {
 		return nil, err
 	}
-	return c.Readback(&DeviceBuffer{buf: xd.buf, n: len(x)})
+	return c.Readback(newDeviceBuffer(xd.buf, len(x)))
 }
 
 // layerNormRowsDevice runs LayerNorm over `rows`×`h`, src→dst device buffers, no
@@ -350,7 +350,7 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	ok = true // dst now owned by the returned DeviceBuffer
-	return &DeviceBuffer{buf: dst, n: M * N}, nil
+	return newDeviceBuffer(dst, M*N), nil
 }
 
 // addRowsWGSL: dst[i] += bias[i % cols] (broadcast a [cols] bias over [rows,cols])
@@ -422,5 +422,5 @@ func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, ep
 	if err := c.layerNormRowsDevice(sd.buf, wd.buf, bd.buf, out, rows, h, eps); err != nil {
 		return nil, err
 	}
-	return c.Readback(&DeviceBuffer{buf: out, n: rows * h})
+	return c.Readback(newDeviceBuffer(out, rows*h))
 }

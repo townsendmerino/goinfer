@@ -81,7 +81,7 @@ func (c *Context) newDevBuf(n int) (*DeviceBuffer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DeviceBuffer{buf: b, n: n}, nil
+	return newDeviceBuffer(b, n), nil
 }
 
 // ln runs LayerNorm(src) → a new device buffer [rows, h].

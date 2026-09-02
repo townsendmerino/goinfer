@@ -736,7 +736,7 @@ func (c *Context) RoPE(vec []float32, heads, headDim, pos int, invFreq []float32
 	if err := c.submitUnary(c.ropePipeline, bg, heads*half); err != nil {
 		return nil, err
 	}
-	return c.Readback(&DeviceBuffer{buf: vBuf, n: len(vec)})
+	return c.Readback(newDeviceBuffer(vBuf, len(vec)))
 }
 
 // Attention runs single-query attention on host inputs (q RoPE'd [nH*hd], keys/
@@ -792,7 +792,7 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 	cmd, _ := enc.Finish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	return c.Readback(&DeviceBuffer{buf: cBuf, n: nH * hd})
+	return c.Readback(newDeviceBuffer(cBuf, nH*hd))
 }
 
 func f32bits(f float32) uint32 { return math.Float32bits(f) }

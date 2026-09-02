@@ -71,6 +71,10 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	if !ok {
 		t.Skip("model did not go GPU-resident — the profile needs the resident plan")
 	}
+	// Close the RESIDENT model, not just the backend: its weight buffers are caller-owned and
+	// b.Close() does not free them. Unreleased, this profiler held ~2.4 GB for the rest of the
+	// process — the first of the two leaks that were emptying the GPU mid-suite.
+	defer func() { _ = rf.Close() }()
 	rd, isRD := rf.(*residentDecoder)
 	if !isRD {
 		t.Fatalf("BuildResident returned %T, want *residentDecoder", rf)

@@ -23,6 +23,16 @@ func TestDecodeRunnerW4A8_7B_fit(t *testing.T) {
 	}
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
+	// Everything below is CALLER-owned: ctx.Close() releases the device handle but not these
+	// buffers, and runner.Release frees only scratch ("not the resident model"). Unreleased,
+	// this test's ~5.6 GB stayed live for the rest of the process and every later test failed
+	// with "failed to request device" — an out-of-memory wearing an unrelated message.
+	var owned []interface{ Close() error }
+	defer func() {
+		for i := len(owned) - 1; i >= 0; i-- {
+			_ = owned[i].Close()
+		}
+	}()
 
 	// Qwen2.5-7B-Instruct shape.
 	const hidden, nH, nKV, hd, inter, vocab, L = 3584, 28, 4, 128, 18944, 152064, 28
@@ -55,10 +65,15 @@ func TestDecodeRunnerW4A8_7B_fit(t *testing.T) {
 		if e != nil {
 			t.Fatalf("UploadW4A8 [%d×%d]: %v (likely VRAM)", N, K, e)
 		}
+		owned = append(owned, rm)
 		wBytes += int64(N*kp/2) + int64(N*nGroups*2) // nibbles + f16 scales
 		return rm
 	}
-	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	up32 := func(v []float32) *DeviceBuffer {
+		d, _ := ctx.UploadF32(v)
+		owned = append(owned, d)
+		return d
+	}
 
 	t.Logf("building resident Qwen2.5-7B int4 (%d layers, 16k KV)…", L)
 	invD := up32(invFreq)
@@ -71,6 +86,7 @@ func TestDecodeRunnerW4A8_7B_fit(t *testing.T) {
 		if e1 != nil || e2 != nil {
 			t.Fatalf("NewKVCache (layer %d): %v %v (VRAM exhausted — 7B+16k KV does not fit)", l, e1, e2)
 		}
+		owned = append(owned, kc, vc)
 		kvBytes += 2 * int64(ctxLen*kvDim*4)
 		rm.layers = append(rm.layers, runLayer{
 			attnNorm: up32(randMat(hidden, uint64(10+l))).buf, invFreq: invD.buf, kCache: kc.buf, vCache: vc.buf,

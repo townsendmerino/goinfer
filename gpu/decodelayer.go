@@ -39,7 +39,7 @@ func (c *Context) rmsnormDevice(x, weight *DeviceBuffer, H int, eps float32, add
 		return nil, nil, err
 	}
 	free := []func(){func() { out.Release() }, pbuf.Release, bg.Release}
-	return &DeviceBuffer{buf: out, n: H}, free, nil
+	return newDeviceBuffer(out, H), free, nil
 }
 
 // residualInPlace: x += y (submit, no poll).
@@ -136,7 +136,7 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	free := []func(){func() { ctxBuf.Release() }, pbuf.Release, bg.Release}
-	return &DeviceBuffer{buf: ctxBuf, n: nH * hd}, free, nil
+	return newDeviceBuffer(ctxBuf, nH*hd), free, nil
 }
 
 // AttnWeights bundles a layer's attention weights + norm (already resident).
@@ -257,7 +257,7 @@ func (c *Context) swigluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer
 	if err := c.submitUnary(c.swigluPipeline, bg, inter); err != nil {
 		return nil, nil, err
 	}
-	return &DeviceBuffer{buf: mid, n: inter}, []func(){func() { mid.Release() }, pbuf.Release, bg.Release}, nil
+	return newDeviceBuffer(mid, inter), []func(){func() { mid.Release() }, pbuf.Release, bg.Release}, nil
 }
 
 // mlpInto runs the gated-MLP sub-block on xd in place (xd += Down(swiglu(Gate/Up
@@ -384,7 +384,7 @@ func (c *Context) NewKVCache(initial []float32, capElems int) (*DeviceBuffer, er
 			return nil, err
 		}
 	}
-	return &DeviceBuffer{buf: buf, n: capElems}, nil
+	return newDeviceBuffer(buf, capElems), nil
 }
 
 // NewKVCacheF16 creates a resident f16 KV cache holding capElems logical elements
@@ -405,7 +405,7 @@ func (c *Context) NewKVCacheF16(initial []float32, capElems int) (*DeviceBuffer,
 			return nil, err
 		}
 	}
-	return &DeviceBuffer{buf: buf, n: capElems}, nil
+	return newDeviceBuffer(buf, capElems), nil
 }
 
 // NewKVCacheI8 creates a resident int8 KV cache holding capElems logical elements
@@ -442,7 +442,7 @@ func (c *Context) NewKVCacheI8(initial []float32, capElems, nKV, hd int) (*Devic
 			return nil, nil, err
 		}
 	}
-	return &DeviceBuffer{buf: dataBuf, n: capElems}, &DeviceBuffer{buf: scaleBuf, n: scaleElems}, nil
+	return newDeviceBuffer(dataBuf, capElems), newDeviceBuffer(scaleBuf, scaleElems), nil
 }
 
 // packKVInt8 per-head quantizes a [nPos*nKV*hd] f32 KV slab to int8 (4/word) plus a

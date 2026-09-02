@@ -86,14 +86,17 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // activation flowing through a layer). n is its element count (f32 or u32
 // depending on the producer). Release frees it.
 type DeviceBuffer struct {
-	buf *wgpu.Buffer
-	n   int
+	bytes int64 // accounted in liveBufferBytes until Close (bufaccount.go)
+	buf   *wgpu.Buffer
+	n     int
 }
 
 func (d *DeviceBuffer) Close() error {
 	if d != nil && d.buf != nil {
 		d.buf.Release()
 		d.buf = nil
+		accountFree(d.bytes)
+		d.bytes = 0
 	}
 	return nil
 }
@@ -133,7 +136,7 @@ func (c *Context) UploadF32(a []float32) (*DeviceBuffer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gpu: UploadF32: %w", err)
 	}
-	return &DeviceBuffer{buf: buf, n: len(a)}, nil
+	return newDeviceBuffer(buf, len(a)), nil
 }
 
 // quantizeDevice quantizes an f32 device activation [M,K] to packed int8 + per-row
@@ -199,7 +202,7 @@ func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *D
 	cmd, _ := enc.Finish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd) // no Poll — pipelines with the consumer
-	return &DeviceBuffer{buf: qBuf, n: qWords}, &DeviceBuffer{buf: scBuf, n: M}, nil
+	return newDeviceBuffer(qBuf, qWords), newDeviceBuffer(scBuf, M), nil
 }
 
 // matmulW8A8Device computes dst = (int8 act) · rmᵀ into a resident f32 device
@@ -255,7 +258,7 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 	cmd, _ := enc.Finish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd) // no Poll
-	return &DeviceBuffer{buf: dstBuf, n: M * N}, nil
+	return newDeviceBuffer(dstBuf, M*N), nil
 }
 
 // Readback copies a device f32 buffer to the host — the single sync point at the

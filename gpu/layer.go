@@ -157,7 +157,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	keep = append(keep, &DeviceBuffer{buf: xn, n: H})
+	keep = append(keep, newDeviceBuffer(xn, H))
 	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rms-p", Contents: wgpu.ToBytes([]uint32{uint32(H), math.Float32bits(eps), boolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
@@ -178,7 +178,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	}
 
 	// 2. quantize(xn) → aq/aScale, gate/up matmuls (device)
-	xnDB := &DeviceBuffer{buf: xn, n: H}
+	xnDB := newDeviceBuffer(xn, H)
 	qb, sb, err := c.quantizeDevice(xnDB, 1, H)
 	if err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	keep = append(keep, &DeviceBuffer{buf: mid, n: I})
+	keep = append(keep, newDeviceBuffer(mid, I))
 	sp, err := c.dims4("swiglu-p", uint32(I), 0)
 	if err != nil {
 		return nil, err
@@ -221,7 +221,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	}
 
 	// 4. quantize(mid) → down matmul
-	midDB := &DeviceBuffer{buf: mid, n: I}
+	midDB := newDeviceBuffer(mid, I)
 	qb2, sb2, err := c.quantizeDevice(midDB, 1, I)
 	if err != nil {
 		return nil, err

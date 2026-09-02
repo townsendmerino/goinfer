@@ -202,7 +202,7 @@ func (c *Context) MLALatentStore(kvDown, normW, invFreq []float32, rank, qkRope,
 	if err := c.submitUnary(c.mlaStorePipeline, bg, 64); err != nil {
 		return nil, err
 	}
-	return c.Readback(&DeviceBuffer{buf: lBuf, n: latDim})
+	return c.Readback(newDeviceBuffer(lBuf, latDim))
 }
 
 // mlaHeadMatvec is the per-head block-diagonal matvec behind the absorb (W_UK) and lift
@@ -351,7 +351,7 @@ func (c *Context) MLAHeadMatvec(a, w []float32, nH, N, K, aStride int) ([]float3
 	cmd, _ := enc.Finish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	return c.Readback(&DeviceBuffer{buf: dBuf, n: nH * N})
+	return c.Readback(newDeviceBuffer(dBuf, nH*N))
 }
 
 func (c *Context) ensureMLAQRope() error {
@@ -444,5 +444,5 @@ func (c *Context) MLAAttn(qAbs, lat []float32, nH, latDim, rank, nKeys int, scal
 	cmd, _ := enc.Finish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	return c.Readback(&DeviceBuffer{buf: wBuf, n: nH * rank})
+	return c.Readback(newDeviceBuffer(wBuf, nH*rank))
 }

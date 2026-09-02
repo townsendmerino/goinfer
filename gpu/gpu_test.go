@@ -102,6 +102,9 @@ func reportLive(t *testing.T) {
 	if n := liveContexts.Load(); n > 0 {
 		t.Logf("[live-contexts] %d already open before this test", n)
 	}
+	if b := LiveBufferBytes(); b > 8<<20 {
+		t.Logf("[live-vram] %.1f MiB of device buffers already held before this test", float64(b)/(1<<20))
+	}
 }
 
 // gpuWasAvailable records that some earlier test in THIS process successfully got a device.

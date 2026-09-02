@@ -101,10 +101,12 @@ type ResidentW4A8 struct {
 // Release frees the resident GPU buffers.
 func (rm *ResidentW4A8) Close() error {
 	if rm.bq != nil {
+		accountFree(int64(rm.bq.GetSize()))
 		rm.bq.Release()
 		rm.bq = nil
 	}
 	if rm.bScales != nil {
+		accountFree(int64(rm.bScales.GetSize()))
 		rm.bScales.Release()
 		rm.bScales = nil
 	}
@@ -225,6 +227,7 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 		bq.Release()
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
+	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))
 	return &ResidentW4A8{bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
 }
 
@@ -265,6 +268,7 @@ func (c *Context) UploadW4A8Packed(q4 []byte, scales []float32, N, K int) (*Resi
 		bq.Release()
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
+	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))
 	return &ResidentW4A8{bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
 }
 
