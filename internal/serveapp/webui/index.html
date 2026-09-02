@@ -1,0 +1,334 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>goinfer</title>
+<style>
+:root{
+  --bg:#fbfbfa; --panel:#fff; --ink:#1b1b19; --dim:#6b6b66; --line:#e4e3df;
+  --accent:#b4530a; --accent-ink:#fff; --err:#a3241b; --ok:#2f6f3e;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#191917; --panel:#212120; --ink:#eceae4; --dim:#9d9a92; --line:#33322f;
+         --accent:#d97a35; --accent-ink:#191917; --err:#e8877e; --ok:#7fc08f; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line)}
+h1{font-size:15px;margin:0;font-weight:640;letter-spacing:.01em}
+h1 span{color:var(--dim);font-weight:400}
+nav{display:flex;gap:4px;margin-left:auto}
+button{font:inherit;color:inherit;background:none;border:1px solid transparent;
+  border-radius:7px;padding:5px 11px;cursor:pointer}
+button:hover{background:var(--line)}
+nav button[aria-selected=true]{background:var(--panel);border-color:var(--line);font-weight:560}
+main{max-width:920px;margin:0 auto;padding:20px 18px 40px}
+section[hidden]{display:none}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px;letter-spacing:.02em}
+input,select,textarea{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);
+  border-radius:7px;background:var(--bg);color:var(--ink)}
+textarea{resize:vertical;min-height:74px}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.row>*{flex:1;min-width:150px}
+.row>.fit{flex:0 0 auto;min-width:0}
+.go{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:560;padding:8px 16px}
+.go:hover{filter:brightness(1.08);background:var(--accent)}
+.go[disabled]{opacity:.5;cursor:default;filter:none}
+#log{display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
+.msg{padding:11px 13px;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;word-wrap:break-word}
+.msg.you{background:var(--bg)}
+.msg.bot{background:var(--panel)}
+.who{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+th{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-weight:560}
+td.f{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+td.n{text-align:right;color:var(--dim);white-space:nowrap}
+.bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin:10px 0 7px}
+.bar>div{height:100%;width:0;background:var(--accent);transition:width .25s}
+.note{font-size:13px;color:var(--dim)}
+.err{color:var(--err)} .ok{color:var(--ok)}
+code{font-family:var(--mono);font-size:12.5px;background:var(--bg);border:1px solid var(--line);
+  border-radius:5px;padding:1px 5px;word-break:break-all}
+</style>
+
+<header>
+  <h1>goinfer <span id="badge"></span></h1>
+  <nav>
+    <button id="tab-chat" aria-selected="true">Chat</button>
+    <button id="tab-models" aria-selected="false">Models</button>
+  </nav>
+</header>
+
+<main>
+<section id="pane-chat">
+  <div class="card">
+    <div class="row">
+      <div><label for="model">Model</label><select id="model"></select></div>
+      <div class="fit" style="flex:0 0 110px"><label for="temp">Temperature</label>
+        <input id="temp" type="number" value="0.7" min="0" max="2" step="0.1"></div>
+      <div class="fit" style="flex:0 0 110px"><label for="max">Max tokens</label>
+        <input id="max" type="number" value="512" min="1" step="1"></div>
+    </div>
+  </div>
+  <div id="log"></div>
+  <div class="card">
+    <label for="prompt">Message</label>
+    <textarea id="prompt" placeholder="Ask something…  (Ctrl/Cmd+Enter to send)"></textarea>
+    <div class="row" style="margin-top:10px">
+      <div class="note" id="chat-status"></div>
+      <div class="fit"><button id="stop" hidden>Stop</button>
+      <button class="go" id="send">Send</button></div>
+    </div>
+  </div>
+</section>
+
+<section id="pane-models" hidden>
+  <div class="card">
+    <label for="repo">HuggingFace GGUF repo</label>
+    <div class="row">
+      <input id="repo" placeholder="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF" spellcheck="false">
+      <div class="fit"><button class="go" id="list">List files</button></div>
+    </div>
+    <p class="note" style="margin:10px 0 0">Anonymous only. Gated repos are detected before
+    the download starts — a community GGUF re-upload is usually ungated.</p>
+  </div>
+  <div class="card" id="files-card" hidden>
+    <div id="files"></div>
+  </div>
+  <div class="card" id="pull-card" hidden>
+    <div id="pull-what" class="note"></div>
+    <div class="bar"><div id="bar"></div></div>
+    <div id="pull-status" class="note"></div>
+  </div>
+  <div class="card">
+    <label>Server API key <span class="note">— only needed if the server was started with -api-key</span></label>
+    <input id="key" type="password" placeholder="(none)" autocomplete="off">
+    <p class="note" style="margin:8px 0 0">Kept in this tab only (sessionStorage); cleared when the tab closes.</p>
+  </div>
+</section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = "goinfer.apikey";
+
+// --- auth -------------------------------------------------------------------
+$("key").value = sessionStorage.getItem(KEY) || "";
+$("key").addEventListener("change", () => sessionStorage.setItem(KEY, $("key").value));
+function headers(extra) {
+  const h = Object.assign({"Content-Type": "application/json"}, extra || {});
+  const k = ($("key").value || "").trim();
+  if (k) h["Authorization"] = "Bearer " + k;
+  return h;
+}
+
+// --- tabs -------------------------------------------------------------------
+function tab(name) {
+  for (const n of ["chat", "models"]) {
+    $("tab-" + n).setAttribute("aria-selected", String(n === name));
+    $("pane-" + n).hidden = n !== name;
+  }
+}
+$("tab-chat").onclick = () => tab("chat");
+$("tab-models").onclick = () => tab("models");
+
+// --- models -----------------------------------------------------------------
+async function loadModels() {
+  try {
+    const r = await fetch("/v1/models", {headers: headers()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    const sel = $("model");
+    sel.textContent = "";
+    for (const m of (j.data || [])) {
+      const o = document.createElement("option");
+      o.value = m.id; o.textContent = m.id;
+      sel.appendChild(o);
+    }
+    const n = (j.data || []).length;
+    $("badge").textContent = n ? "— " + n + " model" + (n > 1 ? "s" : "") + " loaded" : "— no model loaded";
+    if (n && j.data[0].decode_path) $("badge").textContent += " · " + j.data[0].decode_path;
+  } catch (e) {
+    $("badge").textContent = "— " + e.message;
+  }
+}
+loadModels();
+
+// --- chat -------------------------------------------------------------------
+const history = [];
+let ac = null;
+
+function bubble(who, cls) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  const h = document.createElement("div");
+  h.className = "who"; h.textContent = who;
+  const b = document.createElement("div");
+  d.appendChild(h); d.appendChild(b);
+  $("log").appendChild(d);
+  d.scrollIntoView({block: "end"});
+  return b;                       // textContent only — never innerHTML
+}
+
+async function send() {
+  const text = $("prompt").value.trim();
+  if (!text || ac) return;
+  const model = $("model").value;
+  if (!model) { $("chat-status").textContent = "no model loaded"; return; }
+
+  bubble("you", "you").textContent = text;
+  history.push({role: "user", content: text});
+  $("prompt").value = "";
+  const out = bubble(model, "bot");
+  $("send").disabled = true; $("stop").hidden = false;
+  $("chat-status").textContent = "generating…";
+
+  ac = new AbortController();
+  const started = performance.now();
+  let got = 0, acc = "";
+  try {
+    const r = await fetch("/v1/chat/completions", {
+      method: "POST", headers: headers(), signal: ac.signal,
+      body: JSON.stringify({
+        model, messages: history, stream: true,
+        temperature: parseFloat($("temp").value) || 0,
+        max_tokens: parseInt($("max").value, 10) || 512,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 400) || ("HTTP " + r.status));
+    for await (const ev of sse(r)) {
+      if (ev.data === "[DONE]") break;
+      let j; try { j = JSON.parse(ev.data); } catch { continue; }
+      const d = j.choices && j.choices[0] && j.choices[0].delta;
+      if (d && d.content) { acc += d.content; out.textContent = acc; got++; out.scrollIntoView({block: "end"}); }
+    }
+    history.push({role: "assistant", content: acc});
+    const s = (performance.now() - started) / 1000;
+    $("chat-status").textContent = got ? got + " tokens · " + (got / s).toFixed(1) + " tok/s" : "no output";
+  } catch (e) {
+    if (e.name === "AbortError") { $("chat-status").textContent = "stopped"; history.push({role: "assistant", content: acc}); }
+    else { out.textContent = String(e.message || e); out.className = "err"; $("chat-status").textContent = ""; }
+  } finally {
+    ac = null; $("send").disabled = false; $("stop").hidden = true;
+  }
+}
+$("send").onclick = send;
+$("stop").onclick = () => ac && ac.abort();
+$("prompt").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+});
+
+// Minimal SSE reader over fetch. The server sends "event:"/"data:" frames separated by a
+// blank line; we only need the last data line per frame.
+async function* sse(resp) {
+  const rd = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const {value, done} = await rd.read();
+    if (done) break;
+    buf += dec.decode(value, {stream: true});
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, i); buf = buf.slice(i + 2);
+      let ev = "message", data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) ev = line.slice(6).trim();
+        else if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (data) yield {event: ev, data};
+    }
+  }
+}
+
+// --- pull -------------------------------------------------------------------
+$("list").onclick = async () => {
+  const repo = $("repo").value.trim();
+  if (!repo) return;
+  $("list").disabled = true;
+  $("files-card").hidden = false;
+  $("files").textContent = "listing…";
+  try {
+    const r = await fetch("/web/models/list", {method: "POST", headers: headers(), body: JSON.stringify({repo})});
+    const j = await r.json();
+    if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
+    renderFiles(repo, j.files || []);
+  } catch (e) {
+    $("files").textContent = ""; 
+    const p = document.createElement("p"); p.className = "err"; p.textContent = String(e.message || e);
+    $("files").appendChild(p);
+  } finally { $("list").disabled = false; }
+};
+
+function renderFiles(repo, files) {
+  const host = $("files"); host.textContent = "";
+  if (!files.length) { host.textContent = "no .gguf files in this repo"; return; }
+  const t = document.createElement("table");
+  const head = document.createElement("tr");
+  for (const h of ["File", "Size", ""]) { const th = document.createElement("th"); th.textContent = h; head.appendChild(th); }
+  t.appendChild(head);
+  for (const f of files) {
+    const tr = document.createElement("tr");
+    const a = document.createElement("td"); a.className = "f"; a.textContent = f.path;
+    const b = document.createElement("td"); b.className = "n"; b.textContent = f.human;
+    const c = document.createElement("td"); c.className = "n";
+    const btn = document.createElement("button"); btn.className = "go"; btn.textContent = "Pull";
+    btn.onclick = () => pull(repo, f.path);
+    c.appendChild(btn);
+    tr.appendChild(a); tr.appendChild(b); tr.appendChild(c);
+    t.appendChild(tr);
+  }
+  host.appendChild(t);
+}
+
+async function pull(repo, file) {
+  $("pull-card").hidden = false;
+  $("pull-what").textContent = repo + " · " + file;
+  $("bar").style.width = "0%";
+  const st = $("pull-status"); st.className = "note"; st.textContent = "starting…";
+  document.querySelectorAll("#files button").forEach(b => b.disabled = true);
+  try {
+    const r = await fetch("/web/models/pull", {method: "POST", headers: headers(), body: JSON.stringify({repo, file})});
+    if (!r.ok) {
+      let m = "HTTP " + r.status;
+      try { const j = await r.json(); if (j.error && j.error.message) m = j.error.message; } catch {}
+      throw new Error(m);
+    }
+    for await (const ev of sse(r)) {
+      const j = JSON.parse(ev.data);
+      if (ev.event === "start") {
+        st.textContent = j.human + (j.sha256 ? " · sha256 " + j.sha256.slice(0, 16) + "…" : " · no sha256 published");
+      } else if (ev.event === "progress") {
+        if (j.total > 0) $("bar").style.width = (100 * j.done / j.total).toFixed(1) + "%";
+        st.textContent = j.human + " · " + j.rate + (j.eta ? " · eta " + j.eta : "");
+      } else if (ev.event === "done") {
+        $("bar").style.width = "100%";
+        st.className = "note ok";
+        st.textContent = "";
+        st.appendChild(document.createTextNode(
+          (j.verified ? "sha256 verified" : "no sha256 published — NOT verified") + " · " + j.elapsed + " · "));
+        const code = document.createElement("code"); code.textContent = j.path;
+        st.appendChild(code);
+        // The file is on disk, but this server has not loaded it — serving it is a separate,
+        // deliberately-gated action. Say so rather than letting the green tick imply the model
+        // is now live.
+        const hint = document.createElement("div");
+        hint.className = "note"; hint.style.marginTop = "6px";
+        hint.textContent = "Downloaded, not loaded — restart the server with --model <path> to serve it.";
+        st.appendChild(hint);
+        loadModels();
+      } else if (ev.event === "error") {
+        throw new Error(j.message);
+      }
+    }
+  } catch (e) {
+    st.className = "note err"; st.textContent = String(e.message || e);
+  } finally {
+    document.querySelectorAll("#files button").forEach(b => b.disabled = false);
+  }
+}
+</script>

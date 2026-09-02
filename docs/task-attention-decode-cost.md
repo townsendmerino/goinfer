@@ -108,7 +108,7 @@ near-tie flip argument is about f32 *error* vs the f64 reference, not about M-de
 A2 may be dense-only. Roughly another 2-4x over A1's f64.
 
 **A3 — the gated FA-class f32 fast path (the plan-still-slow lever), last resort.** Precedent
-exists and is exactly on point: `--metal-fast-prefill` (internal/serveapp/main.go:353) already
+exists and is exactly on point: `--metal-fast-prefill` (internal/serveapp/main.go:355) already
 gates a documented not-bit-identical speed path, off by default, with the divergence spelled
 out in the flag help. A `--cpu-fast-attention` twin would be off by default, refused or
 ignored when speculative decoding is active, and excluded for MoE unless item 3 clears. Only

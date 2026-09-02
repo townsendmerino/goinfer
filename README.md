@@ -48,6 +48,17 @@ It lands in your user cache dir and prints the exact `--model` command to run it
 only: a gated repo is detected before the transfer starts and named, rather than failing after
 a multi-gigabyte download — community GGUF re-uploads are usually ungated and work directly.
 
+Prefer a browser? `serve -web` adds a local UI at `http://127.0.0.1:8080` — chat with the loaded
+model, browse a HuggingFace repo, and pull a checkpoint with live progress:
+
+```bash
+goinfer-serve -web -model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+```
+
+One embedded HTML file, no external assets, so it works offline like everything else here. Off by
+default, and `-web` alone is enough to start with no model at all — which is how you use it to go
+and fetch your first one.
+
 From source, against any supported checkpoint (the chat template is applied automatically):
 
 ```bash

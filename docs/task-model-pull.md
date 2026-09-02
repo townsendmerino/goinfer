@@ -2,9 +2,9 @@
 
 > **Framing.** This isn't "should goinfer download models" so much as "goinfer already does
 > almost everything downloading would need — what's actually missing is one small piece."
-> `--model` already loads a `.gguf` OR a `.giw` (`internal/serveapp/main.go:330`). A plain
+> `--model` already loads a `.gguf` OR a `.giw` (`internal/serveapp/main.go:332`). A plain
 > `.gguf` is already transparently transcoded to a sidecar `.giw` cache on first use
-> (`internal/serveapp/main.go:838`). `cmd/prequant` already converts a `.gguf` to a `.giw`
+> (`internal/serveapp/main.go:854`). `cmd/prequant` already converts a `.gguf` to a `.giw`
 > bundle. `demo/chat/build-embed.sh` already builds a model-in-binary release from a local
 > `.gguf` path, prequant by default. The only step that does not exist anywhere in the repo
 > is getting the `.gguf` onto disk in the first place — right now that's "go find it on
@@ -54,6 +54,48 @@ reintroduces the friction it exists to remove. Cost was ~10 lines of `os.Args[1]
 malformed ref, a real 395.9 MiB download in 26 s with `sha256 verified`, a 0.58 s cache-hit re-pull,
 and the pulled checkpoint loading and generating correct Go through `--model`.
 
+### §4 the GUI question — option B (local web UI) SHIPPED 2026-09-02
+
+`serve -web` serves a browser UI at `/`, off by default. §4 recommended a good CLI (option A,
+built) and put the web UI as "a real option, not v1, worth a follow-up design of its own"; it
+turned out small enough to do directly, because it adds no second inference path — the page is a
+CLIENT of the same `/v1/models` and `/v1/chat/completions` routes every other client uses, so it
+cannot drift from the API.
+
+- **One embedded HTML file, no external stylesheet, font or script.** Non-negotiable rather than
+  tidy: a CDN reference would make the UI of an offline-capable engine require the network.
+  `TestWebUI_pageIsSelfContained` fails the build on any `http://`, `https://` or `integrity=`
+  in the page, and also asserts the page still contains the routes it drives so the check cannot
+  pass against an empty file.
+- **Chat** (streaming, stop button, tok/s), **model list**, and **pull with live progress** over
+  SSE — reusing `internal/modelpull` unchanged, so digest verification and the .part-then-rename
+  behaviour are identical to the CLI's. Two front ends, one implementation.
+- **Off by default, same two gates as `-allow-admin`.** The page is inert; `POST /web/models/pull`
+  is not — it starts a caller-named multi-gigabyte download and writes it to disk. So: explicit
+  `-web` opt-in, plus the pre-existing startup rule that a non-loopback bind must carry
+  `-api-key`. Loopback stays key-free, so the single-user desktop case has no auth friction.
+- **Single-flight pulls.** One at a time; a second returns 409. Without it a handful of clicks
+  queue unbounded concurrent multi-gigabyte downloads against one disk. Not wrapped in the
+  inflight gate either — that gate bounds INFERENCE, and a minutes-long download must not hold
+  one of those slots.
+- **`GET /{$}`, not `GET /`.** The bare pattern is a catch-all in Go 1.22+ ServeMux and would
+  render HTML to an SDK that typo'd a route; `{$}` matches the root path exactly. Verified: `/`
+  is 200 with `-web`, 404 without, and `/nope` stays 404 either way.
+- **`-web` satisfies the "need at least one of --model/--embed-model/--allow-admin" startup
+  check.** Fetching a model is the point of the Models tab, and requiring a model in order to go
+  and get a model is a bootstrap the user cannot satisfy. Verified: `serve -web` with no model
+  starts, serves the UI, and lists/pulls.
+- **The done state says "Downloaded, not loaded".** Serving a pulled file is a separate,
+  deliberately-gated action (`--model` on restart, or `-allow-admin`); a green tick that implied
+  the model was live would be the more comfortable lie.
+
+Verified live: UI served, unknown routes still 404, list, a real 412 MiB pull over SSE reporting
+15 progress events and `verified: true` in 17 s, a cached re-pull returning start+done instantly,
+and a concurrent pull refused with 409.
+
+**A native desktop app stays rejected**, for §4's own reason: every realistic toolkit needs cgo or
+a bundled webview runtime, which is the property this project exists to avoid.
+
 ### Deliberately NOT in this cut
 
 - **`--prequant`.** `--model` already transcodes a bare `.gguf` to a sidecar `.giw` on first use, so
@@ -88,9 +130,9 @@ already exist. The new surface is entirely "get bytes onto disk," full stop.
 
 ## 1. What already exists (the inventory, so the new-code surface is honest)
 
-- **Loading:** `--model` accepts `.gguf`, `.giw`, or an HF dir (`internal/serveapp/main.go:330`).
+- **Loading:** `--model` accepts `.gguf`, `.giw`, or an HF dir (`internal/serveapp/main.go:332`).
 - **Auto-transcode:** a bare `.gguf` becomes a sidecar `.giw` cache on first use, one-time
-  (`internal/serveapp/main.go:838`, `:642`) — this is *already* most of what a naive "pull and
+  (`internal/serveapp/main.go:854`, `:642`) — this is *already* most of what a naive "pull and
   cache" command would build from scratch.
 - **Conversion:** `cmd/prequant/main.go` — `prequant -o out.giw -quant {int8int8|int8|int4}
   [-embed-int4] [-row4] input.gguf`. Takes a local path only (`flag.Arg(0)`); no fetch step.
@@ -258,7 +300,7 @@ this.
 
 ## Sources
 
-`README.md:10,17-33` (the three existing tiers) · `internal/serveapp/main.go:330,642,838`
+`README.md:10,17-33` (the three existing tiers) · `internal/serveapp/main.go:332,642,838`
 (`--model`'s .gguf/.giw handling and the transparent transcode) · `cmd/prequant/main.go`
 (conversion CLI) · `demo/chat/build-embed.sh` (existing embed pipeline) ·
 `.github/workflows/release-assets.yml` (current model-fetch precedent + checksum practice) ·

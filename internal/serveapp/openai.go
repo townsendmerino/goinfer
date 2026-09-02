@@ -201,6 +201,9 @@ type server struct {
 	models map[string]*loadedModel
 	cfg    config // backend/quant/lora/kv/session-dir/allow-admin for admin loads
 
+	// pulls serialises -web model downloads to one at a time (webui.go).
+	pulls pullState
+
 	// liveness tracks, per underlying *decoder.Model, the request holders (rw) and the number of
 	// registry entries backed by it (refs) — the machinery that lets unload DRAIN in-flight work
 	// before freeing native memory instead of racing it into a use-after-free. A base and its

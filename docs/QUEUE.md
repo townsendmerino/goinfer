@@ -1201,32 +1201,32 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:156` | goinfer | `func (s modelSpec) explicitQuant(cfg config) string {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:359` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:393` | goinfer | `// discoverable only by reading the source. The MoE refusal and the` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:404` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:405` | goinfer | `os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:463` | goinfer | `for _, lm := range srv.modelList() {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:496` | goinfer | `mux.HandleFunc("GET /health", auth(srv.handleHealth))` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:514` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:563` | goinfer | `srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.m` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:728` | goinfer | `if visionModelType(cand) == "qwen2_5_vl" {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:846` | goinfer | `giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1053` | goinfer | `for id := range stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1058` | goinfer | `text, _ := lm.tk.Decode(ids)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1059` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1125` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:423` | goinfer | `type completionReq struct {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:504` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:522` | goinfer | `if !lm.enter(w) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:545` | goinfer | `if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:667` | goinfer | `StopIDs:     lm.stopIDs,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:669` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:759` | goinfer | `gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:761` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:767` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:898` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:912` | goinfer | `func genErr(err error) error {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:931` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:361` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:395` | goinfer | `// discoverable only by reading the source. The MoE refusal and the` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:406` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:407` | goinfer | `os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:468` | goinfer | `for _, lm := range srv.modelList() {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:501` | goinfer | `mux.HandleFunc("GET /health", auth(srv.handleHealth))` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:530` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:579` | goinfer | `srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.m` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:744` | goinfer | `if visionModelType(cand) == "qwen2_5_vl" {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:862` | goinfer | `giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1056` | goinfer | `for id := range stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1061` | goinfer | `text, _ := lm.tk.Decode(ids)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1062` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1128` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:426` | goinfer | `type completionReq struct {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:507` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:525` | goinfer | `if !lm.enter(w) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:548` | goinfer | `if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:670` | goinfer | `StopIDs:     lm.stopIDs,` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:672` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:762` | goinfer | `gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:764` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:770` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:901` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:915` | goinfer | `func genErr(err error) error {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:934` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:139` | goinfer | `ids, err := lm.chatPrompt(messages)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:236` | goinfer | `var stopBeat func()` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:282` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
@@ -1402,7 +1402,7 @@ supports.
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:555` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:571` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:138` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1048` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:407` | goinfer | `def gate_cell_idle():` |
@@ -1434,7 +1434,7 @@ supports.
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:670` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:780` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:880` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
-| `docs/task-attention-decode-cost.md|internal/serveapp/main.go:353` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
+| `docs/task-attention-decode-cost.md|internal/serveapp/main.go:355` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/task-attention-decode-cost.md|linalg/linalg.go:58` | aikit | `var parThreshold = 1 << 24 // 16.78M MACs` |
 | `docs/task-attention-decode-cost.md|linalg/matmul_strided.go:30` | aikit | `func MatmulBTAcc64Strided(a, bMat, dst []float32, M, K, N, bOff, bRowStride, bElemStride` |
 | `docs/task-freetoken-techniques.md|decoder/model.go:163` | goinfer | `MoECacheSlots int` |
@@ -1460,8 +1460,8 @@ supports.
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:330` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
 | `docs/task-model-pull.md|internal/chatapp/embed.go:41` | goinfer | `//go:embed model.gguf` |
 | `docs/task-model-pull.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
-| `docs/task-model-pull.md|internal/serveapp/main.go:330` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/comp` |
-| `docs/task-model-pull.md|internal/serveapp/main.go:838` | goinfer | `// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and` |
+| `docs/task-model-pull.md|internal/serveapp/main.go:332` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/comp` |
+| `docs/task-model-pull.md|internal/serveapp/main.go:854` | goinfer | `// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:463` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:94` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:83` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |

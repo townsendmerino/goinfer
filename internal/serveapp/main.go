@@ -294,6 +294,7 @@ type config struct {
 	spec             string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
 	drafter          string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
 	allowAdmin       bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	web              bool          // -web: serve the local browser UI + its model-pull routes
 	requireBE        bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath       string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
 	visionQuant      string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
@@ -324,6 +325,7 @@ func Main() {
 		tlsKey  = flag.String("tls-key", "", "PEM private key file, paired with -tls-cert")
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
+	flag.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
 	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in; requires -api-key)")
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
@@ -413,8 +415,11 @@ func Main() {
 			cfg.quantSet = true
 		}
 	})
-	if len(cfg.models) == 0 && cfg.embedPath == "" && !cfg.allowAdmin {
-		fmt.Fprintln(os.Stderr, "error: need at least one of --model, --embed-model, or --allow-admin")
+	// -web counts as a reason to start with no model: fetching one is the whole point of
+	// the UI's Models tab, and requiring a model in order to go and get a model is a
+	// bootstrap the user cannot satisfy.
+	if len(cfg.models) == 0 && cfg.embedPath == "" && !cfg.allowAdmin && !cfg.web {
+		fmt.Fprintln(os.Stderr, "error: need at least one of --model, --embed-model, --web, or --allow-admin")
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -510,6 +515,17 @@ func Main() {
 			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes)))))
 	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(textCap, srv.handleAdminLoad)))
 	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(textCap, srv.handleAdminUnload)))
+	if cfg.web {
+		// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and
+		// would turn every unknown GET into the UI page instead of a 404, which is worse than
+		// unhelpful for an API server — a typo'd route would render HTML to an SDK.
+		mux.HandleFunc("GET /{$}", auth(srv.handleWebUI))
+		mux.HandleFunc("POST /web/models/list", auth(maxBytes(textCap, srv.handleWebList)))
+		// Not wrapped in inf(): the inflight gate bounds INFERENCE, and a download that runs
+		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
+		// its own (pullState), which is the bound that actually fits it.
+		mux.HandleFunc("POST /web/models/pull", auth(maxBytes(textCap, srv.handleWebPull)))
+	}
 
 	// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-body
 	// dribble, and idle keep-alive connections. ReadTimeout is the whole-request read deadline
