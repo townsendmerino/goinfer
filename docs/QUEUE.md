@@ -1161,10 +1161,10 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |
 | `docs/audit-2026-09-02.md|gpu/vision.go:52` | goinfer | `let mean = smean[0] / f32(p.h);` |
 | `docs/audit-2026-09-02.md|gpu/vision_encoder.go:202` | goinfer | `for head := range nH {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:199` | goinfer | `case strings.HasSuffix(path, ".giw"):` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:202` | goinfer | `if tk, err = tokenizer.LoadGGUFBytes(raw); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:342` | goinfer | `flush := func(final bool) {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:495` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhen` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:200` | goinfer | `case strings.HasSuffix(path, ".giw"):` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:203` | goinfer | `if tk, err = tokenizer.LoadGGUFBytes(raw); err != nil {` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:343` | goinfer | `flush := func(final bool) {` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:496` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhen` |
 | `docs/audit-2026-09-02.md|internal/chatapp/prequant.go:45` | goinfer | `tk, err := tokenizer.LoadGGUFBytes(tokGGUF)` |
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:113` | goinfer | `// 4) Generate + stream. Decode the whole running sequence (prompt +` |
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:131` | goinfer | `flush := func(final bool) error {` |
@@ -1200,17 +1200,17 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:471` | goinfer | `var reqCounter atomic.Uint64` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:156` | goinfer | `func (s modelSpec) explicitQuant(cfg config) string {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:361` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:395` | goinfer | `// discoverable only by reading the source. The MoE refusal and the` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:406` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:407` | goinfer | `os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:468` | goinfer | `for _, lm := range srv.modelList() {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:501` | goinfer | `mux.HandleFunc("GET /health", auth(srv.handleHealth))` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:530` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:579` | goinfer | `srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.m` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:744` | goinfer | `if visionModelType(cand) == "qwen2_5_vl" {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:862` | goinfer | `giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:157` | goinfer | `func (s modelSpec) explicitQuant(cfg config) string {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:369` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:403` | goinfer | `// discoverable only by reading the source. The MoE refusal and the` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:414` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:415` | goinfer | `os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:476` | goinfer | `for _, lm := range srv.modelList() {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:509` | goinfer | `mux.HandleFunc("GET /health", auth(srv.handleHealth))` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:538` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:587` | goinfer | `srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.m` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:752` | goinfer | `if visionModelType(cand) == "qwen2_5_vl" {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:870` | goinfer | `giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1056` | goinfer | `for id := range stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1061` | goinfer | `text, _ := lm.tk.Decode(ids)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1062` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
@@ -1385,7 +1385,7 @@ supports.
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/sampler_chunked.go:111` | goinfer | `workers := min(runtime.GOMAXPROCS(0), numChunks)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:365` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:286` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
-| `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:368` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
+| `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:369` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:365` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
@@ -1402,7 +1402,7 @@ supports.
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:571` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:579` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:138` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1048` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:407` | goinfer | `def gate_cell_idle():` |
@@ -1434,11 +1434,11 @@ supports.
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:670` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:780` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:880` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
-| `docs/task-attention-decode-cost.md|internal/serveapp/main.go:355` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
+| `docs/task-attention-decode-cost.md|internal/serveapp/main.go:363` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/task-attention-decode-cost.md|linalg/linalg.go:58` | aikit | `var parThreshold = 1 << 24 // 16.78M MACs` |
 | `docs/task-attention-decode-cost.md|linalg/matmul_strided.go:30` | aikit | `func MatmulBTAcc64Strided(a, bMat, dst []float32, M, K, N, bOff, bRowStride, bElemStride` |
 | `docs/task-freetoken-techniques.md|decoder/model.go:163` | goinfer | `MoECacheSlots int` |
-| `docs/task-freetoken-techniques.md|internal/serveapp/main.go:275` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
+| `docs/task-freetoken-techniques.md|internal/serveapp/main.go:276` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
 | `docs/task-gpu-batched-prefill.md|decoder/residency.go:54` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:223` | goinfer | `device const half*  srow = bsc + (uint)gid*(K/32u); \` |
@@ -1460,8 +1460,8 @@ supports.
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:330` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
 | `docs/task-model-pull.md|internal/chatapp/embed.go:41` | goinfer | `//go:embed model.gguf` |
 | `docs/task-model-pull.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
-| `docs/task-model-pull.md|internal/serveapp/main.go:332` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/comp` |
-| `docs/task-model-pull.md|internal/serveapp/main.go:854` | goinfer | `// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and` |
+| `docs/task-model-pull.md|internal/serveapp/main.go:340` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/comp` |
+| `docs/task-model-pull.md|internal/serveapp/main.go:862` | goinfer | `// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:463` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:94` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:83` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |

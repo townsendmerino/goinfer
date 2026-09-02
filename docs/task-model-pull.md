@@ -2,9 +2,9 @@
 
 > **Framing.** This isn't "should goinfer download models" so much as "goinfer already does
 > almost everything downloading would need — what's actually missing is one small piece."
-> `--model` already loads a `.gguf` OR a `.giw` (`internal/serveapp/main.go:332`). A plain
+> `--model` already loads a `.gguf` OR a `.giw` (`internal/serveapp/main.go:340`). A plain
 > `.gguf` is already transparently transcoded to a sidecar `.giw` cache on first use
-> (`internal/serveapp/main.go:854`). `cmd/prequant` already converts a `.gguf` to a `.giw`
+> (`internal/serveapp/main.go:862`). `cmd/prequant` already converts a `.gguf` to a `.giw`
 > bundle. `demo/chat/build-embed.sh` already builds a model-in-binary release from a local
 > `.gguf` path, prequant by default. The only step that does not exist anywhere in the repo
 > is getting the `.gguf` onto disk in the first place — right now that's "go find it on
@@ -96,21 +96,52 @@ and a concurrent pull refused with 409.
 **A native desktop app stays rejected**, for §4's own reason: every realistic toolkit needs cgo or
 a bundled webview runtime, which is the property this project exists to avoid.
 
-### Deliberately NOT in this cut
+### Phases 2–5 SHIPPED 2026-09-02 — the doc's whole plan is now built
+
+**`-embed` (phase 2).** `pull <ref> -embed [os/arch…]` fetches, then bakes the model into a
+single static cgo-free binary per target. It DRIVES `demo/chat/build-embed.sh` — the same script
+the released `goinfer-chat-0.5b`/`-1.5b` assets are built with — rather than reimplementing it,
+because the staging rules, the prequant-vs-raw tag and the cross-compile line already have one
+owner. It therefore needs a source checkout and a Go toolchain, reported after the download
+succeeds so a multi-gigabyte fetch is never wasted. That constraint is the feature's shape, not a
+limitation: the person BUILDING a distributable is a developer; the person RECEIVING it needs
+nothing. Verified: a 618 MB `goinfer-chat-qwen2.5-coder-0.5b-instruct-linux-amd64` that `ldd`
+calls "not a dynamic executable" and that generates with no `--model` and no network.
+
+**`demo:` shortcuts (phase 3), and the shared-source problem solved without touching the release
+pipeline.** `pull demo:0.5b` / `demo:1.5b` resolve to an exact repo + filename + **pinned sha256**
+from `internal/modelpull/curated.json`. §2.1 asked for one shared place with `release-assets.yml`;
+rewriting that workflow's matrix to consume the JSON would have meant editing the release pipeline,
+so instead `TestCurated_matchesReleaseWorkflow` parses the workflow and fails the build if repo,
+file, digest or byte count disagree. The copies may exist; they cannot DISAGREE. (Proven red: a
+one-character digest change fails the test.) The pin is load-bearing rather than decorative —
+`resolve/main` moves, and verifying only against the API-declared digest would cheerfully confirm
+a re-uploaded file's own hash, so `checkPin` refuses a mismatch **before** downloading.
+
+**`serve pull` (phase 4 follow-on).** The CLI moved to `internal/pullcmd`, and both
+`goinfer-chat pull` and `goinfer-serve pull` dispatch to it — one implementation, two front ends,
+with the usage text naming whichever binary invoked it. §3's decision is unchanged; this just
+stops serve users needing a second binary for the same job.
+
+**Resumable downloads.** A dropped transfer keeps its `.part` and the next run sends
+`Range: bytes=N-`. Three cases are tested against an `httptest` server rather than the network:
+a mid-transfer drop then resume (asserting the FINAL sha256, because the running hash must cover
+the bytes already on disk — hashing only the tail would make verification theatre); a server that
+answers **200 to a Range request**, where appending would silently corrupt the file, so the offset
+and hash both reset; and a digest mismatch, which must delete the partial or every later run
+resumes from known-bad bytes forever.
+
+### Still deliberately NOT built
 
 - **`--prequant`.** `--model` already transcodes a bare `.gguf` to a sidecar `.giw` on first use, so
   the primary flow needs no conversion step; adding one would duplicate `cmd/prequant`'s job for no
   user-visible gain. §2.2's "should plain pull prequant by default" question is therefore moot for
   now rather than answered.
-- **`--embed`.** Still the most differentiating idea in this doc (neither Ollama nor WebLLM can hand
-  back a portable single file for an arbitrary model) and unchanged as phase 2.
-- **The `demo:0.5b` / `demo:1.5b` curated shortcuts.** Worth having, and worth sourcing from one
-  place shared with `release-assets.yml` — which is now easy, since that workflow already pins the
-  digests `pull` would want.
-- **`serve pull`.** The library is reusable and the wiring is a few lines; it was left out to keep
-  the blast radius on `internal/serveapp/main.go` at zero.
-- **Resumable downloads, disk-space precheck, split-GGUF shards.** A split shard is *detected* and
-  refused by name rather than pulling one useless piece.
+- **Disk-space precheck** before starting a multi-gigabyte fetch.
+- **Split-GGUF checkpoints.** A shard is *detected* and refused by name rather than pulling one
+  useless piece; actually assembling a split checkpoint needs loader work beyond this command.
+- **Generating the release workflow's matrix from `curated.json`.** The drift test makes this
+  optional rather than necessary; it is still the tidier end state.
 
 ---
 
@@ -130,9 +161,9 @@ already exist. The new surface is entirely "get bytes onto disk," full stop.
 
 ## 1. What already exists (the inventory, so the new-code surface is honest)
 
-- **Loading:** `--model` accepts `.gguf`, `.giw`, or an HF dir (`internal/serveapp/main.go:332`).
+- **Loading:** `--model` accepts `.gguf`, `.giw`, or an HF dir (`internal/serveapp/main.go:340`).
 - **Auto-transcode:** a bare `.gguf` becomes a sidecar `.giw` cache on first use, one-time
-  (`internal/serveapp/main.go:854`, `:642`) — this is *already* most of what a naive "pull and
+  (`internal/serveapp/main.go:862`, `:642`) — this is *already* most of what a naive "pull and
   cache" command would build from scratch.
 - **Conversion:** `cmd/prequant/main.go` — `prequant -o out.giw -quant {int8int8|int8|int4}
   [-embed-int4] [-row4] input.gguf`. Takes a local path only (`flag.Arg(0)`); no fetch step.
@@ -300,7 +331,7 @@ this.
 
 ## Sources
 
-`README.md:10,17-33` (the three existing tiers) · `internal/serveapp/main.go:332,642,838`
+`README.md:10,17-33` (the three existing tiers) · `internal/serveapp/main.go:340,642,838`
 (`--model`'s .gguf/.giw handling and the transparent transcode) · `cmd/prequant/main.go`
 (conversion CLI) · `demo/chat/build-embed.sh` (existing embed pipeline) ·
 `.github/workflows/release-assets.yml` (current model-fetch precedent + checksum practice) ·

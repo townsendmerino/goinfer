@@ -1,4 +1,9 @@
-package chatapp
+// Package pullcmd is the `pull` subcommand shared by the goinfer binaries.
+//
+// It lives outside both chatapp and serveapp so `goinfer-chat pull` and `goinfer-serve pull`
+// are one implementation with two dispatchers, rather than the same flags and error messages
+// maintained twice. internal/modelpull stays the library underneath; this is only the CLI.
+package pullcmd
 
 import (
 	"context"
@@ -15,17 +20,24 @@ import (
 )
 
 // pullUsage is printed for `pull -h` and on a malformed reference.
-const pullUsage = `goinfer-chat pull — fetch a GGUF checkpoint from HuggingFace
+const pullUsage = `%[1]s pull — fetch a GGUF checkpoint from HuggingFace
 
   pull <owner/repo>              list the .gguf files in a repo
   pull <owner/repo>:<quant>      fetch that quant       (e.g. :q4_k_m — case-insensitive)
   pull <owner/repo>:<file.gguf>  fetch that exact file
   pull <ref> -embed [os/arch...] fetch, then bake the model INTO a single static binary
+  pull demo:<tier>               fetch a model goinfer itself vets and pins (see below)
 
 Examples:
-  goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
-  goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
-  goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m -embed darwin/arm64 linux/amd64
+  %[1]s pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
+  %[1]s pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
+  %[1]s pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m -embed darwin/arm64 linux/amd64
+  %[1]s pull demo:1.5b
+
+demo: refs are shorthand for an exact repo and filename that this build PINS a digest for —
+the same models the goinfer-chat-0.5b/-1.5b releases ship — so an upstream re-upload is
+refused rather than silently substituted. Everything else is an explicit owner/repo, which
+is the real interface; this is not a name registry.
 
 The download is verified against the sha256 HuggingFace declares for the file before the
 transfer starts, and lands in the user cache dir unless -o says otherwise. Point --model at
@@ -37,9 +49,10 @@ multi-gigabyte transfer — a community GGUF re-upload of the same model is usua
 `
 
 // runPull implements `goinfer-chat pull`. Returns a process exit code.
-func runPull(args []string) int {
+// Run executes `pull`. args excludes the program name and the "pull" word. Returns an exit code.
+func Run(args []string) int {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
-	fs.Usage = func() { fmt.Fprint(os.Stderr, pullUsage); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprintf(os.Stderr, pullUsage, self()); fs.PrintDefaults() }
 	outDir := fs.String("o", "", "directory to download into (default: <user cache>/goinfer/models/<owner>/<repo>)")
 	embed := fs.Bool("embed", false, "after fetching, bake the model into a single static binary per target (default: the host). Requires a goinfer source checkout and a Go toolchain — it drives demo/chat/build-embed.sh, the same pipeline the released goinfer-chat-0.5b/1.5b binaries are built with")
 	embedGGUF := fs.Bool("embed-gguf", false, "with -embed: bake the raw GGUF and quantize at launch (smaller binary, slower start, full-size weight heap) instead of the default prequant bundle (~5x faster cold start, ~10x less heap)")
@@ -97,7 +110,7 @@ func runPull(args []string) int {
 		for _, f := range files {
 			fmt.Printf("  %-52s %10s\n", f.Path, modelpull.HumanBytes(f.Size))
 		}
-		fmt.Printf("\nfetch one with:  goinfer-chat pull %s:<quant>\n", ref.Repo)
+		fmt.Printf("\nfetch one with:  %s pull %s:<quant>\n", self(), ref.Repo)
 		return 0
 	}
 
@@ -217,7 +230,7 @@ func runEmbed(model string, ref modelpull.Ref, name string, raw bool, targets []
 	if err := cmd.Run(); err != nil {
 		// The script is `set -euo pipefail`, so a non-zero exit already printed its own cause;
 		// do not bury it under a wrapper message.
-		fmt.Fprintf(os.Stderr, "goinfer-chat pull -embed: build-embed.sh failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s pull -embed: build-embed.sh failed: %v\n", self(), err)
 		return 1
 	}
 	fmt.Printf("\nbinaries are in %s\n", filepath.Join(root, "demo", "chat", "dist"))

@@ -42,7 +42,12 @@ to install, and no `huggingface-cli`:
 
 # fetch one quant (case-insensitive; verified against the sha256 HuggingFace declares)
 ./goinfer-chat-darwin-arm64 pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
+
+# or the models goinfer itself vets and pins
+./goinfer-chat-darwin-arm64 pull demo:1.5b
 ```
+
+Interrupted transfers resume where they stopped. `goinfer-serve pull …` is the same command.
 
 It lands in your user cache dir and prints the exact `--model` command to run it. Anonymous
 only: a gated repo is detected before the transfer starts and named, rather than failing after
@@ -58,6 +63,21 @@ goinfer-serve -web -model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 One embedded HTML file, no external assets, so it works offline like everything else here. Off by
 default, and `-web` alone is enough to start with no model at all — which is how you use it to go
 and fetch your first one.
+
+### Bake any model into its own single file
+
+The two pre-built tiers above are just this pipeline run for two models we picked. From a source
+checkout you can run it for **any** supported checkpoint, for any OS/arch — something no other
+local runner will do for a model that isn't on its curated list:
+
+```bash
+go run ./demo/chat pull bartowski/google_gemma-3-4b-it-GGUF:Q4_K_M -embed darwin/arm64 linux/amd64
+# → demo/chat/dist/goinfer-chat-google_gemma-3-4b-it-{darwin-arm64,linux-amd64}
+```
+
+Out comes a static, cgo-free binary with the weights inside it: no runtime, no download, no
+install. Air-gapped machines, workshops, handing a demo to a colleague. The binary is model-sized,
+and the model's licence travels with it — if you redistribute one, that licence is yours to satisfy.
 
 From source, against any supported checkpoint (the chat template is applied automatically):
 

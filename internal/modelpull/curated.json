@@ -1,0 +1,17 @@
+{
+  "_comment": "The models goinfer itself vets, ships and pins. MUST stay in step with the matrix in .github/workflows/release-assets.yml — TestCurated_matchesReleaseWorkflow fails the build if they drift. Deliberately tiny: the explicit owner/repo:quant form is the real interface, and this is not a name registry to grow.",
+  "tiers": {
+    "0.5b": {
+      "repo": "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+      "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+      "sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+      "bytes": 491400064
+    },
+    "1.5b": {
+      "repo": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+      "file": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+      "bytes": 1117320768
+    }
+  }
+}

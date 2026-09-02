@@ -40,6 +40,7 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -79,7 +80,7 @@ func Main() {
 	// standalone fetcher they would have to go and download first would reintroduce exactly
 	// the friction it exists to remove.
 	if len(os.Args) > 1 && os.Args[1] == "pull" {
-		os.Exit(runPull(os.Args[2:]))
+		os.Exit(pullcmd.Run(os.Args[2:]))
 	}
 	var (
 		model    = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build to use the baked-in model)")

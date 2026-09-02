@@ -16,6 +16,7 @@ package modelpull
 import (
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -26,19 +27,23 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 // hfAPI and hfCDN are split because they are different services with different failure
 // modes: the API answers metadata (and is what reports `gated`), the resolve host streams
 // bytes through a redirect to a CDN.
-const (
+// vars, not consts, solely so tests can point them at an httptest server. Nothing in the
+// shipped paths reassigns them.
+var (
 	hfAPI = "https://huggingface.co/api/models"
 	hfCDN = "https://huggingface.co"
-	// userAgent identifies goinfer to HF. Anonymous requests are rate-limited by IP;
-	// naming the client is the courteous minimum and makes our traffic attributable.
-	userAgent = "goinfer-pull/1 (+https://github.com/townsendmerino/goinfer)"
 )
+
+// userAgent identifies goinfer to HF. Anonymous requests are rate-limited by IP; naming the
+// client is the courteous minimum and makes our traffic attributable.
+const userAgent = "goinfer-pull/1 (+https://github.com/townsendmerino/goinfer)"
 
 // Ref is a parsed model reference: a HuggingFace repo plus either an exact filename or a
 // quant selector to resolve against the repo's listing.
@@ -51,6 +56,54 @@ type Ref struct {
 	Repo  string // "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
 	File  string // exact filename, when given after the colon
 	Quant string // quant selector ("q4_k_m"), when the colon part is not a filename
+	// Pin is a sha256 this ref REQUIRES, set only for curated demo: refs. It is checked
+	// against what the API reports before anything downloads. That is the point of pinning:
+	// `resolve/main` is a moving reference, so an upstream re-upload would otherwise change
+	// the bytes under a name goinfer vouches for, and the API-declared digest would happily
+	// verify the NEW file. Empty for user-supplied refs, which pin nothing by construction.
+	Pin string
+}
+
+//go:embed curated.json
+var curatedJSON []byte
+
+// curated is the parsed curated.json, loaded once.
+var curated = struct {
+	once  sync.Once
+	tiers map[string]CuratedTier
+}{}
+
+// CuratedTier is one vetted model: an exact repo + filename plus the digest and size this
+// build pins for it.
+type CuratedTier struct {
+	Repo   string `json:"repo"`
+	File   string `json:"file"`
+	SHA256 string `json:"sha256"`
+	Bytes  int64  `json:"bytes"`
+}
+
+// Curated returns the vetted demo tiers keyed by short name ("0.5b").
+func Curated() map[string]CuratedTier {
+	curated.once.Do(func() {
+		var doc struct {
+			Tiers map[string]CuratedTier `json:"tiers"`
+		}
+		if err := json.Unmarshal(curatedJSON, &doc); err != nil {
+			panic("modelpull: curated.json is malformed: " + err.Error()) // build-time asset; a parse failure is a bug, not input
+		}
+		curated.tiers = doc.Tiers
+	})
+	return curated.tiers
+}
+
+// CuratedNames returns the tier names, sorted, for help text and error messages.
+func CuratedNames() []string {
+	names := make([]string, 0, len(Curated()))
+	for k := range Curated() {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ParseRef accepts "owner/repo", "owner/repo:file.gguf" or "owner/repo:quant".
@@ -60,6 +113,16 @@ func ParseRef(s string) (Ref, error) {
 		return Ref{}, fmt.Errorf("empty model reference")
 	}
 	repo, sel, hasSel := strings.Cut(s, ":")
+	// demo:<tier> — the only non-explicit form, and deliberately the only one. It resolves to
+	// a concrete repo + filename + pinned digest from curated.json, so it is shorthand for an
+	// exact reference rather than an opaque tag: what it pulled is still nameable afterwards.
+	if repo == "demo" {
+		t, ok := Curated()[sel]
+		if !ok {
+			return Ref{}, fmt.Errorf("unknown demo model %q; have: %s", sel, strings.Join(CuratedNames(), ", "))
+		}
+		return Ref{Repo: t.Repo, File: t.File, Pin: t.SHA256}, nil
+	}
 	if !validRepo(repo) {
 		return Ref{}, fmt.Errorf("%q: want owner/repo[:quant|:file.gguf] (e.g. Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m)", s)
 	}
@@ -127,11 +190,19 @@ type treeEntry struct {
 var multiPart = regexp.MustCompile(`-\d{5}-of-\d{5}\.gguf$`)
 
 func get(ctx context.Context, url string) (*http.Response, error) {
+	return getRange(ctx, url, 0)
+}
+
+// getRange issues the GET, asking to resume from `from` when it is non-zero.
+func getRange(ctx context.Context, url string, from int64) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
+	if from > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", from))
+	}
 	return http.DefaultClient.Do(req)
 }
 
@@ -222,6 +293,9 @@ func Select(files []File, ref Ref) (File, error) {
 	case ref.File != "":
 		for _, f := range files {
 			if strings.EqualFold(f.Path, ref.File) {
+				if err := checkPin(f, ref); err != nil {
+					return File{}, err
+				}
 				return f, nil
 			}
 		}
@@ -248,6 +322,17 @@ func Select(files []File, ref Ref) (File, error) {
 	default:
 		return File{}, fmt.Errorf("quant %q is ambiguous in %s — name the file exactly.\n%s", ref.Quant, ref.Repo, render(cands))
 	}
+}
+
+// checkPin refuses a file whose upstream digest no longer matches what this build pinned.
+// Fails BEFORE the download, not after: the pin exists precisely because `resolve/main` can
+// move, and verifying only against the API-declared digest would cheerfully confirm the new
+// file's own hash and report success.
+func checkPin(f File, ref Ref) error {
+	if ref.Pin == "" || f.SHA256 == "" || f.SHA256 == ref.Pin {
+		return nil
+	}
+	return fmt.Errorf("%s in %s no longer matches the digest goinfer pinned for it:\n  pinned   %s\n  upstream %s\nthe file was re-uploaded; pull it explicitly by name if you still want it", f.Path, ref.Repo, ref.Pin, f.SHA256)
 }
 
 func render(files []File) string {
@@ -295,34 +380,64 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		}
 	}
 
-	resp, err := get(ctx, hfCDN+"/"+repo+"/resolve/main/"+f.Path)
+	// Resume from a previous interrupted attempt when one is on disk. Worth doing precisely
+	// because these files are multi-gigabyte: losing 4 GB to a dropped connection and starting
+	// again is the difference between an annoyance and an unusable command on a flaky link.
+	part := final + ".part"
+	var resumeFrom int64
+	h := sha256.New()
+	if st, err := os.Stat(part); err == nil && st.Size() > 0 && (f.Size <= 0 || st.Size() < f.Size) {
+		// The running digest has to cover the bytes already on disk, so re-read them through
+		// the hash. That costs a local read of the partial — trivial beside re-fetching it,
+		// and it keeps the end-to-end sha256 check honest rather than verifying only the tail.
+		if n, err := hashPrefix(h, part); err == nil {
+			resumeFrom = n
+		} else {
+			h.Reset()
+		}
+	}
+
+	resp, err := getRange(ctx, hfCDN+"/"+repo+"/resolve/main/"+f.Path, resumeFrom)
 	if err != nil {
 		return "", fmt.Errorf("downloading %s: %w", f.Path, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusPartialContent:
+		// Server honoured the Range: append.
+	case http.StatusOK:
+		// Server ignored the Range (or we asked for none): this body is the WHOLE file, so any
+		// partial on disk is now meaningless. Reset both the offset and the digest — appending
+		// here would silently produce a corrupt file that fails the checksum with no clue why.
+		resumeFrom = 0
+		h.Reset()
+	default:
 		return "", fmt.Errorf("downloading %s: HuggingFace returned %s", f.Path, resp.Status)
 	}
 
-	part := final + ".part"
-	out, err := os.Create(part)
+	flags := os.O_CREATE | os.O_WRONLY
+	if resumeFrom > 0 {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	out, err := os.OpenFile(part, flags, 0o644)
 	if err != nil {
 		return "", err
 	}
-	h := sha256.New()
 	total := f.Size
 	if total <= 0 {
-		total = resp.ContentLength
+		total = resumeFrom + resp.ContentLength
 	}
-	pw := &progressWriter{w: io.MultiWriter(out, h), total: total, report: progress, last: time.Now()}
+	pw := &progressWriter{w: io.MultiWriter(out, h), done: resumeFrom, total: total, report: progress, last: time.Now()}
 	_, copyErr := io.Copy(pw, resp.Body)
 	closeErr := out.Close()
 	if copyErr != nil {
-		os.Remove(part)
-		return "", fmt.Errorf("downloading %s: %w", f.Path, copyErr)
+		// Deliberately NOT removed: the bytes already fetched are the whole point of resume.
+		// A digest mismatch below still deletes, because that partial is known-bad.
+		return "", fmt.Errorf("downloading %s (%s fetched; re-run to resume): %w", f.Path, humanBytes(pw.done), copyErr)
 	}
 	if closeErr != nil {
-		os.Remove(part)
 		return "", closeErr
 	}
 	if f.SHA256 != "" {
@@ -335,6 +450,16 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		return "", err
 	}
 	return final, nil
+}
+
+// hashPrefix feeds path's current contents into h and returns how many bytes it covered.
+func hashPrefix(h io.Writer, path string) (int64, error) {
+	fh, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer fh.Close()
+	return io.Copy(h, fh)
 }
 
 func fileSHA256(path string) (string, error) {
