@@ -132,17 +132,20 @@ func parityCells(env map[string]string, realckpt bool, timeout string) []cell {
 	}
 	cells := []cell{base}
 	if realckpt {
+		run, _ := realckptRun()
 		cells = append(cells, cell{
 			Name: "realckpt real-model gates",
 			Pkgs: []string{"./decoder/"},
 			Tags: []string{"realckpt"},
-			// Real_oracle is here because TestQwen3NextReal_oracle matched NEITHER alternative and
-			// was therefore unreachable: the sweep reported it "DID NOT RUN (blocker)" for weeks
-			// and every diagnosis went looking at the 163GB asset, which was present and resolving
-			// the whole time. A -run filter that cannot reach a REQUIRED gate is not a skip, it is
-			// a gate that silently does not exist. TestRealckptCellCanReachEveryGate now fails if
-			// this pattern and parityRealckptGates ever disagree again.
-			Run:     "Qwen35|Real_gate|Real_oracle",
+			// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could
+			// not reach TestQwen3NextReal_oracle for weeks — the sweep reported it "DID NOT RUN
+			// (blocker)" and every diagnosis went looking at the 163GB asset, which was present
+			// and resolving the whole time — and after that was patched it still missed five more
+			// (audit-2026-09-02 G-05). A -run filter that cannot reach a gate is not a skip; it is
+			// a gate that silently does not exist. The cell is still filtered rather than
+			// unfiltered because the realckpt tag also carries perf and diagnostic tests that the
+			// release sweep is not for; the filter selects on SHAPE now, not on a name list.
+			Run:     run,
 			Timeout: timeout,
 			Env:     env,
 		})
@@ -255,8 +258,17 @@ func runParity(w io.Writer, logDir string) int {
 	// behind an accurate count.
 	composition(w, false)
 
-	cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: false}
+	// RCIsFailure: a `go test` that exits non-zero with ZERO --- FAIL lines — a panic in a
+	// goroutine, a fatal error, a timeout, a build failure — is a red cell. It was false here, which
+	// meant a crashed realckpt cell could produce no named-gate result at all and the sweep would
+	// read that as gates it simply had nothing to say about (audit-2026-09-02 G-05).
+	cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: true}
 	cfg.Cells = parityCells(cellEnv, realckpt, timeout)
+	if realckpt {
+		if _, note := realckptRun(); note != "" {
+			fmt.Fprintf(w, "   %s\n", note)
+		}
+	}
 	res := newResults()
 	var cells []cellResult
 	for _, c := range cfg.Cells {
@@ -286,6 +298,8 @@ func runParity(w io.Writer, logDir string) int {
 	for _, name := range catchAllSkips(res, checks) {
 		fmt.Fprintf(w, "   skipped: %s\n", name)
 	}
+
+	blockers += extraBlockers(w, res, checks, cells, realckpt)
 
 	if emitManifest {
 		blockers += mergeManifest(w, res, logDir)
@@ -542,3 +556,265 @@ func whyNoResult(test string, cells []cell) string {
 // that assertion, and this map is its only escape hatch — deliberately a code change with a written
 // reason rather than a state the ledger can drift into by nobody doing anything.
 var neverConfirmed = map[string]string{}
+
+// realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
+// but does not require, with the reason. Every such test must be here or in parityRealckptGates —
+// TestRealckptGateIsListedOrExplicitlyNotRequired fails otherwise.
+//
+// WHAT AN ENTRY COSTS, EXACTLY. Since the sweep counts an unlisted FAIL as a blocker, an entry here
+// does NOT make a failure harmless. What it forgoes is the other two outcomes: a SKIP does not block
+// (the asset may not exist on this box), and the gate gets no named row in the checkset table. That
+// is a much smaller claim than "not required" used to be, and it is the one being made.
+//
+// TWO REASONS APPEAR, AND THEY ARE NOT THE SAME DECISION:
+//
+//	"unregistered asset" — the checkpoint is not in testdata/assets.json, so the preflight cannot
+//	    promise it. Requiring the gate would make it SKIP-block on any box that lacks the asset, and
+//	    a permanent blocker is not a gate. Register the asset first, then promote.
+//	"no required gate for this family" — an open COVERAGE decision, not a formality: this family has
+//	    no canonical gate anywhere in the checkset. Recorded by audit-2026-09-02 G-05.
+var realckptNotRequired = map[string]string{
+	"TestCohere2R7bReal_gate": "unregistered asset (GOINFER_COHERE2_R7B); and cohere2 has no " +
+		"required gate for the family — open coverage decision (audit-2026-09-02 G-05)",
+	"TestCohereAyaReal_gate": "unregistered asset (GOINFER_COHERE_AYA); and cohere has no required " +
+		"gate for the family — open coverage decision (audit-2026-09-02 G-05)",
+	"TestGemma3Real_gate": "unregistered asset (GEMMA3_4B, not even GOINFER_-prefixed); gemma3 is " +
+		"required through TestGGUF_gemma3_parity + TestForward_logitParity",
+	"TestGemma4_26B_gate": "unregistered asset (GOINFER_GEMMA4_26B); gemma4 is required through " +
+		"TestGemma4_logitParity + TestGemma4_12B_logitParity",
+	"TestGlm4MoeAir_gate": "unregistered assets (GOINFER_GLM_GGUF, GOINFER_GLM_GIW); and glm4_moe " +
+		"has no required gate for the family — open coverage decision (audit-2026-09-02 G-05)",
+	"TestGptOssReal_gate": "gpt_oss has no required gate for the family — open coverage decision " +
+		"(audit-2026-09-02 G-05). The asset (GOINFER_GPTOSS_GGUF) IS registered, so this one is a " +
+		"decision to make, not an asset to build",
+	"TestGptOssReal_logitParity": "second gate on the same asset as TestGptOssReal_gate; gpt_oss " +
+		"has no required gate for the family — open coverage decision (audit-2026-09-02 G-05)",
+	"TestGraniteReal_gate": "unregistered asset (GOINFER_GRANITE_GGUF); and granite has no required " +
+		"gate for the family — open coverage decision (audit-2026-09-02 G-05)",
+	"TestGraniteReal_oracle": "granite has no required gate for the family — open coverage decision " +
+		"(audit-2026-09-02 G-05). The asset (GOINFER_GRANITE_HF) IS registered",
+	"TestLagunaGGUF_gate": "laguna has no required gate for the family — open coverage decision " +
+		"(audit-2026-09-02 G-05). The asset (GOINFER_LAGUNA_GGUF) IS registered",
+	"TestLagunaReal_gate": "laguna has no required gate for the family — open coverage decision " +
+		"(audit-2026-09-02 G-05). The asset (GOINFER_LAGUNA_XS2) IS registered",
+	"TestLlamaReal_gate": "unregistered asset (GOINFER_QWEN3_REAL); llama is required through " +
+		"TestLlama_forwardParity + TestLlama32_forwardParity",
+	"TestMistralReal_gate": "unregistered asset (GOINFER_QWEN3_REAL); mistral is required through " +
+		"TestMistral_forwardParity",
+	"TestNemotron3NanoMoEReal_gate": "nemotron3nano is required through " +
+		"TestNemotron3NanoMoE_textParity; this adds the real GGUF checkpoint",
+	"TestNemotron3NanoReal_oracle": "nemotron3nano is required through " +
+		"TestNemotron3NanoMoE_textParity; this adds the real bf16 checkpoint",
+	"TestNemotronReal_gate": "unregistered asset (GOINFER_NEMOTRON_GGUF); nemotron is required " +
+		"through TestNemotron_textParity",
+	"TestNemotronReal_oracle": "nemotron is required through TestNemotron_textParity; this adds the " +
+		"real HF checkpoint",
+	"TestQwen2Real_gate": "unregistered asset (GOINFER_QWEN3_REAL); qwen2 is required through " +
+		"TestQwen2_forwardParity + TestGGUF_qwen2_parity",
+	"TestQwen35Real_gate1SliceParity": "unregistered asset (GOINFER_QWEN35_SLICE_REF); the " +
+		"full-model gate TestQwen35Real_gate2FullModel is required",
+	"TestQwen38GGUF_gate": "qwen3.8 dense has no required gate for the family — open coverage " +
+		"decision (audit-2026-09-02 G-05). The asset (GOINFER_QWEN38_GGUF) IS registered",
+	"TestQwen38Real_gate": "qwen3.8 dense has no required gate for the family — open coverage " +
+		"decision (audit-2026-09-02 G-05). The asset (GOINFER_QWEN38) IS registered",
+	"TestQwen3Real_gate": "unregistered asset (GOINFER_QWEN3_REAL); qwen3 is required through " +
+		"TestQwen3_forwardParity + TestGGUF_qwen3_parity",
+}
+
+// realckptDirs are the packages the realckpt cell runs, and so the packages scanned for its gates.
+var realckptDirs = []string{"decoder"}
+
+// legacyRealckptRun is the hand-written -run the realckpt cell used until 2026-09-02. Kept ONLY as
+// the fallback for a tree the scan cannot read, and named so a report saying "fell back" is
+// unambiguous about which pattern ran.
+const legacyRealckptRun = "Qwen35|Real_gate|Real_oracle"
+
+// gateShaped reports whether a test NAME is one this sweep is about. `_gate` and `Parity` are the
+// audit's shapes; `_oracle` is here because TestQwen3NextReal_oracle is a REQUIRED gate, so a shape
+// rule that excluded it would contradict the list it is checked against.
+func gateShaped(name string) bool {
+	return strings.HasSuffix(name, "_gate") || strings.HasSuffix(name, "_oracle") ||
+		strings.Contains(name, "Parity")
+}
+
+var realckptBuildRe = regexp.MustCompile(`(?m)^//go:build (.+)$`)
+var realckptWordRe = regexp.MustCompile(`\brealckpt\b`)
+
+// realckptGateTests scans the realckpt-tagged test files for gate-shaped top-level tests.
+//
+// DERIVED, NOT DECLARED, for the same reason the composition census derives its axes: a
+// hand-written -run is a second copy of the gate list, and the two drifted. Only the `//go:build`
+// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:build
+// realckpt` inside a comment while being an ordinary untagged file, and a substring scan pulls it
+// into the realckpt cell.
+func realckptGateTests(root string) []string { return realckptTests(root, gateShaped) }
+
+// realckptTests is realckptGateTests with the name predicate injected.
+func realckptTests(root string, want func(string) bool) []string {
+	seen := map[string]bool{}
+	for _, d := range realckptDirs {
+		files, _ := filepath.Glob(filepath.Join(root, d, "*_test.go"))
+		sort.Strings(files)
+		for _, f := range files {
+			b, err := os.ReadFile(f)
+			if err != nil {
+				continue
+			}
+			src := string(b)
+			if i := strings.Index(src, "\npackage "); i >= 0 {
+				src = src[:i]
+			}
+			m := realckptBuildRe.FindStringSubmatch(src)
+			if m == nil || !realckptWordRe.MatchString(m[1]) {
+				continue
+			}
+			for _, fm := range funcRe.FindAllStringSubmatch(string(b), -1) {
+				if want(fm[1]) {
+					seen[fm[1]] = true
+				}
+			}
+		}
+	}
+	return sortedSet(seen)
+}
+
+// realckptRun derives the realckpt cell's -run from the tree, and returns a note saying how.
+//
+// THE PATTERN THAT COULD NOT REACH A REQUIRED GATE, GENERALISED. legacyRealckptRun was widened by
+// hand each time someone noticed a miss, and on 2026-09-02 five gates still matched nothing:
+// TestGemma4_26B_gate, TestGlm4MoeAir_gate, TestLagunaGGUF_gate, TestQwen38GGUF_gate and
+// TestGptOssReal_logitParity. Being unlisted as well as unselected, they were not even reported as
+// DID NOT RUN — the sweep had no way to say a word about them. Deriving the pattern from the tagged
+// files makes "a gate exists" and "the sweep can reach it" the same fact.
+//
+// The union with parityRealckptGates is not belt-and-braces: TestQwen35GGUF_weightDiff is required
+// and is NOT gate-shaped, so the scan alone would drop it.
+func realckptRun() (pattern, note string) {
+	root, err := repoRoot()
+	if err != nil {
+		return legacyRealckptRun, fmt.Sprintf("!! could not locate the repo root (%v) — realckpt "+
+			"-run fell back to the hand-written %q, which is known to miss gates", err, legacyRealckptRun)
+	}
+	set := map[string]bool{}
+	for _, t := range realckptGateTests(root) {
+		set[t] = true
+	}
+	scanned := len(set)
+	// THE CHANGE IS ADDITIVE ON PURPOSE. legacyRealckptRun's bare "Qwen35" alternative also selected
+	// four tests that are not gate-shaped — TestQwen35GGUF_vsSafetensors, _locateDivergence,
+	// _routeFlipAtOutlier and TestQwen35Real_loaderSlice. Nobody decided those belong in a release
+	// sweep, but nobody decided they do not either: they have been running in it. Dropping them as a
+	// side effect of fixing a FILTER would be exactly the silent coverage loss this repo keeps
+	// finding, so the derived pattern is unioned with what the old one selected. Removing one is
+	// then its own change, with its own reason.
+	legacy := regexp.MustCompile(legacyRealckptRun)
+	carried := realckptTests(root, legacy.MatchString)
+	for _, t := range carried {
+		set[t] = true
+	}
+	if scanned == 0 {
+		return legacyRealckptRun, fmt.Sprintf("!! no realckpt-tagged gate found under %v — realckpt "+
+			"-run fell back to the hand-written %q, which is known to miss gates", realckptDirs, legacyRealckptRun)
+	}
+	for _, g := range parityRealckptGates {
+		set[g.Test] = true
+	}
+	names := sortedSet(set)
+	pattern = "^(" + strings.Join(names, "|") + ")$"
+	return pattern, fmt.Sprintf("realckpt -run derived from the //go:build realckpt files: %d "+
+		"gate-shaped test(s) scanned, %d carried from the legacy pattern, %d selected after the "+
+		"union with parityRealckptGates", scanned, len(carried), len(names))
+}
+
+// unlistedFailures returns the tests that FAILED and are not one of the named gates.
+//
+// THE FAIL COUNT THE SWEEP USED TO THROW AWAY. `blockers` came only from the checkset, so a FAIL in
+// any of the ~36 family parity tests outside it changed nothing: the cell line printed "N fail" and
+// the verdict still read ALL REQUIRED GATES GREEN, exit 0. The checkset is still the thing that says
+// a NAMED gate is green — that is the decision this gate exists to make — but "nothing else in the
+// sweep failed" is a separate and much cheaper claim, and it was not being made at all.
+//
+// EXACT match, unlike catchAllSkips' containment: a test whose name merely CONTAINS a gate name is a
+// different test, and hiding its failure is the defect, not the feature. Exactness is also what
+// keeps B14 intact — a named gate's FIRST-RUN failure is excluded here because its name matches
+// exactly, so it stays an ITEM.
+func unlistedFailures(res *results, checks []gateCheck) []string {
+	named := map[string]bool{}
+	for _, g := range checks {
+		named[g.Test] = true
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, k := range res.topLevel("fail") {
+		if named[k.Test] || seen[k.Test] {
+			continue
+		}
+		seen[k.Test] = true
+		// Last-writer-wins, the same rule the checkset reads by: a test that failed in the plain
+		// cell and passed in the realckpt one is not a failure.
+		if act, _ := res.lookupTop(k.Test); act != "fail" {
+			continue
+		}
+		out = append(out, k.Test)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedKeys is sortedSet for a string-valued map.
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// extraBlockers is everything blocking that the CHECKSET CANNOT SEE, and it returns the count so
+// there is exactly one place to get the arithmetic wrong.
+//
+// `blockers` used to come only from classifyChecks over the named gates, which meant the sweep
+// discarded two whole categories: a FAIL in any of the ~36 family parity tests outside the checkset,
+// and a cell that died without printing a single --- FAIL line. Both left the verdict reading ALL
+// REQUIRED GATES GREEN, exit 0 (audit-2026-09-02 G-05).
+func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellResult, realckpt bool) int {
+	extra := 0
+
+	// THE CATCH-ALL, FOR FAILURES — and here it BLOCKS. Its skip half is advisory because a missing
+	// asset on one box is ordinary; a failing test is not, whatever list it is on. No name-shape
+	// filter either: the shape filter exists to keep the skip review readable, and a failure nobody
+	// wants to read is still a failure.
+	if unlisted := unlistedFailures(res, checks); len(unlisted) > 0 {
+		fmt.Fprintf(w, "\n-- unlisted FAILURES (blockers): tests that failed and are in no gate list --\n")
+		for _, name := range unlisted {
+			fmt.Fprintf(w, "   ❌ failed: %s\n", name)
+		}
+		extra += len(unlisted)
+	}
+
+	// A cell that exited non-zero with no --- FAIL line: a panic in a goroutine, a fatal error, a
+	// timeout, a build failure. runCell marks it Hidden under RCIsFailure; without counting it the
+	// sweep delivers a verdict about a cell that never finished.
+	for _, c := range cells {
+		if c.Hidden {
+			fmt.Fprintf(w, "\n   ❌ cell %q exited rc=%d with zero --- FAIL lines (crash, timeout or "+
+				"build failure) — BLOCKER: %s\n", c.Cell.Name, c.RC, c.LogPath)
+			extra++
+		}
+	}
+
+	// The realckpt gates the sweep RUNS but does not require. Printed so "not in the table" is a
+	// statement the report makes rather than an absence a reader has to notice.
+	if realckpt && len(realckptNotRequired) > 0 {
+		fmt.Fprintf(w, "\n-- realckpt gates that run but are NOT required (%d) --\n", len(realckptNotRequired))
+		for _, name := range sortedKeys(realckptNotRequired) {
+			act, seen := res.lookupTop(name)
+			if !seen {
+				act = "no result"
+			}
+			fmt.Fprintf(w, "   %-32s %-9s %s\n", name, act, realckptNotRequired[name])
+		}
+	}
+	return extra
+}

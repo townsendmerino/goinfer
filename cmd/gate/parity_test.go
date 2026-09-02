@@ -281,18 +281,7 @@ func TestComposition_loaderAxisComesFromTheName(t *testing.T) {
 // TestQwen3NextReal_oracle: named "Real_oracle" while the filter accepted only "Qwen35|Real_gate",
 // so it was unreachable by construction while every investigation hunted the 163GB checkpoint.
 func TestRealckptCellCanReachEveryGate(t *testing.T) {
-	cells := parityCells(nil, true, "1m")
-	var rc *cell
-	for i := range cells {
-		for _, tag := range cells[i].Tags {
-			if tag == "realckpt" {
-				rc = &cells[i]
-			}
-		}
-	}
-	if rc == nil {
-		t.Fatal("no realckpt cell built with realckpt=true")
-	}
+	rc := realckptCell(t)
 	re, err := regexp.Compile(rc.Run)
 	if err != nil {
 		t.Fatalf("realckpt cell -run %q does not compile: %v", rc.Run, err)
@@ -442,3 +431,282 @@ func TestParity_everyRequiredGateIsConfirmed(t *testing.T) {
 // hasNeverConfirmedKey distinguishes "absent" from "present with an empty reason". A map lookup
 // alone cannot: both yield "".
 func hasNeverConfirmedKey(gate string) bool { _, ok := neverConfirmed[gate]; return ok }
+
+// A FAILURE IN A TEST NOBODY LISTED IS STILL A FAILURE. The sweep's decision is a checkset, so
+// `blockers` came only from the named gates and a FAIL anywhere else changed nothing — 36 family
+// parity tests (Cohere, LFM2, Laguna, InternLM, GLM4-MoE, the VL text parities, 12 *Real_gates)
+// could go red and the verdict still read ALL REQUIRED GATES GREEN, exit 0.
+func TestParity_unlistedFailureIsABlocker(t *testing.T) {
+	res := parityResults(t, map[string]string{
+		"TestListedGate":           "pass",
+		"TestCohere_forwardParity": "fail",
+		"TestSomethingElse":        "fail", // not even parity-shaped: still a failure
+		"TestUnlistedSkip":         "skip", // a skip is the advisory half, not a blocker
+	})
+	got := unlistedFailures(res, []gateCheck{{"a", "TestListedGate"}})
+	want := []string{"TestCohere_forwardParity", "TestSomethingElse"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("unlistedFailures = %v, want %v", got, want)
+	}
+}
+
+// B14 SURVIVES THE NEW RULE, and it survives because the exclusion is EXACT. A named gate failing
+// with no confirmed prior result is an ITEM; if the unlisted-failure sweep re-counted it under a
+// looser match, the first-run outcome would be silently repealed.
+func TestParity_firstRunGateIsNotReCountedAsAnUnlistedFailure(t *testing.T) {
+	res := parityResults(t, map[string]string{"TestFirstRun": "fail"})
+	checks := []gateCheck{{"a", "TestFirstRun"}}
+	if got := unlistedFailures(res, checks); len(got) != 0 {
+		t.Fatalf("unlistedFailures = %v, want none — a NAMED gate is classified by the checkset", got)
+	}
+	_, blockers, _, firstRuns := classifyChecks(res, checks,
+		func(string) string { return "FIRST-RUN" }, oneUnfilteredCell)
+	if blockers != 0 || firstRuns != 1 {
+		t.Fatalf("blockers=%d firstRuns=%d, want 0/1", blockers, firstRuns)
+	}
+}
+
+// A test whose name CONTAINS a gate name is a different test, and its failure must block. This is
+// the one place the containment rule catchAllSkips uses would be actively wrong.
+func TestParity_unlistedFailureMatchIsExactNotContainment(t *testing.T) {
+	res := parityResults(t, map[string]string{"TestListedGateExtra": "fail"})
+	got := unlistedFailures(res, []gateCheck{{"a", "TestListedGate"}})
+	if len(got) != 1 || got[0] != "TestListedGateExtra" {
+		t.Fatalf("unlistedFailures = %v, want [TestListedGateExtra] — containment would hide it", got)
+	}
+}
+
+// Last-writer-wins, the same rule lookupTop applies to the checkset: several gates run in BOTH the
+// plain and the realckpt cell, and the plain cell's skip/fail is not the sweep's answer.
+func TestParity_unlistedFailureUsesTheLastCellsResult(t *testing.T) {
+	r := newResults()
+	r.cur = "plain"
+	r.add(testEvent{Action: "fail", Package: "p", Test: "TestRunsInBothCells"})
+	r.cur = "realckpt"
+	r.add(testEvent{Action: "pass", Package: "p", Test: "TestRunsInBothCells"})
+	if got := unlistedFailures(r, nil); len(got) != 0 {
+		t.Fatalf("unlistedFailures = %v, want none — the realckpt cell's PASS is the result", got)
+	}
+}
+
+// EVERY GATE-SHAPED realckpt TEST IS LISTED, ONE WAY OR THE OTHER.
+//
+// The five-week TestQwen3NextReal_oracle incident was a gate no -run could select. Five more were
+// in that state on 2026-09-02 — TestGemma4_26B_gate, TestGlm4MoeAir_gate, TestLagunaGGUF_gate,
+// TestQwen38GGUF_gate, TestGptOssReal_logitParity — and because they were also in no list, the
+// sweep could not even report them as DID NOT RUN. It had no way to say a word about them.
+func TestRealckptGateIsListedOrExplicitlyNotRequired(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("cannot locate the repo root: %v", err)
+	}
+	found := realckptGateTests(root)
+	if len(found) == 0 {
+		// NOT a skip: an empty scan is how this assertion would silently stop asserting, and it is
+		// also what would silently narrow the cell's -run.
+		t.Fatalf("no gate-shaped test found in any //go:build realckpt file under %v — the scan is "+
+			"broken, and a broken scan both empties this check and narrows the sweep's -run", realckptDirs)
+	}
+	required := map[string]bool{}
+	for _, g := range parityRealckptGates {
+		required[g.Test] = true
+	}
+	for _, test := range found {
+		reason, excluded := realckptNotRequired[test]
+		switch {
+		case required[test] && excluded:
+			t.Errorf("%s is BOTH a required gate and in realckptNotRequired — the two disagree "+
+				"about whether its SKIP blocks a tag", test)
+		case required[test]:
+		case excluded && strings.TrimSpace(reason) == "":
+			t.Errorf("%s is in realckptNotRequired with an EMPTY reason — an unexplained exemption "+
+				"is the state that map exists to prevent", test)
+		case excluded:
+		default:
+			t.Errorf("realckpt gate %s is in neither parityRealckptGates nor realckptNotRequired. "+
+				"Unlisted means the sweep has nothing to say about it: not required, and not even "+
+				"reportable as DID NOT RUN. Add it to one list or the other.", test)
+		}
+	}
+	inTree := map[string]bool{}
+	for _, test := range found {
+		inTree[test] = true
+	}
+	for test := range realckptNotRequired {
+		if !inTree[test] {
+			t.Errorf("realckptNotRequired names %q, which is not a gate-shaped test in any realckpt "+
+				"file — a stale exemption reads as a gate somebody considered", test)
+		}
+	}
+}
+
+// The derived -run must reach every gate it knows about, INCLUDING the required gates that are not
+// gate-shaped: TestQwen35GGUF_weightDiff is required and matches neither `_gate`, `_oracle` nor
+// `Parity`, so the scan alone would drop it and the union is load-bearing.
+func TestRealckptRunReachesEveryScannedAndRequiredGate(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("cannot locate the repo root: %v", err)
+	}
+	if _, note := realckptRun(); strings.HasPrefix(note, "!!") {
+		t.Fatalf("realckptRun fell back: %s", note)
+	}
+	// THE CELL'S OWN -run, not realckptRun() in isolation. A derivation nothing wires up is a
+	// function with a test, not a gate — and re-pinning the cell to legacyRealckptRun has to be the
+	// thing that goes red, since that is the state this fix moved away from.
+	pattern := realckptCell(t).Run
+	if pattern == legacyRealckptRun {
+		t.Fatalf("the realckpt cell is pinned to the hand-written %q again; it must use the "+
+			"pattern derived from the tagged files", legacyRealckptRun)
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("cell -run %q does not compile: %v", pattern, err)
+	}
+	for _, test := range realckptGateTests(root) {
+		if !re.MatchString(test) {
+			t.Errorf("derived -run does not select %s", test)
+		}
+	}
+	for _, g := range parityRealckptGates {
+		if !re.MatchString(g.Test) {
+			t.Errorf("derived -run does not select REQUIRED gate %s (%s)", g.Test, g.Family)
+		}
+	}
+	// And it is anchored: a pattern that also matched everything containing a gate name would drag
+	// the realckpt tag's perf and diagnostic tests into a release sweep.
+	if re.MatchString("TestQwen35GGUF_gateExtraSlowDiagnostic") {
+		t.Errorf("derived -run %q is unanchored — it selects tests merely CONTAINING a gate name", pattern)
+	}
+}
+
+// THE TRAP THE SCAN MUST NOT FALL INTO. decoder/int4_golden_test.go is an ordinary untagged file
+// that DISCUSSES "//go:build realckpt" in a comment, and TestInt4_forwardParity is a required gate
+// of the PLAIN cell. A substring scan pulls that file into the realckpt cell and then demands the
+// gate be listed among the realckpt gates, which it is not and should not be.
+func TestRealckptScanReadsTheBuildLineNotTheProse(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "decoder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, "decoder", name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("prose_test.go", "package decoder\n\n// sits behind `//go:build realckpt` plus a missing "+
+		"checkpoint.\nfunc TestProse_forwardParity(t *testing.T) {}\n")
+	write("tagged_test.go", "//go:build realckpt\n\npackage decoder\n\n"+
+		"func TestTagged_gate(t *testing.T) {}\nfunc TestTagged_speed(t *testing.T) {}\n")
+	write("combined_test.go", "//go:build realckpt && cgo\n\npackage decoder\n\n"+
+		"func TestCombined_oracle(t *testing.T) {}\n")
+	write("other_test.go", "//go:build realckpt_lookalike\n\npackage decoder\n\n"+
+		"func TestLookalike_gate(t *testing.T) {}\n")
+
+	got := realckptGateTests(dir)
+	want := []string{"TestCombined_oracle", "TestTagged_gate"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("realckptGateTests = %v, want %v (prose is not a build tag; realckpt_lookalike is "+
+			"not realckpt; _speed is not gate-shaped)", got, want)
+	}
+}
+
+// THE FIX MUST NOT SILENTLY DROP WHAT THE OLD PATTERN RAN. legacyRealckptRun's bare "Qwen35"
+// alternative selected four tests that are not gate-shaped and are on no list; they have been
+// running in every sweep. A filter fix that quietly stops running them is a coverage loss dressed
+// as a correctness fix, which is the shape this repo keeps catching.
+func TestRealckptRunIsAdditiveOverTheLegacyPattern(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("cannot locate the repo root: %v", err)
+	}
+	pattern, _ := realckptRun()
+	re := regexp.MustCompile(pattern)
+	legacy := regexp.MustCompile(legacyRealckptRun)
+	for _, test := range realckptTests(root, legacy.MatchString) {
+		if !re.MatchString(test) {
+			t.Errorf("%s was selected by the legacy -run and the derived one drops it — removing a "+
+				"test from the sweep is its own change, not a side effect of fixing the filter", test)
+		}
+	}
+}
+
+// realckptCell returns the realckpt cell parityCells builds, so assertions read the -run the sweep
+// will actually run rather than a function's return value nothing is wired to.
+func realckptCell(t *testing.T) cell {
+	t.Helper()
+	for _, c := range parityCells(nil, true, "1m") {
+		for _, tag := range c.Tags {
+			if tag == "realckpt" {
+				return c
+			}
+		}
+	}
+	t.Fatal("no realckpt cell built with realckpt=true")
+	return cell{}
+}
+
+// THROUGH A REAL CELL RUN, NOT A HAND-BUILT results. The pieces below were each provable in
+// isolation while the sweep still exited 0, because what was broken was the ARITHMETIC IN THE
+// CALLER: `blockers` came only from the checkset. So this drives runCell over a scratch module and
+// asserts on what extraBlockers — runParity's one call site for both categories — returns.
+func TestParity_extraBlockersCountsUnlistedFailuresAndDeadCells(t *testing.T) {
+	const src = `package scratch
+
+import "testing"
+
+func TestNamedGate(t *testing.T)          {}
+func TestCohere_forwardParity(t *testing.T) { t.Fatalf("cosine 0.31, want >= 0.99") }
+`
+	cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: true}
+	_, _, res, cells := runScratch(t, cfg, scratchModule(t, src))
+
+	var buf strings.Builder
+	got := extraBlockers(&buf, res, []gateCheck{{"a", "TestNamedGate"}}, cells, false)
+	if got != 1 {
+		t.Fatalf("extraBlockers = %d, want 1 (the unlisted parity failure)\n%s", got, buf.String())
+	}
+	if !strings.Contains(buf.String(), "TestCohere_forwardParity") {
+		t.Errorf("the blocking failure is not named in the report:\n%s", buf.String())
+	}
+	// The premise: this failure is invisible to the checkset, which is why it needed a second path.
+	_, checksetBlockers, _, _ := classifyChecks(res, []gateCheck{{"a", "TestNamedGate"}},
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
+	if checksetBlockers != 0 {
+		t.Fatalf("the premise broke: the checkset already blocks (%d) — this test proves nothing",
+			checksetBlockers)
+	}
+}
+
+// A CELL THAT DIED WITHOUT A SINGLE --- FAIL LINE. A panic in a goroutine, a fatal error, a timeout
+// or a build failure aborts `go test` with a non-zero rc and no per-test result, and the sweep ran
+// with RCIsFailure:false — so it delivered a verdict about a cell that never finished.
+func TestParity_deadCellIsABlocker(t *testing.T) {
+	const src = `package scratch
+
+import (
+	"os"
+	"testing"
+)
+
+func TestExitsHard(t *testing.T) { os.Exit(3) }
+`
+	cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: true}
+	_, _, res, cells := runScratch(t, cfg, scratchModule(t, src))
+	if len(cells) != 1 || !cells[0].Hidden {
+		t.Fatalf("the premise broke: cells=%+v (want one cell marked Hidden)", cells)
+	}
+	var buf strings.Builder
+	if got := extraBlockers(&buf, res, nil, cells, false); got != 1 {
+		t.Fatalf("extraBlockers = %d, want 1 for a cell that exited rc=%d with no FAIL line\n%s",
+			got, cells[0].RC, buf.String())
+	}
+
+	// RCIsFailure:false is the state this fixed, and it must be visibly different: nothing at all.
+	cfgOld := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: false}
+	_, _, resOld, cellsOld := runScratch(t, cfgOld, scratchModule(t, src))
+	var bufOld strings.Builder
+	if got := extraBlockers(&bufOld, resOld, nil, cellsOld, false); got != 0 {
+		t.Fatalf("premise broke: the old config already blocked (%d)", got)
+	}
+}
