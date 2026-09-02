@@ -384,7 +384,7 @@ func runGPU(w io.Writer, logDir string) int {
 	case "cuda":
 		g.expect = []string{"cleangpu", "seam", "suite", "parity", "heavy", "graphsforced", "cgofree", "ptx", "repo"}
 	case "metal":
-		g.expect = []string{"cleangpu", "seam", "suite", "cgofree", "lifecycle", "prefill", "repo"}
+		g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "prefill", "repo"}
 	default:
 		g.expect = []string{"cleangpu", "seam", "suite", "repo"}
 	}
@@ -429,6 +429,7 @@ func runGPU(w io.Writer, logDir string) int {
 		g.cudaPTX()
 	case "metal":
 		g.metalSuite()
+		g.metalParity() // G-02: the tagged tier the suite above cannot see
 		g.metalCgoFree()
 		g.metalLifecycle()
 		g.metalPrefill()
@@ -994,15 +995,76 @@ func (g *gpuGate) metalCgoFree() {
 	g.grp("cgofree")
 	g.hdr("3. cgo-free")
 	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
+	// G-03: build the METAL submodule entrypoint, not the root one. Without
+	// `build.Dir` this compiled ./cmd/serve from the repo root -- a binary that
+	// imports no Metal code at all, as cmd/serve/backendtag_guard_metal.go says in
+	// so many words ("`-tags metal` does nothing on the root cmd/serve since
+	// v0.10.0 (it builds no backend)"). It therefore built fine forever and the
+	// group asserted "Metal is dlopen'd via purego-objc" about a binary with no
+	// Metal in it. The CUDA half of this was fixed at d2c4858 (build.Dir = "cuda");
+	// this half was not, so the gate has been passing on the wrong artifact.
 	build := exec.Command("go", "build", "-o", bin, "./cmd/serve")
+	build.Dir = "metal"
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if err := build.Run(); err != nil {
-		g.bad("serve does not build CGO_ENABLED=0")
+		g.bad("metal/cmd/serve does not build CGO_ENABLED=0")
 		return
 	}
+	// The otool analogue of CUDA's ldd check: purego-objc resolves the Metal
+	// framework at RUNTIME, so a link-time reference to it would falsify the
+	// cgo-free claim exactly as a libcuda link falsifies the CUDA one. Checking the
+	// build succeeds proves only that it compiles.
+	linked := ""
+	if b, err := exec.Command("otool", "-L", bin).Output(); err == nil {
+		for _, ln := range strings.Split(string(b), "\n") {
+			l := strings.ToLower(ln)
+			if strings.Contains(l, "metal.framework") || strings.Contains(l, "metalperformanceshaders") {
+				linked += ln + "\n"
+			}
+		}
+	}
 	os.Remove(bin)
+	if linked != "" {
+		g.bad("binary links the Metal framework — the cgo-free claim is false:")
+		for _, ln := range strings.Split(strings.TrimRight(linked, "\n"), "\n") {
+			fmt.Fprintf(g.w, "        %s\n", strings.TrimSpace(ln))
+		}
+		return
+	}
 	g.ran++
-	g.ok("serve builds CGO_ENABLED=0 (Metal is dlopen'd via purego-objc)")
+	g.ok("metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)")
+}
+
+// ---- Metal resident PARITY gates — the forward is asserted here ----
+//
+// G-02: no Metal cell passed `-tags goinfer_testhooks`, so the ritual's "full
+// metal suite" was the kernel tier plus the snapshot golden, and 59 files / 64
+// test funcs -- every Metal resident-parity gate among them -- were never
+// COMPILED, let alone run. RELEASING.md said the Metal run vouches for G10 and
+// G11; neither was built by the command it named. This is the hole cudaParity
+// describes closing for CUDA, mirrored.
+//
+// Filtered to the resident-parity gates rather than the whole tagged tree: the
+// tag also selects long device tests that belong to other groups, and a cell
+// that quietly runs everything is how a timeout becomes indistinguishable from a
+// crash. -timeout is declared for the same reason cudaParity declares it.
+func (g *gpuGate) metalParity() {
+	g.grp("parity")
+	g.hdr("2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)")
+	_, cr, out := g.run(cell{
+		Name: "metal-parity", Pkgs: []string{"./metal/"}, Tags: []string{"goinfer_testhooks"},
+		Run:     "ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity",
+		Serial:  true,
+		Timeout: "20m",
+		Env:     map[string]string{"GOINFER_HEAVY_TESTS": "1"},
+	}, false)
+	if cr.RC != 0 || cr.vacuous() {
+		g.bad("resident parity gates — a Metal forward moved. This is the group the suite cannot see.")
+		g.detail(out, failLineRe)
+		return
+	}
+	g.ran++
+	g.ok("resident parity gates (dense, gemma3, gemma4 MoE, qwen3.5, mellum, gpt-oss, paging bit-exactness)")
 }
 
 // metalModel is the one checkpoint the Metal lifecycle and prefill gates need. Keeping both on the

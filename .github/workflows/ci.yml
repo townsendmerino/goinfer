@@ -337,6 +337,16 @@ jobs:
       - name: vet (metal module)
         run: go vet ./metal/...
 
+      # G-02: the untagged vet above compiles NONE of the 59 files behind
+      # `//go:build darwin && goinfer_testhooks` -- 64 test funcs including every
+      # Metal resident-parity gate (TestDenseResidentParity, TestGemma4MoE_residentParity,
+      # TestQwen35ResidentParityMetal, TestMellumResidentParity, TestGptOssResidentParityReal20B,
+      # TestGemma4Paging_bitExact, ...). A type error in any of them was invisible
+      # until someone hand-ran with the tag. vet COMPILES without running, so this
+      # is device-free and safe on the runner whose Metal layer SIGSEGVs.
+      - name: vet (metal module, testhooks-tagged — compiles the 59 device-test files)
+        run: go vet -tags goinfer_testhooks ./metal/...
+
       # DEVICE TESTS CANNOT RUN HERE. The macos-latest runner's paravirtual Metal/objc layer
       # SIGSEGVs inside purego's objc_msgSend the moment a test touches the device (measured: a
       # near-null crash in objc.ID.Send), and that abort takes the whole test binary down — so we
