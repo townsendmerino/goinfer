@@ -838,17 +838,17 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:545` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:283` | goinfer | `func TestRealckptCellCanReachEveryGate(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:319` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `anchor: func (m *Masker) StopWhenComplete() *Masker {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:211` | goinfer | `logits[id] = neg` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:153` | goinfer | `logits[id] = neg` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `if len(m.eosIDs) > 0 {` |
+| `docs/audit-2026-09-02.md|constrain/json.go:100` | goinfer | `func (g *jsonGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-02.md|constrain/json.go:84` | goinfer | `func (g *jsonGrammar) CanEnd() bool {` |
-| `docs/audit-2026-09-02.md|constrain/json.go:96` | goinfer | `func (g *jsonGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:12` | goinfer | `// GrammarFromStruct derives a JSON Schema from a Go struct (via its json tags)` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:178` | goinfer | `case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
 | `docs/audit-2026-09-02.md|constrain/schema.go:196` | goinfer | `propsRaw, _ := s["properties"].(map[string]any)` |
 | `docs/audit-2026-09-02.md|constrain/schema.go:200` | goinfer | `// An object with no declared properties and no `additionalProperties:false` is the` |
 | `docs/audit-2026-09-02.md|constrain/schema.go:318` | goinfer | `// encodeLiteral renders an enum/const value to the compact JSON bytes the model must` |
-| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:105` | goinfer | `func (g *schemaGrammar) TryBytes(bs []byte) bool {` |
+| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:112` | goinfer | `func (g *schemaGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-02.md|constrain/schema_grammar.go:78` | goinfer | `// CanEnd reports whether the committed output is a complete document: the root` |
 | `docs/audit-2026-09-02.md|constrain/schema_grammar.go:88` | goinfer | `func (g *schemaGrammar) CanEnd() bool {` |
 | `docs/audit-2026-09-02.md|constrain/schema_test.go:183` | goinfer | `out := genConstrained(t, g, int64(i)+1, 15) // cap digits so ints fit int64` |
@@ -2283,7 +2283,7 @@ maxAbsDiff=0) both pass with it on.
   reproduces the exhaustion. Pre-existing and not caused by this change, but it means **a green full
   suite here is not evidence** — the gates above were run standalone on purpose. Worth its own fix.
 
-## G37 · P-20 measured: constrained decoding is ~1.8–2.0×, not 3–10× — and the ratio is model-dependent by construction
+## G37 · P-20 measured, then fixed: constrained decoding 1.9× → **1.21×** — and the ratio is model-dependent by construction
 
 Measured 2026-09-02, before designing anything on top of it, per the ordering revision in
 `docs/task-embed-and-harness-ux.md` §6. P-20 was explicit that its numbers were an **estimate**
