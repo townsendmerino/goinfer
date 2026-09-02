@@ -1,6 +1,9 @@
 # Task: the first hour — embedding goinfer in a Go program, and pointing existing tools at `serve`
 
-> **Status: SCOPED 2026-09-02, nothing started.** Design record for the two modes of use where
+> **Status: SCOPED 2026-09-02. Phase 0 SHIPPED the same day** (`pull` exported; `hf:`/`demo:`
+> references accepted by `--model` on both binaries). The ordering was changed on review — see
+> §6 — so mode 3 (banner, `serve check`) comes before the facade, and P-20 is measured before
+> the facade is designed around it. Everything else below is unstarted. Design record for the two modes of use where
 > "pure Go, one static binary, no toolchain" is a differentiator no peer has, and where the
 > audience the repo names — a Go engineer, not an ML person — actually lives: **mode 2, embed it**
 > (`go get`, in-process) and **mode 3, point my tools at it** (`serve` behind Claude Code, dsh,
@@ -46,8 +49,10 @@ them"). The audit fixed the crashes; it did not add the script.
 What a Go program has to do to get a filled-in struct out of a model, read off `internal/chatapp`
 and the README example (`README.md:76-88`):
 
-1. Find a checkpoint (now: `goinfer-chat pull`, but `internal/modelpull` is `internal` — a library
-   caller cannot reach it).
+1. ~~Find a checkpoint (now: `goinfer-chat pull`, but `internal/modelpull` is `internal` — a
+   library caller cannot reach it).~~ **CLOSED by phase 0:** the package is exported as
+   `goinfer/pull` (Experimental), and `--model hf:owner/repo:quant` / `demo:tier` fetches on
+   first use, so a library caller and a CLI user take the same first step.
 2. `decoder.Load(dir, decoder.Options{...})` (`decoder/model.go:193`), choosing a quant and a
    backend, and knowing that four default-ON behaviours are set through `os.Setenv` rather than
    `Options` (N-42).
@@ -63,7 +68,7 @@ and the README example (`README.md:76-88`):
    embedded structs, `time.Time`, unsigned ints, enums containing `<`, a top-level integer (M-27,
    M-28, M-29), and refuses the canonical no-argument tool schema (M-30).
 
-Six steps, two packages the user must not know about (`internal/modelpull`, the env plumbing),
+Five steps remaining, one package the user must not know about (the env plumbing),
 and the promise at step 6 broken in five places. Every one of those steps is code the demos
 already carry; the design below is a matter of moving it under one name.
 
@@ -123,7 +128,7 @@ now with a reason to exist beyond release hygiene.
 | tool calls that round-trip | M-18 (Responses loop) fixed | M-20 Gemma-4 tool template; N-18 `tool_choice` required/any; M-26 usage chunk on tool streams |
 | structured output through the API | works for objects | M-27 top-level scalars; M-30 no-arg tool schema |
 | an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30 | prefix reuse off on the resident path; L-05/L-15 |
-| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:927-932`) | the rest of §3.3 |
+| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:939-932`) | the rest of §3.3 |
 | finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
 
 ### 3.2 One command
@@ -211,8 +216,24 @@ by default (the banner says how to turn it on); which of the five routes a given
 
 ## 6. Phasing — each independently droppable
 
-0. **Export `pull`** (`internal/modelpull` → `goinfer/pull`) and the `hf:` reference in
-   `-model` and `goinfer-chat`. A few lines; the first minute for both modes.
+> **Ordering revised on review, 2026-09-02.** As written, phase 1 (the facade, mode 2) preceded
+> phase 2 (banner + `serve check`, mode 3). Reversed, for two reasons. **Audience:** mode 3 has a
+> named consumer with a recorded run (dsh, 277 s, 2026-08-26) and a recipe already in
+> `docs/server.md`; no mode-2 consumer is named anywhere in the repo, so its demand is inferred.
+> **Reversibility:** the banner and the doctor commit to no API, while the facade is a public
+> surface that the bindings will wrap — a wrong guess there propagates into C.
+>
+> And **G4's number is measured before the facade is designed**, not in phase 3. P-20's "3–10×"
+> is explicitly an ESTIMATE ("plausibly 3–10× slower"), and the audit lists it among the items
+> whose measurement is cheap. It decides whether `Into[T]` — the facade's headline and the
+> README's literal promise — is a flagship or a footnote, so it cannot stay a guess underneath
+> a design that assumes it.
+
+0. ~~**Export `pull`** and the `hf:` reference in `-model` and `goinfer-chat`.~~ **SHIPPED
+   2026-09-02.** `internal/modelpull` → `goinfer/pull`, listed Experimental in `api-tiers.md`;
+   `pull.Resolve`/`IsRef` behind `--model` on both binaries. A plain path is returned untouched
+   and stays Hard — `TestResolve_pathsAreUntouched` holds that line, because otherwise every
+   existing `--model` silently changes meaning.
 1. **The facade**: `Open`, `Chat`, `Complete`, `Into[T]`, `Options`, typed errors; the README
    example; G1 + G2 (which means closing M-27–M-30 first — they are the corpus).
 2. **The banner** (§3.3) and **`serve check`** (§3.4) with G3 + G6; the recipes (§3.5) with G5.
@@ -243,7 +264,7 @@ by default (the banner says how to turn it on); which of the five routes a given
 `docs/api-tiers.md` (the Hard tier; the surfaces the facade must not touch) · `README.md:76-88`
 (the six-step example the facade replaces) · `internal/chatapp/main.go` (the 632-line reference
 implementation of mode 2) · `decoder/model.go:146-163`, `:193`, `:802` (`Options`, `Load`,
-`Generate`) · `chat/chat.go:97` (`Detect`) · `internal/modelpull/pull.go` (the library `pull`
+`Generate`) · `chat/chat.go:97` (`Detect`) · `pull/pull.go` (the library `pull`
 exports) · `internal/serveapp/main.go:328`, `:354`, `:927-932` (`-web`, `-require-backend`, the
 resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and dsh today) ·
 `docs/scoping-dsh-goinfer.md` (Tier 0–2) · `docs/task-model-pull.md` (shipped; `hf:` refs, the

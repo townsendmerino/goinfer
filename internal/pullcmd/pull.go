@@ -2,7 +2,7 @@
 //
 // It lives outside both chatapp and serveapp so `goinfer-chat pull` and `goinfer-serve pull`
 // are one implementation with two dispatchers, rather than the same flags and error messages
-// maintained twice. internal/modelpull stays the library underneath; this is only the CLI.
+// maintained twice. the pull package stays the library underneath; this is only the CLI.
 package pullcmd
 
 import (
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/modelpull"
+	"github.com/townsendmerino/goinfer/pull"
 )
 
 // pullUsage is printed for `pull -h` and on a malformed reference.
@@ -83,7 +83,7 @@ func Run(args []string) int {
 		return 2
 	}
 
-	ref, err := modelpull.ParseRef(refArg)
+	ref, err := pull.ParseRef(refArg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 2
@@ -93,11 +93,11 @@ func Run(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := modelpull.CheckAccess(ctx, ref.Repo); err != nil {
+	if err := pull.CheckAccess(ctx, ref.Repo); err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 1
 	}
-	files, err := modelpull.List(ctx, ref.Repo)
+	files, err := pull.List(ctx, ref.Repo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 1
@@ -108,13 +108,13 @@ func Run(args []string) int {
 	if ref.File == "" && ref.Quant == "" {
 		fmt.Printf("%s — %d GGUF file(s):\n", ref.Repo, len(files))
 		for _, f := range files {
-			fmt.Printf("  %-52s %10s\n", f.Path, modelpull.HumanBytes(f.Size))
+			fmt.Printf("  %-52s %10s\n", f.Path, pull.HumanBytes(f.Size))
 		}
 		fmt.Printf("\nfetch one with:  %s pull %s:<quant>\n", self(), ref.Repo)
 		return 0
 	}
 
-	f, err := modelpull.Select(files, ref)
+	f, err := pull.Select(files, ref)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 1
@@ -122,14 +122,14 @@ func Run(args []string) int {
 
 	dir := *outDir
 	if dir == "" {
-		if dir, err = modelpull.CacheDir(ref.Repo); err != nil {
+		if dir, err = pull.CacheDir(ref.Repo); err != nil {
 			fmt.Fprintf(os.Stderr, "goinfer-chat pull: locating cache dir: %v\n", err)
 			return 1
 		}
 	}
 
 	fmt.Printf("%s\n  %s  (%s)\n  sha256 %s\n  -> %s\n",
-		ref.Repo, f.Path, modelpull.HumanBytes(f.Size), shortSHA(f.SHA256), dir)
+		ref.Repo, f.Path, pull.HumanBytes(f.Size), shortSHA(f.SHA256), dir)
 
 	start := time.Now()
 	// A terminal gets a single carriage-return-updated line; a pipe or log file gets
@@ -142,14 +142,14 @@ func Run(args []string) int {
 		interval = time.Second
 	}
 	var lastPrint time.Time
-	path, err := modelpull.Download(ctx, ref.Repo, f, dir, func(done, total int64) {
+	path, err := pull.Download(ctx, ref.Repo, f, dir, func(done, total int64) {
 		el := time.Since(start).Seconds()
 		if el <= 0 || (!tty && time.Since(lastPrint) < interval) {
 			return
 		}
 		lastPrint = time.Now()
 		rate := float64(done) / el
-		line := fmt.Sprintf("  %s / %s  %s/s", modelpull.HumanBytes(done), modelpull.HumanBytes(total), modelpull.HumanBytes(int64(rate)))
+		line := fmt.Sprintf("  %s / %s  %s/s", pull.HumanBytes(done), pull.HumanBytes(total), pull.HumanBytes(int64(rate)))
 		// ETA only once there is enough of a sample to mean anything, and only when the
 		// total is known — a confidently wrong estimate is worse than none, because it
 		// gets planned around.
@@ -201,7 +201,7 @@ func Run(args []string) int {
 // -embed therefore needs a source checkout and a Go toolchain, which is the right constraint:
 // the person BUILDING a distributable is a developer, and the person RECEIVING it needs
 // nothing at all. That asymmetry is the whole point of the feature.
-func runEmbed(model string, ref modelpull.Ref, name string, raw bool, targets []string) int {
+func runEmbed(model string, ref pull.Ref, name string, raw bool, targets []string) int {
 	root, err := repoRoot()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\ngoinfer-chat pull -embed: %v\n", err)
@@ -270,7 +270,7 @@ func mustGetwd() string {
 // embedName derives the output basename from the repo, so `pull …-1.5B-Instruct-GGUF -embed`
 // yields goinfer-chat-qwen2.5-coder-1.5b-instruct rather than clobbering a previous build.
 // Sanitised to a conservative charset because it becomes a filename.
-func embedName(ref modelpull.Ref) string {
+func embedName(ref pull.Ref) string {
 	_, repo, _ := strings.Cut(ref.Repo, "/")
 	repo = strings.ToLower(repo)
 	repo = strings.TrimSuffix(repo, "-gguf")

@@ -29,7 +29,7 @@ func TestWebUI_disabledByDefault(t *testing.T) {
 	}
 }
 
-// TestWebUI_rejectsBadRepo is the network boundary for the traversal fix in modelpull:
+// TestWebUI_rejectsBadRepo is the network boundary for the traversal fix in the pull package:
 // the repo name now arrives from an HTTP body, which is exactly the untrusted source the
 // allow-list exists for. No network is reached — ParseRef fails first, which is the point.
 func TestWebUI_rejectsBadRepo(t *testing.T) {

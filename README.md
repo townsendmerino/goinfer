@@ -49,6 +49,16 @@ to install, and no `huggingface-cli`:
 
 Interrupted transfers resume where they stopped. `goinfer-serve pull …` is the same command.
 
+Or skip the separate step entirely — `--model` takes the same reference and fetches it on first
+use, so one command goes from nothing to a running endpoint:
+
+```bash
+goinfer-serve -model hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
+goinfer-chat  --model demo:0.5b
+```
+
+A plain path still means exactly what it always did; only the `hf:`/`demo:` prefixes are new.
+
 It lands in your user cache dir and prints the exact `--model` command to run it. Anonymous
 only: a gated repo is detected before the transfer starts and named, rather than failing after
 a multi-gigabyte download — community GGUF re-uploads are usually ungated and work directly.

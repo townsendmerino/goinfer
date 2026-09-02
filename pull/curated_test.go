@@ -1,4 +1,4 @@
-package modelpull
+package pull
 
 import (
 	"os"
@@ -18,7 +18,7 @@ import (
 //
 // If this test fails after a deliberate model bump, update BOTH files. That is the point.
 func TestCurated_matchesReleaseWorkflow(t *testing.T) {
-	wf, err := os.ReadFile("../../.github/workflows/release-assets.yml")
+	wf, err := os.ReadFile("../.github/workflows/release-assets.yml")
 	if err != nil {
 		t.Fatalf("reading the release workflow: %v", err)
 	}

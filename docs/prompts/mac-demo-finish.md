@@ -13,7 +13,7 @@ host-agnostic:
 1. **The typed command is visible.** `demo.tape:21,26` type
    `./goinfer-chat-1.5b-linux-amd64` — unmodified, as you noted — so the recording displays that
    filename while a `darwin-arm64` binary is what actually ran.
-2. **The demo prints its own throughput.** `internal/chatapp/main.go:369` writes
+2. **The demo prints its own throughput.** `internal/chatapp/main.go:375` writes
    `[%d tok, %.1f tok/s]` after each answer, so a **measured speed is on screen in the GIF**.
 
 Together those make the most-seen artifact in the repo show a **Linux x86 binary name beside an

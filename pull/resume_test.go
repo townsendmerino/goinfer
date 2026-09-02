@@ -1,4 +1,4 @@
-package modelpull
+package pull
 
 import (
 	"bytes"

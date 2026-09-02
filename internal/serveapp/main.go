@@ -48,6 +48,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/pull"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -337,7 +338,7 @@ func Main() {
 	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in; requires -api-key)")
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
-	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/completions). Repeatable\n"+
+	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
 		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
@@ -663,6 +664,17 @@ func newServer(cfg config) (*server, error) {
 		responses: newResponseStore(256),
 	}
 	for _, spec := range cfg.models {
+		// An `hf:`/`demo:` spec is fetched (or found in the cache) BEFORE the load, so the
+		// served name is derived from the real filename and everything downstream sees an
+		// ordinary path. A plain path is returned untouched, so no existing --model changes
+		// meaning — the property that lets a reference form be added to a Hard-tier flag.
+		if pull.IsRef(spec.path) {
+			resolved, err := pull.ResolveVerbose(context.Background(), spec.path)
+			if err != nil {
+				return nil, fmt.Errorf("resolving %s: %w", spec.path, err)
+			}
+			spec.path = resolved
+		}
 		// Startup load: a transparent .gguf→.giw transcode here isn't request-scoped, so
 		// context.Background() (a Ctrl-C during startup already ends the process). The admin
 		// load path below passes the request context so a disconnect cancels it (M-21).

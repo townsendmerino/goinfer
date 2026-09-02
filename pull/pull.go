@@ -1,4 +1,9 @@
-// Package modelpull fetches a GGUF checkpoint from HuggingFace onto local disk.
+// Package pull fetches a GGUF checkpoint from HuggingFace onto local disk.
+//
+// EXPERIMENTAL (docs/api-tiers.md): supported and used by every goinfer front end, but it may
+// change in any release. It was `internal/modelpull` until 2026-09-02; it is exported because a
+// library caller embedding goinfer needs the same first step the CLIs and the web UI take, and
+// re-deriving it is the one part of "get a model" that has no other owner.
 //
 // It is deliberately the ONLY new capability in the model-pull work: goinfer already
 // loads a .gguf or .giw (--model), already transcodes a bare .gguf to a sidecar .giw
@@ -11,7 +16,7 @@
 //
 // No new module dependency: net/http, crypto/sha256 and encoding/json only, which keeps
 // the cgo-free single-static-binary property the rest of the project is built around.
-package modelpull
+package pull
 
 import (
 	"context"
@@ -89,7 +94,7 @@ func Curated() map[string]CuratedTier {
 			Tiers map[string]CuratedTier `json:"tiers"`
 		}
 		if err := json.Unmarshal(curatedJSON, &doc); err != nil {
-			panic("modelpull: curated.json is malformed: " + err.Error()) // build-time asset; a parse failure is a bug, not input
+			panic("pull: curated.json is malformed: " + err.Error()) // build-time asset; a parse failure is a bug, not input
 		}
 		curated.tiers = doc.Tiers
 	})

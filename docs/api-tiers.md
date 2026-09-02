@@ -111,6 +111,15 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `--stream-weights`, `--drafter`, `--spec`, `--adapter`, `--vision-*`, `--metal-fast-prefill`,
   `--embed-*`, `--require-be`, `--allow-admin` bodies). `Options.Quant` and `Options.LoRA` are
   Hard and listed above.
+- **Checkpoint fetching.** The `pull` package — `Resolve`, `IsRef`, `ParseRef`, `Ref`, `File`,
+  `List`, `Select`, `CheckAccess`, `Download`, `CacheDir`, `Curated`, `CuratedNames`,
+  `CuratedTier`, `HumanBytes` — and the `hf:`/`demo:` reference form accepted by `--model` and
+  `goinfer-chat`/`goinfer-serve`. It was `internal/modelpull` until 2026-09-02 and is exported
+  because a library caller embedding goinfer needs the same first step the CLIs and the web UI
+  take. Experimental because the reference syntax and the curated tier list are both expected to
+  move; the CACHE LAYOUT is not a promise either. **A plain path passed to `--model` is returned
+  untouched and is Hard as before** — the reference form is additive, and `TestResolve_pathsAreUntouched`
+  is what holds that line.
 - **The submodules themselves** — `gpu/`, `cuda/`, `metal/`, `demo/agent` — are Experimental as
   packages regardless of their tag numbers (see Open questions on posture).
 

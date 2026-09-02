@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/townsendmerino/goinfer/internal/modelpull"
+	"github.com/townsendmerino/goinfer/pull"
 )
 
 // The local web UI (docs/completed/task-model-pull.md §4, option B).
@@ -85,30 +85,30 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	ref, err := modelpull.ParseRef(req.Repo)
+	ref, err := pull.ParseRef(req.Repo)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := modelpull.CheckAccess(ctx, ref.Repo); err != nil {
+	if err := pull.CheckAccess(ctx, ref.Repo); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	files, err := modelpull.List(ctx, ref.Repo)
+	files, err := pull.List(ctx, ref.Repo)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	out := make([]map[string]any, 0, len(files))
 	for _, f := range files {
-		out = append(out, map[string]any{"path": f.Path, "size": f.Size, "human": modelpull.HumanBytes(f.Size), "sha256": f.SHA256})
+		out = append(out, map[string]any{"path": f.Path, "size": f.Size, "human": pull.HumanBytes(f.Size), "sha256": f.SHA256})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"repo": ref.Repo, "files": out})
 }
 
-// handleWebPull streams download progress as SSE. It reuses internal/modelpull unchanged,
+// handleWebPull streams download progress as SSE. It reuses the pull package unchanged,
 // so the digest verification and the .part-then-rename behaviour are identical to the CLI's
 // — the UI is a second front end on one implementation, not a second implementation.
 func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +126,7 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	case req.Quant != "":
 		spec += ":" + req.Quant
 	}
-	ref, err := modelpull.ParseRef(spec)
+	ref, err := pull.ParseRef(spec)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -163,35 +163,35 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	// r.Context() dies when the browser tab closes, which cancels the transfer and lets
 	// Download clean up its .part file — no orphaned multi-GB write after a closed tab.
 	ctx := r.Context()
-	if err := modelpull.CheckAccess(ctx, ref.Repo); err != nil {
+	if err := pull.CheckAccess(ctx, ref.Repo); err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	files, err := modelpull.List(ctx, ref.Repo)
+	files, err := pull.List(ctx, ref.Repo)
 	if err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	f, err := modelpull.Select(files, ref)
+	f, err := pull.Select(files, ref)
 	if err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	dir, err := modelpull.CacheDir(ref.Repo)
+	dir, err := pull.CacheDir(ref.Repo)
 	if err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	send("start", map[string]any{"file": f.Path, "size": f.Size, "human": modelpull.HumanBytes(f.Size), "sha256": f.SHA256, "dir": dir})
+	send("start", map[string]any{"file": f.Path, "size": f.Size, "human": pull.HumanBytes(f.Size), "sha256": f.SHA256, "dir": dir})
 
 	start := time.Now()
-	path, err := modelpull.Download(ctx, ref.Repo, f, dir, func(done, total int64) {
+	path, err := pull.Download(ctx, ref.Repo, f, dir, func(done, total int64) {
 		el := time.Since(start).Seconds()
 		var rate float64
 		if el > 0 {
 			rate = float64(done) / el
 		}
-		p := map[string]any{"done": done, "total": total, "human": modelpull.HumanBytes(done), "rate": modelpull.HumanBytes(int64(rate)) + "/s"}
+		p := map[string]any{"done": done, "total": total, "human": pull.HumanBytes(done), "rate": pull.HumanBytes(int64(rate)) + "/s"}
 		// ETA only once the sample is long enough to mean something. A confidently wrong
 		// estimate is worse than none: it gets planned around.
 		if total > 0 && rate > 0 && el > 3 {

@@ -41,6 +41,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
+	"github.com/townsendmerino/goinfer/pull"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -83,7 +84,7 @@ func Main() {
 		os.Exit(pullcmd.Run(os.Args[2:]))
 	}
 	var (
-		model    = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build to use the baked-in model)")
+		model    = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
 		system   = flag.String("system", defaultSystem, "system prompt that steers the model")
 		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
 		quant    = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest; lossier) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM; required for --backend metal) | int8 | \"\" (native f32). All quantized modes get batched CUDA prefill; native f32 falls back to sequential. Default int4")
@@ -123,8 +124,13 @@ func Main() {
 	var err error
 	switch {
 	case *model != "":
-		// Explicit checkpoint (a .gguf file or an HF dir) — load from disk.
-		s, err = loadFromPath(*model, opts)
+		// Explicit checkpoint (a .gguf file, an HF dir, or an hf:/demo: reference fetched on
+		// first use). pull.ResolveVerbose returns a plain path untouched, so this cannot
+		// change what an existing --model means.
+		var path string
+		if path, err = pull.ResolveVerbose(context.Background(), *model); err == nil {
+			s, err = loadFromPath(path, opts)
+		}
 	case hasEmbeddedModel:
 		// Baked-in model (-tags embed): in-memory by default — no temp file, so
 		// the binary runs on a read-only filesystem. --model-tmp opts into the
