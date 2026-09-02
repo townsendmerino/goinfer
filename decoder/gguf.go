@@ -484,6 +484,14 @@ func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 	if headDim <= 0 || numLayers <= 0 {
 		return nil, fmt.Errorf("decoder(gguf-laguna): missing attention.key_length / block_count")
 	}
+	// M-10(a): BOUND block_count before anything allocates from it. granitehybrid, nemotron
+	// and llama4 got ggufLayerCount; laguna did not, and it goes on to `make([]string,
+	// numLayers)`. A GGUF declaring laguna.block_count = 2^36 asks for 1 TiB — under Go's
+	// maxAlloc, so it is a FATAL "out of memory" rather than a panic, and the loader's own
+	// recover() cannot catch it. Untrusted metadata, unbounded allocation, no error.
+	if _, err := ggufLayerCount(int(numLayers)); err != nil {
+		return nil, err
+	}
 	// Sigmoid routing is not optional in this family; llama.cpp encodes it as
 	// expert_gating_func 2 (softmax is 1). Fail loudly rather than route by softmax.
 	if gfn := u("expert_gating_func"); gfn != 0 && gfn != 2 {
@@ -1298,6 +1306,7 @@ const (
 	maxGGUFHidden    = 1 << 20
 	maxGGUFHeads     = 1 << 16
 	maxGGUFVocabSize = 1 << 24
+	maxGGUFExperts   = 1 << 16
 )
 
 // validateGGUFDims rejects core dimensions that are out of range before they

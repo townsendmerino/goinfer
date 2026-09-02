@@ -396,6 +396,20 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}
 		return nil
 	}
+	// req is vec for a vector the family's forward dereferences UNCONDITIONALLY, where
+	// "absent" is not a family that omits it but a bundle that is missing it. vec's `got == 0
+	// ⇒ allowed` is what let a pre-v6 gpt-oss sidecar through: it is still within
+	// giwMinReadV, still "fresh" by mtime, reads AttnSinks as nil, passes validateShapes, and
+	// panics at forward_gptoss.go's `lw.AttnSinks[qh]` on the first request (M-11). Same
+	// shape as the LFM2 conv presence check below (C-03).
+	req := func(name string, got, want int) *SerializeError {
+		if got == 0 {
+			return &SerializeError{fmt.Sprintf("%s: absent, arch requires len %d — the bundle "+
+				"predates this field (rewrite the .giw sidecar; mtime freshness cannot see a "+
+				"missing tensor)", name, want)}
+		}
+		return vec(name, got, want)
+	}
 	if w.Embed.Rows() > 0 {
 		if e := eq("Embed", w.Embed.Rows(), arch.VocabSize); e != nil {
 			return e
@@ -611,6 +625,47 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 					}
 				}
 			}
+		}
+
+		// M-11: the v6 completeness tail. forward_gptoss.go indexes AttnSinks[qh] for every
+		// head and addBias iterates every expert bias with no nil check, so for THIS family
+		// these are required, not optional — and the trigger is real rather than theoretical:
+		// a gpt-oss sidecar written before v6 is sink-free, within giwMinReadV, and judged
+		// fresh by mtime.
+		if arch.gptoss != nil {
+			if e := req(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.NumHeads); e != nil {
+				return e
+			}
+			for xe := range lw.Experts {
+				ex := &lw.Experts[xe]
+				if ex.Gate.Rows() == 0 {
+					continue // an expert the bundle stacks elsewhere; its biases live there too
+				}
+				for _, c := range []struct {
+					name string
+					got  int
+					want int
+				}{
+					{"GateBias", len(ex.GateBias), arch.MoE.IntermediateDim},
+					{"UpBias", len(ex.UpBias), arch.MoE.IntermediateDim},
+					{"DownBias", len(ex.DownBias), arch.HiddenDim},
+				} {
+					if e := req(fmt.Sprintf("layer %d expert %d %s", i, xe, c.name), c.got, c.want); e != nil {
+						return e
+					}
+				}
+			}
+		}
+	}
+
+	// M-11: the model-level PLE tail. gemma4's forward reads all three unconditionally when
+	// the arch declares PLE, and a bundle from before v4 has none of them.
+	if arch.gemma4 != nil && w.PerLayerTokenEmbed.Rows() > 0 {
+		if e := eq("PerLayerModelProj", w.PerLayerModelProj.Rows(), arch.HiddenDim); e != nil {
+			return e
+		}
+		if e := req("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.HiddenDim); e != nil {
+			return e
 		}
 	}
 	return nil

@@ -77,6 +77,21 @@ type Sampler struct {
 
 // NewSampler builds a sampler from params.
 func NewSampler(p SamplingParams) *Sampler {
+	// M-08: MinP > 1 asks for "keep tokens with probability ≥ 1.2× the maximum", which is
+	// nothing — the threshold maxL + T·ln(minP) sits ABOVE maxL, so the candidate set comes
+	// back empty and the always-keep-the-top-token clamps then index ips[:1] on an empty
+	// slice or ips[-1]. Measured before the fix: `index out of range [-1]`, panicking inside
+	// the Generate goroutine. min_p is not on the HTTP surface, so this reached users through
+	// the library and `goinfer-chat --min-p`.
+	//
+	// Clamped rather than rejected: SamplingParams has no error return here, every other
+	// degenerate value in this struct is clamped or ignored, and 1.0 is the identity for
+	// min-p (keep only what ties the max) — the nearest meaningful reading of "more than
+	// everything". The docstring's "min_p at any value are safe" is now true rather than
+	// aspirational.
+	if p.MinP > 1 {
+		p.MinP = 1
+	}
 	return &Sampler{p: p, rng: rand.New(rand.NewSource(p.Seed))}
 }
 
@@ -170,6 +185,13 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 		// (amendment 3). The old path softmaxed all V then full-sorted all V; both
 		// are gone for the filtered case, replaced by topFilterLogits below.
 		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(work))))
+		if info.ID < 0 {
+			// Unreachable: every filter is documented to keep at least the top token, and
+			// NewSampler clamps the one input that could empty the set (M-08). If it ever
+			// happens, the argmax is the answer those clamps were reaching for — a valid id
+			// beats a −1 propagating out as a token, and beats a panic in this goroutine.
+			info.ID = argmax(work)
+		}
 	} else if s.p.Logprobs {
 		// Logprobs needs the full normalized distribution anyway, so the exact path costs nothing extra.
 		info.ID = s.drawFull(softmaxStable(work, s.p.Temperature))
@@ -318,6 +340,13 @@ func computeLogprobs(logits []float32, chosen int, temperature float64, topN int
 // drawFiltered samples one id from the renormalized (id, prob) pairs that
 // survived top-k/top-p/min-p filtering (the trailing return guards float rounding).
 func (s *Sampler) drawFiltered(ips []indexedProb) int {
+	// Defence in depth for M-08: the caller's filters are supposed to keep at least the top
+	// token, and NewSampler now clamps the one input that could empty them. An empty set here
+	// would still be a −1 index, so return a sentinel the CALLER converts to the argmax,
+	// instead of panicking in the generation goroutine.
+	if len(ips) == 0 {
+		return -1
+	}
 	r := s.rng.Float64()
 	var cum float64
 	for _, ip := range ips {

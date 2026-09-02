@@ -71,7 +71,7 @@ niche (single-user, consumer hardware, safetensors/GGUF).
 
 **Possibly-relevant, not confirmed:** Tab. 11's comparison baseline is named `Qwen3.8-27B-Base` —
 a plausible match for the dense hybrid goinfer's `qwen35DenseArchitecture` already implements and
-calls "Qwen3.8" in its own code comment (`decoder/registry.go:1976`). If they're the same family,
+calls "Qwen3.8" in its own code comment (`decoder/registry.go:2063`). If they're the same family,
 goinfer already runs a sibling from this exact lineage today, not merely something
 architecturally adjacent. Worth a five-minute config check at pickup — not asserted here.
 

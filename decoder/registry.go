@@ -66,6 +66,20 @@ func resolveArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("decoder: unsupported model_type %q (have: %s)", cfg.ModelType, knownModelTypes())
 	}
+	// M-10(b): BOUND THE CONFIG BEFORE THE ADAPTER RUNS. Several adapters allocate
+	// NumLayers-sized slices with only a `> 0` check (qwen3_next, llama4), and loadConfig has
+	// no bound at all — so a 300-byte .giw or a hostile safetensors config.json declaring
+	// num_hidden_layers: 68719476736 is a FATAL out-of-memory, not the typed error
+	// LoadSerializedWeights' doc promises. Under Go's maxAlloc, so no recover() catches it.
+	//
+	// Here rather than at the two JSON chokepoints the audit names: this is the single point
+	// every path reaches — .giw, safetensors, GGUF and whatever is added next — and putting it
+	// at the callers would be the "one predicate, N consumers" shape that produced half the
+	// findings in this audit. The GGUF paths bound some of these already; re-checking costs a
+	// handful of comparisons once per load.
+	if err := validateConfigBounds(cfg); err != nil {
+		return nil, nil, err
+	}
 	arch, schema, err := adapter(cfg)
 	if err != nil {
 		return nil, nil, err
@@ -94,10 +108,83 @@ func resolveArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // nobody has written yet. An arch that genuinely wants no attention scaling sets 1.0.
 func (a *Architecture) validateResolved() error {
 	switch {
-	case a.AttnScale <= 0:
-		return fmt.Errorf("decoder(%s): AttnScale=%v must be >0 (adapter omitted it; 1/sqrt(head_dim) is the usual value, 1.0 means deliberately unscaled)", a.Name, a.AttnScale)
-	case a.Norm == NormRMS && a.NormEps <= 0:
+	// !(x > 0) rather than x <= 0: NaN fails EVERY comparison, so `a.AttnScale <= 0` is FALSE
+	// for NaN and the old guard waved it through (M-06). gemma3 with a negative
+	// query_pre_attn_scalar produces exactly that, and +Inf arrives from
+	// num_attention_heads: 0 → Pow(0, -0.5). Both give a forward that runs and returns
+	// garbage rather than one that refuses.
+	case !(a.AttnScale > 0) || math.IsInf(a.AttnScale, 0):
+		return fmt.Errorf("decoder(%s): AttnScale=%v must be finite and >0 (adapter omitted it, or a config value made it NaN/Inf; 1/sqrt(head_dim) is the usual value, 1.0 means deliberately unscaled)", a.Name, a.AttnScale)
+	case a.Norm == NormRMS && !(a.NormEps > 0):
 		return fmt.Errorf("decoder(%s): NormEps=%v must be >0 (adapter omitted it, or read the wrong config key)", a.Name, a.NormEps)
+	}
+
+	// M-06: POSITION INFORMATION MUST COME FROM SOMEWHERE. finalizeRoPE treats
+	// RoPEGlobalBase <= 0 as "no tables", and applyRoPE is a silent no-op on an empty table,
+	// so an adapter that never reads rope_theta loads clean and generates fluent,
+	// POSITION-BLIND text — and drops YaRN with it. gpt-oss and llama4 both read only the
+	// flat rope_theta, and transformers >= 5.10 nests it under rope_parameters; for
+	// llama/mistral/qwen3 that is a loud error, and for these two it was silence.
+	//
+	// The three legitimate ways to have no global RoPE table are named explicitly rather
+	// than inferred, so a new family that simply forgot cannot look like one of them:
+	// GPT-2 has learned positions, Nemotron-H encodes NoPE layers as base 0, and MLA
+	// carries its own decoupled rope dims.
+	if !a.LearnedPosEmbed && a.nemotron == nil && a.mla == nil && len(a.ropeInvFreqGlobal) == 0 {
+		return fmt.Errorf("decoder(%s): no position information — RoPEGlobalBase=%v yields no "+
+			"inv-freq table, and the arch is not learned-position, Nemotron-H or MLA. The adapter "+
+			"most likely did not read rope_theta (transformers >=5.10 nests it under "+
+			"rope_parameters); a model loaded this way generates fluent but position-blind text",
+			a.Name, a.RoPEGlobalBase)
+	}
+
+	// M-06: ZERO DIMS. Every one of these is a divisor, a slice length or both somewhere in
+	// the forward. num_key_value_heads: 0 is the sharpest — `group := nH/nKV` is an integer
+	// divide by zero, a panic in the decode goroutine rather than a load error.
+	for _, d := range []struct {
+		name string
+		v    int
+	}{
+		{"HiddenDim", a.HiddenDim}, {"NumLayers", a.NumLayers}, {"NumHeads", a.NumHeads},
+		{"NumKVHeads", a.NumKVHeads}, {"HeadDim", a.HeadDim}, {"VocabSize", a.VocabSize},
+	} {
+		if d.v <= 0 {
+			return fmt.Errorf("decoder(%s): %s=%d must be >0", a.Name, d.name, d.v)
+		}
+	}
+	if a.NumHeads%a.NumKVHeads != 0 {
+		return fmt.Errorf("decoder(%s): NumHeads=%d is not a multiple of NumKVHeads=%d; "+
+			"grouped-query attention divides one into the other", a.Name, a.NumHeads, a.NumKVHeads)
+	}
+	return nil
+}
+
+// validateConfigBounds rejects config dimensions that are implausible by orders of magnitude,
+// before any adapter allocates from them. The ceilings are the maxGGUF* ones — named for GGUF
+// because that is where they were first needed, but they are generic magnitude limits (largest
+// open models: ~120 layers, hidden ~16K, vocab ~256K) and apply to any source of config JSON.
+//
+// Zero and negative are left to validateResolved, which reports them per-field AFTER the
+// adapter has filled in what the config omitted (HeadDim is derived per family, and several
+// MoE checkpoints leave IntermediateDim at zero legitimately). This function exists only to
+// stop an allocation, so it checks only the upper bound.
+func validateConfigBounds(cfg *Config) error {
+	for _, d := range []struct {
+		name string
+		v    int
+		max  int
+	}{
+		{"num_hidden_layers", cfg.NumLayers, maxGGUFLayers},
+		{"hidden_size", cfg.HiddenDim, maxGGUFHidden},
+		{"num_attention_heads", cfg.NumHeads, maxGGUFHeads},
+		{"num_key_value_heads", cfg.NumKVHeads, maxGGUFHeads},
+		{"vocab_size", cfg.VocabSize, maxGGUFVocabSize},
+		{"num_experts", cfg.NumExperts, maxGGUFExperts},
+	} {
+		if d.v > d.max {
+			return fmt.Errorf("decoder: %s %d exceeds the %d ceiling — refusing before it is "+
+				"allocated from (a hostile or corrupt config, not a real model)", d.name, d.v, d.max)
+		}
 	}
 	return nil
 }

@@ -22,12 +22,12 @@ The checkpoint's `config.json` (`text_config`) has:
 
 `num_kv_shared_layers` is a REAL, already-modeled config field
 (`decoder/config.go:252` `SharedKVLayers`, read into `Architecture.gemma4.SharedKVLayers` at
-`decoder/registry.go:275`) — the last N layers of a Gemma-4 E-model carry no `k_proj`/`v_proj` at
+`decoder/registry.go:362`) — the last N layers of a Gemma-4 E-model carry no `k_proj`/`v_proj` at
 all and reuse an earlier layer's KV cache. Confirmed directly against the checkpoint: layer 15 (of
 35, with `SharedKVLayers=20` meaning layers 15–34 are shared) has `q_proj`/`o_proj`/`q_norm` but
 genuinely no `k_proj`/`v_proj`/`k_norm` tensors on disk — this is not a corrupt download.
 
-**The GGUF loader already handles this** (`decoder/gguf.go:2252-2295`: computes
+**The GGUF loader already handles this** (`decoder/gguf.go:2261-2304`: computes
 `firstShared := arch.NumLayers - g4.SharedKVLayers` and sets `l.KVShared`/skips k/v loading past
 that point). **The safetensors loader does not** — `grep SharedKVLayers decoder/weights.go` finds
 nothing; the safetensors path loads every layer's k/v unconditionally and fails the moment it hits
