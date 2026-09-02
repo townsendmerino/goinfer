@@ -795,25 +795,25 @@ supports.
 | `docs/audit-2026-09-02.md|chat/tools.go:56` | goinfer | `func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segm` |
 | `docs/audit-2026-09-02.md|chat/tools_test.go:99` | goinfer | `// TestGemma4_declaration_byteExact pins the Gemma 4 declaration micro-language` |
 | `docs/audit-2026-09-02.md|cmd/gate/configs.go:34` | goinfer | `Env: map[string]string{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1001` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1028` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1060` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:194` | goinfer | `func (g *gpuGate) noteIfEmpty(c cell, res *results) {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:324` | goinfer | `func detectBackend() string {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:349` | goinfer | `for _, v := range []string{"GOINFER_HEAVY_TESTS", "GOINFER_DRAIN_GROUP"} {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:358` | goinfer | `switch g.backend {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:361` | goinfer | `case "metal":` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:397` | goinfer | `switch g.backend {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:482` | goinfer | `// The header used to read "CUDA kernels + parity" while running NEITHER the resident pa` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:483` | goinfer | `// NOR anything that asserts a forward. Every resident parity gate is behind `goinfer_te` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:517` | goinfer | `// ---- 2b. resident PARITY gates — the forward is asserted here ----` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:631` | goinfer | `Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:732` | goinfer | `bin := filepath.Join(os.TempDir(), "gpu_gate_serve")` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:803` | goinfer | `if v := os.Getenv("GOINFER_NVRTC_DIRS"); v != "" {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:877` | goinfer | `ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:954` | goinfer | `func (g *gpuGate) metalSuite() {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:968` | goinfer | `func (g *gpuGate) metalCgoFree() {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:985` | goinfer | `func (g *gpuGate) metalModel() string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1010` | goinfer | `func (g *gpuGate) metalModel() string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1026` | goinfer | `_, cr, out := g.run(cell{` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1060` | goinfer | `_, cr, out := g.run(cell{` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1093` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:219` | goinfer | `func (g *gpuGate) noteIfEmpty(c cell, res *results) {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:349` | goinfer | `func detectBackend() string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:374` | goinfer | `for _, v := range []string{"GOINFER_HEAVY_TESTS", "GOINFER_DRAIN_GROUP"} {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:383` | goinfer | `switch g.backend {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:386` | goinfer | `case "metal":` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:422` | goinfer | `switch g.backend {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:507` | goinfer | `// The header used to read "CUDA kernels + parity" while running NEITHER the resident pa` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:508` | goinfer | `// NOR anything that asserts a forward. Every resident parity gate is behind `goinfer_te` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:542` | goinfer | `// ---- 2b. resident PARITY gates — the forward is asserted here ----` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:656` | goinfer | `Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:757` | goinfer | `bin := filepath.Join(os.TempDir(), "gpu_gate_serve")` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:828` | goinfer | `if v := os.Getenv("GOINFER_NVRTC_DIRS"); v != "" {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:902` | goinfer | `ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:979` | goinfer | `func (g *gpuGate) metalSuite() {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:993` | goinfer | `func (g *gpuGate) metalCgoFree() {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:145` | goinfer | `Run:     "Qwen35\|Real_gate\|Real_oracle",` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:19` | goinfer | `// THIS IS A CHECKSET, NOT A TALLY, and that is the whole reason it needs its own decisi` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:258` | goinfer | `cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure` |
@@ -1391,7 +1391,7 @@ supports.
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:286` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
 | `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:358` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
-| `docs/queue-engineering.md|cmd/gate/gpu.go:340` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
+| `docs/queue-engineering.md|cmd/gate/gpu.go:365` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:1144` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
