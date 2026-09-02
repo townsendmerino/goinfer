@@ -40,22 +40,40 @@ type Grammar interface {
 // A Masker is single-use per generation (it tracks committed state); call Reset
 // to reuse it for another sequence.
 type Masker struct {
-	g         Grammar
-	tokens    [][]byte     // per-id surface bytes
-	isEOS     map[int]bool // ids that may only be emitted when the grammar CanEnd
-	eosIDs    []int        // the EOS ids, in order (for StopWhenComplete)
-	stopAtEnd bool         // once CanEnd, mask everything but EOS to force a stop
-	committed int          // how many generated tokens have been folded into g
+	g      Grammar
+	tokens [][]byte // per-id surface bytes
+	// isEOS is indexed, not mapped: it is probed once per vocab id per decode step —
+	// 151,936 probes/step on Qwen2.5 — and a map lookup there was pure overhead on the
+	// hottest loop in constrained decoding (audit P-20's cheapest lever, measured).
+	// Sized to cover the largest EOS id; ids past the end are simply not EOS, which is the
+	// same answer the map gave for an absent key.
+	isEOS     []bool
+	eosIDs    []int // the EOS ids, in order (for StopWhenComplete)
+	stopAtEnd bool  // once CanEnd, mask everything but EOS to force a stop
+	committed int   // how many generated tokens have been folded into g
 }
+
+// eosAt reports whether id is an end/stop token. Bounds-checked because logits can be the
+// MODEL's padded vocab length, which runs past both the tokenizer table and this slice — the
+// same over-long-logits case M26 guarded in tokenBytes.
+func (m *Masker) eosAt(id int) bool { return id >= 0 && id < len(m.isEOS) && m.isEOS[id] }
 
 // NewMasker builds a Masker for a vocabulary. tokens[id] is the surface bytes
 // token id contributes (see TokenBytes); eosIDs are end/stop tokens, allowed
 // only when the document is complete. The grammar is Reset to its initial state.
 func NewMasker(g Grammar, tokens [][]byte, eosIDs []int) *Masker {
 	g.Reset()
-	eos := make(map[int]bool, len(eosIDs))
+	n := len(tokens)
 	for _, id := range eosIDs {
-		eos[id] = true
+		if id >= n {
+			n = id + 1
+		}
+	}
+	eos := make([]bool, n)
+	for _, id := range eosIDs {
+		if id >= 0 {
+			eos[id] = true
+		}
 	}
 	return &Masker{g: g, tokens: tokens, isEOS: eos, eosIDs: eosIDs}
 }
@@ -84,7 +102,7 @@ func (m *Masker) ForcedRun(max int) []int {
 		}
 		forced, count := -1, 0
 		for id, b := range m.tokens {
-			if len(b) == 0 || m.isEOS[id] {
+			if len(b) == 0 || m.eosAt(id) {
 				continue // control / EOS tokens are not surface continuations
 			}
 			if g.TryBytes(b) {
@@ -126,7 +144,7 @@ func (m *Masker) MaskAt(g Grammar, logits []float32) {
 	neg := float32(math.Inf(-1))
 	canEnd := g.CanEnd()
 	for id := range logits {
-		if m.isEOS[id] {
+		if m.eosAt(id) {
 			if !canEnd {
 				logits[id] = neg
 			}
@@ -202,7 +220,7 @@ func (m *Masker) Process(generated []int, logits []float32) {
 	neg := float32(math.Inf(-1))
 	canEnd := m.g.CanEnd()
 	for id := range logits {
-		if m.isEOS[id] {
+		if m.eosAt(id) {
 			if !canEnd {
 				logits[id] = neg
 			}

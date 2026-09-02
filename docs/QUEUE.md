@@ -838,8 +838,8 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:545` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:283` | goinfer | `func TestRealckptCellCanReachEveryGate(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:319` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `func (m *Masker) Process(generated []int, logits []float32) {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:211` | goinfer | `// StopWhenComplete: at a completion point, only EOS survives.` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:216` | goinfer | `func (m *Masker) Process(generated []int, logits []float32) {` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:229` | goinfer | `// StopWhenComplete: at a completion point, only EOS survives.` |
 | `docs/audit-2026-09-02.md|constrain/json.go:84` | goinfer | `func (g *jsonGrammar) CanEnd() bool {` |
 | `docs/audit-2026-09-02.md|constrain/json.go:96` | goinfer | `func (g *jsonGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:10` | goinfer | `// GrammarFromStruct derives a JSON Schema from a Go struct (via its json tags)` |
@@ -2282,3 +2282,83 @@ maxAbsDiff=0) both pass with it on.
   from the same cause; both pass standalone, under both kernels, and a control run on unmodified code
   reproduces the exhaustion. Pre-existing and not caused by this change, but it means **a green full
   suite here is not evidence** — the gates above were run standalone on purpose. Worth its own fix.
+
+## G37 · P-20 measured: constrained decoding is ~1.8–2.0×, not 3–10× — and the ratio is model-dependent by construction
+
+Measured 2026-09-02, before designing anything on top of it, per the ordering revision in
+`docs/task-embed-and-harness-ux.md` §6. P-20 was explicit that its numbers were an **estimate**
+("Estimate 40–120 ns/token → 6–30 ms per step… plausibly 3–10× slower per token on GPU") and
+named the measurement to run; the audit itself lists P-20 among the items whose measurement is
+cheap. It cost about an hour and it changes the answer.
+
+**Why it was worth doing first.** Constrained generation is the README's headline promise —
+"a Go struct the model cannot violate" — and `Into[T]` is the proposed facade's flagship call.
+Whether that costs 1.2× or 10× decides whether it is a feature or a documented caveat, and the
+facade would otherwise have been designed around a guess.
+
+**Method.** `MaskAt` is `Process`'s hot loop without the commit, so driving a grammar to a chosen
+state by committing BYTES and timing `MaskAt` isolates the per-step masking cost at that state —
+no tokenizer round-trip, no decode, nothing else in the sample. Real vocab (V=151,936 Qwen2.5),
+min-of-7 per run. `constrain/maskcost_test.go`, `GOINFER_HEAVY_TESTS=1`.
+
+| grammar state | ms/step | ns/token |
+|---|---|---|
+| `fsObjKeyOrClose` (after `{`) | 3.17 | 20.9 |
+| **`fsStr` (inside a string — the dominant JSON state)** | **6.03** | **39.7** |
+| `fsNum` | 4.11 | 27.1 |
+| complete document | 2.10 | 13.8 |
+
+**Against P-20's estimate: the per-token cost lands at the BOTTOM of the predicted band** (39.7 ns
+vs 40–120), and the per-step cost likewise (6.0 ms vs 6–30). The estimate's arithmetic was sound;
+its inputs were pessimistic.
+
+### The lever P-20 called cheapest was real and unspent
+
+`isEOS` was a `map[int]bool`, **probed once per vocab id per step — 151,936 map lookups**. Replaced
+with an indexed `[]bool` (bounds-checked, since logits can be the model's padded vocab length —
+the same over-long-logits case M26 guarded in `tokenBytes`). Behaviour-identical; the `constrain`
+suite is green.
+
+Same-session **interleaved A/B**, stash/restore between arms, `fsStr` state:
+
+| | run 1 | run 2 | run 3 | mean |
+|---|---|---|---|---|
+| `map[int]bool` | 7.121 | 7.091 | 7.096 | **7.103** |
+| `[]bool` | 6.235 | 5.623 | 6.247 | **6.035** |
+
+**−15%**, 3/3 pairs the same sign. Interleaved because a first single pair read −21% and the next
+two runs of the same build read 6.14/6.18 — the variance is ~11% and a lone pair would have
+overstated it. (Note the arms differ in stability: the map arm is tight at 7.09–7.12, the slice arm
+spreads 5.6–6.25.)
+
+### The verdict, against the pre-registered bar
+
+G4 in the task doc pre-registered: **≤1.5× ships, >2× the facade documents the cost instead of
+hiding it**, ambiguous in between. Against this box's post-G36 resident-GPU 1.5B token
+(6.2 ms at pos 64, 7.4 ms at pos 512):
+
+- before the lever: **1.96–2.15×**
+- after the lever: **1.81–1.97×**
+
+That is **inside the ambiguous band and at the top of it** — which is exactly the zone the
+pre-registration exists to stop being argued away. So: not "fine", not "blocking". `Into[T]` ships
+only with the cost stated, or after the remaining L-07 levers move it under 1.5×.
+
+**The structural finding, which the estimate did not make: the mask cost is CONSTANT in the model.**
+It is O(V) and independent of model size, so the RATIO worsens as decode gets faster — the same
+6.0 ms against a ~2 ms step is ~4×, not ~1.9×. A single number cannot answer G4; the bar has to be
+stated per model class, and the fast paths are where constrained decoding hurts most. That also
+means the levers pay for themselves twice on the small/fast models the demo tiers ship.
+
+### Limits, stated
+
+- One box, one vocab (V=151,936), one grammar shape (`struct{string; int; []string}`). A larger
+  schema has more states but the same O(V) per step; a smaller vocab is proportionally cheaper.
+- The mask is CPU work that runs *after* the logits come back, so it is additive to the decode
+  step rather than overlapped. Not separately verified against the resident path's own timing.
+- **Two costs are excluded and neither is measured here.** A non-nil `LogitProcessor` disables
+  the speculative-decode paths (`decoder/spec_eagle.go:21`) and, on the resident backends, the
+  on-device greedy argmax fast path. So the real cost of constrained decoding on a spec-enabled
+  or greedy-fast-path configuration is HIGHER than the ratios above. Sizing that is open.
+- The remaining L-07 levers (per-state first-byte bitmap, string-state cache, vocab byte-trie)
+  are untouched. This measured the floor and took only the cheapest one.

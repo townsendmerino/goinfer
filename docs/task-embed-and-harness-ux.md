@@ -204,9 +204,22 @@ by default (the banner says how to turn it on); which of the five routes a given
 - **G3 · `serve check` in CI on the tiny fixtures**, every row green; on the box against one
   real model per backend before a tag (§C1 gains a row).
 - **G4 · constrained decoding cost.** `Into[T]` on a resident GPU model must cost ≤ 1.5× the
-  unconstrained token time on the same prompt (P-20 estimates 3–10× today; L-07's levers are the
-  fix). Measured paired; below 1.5× ships, above 2× the facade documents the cost instead of
-  hiding it.
+  unconstrained token time on the same prompt. Measured paired; below 1.5× ships, above 2× the
+  facade documents the cost instead of hiding it.
+
+  > **MEASURED 2026-09-02 — G37 in `docs/QUEUE.md`.** P-20's "3–10×" was an estimate and reads
+  > pessimistic: the mask is **39.7 ns/token / 6.0 ms per step** at `fsStr` on V=151,936, the
+  > bottom of P-20's own predicted band. P-20's cheapest lever (`isEOS` was a `map[int]bool`
+  > probed 151,936× per step) was unspent; an indexed `[]bool` took it **−15%**, interleaved A/B,
+  > 3/3 pairs. Against this box's post-G36 1.5B token that is **1.81–1.97×** — inside the
+  > ambiguous band and at the top of it, so G4 is neither passed nor failed: `Into[T]` ships with
+  > the cost stated, or after the remaining L-07 levers.
+  >
+  > **And a single number cannot settle G4.** The mask cost is O(V) and CONSTANT in model size,
+  > so the ratio worsens as decode gets faster — the same 6.0 ms against a ~2 ms step is ~4×.
+  > The bar has to be stated per model class. Two further costs are excluded and unmeasured: a
+  > non-nil `LogitProcessor` disables speculative decoding and the on-device greedy argmax, so
+  > the real ratio on those configurations is higher.
 - **G5 · a harness turn.** dsh's recorded run (277 s, 2026-08-26) and a Claude Code
   `/v1/messages` tool loop are re-run after the M-20/N-18/M-26 fixes and the numbers land in the
   recipes; a recipe with no number is not published.
