@@ -1351,3 +1351,43 @@ llama2.go — github.com/nikolaydubina/llama2.go (README; **archived 2024-11-30*
 > canonical repo files/READMEs (GitHub) and search summaries; a couple of cells were
 > marked "unverified" by the sweep and are `—` here rather than guessed. Before a
 > release that leans on this page, re-open the flagged primary URLs to confirm wording.
+
+## B10 — decode-path decision matrix, re-measured (2026-09-02, goinfer `cd6895c2`)
+
+Replaces `docs/completed/gpu-assessment.md` §1, whose table dates from 2026-06-08. That page is
+archived and its numbers are left as the record they are; **this is the current one.** Two
+things moved since: the G35/G36 kernel work (a serial `quantize` reduce and an attention kernel
+that reduced once per key), and resident prefix reuse, which splits TTFT into two numbers that
+mean different things.
+
+**Provenance.** RTX 2070 SUPER, NVIDIA driver `595.91.07`, Nobara 44 · Ryzen 3700X ·
+goinfer `cd6895c2`, aikit `v1.31.0` · Qwen2.5-Coder-1.5B: `~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`
+and `~/models/qwen15-w4a8-int4.giw`, both on local NVMe · greedy (temperature 0) ·
+`gpu/matrix_bench_test.go` via `decoder.Generate`, so token counts come from the engine, not
+from counting SSE frames · warm (a discarded generation compiles the pipelines first) ·
+**two full runs, both reported** — no peer is involved, so these are goinfer-vs-goinfer only.
+
+| path | fits / VRAM | decode tok/s | TTFT 256-tok, cold | TTFT, warm |
+|---|---|---|---|---|
+| CPU int8 | yes (host) | 13.7 / 13.7 | 4773 / 4721 ms | — |
+| CPU int4 | yes (host) | 16.6 / 16.4 | 5580 / 5633 ms | — |
+| GPU staged (int8) | yes / 485 MiB | 20.5 / 22.4 | 5686 / 5374 ms | — |
+| **GPU residency int8** | yes / 3237 MiB | **118.3 / 113.9** | 1942 / 1938 ms | **7 / 8 ms** |
+| **GPU residency int4** | yes / 2535 MiB | **137.9 / 137.4** | 1748 / 1713 ms | **7 / 7 ms** |
+
+**Decode is up ~1.25–1.35× on the resident paths** against the June table's 95.1 (int8) and
+102.8 (int4) — the G35/G36 kernels, measured here through a different harness than the one that
+produced those results, which is the corroboration worth having. The staged and CPU paths are
+unchanged within noise, as expected: neither runs the rewritten kernels.
+
+**The two TTFT columns are both real and describe different moments.** Cold is a new
+conversation, or one whose prompt diverged from what the resident cache holds. Warm is every
+subsequent turn of an agent loop, where prefix reuse prefills only what changed. Quoting cold
+alone overstates a loop's cost by ~250× here; quoting warm alone overstates a first request.
+Non-resident paths show `—` rather than 0: they cannot reuse at all (it is gated on
+`m.resident != nil`), and a 0 would read as "instant" instead of "not applicable".
+
+**Read `tok/s` and `TTFT` as separate questions.** int4 decodes faster than int8 (137 vs 118)
+*and* has a lower cold TTFT, but the gap between them is far smaller than the gap either has to
+its own warm number — which is the practical point: on a multi-turn workload the prefill term,
+not the quant, dominates what a user feels.

@@ -206,6 +206,12 @@ won't fit host RAM. `dot4I8Packed` remains a *prefill* lever, upstream-blocked.
 
 ## 1. Decision matrix — which path for which size (2026-06-08)
 
+> **SUPERSEDED 2026-09-02 — the current table is `docs/benchmarks.md` §B10.** The numbers below
+> are the June record and are kept as one. Two things moved since: the G35/G36 kernels took
+> resident decode from 95.1 → 118.3 (int8) and 102.8 → 137.9 (int4) tok/s, and resident prefix
+> reuse split TTFT into cold and warm — 1942 ms vs **7 ms** on a 256-token prompt — so a
+> single-TTFT table can no longer say what it used to.
+
 All cells are **real `decoder.Generate`** measurements: greedy/temp-0, warm (the
 first run is discarded so first-token pipeline compilation doesn't poison the
 rate), real weights, this box (RTX 2070 SUPER, ~860 MiB desktop VRAM baseline).
