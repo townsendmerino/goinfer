@@ -559,6 +559,13 @@ func (s *server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 // serveCountTokensWith counts prompt tokens for /v1/messages/count_tokens. Reached ONLY through
 // withModelAnthropic (liveness RLock held). No generation, no decode mutex.
 func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loadedModel) {
+	// G1c, extended (audit-2026-09-02 M-21). THE WORST OF THE FIVE: count_tokens never enters the
+	// per-model queue, so up to -max-inflight (128) of these tokenizations run CONCURRENTLY, each
+	// over a body the guard would have rejected in constant time.
+	if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
 	system, turns, aerr := anthropicTurns(&req)
 	if aerr != nil {
 		aerr.write(w)

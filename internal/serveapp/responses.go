@@ -108,6 +108,15 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	messages = append(messages, inputMsgs...)
 
+	// G1c, extended (audit-2026-09-02 M-21). Placed BEFORE the tools/plain branch so one guard
+	// covers both — /v1/responses was two of the five routes that tokenized an arbitrary body
+	// before rejecting it, and the assembled `messages` here include anything a stored
+	// previous_response_id dragged in, which is the input the BPE would actually run over.
+	if err := lm.promptTooLargeForContext(chatInputBytes(messages)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Sampling: Responses uses max_output_tokens / text.format (vs the chat API's
 	// max_tokens / response_format); map them onto the shared prepare path.
 	sm := req.sampling
@@ -295,15 +304,49 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 	if json.Unmarshal(raw, &str) == nil {
 		return []chatMessage{{Role: "user", Content: rawStr(str)}}, nil
 	}
+	// `type` and the function-call fields are decoded, not just {role, content}. A Responses tool
+	// loop feeds the model's own `function_call` back with a `function_call_output`, and NEITHER
+	// carries a role or a content field — so both used to fall through to the default below and
+	// become `{Role:"user", Content:""}`: two empty user turns. The model never saw the tool
+	// result, so it either answered without it or called the same tool again, forever, under HTTP
+	// 200. docs/server.md and this file's own comment both claim the round-trip works;
+	// TestServe_responses step 4 never feeds a result back, which is why nothing caught it
+	// (audit-2026-09-02 M-18).
 	var items []struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
+		Type      string          `json:"type"`
+		Role      string          `json:"role"`
+		Content   json.RawMessage `json:"content"`
+		CallID    string          `json:"call_id"`
+		Name      string          `json:"name"`
+		Arguments string          `json:"arguments"`
+		Output    json.RawMessage `json:"output"`
 	}
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return nil, fmt.Errorf("input must be a string or an array of message items")
 	}
 	msgs := make([]chatMessage, 0, len(items))
 	for _, it := range items {
+		switch it.Type {
+		case "function_call":
+			// The model's own call, replayed. Becomes the assistant turn that carries it, which is
+			// what the chat template renders as a tool call.
+			tc := apiToolCall{ID: it.CallID, Type: "function"}
+			tc.Function.Name = it.Name
+			tc.Function.Arguments = it.Arguments
+			msgs = append(msgs, chatMessage{Role: "assistant", ToolCalls: []apiToolCall{tc}})
+			continue
+		case "function_call_output":
+			// The caller's result. `output` is a string in every SDK that sends it, but is typed
+			// loosely enough to arrive as an object — contentText handles the string case and
+			// falls back to the raw JSON, which is better in the prompt than an empty turn.
+			msgs = append(msgs, chatMessage{
+				Role:       "tool",
+				ToolCallID: it.CallID,
+				Name:       it.Name,
+				Content:    rawStr(toolOutputText(it.Output)),
+			})
+			continue
+		}
 		role := it.Role
 		if role == "" {
 			role = "user"
@@ -311,6 +354,24 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 		msgs = append(msgs, chatMessage{Role: role, Content: rawStr(contentText(it.Content))})
 	}
 	return msgs, nil
+}
+
+// toolOutputText flattens a `function_call_output`'s `output`: a plain string when it is one, the
+// content-part text when it is an array, and the raw JSON otherwise. Never empty for a non-empty
+// input — an empty tool turn is the M-18 failure, so the fallback keeps SOMETHING the model can
+// read rather than silently dropping the result.
+func toolOutputText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var str string
+	if json.Unmarshal(raw, &str) == nil {
+		return str
+	}
+	if t := contentText(raw); t != "" {
+		return t
+	}
+	return string(raw)
 }
 
 // contentText flattens a message content (string or []{type,text}) to plain text.

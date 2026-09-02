@@ -25,6 +25,13 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
 		return
 	}
+	// G1c, extended (audit-2026-09-02 M-21). The guard reached three routes; this was one of the
+	// five that still ran a full O(n) tokenize over an arbitrary body before rejecting it — the
+	// G1c comment prices what it removes at "~27 s of BPE + gigabytes of ids" on a multi-MiB body.
+	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	tools := make([]chat.Tool, len(req.Tools))
 	for i, t := range req.Tools {
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}

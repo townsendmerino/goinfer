@@ -1213,26 +1213,26 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:563` | goinfer | `srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.m` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:728` | goinfer | `if visionModelType(cand) == "qwen2_5_vl" {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:846` | goinfer | `giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1036` | goinfer | `for id := range stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1041` | goinfer | `text, _ := lm.tk.Decode(ids)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1042` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1095` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:417` | goinfer | `type completionReq struct {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:498` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:516` | goinfer | `if !lm.enter(w) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:539` | goinfer | `if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:661` | goinfer | `StopIDs:     lm.stopIDs,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:663` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:742` | goinfer | `gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:744` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:750` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:881` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:895` | goinfer | `func genErr(err error) error {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:914` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:130` | goinfer | `ids, err := lm.chatPrompt(messages)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:227` | goinfer | `var stopBeat func()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:273` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:290` | goinfer | `func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1053` | goinfer | `for id := range stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1058` | goinfer | `text, _ := lm.tk.Decode(ids)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1059` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1125` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:423` | goinfer | `type completionReq struct {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:504` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:522` | goinfer | `if !lm.enter(w) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:545` | goinfer | `if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:667` | goinfer | `StopIDs:     lm.stopIDs,` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:669` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:759` | goinfer | `gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:761` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:767` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:898` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:912` | goinfer | `func genErr(err error) error {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:931` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:139` | goinfer | `ids, err := lm.chatPrompt(messages)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:236` | goinfer | `var stopBeat func()` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:282` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:299` | goinfer | `func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:94` | goinfer | `if req.PreviousResponseID != "" {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses_test.go:133` | goinfer | `// 4. Tool round-trip: forced function call → a function_call output item.` |
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:126` | goinfer | `func (l *sessionLRU) acquire(prompt []int) *decoder.Session {` |
@@ -1240,21 +1240,19 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:20` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:236` | goinfer | `if err := os.MkdirAll(l.dir, 0o755); err != nil {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:375` | goinfer | `continue // sliding-window (ring) cache: not yet persistable (Inc 3)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:104` | goinfer | `var stopBeat func()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:105` | goinfer | `if ss != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:109` | goinfer | `stopBeat = sseHeartbeat(ss)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:111` | goinfer | `finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:118` | goinfer | `sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:122` | goinfer | `stopBeat() // joins the ticker goroutine before anything else writes to w` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:147` | goinfer | `usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:149` | goinfer | `if req.Stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:215` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:223` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWh` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:112` | goinfer | `if ss != nil {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:116` | goinfer | `stopBeat = sseHeartbeat(ss)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:125` | goinfer | `sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:129` | goinfer | `stopBeat() // joins the ticker goroutine before anything else writes to w` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:154` | goinfer | `usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:222` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:23` | goinfer | `func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req chatReq,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:257` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:272` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:133` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:151` | goinfer | `if req.Stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:230` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWh` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:264` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:279` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:83` | goinfer | `if req.Stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:139` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:157` | goinfer | `if req.Stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:58` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:72` | goinfer | `ids, err := lm.encode(lm.tmpl.Render(system, turns))` |
 | `docs/audit-2026-09-02.md|metal/attn_shape_test.go:149` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin)` |

@@ -130,6 +130,12 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("v1 supports %d image per request, got %d", maxImagesPerTurn, len(imgs)))
 		return
 	}
+	// G1c, extended (audit-2026-09-02 M-21). Image bytes are excluded (chatInputBytes counts tokenizable TEXT), so this cannot reject a
+	// valid image request on a small-context model.
+	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	system, turns := messagesToTurns(req.Messages)
 	vi, err := lm.visionPrompt(system, turns, imgs[0])
 	if err != nil {
@@ -194,6 +200,14 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	if len(imgs) > maxImagesPerTurn {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", fmt.Sprintf("v1 supports %d image per request, got %d", maxImagesPerTurn, len(imgs)))
+		return
+	}
+	// G1c, extended (audit-2026-09-02 M-21). NOT in the audit's list of five — found by widening
+	// the anti-drift gate to prompt builders that tokenize transitively, which is how the vision
+	// routes hide: this function contains no tokenizer call of its own, visionPrompt does. Image
+	// bytes are excluded from the count, so a valid image request is never rejected by it.
+	if err := lm.promptTooLargeForContext(anthropicInputBytes(req)); err != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
 	system, turns, aerr := anthropicTurns(req) // image blocks skipped; text turns only

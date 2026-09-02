@@ -25,6 +25,12 @@ import (
 
 const defaultMaxTokens = 512
 
+// maxTopLogprobs is the largest `top_logprobs` a request may ask for — OpenAI's own documented
+// ceiling, so no compatible client is refused by it. Unbounded, one request retains
+// max_tokens x top_logprobs entries and materializes a map per entry before writing a byte
+// (audit-2026-09-02 C-08).
+const maxTopLogprobs = 20
+
 // maxOutputTokensCeiling is a hard upper bound on a request's max_tokens. KV is
 // preallocated as len(prompt)+max_tokens per layer, so an unbounded value (e.g.
 // {"max_tokens": 2000000000}) triggers a fatal, unrecoverable Go "out of memory"
@@ -683,6 +689,17 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 			sp.TopP = p
 		}
 	}
+	// C-08: top_logprobs was the one sampling field `prepare` passed through unvalidated, and it is
+	// the most expensive one to get wrong. Each retained entry is a TokenLogprob, and the response
+	// builder then materializes a map[string]any per entry BEFORE writing a byte, so
+	// {logprobs:true, top_logprobs:150000, max_tokens:4096} on a 152k-vocab model retains
+	// 4096 x 150k of them (~9.8 GB) and OOM-kills the process — a fatal Go allocation failure, not
+	// a 500. top_logprobs:20000 with max_tokens:2000 already reaches ~6 GB. One request does it.
+	//
+	// [0,20] is OpenAI's own documented range, so this rejects nothing a compatible client sends.
+	if n := deref(sm.TopLogprobs, 0); n < 0 || n > maxTopLogprobs {
+		return genRequest{}, fmt.Errorf("top_logprobs must be in [0,%d] (got %d)", maxTopLogprobs, n)
+	}
 	if sm.TopK != nil {
 		sp.TopK = *sm.TopK
 	}
@@ -955,7 +972,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 		} else {
 			stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
-		finish, n, stopHit := lm.streamTokens(cancel, stream, gr, gen, onText)
+		finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 		return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
 	}
 
@@ -995,7 +1012,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 	default:
 		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	}
-	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, gen, onText)
+	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 	return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
 }
 
@@ -1015,7 +1032,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	} else {
 		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, gr.maxTokens, gr.sp)
 	}
-	finish, n, stopHit := lm.streamTokens(cancel, stream, gr, gen, onText)
+	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 	return finish, n, stopHit, genErr(gen.Err())
 }
 
@@ -1027,7 +1044,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 // cancel ends the producing generation on a stop-string hit. Returns the finish
 // reason ("stop" | "length"), the completion token count, and the stop string
 // that was hit (empty unless a stop sequence ended the turn).
-func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
+func (lm *loadedModel) streamTokens(parent context.Context, cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
 	var ids []int
 	printed := 0
 	finish := ""
@@ -1071,6 +1088,19 @@ func (lm *loadedModel) streamTokens(cancel context.CancelFunc, stream <-chan int
 		} else {
 			finish = "stop" // EOS / turn-stop
 		}
+	}
+	// M-23: the generation was cut short from OUTSIDE and no stop string ended it, so the text is
+	// TRUNCATED and must not be reported as a clean finish. `parent`, not `ctx`: drive's own
+	// stop-string cancel fires on the derived context, so this sees only external cancellation —
+	// graceful shutdown (main.go's srvCancel() runs BEFORE Shutdown, so the client is still
+	// connected and gets a 200 with a partial answer) or a client disconnect.
+	//
+	// "length" rather than an error, deliberately. It is truthful in BOTH cases, where a 500 would
+	// be wrong for a disconnect (nobody is reading) and the two are indistinguishable here — both
+	// arrive as a cancelled request context. What matters is that a client never reads a truncated
+	// answer as complete: "length" is the signal it already knows how to act on.
+	if parent.Err() != nil && stopHit == "" {
+		finish = "length"
 	}
 	return finish, len(ids), stopHit
 }
