@@ -1,0 +1,253 @@
+# Task: the first hour — embedding goinfer in a Go program, and pointing existing tools at `serve`
+
+> **Status: SCOPED 2026-09-02, nothing started.** Design record for the two modes of use where
+> "pure Go, one static binary, no toolchain" is a differentiator no peer has, and where the
+> audience the repo names — a Go engineer, not an ML person — actually lives: **mode 2, embed it**
+> (`go get`, in-process) and **mode 3, point my tools at it** (`serve` behind Claude Code, dsh,
+> Open-WebUI). Sibling: `task-fit-to-hardware.md` (mode 4), which owns "will it fit"; this doc
+> owns what happens in the hour after it does. Reads `task-model-pull.md` (shipped 2026-09-02) as
+> the step that made both hours possible, and the 2026-09-02 audit's serving tranches (C-06, C-07,
+> C-08, M-17, M-18, M-19, M-21, M-22, M-23 fixed the same day) as the floor this builds on.
+
+**The two people.**
+
+- **Mode 2 — the embedder.** A Go developer writing a CLI, a desktop tool, an edge service, who
+  wants generation or structured output *in-process*, deployed by copying a file. They expect what
+  they get from any other Go library: a small stable API, a `context.Context`, an iterator for
+  streaming, typed errors, and a struct that comes back filled in. The README promises them "a Go
+  struct the model cannot violate".
+- **Mode 3 — the harness user.** A developer who already has Claude Code, dsh, Open-WebUI,
+  Continue or their own agent loop, and wants it pointed at a local model with zero cloud. They
+  expect drop-in compatibility — tool calls, streaming, usage accounting, stop sequences — and a
+  turn that finishes in the time the harness waits.
+
+**Why they were never designed for.** The lab mode (measurement, parity, the primer) has a
+persona, a script and gates, and it works. These two have none: the "first hour" for mode 2 is
+`internal/chatapp/main.go` (632 lines, the reference implementation of "use the library"), and
+for mode 3 it is a harness discovering the audit's serving findings one request at a time
+(`docs/server.md`'s dsh recipe says it directly: "set expectations, don't let the harness discover
+them"). The audit fixed the crashes; it did not add the script.
+
+---
+
+## 0. What must not change
+
+- **The Hard tier is the promise** (`docs/api-tiers.md`): `decoder.Load`/`Generate`, the
+  tokenizer, `chat`, `constrain`, and `serve`'s routes and flags. Everything below is **additive
+  and Experimental until v1.0**; nothing here renames or removes a Hard name.
+- **No new module dependency in the root.** A facade is stdlib + the packages that exist.
+- **Parity-gated numerics are untouched.** A convenience layer calls the same `Generate`, the
+  same masker, the same template; it cannot change a logit.
+- **Compatibility is the promise for `serve`; field order and extensions are not**
+  (`docs/api-tiers.md`). A "doctor" tests the promise, it does not extend the surface.
+
+## 1. Mode 2 today — the inventory
+
+What a Go program has to do to get a filled-in struct out of a model, read off `internal/chatapp`
+and the README example (`README.md:76-88`):
+
+1. Find a checkpoint (now: `goinfer-chat pull`, but `internal/modelpull` is `internal` — a library
+   caller cannot reach it).
+2. `decoder.Load(dir, decoder.Options{...})` (`decoder/model.go:193`), choosing a quant and a
+   backend, and knowing that four default-ON behaviours are set through `os.Setenv` rather than
+   `Options` (N-42).
+3. Load the tokenizer separately; detect the chat template (`chat.Detect`, `chat/chat.go:97`);
+   render turns to a string; encode.
+4. Build `constrain.GrammarFromStruct(Person{})`, then the masker
+   `constrain.NewMasker(g, toks, eos).StopWhenComplete().Process`, which needs the token-bytes
+   table and the EOS set from somewhere.
+5. `m.Generate(ctx, ids, maxTokens, sp)` → `(<-chan int, *Generation)` (`decoder/model.go:802`);
+   drain the channel; decode incrementally with UTF-8 holdback; stop on the template's stop ids;
+   check `Generation.Err()` after the channel closes.
+6. `json.Unmarshal` — which the README says "always succeeds" and the audit found does not for
+   embedded structs, `time.Time`, unsigned ints, enums containing `<`, a top-level integer (M-27,
+   M-28, M-29), and refuses the canonical no-argument tool schema (M-30).
+
+Six steps, two packages the user must not know about (`internal/modelpull`, the env plumbing),
+and the promise at step 6 broken in five places. Every one of those steps is code the demos
+already carry; the design below is a matter of moving it under one name.
+
+## 2. Mode 2 — the facade
+
+A new package (working name `llm`, at `github.com/townsendmerino/goinfer/llm`; §F.1 on the
+name), Experimental, thin, whose whole job is the six steps above.
+
+```go
+m, err := llm.Open(ctx, "hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m")   // path or ref; pulls if absent
+defer m.Close()
+
+for tok, err := range m.Chat(ctx, []llm.Message{{Role: "user", Content: "reverse a slice in place"}}) {
+    if err != nil { return err }
+    fmt.Print(tok.Text)
+}
+
+p, err := llm.Into[Person](ctx, m, "Extract the person from: …")   // the README's promise, literally
+```
+
+- **`Open`** takes a path *or* an `hf:` reference, resolves the reference through `modelpull`
+  (exported as `goinfer/pull`, the library the CLI and the web UI already share — a third client
+  costs nothing), applies `task-fit-to-hardware.md`'s plan for the backend and quant unless the
+  caller pins them in `llm.Options`, loads the tokenizer, detects the template. One call, one error.
+- **`Chat`** is `iter.Seq2[Token, error]` (range-over-func; the module is at go 1.27): the
+  channel, the UTF-8 holdback, the stop ids and the post-close `Err()` all live inside it. `Token`
+  carries text and id; `m.Complete` is the raw-prompt sibling.
+- **`Into[T]`** is `GrammarFromStruct` + the masker + `StopWhenComplete` + `Unmarshal` in one
+  generic call. Its acceptance corpus is the audit's list: an embedded struct, a `time.Time`, a
+  `uint8`, an enum with `<`, a top-level `int`, a `[]string`, a nested optional object, a schema
+  with no properties — each a test that fails today (M-27–M-30) and must pass before the function
+  is exported. If `Unmarshal` fails after a constrained generation, that is a bug in `constrain`,
+  and `Into` says so in the error rather than retrying.
+- **`Options`** carries what today reaches the decoder only through the environment: fast
+  attention, fused attention, expert-major prefill, the MoE cache, KV precision, context —
+  the `KVPrecision` pattern `Options` already uses (`decoder/model.go:146-163`). With the field
+  present, the `serve` flags stop transporting through `os.Setenv` (N-42's last paragraph) and a
+  library caller and a multi-model `serve` can differ per model.
+- **Typed errors** for the three things a caller must branch on: context length exceeded,
+  checkpoint not found/gated (from `pull`), backend declined (with the plan's numbers).
+- **This is what the bindings export.** `task-bindings.md`'s c-archive for mobile and sidecar
+  for desktop both want exactly this surface; building the facade first means the bindings wrap
+  one thing instead of re-deriving the six steps in C.
+
+**The README example becomes the facade example**, ≤ 25 lines, and it is compiled in CI against
+the *tagged* release with `GOWORK=off` — which is the standalone-build gate M-34 found missing,
+now with a reason to exist beyond release hygiene.
+
+## 3. Mode 3 — the harness contract
+
+### 3.1 What a harness needs, and where each need stands
+
+| need | status after the 2026-09-02 tranches | open |
+|---|---|---|
+| one command from nothing to a running endpoint | `serve -web` can start with no model and pull one (shipped) | `serve -model hf:…` one-command run (§3.2) |
+| streaming that survives a silent minute | C-06 (one SSE writer), M-17 (write deadline), M-19 (Anthropic heartbeat) fixed | — |
+| tool calls that round-trip | M-18 (Responses loop) fixed | M-20 Gemma-4 tool template; N-18 `tool_choice` required/any; M-26 usage chunk on tool streams |
+| structured output through the API | works for objects | M-27 top-level scalars; M-30 no-arg tool schema |
+| an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30 | prefix reuse off on the resident path; L-05/L-15 |
+| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:927-932`) | the rest of §3.3 |
+| finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
+
+### 3.2 One command
+
+`serve -model hf:Qwen/Qwen2.5-7B-Instruct-GGUF:q4_k_m` — the `hf:` form `pull` already parses,
+pulled if absent (sha256-verified, the cache dir it already uses), then loaded through the plan.
+`goinfer-chat hf:…` likewise. This is `ollama run`'s shape without a registry: the reference is
+explicit and auditable, which `task-model-pull.md` §2.1 argued for and this does not change.
+`task-model-pull.md` left `serve pull` out "to keep the blast radius on main.go at zero"; the
+`hf:` form keeps it at one function call and gives mode 3 the same first minute mode 1 got.
+
+### 3.3 The banner is the UI
+
+A harness user reads exactly one thing: the lines `serve` prints before it says it is listening.
+Today those name the model and the resolved decode/prefill paths. The design adds the rest, in one
+block, in this order: model and quant; backend and **placement** (from the plan — resident /
+expert-cached N / paged / CPU, with the byte line); context cap and KV precision; **session reuse:
+on/off** — and when off, why ("resident path: each turn re-prefills; ~N s at 8k tokens on this
+machine"); routes enabled (`/v1/chat/completions`, `/v1/messages`, `/v1/responses`, embeddings,
+vision, `-web`); features (tools: yes/no per template — Gemma-4 says "partial" until M-20 closes;
+structured output; speculative); the expected-rate band if one exists (`task-fit-to-hardware.md`
+§5). Every line is a fact the runtime already knows; the banner is where it stops being private.
+
+### 3.4 `serve check` — the doctor
+
+A subcommand (or `-check`) that starts the server, then drives it through **the conversation a
+harness would**, over the real routes, and prints a per-feature verdict with a number:
+
+```
+models list ............ ok   1 model
+chat, streamed ......... ok   TTFT 0.41 s · 38.2 tok/s · usage present
+tools, OpenAI .......... ok   call → result → answer in 2 turns
+tools, Anthropic ....... ok   tool_use → tool_result → end_turn
+tools, Responses ....... ok   function_call_output consumed
+structured output ...... ok   {"type":"integer"} → 366
+stop sequences ......... ok   split across tokens, not leaked
+long prompt (8k) ....... ok   TTFT 4.9 s        ← the number a harness user needs before choosing a model
+count_tokens ........... ok   matches usage
+```
+
+Each row is a scripted exchange against the tiny fixtures in CI (the shape ten of the 38
+`serveapp` test files already have, skipping today on `GOINFER_SERVE_MODEL`) and against a real
+model on the box. A red row names the audit ID or the doc section that explains it. This is the
+G-class gate for mode 3: a route that a harness uses and nothing exercises is the "gate that
+cannot fail" one level up.
+
+### 3.5 Recipes, one per harness, with expectations
+
+`docs/integrations/<harness>.md`, each ≤ 40 lines: the exact settings block, the one `serve`
+line, the model class that passed, and **the expectation line** — TTFT at the harness's turn
+size on a named machine, with provenance. The dsh recipe exists (`docs/server.md:173`) and is
+the template; Claude Code (`/v1/messages`, the three env vars at `docs/server.md:123`),
+Open-WebUI and Continue/Cline get the same shape. A recipe is retired when `serve check` covers
+what it says.
+
+## 4. What each person never has to know
+
+**Mode 2:** that `tokenizer`, `chat` and `constrain` are separate packages; the token-bytes
+table; EOS sets; UTF-8 holdback; `Generation.Err()` after channel close; any `GOINFER_*`
+variable; quant names; that `internal/chatapp` is the real example.
+
+**Mode 3:** slot counts and placements (mode 4 owns them); that the resident path re-prefills;
+that Gemma-4 tool calls render differently after the first turn (until M-20); that `-web` is off
+by default (the banner says how to turn it on); which of the five routes a given harness speaks.
+
+## 5. Gates — pre-registered
+
+- **G1 · the facade example compiles standalone.** The README's ≤ 25-line program builds with
+  `GOWORK=off` against the last tag in CI (M-34), and runs against `testdata/llama-tiny` producing
+  a filled struct. Fails on any Hard-tier rename by construction.
+- **G2 · `Into[T]` corpus.** The eight shapes in §2, each round-tripping on the tiny fixture with
+  `Unmarshal` succeeding and `DisallowUnknownFields` on. Today's expected state: five red.
+- **G3 · `serve check` in CI on the tiny fixtures**, every row green; on the box against one
+  real model per backend before a tag (§C1 gains a row).
+- **G4 · constrained decoding cost.** `Into[T]` on a resident GPU model must cost ≤ 1.5× the
+  unconstrained token time on the same prompt (P-20 estimates 3–10× today; L-07's levers are the
+  fix). Measured paired; below 1.5× ships, above 2× the facade documents the cost instead of
+  hiding it.
+- **G5 · a harness turn.** dsh's recorded run (277 s, 2026-08-26) and a Claude Code
+  `/v1/messages` tool loop are re-run after the M-20/N-18/M-26 fixes and the numbers land in the
+  recipes; a recipe with no number is not published.
+- **G6 · the banner tells the truth.** A test that parses the banner and compares every line
+  against the runtime's own state (placement, ctx, sessions, routes) — the M-07 class (doc says
+  exact, code does not) applied to the one document every user reads.
+
+## 6. Phasing — each independently droppable
+
+0. **Export `pull`** (`internal/modelpull` → `goinfer/pull`) and the `hf:` reference in
+   `-model` and `goinfer-chat`. A few lines; the first minute for both modes.
+1. **The facade**: `Open`, `Chat`, `Complete`, `Into[T]`, `Options`, typed errors; the README
+   example; G1 + G2 (which means closing M-27–M-30 first — they are the corpus).
+2. **The banner** (§3.3) and **`serve check`** (§3.4) with G3 + G6; the recipes (§3.5) with G5.
+3. **Constrained-decoding speed** (L-07) so `Into[T]` is usable on the GPU backends — G4.
+4. **Session anchors** (L-05) and longest-prefix reuse (L-15) so an agent loop stops paying a
+   cold prefill per turn on the resident path; the banner's "session reuse: off" line is what
+   makes the cost visible until then.
+5. **Bindings** (`task-bindings.md`) wrap the facade, not the six steps.
+
+## 7. Open questions
+
+- **F.1 The facade's name and place.** `llm` as a sub-package keeps the root module import-light
+  and the Hard tier untouched; a root package (`import "github.com/townsendmerino/goinfer"`) reads
+  better in a README but binds the module path to one API forever. Lean sub-package, Experimental,
+  promote at v1.0 if it earns it.
+- **F.2 `Into[T]` on a chat model vs a raw prompt.** Whether it renders the chat template with a
+  system line asking for JSON, or takes the caller's messages verbatim. Lean: messages verbatim
+  plus an optional system hint; the grammar does the enforcing either way.
+- **F.3 Where `-web` stops.** The web UI is a client of the same routes, so structured output
+  and tool calling could be exposed there for free; whether it should is a scope call, not a
+  design one. Lean: chat and pull only — it is the first-run surface, not a product.
+- **F.4 The Anthropic-side check.** Claude Code applies its own idle timeout to a silent
+  stream; the heartbeat fix (M-19) should make G5 pass, but the timeout value is unrecorded.
+  Measure it in the G5 run rather than assume it.
+
+## Sources
+
+`docs/api-tiers.md` (the Hard tier; the surfaces the facade must not touch) · `README.md:76-88`
+(the six-step example the facade replaces) · `internal/chatapp/main.go` (the 632-line reference
+implementation of mode 2) · `decoder/model.go:146-163`, `:193`, `:802` (`Options`, `Load`,
+`Generate`) · `chat/chat.go:97` (`Detect`) · `internal/modelpull/pull.go` (the library `pull`
+exports) · `internal/serveapp/main.go:328`, `:354`, `:927-932` (`-web`, `-require-backend`, the
+resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and dsh today) ·
+`docs/scoping-dsh-goinfer.md` (Tier 0–2) · `docs/task-model-pull.md` (shipped; `hf:` refs, the
+cache dir, the web UI's contract) · `docs/task-bindings.md` (what the facade is for downstream) ·
+`docs/audit-2026-09-02.md` C-06, C-07, C-08, M-07, M-17–M-30, M-34, N-18, N-42, P-20, L-05, L-07,
+L-15 (the floor and the open items this builds on) · `task-fit-to-hardware.md` (placement, the
+plan, the banner's byte lines).
