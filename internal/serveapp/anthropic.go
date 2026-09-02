@@ -2,7 +2,6 @@ package serveapp
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -120,11 +119,15 @@ func writeAnthropicErr(w http.ResponseWriter, code int, kind, msg string) {
 // (size-bounded, see maxBytes) body exceeded the limit, else 400. M3.
 func decodeAnthropicJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large")
+		// N-16: shared with decodeJSON. This appended err.Error() verbatim, which re-leaked the Go
+		// struct/field/type names M-06 and R-11 removed from the OpenAI surface — the same fix
+		// reaching one route and not the other (audit §0 theme 2).
+		msg, tooLarge := jsonDecodeMessage(err)
+		if tooLarge {
+			writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", msg)
 			return false
 		}
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "invalid request body: "+err.Error())
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", msg)
 		return false
 	}
 	return true
@@ -421,6 +424,13 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MaxTokens == nil || *req.MaxTokens <= 0 {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "max_tokens is required and must be > 0")
+		return
+	}
+	// N-22: G5 made an empty `messages` a 400 on the OpenAI route and this one still accepted it,
+	// rendering a prompt with no turns and generating from whatever the template's scaffold alone
+	// produces. Same fix, second surface.
+	if len(req.Messages) == 0 {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "messages must not be empty")
 		return
 	}
 	s.withModelAnthropic(w, req.Model, func(lm *loadedModel) { s.serveMessagesWith(w, r, req, lm) })

@@ -120,36 +120,49 @@ func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {
 // decodeJSON reads the (size-bounded, see maxBytes) request body into v, writing
 // an OpenAI-shaped error on failure: 413 when the body exceeded the limit, else
 // 400. Returns false iff it wrote an error. M3.
+// jsonDecodeMessage shapes a json decode error into a message safe to return to a client: it never
+// echoes the raw error, whose UnmarshalTypeError rendering leaks the Go struct name (e.g. "…Go
+// struct field completionReq.logprobs of type bool"). tooLarge reports the body-cap case, which the
+// callers answer with a different status.
+//
+// Extracted so BOTH surfaces share it. The OpenAI decoder was hardened by M-06 and R-11; the
+// Anthropic one still appended err.Error() verbatim and leaked exactly what those removed
+// (audit-2026-09-02 N-16).
+func jsonDecodeMessage(err error) (msg string, tooLarge bool) {
+	if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		// Name the limit and how to raise it: TestOversizeBody_BackstopBounded pins that a 413 says
+		// which bound was hit, and a bare "too large" leaves the operator guessing which of the
+		// several caps fired.
+		return fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit), true
+	}
+	if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+		// ute.Type is a reflect.Type; for a composite field it renders the internal named type
+		// (e.g. "[]serveapp.chatMessage"), re-leaking the Go type names M-06/R-11 exist to hide.
+		// Name the expected type only for scalar kinds (bool/number/string); else stay generic (F-03).
+		switch ute.Type.Kind() {
+		case reflect.Bool, reflect.String,
+			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+			reflect.Float32, reflect.Float64:
+			return fmt.Sprintf("invalid request body: field %q has the wrong type (expected %s)", ute.Field, ute.Type.Kind()), false
+		default:
+			return fmt.Sprintf("invalid request body: field %q has the wrong type", ute.Field), false
+		}
+	}
+	if se, ok := errors.AsType[*json.SyntaxError](err); ok {
+		return fmt.Sprintf("invalid request body: malformed JSON at byte %d", se.Offset), false
+	}
+	return "invalid request body", false
+}
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeErr(w, http.StatusRequestEntityTooLarge,
-				fmt.Sprintf("request body exceeds the %d-byte limit (raise it with -max-body-bytes)", mbe.Limit))
+		msg, tooLarge := jsonDecodeMessage(err)
+		if tooLarge {
+			writeErr(w, http.StatusRequestEntityTooLarge, msg)
 			return false
 		}
-		// Don't echo the raw json error: UnmarshalTypeError's default string leaks the Go struct name
-		// (e.g. "…Go struct field completionReq.logprobs of type bool"), which M-06 exists to prevent.
-		// Report the JSON-side field + expected type instead (audit R-11).
-		if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
-			// ute.Type is a reflect.Type; for a composite field it renders the internal named type
-			// (e.g. "[]serveapp.chatMessage"), re-leaking the Go type names M-06/R-11 exist to hide.
-			// Name the expected type only for scalar kinds (bool/number/string); else stay generic (F-03).
-			switch ute.Type.Kind() {
-			case reflect.Bool, reflect.String,
-				reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-				reflect.Float32, reflect.Float64:
-				writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: field %q has the wrong type (expected %s)", ute.Field, ute.Type.Kind()))
-			default:
-				writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: field %q has the wrong type", ute.Field))
-			}
-			return false
-		}
-		if se, ok := errors.AsType[*json.SyntaxError](err); ok {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: malformed JSON at byte %d", se.Offset))
-			return false
-		}
-		writeErr(w, http.StatusBadRequest, "invalid request body")
+		writeErr(w, http.StatusBadRequest, msg)
 		return false
 	}
 	return true

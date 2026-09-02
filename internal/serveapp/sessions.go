@@ -50,6 +50,16 @@ type coldSession struct {
 	path   string
 }
 
+// KV snapshots and cold blobs are the CONVERSATION, not a cache of public data: a .giw-kv blob
+// replays what the user said and what the model answered. They were written 0o644 inside a 0o755
+// directory, so every local account could read them (audit-2026-09-02 N-21). Owner-only, both
+// levels — the directory matters as much as the files, since a readable directory lists the
+// session ids.
+const (
+	sessionDirPerm  = 0o700
+	sessionFilePerm = 0o600
+)
+
 func newSessionLRU(m *decoder.Model, size, capHint int, fp string) *sessionLRU {
 	if size < 0 {
 		size = 0
@@ -233,13 +243,13 @@ func (l *sessionLRU) tierOut(i int) (*decoder.Session, bool) {
 	if blob == nil {
 		return nil, false // recurrent/hybrid cache: not persistable (Snapshot refuses)
 	}
-	if err := os.MkdirAll(l.dir, 0o755); err != nil {
+	if err := os.MkdirAll(l.dir, sessionDirPerm); err != nil {
 		fmt.Fprintf(os.Stderr, "tiered-kv: mkdir %s: %v\n", l.dir, err)
 		return nil, false
 	}
 	l.seq++
 	path := filepath.Join(l.dir, fmt.Sprintf("cold-%06d%s", l.seq, sessionSnapExt))
-	if err := os.WriteFile(path, blob, 0o644); err != nil {
+	if err := os.WriteFile(path, blob, sessionFilePerm); err != nil {
 		fmt.Fprintf(os.Stderr, "tiered-kv: write %s: %v\n", path, err)
 		return nil, false
 	}
@@ -356,7 +366,7 @@ const sessionSnapExt = ".giw-kv"
 // a failed write is logged, not fatal — a snapshot is a cache, never a source of
 // truth.
 func (l *sessionLRU) save(dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, sessionDirPerm); err != nil {
 		return err
 	}
 	// Drop stale snapshots first so an eviction since last save doesn't leave an
@@ -375,7 +385,7 @@ func (l *sessionLRU) save(dir string) error {
 			continue // sliding-window (ring) cache: not yet persistable (Inc 3)
 		}
 		p := filepath.Join(dir, fmt.Sprintf("session-%02d%s", i, sessionSnapExt))
-		if err := os.WriteFile(p, blob, 0o644); err != nil {
+		if err := os.WriteFile(p, blob, sessionFilePerm); err != nil {
 			fmt.Fprintf(os.Stderr, "session snapshot %s: %v\n", p, err)
 			continue
 		}

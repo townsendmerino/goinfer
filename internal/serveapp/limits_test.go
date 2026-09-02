@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -237,5 +238,93 @@ func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
 		t.Error("the embedder's token bound no longer comes from the model's context window; " +
 			"m.Config().MaxPositions is max_position_embeddings, and NOT Architecture.MaxPositions, " +
 			"which is the GPT-2 learned-position table and 0 for every RoPE family")
+	}
+}
+
+// N-16: BOTH decoders must shape a JSON error the same way, and neither may echo the raw one.
+//
+// M-06 and R-11 removed the Go struct/field/type leak from decodeJSON; decodeAnthropicJSON still
+// appended err.Error() verbatim, so "invalid request body: json: cannot unmarshal string into Go
+// struct field anthropicReq.max_tokens of type int" went straight to the client. §0 theme 2 again:
+// one route hardened, its twin not.
+func TestJSONDecodeMessage_neverLeaksGoTypeNames(t *testing.T) {
+	type inner struct {
+		N int `json:"n"`
+	}
+	type req struct {
+		Flag     bool            `json:"flag"`
+		Messages []inner         `json:"messages"`
+		Raw      json.RawMessage `json:"raw"`
+	}
+	for name, body := range map[string]string{
+		"scalar field":    `{"flag": "yes"}`,
+		"composite field": `{"messages": "nope"}`,
+		"malformed":       `{"flag":`,
+	} {
+		var v req
+		err := json.Unmarshal([]byte(body), &v)
+		if err == nil {
+			t.Fatalf("%s: premise broke, %s decoded cleanly", name, body)
+		}
+		msg, tooLarge := jsonDecodeMessage(err)
+		if tooLarge {
+			t.Errorf("%s: reported as a body-size failure", name)
+		}
+		for _, leak := range []string{"Go struct", "serveapp.", "json:", "*serveapp"} {
+			if strings.Contains(msg, leak) {
+				t.Errorf("%s: message leaks internals (%q): %s", name, leak, msg)
+			}
+		}
+		if msg == "" {
+			t.Errorf("%s: empty message", name)
+		}
+	}
+}
+
+// The Anthropic decoder must USE it. The test above proves the shaper is clean and says nothing
+// about the call site — the same gap that let M-21's vision route and M-22's call site pass.
+func TestAnthropic_decodeUsesTheSharedShaping(t *testing.T) {
+	b, err := os.ReadFile("anthropic.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if strings.Contains(src, `"invalid request body: "+err.Error()`) {
+		t.Error("decodeAnthropicJSON still appends the raw json error, which re-leaks the Go " +
+			"struct/field/type names M-06 and R-11 removed from the OpenAI surface (N-16)")
+	}
+	if !strings.Contains(src, "jsonDecodeMessage(err)") {
+		t.Error("decodeAnthropicJSON no longer routes through jsonDecodeMessage; the two surfaces " +
+			"can drift again")
+	}
+}
+
+// N-21: session persistence is the CONVERSATION. A .giw-kv blob replays what the user said and what
+// the model answered, and it was written 0o644 inside a 0o755 directory — readable by every local
+// account. The directory matters as much as the files: a readable one lists the session ids.
+func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
+	if sessionFilePerm != 0o600 {
+		t.Errorf("session blobs are written %#o, want 0o600", sessionFilePerm)
+	}
+	if sessionDirPerm != 0o700 {
+		t.Errorf("the session directory is created %#o, want 0o700", sessionDirPerm)
+	}
+	b, err := os.ReadFile("sessions.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Code lines only. The comment above the constants NAMES the old modes, and a substring scan
+	// over the whole file matches its own explanation of the defect — the second time a check in
+	// this batch did that, so it is worth doing deliberately rather than rediscovering.
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		for _, world := range []string{"0o644", "0o755", "0o666", "0o777"} {
+			if strings.Contains(line, world) {
+				t.Errorf("sessions.go still writes something %s — a KV blob is the conversation: %s",
+					world, strings.TrimSpace(line))
+			}
+		}
 	}
 }

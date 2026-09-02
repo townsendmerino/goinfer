@@ -227,7 +227,11 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 		return nil
 	}
 	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
-	m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWhenComplete()
+	// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k entries and
+	// this site rebuilt it PER REQUEST, before the queue — the 2026-08-05 audit's N-14 disposition
+	// says it is built once per model, and openai.go:767 does exactly that. One call site kept the
+	// uncached form.
+	m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
 	gr.sp.LogitProcessor = m.Process
 	gr.masker = m // enables grammar-fused speculative decode (drive)
 	return nil
