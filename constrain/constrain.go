@@ -47,10 +47,14 @@ type Masker struct {
 	// hottest loop in constrained decoding (audit P-20's cheapest lever, measured).
 	// Sized to cover the largest EOS id; ids past the end are simply not EOS, which is the
 	// same answer the map gave for an absent key.
-	isEOS     []bool
-	eosIDs    []int // the EOS ids, in order (for StopWhenComplete)
-	stopAtEnd bool  // once CanEnd, mask everything but EOS to force a stop
-	committed int   // how many generated tokens have been folded into g
+	isEOS  []bool
+	eosIDs []int // the EOS ids, in order (for StopWhenComplete)
+	// plainOK marks ids that are unconditionally legal inside a JSON string and leave the
+	// string state unchanged — 96.88% of a real vocab. One bit test replaces a grammar walk
+	// for those whenever the grammar reports a plain-string state (plainstring.go).
+	plainOK   bitset
+	stopAtEnd bool // once CanEnd, mask everything but EOS to force a stop
+	committed int  // how many generated tokens have been folded into g
 }
 
 // eosAt reports whether id is an end/stop token. Bounds-checked because logits can be the
@@ -75,7 +79,7 @@ func NewMasker(g Grammar, tokens [][]byte, eosIDs []int) *Masker {
 			eos[id] = true
 		}
 	}
-	return &Masker{g: g, tokens: tokens, isEOS: eos, eosIDs: eosIDs}
+	return &Masker{g: g, tokens: tokens, isEOS: eos, eosIDs: eosIDs, plainOK: buildPlainString(tokens)}
 }
 
 // ForcedRun returns up to max tokens the grammar FORCES from its current committed
@@ -143,8 +147,9 @@ func (m *Masker) TokenBytes(id int) []byte { return m.tokenBytes(id) }
 func (m *Masker) MaskAt(g Grammar, logits []float32) {
 	neg := float32(math.Inf(-1))
 	canEnd := g.CanEnd()
+	plain := inPlainString(g)
 	for id := range logits {
-		if m.maskID(g, id, canEnd) {
+		if m.maskID(g, id, canEnd, plain) {
 			logits[id] = neg
 		}
 	}
@@ -206,8 +211,9 @@ func (m *Masker) Process(generated []int, logits []float32) {
 	}
 	neg := float32(math.Inf(-1))
 	canEnd := m.g.CanEnd()
+	plain := inPlainString(m.g)
 	for id := range logits {
-		if m.maskID(m.g, id, canEnd) {
+		if m.maskID(m.g, id, canEnd, plain) {
 			logits[id] = neg
 		}
 	}
@@ -219,9 +225,16 @@ func (m *Masker) Process(generated []int, logits []float32) {
 //
 // canEnd is passed in rather than recomputed: both callers need it for the EOS branch
 // and CanEnd is not free on every grammar.
-func (m *Masker) maskID(g Grammar, id int, canEnd bool) bool {
+func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool) bool {
 	if m.eosAt(id) {
 		return !canEnd // EOS only once the document is complete
+	}
+	// Plain-string fast path: one bit test instead of a grammar walk, for the 96.88% of ids
+	// that cannot leave a string state or make it invalid (plainstring.go). `!canEnd` is
+	// belt-and-braces — a document cannot be complete mid-string, so the whitespace rule
+	// below cannot apply here — and costs a register compare to not depend on that.
+	if plain && !canEnd && m.plainOK.has(id) {
+		return false
 	}
 	b := m.tokenBytes(id)
 	// An id with no surface bytes (a control token, or a padded-vocab id past the

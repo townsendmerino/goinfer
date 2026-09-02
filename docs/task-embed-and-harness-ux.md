@@ -215,6 +215,13 @@ by default (the banner says how to turn it on); which of the five routes a given
   > ambiguous band and at the top of it, so G4 is neither passed nor failed: `Into[T]` ships with
   > the cost stated, or after the remaining L-07 levers.
   >
+  > **UPDATE, same day — G4 now PASSES on this model class.** An exact per-vocabulary bitmap for
+  > the plain-string state (96.88% of ids answerable by one bit test, proved exhaustively equal to
+  > the full walk) took `fsStr` **6.03 → 0.35 ms, ~17×**. Weighted over every step of a real
+  > document the mask is **1.299 ms/step = 1.21×**, under the 1.5× bar. `Into[T]` can be the
+  > headline rather than a documented caveat — for the 1.5B class; the per-class caveat below
+  > still holds.
+  >
   > **And a single number cannot settle G4.** The mask cost is O(V) and CONSTANT in model size,
   > so the ratio worsens as decode gets faster — the same 6.0 ms against a ~2 ms step is ~4×.
   > The bar has to be stated per model class. Two further costs are excluded and unmeasured: a

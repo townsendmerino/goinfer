@@ -102,6 +102,13 @@ func (g *schemaGrammar) CanEnd() bool {
 	return false
 }
 
+// InPlainString reports that the top frame is inside a JSON string with no pending escape,
+// where a token containing no '"', '\\' or control byte is legal and leaves the state alone.
+// See constrain/plainstring.go.
+func (g *schemaGrammar) InPlainString() bool {
+	return !g.done && len(g.stack) > 0 && g.stack[len(g.stack)-1].state == fsStr
+}
+
 func (g *schemaGrammar) TryBytes(bs []byte) bool {
 	g.snapshot()
 	ok := true

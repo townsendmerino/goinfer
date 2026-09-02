@@ -93,6 +93,10 @@ func (g *jsonGrammar) CanEnd() bool {
 
 // TryBytes reports whether appending bs keeps the document a valid prefix,
 // leaving the grammar state unchanged (snapshot/restore around the trial).
+// InPlainString reports that the grammar is inside a JSON string with no pending escape.
+// Same byte rule as the schema grammar's fsStr — see constrain/plainstring.go.
+func (g *jsonGrammar) InPlainString() bool { return g.state == jsString }
+
 func (g *jsonGrammar) TryBytes(bs []byte) bool {
 	g.snapshot()
 	ok := true

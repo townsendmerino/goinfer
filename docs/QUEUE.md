@@ -2350,8 +2350,67 @@ It is O(V) and independent of model size, so the RATIO worsens as decode gets fa
 stated per model class, and the fast paths are where constrained decoding hurts most. That also
 means the levers pay for themselves twice on the small/fast models the demo tiers ship.
 
+### The second lever: an EXACT bitmap for the string state — 17×, and G4 now passes
+
+Proposed in review as "a Bloom filter?", and the measurement said use an exact structure instead.
+Both grammars answer identically inside a JSON string:
+
+    '"' → closes it (legal, moves state) · '\' → escape (legal, moves state)
+    b < 0x20 → illegal · anything else → legal, AND THE STATE DOES NOT MOVE
+
+So for a token containing none of those three classes, legality inside a string is a property of
+the TOKEN ALONE — precomputable once per vocabulary, answerable with one bit test. Measured share
+of Qwen2.5's vocab:
+
+| class | share | verdict in a string |
+|---|---|---|
+| no control, no `"`, no `\` | **96.88%** | always legal, state unchanged ⇒ **one bit test** |
+| contains a control byte | 2.32% | usually illegal — but NOT fast-pathed (see below) |
+| contains `"` or `\` | 0.81% | legal but transitions ⇒ real walk |
+
+**Why exact and not Bloom.** A Bloom "maybe" forces the very walk being avoided, so it only saves
+work on definite-nos — while here the definite answers are 97% of the vocabulary. And at ~19 KB
+for the whole vocab there is no space pressure to trade accuracy for. A bit test is also cheaper
+than k hash rounds.
+
+**Conservative by construction.** Control-byte tokens are NOT classified illegal, even though most
+are: a token like `"`+0x0A closes the string *before* the control byte, which is then judged in a
+different state. Only "provably legal and state-invariant" is fast-pathed; everything else walks.
+
+Interleaved A/B, `fsStr`: **5.628 / 6.160 ms OFF → 0.343 / 0.343 / 0.347 ms ON — ~17×**, and the
+ON arm is far more stable than the OFF arm.
+
+| state | before both levers | after |
+|---|---|---|
+| `fsStr` (dominant) | 7.10 | **0.35** |
+| `fsObjKeyOrClose` | 3.93 | 3.30 |
+| `fsNum` | 5.17 | 4.46 |
+| complete document | 2.99 | 2.12 |
+
+**And per-state costs are not what a caller pays.** A real document spends most of its steps inside
+strings. Timing the mask at *every step* of a representative 17-token document gives **1.299 ms/step
+weighted**, i.e. **1.21× (pos 64) / 1.18× (pos 512)** — **under G4's 1.5× bar, so G4 PASSES on this
+model class.** The worst single state is now a ≤1.72× upper bound rather than a typical step, and
+quoting it would overstate the real cost several-fold.
+
+**Correctness is proved, not sampled.** `TestPlainString_exact` compares the fast path against the
+full walk for EVERY id of an adversarial vocabulary (exhaustive over 1- and 2-byte tokens across
+control/quote/backslash/UTF-8 classes, plus shapes like `"`+0x0A where the first byte changes which
+state later bytes are judged in), at every string state a nested document passes through, for both
+grammar implementations. Proven able to go red: mis-classifying control bytes as safe fails it with
+`id 2 ("\x00") — fast path says masked=false, full walk says masked=true`.
+
 ### Limits, stated
 
+- **G4 passes for THIS model class, not universally.** The mask is still constant in model size, so
+  1.299 ms against a ~2 ms decode step is ~1.65× and would miss the bar. The per-class statement
+  from the first measurement stands.
+- The weighted figure is one 17-token document. A document of many short keys and numbers sits
+  higher (those states are untouched by the bitmap); one with long string content sits lower.
+  `fsObjKeyOrClose` and `fsNum` are the remaining targets, and the same cache-an-exact-bitmap idea
+  generalises to them per `(node, state)`.
+- The snapshot/restore of the frame stack — the mechanism that makes the untouched states cost what
+  they do, and which tracks stack DEPTH — is still there. Not attempted.
 - One box, one vocab (V=151,936), one grammar shape (`struct{string; int; []string}`). A larger
   schema has more states but the same O(V) per step; a smaller vocab is proportionally cheaper.
 - The mask is CPU work that runs *after* the logits come back, so it is additive to the decode
