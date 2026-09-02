@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cogentcore/webgpu/wgpu"
@@ -38,9 +39,7 @@ func randSlice(rng *rand.Rand, n int) []float32 {
 func newOrSkip(t *testing.T) *Context {
 	t.Helper()
 	c, err := New()
-	if err != nil {
-		t.Skipf("no GPU available: %v", err)
-	}
+	requireGPU(t, err) // skips if this machine has no GPU; FAILS if the process exhausted one
 	return c
 }
 
@@ -95,8 +94,51 @@ func TestSoftwareAdapterDetection(t *testing.T) {
 // perf/microbenches (meaningless on software), and full-model tests (their large
 // buffers exceed software-adapter binding limits). Keeps the bit-exact gates
 // running on real hardware while making CI robust to environment drift.
+// reportLive logs the number of Contexts currently open, so a full-suite run shows WHICH test
+// leaked one. The driver allows 63 live at once; past that every later test loses its GPU and
+// skips, which is how TestWebGPU_forwardParity and TestResidentForwardN_parity stopped being
+// gates without anyone noticing.
+func reportLive(t *testing.T) {
+	if n := liveContexts.Load(); n > 0 {
+		t.Logf("[live-contexts] %d already open before this test", n)
+	}
+}
+
+// gpuWasAvailable records that some earlier test in THIS process successfully got a device.
+//
+// It is the difference between the two reasons a device request fails, which used to be
+// indistinguishable and were both reported as a skip:
+//
+//	never worked  → this machine has no usable GPU. Skipping is right.
+//	worked, then stopped → the process EXHAUSTED it (measured: VRAM climbing to 7,782 MiB
+//	                       of 8,192 as tests retain resident weights). Skipping is wrong:
+//	                       it silently converts every later gate into a no-op, which is how
+//	                       TestWebGPU_forwardParity and TestResidentForwardN_parity stopped
+//	                       verifying anything without anyone noticing.
+//
+// So the second case now FAILS. A red suite that names the cause is worth more than a green
+// one that ran nothing — the same reason this project treats a skip as not-a-pass.
+var gpuWasAvailable atomic.Bool
+
+// requireGPU converts a lost device into a loud failure, and a genuinely absent one into a
+// skip. Call it wherever a test would otherwise skip on a device error.
+func requireGPU(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		gpuWasAvailable.Store(true)
+		return
+	}
+	if gpuWasAvailable.Load() {
+		t.Fatalf("GPU was available earlier in this process and is now gone — the test binary has "+
+			"exhausted it (resident weights not released; see gpu/modelw_release.go). This is a real "+
+			"defect, not a missing GPU, so it fails instead of skipping: %v", err)
+	}
+	t.Skipf("no GPU available: %v", err)
+}
+
 func newOrSkipHW(t *testing.T) *Context {
 	t.Helper()
+	reportLive(t)
 	c := newOrSkip(t)
 	if isSoftwareAdapter(c) {
 		info := c.adapter.GetInfo()

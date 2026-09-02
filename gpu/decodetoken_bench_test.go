@@ -46,6 +46,7 @@ func TestDecodeToken_throughput(t *testing.T) {
 
 	t.Logf("uploading %d-layer resident model (~1.7 GB int8)…", L)
 	mw := ModelW{FinalNorm: up32(randMat(hidden, 1)), LMHead: mk(vocab, hidden, 7)}
+	defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 	var sd uint64 = 10
 	for l := range L {
 		prior := randMat(pos*kvDim, uint64(l))

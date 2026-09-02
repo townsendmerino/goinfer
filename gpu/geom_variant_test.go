@@ -55,6 +55,7 @@ func TestGeomVariants_dedup(t *testing.T) {
 	buildMW := func() ModelW {
 		invD := up32(invFreq)
 		mw := ModelW{FinalNorm: up32(randMat(hidden, 600)), LMHead: W(vocab, hidden)}
+		defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 		for l := range 2 {
 			kc, _ := ctx.NewKVCache(nil, (pos+1)*kvDim)
 			vc, _ := ctx.NewKVCache(nil, (pos+1)*kvDim)

@@ -75,6 +75,7 @@ func TestKVCacheF16_parity(t *testing.T) {
 	invD := up32(invFreq)
 	build := func(f16 bool) ModelW {
 		mw := ModelW{FinalNorm: up32(fnorm), LMHead: mk(lmBQ, lmS, vocab, hidden)}
+		defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 		for l := range layers {
 			L := &layers[l]
 			var kc, vc *DeviceBuffer

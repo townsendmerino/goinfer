@@ -28,6 +28,11 @@ func TestResidentForwardN_parity(t *testing.T) {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
 	}
 	if _, err := gpu.New(); err != nil {
+		// A device that worked earlier in this process and is now gone means the test
+		// binary exhausted it — skipping there is how this gate silently stopped gating.
+		if gpu.GPUEverAvailable() {
+			t.Fatalf("GPU exhausted by this test binary (not a missing GPU) — this gate must not skip: %v", err)
+		}
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
 	home, _ := os.UserHomeDir()

@@ -76,6 +76,7 @@ func TestKVCacheI8_parity(t *testing.T) {
 
 	// f32 reference: a ModelW with f32 caches prefilled EXACT from prior K/V.
 	mw := ModelW{FinalNorm: up32(fnorm), LMHead: mk(lmBQ, lmS, vocab, hidden)}
+	defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 	for l := range layers {
 		L := &layers[l]
 		kc, _ := ctx.NewKVCache(L.priorK, capElems)

@@ -106,6 +106,7 @@ func TestDecodeToken_parity(t *testing.T) {
 	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
 	invD := up32(invFreq)
 	mw := ModelW{FinalNorm: up32(fnorm), LMHead: mk(lmBQ, lmS, vocab, hidden)}
+	defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 	for l := range layers {
 		L := &layers[l]
 		kc, _ := ctx.NewKVCache(L.priorK, (pos+1)*kvDim)

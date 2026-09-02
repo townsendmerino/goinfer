@@ -37,6 +37,11 @@ func TestWebGPU_forwardParity(t *testing.T) {
 	// Skip cleanly on a headless box (no adapter) before touching the model.
 	ctx, err := gpu.New()
 	if err != nil {
+		// A device that worked earlier in this process and is now gone means the test
+		// binary exhausted it — skipping there is how this gate silently stopped gating.
+		if gpu.GPUEverAvailable() {
+			t.Fatalf("GPU exhausted by this test binary (not a missing GPU) — this gate must not skip: %v", err)
+		}
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
 	ctx.Close()

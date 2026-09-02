@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/cogentcore/webgpu/wgpu"
 )
@@ -317,6 +318,19 @@ type Context struct {
 // preference) → device → compiled matmul pipeline. Returns an error if
 // no adapter/device is available (e.g. a headless box with no GPU), so
 // callers can fall back to the CPU path or skip GPU tests cleanly.
+// liveContexts counts Contexts that have been created and not yet Closed. A WebGPU device is
+// a scarce driver resource — measured on this box's NVIDIA/Vulkan stack, exactly 63 can be
+// LIVE at once, while create/destroy churn is free (200 cycles with no trouble). So a leaked
+// Context is not a slow drain, it is a hard cliff: past 63 every later New() fails with
+// "failed to request device", and in a test binary that silently converts gates into skips.
+// Exposed to tests through liveContexts.Load(); see TestDeviceExhaustion_repro.
+var liveContexts atomic.Int64
+
+// gpuEverAvailable records that a Context was successfully created at least once in this
+// process. Tests use it to tell "this machine has no GPU" (skip) from "this process ran out
+// of one" (a defect that must fail loudly) — see GPUEverAvailable.
+var gpuEverAvailable atomic.Bool
+
 func New() (*Context, error) {
 	// Quiet wgpu-native's benign warnings ("No windowing system present. Using surfaceless
 	// platform", "No config found!") — pure noise on a headless/server box. Errors still log.
@@ -355,7 +369,7 @@ func New() (*Context, error) {
 	if err != nil {
 		adapter.Release()
 		inst.Release()
-		return nil, fmt.Errorf("gpu: request device: %w", err)
+		return nil, fmt.Errorf("gpu: request device (%d goinfer Contexts already live; this driver allows ~63): %w", liveContexts.Load(), err)
 	}
 	shader, err := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:          "matmulBT",
@@ -379,6 +393,8 @@ func New() (*Context, error) {
 		inst.Release()
 		return nil, fmt.Errorf("gpu: create pipeline: %w", err)
 	}
+	liveContexts.Add(1)
+	gpuEverAvailable.Store(true)
 	return &Context{
 		instance: inst,
 		adapter:  adapter,
@@ -449,6 +465,7 @@ func (c *Context) Close() error {
 		return nil // idempotent: `defer m.Close()` + an explicit Close must not double-release (C-26b)
 	}
 	c.closed = true
+	liveContexts.Add(-1)
 	// Drain every lazily-created pipeline/shader, newest first. Registered at the allocation site
 	// (mkPipeline / track), so this stays complete as new ensure* builders are added — unlike the
 	// hand-maintained field list this replaces, which covered 14 of ~40.
