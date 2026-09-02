@@ -144,30 +144,30 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	inTok := len(gr.promptIDs)
 
 	if req.Stream {
-		f, ok := sseStart(w)
+		ss, ok := sseStart(w)
 		if !ok {
 			return
 		}
-		sseEvent(w, f, "response.created", map[string]any{
+		sseEvent(ss, "response.created", map[string]any{
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
 		finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sb.WriteString(t)
-			sseEvent(w, f, "response.output_text.delta", map[string]any{
+			sseEvent(ss, "response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
 			})
 		})
 		if gerr != nil {
-			sseEvent(w, f, "error", map[string]any{"type": "error", "message": "generation failed: " + gerr.Error()})
-			sseDone(w, f)
+			sseEvent(ss, "error", map[string]any{"type": "error", "message": "generation failed: " + gerr.Error()})
+			sseDone(ss)
 			return
 		}
 		out := []any{outputMessage(id+"-msg", sb.String())}
-		sseEvent(w, f, "response.completed", map[string]any{
+		sseEvent(ss, "response.completed", map[string]any{
 			"type": "response.completed", "response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp),
 		})
-		sseDone(w, f)
+		sseDone(ss)
 		s.maybeStore(store, id, lm.name, messages, sb.String())
 		return
 	}
@@ -216,26 +216,26 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	// SSE first and keep the stream alive with comment frames while the buffer
 	// fills, so a slow generation is not indistinguishable from a dead server. See
 	// tools.go for the full rationale and the 500-vs-sseErr consequence.
-	var f http.Flusher
+	var ss *sseWriter
 	if req.Stream {
 		var ok bool
-		if f, ok = sseStart(w); !ok {
+		if ss, ok = sseStart(w); !ok {
 			return
 		}
 	}
 	var sb strings.Builder
 	var stopBeat func()
-	if f != nil {
-		stopBeat = sseHeartbeat(w, f)
+	if ss != nil {
+		stopBeat = sseHeartbeat(ss)
 	}
 	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	if stopBeat != nil {
 		stopBeat() // joins the ticker goroutine before anything else writes to w
 	}
 	if gerr != nil {
-		if f != nil {
-			sseErr(w, f, "generation failed: "+gerr.Error())
-			sseDone(w, f)
+		if ss != nil {
+			sseErr(ss, "generation failed: "+gerr.Error())
+			sseDone(ss)
 			return
 		}
 		writeServerErr(w, "generation failed: "+gerr.Error())
@@ -264,9 +264,9 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	// "incomplete", not "completed" (audit R-16 — the N-15 residual in the tools branch).
 	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
 	if req.Stream {
-		sseEvent(w, f, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
-		sseEvent(w, f, "response.completed", map[string]any{"type": "response.completed", "response": resp})
-		sseDone(w, f)
+		sseEvent(ss, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
+		sseDone(ss)
 	} else {
 		writeJSON(w, http.StatusOK, resp)
 	}
@@ -380,8 +380,7 @@ func outputMessage(itemID, text string) map[string]any {
 
 // sseEvent writes a Responses SSE event (both the event: line and the data: JSON,
 // which itself carries the "type"). Mirrors OpenAI's wire format.
-func sseEvent(w http.ResponseWriter, f http.Flusher, event string, payload any) {
+func sseEvent(ss *sseWriter, event string, payload any) {
 	b, _ := json.Marshal(payload)
-	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
-	f.Flush()
+	ss.frame("event: %s\ndata: %s\n\n", event, b)
 }

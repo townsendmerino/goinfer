@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -156,7 +157,73 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 // --- SSE ---
 
-func sseStart(w http.ResponseWriter) (http.Flusher, bool) {
+// sseWriter owns one SSE response: every frame goes through it, one at a time, under a bounded
+// write deadline. Both the OpenAI and the Anthropic stream paths write through it.
+//
+// IT EXISTS BECAUSE TWO GOROUTINES WERE WRITING THE SAME ResponseWriter. G19 added a heartbeat
+// goroutine that owns w while the handler is silent; G21 then made the incremental tool paths write
+// prose deltas to that same w during the same window, deliberately. net/http's response/bufio.Writer
+// is not safe for concurrent Write/Flush, so outcomes ran from ": ping" spliced into a data: line
+// (the client drops or mis-parses the chunk) to a bufio slice-bounds panic — and a panic in the
+// HEARTBEAT goroutine is outside net/http's per-request recover, so it takes the PROCESS
+// (audit-2026-09-02 C-06). sseHeartbeat's own doc promised "no risk of interleaving two writers";
+// that was true only on the paths whose callback appends to a builder.
+//
+// The deadline is a second defect on the same write path. Flush blocks in net.Conn.Write with no
+// deadline, so a client that stops READING without closing pins the handler inside onText holding
+// the model's queue slot — r.Context() cancels on close, not on a stalled read — and every other
+// request queues then 429s for as long as that socket stays open (M-17). This is NOT the
+// server-wide WriteTimeout the M3 comment conflated it with: that would truncate a legitimately
+// long stream; this bounds one frame.
+//
+// The first write error is sticky and readable: a stream whose client vanished should stop
+// generating rather than keep pushing frames into a dead socket.
+type sseWriter struct {
+	mu  sync.Mutex
+	w   http.ResponseWriter
+	f   http.Flusher
+	rc  *http.ResponseController
+	err error
+}
+
+// sseWriteTimeout bounds one frame's write+flush. A var so tests can drive it. Generous against a
+// slow but live client, short enough that a stalled one frees the decode worker.
+var sseWriteTimeout = 30 * time.Second
+
+// frame writes one preformatted SSE frame under the lock, and is the ONLY place this package
+// writes to a streaming ResponseWriter.
+func (s *sseWriter) frame(format string, args ...any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err // sticky: the client is gone, stop trying
+	}
+	if s.rc != nil {
+		// An unsupported controller is not a stream failure — httptest's recorder has no deadline
+		// support — so the error is deliberately dropped rather than made sticky.
+		_ = s.rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+	}
+	if _, err := fmt.Fprintf(s.w, format, args...); err != nil {
+		s.err = err
+		return err
+	}
+	s.f.Flush()
+	return nil
+}
+
+// Err reports the first write failure. Non-nil means the client is gone.
+func (s *sseWriter) Err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
+}
+
+// newSSEWriter wraps a streaming response. Shared by both protocols' start helpers.
+func newSSEWriter(w http.ResponseWriter, f http.Flusher) *sseWriter {
+	return &sseWriter{w: w, f: f, rc: http.NewResponseController(w)}
+}
+
+func sseStart(w http.ResponseWriter) (*sseWriter, bool) {
 	f, ok := w.(http.Flusher)
 	if !ok {
 		writeErr(w, http.StatusInternalServerError, "streaming unsupported")
@@ -165,25 +232,23 @@ func sseStart(w http.ResponseWriter) (http.Flusher, bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	return f, true
+	return newSSEWriter(w, f), true
 }
 
-func sseSend(w http.ResponseWriter, f http.Flusher, v any) {
+func sseSend(ss *sseWriter, v any) {
 	b, _ := json.Marshal(v)
-	fmt.Fprintf(w, "data: %s\n\n", b)
-	f.Flush()
+	ss.frame("data: %s\n\n", b)
 }
 
-func sseDone(w http.ResponseWriter, f http.Flusher) {
-	fmt.Fprint(w, "data: [DONE]\n\n")
-	f.Flush()
+func sseDone(ss *sseWriter) {
+	ss.frame("data: [DONE]\n\n")
 }
 
 // sseErr emits an OpenAI-style error object mid-stream (the response is already
 // 200 with headers flushed, so a status code is no longer available). Callers
 // send this in place of the normal finish chunk when a generation fails. M1.
-func sseErr(w http.ResponseWriter, f http.Flusher, msg string) {
-	sseSend(w, f, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
+func sseErr(ss *sseWriter, msg string) {
+	sseSend(ss, map[string]any{"error": map[string]any{"message": msg, "type": "api_error"}})
 }
 
 // sseHeartbeatInterval is how often a buffered generation emits a keep-alive
@@ -201,10 +266,12 @@ var sseHeartbeatInterval = 10 * time.Second
 // carries no data, and every SSE parser drops it, so nothing downstream can
 // mistake a keep-alive for content. The buffering guarantee is untouched.
 //
-// The returned stop JOINS the goroutine before returning, so the caller can
-// resume writing to w with no risk of interleaving two writers on one
-// ResponseWriter.
-func sseHeartbeat(w http.ResponseWriter, f http.Flusher) (stop func()) {
+// The returned stop JOINS the goroutine before returning. That join was once the ONLY thing keeping
+// two writers apart, and it was not enough: it orders the heartbeat against the handler's writes
+// AFTER drive returns, not against the prose deltas the incremental paths emit WHILE it runs. The
+// serialization now comes from sseWriter's lock; the join remains so nothing ticks after the
+// caller's final frame (audit-2026-09-02 C-06).
+func sseHeartbeat(ss *sseWriter) (stop func()) {
 	done, finished := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(finished)
@@ -215,8 +282,7 @@ func sseHeartbeat(w http.ResponseWriter, f http.Flusher) (stop func()) {
 			case <-done:
 				return
 			case <-t.C:
-				fmt.Fprint(w, ": ping\n\n")
-				f.Flush()
+				ss.frame(": ping\n\n")
 			}
 		}
 	}()

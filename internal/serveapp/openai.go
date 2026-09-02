@@ -521,29 +521,29 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	created := time.Now().Unix()
 
 	if req.Stream {
-		f, ok := sseStart(w)
+		ss, ok := sseStart(w)
 		if !ok {
 			return
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
-		sseSend(w, f, role)
+		sseSend(ss, role)
 		finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
-			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
+			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
-			sseErr(w, f, "generation failed: "+gerr.Error())
-			sseDone(w, f)
+			sseErr(ss, "generation failed: "+gerr.Error())
+			sseDone(ss)
 			return
 		}
-		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
+		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
 		if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
 			// OpenAI's shape: an extra chunk AFTER the finish chunk, with empty choices, carrying
 			// the authoritative counts. nComp is len(ids) from streamTokens — the tokens actually
 			// generated, which is what a chunk count cannot report.
-			sseSend(w, f, usageChunk(id, created, lm.name,
+			sseSend(ss, usageChunk(id, created, lm.name,
 				usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}))
 		}
-		sseDone(w, f)
+		sseDone(ss)
 		return
 	}
 
@@ -609,20 +609,20 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	created := time.Now().Unix()
 
 	if req.Stream {
-		f, ok := sseStart(w)
+		ss, ok := sseStart(w)
 		if !ok {
 			return
 		}
 		finish, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
-			sseSend(w, f, completionChunk(id, created, lm.name, t, nil))
+			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
 		if gerr != nil {
-			sseErr(w, f, "generation failed: "+gerr.Error())
-			sseDone(w, f)
+			sseErr(ss, "generation failed: "+gerr.Error())
+			sseDone(ss)
 			return
 		}
-		sseSend(w, f, completionChunk(id, created, lm.name, "", &finish))
-		sseDone(w, f)
+		sseSend(ss, completionChunk(id, created, lm.name, "", &finish))
+		sseDone(ss)
 		return
 	}
 	var sb strings.Builder

@@ -149,21 +149,21 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	created := time.Now().Unix()
 
 	if req.Stream {
-		f, ok := sseStart(w)
+		ss, ok := sseStart(w)
 		if !ok {
 			return
 		}
-		sseSend(w, f, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
+		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
 		finish, _, _, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
-			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: t}, nil))
+			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
-			sseErr(w, f, "generation failed: "+gerr.Error())
-			sseDone(w, f)
+			sseErr(ss, "generation failed: "+gerr.Error())
+			sseDone(ss)
 			return
 		}
-		sseSend(w, f, chatChunk(id, created, lm.name, delta{}, &finish))
-		sseDone(w, f)
+		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		sseDone(ss)
 		return
 	}
 	var sb strings.Builder
@@ -220,11 +220,11 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	id := "msg_" + reqID()
 
 	if req.Stream {
-		f, ok := anthropicSSEStart(w)
+		ss, ok := anthropicSSEStart(w)
 		if !ok {
 			return
 		}
-		anthropicEvent(w, f, "message_start", map[string]any{
+		anthropicEvent(ss, "message_start", map[string]any{
 			"type": "message_start",
 			"message": map[string]any{
 				"id": id, "type": "message", "role": "assistant", "model": lm.name,
@@ -232,25 +232,25 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 				"usage": map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": 0},
 			},
 		})
-		anthropicEvent(w, f, "ping", map[string]any{"type": "ping"})
-		anthropicEvent(w, f, "content_block_start", map[string]any{
+		anthropicEvent(ss, "ping", map[string]any{"type": "ping"})
+		anthropicEvent(ss, "content_block_start", map[string]any{
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
 		finish, nComp, stopSeq, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
-			anthropicEvent(w, f, "content_block_delta", map[string]any{
+			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
 			})
 		})
 		if gerr != nil {
-			anthropicEvent(w, f, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
-			anthropicStreamErr(w, f, "generation failed: "+gerr.Error())
+			anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+			anthropicStreamErr(ss, "generation failed: "+gerr.Error())
 			return
 		}
-		anthropicEvent(w, f, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(w, f, reason, seq, nComp)
+		anthropicMessageEnd(ss, reason, seq, nComp)
 		return
 	}
 	var sb strings.Builder

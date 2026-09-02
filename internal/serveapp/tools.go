@@ -72,10 +72,10 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	// the streaming path, because the headers are already flushed. That is the M1
 	// convention sseErr exists for and what the non-tool streaming paths already do.
 	// The non-streaming path below keeps its 500 unchanged.
-	var f http.Flusher
+	var ss *sseWriter
 	if req.Stream {
 		var ok bool
-		if f, ok = sseStart(w); !ok {
+		if ss, ok = sseStart(w); !ok {
 			return
 		}
 	}
@@ -92,7 +92,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	// stream for good once the opener appears — everything after it belongs to a
 	// call, not to prose.
 	opener, incremental := "", false
-	if f != nil && lm.tmpl != nil {
+	if ss != nil && lm.tmpl != nil {
 		opener, incremental = lm.tmpl.ToolCallOpener()
 	}
 	var streamed strings.Builder // exactly what left as content deltas
@@ -102,11 +102,11 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	}
 
 	var stopBeat func()
-	if f != nil {
+	if ss != nil {
 		// Heartbeats still run: on an incremental family they cover the silence
 		// before the first token and inside a tool call, and on the others they
 		// cover the whole generation as before.
-		stopBeat = sseHeartbeat(w, f)
+		stopBeat = sseHeartbeat(ss)
 	}
 	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 		sb.WriteString(t)
@@ -115,16 +115,16 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		}
 		if out := prose.Push(t); out != "" {
 			streamed.WriteString(out)
-			sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: out}, nil))
+			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))
 		}
 	})
 	if stopBeat != nil {
 		stopBeat() // joins the ticker goroutine before anything else writes to w
 	}
 	if gerr != nil {
-		if f != nil {
-			sseErr(w, f, "generation failed: "+gerr.Error())
-			sseDone(w, f)
+		if ss != nil {
+			sseErr(ss, "generation failed: "+gerr.Error())
+			sseDone(ss)
 			return
 		}
 		writeServerErr(w, "generation failed: "+gerr.Error())
@@ -164,9 +164,9 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 			// fires, bytes were sent that the parser does not agree are prose, and
 			// they cannot be recalled: say so loudly rather than emit a stream that
 			// silently disagrees with itself.
-			sseErr(w, f, "internal: streamed prose diverged from the parsed lead; the tool-call "+
+			sseErr(ss, "internal: streamed prose diverged from the parsed lead; the tool-call "+
 				"stream for this family is not prefix-safe (G21)")
-			sseDone(w, f)
+			sseDone(ss)
 			return
 		}
 		d := map[string]any{"role": "assistant"}
@@ -174,17 +174,17 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 			d["tool_calls"] = streamToolCalls(calls)
 			if rest := full[len(already):]; rest != "" {
 				// Prose that preceded the call and was still held back.
-				sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: rest}, nil))
+				sseSend(ss, chatChunk(id, created, lm.name, delta{Content: rest}, nil))
 			}
 		} else {
 			d["content"] = full[len(already):]
 		}
-		sseSend(w, f, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
+		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})
 		fin := finish
-		sseSend(w, f, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
+		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": &fin}}})
-		sseDone(w, f)
+		sseDone(ss)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

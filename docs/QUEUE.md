@@ -1186,7 +1186,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:433` | goinfer | `// O(n) tokenize. The OpenAI routes got this guard; /v1/messages did not, so a body unde` |
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:438` | goinfer | `if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:561` | goinfer | `func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loade` |
-| `docs/audit-2026-09-02.md|internal/serveapp/anthropic_stream.go:94` | goinfer | `func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, f http.Flus` |
+| `docs/audit-2026-09-02.md|internal/serveapp/anthropic_stream.go:94` | goinfer | `// THE THIRD BUFFER-THEN-STREAM SITE. G19 gave the OpenAI tool path and /v1/responses a` |
 | `docs/audit-2026-09-02.md|internal/serveapp/cpufastattn_test.go:12` | goinfer | `//  1. It is OFF unless asked for. A speed flag that turns itself on is how a user` |
 | `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:170` | goinfer | `func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, error) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:181` | goinfer | `func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {` |
@@ -1195,11 +1195,11 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:31` | goinfer | `// positions. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes ` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
 | `docs/audit-2026-09-02.md|internal/serveapp/heartbeat_test.go:161` | goinfer | `// G21 end-to-end. What this asserts is bounded by the model available: the 1.5B` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:129` | goinfer | `// Don't echo the raw json error: UnmarshalTypeError's default string leaks the Go struc` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:171` | goinfer | `func sseSend(w http.ResponseWriter, f http.Flusher, v any) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:203` | goinfer | `anchor: var sseHeartbeatInterval = 10 * time.Second` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:207` | goinfer | `func sseHeartbeat(w http.ResponseWriter, f http.Flusher) (stop func()) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:392` | goinfer | `var reqCounter atomic.Uint64` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:130` | goinfer | `// Don't echo the raw json error: UnmarshalTypeError's default string leaks the Go struc` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:171` | goinfer | `anchor: func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:203` | goinfer | `// support — so the error is deliberately dropped rather than made sticky.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:207` | goinfer | `anchor: func (s *sseWriter) frame(format string, args ...any) error {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:458` | goinfer | `var reqCounter atomic.Uint64` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:1088` | goinfer | `for _, lm := range srv.modelList() {` |
@@ -1241,10 +1241,10 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:236` | goinfer | `if err := os.MkdirAll(l.dir, 0o755); err != nil {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:375` | goinfer | `continue // sliding-window (ring) cache: not yet persistable (Inc 3)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:104` | goinfer | `var stopBeat func()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:105` | goinfer | `if f != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:109` | goinfer | `stopBeat = sseHeartbeat(w, f)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:105` | goinfer | `if ss != nil {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:109` | goinfer | `stopBeat = sseHeartbeat(ss)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:111` | goinfer | `finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:118` | goinfer | `sseSend(w, f, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:118` | goinfer | `sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:122` | goinfer | `stopBeat() // joins the ticker goroutine before anything else writes to w` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:147` | goinfer | `usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:149` | goinfer | `if req.Stream {` |
