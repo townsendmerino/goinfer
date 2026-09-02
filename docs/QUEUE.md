@@ -1462,6 +1462,10 @@ supports.
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:287` | goinfer | `#define SA_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:330` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
+| `docs/task-model-pull.md|internal/chatapp/embed.go:41` | goinfer | `//go:embed model.gguf` |
+| `docs/task-model-pull.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
+| `docs/task-model-pull.md|internal/serveapp/main.go:330` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/comp` |
+| `docs/task-model-pull.md|internal/serveapp/main.go:838` | goinfer | `// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:463` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:94` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:83` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
