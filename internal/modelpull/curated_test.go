@@ -10,7 +10,7 @@ import (
 
 // TestCurated_matchesReleaseWorkflow is the "one shared place" enforcement.
 //
-// docs/task-model-pull.md asked for the demo tiers to be read from a single source shared
+// docs/completed/task-model-pull.md asked for the demo tiers to be read from a single source shared
 // with .github/workflows/release-assets.yml, because this project keeps rediscovering that
 // two copies of one fact drift. Rewriting the workflow's matrix to consume curated.json
 // would touch the release pipeline; this achieves the same guarantee without that risk —

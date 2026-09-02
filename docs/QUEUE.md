@@ -51,6 +51,20 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
+**Model-pull leftovers** — three small items left when `task-model-pull.md` was archived
+2026-09-02 (all of its phases shipped; these were never in scope). Recorded here because
+`docs/completed/` is a record, not a task list, so anything still to do had to leave it.
+
+- **Disk-space precheck** before a multi-gigabyte fetch. Today `pull` discovers a full disk by
+  failing partway; the sizes are known up front from the tree API, so this is a cheap check.
+- **Split-GGUF checkpoints.** A shard is *detected* and refused by name (`Select`), so nobody
+  gets one useless piece — but assembling a split checkpoint needs loader work beyond the fetch
+  command, which is why it stopped at the refusal.
+- **Generate `release-assets.yml`'s matrix from `internal/modelpull/curated.json`.** Optional:
+  `TestCurated_matchesReleaseWorkflow` already makes the two impossible to ship out of step, so
+  this is tidiness, not a correctness gap. Weigh it against editing the release path.
+
+
 **G26 · phi3-mini lost 5.8% at `temperature 1.0`, and only phi3-mini** — **CLOSED 2026-08-27: the
 cause is optimistic forward (`6a4e0ae`), a net loss above T ≈ 0.26; about half the headline was the
 anchor's own spread. Full result at the end of this entry — the investigation below is left intact,
@@ -1458,10 +1472,6 @@ supports.
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:287` | goinfer | `#define SA_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:330` | goinfer | `func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {` |
-| `docs/task-model-pull.md|internal/chatapp/embed.go:41` | goinfer | `//go:embed model.gguf` |
-| `docs/task-model-pull.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
-| `docs/task-model-pull.md|internal/serveapp/main.go:340` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file or HF dir (chat/comp` |
-| `docs/task-model-pull.md|internal/serveapp/main.go:862` | goinfer | `// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:463` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:94` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:83` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |

@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/modelpull"
 )
 
-// The local web UI (docs/task-model-pull.md §4, option B).
+// The local web UI (docs/completed/task-model-pull.md §4, option B).
 //
 // It rides the server that already exists: the page is a single embedded HTML file with no
 // external stylesheet, font or script, and it talks to the SAME /v1/models and

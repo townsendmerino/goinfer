@@ -1,5 +1,17 @@
 # Model pull — a download helper, scoped against what already exists
 
+> **ARCHIVED 2026-09-02 — a record, not instructions.** Every phase in this doc shipped:
+> `pull`, `-embed`, the `demo:` shortcuts, `serve pull`, resumable downloads, and the §4
+> web UI. Checkboxes and "phase N" language below record the plan as it stood, **not**
+> outstanding work. The three items that were still open when this was archived were moved
+> to the live queue (`docs/QUEUE.md`, "Model-pull leftovers") rather than left here, per the
+> archiving rule in `docs/parity-coverage-policy.md` — nothing in `docs/completed/` should
+> tell a future reader what to do.
+>
+> The design questions this doc refused to answer without checking (the HF digest, the quant
+> matching scheme, where `pull` should live) were all measured before implementation; the
+> answers are in the STATUS section immediately below.
+
 > **Framing.** This isn't "should goinfer download models" so much as "goinfer already does
 > almost everything downloading would need — what's actually missing is one small piece."
 > `--model` already loads a `.gguf` OR a `.giw` (`internal/serveapp/main.go:340`). A plain
@@ -318,16 +330,20 @@ approachable to non-technical users," which is a real but different product deci
 an explicit, separate conversation if that's ever the actual goal, not something to fold into
 this.
 
-## 5. Suggested phasing
+## 5. Phasing as planned — ALL SHIPPED 2026-09-02 (record only)
 
-1. `cmd/pull`, explicit-reference form only, plain fetch + `--prequant`, CLI progress, sha256
-   printed. No `--embed`, no curated shortlist, no subcommand restructuring.
-2. `--embed`, wired to `build-embed.sh`'s existing logic.
-3. The `demo:0.5b`/`demo:1.5b` curated shortcuts, sourced from one place shared with
-   `release-assets.yml`.
-4. Decide and execute the subcommand question (§3) once it's clear whether `pull` earns its
-   keep as a separate tool or belongs inside `goinfer-chat`/`serve`.
-5. The local web UI (§4), as its own scoped design, if wanted at all.
+1. ~~`cmd/pull`, explicit-reference form only, plain fetch + `--prequant`, CLI progress, sha256
+   printed.~~ SHIPPED as a `goinfer-chat`/`goinfer-serve` subcommand (§3 was decided first, not
+   fourth — see STATUS). `--prequant` was dropped as redundant: `--model` already transcodes.
+   The sha256 is VERIFIED, not merely printed.
+2. ~~`--embed`, wired to `build-embed.sh`'s existing logic.~~ SHIPPED, exactly that way.
+3. ~~The `demo:0.5b`/`demo:1.5b` curated shortcuts, sourced from one place shared with
+   `release-assets.yml`.~~ SHIPPED, with the sharing enforced by a drift test rather than by
+   rewriting the release workflow.
+4. ~~Decide and execute the subcommand question (§3) last.~~ Decided FIRST instead: doing it
+   fourth would have built the shape §3 already suspected was wrong. It belongs inside
+   `goinfer-chat`, and `goinfer-serve` shares the implementation.
+5. ~~The local web UI (§4), as its own scoped design, if wanted at all.~~ SHIPPED as `serve -web`.
 
 ## Sources
 
