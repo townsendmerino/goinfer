@@ -858,11 +858,11 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/drafter.go:101` | goinfer | `d.fc = r.upW(fcw)` |
 | `docs/audit-2026-09-02.md|cuda/drafter.go:173` | goinfer | `if n > d.ctxCap {` |
 | `docs/audit-2026-09-02.md|cuda/drafter.go:251` | goinfer | `need := d.ctxLen + n` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:271` | goinfer | `if n > d.extCap {` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:382` | goinfer | `if d.ctxLen+M > d.kvCap {` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:447` | goinfer | `if e := d.r.launch(d.attnBlock, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ:` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:451` | goinfer | `gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.r.attnScale),` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:563` | goinfer | `if M > d.headCap {` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:284` | goinfer | `if n > d.extCap {` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:395` | goinfer | `if d.ctxLen+M > d.kvCap {` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:460` | goinfer | `if e := d.r.launch(d.attnBlock, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ:` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:464` | goinfer | `gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.r.attnScale),` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:576` | goinfer | `if M > d.headCap {` |
 | `docs/audit-2026-09-02.md|cuda/drafter_loop_test.go:267` | goinfer | `const maxNew = 96` |
 | `docs/audit-2026-09-02.md|cuda/drafter_vs_off_test.go:145` | goinfer | `maxNew := 96` |
 | `docs/audit-2026-09-02.md|cuda/foreign_context_test.go:52` | goinfer | `func foreignCUDAContexts() (out []foreignCtx, ok bool) {` |
@@ -873,16 +873,15 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/kernel_fma_lint_test.go:15` | goinfer | `// moe.cu is the audited, FROZEN MoE PTX — reviewed separately (editing it needs its own` |
 | `docs/audit-2026-09-02.md|cuda/kernels.go:107` | goinfer | `// this box's NVRTC 12.9.86, not 12.6; only moe.ptx + the bench kernels are the audited ` |
 | `docs/audit-2026-09-02.md|cuda/kernels.go:178` | goinfer | `func f32tof16(f float32) uint16 {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:125` | goinfer | `func (r *cudaResident) prefillStaticDecline() error {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:156` | goinfer | `func nonBatchableKind(Ly *cudaLayer) string {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:204` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:226` | goinfer | `var scratch []Buffer` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:319` | goinfer | `if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, ` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:323` | goinfer | `gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), ArgNull()); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:417` | goinfer | `if e := r.stream.Sync(); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:431` | goinfer | `for m := first; m < M; m++ {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:484` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:493` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:157` | goinfer | `func (r *cudaResident) prefillStaticDecline() error {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:188` | goinfer | `func nonBatchableKind(Ly *cudaLayer) string {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:236` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:258` | goinfer | `var scratch []Buffer` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:351` | goinfer | `if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, ` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:355` | goinfer | `gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), ArgNull()); e != nil {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:463` | goinfer | `for m := first; m < M; m++ {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:516` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:531` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1235` | goinfer | `if r.prefillReady && r.dnet == nil {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1242` | goinfer | `if startPos == 0 {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:125` | goinfer | `func splitkvThreshold(nH, hd int) int {` |
@@ -911,17 +910,16 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/attention.go:114` | goinfer | `// 4. Append this position's K/V, then attend over the stored history. Route` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:129` | goinfer | `ctx := cache.scr.ctx[:nH*hd]` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:156` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:140` | goinfer | `// LOSSLESS BY CONSTRUCTION: every emitted token is one the TARGET's own argmax produced` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:175` | goinfer | `eos := map[int]bool{}` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:201` | goinfer | `ids, err := host.PrefillLastNArgmax(embs, 0)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:209` | goinfer | `anchor := ids[len(ids)-1]` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:221` | goinfer | `for opt.MaxTokens <= 0 \|\| len(out) < opt.MaxTokens {` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:269` | goinfer | `blockIn := make([][]float32, width)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:274` | goinfer | `trunk, e := rd.DraftBlock(blockIn)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:301` | goinfer | `burst := make([]int, 0, accepted+1)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:305` | goinfer | `// TRUNCATE BEFORE EOS INSIDE THE BURST. A round commits several tokens at once, so a` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:352` | goinfer | `func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens int,` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:385` | goinfer | `stats.Emitted = len(toks)` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:169` | goinfer | `// LOSSLESS BY CONSTRUCTION: every emitted token is one the TARGET's own argmax produced` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:175` | goinfer | `anchor: func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:201` | goinfer | `rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:209` | goinfer | `for i := range n {` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:257` | goinfer | `for opt.MaxTokens <= 0 \|\| len(out) < opt.MaxTokens {` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:320` | goinfer | `blockIn := make([][]float32, width)` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:325` | goinfer | `trunk, e := rd.DraftBlock(blockIn)` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:356` | goinfer | `// TRUNCATE BEFORE EOS INSIDE THE BURST. A round commits several tokens at once, so a` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:453` | goinfer | `func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens int,` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:501` | goinfer | `stats.Emitted = len(toks)` |
 | `docs/audit-2026-09-02.md|decoder/blockspec_cpu_test.go:87` | goinfer | `n := min(len(base), len(got))` |
 | `docs/audit-2026-09-02.md|decoder/config.go:1048` | goinfer | `// resolveEOSIDs returns the ids that end generation: config.json's` |
 | `docs/audit-2026-09-02.md|decoder/config.go:1090` | goinfer | `func loadConfig(fsys fs.FS, name string) (*Config, error) {` |
@@ -1392,7 +1390,7 @@ supports.
 | `docs/queue-engineering.md|cmd/gate/gpu.go:365` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:1144` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-engineering.md|cuda/prefill.go:227` | goinfer | `defer func() {` |
+| `docs/queue-engineering.md|cuda/prefill.go:259` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:274` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:499` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/forwardn.go:1047` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
@@ -1421,7 +1419,7 @@ supports.
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:44` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,      // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:241` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:248` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
-| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:399` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:521` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:147` | goinfer | `// head). Fixed size — independent of sequence length, and NOT position-` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:150` | goinfer | `type deltaState struct {` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:184` | goinfer | `win := st.convWin` |
@@ -1470,7 +1468,7 @@ supports.
 | `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
 | `docs/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
 | `docs/task-moe-streaming.md|decoder/residency.go:130` | goinfer | `return m.residentProjsInt4()` |
-| `docs/task-verification-surface-audit.md|decoder/blockspec.go:399` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/task-verification-surface-audit.md|decoder/blockspec.go:521` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1245` | goinfer | `// gemma4's fused PLE/MoE tail can't stream incrementally; it falls back to a` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1253` | goinfer | `if arch.gemma4 != nil {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1414` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |

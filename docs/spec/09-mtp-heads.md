@@ -173,7 +173,7 @@ accepted length 0.64 → ~1.64 at K=6. **Fails → stop.** The lever is α; if �
 downstream matters and no build is justified.
 
 **Gate 2 — α clears break-even given the round cost**, using `breakEvenTokensPerRound`
-(`decoder/blockspec.go:399`) rather than a new cost model. That comment records **~3.5 tok/round**
+(`decoder/blockspec.go:521`) rather than a new cost model. That comment records **~3.5 tok/round**
 on the measured 4B / 2070S pairing (~39 ms per round against an 11.1 ms decode), and records that
 the shipped guard sits at 2.5 — deliberately *below* break-even, because acceptance measured over
 the first few rounds is not acceptance over the generation.

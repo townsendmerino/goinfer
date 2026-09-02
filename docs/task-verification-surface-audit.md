@@ -70,7 +70,7 @@ rather than three slips:
 | a number from | got applied to | cost |
 |---|---|---|
 | an int8 W8A8 bar (`realLogitOracleQuant`) | the repo's first int4 T3 | five weeks of a blocker, resolved as G25 |
-| a block drafter's break-even, `decoder/blockspec.go:399` | an MTP round, whose draft term scales with K | caught in review, before it reached a gate |
+| a block drafter's break-even, `decoder/blockspec.go:521` | an MTP round, whose draft term scales with K | caught in review, before it reached a gate |
 | a 0.8B `c_head/c_decode` ratio | *would have been* read as a break-even for a 27B trunk | caught pre-emptively in `docs/spec/09-mtp-heads.md` |
 
 The first cost real time. The second and third were caught by someone asking which population a
