@@ -75,6 +75,12 @@ var censusList = []string{
 	"../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-moe-kv-tiny",
 	"../testdata/gemma4-moe-unified-tiny", "../testdata/glm-tiny-bias",
 	"../testdata/glm-tiny.gguf", "../testdata/qwen25vl-tiny", "testdata/qwen3_5_moe-tiny",
+	// llama-tiny (2026-09-02): the plain `llama` arch had NO fixture anywhere in the tree, only
+	// goldens — so the census round-tripped 21 families without ever touching the most common
+	// architecture in the ecosystem, and a required parity gate's family at that. The only
+	// llama checkpoints here are the box's gitignored llama3.2-1b / tinyllama-awq /
+	// tinyllama-gptq, none of them tiny. scripts/pin_llama_tiny.py, 720 KB, tracked.
+	"../testdata/llama-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with
@@ -96,6 +102,30 @@ var censusExcluded = map[string]string{
 	"mellum-mellum2-slice": "4.0 GB — a real-weight 4-layer slice. Measured: still running after 90s while all 29 listed fixtures together take 0.27s. mellum's per-layer fields are the generic set.",
 	"siglip-tiny":          "a vision encoder, not a decoder — Load refuses it, so there are no LayerWeights to census.",
 	"mistral-tiny-window":  "config-only fixture (no model.safetensors); it exists to pin sliding-window CONFIG parsing, and Load cannot open it.",
+
+	// The Linux box's nine local drops, 549 MB to 17 GB and ~44 GB together. Recorded as decisions
+	// rather than left to be re-reported every run. TWO reasons apply to all of them and both are
+	// measured, not judgement:
+	//
+	//  1. COST. This census loads, serializes and greedy-decodes every fixture, and its whole design
+	//     point is that 30 of them together take 0.19 s — cheap enough to run in every CI. The
+	//     smallest of these is 549 MB; mellum-mellum2-slice at 4.0 GB was still running after 90 s.
+	//  2. NO NEW FIELDS. Eight of the nine are an architecture the census already round-trips, and
+	//     the field set this test compares is a function of the ARCHITECTURE. A second gemma4 or a
+	//     third laguna adds bytes, not coverage.
+	//
+	// The ninth is different and is recorded in docs/QUEUE.md rather than hidden here: llama3.2-1b,
+	// tinyllama-awq and tinyllama-gptq are the ONLY fixtures anywhere for the plain `llama` arch,
+	// and there is no tiny one. See llama-tiny below, which is the answer to that.
+	"gptoss120-slice":        "8.7 GB; gpt_oss is round-tripped by decoder/testdata/gptoss_tiny.gguf, same arch, same field set.",
+	"laguna-xs2-slice":       "5.7 GB; laguna is round-tripped by laguna-xs2-tiny, laguna-xs21-tiny and laguna-m1-tiny.",
+	"laguna-xs21-slice":      "5.7 GB; same arch as the three laguna tiny fixtures already censused.",
+	"qwen3next-q3next-slice": "17 GB, the largest fixture on any machine here; qwen3_next is round-tripped by qwen3next-tiny.",
+	"gemma4-moe-scaled":      "1.9 GB; gemma4_text is round-tripped by four gemma4 tiny fixtures already.",
+	"gemma-3-270m":           "549 MB; gemma3 is round-tripped by gemma3-vl-tiny.",
+	"llama3.2-1b":            "2.4 GB. It is a REAL llama checkpoint, not a tiny fixture — the census gets the llama arch from llama-tiny instead.",
+	"tinyllama-awq":          "731 MB. The AWQ loader has no tiny fixture and no census coverage; recorded in docs/QUEUE.md rather than paid for at this size.",
+	"tinyllama-gptq":         "733 MB. The GPTQ loader has no tiny fixture and no census coverage; recorded in docs/QUEUE.md rather than paid for at this size.",
 }
 
 func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {

@@ -41,6 +41,16 @@ demo/chat/dist/
 # assertion in TestLFM2_textParity is the only thing that would catch either coming back.
 !testdata/lfm2-tiny/
 !testdata/lfm2-tiny/model.safetensors
+# EXCEPTION: llama-tiny is a 710 KB deterministic random-weight PLAIN llama checkpoint
+# (scripts/pin_llama_tiny.py). Committed for the same reason as the four above, plus one of
+# its own: `llama` is a REQUIRED parity gate and the most common architecture in the
+# ecosystem, and it had NO tiny fixture anywhere in this tree — only goldens. The only llama
+# checkpoints on any machine here are the Linux box's gitignored llama3.2-1b (2.4 GB),
+# tinyllama-awq (731 MB) and tinyllama-gptq (733 MB), so no other machine could exercise the
+# arch at all and the .giw census round-tripped 21 families without ever touching it. It is
+# built UNTIED on purpose: the tied families cannot exercise the separate-LMHead path.
+!testdata/llama-tiny/
+!testdata/llama-tiny/model.safetensors
 
 # EXCEPTION: the DFlash reference trace (2.6 MB, scripts/pin_dflash_trace.py). It is the
 # upstream implementation's OWN per-layer output, not weights — the oracle P10's kill-gate 1
