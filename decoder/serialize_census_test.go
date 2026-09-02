@@ -23,6 +23,7 @@ package decoder
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -169,13 +170,20 @@ func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
 	t.Logf("censused %d representable fixture(s) field-by-field", checked)
 }
 
-// EVERY COMMITTED FIXTURE IS LISTED OR EXPLICITLY EXCLUDED.
+// EVERY FIXTURE PRESENT IN THIS CHECKOUT IS LISTED OR EXPLICITLY EXCLUDED.
 //
 // The census above is only as complete as its fixture list, and that list is hand-maintained — the
 // exact shape whose failure it was written to replace. This walks both testdata roots, treats an
 // entry with a config.json (or a .gguf/.giw file) as a model fixture, and requires each to be
 // censused or excluded with a written reason. It is a STAT, not a load, so it costs nothing and
 // cannot be the reason someone trims the list.
+//
+// PRESENT IN THIS CHECKOUT, NOT "COMMITTED" — a distinction that cost a red CI. Most fixture
+// checkpoints are GITIGNORED local drops: 12 of the 35 this machine holds are tracked, and a fresh
+// clone or `git worktree` has only those. So the set this walks is machine-dependent, and the
+// STALE half of the check has to account for it: an exclusion naming a fixture that is merely
+// absent here proves nothing, while one naming a TRACKED path that is gone is genuinely stale.
+// The positive half — a fixture that IS here must be listed — is sound on every machine.
 func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 	listed := map[string]bool{}
 	for _, p := range censusList {
@@ -209,7 +217,7 @@ func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 				t.Errorf("%s is in censusExcluded with an EMPTY reason", name)
 			case excluded:
 			default:
-				t.Errorf("committed model fixture %s is in neither censusList nor censusExcluded. "+
+				t.Errorf("model fixture %s is in neither censusList nor censusExcluded. "+
 					"An unlisted fixture is a family this census does not speak for, and that is "+
 					"exactly how serialize.go came to drop LFM2's entire conv mixer while this "+
 					"test reported green over 21 other families (audit-2026-09-02 C-03).", name)
@@ -220,12 +228,49 @@ func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 		t.Fatal("no model fixture found under either testdata root — the scan is broken, and a " +
 			"broken scan makes this gate pass over nothing")
 	}
+	tracked, canCheckStale := trackedFixtureNames()
+	unverifiable := 0
 	for name := range censusExcluded {
-		if !found[name] {
-			t.Errorf("censusExcluded names %q, which is not a committed fixture — a stale exemption "+
+		switch {
+		case found[name]:
+		case !canCheckStale:
+			unverifiable++
+		case tracked[name]:
+			t.Errorf("censusExcluded names %q, which is TRACKED and absent — a stale exemption "+
 				"reads as a fixture somebody considered", name)
+		default:
+			// Gitignored and not on this machine. Absence is not evidence: a fresh clone has
+			// almost none of these. Counted, not asserted on.
+			unverifiable++
 		}
 	}
-	t.Logf("%d committed model fixture(s): %d censused, %d explicitly excluded",
-		len(found), len(found)-len(censusExcluded), len(censusExcluded))
+	t.Logf("%d model fixture(s) present here: %d censused, %d excluded (%d of the exclusions name "+
+		"gitignored fixtures absent from this checkout, so their staleness cannot be judged here)",
+		len(found), len(found)-(len(censusExcluded)-unverifiable), len(censusExcluded), unverifiable)
+}
+
+// trackedFixtureNames returns the basenames git tracks under either testdata root, and whether the
+// question could be answered at all. Fixture checkpoints are mostly gitignored, so "absent" and
+// "deleted" are only distinguishable for a tracked path.
+func trackedFixtureNames() (map[string]bool, bool) {
+	out, err := exec.Command("git", "ls-files", "testdata", "../testdata").Output()
+	if err != nil {
+		return nil, false
+	}
+	names := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// testdata/<name>/config.json -> <name>; testdata/<name>.gguf -> <name>.gguf
+		parts := strings.Split(line, "/")
+		for i, p := range parts {
+			if p == "testdata" && i+1 < len(parts) {
+				names[parts[i+1]] = true
+				break
+			}
+		}
+	}
+	return names, len(names) > 0
 }
