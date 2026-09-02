@@ -612,6 +612,9 @@ func Main() {
 		scheme = "https"
 	}
 	fmt.Fprintf(os.Stderr, "goinfer serving on %s://%s [%s]\n", scheme, *addr, srv.endpointSummary())
+	for _, line := range serverBanner(srv, cfg) {
+		fmt.Fprintf(os.Stderr, "  %s\n", line)
+	}
 	// No -api-key: every route above is unauthenticated. Binding to loopback keeps
 	// other MACHINES out, but not other TABS — any page open in a browser on this
 	// machine can still fetch()/POST to it while it's running (the request is sent
@@ -949,7 +952,12 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// backend, and still take one forward per prompt token (cuda int8int8: ~9× TTFT). Printing them at
 	// load is what makes that visible; -require-backend turns a decline into a startup failure.
 	batched, why := lm.model.PrefillPath()
-	fmt.Fprintf(os.Stderr, "  decode path: %s\n  prefill path: %s\n", lm.model.DecodePath(), why)
+	// The rest of the resolved state — context cap, KV precision, session reuse (and WHY when
+	// it is off), and the features a harness asks about — comes from modelBanner so a test can
+	// hold it to the runtime's own state rather than trusting a run of Fprintf calls.
+	for _, line := range modelBanner(lm, cfg) {
+		fmt.Fprintf(os.Stderr, "  %s\n", line)
+	}
 	// C-10: the same reasoning one line up, applied to the TOKENIZER. A pre-tokenizer this build
 	// does not walk produces a different id stream from HF and from llama.cpp with no error
 	// anywhere — count_tokens and usage drift by the same amount — and the only way anyone finds
