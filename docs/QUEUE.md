@@ -1153,7 +1153,7 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:119` | goinfer | `func f32to16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:25` | goinfer | `@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] in` |
 | `docs/audit-2026-09-02.md|gpu/gemv_w8a16.go:21` | goinfer | `@group(0) @binding(0) var<storage, read>       act:     array<f32>;        // [kp] f32 a` |
-| `docs/audit-2026-09-02.md|gpu/gpu.go:50` | goinfer | `// not. Not safe for concurrent use by multiple goroutines; wrap in your` |
+| `docs/audit-2026-09-02.md|gpu/gpu.go:51` | goinfer | `// not. Not safe for concurrent use by multiple goroutines; wrap in your` |
 | `docs/audit-2026-09-02.md|gpu/kv_longctx_test.go:24` | goinfer | `func TestKVLongCtx(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|gpu/mamba_f16.go:21` | goinfer | `func f32ToF16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|gpu/moe.go:25` | goinfer | `const MAXE: u32 = 512u;` |
