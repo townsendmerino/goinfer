@@ -258,7 +258,7 @@ func setupGGUFByteLevel(t *Tokenizer, g *embed.GGUFFile) {
 	t.byteEncoder, t.byteDecoder = buildByteLevelTables()
 	pre, _ := g.Str(ggufTokPre)
 	var known bool
-	t.maxDigits, t.normForm, t.normOn, t.ignoreMerges, t.splitDigits, known = byteLevelKnobs(pre)
+	t.maxDigits, t.normForm, t.normOn, t.ignoreMerges, t.splitDigits, t.preShape, known = byteLevelKnobs(pre)
 	if !known {
 		// C-10: an unrecognised `pre` used to fall silently to GPT-2-like defaults, and the two
 		// families this repo ships that do that are not hypothetical — measured on the local
@@ -279,28 +279,36 @@ func setupGGUFByteLevel(t *Tokenizer, g *embed.GGUFFile) {
 // has no normalizer and a Digits{individual_digits} pretokenizer (each digit
 // isolated, so a leading space never attaches to one); GPT-2 takes one digit, no
 // NFC, and honors merges. Unknown pre falls back to the GPT-2-like defaults.
-func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMerges, splitDigits, known bool) {
+func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMerges, splitDigits bool, shape splitShape, known bool) {
 	switch pre {
 	case "llama-bpe", "llama3", "llama-v3":
-		return 3, norm.NFC, false, true, false, true
+		return 3, norm.NFC, false, true, false, shapeCl100k, true
 	case "qwen2", "qwen2.5", "qwen":
-		return 1, norm.NFC, true, false, false, true
+		return 1, norm.NFC, true, false, false, shapeCl100k, true
+	case "gpt-4o":
+		// o200k. A GGUF carries no Split regex, so a name→shape mapping is exactly the guess that
+		// produced C-10 — this one is not a guess. Measured: gpt-oss-20b-MXFP4.gguf declares
+		// pre="gpt-4o", and the SAME MODEL's HF tokenizer.json (~/models/gpt-oss-20b-hf) declares a
+		// Split regex byte-identical to the o200k pattern splitO200k implements — sha256 2d1b8dc1…
+		// on both that file's regex and this repo's test constant for it. Digits cap at 3 in that
+		// pattern, and it ships no normalizer.
+		return 3, norm.NFC, false, false, false, shapeO200k, true
 	case "qwen35":
 		// Qwen3.5's GGUFs. Same family and the same tokenizer.json pipeline as qwen2 — NFC on, one
 		// digit — and it was NOT in this switch, so it fell to the default whose only difference is
 		// NFC OFF. That diverges on exactly the inputs needing normalisation and on nothing else,
 		// which is why it went unnoticed. Measured: Qwen3.5-35B-A3B-Q4_K_M.gguf is pre="qwen35".
-		return 1, norm.NFC, true, false, false, true
+		return 1, norm.NFC, true, false, false, shapeCl100k, true
 	case "mellum2":
-		return 1, norm.NFC, false, false, true, true
+		return 1, norm.NFC, false, false, true, shapeCl100k, true
 	case "gpt-2", "default", "":
 		// GPT-2's OWN alternation is not the cl100k one either (no contraction clause, ` ?\p{N}+`
 		// rather than a capped run), so these knobs are the historical behaviour and not a claim of
 		// correctness — see PreTokenizerDecline. Reported as known so the decline names the real
 		// remaining gap (the walker) rather than the name lookup.
-		return 1, norm.NFC, false, false, false, true
+		return 1, norm.NFC, false, false, false, shapeGPT2Original, true
 	default:
-		return 1, norm.NFC, false, false, false, false
+		return 1, norm.NFC, false, false, false, shapeUnknown, false
 	}
 }
 

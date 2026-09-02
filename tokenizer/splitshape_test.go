@@ -99,28 +99,53 @@ func TestClassifySplit_partialO200kIsNotO200k(t *testing.T) {
 // would mean claiming the walker handles o200k, and it does not.
 func TestByteLevelKnobs_unknownPreIsReportedNotAssumed(t *testing.T) {
 	for _, pre := range []string{"llama-bpe", "llama3", "llama-v3", "qwen2", "qwen2.5", "qwen",
-		"qwen35", "mellum2", "gpt-2", "default", ""} {
-		if _, _, _, _, _, known := byteLevelKnobs(pre); !known {
+		"qwen35", "mellum2", "gpt-2", "default", "", "gpt-4o"} {
+		if _, _, _, _, _, _, known := byteLevelKnobs(pre); !known {
 			t.Errorf("pre=%q is not recognised; it was, before this change or after it", pre)
 		}
 	}
 	// The real unrecognised names, from the assets and from the audit's list.
-	for _, pre := range []string{"gpt-4o", "llama4", "kimi-k2", "deepseek-v3", "glm4", "something-new"} {
-		if _, _, _, _, _, known := byteLevelKnobs(pre); known {
+	for _, pre := range []string{"llama4", "kimi-k2", "deepseek-v3", "glm4", "something-new"} {
+		if _, _, _, _, _, _, known := byteLevelKnobs(pre); known {
 			t.Errorf("pre=%q reports as known; the switch does not carry it, so the knobs are the "+
 				"cl100k default and the caller must be TOLD rather than served silently", pre)
 		}
 	}
 
 	// qwen35 specifically: it must match qwen2 and NOT the default, which differs in NFC.
-	d2, f2, on2, im2, sd2, _ := byteLevelKnobs("qwen2")
-	d35, f35, on35, im35, sd35, _ := byteLevelKnobs("qwen35")
+	d2, f2, on2, im2, sd2, _, _ := byteLevelKnobs("qwen2")
+	d35, f35, on35, im35, sd35, _, _ := byteLevelKnobs("qwen35")
 	if d2 != d35 || f2 != f35 || on2 != on35 || im2 != im35 || sd2 != sd35 {
 		t.Errorf("qwen35 knobs (%v,%v,%v,%v,%v) differ from qwen2's (%v,%v,%v,%v,%v)",
 			d35, f35, on35, im35, sd35, d2, f2, on2, im2, sd2)
 	}
-	if _, _, onDefault, _, _, _ := byteLevelKnobs("unrecognised"); onDefault == on35 {
+	if _, _, onDefault, _, _, _, _ := byteLevelKnobs("unrecognised"); onDefault == on35 {
 		t.Error("the premise broke: the default's NFC setting now equals qwen35's, so falling " +
 			"through would have been harmless and this test no longer describes the defect")
+	}
+}
+
+// gpt-oss: the GGUF says pre="gpt-4o" and carries no regex, so the mapping to a walker has to be
+// justified from outside the file. It is: the SAME MODEL's HF tokenizer.json declares a Split regex
+// byte-identical to reO200k below — sha256 2d1b8dc1… on both, checked against
+// ~/models/gpt-oss-20b-hf. That is evidence, not the name-to-shape guess C-10 is about.
+func TestByteLevelKnobs_gptOssSelectsTheO200kWalker(t *testing.T) {
+	digits, _, normOn, _, _, shape, known := byteLevelKnobs("gpt-4o")
+	if !known {
+		t.Fatal("pre=gpt-4o is not recognised")
+	}
+	if shape != shapeO200k {
+		t.Errorf("pre=gpt-4o selects %v, want o200k", shape)
+	}
+	if digits != 3 {
+		t.Errorf("digit cap %d, want 3 — the o200k pattern caps at \\p{N}{1,3}", digits)
+	}
+	if normOn {
+		t.Error("NFC is on; gpt-oss's tokenizer.json ships no normalizer")
+	}
+	// And the regex this repo pins for o200k must still classify as o200k — if the constant and
+	// the classifier ever disagree, the mapping above is resting on nothing.
+	if classifySplit(reO200k) != shapeO200k {
+		t.Error("reO200k no longer classifies as o200k")
 	}
 }
