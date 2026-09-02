@@ -91,7 +91,7 @@ Fix shape: mirror the OpenAI 400 (or implement tools-in-vision) on the Anthropic
 ## Confirmed findings — minor
 
 **serve (internal/serveapp)**
-- **R-09** `openai.go:888` + `decoder/model.go:873` — M-04 residual: `Budget == 0` means both "no clamp" and "clamped to zero", so a prompt that **exactly** fills the resident cap returns empty content with `finish_reason:"stop"` (the M-04 text's own listed case). The gate test codifies the wrong branch (`openai_test.go:593`). Publish a `-1`/pointer sentinel or a separate bool.
+- **R-09** `openai.go:888` + `decoder/model.go:858` — M-04 residual: `Budget == 0` means both "no clamp" and "clamped to zero", so a prompt that **exactly** fills the resident cap returns empty content with `finish_reason:"stop"` (the M-04 text's own listed case). The gate test codifies the wrong branch (`openai_test.go:593`). Publish a `-1`/pointer sentinel or a separate bool.
 - **R-10** `openai.go:591` — prompts in `(ctxCap, MaxPositions)` on a resident backend pass the C-20 check, then die mid-prefill with a 500 whose body leaks the internal "use the staged path" hint. Docs promise a staged fallback for long prompts; stateless Generate has none. Either fall back or 400 with `context_length_exceeded`.
 - **R-11** `helpers.go:94` — `decodeJSON` returns `json.Unmarshal` errors verbatim: any type-mismatched field leaks Go struct/field/type names (`completionReq.logprobs`, …). Defeats M-06's "no leaked Go field names" for the bool case it was about (reproduced empirically).
 - **R-16** `responses.go:241` — N-15 residual: the `/v1/responses` **tools** branch discards finish and hardcodes `status:"completed"`, so a budget-truncated (broken) tool call reads as complete.

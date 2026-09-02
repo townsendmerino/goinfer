@@ -914,7 +914,7 @@ comparison. It found one real, designed (not buggy) difference: the old resident
 path bakes a resolved `quantLabel` ("int4mix") into the header because `w` is fully materialized
 before `writeHeadGlobals` runs; the new streaming path calls `writeHeadGlobals` before any layer
 streams in, so `hasPopulatedLayers()` correctly defers the label to "" (pre-existing B11 logic,
-`decoder/serialize.go:170-185`) — exactly how every other already-streaming family already behaves.
+`decoder/serialize.go:177-192`) — exactly how every other already-streaming family already behaves.
 Every other byte agrees, and both bundles resolve to the same live-inferred label once loaded. All
 qwen35-family goldens (`TestQwen35_forwardParity`, `TestQwen3_5_textParity`,
 `TestSerializeQwen35_roundTrip`) stayed green, and the change is provably non-numeric (proven by the

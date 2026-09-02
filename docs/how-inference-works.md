@@ -28,7 +28,7 @@ next, and so on, until you decide to stop. Everything below is detail about (a)
 how that one prediction works and (b) the engineering tricks that make running it
 thousands of times not unbearably slow.
 
-That outer loop lives in [`decoder/model.go:545-655`](../decoder/model.go#L545-L655), a
+That outer loop lives in [`decoder/model.go:893-1122`](../decoder/model.go#L893-L1122), a
 function called `generateInto`.
 
 ---
@@ -183,7 +183,7 @@ The output is a single integer — the next token.
 
 ## Step 4: The loop (autoregression)
 
-Now zoom back out to [`generateInto`](../decoder/model.go#L545-L655). We:
+Now zoom back out to [`generateInto`](../decoder/model.go#L893-L1122). We:
 
 1. Run the forward pass on the prompt,
 2. Sample one new token,
@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L545-L655). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:586-649](../decoder/model.go#L586-L649)).
+   ([decoder/model.go:1004-1121](../decoder/model.go#L1004-L1121)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one
