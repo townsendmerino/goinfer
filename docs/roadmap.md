@@ -330,8 +330,12 @@ v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverag
   > decomposition into "gemv + glue + barriers" bills every dispatch to a category and
   > none to being written badly, so a 12%-of-token kernel doing 1/64th of the parallel
   > work it could sat inside the "glue" bar for months, reading as structural.
-  > **The lever now is attention** (65% of the token by pos 512, dispatched as nH=12
-  > workgroups on 40 SMs) — see G35 in `docs/QUEUE.md`.
+  > **The lever was attention** — and it has since been taken. G36 (`docs/QUEUE.md`) found it was
+  > reducing once per KEY rather than twice per layer, split the workgroup over keys instead of
+  > head dims, and measured **9.2× on the kernel / 2.39× on the token at 1k context**, taking
+  > server-to-server decode from 48.5 to 115.2 tok/s at 1024 tokens. The "nH=12 workgroups on 40
+  > SMs" occupancy reading in G35 was a false lead borrowed from the CUDA kernel, which was running
+  > a different algorithm; it is corrected there.
   **UPDATE (2026-07, MEASURED e2e): "past it needs native CUDA" is realized
   cgo-free — spike is GO.** Real q4_k_m end-to-end decode measured at **218.6 tok/s
   = 1.96× WebGPU** on the 2070 SUPER (int4/W4A8, 80% peak bandwidth; executor-path

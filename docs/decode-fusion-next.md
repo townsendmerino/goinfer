@@ -12,8 +12,16 @@ dispatch/barrier count is the lever for cogentcore today.
 >
 > **And the premise is now measured, not assumed.** G35's ablation profile puts the
 > whole remaining elementwise-glue budget at ~28% of the token at pos 64 and ~12% at
-> pos 512, against **attention at 65% by pos 512**. Dispatch/barrier count is no longer
-> the lever it was when this doc was written; the attention kernel's occupancy is.
+> pos 512, against **attention at 65% by pos 512**. Dispatch/barrier count across the PLAN is no
+> longer the lever it was when this doc was written.
+>
+> **Barrier count INSIDE one kernel still was, though — G36 (2026-09-02).** The attention kernel
+> reduced once per key (9 `workgroupBarrier()` × nKeys per layer) where `cuda/attn_block.cu`
+> reduces twice per layer. Splitting the workgroup over KEYS instead of head dims measured
+> **9.2× on the kernel, 2.39× on the token at 1k context**, and flattened decode's fall-off with
+> context from −54% to −12% (128→1024 tokens). Note what that says about this doc's framing: the
+> plan-level dispatch chain was the wrong altitude to look at, twice — G35 found a bad reduction
+> inside `quantize`, G36 a bad decomposition inside `attn`.
 
 > **Correction (2026-06-19):** an earlier draft claimed a "wgpu-native v29 decode
 > penalty" that this fusion would also shrink. That penalty was **measured and does

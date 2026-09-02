@@ -2046,8 +2046,16 @@ Two things fall out, and neither is the megakernel:
 1. **Attention is the bottleneck at any real context**, and it is O(pos): 1.47 ms at pos 64 → 13.44 ms
    at pos 512, 65% of the token. It is dispatched as `nH`=12 workgroups on a 40-SM card. This is the
    same occupancy wall `docs/ollama-chase.md` names on the CUDA side (12 blocks / 40 SMs, 11.9%
-   occupancy) and answers there with split-KV, measured 1.30×. **Not attempted here** — flagged as
-   the next lever, not a result.
+   occupancy) and answers there with split-KV. **Not attempted here** — flagged as the next lever,
+   not a result.
+
+   > **CORRECTED by G36 (same day), on both counts.** The split-KV figure quoted here as "1.30×" was
+   > a GEMV `RN·MT` tuning result, not split-KV; split-KV measured **1.20×**. And the occupancy
+   > *diagnosis* does not transfer: it is correct for the CUDA kernel, but WebGPU's was running a
+   > different algorithm — reducing once per KEY rather than twice per layer — so the lever was the
+   > barrier count, not the workgroup count. Acting on the analogy would have shipped the wrong fix;
+   > CUDA's own P6a data says split-KV *loses* on this exact geometry at this depth. G36 measured
+   > **9.2× on the kernel and 2.39× on the token at 1k context** instead.
 2. **The entire glue budget K1/K3a would attack is 5.2% of the token** (rmsQuant), falling to 2.2% at
    pos 512. Even a free, perfect K1 could not clear a 1.3× bar; CUDA's own K1+K3a bought **+1.5% on
    the 1.5B** (its +21% was the 0.5B, which is glue-dominated). Experiment B is **NO-GO on its own
@@ -2117,3 +2125,117 @@ dispatch-count framing treated as a fixed unit.
   Deliberate: both arms are equally garbage and NVIDIA f32 has no denormal/NaN timing cliff to bias
   the comparison. It is a timing harness; the parity tests are the correctness gate.
 - Attention's split-KV lever is **named, not measured**. The CUDA 1.30× does not transfer on its own.
+
+## G36 · decode attention was reducing once per KEY — 9.2× on the kernel, 2.4× on the token at 1k
+
+Executed 2026-09-02, directly off G35's "attention is the next lever" and its ablation profile.
+G35 named the term; this identifies the mechanism and removes it. **The lever was not occupancy,
+which is what the CUDA-side analogy predicted, and acting on that analogy first would have been
+wrong.**
+
+**Box:** RTX 2070 SUPER, driver 595.91.07, Qwen2.5-Coder-1.5B int8 GPU-resident (`nH=12 nKV=2
+headDim=128`, 28 layers), greedy, local disk. A/B by `GOINFER_ATTN_KEYS=0/1` — one binary, no
+rebuild between arms.
+
+### The mechanism: a barrier per key, not too few workgroups
+
+`attnShaderWGSL` put one lane on each of the `hd` dimensions. That makes the q·k dot for **every
+key** a cross-lane reduction: `red[d]=prod`, barrier, 7 barrier'd tree levels, trailing barrier =
+**9 `workgroupBarrier()` per key**, or **4,617 per layer** at nKeys=513.
+
+The roofline says how far off that is. 28 layers × 513 keys × 2048 B = **29.4 MB of KV per token**,
+which at 448 GB/s is a **0.066 ms** job. Measured: **13.68 ms**.
+
+| | measured | roofline | efficiency |
+|---|---|---|---|
+| GEMV (weights) | 4.14 ms | ~1.55 GB | ~83% |
+| attention, before | 13.68 ms | 29.4 MB | **0.48%** |
+| attention, after | 1.49 ms | 29.4 MB | 4.4% |
+
+Two halves of one token differing by 175× in bandwidth efficiency is not a tuning gap, and the
+implied 106 ns/barrier (13.68 ms ÷ 4,617 ÷ 28 layers) says what the time was.
+
+### Why the occupancy reading was wrong, and what it would have cost
+
+G35 flagged "nH=12 workgroups on a 40-SM card" and pointed at CUDA's split-KV, which `ollama-chase.md`
+records at 11.9% achieved occupancy, Waves/SM 0.04. That diagnosis is correct **for the CUDA kernel**,
+and following it here would have been a mistake twice over:
+
+1. **CUDA's own P6a amendment says split-KV LOSES on this exact geometry at this depth** — the 1.5B
+   measures 0.941 at 256 keys and 0.939 at 512; its crossover is in (512, 1024]. phi3-mini (MHA,
+   nH=32) never crosses at any depth, declining monotonically to 0.754. The shipped gate had to
+   become a measured per-geometry lookup because the *form* "ON iff nWin ≥ f(geometry)" is falsified.
+2. **CUDA and WebGPU were not running the same algorithm.** `cuda/attn_block.cu` splits lanes over
+   **keys** and reduces twice per layer; WebGPU split over **dims** and reduced once per key —
+   a ~250× difference in barrier count. Split-KV is an occupancy fix for a kernel already
+   structurally right. Ours was not, and adding workgroups underneath a per-key barrier storm
+   would have bought little and shipped a lookup table to maintain.
+
+**The general form: an analogy that transfers a DIAGNOSIS also transfers the assumption that the
+two things are the same underneath.** The occupancy numbers were real, measured, and about a kernel
+this one only resembled. Reading both kernels side by side cost ten minutes and changed the whole plan.
+
+### The port, and the one thing WGSL genuinely cannot do
+
+Lanes own disjoint keys; only the softmax max and denominator reduce. `workgroupBarrier()` maps 1:1
+to `__syncthreads()`, and **no subgroup ops are needed** — which matters, because the cogentcore
+binding exposes none.
+
+The real constraint is **dynamic workgroup storage**: CUDA sizes `sc[nWin]` per launch via
+`extern __shared__`; a WGSL `var<workgroup>` is fixed at compile time. So this **tiles** — TILE=2048
+keys, online-softmax state (m, l, acc) carried across tiles. Storage is 2048·4 + 128·4 = **8.5 KB,
+inside WebGPU's guaranteed 16 KB**: no limit raise, no portability cost, any context length. Barriers
+per layer go 9/key → ~19/tile.
+
+`vec4` K/q loads are load-bearing, not a micro-optimisation. Splitting over keys strides the K read
+by kvDim across the warp; ncu measured that pattern using **~22% of each 32-byte L1TEX sector** on
+the CUDA twin, which is why `attn_block.cu` reads `float4`. Hence the `hd%4==0 && kvDim%4==0`
+eligibility guard.
+
+### Result — and the shape matters more than any row
+
+| server-to-server (best of 2) | dim-split | key-split | |
+|---|---|---|---|
+| 128 tokens | 106.2 | **131.0** | 1.23× |
+| 512 tokens | 69.0 / 67.6 | **122.8** | **1.80×** |
+| 1024 tokens | 48.5 / 47.9 | **115.2** | **2.39×** |
+
+Real `gpu/cmd/serve`, streaming `/v1/chat/completions`, greedy, inter-token rate excluding TTFT;
+the dim-split arm was re-measured after the key-split arm to close the interleave and reproduced
+(69.0→67.6, 48.5→47.9).
+
+**The old kernel loses 54% of its rate from 128 to 1024 tokens; the new one loses 12%.** Decode no
+longer falls off a cliff as context grows — which is the regime agent loops, RAG and code editing
+actually run in, and which every short-prompt benchmark in this repo is blind to.
+
+Ablation profile, same session: attention **13.676 → 1.491 ms** at pos 512 (**9.2×**), whole token
+**19.609 → 7.431 ms** (**2.64×**). Attention falls from 70% of the token to 20%; GEMV is the
+majority term again at 55.6%, which is the healthy shape.
+
+### Correctness
+
+**Not bit-identical** — the denominator sums in a different order and the tiled rescale reassociates.
+Attention never was: it runs f32 against the CPU oracle's f64. `TestAttnKeys_parity` gates it against
+that same f64 reference at **11 depths chosen around the TILE boundary** — 2047 / 2048 / 2049 /
+4133 / 5000 — because the cross-tile rescale is the only genuinely new arithmetic and a test staying
+under TILE would exercise the single-tile path, pass, and vouch for a kernel broken at every real
+long context. cosine=1.00000000, maxAbs ≤ 1.5e-7, plus agreement with the dim-split kernel it
+replaces. nKeys=1 is in the list but is explicitly **not** sufficient alone: softmax over one element
+is 1.0 at any scale. `TestWebGPU_forwardParity` and `TestResidentForwardN_parity` (cosine=1.000000,
+maxAbsDiff=0) both pass with it on.
+
+### Limits, stated
+
+- **Scoped to f32 KV, hd ≤ 128, hd%4==0, kvDim%4==0.** f16/int8 KV and the wide (hd>128) kernels are
+  untouched and still take the dim-split path — so gemma3/gemma4's 256/512-wide layers get **nothing**
+  from this. Porting the shape to those is the obvious follow-up and is NOT done.
+- Attention is now at 4.4% of roofline, up from 0.48%. Still ~20× off. It is no longer the dominant
+  term, so the next profile should be re-read before assuming it is the next target.
+- One box, one card, one checkpoint. No peer was run; nothing here licenses a "% of Ollama" figure.
+- **The full `./gpu/` suite cannot confirm this and did not.** After ~110 tests the run exhausts
+  WebGPU devices (`failed to request device`), and from there `TestWebGPU_forwardParity` and
+  `TestResidentForwardN_parity` **SKIP** — the exact gates that matter, reported as `ok`-adjacent
+  noise rather than as failures. `TestKVCacheF16_fit` and `TestVisionEnableResident_parity` turn red
+  from the same cause; both pass standalone, under both kernels, and a control run on unmodified code
+  reproduces the exhaustion. Pre-existing and not caused by this change, but it means **a green full
+  suite here is not evidence** — the gates above were run standalone on purpose. Worth its own fix.
