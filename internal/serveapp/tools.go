@@ -191,6 +191,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		fin := finish
 		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": &fin}}})
+		sendUsage(ss, req.StreamOptions, id, created, lm.name, usagev)
 		sseDone(ss)
 		return
 	}

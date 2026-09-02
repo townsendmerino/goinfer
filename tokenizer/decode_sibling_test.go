@@ -54,3 +54,55 @@ func TestLoadJSONBytes_noCWDSibling_M14(t *testing.T) {
 		t.Errorf("LoadJSONBytes adopted the CWD tokenizer_config.json (BOS=%d, want -1) — M-14 not closed", tk.special.BOS)
 	}
 }
+
+// M-25: the serving loop decoded GENERATED ids with Decode, which applies SentencePiece's
+// dummy-prefix strip — a SEQUENCE-level rule. The generated ids are a CONTINUATION of the
+// prompt, never a sequence, so a response opening with `▁Paris` reached the client as
+// "Paris" where OpenAI and llama.cpp both return " Paris".
+//
+// Built from a hand-made dummy-prefix tokenizer rather than asserting the claim, so the
+// premise (that Decode really does strip) is proven in the same test that proves the fix.
+func TestDecodeContinuation_keepsTheLeadingSpace(t *testing.T) {
+	tk := &Tokenizer{idToPiece: []string{"▁Paris", "▁is"}, stripLeadingSpace: true} // Llama-2 / Mistral
+	const paris = 0
+
+	// The premise: Decode strips, which is CORRECT for a whole sequence.
+	whole, err := tk.Decode([]int{paris})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if whole != "Paris" {
+		t.Fatalf("premise broke: Decode gave %q, want %q — this fixture no longer has the "+
+			"dummy-prefix behaviour the defect depends on", whole, "Paris")
+	}
+
+	// The fix: a continuation keeps it.
+	cont, err := tk.DecodeContinuation([]int{paris})
+	if err != nil {
+		t.Fatalf("DecodeContinuation: %v", err)
+	}
+	if cont != " Paris" {
+		t.Errorf("DecodeContinuation gave %q, want %q — the generated ids continue the prompt, "+
+			"so the sequence-level dummy-prefix strip does not apply to them (M-25)", cont, " Paris")
+	}
+
+	// Not just the first token: the strip is once-per-string, so a multi-token continuation
+	// must be unaffected beyond its head.
+	if got, _ := tk.DecodeContinuation([]int{paris, 1}); got != " Paris is" {
+		t.Errorf("multi-token continuation = %q, want %q", got, " Paris is")
+	}
+}
+
+// A tokenizer that does NOT strip (Gemma, and every byte-level family) must be unchanged by
+// the fix — without this, a change that simply stopped stripping everywhere would pass.
+func TestDecodeContinuation_identicalWhenNothingIsStripped(t *testing.T) {
+	tk := &Tokenizer{idToPiece: []string{"▁Paris"}, stripLeadingSpace: false}
+	d, _ := tk.Decode([]int{0})
+	c, _ := tk.DecodeContinuation([]int{0})
+	if d != c {
+		t.Errorf("Decode %q != DecodeContinuation %q on a non-stripping tokenizer", d, c)
+	}
+	if c != " Paris" {
+		t.Errorf("got %q, want %q", c, " Paris")
+	}
+}

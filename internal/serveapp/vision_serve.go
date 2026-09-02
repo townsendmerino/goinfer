@@ -224,7 +224,9 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
-		finish, _, _, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
+		// nComp was discarded here; include_usage needs the real generated-token count,
+		// which no count of emitted chunks can report (M-26).
+		finish, nComp, _, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
@@ -233,6 +235,8 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		sendUsage(ss, req.StreamOptions, id, created, lm.name,
+			usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp})
 		sseDone(ss)
 		return
 	}

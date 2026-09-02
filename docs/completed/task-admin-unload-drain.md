@@ -34,8 +34,8 @@ WebGPU C-26 `closed` flag). So *closing is safe.* **Closing at the wrong time is
 
 Every handler has the shape `pick() → work → enter()`. `pick` (internal/serveapp/openai.go:213) returns the
 `*loadedModel` under `regMu`; `enter` (internal/serveapp/openai.go:166) is where `lm.mu` is finally taken. Between them
-the **preamble** touches `lm.model`/`lm.tk` with **no lock** — in `handleChat`: `pick` (internal/serveapp/openai.go:464)
-→ `promptTooLargeForContext` → `chatPrompt` (a full BPE) → `prepare` → `enter` (internal/serveapp/openai.go:489).
+the **preamble** touches `lm.model`/`lm.tk` with **no lock** — in `handleChat`: `pick` (internal/serveapp/openai.go:465)
+→ `promptTooLargeForContext` → `chatPrompt` (a full BPE) → `prepare` → `enter` (internal/serveapp/openai.go:490).
 `handleAdminUnload`'s `lm.mu.TryLock()` sees an idle model and would grant the unload while that
 request is mid-tokenize against weights about to be freed; the request then `drive()`s on a torn-down
 backend. On CUDA that is a driver SIGSEGV that kills the server; on CPU it is a quieter read of reused
@@ -43,8 +43,8 @@ memory. Seven handlers share the shape:
 
 | handler | `pick` |
 |---|---|
-| `handleChat` | internal/serveapp/openai.go:464 |
-| `handleCompletions` | internal/serveapp/openai.go:542 |
+| `handleChat` | internal/serveapp/openai.go:465 |
+| `handleCompletions` | internal/serveapp/openai.go:543 |
 | `handleMessages` | internal/serveapp/anthropic.go:406 |
 | `handleCountTokens` | internal/serveapp/anthropic.go:535 |
 | `handleChatTools` | internal/serveapp/tools.go:19 |

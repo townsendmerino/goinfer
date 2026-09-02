@@ -21,7 +21,7 @@
 ## New findings this round
 
 ### F-01 · The R-10 cap is applied per-model, not per-path — vision and adapter requests are now over-rejected
-`internal/serveapp/openai.go:573` (prepare) · **regression introduced by the R-10 fix** · confirmed independently by both review passes
+`internal/serveapp/openai.go:569` (prepare) · **regression introduced by the R-10 fix** · confirmed independently by both review passes
 
 `prepare` now lowers the context bound to `lm.model.ResidentContextCap()` whenever the model has a resident runner. But the cap is a property of the **stateless resident decode path**, and two request classes never take that path:
 

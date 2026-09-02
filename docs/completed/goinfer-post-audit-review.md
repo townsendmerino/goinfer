@@ -25,7 +25,7 @@
 ## Confirmed findings — critical bar (ranked)
 
 ### R-01 · Adapter requests are served with base weights when the base is resident
-`internal/serveapp/openai.go:751` (drive's resident fast path) · **silent wrong output** · residual of the C-29/#7 multi-LoRA feature area
+`internal/serveapp/openai.go:749` (drive's resident fast path) · **silent wrong output** · residual of the C-29/#7 multi-LoRA feature area
 
 Compute-time LoRA is applied only via the session binding: `sessionLRU.acquire` → `Session.UseAdapter` → `cache.lora` (sessions.go:73, decoder/session.go:54), and the forward reads it per layer at `decoder/model.go:515`. But `drive()` branches on `lm.model.ResidentActive()` **before** touching sessions and calls the stateless `lm.model.Generate(...)` / `GenerateNgramSpeculativeAdaptive(...)`, whose fresh cache has `lora == nil`. There is no `lm.adapter` check in that branch, and nothing rejects the combination at startup — `loadAdapters` rejects only `--stream-weights`, and `LoadAdapter` (decoder/lora.go:260) rejects gguf/MoE/gemma4/non-gated but not a resident base. The dense safetensors class it accepts is exactly the resident-eligible class, and `loadAdapters`' own comment says the adapter "shares the base's **resident** decoder.Model".
 

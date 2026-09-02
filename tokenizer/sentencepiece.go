@@ -782,6 +782,21 @@ func (t *Tokenizer) decode(ids []int, stripLeading bool) (string, error) {
 	return out, nil
 }
 
+// DecodeContinuation decodes ids that CONTINUE an existing sequence rather than
+// forming one, so the SentencePiece dummy-prefix strip does NOT apply: that space
+// belongs to the first token of the whole sequence, and these ids are not it.
+//
+// M-25: the serving loop decoded generated ids with Decode, which strips. On a
+// dummy-prefix family (Llama-2/Mistral) a generation whose first token is `▁Paris`
+// reached the client as "Paris" where OpenAI and llama.cpp both return " Paris".
+// internal/gemmaapp decodes prompt+generation together for exactly this reason;
+// this is the same correction without re-decoding the prompt every token.
+//
+// Byte-level tokenizers never strip, so this is identical to Decode for them.
+func (t *Tokenizer) DecodeContinuation(ids []int) (string, error) {
+	return t.decode(ids, false)
+}
+
 // DecodePiece decodes a single id to its display string — used for token
 // streaming so the demo can print as it goes. A lone byte-fallback piece may
 // be an incomplete UTF-8 sequence; callers that stream should buffer across

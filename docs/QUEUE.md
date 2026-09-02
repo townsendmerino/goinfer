@@ -1211,7 +1211,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:171` | goinfer | `// --- SSE ---` |
 | `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:207` | goinfer | `// writes to a streaming ResponseWriter.` |
 | `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:216` | goinfer | `// support — so the error is deliberately dropped rather than made sticky.` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:471` | goinfer | `var reqCounter atomic.Uint64` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:493` | goinfer | `var reqCounter atomic.Uint64` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:157` | goinfer | `// default must never conflict with an already-baked bundle.` |
@@ -1225,22 +1225,22 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:587` | goinfer | `close(stopDemote) // stop demoting before we checkpoint` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:752` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:870` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1056` | goinfer | `for id := range stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1061` | goinfer | `text, _ := lm.tk.Decode(ids)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1062` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1128` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:426` | goinfer | `type completionReq struct {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:507` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:525` | goinfer | `if !lm.enter(w) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:548` | goinfer | `if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:670` | goinfer | `StopIDs:     lm.stopIDs,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:672` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:762` | goinfer | `gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:764` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:770` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:901` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:915` | goinfer | `func genErr(err error) error {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:934` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1054` | goinfer | `for id := range stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1064` | goinfer | `text, _ := lm.tk.DecodeContinuation(ids)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1065` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1131` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:424` | goinfer | `type completionReq struct {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:508` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:526` | goinfer | `if !lm.enter(w) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:549` | goinfer | `sendUsage(ss, req.StreamOptions, id, created, lm.name,` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:668` | goinfer | `StopIDs:     lm.stopIDs,` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:670` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:760` | goinfer | `gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:762` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:768` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:899` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:913` | goinfer | `func genErr(err error) error {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:932` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:139` | goinfer | `ids, err := lm.chatPrompt(messages)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:236` | goinfer | `var stopBeat func()` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:282` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
@@ -1257,11 +1257,11 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:125` | goinfer | `sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:129` | goinfer | `stopBeat() // joins the ticker goroutine before anything else writes to w` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:154` | goinfer | `usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:222` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:223` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:23` | goinfer | `func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req chatReq,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:230` | goinfer | `// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k ent` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:268` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:283` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:231` | goinfer | `// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k ent` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:269` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:284` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:83` | goinfer | `if req.Stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:120` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:203` | goinfer | `system, turns := messagesToTurns(req.Messages)` |

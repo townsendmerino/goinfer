@@ -11,6 +11,10 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 )
 
 // C-08: top_logprobs was the one sampling field `prepare` passed through without a range check.
@@ -326,5 +330,69 @@ func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
 					world, strings.TrimSpace(line))
 			}
 		}
+	}
+}
+
+// M-24: two concurrent admin loads of the same name leaked the loser's model.
+//
+// loadDecoder runs OUTSIDE the registry lock (deliberately — it takes seconds), so two
+// requests for the same name both load, and the post-check refuses to publish the second.
+// The refused *loadedModel holds resident device memory, the .giw mmap and an uploaded block
+// drafter, and dropping the pointer released none of it: purego installs no finalizers, which
+// is the whole reason the drain design exists.
+//
+// Asserted on the SOURCE because the leak has no observable behaviour to test — nothing
+// errors, nothing is slower, the memory is simply never returned. A test that loaded two real
+// models to watch RSS would be measuring Darwin's UBC rather than the defect (the audit's own
+// note about RSS-based guards inverting under pressure).
+func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "admin.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse admin.go: %v", err)
+	}
+	// The 409 branch that fires AFTER loadDecoder — identified by its body writing a
+	// StatusConflict error, in a block that also unlocks regMu (the pre-check does not).
+	var checked int
+	ast.Inspect(af, func(n ast.Node) bool {
+		blk, ok := n.(*ast.BlockStmt)
+		if !ok {
+			return true
+		}
+		// DIRECT statements only. Matching nested text made the enclosing function body
+		// match as well, since it contains this block — a guard counting 2 where it meant 1.
+		var unlocks, conflict bool
+		for _, st := range blk.List {
+			es, ok := st.(*ast.ExprStmt)
+			if !ok {
+				continue
+			}
+			src := &strings.Builder{}
+			_ = printer.Fprint(src, fset, es)
+			if strings.Contains(src.String(), "regMu.Unlock()") {
+				unlocks = true
+			}
+			if strings.Contains(src.String(), "StatusConflict") {
+				conflict = true
+			}
+		}
+		if !unlocks || !conflict {
+			return true
+		}
+		checked++
+		var body strings.Builder
+		_ = printer.Fprint(&body, fset, blk)
+		for _, want := range []string{"model.Close()", "closeEntryNatives()"} {
+			if !strings.Contains(body.String(), want) {
+				t.Errorf("the raced-duplicate 409 path does not call %s: the loser's fully "+
+					"loaded model is dropped without releasing device memory, the .giw mmap or "+
+					"the block drafter, and purego has no finalizers to collect them (M-24)", want)
+			}
+		}
+		return true
+	})
+	if checked != 1 {
+		t.Errorf("found %d post-load 409 branches, want 1 — the guard is watching the wrong "+
+			"code (the PRE-load duplicate check must not match: it has nothing to close)", checked)
 	}
 }

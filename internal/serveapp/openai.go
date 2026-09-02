@@ -373,11 +373,9 @@ type chatReq struct {
 	// no token count at all — and counting SSE chunks is not a substitute, since a token held back
 	// for an incomplete UTF-8 rune or a partial stop-string match emits no chunk, and the token
 	// that resolves the holdback emits one chunk covering several tokens' bytes.
-	StreamOptions *struct {
-		IncludeUsage bool `json:"include_usage"`
-	} `json:"stream_options"`
-	Tools      []toolSpec      `json:"tools"`
-	ToolChoice json.RawMessage `json:"tool_choice"` // "auto"|"none"|{"type":"function","function":{"name":…}}
+	StreamOptions *streamOptions  `json:"stream_options"`
+	Tools         []toolSpec      `json:"tools"`
+	ToolChoice    json.RawMessage `json:"tool_choice"` // "auto"|"none"|{"type":"function","function":{"name":…}}
 	sampling
 }
 
@@ -434,6 +432,9 @@ type completionReq struct {
 	// wins during JSON decode, so req.sampling.Logprobs stays false and the expensive per-token
 	// logprobs path never engages; the handler 400s explicitly when it is set (unimplemented here).
 	Logprobs *int `json:"logprobs"`
+	// M-26: /v1/completions never parsed stream_options, so include_usage was silently
+	// ignored on this surface rather than unsupported-with-an-error.
+	StreamOptions *streamOptions `json:"stream_options"`
 	sampling
 }
 
@@ -545,13 +546,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
-		if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
-			// OpenAI's shape: an extra chunk AFTER the finish chunk, with empty choices, carrying
-			// the authoritative counts. nComp is len(ids) from streamTokens — the tokens actually
-			// generated, which is what a chunk count cannot report.
-			sseSend(ss, usageChunk(id, created, lm.name,
-				usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}))
-		}
+		sendUsage(ss, req.StreamOptions, id, created, lm.name,
+			usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp})
 		sseDone(ss)
 		return
 	}
@@ -622,7 +618,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
-		finish, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
 		if gerr != nil {
@@ -631,6 +627,8 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 			return
 		}
 		sseSend(ss, completionChunk(id, created, lm.name, "", &finish))
+		sendUsage(ss, req.StreamOptions, id, created, lm.name,
+			usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp})
 		sseDone(ss)
 		return
 	}
@@ -1058,7 +1056,12 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			continue // drain so the generation goroutine exits cleanly
 		}
 		ids = append(ids, id)
-		text, _ := lm.tk.Decode(ids)
+		// DecodeContinuation, not Decode: these ids CONTINUE the prompt, and Decode
+		// applies SentencePiece's sequence-level dummy-prefix strip — which ate the
+		// leading space of the response on Llama-2/Mistral (M-25). Shared by chat,
+		// /v1/completions and vision, so all three were affected, not just the one
+		// the audit names.
+		text, _ := lm.tk.DecodeContinuation(ids)
 		if cut, which, hit := firstStop(text, gr.stopStrings); hit {
 			if cut > printed {
 				onText(text[printed:cut])
@@ -1079,7 +1082,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		}
 	}
 	if !stopping { // flush any held-back trailing bytes
-		if text, _ := lm.tk.Decode(ids); len(text) > printed {
+		if text, _ := lm.tk.DecodeContinuation(ids); len(text) > printed {
 			onText(text[printed:])
 		}
 		// Compare against the EFFECTIVE budget, not the requested max_tokens: a resident

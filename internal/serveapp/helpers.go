@@ -317,6 +317,28 @@ func chatChunk(id string, created int64, model string, d delta, finish *string) 
 	}
 }
 
+// streamOptions is OpenAI's stream_options. Named rather than anonymous so every streaming
+// surface can accept it and hand it to sendUsage — it was an anonymous struct on chatReq
+// alone, which is part of why three other surfaces silently lacked it (M-26).
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+// sendUsage emits the include_usage chunk, if the client asked for one, immediately before
+// sseDone. THE ONE PLACE that decision is made.
+//
+// M-26: include_usage was honoured on the plain chat stream only. The tool and vision streams
+// silently omitted it and /v1/completions did not even parse the field — and agent harnesses,
+// which declare tools on every turn, are exactly the clients that depend on it for context
+// accounting. Routing all four through one helper is what lets a test COUNT the sites, so a
+// fifth streaming surface cannot be added quietly without one.
+func sendUsage(ss *sseWriter, so *streamOptions, id string, created int64, model string, u usage) {
+	if so == nil || !so.IncludeUsage {
+		return
+	}
+	sseSend(ss, usageChunk(id, created, model, u))
+}
+
 // usageChunk is the final streaming chunk when stream_options.include_usage is set: empty choices,
 // a usage object. Matches OpenAI, so a client that already understands their stream needs no
 // goinfer-specific handling.

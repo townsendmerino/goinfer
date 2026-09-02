@@ -76,6 +76,18 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	s.regMu.Lock()
 	if _, dup := s.models[lm.name]; dup { // raced another load of the same name
 		s.regMu.Unlock()
+		// M-24: the LOSER of the race holds a fully loaded model — resident device
+		// memory, the .giw mmap, an uploaded block drafter — and refusing to publish it
+		// used to just drop the pointer. purego installs no finalizers, so nothing ever
+		// reclaims those; that is the whole reason the drain design exists. Close here
+		// rather than in a defer: it must NOT run on the success path, where the registry
+		// now owns the model.
+		//
+		// Safe to Close unconditionally: loadDecoder always builds a fresh decoder.Load,
+		// so this entry shares its weights with no other registry entry, and retainLocked
+		// has not run for it — it was never published.
+		lm.model.Close()
+		lm.closeEntryNatives()
 		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", lm.name))
 		return
 	}
