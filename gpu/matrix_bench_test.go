@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -73,7 +74,7 @@ func TestDecisionMatrix(t *testing.T) {
 	}
 
 	t.Logf("=== %s ===", label)
-	t.Logf("%-22s | %-22s | %-9s | %-8s | %s", "path", "fits / resident", "tok/s", "TTFT256", "note")
+	t.Logf("%-22s | %-22s | %-9s | %-8s | %-6s | %s", "path", "fits / resident", "tok/s", "TTFT256", "warm", "note")
 
 	row := func(name, path string, opts decoder.Options, noResidency bool) {
 		if noResidency {
@@ -104,9 +105,27 @@ func TestDecisionMatrix(t *testing.T) {
 		ch, _ := m.Generate(context.Background(), shortIDs, greedyN, greedy)
 		n, ttftShort, total := consume(ch)
 		tps := float64(n-1) / (total - ttftShort).Seconds()
-		// TTFT on the ~256-token prompt (option-(a) prefill is O(prompt-len)).
+		// TTFT on the ~256-token prompt (option-(a) prefill is O(prompt-len)), reported COLD
+		// and WARM because since resident prefix reuse both are real and they describe
+		// different moments: cold is a new conversation (or one whose prompt diverged), warm
+		// is every subsequent turn of an agent loop. Quoting only cold overstates a loop's
+		// cost by the ratio between them; quoting only warm overstates the engine.
 		ch2, _ := m.Generate(context.Background(), longIDs, 1, greedy)
 		_, ttft256, _ := consume(ch2)
+
+		// Warm: same prompt again, with reuse enabled, so the cache already holds it.
+		// Restored immediately — every other measurement in this table is cold by contract.
+		os.Unsetenv("GOINFER_NO_RESIDENT_REUSE")
+		if ch, _ := m.Generate(context.Background(), longIDs, 1, greedy); ch != nil {
+			consume(ch) // seed the cache with this prompt
+		}
+		ch3, _ := m.Generate(context.Background(), longIDs, 1, greedy)
+		_, ttft256Warm, _ := consume(ch3)
+		os.Setenv("GOINFER_NO_RESIDENT_REUSE", "1")
+		warmCol := "     —" // non-resident paths cannot reuse; an em dash, not a misleading 0
+		if resident {
+			warmCol = fmt.Sprintf("%4.0fms", float64(ttft256Warm.Milliseconds()))
+		}
 
 		fitsCol := fits
 		if gpu {
@@ -114,7 +133,8 @@ func TestDecisionMatrix(t *testing.T) {
 		} else {
 			fitsCol = "yes (cpu)"
 		}
-		t.Logf("%-22s | %-22s | %7.1f   | %6.0fms | tokens=%d", name, fitsCol, tps, float64(ttft256.Milliseconds()), n)
+		t.Logf("%-22s | %-22s | %7.1f   | %6.0fms | %s | tokens=%d",
+			name, fitsCol, tps, float64(ttft256.Milliseconds()), warmCol, n)
 	}
 
 	row("CPU int8", gguf, decoder.Options{Backend: "cpu", Quant: "int8int8"}, false)
