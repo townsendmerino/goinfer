@@ -64,6 +64,24 @@ type ResidentDrafterHost interface {
 	BatchedCapture() [][]float32
 }
 
+// ResidentSeedArgmax is an OPTIONAL narrowing of PrefillLastNArgmax for the prompt seed: the one
+// place the loop asks for M rows of argmax and reads exactly one of them.
+//
+// The seed calls PrefillLastNArgmax over the whole prompt and uses `ids[len(ids)-1]`. On a
+// vocab-151,936 target a 2048-token prompt therefore allocates 1.24 GB of VRAM for the batched
+// logits, a 1.24 GB host slice and a 1.24 GB device-to-host copy, runs the head GEMV over 2048 rows
+// and a single-threaded host argmax over 311M floats — to obtain ONE token id. The capture the seed
+// actually needs comes from the LAYER LOOP, not the head, so heading one row loses nothing
+// (audit-2026-09-02 C-12).
+//
+// Optional rather than added to ResidentDrafterHost, following ResidentCapped/ResidentGreedy: a
+// backend that has not implemented it keeps working through the wide path.
+type ResidentSeedArgmax interface {
+	// PrefillSeedArgmax runs the same batched forward and returns only the LAST row's argmax.
+	// The batched capture seam must be armed and filled exactly as PrefillLastNArgmax fills it.
+	PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error)
+}
+
 // BlockSpecCapable reports whether this model can run block-drafting speculation: a resident
 // target that implements ResidentDrafterHost. Checked before a drafter is loaded, so a caller
 // can decline early rather than paying a load it cannot use.
@@ -88,6 +106,17 @@ type BlockSpecOptions struct {
 	VerifyWidth int
 	// MaxTokens caps generation; 0 means unlimited (the caller stops on EOS).
 	MaxTokens int
+
+	// StopIDs are the caller's extra stop tokens — SamplingParams.StopIDs, which for a served
+	// request carries the CHAT TEMPLATE's stops on top of the model's own.
+	//
+	// It exists because this loop rebuilt its stop set from Cfg.EOSIDs() alone while every other
+	// speculative loop asks target.isStop(tok, sp). For the pairing this ships for (Qwen3-4B +
+	// DFlash) that is {151645} against m.eosIDs' {151645, 151643}, so a <|endoftext|> was emitted
+	// as ordinary content and generation ran on to <|im_end|> or max_tokens — with streamTokens
+	// decoding the stop token into the response. The "lossless by construction" contract was
+	// broken by the STOP SET, not by the verify (audit-2026-09-02 C-11).
+	StopIDs []int
 
 	// OnRound, if non-nil, is called after each completed round with the verify width that
 	// round used and the tokens it committed (accepted drafts plus the target's own token).
@@ -172,10 +201,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak in
 
 	hidden := m.w.arch.HiddenDim
-	eos := map[int]bool{}
-	for _, e := range m.w.Cfg.EOSIDs() {
-		eos[e] = true
-	}
+	eos := blockSpecStopSet(m, opt)
 	// fuse folds a batched capture into the drafter's context: the taps for n rows become n
 	// concatenated rows, projected and appended.
 	fuse := func(capt [][]float32, n int) error {
@@ -198,15 +224,25 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	for i, id := range prompt {
 		embs[i] = m.embedResident(id)
 	}
-	ids, err := host.PrefillLastNArgmax(embs, 0)
-	if err != nil {
-		return nil, 0, err
+	// C-12: the seed reads ONE id. Ask for one when the backend can, which skips an M x vocab
+	// device buffer, host slice, D2H copy and host argmax — gigabytes at prompt lengths over ~1k.
+	var anchor int
+	if seeder, ok := host.(ResidentSeedArgmax); ok {
+		anchor, err = seeder.PrefillSeedArgmax(embs, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		ids, e := host.PrefillLastNArgmax(embs, 0)
+		if e != nil {
+			return nil, 0, e
+		}
+		anchor = ids[len(ids)-1]
 	}
 	if err := fuse(host.BatchedCapture(), len(prompt)); err != nil {
 		return nil, 0, err
 	}
 	pos := len(prompt)
-	anchor := ids[len(ids)-1]
 	if eos[anchor] {
 		return out, rounds, nil // Generate emits nothing when the first token is a stop
 	}
@@ -265,6 +301,21 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 				return out, rounds, nil
 			}
 			continue
+		}
+		// M-13: the round's width is clamped by what is left of BOTH budgets.
+		//
+		// MaxTokens: the loop condition is checked per ROUND while a round commits up to `width`
+		// tokens at once, so max_tokens=2 could return 9 and usage.completion_tokens could exceed
+		// the request's own cap. Neither losslessness gate could see it — the CPU one compares only
+		// the common prefix, and the CUDA one asks the reference for exactly len(got) tokens.
+		//
+		// The context cap: verifying `width` rows at `pos` with no clamp makes checkCap refuse the
+		// WHOLE round near the end of the window, so a nearly complete response ends in a
+		// generation error. Plain Generate and the server both clamp instead, so a max-length turn
+		// finishes cleanly with "length"; this path did not.
+		width := blockSpecRoundWidth(width, opt.MaxTokens, len(out), pos, m.ResidentContextCap())
+		if width < 1 {
+			break // no room in either budget: finish cleanly rather than erroring
 		}
 		blockIn := make([][]float32, width)
 		blockIn[0] = m.embedResident(anchor)
@@ -333,12 +384,62 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			break
 		}
 		anchor = next
+		// M-13: `width` here is the CLAMPED width this round actually verified, which is what the
+		// telemetry must count — drafted = the positions offered (width-1, the anchor is not a
+		// draft), evaluated = the positions tested. GenerateStream left Drafted and Evaluated at
+		// zero, so AcceptanceRate() was 0 for every block-spec generation and the adaptive
+		// controller's own signal was unreadable.
 		if opt.OnRound != nil {
 			opt.OnRound(width, 1+accepted)
 		}
 		guard.observe(1 + accepted)
 	}
 	return out, rounds, nil
+}
+
+// blockSpecStopSet is this loop's stop predicate, and it must agree with Model.isStop — the
+// predicate plain decoding and every OTHER speculative loop use.
+//
+// It did not. The set was rebuilt from Cfg.EOSIDs() alone: config.json's eos_token_id, without
+// generation_config.json's additions (which resolveEOSIDs merges into m.eosIDs) and without the
+// caller's SamplingParams.StopIDs (which for a served request carries the chat template's stops).
+// On the pairing this ships for, Qwen3-4B + DFlash, that is {151645} against {151645, 151643}: a
+// <|endoftext|> was emitted as ordinary content and generation ran on to <|im_end|> or max_tokens,
+// with streamTokens decoding the stop token into the response. "Lossless by construction" was
+// broken by the STOP SET, not by the verify (audit-2026-09-02 C-11).
+func blockSpecStopSet(m *Model, opt BlockSpecOptions) map[int]bool {
+	eos := make(map[int]bool, len(m.eosIDs)+len(opt.StopIDs))
+	for _, e := range m.eosIDs {
+		eos[e] = true
+	}
+	for _, e := range opt.StopIDs {
+		eos[e] = true
+	}
+	return eos
+}
+
+// blockSpecRoundWidth clamps a round's verify width to what is left of BOTH budgets. Returns < 1
+// when neither has room, which the caller treats as a clean finish.
+//
+// TWO SEPARATE M-13 DEFECTS, ONE CLAMP. The loop tests its token budget once per ROUND while a
+// round commits up to `width` tokens at once, so max_tokens=2 could return 9 and
+// usage.completion_tokens could exceed the request's own cap. And verifying `width` rows at `pos`
+// with no context clamp made the backend's checkCap refuse the WHOLE round near the end of the
+// window, so a nearly complete response ended in a generation error — where plain Generate and the
+// server both clamp instead, and a max-length turn finishes cleanly with "length".
+//
+// Neither losslessness gate could see either one: the CPU gate compares only the common prefix, and
+// the CUDA gate asks the reference for exactly len(got) tokens.
+func blockSpecRoundWidth(width, maxTokens, emitted, pos, ctxCap int) int {
+	if maxTokens > 0 {
+		if left := maxTokens - emitted; left < width {
+			width = left
+		}
+	}
+	if ctxCap > 0 && pos+width > ctxCap {
+		width = ctxCap - pos
+	}
+	return width
 }
 
 // GenerateStream is the serving-shaped entry point: greedy block-drafting speculation as a token
@@ -380,9 +481,26 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 			}
 			return true
 		}
-		toks, rounds, err := s.generate(prompt, BlockSpecOptions{MaxTokens: maxTokens}, emit)
+		// StopIDs: this loop is the one speculative path that did not consult the caller's stop
+		// set, so a chat-template stop was decoded into the response as content (C-11).
+		//
+		// Drafted/Evaluated come from the per-round hook because only the loop knows the CLAMPED
+		// width each round used; computing them out here from len(toks) would assume every round
+		// ran at the configured width, which is exactly what the M-13 clamp makes untrue.
+		var drafted, evaluated int
+		opt := BlockSpecOptions{
+			MaxTokens: maxTokens,
+			StopIDs:   sp.StopIDs,
+			OnRound: func(width, committed int) {
+				drafted += width - 1 // the anchor is the target's own token, not a draft
+				evaluated += committed
+			},
+		}
+		toks, rounds, err := s.generate(prompt, opt, emit)
 		stats.Rounds = rounds
 		stats.Emitted = len(toks)
+		stats.Drafted = drafted
+		stats.Evaluated = evaluated
 		// Accepted counts DRAFT tokens the target confirmed, excluding each round's own
 		// correction token — the same convention SpecStats uses for the n-gram path, so the
 		// two acceptance rates are comparable.
@@ -391,6 +509,10 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 		}
 		if err != nil {
 			g.err = err
+		} else if ctx.Err() != nil {
+			// M-13: a cancelled generation returned with g.err nil, so the caller read a truncated
+			// stream as a clean finish. Same shape as M-23 one tranche earlier, in a different loop.
+			g.err = ctx.Err()
 		}
 	}()
 	return out, g, nil

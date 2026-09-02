@@ -251,18 +251,31 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 	need := d.ctxLen + n
 	return d.r.do(func() error {
 		if need > d.kvCap {
-			cap := need + 512 // headroom so a long generation does not realloc every round
-			d.kc = make([]Buffer, geo.Layers)
-			d.vc = make([]Buffer, geo.Layers)
-			for l := range d.kc {
-				d.kc[l] = d.r.af(cap * kvDim)
-				d.vc[l] = d.r.af(cap * kvDim)
-			}
+			// REFUSE BEFORE ALLOCATING, NOT AFTER. The check sat below the allocation, so a
+			// mid-sequence overflow had ALREADY replaced d.kc/d.vc with fresh empty buffers before
+			// returning its error — the K/V it warns about dropping was dropped by the line above
+			// the warning (audit-2026-09-02 M-15).
 			if d.ctxLen > 0 {
 				return fmt.Errorf("cuda drafter: context grew past capacity mid-sequence (%d > %d); "+
 					"reallocating would drop the K/V already written", need, d.kvCap)
 			}
-			d.kvCap = cap
+			// SIZED TO THE TARGET'S CONTEXT, not need+512. The drafter is a 5-layer trunk, so its
+			// whole K/V is layers*ctxCap*kvDim*2 floats — small. At need+512 the capacity froze at
+			// len(prompt)+512 on the first call and never grew, so any greedy generation past
+			// ~500 tokens failed mid-stream, prompt-length independent, and blockspec returned that
+			// as the generation's terminal error. Every committed block-spec test stops at <= 96
+			// tokens, so none of them could reach it.
+			capRows := need + 512
+			if d.r.ctxCap > capRows {
+				capRows = d.r.ctxCap
+			}
+			d.kc = make([]Buffer, geo.Layers)
+			d.vc = make([]Buffer, geo.Layers)
+			for l := range d.kc {
+				d.kc[l] = d.r.af(capRows * kvDim)
+				d.vc[l] = d.r.af(capRows * kvDim)
+			}
+			d.kvCap = capRows
 		}
 		// Sized from THIS call's row count, not from whatever FuseContext last allocated.
 		// Coupling the two would make ExtendContext depend on a prior FuseContext having run

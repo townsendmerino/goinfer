@@ -111,6 +111,38 @@ func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) 
 	return ids, err
 }
 
+// PrefillSeedArgmax satisfies decoder.ResidentSeedArgmax: the same batched forward and the same
+// batched capture, but the head runs over ONE row.
+//
+// The block-spec prompt seed asked for M rows of argmax and read only the last. At vocab 151,936 a
+// 2048-token prompt therefore allocated 1.24 GB of VRAM for the batched logits, a 1.24 GB host
+// slice and a 1.24 GB D2H, ran the head GEMV over 2048 rows and a single-threaded host argmax over
+// 311M floats — for one token id. logitsB is grow-only, so each longer prompt also abandoned its
+// predecessor; a 4096-token prompt on an 8 GB card OOM'd inside the executor, and per backend.go's
+// A13 a context driven to refusal and kept in use can afterwards launch kernels that "return
+// SUCCESS and execute NOTHING" (audit-2026-09-02 C-12).
+//
+// tailLastLogits, not a new kernel path: it ALREADY heads the last row only, and the seed's other
+// requirement — the batched capture — comes from the layer loop either way. One row of logits is
+// vocab floats (~0.6 MB) against M x vocab.
+func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
+	outs, _, err := r.prefillCore(embeddings, startPos, tailLastLogits)
+	if err != nil {
+		return 0, err
+	}
+	if len(outs) == 0 || outs[len(outs)-1] == nil {
+		return 0, fmt.Errorf("cuda prefill: seed argmax got no logits for the last row")
+	}
+	row := outs[len(outs)-1]
+	best := 0
+	for i, v := range row {
+		if v > row[best] {
+			best = i
+		}
+	}
+	return best, nil
+}
+
 // prefillStaticDecline reports why the batched path can't run for THIS model, or nil when it can. It
 // covers exactly the MODEL-dependent guards — arch, per-layer geometry, weight kind, kernel
 // availability — and deliberately not the prompt-dependent one (checkCap, which needs M/startPos).
@@ -483,6 +515,12 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 // same lifetime the rest of the resident scratch has.
 func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error {
 	if M > r.logitsBCap {
+		// RELEASE BEFORE GROWING. This was grow-only: each larger prompt abandoned the previous
+		// buffer to the device ledger, bounded only by 2*ctxCap*vocab*4 B — about 5 GB at the 4096
+		// default, on top of the live one (audit-2026-09-02 C-12).
+		if r.logitsBCap > 0 {
+			r.dev.ReleaseBuf(r.logitsB)
+		}
 		r.logitsB = r.af(M * r.vocab)
 		r.logitsBCap = M
 	}
