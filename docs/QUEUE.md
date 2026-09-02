@@ -1180,12 +1180,12 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/admin.go:64` | goinfer | `anchor: func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/admin.go:71` | goinfer | `lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, c)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/admin_test.go:80` | goinfer | `// old contract was "busy → 409"; unload now DRAINS instead of refusing — the in-flight-` |
-| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:127` | goinfer | `writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "invalid request bo` |
-| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:354` | goinfer | `func anthropicForcedTool(mode, name string, tools []chat.Tool) *chat.Tool {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:417` | goinfer | `func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:433` | goinfer | `// O(n) tokenize. The OpenAI routes got this guard; /v1/messages did not, so a body unde` |
-| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:438` | goinfer | `if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:561` | goinfer | `func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loade` |
+| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:127` | goinfer | `writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", msg)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:357` | goinfer | `func anthropicForcedTool(mode, name string, tools []chat.Tool) *chat.Tool {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:420` | goinfer | `func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:443` | goinfer | `// O(n) tokenize. The OpenAI routes got this guard; /v1/messages did not, so a body unde` |
+| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:448` | goinfer | `if err := lm.promptTooLargeForContext(anthropicInputBytes(&req)); err != nil {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:571` | goinfer | `func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loade` |
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic_stream.go:94` | goinfer | `// THE THIRD BUFFER-THEN-STREAM SITE. G19 gave the OpenAI tool path and /v1/responses a` |
 | `docs/audit-2026-09-02.md|internal/serveapp/cpufastattn_test.go:12` | goinfer | `//  1. It is OFF unless asked for. A speed flag that turns itself on is how a user` |
 | `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:182` | goinfer | `func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, error) {` |
@@ -1195,11 +1195,11 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:31` | goinfer | `// positions. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes ` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
 | `docs/audit-2026-09-02.md|internal/serveapp/heartbeat_test.go:161` | goinfer | `// G21 end-to-end. What this asserts is bounded by the model available: the 1.5B` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:130` | goinfer | `// Don't echo the raw json error: UnmarshalTypeError's default string leaks the Go struc` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:171` | goinfer | `anchor: func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:203` | goinfer | `// support — so the error is deliberately dropped rather than made sticky.` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:207` | goinfer | `anchor: func (s *sseWriter) frame(format string, args ...any) error {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:458` | goinfer | `var reqCounter atomic.Uint64` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:130` | goinfer | `// (audit-2026-09-02 N-16).` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:171` | goinfer | `// --- SSE ---` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:207` | goinfer | `// writes to a streaming ResponseWriter.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:216` | goinfer | `// support — so the error is deliberately dropped rather than made sticky.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:471` | goinfer | `var reqCounter atomic.Uint64` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:1088` | goinfer | `for _, lm := range srv.modelList() {` |
@@ -1235,11 +1235,11 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:299` | goinfer | `func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:94` | goinfer | `if req.PreviousResponseID != "" {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses_test.go:133` | goinfer | `// 4. Tool round-trip: forced function call → a function_call output item.` |
-| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:126` | goinfer | `func (l *sessionLRU) acquire(prompt []int) *decoder.Session {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:155` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:136` | goinfer | `func (l *sessionLRU) acquire(prompt []int) *decoder.Session {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:165` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:20` | goinfer | `UNKEYABLE` |
-| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:236` | goinfer | `if err := os.MkdirAll(l.dir, 0o755); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:375` | goinfer | `continue // sliding-window (ring) cache: not yet persistable (Inc 3)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:236` | goinfer | `// the ordinary way.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:385` | goinfer | `continue // sliding-window (ring) cache: not yet persistable (Inc 3)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:112` | goinfer | `if ss != nil {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:116` | goinfer | `stopBeat = sseHeartbeat(ss)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:125` | goinfer | `sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
@@ -1247,9 +1247,9 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:154` | goinfer | `usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:222` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:23` | goinfer | `func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req chatReq,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:230` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(lm.vocab, lm.tk.TokenText), eos).StopWh` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:264` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:279` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:230` | goinfer | `// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k ent` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:268` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:283` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:83` | goinfer | `if req.Stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:120` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:203` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
