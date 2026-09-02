@@ -24,7 +24,7 @@ re-anchor never scoped; they are marked stale rather than quietly carried.
 | **Prefill** | **Depth-dependent, and it crosses over.** goinfer is FASTER to first token below ~600–1000 prompt tokens (0.13× at K=128) and slower above, reaching 4.8×/6.1× behind at K=3900 (0.5B/1.5B). On overhead-free *throughput* the deficit is larger: marginal cost per token is **12–15× behind at depth**, and it GROWS with K while Ollama's is flat. **Re-anchored 2026-09-01** on the §B8 stack | §B2 |
 | **Total request time** | goinfer wins prompts up to **~320 tokens** at 1.5B, loses beyond — decode edge vs prefill cost. Also pre-re-anchor | archive §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
-| **Apple Silicon CPU prefill** | ⚠ **NOT re-measured since 2026-09-01**, when CPU prefill got faster four times in one day (A3 fan-out 1.92×, P18 expert-major 4.36× on MoE, P19 fusion +8%, plus the f32 default). No peer comparison on this page reflects that; §A's absolute table predates all of it | §A |
+| **Apple Silicon CPU prefill** | **8.61× faster than the pre-2026-09-01 record at a 3020-token prompt** (334.9 s → 38.9 s), and the rate no longer falls with length: **78.4 → 77.7 tok/s** across 170→3020 where it used to collapse 51.5 → 9.0. No PEER comparison exists for CPU prefill — this is goinfer-vs-goinfer | §A |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
@@ -439,10 +439,32 @@ read-only image, not heap-copied.
 > resolved by A3; measured utilization on the same class of run is now **1.67× before the fan-out
 > and 5.27× after** it, and the profile arms today ran at 250–300% CPU.
 >
-> **The absolute table has NOT been re-measured and no replacement numbers are invented here.**
-> Those cells (dense 1.5B `int8int8`, 170/620/1520/3020 tok) predate all four changes and will be
-> faster now by an amount nobody has measured at those exact shapes. Quoting them today
-> understates the engine; quoting a guess would be worse. **Re-measuring them is the open item.**
+> ### RE-MEASURED 2026-09-01 — and the RATE NO LONGER FALLS WITH LENGTH
+>
+> Same configuration as the original cells (dense **1.5B**, `int8int8`, prefill + 1 token, M1 Pro),
+> best of 3 rather than the original's single shot — an improvement to the method, stated so the
+> two are not read as identically obtained. goinfer `cfec302`.
+>
+> | prompt | recorded (pre-2026-09-01) | **measured** | **tok/s** | speedup |
+> |---|---|---|---|---|
+> | 170 | 3.3 s | **2.2 s** | **78.4** | 1.52× |
+> | 620 | 19.7 s | **7.0 s** | **89.0** | 2.83× |
+> | 1520 | 93.2 s | **18.1 s** | **84.1** | 5.16× |
+> | 3020 | 334.9 s | **38.9 s** | **77.7** | **8.61×** |
+>
+> **The structural claim is the flat rate, not the speedup.** The recorded cells fell from
+> 51.5 tok/s to 9.0 tok/s across this range — a 5.7× collapse — and the prose below attributes that
+> to the serial attention half. It is now **78.4 → 77.7 tok/s, flat**, because that is precisely
+> what A3's head fan-out removed. The speedup grows with length (1.52× → 8.61×) for the same
+> reason: the term that was superlinear is the one that got fixed.
+>
+> Attribution, since three changes landed together: the f32 prefill default and **A3's head
+> fan-out** do the work here, plus **P19's fused schedule** (+8%). **P18 is inert for this row** —
+> it is MoE-only and this is a dense model.
+>
+> "Long prompts on the CPU backend are much slower than the speedup suggests" — the practical
+> warning below — no longer holds in the form it is written. A 3020-token prompt is 38.9 s, not
+> 334.9 s.
 >
 > **Everything from here to the end of this block is the pre-2026-09-01 record:**
 >
