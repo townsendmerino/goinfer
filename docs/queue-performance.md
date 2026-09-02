@@ -13,7 +13,7 @@
 
 ## What is open
 
-- **P19 · Fused (FlashAttention-style) tiled attention — CLOSED 2026-09-01 for the portable form; the CUDA form is untested and NOT closed.**
+- **P19 · Fused (FlashAttention-style) tiled attention — CLEARS ITS BAR at 1.73–1.81×, but only when parallelised over ROWS. Open, and the next step is production.**
   *(Filed as P19, not P17: this queue already has a P17. The item arrived carrying that number
   from outside the repo; renumbered here rather than shadowing an existing entry.)*
 
@@ -58,34 +58,46 @@
   (A3 fan-out: each worker gathers into its own buffers). And its sequencing condition, "A3 first",
   is satisfied: A3's kernel measurement and its end-to-end result both landed.
 
-  **THE PROTOTYPE WAS BUILT AND MEASURED THE SAME DAY, AND IT LOSES**
+  **THE PROTOTYPE WAS BUILT AND MEASURED THE SAME DAY, AND THE VERDICT REVERSED WITHIN IT**
   (`docs/measurements/p19-fused-attention-2026-09-01.md`). At production shapes (kt=256, hd=128,
   nKeys=8192), f32 both arms so the schedule is the only variable:
 
-  | | materialized | best fused | ratio |
+  | configuration | materialized | best fused | ratio |
   |---|---|---|---|
-  | serial (stable) | 52.9 ms | 51.3 ms | **1.031×** |
-  | parallel (as shipped) | 37.4 ms | 54.1 ms | **0.690×** |
+  | serial | 52.9 ms | 51.3 ms | 1.031× — wash |
+  | column-parallel (composed over `MatmulBT`) | 37.8 ms | 54.0 ms | 0.700× — loses |
+  | **row-parallel, 8 workers, serial inner** | **15.7–16.2 ms** | **9.0–9.1 ms** | **1.73–1.81× — CLEARS** |
 
-  Pre-registered bar was ≥1.30× clears / <1.10× closes. **It closes.** Correctness was never the
-  problem — cosine 1.000000000, max|diff| ~1e-8.
+  Pre-registered bar ≥1.30× clears / <1.10× closes. Correctness held everywhere: cosine
+  1.000000000, max|diff| ~1e-8.
 
-  **Why, established by a control rather than guessed.** The serial arm was run because this repo
-  has already published a kernel ratio that was mostly core count (G24's first pass: 17.6× against
-  a documented ~3.7×). `MatmulBT` fans out over N output columns; materialized presents N=8192,
-  fused presents N=kb (128–1024). Serially the schedule is a **wash** (1.031×) — on CPU the 8 MiB
-  score block is streamed well enough that avoiding it buys nothing. In parallel, materialized
-  gains 1.41× and fused gains nothing, because fusion forfeits column parallelism *by construction*.
+  **This item was briefly closed on the 0.700× row, and that was wrong.** Composing fusion over a
+  COLUMN-parallel matmul forfeits parallelism by construction — materialized presents N=8192 to
+  `MatmulBT`, fused presents N=kb. The page had written that down as a caveat and drawn a verdict
+  anyway. **A schedule that is bad at exploiting one parallelism axis has not been shown to be
+  bad.** Re-run with both arms row-parallel at equal worker count and an identical serial inner
+  primitive, fusion wins.
 
-  **What is NOT closed, stated so nobody reads this as more than it is:**
-  - **The CUDA form.** The 55%-of-prefill share that made this interesting is a CUDA measurement,
-    where the score matrix goes to HBM and the trade is different. Nothing here refutes a fused
-    CUDA kernel — it refutes the *cheap portable* win, which is what the item was filed on
-    ("the portable claim is the I/O schedule, not the kernels").
-  - **An implementation that does not sit on `MatmulBT`.** This prototype composes fusion out of
-    the general blocked matmul and therefore inherits its parallelism model. A hand-written fused
-    inner kernel parallelised over QUERY ROWS would not forfeit parallelism the same way. That is
-    a real limit on the strength of this negative, and a much larger piece of work.
+  **The mechanism, which only the parallel arm reveals.** Serially the schedule is neutral, so
+  fusion saves no arithmetic. It wins on SCALING: materialized hands each worker a `[n, nKeys]`
+  score array (1.4 MB here) and scales 3.7× on 8 workers; fused hands it `[n, kb]` (~44 KB) and
+  scales 7.3×. Eight workers streaming 1.4 MB arrays are bandwidth-bound; on 44 KB blocks they stay
+  in cache. That is the FlashAttention argument, and it is invisible without parallelism.
+
+  **Correctly sequenced against A3, as the item demanded.** The column-parallel arm is the *pre-*A3
+  f32 shape; row-parallel is analogous to the head fan-out A3 shipped the same day (3.27× at the
+  kernel). So 1.75× is a win **on top of** A3's, not a re-measurement of it.
+
+  **Next step: production.** `attendBatchedHeads` already fans out over heads with a serial inner
+  matmul (A3), which is the configuration where fusion wins — so the schedule change lands in a
+  shape that already exists rather than requiring a new parallelism model. It costs the A1
+  guarantees (the running-max rescale re-associates; same category as `--cpu-fast-attention`), so
+  it needs the same flag-and-floor treatment and its own golden.
+
+  **Still not tested:** the CUDA form (where the 55% share was measured and the score matrix goes to
+  HBM — the CPU result makes that MORE interesting, not less), and a hand-written SIMD fused inner
+  kernel (these arms deliberately keep `MatmulBT` inside, so kernel quality is controlled rather
+  than confounded).
 
 - **P18 · Expert-major MoE prefill batching — REOPENED 2026-09-01, and the reason it was parked
   does not apply to it.** Scoped, not funded: the next step is a cost measurement, not a rewrite.

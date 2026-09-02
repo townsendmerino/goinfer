@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,6 +236,212 @@ func TestP19FusedAttention(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "  fused kb=%-5d %8.1f ms   %.3fx   cosine %.9f  max|diff| %.3g\n",
 			kb, float64(d.Microseconds())/1000, float64(dMat)/float64(d), cos, maxAb)
 	}
+
+	// ---------------------------------------------------------------------
+	// ROW-PARALLEL ARMS — the control for this file's own stated caveat.
+	//
+	// The arms above showed fusion losing 0.690x in parallel and washing (1.031x)
+	// serially, and attributed the gap to MatmulBT's fan-out being over N OUTPUT
+	// COLUMNS: materialized presents N=8192, fused presents N=kb. That is a
+	// property of composing fusion over a column-parallel matmul, NOT of the
+	// schedule -- so it left open whether a version parallelised over QUERY ROWS
+	// changes the answer.
+	//
+	// This tests exactly that, and controls the obvious confound: both arms are
+	// row-parallel across the same worker count, and both use MatmulBT as a
+	// SERIAL inner primitive (per-worker Workspace, threshold pinned). So kernel
+	// quality is identical and the parallelism model is identical; the schedule is
+	// again the only variable. Writing a hand-rolled SIMD inner loop instead would
+	// have measured my scalar Go against aikit's tuned kernel and told us nothing
+	// about scheduling.
+	rowsPer := func(w, workers int) (int, int) {
+		per := (ktProd + workers - 1) / workers
+		return w * per, min((w+1)*per, ktProd)
+	}
+	workers := min(runtime.GOMAXPROCS(0), 8)
+
+	chMatRP := make([]float32, ktProd*hd)
+	// PER-WORKER SCRATCH AND WORKSPACES HOISTED OUT OF THE TIMED REGION. The first
+	// version allocated the materialized arm's [n, nKeys] score buffer (1.4 MB per
+	// worker) INSIDE the timed call while the fused arm allocated far less — which
+	// would have charged the losing arm for allocation and inflated exactly the
+	// result being claimed. Caught before quoting the number, not after.
+	matScr := make([][]float32, workers)
+	matWS := make([]*linalg.Workspace, workers)
+	for w := range workers {
+		r0, r1 := rowsPer(w, workers)
+		if r0 < r1 {
+			matScr[w] = make([]float32, (r1-r0)*nKeys)
+		}
+		matWS[w] = serialMMWorkspace()
+	}
+	matRowPar := func() {
+		var wg sync.WaitGroup
+		for w := range workers {
+			r0, r1 := rowsPer(w, workers)
+			if r0 >= r1 {
+				continue
+			}
+			wg.Add(1)
+			go func(w, r0, r1 int) {
+				defer wg.Done()
+				ws := matWS[w]
+				n := r1 - r0
+				sc := matScr[w]
+				ws.MatmulBT(qh[r0*hd:r1*hd], kh, sc, n, hd, nKeys)
+				for i := range n {
+					row := sc[i*nKeys : (i+1)*nKeys]
+					maxS := float32(math.Inf(-1))
+					for j := range row {
+						row[j] *= scale
+						if row[j] > maxS {
+							maxS = row[j]
+						}
+					}
+					var sum float64
+					for j := range row {
+						e := math.Exp(float64(row[j] - maxS))
+						row[j] = float32(e)
+						sum += e
+					}
+					inv := float32(1 / sum)
+					for j := range row {
+						row[j] *= inv
+					}
+				}
+				ws.MatmulBT(sc, vt, chMatRP[r0*hd:r1*hd], n, nKeys, hd)
+			}(w, r0, r1)
+		}
+		wg.Wait()
+	}
+
+	chFusedRP := make([]float32, ktProd*hd)
+	fusedRowPar := func(kb int) func() {
+		vBlk := make([]float32, hd*nKeys)
+		for k0 := 0; k0 < nKeys; k0 += kb {
+			n := min(kb, nKeys-k0)
+			base := k0 * hd
+			for j := range n {
+				for d := range hd {
+					vBlk[base+d*n+j] = vRow[(k0+j)*hd+d]
+				}
+			}
+		}
+		// Same hoist for the fused arm, so neither pays allocation inside timing.
+		fWS := make([]*linalg.Workspace, workers)
+		fS := make([][]float32, workers)
+		fTmp := make([][]float32, workers)
+		fAcc := make([][]float32, workers)
+		fM := make([][]float32, workers)
+		fL := make([][]float32, workers)
+		for w := range workers {
+			r0, r1 := rowsPer(w, workers)
+			nr := max(r1-r0, 0)
+			fWS[w] = serialMMWorkspace()
+			fS[w] = make([]float32, nr*kb)
+			fTmp[w] = make([]float32, nr*hd)
+			fAcc[w] = make([]float32, nr*hd)
+			fM[w] = make([]float32, nr)
+			fL[w] = make([]float32, nr)
+		}
+		return func() {
+			var wg sync.WaitGroup
+			for w := range workers {
+				r0, r1 := rowsPer(w, workers)
+				if r0 >= r1 {
+					continue
+				}
+				wg.Add(1)
+				go func(w, r0, r1 int) {
+					defer wg.Done()
+					ws := fWS[w]
+					nr := r1 - r0
+					sBlk, tmp, acc, mRun, lRun := fS[w], fTmp[w], fAcc[w], fM[w], fL[w]
+					for i := range acc {
+						acc[i] = 0
+					}
+					for i := range nr {
+						mRun[i], lRun[i] = float32(math.Inf(-1)), 0
+					}
+					for k0 := 0; k0 < nKeys; k0 += kb {
+						k1 := min(k0+kb, nKeys)
+						n := k1 - k0
+						ws.MatmulBT(qh[r0*hd:r1*hd], kh[k0*hd:k1*hd], sBlk[:nr*n], nr, hd, n)
+						for i := range nr {
+							row := sBlk[i*n : i*n+n]
+							blkMax := float32(math.Inf(-1))
+							for j := range row {
+								row[j] *= scale
+								if row[j] > blkMax {
+									blkMax = row[j]
+								}
+							}
+							mNew := mRun[i]
+							if blkMax > mNew {
+								mNew = blkMax
+							}
+							corr := float32(math.Exp(float64(mRun[i] - mNew)))
+							var sum float64
+							for j := range row {
+								e := math.Exp(float64(row[j] - mNew))
+								row[j] = float32(e)
+								sum += e
+							}
+							lRun[i] = lRun[i]*corr + float32(sum)
+							mRun[i] = mNew
+							if corr != 1 {
+								a := acc[i*hd : (i+1)*hd]
+								for d := range a {
+									a[d] *= corr
+								}
+							}
+						}
+						ws.MatmulBT(sBlk[:nr*n], vBlk[k0*hd:k0*hd+hd*n], tmp[:nr*hd], nr, n, hd)
+						for i := range nr * hd {
+							acc[i] += tmp[i]
+						}
+					}
+					for i := range nr {
+						inv := 1 / lRun[i]
+						a := acc[i*hd : (i+1)*hd]
+						o := chFusedRP[(r0+i)*hd : (r0+i+1)*hd]
+						for d := range a {
+							o[d] = a[d] * inv
+						}
+					}
+				}(w, r0, r1)
+			}
+			wg.Wait()
+		}
+	}
+
+	cosVs := func(ref, got []float32) float64 {
+		var dot, na, nb float64
+		for i := range ref {
+			x, y := float64(ref[i]), float64(got[i])
+			dot += x * y
+			na += x * x
+			nb += y * y
+		}
+		return dot / (math.Sqrt(na) * math.Sqrt(nb))
+	}
+
+	fmt.Fprintf(os.Stderr, "\n  ROW-PARALLEL control (%d workers, serial MatmulBT inner in BOTH arms)\n", workers)
+	dMatRP := best(matRowPar)
+	fmt.Fprintf(os.Stderr, "  materialized row-par %8.1f ms   cosine %.9f\n",
+		float64(dMatRP.Microseconds())/1000, cosVs(chMat, chMatRP))
+	bestRP, bestRPkb := time.Duration(1<<62-1), 0
+	for _, kb := range []int{128, 256, 512, 1024} {
+		d := best(fusedRowPar(kb))
+		fmt.Fprintf(os.Stderr, "  fused row-par kb=%-5d %8.1f ms   %.3fx vs mat-row-par   cosine %.9f\n",
+			kb, float64(d.Microseconds())/1000, float64(dMatRP)/float64(d), cosVs(chMat, chFusedRP))
+		if d < bestRP {
+			bestRP, bestRPkb = d, kb
+		}
+	}
+	rpRatio := float64(dMatRP) / float64(bestRP)
+	fmt.Fprintf(os.Stderr, "  ROW-PARALLEL VERDICT: best kb=%d -> %.3fx (bar: >=1.30 clears, <1.10 closes)\n",
+		bestRPkb, rpRatio)
 
 	bestF := out[0]
 	for _, r := range out[1:] {
