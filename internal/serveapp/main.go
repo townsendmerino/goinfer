@@ -914,6 +914,16 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// load is what makes that visible; -require-backend turns a decline into a startup failure.
 	batched, why := lm.model.PrefillPath()
 	fmt.Fprintf(os.Stderr, "  decode path: %s\n  prefill path: %s\n", lm.model.DecodePath(), why)
+	// C-10: the same reasoning one line up, applied to the TOKENIZER. A pre-tokenizer this build
+	// does not walk produces a different id stream from HF and from llama.cpp with no error
+	// anywhere — count_tokens and usage drift by the same amount — and the only way anyone finds
+	// out is by diffing ids against AutoTokenizer. Say it at load, where the other silent
+	// fallbacks are already said.
+	if lm.tk != nil {
+		if d := lm.tk.PreTokenizerDecline(); d != "" {
+			fmt.Fprintf(os.Stderr, "  !! tokenizer: %s\n", d)
+		}
+	}
 	if cfg.requireBE {
 		if err := requireFastPaths(name, cfg, lm, batched, why); err != nil {
 			return nil, err

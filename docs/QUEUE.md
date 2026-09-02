@@ -1200,12 +1200,12 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:471` | goinfer | `var reqCounter atomic.Uint64` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:1088` | goinfer | `for _, lm := range srv.modelList() {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:156` | goinfer | `func (s modelSpec) explicitQuant(cfg config) string {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:359` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:393` | goinfer | `// discoverable only by reading the source. The MoE refusal and the` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:404` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:405` | goinfer | `os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:463` | goinfer | `for _, lm := range srv.modelList() {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:496` | goinfer | `mux.HandleFunc("GET /health", auth(srv.handleHealth))` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:514` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:563` | goinfer | `srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.m` |
@@ -1304,20 +1304,20 @@ supports.
 | `docs/audit-2026-09-02.md|scripts/gate_ledger.py:151` | goinfer | `if e is None:` |
 | `docs/audit-2026-09-02.md|scripts/gptoss_tiny_golden.py:32` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-02.md|scripts/queue_citation_lint.py:574` | goinfer | `update = "--update" in sys.argv` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:185` | goinfer | `// decodeByteLevel inverts the byte-level map: render each piece (special tokens` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:206` | goinfer | `// splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:231` | goinfer | `for i := 0; i < n; {` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:196` | goinfer | `// decodeByteLevel inverts the byte-level map: render each piece (special tokens` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:233` | goinfer | `// splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:258` | goinfer | `for i := 0; i < n; {` |
 | `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:27` | goinfer | `func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:350` | goinfer | `func normalizerForm(raw json.RawMessage) (norm.Form, bool) {` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:377` | goinfer | `func normalizerForm(raw json.RawMessage) (norm.Form, bool) {` |
 | `docs/audit-2026-09-02.md|tokenizer/bytelevel_test.go:18` | goinfer | `//	.venv/bin/python scripts/pin_qwen3_tokenizer.py` |
 | `docs/audit-2026-09-02.md|tokenizer/doc.go:26` | goinfer | `// Golden parity against HF `tokenizers` is the gate for every family (M2 /` |
-| `docs/audit-2026-09-02.md|tokenizer/gguf.go:118` | goinfer | `for i, tok := range tokens {` |
-| `docs/audit-2026-09-02.md|tokenizer/gguf.go:262` | goinfer | `// byteLevelKnobs maps a tokenizer.ggml.pre identifier to the byte-level pipeline` |
-| `docs/audit-2026-09-02.md|tokenizer/gguf.go:278` | goinfer | `default: // "gpt-2", "default", "", and unrecognized` |
+| `docs/audit-2026-09-02.md|tokenizer/gguf.go:119` | goinfer | `for i, tok := range tokens {` |
+| `docs/audit-2026-09-02.md|tokenizer/gguf.go:274` | goinfer | `// byteLevelKnobs maps a tokenizer.ggml.pre identifier to the byte-level pipeline` |
+| `docs/audit-2026-09-02.md|tokenizer/gguf.go:278` | goinfer | `// ignore_merges; Qwen takes one digit, NFC-normalizes, and honors merges; Mellum2` |
 | `docs/audit-2026-09-02.md|tokenizer/gguf_test.go:19` | goinfer | `//	.venv/bin/python scripts/pin_tinyllama_tokenizer.py` |
-| `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:412` | goinfer | `// Encode turns text into token ids. If addBOS, prepend the BOS token (the` |
-| `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:723` | goinfer | `func (t *Tokenizer) Decode(ids []int) (string, error) {` |
-| `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:791` | goinfer | `if t.mode == modeByteLevel {` |
+| `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:433` | goinfer | `// Encode turns text into token ids. If addBOS, prepend the BOS token (the` |
+| `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:458` | goinfer | `if t.mode == modeByteLevel {` |
+| `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:744` | goinfer | `func (t *Tokenizer) Decode(ids []int) (string, error) {` |
 | `docs/audit-2026-09-02.md|tokenizer/sentencepiece_test.go:51` | goinfer | `//	.venv/bin/python scripts/pin_gemma_tokenizer.py` |
 | `docs/audit-2026-09-02.md|tokenizer/tokentext_test.go:30` | goinfer | `if _, err := os.Stat(c.dir); errors.Is(err, fs.ErrNotExist) {` |
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |

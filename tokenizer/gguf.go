@@ -2,6 +2,7 @@ package tokenizer
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -256,7 +257,18 @@ func setupGGUFByteLevel(t *Tokenizer, g *embed.GGUFFile) {
 	t.mode = modeByteLevel
 	t.byteEncoder, t.byteDecoder = buildByteLevelTables()
 	pre, _ := g.Str(ggufTokPre)
-	t.maxDigits, t.normForm, t.normOn, t.ignoreMerges, t.splitDigits = byteLevelKnobs(pre)
+	var known bool
+	t.maxDigits, t.normForm, t.normOn, t.ignoreMerges, t.splitDigits, known = byteLevelKnobs(pre)
+	if !known {
+		// C-10: an unrecognised `pre` used to fall silently to GPT-2-like defaults, and the two
+		// families this repo ships that do that are not hypothetical — measured on the local
+		// assets, gpt-oss-20b-MXFP4.gguf is pre="gpt-4o" and Qwen3.5-35B-A3B-Q4_K_M.gguf is
+		// pre="qwen35". A GGUF carries no Split regex, so there is nothing to classify here; the
+		// name is all the evidence there is, and an unknown name means unknown knobs.
+		t.preDecline = "GGUF tokenizer.ggml.pre=" + strconv.Quote(pre) + " is not a known " +
+			"pre-tokenizer; falling back to cl100k with a 1-digit cap, so this model's token ids " +
+			"may differ from HF and llama.cpp"
+	}
 }
 
 // byteLevelKnobs maps a tokenizer.ggml.pre identifier to the byte-level pipeline
@@ -267,16 +279,28 @@ func setupGGUFByteLevel(t *Tokenizer, g *embed.GGUFFile) {
 // has no normalizer and a Digits{individual_digits} pretokenizer (each digit
 // isolated, so a leading space never attaches to one); GPT-2 takes one digit, no
 // NFC, and honors merges. Unknown pre falls back to the GPT-2-like defaults.
-func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMerges, splitDigits bool) {
+func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMerges, splitDigits, known bool) {
 	switch pre {
 	case "llama-bpe", "llama3", "llama-v3":
-		return 3, norm.NFC, false, true, false
+		return 3, norm.NFC, false, true, false, true
 	case "qwen2", "qwen2.5", "qwen":
-		return 1, norm.NFC, true, false, false
+		return 1, norm.NFC, true, false, false, true
+	case "qwen35":
+		// Qwen3.5's GGUFs. Same family and the same tokenizer.json pipeline as qwen2 — NFC on, one
+		// digit — and it was NOT in this switch, so it fell to the default whose only difference is
+		// NFC OFF. That diverges on exactly the inputs needing normalisation and on nothing else,
+		// which is why it went unnoticed. Measured: Qwen3.5-35B-A3B-Q4_K_M.gguf is pre="qwen35".
+		return 1, norm.NFC, true, false, false, true
 	case "mellum2":
-		return 1, norm.NFC, false, false, true
-	default: // "gpt-2", "default", "", and unrecognized
-		return 1, norm.NFC, false, false, false
+		return 1, norm.NFC, false, false, true, true
+	case "gpt-2", "default", "":
+		// GPT-2's OWN alternation is not the cl100k one either (no contraction clause, ` ?\p{N}+`
+		// rather than a capped run), so these knobs are the historical behaviour and not a claim of
+		// correctness — see PreTokenizerDecline. Reported as known so the decline names the real
+		// remaining gap (the walker) rather than the name lookup.
+		return 1, norm.NFC, false, false, false, true
+	default:
+		return 1, norm.NFC, false, false, false, false
 	}
 }
 

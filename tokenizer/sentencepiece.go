@@ -65,6 +65,12 @@ const (
 // golden: split out added/special tokens (longest match on the raw text),
 // normalize the gaps, pretokenize (byte-level only), then BPE each piece.
 type Tokenizer struct {
+	// preDecline is non-empty when the pre-tokenizer this tokenizer declares is one this build
+	// does not walk. See PreTokenizerDecline.
+	preDecline string
+	// preShape is the alternation the model's own Split regex expresses; it selects the walker.
+	preShape splitShape
+
 	vocab     map[string]int32 // piece → id
 	idToPiece []string         // id → piece (len == vocab size)
 	pairRank  map[bigram]int32 // BPE merge rank
@@ -122,6 +128,21 @@ func (t *Tokenizer) Has(piece string) bool { _, ok := t.vocab[piece]; return ok 
 // TokenID returns the id of a vocab piece (e.g. a chat stop marker like
 // "<end_of_turn>") and whether it exists.
 func (t *Tokenizer) TokenID(piece string) (int, bool) { id, ok := t.vocab[piece]; return int(id), ok }
+
+// PreTokenizerDecline reports why this tokenizer's pre-tokenizer is NOT the alternation the walker
+// implements, or "" when it is (or when the family is not byte-level at all).
+//
+// It exists because the answer used to be nothing. splitGPT2 is exactly the cl100k/Llama-3
+// alternation, and every byte-level family was walked with it: a `Split` regex of a different shape,
+// or a GGUF `tokenizer.ggml.pre` outside a four-name switch, produced a DIFFERENT id stream from
+// HF and from llama.cpp with no error and no log — `count_tokens` and usage drifting by the same
+// amount (audit-2026-09-02 C-10). Measured on this machine's own assets: gpt-oss's GGUF is
+// pre="gpt-4o" and Qwen3.5's is pre="qwen35", and neither was in the switch.
+//
+// A caller that cares — serve's startup line, a gate — can now say so out loud. Nothing here
+// changes what the walker does: naming the divergence is separable from fixing it, and shipping a
+// walker for a pattern this repo cannot yet check against a reference would be the worse half.
+func (t *Tokenizer) PreTokenizerDecline() string { return t.preDecline }
 
 // Special returns the resolved special-token ids.
 func (t *Tokenizer) Special() SpecialTokens { return t.special }

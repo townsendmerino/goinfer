@@ -27,8 +27,19 @@ import (
 func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {
 	t.byteEncoder, t.byteDecoder = buildByteLevelTables()
 	t.normForm, t.normOn = normalizerForm(tj.Normalizer)
-	t.maxDigits = digitRunCap(splitRegex(tj.PreTokenizer))
+	re := splitRegex(tj.PreTokenizer)
+	t.maxDigits = digitRunCap(re)
 	t.splitDigits = hasIndividualDigits(tj.PreTokenizer)
+	// C-10: compare the declared regex against the shape the walker actually implements. A Digits
+	// pre-tokenizer (Mellum2) carries no Split regex and is handled by splitDigits, so an empty
+	// regex is not a mismatch — only a regex that IS present and is a different alternation.
+	if re != "" {
+		t.preShape = classifySplit(re)
+		if !walkerImplements(t.preShape) {
+			t.preDecline = "pre-tokenizer regex is the " + t.preShape.String() + " alternation, " +
+				"which this build does not walk; this model's token ids differ from HF"
+		}
+	}
 
 	t.special = SpecialTokens{BOS: -1, EOS: -1, Pad: -1, StartOfTurn: -1, EndOfTurn: -1}
 	lookup := func(piece string) int {
@@ -103,7 +114,7 @@ func (t *Tokenizer) encodeByteLevel(text string, addBOS, parseSpecial bool) ([]i
 		// becomes " " + "1", not the single "Ġ1" piece). Without it the gap is one
 		// segment.
 		for _, seg := range t.digitSegments(gap) {
-			for _, piece := range splitGPT2(seg, t.maxDigits) {
+			for _, piece := range t.splitPre(seg) {
 				ids, err := t.bpeByteLevel(piece)
 				if err != nil {
 					return err
@@ -201,6 +212,22 @@ func (t *Tokenizer) decodeByteLevel(ids []int) (string, error) {
 		}
 	}
 	return string(buf), nil
+}
+
+// splitPre applies the pre-tokenizer alternation this tokenizer actually declares.
+//
+// It used to be splitGPT2 unconditionally — one alternation for every byte-level family, which is
+// audit-2026-09-02 C-10. The shape is classified from the model's own `Split` regex at load, so
+// this dispatches on what the file says rather than on which family someone assumed it was.
+//
+// A shape with no walker keeps the cl100k one AND sets PreTokenizerDecline, because a wrong split
+// that says so is strictly better than a wrong split that does not — and refusing to load a model
+// that works today, imperfectly, would be a worse trade than reporting it.
+func (t *Tokenizer) splitPre(seg string) []string {
+	if t.preShape == shapeO200k {
+		return splitO200k(seg)
+	}
+	return splitGPT2(seg, t.maxDigits)
 }
 
 // splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex
