@@ -26,6 +26,11 @@ import (
 // Rate is the inter-token rate (total − TTFT)/(n−1), so prefill/first-token pipeline
 // compilation is excluded; reported as the BEST of several rounds (the steady-state
 // floor, least perturbed by scheduler/thermal noise).
+//
+// Deliberately NOT affected by resident prefix reuse, even though the rounds repeat one
+// prompt and later rounds therefore reuse it: reuse changes PREFILL, and this figure
+// subtracts TTFT. A bench that reported TTFT would have to disable reuse — matrix_bench and
+// granite_resident_speedup do (decoder/resident_reuse.go).
 func TestDecodeRealModel_throughput(t *testing.T) {
 	requireHeavyModel(t)
 	if testing.Short() {

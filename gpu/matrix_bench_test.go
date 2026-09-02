@@ -32,6 +32,12 @@ func TestDecisionMatrix(t *testing.T) {
 		t.Skip("set GOINFER_MATRIX_GGUF, GOINFER_MATRIX_INT4, GOINFER_MATRIX_LABEL")
 	}
 	newOrSkipHW(t).Close() // real-HW gate
+	// Cold TTFT is the quantity this table reports, so resident prefix reuse is disabled
+	// here. Without this the warm-up Generate leaves the prompt in the resident KV and the
+	// TIMED Generate reuses it, collapsing TTFT to near zero and publishing a warm number
+	// under a cold heading (decoder/resident_reuse.go).
+	os.Setenv("GOINFER_NO_RESIDENT_REUSE", "1")
+	defer os.Unsetenv("GOINFER_NO_RESIDENT_REUSE")
 
 	// tokenizer (from the int4 .giw's metadata GGUF) + a short prompt and a
 	// ~256-token prompt for TTFT.

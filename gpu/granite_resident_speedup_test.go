@@ -33,6 +33,12 @@ func TestGraniteResidentSpeedup(t *testing.T) {
 		t.Skipf("no granite model: %v", err)
 	}
 	os.Setenv("GOINFER_SSM_RESIDENT", "1") // P5b/P6 guarded eligibility
+	// Cold TTFT is the quantity this table reports, so resident prefix reuse is disabled
+	// here. Without this the warm-up Generate leaves the prompt in the resident KV and the
+	// TIMED Generate reuses it, collapsing TTFT to near zero and publishing a warm number
+	// under a cold heading (decoder/resident_reuse.go).
+	os.Setenv("GOINFER_NO_RESIDENT_REUSE", "1")
+	defer os.Unsetenv("GOINFER_NO_RESIDENT_REUSE")
 	defer os.Unsetenv("GOINFER_SSM_RESIDENT")
 
 	tk, err := tokenizer.LoadGGUF(path)

@@ -27,22 +27,26 @@ var decodeTiming = os.Getenv("GOINFER_DECODE_TIMING") != ""
 // sequence state (the KV cache) is owned by each Generate call, so distinct
 // sequences can run concurrently, but a single KVCache is not shared.
 type Model struct {
-	w          *Weights
-	be         Backend
-	eosIDs     []int           // end-of-sequence ids from config (generation stops on these)
-	resident   ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
-	resBusy    int32           // atomic: claims the single shared resident KV for one in-flight generation (M9). Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
-	kvF16      bool            // residency KV cache precision request (Options.KVPrecision == "f16")
-	kvPrecI8   bool            // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8       bool            // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	resCtxReq  int             // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	moeCache   bool            // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
-	moeSlots   int             // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
-	mmap       []byte          // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
-	srcPath    string          // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
-	pager      *expertPager    // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
-	layerPager *layerPager     // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
-	quant      string          // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+	w        *Weights
+	be       Backend
+	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
+	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	resBusy  int32           // atomic: claims the single shared resident KV for one in-flight generation (M9). Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
+	// resIDs is the token sequence currently committed to the resident positional KV, or nil
+	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
+	// to that cache; see resident_reuse.go for why nil is the safe default.
+	resIDs     []int
+	kvF16      bool         // residency KV cache precision request (Options.KVPrecision == "f16")
+	kvPrecI8   bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8       bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	resCtxReq  int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	moeCache   bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	moeSlots   int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
+	mmap       []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	srcPath    string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	pager      *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	layerPager *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
+	quant      string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
 	// resDecline records WHY resident is nil on a non-CPU backend — the reason withResidency
 	// would otherwise discard. Empty when residency was built, or when it was never attempted
 	// (CPU backend). DecodePath / -require-backend read it; see withResidency.
@@ -839,14 +843,23 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 // bumped, TestPrefillDivergenceRate is 0/50 on the real 1.5B (was 42/50), gap
 // byte-identical. GOINFER_BATCHED_PREFILL=0 force-disables.
 // See docs/task-batched-prefill-bitidentity.md.
-func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int) ([]float32, error) {
-	if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(prompt) >= 8 {
+// from is the first position to compute: prompt[:from] is already committed to the resident
+// KV (prefix reuse, resident_reuse.go) and positions carry through unchanged because the cache
+// is positional. from == 0 is the cold path.
+func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int) ([]float32, error) {
+	if from < 0 || from >= len(prompt) {
+		from = 0 // never skip the seed token, whose logits start decode
+	}
+	suffix := prompt[from:]
+	if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(suffix) >= 8 {
 		if pf, ok := m.resident.(Prefiller); ok {
-			embs := make([][]float32, len(prompt))
-			for i, id := range prompt {
+			embs := make([][]float32, len(suffix))
+			for i, id := range suffix {
 				embs[i] = m.embedResident(id)
 			}
-			if lg, perr := pf.PrefillLast(embs, 0); perr == nil {
+			// startPos is why the batched path needs no change for reuse: it already
+			// places the run at an offset.
+			if lg, perr := pf.PrefillLast(embs, from); perr == nil {
 				return lg, nil
 			}
 		}
@@ -860,6 +873,9 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int) ([]float3
 	var logits []float32
 	var err error
 	for i, id := range prompt {
+		if i < from {
+			continue // already in the cache at position i
+		}
 		// G18: the resident prefill loop is the GPU-side twin of the batched CPU
 		// path's per-layer check. Same failure without it — an abandoned client
 		// leaves the whole prompt streaming through the device.
@@ -926,10 +942,17 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	var logits []float32
 	var err error
 	if useGPU {
-		if logits, err = m.residentPrefillSeed(ctx, prompt); err != nil {
+		// Prefix reuse: skip the leading tokens already committed to the resident positional
+		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
+		// generation completes the cache is mid-write, and any early return must leave the
+		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
+		reuseFrom := m.residentReuseLen(prompt)
+		m.residentForgetIDs()
+		if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom); err != nil {
 			g.err = err
 			return
 		}
+		g.PrefillReused = reuseFrom
 		gpuPos = len(prompt)
 	} else {
 		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
@@ -1114,6 +1137,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			commit(next)
 		}
 	}
+	// The ONLY place the resident cache's contents are recorded: a generation that ran to
+	// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.
+	if useGPU {
+		m.residentCommitIDs(prompt, generated)
+	}
 	if decodeTiming && nFwd > 0 {
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }
 		fmt.Printf("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token\n",
@@ -1134,9 +1162,14 @@ func (m *Model) isStop(id int, sp SamplingParams) bool {
 // Generation carries the terminal status of a Generate stream. Spec is non-nil
 // for GenerateSpeculative and carries acceptance telemetry.
 type Generation struct {
-	err    error
-	Spec   *SpecStats
-	OptFwd *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
+	err error
+	// PrefillReused is how many leading prompt tokens this generation skipped because they
+	// were already committed to the resident positional KV (resident_reuse.go). 0 on a cold
+	// prefill and on every non-resident path. Diagnostic: it is what makes an agent loop's
+	// per-turn prefill cost visible without timing it.
+	PrefillReused int
+	Spec          *SpecStats
+	OptFwd        *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
 	// Logprobs holds one entry per emitted token (in order) when
 	// SamplingParams.Logprobs was set — the chosen token's log-probability and
 	// any requested top alternatives. Complete once the stream has closed.

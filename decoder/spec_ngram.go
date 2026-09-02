@@ -289,7 +289,11 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// Forward loop, which is how it missed batched prefill entirely when that
 			// landed in c36698a — 6.3x per prompt token, and `off` beating speculation
 			// 3-4.5x on realistic prompts. See residentPrefillSeed's comment.
-			if seedLogits, err = target.residentPrefillSeed(ctx, prompt); err != nil {
+			// Speculative verify writes the resident KV at positions this function owns, not
+			// generateInto's, so the recorded id list stops being true here. Forget it: the
+			// next turn cold-prefills, which is slow rather than wrong (resident_reuse.go).
+			target.residentForgetIDs()
+			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0); err != nil {
 				g.err = err
 				return
 			}
