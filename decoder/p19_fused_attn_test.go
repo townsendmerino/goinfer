@@ -728,3 +728,114 @@ func TestFusedAttention_matchesMaterialized(t *testing.T) {
 		})
 	}
 }
+
+// TestFusedAttention_logitDivergence answers the question the golden raises but
+// cannot: when fusion changes the generated tokens, is that a NEAR-TIE FLIP or a
+// BUG? Those look identical from a token diff.
+//
+// It compares the PREFILL LOGITS directly on a real checkpoint and reports both
+// the cosine (is the forward computing the same thing?) and the top-2 margin at
+// the final position (was the argmax decidable at all?). A high cosine with a
+// margin near the perturbation size is a tie flip; a low cosine is a defect.
+//
+// This is the same shape as a3_divergence_test.go, which exists because the f32
+// flag needed the identical question answered.
+func TestFusedAttention_logitDivergence(t *testing.T) {
+	if os.Getenv("GOINFER_P19") == "" {
+		t.Skip("set GOINFER_P19=1 (loads a real model)")
+	}
+	m, err := loadBenchModel()
+	if err != nil {
+		t.Skipf("no model (%v)", err)
+	}
+	ctx := deadlineCtx(t)
+	const K = 768 // the long-prompt golden's depth
+	ids := make([]int, K)
+	for i := range ids {
+		ids[i] = 700 + i%64
+	}
+	run := func(on string) []float32 {
+		t.Setenv("GOINFER_FUSED_ATTENTION", on)
+		out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true)
+		if err != nil {
+			t.Fatalf("forward(fused=%s): %v", on, err)
+		}
+		return out
+	}
+	// BASELINE ON THE SAME MODEL: how far does the f32 flag ALREADY move the
+	// hidden states away from acc64? Comparing fusion's divergence against a
+	// number from a different model (a3_divergence_test.go's 0.9976 at dense 1.5B)
+	// would be the cross-machine mistake in another costume. Both arms here, one
+	// checkpoint, one depth.
+	accRun := func() []float32 {
+		t.Setenv("GOINFER_FUSED_ATTENTION", "0")
+		out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), false) // acc64
+		if err != nil {
+			t.Fatalf("forward(acc64): %v", err)
+		}
+		return out
+	}
+	cosOf := func(a, b []float32) (float64, float64) {
+		var dot, na, nb, mx float64
+		for i := range a {
+			x, y := float64(a[i]), float64(b[i])
+			dot += x * y
+			na += x * x
+			nb += y * y
+			if d := math.Abs(x - y); d > mx {
+				mx = d
+			}
+		}
+		return dot / (math.Sqrt(na) * math.Sqrt(nb)), mx
+	}
+	acc := accRun()
+	off, on := run("0"), run("1")
+	c1, m1 := cosOf(acc, off)
+	c2, m2 := cosOf(acc, on)
+	t.Logf("BASELINE  acc64 vs f32-materialized (what the flag already ships): cosine %.9f  max|diff| %.3g", c1, m1)
+	t.Logf("TOTAL     acc64 vs f32-fused        (what shipping fusion means):  cosine %.9f  max|diff| %.3g", c2, m2)
+	var dot, na, nb, maxAb float64
+	for i := range off {
+		x, y := float64(off[i]), float64(on[i])
+		dot += x * y
+		na += x * x
+		nb += y * y
+		if a := math.Abs(x - y); a > maxAb {
+			maxAb = a
+		}
+	}
+	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	// top-2 margin at the LAST row — the position whose argmax picks token 0.
+	hidden := len(off) / K
+	last := off[(K-1)*hidden:]
+	b1, b2 := math.Inf(-1), math.Inf(-1)
+	arg1 := -1
+	for i, v := range last {
+		f := float64(v)
+		if f > b1 {
+			b2, b1, arg1 = b1, f, i
+		} else if f > b2 {
+			b2 = f
+		}
+	}
+	lastOn := on[(K-1)*hidden:]
+	o1, oarg := math.Inf(-1), -1
+	for i, v := range lastOn {
+		if float64(v) > o1 {
+			o1, oarg = float64(v), i
+		}
+	}
+	t.Logf("hidden-state cosine %.9f   max|diff| %.3g", cos, maxAb)
+	t.Logf("last row: top1 idx %d (%.6f), top2 %.6f, MARGIN %.3g", arg1, b1, b2, b1-b2)
+	t.Logf("fused    top1 idx %d (%.6f)   %s", oarg, o1,
+		map[bool]string{true: "SAME", false: "FLIPPED"}[oarg == arg1])
+	// The bar compares fusion's ADDITIONAL divergence against the divergence the
+	// f32 flag already accepts on the SAME model. A kernel-level 0.9999 bar is the
+	// wrong instrument for a 24-layer forward -- the flag itself only reaches
+	// ~0.998 there -- and applying it was my error, corrected here rather than
+	// relaxed silently.
+	if c2 < c1*0.999 {
+		t.Fatalf("fusion moves the hidden states materially further from acc64 than the f32 flag "+
+			"already does (%.9f vs baseline %.9f) — that is a defect, not a tie flip", c2, c1)
+	}
+}

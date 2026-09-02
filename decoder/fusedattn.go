@@ -24,9 +24,13 @@ import (
 // IT IS NOT BIT-IDENTICAL, and that is structural rather than incidental: the
 // running-max rescale re-associates the softmax denominator and the AV fold. This
 // is the same category as --cpu-fast-attention, and it rides that flag rather
-// than adding a second user-facing one, because the divergence it adds is ~5
-// orders of magnitude smaller than the divergence that flag already accepts
-// (max|diff| 9.3e-9 against f32-vs-acc64's ~2.4e-3). GOINFER_FUSED_ATTENTION is a
+// than adding a second user-facing one -- but NOT for the reason first written
+// here. That claimed the added divergence was "~5 orders of magnitude smaller",
+// comparing a KERNEL number (max|diff| 9.3e-9) to a MODEL-LEVEL one. Measured on
+// one checkpoint at one depth, both at model level: acc64 vs f32-materialized is
+// cosine 0.998283, acc64 vs f32-fused is 0.998262. Same order; what is small is
+// fusion's INCREMENT (~2e-5 of cosine), not its magnitude. The conclusion holds,
+// the arithmetic behind it did not. GOINFER_FUSED_ATTENTION is a
 // developer A/B handle, not a user setting -- it exists so fusion's win stays
 // attributable separately from A3's, and so it can be rolled back without losing
 // A3's.

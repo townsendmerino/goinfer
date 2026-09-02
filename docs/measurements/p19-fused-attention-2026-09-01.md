@@ -172,3 +172,47 @@ The CPU attention share that made this item look near-dead earlier in the day (1
 figure. That was corrected before this ran — dense models are 55% (CUDA, K=3900) and ~70% (Mac CPU
 acc64, K=8192) — so this item was measured on its merits rather than dismissed on a
 model-class error. The negative result stands on this measurement, not on that mistake.
+
+
+## Production wiring, and a correction to this page's own argument
+
+Implemented in `decoder/fusedattn.go`, default OFF (`GOINFER_FUSED_ATTENTION=1`).
+It declines for acc64 (whose bit-identity it would break) and for tree attention
+(a per-(row,column) mask is a different problem from the contiguous `[lo,hi]` bound the
+causal and sliding-window cases share).
+
+**Correctness at kernel level** — `TestFusedAttention_matchesMaterialized`, through the real
+`attendBatchedHeads` with masking on, across causal-single-block, causal-multi-block and
+sliding-window shapes: cosine 1.000000000, max|diff| 2.6e-8 to 4.5e-8. Mutation-proven (dropping
+the running-max rescale reddens it at 0.995/0.997). The single-block case still passes under that
+mutation — with one block `corr` is always 1 — which is why the multi-block case is in the suite.
+
+**And then the real model said something different.** At K=768 on the bench checkpoint, fused vs
+materialized hidden states come out at cosine **0.9985**, not 1.0. Twenty-four layers compound a
+4e-8 per-tile perturbation into something visible, and the committed long-prompt golden changes
+its tokens from position 0.
+
+**THE BAR I FIRST APPLIED WAS THE WRONG INSTRUMENT, AND IT FIRED.** A `cosine >= 0.9999` bar is
+right for a kernel comparison and meaningless for a 24-layer forward — the f32 flag itself does
+not reach 0.9999 there. Measured on the SAME model and depth, rather than against a number from
+another checkpoint:
+
+| comparison | cosine | max\|diff\| |
+|---|---|---|
+| acc64 vs f32-materialized — **what `--cpu-fast-attention` already ships** | 0.998282798 | 6.37 |
+| acc64 vs f32-**fused** — what shipping fusion would mean | 0.998261937 | 8.04 |
+
+**Fusion adds ~2e-5 of cosine on top of an already-accepted 1.7e-3.** So it is not a defect, and
+it does belong under the existing flag rather than a new one.
+
+**But the argument this page previously gave for that conclusion was wrong.** It said fusion's
+divergence is *"~5 orders of magnitude smaller than the divergence that flag already accepts
+(max|diff| 9.3e-9 against f32-vs-acc64's ~2.4e-3)"*. That compared a KERNEL number to a MODEL-LEVEL
+one. At model level the two are the same order; what is small is fusion's *increment*, not its
+magnitude. The conclusion survives the correction, the reasoning does not, and the difference
+matters because the wrong version would licence skipping the golden.
+
+**Consequence, stated rather than discovered later:** turning fusion on changes what
+`--cpu-fast-attention` produces. It needs a regenerated GOARCH-keyed golden and a CHANGELOG entry
+saying output moved — exactly the treatment the default flip got. Default stays OFF until that is
+done deliberately.
