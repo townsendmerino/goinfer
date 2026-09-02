@@ -62,7 +62,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
 | decision | today's surface | what the user has to know |
 |---|---|---|
 | which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/serveapp/main.go:356`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
-| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:207`, `metal/moe.go:313`), env only, no flag, no auto | the measured optimum was N=64 (`docs/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it |
+| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:207`, `metal/moe.go:319`), env only, no flag, no auto | the measured optimum was N=64 (`docs/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it |
 | context cap and KV precision | `-ctx` (`:361`, ignored by WebGPU — M-32), `-kv` (`:360`, breaks three families on WebGPU — M-32), `-kv-quant` (`:362`) | the VRAM a 16k f32 KV costs on their card |
 | quant | `-quant int4` default (`:340`), `--embed-int4` (`:374`) | that int4 is now as fast as int8int8 on CPU (the in-repo guidance was reversed 2026-08-25) |
 | whether it worked | `-require-backend` (`:354`) or reading the decline line | that "declined to CPU" is the failure they are looking for |

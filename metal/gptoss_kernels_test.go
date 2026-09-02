@@ -11,8 +11,13 @@
 package metal
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 )
 
@@ -465,7 +470,8 @@ func TestGptOssMoEDownBias_metal(t *testing.T) {
 		NewBufferUint32s(d, words), NewBufferU16s(d, scalesH), NewBufferInt8(d, aq),
 		NewBufferFloats(d, []float32{aSc}), out,
 		NewBufferU32(d, uint32(K)), NewBufferUint32s(d, []uint32{1}), NewBufferFloats(d, wgt),
-		NewBufferU32(d, uint32(slot)), NewBufferU32(d, uint32(N)), NewBufferFloats(d, bias))
+		NewBufferU32(d, uint32(slot)), NewBufferU32(d, uint32(N)), NewBufferFloats(d, bias),
+		NewBufferUint32s(d, []uint32{1})) // bidx: same expert as idx on the non-paged path
 	got := out.Floats()
 
 	var dot, na, nb, maxRel float64
@@ -485,4 +491,185 @@ func TestGptOssMoEDownBias_metal(t *testing.T) {
 		t.Fatalf("gemv_w4a8_moe_wacc_bias parity FAIL: cos=%.7f maxRel=%.4f", cos, maxRel)
 	}
 	t.Logf("gemv_w4a8_moe_wacc_bias N=%d K=%d vs CPU: cos=%.7f maxRel=%.4f — PARITY ✓", N, K, cos, maxRel)
+}
+
+// C-09: THE PAGED PATH INDEXED THE BIAS TABLE BY THE WEIGHT INDEX.
+//
+// encodeMoEExpertsPaged substitutes a zero buffer for rIdx so the reused GEMVs read row 0 of a
+// one-expert slot — correct for the WEIGHTS, which is what the slot holds. But the same index
+// addressed ml.expDBias / ml.expGuBias, which stay the STACKED all-expert tables, so every routed
+// expert got expert 0's bias. Finite, plausible, wrong: the class CUDA fixed in d9829ce, here
+// indexed by a constant zero.
+//
+// This is the paged shape exactly: one expert's weights staged at slot row 0, the bias table
+// stacked, and the two indices therefore DIFFERENT. Expert 0's bias is a decoy, so the pre-fix
+// addressing is not merely inaccurate — it is unmistakable.
+func TestGptOssMoEDownBias_pagedIndexesBiasByExpert(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe, err := d.NewComputePipeline(lib, "gemv_w4a8_moe_wacc_bias")
+	if err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+
+	const nExp, N, K = 3, 64, 512
+	const expert = 2 // the routed expert; its weights are staged, its bias lives at row 2
+	const slot = 0
+	rng := rand.New(rand.NewSource(91))
+
+	a := make([]float32, K)
+	for i := range a {
+		a[i] = rng.Float32()*2 - 1
+	}
+	amx := float32(0)
+	for _, v := range a {
+		if x := float32(math.Abs(float64(v))); x > amx {
+			amx = x
+		}
+	}
+	aSc := amx / 127
+	aq := make([]int8, K)
+	for i, v := range a {
+		aq[i] = int8(math.Max(-127, math.Min(127, math.Round(float64(v/aSc)))))
+	}
+
+	wgt := []float32{0.41}
+	resid0 := make([]float32, N)
+	for i := range resid0 {
+		resid0[i] = rng.Float32()*4 - 2
+	}
+	// STACKED bias table, as the paged path leaves it. Expert 0 is a decoy.
+	bias := make([]float32, nExp*N)
+	for i := range N {
+		bias[i] = 999
+		bias[N+i] = -999
+		bias[2*N+i] = rng.Float32()*2 - 1 // expert 2: the correct one
+	}
+
+	// The SLOT: one expert's weights only, at row 0. This is what staging produces.
+	slotW := make([]uint32, N*(K/8))
+	slotS := make([]uint16, N*(K/32))
+	ref := make([]float32, N)
+	for row := range N {
+		rowVals := make([]float32, K)
+		for k := range rowVals {
+			rowVals[k] = rng.Float32()*2 - 1
+		}
+		w, sc := packW4A8Row(rowVals)
+		copy(slotW[row*(K/8):(row+1)*(K/8)], w)
+		var acc float64
+		for g := range K / 32 {
+			slotS[row*(K/32)+g] = f32ToF16(sc[g])
+			s16 := float64(f16ToF32(slotS[row*(K/32)+g]))
+			for e := range 32 {
+				k := g*32 + e
+				nib := int((w[k/8]>>(4*uint(k%8)))&0xF) - 8
+				acc += float64(nib) * float64(aq[k]) * s16
+			}
+		}
+		// The expected answer uses the SLOT's weights and EXPERT 2's bias.
+		ref[row] = resid0[row] + wgt[slot]*(float32(acc)*aSc+bias[expert*N+row])
+	}
+
+	q := d.NewCommandQueue()
+	out := NewBufferFloats(d, resid0)
+	q.Run1DTG(pipe, N*32, 256, K*2,
+		NewBufferUint32s(d, slotW), NewBufferU16s(d, slotS), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{aSc}), out,
+		NewBufferU32(d, uint32(K)),
+		NewBufferUint32s(d, []uint32{0}), // idx: row 0 of the slot — the PAGED substitution
+		NewBufferFloats(d, wgt),
+		NewBufferU32(d, uint32(slot)), NewBufferU32(d, uint32(N)), NewBufferFloats(d, bias),
+		NewBufferUint32s(d, []uint32{expert})) // bidx: the REAL expert id, for the stacked bias
+	got := out.Floats()
+
+	var dot, na, nb, maxRel float64
+	for n := range N {
+		dot += float64(got[n]) * float64(ref[n])
+		na += float64(got[n]) * float64(got[n])
+		nb += float64(ref[n]) * float64(ref[n])
+		if dd := math.Abs(float64(got[n] - ref[n])); dd > 1e-3 {
+			if rel := dd / (math.Abs(float64(ref[n])) + 1e-3); rel > maxRel {
+				maxRel = rel
+			}
+		}
+	}
+	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	mustFinite(t, "gpt-oss paged MoE down-bias cosine", cos)
+	if cos < 0.9999 || maxRel > 5e-3 {
+		t.Fatalf("paged bias addressing FAIL: cos=%.7f maxRel=%.4f — indexing the stacked bias "+
+			"table by the SLOT index gives every routed expert expert 0's bias (C-09)", cos, maxRel)
+	}
+	t.Logf("paged: weights at slot row 0, bias at expert %d — cos=%.7f maxRel=%.4f ✓", expert, cos, maxRel)
+}
+
+// C-09, THE CALL SITE. The kernel test above proves the kernel does the right thing GIVEN two
+// indices; it cannot prove the encoder passes two. The defect was never in the kernel — it was
+// encodeMoEExpertsPaged handing the same zero buffer to both roles, which no test that dispatches
+// the kernel itself can see.
+//
+// The invariant, on BOTH paths and BOTH kernels: an expert bias table is immediately followed by
+// the index that addresses it, and that index is mo.biasIdx() ALWAYS — because expGuBias/expDBias stay
+// the stacked all-expert tables under every paging state, while only the WEIGHT index switches to
+// idxZeros. Keying on "the argument after a bias table" rather than on a fixed position is what
+// makes this one rule cover swiglu_quant_gptoss (index 8 of 12) and gemv_w4a8_moe_wacc_bias
+// (index 11 of 12) at once, and survive either signature growing.
+//
+// Read via go/ast rather than by line: these calls wrap, and a line-wise scan silently matched the
+// pipeline ASSIGNMENTS and half of each dispatch instead — a guard watching the wrong thing, which
+// is the failure this audit keeps turning up.
+func TestGptOssBiasDispatches_alwaysIndexedByRealExpert(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "moe.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse moe.go: %v", err)
+	}
+	render := func(e ast.Expr) string {
+		var b strings.Builder
+		if err := printer.Fprint(&b, fset, e); err != nil {
+			return "<unprintable>"
+		}
+		return b.String()
+	}
+	var checked int
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || (sel.Sel.Name != "Dispatch" && sel.Sel.Name != "DispatchTG") {
+			return true
+		}
+		for i, arg := range call.Args {
+			name := render(arg)
+			if !strings.HasSuffix(name, "Bias") || !strings.HasPrefix(name, "ml.exp") {
+				continue
+			}
+			checked++
+			if i+1 >= len(call.Args) {
+				t.Errorf("%s at %s is the last argument — nothing indexes it",
+					name, fset.Position(call.Pos()))
+				continue
+			}
+			if got := render(call.Args[i+1]); got != "mo.biasIdx()" {
+				t.Errorf("%s at %s is indexed by %s, want mo.biasIdx() — the bias tables stay STACKED "+
+					"while paging swaps the weights, so a slot index here gives every routed "+
+					"expert expert 0's bias (C-09)", name, fset.Position(call.Pos()), got)
+			}
+		}
+		return true
+	})
+	// A guard that matches nothing is the failure mode this audit keeps finding, so pin the count:
+	// expGuBias and expDBias, on the resident path and the paged one.
+	if checked != 4 {
+		t.Errorf("found %d expert-bias arguments, want 4 — the sites moved and this guard is now "+
+			"watching the wrong ones", checked)
+	}
 }

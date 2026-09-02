@@ -182,6 +182,7 @@ kernel void gemv_w4a8_moe_wacc_bias(device const uint4* wq[[buffer(0)]], device 
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
     constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], device const float* wgt[[buffer(7)]],
     constant uint& slot[[buffer(8)]], constant uint& rowsPerExpert[[buffer(9)]], device const float* bias[[buffer(10)]],
+    device const uint* bidx[[buffer(11)]],
     threadgroup short* As[[threadgroup(0)]],
     uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
     uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
@@ -200,7 +201,12 @@ kernel void gemv_w4a8_moe_wacc_bias(device const uint4* wq[[buffer(0)]], device 
         acc += float(gi) * float(sr[g]);
     }
     acc = simd_sum(acc);
-    if (lane==0) out[row] += wgt[slot]*(acc*asc[0] + bias[idx[slot]*rowsPerExpert + row]);
+    // bidx, NOT idx. On the PAGED path idx is a zero buffer so the weight GEMV reads row 0 of a
+    // one-expert slot — correct — but the bias table stays the STACKED all-expert one, so indexing
+    // it the same way gave every routed expert expert 0's bias. Finite, plausible, wrong: the class
+    // CUDA fixed in d9829ce, here indexed by a constant zero (audit-2026-09-02 C-09). The
+    // non-paged path passes the same buffer for both and is unchanged.
+    if (lane==0) out[row] += wgt[slot]*(acc*asc[0] + bias[bidx[slot]*rowsPerExpert + row]);
 }
 
 // shared_gate_combine: qwen2_moe gated shared expert — x[i] += sigmoid(gl[0])*src[i].
@@ -319,6 +325,21 @@ type moeResident struct {
 	paged    bool
 	slots    int
 	idxZeros Buffer
+
+	// TWO INDEX SPACES, DIVERGING ONLY WHEN PAGING IS ON — the same doctrine as cuda/resident.go's
+	// expIdx / expertBiasIdx pair, and adopted here because Metal had the defect that pair exists
+	// to prevent (C-09).
+	//
+	//	the weight index  WHERE the weights live  → idxZeros when this LAYER is paged (row 0 of a
+	//	                                            one-expert slot), rIdx otherwise; passed
+	//	                                            explicitly, see biasIdx's note on why
+	//	biasIdx()         WHICH expert is running → ALWAYS rIdx
+	//
+	// With paging off the two are the same buffer, so a site that binds the wrong one is correct in
+	// every configuration anyone has run and wrong — silently, with plausible logits — in the one
+	// configuration that needs it. That is exactly what shipped: the paged encoder passed idxZeros
+	// to both roles, so gpt-oss's stacked expGuBias/expDBias tables were addressed by a constant
+	// zero and every routed expert got expert 0's bias.
 
 	// giwFile is the re-opened .giw for pread-staging; nil ⇒ the mmap byte-copy path. Shared
 	// read-only fd across every layer's pool; closed by resident.Close. Same knob and default as
@@ -614,8 +635,8 @@ func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer) {
 		e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, mo.rIdx, mo.uSlot[j], mo.uInter2)
 		if mo.isGptOss {
 			e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,
-				ml.expGuBias, mo.rIdx, mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
-			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias)
+				ml.expGuBias, mo.biasIdx(), mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
+			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias, mo.biasIdx())
 		} else {
 			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
 			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
@@ -630,6 +651,19 @@ func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer) {
 // the selection slot uSlot[j], so the reused gemv_w4a8_moe(_wacc[_bias]) kernels compute
 // byte-identically to the stacked path (slot bytes == the stacked buffer's rows for that expert —
 // see buildMoELayer's paged stage fn). Mirrors gemma4_moe.go's encodeG4Phase2Paged.
+// biasIdx is the index for PER-EXPERT TABLES that stay STACKED for all experts and are addressed
+// on the device — today gpt-oss's [nExpert][2*I] gate‖up bias and [nExpert][H] down bias. It is
+// always the router's real expert ids, NEVER the slot index: those tables do not move when an
+// expert is staged into a slot, so paging must not renumber their rows.
+func (mo *moeResident) biasIdx() Buffer { return mo.rIdx }
+
+// THERE IS DELIBERATELY NO SYMMETRIC weightIdx(). It was written and removed: keying it on
+// mo.paged is WRONG, because paging is decided PER LAYER — forwardLogitsMoEPaged branches on
+// L.moe.pool != nil, so a layer with no pool encodes through the ordinary non-paged path while
+// mo.paged is true, and such an accessor would hand it idxZeros for its weights. That is the same
+// silent-plausible-logits failure this pair exists to prevent, reintroduced by the symmetry. The
+// weight index stays explicit at each call site, where which encoder you are in settles it.
+
 func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, slots []expertSlot) {
 	mo := r.moe
 	ml := L.moe
@@ -637,9 +671,11 @@ func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, slots []expe
 		s := slots[j]
 		e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, s.guW, s.guS, r.mq, r.mSc, r.gu, r.uH, mo.idxZeros, mo.uSlot[j], mo.uInter2)
 		if mo.isGptOss {
+			// mo.rIdx, not idxZeros: this kernel's idx feeds ONLY biasOff, and the gate/up bias
+			// table is the stacked all-expert one even on the paged path (C-09).
 			e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,
-				ml.expGuBias, mo.idxZeros, mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
-			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, s.dW, s.dS, r.dq, r.dSc, r.x, mo.uInter, mo.idxZeros, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias)
+				ml.expGuBias, mo.biasIdx(), mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
+			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, s.dW, s.dS, r.dq, r.dSc, r.x, mo.uInter, mo.idxZeros, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias, mo.biasIdx())
 		} else {
 			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
 			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, s.dW, s.dS, r.dq, r.dSc, r.x, mo.uInter, mo.idxZeros, mo.rWgt, mo.uSlot[j], r.uH)

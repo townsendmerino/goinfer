@@ -838,8 +838,8 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:545` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:283` | goinfer | `func TestRealckptCellCanReachEveryGate(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:319` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:216` | goinfer | `func (m *Masker) Process(generated []int, logits []float32) {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:229` | goinfer | `// StopWhenComplete: at a completion point, only EOS survives.` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `anchor: func (m *Masker) ForcedBytesRun(max int) []byte {` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:211` | goinfer | `anchor: func (m *Masker) StopWhenComplete() *Masker {` |
 | `docs/audit-2026-09-02.md|constrain/json.go:84` | goinfer | `func (g *jsonGrammar) CanEnd() bool {` |
 | `docs/audit-2026-09-02.md|constrain/json.go:96` | goinfer | `func (g *jsonGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:10` | goinfer | `// GrammarFromStruct derives a JSON Schema from a Go struct (via its json tags)` |
@@ -1175,10 +1175,10 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |
 | `docs/audit-2026-09-02.md|gpu/vision.go:52` | goinfer | `let mean = smean[0] / f32(p.h);` |
 | `docs/audit-2026-09-02.md|gpu/vision_encoder.go:202` | goinfer | `for head := range nH {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:206` | goinfer | `case strings.HasSuffix(path, ".giw"):` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:209` | goinfer | `if tk, err = tokenizer.LoadGGUFBytes(raw); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:349` | goinfer | `flush := func(final bool) {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:502` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhen` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:200` | goinfer | `// bundle, or raw tokenizer.json for a safetensors-sourced one).` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:203` | goinfer | `var tk *tokenizer.Tokenizer` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:343` | goinfer | `// print only newly-completed bytes (a byte-fallback token may be a partial` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:496` | goinfer | `g := constrain.JSON()` |
 | `docs/audit-2026-09-02.md|internal/chatapp/prequant.go:45` | goinfer | `tk, err := tokenizer.LoadGGUFBytes(tokGGUF)` |
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:113` | goinfer | `// 4) Generate + stream. Decode the whole running sequence (prompt +` |
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:131` | goinfer | `flush := func(final bool) error {` |
@@ -1214,16 +1214,17 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:471` | goinfer | `var reqCounter atomic.Uint64` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:158` | goinfer | `func (s modelSpec) explicitQuant(cfg config) string {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:370` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:404` | goinfer | `// discoverable only by reading the source. The MoE refusal and the` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:416` | goinfer | `os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:477` | goinfer | `for _, lm := range srv.modelList() {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:510` | goinfer | `mux.HandleFunc("GET /health", auth(srv.handleHealth))` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:539` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:588` | goinfer | `srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.m` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:764` | goinfer | `if visionModelType(cand) == "qwen2_5_vl" {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:882` | goinfer | `giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:157` | goinfer | `// default must never conflict with an already-baked bundle.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:369` | goinfer | `flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exa` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:403` | goinfer | `// and a divergence a user opts into should be spelled out in --help rather than` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:414` | goinfer | `// contradiction the user did not realise they had expressed.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:415` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:476` | goinfer | `if cfg.sessionDir != "" && cfg.kvSessions > 0 {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:509` | goinfer | `// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:538` | goinfer | `anchor: func Main() {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:587` | goinfer | `close(stopDemote) // stop demoting before we checkpoint` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:752` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:870` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1056` | goinfer | `for id := range stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1061` | goinfer | `text, _ := lm.tk.Decode(ids)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1062` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
@@ -1294,15 +1295,14 @@ supports.
 | `docs/audit-2026-09-02.md|metal/model.go:772` | goinfer | `// Vocab is NOT checked here (2026-08-18): it never routes through an SA-family kernel —` |
 | `docs/audit-2026-09-02.md|metal/model.go:887` | goinfer | `if r.g4moe != nil && r.g4moe.paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && Resid` |
 | `docs/audit-2026-09-02.md|metal/moe.go:106` | goinfer | `for (uint j=0u;j<k;j++) {` |
-| `docs/audit-2026-09-02.md|metal/moe.go:203` | goinfer | `if (lane==0) out[row] += wgt[slot]*(acc*asc[0] + bias[idx[slot]*rowsPerExpert + row]);` |
-| `docs/audit-2026-09-02.md|metal/moe.go:236` | goinfer | `uint biasOff = hasBias != 0u ? idx[slot]*2u*I : 0u;` |
-| `docs/audit-2026-09-02.md|metal/moe.go:404` | goinfer | `if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {` |
-| `docs/audit-2026-09-02.md|metal/moe.go:517` | goinfer | `panic(fmt.Sprintf("metal MoE pread gate expert %d: %v", ei, err))` |
-| `docs/audit-2026-09-02.md|metal/moe.go:589` | goinfer | `e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)` |
-| `docs/audit-2026-09-02.md|metal/moe.go:613` | goinfer | `for j := 0; j < mo.k; j++ {` |
-| `docs/audit-2026-09-02.md|metal/moe.go:638` | goinfer | `e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, s.guW, s.guS, r.mq, r.mSc, r.gu, r.uH,` |
-| `docs/audit-2026-09-02.md|metal/moe.go:639` | goinfer | `if mo.isGptOss {` |
-| `docs/audit-2026-09-02.md|metal/moe.go:679` | goinfer | `func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {` |
+| `docs/audit-2026-09-02.md|metal/moe.go:209` | goinfer | `if (lane==0) out[row] += wgt[slot]*(acc*asc[0] + bias[bidx[slot]*rowsPerExpert + row]);` |
+| `docs/audit-2026-09-02.md|metal/moe.go:242` | goinfer | `uint biasOff = hasBias != 0u ? idx[slot]*2u*I : 0u;` |
+| `docs/audit-2026-09-02.md|metal/moe.go:425` | goinfer | `if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {` |
+| `docs/audit-2026-09-02.md|metal/moe.go:538` | goinfer | `panic(fmt.Sprintf("metal MoE pread gate expert %d: %v", ei, err))` |
+| `docs/audit-2026-09-02.md|metal/moe.go:610` | goinfer | `e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)` |
+| `docs/audit-2026-09-02.md|metal/moe.go:634` | goinfer | `for j := 0; j < mo.k; j++ {` |
+| `docs/audit-2026-09-02.md|metal/moe.go:676` | goinfer | `e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,` |
+| `docs/audit-2026-09-02.md|metal/moe.go:715` | goinfer | `func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {` |
 | `docs/audit-2026-09-02.md|metal/prefill_nan_test.go:20` | goinfer | `requireHeavyModel(t)` |
 | `docs/audit-2026-09-02.md|metal/prefill_parity_test.go:20` | goinfer | `requireHeavyModel(t)` |
 | `docs/audit-2026-09-02.md|metal/qwen35_35b_paged_test.go:95` | goinfer | `r, err := buildResident(m)` |
@@ -1465,7 +1465,7 @@ supports.
 | `docs/task-fit-to-hardware.md|metal/backend.go:135` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",` |
 | `docs/task-fit-to-hardware.md|metal/backend.go:80` | goinfer | `if !residentFitsMemory(m) {` |
 | `docs/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {` |
-| `docs/task-fit-to-hardware.md|metal/moe.go:313` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
+| `docs/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
 | `docs/task-fit-to-hardware.md|pull/pull.go:174` | goinfer | `Size   int64` |
 | `docs/task-freetoken-techniques.md|decoder/model.go:163` | goinfer | `MoECacheSlots int` |
 | `docs/task-freetoken-techniques.md|internal/serveapp/main.go:277` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
