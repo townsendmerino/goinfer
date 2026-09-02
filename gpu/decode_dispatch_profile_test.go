@@ -78,7 +78,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	r := rd.runner
 	c := r.c
 
-	hidden, _, _, _, _, _, _ := m.Dims()
+	hidden, nLayers, nH, nKV, hd, inter, vocab := m.Dims()
 	names := pipelineFieldNames(c)
 
 	// Step census by pipeline: how many dispatches/token each class contributes.
@@ -102,7 +102,9 @@ func TestDecode_dispatchProfile(t *testing.T) {
 		}
 		cl.count++
 	}
-	t.Logf("resident plan: %d dispatches/token across %d pipeline classes (hidden=%d)", len(r.steps), len(order), hidden)
+	t.Logf("resident plan: %d dispatches/token across %d pipeline classes", len(r.steps), len(order))
+	t.Logf("geometry: hidden=%d layers=%d nH=%d nKV=%d headDim=%d inter=%d vocab=%d  (kvDim=%d, KV bytes/pos/layer=%d)",
+		hidden, nLayers, nH, nKV, hd, inter, vocab, nKV*hd, 2*nKV*hd*4)
 
 	// Warm the pipelines and fill the KV cache, so attention is profiled against a
 	// realistic nKeys rather than the near-empty cache of pos 0 (where QK^T and the
