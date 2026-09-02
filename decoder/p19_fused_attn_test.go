@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
@@ -838,4 +839,80 @@ func TestFusedAttention_logitDivergence(t *testing.T) {
 		t.Fatalf("fusion moves the hidden states materially further from acc64 than the f32 flag "+
 			"already does (%.9f vs baseline %.9f) — that is a defect, not a tie flip", c2, c1)
 	}
+}
+
+// TestFusedAttention_endToEnd — what the 1.69-1.73x kernel win is worth through
+// a real forward, which is the only number that justifies accepting a
+// user-visible output change.
+//
+// Everything else measured for P19 is kernel-level. This repo has retracted two
+// projections in one day for composing a kernel ratio with a profile share, so
+// the shipping claim comes from here.
+//
+// DENSE model on purpose: attention's share of prefill is what the win scales
+// with, and it is ~55-70% on dense at depth against 17.4% on the MoE profiled
+// 2026-09-01. Dense is the favourable case, so a weak result here closes the
+// question for both.
+//
+// Paired and interleaved with alternating lead. Both arms run the f32 path
+// (fastAttn=true); the ONLY difference is GOINFER_FUSED_ATTENTION.
+func TestFusedAttention_endToEnd(t *testing.T) {
+	if os.Getenv("GOINFER_P19_E2E") == "" {
+		t.Skip("set GOINFER_P19_E2E=1")
+	}
+	path := os.Getenv("GOINFER_P19_MODEL")
+	if path == "" {
+		path = os.Getenv("HOME") + "/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s: %v", path, err)
+	}
+	m, err := Load(path, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	ctx := deadlineCtx(t)
+	K := 4096
+	if v := os.Getenv("GOINFER_P19_K"); v != "" {
+		fmt.Sscanf(v, "%d", &K)
+	}
+	pairs := 2
+	if v := os.Getenv("GOINFER_P19_PAIRS"); v != "" {
+		fmt.Sscanf(v, "%d", &pairs)
+	}
+	if !m.canBatchN(K) {
+		t.Skip("no batched prefill")
+	}
+	ids := longPromptIDs(K)
+	start := time.Now()
+	fmt.Fprintf(os.Stderr, "P19 e2e: start %s  model=%s K=%d pairs=%d\n",
+		start.Format("15:04:05"), filepath.Base(path), K, pairs)
+
+	run := func(on string) time.Duration {
+		t.Helper()
+		t.Setenv("GOINFER_FUSED_ATTENTION", on)
+		t0 := time.Now()
+		if _, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true); err != nil {
+			t.Fatalf("forward(fused=%s): %v", on, err)
+		}
+		return time.Since(t0)
+	}
+	run("0") // warm, discarded
+	var onD, offD []time.Duration
+	for p := range pairs {
+		var dOn, dOff time.Duration
+		if p%2 == 0 {
+			dOff, dOn = run("0"), run("1")
+		} else {
+			dOn, dOff = run("1"), run("0")
+		}
+		onD, offD = append(onD, dOn), append(offD, dOff)
+		fmt.Fprintf(os.Stderr, "  pair %d/%d  materialized %7.1fs  fused %7.1fs  %.3fx  [elapsed %s]\n",
+			p+1, pairs, dOff.Seconds(), dOn.Seconds(), float64(dOff)/float64(dOn),
+			time.Since(start).Round(time.Second))
+	}
+	r := medianDur(offD).Seconds() / medianDur(onD).Seconds()
+	fmt.Fprintf(os.Stderr, "\n  K=%d END-TO-END: materialized %.1fs  fused %.1fs  %.3fx (%+.1f%%)\n",
+		K, medianDur(offD).Seconds(), medianDur(onD).Seconds(), r, 100*(r-1))
 }
