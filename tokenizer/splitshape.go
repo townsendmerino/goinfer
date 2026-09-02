@@ -97,7 +97,9 @@ func classifySplit(re string) splitShape {
 
 // walkerImplements reports whether this build has a walker for the shape.
 //
-// shapeGPT2Original and shapeUnknown do not: GPT-2's own alternation has no contraction clause and
-// no [\r\n] handling, so ` 2020` is ONE pre-token there and `Ġ 2 0 2 0` under the cl100k walker.
-// Both keep the cl100k walker and set PreTokenizerDecline.
-func walkerImplements(s splitShape) bool { return s == shapeCl100k || s == shapeO200k }
+// shapeUnknown never does, by definition: an unclassified regex keeps the cl100k walker and sets
+// PreTokenizerDecline, because a wrong split that SAYS SO is better than one that does not, and
+// refusing to load a model that works today would be the worse trade.
+func walkerImplements(s splitShape) bool {
+	return s == shapeCl100k || s == shapeO200k || s == shapeGPT2Original
+}

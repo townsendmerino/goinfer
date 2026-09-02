@@ -39,15 +39,14 @@ func TestClassifySplit_namesTheRealAlternations(t *testing.T) {
 // reports true for one that does not, the mis-tokenization is back and silent again — which is the
 // whole of C-10.
 func TestWalkerImplements_onlyShapesWithAWalker(t *testing.T) {
-	for _, s := range []splitShape{shapeCl100k, shapeO200k} {
+	for _, s := range []splitShape{shapeCl100k, shapeO200k, shapeGPT2Original} {
 		if !walkerImplements(s) {
-			t.Errorf("%v has a walker (splitGPT2 / splitO200k) and is not claimed", s)
+			t.Errorf("%v has a walker (splitGPT2 / splitO200k / splitGPT2Original) and is not claimed", s)
 		}
 	}
-	// GPT-2's OWN alternation still has none: no contraction clause and no [\r\n] handling, so
-	// ` 2020` is ONE pre-token there against `Ġ 2 0 2 0` under the cl100k walker. Claiming it would
-	// re-hide exactly the divergence this gate exists for.
-	for _, s := range []splitShape{shapeGPT2Original, shapeUnknown} {
+	// An unclassified regex still has none, and claiming it would re-hide exactly the divergence
+	// this gate exists for.
+	for _, s := range []splitShape{shapeUnknown} {
 		if walkerImplements(s) {
 			t.Errorf("%v is claimed as implemented and no walker exists for it", s)
 		}
@@ -69,6 +68,11 @@ func TestSplitPre_dispatchesOnTheDeclaredShape(t *testing.T) {
 	u := &Tokenizer{preShape: shapeUnknown, maxDigits: 1}
 	if got := u.splitPre("don't"); len(got) != 2 {
 		t.Errorf("an unknown shape produced %q; it must fall back to the cl100k walker", got)
+	}
+	// GPT-2's own alternation: ` 2020` is one pre-token, which is the divergence that motivated it.
+	g := &Tokenizer{preShape: shapeGPT2Original, maxDigits: 1}
+	if got := g.splitPre(" 2020"); len(got) != 1 {
+		t.Errorf("a gpt2-original tokenizer split ' 2020' into %q; the walker was not selected", got)
 	}
 }
 

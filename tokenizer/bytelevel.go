@@ -224,8 +224,11 @@ func (t *Tokenizer) decodeByteLevel(ids []int) (string, error) {
 // that says so is strictly better than a wrong split that does not — and refusing to load a model
 // that works today, imperfectly, would be a worse trade than reporting it.
 func (t *Tokenizer) splitPre(seg string) []string {
-	if t.preShape == shapeO200k {
+	switch t.preShape {
+	case shapeO200k:
 		return splitO200k(seg)
+	case shapeGPT2Original:
+		return splitGPT2Original(seg)
 	}
 	return splitGPT2(seg, t.maxDigits)
 }

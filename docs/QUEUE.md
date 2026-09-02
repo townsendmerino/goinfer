@@ -1305,10 +1305,10 @@ supports.
 | `docs/audit-2026-09-02.md|scripts/gptoss_tiny_golden.py:32` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-02.md|scripts/queue_citation_lint.py:574` | goinfer | `update = "--update" in sys.argv` |
 | `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:196` | goinfer | `// decodeByteLevel inverts the byte-level map: render each piece (special tokens` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:233` | goinfer | `// splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:258` | goinfer | `for i := 0; i < n; {` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:236` | goinfer | `// splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:261` | goinfer | `for i := 0; i < n; {` |
 | `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:27` | goinfer | `func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:377` | goinfer | `func normalizerForm(raw json.RawMessage) (norm.Form, bool) {` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:380` | goinfer | `func normalizerForm(raw json.RawMessage) (norm.Form, bool) {` |
 | `docs/audit-2026-09-02.md|tokenizer/bytelevel_test.go:18` | goinfer | `//	.venv/bin/python scripts/pin_qwen3_tokenizer.py` |
 | `docs/audit-2026-09-02.md|tokenizer/doc.go:26` | goinfer | `// Golden parity against HF `tokenizers` is the gate for every family (M2 /` |
 | `docs/audit-2026-09-02.md|tokenizer/gguf.go:119` | goinfer | `for i, tok := range tokens {` |
