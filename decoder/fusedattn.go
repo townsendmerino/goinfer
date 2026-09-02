@@ -192,6 +192,18 @@ type fusedScratch struct {
 	lo, hi                           []int // per-row key bounds for the current tile
 }
 
+// fits reports whether this scratch is already large enough for the requested shape, so a pool slot
+// can be REUSED across calls instead of reallocated per token (M-03). Every buffer is used as a
+// prefix slice, so larger is fine.
+func (f *fusedScratch) fits(kt, hd, nKeys int) bool {
+	return f != nil &&
+		len(f.sBlk) >= kt*fusedKeyBlock &&
+		len(f.tmp) >= kt*hd && len(f.acc) >= kt*hd &&
+		len(f.mRun) >= kt && len(f.lRun) >= kt &&
+		len(f.vBlk) >= hd*nKeys &&
+		len(f.lo) >= kt && len(f.hi) >= kt
+}
+
 func newFusedScratch(kt, hd, nKeys int) *fusedScratch {
 	return &fusedScratch{
 		sBlk: make([]float32, kt*fusedKeyBlock),

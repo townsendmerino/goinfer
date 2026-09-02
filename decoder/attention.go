@@ -135,7 +135,7 @@ func causalAttention(
 		rows := pos - cache.WindowStart(pos, global) + 1
 		lk, lv := scr.localBufs(rows * kvDim)
 		base, nKeys := cache.batchReadLocal(layer, pos, 1, k, v, lk, lv)
-		pool := scr.headWorkerPool(nH, 1, nKeys, hd)
+		pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)
 		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], base, cache, layer, pos, 1, global, arch, acc64, pool)
 		cache.commitBatch(layer, pos, 1, k, v)
 		if !cache.manualPos && layer == cache.numLayers-1 {
@@ -147,13 +147,13 @@ func causalAttention(
 		cache.Append(layer, k, v)
 		lk, lv := scr.localBufs(cache.storedRows(layer, kvDim) * kvDim)
 		nKeys := cache.dequantGlobalLayer(layer, kvDim, lk, lv)
-		pool := scr.headWorkerPool(nH, 1, nKeys, hd)
+		pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)
 		attendBatchedHeads(q, ctx, lk[:nKeys*kvDim], lv[:nKeys*kvDim], 0, cache, layer, pos, 1, global, arch, acc64, pool)
 	default:
 		// f32 global (append-forever): read the whole stored history.
 		cache.Append(layer, k, v)
 		nKeys := cache.storedRows(layer, kvDim)
-		pool := scr.headWorkerPool(nH, 1, nKeys, hd)
+		pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)
 		attendBatchedHeads(q, ctx, cache.Keys(layer), cache.Vals(layer), 0, cache, layer, pos, 1, global, arch, acc64, pool)
 	}
 

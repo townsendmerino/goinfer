@@ -245,7 +245,7 @@ func prefillAttnWorkers(K, nKeys, hd, nH int) int {
 // arrays once as decode extends — the same grow-only discipline the single-
 // buffer attnBatchBufs used, replicated per pool slot so A1 move (a)'s
 // concurrent per-head workers never share mutable scratch.
-func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
+func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused bool) []headWorkerScratch {
 	if n > maxAttnWorkers {
 		n = maxAttnWorkers
 	}
@@ -262,8 +262,27 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int) []headWorkerScratch 
 		if p.mmWS == nil {
 			p.mmWS = serialMMWorkspace()
 		}
-		if fusedAttention() {
-			p.fused = newFusedScratch(attnRowTile(K, nKeys), hd, nKeys)
+		// M-03: ONLY when the caller will actually use it, and GROWN ONCE.
+		//
+		// This sat in the per-call slot loop with no guard, so every decoded token allocated
+		// min(nH,6) fused scratches per LAYER — each 4*hd*nKeys bytes plus change — on a path where
+		// ws.fused is dead: decode runs with acc64=true, and attendBatchedHeads computes
+		// fusedOK = !useAcc64 && treeMask == nil, so it never reads them. Since 84e0f13 made
+		// GOINFER_FUSED_ATTENTION default-on, that was the shipped default.
+		//
+		// Measured on qwen2.5-coder-0.5b int8int8, interleaved A/B, TotalAlloc per decoded token:
+		//
+		//	context 256    11.9 MB/token on  vs  74 KB/token off   (160x)
+		//	context 1024   42.6 MB/token on  vs  74 KB/token off   (573x)
+		//
+		// linear in context, all of it zero-filled and churned through GC, and none of it read
+		// (audit-2026-09-02 M-03, measured as P-01 asked).
+		if wantFused && fusedAttention() {
+			if t := attnRowTile(K, nKeys); p.fused == nil || !p.fused.fits(t, hd, nKeys) {
+				p.fused = newFusedScratch(t, hd, nKeys)
+			}
+		} else {
+			p.fused = nil
 		}
 		if c := K * hd; cap(p.qh) < c {
 			p.qh = make([]float32, c)
