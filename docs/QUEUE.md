@@ -1979,3 +1979,145 @@ the identical reason, speculative-decode verify batches on MoE, and it took dedi
 get there: 2–22% E2E, gains tapering past width 4. Real, but bounded, not free. If block verify is
 ever built, `mmvq.cu` / `topk-moe.cu` in that PR is a working reference for the fusion shape; until
 then, Result 2 is a projection, not a measurement.
+
+## G35 · the WGSL megakernel is unreachable — and the kernel actually pinning decode was a serial reduce
+
+Scoped 2026-09-02 as two experiments: (A) execute the CUDA cgo-free megakernel spike's "Phase 2",
+(B) test whether that spike's K1/K2/K3 stage-grouping can be built as 3 WGSL dispatches instead of
+13, to close the WebGPU-vs-native retention gap. **Experiment A was already done. Experiment B's
+target is not expressible in WGSL. And the ablation profile run to decide B named a different
+kernel entirely — a 1-line-of-reasoning defect worth +9.9% decode, bit-identical.**
+
+**Box:** RTX 2070 SUPER, driver 595.91.07, Qwen2.5-Coder-1.5B (`~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`,
+loaded `int8int8`, GPU-resident), greedy/temp-0, warm, best-of-6 × 48 tokens. Local disk, not the archive.
+
+### (A) Already executed — the spike doc is archived with the answer in it
+
+`docs/completed/task-cuda-cgofree-spike.md` carries the whole Phase-2 log through 2026-08-31, well past
+"the box fills": production backend, real-checkpoint parity, W4A8 coalescing 43%→80% of peak, the
+launch diet (18→13→8 launches/layer), **and the §5.2 three-super-kernel fusion itself** — K1
+(rmsnorm folded into the QKV GEMV) and K3a shipped as `cuda/fused_qkv.cu` behind `fuseQKV` /
+`GOINFER_CUDA_NO_FUSE`; **K2 built, measured at ~0%, and reverted.** `cuda/megakernel.cu` is a dead
+July scaffold referenced only from tests; the work landed elsewhere. Nothing in Experiment A was
+open. Recorded here because the spec (`docs/cuda-megakernel-spec.md`) still reads as a live
+prep artifact and does not say the spike it belongs to has closed.
+
+### (B) 3 WGSL dispatches/layer is NOT reachable — and 8 is already the floor CUDA found
+
+The stage-grouping does not survive translation, for the reason the CUDA spec routes around:
+
+| stage-group | expressible in WGSL? | why |
+|---|---|---|
+| K1 = rmsnorm+quant ⊕ QKV GEMV | **yes**, mechanically | redundant recompute in `var<workgroup>` + `workgroupBarrier()` |
+| K2 = attention ⊕ quant ⊕ O-proj | **NO** | attention is one workgroup/head; O-proj needs every head. Cross-workgroup dependency ⇒ grid-wide sync. WGSL has none — `storageBarrier()` orders memory *within* a workgroup, it is not an execution barrier across them |
+| K2′ = quant ⊕ O-proj (what CUDA actually shipped) | yes | but CUDA **measured it at ~0% and reverted it** |
+| K3 = ...⊕ SwiGLU ⊕ down-proj | expressible, **bandwidth-fatal** | down-GEMV blocks must redundantly read gO+uO — CUDA measured ~6.9 MB/layer against a 4 MB L2 |
+
+The escape hatch for K2 — have every O-proj block redundantly recompute all heads' attention — is
+not viable: it multiplies KV-cache traffic by the O-proj block count (~24× at this shape), on the
+term that already dominates the token. So the reachable target is **8 dispatches/layer, exactly
+where CUDA landed, by the same three concessions.** "13 → 3" was never a WGSL-side possibility.
+
+**And the premise that WebGPU sits at 13/layer is stale.** Measured: **366 dispatches/token = 12 per
+layer** (28 layers) + 30, across 7 pipeline classes. `docs/decode-fusion-next.md`'s "~535
+dispatches/token" predates Increments 1–2. The gap B was scoped to close is roughly half the size it
+was described as, before any of the above.
+
+### The measurement that mattered: ablate, don't attribute
+
+`TestDecode_dispatchProfile` (`gpu/decode_dispatch_profile_test.go`) re-records the whole token plan
+R×8 into one pass with one pipeline class **omitted**, one Submit, one blocking Poll, and differences
+against the unablated plan. Ablation, not per-kernel attribution, because the question is "what would
+deleting this buy" — a dispatch that fully overlaps its neighbours costs wall-clock nothing to remove,
+and attribution would still bill it. Pipeline classes are named by reflecting over `Context`'s
+pipeline fields, so it cannot drift as kernels are added.
+
+**Baseline, before any change (ms/token, ablation delta):**
+
+| class | n/token | pos=64 | % | pos=512 | % |
+|---|---|---|---|---|---|
+| gemv | 113 | 4.226 | 49.1% | 4.220 | 20.5% |
+| **attn** | 28 | 1.473 | 17.1% | **13.440** | **65.3%** |
+| **quantize** | 28 | **1.039** | **12.1%** | 1.054 | 5.1% |
+| swigluQuant | 28 | 0.848 | 9.9% | 0.840 | 4.1% |
+| gemvBias | 84 | 0.455 | 5.3% | 0.473 | 2.3% |
+| rmsQuant | 57 | 0.452 | 5.2% | 0.457 | 2.2% |
+| qkvFinalize | 28 | 0.049 | 0.6% | 0.068 | 0.3% |
+| **token** | 366 | **8.605** | | **20.570** | |
+
+Two things fall out, and neither is the megakernel:
+
+1. **Attention is the bottleneck at any real context**, and it is O(pos): 1.47 ms at pos 64 → 13.44 ms
+   at pos 512, 65% of the token. It is dispatched as `nH`=12 workgroups on a 40-SM card. This is the
+   same occupancy wall `docs/ollama-chase.md` names on the CUDA side (12 blocks / 40 SMs, 11.9%
+   occupancy) and answers there with split-KV, measured 1.30×. **Not attempted here** — flagged as
+   the next lever, not a result.
+2. **The entire glue budget K1/K3a would attack is 5.2% of the token** (rmsQuant), falling to 2.2% at
+   pos 512. Even a free, perfect K1 could not clear a 1.3× bar; CUDA's own K1+K3a bought **+1.5% on
+   the 1.5B** (its +21% was the 0.5B, which is glue-dominated). Experiment B is **NO-GO on its own
+   arithmetic**, before the expressiveness wall above is even reached.
+
+### The defect the profile exposed, fixed and measured
+
+`quantize` cost **37 µs/dispatch against rmsQuant's 7.9 µs for strictly more work** — an inversion
+with no bandwidth explanation. Cause, in the kernel's own comment: it computed the row max-abs as a
+**serial scan on lane 0**, justified as "trivial at decode; the rows run in parallel". That is exactly
+inverted — **decode is M=1, so there is only ever one row**; one lane scanned all 1536 elements while
+63 idled at the barrier, in a single-workgroup dispatch. The parallel-reduce idiom was already in the
+adjacent file (`rmsnormQuantWGSL`), which is why the two kernels' costs diverged.
+
+Replaced with a 64-lane tree reduce. **Bit-identical, provably: f32 `max` is exact and
+order-independent** (associative, commutative, no rounding), so every reduction order yields the same
+scale and the same packed int8 — this is not a tolerance argument.
+
+| | before | after | |
+|---|---|---|---|
+| `quantize` class, pos=64 | 1.039 ms | **0.104 ms** | **−90%** |
+| token, pos=64 (plan) | 8.605 ms | **7.694 ms** | −10.6% |
+| token, pos=512 (plan) | 20.570 ms | 19.709 ms | −4.2% |
+| **real-model decode** (interleaved A/B) | **104.8 / 104.8** | **118.4 / 118.4** | **+13.0%** |
+
+**And it holds through the server, which is the claim that matters.** The change is one shared
+WGSL pipeline (`c.quantizePipeline`) bound by the resident decode path, the batched/fused paths and
+the staged path alike — no flag, no build tag — so `serve` gets it by construction. Measured anyway,
+because this repo has a retired claim built on exactly that inference (an in-process kernel number
+published beside a peer's HTTP number). Real `gpu/cmd/serve`, `-backend webgpu -quant int8int8`,
+streaming `/v1/chat/completions`, greedy, 128 max tokens, inter-token rate excluding TTFT:
+
+| server-to-server | best of 4 |
+|---|---|
+| old kernel | **95.9 tok/s** |
+| new kernel | **104.3 / 104.5 tok/s** (two separate server starts, interleaved around the old) |
+| | **+8.9%** |
+
+Note the level shift: **118.4 in-process vs 104.5 through the server** on the same kernel. The
+server number is the smaller and the honest one for any user-facing claim; the in-process number is
+correct only for what it measures. TTFT was unchanged (~132–151 ms both arms) — this is a decode
+lever, not a prefill one.
+
+The decode row is a **same-session interleaved A/B** — control, treatment, control, treatment,
+rebuilding between each — not two numbers from different sessions, because this box drifts ~3.5%
+between sessions and the effect had to be separated from that. Both arms reproduced exactly
+(the harness reports best-of-6 × 48 tokens). A cross-session pair taken earlier the same day read
+103.7 → 114.0 (+9.9%); the interleaved pair supersedes it and is the number to quote.
+
+Parity: `TestResidentForwardN_parity` gives cosine=1.000000, maxAbsDiff=0 on the resident path — and
+**was run on the old kernel too, giving the same maxAbsDiff=0**, so the two agree exactly with the
+CPU reference and therefore with each other. The A/B is measured, not inferred from the max argument.
+
+**This is larger than everything Experiment B was scoped to win**, and it needed no fusion, no new
+kernel, and no dispatch-count change — which is the finding. The lever was inside a kernel the
+dispatch-count framing treated as a fixed unit.
+
+### Limits, stated
+
+- One box, one card, one dense checkpoint. `swigluQuant` (0.81 ms, 10.6% at pos 64) has the *same*
+  single-workgroup shape and was **not** examined; it is the obvious next check, not a claim.
+- The **89.7 tok/s** baseline in `docs/completed/gpu-assessment.md` §0.0 is superseded twice over:
+  fresh-and-unmodified is **104.8**, and **118.4** after this change. Both are goinfer-vs-goinfer on this
+  box. **No peer was run in this session**, so nothing here licenses restating any "% of Ollama"
+  figure — that needs a same-session interleaved `scripts/bench_peer.py` run.
+- The profiler's values go garbage after the first repetition (residual epilogues accumulate R times).
+  Deliberate: both arms are equally garbage and NVIDIA f32 has no denormal/NaN timing cliff to bias
+  the comparison. It is a timing harness; the parity tests are the correctness gate.
+- Attention's split-KV lever is **named, not measured**. The CUDA 1.30× does not transfer on its own.

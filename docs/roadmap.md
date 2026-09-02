@@ -179,6 +179,9 @@ place: a **full-token on-GPU residency forward** wins. Shipped:
   measured for v0.5.0 (~2026-06) and are stale; the cgo-free CUDA backend and the
   current Ollama v0.32.5 re-anchor supersede them — see `benchmarks.md` **§B8**.)*
   int8 decode peaks ~89.7 tok/s on the 1.5B (3.5× the staged hybrid).
+  *(Superseded 2026-09-02: fresh-and-unmodified is **104.8**, and **118.4 tok/s**
+  after G35's bit-identical `quantize` reduce fix — `docs/QUEUE.md` G35. Both are
+  goinfer-vs-goinfer on this box; no peer was re-run, so no ratio follows.)*
 
 Deferred follow-ons (named, **not scheduled** — pick up if a use case pulls):
 
@@ -315,9 +318,20 @@ v0.4.0 ships without them.** Grouped by theme; ordered within a group by leverag
   each glue link forces a barrier the GPU can't hide. Fusion + the attn
   warp-per-head rewrite already took it 22→89.7. The remaining ~4 ms glue + ~1 ms
   encode is the gap; squeezing it further needs a single-dispatch **megakernel
-  (whole layer in one dispatch), which WGSL cannot express.** So ~90–100 tok/s is
-  roughly the WebGPU ceiling on this card; past it needs native CUDA/Metal.
-  **Status: effectively at the practical *WebGPU* ceiling. Don't grind WebGPU.**
+  (whole layer in one dispatch), which WGSL cannot express.**
+
+  > **The "~90–100 tok/s WebGPU ceiling / don't grind WebGPU" call is WITHDRAWN
+  > (2026-09-02).** Measured 118.4 tok/s on the same card and checkpoint, from a
+  > **bit-identical** change that is not a fusion at all: `quantize` was computing its
+  > row max-abs as a serial scan on lane 0 of a single-workgroup dispatch. The
+  > megakernel reasoning was structurally right — WGSL still cannot express it, and
+  > G35 confirms the K1/K2/K3 grouping does not translate either — but the *ceiling
+  > number* was set by an unexamined kernel internal, not by the wall. A whole-token
+  > decomposition into "gemv + glue + barriers" bills every dispatch to a category and
+  > none to being written badly, so a 12%-of-token kernel doing 1/64th of the parallel
+  > work it could sat inside the "glue" bar for months, reading as structural.
+  > **The lever now is attention** (65% of the token by pos 512, dispatched as nH=12
+  > workgroups on 40 SMs) — see G35 in `docs/QUEUE.md`.
   **UPDATE (2026-07, MEASURED e2e): "past it needs native CUDA" is realized
   cgo-free — spike is GO.** Real q4_k_m end-to-end decode measured at **218.6 tok/s
   = 1.96× WebGPU** on the 2070 SUPER (int4/W4A8, 80% peak bandwidth; executor-path

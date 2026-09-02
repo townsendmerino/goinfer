@@ -1,9 +1,19 @@
 # Decode-perf via kernel fusion — status & next steps
 
 The decode path's throughput ceiling on WebGPU is the long, serially-dependent
-dispatch chain (~535 dispatches/token: ~197 GEMV + ~338 glue), where per-dispatch
-barrier cost dominates over kernel work. Cutting dispatch/barrier count is the lever
-for cogentcore today.
+dispatch chain, where per-dispatch barrier cost dominates over kernel work. Cutting
+dispatch/barrier count is the lever for cogentcore today.
+
+> **Correction (2026-09-02):** this line read "~535 dispatches/token: ~197 GEMV + ~338
+> glue" — the pre-Increment-1/2 count. **Measured now: 366/token = 12 per layer** (28
+> layers) + 30, across 7 pipeline classes, on the resident 1.5B. See G35 in
+> `docs/QUEUE.md`. The correction matters because "cut the dispatch count" was sized
+> against a chain roughly twice as long as the one that exists.
+>
+> **And the premise is now measured, not assumed.** G35's ablation profile puts the
+> whole remaining elementwise-glue budget at ~28% of the token at pos 64 and ~12% at
+> pos 512, against **attention at 65% by pos 512**. Dispatch/barrier count is no longer
+> the lever it was when this doc was written; the attention kernel's occupancy is.
 
 > **Correction (2026-06-19):** an earlier draft claimed a "wgpu-native v29 decode
 > penalty" that this fusion would also shrink. That penalty was **measured and does
@@ -80,3 +90,32 @@ elementwise glue geometry) — the "single megakernel per layer" that CUDA/Metal
 express. So decode-fusion headroom is bounded to the glue/elementwise chain; the GEMV
 stream (~4.3 ms/token, ~98% of the bandwidth roofline) is already optimal and unfusable
 further here.
+
+### Confirmed against the CUDA spike's stage-grouping (2026-09-02)
+
+The obvious next question — can `docs/cuda-megakernel-spec.md` §5.2's K1/K2/K3
+super-kernel grouping be built as 3 WGSL dispatches, since it was designed specifically
+to avoid needing grid-wide cooperative launch? — is **NO**, and the ceiling above is why.
+K2 (attention ⊕ quant ⊕ O-proj) needs a grid-wide sync: attention is one workgroup per
+head, O-proj needs every head. `storageBarrier()` orders memory *within* a workgroup and
+is not an execution barrier across them, so WGSL cannot express it; the redundant-recompute
+escape multiplies KV traffic by the O-proj block count (~24×) on the term that already
+dominates. K3's SwiGLU fold is expressible but bandwidth-fatal (CUDA measured ~6.9 MB/layer
+against a 4 MB L2). The reachable floor is **8 dispatches/layer — exactly where CUDA landed**,
+which also shipped K1+K3a and **reverted K2 at a measured ~0%**.
+
+That makes the fusion arithmetic decisive on its own: K1's whole target here, `rmsQuant`,
+is **5.2% of the token at pos 64 and 2.2% at pos 512**. CUDA's K1+K3a bought **+1.5% on the
+1.5B**. NO-GO, and the reason is the size of the prize, not just the expressiveness wall.
+
+**What the profile found instead** — `quantize` was doing its row max-abs as a serial scan
+on lane 0 in a single-workgroup dispatch (37 µs/dispatch vs `rmsQuant`'s 7.9 for more work).
+The comment justified it as "trivial at decode; the rows run in parallel"; decode is M=1, so
+there is exactly one row and nothing runs in parallel. A 64-lane tree reduce — the idiom
+already in `rmsnormQuantWGSL` — is **bit-identical** (f32 `max` is exact and order-independent)
+and measured **104.8 → 118.4 tok/s (+13.0%)**, same-session interleaved A/B. Full numbers and limits: G35 in `docs/QUEUE.md`.
+
+**The lesson, which is this doc's own rule turned one level inward:** "fuse dependent links,
+keeping the better launch geometry" treats each dispatch as a fixed unit with a geometry.
+The largest available win was a *bad geometry inside one kernel* — invisible to dispatch
+counting, and it survived precisely because it sat next to a kernel that already did it right.

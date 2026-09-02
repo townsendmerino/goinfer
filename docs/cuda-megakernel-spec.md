@@ -13,8 +13,17 @@
 > resident decode path (`gpu/decoderunner.go` + friends). Dense **residency-eligible
 > Qwen2/Llama decode only** — no MoE / MLA / Mamba / vision / prefill / QK-norm.
 >
-> **Status: prep artifact.** The kernel is authored + compiled + measured **on the
-> 2070 box** (Phase 2). Nothing here runs on a GPU-less machine.
+> **Status: CLOSED — the spike this belongs to has completed. Read as a record, not a
+> task (2026-09-02).** `docs/completed/task-cuda-cgofree-spike.md` carries the full
+> Phase-2 log: production backend, real-checkpoint parity, W4A8 coalescing to 80% of
+> peak, the launch diet (18→13→8/layer), and §5.2's fusion itself — **K1 and K3a shipped
+> as `cuda/fused_qkv.cu`** (behind `fuseQKV` / `GOINFER_CUDA_NO_FUSE`), **K2 built,
+> measured at ~0%, and reverted.** `cuda/megakernel.cu` is the original scaffold and is
+> now dead: the work landed in `fused_qkv.cu` instead, and nothing outside tests
+> references it. §8's "box fills" list is therefore historical.
+>
+> The WGSL counterpart question — can §5.2's K1/K2/K3 grouping be rebuilt as 3 WebGPU
+> dispatches? — was asked and answered **NO** in `docs/QUEUE.md` G35.
 
 ## 0. What must be reproduced (the correctness bar — read first)
 
