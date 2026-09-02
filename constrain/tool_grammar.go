@@ -1,8 +1,10 @@
 package constrain
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Tool-call constraint. A tool call is a fixed family wrapper around a JSON
@@ -29,7 +31,13 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 	if len(paramSchema) == 0 {
 		paramSchema = []byte(`{"type":"object","properties":{},"additionalProperties":false}`)
 	}
-	name, _ := json.Marshal(toolName)
+	paramSchema = closeEmptyToolObject(paramSchema)
+	// encodeLiteral, not json.Marshal: the tool name becomes a `const` literal in the
+	// grammar, so HTML-escaping it makes a name containing < or & unreachable (M-29).
+	name, err := encodeLiteral(toolName)
+	if err != nil {
+		return nil, fmt.Errorf("constrain: tool name: %w", err)
+	}
 	obj := fmt.Sprintf(
 		`{"type":"object","additionalProperties":false,"required":["name",%q],"properties":{"name":{"const":%s},%q:%s}}`,
 		argsKey, name, argsKey, paramSchema)
@@ -46,9 +54,14 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 	return g, nil
 }
 
+// mustMap decodes a schema document built above. UseNumber for the same reason
+// JSONSchema uses it: this is the path a TOOL's paramSchema takes, so without it a
+// large integer enum in a tool argument loses precision here instead (M-29).
 func mustMap(s string) map[string]any {
+	dec := json.NewDecoder(strings.NewReader(s))
+	dec.UseNumber()
 	var m map[string]any
-	_ = json.Unmarshal([]byte(s), &m)
+	_ = dec.Decode(&m)
 	return m
 }
 
@@ -150,4 +163,49 @@ func (g *toolGrammar) step(b byte) bool {
 		}
 		return false
 	}
+}
+
+// closeEmptyToolObject rewrites a no-argument tool schema into the closed-empty form
+// the compiler can build (M-30).
+//
+// `{"type":"object","properties":{}}` is THE canonical no-argument tool schema —
+// OpenAI's own examples, most MCP servers, and every Pydantic/zod tool with no
+// parameters emit it. compile() rejects an object with no properties and no
+// `additionalProperties:false`, correctly, because in JSON Schema that shape means
+// "any object" and the grammar can only build a closed one. But a TOOL that declared
+// its parameters and declared NONE means it takes no arguments, and reading it as
+// "any object" is the wrong of the two readings. So the narrowing happens here, in
+// the tool path where the extra context justifies it, and compile() is left strict —
+// an omitted `parameters` already mapped to this same closed-empty form, so the
+// explicit spelling now behaves like the implicit one rather than being a 400.
+//
+// Only the ambiguous case is touched: an explicit additionalProperties (true or
+// false) is left exactly as written, so `additionalProperties:true` still reaches
+// compile() and is still refused rather than being silently narrowed.
+func closeEmptyToolObject(schema []byte) []byte {
+	dec := json.NewDecoder(bytes.NewReader(schema))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return schema // not an object literal; let compile report it
+	}
+	if t, _ := m["type"].(string); t != "object" {
+		return schema
+	}
+	if _, present := m["additionalProperties"]; present {
+		return schema
+	}
+	if props, ok := m["properties"].(map[string]any); ok && len(props) > 0 {
+		return schema
+	} else if !ok {
+		if _, present := m["properties"]; present {
+			return schema // properties present but not an object — compile reports it
+		}
+	}
+	m["additionalProperties"] = false
+	out, err := json.Marshal(m)
+	if err != nil {
+		return schema
+	}
+	return out
 }

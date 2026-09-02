@@ -838,22 +838,22 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:545` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:283` | goinfer | `func TestRealckptCellCanReachEveryGate(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:319` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `anchor: func (m *Masker) ForcedBytesRun(max int) []byte {` |
-| `docs/audit-2026-09-02.md|constrain/constrain.go:211` | goinfer | `anchor: func (m *Masker) StopWhenComplete() *Masker {` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `anchor: func (m *Masker) StopWhenComplete() *Masker {` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:211` | goinfer | `logits[id] = neg` |
 | `docs/audit-2026-09-02.md|constrain/json.go:84` | goinfer | `func (g *jsonGrammar) CanEnd() bool {` |
 | `docs/audit-2026-09-02.md|constrain/json.go:96` | goinfer | `func (g *jsonGrammar) TryBytes(bs []byte) bool {` |
-| `docs/audit-2026-09-02.md|constrain/reflect.go:10` | goinfer | `// GrammarFromStruct derives a JSON Schema from a Go struct (via its json tags)` |
-| `docs/audit-2026-09-02.md|constrain/reflect.go:103` | goinfer | `case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,` |
-| `docs/audit-2026-09-02.md|constrain/reflect.go:63` | goinfer | `for f := range t.Fields() {` |
-| `docs/audit-2026-09-02.md|constrain/schema.go:187` | goinfer | `propsRaw, _ := s["properties"].(map[string]any)` |
-| `docs/audit-2026-09-02.md|constrain/schema.go:191` | goinfer | `// An object with no declared properties and no `additionalProperties:false` is the` |
-| `docs/audit-2026-09-02.md|constrain/schema.go:298` | goinfer | `// encodeLiteral renders an enum/const value to the compact JSON bytes the model` |
-| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:80` | goinfer | `// enum literal has no closing delimiter, so it's done as soon as it can't extend).` |
-| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:81` | goinfer | `func (g *schemaGrammar) CanEnd() bool {` |
-| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:98` | goinfer | `func (g *schemaGrammar) TryBytes(bs []byte) bool {` |
-| `docs/audit-2026-09-02.md|constrain/schema_test.go:180` | goinfer | `out := genConstrained(t, g, int64(i)+1, 15) // cap digits so ints fit int64` |
-| `docs/audit-2026-09-02.md|constrain/tool_grammar.go:29` | goinfer | `if len(paramSchema) == 0 {` |
-| `docs/audit-2026-09-02.md|constrain/tool_grammar.go:32` | goinfer | `name, _ := json.Marshal(toolName)` |
+| `docs/audit-2026-09-02.md|constrain/reflect.go:12` | goinfer | `// GrammarFromStruct derives a JSON Schema from a Go struct (via its json tags)` |
+| `docs/audit-2026-09-02.md|constrain/reflect.go:178` | goinfer | `case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:` |
+| `docs/audit-2026-09-02.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
+| `docs/audit-2026-09-02.md|constrain/schema.go:196` | goinfer | `propsRaw, _ := s["properties"].(map[string]any)` |
+| `docs/audit-2026-09-02.md|constrain/schema.go:200` | goinfer | `// An object with no declared properties and no `additionalProperties:false` is the` |
+| `docs/audit-2026-09-02.md|constrain/schema.go:318` | goinfer | `// encodeLiteral renders an enum/const value to the compact JSON bytes the model must` |
+| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:105` | goinfer | `func (g *schemaGrammar) TryBytes(bs []byte) bool {` |
+| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:78` | goinfer | `// CanEnd reports whether the committed output is a complete document: the root` |
+| `docs/audit-2026-09-02.md|constrain/schema_grammar.go:88` | goinfer | `func (g *schemaGrammar) CanEnd() bool {` |
+| `docs/audit-2026-09-02.md|constrain/schema_test.go:183` | goinfer | `out := genConstrained(t, g, int64(i)+1, 15) // cap digits so ints fit int64` |
+| `docs/audit-2026-09-02.md|constrain/tool_grammar.go:31` | goinfer | `if len(paramSchema) == 0 {` |
+| `docs/audit-2026-09-02.md|constrain/tool_grammar.go:37` | goinfer | `name, err := encodeLiteral(toolName)` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:204` | goinfer | `hls := make([]hlayer, nLayers)` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:225` | goinfer | `hl.isDeltaNet = true` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:455` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |

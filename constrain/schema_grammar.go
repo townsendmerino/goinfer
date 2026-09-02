@@ -76,8 +76,15 @@ func (g *schemaGrammar) Clone() Grammar {
 }
 
 // CanEnd reports whether the committed output is a complete document: the root
-// value finished, or we're sitting on a complete top-level scalar (a number or
-// enum literal has no closing delimiter, so it's done as soon as it can't extend).
+// value finished, or we're sitting on a complete top-level scalar (a number or enum
+// literal has no closing delimiter, so it is complete as soon as what has been
+// committed is ITSELF a legal value).
+//
+// MAY-end, not MUST-end. `1` satisfies this and `12` is still reachable — the old
+// comment here said "done as soon as it can't extend", which describes neither this
+// function nor any caller, and StopWhenComplete acted on that reading and truncated
+// every top-level number to one digit (M-27). Extension is the caller's business:
+// Masker.maskID keeps any token that genuinely extends the value.
 func (g *schemaGrammar) CanEnd() bool {
 	if g.done {
 		return true
@@ -456,6 +463,9 @@ func (g *schemaGrammar) enumTerminal(f *frame) bool {
 func numStartSchema(f *frame, b byte) bool {
 	switch {
 	case b == '-':
+		if f.n.nonNeg {
+			return false // minimum:0 — an unsigned field cannot open with a sign (M-28)
+		}
 		f.num = snNeg
 	case b == '0':
 		f.num = snZero

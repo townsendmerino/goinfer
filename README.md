@@ -115,7 +115,7 @@ sp.LogitProcessor = constrain.NewMasker(g, toks, eos).StopWhenComplete().Process
 
 out := generate(sp)                                  // constrained decode
 var p Person
-_ = json.Unmarshal(out, &p)                          // always succeeds
+_ = json.Unmarshal(out, &p)                          // shape guaranteed, not magnitude
 ```
 
 Works from any JSON Schema too (`constrain.JSONSchema(bytes)`), or from the demo:

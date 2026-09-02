@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A small byte-piece "vocabulary" for the property test: every printable ASCII
@@ -358,4 +361,241 @@ func eqJSON(a, b any) error {
 		return fmt.Errorf("%s != %s", ab, bb)
 	}
 	return nil
+}
+
+// M-29: enum/const literals went through json.Marshal, which HTML-ESCAPES by default.
+//
+// For {"enum":["<",">","="]} the grammar demanded "<", so the natural continuation `<`
+// was masked at −∞ and a greedy model slid to whichever member remained reachable. The output
+// still VALIDATES — the oracle marshals both sides the same way — which is why no round-trip
+// test could see it. The assertion has to be on the literal bytes the grammar forces.
+func TestEncodeLiteral_doesNotHTMLEscape(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"<", `"<"`},
+		{">", `">"`},
+		{"a&b", `"a&b"`},
+		{"x", `"x"`},
+	} {
+		got, err := encodeLiteral(tc.in)
+		if err != nil {
+			t.Fatalf("encodeLiteral(%q): %v", tc.in, err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("encodeLiteral(%q) = %s, want %s — an escaped literal is unreachable for "+
+				"the model even though the result still validates (M-29)", tc.in, got, tc.want)
+		}
+	}
+	// And no trailing newline: json.Encoder appends one, and a literal must be exact.
+	if got, _ := encodeLiteral("x"); string(got) != `"x"` {
+		t.Errorf("encodeLiteral left trailing bytes: %q", got)
+	}
+}
+
+// The masker half of M-29: `<` must actually be a legal first token for that enum.
+func TestSchemaGrammar_htmlUnsafeEnumIsReachable(t *testing.T) {
+	g, err := JSONSchema([]byte(`{"enum":["<",">","="]}`))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if !g.TryBytes([]byte(`"<`)) {
+		t.Error(`the grammar rejects "< as a prefix: the < member of the enum is unreachable, ` +
+			`so a model asked to choose it must pick a different one (M-29)`)
+	}
+}
+
+// The precision half of M-29: an integer enum above 2^53 must survive the schema decode.
+// float64 turns 9007199254740993 into ...992, and the grammar then forces a literal the
+// caller never wrote — which validates against nothing the caller can check.
+func TestSchemaGrammar_largeIntegerEnumKeepsItsDigits(t *testing.T) {
+	const big = "9007199254740993" // 2^53 + 1, not representable in float64
+	g, err := JSONSchema([]byte(`{"enum":[` + big + `]}`))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if !g.TryBytes([]byte(big)) {
+		t.Errorf("the grammar rejects %s, the only member of its own enum — the schema was "+
+			"decoded through float64 and re-encoded with different digits (M-29)", big)
+	}
+	// The premise, so this cannot pass for the wrong reason: float64 really does change it.
+	if fmt.Sprintf("%.0f", 9007199254740993.0) == big {
+		t.Skip("float64 now represents 2^53+1 exactly; this test no longer describes the defect")
+	}
+}
+
+// M-30: `{"type":"object","properties":{}}` is THE canonical no-argument tool schema —
+// OpenAI's examples, most MCP servers, every Pydantic/zod no-arg tool — and it was a compile
+// error, so a named tool_choice for such a tool came back 400. An OMITTED `parameters`
+// already worked, so the two spellings of "no arguments" disagreed.
+func TestToolCallGrammar_noArgumentSchemas(t *testing.T) {
+	for name, schema := range map[string]string{
+		"explicit empty properties": `{"type":"object","properties":{}}`,
+		"absent properties":         `{"type":"object"}`,
+		"already closed":            `{"type":"object","properties":{},"additionalProperties":false}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			g, err := ToolCallGrammar("", "", "arguments", "ping", false, []byte(schema))
+			if err != nil {
+				t.Fatalf("ToolCallGrammar(%s): %v — a no-argument tool is refused, and "+
+					"serveapp turns that into a 400 under a named tool_choice (M-30)", schema, err)
+			}
+			if !g.TryBytes([]byte(`{"name":"ping","arguments":{}}`)) {
+				t.Errorf("%s: the grammar rejects the only call such a tool can make", schema)
+			}
+		})
+	}
+
+	// NOT narrowed: an explicit additionalProperties:true is still a freeform object, still
+	// unconstrainable, and must still be refused rather than silently turned into "{} only".
+	// Without this, the fix would look identical to one that accepts everything.
+	if _, err := ToolCallGrammar("", "", "arguments", "ping", false,
+		[]byte(`{"type":"object","properties":{},"additionalProperties":true}`)); err == nil {
+		t.Error("additionalProperties:true compiled — a freeform object was silently narrowed " +
+			"to the empty object, which is tighter than the schema means")
+	}
+}
+
+// M-28: SchemaFromStruct did not flatten embedded structs, and the "json.Unmarshal always
+// succeeds" contract was false three separate ways.
+//
+// The embedded case is the worst of them because it is SILENT: `type Person struct { Base;
+// Name string }` produced {"Base":{…},"name":…}, the model satisfied that schema, and
+// json.Unmarshal accepted the result WITHOUT ERROR while leaving every promoted field zero.
+// A round-trip test that only checks `err == nil` passes on it.
+func TestSchemaFromStruct_embeddedFieldsArePromoted(t *testing.T) {
+	type Base struct {
+		ID int `json:"id"`
+	}
+	type Person struct {
+		Base
+		Name string `json:"name"`
+	}
+	raw, err := SchemaFromStruct(Person{})
+	if err != nil {
+		t.Fatalf("SchemaFromStruct: %v", err)
+	}
+	var doc struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	if _, promoted := doc.Properties["id"]; !promoted {
+		t.Errorf("embedded Base was not promoted; properties = %v. json.Unmarshal expects `id` "+
+			"at the top level, and the un-promoted schema round-trips WITHOUT ERROR while "+
+			"leaving ID zero (M-28)", slices.Sorted(maps.Keys(doc.Properties)))
+	}
+	if _, asObject := doc.Properties["Base"]; asObject {
+		t.Error(`the embedded struct appears as a property named "Base"`)
+	}
+	if !slices.Contains(doc.Required, "id") {
+		t.Errorf("promoted `id` is not required; required = %v", doc.Required)
+	}
+
+	// THE END-TO-END CHECK the shape argument rests on: what the grammar produces must
+	// actually populate the promoted field, not merely parse.
+	var p Person
+	if err := json.Unmarshal([]byte(`{"id":7,"name":"x"}`), &p); err != nil || p.ID != 7 {
+		t.Fatalf("premise: json.Unmarshal promotes id (got ID=%d, err=%v)", p.ID, err)
+	}
+	if err := json.Unmarshal([]byte(`{"Base":{"id":7},"name":"x"}`), &p); err != nil {
+		t.Fatalf("premise: the OLD schema's output must parse without error — that is what "+
+			"made this silent (err=%v)", err)
+	}
+}
+
+// An embedded field WITH an explicit json name is a normal property, per encoding/json's
+// own rule. A fix that promoted unconditionally would be wrong in the other direction.
+func TestSchemaFromStruct_namedEmbeddedIsNotPromoted(t *testing.T) {
+	type Base struct {
+		ID int `json:"id"`
+	}
+	type Person struct {
+		Base `json:"base"`
+		Name string `json:"name"`
+	}
+	raw, err := SchemaFromStruct(Person{})
+	if err != nil {
+		t.Fatalf("SchemaFromStruct: %v", err)
+	}
+	if !strings.Contains(string(raw), `"base"`) {
+		t.Errorf("a json-named embedded field was promoted anyway: %s", raw)
+	}
+}
+
+// The other two halves of the false contract, both of which used to compile to a schema the
+// model could satisfy and json.Unmarshal could not accept.
+func TestSchemaFromStruct_selfUnmarshalingTypes(t *testing.T) {
+	t.Run("time.Time maps to string", func(t *testing.T) {
+		type Ev struct {
+			At time.Time `json:"at"`
+		}
+		raw, err := SchemaFromStruct(Ev{})
+		if err != nil {
+			t.Fatalf("SchemaFromStruct: %v", err)
+		}
+		if !strings.Contains(string(raw), `"at":{"type":"string"}`) {
+			t.Errorf("time.Time did not map to string: %s\n"+
+				"as an object it has no exported fields, so the grammar forced `{}` — the one "+
+				"value time.Time's UnmarshalJSON rejects (M-28)", raw)
+		}
+	})
+	t.Run("a struct with no exported fields is refused", func(t *testing.T) {
+		// The unexported field is the POINT: a struct whose only field is unexported has no
+		// JSON shape to derive. staticcheck cannot know that, so the suppression is explicit.
+		//lint:ignore U1000 deliberately unexported — the fixture is a struct with no exported fields
+		type Opaque struct{ hidden int }
+		type Wrap struct {
+			O Opaque `json:"o"`
+		}
+		if _, err := SchemaFromStruct(Wrap{}); err == nil {
+			t.Error("compiled to `{}`-only instead of erroring; the model can then produce only " +
+				"the empty object, which is not what the field means")
+		}
+	})
+}
+
+// The unsigned half. This is also where the audit found the "test supplies its own calling
+// convention" trap: the property test at schema_test.go worked around unbounded integers with
+// its OWN 15-digit cap, which made the schema look adequate.
+func TestSchemaFromStruct_unsignedRejectsNegative(t *testing.T) {
+	type Q struct {
+		N uint32 `json:"n"`
+	}
+	raw, err := SchemaFromStruct(Q{})
+	if err != nil {
+		t.Fatalf("SchemaFromStruct: %v", err)
+	}
+	g, err := JSONSchema(raw)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if g.TryBytes([]byte(`{"n":-`)) {
+		t.Error(`a uint32 field accepts a leading "-": json.Unmarshal then FAILS on the ` +
+			`grammar's own output (M-28)`)
+	}
+	// Signed fields must be unaffected — a fix that banned '-' everywhere would pass above.
+	type S struct {
+		N int32 `json:"n"`
+	}
+	sraw, _ := SchemaFromStruct(S{})
+	sg, err := JSONSchema(sraw)
+	if err != nil {
+		t.Fatalf("compile signed: %v", err)
+	}
+	if !sg.TryBytes([]byte(`{"n":-`)) {
+		t.Error("an int32 field now rejects a negative number")
+	}
+
+	// STATED, NOT FIXED: magnitude is still unbounded, which is exactly why the docstring no
+	// longer promises json.Unmarshal always succeeds. Pinned so the gap cannot be forgotten
+	// or quietly "fixed" without updating the contract that describes it.
+	type B struct {
+		N uint8 `json:"n"`
+	}
+	braw, _ := SchemaFromStruct(B{})
+	bg, _ := JSONSchema(braw)
+	if !bg.TryBytes([]byte(`{"n":99999`)) {
+		t.Log("uint8 now bounds magnitude — update SchemaFromStruct's docstring, which says it does not")
+	}
 }

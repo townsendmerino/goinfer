@@ -144,20 +144,7 @@ func (m *Masker) MaskAt(g Grammar, logits []float32) {
 	neg := float32(math.Inf(-1))
 	canEnd := g.CanEnd()
 	for id := range logits {
-		if m.eosAt(id) {
-			if !canEnd {
-				logits[id] = neg
-			}
-			continue
-		}
-		if canEnd && m.stopAtEnd {
-			logits[id] = neg
-			continue
-		}
-		// Same empty-surface guard as Process, and tokenBytes bounds-checks id against
-		// the table so a model-vocab-length logits slice (padded past the tokenizer)
-		// can't index m.tokens out of range — M26.
-		if b := m.tokenBytes(id); len(b) == 0 || !g.TryBytes(b) {
+		if m.maskID(g, id, canEnd) {
 			logits[id] = neg
 		}
 	}
@@ -220,26 +207,60 @@ func (m *Masker) Process(generated []int, logits []float32) {
 	neg := float32(math.Inf(-1))
 	canEnd := m.g.CanEnd()
 	for id := range logits {
-		if m.eosAt(id) {
-			if !canEnd {
-				logits[id] = neg
-			}
-			continue
-		}
-		// StopWhenComplete: at a completion point, only EOS survives.
-		if canEnd && m.stopAtEnd {
-			logits[id] = neg
-			continue
-		}
-		// An id with no surface bytes (a control token, or a padded-vocab id past the
-		// tokenizer table — tokenBytes returns nil for both) can never advance the
-		// grammar: TryBytes(nil) is vacuously true, so leaving it legal lets the sampler
-		// pick an id that never progresses, livelocking to maxTokens and then failing to
-		// Decode. Mask it (EOS was already handled above) — M26.
-		if b := m.tokenBytes(id); len(b) == 0 || !m.g.TryBytes(b) {
+		if m.maskID(m.g, id, canEnd) {
 			logits[id] = neg
 		}
 	}
+}
+
+// maskID reports whether token id must be masked in grammar state g. It is the ONE
+// masking rule; Process and MaskAt both call it, because they had two verbatim copies
+// of it and M-27 was a defect in the copy — the shape this audit keeps turning up.
+//
+// canEnd is passed in rather than recomputed: both callers need it for the EOS branch
+// and CanEnd is not free on every grammar.
+func (m *Masker) maskID(g Grammar, id int, canEnd bool) bool {
+	if m.eosAt(id) {
+		return !canEnd // EOS only once the document is complete
+	}
+	b := m.tokenBytes(id)
+	// An id with no surface bytes (a control token, or a padded-vocab id past the
+	// tokenizer table — tokenBytes returns nil for both) can never advance the
+	// grammar: TryBytes(nil) is vacuously true, so leaving it legal lets the sampler
+	// pick an id that never progresses, livelocking to maxTokens and then failing to
+	// Decode. Mask it (EOS was already handled above) — M26. tokenBytes also
+	// bounds-checks id, so a model-vocab-length logits slice (padded past the
+	// tokenizer) can't index m.tokens out of range.
+	if len(b) == 0 || !g.TryBytes(b) {
+		return true
+	}
+	// StopWhenComplete: stop at the first complete document rather than trailing to
+	// maxTokens. M-27: this used to mask EVERY non-EOS token at a completion point,
+	// which conflates MAY-end with MUST-end. CanEnd is true after `1` for a top-level
+	// number — but `12` is a longer legal document, not trailing filler, so blanket
+	// masking made `{"type":"integer"}` return exactly one digit and
+	// `{"enum":[1,10,100]}` able to produce only `1`.
+	//
+	// What StopWhenComplete is actually for is suppressing the WHITESPACE the grammars
+	// permit at every structural boundary, so that is what it suppresses. A token that
+	// genuinely extends the VALUE has already passed TryBytes above and is kept. This
+	// needs no per-grammar may-end/must-end split: whitespace-only is the exact
+	// property, and it is the same one for json, schema and tool grammars.
+	if canEnd && m.stopAtEnd && allJSONSpace(b) {
+		return true
+	}
+	return false
+}
+
+// allJSONSpace reports whether b is non-empty and entirely RFC 8259 whitespace — the
+// only continuation a completed document can take that does not change its value.
+func allJSONSpace(b []byte) bool {
+	for _, c := range b {
+		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+			return false
+		}
+	}
+	return len(b) > 0
 }
 
 // CanEnd reports whether the committed output is a complete, valid document.

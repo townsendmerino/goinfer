@@ -200,3 +200,86 @@ func TestConstrainedDecode_alwaysValidJSON(t *testing.T) {
 	}
 	t.Logf("%d/%d trials produced a complete, valid JSON document under random logits", completed, trials)
 }
+
+// M-27: StopWhenComplete truncated a top-level scalar at its first completion point.
+//
+// CanEnd is a MAY-end predicate — `1` is a complete integer document and `12` is a longer
+// one — but StopWhenComplete read it as MUST-end and masked every non-EOS token there. So
+// `response_format: {"type":"integer"}` could only ever return a SINGLE DIGIT, and
+// `{"enum":[1,10,100]}` could only ever produce `1`. No test caught it because none drove a
+// TOP-LEVEL scalar: every existing case is an object or array, whose completion point really
+// does admit nothing but whitespace, so the bug is invisible there.
+//
+// This drives the real Masker and asks what it permits, rather than asserting a generated
+// string — the defect is in the mask, and a sampler that happened to pick EOS would hide it.
+func TestMasker_stopWhenComplete_scalarsMayStillExtend(t *testing.T) {
+	// "1" "2" "0" " " eos — a digit continuation and a whitespace continuation, so the two
+	// cases the rule must separate are both in the vocabulary.
+	vocab := bytesVocab("1", "2", "0", " ", "")
+	const eos = 4
+	allowed := func(t *testing.T, g Grammar, prefix []int) map[string]bool {
+		t.Helper()
+		m := NewMasker(g, vocab, []int{eos}).StopWhenComplete()
+		logits := make([]float32, len(vocab))
+		m.Process(prefix, logits)
+		out := map[string]bool{}
+		for id, v := range logits {
+			if !math.IsInf(float64(v), -1) {
+				out[string(vocab[id])] = true
+			}
+		}
+		return out
+	}
+
+	t.Run("integer", func(t *testing.T) {
+		g, err := JSONSchema([]byte(`{"type":"integer"}`))
+		if err != nil {
+			t.Fatalf("compile: %v", err)
+		}
+		got := allowed(t, g, []int{0}) // committed "1" — a complete integer, and extensible
+		if !got[""] {
+			t.Error("EOS masked after \"1\" — a complete integer must be allowed to stop")
+		}
+		if !got["2"] {
+			t.Error(`"2" masked after "1": {"type":"integer"} can only ever return one digit (M-27)`)
+		}
+		if got[" "] {
+			t.Error(`whitespace allowed after a complete "1" — StopWhenComplete must still ` +
+				`suppress trailing filler, or the fix has simply disabled it`)
+		}
+	})
+
+	t.Run("enum with a shared prefix", func(t *testing.T) {
+		// 1 is a member AND a prefix of 10 and 100: the completion point sits mid-literal.
+		g, err := JSONSchema([]byte(`{"enum":[1,10,100]}`))
+		if err != nil {
+			t.Fatalf("compile: %v", err)
+		}
+		got := allowed(t, g, []int{0}) // committed "1"
+		if !got[""] {
+			t.Error(`EOS masked after "1" — 1 is itself a member of the enum`)
+		}
+		if !got["0"] {
+			t.Error(`"0" masked after "1": the enum can only ever produce 1, never 10 or 100 (M-27)`)
+		}
+	})
+
+	// THE OTHER DIRECTION, which matters as much: a fix that simply stopped masking would
+	// pass everything above and silently delete StopWhenComplete. A completed OBJECT admits
+	// nothing but whitespace, and that must still be masked down to EOS alone.
+	t.Run("object still stops", func(t *testing.T) {
+		ov := bytesVocab("{", "}", " ", "")
+		const oeos = 3
+		m := NewMasker(JSON(), ov, []int{oeos}).StopWhenComplete()
+		logits := make([]float32, len(ov))
+		m.Process([]int{0, 1}, logits) // "{}"
+		for id := range oeos {
+			if !math.IsInf(float64(logits[id]), -1) {
+				t.Errorf("token %q allowed after a complete {} — StopWhenComplete is not stopping", ov[id])
+			}
+		}
+		if math.IsInf(float64(logits[oeos]), -1) {
+			t.Error("EOS masked after {}")
+		}
+	})
+}

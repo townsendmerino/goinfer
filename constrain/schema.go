@@ -1,6 +1,7 @@
 package constrain
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -49,6 +50,7 @@ type node struct {
 
 	// number
 	intOnly bool
+	nonNeg  bool // reject a leading '-' (unsigned Go kinds; JSON Schema minimum:0)
 
 	// enum: the allowed values' compact JSON encodings (≤64 entries)
 	enum [][]byte
@@ -62,8 +64,13 @@ type propNode struct {
 // JSONSchema compiles a JSON Schema document into a Grammar. It returns an error
 // for an unsupported keyword/shape (so an unenforceable constraint is loud).
 func JSONSchema(schema []byte) (Grammar, error) {
+	// UseNumber, not plain Unmarshal: an integer enum/const above 2^53 decoded into
+	// float64 comes back out of encodeLiteral with different digits, and the grammar
+	// then forces a literal the caller never wrote (M-29).
+	dec := json.NewDecoder(bytes.NewReader(schema))
+	dec.UseNumber()
 	var doc map[string]any
-	if err := json.Unmarshal(schema, &doc); err != nil {
+	if err := dec.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("constrain: parse schema: %w", err)
 	}
 	n, err := compile(doc)
@@ -86,7 +93,7 @@ var schemaKeywords = map[string]bool{
 	// enforced
 	"type": true, "enum": true, "const": true,
 	"properties": true, "required": true, "additionalProperties": true, "items": true,
-	"minItems": true, "maxItems": true,
+	"minItems": true, "maxItems": true, "minimum": true,
 	// annotation-only — allowed, not enforced
 	"title": true, "description": true, "default": true, "examples": true, "format": true,
 	"$schema": true, "$id": true, "$comment": true,
@@ -141,10 +148,12 @@ func compile(s map[string]any) (*node, error) {
 		return compileArray(s)
 	case "string":
 		return &node{kind: kString}, nil
-	case "number":
-		return &node{kind: kNumber}, nil
-	case "integer":
-		return &node{kind: kNumber, intOnly: true}, nil
+	case "number", "integer":
+		nn, err := nonNegativeKeyword(s)
+		if err != nil {
+			return nil, err
+		}
+		return &node{kind: kNumber, intOnly: typ == "integer", nonNeg: nn}, nil
 	case "boolean":
 		return &node{kind: kEnum, enum: [][]byte{[]byte("true"), []byte("false")}}, nil
 	case "null":
@@ -285,8 +294,19 @@ func intKeyword(s map[string]any, key string) (val int, present bool, err error)
 	if !ok {
 		return 0, false, nil
 	}
-	f, ok := raw.(float64)
-	if !ok {
+	// Both forms: json.Number from the UseNumber decode above, float64 from a
+	// map built in Go (mustMap, and callers that construct a schema directly).
+	var f float64
+	switch v := raw.(type) {
+	case json.Number:
+		p, err := v.Float64()
+		if err != nil {
+			return 0, true, fmt.Errorf("constrain: %s must be a number", key)
+		}
+		f = p
+	case float64:
+		f = v
+	default:
 		return 0, true, fmt.Errorf("constrain: %s must be a number", key)
 	}
 	if f < 0 || f != math.Trunc(f) {
@@ -295,12 +315,61 @@ func intKeyword(s map[string]any, key string) (val int, present bool, err error)
 	return int(f), true, nil
 }
 
-// encodeLiteral renders an enum/const value to the compact JSON bytes the model
-// must reproduce exactly (json.Marshal gives canonical, space-free output).
+// encodeLiteral renders an enum/const value to the compact JSON bytes the model must
+// reproduce exactly.
+//
+// NOT json.Marshal, which HTML-ESCAPES by default (M-29). For {"enum":["<",">","="]}
+// it emits "\u003c", so the grammar masks the natural continuation `<` at −∞ and a
+// greedy model slides to whichever member IS reachable. The output still validates —
+// the oracle marshals both sides the same way — so the failure is silent and shows up
+// only as the model "preferring" a different literal than it did unconstrained.
+//
+// json.Number is emitted VERBATIM: the schema is decoded with UseNumber precisely so
+// an integer enum above 2^53 is not routed through float64 and re-encoded with lost
+// precision, which would make the literal unreachable for a different reason.
 func encodeLiteral(v any) ([]byte, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
+	if n, ok := v.(json.Number); ok {
+		return []byte(n.String()), nil
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
 		return nil, fmt.Errorf("constrain: encode enum/const literal: %w", err)
 	}
-	return b, nil
+	// Encode appends a newline; the literal must be the exact bytes and nothing more.
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
+// nonNegativeKeyword reads `minimum`, which is supported for the value 0 ONLY — the
+// grammar can enforce "no leading minus" as a prefix rule, which is all minimum:0 is,
+// but a general numeric bound needs magnitude comparison the byte FSM does not do.
+// Anything else is refused rather than silently ignored, per this compiler's rule that
+// an unenforceable constraint is loud. `minimum` was previously not a known keyword at
+// all, so every schema carrying it already errored; this only ever widens what compiles.
+//
+// SchemaFromStruct emits minimum:0 for the unsigned Go kinds (M-28).
+func nonNegativeKeyword(s map[string]any) (bool, error) {
+	raw, ok := s["minimum"]
+	if !ok {
+		return false, nil
+	}
+	var f float64
+	switch v := raw.(type) {
+	case json.Number:
+		p, err := v.Float64()
+		if err != nil {
+			return false, fmt.Errorf("constrain: minimum must be a number")
+		}
+		f = p
+	case float64:
+		f = v
+	default:
+		return false, fmt.Errorf("constrain: minimum must be a number")
+	}
+	if f != 0 {
+		return false, fmt.Errorf("constrain: only minimum:0 is supported (a general numeric "+
+			"bound is not enforceable by a byte grammar), got %v", raw)
+	}
+	return true, nil
 }
