@@ -95,14 +95,26 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 }
 
 // TestForwardN_matchesSequential checks the batched multi-position forward
-// (forwardLayersN, whose attention is the SIMD-matmul attendBatchedHeads) agrees
-// with running forward() one token at a time (the scalar attendQuery). The bar is
-// the speculative verifier's: argmax-exact at every position, plus high cosine —
-// NOT bit-identical, since batched attention moved QKᵀ/scores·V onto the f32 SIMD
-// A·Bᵀ kernel (float64→f32 accumulation + matmul reassociation), the same
-// parity standard the GPU residency attention meets. K=192 is included so the
-// O(L²) attention term is actually exercised (K=6 barely touches it). Skips
-// without the model asset.
+// (forwardLayersN) against running forward() one token at a time. The bar is BIT-IDENTITY: every
+// logit equal, not argmax plus a cosine floor.
+//
+// THE COMMENT THAT USED TO BE HERE DESCRIBED A DIFFERENT CODEBASE. It said "NOT bit-identical,
+// since batched attention moved QKᵀ/scores·V onto the f32 SIMD A·Bᵀ kernel" against "the scalar
+// attendQuery" — but decode has not used attendQuery since single-token decode was routed through
+// attendBatchedHeads at K=1 with acc64. attention.go says so where it does it, names THIS test as
+// the gate, and gives the reason: f32's reduction is M-dependent, so K=1 decode ≠ M=K verify, and
+// that flipped ~11% of argmaxes and left ~7% of speculations rejected. f64 is order-independent, so
+// the two are exact.
+//
+// So the gate was one assertion weaker than the contract it guards: a regression breaking
+// decode == prefill by 1e-6 passed here and only the heavy token-level spec-parity gates would have
+// noticed (audit-2026-09-02 G-06). Measured before tightening — 0 differing logits of 19,447,808 at
+// K=128 on qwen2.5-coder-0.5b int8int8 — so this asserts a property the code has, not one it ought
+// to have. forwardN passes fastAttn=false, so the A3 f32 path is not in play here; that path is
+// deliberately NOT bit-identical and has its own gate.
+//
+// K=128 is included so the O(L²) attention term is actually exercised (K=6 barely touches it).
+// Skips without the model asset.
 func TestForwardN_matchesSequential(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
@@ -139,33 +151,32 @@ func TestForwardN_matchesSequential(t *testing.T) {
 				t.Fatalf("cache positions: seq=%d batch=%d want %d", cseq.Pos(), cbat.Pos(), K)
 			}
 
-			var worstCos, worstMaxd float64 = 1, 0
+			// EVERY LOGIT EQUAL. Same standard as TestMoEExpertMajor_bitIdentical, and the one
+			// attention.go's acc64 comment claims. A cosine floor cannot express it: 0.99 admits a
+			// drift big enough to flip argmaxes downstream, which is exactly what the f32 path did
+			// before acc64.
+			ndiff := 0
+			var worstMaxd float64
 			for i := range K {
-				if argmax(seq[i]) != argmax(bat[i]) {
-					t.Fatalf("position %d: argmax seq=%d batch=%d", i, argmax(seq[i]), argmax(bat[i]))
-				}
-				cos := logitCosine(seq[i], bat[i])
-				var maxd float64
 				for j := range seq[i] {
-					if d := math.Abs(float64(seq[i][j] - bat[i][j])); d > maxd {
-						maxd = d
+					if seq[i][j] != bat[i][j] {
+						ndiff++
+						if d := math.Abs(float64(seq[i][j] - bat[i][j])); d > worstMaxd {
+							worstMaxd = d
+						}
+						if ndiff <= 3 { // name the first few rather than 19M of them
+							t.Errorf("position %d logit %d: sequential %v != batched %v — decode and "+
+								"the batched forward must be BIT-IDENTICAL (attention.go routes K=1 "+
+								"through attendBatchedHeads with acc64 precisely so they are)",
+								i, j, seq[i][j], bat[i][j])
+						}
 					}
 				}
-				if cos < worstCos {
-					worstCos = cos
-				}
-				if maxd > worstMaxd {
-					worstMaxd = maxd
-				}
-				// argmax-exact (above) is the hard bar; cosine ≥ 0.99 is the GPU-path
-				// sanity floor (f32-SIMD attention over the full stack drifts ~0.998
-				// vs the float64 scalar reference — accepted, not bit-identical).
-				if cos < 0.99 {
-					t.Errorf("position %d: cosine %.6f < 0.99 (max logit diff %.2e)", i, cos, maxd)
-				}
 			}
-			t.Logf("K=%d: argmax exact all positions; worst cosine %.6f, worst max logit diff %.2e",
-				K, worstCos, worstMaxd)
+			if ndiff > 0 {
+				t.Errorf("K=%d: %d logit(s) differ, worst |delta| %.3e", K, ndiff, worstMaxd)
+			}
+			t.Logf("K=%d: bit-identical across %d logits", K, K*len(seq[0]))
 		})
 	}
 }
