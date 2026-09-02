@@ -1149,7 +1149,7 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/deltanet.go:13` | goinfer | `// This is the mixer that makes every DeltaNet hybrid CPU-only on every backend today: 4` |
 | `docs/audit-2026-09-02.md|gpu/doc.go:19` | goinfer | `// Status: FOUNDATION cut. A single `dst = a·bᵀ` GEMM offloaded to the GPU` |
 | `docs/audit-2026-09-02.md|gpu/doc.go:6` | goinfer | `// wgpu-native Rust library) is allowed to appear. Every file except this doc` |
-| `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:119` | goinfer | `func f32to16(f float32) uint16 {` |
+| `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:121` | goinfer | `func f32to16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:25` | goinfer | `@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] in` |
 | `docs/audit-2026-09-02.md|gpu/gemv_w8a16.go:21` | goinfer | `@group(0) @binding(0) var<storage, read>       act:     array<f32>;        // [kp] f32 a` |
 | `docs/audit-2026-09-02.md|gpu/gpu.go:51` | goinfer | `// not. Not safe for concurrent use by multiple goroutines; wrap in your` |
