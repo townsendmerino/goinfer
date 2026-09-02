@@ -24,7 +24,8 @@ re-anchor never scoped; they are marked stale rather than quietly carried.
 | **Prefill** | **Depth-dependent, and it crosses over.** goinfer is FASTER to first token below ~600–1000 prompt tokens (0.13× at K=128) and slower above, reaching 4.8×/6.1× behind at K=3900 (0.5B/1.5B). On overhead-free *throughput* the deficit is larger: marginal cost per token is **12–15× behind at depth**, and it GROWS with K while Ollama's is flat. **Re-anchored 2026-09-01** on the §B8 stack | §B2 |
 | **Total request time** | goinfer wins prompts up to **~320 tokens** at 1.5B, loses beyond — decode edge vs prefill cost. Also pre-re-anchor | archive §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
-| **Apple Silicon CPU prefill** | **8.61× faster than the pre-2026-09-01 record at a 3020-token prompt** (334.9 s → 38.9 s), and the rate no longer falls with length: **78.4 → 77.7 tok/s** across 170→3020 where it used to collapse 51.5 → 9.0. No PEER comparison exists for CPU prefill — this is goinfer-vs-goinfer | §A |
+| **Apple Silicon CPU prefill** | **vs Ollama: 2.98× behind at K=512, narrowing to 1.80× at K=3900** — the gap CLOSES with depth because Ollama's CPU prefill degrades faster (scaling 13.37× vs our 8.35× over the same range). First peer CPU-prefill number this page has had | §A |
+| ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
@@ -461,6 +462,34 @@ read-only image, not heap-copied.
 > Attribution, since three changes landed together: the f32 prefill default and **A3's head
 > fan-out** do the work here, plus **P19's fused schedule** (+8%). **P18 is inert for this row** —
 > it is MoE-only and this is a dense model.
+>
+> ### AND THE FIRST PEER CPU-PREFILL COMPARISON — 2026-09-01
+>
+> The table above is goinfer-vs-goinfer. Against **Ollama v0.32.5** (same GGUF both sides, Ollama
+> forced to CPU with `num_gpu: 0`, goinfer at **int4** so the weights match q4_K_M, 4 distinct
+> prompts per cell, engines interleaved) on the same M1 Pro:
+>
+> | K | goinfer | Ollama | ratio |
+> |---|---|---|---|
+> | 512 | 68.4 tok/s | 203.7 | **2.98×** |
+> | 1024 | 68.7 | 187.9 | **2.74×** |
+> | 2048 | 67.6 | 145.4 | **2.15×** |
+> | 3900 | 61.9 | 111.2 | **1.80×** |
+>
+> **The gap closes with depth**, and the scaling says why: over 512→3900 goinfer slows 8.35× while
+> Ollama slows **13.37×**. At the deepest interval the marginal rates are 56.5 vs 87.8 tok/s.
+>
+> **QUANT NOTE, because the first attempt got it wrong.** These use goinfer at int4 to match the
+> peer's q4_K_M. A first sweep ran int8int8 — mirroring §A's own table — which is 8-bit against
+> 4-bit and not a peer comparison at all. Re-run weight-matched. The difference is itself worth
+> knowing: **int8int8 CPU prefill is 25–33% FASTER than int4** (90.7 vs 68.4 tok/s at K=512),
+> because the W4A8 unpack costs more at M>1 than the halved weight bytes save. §A's absolute table
+> is int8int8 and this peer table is int4; they are not the same configuration and must not be read
+> as one series.
+>
+> **Ollama caches prompts hard on CPU** — repeat/fresh 0.05 → 0.00 across these depths. Every
+> request here carries a unique prefix; reusing one would have compared our prefill against its
+> cache lookup. Record: `measurements/cpu-peer-prefill-2026-09-01.md`.
 >
 > "Long prompts on the CPU backend are much slower than the speedup suggests" — the practical
 > warning below — no longer holds in the form it is written. A 3020-token prompt is 38.9 s, not

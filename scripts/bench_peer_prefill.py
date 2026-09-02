@@ -83,7 +83,9 @@ import argparse, json, os, platform, signal, socket, statistics, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 GPORT, OPORT = 8098, 11498
 SERVE_CUDA = os.environ.get("GOINFER_SERVE_CUDA", os.path.expanduser("~/bench-cur/serve-cuda"))
+SERVE_CPU = os.environ.get("GOINFER_SERVE_CPU", os.path.expanduser("~/bench-cur/serve-cpu"))
 OLLAMA = os.environ.get("OLLAMA_BIN", os.path.expanduser("~/ollama-0325/bin/ollama"))
+OLLAMA_MODELS_DEFAULT = os.environ.get("OLLAMA_MODELS", "")
 OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models"))
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
@@ -156,22 +158,34 @@ def ttft(url, payload, parse):
 
 
 class Engine:
-    def __init__(self, name, model_key):
-        self.name, self.model_key = name, model_key
+    def __init__(self, name, model_key, backend="cuda"):
+        self.name, self.model_key, self.backend = name, model_key, backend
         self.path, self.tag = MODELS[model_key]
         self.proc = None
 
     def __enter__(self):
         if self.name == "goinfer":
+            if self.backend == "cpu":
+                # int4 by default so the WEIGHTS MATCH the peer's q4_K_M. A first
+                # CPU sweep ran int8int8 (to mirror benchmarks.md §A's own table)
+                # against Ollama's native q4_K_M -- 8-bit against 4-bit, i.e. 2x
+                # the weight bytes on our side, which is not a peer comparison at
+                # all. GOINFER_CPU_QUANT overrides for goinfer-vs-goinfer work.
+                argv = [SERVE_CPU, "-model", f"bench={self.path}",
+                        "-addr", f"127.0.0.1:{GPORT}",
+                        "-quant", os.environ.get("GOINFER_CPU_QUANT", "int4")]
+            else:
+                argv = [SERVE_CUDA, "-model", f"bench={self.path}", "-backend", "cuda",
+                        "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
             self.proc = subprocess.Popen(
-                [SERVE_CUDA, "-model", f"bench={self.path}", "-backend", "cuda",
-                 "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+                argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
             self.port = GPORT
             self.url = f"http://127.0.0.1:{GPORT}/v1/chat/completions"
             self.parse = parse_openai
         else:
-            env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
+            env = dict(os.environ, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
+            if OLLAMA_MODELS_DEFAULT:
+                env["OLLAMA_MODELS"] = OLLAMA_MODELS_DEFAULT
             self.proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                          preexec_fn=os.setsid)
@@ -201,8 +215,13 @@ class Engine:
             return {"model": "bench", "stream": True, "max_tokens": 1, "temperature": 0,
                     "stream_options": {"include_usage": True},
                     "messages": [{"role": "user", "content": text}]}
+        # num_gpu=0 on the CPU row is NOT optional. Without it Ollama silently uses
+        # Metal (or CUDA), which would make a "CPU" comparison a goinfer-CPU vs
+        # peer-GPU one and nobody would see it -- bench_peer.py carries the same
+        # forcing for exactly that reason.
+        ngpu = 0 if self.backend == "cpu" else 99
         return {"model": self.tag, "stream": True,
-                "options": {"temperature": 0, "num_predict": 1, "num_gpu": 99},
+                "options": {"temperature": 0, "num_predict": 1, "num_gpu": ngpu},
                 "messages": [{"role": "user", "content": text}]}
 
     def measure(self, base, n, warm_prefix=9000):
@@ -243,7 +262,7 @@ def machine_header():
     return {
         "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "host": platform.node(),
-        "driver": sh("nvidia-smi --query-gpu=driver_version --format=csv,noheader"),
+        "driver": sh("nvidia-smi --query-gpu=driver_version --format=csv,noheader") or sh("sw_vers -productVersion"),
         "gpu": sh("nvidia-smi --query-gpu=name --format=csv,noheader"),
         "kernel": platform.release(),
         "distro": sh(". /etc/os-release 2>/dev/null && echo $PRETTY_NAME"),
@@ -261,6 +280,8 @@ def main():
     ap.add_argument("--models", default="0.5B,1.5B")
     ap.add_argument("--depths", default="512,1024,2048")
     ap.add_argument("--n", type=int, default=6, help="distinct prompts per cell")
+    ap.add_argument("--backend", default="cuda", choices=["cuda", "cpu"],
+                    help="cpu forces goinfer to the CPU serve binary AND ollama to num_gpu=0")
     ap.add_argument("--verify-nocache", action="store_true", default=True)
     ap.add_argument("--cache-bar", type=float, default=0.80,
                     help="repeat/fresh below this = engine caches and fresh prompts miss it (healthy)")
@@ -284,7 +305,7 @@ def main():
             # with its own server start/stop, so drift between cells cannot land on one
             # engine (CLAUDE.md: peer comparisons must be same-session interleaved).
             for name in ("goinfer", "ollama"):
-                with Engine(name, mk) as e:
+                with Engine(name, mk, a.backend) as e:
                     if a.verify_nocache:
                         r = e.cache_check(base)
                         cachechk.append({"model": mk, "depth": depth, "engine": name, "repeat_over_new": r})
@@ -312,7 +333,7 @@ def main():
             g = cell.get("goinfer", {}).get("ttft_tok_s")
             o = cell.get("ollama", {}).get("ttft_tok_s")
             print(f"{mk:6s} K={depth:<6d} goinfer {g!s:>9} tok/s   ollama {o!s:>9} tok/s   "
-                  f"ratio {cell.get('peer_over_goinfer')}")
+                  f"ratio {cell.get('ttft_peer_over_goinfer')}")
 
     # CHECK 2 -- absolute, and the one that catches what the ratio cannot. Real
     # prefill work grows with prompt length; a cache lookup is flat. If an engine's
