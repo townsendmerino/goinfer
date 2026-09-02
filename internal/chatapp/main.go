@@ -71,6 +71,16 @@ type session struct {
 }
 
 func Main() {
+	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set.
+	//
+	// `pull` lives INSIDE this binary rather than shipping as a separate tool on purpose.
+	// The person it is for is holding `goinfer-chat-<os>-<arch>` — the ~5 MB runtime whose
+	// whole pitch is "point it at your own GGUF" — and has no other goinfer binary. A
+	// standalone fetcher they would have to go and download first would reintroduce exactly
+	// the friction it exists to remove.
+	if len(os.Args) > 1 && os.Args[1] == "pull" {
+		os.Exit(runPull(os.Args[2:]))
+	}
 	var (
 		model    = flag.String("model", "", "path to a .gguf file or HF checkpoint dir (omit in the -tags embed build to use the baked-in model)")
 		system   = flag.String("system", defaultSystem, "system prompt that steers the model")

@@ -1161,10 +1161,10 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |
 | `docs/audit-2026-09-02.md|gpu/vision.go:52` | goinfer | `let mean = smean[0] / f32(p.h);` |
 | `docs/audit-2026-09-02.md|gpu/vision_encoder.go:202` | goinfer | `for head := range nH {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:189` | goinfer | `case strings.HasSuffix(path, ".giw"):` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:192` | goinfer | `if tk, err = tokenizer.LoadGGUFBytes(raw); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:332` | goinfer | `flush := func(final bool) {` |
-| `docs/audit-2026-09-02.md|internal/chatapp/main.go:485` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhen` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:199` | goinfer | `case strings.HasSuffix(path, ".giw"):` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:202` | goinfer | `if tk, err = tokenizer.LoadGGUFBytes(raw); err != nil {` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:342` | goinfer | `flush := func(final bool) {` |
+| `docs/audit-2026-09-02.md|internal/chatapp/main.go:495` | goinfer | `m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhen` |
 | `docs/audit-2026-09-02.md|internal/chatapp/prequant.go:45` | goinfer | `tk, err := tokenizer.LoadGGUFBytes(tokGGUF)` |
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:113` | goinfer | `// 4) Generate + stream. Decode the whole running sequence (prompt +` |
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:131` | goinfer | `flush := func(final bool) error {` |
@@ -1385,7 +1385,7 @@ supports.
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/sampler_chunked.go:111` | goinfer | `workers := min(runtime.GOMAXPROCS(0), numChunks)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:365` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:286` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
-| `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:358` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
+| `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:368` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:365` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |

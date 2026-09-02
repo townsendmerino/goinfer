@@ -11,6 +11,67 @@
 > HuggingFace yourself." Confirmed no HTTP client/download code exists anywhere outside the
 > release CI (`grep -rl "http.Get\|http.Client{" --include="*.go" .` → nothing).
 
+## STATUS — phase 1 SHIPPED 2026-09-02, and the two open questions are now measured
+
+`goinfer-chat pull <owner/repo>[:quant|:file.gguf]`. Library in `internal/modelpull`, CLI in
+`internal/chatapp/pull.go`. Stdlib only — `net/http`, `crypto/sha256`, `encoding/json` — so the
+cgo-free single-static-binary property is untouched and no module dependency was added.
+
+**Both things this doc refused to build on faith were checked against the live API first.**
+
+1. **HF DOES hand back the expected digest before the transfer.** `GET /api/models/{repo}/tree/main`
+   returns, per file, `path`, `size`, and `lfs.oid` — and **the oid IS the sha256**. Confirmed by
+   identity, not by assumption: the API returns
+   `cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046` for
+   `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`, which is byte-for-byte the digest
+   `.github/workflows/release-assets.yml` already pins for that same file. So §2.3's v1 plan is
+   upgraded: the download is **verified**, not merely printed. A hash nobody compares is
+   self-documentation, not a check. `--expect-sha256` is unnecessary and was not built.
+
+2. **The `:quant` matching scheme has two traps, both found by looking.** Matching is on the full
+   `-<quant>.gguf` suffix, **case-insensitively**:
+   - Case differs by publisher — Qwen ships `…-q4_k_m.gguf`, bartowski ships `…-Q4_K_M.gguf`.
+   - `Q2_K` and `Q2_K_L` **coexist in one repo**, so a substring match on `q2_k` is ambiguous and
+     would silently return whichever sorted first. Both are pinned by `TestSelect_realWorldNaming`.
+
+**Gating is much smaller than §2.3 feared, and is now detected up front.** Measured: upstream
+originals are gated (`google/gemma-3-4b-it` and `meta-llama/Llama-3.2-3B-Instruct` both report
+`gated: "manual"`), but the community GGUF re-uploads this command actually targets are not
+(`bartowski/google_gemma-3-4b-it-GGUF`, `unsloth/Llama-3.2-3B-Instruct-GGUF` → `gated: false`).
+Since `pull` targets GGUF repos by construction it mostly sidesteps the problem, and `gated` is a
+field on the repo metadata, so a gated repo fails in a second with an actionable message instead of
+after a multi-gigabyte 401. Note the field is `false` when open and a **string** when not, so it
+cannot be decoded as a bool — doing so fails on exactly the repos the check exists to catch.
+
+**§3 DECIDED: `pull` is a subcommand of `goinfer-chat`, not a fifth binary.** §3 called this out and
+§5 phased it fourth; doing it fourth would have meant building the shape §3 already suspected was
+wrong and then redoing the flag surface plus `build-embed.sh` and `release-assets.yml` anyway. The
+person `pull` is for is holding `goinfer-chat-<os>-<arch>` — the ~5 MB "point it at your own GGUF"
+tier — and has no other goinfer binary; a standalone fetcher they must first go and download
+reintroduces the friction it exists to remove. Cost was ~10 lines of `os.Args[1]` dispatch.
+
+**Verified end to end on the box:** listing, gated-repo refusal, unknown-quant (lists what exists),
+malformed ref, a real 395.9 MiB download in 26 s with `sha256 verified`, a 0.58 s cache-hit re-pull,
+and the pulled checkpoint loading and generating correct Go through `--model`.
+
+### Deliberately NOT in this cut
+
+- **`--prequant`.** `--model` already transcodes a bare `.gguf` to a sidecar `.giw` on first use, so
+  the primary flow needs no conversion step; adding one would duplicate `cmd/prequant`'s job for no
+  user-visible gain. §2.2's "should plain pull prequant by default" question is therefore moot for
+  now rather than answered.
+- **`--embed`.** Still the most differentiating idea in this doc (neither Ollama nor WebLLM can hand
+  back a portable single file for an arbitrary model) and unchanged as phase 2.
+- **The `demo:0.5b` / `demo:1.5b` curated shortcuts.** Worth having, and worth sourcing from one
+  place shared with `release-assets.yml` — which is now easy, since that workflow already pins the
+  digests `pull` would want.
+- **`serve pull`.** The library is reusable and the wiring is a few lines; it was left out to keep
+  the blast radius on `internal/serveapp/main.go` at zero.
+- **Resumable downloads, disk-space precheck, split-GGUF shards.** A split shard is *detected* and
+  refused by name rather than pulling one useless piece.
+
+---
+
 ## 0. What must not change
 
 The README's headline pitch — "no model download" (`README.md:10`) — describes the

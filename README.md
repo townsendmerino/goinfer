@@ -33,6 +33,21 @@ Two kinds of binary on the [latest release](https://github.com/townsendmerino/go
 ./goinfer-chat-darwin-arm64 --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 ```
 
+Don't have one yet? The runtime can fetch a GGUF straight from HuggingFace — no extra tool
+to install, and no `huggingface-cli`:
+
+```bash
+# see what a repo publishes
+./goinfer-chat-darwin-arm64 pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
+
+# fetch one quant (case-insensitive; verified against the sha256 HuggingFace declares)
+./goinfer-chat-darwin-arm64 pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
+```
+
+It lands in your user cache dir and prints the exact `--model` command to run it. Anonymous
+only: a gated repo is detected before the transfer starts and named, rather than failing after
+a multi-gigabyte download — community GGUF re-uploads are usually ungated and work directly.
+
 From source, against any supported checkpoint (the chat template is applied automatically):
 
 ```bash
