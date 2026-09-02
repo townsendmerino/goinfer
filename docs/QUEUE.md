@@ -909,7 +909,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/attention.go:11` | goinfer | `func addBias(x, b []float32) {` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:114` | goinfer | `// 4. Append this position's K/V, then attend over the stored history. Route` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:129` | goinfer | `ctx := cache.scr.ctx[:nH*hd]` |
-| `docs/audit-2026-09-02.md|decoder/attention.go:156` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd)` |
+| `docs/audit-2026-09-02.md|decoder/attention.go:156` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:169` | goinfer | `// LOSSLESS BY CONSTRUCTION: every emitted token is one the TARGET's own argmax produced` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:175` | goinfer | `anchor: func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:201` | goinfer | `rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak` |
@@ -931,8 +931,8 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/deltanet.go:226` | goinfer | `S := st.s[headV*hk*hv : (headV+1)*hk*hv] // [hk, hv]` |
 | `docs/audit-2026-09-02.md|decoder/deltanet.go:77` | goinfer | `// THE THREE DOMINANT PROJECTIONS ARE QUANTIZABLE (2026-08-19). They were []float32 —` |
 | `docs/audit-2026-09-02.md|decoder/deltanet_chunked.go:10` | goinfer | `// matmuls). It is NOT yet wired into the forward — the qwen3_5_moe path is still` |
-| `docs/audit-2026-09-02.md|decoder/deltanet_chunked.go:137` | goinfer | `anchor: func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,` |
-| `docs/audit-2026-09-02.md|decoder/deltanet_chunked_test.go:36` | goinfer | `aLog[i] = -2 * rng.Float32() // A_log in [-2,0] → gt = exp(g) in (0,1), stable` |
+| `docs/audit-2026-09-02.md|decoder/deltanet_chunked.go:137` | goinfer | `// decay of ~0.2 gives 0.2^64 ≈ 1e-45, below f32 min-normal. c[m] then rounds to ZERO an` |
+| `docs/audit-2026-09-02.md|decoder/deltanet_chunked_test.go:62` | goinfer | `aLog[i] = -2 * rng.Float32() // A_log in [-2,0] → gt = exp(g) in (0,1), stable` |
 | `docs/audit-2026-09-02.md|decoder/dflash.go:651` | goinfer | `scale := 1 / math.Sqrt(float64(hd))` |
 | `docs/audit-2026-09-02.md|decoder/embed.go:40` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-02.md|decoder/embed.go:64` | goinfer | `cache := m.NewCache(len(ids))` |
@@ -981,7 +981,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:750` | goinfer | `copy(qh[i*hd:i*hd+hd], q[b:b+hd])` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:913` | goinfer | `gatherKV := func(ws *headWorkerScratch, kvh int) {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:96` | goinfer | `func (m *Model) canBatchN(K int) bool {` |
-| `docs/audit-2026-09-02.md|decoder/forwardn_test.go:160` | goinfer | `// argmax-exact (above) is the hard bar; cosine ≥ 0.99 is the GPU-path` |
+| `docs/audit-2026-09-02.md|decoder/forwardn_test.go:160` | goinfer | `for i := range K {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn_test.go:97` | goinfer | `// TestForwardN_matchesSequential checks the batched multi-position forward` |
 | `docs/audit-2026-09-02.md|decoder/fp8.go:124` | goinfer | `// Shape is checked against the ARCHITECTURE (in/out from the config), not just against` |
 | `docs/audit-2026-09-02.md|decoder/fusedattn.go:101` | goinfer | `a0, a1 := max(lo[i], k0), min(hi[i], k1-1)` |
@@ -1022,7 +1022,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/longprompt_golden_test.go:84` | goinfer | `os.Unsetenv("GOINFER_CPU_FAST_ATTENTION")` |
 | `docs/audit-2026-09-02.md|decoder/mamba2.go:44` | goinfer | `inProj  []float32 // [projDim, hidden]` |
 | `docs/audit-2026-09-02.md|decoder/mamba2.go:76` | goinfer | `if ssmQ8CPU { // confirmation seam: match the resident W8A8 — int8 weights AND int8 acti` |
-| `docs/audit-2026-09-02.md|decoder/mamba2_chunked.go:91` | goinfer | `Pc := make([]float32, L)` |
+| `docs/audit-2026-09-02.md|decoder/mamba2_chunked.go:91` | goinfer | `// checkpoint rates — A_log = log(U(1,16)) with dt in [0.001, 0.1] gives a per-step` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:464` | goinfer | `func moeExpertMajor() bool { return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") != "0" }` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:484` | goinfer | `func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:504` | goinfer | `logits := make([]float32, n*nE)` |
@@ -1069,20 +1069,20 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/sampler.go:264` | goinfer | `func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {` |
 | `docs/audit-2026-09-02.md|decoder/sampler.go:293` | goinfer | `func computeLogprobs(logits []float32, chosen int, temperature float64, topN int) (float` |
 | `docs/audit-2026-09-02.md|decoder/sampler.go:320` | goinfer | `func (s *Sampler) drawFiltered(ips []indexedProb) int {` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:342` | goinfer | `return len(probs) - 1` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:437` | goinfer | `case minP > 0:` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:496` | goinfer | `if topPActive {` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:539` | goinfer | `func topKByLogit(logits []float32, k int) []int {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:342` | goinfer | `return lastWithMass(probs, 0, len(probs))` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:441` | goinfer | `if topPActive {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:454` | goinfer | `case minP > 0:` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:556` | goinfer | `func topKByLogit(logits []float32, k int) []int {` |
 | `docs/audit-2026-09-02.md|decoder/sampler_chunked.go:110` | goinfer | `func forEachChunk(n int, fn func(c, lo, hi int)) {` |
-| `docs/audit-2026-09-02.md|decoder/sampler_chunked.go:159` | goinfer | `return hi - 1 // rounding hair inside the chunk` |
+| `docs/audit-2026-09-02.md|decoder/sampler_chunked.go:159` | goinfer | `return lastWithMass(e, lo, hi) // N-02: not hi-1, which is often a masked token` |
 | `docs/audit-2026-09-02.md|decoder/sampler_selection_test.go:296` | goinfer | `// RE-BOUNDED after P2b (2026-08-09). This gate compares temp+top_p against temp-only, a` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:192` | goinfer | `func attnRowTile(K, nKeys int) int {` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:222` | goinfer | `if v := os.Getenv("GOINFER_PREFILL_ATTN_WORKERS"); v != "" {` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:230` | goinfer | `// Per slot, in bytes, at the TILED size (G20): scores (tile*nKeys) + kh + vt` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:234` | goinfer | `t := attnRowTile(K, nKeys)` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:260` | goinfer | `for i := range s.headPool[:n] {` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:294` | goinfer | `func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:304` | goinfer | `t := attnRowTile(K, nKeys)` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:311` | goinfer | `kh:     make([]float32, nKeys*hd),` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:313` | goinfer | `func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:330` | goinfer | `kh:     make([]float32, nKeys*hd),` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:84` | goinfer | `ws := &linalg.Workspace{}` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:105` | goinfer | `func canSerialize(a *Architecture) *SerializeError {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:119` | goinfer | `anchor: func canSerialize(a *Architecture) *SerializeError {` |
