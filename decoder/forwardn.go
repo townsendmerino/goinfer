@@ -95,11 +95,15 @@ const attnHeadsParThreshold = 0
 // GPT-2 (non-gated + learned positions) and K≤1 take the sequential fallback.
 func (m *Model) canBatchN(K int) bool {
 	a := m.w.arch
-	// Gemma 4 (per-layer head_dim, KV-sharing, PLE), qwen3_5_moe (Gated DeltaNet),
-	// granitemoehybrid + nemotron_h (Mamba-2), and deepseek_v2/v3 (MLA latent cache)
-	// each have their own sequential forward — the recurrent / latent-reconstruction
-	// layers can't be batched across positions; exclude them all.
-	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.mla == nil && a.llama4 == nil && a.gptoss == nil
+	// Every family with its own sequential forward is excluded, and the exclusion is DERIVED from
+	// the dispatch table rather than restated here. It used to be restated, and the copy fell one
+	// family behind: LFM2 dispatched to runLayersLFM2 in runLayers and was absent from this list,
+	// so a 2-token prompt ran the dense attention stack over conv layers that load no q/k/v/o and
+	// panicked in rmsNorm (audit-2026-09-02 C-01). A new family now gets this for free.
+	if _, own := a.ownForward(); own {
+		return false
+	}
+	return K > 1 && m.w.Embed.Rows() != 0 && !a.NonGatedMLP && !a.LearnedPosEmbed
 }
 
 // specRollbackSafe reports whether speculative decode's rollback — KVCache.TruncateTo
@@ -115,7 +119,11 @@ func (m *Model) canBatchN(K int) bool {
 // speculative entry points refuse them and the caller falls back to plain decode.
 func (m *Model) specRollbackSafe() bool {
 	a := m.w.arch
-	if a.granite != nil || a.nemotron != nil || a.qwen35 != nil {
+	// Derived from the dispatch table's Recurrent bit. LFM2's short-conv window is exactly this
+	// kind of state — mutated in place per token, not rewound by TruncateTo — and the hand-written
+	// list did not mention it, so all six speculative entry points would have "rolled back" a
+	// rejected draft with a truncate that touches only K/V (audit-2026-09-02 C-02).
+	if f, own := a.ownForward(); own && f.Recurrent {
 		return false
 	}
 	// C1/C-04: a STAGED sliding-window cache stores local layers in physical rings. Once a ring

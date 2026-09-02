@@ -35,7 +35,9 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 		return nil, fmt.Errorf("decoder.HiddenLast: empty token sequence")
 	}
 	a := m.w.arch
-	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
+	// Derived from the dispatch table. The hand-written list had fallen TWO families behind, not
+	// one: lfm2 and gpt-oss both reached this seam (audit-2026-09-02 C-02).
+	if _, own := a.ownForward(); own {
 		return nil, fmt.Errorf("decoder.HiddenLast: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	for i, id := range ids {

@@ -84,6 +84,10 @@ func TestSpecRollbackSafetyGuard(t *testing.T) {
 		"granite":  {w: &Weights{arch: &Architecture{granite: &graniteParams{}}}},
 		"nemotron": {w: &Weights{arch: &Architecture{nemotron: &nemotronParams{}}}},
 		"qwen35":   {w: &Weights{arch: &Architecture{qwen35: &qwen35Params{}}}},
+		// lfm2's short-conv window is the same kind of state and was admitted here, so all six
+		// speculative entry points would have rolled a rejected draft back with a TruncateTo that
+		// touches only K/V — leaving the window advanced past the committed KV (C-02).
+		"lfm2": {w: &Weights{arch: &Architecture{lfm2: &lfm2Params{}}}},
 	}
 	for name, m := range recurrent {
 		if m.specRollbackSafe() {

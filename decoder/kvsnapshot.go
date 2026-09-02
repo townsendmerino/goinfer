@@ -59,12 +59,16 @@ func (e *SnapshotError) Error() string { return "decoder: kv snapshot: " + e.Rea
 // with Model.LoadSession on a model of the same architecture.
 func (s *Session) Snapshot(id string) []byte {
 	c := s.cache
-	// Some families carry recurrent / latent state this format does not persist:
-	// qwen3_5_moe's DeltaNet (c.delta), Granite/Nemotron's Mamba-2 state (c.mamba), and
-	// DeepSeek/Kimi's MLA compressed-KV latent (c.mlaLatent). Snapshotting any of them would
-	// restore from zeroed/empty state and continue silently wrong — refuse (caller skips →
+	// Some families carry recurrent / latent state this format does not persist: qwen3_5_moe's
+	// DeltaNet (c.delta), Granite/Nemotron's Mamba-2 state (c.mamba), LFM2's short-conv window
+	// (c.conv) and DeepSeek/Kimi's MLA compressed-KV latent (c.mlaLatent). Snapshotting any of them
+	// would restore from zeroed/empty state and continue silently wrong — refuse (caller skips →
 	// cold prefill). All other families serialize fully below, incl. ring (windowed) + int8 (C2).
-	if c.delta != nil || len(c.mamba) > 0 || len(c.mlaLatent) > 0 {
+	//
+	// The recurrent kinds come from hasRecurrentState() rather than being re-listed: LFM2 was
+	// missing from this list too, so -session-dir and -kv-idle-demote restored an LFM2 session
+	// "warm" with empty conv windows (audit-2026-09-02 C-02, the C-05 shape).
+	if c.hasRecurrentState() || len(c.mlaLatent) > 0 {
 		return nil
 	}
 	// Gemma-4's global (append-forever) layers carry PER-LAYER KV widths — its E2B/E4B geometry

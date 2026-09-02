@@ -95,7 +95,7 @@ func (s *Session) reconcile(seq []int) {
 	// Clamping seq to cache.Pos() makes the truncate a no-op (exact), so the corrupt state would be
 	// warm-reused on the next call and decode a new sequence from leaked state (C-01 class). On any
 	// rollback, reset a recurrent session to cold so the next call re-prefills (audit R-14).
-	if rolledBack && (s.cache.mamba != nil || s.cache.delta != nil) {
+	if rolledBack && s.cache.hasRecurrentState() {
 		s.cache.TruncateTo(0) // re-zeroes the rolling state (C-01)
 		s.tokens = nil
 		return

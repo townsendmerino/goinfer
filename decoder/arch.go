@@ -563,3 +563,66 @@ func (a *Architecture) ropeInvFreq(i int) []float64 {
 	}
 	return a.ropeInvFreqLocal
 }
+
+// ownForwardFamily is one family whose per-token layer loop is its own, not the generic one.
+type ownForwardFamily struct {
+	// Name is the descriptor name, for reports and for the test that keeps this table complete.
+	Name string
+	// is reports whether an Architecture is this family.
+	is func(*Architecture) bool
+	// run is the family's layer loop. Same signature as the generic path.
+	run func(*Model, int, *KVCache) ([]float32, error)
+	// Captures is true when this family's loop calls cache.captureResidual, i.e. ForwardCapture's
+	// hidden-state seam is wired for it. A family is wired only when BOTH its loop captures and
+	// this is set, so a half-wired one fails loudly instead of returning nil rows.
+	Captures bool
+	// Recurrent is true when this family carries state mutated IN PLACE per token — a conv window,
+	// an SSM state, a linear-attention state — that KVCache.TruncateTo cannot rewind. It is the
+	// arch-side view of KVCache.hasRecurrentState(): the cache knows once it exists, this knows
+	// from the descriptor, and speculative rollback has to decide before either is built.
+	Recurrent bool
+}
+
+// ownForwards is THE list of families that do not use the generic layer loop — one table, so that
+// "runLayers dispatches here" and "the batched path must not touch this" are the same fact.
+//
+// THEY WERE TWO FACTS, AND THEY DISAGREED. runLayers dispatched LFM2 to runLayersLFM2 while
+// canBatchN's hand-written exclusion list — gemma4, qwen35, granite, nemotron, mla, llama4, gptoss
+// — simply did not mention it. So every prompt of ≥2 tokens ran the DENSE ATTENTION STACK over
+// LFM2's 22 conv layers, whose QProj/KProj/VProj/OProj/QNorm/KNorm are never loaded: rmsNorm
+// indexed a nil weight slice at layer 0 and the process died, since the panic is in the Generate
+// goroutine where net/http's handler recover cannot reach it. PrefillPath() published "batched
+// shape" for the same model at startup. Reproduced on the committed testdata/lfm2-tiny fixture
+// with a 4-token prompt (audit-2026-09-02 C-01; three reviewers found it independently).
+//
+// This is audit §0 theme 1 — "one predicate, seven consumers" — applied to the first two. A family
+// added to this table is excluded from the batched path by construction, and
+// TestOwnForward_tableNamesEveryFamilyForward fails if a runLayersXxx is written that is not here.
+var ownForwards = []ownForwardFamily{
+	// Gemma 4: per-layer head_dim, KV-sharing, PLE.
+	{"gemma4", func(a *Architecture) bool { return a.gemma4 != nil }, (*Model).runLayersGemma4, true, false},
+	// qwen3_5_moe: Gated DeltaNet / softmax hybrid.
+	{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayersQwen35, true, true},
+	// lfm2: gated short-conv / softmax hybrid.
+	{"lfm2", func(a *Architecture) bool { return a.lfm2 != nil }, (*Model).runLayersLFM2, false, true},
+	// granitemoehybrid: Mamba-2 / softmax hybrid.
+	{"granitemoehybrid", func(a *Architecture) bool { return a.granite != nil }, (*Model).runLayersGranite, false, true},
+	// nemotron_h: single-op-per-block hybrid.
+	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true},
+	// deepseek_v2/v3: Multi-head Latent Attention.
+	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false},
+	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).
+	{"llama4_text", func(a *Architecture) bool { return a.llama4 != nil }, (*Model).runLayersLlama4, false, false},
+	// gpt-oss: per-head attention sinks + clamped-SwiGLU MoE.
+	{"gpt-oss", func(a *Architecture) bool { return a.gptoss != nil }, (*Model).runLayersGptOss, true, false},
+}
+
+// ownForward returns this architecture's own layer loop, if it has one.
+func (a *Architecture) ownForward() (ownForwardFamily, bool) {
+	for _, f := range ownForwards {
+		if f.is(a) {
+			return f, true
+		}
+	}
+	return ownForwardFamily{}, false
+}

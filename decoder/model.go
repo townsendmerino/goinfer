@@ -501,29 +501,8 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	if m.w.Embed.Rows() == 0 {
 		return nil, fmt.Errorf("decoder.forward: weights not loaded %w [M1]", errNotImplemented)
 	}
-	if arch.gemma4 != nil { // Gemma 4: per-layer head_dim, KV-sharing, PLE — own path.
-		return m.runLayersGemma4(id, cache)
-	}
-	if arch.qwen35 != nil { // qwen3_5_moe: Gated DeltaNet / softmax hybrid — own path.
-		return m.runLayersQwen35(id, cache)
-	}
-	if arch.lfm2 != nil { // lfm2: gated short-conv / softmax hybrid — own path.
-		return m.runLayersLFM2(id, cache)
-	}
-	if arch.granite != nil { // granitemoehybrid: Mamba-2 / softmax hybrid — own path.
-		return m.runLayersGranite(id, cache)
-	}
-	if arch.nemotron != nil { // nemotron_h: single-op-per-block hybrid — own path.
-		return m.runLayersNemotron(id, cache)
-	}
-	if arch.mla != nil { // deepseek_v2/v3: Multi-head Latent Attention — own path.
-		return m.runLayersDeepseek(id, cache)
-	}
-	if arch.llama4 != nil { // llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp) — own path.
-		return m.runLayersLlama4(id, cache)
-	}
-	if arch.gptoss != nil { // gpt-oss: per-head attention sinks + clamped-SwiGLU MoE — own path.
-		return m.runLayersGptOss(id, cache)
+	if f, ok := arch.ownForward(); ok {
+		return f.run(m, id, cache)
 	}
 	if cache.scr == nil { // caches from NewKVCache directly (tests); Generate uses NewCache
 		cache.scr = newDecodeScratch(arch)
@@ -721,7 +700,11 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 // list, so a half-wired one fails here loudly instead of handing back nil rows.
 func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, hidden [][]float32, err error) {
 	a := m.w.arch
-	if a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil {
+	// Derived from the dispatch table's Captures bit rather than re-listed: the families whose own
+	// loop calls captureResidual are wired, every other own-forward family is not. LFM2 was in
+	// neither list, so runLayersLFM2 — which never captures — returned nil rows through a seam
+	// documented to fail loudly instead (audit-2026-09-02 C-02; EAGLE's fuseAt would panic on them).
+	if f, own := a.ownForward(); own && !f.Captures {
 		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	for _, l := range layers {
@@ -747,7 +730,9 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // families (they don't route through runLayersFromEmbed's uniform block).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	if a.gemma4 != nil || a.qwen35 != nil || a.granite != nil || a.nemotron != nil || a.mla != nil || a.llama4 != nil || a.gptoss != nil {
+	// EVERY own-forward family, derived: this seam needs runLayersFromEmbed's uniform block, which
+	// no own-forward loop routes through. The hand-written list was that set minus lfm2.
+	if _, own := a.ownForward(); own {
 		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q (own runLayers)", a.Name)
 	}
 	nL := a.NumLayers

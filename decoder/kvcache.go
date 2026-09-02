@@ -383,6 +383,25 @@ func (c *KVCache) Pos() int { return c.pos }
 // history — so it returns exact=false. Callers reusing a rewound prefix (Session prefix reuse,
 // speculative rollback) MUST cold-prefill on an inexact rewind or produce silently wrong output
 // (C1). Global/int8/MLA layers store every position, so they always rewind exactly.
+// hasRecurrentState reports whether this cache carries state that is mutated IN PLACE per token
+// and has no per-position history — so TruncateTo cannot rewind it, Snapshot cannot persist it, and
+// a rolled-back session must go cold rather than warm-reuse it.
+//
+// THREE KINDS, ONE PREDICATE, BECAUSE THE THIRD WAS INVISIBLE TO ALL OF THEM. Mamba-2 (c.mamba) and
+// Gated DeltaNet (c.delta) were hand-listed at each site; LFM2's short-conv window (c.conv) is the
+// same kind of state — mutated in place per token, exactly like the other two windows — and was
+// named at none of them. resetRecurrent() already cleared c.conv, and was unreachable for an
+// LFM2-only cache because the guard that calls it did not mention conv. So TruncateTo(0) left the
+// window intact: conversation B's first K-1 tokens convolved over conversation A's last Bx
+// vectors, at every conv layer — the cross-conversation leak audit C-01 closed for the other two
+// kinds — and a partial rewind reported exact=true, so rewindForReuse warm-reused a prefix whose
+// windows still held the dropped positions (audit-2026-09-02 C-02, audit §0 theme 1).
+//
+// The fourth kind will be added here, once, or it will be missed at four sites again.
+func (c *KVCache) hasRecurrentState() bool {
+	return c.mamba != nil || c.delta != nil || c.conv != nil
+}
+
 // resetRecurrent re-zeroes the Mamba-2 / Gated DeltaNet rolling state (conv window +
 // SSM/linear-attn state) so a reused cache doesn't leak the prior sequence's recurrence
 // into a fresh one (audit C-01). No-op on non-recurrent families (nil slices).
@@ -431,12 +450,11 @@ func (c *KVCache) TruncateTo(pos int) (exact bool) {
 	if pos < 0 || pos > c.pos {
 		return exact // out-of-range no-op is exact
 	}
-	// Recurrent state (Mamba-2 c.mamba / Gated DeltaNet c.delta) is a single rolling
-	// state with no per-position history, so it cannot be exactly rewound (audit C-01).
-	// Reset it on a full clear (Session.Reset → TruncateTo(0), and sessionLRU.fresh),
-	// and report inexact on any rewind so rewindForReuse cold-prefills rather than
-	// decoding a new sequence from the previous one's leaked state.
-	if c.mamba != nil || c.delta != nil {
+	// Recurrent state is a single rolling state with no per-position history, so it cannot be
+	// exactly rewound (audit C-01). Reset it on a full clear (Session.Reset → TruncateTo(0), and
+	// sessionLRU.fresh), and report inexact on any rewind so rewindForReuse cold-prefills rather
+	// than decoding a new sequence from the previous one's leaked state.
+	if c.hasRecurrentState() {
 		if pos == 0 {
 			c.resetRecurrent()
 		} else if pos < c.pos {
