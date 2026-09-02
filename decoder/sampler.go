@@ -339,7 +339,24 @@ func (s *Sampler) drawFull(probs []float64) int {
 			return i
 		}
 	}
-	return len(probs) - 1
+	return lastWithMass(probs, 0, len(probs))
+}
+
+// lastWithMass is the float-rounding fall-through for a cumulative draw: the last index in
+// [lo,hi) whose probability is non-zero, or hi-1 when every one of them is zero.
+//
+// N-02. The draws returned `hi-1` outright. The vector is MASKED — top-k and top-p zero the
+// excluded tail — so hi-1 is very often a token the filter deliberately removed, and returning it
+// emits something the caller configured to be impossible. spec_sample.go's drawTree already walked
+// back like this; drawFull and drawChunked did not. ~1e-16 per draw, so a contract nick rather
+// than a live bug, but it is the contract top-k and top-p exist to provide.
+func lastWithMass(p []float64, lo, hi int) int {
+	for i := hi - 1; i >= lo; i-- {
+		if p[i] > 0 {
+			return i
+		}
+	}
+	return hi - 1
 }
 
 func argmax(logits []float32) int {

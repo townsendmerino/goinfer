@@ -156,11 +156,11 @@ func drawChunked(e []float64, sums []float64, z, r float64) int {
 					return i
 				}
 			}
-			return hi - 1 // rounding hair inside the chunk
+			return lastWithMass(e, lo, hi) // N-02: not hi-1, which is often a masked token
 		}
 		cum = nextCum
 	}
-	return len(e) - 1
+	return lastWithMass(e, 0, len(e))
 }
 
 // sampleChunked is the temperature-only draw: parallel max, parallel exp + per-chunk sums, ordered
