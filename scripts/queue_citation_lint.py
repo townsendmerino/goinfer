@@ -747,7 +747,18 @@ def main() -> int:
             if content is None:
                 continue
             keyable = discriminating(content) or content.startswith("anchor: ")
-            body_txt = content.replace('|', chr(92) + '|')[:88] if keyable else "UNKEYABLE"
+            # TRUNCATE FIRST, THEN ESCAPE. The reverse order silently broke every
+            # citation whose line contains a pipe -- i.e. every Go boolean
+            # condition with `||`. Escaping doubles each pipe's width, so slicing
+            # the ESCAPED string to 88 stored fewer than 88 real characters, while
+            # the checker compares against `content[:88]` of the raw line. They can
+            # never be equal, and the failure reports as "CONTENT ABSENT -- the line
+            # now reads X and the recorded content X is nowhere in the file", with X
+            # identical on both sides because the message truncates for display.
+            # Found 2026-09-01 when four audit citations stayed red across repeated
+            # --update runs; three of the four lines were unique in the tree, so an
+            # anchor collision could not explain it.
+            body_txt = content[:88].replace('|', chr(92) + '|') if keyable else "UNKEYABLE"
             lines.append(f"| `{key}` | {repo} | `{body_txt}` |")
         lines += ["", "## Bare file index", "",
                   "Generated. Every file referenced WITHOUT a line number, and the repo it resolves in.",

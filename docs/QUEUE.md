@@ -936,7 +936,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/deltanet_chunked.go:137` | goinfer | `anchor: func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,` |
 | `docs/audit-2026-09-02.md|decoder/deltanet_chunked_test.go:36` | goinfer | `aLog[i] = -2 * rng.Float32() // A_log in [-2,0] → gt = exp(g) in (0,1), stable` |
 | `docs/audit-2026-09-02.md|decoder/dflash.go:651` | goinfer | `scale := 1 / math.Sqrt(float64(hd))` |
-| `docs/audit-2026-09-02.md|decoder/embed.go:38` | goinfer | `if a.gemma4 != nil \|\| a.qwen35 != nil \|\| a.granite != nil \|\| a.nemotron != nil \|\` |
+| `docs/audit-2026-09-02.md|decoder/embed.go:38` | goinfer | `if a.gemma4 != nil \|\| a.qwen35 != nil \|\| a.granite != nil \|\| a.nemotron != nil \|\| a.mla ` |
 | `docs/audit-2026-09-02.md|decoder/embed.go:46` | goinfer | `cache := m.NewCache(len(ids))` |
 | `docs/audit-2026-09-02.md|decoder/embed.go:48` | goinfer | `for _, id := range ids {` |
 | `docs/audit-2026-09-02.md|decoder/features.go:261` | goinfer | `// residentBackendMoECap is the router-kernel capacity of each backend whose MoE scorebo` |
@@ -1012,13 +1012,13 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/kvcache.go:497` | goinfer | `func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV []float3` |
 | `docs/audit-2026-09-02.md|decoder/kvcache.go:503` | goinfer | `base = max(startPos-r.w+1, 0)` |
 | `docs/audit-2026-09-02.md|decoder/kvcache_recurrent_test.go:13` | goinfer | `c.mamba = []*mamba2State{{ssm: []float32{1, 2, 3}, convWin: [][]float32{{9}}}}` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:210` | goinfer | `if numLayers < 0 \|\| numLayers > maxSerializedLayers \|\| kvDim < 0 \|\| kvDim > 1<<24 ` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:210` | goinfer | `if numLayers < 0 \|\| numLayers > maxSerializedLayers \|\| kvDim < 0 \|\| kvDim > 1<<24 \|\|` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:214` | goinfer | `if perPos := numLayers * kvDim; perPos > 0 && int64(pos) > int64(len(data))/int64(perPos` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:250` | goinfer | `if st != kvDim \|\| rr.count < 0 \|\| nLive > rr.w \|\| rr.count < nLive {` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:283` | goinfer | `} else if quant == kvI8 {` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:67` | goinfer | `if c.delta != nil \|\| len(c.mamba) > 0 \|\| len(c.mlaLatent) > 0 {` |
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:106` | goinfer | `const ahead = 1` |
-| `docs/audit-2026-09-02.md|decoder/layerpaging.go:63` | goinfer | `if a := w.arch; a.gemma4 != nil \|\| a.qwen35 != nil \|\| a.granite != nil \|\| a.nemotr` |
+| `docs/audit-2026-09-02.md|decoder/layerpaging.go:63` | goinfer | `if a := w.arch; a.gemma4 != nil \|\| a.qwen35 != nil \|\| a.granite != nil \|\| a.nemotron != ` |
 | `docs/audit-2026-09-02.md|decoder/lfm2_test.go:178` | goinfer | `for _, id := range g.PromptIDs {` |
 | `docs/audit-2026-09-02.md|decoder/llama4_real_test.go:52` | goinfer | `prompt := "The capital of France is"` |
 | `docs/audit-2026-09-02.md|decoder/longprompt_golden_test.go:84` | goinfer | `os.Unsetenv("GOINFER_CPU_FAST_ATTENTION")` |
@@ -1035,7 +1035,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/model.go:216` | goinfer | `weightsBlob, _, gerr := giw.Read(data)` |
 | `docs/audit-2026-09-02.md|decoder/model.go:719` | goinfer | `// mixers whose "residual after layer l" needs deciding rather than assuming, mla and ll` |
 | `docs/audit-2026-09-02.md|decoder/model.go:724` | goinfer | `if a.granite != nil \|\| a.nemotron != nil \|\| a.mla != nil \|\| a.llama4 != nil {` |
-| `docs/audit-2026-09-02.md|decoder/model.go:750` | goinfer | `if a.gemma4 != nil \|\| a.qwen35 != nil \|\| a.granite != nil \|\| a.nemotron != nil \|\` |
+| `docs/audit-2026-09-02.md|decoder/model.go:750` | goinfer | `if a.gemma4 != nil \|\| a.qwen35 != nil \|\| a.granite != nil \|\| a.nemotron != nil \|\| a.mla ` |
 | `docs/audit-2026-09-02.md|decoder/model.go:821` | goinfer | `anchor: func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa` |
 | `docs/audit-2026-09-02.md|decoder/model.go:864` | goinfer | `if lg, perr := pf.PrefillLast(embs, 0); perr == nil {` |
 | `docs/audit-2026-09-02.md|decoder/model.go:989` | goinfer | `optFwd := useGPU && !fastGreedy && m.optFwdEligible(sp) && os.Getenv("GOINFER_NO_OPTFWD"` |
