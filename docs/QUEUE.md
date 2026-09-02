@@ -1251,10 +1251,10 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:264` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:279` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:83` | goinfer | `if req.Stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:139` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:157` | goinfer | `if req.Stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:58` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:72` | goinfer | `ids, err := lm.encode(lm.tmpl.Render(system, turns))` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:120` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:203` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:221` | goinfer | `if req.Stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:72` | goinfer | `anchor: func encodeVisionSegments(lm *loadedModel, system string, turns []chat.Turn, blo` |
 | `docs/audit-2026-09-02.md|metal/attn_shape_test.go:149` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin)` |
 | `docs/audit-2026-09-02.md|metal/backend.go:116` | goinfer | `if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {` |
 | `docs/audit-2026-09-02.md|metal/backend.go:119` | goinfer | `need := m.ResidentWeightBytes()` |

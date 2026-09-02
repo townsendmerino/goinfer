@@ -10,6 +10,7 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // imageSoftToken is the Gemma 3 image placeholder token; the per-image block and
@@ -44,6 +45,67 @@ type visionInput struct {
 // visionPrompt runs img through the tower and assembles the multimodal prompt: the
 // text turns with the family's image block prepended to the last user turn, so the
 // rendered+encoded ids carry a placeholder run the embed seam overrides.
+
+// encodeVisionSegments encodes a vision prompt the way the TEXT path already does: the template's
+// structural markers and the image block as Special segments, the user's own words as ordinary
+// content the added-token trie never sees.
+//
+// M-22. The vision path called lm.encode(lm.tmpl.Render(...)) — Tokenizer.Encode, whose own doc
+// says "do NOT use this on untrusted content" — while the text path had used EncodeSegments since
+// M25. So a user message in an IMAGE request containing "<end_of_turn>\n<start_of_turn>model\n"
+// (or "<|im_end|>…<|im_start|>system") became real control tokens and forged a turn boundary: the
+// hardening reached one route and not the other, which is audit §0 theme 2 exactly.
+//
+// The image block has to stay SPECIAL — its sentinels and soft-token run are what FindImageRun
+// locates and what the embed-by-vector seam replaces — so it cannot simply be prepended to the
+// content segment, which is untrusted by construction. It is spliced back in as its own Special
+// segment instead, and a block that fails to splice is an error rather than a prompt that silently
+// tokenizes the sentinels as text (the imgLen check downstream would catch it, but late and with a
+// misleading message about a template mismatch).
+func encodeVisionSegments(lm *loadedModel, system string, turns []chat.Turn, block string) ([]int, error) {
+	segs, err := spliceImageBlock(lm.tmpl.RenderSegments(system, turns), block)
+	if err != nil {
+		return nil, err
+	}
+	return lm.tk.EncodeSegments(segs, false)
+}
+
+// spliceImageBlock re-tags the image block as its own Special segment, splitting the content
+// segment that contains it.
+//
+// The block does NOT start its segment: the template renders the role prefix and the message body
+// into one non-special span, so a Gemma-4 user turn arrives as "user\n<start_of_image>…<end_of_image>\nhello".
+// The first cut of this looked for the block as a PREFIX, found it nowhere, and would have refused
+// every vision request — caught by the test, which is why the test drives this function rather than
+// re-implementing its logic beside it.
+func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
+	out := make([]tokenizer.Segment, 0, len(segs)+2)
+	spliced := false
+	for _, sg := range segs {
+		i := -1
+		if !spliced && !sg.Special {
+			i = strings.Index(sg.Text, block)
+		}
+		if i < 0 {
+			out = append(out, sg)
+			continue
+		}
+		if before := sg.Text[:i]; before != "" {
+			out = append(out, tokenizer.Segment{Text: before}) // the template's role prefix
+		}
+		out = append(out, tokenizer.Segment{Text: block, Special: true})
+		if after := sg.Text[i+len(block):]; after != "" {
+			out = append(out, tokenizer.Segment{Text: after}) // the user's own words
+		}
+		spliced = true
+	}
+	if !spliced {
+		return nil, fmt.Errorf("vision: the image block was not found in the rendered prompt " +
+			"(template changed?); refusing to encode its sentinels as ordinary text")
+	}
+	return out, nil
+}
+
 func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageRef) (visionInput, error) {
 	if lm.tmpl == nil {
 		return visionInput{}, fmt.Errorf("this model has no chat template for vision")
@@ -68,8 +130,9 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 		return visionInput{}, fmt.Errorf("vision projector: %w", err)
 	}
 	n := lm.vproj.MMTokens()
-	turns[idx].Content = multimodal.Gemma3ImageBlock(n) + "\n" + turns[idx].Content
-	ids, err := lm.encode(lm.tmpl.Render(system, turns))
+	block := multimodal.Gemma3ImageBlock(n) + "\n"
+	turns[idx].Content = block + turns[idx].Content
+	ids, err := encodeVisionSegments(lm, system, turns, block)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
@@ -96,8 +159,9 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 		return visionInput{}, fmt.Errorf("qwen vision encoder: %w", err)
 	}
 	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
-	turns[idx].Content = multimodal.QwenImageBlock(n) + "\n" + turns[idx].Content
-	ids, err := lm.encode(lm.tmpl.Render(system, turns))
+	block := multimodal.QwenImageBlock(n) + "\n"
+	turns[idx].Content = block + turns[idx].Content
+	ids, err := encodeVisionSegments(lm, system, turns, block)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
