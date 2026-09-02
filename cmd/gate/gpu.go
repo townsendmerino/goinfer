@@ -52,6 +52,7 @@ type gpuGate struct {
 	cur     string
 
 	pass, fail, skipped, ran int
+	vacuousCells             []string // filtered cells whose tests ALL skipped — a pass that ran nothing
 
 	// emptyCells are filtered cells whose -run matched no test at all. Tracked separately from
 	// `fail` because nothing failed: the cell simply did not exist, which the aggregate ran==0
@@ -182,7 +183,31 @@ func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 	// shape as the qwen3next oracle, where a -run pattern that could not match a required gate
 	// produced "DID NOT RUN" for five weeks (docs/task-verification-surface-audit.md).
 	g.noteIfEmpty(c, res)
+	g.noteIfAllSkipped(c, cr)
 	return res, cr, res.text()
+}
+
+// noteIfAllSkipped records a FILTERED cell whose tests all SKIPPED. noteIfEmpty
+// cannot see this: a skip is a result, so `len(res.final) > 0` and it returns
+// early — which is precisely how G-01 survived. Two Metal groups printed PASS,
+// with their specific claim text, across at least two archived release logs while
+// executing zero tests, because every test in them skipped for want of
+// GOINFER_HEAVY_TESTS and `go test` exits 0 on an all-skip package.
+//
+// This is the gate's own rule applied to the gate: A SKIP IS NOT A PASS. It is a
+// note rather than a hard failure because a cell CAN legitimately be all-skip on
+// a box without the assets — but it must say so loudly, since the alternative is
+// a green that vouches for nothing.
+func (g *gpuGate) noteIfAllSkipped(c cell, cr cellResult) {
+	if c.Run == "" || cr.Pass != 0 || cr.Fail != 0 || cr.Skip == 0 {
+		return
+	}
+	fmt.Fprintf(g.w, "\n  !! CELL RAN NOTHING — ALL %d TEST(S) SKIPPED: %s  -run %q\n"+
+		"     `go test` exits 0 on an all-skip package, so this cell would otherwise read as a\n"+
+		"     PASS that vouches for nothing. A skip is not a pass. Usually a missing asset or an\n"+
+		"     opt-in env var the cell forgot to set for itself.\n", cr.Skip, c.Name, c.Run)
+	g.note(fmt.Sprintf("%s: all %d test(s) skipped — cell proves nothing", c.Name, cr.Skip))
+	g.vacuousCells = append(g.vacuousCells, fmt.Sprintf("%s (-run %q, %d skipped)", c.Name, c.Run, cr.Skip))
 }
 
 // noteIfEmpty records a FILTERED cell that matched no test at all. Split out from run so it can be
@@ -1001,8 +1026,15 @@ func (g *gpuGate) metalLifecycle() {
 	_, cr, out := g.run(cell{
 		Name: "metal-lifecycle", Pkgs: []string{"./metal/"},
 		Run: "TestMetal_CloseFreesMemory|TestMetal_CloseWithSecondModelAlive",
+		// G-01: all four tests in the two Metal cells call requireHeavyModel, and
+		// the gate deliberately UNSETS GOINFER_HEAVY_TESTS above so no ambient
+		// value can change what a group means. The cells therefore have to set it
+		// themselves, exactly as cuda-heavy does -- without it every test skips,
+		// `go test` exits 0, and the group printed PASS while running nothing.
+		// Measured 2026-09-01: skip/skip in 0.4 s before, pass/pass in 27 s after.
+		Env: map[string]string{"GOINFER_HEAVY_TESTS": "1"},
 	}, false)
-	if cr.RC != 0 {
+	if cr.RC != 0 || cr.vacuous() {
 		g.bad("Close() leaks memory")
 		g.detail(out, regexp.MustCompile(`^--- FAIL|LEAK|did NOT free|USE-AFTER-FREE|\.go:[0-9]+:`))
 		return
@@ -1028,7 +1060,8 @@ func (g *gpuGate) metalPrefill() {
 	_, cr, out := g.run(cell{
 		Name: "metal-prefill", Pkgs: []string{"./metal/"},
 		Run: "TestPrefillParity|TestPrefillNoNaN",
-		Env: map[string]string{"GOINFER_METAL_MODEL": m},
+		// GOINFER_HEAVY_TESTS for the same reason as metal-lifecycle above (G-01).
+		Env: map[string]string{"GOINFER_METAL_MODEL": m, "GOINFER_HEAVY_TESTS": "1"},
 	}, false)
 	if cr.RC != 0 {
 		g.bad("prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model")
@@ -1209,6 +1242,22 @@ func (g *gpuGate) verdict() int {
 	}
 	if g.ran == 0 {
 		fmt.Fprintf(g.w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", red, off)
+		return 1
+	}
+	// A FILTERED CELL WHOSE TESTS ALL SKIPPED IS THE SAME CLASS AS AN EMPTY ONE:
+	// coverage the verdict is vouching for did not run. It is separate from
+	// emptyCells because the failure LOOKS different -- the tests exist and were
+	// selected, they simply all opted out -- and because `go test` exits 0 on an
+	// all-skip package, so nothing upstream notices. This is G-01: two Metal
+	// groups printed PASS with their specific claim text across at least two
+	// archived release logs while executing nothing.
+	if len(g.vacuousCells) > 0 {
+		fmt.Fprintf(g.w, "\n  %sVACUOUS CELL(S)%s — every test skipped, so the PASS above vouches for nothing:\n", red, off)
+		for _, c := range g.vacuousCells {
+			fmt.Fprintf(g.w, "    - %s\n", c)
+		}
+		fmt.Fprintf(g.w, "    A skip is not a pass. Usually a missing asset, or an opt-in env var\n"+
+			"    the cell must set for itself because the gate deliberately unsets ambient ones.\n")
 		return 1
 	}
 	if len(g.emptyCells) > 0 {
