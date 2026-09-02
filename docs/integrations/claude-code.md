@@ -26,7 +26,8 @@ and is not one.
 | tool loop (`glob` → `read` → answer) | **3 turns, 2.83 s**, correct answer, ends `stop_reason: end_turn` |
 | streamed tool call event order | `message_start → ping → content_block_start → content_block_delta → content_block_stop → message_delta → message_stop` (no `[DONE]`) |
 | `usage` on a **streamed tool call** | present (this was M-26; it used to appear on the plain text stream only) |
-| **TTFT, realistic agent turn** | **8.85 s** for a 2,293-token turn (25 tool schemas + a 3.5 KB system prompt) ≈ **259 tok/s prefill** |
+| **TTFT, realistic agent turn (cold)** | **8.85 s** for a 2,293-token turn (25 tool schemas + a 3.5 KB system prompt) ≈ **259 tok/s prefill** |
+| TTFT, the same turn once warm | **0.42–0.58 s** (prefix reuse; see below) |
 | TTFT, small turn (2 schemas) | 0.89 s |
 
 Provenance: RTX 2070 SUPER, NVIDIA driver 595.91.07, `-quant int4 -backend cuda`, greedy,
@@ -35,11 +36,25 @@ turn size from this server's own `/v1/messages/count_tokens`.
 
 ## What to expect, and what will bite
 
-**Every turn re-prefills its whole prompt.** A CUDA/WebGPU-resident model decodes statelessly —
-the resident KV lives on the GPU while a session's prefix cache is CPU-side, and they cannot
-both be the source of truth — so prefix reuse is off, whatever `--kv-sessions` says. The
-startup banner states this. At ~259 tok/s prefill that is the 8.85 s above **on every turn**,
-and it grows with your conversation. It is the dominant cost of an agent loop here.
+**Turn 1 is cold; turns 2+ are not.** A resident model now reuses the part of the prompt
+already in its GPU KV and prefills only what changed, which is what an agent loop mostly adds
+(one tool call plus one tool result). Same box, same 25-schema turn, identical answers:
+
+| turn | without reuse | with reuse |
+|---|---|---|
+| 1 (cold) | 8.86 s | 8.80 s |
+| 2 | 9.01 s | **0.58 s** |
+| 3 | 9.13 s | **0.42 s** |
+| whole loop | 27.00 s | **9.82 s** |
+
+Note the shape as much as the ratio: without reuse the per-turn cost *grows* with the
+conversation; with it, the cost tracks what you actually added. `GOINFER_NO_RESIDENT_REUSE=1`
+turns it off.
+
+Reuse is skipped whenever the prompt diverges from what the cache holds — editing an earlier
+message, or a second conversation on the same server — and that turn cold-prefills. Prefix
+reuse is per-model and single-conversation: two interleaved conversations will each cold-prefill
+as they alternate.
 
 **Known-open, so do not debug them as your setup:**
 - `tool_choice: "any"` (or OpenAI `"required"`) with **two or more** tools does not force a

@@ -95,7 +95,7 @@ different lists:
 
 | gate | refuses |
 |---|---|
-| `ForwardCapture` (`decoder/model.go:703`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
+| `ForwardCapture` (`decoder/model.go:707`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
 | `specRollbackSafe` (`decoder/forwardn.go:120`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
 
 **qwen35 passes the capture seam and is refused by rollback safety.** The cause is in the arch
