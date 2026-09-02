@@ -1451,6 +1451,23 @@ supports.
 | `docs/task-attention-decode-cost.md|internal/serveapp/main.go:363` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/task-attention-decode-cost.md|linalg/linalg.go:58` | aikit | `var parThreshold = 1 << 24 // 16.78M MACs` |
 | `docs/task-attention-decode-cost.md|linalg/matmul_strided.go:30` | aikit | `func MatmulBTAcc64Strided(a, bMat, dst []float32, M, K, N, bOff, bRowStride, bElemStride` |
+| `docs/task-embed-and-harness-ux.md|chat/chat.go:97` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
+| `docs/task-embed-and-harness-ux.md|decoder/model.go:146` | goinfer | `type Options struct {` |
+| `docs/task-embed-and-harness-ux.md|decoder/model.go:193` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
+| `docs/task-embed-and-harness-ux.md|decoder/model.go:802` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
+| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:328` | goinfer | `anchor: func Main() {` |
+| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:927` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
+| `docs/task-fit-to-hardware.md|decoder/model.go:123` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
+| `docs/task-fit-to-hardware.md|decoder/weightbytes.go:47` | goinfer | `func (m *Model) ResidentWeightBytes() int64 {` |
+| `docs/task-fit-to-hardware.md|internal/modelpull/pull.go:104` | goinfer | `anchor: func CuratedNames() []string {` |
+| `docs/task-fit-to-hardware.md|internal/serveapp/main.go:339` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
+| `docs/task-fit-to-hardware.md|internal/serveapp/main.go:355` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
+| `docs/task-fit-to-hardware.md|internal/serveapp/main.go:373` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
+| `docs/task-fit-to-hardware.md|metal/backend.go:101` | goinfer | `const residentMemFraction = 0.70` |
+| `docs/task-fit-to-hardware.md|metal/backend.go:135` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",` |
+| `docs/task-fit-to-hardware.md|metal/backend.go:80` | goinfer | `if !residentFitsMemory(m) {` |
+| `docs/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {` |
+| `docs/task-fit-to-hardware.md|metal/moe.go:313` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
 | `docs/task-freetoken-techniques.md|decoder/model.go:163` | goinfer | `MoECacheSlots int` |
 | `docs/task-freetoken-techniques.md|internal/serveapp/main.go:276` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
 | `docs/task-gpu-batched-prefill.md|decoder/residency.go:54` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |
