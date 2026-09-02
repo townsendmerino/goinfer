@@ -138,7 +138,7 @@ land in the same cache. That already matches what FreeToken calls a "shared LRU
 residency space."
 
 The CUDA path doesn't: `GOINFER_MOE_CACHE_SLOTS` is a **per-layer** slot count
-(`decoder/model.go:163`, `internal/serveapp/main.go:277`), auto-capped to free VRAM at
+(`decoder/model.go:163`, `internal/serveapp/main.go:278`), auto-capped to free VRAM at
 load. `task-moe-streaming.md`'s §C′ never discusses pooling it across layers — every
 mention of slot budgeting there is per-layer. If expert "hotness" is uneven across
 layers (plausible, and apparently never measured either way — the doc's own hit-rate

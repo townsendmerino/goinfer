@@ -1,6 +1,10 @@
 # Task: the first hour — embedding goinfer in a Go program, and pointing existing tools at `serve`
 
-> **Status: SCOPED 2026-09-02. Phase 0 SHIPPED the same day** (`pull` exported; `hf:`/`demo:`
+> **Status: SCOPED 2026-09-02. Phases 0 and 2 SHIPPED the same day** (`pull` exported with
+> `hf:`/`demo:` refs; the banner and `serve check`; P-20 measured and fixed). Phase 1 (the
+> facade) is unstarted and now unblocked — G4 was what gated it, and it passes.
+>
+> **Superseded status line:** Phase 0 SHIPPED the same day (`pull` exported; `hf:`/`demo:`
 > references accepted by `--model` on both binaries). The ordering was changed on review — see
 > §6 — so mode 3 (banner, `serve check`) comes before the facade, and P-20 is measured before
 > the facade is designed around it. Everything else below is unstarted. Design record for the two modes of use where
@@ -128,7 +132,7 @@ now with a reason to exist beyond release hygiene.
 | tool calls that round-trip | M-18 (Responses loop) fixed | M-20 Gemma-4 tool template; N-18 `tool_choice` required/any; M-26 usage chunk on tool streams |
 | structured output through the API | works for objects | M-27 top-level scalars; M-30 no-arg tool schema |
 | an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30 | prefix reuse off on the resident path; L-05/L-15 |
-| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:939-932`) | the rest of §3.3 |
+| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:949-932`) | the rest of §3.3 |
 | finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
 
 ### 3.2 One command
@@ -256,7 +260,14 @@ by default (the banner says how to turn it on); which of the five routes a given
    existing `--model` silently changes meaning.
 1. **The facade**: `Open`, `Chat`, `Complete`, `Into[T]`, `Options`, typed errors; the README
    example; G1 + G2 (which means closing M-27–M-30 first — they are the corpus).
-2. **The banner** (§3.3) and **`serve check`** (§3.4) with G3 + G6; the recipes (§3.5) with G5.
+2. ~~**The banner** (§3.3) and **`serve check`** (§3.4) with G3 + G6; the recipes (§3.5) with G5.~~
+   **BANNER + `serve check` SHIPPED 2026-09-02.** The banner reports decode/prefill path,
+   context + KV precision, session reuse *and why it is off*, and features; built as a pure
+   function of resolved state so **G6** asserts it against the runtime rather than trusting it.
+   `serve check` drives a RUNNING server (a client, not an embedded server) and prints a number
+   per row — the long-prompt TTFT row is the one a harness user actually needs. Each defect it
+   claims to catch has a test that makes it go red against an httptest server, so **G3** runs in
+   CI with no model. The recipes (§3.5) and **G5** are NOT done.
 3. **Constrained-decoding speed** (L-07) so `Into[T]` is usable on the GPU backends — G4.
 4. **Session anchors** (L-05) and longest-prefix reuse (L-15) so an agent loop stops paying a
    cold prefill per turn on the resident path; the banner's "session reuse: off" line is what
