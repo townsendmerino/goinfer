@@ -13,7 +13,7 @@
 
 ## What is open
 
-- **P19 · Fused (FlashAttention-style) tiled attention — CLEARS ITS BAR at 1.73–1.81×, but only when parallelised over ROWS. Open, and the next step is production.**
+- **P19 · Fused (FlashAttention-style) tiled attention — CLEARS ITS BAR at 1.69–1.73× causal over a whole prefill. Open; next step is production wiring under `--cpu-fast-attention`.**
   *(Filed as P19, not P17: this queue already has a P17. The item arrived carrying that number
   from outside the repo; renumbered here rather than shadowing an existing entry.)*
 
@@ -62,11 +62,18 @@
   (`docs/measurements/p19-fused-attention-2026-09-01.md`). At production shapes (kt=256, hd=128,
   nKeys=8192), f32 both arms so the schedule is the only variable:
 
-  | configuration | materialized | best fused | ratio |
-  |---|---|---|---|
-  | serial | 52.9 ms | 51.3 ms | 1.031× — wash |
-  | column-parallel (composed over `MatmulBT`) | 37.8 ms | 54.0 ms | 0.700× — loses |
-  | **row-parallel, 8 workers, serial inner** | **15.7–16.2 ms** | **9.0–9.1 ms** | **1.73–1.81× — CLEARS** |
+  | configuration | materialized | best fused | ratio | verdict implied |
+  |---|---|---|---|---|
+  | serial | 52.9 ms | 51.3 ms | 1.031× | wash |
+  | column-parallel (over `MatmulBT`) | 37.8 ms | 54.0 ms | 0.700× | ✗ close |
+  | row-parallel, unmasked | 15.7–16.2 ms | 9.0–9.1 ms | 1.73–1.81× | clears |
+  | row-parallel, causal, last tile only | 11.0 ms | 9.2 ms | 1.19–1.25× | ✗ park |
+  | **row-parallel, causal, ALL 32 TILES** | **243–257 ms** | **144–148 ms** | **1.69–1.73×** | **✓ CLEARS** |
+
+  **Three of five configurations imply the wrong verdict**, all for methodological reasons — the
+  arithmetic is correct f32 in every one (cosine 1.000000000 throughout). The bottom row is what
+  production runs: row-parallel is the shape A3 ships, causal is prefill's only masking, and a
+  prefill is the SUM over its tiles.
 
   Pre-registered bar ≥1.30× clears / <1.10× closes. Correctness held everywhere: cosine
   1.000000000, max|diff| ~1e-8.

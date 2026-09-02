@@ -7,15 +7,21 @@
 > same worker count, same serial inner primitive — fusion wins **1.73–1.81×**. The close is
 > withdrawn. The history is kept below rather than rewritten, because the mistake is the lesson.
 
-**Measured, at fixed precision, at production shapes:**
+**FOUR configurations were measured and THREE of them give the wrong verdict.** The differences
+are all methodological, not numerical — every arm below is correct f32 arithmetic over identical
+inputs, cosine 1.000000000 throughout.
 
-| configuration | materialized | best fused | ratio |
-|---|---|---|---|
-| serial | 52.9 ms | 51.3 ms | **1.031×** — wash |
-| column-parallel (composed over `MatmulBT`) | 37.8 ms | 54.0 ms | **0.700×** — loses |
-| **row-parallel, 8 workers, serial inner** | **15.7–16.2 ms** | **9.0–9.1 ms** | **1.73–1.81× — CLEARS** |
+| configuration | materialized | best fused | ratio | verdict it implies |
+|---|---|---|---|---|
+| serial | 52.9 ms | 51.3 ms | 1.031× | wash |
+| column-parallel (composed over `MatmulBT`) | 37.8 ms | 54.0 ms | 0.700× | ✗ close it |
+| row-parallel, **unmasked** | 15.7–16.2 ms | 9.0–9.1 ms | 1.73–1.81× | clears |
+| row-parallel, causal, **last tile only** | 11.0 ms | 9.2 ms | 1.19–1.25× | ✗ park it |
+| **row-parallel, causal, ALL 32 TILES** | **243–257 ms** | **144–148 ms** | **1.69–1.73×** | **✓ CLEARS** |
 
-Pre-registered bar: ≥1.30× clears, <1.10× closes. Row-parallel clears it on both runs.
+Pre-registered bar: ≥1.30× clears, <1.10× closes. **The bottom row is the one production runs**:
+row-parallel is the shape A3 already ships, causal is the only masking prefill uses, and a prefill
+is the SUM over all its tiles, not one of them.
 
 Correctness holds throughout — cosine **1.000000000**, max|diff| ~1e-8 at every block size and in
 every configuration — so the schedule computes the right thing and the question was only ever
@@ -108,6 +114,27 @@ the fused arm allocated far less — charging the losing arm for allocation. Wit
 hoisted out, the honest figure is **1.73–1.81×**. Recorded because a result that moves 2.06 → 1.75
 when you fix your own instrument is exactly the kind that should be reported with its correction
 attached.
+
+## The two instrument errors, because they are the transferable part
+
+**1. The parallelism axis.** Composing fusion over a column-parallel matmul forfeits parallelism by
+construction — materialized presents N=8192 to `MatmulBT`, fused presents N=kb. Measured 0.700×,
+and this page closed the item on it. The caveat naming the confound was already written down; it
+was left as prose instead of run. **A schedule that is bad at exploiting one parallelism axis has
+not been shown to be bad.**
+
+**2. The tile.** The causal arm first measured `startPos = nKeys - ktProd` — the LAST tile, where
+every row attends nearly all 8192 keys. That is the one tile where fusion's block-skip saves
+almost nothing while materialized still gets its softmax narrowed to `[0, hi]`. It read 1.19–1.25×
+and would have parked the item. Summed over all 32 tiles, as a prefill actually runs, it is
+1.69–1.73×. **The measurement was taken at the least favourable point of the workload and read as
+the workload.**
+
+A prediction of mine that the same run refuted: I expected causal masking to *help* fusion, since
+it can skip fully-masked blocks while materialized computes the full QKᵀ regardless. Per tile it
+did the opposite — masking helps materialized more, because its softmax cost falls with `hi` while
+fusion's skip is worth little near the end of the prompt. It only comes out ahead once summed over
+the whole prefill.
 
 **Sequencing against A3, which the item required.** The column-parallel arm is the *pre-*A3 f32
 shape; row-parallel is analogous to the head fan-out A3 shipped on 2026-09-01 (measured 3.27× at

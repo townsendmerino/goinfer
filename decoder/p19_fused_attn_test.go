@@ -443,6 +443,195 @@ func TestP19FusedAttention(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "  ROW-PARALLEL VERDICT: best kb=%d -> %.3fx (bar: >=1.30 clears, <1.10 closes)\n",
 		bestRPkb, rpRatio)
 
+	// ---------------------------------------------------------------------
+	// CAUSAL ARMS — the condition production actually runs under.
+	//
+	// The arms above are UNMASKED, and that flatters neither side by accident: it
+	// omits the one asymmetry that matters most. Production's materialized path
+	// computes the FULL QK^T over every key --
+	//   matmul(qh, ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
+	// -- and only then masks inside the softmax, so causality buys it NOTHING. A
+	// key-blocked fused loop can skip a block that is entirely masked, and in
+	// causal prefill roughly half of them are.
+	//
+	// So the unmasked 1.75x is a floor, not the number. This measures the real one.
+	// Rows are placed at absolute positions startPos+i with startPos = nKeys-ktProd,
+	// i.e. the last tile of an nKeys-token prompt, which is the shape at K=8192.
+	// SWEEP EVERY TILE, not just the last one. A prefill of nKeys tokens runs
+	// nKeys/ktProd tiles, from row 0 (attends 1 key) to row nKeys-1 (attends all).
+	// The FIRST version of this arm measured only the last tile -- where causal
+	// masking skips almost nothing, so fusion's block-skip is worth ~zero while
+	// materialized still gets its softmax narrowed. That is the least favourable
+	// tile for the schedule under test, and parking the item on it would have been
+	// parking it on the instrument. Production's cost is the SUM over tiles.
+	var startPos int
+	chMatC := make([]float32, ktProd*hd)
+	matCausalTile := func() {
+		var wg sync.WaitGroup
+		for w := range workers {
+			r0, r1 := rowsPer(w, workers)
+			if r0 >= r1 {
+				continue
+			}
+			wg.Add(1)
+			go func(w, r0, r1 int) {
+				defer wg.Done()
+				ws, n := matWS[w], r1-r0
+				sc := matScr[w]
+				ws.MatmulBT(qh[r0*hd:r1*hd], kh, sc, n, hd, nKeys) // full width, as production does
+				for i := range n {
+					hi := startPos + r0 + i // inclusive causal bound
+					row := sc[i*nKeys : (i+1)*nKeys]
+					maxS := float32(math.Inf(-1))
+					for j := 0; j <= hi; j++ {
+						row[j] *= scale
+						if row[j] > maxS {
+							maxS = row[j]
+						}
+					}
+					var sum float64
+					for j := 0; j <= hi; j++ {
+						e := math.Exp(float64(row[j] - maxS))
+						row[j] = float32(e)
+						sum += e
+					}
+					inv := float32(1 / sum)
+					for j := 0; j <= hi; j++ {
+						row[j] *= inv
+					}
+					for j := hi + 1; j < nKeys; j++ {
+						row[j] = 0
+					}
+				}
+				ws.MatmulBT(sc, vt, chMatC[r0*hd:r1*hd], n, nKeys, hd)
+			}(w, r0, r1)
+		}
+		wg.Wait()
+	}
+
+	chFusedC := make([]float32, ktProd*hd)
+	fusedCausalTile := func(kb int) func() {
+		vBlk := make([]float32, hd*nKeys)
+		for k0 := 0; k0 < nKeys; k0 += kb {
+			n := min(kb, nKeys-k0)
+			for j := range n {
+				for d := range hd {
+					vBlk[k0*hd+d*n+j] = vRow[(k0+j)*hd+d]
+				}
+			}
+		}
+		fWS := make([]*linalg.Workspace, workers)
+		for w := range workers {
+			fWS[w] = serialMMWorkspace()
+		}
+		return func() {
+			var wg sync.WaitGroup
+			for w := range workers {
+				r0, r1 := rowsPer(w, workers)
+				if r0 >= r1 {
+					continue
+				}
+				wg.Add(1)
+				go func(w, r0, r1 int) {
+					defer wg.Done()
+					ws, nr := fWS[w], r1-r0
+					sBlk := make([]float32, nr*kb)
+					tmp := make([]float32, nr*hd)
+					acc := make([]float32, nr*hd)
+					mRun := make([]float32, nr)
+					lRun := make([]float32, nr)
+					for i := range nr {
+						mRun[i], lRun[i] = float32(math.Inf(-1)), 0
+					}
+					hiMax := startPos + r1 - 1 // the widest bound any row in this worker needs
+					for k0 := 0; k0 < nKeys; k0 += kb {
+						if k0 > hiMax {
+							break // BLOCK SKIP: every row here is masked past this point
+						}
+						k1 := min(k0+kb, nKeys)
+						n := k1 - k0
+						ws.MatmulBT(qh[r0*hd:r1*hd], kh[k0*hd:k1*hd], sBlk[:nr*n], nr, hd, n)
+						for i := range nr {
+							hi := startPos + r0 + i
+							if k0 > hi {
+								continue // this row is fully masked in this block
+							}
+							row := sBlk[i*n : i*n+n]
+							lim := min(n, hi-k0+1)
+							blkMax := float32(math.Inf(-1))
+							for j := range lim {
+								row[j] *= scale
+								if row[j] > blkMax {
+									blkMax = row[j]
+								}
+							}
+							mNew := mRun[i]
+							if blkMax > mNew {
+								mNew = blkMax
+							}
+							corr := float32(math.Exp(float64(mRun[i] - mNew)))
+							var sum float64
+							for j := range lim {
+								e := math.Exp(float64(row[j] - mNew))
+								row[j] = float32(e)
+								sum += e
+							}
+							for j := lim; j < n; j++ {
+								row[j] = 0
+							}
+							lRun[i] = lRun[i]*corr + float32(sum)
+							mRun[i] = mNew
+							if corr != 1 {
+								a := acc[i*hd : (i+1)*hd]
+								for d := range a {
+									a[d] *= corr
+								}
+							}
+						}
+						ws.MatmulBT(sBlk[:nr*n], vBlk[k0*hd:k0*hd+hd*n], tmp[:nr*hd], nr, n, hd)
+						for i := range nr * hd {
+							acc[i] += tmp[i]
+						}
+					}
+					for i := range nr {
+						inv := 1 / lRun[i]
+						a := acc[i*hd : (i+1)*hd]
+						o := chFusedC[(r0+i)*hd : (r0+i+1)*hd]
+						for d := range a {
+							o[d] = a[d] * inv
+						}
+					}
+				}(w, r0, r1)
+			}
+			wg.Wait()
+		}
+	}
+
+	nTiles := nKeys / ktProd
+	fmt.Fprintf(os.Stderr, "\n  CAUSAL arms, SUMMED over all %d tiles of an %d-token prefill\n", nTiles, nKeys)
+	sumOver := func(f func()) time.Duration {
+		var tot time.Duration
+		for tIdx := range nTiles {
+			startPos = tIdx * ktProd
+			tot += best(f)
+		}
+		return tot
+	}
+	dMatC := sumOver(matCausalTile)
+	fmt.Fprintf(os.Stderr, "  materialized causal (all tiles) %8.1f ms\n", float64(dMatC.Microseconds())/1000)
+	bestC, bestCkb := time.Duration(1<<62-1), 0
+	for _, kb := range []int{256, 512, 1024} {
+		fn := fusedCausalTile(kb)
+		d := sumOver(fn)
+		fmt.Fprintf(os.Stderr, "  fused causal kb=%-5d (all tiles) %8.1f ms   %.3fx   cosine %.9f (last tile)\n",
+			kb, float64(d.Microseconds())/1000, float64(dMatC)/float64(d), cosVs(chMatC, chFusedC))
+		if d < bestC {
+			bestC, bestCkb = d, kb
+		}
+	}
+	fmt.Fprintf(os.Stderr, "  CAUSAL VERDICT (whole prefill): best kb=%d -> %.3fx (bar: >=1.30 clears, <1.10 closes)\n",
+		bestCkb, float64(dMatC)/float64(bestC))
+
 	bestF := out[0]
 	for _, r := range out[1:] {
 		if r.d < bestF.d {
