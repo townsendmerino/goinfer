@@ -128,6 +128,24 @@ being authoritative the moment the Release is published**. Edit the Release, not
 is out — otherwise the only copy anyone can read and the only copy anyone is updating are different
 documents, and the divergence is invisible to everyone but the person holding the draft.
 
+## Release assets embed somebody else's weights — check the pins (M-33)
+
+`.github/workflows/release-assets.yml` attaches 12 `goinfer-chat-{0.5b,1.5b}-*` binaries with a
+Qwen2.5-Coder-Instruct GGUF **compiled in**. Those assets are a redistribution of Apache-2.0
+weights, which is why the workflow also attaches `QWEN2.5-CODER-LICENSE.txt` (§4(a)) and `NOTICE.txt`
+(§4(c)), and why `NOTICE` carries an "Embedded model" section. Until 2026-09-02 `NOTICE` said the
+project "does not embed or distribute any model weights itself" while exactly that shipped, no
+license travelled with the asset, and the GGUF was fetched from `resolve/main` with **no digest** —
+so a re-upload upstream, or a `workflow_dispatch` re-run under the same tag, silently changed the
+model inside an already-published release.
+
+Nothing to do per-release while the pins hold: the workflow verifies each weight file's sha256 and
+the license's, and **fails the build on a mismatch**. What that failure means is that upstream
+MOVED — go read the model repo's history and update the matrix deliberately. It is not a flake, and
+deleting the check is not the fix. If the tier list or the model ever changes, `NOTICE` and
+`THIRD_PARTY_LICENSES.md` ("Embedded model weights", hand-maintained — `go-licenses` will not
+regenerate it) both have to move with it.
+
 ## Queue-gated follow-ups — consult QUEUE.md at each tag (B5)
 
 A tag is the natural checkpoint to review what is outstanding, and the release process is read at

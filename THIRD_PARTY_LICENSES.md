@@ -7,6 +7,37 @@ goinfer itself is MIT (see `LICENSE`); `NOTICE` carries the human-readable summa
 
 ---
 
+## Embedded model weights — release assets only, NOT any build from source
+
+**This section is hand-maintained. `go-licenses` cannot produce it and will not preserve it — see
+"Regenerating this file" at the bottom before you overwrite this file.**
+
+The `goinfer-chat-0.5b-*` and `goinfer-chat-1.5b-*` release assets (12 binaries) have a
+Qwen2.5-Coder-Instruct GGUF compiled in, so those binaries are a redistribution of third-party
+weights. Nothing built from this source tree embeds them, and no library module does.
+
+### Qwen2.5-Coder-{0.5B,1.5B}-Instruct-GGUF (q4_k_m) — Apache-2.0
+
+```
+Copyright 2024 Alibaba Cloud
+```
+
+- https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF
+- https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
+
+Both repositories ship a byte-identical `LICENSE` (sha256 `832dd9e0…`): the stock Apache-2.0 text
+with the copyright line above. It is **not** reproduced a third time here — it is byte-identical to
+the Apache-2.0 text already in this file (under `github.com/cogentcore/webgpu` and
+`github.com/ebitengine/purego`), and the copy that discharges §4(a) for a recipient of the binaries
+travels with the release itself as the `QWEN2.5-CODER-LICENSE.txt` asset. Neither model repository
+contains a NOTICE file, so §4(d) does not attach.
+
+`.github/workflows/release-assets.yml` pins each weight file's sha256 and the license's, and fails
+the build on a mismatch — so the identity above is checked at release time rather than asserted
+here.
+
+---
+
 ## Core (default build)
 
 ### golang.org/x/text — BSD-3-Clause
@@ -547,3 +578,9 @@ go-licenses report -tags cuda ./cuda/...     # + cgo-free CUDA backend
 go-licenses report -tags metal ./metal/...   # + cgo-free Metal backend (darwin)
 # full texts above are the modules' own LICENSE files from $(go env GOMODCACHE).
 ```
+
+**`go-licenses` does not know about the embedded model weights.** The "Embedded model weights"
+section at the top is hand-maintained: model weights are not a Go module, so a regeneration that
+simply overwrites this file DELETES the only in-repo record of an Apache-2.0 obligation the
+release assets carry. Re-add it, or regenerate into a scratch file and merge. (The release
+workflow still attaches the model license either way — but this file is where a reader looks.)

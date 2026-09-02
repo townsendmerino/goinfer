@@ -56,10 +56,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # sha256 + bytes are PINNED. `resolve/main` is a moving reference: a re-upload on the HF
+          # side, or a workflow_dispatch re-run months later, silently changes the model embedded
+          # in a release that already shipped under the same tag (--clobber replaces the assets).
+          # Both digests were verified by downloading the file and hashing it, not read off the API
+          # alone (audit-2026-09-02 M-33).
           - tier: 0.5b
             url: https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+            sha256: 1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32
+            bytes: 491400064
           - tier: 1.5b
             url: https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+            sha256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
+            bytes: 1117320768
     steps:
       - uses: actions/checkout@v4
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
@@ -79,12 +88,34 @@ jobs:
       - uses: actions/setup-go@v5
         if: steps.gate.outputs.skip == 'false'
         with: { go-version-file: 'go.mod' }
-      - name: fetch the model
+      - name: fetch the model + verify the pinned digest
         if: steps.gate.outputs.skip == 'false'
         run: |
           set -euo pipefail
           curl -fsSL --retry 3 --retry-delay 5 -o model.gguf "${{ matrix.url }}"
           ls -lh model.gguf
+          # THE POINT OF THE PIN: fail here, loudly, rather than ship a binary with weights nobody
+          # chose. A mismatch means the upstream file MOVED — check the model repo's commit history
+          # and update the matrix deliberately; do not "fix" this by deleting the check.
+          echo "${{ matrix.sha256 }}  model.gguf" | sha256sum -c -
+          size=$(stat -c%s model.gguf)
+          if [ "$size" != "${{ matrix.bytes }}" ]; then
+            echo "size $size != pinned ${{ matrix.bytes }}"; exit 1
+          fi
+      - name: fetch the model license (Apache-2.0 §4 travels with the weights)
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          # The weights go INSIDE the binaries, so the binaries are a redistribution and §4(a)
+          # ("give any other recipients a copy of this License") and §4(c) (retain the attribution
+          # notices) attach to the release, not just to this repo. Both tiers carry byte-identical
+          # LICENSE files; pinned for the same reason the weights are — a license that changes
+          # under a shipped tag is exactly what nobody would notice.
+          mkdir -p licenses
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -o licenses/QWEN2.5-CODER-LICENSE.txt \
+            "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/LICENSE"
+          echo "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e  licenses/QWEN2.5-CODER-LICENSE.txt" | sha256sum -c -
       - name: build embedded binaries
         if: steps.gate.outputs.skip == 'false'
         run: |
@@ -99,6 +130,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.gate.outputs.skip == 'false'
         with: { name: 'embedded-${{ matrix.tier }}', path: demo/chat/dist/ }
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.skip == 'false'
+        with: { name: 'model-license-${{ matrix.tier }}', path: licenses/, overwrite: true }
 
   publish:
     name: attach to the release
@@ -106,14 +140,33 @@ jobs:
     if: always() && needs.plain.result == 'success'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - uses: actions/download-artifact@v4
         with: { path: staged }
       - name: collect + checksum
         run: |
           set -euo pipefail
           mkdir -p dist
+          # -n (no-clobber) matters: both tiers upload the byte-identical model LICENSE, so the
+          # second one is skipped rather than racing. Verified identical (sha256 832dd9e0…).
           find staged -type f -exec mv -n {} dist/ \;
-          cd dist && sha256sum goinfer-chat-* > checksums.txt
+          # Our NOTICE carries the attribution for the embedded weights (Apache-2.0 §4(c)) and says
+          # which assets contain them. A recipient of a binary gets the license text from
+          # QWEN2.5-CODER-LICENSE.txt and the attribution from here; neither is in the binary.
+          # Attached only when weights actually shipped — no embedded asset, no obligation. Keyed
+          # on the LICENSE file rather than on a binary name pattern: only the embedded job uploads
+          # it, so its presence is a causal signal that weights were fetched, not a guess about
+          # what "goinfer-chat-*b-*" happens to match.
+          if [ -f dist/QWEN2.5-CODER-LICENSE.txt ]; then
+            cp NOTICE dist/NOTICE.txt
+          else
+            echo "no embedded-model asset in this run — NOTICE not attached"
+          fi
+          cd dist
+          # checksums cover EVERY attached asset, the model license included — the previous
+          # `goinfer-chat-*` glob checksummed only our own build output.
+          sha256sum -- * > checksums.txt.tmp && mv checksums.txt.tmp checksums.txt
           ls -lh
       - name: upload
         env:
@@ -121,7 +174,9 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          # --clobber so a re-run replaces assets instead of failing on the second attempt.
+          # --clobber so a re-run replaces assets instead of failing on the second attempt. That is
+          # only safe because the model digests are PINNED: before that, a re-run months later
+          # silently swapped the weights inside an already-published tag (M-33).
           gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
           echo "attached to $TAG:"; gh release view "$TAG" --json assets \
             --jq '.assets[] | "  \(.name)  \(.size)"' --repo "${{ github.repository }}"

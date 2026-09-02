@@ -1,9 +1,38 @@
 goinfer
 Copyright (c) 2026 Francis Townsend-Merino
 
-goinfer is a pure-Go LLM runtime. It does not embed or distribute any model
-weights itself — users supply their own open-weight checkpoints (safetensors,
-GGUF, GPTQ, or AWQ) at runtime, under whatever license those checkpoints carry.
+goinfer is a pure-Go LLM runtime. The SOURCE tree embeds no model weights, and
+the plain `goinfer-chat-<os>-<arch>` binaries embed none either — you supply your
+own open-weight checkpoint (safetensors, GGUF, GPTQ, or AWQ) at runtime, under
+whatever license it carries.
+
+TWO RELEASE ASSETS ARE THE EXCEPTION, and they are a redistribution of somebody
+else's weights: `goinfer-chat-0.5b-*` and `goinfer-chat-1.5b-*` have a
+Qwen2.5-Coder-Instruct GGUF compiled into them. See "Embedded model" below.
+This file used to say the project "does not embed or distribute any model weights
+itself", full stop, while twelve such binaries shipped with each release
+(audit-2026-09-02 M-33).
+
+──────────────────────────────────────────────────────────────────────────────
+Embedded model (release assets `goinfer-chat-0.5b-*` and `goinfer-chat-1.5b-*`)
+──────────────────────────────────────────────────────────────────────────────
+
+    Qwen2.5-Coder-0.5B-Instruct-GGUF  (q4_k_m)
+    Qwen2.5-Coder-1.5B-Instruct-GGUF  (q4_k_m)
+    Copyright 2024 Alibaba Cloud
+    Licensed under the Apache License, Version 2.0.
+
+    https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF
+    https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
+
+    The Apache-2.0 text both models ship travels with the release as the
+    QWEN2.5-CODER-LICENSE.txt asset (§4(a)), and the copyright line above is the
+    attribution §4(c) requires. Neither model repository contains a NOTICE file,
+    so §4(d) does not attach. The weights are unmodified: the release pins each
+    file's sha256 and refuses to build on a mismatch, so what is embedded is the
+    exact upstream artifact and not a re-quantization of it.
+
+    NOT embedded in: the plain binaries, the source tree, or any library module.
 
 ──────────────────────────────────────────────────────────────────────────────
 Third-party Go dependencies
