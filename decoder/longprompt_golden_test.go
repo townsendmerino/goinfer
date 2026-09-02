@@ -31,9 +31,27 @@ func longPromptIDs(n int) []int {
 // has no f64 accumulator to absorb the difference.
 //
 // A single shared list here would have been a permanently red gate on one of the two CI runners.
+// REGENERATED 2026-09-01 for the P19 fused schedule becoming the default. The
+// pre-fusion lists were:
+//
+//	arm64 {11, 714, 279, 3491, 374, 429, 279, 2038, 374, 537, 3238, 438, 3601, 13, 576, 1465}
+//	amd64 {13, 715, 522, 2599, 397, 522, 1551, 397, 522, 2599, 397, 522, 1551, 397, 522, 2599}
+//
+// AN ODDITY WORTH RECORDING RATHER THAN GLOSSING: arm64-fused reproduces the
+// pre-fusion AMD64 list exactly, all 16 tokens. That is not mystical -- that
+// sequence is a repeating attractor (522, 2599, 397, 1551 cycling) and two
+// different numerical paths can fall into the same loop -- but it does say these
+// continuations sit on knife-edges, which is the tie-flip reading rather than the
+// defect one. Independently supported: fusion's model-level divergence from acc64
+// (cosine 0.998262) is within 2e-5 of what the f32 flag already produces on its
+// own (0.998283), measured on one checkpoint at one depth.
+//
+// The prompt is synthetic nonsense (700 + (i*7919)%9000), so a degenerate
+// continuation is garbage-in-garbage-out on either path and is not read here as a
+// quality signal. What the golden pins is REPRODUCIBILITY, not quality.
 var longPromptFastWant = map[string][]int{
-	"arm64": {11, 714, 279, 3491, 374, 429, 279, 2038, 374, 537, 3238, 438, 3601, 13, 576, 1465},
-	"amd64": {13, 715, 522, 2599, 397, 522, 1551, 397, 522, 2599, 397, 522, 1551, 397, 522, 2599},
+	"arm64": {13, 715, 522, 2599, 397, 522, 1551, 397, 522, 2599, 397, 522, 1551, 397, 522, 2599},
+	"amd64": {11, 714, 279, 1196, 374, 537, 2952, 311, 1490, 279, 1196, 594, 3139, 13, 576, 1196},
 }
 
 // TestLongPromptFast_forwardParity closes the coverage hole that flipping --cpu-fast-attention's

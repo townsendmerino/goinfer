@@ -13,7 +13,18 @@
 
 ## What is open
 
-- **P19 · Fused (FlashAttention-style) tiled attention — CLEARS ITS BAR at 1.69–1.73× causal over a whole prefill. Open; next step is production wiring under `--cpu-fast-attention`.**
+- **P19 · Fused (FlashAttention-style) tiled attention — SHIPPED 2026-09-01, default ON under
+  `--cpu-fast-attention`. 1.69–1.73× at the kernel, +8.0% end to end.**
+
+  **The end-to-end number is the one to quote, and it is modest.** Dense 1.5B, K=4096, paired and
+  interleaved: **1.080×**. The kernel win does not carry because A3's head fan-out already
+  collapsed attention's share to ~18% of this prefill (Amdahl back-solve) — P19 is competing for
+  what A3 left. On the MoE profiled today attention is 17.4%, so it is no better there.
+
+  **It ships on an operator decision, not on the measurement.** +8% bought with a user-visible
+  output change is a worse ratio than the flip that introduced the flag (1.43–2.28×), and the
+  recommendation from the measurement was to leave it off. Recorded so the decision is
+  attributable.
   *(Filed as P19, not P17: this queue already has a P17. The item arrived carrying that number
   from outside the repo; renumbered here rather than shadowing an existing entry.)*
 

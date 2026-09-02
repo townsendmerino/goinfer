@@ -15,6 +15,28 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **Prefill attention now uses a FUSED (FlashAttention-style) schedule under `--cpu-fast-attention`,
+  and THIS CHANGES OUTPUT.** The score block is kept resident and folded into the output
+  accumulator with a running max and running sum, instead of materialising a `kt × nKeys` matrix
+  and making three passes over it. **A long prompt can now produce a different response than the
+  same build produced before, at temperature 0** — the committed long-prompt goldens are
+  regenerated on both architectures.
+  - **What it buys: +8.0% end-to-end** (dense 1.5B, K=4096, paired and interleaved). The kernel
+    win is much larger — 1.69–1.73× over a whole prefill's tiles — but A3's head fan-out already
+    took most of what attention had to give, leaving it ~18% of this prefill.
+  - **This is a deliberate trade and it is a close one.** Eight percent for a user-visible output
+    change is a worse ratio than the flip that introduced this flag (1.43–2.28×). It ships because
+    the operator chose it after the measurement was presented, not because the number argued for
+    itself.
+  - **The divergence is small relative to what the flag already accepts**: measured on one
+    checkpoint at one depth, acc64 vs f32-materialized is cosine 0.998283 and acc64 vs f32-fused is
+    0.998262 — an increment of ~2e-5. It rides `--cpu-fast-attention` rather than adding a second
+    user-facing flag for that reason. `GOINFER_FUSED_ATTENTION=0` restores the materialized path.
+  - Declines, rather than approximating, for acc64 (whose bit-identity it would break) and for tree
+    attention. See `docs/measurements/p19-fused-attention-2026-09-01.md`.
+
 ### Performance
 
 - **MoE prefill runs the experts EXPERT-MAJOR — 4.36× end-to-end, bit-identical.** At K=4096 on a

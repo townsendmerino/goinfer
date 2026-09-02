@@ -34,7 +34,15 @@ import (
 // developer A/B handle, not a user setting -- it exists so fusion's win stays
 // attributable separately from A3's, and so it can be rolled back without losing
 // A3's.
-func fusedAttention() bool { return os.Getenv("GOINFER_FUSED_ATTENTION") == "1" }
+// DEFAULT ON since 2026-09-01, by operator decision. The measurement does not
+// make the case on its own and that is recorded rather than smoothed: the fused
+// schedule is 1.69-1.73x at the KERNEL over a whole prefill's tiles, but only
+// 1.080x END-TO-END (dense 1.5B, K=4096, paired) -- because A3's head fan-out
+// already took most of what attention had to give, leaving it ~18% of this
+// prefill by Amdahl. Eight percent, bought with a user-visible output change.
+//
+// GOINFER_FUSED_ATTENTION=0 restores the materialized schedule.
+func fusedAttention() bool { return os.Getenv("GOINFER_FUSED_ATTENTION") != "0" }
 
 // fusedKeyBlock is the key-block width. 256 and 512 measured within noise of each
 // other (1.731x / 1.687x) and both beat 1024; 512 keeps the per-tile score block
