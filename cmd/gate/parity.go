@@ -95,6 +95,24 @@ var parityRealckptGates = []gateCheck{
 	{"phi3-gguf", "TestPhi3GGUFReal_gate"},
 	{"llama4-scout-gguf", "TestLlama4Real_gate"},
 	{"qwen3next-oracle", "TestQwen3NextReal_oracle"},
+	// ONE OR TWO CANONICAL GATES FOR SIX FAMILIES THAT HAD NONE (2026-09-02, audit G-05 follow-up).
+	// gpt_oss, granite, laguna, glm4_moe, cohere, cohere2 and dense qwen3.8 were shipped families
+	// with no required gate ANYWHERE in the checkset — not in parityGates either, since none has a
+	// tiny fixture. "Not required" was never a decision about them; it was the absence of one, and
+	// the sweep's own report could not distinguish the two. Every asset below is registered in
+	// testdata/assets.json and verified present on the sweep box, so none of these is a permanent
+	// SKIP-blocker.
+	{"gpt_oss", "TestGptOssReal_gate"},
+	{"gpt_oss-logits", "TestGptOssReal_logitParity"},
+	{"granite-gguf", "TestGraniteReal_gate"},
+	{"granite-oracle", "TestGraniteReal_oracle"},
+	{"laguna", "TestLagunaReal_gate"},
+	{"laguna-gguf", "TestLagunaGGUF_gate"},
+	{"glm4moe-air", "TestGlm4MoeAir_gate"},
+	{"cohere", "TestCohereAyaReal_gate"},
+	{"cohere2", "TestCohere2R7bReal_gate"},
+	{"qwen3.8-dense", "TestQwen38Real_gate"},
+	{"qwen3.8-gguf", "TestQwen38GGUF_gate"},
 }
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -557,6 +575,38 @@ func whyNoResult(test string, cells []cell) string {
 // reason rather than a state the ledger can drift into by nobody doing anything.
 var neverConfirmed = map[string]string{}
 
+// awaitingFirstConfirmation names a required gate that has NEVER produced a confirmed result, with
+// the date it became required and what will confirm it. It is the third state, and it is not the
+// same as either neighbour:
+//
+//	ledger entry          a person looked at a value and said it is correct.
+//	neverConfirmed        we have decided to accept a permanently non-blocking gate.
+//	awaitingFirstConfirmation   nothing has been decided yet, because the gate has not run.
+//
+// COLLAPSING THIS INTO EITHER NEIGHBOUR WOULD BE A LIE IN A DIFFERENT DIRECTION. Promoting these
+// from "it did not appear in the sweep's SKIP list, so it must have passed" would bank an inferred
+// value as a baseline — exactly the auto-promotion gate_ledger.py refuses to do — and the inference
+// is not even sound, since the sweep that ran them discarded unlisted FAIL counts (G-05). Filing
+// them under neverConfirmed would assert a decision to leave them non-blocking forever, which is
+// the opposite of the intent: they were made required BECAUSE their families need cover.
+//
+// So they are first-run, which is the correct and honest outcome — their failures are ITEMS until a
+// sweep produces a value a person promotes. The date is required so an entry that quietly becomes
+// permanent is visible as one.
+var awaitingFirstConfirmation = map[string]string{
+	"TestGptOssReal_gate":        "2026-09-02 — newly required (gpt_oss had no gate); promote from the first sweep that runs it",
+	"TestGptOssReal_logitParity": "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
+	"TestGraniteReal_gate":       "2026-09-02 — newly required (granite had no gate); promote from the first sweep that runs it",
+	"TestGraniteReal_oracle":     "2026-09-02 — newly required (granite had no gate); promote from the first sweep that runs it",
+	"TestLagunaReal_gate":        "2026-09-02 — newly required (laguna had no gate); promote from the first sweep that runs it",
+	"TestLagunaGGUF_gate":        "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
+	"TestGlm4MoeAir_gate":        "2026-09-02 — newly required; also newly REACHABLE, and it has never run in any sweep",
+	"TestCohereAyaReal_gate":     "2026-09-02 — newly required (cohere had no gate); promote from the first sweep that runs it",
+	"TestCohere2R7bReal_gate":    "2026-09-02 — newly required (cohere2 had no gate); promote from the first sweep that runs it",
+	"TestQwen38Real_gate":        "2026-09-02 — newly required (dense qwen3.8 had no gate); promote from the first sweep that runs it",
+	"TestQwen38GGUF_gate":        "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
+}
+
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
 // but does not require, with the reason. Every such test must be here or in parityRealckptGates —
 // TestRealckptGateIsListedOrExplicitlyNotRequired fails otherwise.
@@ -566,37 +616,18 @@ var neverConfirmed = map[string]string{}
 // (the asset may not exist on this box), and the gate gets no named row in the checkset table. That
 // is a much smaller claim than "not required" used to be, and it is the one being made.
 //
-// TWO REASONS APPEAR, AND THEY ARE NOT THE SAME DECISION:
-//
-//	"unregistered asset" — the checkpoint is not in testdata/assets.json, so the preflight cannot
-//	    promise it. Requiring the gate would make it SKIP-block on any box that lacks the asset, and
-//	    a permanent blocker is not a gate. Register the asset first, then promote.
-//	"no required gate for this family" — an open COVERAGE decision, not a formality: this family has
-//	    no canonical gate anywhere in the checkset. Recorded by audit-2026-09-02 G-05.
+// EVERY ENTRY IS NOW "THE FAMILY IS COVERED ELSEWHERE", AND THAT IS THE ONLY ACCEPTABLE REASON.
+// The second kind this map briefly held — "this family has no required gate anywhere" — was not a
+// reason, it was the absence of a decision: gpt_oss, granite, laguna, glm4_moe, cohere, cohere2 and
+// dense qwen3.8 were shipped families the checkset said nothing about. All seven are required gates
+// now, their assets registered and verified present, so what remains here is genuinely extra depth
+// on a family that already has a canonical gate. A new entry claiming anything else is a coverage
+// hole wearing a reason, and reviewing it is the point of making it a code change.
 var realckptNotRequired = map[string]string{
-	"TestCohere2R7bReal_gate": "unregistered asset (GOINFER_COHERE2_R7B); and cohere2 has no " +
-		"required gate for the family — open coverage decision (audit-2026-09-02 G-05)",
-	"TestCohereAyaReal_gate": "unregistered asset (GOINFER_COHERE_AYA); and cohere has no required " +
-		"gate for the family — open coverage decision (audit-2026-09-02 G-05)",
 	"TestGemma3Real_gate": "unregistered asset (GEMMA3_4B, not even GOINFER_-prefixed); gemma3 is " +
 		"required through TestGGUF_gemma3_parity + TestForward_logitParity",
 	"TestGemma4_26B_gate": "unregistered asset (GOINFER_GEMMA4_26B); gemma4 is required through " +
 		"TestGemma4_logitParity + TestGemma4_12B_logitParity",
-	"TestGlm4MoeAir_gate": "unregistered assets (GOINFER_GLM_GGUF, GOINFER_GLM_GIW); and glm4_moe " +
-		"has no required gate for the family — open coverage decision (audit-2026-09-02 G-05)",
-	"TestGptOssReal_gate": "gpt_oss has no required gate for the family — open coverage decision " +
-		"(audit-2026-09-02 G-05). The asset (GOINFER_GPTOSS_GGUF) IS registered, so this one is a " +
-		"decision to make, not an asset to build",
-	"TestGptOssReal_logitParity": "second gate on the same asset as TestGptOssReal_gate; gpt_oss " +
-		"has no required gate for the family — open coverage decision (audit-2026-09-02 G-05)",
-	"TestGraniteReal_gate": "unregistered asset (GOINFER_GRANITE_GGUF); and granite has no required " +
-		"gate for the family — open coverage decision (audit-2026-09-02 G-05)",
-	"TestGraniteReal_oracle": "granite has no required gate for the family — open coverage decision " +
-		"(audit-2026-09-02 G-05). The asset (GOINFER_GRANITE_HF) IS registered",
-	"TestLagunaGGUF_gate": "laguna has no required gate for the family — open coverage decision " +
-		"(audit-2026-09-02 G-05). The asset (GOINFER_LAGUNA_GGUF) IS registered",
-	"TestLagunaReal_gate": "laguna has no required gate for the family — open coverage decision " +
-		"(audit-2026-09-02 G-05). The asset (GOINFER_LAGUNA_XS2) IS registered",
 	"TestLlamaReal_gate": "unregistered asset (GOINFER_QWEN3_REAL); llama is required through " +
 		"TestLlama_forwardParity + TestLlama32_forwardParity",
 	"TestMistralReal_gate": "unregistered asset (GOINFER_QWEN3_REAL); mistral is required through " +
@@ -613,10 +644,6 @@ var realckptNotRequired = map[string]string{
 		"TestQwen2_forwardParity + TestGGUF_qwen2_parity",
 	"TestQwen35Real_gate1SliceParity": "unregistered asset (GOINFER_QWEN35_SLICE_REF); the " +
 		"full-model gate TestQwen35Real_gate2FullModel is required",
-	"TestQwen38GGUF_gate": "qwen3.8 dense has no required gate for the family — open coverage " +
-		"decision (audit-2026-09-02 G-05). The asset (GOINFER_QWEN38_GGUF) IS registered",
-	"TestQwen38Real_gate": "qwen3.8 dense has no required gate for the family — open coverage " +
-		"decision (audit-2026-09-02 G-05). The asset (GOINFER_QWEN38) IS registered",
 	"TestQwen3Real_gate": "unregistered asset (GOINFER_QWEN3_REAL); qwen3 is required through " +
 		"TestQwen3_forwardParity + TestGGUF_qwen3_parity",
 }

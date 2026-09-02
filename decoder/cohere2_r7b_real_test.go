@@ -14,20 +14,14 @@ package decoder
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
 func TestCohere2R7bReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	ckpt := os.Getenv("GOINFER_COHERE2_R7B")
-	if ckpt == "" {
-		ckpt = filepath.Join(home, "models", "command-r7b")
-	}
-	if _, err := os.Stat(ckpt); err != nil {
-		t.Skipf("no Command-R7B at %s: %v", ckpt, err)
-	}
+	// assetPath, not a hand-rolled env+fallback. os.Stat on the DIRECTORY was the weaker check the
+	// registry exists to replace: a directory that exists but holds no shards satisfied it.
+	ckpt := assetPath(t, "GOINFER_COHERE2_R7B")
 	const golden = "../testdata/cohere2_r7b_golden.json"
 	raw, err := os.ReadFile(golden)
 	if err != nil {

@@ -403,34 +403,69 @@ func TestParity_everyRequiredGateIsConfirmed(t *testing.T) {
 	required := map[string]bool{}
 	for _, g := range append(append([]gateCheck{}, parityGates...), parityRealckptGates...) {
 		required[g.Test] = true
+		exempt, isExempt := neverConfirmed[g.Test]
+		pending, isPending := awaitingFirstConfirmation[g.Test]
+		states := 0
+		for _, in := range []bool{confirmed[g.Test], isExempt, isPending} {
+			if in {
+				states++
+			}
+		}
 		switch {
-		case confirmed[g.Test] && neverConfirmed[g.Test] != "":
-			t.Errorf("%s is BOTH confirmed in the ledger and listed in neverConfirmed — the two "+
-				"disagree about whether a failure blocks; delete the neverConfirmed entry", g.Test)
+		case states > 1:
+			// The three states answer the same question differently, so belonging to two of them is
+			// not redundancy — it is two answers with nothing choosing between them.
+			t.Errorf("%s is in more than one of {ledger, neverConfirmed, awaitingFirstConfirmation}; "+
+				"they disagree about whether its failure blocks", g.Test)
 		case confirmed[g.Test]:
-		case neverConfirmed[g.Test] != "":
-			// Deliberately accepted as permanently first-run.
-		case neverConfirmed[g.Test] == "" && hasNeverConfirmedKey(g.Test):
+		case isExempt && strings.TrimSpace(exempt) == "":
 			t.Errorf("%s is in neverConfirmed with an EMPTY reason — an unexplained exemption is "+
 				"the state this map exists to prevent", g.Test)
+		case isExempt:
+			// Deliberately accepted as permanently first-run.
+		case isPending && !isoDatePrefix(pending):
+			t.Errorf("%s is in awaitingFirstConfirmation without a leading ISO date (got %q) — the "+
+				"date is what makes a pending entry that has quietly become permanent visible",
+				g.Test, pending)
+		case isPending:
+			// Never run, so nothing to confirm yet.
 		default:
-			t.Errorf("required gate %s (%s) has no ledger entry, so it is permanently FIRST-RUN: a "+
-				"failure is reported as an ITEM and cannot block a tag. Either promote it from a "+
-				"sweep log (scripts/gate_ledger.py promote --gate %s --value PASS --by <you>) or "+
-				"add it to neverConfirmed with a reason.", g.Test, g.Family, g.Test)
+			t.Errorf("required gate %s (%s) has no ledger entry, so it is FIRST-RUN: a failure is "+
+				"reported as an ITEM and cannot block a tag. Promote it from a sweep log "+
+				"(scripts/gate_ledger.py promote --gate %s --value PASS --by <you>), or — if it has "+
+				"never run — add it to awaitingFirstConfirmation with the date, or to neverConfirmed "+
+				"with a reason.", g.Test, g.Family, g.Test)
 		}
 	}
-	for gate, reason := range neverConfirmed {
-		if !required[gate] {
-			t.Errorf("neverConfirmed names %q (%q), which is not a required gate — a stale exemption "+
-				"reads as a covered gate", gate, reason)
+	for _, m := range []struct {
+		name string
+		set  map[string]string
+	}{{"neverConfirmed", neverConfirmed}, {"awaitingFirstConfirmation", awaitingFirstConfirmation}} {
+		for gate, reason := range m.set {
+			if !required[gate] {
+				t.Errorf("%s names %q (%q), which is not a required gate — a stale exemption reads "+
+					"as a covered gate", m.name, gate, reason)
+			}
 		}
 	}
 }
 
-// hasNeverConfirmedKey distinguishes "absent" from "present with an empty reason". A map lookup
-// alone cannot: both yield "".
-func hasNeverConfirmedKey(gate string) bool { _, ok := neverConfirmed[gate]; return ok }
+// isoDatePrefix reports whether a reason opens with a YYYY-MM-DD date.
+func isoDatePrefix(s string) bool {
+	if len(s) < 10 {
+		return false
+	}
+	for i, c := range s[:10] {
+		if i == 4 || i == 7 {
+			if c != '-' {
+				return false
+			}
+		} else if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 // A FAILURE IN A TEST NOBODY LISTED IS STILL A FAILURE. The sweep's decision is a checkset, so
 // `blockers` came only from the named gates and a FAIL anywhere else changed nothing — 36 family

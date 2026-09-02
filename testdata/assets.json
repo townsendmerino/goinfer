@@ -412,7 +412,9 @@
         "$MODELS/gpt-oss-20b-hf"
       ],
       "used_by": [
-        "TestGptOssSafetensors_vsGGUF"
+        "TestGptOssSafetensors_vsGGUF",
+        "TestGptOssReal_gate",
+        "TestGptOssReal_logitParity"
       ],
       "note": "openai/gpt-oss-20b SAFETENSORS (MXFP4 experts as paired U8 *_blocks/*_scales, interleaved gate_up). Diffed against the GGUF of the same model, whose path is already T3-validated."
     },
@@ -492,6 +494,48 @@
       "candidates": ["$MODELS/qwen3-0.6b-bf16"],
       "used_by": ["TestFP8Qwen3_vsBF16"],
       "note": "The bf16 TWIN of the fp8 asset above — same weights, unquantized. It is the reference half of the gate: qwen3 is a full-oracle family, so this side is read by an already-validated loader and any disagreement is attributable to the fp8 reader."
+    },
+    {
+      "env": "GOINFER_COHERE_AYA",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/aya-expanse-8b"],
+      "used_by": ["TestCohereAyaReal_gate"],
+      "note": "CohereLabs Aya-Expanse-8B (CohereForCausalLM), 4 bf16 shards / ~16 GB. Loaded with Options{} so the gate is a TIGHT f32 cosine against the HF golden. No tokenizer member: the gate replays prompt_ids out of testdata/cohere_aya_golden.json rather than re-tokenizing, which is the pinning rule every oracle here follows."
+    },
+    {
+      "env": "GOINFER_COHERE2_R7B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/command-r7b"],
+      "used_by": ["TestCohere2R7bReal_gate"],
+      "note": "CohereLabs Command-R7B (Cohere2ForCausalLM), 4 bf16 shards / ~16 GB. A SEPARATE arch from cohere, not a size variant \u2014 interleaved sliding/full attention and no per-layer QK norm \u2014 which is why both families carry their own required gate. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
+    },
+    {
+      "env": "GOINFER_GRANITE_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": ["$MODELS/granite/granite-4.0-h-tiny-Q8_0.gguf"],
+      "used_by": ["TestGraniteReal_gate"],
+      "note": "Granite 4.0 H Tiny Q8_0 GGUF, 7.4 GB \u2014 the COHERENCE gate's asset. NOT interchangeable with GOINFER_GRANITE_HF: the T3 numeric oracle must load the same bf16 weights the HF reference forward ran on. GOINFER_GRANITE_HF's own note called this one \"still unregistered\"; this is that entry."
+    },
+    {
+      "env": "GOINFER_GLM_GGUF",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": ["$MODELS/glm-air/GLM-4.5-Air-Q2_K.gguf"],
+      "used_by": ["TestGlm4MoeAir_gate"],
+      "note": "GLM-4.5-Air (glm4moe, 106B-A12B) Q2_K GGUF, 45 GB. The gate does not load this file \u2014 it loads the int4 .giw prequantized FROM it \u2014 but it is registered because the .giw cannot be rebuilt without it, and a preflight that resolved only the derived file would report an asset that cannot be regenerated as present."
+    },
+    {
+      "env": "GOINFER_GLM_GIW",
+      "kind": "file",
+      "min_bytes": 1048576,
+      "candidates": ["$MODELS/glm-air/GLM-4.5-Air-Q2_K.int4.giw"],
+      "used_by": ["TestGlm4MoeAir_gate"],
+      "note": "int4 .giw prequantized from GOINFER_GLM_GGUF, 67 GB. A LOCALLY BUILT asset, not a download: `go run ./cmd/prequant -o <giw> -quant int4 <gguf>`. 106B will not sit resident in 62 GB, so the gate streams experts out of the mmap under a 24 GB weight-cache budget."
     }
   ]
 }

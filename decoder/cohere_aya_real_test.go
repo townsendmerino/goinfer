@@ -15,20 +15,14 @@ package decoder
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
 func TestCohereAyaReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	ckpt := os.Getenv("GOINFER_COHERE_AYA")
-	if ckpt == "" {
-		ckpt = filepath.Join(home, "models", "aya-expanse-8b")
-	}
-	if _, err := os.Stat(ckpt); err != nil {
-		t.Skipf("no Aya-Expanse-8B at %s: %v", ckpt, err)
-	}
+	// assetPath, not a hand-rolled env+fallback. os.Stat on the DIRECTORY was the weaker check the
+	// registry exists to replace: a directory that exists but holds no shards satisfied it.
+	ckpt := assetPath(t, "GOINFER_COHERE_AYA")
 	const golden = "../testdata/cohere_aya_golden.json"
 	raw, err := os.ReadFile(golden)
 	if err != nil {

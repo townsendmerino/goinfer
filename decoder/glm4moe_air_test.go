@@ -21,8 +21,6 @@ package decoder
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -32,21 +30,14 @@ import (
 
 func TestGlm4MoeAir_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_GLM_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "glm-air", "GLM-4.5-Air-Q2_K.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no GLM-4.5-Air GGUF at %s: %v", gguf, err)
-	}
-	giw := os.Getenv("GOINFER_GLM_GIW")
-	if giw == "" {
-		giw = strings.TrimSuffix(gguf, ".gguf") + ".int4.giw"
-	}
-	if _, err := os.Stat(giw); err != nil {
-		t.Skipf("no int4 .giw at %s — build with: go run ./cmd/prequant -o %s -quant int4 %s", giw, giw, gguf)
-	}
+	// assetPath, not a hand-rolled env+fallback: the registry is what makes this gate and the sweep
+	// preflight apply the SAME predicate to the same candidate paths. Both halves are registered
+	// because the .giw is DERIVED from the .gguf — resolving only the derived file would report an
+	// asset that cannot be regenerated as present. Build the .giw with:
+	//
+	//	go run ./cmd/prequant -o <giw> -quant int4 <gguf>
+	gguf := assetPath(t, "GOINFER_GLM_GGUF")
+	giw := assetPath(t, "GOINFER_GLM_GIW")
 
 	// Stream the experts out of an mmap'd int4 .giw under a RAM budget — a 106B
 	// model won't sit resident in 62 GB. Bound the load fan-out (each in-flight

@@ -15,7 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,14 +23,11 @@ import (
 
 func TestGraniteReal_gate(t *testing.T) {
 	requireHeavyModel(t)
-	home, _ := os.UserHomeDir()
-	gguf := os.Getenv("GOINFER_GRANITE_GGUF")
-	if gguf == "" {
-		gguf = filepath.Join(home, "models", "granite", "granite-4.0-h-tiny-Q8_0.gguf")
-	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no Granite GGUF at %s: %v", gguf, err)
-	}
+	// assetPath, not a hand-rolled env+fallback: the registry is what makes this gate and the
+	// sweep preflight apply the SAME predicate to the same candidate paths. Required by the sweep
+	// since 2026-09-02, and a required gate whose presence check disagrees with the preflight's is
+	// a SKIP nobody can attribute.
+	gguf := assetPath(t, "GOINFER_GRANITE_GGUF")
 
 	m, err := Load(gguf, Options{Quant: "int8int8"})
 	if err != nil {
