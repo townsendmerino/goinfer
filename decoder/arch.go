@@ -160,6 +160,15 @@ type gptOssParams struct {
 // dense layers use Architecture.IntermediateDim (intermediate_size_mlp); the routed +
 // shared experts use MoEConfig.IntermediateDim (intermediate_size). forward_llama4.go reads this.
 type llama4Params struct {
+	// chunkSize is attention_chunk_size (8192 on Scout/Maverick): the RoPE layers use a
+	// BLOCK-DIAGONAL chunked mask, so a query at position p attends only to keys in its own
+	// chunk, [(p/C)*C, p]. NoPE layers stay full-causal.
+	//
+	// M-05: this was read from config and then dropped, and the forward attended [0, pos] on
+	// every layer. Below C that is identical to chunked — which is why the parity gates, which
+	// use short sequences, never saw it — and from position C on, the RoPE layers saw keys HF
+	// masks out. 0 means no chunking (a checkpoint that does not set the field).
+	chunkSize  int
 	useRope    []bool  // per layer: RoPE (true) vs NoPE (false) — from no_rope_layers
 	isMoE      []bool  // per layer: MoE (true) vs dense (false) — from moe_layers
 	useQKNorm  bool    // parameter-free L2 (RMS-over-head-dim) QK-norm on the RoPE layers
@@ -198,6 +207,20 @@ type mlaParams struct {
 	QKRopeHeadDim  int  // per-head Q/K dims carrying decoupled RoPE (one K shared across heads)
 	VHeadDim       int  // per-head V width (≠ QKNopeHeadDim+QKRopeHeadDim)
 	ropeInterleave bool // GPT-J pairwise (true, V3 default) vs NeoX half-split RoPE on the rope dims
+}
+
+// attnChunkStart returns the first key position a query at pos may attend on this layer, or 0
+// when the layer is not chunked. Llama-4's RoPE layers are the only chunked case today.
+//
+// max() with the caller's existing window start rather than replacing it: a layer could in
+// principle be both windowed and chunked, and taking the tighter of the two is the only reading
+// that cannot silently widen attention.
+func (a *Architecture) attnChunkStart(layer, pos int) int {
+	l4 := a.llama4
+	if l4 == nil || l4.chunkSize <= 0 || layer >= len(l4.useRope) || !l4.useRope[layer] {
+		return 0
+	}
+	return (pos / l4.chunkSize) * l4.chunkSize
 }
 
 // qkHeadDim is the query·key dot-product width: the no-rope dims plus the rope dims.

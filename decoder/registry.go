@@ -1877,7 +1877,10 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:     0,
 		TiedLMHead:     false, // finalized from lm_head.weight presence at load
 		llama4: &llama4Params{
-			useRope: useRope, isMoE: isMoE, useQKNorm: cfg.UseQKNorm,
+			// M-05: attention_chunk_size was read into Config and dropped here, so the RoPE
+			// layers attended full-causal past it.
+			chunkSize: cfg.AttentionChunkSize,
+			useRope:   useRope, isMoE: isMoE, useQKNorm: cfg.UseQKNorm,
 			attnTemp: cfg.AttnTemperatureTuning, floorScale: floor, attnScale: attnScale,
 		},
 	}, &llama4TensorSchema, nil

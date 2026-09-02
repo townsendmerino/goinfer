@@ -150,8 +150,15 @@ go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-i
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache for
 the longest token prefix a new prompt shares with a recent one, prefilling only
 the new suffix — so a continuing chat (or an agent loop with a fixed system
-prompt + tool specs) skips re-encoding the whole history. Reuse is exact
-(bit-identical to a cold prefill). `--kv-sessions N` sets how many conversations
+prompt + tool specs) skips re-encoding the whole history.
+
+Reuse is exact — bit-identical to a cold prefill — under `GOINFER_CPU_FAST_ATTENTION=0`.
+With the default fast prefill attention ON, a suffix of 512 tokens or more is prefilled
+with a kernel whose reassociated arithmetic is not split-invariant, so a warm continuation
+can differ in the last ulps from a one-shot generate of the same full prompt, and at
+temperature 0 that can change a near-tie token. This is an accepted trade (2026-08-31): the
+exact kernel costs 1.43x on a cold 2048-token turn. Below 512 tokens the fast path does not
+engage and reuse is exact either way. `--kv-sessions N` sets how many conversations
 to keep warm (default 4; 0 disables); `--session-dir DIR` persists the warm
 sessions to disk and restores them on restart.
 

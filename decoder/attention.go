@@ -208,7 +208,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		}
 		return s * kvDim
 	}
-	start := cache.WindowStart(pos, global)
+	start := max(cache.WindowStart(pos, global), arch.attnChunkStart(layer, pos))
 	scale := arch.AttnScale // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
 	group := nH / nKV       // GQA: query heads per KV head
 
@@ -274,7 +274,10 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 		}
 		return s
 	}
-	start := cache.WindowStart(pos, global)
+	// Chunked layers here too, for symmetry with attendQuery — llama4 is f32-only today so
+	// this path is not reachable for it, but a start rule that lives in one of two twins is
+	// how they drift (M-05).
+	start := max(cache.WindowStart(pos, global), arch.attnChunkStart(layer, pos))
 	scale := arch.AttnScale
 	group := nH / nKV
 	qq := make([]int8, hd) // quantized query head (reused across keys)

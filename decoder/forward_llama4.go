@@ -13,9 +13,13 @@ import "math"
 //   - FFN: dense layers vs MoE layers (moe_layers) — handled by the shared mlp() dispatch
 //     (dense ⇒ gatedMLP; MoE ⇒ moeMLP with top-1 sigmoid routing + an ungated shared expert).
 //
-// Chunked (local) attention on the RoPE layers reduces to full causal for sequences below
-// attention_chunk_size, which the parity gates use — so this attends full-causal. Parity-
-// first f32, one token per call; canBatchN excludes it.
+// Chunked (local) attention on the RoPE layers: a query at position p attends only within its
+// own chunk, [(p/C)*C, p], where C is attention_chunk_size (8192 on Scout/Maverick). Below C
+// that is identical to full causal, which is what the parity gates exercise — and for a long
+// time it was ALL this did, because the config field was read and dropped, so from position C
+// on the RoPE layers saw keys HF masks out (M-05). The bound now comes from
+// Architecture.attnChunkStart, max()'d with the window start in attendQuery. NoPE layers stay
+// full-causal. Parity-first f32, one token per call; canBatchN excludes it.
 func (m *Model) runLayersLlama4(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	hidden := arch.HiddenDim
@@ -86,7 +90,7 @@ func (m *Model) llama4Attention(n []float32, lw *LayerWeights, arch *Architectur
 	cache.Append(layer, k, v)
 	ctx := make([]float32, nH*hd)
 	nKeys := len(cache.Keys(layer)) / (nKV * hd)
-	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*full causal*/, arch)
+	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*no sliding window; chunking applies inside*/, arch)
 
 	out := make([]float32, hidden)
 	matmul(m.be, &lw.OProj, ctx, out, 1)

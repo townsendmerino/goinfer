@@ -69,11 +69,11 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 			}
 			return head.Fuse(m.be, h3)
 		}
-		captureN := func(ids []int) (logits [][]float32, feats [][]float32, err error) {
+		captureN := func(ids []int, fastAttn bool) (logits [][]float32, feats [][]float32, err error) {
 			tc.captureLayers = capLayers
 			tc.captured = make([][]float32, len(capLayers))
 			defer func() { tc.captureLayers, tc.captured = nil, nil }()
-			lg, e := m.forwardN(ctx, ids, tc)
+			lg, e := m.forwardNAttn(ctx, ids, tc, fastAttn)
 			if e != nil {
 				return nil, nil, e
 			}
@@ -83,7 +83,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 			}
 			return lg, feats, nil
 		}
-		logitsN, feats, err := captureN(prompt)
+		logitsN, feats, err := captureN(prompt, cpuFastAttention())
 		if err != nil {
 			g.err = err
 			return
@@ -114,7 +114,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 
 			// Verify the whole tree in one batched pass under tree attention.
 			tc.treeRowPos, tc.treeMask = td.RowPos, td.Mask
-			dlogits, _, err := captureN(td.Tokens)
+			dlogits, _, err := captureN(td.Tokens, false)
 			tc.treeRowPos, tc.treeMask = nil, nil
 			if err != nil {
 				g.err = err
@@ -152,7 +152,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 			// their KV lands at the right positions and we get fresh features + logits.
 			tc.TruncateTo(C)
 			commit := append(append([]int{}, accepted...), correction)
-			cl, cf, err := captureN(commit)
+			cl, cf, err := captureN(commit, false)
 			if err != nil {
 				g.err = err
 				return
@@ -243,11 +243,11 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 		}
 		// captureN runs forwardN over ids with the seam on, returning per-position logits
 		// and per-position fused features.
-		captureN := func(ids []int) (logits [][]float32, feats [][]float32, err error) {
+		captureN := func(ids []int, fastAttn bool) (logits [][]float32, feats [][]float32, err error) {
 			tc.captureLayers = capLayers
 			tc.captured = make([][]float32, len(capLayers))
 			defer func() { tc.captureLayers, tc.captured = nil, nil }()
-			lg, e := m.forwardN(ctx, ids, tc)
+			lg, e := m.forwardNAttn(ctx, ids, tc, fastAttn)
 			if e != nil {
 				return nil, nil, e
 			}
@@ -259,7 +259,7 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 		}
 
 		// Prefill: one batched pass over the prompt, capturing every position's feature.
-		logitsN, feats, err := captureN(prompt)
+		logitsN, feats, err := captureN(prompt, cpuFastAttention())
 		if err != nil {
 			g.err = err
 			return
@@ -293,7 +293,7 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 			C := len(confirmed)
 
 			// Verify the draft in one batched target pass at positions C..C+K-1.
-			dlogits, dfeats, err := captureN(draft)
+			dlogits, dfeats, err := captureN(draft, false)
 			if err != nil {
 				g.err = err
 				return
@@ -329,7 +329,7 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 			}
 			// The correction's hidden wasn't captured (it differs from the rejected
 			// draft), so forward it once to get its feature + next-token logits.
-			cl, cfeat, err := captureN([]int{correction})
+			cl, cfeat, err := captureN([]int{correction}, false)
 			if err != nil {
 				g.err = err
 				return

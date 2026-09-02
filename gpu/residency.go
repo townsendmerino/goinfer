@@ -137,12 +137,47 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// bytes → 32k (task-gpu-f16-kv.md); int8 quarters them → ~64k (task-gpu-kv-i8.md).
 	kvF16 := m.KVCacheF16()
 	kvI8 := m.KVCacheI8()
+
+	// M-32: ONLY the generic GQA branch honours the KV precision flag. The Nemotron, Qwen3.5
+	// and MLA branches always allocate f32 NewKVCache, while ctxCap below is raised by the flag
+	// and the kernel selection later is model-wide. The two failure shapes:
+	//
+	//   --kv i8 : rl.kScale stays nil, bind reports "nil buffer for binding 3 (allocation
+	//             failed)", which surfaces as "device allocation failed (VRAM exhausted?)" —
+	//             so the whole model silently runs on CPU for a reason that is not true.
+	//   --kv f16: each cache is ctxCap×kvDim×4 bytes at the RAISED cap, i.e. 2x the intended
+	//             f16 footprint and 2x the f32 default. The "f16 halves KV bytes, so 32k fits"
+	//             premise inverts.
+	//
+	// Declining is the honest fix rather than a guess: quantized KV for MLA's rank-space latent
+	// (or Nemotron's mixed mamba/attention layers) is real kernel work, and inventing it here
+	// unvalidated would trade a loud wrong reason for a quiet wrong number. The decline names
+	// the flag, so the operator can drop it and get the resident path back.
+	if kvI8 || kvF16 {
+		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
+		_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
+			map[bool]string{true: "mla"}[mlaOK]; family != "" {
+			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
+			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: %s does not implement %s KV "+
+				"(only the generic GQA path does); drop the flag to use the resident path\n", family, flag)
+			return nil, false, nil
+		}
+	}
+
 	ctxCap := 16384
 	switch {
 	case kvI8:
 		ctxCap = 65536
 	case kvF16:
 		ctxCap = 32768
+	}
+	// M-32, the -ctx half: Options.ResidentContext / `serve -ctx` was read nowhere under gpu/,
+	// so -ctx 32768 silently kept 16k (requests past it fail at checkCap) and -ctx 2048 still
+	// allocated 16k per layer. min(), not the request: the caps above are proven-fit ceilings,
+	// and honouring a LARGER request would trade a clear checkCap refusal for an OOM.
+	if req := m.ResidentContextRequest(); req > 0 && req < ctxCap {
+		ctxCap = req
 	}
 	kvDim := nKV * hd
 

@@ -949,7 +949,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/a3_fanout_test.go:190` | goinfer | `func TestAttendF32Fanout_bitIdentical(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|decoder/a3_moe_exclusion_test.go:15` | goinfer | `// forwardn.go excludes MoE from --cpu-fast-attention unconditionally, on a stated` |
 | `docs/audit-2026-09-02.md|decoder/api_tiers_test.go:66` | goinfer | `bare := name` |
-| `docs/audit-2026-09-02.md|decoder/arch.go:536` | goinfer | `func (a *Architecture) finalizeRoPE() {` |
+| `docs/audit-2026-09-02.md|decoder/arch.go:559` | goinfer | `func (a *Architecture) finalizeRoPE() {` |
 | `docs/audit-2026-09-02.md|decoder/assets.go:49` | goinfer | `if m := os.Getenv("GOINFER_MODELS"); m != "" {` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:11` | goinfer | `func addBias(x, b []float32) {` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:114` | goinfer | `// 4. Append this position's K/V, then attend over the stored history. Route` |
@@ -993,13 +993,12 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/forward_lfm2.go:111` | goinfer | `pos := cache.Pos()` |
 | `docs/audit-2026-09-02.md|decoder/forward_lfm2.go:126` | goinfer | `mix = shortConvStep(n, lw.shortConv, *g, hidden, cache.conv[l])` |
 | `docs/audit-2026-09-02.md|decoder/forward_lfm2.go:32` | goinfer | `bcx := matvec(w.inProj, 3*cd, hidden, n)` |
-| `docs/audit-2026-09-02.md|decoder/forward_llama4.go:16` | goinfer | `// Chunked (local) attention on the RoPE layers reduces to full causal for sequences bel` |
-| `docs/audit-2026-09-02.md|decoder/forward_llama4.go:89` | goinfer | `attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*full causal*/,` |
+| `docs/audit-2026-09-02.md|decoder/forward_llama4.go:16` | goinfer | `// Chunked (local) attention on the RoPE layers: a query at position p attends only with` |
+| `docs/audit-2026-09-02.md|decoder/forward_llama4.go:93` | goinfer | `attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*no sliding win` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:103` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:1065` | goinfer | `// position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:1094` | goinfer | `h, err := m.forwardLayersN(reqCtx, ids, cache, false)` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:1120` | goinfer | `if cache.lora != nil \|\| !m.canBatchN(len(prompt)) {` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:1133` | goinfer | `h, err := m.forwardLayersN(ctx, prompt, cache, cpuFastAttention())` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:1107` | goinfer | `h, err := m.forwardLayersN(reqCtx, ids, cache, fastAttn)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:1146` | goinfer | `h, err := m.forwardLayersN(ctx, prompt, cache, cpuFastAttention())` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:122` | goinfer | `// Derived from the dispatch table's Recurrent bit. LFM2's short-conv window is exactly ` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:154` | goinfer | `// reused across the K rows (aikit's column-blocked W8A8 kernel); attention stays` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:200` | goinfer | `norm := make([]float32, K*hidden)` |
@@ -1146,7 +1145,8 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/session_test.go:213` | goinfer | `bad := append([]byte(nil), blob...)` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:163` | goinfer | `case "cuda":` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:82` | goinfer | `if a.Theta >= 1 {` |
-| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:86` | goinfer | `logitsN, feats, err := captureN(prompt)` |
+| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:254` | goinfer | `feats = make([][]float32, len(ids))` |
+| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:82` | goinfer | `feats[i] = fuseAt(i)` |
 | `docs/audit-2026-09-02.md|decoder/spec_hitrate_probe_test.go:37` | goinfer | `const giw = "/Users/francistownsend-merino/models/gemma4-26b-int4.giw"` |
 | `docs/audit-2026-09-02.md|decoder/spec_ngram.go:338` | goinfer | `lookupCtx := append(slices.Clone(hist), cur)` |
 | `docs/audit-2026-09-02.md|decoder/spec_ngram.go:385` | goinfer | `p := dist(logitsN[i], ph)` |
@@ -1189,16 +1189,16 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8.go:146` | goinfer | `func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32, nE, N,` |
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8_expert_test.go:37` | goinfer | `stack, err := ctx.UploadStackedExpertsInt4(nib, sc, nE, N, K)` |
 | `docs/audit-2026-09-02.md|gpu/qwen35_resident_parity_test.go:26` | goinfer | `if os.Getenv("GOINFER_DNET_PARITY") == "" {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:1032` | goinfer | `func (rd *residentDecoder) Reset() {` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:104` | goinfer | `_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:126` | goinfer | `if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK && (nE > 25` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:138` | goinfer | `kvF16 := m.KVCacheF16()` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:140` | goinfer | `ctxCap := 16384` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:382` | goinfer | `if K%w4a8GroupSize == 0 && !int4SlowPath {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:628` | goinfer | `if os.Getenv("GOINFER_SSM_F16MAMBA") != "" { // f16 (no quality gain; kept for experimen` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:743` | goinfer | `anchor: func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:892` | goinfer | `func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:906` | goinfer | `func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, ` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:997` | goinfer | `func (rd *residentDecoder) Reset() {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:168` | goinfer | `ctxCap := 16384` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:44` | goinfer | `if K%w4a8GroupSize == 0 && !int4SlowPath {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:663` | goinfer | `if os.Getenv("GOINFER_SSM_F16MAMBA") != "" { // f16 (no quality gain; kept for experimen` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:743` | goinfer | `// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:927` | goinfer | `func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:941` | goinfer | `func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, ` |
 | `docs/audit-2026-09-02.md|gpu/residency_c01_reset_test.go:24` | goinfer | `requireHeavyModel(t)` |
 | `docs/audit-2026-09-02.md|gpu/resident_pack_bench_test.go:18` | goinfer | `func TestResidentPackCost(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |
@@ -1448,7 +1448,7 @@ supports.
 | `docs/queue-engineering.md|linalg/quant.go:138` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1048` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:407` | goinfer | `def gate_cell_idle():` |
-| `docs/scoping-lfm2.md|decoder/arch.go:177` | goinfer | `type nemotronParams struct {` |
+| `docs/scoping-lfm2.md|decoder/arch.go:186` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:97` | goinfer | `if arch.QKNorm {` |
 | `docs/scoping-lfm2.md|decoder/config.go:903` | goinfer | `case c.UseQKNorm:` |
 | `docs/scoping-lfm2.md|decoder/deltanet.go:176` | goinfer | `// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1` |
@@ -1457,7 +1457,7 @@ supports.
 | `docs/scoping-lfm2.md|decoder/mamba2.go:89` | goinfer | `// 2. Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last` |
 | `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
-| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2063` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
+| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2066` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:44` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,      // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:241` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:248` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |

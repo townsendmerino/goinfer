@@ -1065,6 +1065,20 @@ func (m *Model) lmHeadN(h []float32, M int) []float32 {
 // position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to
 // K sequential forwards. Falls back to sequential for the non-batched archs.
 func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
+	// Speculative VERIFY: never fast, whatever the operator asked for. See forwardNAttn.
+	return m.forwardNAttn(reqCtx, ids, cache, false)
+}
+
+// forwardNAttn is forwardN with the attention-kernel choice made by the caller.
+//
+// M-07: the two callers want DIFFERENT answers and shared one. Speculative verify must run the
+// exact kernel on both arms or its equality argument collapses — that is what `false` is for,
+// and it is unchanged. But EAGLE also PREFILLED the prompt through here, while Generate's
+// prefillLogits prefills with cpuFastAttention() (default ON, floored at 512 tokens). So the
+// two produced different KV for the same prompt, and "token-identical to plain greedy" — which
+// EAGLE's whole contract rests on — stopped holding at temperature 0 for any prompt over the
+// floor. TestEagleSpecParity uses ~25 tokens, well under it, so nothing caught this.
+func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([][]float32, error) {
 	K := len(ids)
 	if K == 0 {
 		return nil, nil
@@ -1090,8 +1104,7 @@ func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][
 		}
 		return out, nil
 	}
-	// forwardN backs speculative verify: never fast, whatever the operator asked for.
-	h, err := m.forwardLayersN(reqCtx, ids, cache, false)
+	h, err := m.forwardLayersN(reqCtx, ids, cache, fastAttn)
 	if err != nil {
 		return nil, err
 	}
