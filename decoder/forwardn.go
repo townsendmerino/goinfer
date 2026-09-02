@@ -627,6 +627,36 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	return h, nil
 }
 
+// attendTileFor returns how many query rows attendOneHead may process at once with THIS slot: the
+// cache-sized tile from attnRowTile, clamped to what the slot's buffers actually hold.
+//
+// THE TILE IS A PROPERTY OF THE POOL, NOT OF THE CALL, AND THAT WAS THE BUG. forwardLayersN sizes
+// the pool ONCE from maxKeys = startPos+K, on the premise its own comment states — "nKeys =
+// startPos+K is the same for every layer in this sweep". It is not. A local (sliding-window) layer
+// whose ring has wrapped assembles a SHORTER window, nKeys = W-1+K, and attnRowTile is INVERSE in
+// nKeys: fewer keys, more rows per tile. So the per-layer tile came out LARGER than the qh the slot
+// was allocated, and the Q gather sliced past its length — `panic: slice bounds out of range`, in a
+// worker goroutine on the fan-out arm and in the Generate goroutine on the serial one, neither
+// recovered (audit-2026-09-02 C-04).
+//
+// Clamping is not a workaround for a sizing mistake; it is the invariant stated in the one place
+// that can enforce it. The tile is a memory-locality choice and the slot's capacity is the binding
+// constraint, so the slot is what gets to decide. Every other slot buffer follows from qh: with
+// kt <= t and nKeys <= maxKeys, scores needs kt*nKeys <= t*maxKeys, ch needs kt*hd <= t*hd, and
+// kh/vt need nKeys*hd <= maxKeys*hd. Clamp qh and they are all satisfied.
+//
+// It also covers the hand-built scratch slices in the ring tests, which no pool constructor sizes.
+func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
+	tile := attnRowTile(K, nKeys)
+	if hd < 1 {
+		return max(1, tile)
+	}
+	if rows := len(ws.qh) / hd; rows >= 1 && tile > rows {
+		tile = rows
+	}
+	return max(1, tile)
+}
+
 // attendBatchedHeads computes grouped-query causal attention for K query
 // positions at once, per head, via the SIMD A·Bᵀ matmul (linalg.MatmulBT)
 // instead of the scalar per-position attendQuery. The two O(L²) terms — QKᵀ and
@@ -710,7 +740,9 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		//
 		// `i` indexes the TILE below; `gi` is the global row. Positions and masks must
 		// use `gi` — startPos+gi, treeRowPos[gi], treeMask[gi] — while buffers use `i`.
-		tile := attnRowTile(K, nKeys)
+		// attendTileFor, not attnRowTile: the slot's capacity binds, and recomputing the tile
+		// from this layer's key count is what panicked a warm windowed session (C-04).
+		tile := attendTileFor(ws, K, nKeys, hd)
 		for t0 := 0; t0 < K; t0 += tile {
 			kt := min(tile, K-t0)
 			for i := range kt { // gather this tile's Q_head [kt,hd]

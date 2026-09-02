@@ -100,8 +100,28 @@ func (s *Session) reconcile(seq []int) {
 		s.tokens = nil
 		return
 	}
+	// CONSUME THE BOOL. TruncateTo reports whether the rewind was EXACT, and this line discarded it
+	// — the same answer rewindForReuse above has always acted on.
+	//
+	// It is reachable, and G18 is what made it so (3a16a4b, 2026-08-25: the batched sweep aborts per
+	// LAYER on a cancelled context). Layers below the abort point have already commitBatch'd, so
+	// their ring count is startPos+K while c.pos is still startPos — advanceTo runs only at the end
+	// of a completed sweep. Truncating to c.pos then rewinds those rings by K on a WRAPPED window,
+	// which cannot restore the rows the commit evicted: ring.truncate returns false. Ignoring that
+	// left the aborted turn's K/V — RoPE'd at positions startPos.. — physically resident, and
+	// s.tokens pointing at the prefix, so the next request that extends the conversation matched,
+	// rewound to a no-op "exact", and read those rows as history for EARLIER positions. Silently
+	// wrong attention on every local layer below the abort point, and plausible text
+	// (audit-2026-09-02 C-05). A cancelled request reports a clean end, so nothing else notices.
+	//
+	// Rings cannot restore evicted rows, so cold reset is the only exact answer — same remedy,
+	// same reason, as rewindForReuse.
+	if !s.cache.TruncateTo(len(seq)) {
+		s.cache.TruncateTo(0)
+		s.tokens = nil
+		return
+	}
 	s.tokens = seq
-	s.cache.TruncateTo(len(seq))
 }
 
 // Generate is Model.Generate with cross-call KV reuse. It rewinds the cache to
