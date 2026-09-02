@@ -60,7 +60,7 @@ func ParseRef(s string) (Ref, error) {
 		return Ref{}, fmt.Errorf("empty model reference")
 	}
 	repo, sel, hasSel := strings.Cut(s, ":")
-	if strings.Count(repo, "/") != 1 || strings.HasPrefix(repo, "/") || strings.HasSuffix(repo, "/") {
+	if !validRepo(repo) {
 		return Ref{}, fmt.Errorf("%q: want owner/repo[:quant|:file.gguf] (e.g. Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m)", s)
 	}
 	r := Ref{Repo: repo}
@@ -75,6 +75,29 @@ func ParseRef(s string) (Ref, error) {
 		}
 	}
 	return r, nil
+}
+
+// repoSegment is HuggingFace's owner/name charset. Validating against an ALLOW-list rather
+// than blocking bad characters is deliberate: the repo string is interpolated into a URL
+// path AND joined into a filesystem path, so anything that slips through is wrong in two
+// places at once. "../.." satisfies a naive "exactly one slash, no leading or trailing
+// slash" check — which is what this replaced — and would then escape the cache directory
+// under filepath.Join. Reachable remotely once the repo name can come from an HTTP request.
+var repoSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// validRepo reports whether repo is exactly "owner/name" with both segments in the safe
+// charset and neither being a relative-path element.
+func validRepo(repo string) bool {
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok || strings.Contains(name, "/") {
+		return false
+	}
+	for _, seg := range [2]string{owner, name} {
+		if seg == "." || seg == ".." || !repoSegment.MatchString(seg) {
+			return false
+		}
+	}
+	return true
 }
 
 // File is one downloadable file in a repo.

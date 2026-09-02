@@ -20,6 +20,24 @@ func TestParseRef(t *testing.T) {
 		{in: "noslash", wantErr: true},
 		{in: "too/many/slashes", wantErr: true},
 		{in: "a/b:", wantErr: true},
+		// Path-traversal and URL-injection shapes. "../.." passes a naive
+		// "one slash, no leading/trailing slash" check, which is what the first cut used;
+		// it would then escape the cache dir under filepath.Join AND corrupt the API URL.
+		{in: "../..", wantErr: true},
+		{in: "a/../../etc", wantErr: true},
+		{in: "./x", wantErr: true},
+		{in: "a/..", wantErr: true},
+		{in: "../b", wantErr: true},
+		{in: "a b/c", wantErr: true},
+		{in: "a/b c", wantErr: true},
+		{in: "-lead/b", wantErr: true},
+		{in: "a/b?x=1", wantErr: true},
+		{in: "a/b#frag", wantErr: true},
+		{in: "a%2f../b", wantErr: true},
+		// ...while ordinary HF names with dots, dashes and underscores stay valid.
+		{in: "unsloth/Llama-3.2-3B-Instruct-GGUF", repo: "unsloth/Llama-3.2-3B-Instruct-GGUF"},
+		{in: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", repo: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"},
+		{in: "bartowski/google_gemma-3-4b-it-GGUF:Q4_K_M.gguf", repo: "bartowski/google_gemma-3-4b-it-GGUF", file: "Q4_K_M.gguf"},
 	} {
 		got, err := ParseRef(tc.in)
 		if (err != nil) != tc.wantErr {
