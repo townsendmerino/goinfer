@@ -23,7 +23,7 @@ func TestStreamCachePath(t *testing.T) {
 
 // TestCacheFresh: a cache is fresh only when it exists and is newer than the source
 // — so replacing/re-touching the GGUF invalidates a stale cache.
-func TestCacheFresh(t *testing.T) {
+func TestCacheNewer(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "model.gguf")
 	cache := filepath.Join(dir, "model.int8.giw")
@@ -34,14 +34,14 @@ func TestCacheFresh(t *testing.T) {
 	}
 
 	write(src)
-	if cacheFresh(cache, src) {
+	if cacheNewer(cache, src) {
 		t.Error("no cache file → must not be fresh")
 	}
 
 	// cache written after src → fresh
 	time.Sleep(10 * time.Millisecond)
 	write(cache)
-	if !cacheFresh(cache, src) {
+	if !cacheNewer(cache, src) {
 		t.Error("cache newer than src → must be fresh")
 	}
 
@@ -51,7 +51,7 @@ func TestCacheFresh(t *testing.T) {
 	if err := os.Chtimes(src, now, now); err != nil {
 		t.Fatal(err)
 	}
-	if cacheFresh(cache, src) {
+	if cacheNewer(cache, src) {
 		t.Error("src newer than cache → must be stale")
 	}
 }

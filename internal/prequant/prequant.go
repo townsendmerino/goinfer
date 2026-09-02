@@ -67,9 +67,21 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool)
 	// whole resident model — this is what lets a model larger than RAM be prequant'd
 	// (e.g. a 106B-A12B int4 on a 62 GB box). The dedicated qwen35/gemma4 loaders fall
 	// back to a resident build inside StreamTranscodeGGUF (those models fit).
-	f, err := os.Create(out)
+	// TEMP + RENAME, not os.Create(out) directly (M-12). giw.WriteStream patches the body
+	// length placeholder at the END, so a bundle whose write was interrupted has a ZERO length
+	// in its header — and the error paths below cannot help, because the interruptions that
+	// matter are the ones that run no cleanup: SIGKILL, the OOM killer, power loss. Written in
+	// place, such a file exists, has an mtime NEWER than the source, and is therefore judged
+	// "fresh" forever — so every subsequent `serve --stream-weights` fails at boot with
+	// "truncated bundle", naming the .giw rather than the cause, until a human deletes it.
+	//
+	// With a temp file, an interrupted run leaves out.tmp and no `out` at all, so the next run
+	// simply rebuilds. The rename is atomic within a directory, so `out` only ever appears
+	// once the bytes are complete AND selfCheck has passed.
+	tmp := out + ".tmp"
+	f, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", out, err)
+		return fmt.Errorf("create %s: %w", tmp, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
 		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, false, row4, filepath.Base(in))
@@ -79,15 +91,20 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool)
 		werr = cerr
 	}
 	if werr != nil {
-		_ = os.Remove(out)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("write bundle: %w", werr)
 	}
 
 	// 3) Verify the bundle round-trips through the real (mmap) load path — cheap
-	// (lazy faults), confirms the streamed weights deserialize.
-	if err := selfCheck(out); err != nil {
-		_ = os.Remove(out)
+	// (lazy faults), confirms the streamed weights deserialize. On the TEMP file, so a
+	// bundle that fails it never becomes the sidecar even for an instant.
+	if err := selfCheck(tmp); err != nil {
+		_ = os.Remove(tmp)
 		return fmt.Errorf("self-check: %w", err)
+	}
+	if err := os.Rename(tmp, out); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("publish %s: %w", out, err)
 	}
 	return nil
 }
@@ -175,9 +192,33 @@ func streamCachePath(ggufPath, quant string) string {
 	return base + "." + quantLabel(quant) + ".giw"
 }
 
-// cacheFresh reports whether cache exists and is newer than src (so an updated GGUF
-// invalidates a stale cache).
+// cacheFresh reports whether cache exists, is newer than src, AND actually loads.
+//
+// mtime alone is not freshness (M-12). It cannot see a bundle that is truncated, written by an
+// older writer, or missing a tensor a newer reader requires — all of which are newer than the
+// source and all of which fail at load. That is also M-11's trigger: a pre-v6 gpt-oss sidecar
+// is "fresh" by mtime, passes validateShapes, and panics at the first forward.
+//
+// So freshness ends with the question that actually matters — does it load? — using the same
+// mmap probe selfCheck uses, which is lazy and cheap (it faults pages it never reads). A
+// bundle that does not load is not fresh, and the caller rebuilds it instead of failing at
+// boot with an error that names the .giw rather than the cause.
 func cacheFresh(cache, src string) bool {
+	if !cacheNewer(cache, src) {
+		return false
+	}
+	if err := selfCheck(cache); err != nil {
+		fmt.Fprintf(os.Stderr, "stream-weights: cache %s is newer than the source but does not "+
+			"load (%v) — rebuilding\n", filepath.Base(cache), err)
+		return false
+	}
+	return true
+}
+
+// cacheNewer is the mtime half of freshness, kept separate so each half can be tested for what
+// it actually decides: this one answers "has the source changed since the cache was built",
+// which is all an mtime can answer.
+func cacheNewer(cache, src string) bool {
 	cs, err1 := os.Stat(cache)
 	ss, err2 := os.Stat(src)
 	return err1 == nil && err2 == nil && cs.ModTime().After(ss.ModTime())

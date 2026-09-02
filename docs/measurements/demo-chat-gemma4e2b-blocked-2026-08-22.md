@@ -27,7 +27,7 @@ all and reuse an earlier layer's KV cache. Confirmed directly against the checkp
 35, with `SharedKVLayers=20` meaning layers 15–34 are shared) has `q_proj`/`o_proj`/`q_norm` but
 genuinely no `k_proj`/`v_proj`/`k_norm` tensors on disk — this is not a corrupt download.
 
-**The GGUF loader already handles this** (`decoder/gguf.go:2261-2304`: computes
+**The GGUF loader already handles this** (`decoder/gguf.go:2317-2360`: computes
 `firstShared := arch.NumLayers - g4.SharedKVLayers` and sets `l.KVShared`/skips k/v loading past
 that point). **The safetensors loader does not** — `grep SharedKVLayers decoder/weights.go` finds
 nothing; the safetensors path loads every layer's k/v unconditionally and fails the moment it hits

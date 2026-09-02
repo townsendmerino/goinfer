@@ -11,6 +11,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
+	"strings"
+	"time"
 )
 
 // TestGIWRoundTripPreservesRouterBias guards the .giw serialize format against
@@ -216,5 +222,129 @@ func TestStreamTranscodeMatchesResident(t *testing.T) {
 					n, len(rPost), len(rPost), len(sPost))
 			}
 		})
+	}
+}
+
+// M-12: the sidecar was written IN PLACE, and freshness was mtime alone.
+//
+// giw.WriteStream patches the body-length placeholder at the END, so a bundle whose write was
+// interrupted carries a ZERO length in its header. The error paths in Transcode cannot help,
+// because the interruptions that matter run no cleanup at all: SIGKILL, the OOM killer, power
+// loss. Written in place, such a file EXISTS and has an mtime newer than the source, so it is
+// "fresh" forever — and every later `serve --stream-weights` dies at boot with "truncated
+// bundle", naming the .giw rather than the cause, until a human deletes it.
+func TestSidecar_interruptedWriteDoesNotPoisonTheCache(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "model.gguf")
+	if err := os.WriteFile(src, []byte("not really a gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache := filepath.Join(dir, "model.int8.giw")
+
+	// What a killed transcode leaves behind: a partial bundle at the FINAL path, newer than
+	// the source. This is the state the old writer produced and could never recover from.
+	if err := os.WriteFile(cache, []byte("GIW\x00truncated"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := os.Chtimes(cache, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// The mtime half says fresh — which is exactly the trap, so assert it rather than assume
+	// it: if this ever stopped being true the test below would pass for the wrong reason.
+	if !cacheNewer(cache, src) {
+		t.Fatal("premise broke: the partial cache is not newer than the source, so this no " +
+			"longer reproduces the state a killed transcode leaves")
+	}
+	if cacheFresh(cache, src) {
+		t.Error("a truncated bundle newer than its source is reported FRESH — serve then fails " +
+			"at boot with `truncated bundle` and never rebuilds (M-12)")
+	}
+}
+
+// The other half: the write must not publish the final path until the bytes are complete AND
+// self-checked. Asserted on the writer's behaviour under a failure, since SIGKILL cannot be
+// simulated in-process — a transcode that fails leaves no sidecar, only (at most) a .tmp.
+func TestSidecar_failedTranscodeLeavesNoFinalFile(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "model.gguf")
+	if err := os.WriteFile(src, []byte("not a gguf at all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "model.int8.giw")
+
+	if err := Transcode(context.Background(), src, out, "int8", false, false); err == nil {
+		t.Fatal("Transcode accepted a non-GGUF source")
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Error("a failed transcode left the FINAL sidecar in place; the next run would treat " +
+			"it as a cache rather than rebuilding (M-12)")
+	}
+}
+
+// The temp+rename half of M-12 cannot be shown by a failing Transcode: the error paths remove
+// the file either way, so an in-place writer passes the tests above unchanged (measured — that
+// is why this exists). The property is about what is on disk DURING the write, and the
+// interruption that matters (SIGKILL, OOM-kill, power loss) cannot be simulated in-process.
+//
+// So it is asserted structurally: Transcode must os.Create something that is NOT the final
+// path, and must os.Rename onto the final path. A writer that satisfies both cannot leave a
+// partial bundle where the cache lookup will find it.
+func TestTranscode_writesViaTempThenRenames(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "prequant.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var fn *ast.FuncDecl
+	ast.Inspect(af, func(n ast.Node) bool {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "Transcode" {
+			fn = d
+		}
+		return true
+	})
+	if fn == nil {
+		t.Fatal("Transcode not found — this guard is watching nothing")
+	}
+	render := func(e ast.Expr) string {
+		var b strings.Builder
+		_ = printer.Fprint(&b, fset, e)
+		return b.String()
+	}
+	var createdFinal, renamedToFinal, creates int
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || render(sel.X) != "os" || len(call.Args) == 0 {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Create":
+			creates++
+			if render(call.Args[0]) == "out" {
+				createdFinal++
+			}
+		case "Rename":
+			if len(call.Args) == 2 && render(call.Args[1]) == "out" {
+				renamedToFinal++
+			}
+		}
+		return true
+	})
+	if creates == 0 {
+		t.Fatal("Transcode creates no file — the guard is watching the wrong function")
+	}
+	if createdFinal > 0 {
+		t.Error("Transcode os.Creates the FINAL sidecar path directly. giw.WriteStream patches " +
+			"the body length at the END, so a killed write leaves a zero-length header at a path " +
+			"that is newer than its source and therefore 'fresh' forever (M-12)")
+	}
+	if renamedToFinal != 1 {
+		t.Errorf("Transcode renames onto the final path %d times, want exactly 1 — the sidecar "+
+			"must appear only once the bytes are complete and self-checked", renamedToFinal)
 	}
 }

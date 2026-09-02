@@ -1001,11 +1001,11 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/fusedattn.go:101` | goinfer | `a0, a1 := max(lo[i], k0), min(hi[i], k1-1)` |
 | `docs/audit-2026-09-02.md|decoder/fusedattn.go:45` | goinfer | `func fusedAttention() bool { return os.Getenv("GOINFER_FUSED_ATTENTION") != "0" }` |
 | `docs/audit-2026-09-02.md|decoder/fusedattn.go:85` | goinfer | `anchor: func attendTileFused(` |
-| `docs/audit-2026-09-02.md|decoder/gguf.go:1246` | goinfer | `// Refuse families whose per-layer state the .giw writer can't express (MLA / Mamba-2 / ` |
-| `docs/audit-2026-09-02.md|decoder/gguf.go:1261` | goinfer | `if arch.gemma4 != nil {` |
-| `docs/audit-2026-09-02.md|decoder/gguf.go:1539` | goinfer | `if err := sink.writeHeadGlobals(w, id); err != nil {` |
-| `docs/audit-2026-09-02.md|decoder/gguf.go:1764` | goinfer | `// expert weights are MXFP4 in the real checkpoint — stackedExperts routes them` |
-| `docs/audit-2026-09-02.md|decoder/gguf.go:1860` | goinfer | `if err := parallelLayers(arch.NumLayers, loadGptOss); err != nil {` |
+| `docs/audit-2026-09-02.md|decoder/gguf.go:1246` | goinfer | `// canSerialize once refused MLA / Mamba-2 / Gemma-4 PLE / Llama-4 here; since v6 the wr` |
+| `docs/audit-2026-09-02.md|decoder/gguf.go:1556` | goinfer | `if arch.gemma4 != nil {` |
+| `docs/audit-2026-09-02.md|decoder/gguf.go:1559` | goinfer | `if err := sink.writeHeadGlobals(w, id); err != nil {` |
+| `docs/audit-2026-09-02.md|decoder/gguf.go:1784` | goinfer | `// expert weights are MXFP4 in the real checkpoint — stackedExperts routes them` |
+| `docs/audit-2026-09-02.md|decoder/gguf.go:1880` | goinfer | `if err := parallelLayers(arch.NumLayers, loadGptOss); err != nil {` |
 | `docs/audit-2026-09-02.md|decoder/gguf.go:27` | goinfer | `// Architectures: llama, qwen2, qwen3, gemma3, mellum. Quant types: F32/F16,` |
 | `docs/audit-2026-09-02.md|decoder/gguf.go:41` | goinfer | `defer func() {` |
 | `docs/audit-2026-09-02.md|decoder/gguf.go:483` | goinfer | `numLayers := u("block_count")` |
@@ -1024,10 +1024,10 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/kvcache.go:515` | goinfer | `func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV []float3` |
 | `docs/audit-2026-09-02.md|decoder/kvcache.go:521` | goinfer | `base = max(startPos-r.w+1, 0)` |
 | `docs/audit-2026-09-02.md|decoder/kvcache_recurrent_test.go:13` | goinfer | `c.mamba = []*mamba2State{{ssm: []float32{1, 2, 3}, convWin: [][]float32{{9}}}}` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:214` | goinfer | `if numLayers < 0 \|\| numLayers > maxSerializedLayers \|\| kvDim < 0 \|\| kvDim > 1<<24 \|\|` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:218` | goinfer | `if perPos := numLayers * kvDim; perPos > 0 && int64(pos) > int64(len(data))/int64(perPos` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:254` | goinfer | `if st != kvDim \|\| rr.count < 0 \|\| nLive > rr.w \|\| rr.count < nLive {` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:287` | goinfer | `} else if quant == kvI8 {` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:214` | goinfer | `// M-04: numLayers == 0 and kvDim == 0 USED TO PASS — only negatives and over-maxes were` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:241` | goinfer | `// Each of the pos positions stores at least one byte across the numLayers·kvDim KV, so ` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:279` | goinfer | `if st != kvDim \|\| rr.count < 0 \|\| nLive > rr.w \|\| rr.count < nLive {` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:312` | goinfer | `} else if quant == kvI8 {` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:71` | goinfer | `if c.hasRecurrentState() \|\| len(c.mlaLatent) > 0 {` |
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:107` | goinfer | `const ahead = 1` |
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:64` | goinfer | `if _, own := w.arch.ownForward(); own {` |
@@ -1183,11 +1183,11 @@ supports.
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:131` | goinfer | `flush := func(final bool) error {` |
 | `docs/audit-2026-09-02.md|internal/gemmaapp/main.go:175` | goinfer | `m := constrain.NewMasker(constrain.JSON(), constrain.TokenBytes(vocab, tk.TokenText), eo` |
 | `docs/audit-2026-09-02.md|internal/giw/bundle.go:44` | goinfer | `func WriteStream(f *os.File, tok []byte, writeWeights func(io.Writer) (int64, error)) er` |
-| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:101` | goinfer | `func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4, row4 bool) err` |
-| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:154` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant string) (string, error) {` |
-| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:180` | goinfer | `func cacheFresh(cache, src string) bool {` |
-| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:193` | goinfer | `// selfCheck verifies a freshly written bundle loads through the real mmap path` |
-| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:70` | goinfer | `f, err := os.Create(out)` |
+| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:118` | goinfer | `func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4, row4 bool) err` |
+| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:140` | goinfer | `f, err := os.Create(out)` |
+| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:171` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant string) (string, error) {` |
+| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:206` | goinfer | `func cacheFresh(cache, src string) bool {` |
+| `docs/audit-2026-09-02.md|internal/prequant/prequant.go:234` | goinfer | `// selfCheck verifies a freshly written bundle loads through the real mmap path` |
 | `docs/audit-2026-09-02.md|internal/serveapp/admin.go:64` | goinfer | `anchor: func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/admin.go:71` | goinfer | `lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, c)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/admin_test.go:80` | goinfer | `// old contract was "busy → 409"; unload now DRAINS instead of refusing — the in-flight-` |
@@ -1359,7 +1359,7 @@ supports.
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:580` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:252` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
-| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2261` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
+| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2317` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:362` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1101` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:549` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
@@ -1494,9 +1494,9 @@ supports.
 | `docs/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
 | `docs/task-moe-streaming.md|decoder/residency.go:130` | goinfer | `return m.residentProjsInt4()` |
 | `docs/task-verification-surface-audit.md|decoder/blockspec.go:521` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
-| `docs/task-zeno-compare.md|decoder/gguf.go:1261` | goinfer | `if arch.gemma4 != nil {` |
-| `docs/task-zeno-compare.md|decoder/gguf.go:1423` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
-| `docs/task-zeno-compare.md|decoder/gguf.go:1526` | goinfer | `if g.Has("output.weight") {` |
+| `docs/task-zeno-compare.md|decoder/gguf.go:1443` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
+| `docs/task-zeno-compare.md|decoder/gguf.go:1546` | goinfer | `if g.Has("output.weight") {` |
+| `docs/task-zeno-compare.md|decoder/gguf.go:1556` | goinfer | `if arch.gemma4 != nil {` |
 | `docs/task-zeno-compare.md|decoder/serialize.go:177` | goinfer | `anchor: func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error)` |
 | `docs/task-zeno-compare.md|decoder/weightmat.go:125` | goinfer | `func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) ` |
 | `docs/task-zeno-compare.md|internal/prequant/prequant.go:65` | goinfer | `// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a` |

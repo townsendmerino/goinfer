@@ -1243,10 +1243,11 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	if err != nil {
 		return 0, err
 	}
-	// Refuse families whose per-layer state the .giw writer can't express (MLA / Mamba-2 / Gemma-4
-	// PLE / Llama-4) BEFORE the load — otherwise the granite/nemotron/llama4 branches stream a
-	// header declaring N layers followed by zero layers, or gemma4 loads fully then drops its PLE
-	// stack, producing a CRC-valid bundle that nil-derefs at the first forward (C2).
+	// canSerialize once refused MLA / Mamba-2 / Gemma-4 PLE / Llama-4 here; since v6 the writer
+	// expresses all of them and it returns nil unconditionally. The comment that used to sit
+	// here still described the refusal, which is how M-09 stayed invisible: the families it
+	// named are exactly the ones whose GGUF branch never drives the sink, and the reader was
+	// told they could not get this far.
 	if serr := canSerialize(arch); serr != nil {
 		return 0, serr
 	}
@@ -1258,7 +1259,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	// each layer instead of holding all of them until one final serialize), not a
 	// numerics one. A 35B-A3B MoE OOM'd at 40.5GB resident on a 16GB Mac under the
 	// old resident-then-serialize path; this bounds peak RSS to ~one layer.
-	if arch.gemma4 != nil {
+	if needsResidentSerialize(arch) {
 		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, nil, "")
 		if berr != nil {
 			return 0, berr
@@ -1321,6 +1322,25 @@ const (
 // family builder has already run — a hostile count would makeslice a multi-TB array
 // (a fatal OOM, unrecoverable) or, wrapped negative, panic, before that. Call this
 // right after reading block_count in any builder that allocates from it (M16).
+// needsResidentSerialize names the families whose dedicated GGUF branch builds every layer and
+// returns, WITHOUT driving the per-layer sink. For them the streaming writer would emit a header
+// declaring N layers followed by zero layers — a bundle whose CRC is valid and whose body ends
+// early, so cmd/prequant and `serve --stream-weights` load the whole model resident (defeating
+// the one-layer-peak-RAM contract this path exists for) and then fail minutes later with
+// "truncated body: unexpected end of data" (M-09).
+//
+// gemma4 was already routed this way because its fused PLE/MoE tail cannot stream. The other
+// five are here because their branches never call sink.layer either — a fact the old comment
+// above canSerialize actively hid by claiming they were refused before the load.
+//
+// This is a LIST, so it will go stale. The refusal inside buildWeightsFromGGUF is the backstop:
+// a family that reaches a non-streaming return with a live sink errors loudly instead of writing
+// a header-only bundle.
+func needsResidentSerialize(a *Architecture) bool {
+	return a.gemma4 != nil || a.gptoss != nil || a.laguna != nil ||
+		a.granite != nil || a.nemotron != nil || a.llama4 != nil
+}
+
 func ggufLayerCount(n int) (int, error) {
 	if n <= 0 || n > maxGGUFLayers {
 		return 0, fmt.Errorf("decoder(gguf): block_count %d out of range (1..%d)", n, maxGGUFLayers)
@@ -1860,6 +1880,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if err := parallelLayers(arch.NumLayers, loadGptOss); err != nil {
 			return nil, err
 		}
+		if sink != nil {
+			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
+			// continuing would write a header declaring arch.NumLayers followed by no layers
+			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
+			// resident-build fallback (needsResidentSerialize); if it did not, say so here
+			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
+			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
+				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
+		}
 		return w, nil
 	}
 
@@ -1981,6 +2010,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if err := parallelLayers(arch.NumLayers, loadLaguna); err != nil {
 			return nil, err
 		}
+		if sink != nil {
+			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
+			// continuing would write a header declaring arch.NumLayers followed by no layers
+			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
+			// resident-build fallback (needsResidentSerialize); if it did not, say so here
+			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
+			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
+				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
+		}
 		return w, nil
 	}
 
@@ -2098,6 +2136,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		if err := parallelLayers(arch.NumLayers, loadGranite); err != nil {
 			return nil, err
+		}
+		if sink != nil {
+			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
+			// continuing would write a header declaring arch.NumLayers followed by no layers
+			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
+			// resident-build fallback (needsResidentSerialize); if it did not, say so here
+			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
+			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
+				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}
@@ -2236,6 +2283,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		if err := parallelLayers(arch.NumLayers, loadNemo); err != nil {
 			return nil, err
+		}
+		if sink != nil {
+			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
+			// continuing would write a header declaring arch.NumLayers followed by no layers
+			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
+			// resident-build fallback (needsResidentSerialize); if it did not, say so here
+			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
+			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
+				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}
@@ -2456,6 +2512,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		if err = parallelLayers(arch.NumLayers, loadL4); err != nil {
 			return nil, err
+		}
+		if sink != nil {
+			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
+			// continuing would write a header declaring arch.NumLayers followed by no layers
+			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
+			// resident-build fallback (needsResidentSerialize); if it did not, say so here
+			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
+			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
+				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}
