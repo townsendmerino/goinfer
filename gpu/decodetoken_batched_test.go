@@ -70,7 +70,6 @@ func TestDecodeTokenFusedBatched_parity(t *testing.T) {
 
 	buildMW := func() ModelW {
 		mw := ModelW{FinalNorm: fnorm, LMHead: lmHead}
-		defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 		for l := range layers {
 			kc, _ := ctx.NewKVCache(layers[l].priorK, cap)
 			vc, _ := ctx.NewKVCache(layers[l].priorV, cap)
@@ -91,7 +90,12 @@ func TestDecodeTokenFusedBatched_parity(t *testing.T) {
 	}
 
 	// Reference: M sequential DecodeTokenFused over one shared KV cache.
+	// Release at TEST scope, not inside buildMW. A `defer mw.Release()` in the builder fires
+	// when the BUILDER returns — and since `return mw` copies to the return slot before defers
+	// run, the caller receives a struct whose buffers are all already closed, then nil-derefs
+	// on the first use. Resident weights are caller-owned; Context.Close does not free them.
 	mwSeq := buildMW()
+	defer mwSeq.Release()
 	ref := make([][]float32, M)
 	for r := range xs {
 		out, err := ctx.DecodeTokenFused(xs[r], mwSeq, hidden, nH, nKV, hd, inter, start+r, 0, eps, scale, false)
@@ -103,6 +107,7 @@ func TestDecodeTokenFusedBatched_parity(t *testing.T) {
 
 	// Batched: one call, fresh KV cache from the same prefix.
 	mwBatch := buildMW()
+	defer mwBatch.Release()
 	positions := make([]int, M)
 	for r := range positions {
 		positions[r] = start + r

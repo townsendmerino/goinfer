@@ -75,7 +75,6 @@ func TestKVCacheF16_parity(t *testing.T) {
 	invD := up32(invFreq)
 	build := func(f16 bool) ModelW {
 		mw := ModelW{FinalNorm: up32(fnorm), LMHead: mk(lmBQ, lmS, vocab, hidden)}
-		defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 		for l := range layers {
 			L := &layers[l]
 			var kc, vc *DeviceBuffer
@@ -98,12 +97,18 @@ func TestKVCacheF16_parity(t *testing.T) {
 		return mw
 	}
 
-	runner32, err := ctx.NewDecodeRunner(build(false), hidden, nH, nKV, hd, inter, 0, eps, scale, false)
+	// Released at TEST scope, not inside build(): a defer there frees the weights the moment
+	// they are built. Resident weights are caller-owned; Context.Close does not free them.
+	mw32 := build(false)
+	defer mw32.Release()
+	runner32, err := ctx.NewDecodeRunner(mw32, hidden, nH, nKV, hd, inter, 0, eps, scale, false)
 	if err != nil {
 		t.Fatalf("NewDecodeRunner f32: %v", err)
 	}
 	defer runner32.Release()
-	rm16 := w8Model(build(true))
+	mw16 := build(true)
+	defer mw16.Release()
+	rm16 := w8Model(mw16)
 	rm16.kvF16 = true
 	runner16, err := ctx.newDecodeRunner(rm16, hidden, nH, nKV, hd, inter, 0, eps, scale, false)
 	if err != nil {

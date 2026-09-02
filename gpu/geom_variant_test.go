@@ -55,7 +55,6 @@ func TestGeomVariants_dedup(t *testing.T) {
 	buildMW := func() ModelW {
 		invD := up32(invFreq)
 		mw := ModelW{FinalNorm: up32(randMat(hidden, 600)), LMHead: W(vocab, hidden)}
-		defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 		for l := range 2 {
 			kc, _ := ctx.NewKVCache(nil, (pos+1)*kvDim)
 			vc, _ := ctx.NewKVCache(nil, (pos+1)*kvDim)
@@ -74,7 +73,13 @@ func TestGeomVariants_dedup(t *testing.T) {
 	// (ghd, gnKV, ghalf) + kEqV and reports how many distinct geometries the plan dedups
 	// to. ghd==0 leaves the dims at the model default (used to vary kEqV in isolation).
 	count := func(t *testing.T, ghd, gnKV, ghalf int, kEqV bool) int {
-		rm := w8Model(buildMW())
+		// Released at THIS scope, not inside buildMW: a defer there fires when the BUILDER
+		// returns, and `return mw` copies to the return slot first, so the caller gets a
+		// struct whose buffers are already closed. Resident weights are caller-owned;
+		// Context.Close does not free them.
+		mw := buildMW()
+		defer mw.Release()
+		rm := w8Model(mw)
 		if ghd != 0 {
 			rm.layers[1].ghd, rm.layers[1].gnKV, rm.layers[1].ghalf = ghd, gnKV, ghalf
 		}
