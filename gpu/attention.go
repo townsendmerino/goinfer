@@ -5,6 +5,7 @@ package gpu
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 
@@ -125,6 +126,160 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     if (lane) { ctx[qbase + d] = acc / l; }
 }
 `
+
+// attnKeys — decode attention that splits the workgroup over KEYS, not over the head
+// dimension. Same math as attnShaderWGSL, different decomposition, and the decomposition
+// is the whole point.
+//
+// attnShaderWGSL puts one lane on each of the hd dimensions, so the q·k dot for EVERY key
+// is a cross-lane reduction: red[d]=prod, barrier, 7 barrier'd tree levels, trailing
+// barrier = 9 workgroupBarrier() PER KEY. At nKeys=513 that is 4,617 barriers per layer,
+// and measured 13.69 ms/token at pos 512 on the 1.5B — 28 layers reading 29.4 MB of KV,
+// which at 448 GB/s is a 0.066 ms job. ~0.5% of streaming roofline, against the GEMV path's
+// ~83%: a latency wall, not a bandwidth one. (TestDecode_dispatchProfile, G35.)
+//
+// Here each lane owns a disjoint set of KEYS and computes its own dots with no cross-lane
+// traffic; only the softmax max and denominator reduce, ONCE per tile rather than once per
+// key. Barriers per layer fall ~250×. This is the shape cuda/attn_block.cu already uses —
+// WebGPU's kernel was a generation behind it, not blocked by WGSL.
+//
+// TILED, because WGSL has no dynamic workgroup storage. CUDA sizes sc[nWin] per launch via
+// extern __shared__; a WGSL var<workgroup> is fixed at compile time, so scores are processed
+// in TILE-key tiles with the online-softmax state (m, l, acc) carried across them. Storage is
+// 2048*4 + 128*4 = 8.5 KB, inside WebGPU's guaranteed 16 KB — no limit raise, no portability
+// cost, and any context length works.
+//
+// vec4 K/q loads are load-bearing, not a micro-optimization. Splitting over keys makes the K
+// read stride kvDim across the warp; ncu measured that pattern using only ~22% of each 32-byte
+// L1TEX sector on the CUDA twin, which is why attn_block.cu reads float4. Same fix here, and
+// it is why the eligibility guard requires hd%4==0 and kvDim%4==0.
+//
+// NOT bit-identical to attnShaderWGSL: the denominator sums in a different order and the tiled
+// rescale reassociates. Attention was never bit-exact anyway — it runs f32 against the CPU
+// oracle's f64 (see the note at the top of this file), so the standing gate is TestAttention_parity's
+// cosine/maxAbs against that f64 reference, plus argmax through TestWebGPU_forwardParity.
+const attnKeysShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       q4:   array<vec4<f32>>;  // [nH*hd/4]  (RoPE'd)
+@group(0) @binding(1) var<storage, read>       k4:   array<vec4<f32>>;  // [nKeys*kvDim/4]
+@group(0) @binding(2) var<storage, read>       vals: array<f32>;        // [nKeys*kvDim]
+@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;        // [nH*hd]
+@group(0) @binding(4) var<uniform>             p:    P;
+
+var<workgroup> sc:  array<f32, 2048>;  // one tile of scores; TILE below must match
+var<workgroup> red: array<f32, 128>;   // the two per-tile reductions
+
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    if (qh >= p.nH) { return; }   // uniform per workgroup ⇒ the barriers below stay uniform
+    let t = lid.x;
+    let hd = p.hd;
+    let hd4 = hd / 4u;
+    let kvDim = p.nKV * hd;
+    let kvDim4 = kvDim / 4u;
+    let kvh = qh / p.group;
+    let qb4 = (qh * hd) / 4u;
+    let kvb4 = (kvh * hd) / 4u;
+    let kvbase = kvh * hd;
+    let TILE: u32 = 2048u;
+
+    var m: f32 = -1e30;   // running softmax max
+    var l: f32 = 0.0;     // running denominator
+    var acc: f32 = 0.0;   // lane t's running weighted V-sum for dim t (t < hd)
+
+    var tileStart: u32 = p.start;
+    loop {
+        if (tileStart >= p.nKeys) { break; }
+        var tileEnd: u32 = tileStart + TILE;
+        if (tileEnd > p.nKeys) { tileEnd = p.nKeys; }
+
+        // pass 1 — scores. Lanes split over KEYS: each lane's dot is entirely its own.
+        var lm: f32 = -1e30;
+        for (var s: u32 = tileStart + t; s < tileEnd; s = s + 128u) {
+            let kb = s * kvDim4 + kvb4;
+            var dot: f32 = 0.0;
+            for (var i: u32 = 0u; i < hd4; i = i + 1u) {
+                let qq = q4[qb4 + i];
+                let kk = k4[kb + i];
+                dot = dot + qq.x * kk.x;
+                dot = dot + qq.y * kk.y;
+                dot = dot + qq.z * kk.z;
+                dot = dot + qq.w * kk.w;
+            }
+            let x = dot * p.scale;
+            sc[s - tileStart] = x;
+            lm = max(lm, x);
+        }
+        red[t] = lm;
+        workgroupBarrier();
+        var stride: u32 = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (t < stride) { red[t] = max(red[t], red[t + stride]); }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let mnew = max(m, red[0]);
+        let corr = exp(m - mnew);
+        workgroupBarrier();   // every lane has read red[0] before pass 2 overwrites red[t]
+
+        // pass 2 — exponentiate in place + partial denominator, still split over KEYS.
+        var ls: f32 = 0.0;
+        for (var s: u32 = tileStart + t; s < tileEnd; s = s + 128u) {
+            let e = exp(sc[s - tileStart] - mnew);
+            sc[s - tileStart] = e;
+            ls = ls + e;
+        }
+        red[t] = ls;
+        workgroupBarrier();
+        stride = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (t < stride) { red[t] = red[t] + red[t + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        l = l * corr + red[0];
+
+        // pass 3 — V-sum. Lanes switch to owning DIMS, which is what makes the V read
+        // coalesced across the warp (adjacent lanes read adjacent floats of one row).
+        if (t < hd) {
+            var a: f32 = acc * corr;
+            for (var s: u32 = tileStart; s < tileEnd; s = s + 1u) {
+                a = a + sc[s - tileStart] * vals[s * kvDim + kvbase + t];
+            }
+            acc = a;
+        }
+        m = mnew;
+        workgroupBarrier();   // sc and red are reused by the next tile
+        tileStart = tileEnd;
+    }
+    if (t < hd) { ctx[qh * hd + t] = acc / l; }
+}
+`
+
+// attnKeysTile is the key-tile width compiled into attnKeysShaderWGSL's sc[] array. Kept
+// beside the shader because the two MUST agree: a larger TILE in the WGSL without a larger
+// sc[] writes out of bounds.
+const attnKeysTile = 2048
+
+// attnKeysEligible reports whether the key-split attention kernel can serve this geometry.
+// f32 KV only (the f16/int8 caches have their own packed kernels), hd within the narrow
+// 128-lane kernel, and hd/kvDim both multiples of 4 so the vec4 K/q loads are in bounds and
+// aligned — without those loads the key-split read pattern wastes ~78% of each L1TEX sector,
+// which is the whole reason cuda/attn_block.cu reads float4.
+// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the old
+// dim-split kernel can be A/B'd in the same binary. Read once: the plan is recorded per
+// runner, and a mid-run flip would leave a half-converted plan.
+var attnKeysDisabled = os.Getenv("GOINFER_ATTN_KEYS") == "0"
+
+func attnKeysEligible(hd, kvDim int, kvF16, kvI8 bool) bool {
+	if kvF16 || kvI8 || hd > attnWG || hd <= 0 {
+		return false
+	}
+	return hd%4 == 0 && kvDim%4 == 0
+}
 
 // ropeStore: like rope, but reads the q/k-projection output from a separate src
 // buffer and writes the rotated result into dst (the KV cache) at element offset
@@ -511,6 +666,11 @@ func (c *Context) ensureAttn() error {
 	if c.attnShader, c.attnPipeline, c.attnLayout, err = mk("attn", attnShaderWGSL); err != nil {
 		return err
 	}
+	// Built here (not lazily at first use) so a shader-compile failure surfaces at ensureAttn
+	// alongside every other attention pipeline, rather than mid-decode. Cheap: one compile.
+	if c.attnKeysShader, c.attnKeysPipeline, c.attnKeysLayout, err = mk("attn-keys", attnKeysShaderWGSL); err != nil {
+		return err
+	}
 	if c.qkvFinShader, c.qkvFinPipeline, c.qkvFinLayout, err = mk("qkvFinalize", qkvFinalizeShaderWGSL); err != nil {
 		return err
 	}
@@ -585,6 +745,14 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 	if err := c.ensureAttn(); err != nil {
 		return nil, err
 	}
+	return c.attentionOn(c.attnPipeline, c.attnLayout, q, keys, vals, nH, nKV, hd, nKeys, start, scale)
+}
+
+// attentionOn is Attention's body, parameterised by which attention pipeline to run. Split out
+// so the key-split kernel is exercised through EXACTLY the same host path as the dim-split one —
+// a parity test that supplied its own dispatch would be testing its own calling convention rather
+// than the kernel the runner uses.
+func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout, q, keys, vals []float32, nH, nKV, hd, nKeys, start int, scale float32) ([]float32, error) {
 	group := nH / nKV
 	qBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
 	defer qBuf.Release()
@@ -599,7 +767,7 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 	defer cBuf.Release()
 	pBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
 	defer pBuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.attnLayout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
 		{Binding: 1, Buffer: kBuf, Size: kBuf.GetSize()},
 		{Binding: 2, Buffer: vBuf, Size: vBuf.GetSize()},
@@ -613,7 +781,7 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 	enc, _ := c.device.CreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
-	pass.SetPipeline(c.attnPipeline)
+	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(nH), 1, 1) // one workgroup per query head
 	if err := pass.End(); err != nil {

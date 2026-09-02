@@ -157,6 +157,13 @@ type Context struct {
 	attnPipeline *wgpu.ComputePipeline
 	attnLayout   *wgpu.BindGroupLayout
 
+	// attnKeys: the key-split decode attention kernel (attention.go). Same bindings as attn,
+	// but its own auto-derived layout — the shader views q/keys as array<vec4<f32>>, so the
+	// minBindingSize the two layouts derive is not the same and they must not be swapped.
+	attnKeysShader   *wgpu.ShaderModule
+	attnKeysPipeline *wgpu.ComputePipeline
+	attnKeysLayout   *wgpu.BindGroupLayout
+
 	// KV-cache writers (ensureAttn): rope-and-store K into KCache, store V into
 	// VCache — both at pos*kvDim via a per-token uniform base, so the decode token
 	// is a single compute pass with no CopyBufferToBuffer to break it.
