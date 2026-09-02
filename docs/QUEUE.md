@@ -937,8 +937,8 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/deltanet_chunked_test.go:36` | goinfer | `aLog[i] = -2 * rng.Float32() // A_log in [-2,0] → gt = exp(g) in (0,1), stable` |
 | `docs/audit-2026-09-02.md|decoder/dflash.go:651` | goinfer | `scale := 1 / math.Sqrt(float64(hd))` |
 | `docs/audit-2026-09-02.md|decoder/embed.go:40` | goinfer | `if _, own := a.ownForward(); own {` |
-| `docs/audit-2026-09-02.md|decoder/embed.go:48` | goinfer | `cache := m.NewCache(len(ids))` |
-| `docs/audit-2026-09-02.md|decoder/embed.go:50` | goinfer | `for _, id := range ids {` |
+| `docs/audit-2026-09-02.md|decoder/embed.go:64` | goinfer | `cache := m.NewCache(len(ids))` |
+| `docs/audit-2026-09-02.md|decoder/embed.go:66` | goinfer | `for _, id := range ids {` |
 | `docs/audit-2026-09-02.md|decoder/features.go:261` | goinfer | `// residentBackendMoECap is the router-kernel capacity of each backend whose MoE scorebo` |
 | `docs/audit-2026-09-02.md|decoder/features.go:273` | goinfer | `"webgpu": {experts: 512, groups: 32}, // gpu/moe.go: MAXE 512, array<f32,512> score/sel ` |
 | `docs/audit-2026-09-02.md|decoder/features.go:419` | goinfer | `//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU` |
@@ -1188,9 +1188,9 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:561` | goinfer | `func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loade` |
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic_stream.go:94` | goinfer | `// THE THIRD BUFFER-THEN-STREAM SITE. G19 gave the OpenAI tool path and /v1/responses a` |
 | `docs/audit-2026-09-02.md|internal/serveapp/cpufastattn_test.go:12` | goinfer | `//  1. It is OFF unless asked for. A speed flag that turns itself on is how a user` |
-| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:170` | goinfer | `func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, error) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:181` | goinfer | `func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:84` | goinfer | `maxTokens: 0,` |
+| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:182` | goinfer | `func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:193` | goinfer | `func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:84` | goinfer | `// "nothing shorter" is not "unbounded": HiddenLast preallocates KV for len(ids) positio` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:122` | goinfer | `promptTokens := s.countEmbedTokens(inputs, isQuery)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:31` | goinfer | `// positions. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes ` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |

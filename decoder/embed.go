@@ -40,6 +40,22 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 	if _, own := a.ownForward(); own {
 		return nil, fmt.Errorf("decoder.HiddenLast: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
+	// A LENGTH BOUND, NOT JUST A VOCAB ONE. This preallocates KV for len(ids) positions and then
+	// runs one sequential forward per token with no context to cancel it, so an over-long input is
+	// not slow — it is a ~114 GB allocation (28 layers, kvDim 1024, 500k positions) and attention
+	// over up to len(ids) keys per token, holding the caller's mutex until the process is OOM-killed.
+	// The serving embedder now truncates to MaxPositions before it gets here (C-07), and this is
+	// the same bound stated where the cost is actually incurred, so a DIFFERENT caller cannot
+	// reintroduce it. Positions past the window would also pool from out-of-range RoPE — plausible,
+	// and wrong — which is the quieter half of the same defect.
+	// m.Config().MaxPositions (max_position_embeddings), NOT a.MaxPositions — the Architecture field
+	// of that name is the GPT-2 learned-position TABLE SIZE and is 0 for every RoPE family, so
+	// keying on it would have made this guard silently inert for almost every model. Same shape as
+	// the LFM2 bugs: the wrong key reads as a legal zero.
+	if mp := m.Config().MaxPositions; mp > 0 && len(ids) > mp {
+		return nil, fmt.Errorf("decoder.HiddenLast: %d tokens exceeds the model's context window of "+
+			"%d (context_length_exceeded); truncate before pooling", len(ids), mp)
+	}
 	for i, id := range ids {
 		if id < 0 || id >= a.VocabSize {
 			return nil, fmt.Errorf("decoder.HiddenLast: token %d at index %d out of vocab [0,%d)", id, i, a.VocabSize)

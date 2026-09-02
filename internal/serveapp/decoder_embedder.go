@@ -79,9 +79,21 @@ func newDecoderEmbedder(m *decoder.Model, tk *tokenizer.Tokenizer, queryPrompt, 
 		queryPrompt: queryPrompt,
 		docPrompt:   docPrompt,
 		appendID:    appendID,
-		// No truncation by default: Qwen3-Embedding ships no sentence_bert_config.json, so the
-		// reference imposes nothing shorter than the tokenizer's model_max_length (131072).
-		maxTokens: 0,
+		// BOUNDED BY THE MODEL'S CONTEXT, always. The reference imposes nothing shorter than the
+		// tokenizer's model_max_length (Qwen3-Embedding ships no sentence_bert_config.json), but
+		// "nothing shorter" is not "unbounded": HiddenLast preallocates KV for len(ids) positions
+		// and runs a sequential per-token forward with no context, so 0 here meant the ONLY bound
+		// was C-21's 1 MiB byte cap — about 500k tokens of short words. For a 28-layer, kvDim-1024
+		// embedder that is ~114 GB of KV and attention over up to 500k keys per token: hours of one
+		// pinned core, every other /v1/embeddings request blocked behind the embed mutex, and then
+		// an OOM kill. Uncancellable, and un-queued.
+		//
+		// Even a legitimate 200 KB document (~45k tokens) silently exceeded Qwen3-Embedding's 40k
+		// window and returned a vector pooled from out-of-range RoPE positions — plausible, and
+		// wrong. MaxPositions is HF's truncation=True semantics, which is what the aikit encoder
+		// path already does; only this one was unbounded (audit-2026-09-02 C-07, an incomplete
+		// closure of the 2026-08-05 audit's C-21).
+		maxTokens: m.Config().MaxPositions,
 	}
 }
 

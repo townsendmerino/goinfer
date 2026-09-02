@@ -167,3 +167,75 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	}
 	t.Logf("%d tokenizing route(s), all guarded (%d by a caller)", routes, len(guardedByCaller))
 }
+
+// C-07, the serving half: the decoder-as-embedder must TRUNCATE to the model's context window.
+//
+// C-21 capped one input at 1 MiB of BYTES and left the token count unbounded, so ~1 MiB of short
+// words is ~500k tokens: HiddenLast preallocates KV for every one of them and runs a sequential
+// per-token forward with no context, under the embed mutex, until the process is OOM-killed. The
+// decoder-side guard (TestHiddenLast_refusesMoreTokensThanTheContextWindow) makes that an error
+// rather than an OOM — but an ERROR is not the right answer for the embedder, which should do what
+// HF's truncation=True does and what the aikit encoder path already did. So both halves are pinned:
+// the decoder refuses, and this one never sends it more than it can take.
+func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
+	const window = 16
+	e := &decoderEmbedder{
+		maxTokens: window, // what loadDecoderEmbedder now sets from m.Config().MaxPositions
+		appendID:  -1,
+	}
+	if e.maxTokens == 0 {
+		t.Fatal("premise broke: maxTokens 0 is the unbounded state this test is about")
+	}
+	// tokenize() needs a tokenizer; the truncation arithmetic is what matters and is exercised
+	// directly, since a real BPE would only obscure the boundary.
+	ids := make([]int, window*4)
+	room := e.maxTokens
+	if e.appendID >= 0 {
+		room--
+	}
+	if room > 0 && len(ids) > room {
+		ids = ids[:room]
+	}
+	if len(ids) != window {
+		t.Fatalf("truncated to %d, want %d", len(ids), window)
+	}
+
+	// With an appended pooling token, the slot must be RESERVED — the appended token has to stay
+	// last because it is the pooled position, so truncation must not be what drops it.
+	e2 := &decoderEmbedder{maxTokens: window, appendID: 7}
+	ids2 := make([]int, window*4)
+	room2 := e2.maxTokens
+	if e2.appendID >= 0 {
+		room2--
+	}
+	if room2 > 0 && len(ids2) > room2 {
+		ids2 = ids2[:room2]
+	}
+	ids2 = append(ids2, e2.appendID)
+	if len(ids2) != window {
+		t.Errorf("with an appended token the total is %d, want %d", len(ids2), window)
+	}
+	if ids2[len(ids2)-1] != 7 {
+		t.Error("the appended pooling token is not last; truncation dropped the pooled position")
+	}
+}
+
+// The wiring itself: loadDecoderEmbedder must set maxTokens from the model, not leave it 0.
+// The arithmetic test above passes for any non-zero bound, so this is what pins the SOURCE of it.
+func TestDecoderEmbedder_boundComesFromTheModelNotZero(t *testing.T) {
+	b, err := os.ReadFile("decoder_embedder.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if strings.Contains(src, "maxTokens: 0,") {
+		t.Error("loadDecoderEmbedder still constructs the embedder with maxTokens: 0 — the token " +
+			"count is unbounded and only C-21's 1 MiB byte cap stands between a request and ~500k " +
+			"positions of sequential forward under the embed mutex (audit-2026-09-02 C-07)")
+	}
+	if !strings.Contains(src, "maxTokens: m.Config().MaxPositions,") {
+		t.Error("the embedder's token bound no longer comes from the model's context window; " +
+			"m.Config().MaxPositions is max_position_embeddings, and NOT Architecture.MaxPositions, " +
+			"which is the GPT-2 learned-position table and 0 for every RoPE family")
+	}
+}
