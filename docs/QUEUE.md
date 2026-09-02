@@ -2204,6 +2204,23 @@ Real `gpu/cmd/serve`, streaming `/v1/chat/completions`, greedy, inter-token rate
 the dim-split arm was re-measured after the key-split arm to close the interleave and reproduced
 (69.0→67.6, 48.5→47.9).
 
+### Combined with G35 — the end-to-end number for the two changes together
+
+Measured separately afterwards, because the table above is the attention A/B *on top of* G35's
+`quantize` fix and multiplying two deltas is not a measurement. Both-off is HEAD with `gpu/device.go`
+reverted to its pre-G35 state (verified: no other commit has touched that file since) and
+`GOINFER_ATTN_KEYS=0`; both-on is the shipped binary. Same server, same prompt, interleaved.
+
+| server-to-server | before (both off) | now | |
+|---|---|---|---|
+| 128 tokens | 93.5 / 97.0 | **131.8** | **1.38×** |
+| 512 tokens | 63.7 | **125.3** | **1.97×** |
+| 1024 tokens | 46.2 / 46.8 | **116.2** | **2.50×** |
+
+Two bit-level-cheap changes — one serial reduction made parallel, one workgroup decomposition
+transposed — for **2.5× at 1k context**, on a path a whole-token decomposition had already declared
+to be within ~10% of its ceiling. Neither was a fusion, a new kernel, or a dispatch-count change.
+
 **The old kernel loses 54% of its rate from 128 to 1024 tokens; the new one loses 12%.** Decode no
 longer falls off a cliff as context grows — which is the regime agent loops, RAG and code editing
 actually run in, and which every short-prompt benchmark in this repo is blind to.
