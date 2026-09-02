@@ -51,6 +51,37 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
+**Granite/Nemotron lost resident residency on WebGPU — `[nope]`** *(found 2026-09-02, unfiled
+until now)*. `TestGraniteResidentSpeedup` and `TestResident_C01_pos0ResetsRecurrent` both fail in a
+full `./gpu/` run with `BuildResident declined: arch needs unimplemented feature(s) [nope]`.
+Verified on a CLEAN `origin/main` checkout, so it is not from the G35/G36/reuse work that was in
+flight when it surfaced. `FeatNoPE` arrived with the Cohere family; something in the decoder
+tranche now has granite declaring it, and the WebGPU backend does not implement it — so granite
+silently dropped off the resident path onto CPU/staged. That is a **capability regression, not a
+test problem**: the tests are correctly reporting it.
+
+**`TestPrefillAttnRowTileInvariance` fails in `./decoder/`** *(found 2026-09-02, unfiled)*. Also
+reproduces on a clean `origin/main` checkout. Not investigated.
+
+**G5 leftovers** *(the harness-UX gate, `docs/task-embed-and-harness-ux.md`)*. The Claude Code half
+is done and `docs/integrations/claude-code.md` is published with measured numbers. Still open:
+- **dsh's 277 s run is un-re-measured** — deliberately parked 2026-09-02 (dsh is not installed and
+  `server.md` documents the install as an ordeal). The figure stands unverified, not disproven.
+- **N-18 and M-20**, two of G5's three stated preconditions, are still open: `tool_choice`
+  `required`/`any` forces nothing with 2+ tools (`forcedTool` handles `none` and a named function,
+  and `required` falls through to the single-tool case), and Gemma-4's tool rendering disagrees
+  with its own template. Both are stated in the recipe so nobody debugs them as their own setup.
+- **Open-WebUI and Continue recipes** are unwritten, because §3.5's rule is that a recipe with no
+  number is not published and neither has one.
+
+**Resident prefix reuse is single-conversation.** Two interleaved conversations on one model each
+cold-prefill as they alternate. The fix is per-conversation KV parked in host RAM and swapped back
+(~257 MiB and ~43 ms for a 2.3k-token conversation, against ~8.9 s to recompute it) — worth doing
+when concurrency is real, not before.
+
+**The facade (`task-embed-and-harness-ux.md` phase 1) is unblocked and undecided.** G4 was the
+gate and it passes at 1.21×.
+
 **Model-pull leftovers** — three small items left when `task-model-pull.md` was archived
 2026-09-02 (all of its phases shipped; these were never in scope). Recorded here because
 `docs/completed/` is a record, not a task list, so anything still to do had to leave it.
