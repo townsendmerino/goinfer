@@ -64,13 +64,20 @@ import (
 // v2 added the per-layer hybrid tail so the qwen3_5_moe (DeltaNet + gated-softmax)
 // family round-trips through .giw; v1 blobs (no tail) are rejected by the version
 // guard and rebuilt from the source GGUF.
+//
+// v8 added the per-layer LFM2 short-conv mixer (presence byte + inProj/convW/outProj), the same
+// shape as the v6 Mamba-2 block. Before it, `grep shortConv decoder/serialize.go` returned nothing:
+// cmd/prequant wrote a CRC-valid bundle with every conv layer's mixer missing, selfCheck passed
+// because it only Loads, and the first forward nil-dereferenced in the decode goroutine
+// (audit-2026-09-02 C-03, a regression of R3).
 
 const (
-	giwMagic    = "GINFW"
-	giwVersion  = 7 // v7: weightMat kind 4 (int4 split-half + 4-row-interleave on disk, opt-in) — see the format comment above
-	giwMinReadV = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4; older bundles stay valid and fall back to inference)
-	giwV4Gemma4 = 4 // the version at/after which the gemma4 tail is present
-	giwV6Tail   = 6 // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
+	giwMagic       = "GINFW"
+	giwVersion     = 8 // v8: the per-layer LFM2 short-conv mixer — see the format comment above
+	giwMinReadV    = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv; older bundles stay valid and fall back to inference)
+	giwV4Gemma4    = 4 // the version at/after which the gemma4 tail is present
+	giwV6Tail      = 6 // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
+	giwV8ShortConv = 8 // the version at/after which the LFM2 short-conv tail is present
 	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
 	// (largest models: ~120 layers, a few hundred experts) but low enough that a
@@ -462,6 +469,38 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		} {
 			if e := vec(fmt.Sprintf("layer %d %s", i, c.name), c.got, c.want); e != nil {
 				return e
+			}
+		}
+		// LFM2's short-conv mixer. Its three tensors are flat f32 slices the forward indexes at
+		// arch-derived widths, so a short one slice-panics in the decode goroutine exactly as R-07
+		// describes for the bias vectors. And the PRESENCE check is the load-bearing half here: a
+		// conv layer whose mixer is absent is what a pre-v8 .giw hands back, and the panic it
+		// produces at the first forward is the defect this validation exists to convert into a
+		// refusal at load (audit-2026-09-02 C-03).
+		if arch.lfm2 != nil {
+			cd, k := arch.lfm2.ConvDim, arch.lfm2.ConvLCache
+			isConv := lw.QProj.Rows() == 0 // a conv layer loads no attention projections
+			switch {
+			case isConv && lw.shortConv == nil:
+				return &SerializeError{fmt.Sprintf("layer %d: lfm2 conv layer has no short-conv "+
+					"mixer — the bundle was written before the v8 tail and would nil-deref at the "+
+					"first forward", i)}
+			case lw.shortConv == nil:
+			default:
+				c := lw.shortConv
+				for _, ck := range []struct {
+					name string
+					got  int
+					want int
+				}{
+					{"shortConv.inProj", len(c.inProj), 3 * cd * arch.HiddenDim},
+					{"shortConv.convW", len(c.convW), cd * k},
+					{"shortConv.outProj", len(c.outProj), arch.HiddenDim * cd},
+				} {
+					if e := eq(fmt.Sprintf("layer %d %s", i, ck.name), ck.got, ck.want); e != nil {
+						return e
+					}
+				}
 			}
 		}
 		// gemma-4 per-layer-embedding (PLE) branch: PLEGate/PLEProj are matmul'd and PostPLENorm
@@ -896,6 +935,7 @@ func (w *giwWriter) layer(l *LayerWeights) {
 		w.gemma4Layer(l)
 	}
 	w.v6Layer(l) // v6 completeness tail — see below
+	w.v8Layer(l) // v8 LFM2 short-conv tail — see below
 }
 
 // v6Layer writes the state that made five families unrepresentable, in one unconditional tail.
@@ -949,6 +989,31 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 		w.f32(m.normW)
 		w.f32(m.outProj)
 	}
+}
+
+// v8Layer writes the LFM2 gated short-convolution mixer: presence byte then the three tensors.
+//
+// UNCONDITIONAL, LIKE THE v6 TAIL AND FOR THE SAME REASON. An arch-gated tail is how gpt-oss's
+// attention sinks went missing, and the cost here is one zero byte per layer on every other family.
+//
+// This field existed for a whole family and serialize.go did not mention it once — `grep shortConv
+// decoder/serialize.go` returned zero matches. cmd/prequant loaded an LFM2 checkpoint, wrote every
+// field EXCEPT this one, appended a valid CRC, and selfCheck passed because selfCheck only Loads.
+// Serving the bundle, the first token reached conv layer 0 with lw.shortConv == nil and
+// nil-dereferenced in the decode goroutine (audit-2026-09-02 C-03, a regression of R3).
+//
+// As with mamba, only the WEIGHTS are here — the rolling conv window is per-sequence state that
+// lives in the KVCache and is rebuilt at load.
+func (w *giwWriter) v8Layer(l *LayerWeights) {
+	if l.shortConv == nil {
+		w.raw([]byte{0})
+		return
+	}
+	w.raw([]byte{1})
+	c := l.shortConv
+	w.f32(c.inProj)
+	w.f32(c.convW)
+	w.f32(c.outProj)
 }
 
 // gemma4Layer writes the v4 Gemma 4 per-layer tail: the PLE branch, the per-layer
@@ -1246,6 +1311,9 @@ func (r *giwReader) layer(l *LayerWeights) {
 	if r.version >= giwV6Tail { // v6 completeness tail
 		r.v6Layer(l)
 	}
+	if r.version >= giwV8ShortConv { // v8 LFM2 short-conv tail
+		r.v8Layer(l)
+	}
 }
 
 // v6Layer mirrors giwWriter.v6Layer: the state that made five families unrepresentable before v6.
@@ -1286,6 +1354,20 @@ func (r *giwReader) v6Layer(l *LayerWeights) {
 		m.outProj = r.f32()
 		l.mamba = m
 	}
+}
+
+// v8Layer mirrors giwWriter.v8Layer. Version-gated, so a v3-v7 bundle's layer block ends where it
+// always did — and an LFM2 bundle written at v7 or earlier is one whose conv weights were never in
+// the file at all, which validateShapes rejects rather than loading into a nil-deref.
+func (r *giwReader) v8Layer(l *LayerWeights) {
+	if r.u8() == 0 {
+		return
+	}
+	c := &shortConvWeights{}
+	c.inProj = r.f32()
+	c.convW = r.f32()
+	c.outProj = r.f32()
+	l.shortConv = c
 }
 
 // gemma4Layer reads the v4 Gemma 4 per-layer tail and, when the MoE sub-block is
