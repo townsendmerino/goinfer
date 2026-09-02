@@ -218,6 +218,23 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
     is **not** legitimate is proceeding quietly: either way it gets **written down as a decision**
     rather than skipped as a step.
 
+    **§C1 HAS A THIRD OBLIGATION: PROMOTE WHAT THE SWEEP CONFIRMED.** A gate with no entry in
+    `testdata/gate_ledger.json` is FIRST-RUN, so its failure is reported as an ITEM and **cannot
+    block the next tag**. The sweep never writes that record itself — auto-promotion would turn
+    "never checked" into "expected" in one silent step — and `gate_ledger.py reconcile` only
+    *prints* the first-run list. So after a green sweep, promote each gate the sweep confirmed:
+
+    ```
+    python3 scripts/gate_ledger.py promote --gate <G> --value PASS --by <you> \
+        --commit <sweep SHA> --note "<the sweep log this came from>"
+    ```
+
+    Skipping this is not inert: the ledger was seeded once on 2026-08-14 and left alone, and five
+    required gates — including `TestInt4_forwardParity`, the broadest quant check in the checkset —
+    were still non-blocking two and a half weeks later **while a PASS for each sat in the v0.15.0
+    sweep log** (audit-2026-09-02 G-04). `TestParity_everyRequiredGateIsConfirmed` now fails CI on
+    a required gate that is neither in the ledger nor in `neverConfirmed` with a written reason.
+
 ## §C1-M — the Metal device gate (manual, and what "green" means)
 
 **CI cannot run it, and that is a property of the runner, not a choice.** `macos-latest`'s

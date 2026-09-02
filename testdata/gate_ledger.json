@@ -244,6 +244,15 @@
       "value": "PASS"
     },
     {
+      "commit": "bd085de",
+      "date": "2026-08-27",
+      "gate": "TestInt4_forwardParity",
+      "note": "confirmed PASS in the v0.15.0 release sweep, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log (the sweep tree was bd085de +dirty). The function body is byte-identical at bd085de and at promotion time, so this confirmation is keyed to the same assertion that produced the PASS. Promoted per audit-2026-09-02 G-04.",
+      "promoted_by": "francis",
+      "source_sha256": "c45a3e9242777750",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestKimi_textParity",
@@ -334,6 +343,24 @@
       "value": "PASS"
     },
     {
+      "commit": "bd085de",
+      "date": "2026-08-27",
+      "gate": "TestNemotron3NanoMoE_textParity",
+      "note": "confirmed PASS in the v0.15.0 release sweep, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log (the sweep tree was bd085de +dirty). The function body is byte-identical at bd085de and at promotion time, so this confirmation is keyed to the same assertion that produced the PASS. Promoted per audit-2026-09-02 G-04.",
+      "promoted_by": "francis",
+      "source_sha256": "695366ae1ca2e05f",
+      "value": "PASS"
+    },
+    {
+      "commit": "bd085de",
+      "date": "2026-08-27",
+      "gate": "TestNemotron_textParity",
+      "note": "confirmed PASS in the v0.15.0 release sweep, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log (the sweep tree was bd085de +dirty). The function body is byte-identical at bd085de and at promotion time, so this confirmation is keyed to the same assertion that produced the PASS. Promoted per audit-2026-09-02 G-04.",
+      "promoted_by": "francis",
+      "source_sha256": "7eab36dab7f6780f",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestPhi3GGUFReal_gate",
@@ -415,12 +442,30 @@
       "value": "PASS"
     },
     {
+      "commit": "bd085de",
+      "date": "2026-08-27",
+      "gate": "TestQwen3NextReal_oracle",
+      "note": "confirmed PASS in the v0.15.0 release sweep, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log (the sweep tree was bd085de +dirty). The function body is byte-identical at bd085de and at promotion time, so this confirmation is keyed to the same assertion that produced the PASS. Promoted per audit-2026-09-02 G-04.",
+      "promoted_by": "francis",
+      "source_sha256": "c795437c9180a763",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestQwen3_forwardParity",
       "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
       "promoted_by": "francis",
       "source_sha256": "051a58eff88a5cbe",
+      "value": "PASS"
+    },
+    {
+      "commit": "bd085de",
+      "date": "2026-08-27",
+      "gate": "TestW4A8DecodeParity",
+      "note": "confirmed PASS in the v0.15.0 release sweep, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log (the sweep tree was bd085de +dirty). The function body is byte-identical at bd085de and at promotion time, so this confirmation is keyed to the same assertion that produced the PASS. Promoted per audit-2026-09-02 G-04.",
+      "promoted_by": "francis",
+      "source_sha256": "4d03385de54654a1",
       "value": "PASS"
     }
   ]

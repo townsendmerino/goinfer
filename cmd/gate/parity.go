@@ -528,3 +528,17 @@ func whyNoResult(test string, cells []cell) string {
 	return "UNREACHABLE: no cell's -run pattern selects this test, so no asset, machine or " +
 		"environment could make it run. Fix the pattern or the test name, not the box."
 }
+
+// neverConfirmed names a REQUIRED gate that is deliberately absent from the ledger, with the reason.
+// A gate here stays permanently FIRST-RUN: its failure is reported as an ITEM and never blocks a
+// tag, so an entry is a decision to accept that, not a formality.
+//
+// EMPTY, AND EMPTY IS THE HONEST STATE (2026-09-02, audit G-04). The ledger was bulk-seeded once on
+// 2026-08-14 and never touched again, so five required gates — TestInt4_forwardParity ("the broadest
+// quant check here"), TestW4A8DecodeParity, TestNemotron_textParity, TestNemotron3NanoMoE_textParity
+// and TestQwen3NextReal_oracle — sat FIRST-RUN for two and a half weeks WHILE A CONFIRMED PASS FOR
+// EACH SAT IN THE v0.15.0 SWEEP LOG. Nothing turned the one into the other: `reconcile` is advisory
+// by design, and no test asserted `required ⊆ ledger`. TestParity_everyRequiredGateIsConfirmed is
+// that assertion, and this map is its only escape hatch — deliberately a code change with a written
+// reason rather than a state the ledger can drift into by nobody doing anything.
+var neverConfirmed = map[string]string{}

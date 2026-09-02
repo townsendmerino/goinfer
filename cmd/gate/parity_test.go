@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -359,3 +361,84 @@ func rowFor(t *testing.T, rows []checkRow, test string) string {
 	t.Fatalf("no row for %s", test)
 	return ""
 }
+
+// EVERY REQUIRED GATE MUST HAVE A CONFIRMED PRIOR RESULT, OR SAY IN CODE WHY IT DOES NOT.
+//
+// B14's first-run outcome is only safe while the ledger is maintained: a gate with no entry fails
+// as an ITEM, not a blocker, so an UNMAINTAINED ledger silently converts regressions into notes.
+// That is not hypothetical — the ledger was bulk-seeded on 2026-08-14 and never touched again, and
+// by 2026-09-02 five required gates were still first-run INCLUDING TestInt4_forwardParity, which
+// the gate list itself calls "the broadest quant check here". Each of the five had a PASS sitting
+// in the v0.15.0 sweep log the whole time; `reconcile` printed them every run and never exits
+// non-zero (deliberately — see gate_ledger.py), and nothing else looked. So the assertion lives
+// here, where CI already runs it.
+//
+// A missing entry is a red test with one of two fixes, both deliberate: promote the gate from a
+// sweep log, or add it to neverConfirmed with a written reason.
+func TestParity_everyRequiredGateIsConfirmed(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("cannot locate the repo root: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "testdata", "gate_ledger.json"))
+	if err != nil {
+		// NOT a skip. An unreadable ledger is the state in which every failing gate becomes a
+		// non-blocking item, which is precisely what this test exists to notice.
+		t.Fatalf("cannot read testdata/gate_ledger.json: %v", err)
+	}
+	var led struct {
+		Entries []struct {
+			Gate       string `json:"gate"`
+			Value      string `json:"value"`
+			PromotedBy string `json:"promoted_by"`
+			Date       string `json:"date"`
+			Commit     string `json:"commit"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(b, &led); err != nil {
+		t.Fatalf("gate_ledger.json does not parse: %v", err)
+	}
+	confirmed := map[string]bool{}
+	for _, e := range led.Entries {
+		// An entry missing a required field is a NOTE, NOT A CONFIRMATION (gate_ledger.py's five
+		// required fields). Counting it here would let a blank row satisfy this assertion, which is
+		// the same false-green one level down.
+		if e.Gate == "" || e.Value == "" || e.PromotedBy == "" || e.Date == "" || e.Commit == "" {
+			t.Errorf("ledger entry for %q is missing a required field (gate/value/promoted_by/date/"+
+				"commit) — a note, not a confirmation: %+v", e.Gate, e)
+			continue
+		}
+		confirmed[e.Gate] = true
+	}
+
+	required := map[string]bool{}
+	for _, g := range append(append([]gateCheck{}, parityGates...), parityRealckptGates...) {
+		required[g.Test] = true
+		switch {
+		case confirmed[g.Test] && neverConfirmed[g.Test] != "":
+			t.Errorf("%s is BOTH confirmed in the ledger and listed in neverConfirmed — the two "+
+				"disagree about whether a failure blocks; delete the neverConfirmed entry", g.Test)
+		case confirmed[g.Test]:
+		case neverConfirmed[g.Test] != "":
+			// Deliberately accepted as permanently first-run.
+		case neverConfirmed[g.Test] == "" && hasNeverConfirmedKey(g.Test):
+			t.Errorf("%s is in neverConfirmed with an EMPTY reason — an unexplained exemption is "+
+				"the state this map exists to prevent", g.Test)
+		default:
+			t.Errorf("required gate %s (%s) has no ledger entry, so it is permanently FIRST-RUN: a "+
+				"failure is reported as an ITEM and cannot block a tag. Either promote it from a "+
+				"sweep log (scripts/gate_ledger.py promote --gate %s --value PASS --by <you>) or "+
+				"add it to neverConfirmed with a reason.", g.Test, g.Family, g.Test)
+		}
+	}
+	for gate, reason := range neverConfirmed {
+		if !required[gate] {
+			t.Errorf("neverConfirmed names %q (%q), which is not a required gate — a stale exemption "+
+				"reads as a covered gate", gate, reason)
+		}
+	}
+}
+
+// hasNeverConfirmedKey distinguishes "absent" from "present with an empty reason". A map lookup
+// alone cannot: both yield "".
+func hasNeverConfirmedKey(gate string) bool { _, ok := neverConfirmed[gate]; return ok }
