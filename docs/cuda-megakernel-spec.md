@@ -29,7 +29,7 @@
 
 The gate is **argmax-match to the pinned CPU golden**, NOT bit-identical logits. GPU
 attention/RoPE run f32 while the CPU oracle accumulates in f64 → logits are cosine
-≈1.0, not bit-exact (`gpu/attention.go:17`). The existing `TestWebGPU_forwardParity`
+≈1.0, not bit-exact (`gpu/attention.go:18`). The existing `TestWebGPU_forwardParity`
 (`gpu/forward_parity_test.go:36`) asserts the greedy next-token **argmax equals
 `testdata/gemma_forward_golden.json` `Argmax`**. The CUDA backend reuses that harness
 with `Backend:"cuda"` and must clear the same token-identical bar. **Match the token,

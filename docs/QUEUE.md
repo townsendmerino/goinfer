@@ -1123,11 +1123,11 @@ supports.
 | `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:330` | goinfer | `ids, err := s.tk.Encode(s.buildPrompt(visionSystem, turns), s.tmpl == nil)` |
 | `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:397` | goinfer | `flush := func(final bool) {` |
 | `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:462` | goinfer | `return constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWh` |
-| `docs/audit-2026-09-02.md|gpu/attention.go:793` | goinfer | `func (c *Context) ensureAttnWide() error {` |
+| `docs/audit-2026-09-02.md|gpu/attention.go:961` | goinfer | `func (c *Context) ensureAttnWide() error {` |
 | `docs/audit-2026-09-02.md|gpu/decode_staged_prize_test.go:23` | goinfer | `func TestDecodeStaged_prize(t *testing.T) {` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1126` | goinfer | `fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1176` | goinfer | `func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []fl` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1231` | goinfer | `enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1132` | goinfer | `fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1182` | goinfer | `func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []fl` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1237` | goinfer | `enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:294` | goinfer | `ssmStopLayer := -1 // GOINFER_SSM_STOP_LAYER debug (resident SSM bring-up): truncate the` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:303` | goinfer | `w8a16 := os.Getenv("GOINFER_SSM_W8A16") != ""` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:467` | goinfer | `gemv := func(aq, as *wgpu.Buffer, w decodeWeight) *wgpu.Buffer {` |
@@ -1323,7 +1323,7 @@ supports.
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
-| `docs/cuda-megakernel-spec.md|gpu/attention.go:17` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
+| `docs/cuda-megakernel-spec.md|gpu/attention.go:18` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:807` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:912` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
 | `docs/cuda-megakernel-spec.md|gpu/forward_parity_test.go:36` | goinfer | `func TestWebGPU_forwardParity(t *testing.T) {` |
