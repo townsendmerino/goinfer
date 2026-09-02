@@ -154,6 +154,11 @@ type headWorkerScratch struct {
 	// serial-through-Workspace is BIT-IDENTICAL to column-parallel, which is
 	// what lets the two arms share one golden.
 	mmWS *linalg.Workspace
+	// fused is this slot's P19 scratch, or nil when the fused schedule is off.
+	// PER-WORKER, not shared: each worker gathers ITS OWN kv head's V into vBlk,
+	// so one shared buffer would be a data race producing silently wrong output
+	// rather than a crash. Same reason kh/vt are per-slot.
+	fused *fusedScratch
 }
 
 // serialMMWorkspace returns a Workspace whose matmuls never fan out. 1<<62 is
@@ -257,6 +262,9 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int) []headWorkerScratch 
 		if p.mmWS == nil {
 			p.mmWS = serialMMWorkspace()
 		}
+		if fusedAttention() {
+			p.fused = newFusedScratch(attnRowTile(K, nKeys), hd, nKeys)
+		}
 		if c := K * hd; cap(p.qh) < c {
 			p.qh = make([]float32, c)
 			p.ch = make([]float32, c)
@@ -298,6 +306,7 @@ func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
 	for i := range pool {
 		pool[i] = headWorkerScratch{
 			mmWS:   serialMMWorkspace(),
+			fused:  fusedIfEnabled(t, hd, nKeys),
 			qh:     make([]float32, t*hd),
 			kh:     make([]float32, nKeys*hd),
 			vt:     make([]float32, nKeys*hd),

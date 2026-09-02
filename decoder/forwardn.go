@@ -677,7 +677,15 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	// (column-parallel) on the serial arm, or the worker's own serial
 	// Workspace on the head-parallel arm. Unused on the acc64 path, which
 	// calls MatmulQKAcc64/MatmulAVAcc64 directly.
+	// P19: the fused schedule is eligible only on the f32 path (it would break
+	// acc64's bit-identity) and only without a tree mask. Each worker uses ITS OWN
+	// ws.fused — never a shared one, since each gathers a different kv head's V.
+	fusedOK := !useAcc64 && cache.treeMask == nil
 	attendOneHead := func(qhead int, ws *headWorkerScratch, mm func(a, b, dst []float32, M, K, N int)) {
+		var fs *fusedScratch
+		if fusedOK {
+			fs = ws.fused
+		}
 		kvh := qhead / group
 		qh, scores, ch, avAcc := ws.qh, ws.scores, ws.ch, ws.avAcc
 		// G20: walk the query rows in TILES. Every step below is row-wise — the Q
@@ -700,6 +708,30 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			for i := range kt { // gather this tile's Q_head [kt,hd]
 				b := (t0+i)*qDim + qhead*hd
 				copy(qh[i*hd:i*hd+hd], q[b:b+hd])
+			}
+			// P19: the FUSED schedule, when enabled and applicable. It replaces the
+			// whole QKᵀ / softmax / scores·V sequence below for this tile, keeping
+			// the score block resident instead of materializing kt x nKeys. Declines
+			// (and falls through) for acc64, whose bit-identity it would break, and
+			// for tree attention, whose per-(row,column) mask is not the contiguous
+			// [lo,hi] bound this handles. Measured 1.69-1.73x causal over a whole
+			// prefill — see fusedattn.go.
+			if fs != nil {
+				for i := range kt {
+					gi := t0 + i
+					pos := startPos + gi
+					fs.lo[i] = cache.WindowStart(pos, global) - base
+					fs.hi[i] = cache.attendHi(pos) - base
+				}
+				if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
+					fs.sBlk, fs.tmp, fs.acc, fs.mRun, fs.lRun,
+					kt, hd, nKeys, scale, fs.lo[:kt], fs.hi[:kt]) {
+					for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
+						b := (t0+i)*qDim + qhead*hd
+						copy(ctx[b:b+hd], ch[i*hd:i*hd+hd])
+					}
+					continue
+				}
 			}
 			// QKᵀ: scores[K,nKeys] = Q_head[K,hd] · K_head[nKeys,hd]ᵀ. Acc64 reads
 			// keys DIRECTLY — row stride kvDim (rows are nKeys apart), element
@@ -839,6 +871,14 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		// serial and fan-out arms below are BIT-IDENTICAL, not merely close
 		// (TestAttendF32Fanout_bitIdentical).
 		gatherKV := func(ws *headWorkerScratch, kvh int) {
+			// P19: the fused schedule needs V BLOCK-MAJOR (a key-range slice of the
+			// [hd, nKeys] layout is not contiguous), so the layout is chosen here at
+			// gather time rather than re-transposed per block. Same work, different
+			// indexing.
+			if fusedOK && ws.fused != nil {
+				gatherKVFused(ws.kh, ws.fused.vBlk, keys, vals, kvh, hd, kvDim, nKeys)
+				return
+			}
 			for s := range nKeys {
 				kvBase := s*kvDim + kvh*hd
 				copy(ws.kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])

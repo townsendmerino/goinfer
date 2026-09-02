@@ -654,3 +654,77 @@ func TestP19FusedAttention(t *testing.T) {
 			bestF.cos)
 	}
 }
+
+// TestFusedAttention_matchesMaterialized gates the production fused path.
+//
+// NOT bit-identity — the running-max rescale re-associates by construction, so
+// demanding equality would be demanding the schedule not work. The bar is the
+// one declared before the kernel: cosine >= 0.9999 against the materialized
+// path, through the REAL attendBatchedHeads, with masking on.
+//
+// It runs shapes the prototype did not: a sliding window and a non-zero base, so
+// the lo/hi bounds are exercised rather than assumed to be [0, pos].
+func TestFusedAttention_matchesMaterialized(t *testing.T) {
+	const (
+		nH    = 8
+		nKV   = 2
+		hd    = 16
+		kvDim = nKV * hd
+		qDim  = nH * hd
+	)
+	arch := &Architecture{NumHeads: nH, NumKVHeads: nKV, HeadDim: hd, AttnScale: 0.25}
+	for _, tc := range []struct {
+		name     string
+		K, nKeys int
+		window   int
+		startPos int
+	}{
+		{"causal, one block", 48, 96, 0, 48},
+		{"causal, multi block", 300, 1400, 0, 1100},
+		{"sliding window", 300, 1400, 256, 1100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := randF32(tc.K*qDim, 41)
+			keys := randF32(tc.nKeys*kvDim, 42)
+			vals := randF32(tc.nKeys*kvDim, 43)
+			cache := &KVCache{}
+			if tc.window > 0 {
+				cache.window = tc.window
+			}
+			run := func(on string) []float32 {
+				t.Setenv("GOINFER_FUSED_ATTENTION", on)
+				pool := newHeadWorkerPool(4, tc.K, tc.nKeys, hd)
+				ctx := make([]float32, tc.K*qDim)
+				attendBatchedHeads(q, ctx, keys, vals, 0, cache, 0, tc.startPos, tc.K,
+					tc.window == 0, arch, false, pool)
+				return ctx
+			}
+			mat := run("0")
+			fus := run("1")
+			var dot, na, nb, maxAb float64
+			for i := range mat {
+				x, y := float64(mat[i]), float64(fus[i])
+				dot += x * y
+				na += x * x
+				nb += y * y
+				if a := math.Abs(x - y); a > maxAb {
+					maxAb = a
+				}
+			}
+			cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
+			t.Logf("cosine %.9f  max|diff| %.3g", cos, maxAb)
+			if cos < 0.9999 {
+				t.Fatalf("fused diverges past the declared bar: cosine %.9f (max|diff| %.3g)", cos, maxAb)
+			}
+			nz := 0
+			for _, v := range mat {
+				if v != 0 {
+					nz++
+				}
+			}
+			if nz < len(mat)/2 {
+				t.Fatalf("output mostly zeros (%d/%d) — the arms agree because nothing ran", nz, len(mat))
+			}
+		})
+	}
+}
