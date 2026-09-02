@@ -40,7 +40,7 @@ func TestMamba2_chunkedMatchesSequential(t *testing.T) {
 		outProj: uni(p.Hidden * dInner),
 	}
 
-	for _, seq := range []int{1, 5, 17, 40} {
+	for _, seq := range []int{1, 5, 17, 40, 96} {
 		h := make([][]float32, seq)
 		for t := range h {
 			h[t] = uni(p.Hidden)

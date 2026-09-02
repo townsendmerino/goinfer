@@ -87,13 +87,19 @@ func mamba2Chunked(h [][]float32, w *mamba2Weights, p mamba2Params, eps float64,
 		for start := 0; start < n; start += chunk {
 			end := min(start+chunk, n)
 			L := end - start
-			// inclusive cumulative decay within the chunk
-			Pc := make([]float32, L)
-			acc := float32(1)
+			// INCLUSIVE CUMULATIVE DECAY, IN LOG SPACE. The product form underflows f32 at real
+			// checkpoint rates — A_log = log(U(1,16)) with dt in [0.001, 0.1] gives a per-step
+			// decay around 0.2, and 0.2^64 ≈ 1e-45 is below f32 min-normal — so Pc[m] rounds to
+			// ZERO and every Pc[i]/Pc[m] below becomes 0/0 = NaN. Silently, and only at
+			// chunk >= 64, which the equivalence tests never reached (audit-2026-09-02 N-01).
+			//
+			// Each step's decay is exp(dt*A) with A <= 0, so the log is just dt*A and the running
+			// sum needs no Log call at all. Every ratio becomes exp(logPc[i] - logPc[m]).
+			logPc := make([]float32, L)
+			var lacc float32
 			for i := range L {
-				da := float32(math.Exp(float64(dtH[start+i][head]) * A))
-				acc *= da
-				Pc[i] = acc
+				lacc += dtH[start+i][head] * float32(A)
+				logPc[i] = lacc
 			}
 			for i := range L {
 				t := start + i
@@ -107,7 +113,7 @@ func mamba2Chunked(h [][]float32, w *mamba2Weights, p mamba2Params, eps float64,
 					for nn := range N {
 						s += row[nn] * Ci[nn]
 					}
-					out[pi] = Pc[i]*s + Dh*xi[pi]
+					out[pi] = expf32(logPc[i])*s + Dh*xi[pi]
 				}
 				// term2: Σ_{m≤i} (P_i/P_m)·dt_m·x_m[p]·(B_m·C_i)
 				for m := 0; m <= i; m++ {
@@ -116,7 +122,7 @@ func mamba2Chunked(h [][]float32, w *mamba2Weights, p mamba2Params, eps float64,
 					for nn := range N {
 						bc += Bm[nn] * Ci[nn]
 					}
-					coef := (Pc[i] / Pc[m]) * dtH[start+m][head] * bc
+					coef := expf32(logPc[i]-logPc[m]) * dtH[start+m][head] * bc
 					xm := x[start+m][head*P : head*P+P]
 					for pi := range P {
 						out[pi] += coef * xm[pi]
@@ -124,14 +130,14 @@ func mamba2Chunked(h [][]float32, w *mamba2Weights, p mamba2Params, eps float64,
 				}
 			}
 			// S_out = P_{L-1}·S_in + Σ_m (P_{L-1}/P_m)·dt_m·(x_m⊗B_m)
-			cl := Pc[L-1]
+			cl := logPc[L-1]
 			for i := range S {
-				S[i] *= cl
+				S[i] *= expf32(cl)
 			}
 			for m := range L {
 				Bm := Bs[start+m][grp*N : grp*N+N]
 				xm := x[start+m][head*P : head*P+P]
-				sc := (cl / Pc[m]) * dtH[start+m][head]
+				sc := expf32(cl-logPc[m]) * dtH[start+m][head]
 				for pi := range P {
 					xc := sc * xm[pi]
 					row := S[pi*N : pi*N+N]

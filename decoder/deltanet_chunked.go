@@ -25,6 +25,12 @@ import "math"
 // using the chunked scan, returning the same [hidden] output per position as
 // gatedDeltaNet. chunk is the scan block size (chunk ≤ 0 ⇒ the whole sequence;
 // chunk == 1 reduces exactly to the sequential step).
+// expf32 is exp for a float32 exponent, computed in float64 so the intermediate does not lose the
+// range the log form exists to preserve. A very negative exponent flushes to 0, which is the true
+// answer when the decay really has vanished — as distinct from 0/0, which is what a cumulative
+// product produced (N-01).
+func expf32(x float32) float32 { return float32(math.Exp(float64(x))) }
+
 func gatedDeltaNetChunked(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, chunk int) [][]float32 {
 	n := len(h)
 	if n == 0 {
@@ -126,7 +132,16 @@ func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,
 	q := make([][]float32, L)
 	k := make([][]float32, L)
 	v := make([][]float32, L)
-	c := make([]float32, L) // cumulative decay c_i = Π_{j≤i} gt_j within the chunk
+	// CUMULATIVE DECAY IN LOG SPACE. c_i = Π_{j≤i} gt_j underflows f32 at real-checkpoint decay
+	// rates: checkpoints initialise A_log = log(U(1,16)) with dt in [0.001, 0.1], so a per-step
+	// decay of ~0.2 gives 0.2^64 ≈ 1e-45, below f32 min-normal. c[m] then rounds to ZERO and every
+	// c[i]/c[m] below is 0/0 = NaN — silently, and only at chunk >= 64, which the equivalence test
+	// never reached because it drew A_log from [-2, 0] with seq <= 40 (audit-2026-09-02 N-01).
+	//
+	// logc carries the exponent instead, and every ratio becomes exp(logc[i] - logc[m]). Since each
+	// gt is in (0,1] the difference is <= 0 for i >= m, so the exp is in (0,1] and underflows only
+	// when the TRUE ratio does — which is the correct answer rather than a NaN.
+	logc := make([]float32, L) // log c_i = Σ_{j<=i} log gt_j within the chunk
 	bta := make([]float32, L)
 	for i := range L {
 		t := start + i
@@ -134,10 +149,11 @@ func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,
 		k[i] = l2normScaled(conv[t][keyDim+headK*hk:keyDim+headK*hk+hk], 1)
 		v[i] = conv[t][2*keyDim+headV*hv : 2*keyDim+headV*hv+hv]
 		bta[i] = beta[t][headV]
+		lg := float32(math.Log(float64(gt[t][headV])))
 		if i == 0 {
-			c[i] = gt[t][headV]
+			logc[i] = lg
 		} else {
-			c[i] = c[i-1] * gt[t][headV]
+			logc[i] = logc[i-1] + lg
 		}
 	}
 
@@ -151,7 +167,7 @@ func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,
 			for kd := range hk {
 				sk += S[kd*hv+vd] * k[i][kd]
 			}
-			ui[vd] = bta[i] * (v[i][vd] - c[i]*sk)
+			ui[vd] = bta[i] * (v[i][vd] - expf32(logc[i])*sk)
 		}
 		// − β_i·Σ_{m<i} (c_i/c_m)(k_m·k_i)·u_m
 		for m := range i {
@@ -159,7 +175,7 @@ func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,
 			for kd := range hk {
 				kk += k[m][kd] * k[i][kd]
 			}
-			coef := bta[i] * (c[i] / c[m]) * kk
+			coef := bta[i] * expf32(logc[i]-logc[m]) * kk
 			um := u[m]
 			for vd := range hv {
 				ui[vd] -= coef * um[vd]
@@ -176,14 +192,14 @@ func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,
 			for kd := range hk {
 				sq += S[kd*hv+vd] * q[i][kd]
 			}
-			out[vd] = c[i] * sq
+			out[vd] = expf32(logc[i]) * sq
 		}
 		for m := 0; m <= i; m++ {
 			var kq float32
 			for kd := range hk {
 				kq += k[m][kd] * q[i][kd]
 			}
-			coef := (c[i] / c[m]) * kq
+			coef := expf32(logc[i]-logc[m]) * kq
 			um := u[m]
 			for vd := range hv {
 				out[vd] += coef * um[vd]
@@ -192,14 +208,14 @@ func scanChunk(core [][]float32, S []float32, conv, gt, beta [][]float32,
 	}
 
 	// S_out = c_{L−1}·S_in + Σ_m (c_{L−1}/c_m)·k_m⊗u_m
-	cl := c[L-1]
+	cl := logc[L-1]
 	for kd := range hk {
 		for vd := range hv {
-			S[kd*hv+vd] *= cl
+			S[kd*hv+vd] *= expf32(cl)
 		}
 	}
 	for m := range L {
-		scale := cl / c[m]
+		scale := expf32(cl - logc[m])
 		um := u[m]
 		km := k[m]
 		for kd := range hk {
