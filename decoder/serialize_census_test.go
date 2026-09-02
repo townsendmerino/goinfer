@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -170,26 +171,44 @@ func TestSerializeCensus_noSilentFieldDrop(t *testing.T) {
 	t.Logf("censused %d representable fixture(s) field-by-field", checked)
 }
 
-// EVERY FIXTURE PRESENT IN THIS CHECKOUT IS LISTED OR EXPLICITLY EXCLUDED.
+// EVERY TRACKED FIXTURE IS LISTED OR EXPLICITLY EXCLUDED.
 //
 // The census above is only as complete as its fixture list, and that list is hand-maintained — the
 // exact shape whose failure it was written to replace. This walks both testdata roots, treats an
 // entry with a config.json (or a .gguf/.giw file) as a model fixture, and requires each to be
-// censused or excluded with a written reason. It is a STAT, not a load, so it costs nothing and
-// cannot be the reason someone trims the list.
+// censused or excluded with a written reason. It is a STAT plus one `git ls-files`, not a load, so
+// it costs nothing and cannot be the reason someone trims the list.
 //
-// PRESENT IN THIS CHECKOUT, NOT "COMMITTED" — a distinction that cost a red CI. Most fixture
-// checkpoints are GITIGNORED local drops: 12 of the 35 this machine holds are tracked, and a fresh
-// clone or `git worktree` has only those. So the set this walks is machine-dependent, and the
-// STALE half of the check has to account for it: an exclusion naming a fixture that is merely
-// absent here proves nothing, while one naming a TRACKED path that is gone is genuinely stale.
-// The positive half — a fixture that IS here must be listed — is sound on every machine.
+// TRACKED, NOT "PRESENT", AND CERTAINLY NOT "COMMITTED" — two wrong scopes, each caught by a
+// machine that had a different set of files:
+//
+//   - "committed" was the first, and it was never checked. Most fixture checkpoints are GITIGNORED
+//     local drops; 12 of the 35 this machine holds are tracked, and CI's checkout has 14 in total.
+//     Four exclusions naming large untracked fixtures read as STALE there and turned CI red.
+//   - "present in this checkout" was the second. The Linux box carries local drops nobody else has
+//     — `gptoss120-slice`, `laguna-xs2-slice`, and three SCRATCH dot-directories — so a rule that
+//     demands every present fixture be listed fails on any machine with extras, which makes the
+//     gate an override habit rather than a gate.
+//
+// Tracked is the scope that is the same everywhere, and it is a real scope, not a retreat: a new
+// family's tiny fixture gets committed, which is exactly how ../testdata/lfm2-tiny (the fixture
+// whose absence from the list let serialize.go drop an entire family's conv mixer) got there. It
+// is tracked, so the defect this gate exists for is inside the blocking set.
+//
+// An untracked fixture that is present and unlisted is REPORTED, never asserted on: it may be
+// worth adding, and it may be somebody's scratch copy, and this test cannot tell.
 func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
+	tracked, gitOK := trackedFixtureNames()
+	if !gitOK {
+		// NOT a skip that hides: without git the scope cannot be established, and asserting over
+		// "whatever is on this disk" is the rule that just failed on two machines.
+		t.Skip("git ls-files unavailable — the tracked set cannot be established")
+	}
 	listed := map[string]bool{}
 	for _, p := range censusList {
 		listed[filepath.Base(p)] = true
 	}
-	found := map[string]bool{}
+	found, untrackedExtra := map[string]bool{}, []string{}
 	for _, root := range []string{"testdata", "../testdata"} {
 		ents, err := os.ReadDir(root)
 		if err != nil {
@@ -197,6 +216,9 @@ func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 		}
 		for _, e := range ents {
 			name := e.Name()
+			if strings.HasPrefix(name, ".") {
+				continue // scratch by convention; the box carries three
+			}
 			switch {
 			case e.IsDir():
 				if _, err := os.Stat(filepath.Join(root, name, "config.json")); err != nil {
@@ -216,8 +238,10 @@ func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 			case excluded && strings.TrimSpace(reason) == "":
 				t.Errorf("%s is in censusExcluded with an EMPTY reason", name)
 			case excluded:
+			case !tracked[name]:
+				untrackedExtra = append(untrackedExtra, name)
 			default:
-				t.Errorf("model fixture %s is in neither censusList nor censusExcluded. "+
+				t.Errorf("TRACKED model fixture %s is in neither censusList nor censusExcluded. "+
 					"An unlisted fixture is a family this census does not speak for, and that is "+
 					"exactly how serialize.go came to drop LFM2's entire conv mixer while this "+
 					"test reported green over 21 other families (audit-2026-09-02 C-03).", name)
@@ -228,13 +252,19 @@ func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 		t.Fatal("no model fixture found under either testdata root — the scan is broken, and a " +
 			"broken scan makes this gate pass over nothing")
 	}
-	tracked, canCheckStale := trackedFixtureNames()
+	nTracked := 0
+	for name := range found {
+		if tracked[name] {
+			nTracked++
+		}
+	}
+	if nTracked == 0 {
+		t.Fatal("no TRACKED fixture found — this gate asserted over nothing")
+	}
 	unverifiable := 0
 	for name := range censusExcluded {
 		switch {
 		case found[name]:
-		case !canCheckStale:
-			unverifiable++
 		case tracked[name]:
 			t.Errorf("censusExcluded names %q, which is TRACKED and absent — a stale exemption "+
 				"reads as a fixture somebody considered", name)
@@ -244,9 +274,13 @@ func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 			unverifiable++
 		}
 	}
-	t.Logf("%d model fixture(s) present here: %d censused, %d excluded (%d of the exclusions name "+
-		"gitignored fixtures absent from this checkout, so their staleness cannot be judged here)",
-		len(found), len(found)-(len(censusExcluded)-unverifiable), len(censusExcluded), unverifiable)
+	sort.Strings(untrackedExtra)
+	t.Logf("%d fixture(s) present here, %d of them tracked (the asserted scope); %d exclusion(s), "+
+		"%d naming gitignored fixtures absent here", len(found), nTracked, len(censusExcluded), unverifiable)
+	if len(untrackedExtra) > 0 {
+		t.Logf("untracked and unlisted, reported only — add them to censusList if they are real "+
+			"fixtures rather than local scratch: %s", strings.Join(untrackedExtra, " "))
+	}
 }
 
 // trackedFixtureNames returns the basenames git tracks under either testdata root, and whether the
