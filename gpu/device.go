@@ -16,9 +16,15 @@ import (
 //
 // Chaining W8A8→W8A8 needs the one glue op that was on the CPU — int8
 // re-quantization of a matmul's f32 output — moved onto the GPU. quantizeShader
-// does it: one workgroup per row computes the row max-abs (naive serial reduce
-// on lane 0 — trivial at decode; the rows run in parallel), then all lanes
-// quantize+pack to the same 4×int8/u32 layout MatmulW8A8 consumes.
+// does it: one workgroup per row computes the row max-abs (a 64-lane tree reduce),
+// then all lanes quantize+pack to the same 4×int8/u32 layout MatmulW8A8 consumes.
+//
+// The reduce was a serial scan on lane 0 until 2026-09-02, justified as "trivial at
+// decode; the rows run in parallel". That is exactly backwards: decode is M=1, so
+// there is only ever ONE row and nothing to run in parallel — one lane scanned the
+// whole row while 63 idled at the barrier, in a single-workgroup dispatch. Measured
+// 37 µs/dispatch against rmsnormQuantWGSL's 7.9 µs for strictly more work; see the
+// ablation profile in TestDecode_dispatchProfile and G35 in docs/QUEUE.md.
 
 const quantizeShaderWGSL = `
 struct QDims { m: u32, n: u32, np: u32, _p: u32 };  // np = N padded to mult of 4
@@ -28,29 +34,39 @@ struct QDims { m: u32, n: u32, np: u32, _p: u32 };  // np = N padded to mult of 
 @group(0) @binding(2) var<storage, read_write> scales: array<f32>;  // [M]
 @group(0) @binding(3) var<uniform>             d:      QDims;
 
-var<workgroup> shScale: f32;
+var<workgroup> sh: array<f32, 64>;
 
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
     let m = wid.x;
-    if (m >= d.m) { return; }
+    if (m >= d.m) { return; }   // uniform across the workgroup ⇒ the barriers below stay uniform
+    let t = lid.x;
     let base = m * d.n;
-    if (lid.x == 0u) {
-        var mx: f32 = 0.0;
-        for (var i: u32 = 0u; i < d.n; i = i + 1u) {
-            let v = abs(src[base + i]);
-            if (v > mx) { mx = v; }
-        }
-        var s: f32 = mx / 127.0;
-        if (s == 0.0) { s = 1.0; }
-        shScale = s;
-        scales[m] = s;
-    }
+    // max-abs over the row on all 64 lanes, then a tree reduce — the same shape
+    // rmsnormQuantWGSL already uses. BIT-IDENTICAL to the old serial lane-0 scan:
+    // f32 max is exact and order-independent (no rounding, associative, commutative),
+    // so every reduction order yields the same mx, hence the same scale and the same
+    // packed int8. The old version's "trivial at decode; the rows run in parallel"
+    // premise only holds for M>1 — at decode M IS 1, so one lane did the whole
+    // N-element scan while 63 idled at the barrier.
+    var mx: f32 = 0.0;
+    for (var i: u32 = t; i < d.n; i = i + 64u) { mx = max(mx, abs(src[base + i])); }
+    sh[t] = mx;
     workgroupBarrier();
-    let inv = 1.0 / shScale;
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { sh[t] = max(sh[t], sh[t + stride]); }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    var s: f32 = sh[0] / 127.0;
+    if (s == 0.0) { s = 1.0; }
+    if (t == 0u) { scales[m] = s; }
+    let inv = 1.0 / s;
     let nw = d.np / 4u;
     let obase = m * nw;
-    for (var w: u32 = lid.x; w < nw; w = w + 64u) {
+    for (var w: u32 = t; w < nw; w = w + 64u) {
         var word: u32 = 0u;
         for (var j: u32 = 0u; j < 4u; j = j + 1u) {
             let k = w * 4u + j;
