@@ -47,6 +47,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
+	"github.com/townsendmerino/goinfer/internal/servecheck"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/pull"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -325,6 +326,12 @@ func Main() {
 	// reason chat users do.
 	if len(os.Args) > 1 && os.Args[1] == "pull" {
 		os.Exit(pullcmd.Run(os.Args[2:]))
+	}
+	// `check` drives a RUNNING server through a harness's conversation. A client rather than
+	// an embedded server, so it exercises whatever is actually serving with the flags its
+	// operator chose — which is what a harness meets.
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		os.Exit(servecheck.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
 	var (
 		cfg     config
