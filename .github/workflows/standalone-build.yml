@@ -1,0 +1,72 @@
+# standalone-build — the gate RELEASING.md says proves the shipped tags do not need a go.work.
+#
+# M-34: RELEASING.md said "CI's standalone-build step (below) is what proves" it, and no such
+# step existed: `.github/workflows/ci.yml` has no GOWORK=off anywhere (every submodule job runs
+# `go work init`). The B-01…B-04 class was caught only by a human running Step 2 by hand at tag
+# time.
+#
+# WHY THIS IS NOT IN ci.yml. A submodule built with GOWORK=off resolves the goinfer root from
+# the module proxy at its LAST PUBLISHED TAG. Between releases that legitimately fails — a
+# submodule using a root symbol added since the last tag reports "method not found" on perfectly
+# good code. Running it on every push would make CI red by design and train everyone to ignore
+# it. At TAG time the root tag is published, which is exactly when the answer is meaningful and
+# exactly what the release depends on.
+name: standalone-build
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'gpu/v*'
+      - 'cuda/v*'
+      - 'metal/v*'
+      - 'demo/agent/v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  standalone:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: gpu
+            tags: gpu
+          - module: cuda
+            tags: cuda
+          - module: metal
+            tags: metal
+          - module: demo/agent
+            tags: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # metal/ is darwin-only and cuda/ is linux-only for its cgo-free dlopen path; both still
+      # COMPILE cross-target with GOOS set, which is what this gate needs — it is asking whether
+      # the module resolves without a workspace, not whether it runs here.
+      - name: install GPU build deps
+        if: matrix.module == 'gpu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
+      # NO `go work init`. That is the whole point: this must resolve the goinfer root from the
+      # proxy, the way `go install github.com/townsendmerino/goinfer/<module>@<tag>` does for a
+      # user. GOWORK=off also defends against a stray go.work in the runner image.
+      - name: standalone build (GOWORK=off)
+        env:
+          GOWORK: "off"
+          GOOS: ${{ matrix.module == 'metal' && 'darwin' || 'linux' }}
+        run: |
+          cd ${{ matrix.module }}
+          if [ -n "${{ matrix.tags }}" ]; then
+            go build -tags '${{ matrix.tags }}' ./...
+          else
+            go build ./...
+          fi

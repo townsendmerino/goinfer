@@ -28,8 +28,13 @@ survives to a tag unless caught here.
 - **`go.work` is gitignored, per-machine, and now MANDATORY for cross-module dev.** With the replaces
   gone, a submodule build outside a workspace resolves the root from the proxy; local cross-module
   work needs a `go.work` covering **all five modules** (`.`, `./gpu`, `./cuda`, `./metal`,
-  `./demo/agent`). It stays dev-only — nothing in the shipped tag may depend on it, which CI's
-  standalone-build step (below) is what proves.
+  `./demo/agent`). It stays dev-only — nothing in the shipped tag may depend on it, which the
+  `standalone-build` workflow proves. That workflow runs on TAG pushes, not on every push, and
+  the reason is structural rather than a preference: a submodule built with `GOWORK=off`
+  resolves the goinfer root from the proxy at its LAST PUBLISHED TAG, so between releases it
+  legitimately fails on perfectly good code that uses a root symbol added since. At tag time the
+  root tag is published, which is when the answer means anything. Until 2026-09-02 the sentence
+  here claimed a CI step that did not exist, and Step 2 below was the only thing checking it.
 - **Version alignment (B-07):** all five modules must agree on `aikit`, and `cuda`/`metal` must
   agree on `aikit/gpu`. **Read the versions, do not read them here.**
 

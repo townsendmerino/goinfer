@@ -123,9 +123,18 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// experts 256+ silently never considered); more than 32 groups indexes out of bounds. Either
 	// is plausible-looking wrong output, so decline to the staged path — matching cuda/backend.go's
 	// nE>256 build check (M22). Checked here, before any allocation, so the decline is clean.
-	if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK && (nE > 256 || nGroup > 32) {
-		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: MoE nE=%d/nGroup=%d exceeds router-kernel cap (256 experts / 32 groups)\n", nE, nGroup)
-		return nil, false, nil
+	// M-31: the cap is READ from decoder's declaration, not restated here. This site had its
+	// own 256/32 while the map, gpu/moe.go's MAXE and both published matrices said 512 — so a
+	// 384-expert Kimi-K2 or DeepSeek-V4-Pro was admitted by ResidentEligible, advertised as
+	// resident, and then declined to CPU by this line with a message naming a number nothing
+	// else agreed with.
+	if capE, capG, capOK := decoder.ResidentBackendMoECap("webgpu"); capOK {
+		if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK &&
+			((capE > 0 && nE > capE) || (capG > 0 && nGroup > capG)) {
+			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: MoE nE=%d/nGroup=%d exceeds "+
+				"router-kernel cap (%d experts / %d groups)\n", nE, nGroup, capE, capG)
+			return nil, false, nil
+		}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()

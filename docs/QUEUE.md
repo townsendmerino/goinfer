@@ -838,7 +838,7 @@ supports.
 | `docs/audit-2026-09-02.md|chat/templates.go:156` | goinfer | `func ChatML() *Template {` |
 | `docs/audit-2026-09-02.md|chat/templates.go:197` | goinfer | `date := timeNow().Format("02 Jan 2006")` |
 | `docs/audit-2026-09-02.md|chat/tools.go:56` | goinfer | `func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segm` |
-| `docs/audit-2026-09-02.md|chat/tools_test.go:99` | goinfer | `// TestGemma4_declaration_byteExact pins the Gemma 4 declaration micro-language` |
+| `docs/audit-2026-09-02.md|chat/tools_test.go:100` | goinfer | `// TestGemma4_declaration_byteExact pins the Gemma 4 declaration micro-language` |
 | `docs/audit-2026-09-02.md|cmd/gate/configs.go:34` | goinfer | `Env: map[string]string{` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1072` | goinfer | `func (g *gpuGate) metalModel() string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1088` | goinfer | `_, cr, out := g.run(cell{` |
@@ -915,9 +915,9 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/gptoss_real20b_test.go:36` | goinfer | `// Skips until CUDA declares the two features, exactly as metal/gptoss_real_test.go does` |
 | `docs/audit-2026-09-02.md|cuda/gptoss_real20b_test.go:44` | goinfer | `// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF` |
 | `docs/audit-2026-09-02.md|cuda/graphs_safe.go:109` | goinfer | `// admitGraphs applies the safe-gate: it is the ONLY place r.graphs is promoted from "re` |
-| `docs/audit-2026-09-02.md|cuda/kernel_fma_lint_test.go:15` | goinfer | `// moe.cu is the audited, FROZEN MoE PTX — reviewed separately (editing it needs its own` |
-| `docs/audit-2026-09-02.md|cuda/kernels.go:107` | goinfer | `// this box's NVRTC 12.9.86, not 12.6; only moe.ptx + the bench kernels are the audited ` |
-| `docs/audit-2026-09-02.md|cuda/kernels.go:178` | goinfer | `func f32tof16(f float32) uint16 {` |
+| `docs/audit-2026-09-02.md|cuda/kernel_fma_lint_test.go:15` | goinfer | `// moe.cu is exempt because the shipped moe.ptx was a FROZEN artifact, audited at NVRTC ` |
+| `docs/audit-2026-09-02.md|cuda/kernels.go:107` | goinfer | `// this box's NVRTC 12.9.86, not 12.6. moe.ptx was the audited 12.6.85 artifact (R-26) a` |
+| `docs/audit-2026-09-02.md|cuda/kernels.go:179` | goinfer | `func f32tof16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:157` | goinfer | `func (r *cudaResident) prefillStaticDecline() error {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:188` | goinfer | `func nonBatchableKind(Ly *cudaLayer) string {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:236` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
@@ -984,7 +984,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/embed.go:66` | goinfer | `for _, id := range ids {` |
 | `docs/audit-2026-09-02.md|decoder/features.go:261` | goinfer | `// residentBackendMoECap is the router-kernel capacity of each backend whose MoE scorebo` |
 | `docs/audit-2026-09-02.md|decoder/features.go:273` | goinfer | `"webgpu": {experts: 512, groups: 32}, // gpu/moe.go: MAXE 512, array<f32,512> score/sel ` |
-| `docs/audit-2026-09-02.md|decoder/features.go:419` | goinfer | `//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU` |
+| `docs/audit-2026-09-02.md|decoder/features.go:433` | goinfer | `//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU` |
 | `docs/audit-2026-09-02.md|decoder/features_test.go:423` | goinfer | `// The cap was raised 256 -> 512 (MOE_MAX_E / MAXE) so Kimi-K2's 384 is now ADMITTED on ` |
 | `docs/audit-2026-09-02.md|decoder/forward_gemma4.go:216` | goinfer | `if lw.LayerScalar != 0 {` |
 | `docs/audit-2026-09-02.md|decoder/forward_gemma4.go:301` | goinfer | `for kvh := range nKV {` |
@@ -1082,7 +1082,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/model.go:986` | goinfer | `greedyRF, hasGreedy := m.resident.(ResidentGreedy)` |
 | `docs/audit-2026-09-02.md|decoder/model.go:997` | goinfer | `optFwd := useGPU && !fastGreedy && m.optFwdEligible(sp) && os.Getenv("GOINFER_NO_OPTFWD"` |
 | `docs/audit-2026-09-02.md|decoder/moe_expert_batch_test.go:220` | goinfer | `func loadMoEBitIdentModel(t *testing.T) (*Model, error) {` |
-| `docs/audit-2026-09-02.md|decoder/moecap_kernel_pin_test.go:37` | goinfer | `// webgpu: array<f32, 256> score / array<f32, 32> gscore` |
+| `docs/audit-2026-09-02.md|decoder/moecap_kernel_pin_test.go:38` | goinfer | `// webgpu: array<f32, 256> score / array<f32, 32> gscore` |
 | `docs/audit-2026-09-02.md|decoder/moepaging.go:61` | goinfer | `anchor: func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {` |
 | `docs/audit-2026-09-02.md|decoder/mtp.go:35` | goinfer | `anchor: type MTPHead struct {` |
 | `docs/audit-2026-09-02.md|decoder/prefillattnpool_test.go:83` | goinfer | `os.Unsetenv("GOINFER_PREFILL_ATTN_WORKERS")` |
@@ -1189,16 +1189,16 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8.go:146` | goinfer | `func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32, nE, N,` |
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8_expert_test.go:37` | goinfer | `stack, err := ctx.UploadStackedExpertsInt4(nib, sc, nE, N, K)` |
 | `docs/audit-2026-09-02.md|gpu/qwen35_resident_parity_test.go:26` | goinfer | `if os.Getenv("GOINFER_DNET_PARITY") == "" {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:1032` | goinfer | `func (rd *residentDecoder) Reset() {` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:104` | goinfer | `_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:126` | goinfer | `if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK && (nE > 25` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:138` | goinfer | `kvF16 := m.KVCacheF16()` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:168` | goinfer | `ctxCap := 16384` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:1041` | goinfer | `func (rd *residentDecoder) Reset() {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:126` | goinfer | `// M-31: the cap is READ from decoder's declaration, not restated here. This site had it` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:147` | goinfer | `kvF16 := m.KVCacheF16()` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:177` | goinfer | `ctxCap := 16384` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:44` | goinfer | `if K%w4a8GroupSize == 0 && !int4SlowPath {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:663` | goinfer | `if os.Getenv("GOINFER_SSM_F16MAMBA") != "" { // f16 (no quality gain; kept for experimen` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:743` | goinfer | `// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:927` | goinfer | `func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:941` | goinfer | `func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, ` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:672` | goinfer | `if os.Getenv("GOINFER_SSM_F16MAMBA") != "" { // f16 (no quality gain; kept for experimen` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:752` | goinfer | `// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:936` | goinfer | `func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:950` | goinfer | `func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, ` |
 | `docs/audit-2026-09-02.md|gpu/residency_c01_reset_test.go:24` | goinfer | `requireHeavyModel(t)` |
 | `docs/audit-2026-09-02.md|gpu/resident_pack_bench_test.go:18` | goinfer | `func TestResidentPackCost(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |

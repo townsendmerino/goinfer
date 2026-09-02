@@ -1,5 +1,19 @@
 # Regenerating `moe.ptx` (and the other audited 12.6 artifacts)
 
+> **STATUS 2026-09-02 (audit M-35): the shipped `moe.ptx` is NO LONGER the 12.6.85 artifact.**
+> Its header reads `release 12.9, V12.9.86` — it was regenerated at 12.9.86 in `610ce7f`, against
+> the rule this document states. So "audited artifact" below describes the intent, not the file
+> in the tree, and the control the table records (rebuilt unchanged at 12.6.85, byte-identical)
+> no longer corresponds to what ships. Nothing measured says the numerics moved — there is no
+> bit-identity sibling for the MoE GEMVs, and `moe.cu`'s bare MACs may simply have been
+> contracted the same way — but that is an absence of evidence, not evidence.
+>
+> Two ways to close it, neither doable off the box: **(a)** pin-regen at 12.6.85 per the
+> procedure below and record the control, or **(b)** drop `moe.cu`'s FMA-lint exemption —
+> convert its MACs to explicit intrinsics and add it to `lintedKernels`, which makes the
+> toolchain's contraction choice stop mattering. `TestMoEPTX_versionMatchesItsDocumentation`
+> pins the current state so this cannot drift further while the decision is open.
+
 `moe.ptx` is an **audited artifact**: it ships built at CUDA **NVRTC 12.6.85**, while this dev box
 runs 12.9.86. The standing rule is often paraphrased as "never regenerate moe.ptx". That is not
 quite the rule, and the imprecision costs real work — it pushes the next person toward writing a

@@ -178,10 +178,19 @@ jobs:
       # (2026-08-15; a committed replace broke `go install …@vX`), so `go work init`
       # is what resolves the root, not a replace.
       - name: workspace (resolve unpublished goinfer locally)
-        run: go work init . ./gpu
+        run: go work init . ./gpu ./demo/agent
 
       - name: build -tags gpu
         run: go build -tags 'gpu goinfer_testhooks' ./gpu/...
+
+      # demo/agent is the fifth module and had ZERO CI coverage — the MCP-SDK demo compiled for
+      # the first time at tag time, by a human running RELEASING.md Step 2 by hand (M-34). It
+      # builds inside the workspace here, which catches ordinary breakage; the standalone
+      # (GOWORK=off) build that the release actually depends on is in standalone-build.yml,
+      # which runs at tag time because it CANNOT pass between releases — a module built outside
+      # a workspace resolves the root from the proxy at its last published tag.
+      - name: build demo/agent (workspace)
+        run: go build ./demo/agent/...
 
       # Compile the WIRED serve + demo entrypoints (gpu/cmd/serve, gpu/cmd/chat): the
       # RegisterBackend blank-imports live in the submodule cmd/ mains since audit M-19, so a

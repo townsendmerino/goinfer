@@ -296,6 +296,20 @@ var residentBackendMoECap = map[string]struct{ experts, groups int }{
 //            this cap says. Its WGSL compiles at runtime (no frozen artifact), and it was validated
 //            on this box. Groups stay 32 — array<f32,32> gscore is untouched and no target needs more.
 
+// ResidentBackendMoECap returns backend's declared router-kernel capacity. ok is false for a
+// backend with no fixed-size router.
+//
+// Exported for the BACKENDS to read (M-31). gpu/residency.go had its own hardcoded 256/32 while
+// this map said 512, so ResidentEligible admitted a 384-expert Kimi-K2 or DeepSeek-V4-Pro — "✅
+// resident" in both generated matrices — and BuildResident then declined it to CPU with a
+// message naming 256, or refused to start under -require-be webgpu. Two pin tests were green
+// throughout: one greps gpu/moe.go, the other asserts ResidentEligible; neither reads
+// residency.go. That is exactly the drift this map exists to prevent, happening one file over.
+func ResidentBackendMoECap(backend string) (experts, groups int, ok bool) {
+	c, ok := residentBackendMoECap[backend]
+	return c.experts, c.groups, ok
+}
+
 // residentMoECapacityOK reports whether backend's router kernel can route arch's MoE (M22). True for
 // a dense arch or a backend without a fixed-size router.
 func residentMoECapacityOK(a *Architecture, backend string) bool {
