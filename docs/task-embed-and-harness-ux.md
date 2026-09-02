@@ -267,7 +267,28 @@ by default (the banner says how to turn it on); which of the five routes a given
    `serve check` drives a RUNNING server (a client, not an embedded server) and prints a number
    per row — the long-prompt TTFT row is the one a harness user actually needs. Each defect it
    claims to catch has a test that makes it go red against an httptest server, so **G3** runs in
-   CI with no model. The recipes (§3.5) and **G5** are NOT done.
+   CI with no model.
+
+   **§3.5 + G5, 2026-09-02 — PARTLY done, and the split is deliberate.** `docs/integrations/claude-code.md`
+   is published with measured numbers: the `/v1/messages` tool loop round-trips (`glob` → `read`
+   → answer, 3 turns, 2.83 s, ends `end_turn`), `usage` is present on a **streamed tool call**
+   (M-26's fix, confirmed), and the expectation line is **TTFT 8.85 s for a 2,293-token agent
+   turn ≈ 259 tok/s prefill** — which independently corroborates `server.md`'s 270 tok/s figure.
+   Qwen2.5-7B-Instruct int4 CUDA-resident, RTX 2070 SUPER, driver 595.91.07.
+
+   **Only that one recipe is published**, because §3.5's own rule is that a recipe with no
+   number is not published and Open-WebUI / Continue have none yet.
+
+   **The dsh half of G5 was NOT run** (decided 2026-09-02): dsh is not installed here and
+   `server.md` documents its install as an ordeal (npm's resolver hangs; 19 peer plugins added
+   one error at a time). The 277 s figure therefore stands un-re-measured. The Claude Code loop
+   exercises the same routes and the same tool round-trip, so what is missing is dsh's harness,
+   not the server behaviour.
+
+   **Two of G5's three preconditions are still open**, which the recipe states rather than
+   hides: N-18 (`tool_choice` `any`/`required` does not force a call with 2+ tools — `forcedTool`
+   handles `none` and a named function, and `required` falls through to the single-tool case)
+   and M-20 (Gemma-4 tool rendering). Only M-26 was fixed, and the measurement confirms it.
 3. **Constrained-decoding speed** (L-07) so `Into[T]` is usable on the GPU backends — G4.
 4. **Session anchors** (L-05) and longest-prefix reuse (L-15) so an agent loop stops paying a
    cold prefill per turn on the resident path; the banner's "session reuse: off" line is what
