@@ -106,8 +106,8 @@
   kernel (these arms deliberately keep `MatmulBT` inside, so kernel quality is controlled rather
   than confounded).
 
-- **P18 · Expert-major MoE prefill batching — REOPENED 2026-09-01, and the reason it was parked
-  does not apply to it.** Scoped, not funded: the next step is a cost measurement, not a rewrite.
+- **P18 · Expert-major MoE prefill batching — FUNDED AND SHIPPED 2026-09-01, default ON.
+  4.364× end to end, bit-identical.**
 
   **Why it is back.** The full-model K=8192 profile
   (`docs/measurements/mellum2-fullmodel-profile-RESULT.md`) moved the target after A3 collapsed
@@ -137,6 +137,25 @@
   retracted twice on 2026-09-01. **Decision rule, pre-registered here:** measure permutation cost
   against batching win on the real forward at K≥4096; **fund if the net is ≥15% end-to-end,
   park if <8%, and treat 8–15% as ambiguous → parked pending a second mechanism.**
+
+  **MEASURED: +336.4%, i.e. 4.364×** (full 28-layer Mellum2, K=4096, paired and interleaved;
+  1206.9 s → 276.6 s, second pair 4.50×) — clears the bar by more than twenty times. Shipped
+  default ON; `GOINFER_MOE_EXPERT_MAJOR=0` disables. **Bit-identical**, so no golden changes, no
+  documented divergence, no user-facing flag: it changes speed and nothing else.
+
+  **The mechanism I proposed is REFUTED, which is the durable part.** Amdahl on the microbenchmark
+  (2.13× on matmuls that are ~39% of prefill) predicts 1.26×; measuring 4.36× said something else
+  was doing the work. I proposed per-row allocation — `moeMLP` allocates ~5 slices per row per
+  layer and the K=8192 profile recorded 339,293 GCs / 20.9 GB. Measured as its own arm, changing no
+  arithmetic: **0.99× and 1.02×. Nothing.** The cheap five-line alternative is dead.
+
+  Leading hypothesis for the remaining gap, **not measured**: the microbenchmark reused one
+  expert's weights cache-warm, while production touches 8 of 64 experts per row with consecutive
+  rows differing, on a machine whose working set drove swap to 18 GB. If so my own benchmark
+  understated the win by omitting the pressure — the "synthetic reproduces shape, not pressure"
+  trap, in the direction that would have killed the item rather than oversold it.
+
+  Record: `docs/measurements/p18-expert-major-e2e-2026-09-01.md`.
 
   Structural note for whoever picks it up: `canBatchN`'s comment states the per-row design as a
   deliberate constraint ("the MoE FFN itself stays per-row"), so this is a restructuring of the

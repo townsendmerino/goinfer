@@ -438,10 +438,30 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 const moeExpertMajorChunk = 512
 
 // moeExpertMajor reports whether the expert-major prefill path is enabled.
-// Default OFF while P18 is being measured -- the gather/scatter cost is the
-// open question, and until it is measured on the real forward this must not be
-// the shipping path.
-func moeExpertMajor() bool { return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") == "1" }
+//
+// DEFAULT ON since 2026-09-01. Measured end to end on the full 28-layer Mellum2
+// at K=4096, paired and interleaved: 4.364x (1206.9s -> 276.6s), reproduced at
+// 4.50x on the second pair. The pre-registered bar was 15%; this clears it by
+// more than twenty times.
+//
+// It is BIT-IDENTICAL, which is why this default flip needs no golden change, no
+// documented divergence and no user-facing flag -- unlike --cpu-fast-attention,
+// this changes speed and nothing else. TestMoEExpertMajor_bitIdentical asserts
+// equality on every logit through the real forward at K=600 and K=4096, is
+// mutation-proven (reverse-order folding reddens 1381871/1382400 logits), and
+// asserts non-vacuity via a chunk counter so a silent refusal cannot pass as a
+// green.
+//
+// GOINFER_MOE_EXPERT_MAJOR=0 restores the per-row path. Kept as an escape hatch
+// and an A/B handle, not as a user setting.
+//
+// What the win is NOT: per-row allocation. moeMLP allocates ~5 slices per row
+// per layer here and the K=8192 profile recorded 339,293 GCs / 20.9 GB, so that
+// was the obvious explanation -- and reusing one scratch across the row loop,
+// measured as its own arm, is worth 0.99x and 1.02x. The mechanism is the
+// restructuring itself; the decomposition of why is measured as unexplained
+// rather than asserted. See docs/measurements/p18-expert-major-e2e-2026-09-01.md.
+func moeExpertMajor() bool { return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") != "0" }
 
 // moeExpertMajorRuns counts chunks that actually took the expert-major path.
 // It exists so the bit-identity gate can prove it is not vacuous: moeMLPBatch

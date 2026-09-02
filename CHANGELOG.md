@@ -15,6 +15,23 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Performance
+
+- **MoE prefill runs the experts EXPERT-MAJOR — 4.36× end-to-end, bit-identical.** At K=4096 on a
+  full 28-layer Mellum2, batched prefill went 1206.9 s → 276.6 s (second pair 4.50×). Previously
+  the FFN ran one row at a time, issuing its three expert matmuls at M=1, so an expert's weights
+  were re-read for every token routed to it — ~10³ times per expert per layer at K=8192.
+  - **Bit-identical, so nothing about the output changes** — no golden updates, no documented
+    divergence, no flag to reason about. Achieved by computing every (row, rank) expert output
+    first and folding each row in *routing-rank* order, since float addition is not associative and
+    an expert-major visit order would otherwise change results.
+  - It declines, rather than approximating, for a live expert pager, a shared expert, and the
+    routing test seams; those fall through to the per-row path unchanged.
+  - `GOINFER_MOE_EXPERT_MAJOR=0` restores the old path.
+  - **The obvious explanation is wrong and was measured, not assumed:** per-row allocation churn
+    (339,293 GCs / 20.9 GB in the profile) accounts for *none* of it — reusing one scratch across
+    the row loop is worth 0.99×. See `docs/measurements/p18-expert-major-e2e-2026-09-01.md`.
+
 ### Fixed
 
 - **Speculative decode's `Theta` could not express Metal, so Metal drafted when it should not
