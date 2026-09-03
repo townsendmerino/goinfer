@@ -206,8 +206,14 @@ func loadFromPath(path string, opts decoder.Options) (*session, error) {
 	case strings.HasSuffix(path, ".giw"):
 		var raw []byte
 		if raw, err = giw.ReadTokFile(path); err == nil {
-			if tk, err = tokenizer.LoadGGUFBytes(raw); err != nil {
-				tk, err = tokenizer.LoadJSONBytes(raw)
+			var gerr error
+			if tk, gerr = tokenizer.LoadGGUFBytes(raw); gerr != nil {
+				// N-25: report BOTH. This used to overwrite the GGUF error with the JSON one,
+				// so a corrupt GGUF-sourced bundle reported "invalid JSON" — pointing the
+				// reader at the wrong half of the file.
+				if tk, err = tokenizer.LoadJSONBytes(raw); err != nil {
+					err = fmt.Errorf("not a GGUF (%v) and not tokenizer.json (%v)", gerr, err)
+				}
 			}
 		}
 	case strings.HasSuffix(path, ".gguf"):

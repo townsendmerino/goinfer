@@ -203,6 +203,14 @@ func (t *Tokenizer) decodeByteLevel(ids []int) (string, error) {
 		if id < 0 || id >= len(t.idToPiece) {
 			return "", fmt.Errorf("tokenizer.Decode: id %d out of range [0,%d)", id, len(t.idToPiece))
 		}
+		// N-24: an ADDED token's surface is stored verbatim, NOT byte-level-encoded, so pushing
+		// it through the byte table is a category error. A rune in U+0080–U+0143 (é ü ñ — and
+		// every chat template that spells a role in a non-ASCII language) maps back to ONE raw
+		// byte, so the result is invalid UTF-8 and the grammar mask sees the wrong surface.
+		if id < len(t.isAdded) && t.isAdded[id] {
+			buf = append(buf, t.idToPiece[id]...)
+			continue
+		}
 		for _, r := range t.idToPiece[id] {
 			if b, ok := t.byteDecoder[r]; ok {
 				buf = append(buf, b)

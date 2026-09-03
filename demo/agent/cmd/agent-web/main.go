@@ -36,6 +36,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/demo/agent/agent"
 	"github.com/townsendmerino/goinfer/demo/agent/internal/embedmodel"
+	"net/url"
 )
 
 //go:embed index.html
@@ -108,9 +109,13 @@ func main() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(indexHTML)
 	})
+	// N-26: this is demo-grade, but "demo" is not a security boundary — it binds a port and any
+	// web page the operator visits can POST to it. sameOrigin rejects cross-origin POSTs (a page
+	// on another site could otherwise burn a multi-minute vision turn or reset the history), and
+	// limitBody caps the request so an unbounded body cannot be streamed into memory.
 	mux.HandleFunc("GET /api/info", s.handleInfo)
-	mux.HandleFunc("POST /api/chat", s.handleChat)
-	mux.HandleFunc("POST /api/reset", s.handleReset)
+	mux.HandleFunc("POST /api/chat", sameOrigin(limitBody(s.handleChat)))
+	mux.HandleFunc("POST /api/reset", sameOrigin(limitBody(s.handleReset)))
 
 	fmt.Fprintf(os.Stderr, "agent-web listening on http://%s\n", *addr)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
@@ -228,4 +233,37 @@ func decodeImage(s string) ([]byte, error) {
 		return nil, fmt.Errorf("image must be base64 (a remote URL is not fetched)")
 	}
 	return base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
+}
+
+// maxRequestBody bounds a POST. Generous for a base64 data-URI image (~8 MB of JPEG) and far
+// below anything that would matter as a memory target (N-26).
+const maxRequestBody = 12 << 20
+
+// limitBody wraps h so the request body cannot exceed maxRequestBody. MaxBytesReader makes the
+// decoder fail with a clear error rather than reading until the process runs out of memory.
+func limitBody(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		h(w, r)
+	}
+}
+
+// sameOrigin rejects a POST whose Origin names a different host than the one serving it.
+//
+// A browser sends Origin on every cross-origin POST, so this is enough to stop a page on another
+// site from driving this agent — which matters here because one request can occupy the model for
+// minutes (a vision turn) or discard the conversation (/api/reset). A request with NO Origin is
+// allowed: that is curl, or a same-origin form in an older browser, and refusing it would break
+// the demo's own usage without closing anything a browser can do.
+func sameOrigin(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); o != "" {
+			u, err := url.Parse(o)
+			if err != nil || u.Host != r.Host {
+				http.Error(w, "cross-origin request refused", http.StatusForbidden)
+				return
+			}
+		}
+		h(w, r)
+	}
 }

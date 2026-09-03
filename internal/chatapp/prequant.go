@@ -42,9 +42,18 @@ func loadEmbedded(_ bool, opts decoder.Options) (*session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("prequant weights: %w (rebuild the bundle, or run with --model <gguf>)", err)
 	}
-	tk, err := tokenizer.LoadGGUFBytes(tokGGUF)
-	if err != nil {
-		return nil, fmt.Errorf("prequant tokenizer: %w", err)
+	// N-25: a .giw's tok half is GGUF metadata for a GGUF-sourced bundle and RAW tokenizer.json
+	// for a safetensors-sourced one. This path tried only the GGUF form, so an embedded build
+	// made from a safetensors checkpoint produced a binary that exited at startup — the same
+	// fallback loadFromPath has always had, missing from the baked-in twin.
+	tk, gerr := tokenizer.LoadGGUFBytes(tokGGUF)
+	if gerr != nil {
+		var jerr error
+		if tk, jerr = tokenizer.LoadJSONBytes(tokGGUF); jerr != nil {
+			// BOTH errors, not just the last: with only the JSON one, a corrupt GGUF-sourced
+			// bundle reports "invalid JSON" and sends the reader down the wrong path.
+			return nil, fmt.Errorf("prequant tokenizer: not a GGUF (%v) and not tokenizer.json (%v)", gerr, jerr)
+		}
 	}
 	model, err := decoder.NewModel(w, opts.Backend)
 	if err != nil {

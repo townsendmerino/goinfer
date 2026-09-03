@@ -115,26 +115,17 @@ func (rm *ResidentW4A8) Close() error {
 
 func padK32(k int) int { return (k + 31) &^ 31 }
 
-// f32to16 rounds float32 → IEEE-754 half (round-half-up). The per-group scales
-// are ~⅕ of the W4A8 stream at f32; half width halves that. Scales are small
-// positives — inf/subnormal/sign paths are handled but not exercised here.
-func f32to16(f float32) uint16 {
-	b := math.Float32bits(f)
-	sign := uint16((b >> 16) & 0x8000)
-	exp := int32((b>>23)&0xff) - 127 + 15
-	mant := b & 0x7fffff
-	if exp >= 0x1f {
-		return sign | 0x7c00
-	}
-	if exp <= 0 {
-		return sign
-	}
-	half := sign | uint16(exp<<10) | uint16(mant>>13)
-	if mant&0x1000 != 0 { // round up (carry propagates mantissa→exponent)
-		half++
-	}
-	return half
-}
+// f32to16 is an alias for the ONE converter this package uses; see f32ToF16 in mamba_f16.go.
+//
+// N-04: there used to be two different float32→half converters in this package, and this was the
+// load-bearing one — every W4A8 group-scale upload and NewKVCacheF16 go through it. It FLUSHED
+// THE ENTIRE SUBNORMAL RANGE (`exp <= 0 → sign`), so an int4 group whose scale is below 2^-14
+// read as all-zero on WebGPU and nowhere else. The 2026-08-05 audit's C-15 fixed exactly this in
+// cuda/ and gpu/ was not in the disposition.
+//
+// It also made GOINFER_INT4_F16_SCALES lie: that diagnostic claims to reproduce WebGPU's unpack
+// on the CPU, and for those groups it did not.
+func f32to16(f float32) uint16 { return f32ToF16(f) }
 
 // f16to32 expands an IEEE-754 half to float32 (so the parity reference can
 // dequantize with the exact f16 the GPU reads).

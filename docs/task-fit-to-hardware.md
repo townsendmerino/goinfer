@@ -95,15 +95,32 @@ is not file-backed (M-02's doubling); disk class only as a warning (the SMR-arch
 `CLAUDE.md` is an operator rule, not something the planner can detect).
 
 **`request`** — what the user asked for, with the defaults filled: context wanted (default: the
-smaller of the model's window and 8192 — see §8), quant (default int4), and anything they set
-explicitly, which pins that dimension.
+smaller of the model's window and 8192 — see §8), quant (default int4), anything they set
+explicitly, which pins that dimension — and every companion the configuration will attach
+(`--drafter`, a vision tower), because those allocate on the same device.
+
+**Every allocation is a term of the plan, including the ones that attach after load.** Today's
+CUDA cap sizes the expert cache against *free VRAM at that moment* (`capSlots`,
+`cuda/resident.go`), keeping back `slotMarginBytes` — 384 MiB, by its own comment the only
+unmeasured constant on that path — and nothing else; it cannot see what the same configuration
+allocates next. Measured 2026-09-02 on the 8 GB card, in the verify-vs-pager run: gemma-4-26b-a4b
+auto-sized to 31 slots/layer, the server came up, then `--drafter` attached and `NewBlockSpec`
+failed on a 15.9 MB typed-len buffer — `cuda: device allocation failed` — because the cache had
+already taken the room. So the plan sums the **fixed** terms first — dense weights, KV at the
+chosen ctx, the drafter's weights (~500 MB for the 4B pairing, uploaded to the target's device at
+attach) and the verify and capture buffers `NewBlockSpec` allocates, the host copy when M-02
+applies, the first-launch reservation the A9 fix pays early — and gives the one **elastic** term,
+the expert slot count, whatever remains. Elastic last: the thing that can shrink is sized after
+the things that cannot, which is the same rule the priority order below applies to context. The
+greedy load-time cap stays as the backstop for what the plan did not foresee, not as the plan.
 
 **`placement`** — one of, per backend, with every number that justified it:
 
 1. **resident** — everything on the device; KV at the requested ctx.
 2. **expert-cached** — dense resident, routed experts in N slots per layer; N chosen as the largest
-   count whose bytes fit beside dense + KV + scratch (the CUDA cap already does the VRAM half of
-   this; Metal has no equivalent).
+   count whose bytes fit beside every fixed term above — dense + KV + scratch + drafter + verify
+   buffers (the CUDA cap already does the VRAM half of this, against whatever was allocated
+   before it ran; Metal has no equivalent).
 3. **host-computed experts** — reserved for L-01 (misses computed on the CPU from the pinned host
    copy). Not built; the placement enum carries it now so the planner is not rewritten when it lands.
 4. **weight-paged** — CPU with `--weight-cache` sized from RAM (today's auto), for the model that
@@ -193,8 +210,9 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
   the same accounting function, in one test that runs the arithmetic on the recorded geometries
   without a device. A guard that passes one half and fails the other has inverted again.
 - **G3 · accounting within 10%.** Planned bytes vs measured device allocation after load, on the
-  G1 cells: every class within 10%, total within 5%. Keyed on quantities the plan computes, never
-  on RSS or "available" (the `CLAUDE.md` rule the last guard broke).
+  G1 cells, and once more on the 26B cell with `--drafter` attached — the allocation the load-time
+  cap could not see: every class within 10%, total within 5%. Keyed on quantities the plan
+  computes, never on RSS or "available" (the `CLAUDE.md` rule the last guard broke).
 - **G4 · the plan is a pure function.** A table-driven unit test on synthetic headers — dense,
   MoE, hybrid, every backend, every budget from 6 to 64 GB — runs in CI with no assets and pins the
   placement and the ctx cap. A change to the priority order is a change to this table, reviewed.
@@ -206,7 +224,8 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
 ## 7. Phasing — each step independently droppable
 
 0. **Accounting** (closes M-01/M-02, prerequisite): `WeightBudget()` by class from the writer's
-   walker; the Metal guard moved after slot resolution; G2 + G3.
+   walker, with the drafter and verify buffers as named terms; the Metal guard moved after slot
+   resolution; G2 + G3.
 1. **Dry run**: `goinfer-chat fit`, the pure `plan` and its table test (G4), the banner lines. No
    behaviour change yet — the plan is printed beside today's decision so the two can be compared
    on the reference cells before anything flips.

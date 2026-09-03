@@ -150,7 +150,10 @@ func TestMambaResidentCapture(t *testing.T) {
 		if _, err := rd.Forward(emb, pos); err != nil {
 			t.Fatal(err)
 		}
-		rProj, rConv, rY, rGated := rd.runner.ReadMambaCap(projDim, convDim, dInner)
+		rProj, rConv, rY, rGated, rerr := rd.runner.ReadMambaCap(projDim, convDim, dInner)
+		if rerr != nil {
+			t.Fatalf("ReadMambaCap: %v", rerr)
+		}
 		residentProj = append(residentProj, rProj)
 		cConv, cY, cGated := cpuMixer(rProj)
 		cc, _ := cosSim(cConv, rConv)

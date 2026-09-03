@@ -112,6 +112,13 @@ type Tokenizer struct {
 
 	added *addedTrie // added/special token surface forms → id
 
+	// isAdded[id] marks an ADDED/special token, whose surface is stored VERBATIM rather than
+	// byte-level-encoded (N-24). decodeByteLevel must emit those runes as-is: pushing them
+	// through the byte table turns a rune in U+0080–U+0143 (é ü ñ — ordinary in a chat
+	// template's added tokens) into a single raw byte, producing invalid UTF-8 and a wrong
+	// surface for the constrained-decoding mask.
+	isAdded []bool
+
 	chatTemplate string // raw GGUF/HF tokenizer.chat_template (Jinja); "" if absent. For chat.Detect.
 }
 
@@ -342,6 +349,7 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 	t.added = newAddedTrie()
 	for _, a := range tj.AddedTokens {
 		t.added.add(a.Content, a.ID)
+		t.markAdded(int(a.ID))
 	}
 
 	return t, nil
@@ -840,4 +848,17 @@ func (t *Tokenizer) TokenText(id int) []byte {
 		return []byte{b}
 	}
 	return []byte(strings.ReplaceAll(t.idToPiece[id], spaceMarker, " "))
+}
+
+// markAdded records id as an added/special token; see the isAdded field (N-24).
+func (t *Tokenizer) markAdded(id int) {
+	if id < 0 {
+		return
+	}
+	if id >= len(t.isAdded) {
+		grown := make([]bool, id+1)
+		copy(grown, t.isAdded)
+		t.isAdded = grown
+	}
+	t.isAdded[id] = true
 }

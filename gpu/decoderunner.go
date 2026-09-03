@@ -301,6 +301,27 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// W8A16 (activation-precision fix, gemv_w8a16.go): int8 weights, f32 activations — no
 	// activation int8 quant, so the granite re-quant cascade can't compound. Off by default.
 	w8a16 := os.Getenv("GOINFER_SSM_W8A16") != ""
+	// N-13: the W8A16 path binds the INT8-weight kernel (gemv_w8a16.go: one byte per weight,
+	// f32 per-row scales). A *ResidentW4A8 projection stores two 4-bit nibbles per byte with f16
+	// GROUP scales, so dispatching it here reads nibble pairs as int8 weights and group scales
+	// as row scales — silent garbage, not an error. Decline instead: the flag is an opt-in
+	// experiment and running it against int4 weights answers nothing.
+	if w8a16 {
+		for i := range m.layers {
+			for _, w := range []decodeWeight{m.layers[i].up, m.layers[i].down} {
+				if _, isW4 := w.(*ResidentW4A8); isW4 {
+					fmt.Fprintf(os.Stderr, "[gpu] GOINFER_SSM_W8A16 ignored: layer %d has int4 "+
+						"(W4A8) projections, and the W8A16 kernel would read nibble pairs as "+
+						"int8 weights (N-13)\n", i)
+					w8a16 = false
+					break
+				}
+			}
+			if !w8a16 {
+				break
+			}
+		}
+	}
 	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
 	if w8a16 {
 		ensures = append(ensures, c.ensureGEMVW8A16)
@@ -1179,8 +1200,12 @@ func (r *DecodeRunner) writeInputs(x []float32, pos int) error {
 // values from the most recent Run) back to the host — the resident's actual per-token kernel
 // I/O, for diffing against mamba2Step (gpu/mamba_resident_capture_test.go). projN/convN/dInner
 // are the element counts. Test-only; allocates fresh staging per call.
-func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []float32) {
-	rd := func(b *wgpu.Buffer, n int) []float32 {
+//
+// N-15: this is EXPORTED and used to panic on a failed buffer map. "Test-only" is a comment, not
+// a compiler constraint — an exported method on an exported type is callable by anyone, and a
+// panic on a device-boundary failure takes the caller's process down. Returns an error now.
+func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []float32, err error) {
+	rd := func(b *wgpu.Buffer, n int) ([]float32, error) {
 		stag, _ := r.c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		defer stag.Release()
 		enc, _ := r.c.device.CreateCommandEncoder(nil)
@@ -1193,14 +1218,26 @@ func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, ga
 		stag.MapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
 		r.c.device.Poll(true, nil)
 		if st != wgpu.BufferMapAsyncStatusSuccess {
-			panic("ReadMambaCap: map failed")
+			return nil, fmt.Errorf("gpu: ReadMambaCap: buffer map failed (status %v)", st)
 		}
 		out := make([]float32, n)
 		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
 		stag.Unmap()
-		return out
+		return out, nil
 	}
-	return rd(r.mcapProj, projN), rd(r.mcapConv, convN), rd(r.mcapY, dInner), rd(r.mcapGated, dInner)
+	if proj, err = rd(r.mcapProj, projN); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if conv, err = rd(r.mcapConv, convN); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if y, err = rd(r.mcapY, dInner); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if gated, err = rd(r.mcapGated, dInner); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return proj, conv, y, gated, nil
 }
 
 func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {

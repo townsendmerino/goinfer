@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestDecodePiece_noSequenceStrip_M13 gates M-13: DecodePiece renders ONE token for streaming
@@ -104,5 +105,53 @@ func TestDecodeContinuation_identicalWhenNothingIsStripped(t *testing.T) {
 	}
 	if c != " Paris" {
 		t.Errorf("got %q, want %q", c, " Paris")
+	}
+}
+
+// N-24: byte-level decode pushed ADDED-token content through the byte table. An added token's
+// surface is stored VERBATIM (it is not byte-level-encoded), so a rune in U+0080–U+0143 — é, ü,
+// ñ, and every chat template that spells a role in a non-ASCII language — mapped back to ONE raw
+// byte. The result is invalid UTF-8 and, worse, a wrong surface for the constrained-decoding
+// mask, which builds its token table from these strings.
+func TestDecodeByteLevel_addedTokensAreVerbatim(t *testing.T) {
+	tk := &Tokenizer{
+		mode:        modeByteLevel,
+		idToPiece:   []string{"Hello", "<|café|>", "Ġworld"},
+		byteDecoder: map[rune]byte{},
+	}
+	// A minimal byte-level table: ASCII maps to itself, and Ġ is the GPT-2 space marker. The
+	// accented rune is deliberately IN the table, because that is exactly the situation — the
+	// byte-level alphabet covers U+0080–U+0143 and an added token's é collides with it.
+	for r := rune(33); r < 127; r++ {
+		tk.byteDecoder[r] = byte(r)
+	}
+	tk.byteDecoder['Ġ'] = ' '
+	tk.byteDecoder['é'] = 0xE9 // the collision: é is a byte-level alphabet member
+
+	// Premise: without the added-token check, é decodes to the single byte 0xE9 — invalid UTF-8.
+	tk.isAdded = nil
+	if got, _ := tk.Decode([]int{1}); utf8.ValidString(got) {
+		t.Fatalf("premise broke: %q is valid UTF-8, so this fixture no longer reproduces N-24", got)
+	}
+
+	// With the token marked as added, its surface comes back verbatim.
+	tk.markAdded(1)
+	got, err := tk.Decode([]int{1})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got != "<|café|>" {
+		t.Errorf("added token decoded to %q, want %q — its surface is stored verbatim and must "+
+			"not go through the byte table (N-24)", got, "<|café|>")
+	}
+	if !utf8.ValidString(got) {
+		t.Error("added-token decode produced invalid UTF-8")
+	}
+
+	// Ordinary byte-level tokens must be UNAFFECTED — a fix that emitted everything verbatim
+	// would break the byte-level decoding this mode exists for.
+	if got, _ := tk.Decode([]int{2}); got != " world" {
+		t.Errorf("byte-level token decoded to %q, want %q — the byte table must still apply to "+
+			"non-added tokens", got, " world")
 	}
 }

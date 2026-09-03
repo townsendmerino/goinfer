@@ -959,7 +959,15 @@ func buildWideAttnWGSL(v attnWideVariant) (string, error) {
 // plan actually has head_dim > attnWG, so every existing family pays nothing — no extra shader
 // compiles, no behaviour change, and no dependence on a device limit it does not need.
 func (c *Context) ensureAttnWide() error {
-	if c.attnWidePipeline != nil {
+	// N-14: guard on the LAST pipeline, not the first. This compiles THREE variants (f32, f16
+	// KV, int8 KV) and returned early when the FIRST existed — so a failure on the second or
+	// third left those nil, and the next call reported success while a kvF16/kvI8 plan went on
+	// to bind a nil pipeline. That is the R-30 class, in the file R-30 fixed: a
+	// partially-completed lazy init that looks complete.
+	//
+	// The three are all-or-nothing (any error returns before assigning the rest), so the last
+	// being non-nil implies all three are.
+	if c.attnI8WidePipeline != nil {
 		return nil
 	}
 	// maxComputeInvocationsPerWorkgroup is 256 in the WebGPU default limits, but "default" is a

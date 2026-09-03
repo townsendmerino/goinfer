@@ -131,7 +131,7 @@ now with a reason to exist beyond release hygiene.
 | streaming that survives a silent minute | C-06 (one SSE writer), M-17 (write deadline), M-19 (Anthropic heartbeat) fixed | — |
 | tool calls that round-trip | M-18 (Responses loop) fixed | M-20 Gemma-4 tool template; N-18 `tool_choice` required/any; M-26 usage chunk on tool streams |
 | structured output through the API | works for objects | M-27 top-level scalars; M-30 no-arg tool schema |
-| an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30 | prefix reuse off on the resident path; L-05/L-15 |
+| an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30; **resident prefix reuse shipped 2026-09-02 (3358e6b)** — agent turn 3 went 9.13 → 0.42 s, so a turn now costs its suffix, not its history | reuse is token-id bookkeeping only (`residentReuseLen`, `decoder/resident_reuse.go`) and nothing rewinds a recurrent state: on the Gated-DeltaNet/Mamba hybrids a reused prefix runs against the state decode left behind, and it was found silently corrupting Qwen3.5 output on CUDA (2026-09-02 run on the 8 GB box; its QUEUE §A entry was still uncommitted there when this line was written) — needs a family exclusion until the state is snapshotted with the prefix; also single-conversation (QUEUE §A) |
 | knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:949-932`) | the rest of §3.3 |
 | finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
 
@@ -150,8 +150,10 @@ A harness user reads exactly one thing: the lines `serve` prints before it says 
 Today those name the model and the resolved decode/prefill paths. The design adds the rest, in one
 block, in this order: model and quant; backend and **placement** (from the plan — resident /
 expert-cached N / paged / CPU, with the byte line); context cap and KV precision; **session reuse:
-on/off** — and when off, why ("resident path: each turn re-prefills; ~N s at 8k tokens on this
-machine"); routes enabled (`/v1/chat/completions`, `/v1/messages`, `/v1/responses`, embeddings,
+on/off** — and when off, why ("hybrid family: reuse excluded until the recurrent state is rewound
+with the prefix; each turn re-prefills, ~N s at 8k tokens on this machine" — since 3358e6b the
+resident path reuses too, so the why-line is for the exclusions, not the path); routes enabled
+(`/v1/chat/completions`, `/v1/messages`, `/v1/responses`, embeddings,
 vision, `-web`); features (tools: yes/no per template — Gemma-4 says "partial" until M-20 closes;
 structured output; speculative); the expected-rate band if one exists (`task-fit-to-hardware.md`
 §5). Every line is a fact the runtime already knows; the banner is where it stops being private.
@@ -194,7 +196,8 @@ what it says.
 table; EOS sets; UTF-8 holdback; `Generation.Err()` after channel close; any `GOINFER_*`
 variable; quant names; that `internal/chatapp` is the real example.
 
-**Mode 3:** slot counts and placements (mode 4 owns them); that the resident path re-prefills;
+**Mode 3:** slot counts and placements (mode 4 owns them); that the resident path re-prefills on
+the families where reuse is excluded;
 that Gemma-4 tool calls render differently after the first turn (until M-20); that `-web` is off
 by default (the banner says how to turn it on); which of the five routes a given harness speaks.
 

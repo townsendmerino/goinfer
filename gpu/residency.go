@@ -93,6 +93,14 @@ type residentDecoder struct {
 	// to the largest K seen. batch[0] aliases runner. newRunner builds one more.
 	newRunner func() (*DecodeRunner, error)
 	batch     []*DecodeRunner
+
+	// resetErr holds the first error from Reset's state re-zero (N-15). Reset() satisfies the
+	// cross-backend ResidentForward interface and returns nothing, so the errors cannot be
+	// returned to the caller — but dropping them entirely means a failed re-zero leaves the
+	// PREVIOUS sequence's mamba/DeltaNet state in place and the next generation continues from
+	// it silently. Recorded here and surfaced by the next Forward, which is the same shape
+	// metal/ uses for its encode errors.
+	resetErr error
 }
 
 // BuildResident builds a resident DecodeRunner from m, or (nil,false,nil) when
@@ -563,6 +571,16 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				if rl.down, e = proj(&lw.DownProj); e != nil {
 					return fail(e)
 				}
+			default:
+				// N-12: no default meant an unhandled block kind (nemoMoE) appended a layer
+				// with NIL weights, and decoderunner's gemv nil-dereferenced on the first
+				// token. decoder/residency.go calls DecodeRunnerEligible "the one predicate
+				// every backend's admission funnels through" and documents declining there —
+				// and BuildResident's nemotron bypass above skips exactly that, so this switch
+				// is the last place the shape is checked. Reachable through the exported
+				// ResidencyBackend.BuildResident.
+				return fail(fmt.Errorf("gpu: nemotron block kind %d at layer %d is not "+
+					"implemented by this runner", m.NemotronBlockKind(i), i))
 			}
 			rd.rm.layers = append(rd.rm.layers, rl)
 			continue
@@ -939,7 +957,14 @@ func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, err
 	}
 	if pos == 0 {
 		rd.Reset() // fresh sequence: re-zero the compounding Mamba {win,ssm} state so it
-	} //          doesn't carry over from a prior Generate on this *Model (audit C-01).
+		//           doesn't carry over from a prior Generate on this *Model (audit C-01).
+		// N-15: Reset() cannot return an error (the cross-backend interface returns nothing),
+		// so it records one. Surface it HERE rather than continuing: a failed re-zero means
+		// this sequence starts from the previous one's recurrent state.
+		if rd.resetErr != nil {
+			return nil, rd.resetErr
+		}
+	}
 	return rd.runner.Run(embedding, pos)
 }
 
@@ -973,6 +998,9 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	}
 	if startPos == 0 {
 		rd.Reset() // fresh sequence (prefill from 0): re-zero Mamba {win,ssm} (audit C-01)
+		if rd.resetErr != nil {
+			return nil, rd.resetErr // N-15; see Forward
+		}
 	}
 	if len(rd.batch) == 0 {
 		rd.batch = append(rd.batch, rd.runner) // batch[0] aliases the M=1 runner
@@ -1039,13 +1067,22 @@ func (rd *residentDecoder) UploadKV(layer int, keys, vals []float32) error {
 // DeltaNet's {win, dnState} alike — so it must be re-zeroed each generation or the
 // recurrence carries over from the prior sequence.
 func (rd *residentDecoder) Reset() {
+	// N-15: every WriteBuffer error here used to be dropped. This is the C-01 re-zero — if it
+	// fails, the previous sequence's recurrent state stays resident and the next generation
+	// continues from it with no sign anything went wrong.
+	rd.resetErr = nil
+	wr := func(b *wgpu.Buffer, data []byte) {
+		if err := rd.c.queue.WriteBuffer(b, 0, data); err != nil && rd.resetErr == nil {
+			rd.resetErr = fmt.Errorf("gpu: resident Reset failed to re-zero recurrent state: %w", err)
+		}
+	}
 	if mp := rd.rm.mamba; mp != nil {
 		winZ := make([]float32, (mp.dConv-1)*mp.convDim)
 		ssmZ := make([]float32, mp.nHeads*mp.hp*mp.dn)
 		for i := range rd.rm.layers {
 			if lw := &rd.rm.layers[i]; lw.isMamba {
-				rd.c.queue.WriteBuffer(lw.mambaWin, 0, wgpu.ToBytes(winZ))
-				rd.c.queue.WriteBuffer(lw.mambaSSM, 0, wgpu.ToBytes(ssmZ))
+				wr(lw.mambaWin, wgpu.ToBytes(winZ))
+				wr(lw.mambaSSM, wgpu.ToBytes(ssmZ))
 			}
 		}
 	}
@@ -1054,8 +1091,8 @@ func (rd *residentDecoder) Reset() {
 		stZ := make([]float32, dp.stateElems)
 		for i := range rd.rm.layers {
 			if lw := &rd.rm.layers[i]; lw.isDeltaNet {
-				rd.c.queue.WriteBuffer(lw.mambaWin, 0, wgpu.ToBytes(winZ))
-				rd.c.queue.WriteBuffer(lw.dnState, 0, wgpu.ToBytes(stZ))
+				wr(lw.mambaWin, wgpu.ToBytes(winZ))
+				wr(lw.dnState, wgpu.ToBytes(stZ))
 			}
 		}
 	}

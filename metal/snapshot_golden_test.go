@@ -37,11 +37,16 @@ import (
 //
 //	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
 //
-// ⚠ RE-BAKE OWED (audit G-02, fixed on Linux where this suite cannot run). The checkpoint call now
+// N-29: the re-bake this note demanded HAS happened — TestMetalSnapshotGolden reports
+// 6 checkpoints byte-identical on this machine. A standing "EXPECTED TO FAIL" note turns
+// the suite's only absolute gate into noise: a red here is a REAL drift and must be read
+// as one. The G-02 history is kept below for provenance, in the past tense.
+//
+// RE-BAKE DONE (audit G-02, fixed on Linux where this suite cannot run). The checkpoint call now
 // drives ForwardEmb with the production-scaled embedding row instead of Forward with a raw one, and
 // Forward/ForwardArgmax now apply the arch embed scale. For `gemma4-dense-scaled` (EmbedScale =
 // √hidden) that CHANGES the hashed stream — the stored entries pin the pre-fix, non-production
-// computation, so this test is EXPECTED TO FAIL until re-baked on the Mac:
+// computation, so that CHANGED the hashed stream, and the golden was re-baked accordingly:
 //
 //	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
 //
@@ -51,7 +56,13 @@ import (
 // Regenerate too on a hardware change (different Mac). Runs on every `go test` (tiny committed models,
 // no heavy-model dependency). Coverage: mixtral-tiny is full-causal (attention softmax denom over
 // >256 keys → the width coupling at multi-iteration depth) + rmsnorm_quant; gemma4-dense-scaled covers
-// attention_f32 + rmsnorm_f32 + qk_norm. Union = every pinned-width reduction kernel. See §A2-Metal.
+// rmsnorm_f32 + qk_norm. Union = every pinned-width reduction kernel this build DISPATCHES.
+//
+// N-28: this used to claim attention_f32 as well. It is not covered and cannot be — model.go
+// hard-wires `r.kvF32 = false` and builds kv_store_f32/attention_f32 only inside `if r.kvF32`,
+// so both are dead code no path reaches. A coverage claim naming a kernel nothing dispatches is
+// the "a doc comment claiming coverage is not coverage" class: the reader matches the claim to a
+// plausible kernel name and stops. See §A2-Metal.
 // prodEmbedRow fills dst with token id's LAYER-0 INPUT exactly as production builds it:
 // decoder.embedResident dequantizes the embedding row and multiplies by the arch's embed scale
 // (Gemma's √hidden). Mirroring it here is what makes the golden a reference for the SHIPPED

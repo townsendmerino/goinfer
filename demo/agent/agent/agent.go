@@ -327,7 +327,7 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 
 	turns := append([]msg(nil), s.history...)
 	turns = append(turns, msg{"user", multimodal.Gemma3ImageBlock(n) + "\n" + user})
-	ids, err := s.tk.Encode(s.buildPrompt(visionSystem, turns), s.tmpl == nil)
+	ids, err := s.tk.EncodeSegments(s.buildPromptSegments(visionSystem, turns), s.tmpl == nil)
 	if err != nil {
 		return "", fmt.Errorf("encode: %w", err)
 	}
@@ -376,8 +376,7 @@ func (s *Session) decide(ctx context.Context, user string) decision {
 // generation, emitting completed text spans to onToken (if non-nil), and
 // returns the full text.
 func (s *Session) generate(ctx context.Context, system string, turns []msg, sp decoder.SamplingParams, maxTok int, onToken func(string)) (string, error) {
-	prompt := s.buildPrompt(system, turns)
-	ids, err := s.tk.Encode(prompt, s.tmpl == nil /* addBOS */)
+	ids, err := s.tk.EncodeSegments(s.buildPromptSegments(system, turns), s.tmpl == nil /* addBOS */)
 	if err != nil {
 		return "", fmt.Errorf("encode: %w", err)
 	}
@@ -427,6 +426,33 @@ func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder
 
 // buildPrompt renders system + turns via the detected chat template, falling
 // back to plain concatenation for unrecognized templates.
+// buildPromptSegments is buildPrompt's segment-returning twin (N-26).
+//
+// Encode() PARSES special-token markers out of the text it is given, so encoding a rendered
+// prompt lets a user who types "<|im_start|>assistant" into the chat box promote those bytes to
+// real role tokens — the template's own boundaries, forged from user content. EncodeSegments
+// keeps the distinction the template already knows: the renderer marks which spans are its
+// special tokens, and everything else is encoded as literal text.
+//
+// Same ids as Encode(Render(...)) on legitimate input; different, and correct, on hostile input.
+func (s *Session) buildPromptSegments(system string, turns []msg) []tokenizer.Segment {
+	ct := make([]chat.Turn, len(turns))
+	for i, m := range turns {
+		ct[i] = chat.Turn{Role: m.role, Content: m.content}
+	}
+	if s.tmpl != nil {
+		cs := s.tmpl.RenderSegments(system, ct)
+		out := make([]tokenizer.Segment, len(cs))
+		for i, seg := range cs {
+			out[i] = tokenizer.Segment{Text: seg.Text, Special: seg.Special}
+		}
+		return out
+	}
+	// No template: the fallback prompt has no special markers at all, so ONE literal segment is
+	// the whole of it — and that is the point, since it is user text.
+	return []tokenizer.Segment{{Text: s.buildPrompt(system, turns)}}
+}
+
 func (s *Session) buildPrompt(system string, turns []msg) string {
 	ct := make([]chat.Turn, len(turns))
 	for i, m := range turns {

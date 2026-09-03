@@ -327,8 +327,12 @@ func parallelF32ToF16(dst []uint16, src []float32) {
 // the q-width `qWidth` = nH·hd (o-proj), or — for MoE — the expert intermediate `moeInter`/`g4moeInter`
 // (the expert down-proj stages `inter`). The dense down-proj uses the non-staging pGemv, so the dense
 // intermediate is deliberately NOT counted. Split out so the M-11 budget arithmetic is unit-testable.
-func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter int) int {
-	return 2 * max(max(hidden, qWidth), max(moeInter, g4moeInter))
+// N-32: dnValueDim is DeltaNet's out-projection staging width. deltanet.go dispatches pSAResid
+// with `dp.valueDim*2` threadgroup bytes, and that term was missing here — so on a DeltaNet model
+// whose value dim exceeds every other staged width, the M-11 budget under-counts and the check
+// passes on a configuration that then exceeds the device limit at dispatch.
+func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter, dnValueDim int) int {
+	return 2 * max(max(max(hidden, qWidth), max(moeInter, g4moeInter)), dnValueDim)
 }
 
 func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
@@ -825,7 +829,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.g4moe != nil {
 		g4Inter = r.g4moe.moeInter
 	}
-	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter), d.MaxThreadgroupMemoryLength(); tg > lim {
+	dnValueDim := 0
+	if r.dnet != nil {
+		dnValueDim = r.dnet.valueDim
+	}
+	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter, dnValueDim), d.MaxThreadgroupMemoryLength(); tg > lim {
 		return nil, fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
 	}
 	r.x = d.NewBufferLen(H)

@@ -199,12 +199,14 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 			switch ty {
 			case ggufTokUnknown, ggufTokControl, ggufTokUserDefined:
 				t.added.add(tokens[i], int32(i))
+				t.markAdded(i)
 			}
 		}
 	} else {
 		for _, id := range []int{t.special.BOS, t.special.EOS, t.special.Pad} {
 			if id >= 0 && id < len(tokens) {
 				t.added.add(tokens[id], int32(id))
+				t.markAdded(id)
 			}
 		}
 	}
