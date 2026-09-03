@@ -1066,28 +1066,47 @@ func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *A
 // [nExpert, 2*inter, hidden] (gate ‖ up concatenated on the output/row axis) and
 // down_proj [nExpert, hidden, inter]. Splits the fused gate_up and de-stacks per
 // expert (the safetensors analogue of the GGUF stackedExperts path), then
-// quantizes each into the resident format. Each expert slice is copied so the two
-// big 3-D arrays are released after the layer rather than aliased.
+// quantizes each into the resident format.
+//
+// P-11: streamed via Tensor.SubF32, one expert at a time — the same win
+// streamExperts already banks for gemma4's fused experts (the bf16-26B transient
+// fix). The two whole-tensor TensorF32 reads this used to do materialized
+// nExpert*2*inter*hidden + nExpert*hidden*inter f32 floats before touching a
+// single expert (~3 GB transient at Qwen3.6-35B-A3B shapes, per layer, times
+// however many layers parallelLayers has in flight at once) — exactly the
+// per-layer materialization streamExperts exists to avoid, just not routed
+// through it because this loader predates the split of that helper out. Same
+// external behavior (same expertWeights per index, same quantization), smaller
+// peak.
 func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode) ([]expertWeights, error) {
-	gu, err := st.TensorF32(gateUpName, nExpert, 2*inter, hidden)
+	guT, err := st.Tensor(gateUpName)
 	if err != nil {
 		return nil, err
 	}
-	down, err := st.TensorF32(downName, nExpert, hidden, inter)
+	dnT, err := st.Tensor(downName)
 	if err != nil {
 		return nil, err
 	}
 	guStride, downStride, half := 2*inter*hidden, hidden*inter, inter*hidden
+	if guT.Elements() != nExpert*guStride {
+		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", gateUpName, guT.Elements(), nExpert*guStride, nExpert, 2*inter, hidden)
+	}
+	if dnT.Elements() != nExpert*downStride {
+		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", downName, dnT.Elements(), nExpert*downStride, nExpert, hidden, inter)
+	}
 	experts := make([]expertWeights, nExpert)
 	for e := range experts {
-		guE := gu[e*guStride : (e+1)*guStride]
-		dnE := down[e*downStride : (e+1)*downStride]
-		gate := linalg.WrapF32(append([]float32(nil), guE[:half]...), inter, hidden)
-		up := linalg.WrapF32(append([]float32(nil), guE[half:]...), inter, hidden)
-		dn := linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter)
-		gate = quantizeWM(gate, quant)
-		up = quantizeWM(up, quant)
-		dn = quantizeWM(dn, quant)
+		guE, err := guT.SubF32(e*guStride, guStride)
+		if err != nil {
+			return nil, err
+		}
+		dnE, err := dnT.SubF32(e*downStride, downStride)
+		if err != nil {
+			return nil, err
+		}
+		gate := quantizeWM(linalg.WrapF32(append([]float32(nil), guE[:half]...), inter, hidden), quant)
+		up := quantizeWM(linalg.WrapF32(append([]float32(nil), guE[half:]...), inter, hidden), quant)
+		dn := quantizeWM(linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter), quant)
 		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
 	}
 	return experts, nil
