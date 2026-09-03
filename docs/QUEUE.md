@@ -51,6 +51,34 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
+**Two decoder tests are RED on main, and neither is from the spec-x-pager work** *(observed
+2026-09-02, both A/B-confirmed pre-existing by stashing the day's changes)*. A full
+`go test ./decoder/ -v -timeout 30m` on nobara-pc ran 451 tests with exactly these two failures:
+
+- **`TestLoadSession_rejectsCorrupt`** — fails on its *"clean blob, no id check should load"* case
+  with `kv snapshot: tokens: 3 ids for pos 0 — a longer token list makes rewindForReuse report an
+  exact match it never performed`. So a LEGITIMATE snapshot is being refused by a reuse-safety
+  guard. Worth noting the shape: that is the same family of problem as the resident prefix-reuse
+  bug fixed today, one layer down in the staged cache — a reuse path and its safety check
+  disagreeing about what counts as a match. Not investigated.
+- **`TestParityManifest_fresh`** — 28 validated families stale, since a spread of old commits
+  (`bd085de`, `e8fa53c`, `3f23c96`, `41673f7`, `25a4711`, `b067007`, `d64afe4`). Its own message
+  names the fix: re-run `go run ./cmd/gate parity` then `-update`, or `scripts/refresh_parity_hashes.sh`
+  for a provably non-numeric edit. Deliberately NOT refreshed as a side effect of an unrelated fix —
+  re-baselining 28 families' parity hashes to make a red go green is how a real regression gets
+  blessed.
+
+**The decoder suite's runtime depends on whether the developer has `~/models`, and CI cannot see
+it** *(observed 2026-09-02)*. Nine test files — `decoder/eagle_test.go`, `decoder/eagle_throughput_test.go`,
+`decoder/eagle_accept_test.go`, `decoder/eagle_alpha_test.go`, `decoder/eagle_diag_test.go`, `decoder/eagle_forward_test.go`,
+`decoder/mtp_head_test.go`, `decoder/spec_eagle_test.go`, `decoder/tree_verify_test.go` — read `~/models` with no
+`GOINFER_HEAVY_TESTS` or `realckpt` gate. On CI there are no checkpoints so they skip and the job
+lands at ~10 min; on a box with a populated `~/models` they run. The measured local figure was
+**1366 s (22.8 min)** against CI's ~10 min, and `-timeout 25m` in `.github/workflows/ci.yml` is already sized for the
+CI shape, not this one. Two consequences: "green on CI" and "green on my box" are not the same
+statement, and a local run with the DEFAULT 10 m timeout fails as a timeout that looks like a hang.
+Within that, **`TestMoEExpertMajor_bitIdentical` alone is 569 s — 42% of the whole suite.**
+
 **Resident prefix reuse returned WRONG OUTPUT on recurrent families — `3358e6ba`** *(found
 2026-09-02, A/B-confirmed; **FIXED, feature kept**)*. Prefix reuse on the resident KV corrupts generation on Gated-DeltaNet
 models: repeated identical greedy prompts on qwen3.6-35B-A3B diverge at token 0, differently on
@@ -838,9 +866,12 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0221d32` | docs: the developer-role task is NOT a blocker -- it is silent-wrong, which is worse |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
+| `25a4711` | refactor(cuda): re-point the device layer onto aikit/gpu v0.3.1 (native-GPU Phase 1) |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
 | `3358e6ba` | perf(decoder): prefix reuse on the resident KV — agent turn 3 goes 9.13s → 0.42s (21.7x) |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
+| `3f23c96` | feat(llama4): GGUF deepseek2-style loader + real Scout-109B gate (coherent + factual) |
+| `41673f7` | re-point doc citations shifted by the laguna edits |
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `4ca19e9` | fix(serve): accept `role: "developer"` as an alias for `system` (G12) |
 | `4da116d` | perf(decoder): P10 — reuse Sampler's full-vocab scratch buffer across draws |
@@ -852,13 +883,17 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
+| `b067007` | B-12 cuda: make io.Closer contract explicit + propagate teardown error |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
+| `bd085de` | test(decoder): build the ETA from the recent window, not all history |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c3e43c8` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
 | `c62f2b7` | test(decoder): give the real-model oracles a bar per precision |
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cda8cfe` | docs: re-declare the freeze as a proof requirement; clear G2 for amd64 alone |
+| `d64afe4` | chore(parity): record real-model validations for the new families + sweep gates |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
+| `e8fa53c` | G7 follow-up: land the goldens the CUDA mscale declaration was supposed to move |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
 | `f33fcaf` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 
@@ -1588,10 +1623,19 @@ than papered over.
 |---|---|
 | `cuda/pager_determinism_test.go` | goinfer |
 | `decoder/deltanet.go` | goinfer |
+| `decoder/eagle_accept_test.go` | goinfer |
+| `decoder/eagle_alpha_test.go` | goinfer |
+| `decoder/eagle_diag_test.go` | goinfer |
+| `decoder/eagle_forward_test.go` | goinfer |
+| `decoder/eagle_test.go` | goinfer |
+| `decoder/eagle_throughput_test.go` | goinfer |
 | `decoder/forwardn.go` | goinfer |
 | `decoder/g26_sampler_bench_test.go` | goinfer |
+| `decoder/mtp_head_test.go` | goinfer |
 | `decoder/real_oracle_test.go` | goinfer |
 | `decoder/resident_reuse.go` | goinfer |
+| `decoder/spec_eagle_test.go` | goinfer |
+| `decoder/tree_verify_test.go` | goinfer |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |
 | `internal/serveapp/openai.go` | goinfer |
