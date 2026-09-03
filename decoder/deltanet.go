@@ -228,18 +228,32 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 			S[i] *= gt
 		}
 		out := core[headV*hv : headV*hv+hv]
+		// P-07: kd-outer / vd-inner, walking S row-major (S[kd*hv:kd*hv+hv] is contiguous)
+		// instead of the original vd-outer / kd-inner, which strided hv floats (512 B at
+		// hk=hv=128) apart on every access. Bit-identical: for a fixed vd, both reductions
+		// (kv, then out) still sum their kd=0..hk-1 contributions in the same ascending
+		// order; S's columns are disjoint across vd, so computing every vd's read-phase
+		// (kv) before any vd's write-phase (the S update + out accumulation), rather than
+		// interleaved per vd as the original did, changes nothing either.
+		kv := make([]float32, hv)
+		for kd := range hk {
+			row := S[kd*hv : kd*hv+hv]
+			kk := k[kd]
+			for vd := range hv {
+				kv[vd] += row[vd] * kk
+			}
+		}
+		delta := kv // aliased and overwritten in place: index vd is read once, then written once
 		for vd := range hv {
-			var kv float32
-			for kd := range hk {
-				kv += S[kd*hv+vd] * k[kd]
+			delta[vd] = (v[vd] - kv[vd]) * beta
+		}
+		for kd := range hk {
+			row := S[kd*hv : kd*hv+hv]
+			kk, qq := k[kd], q[kd]
+			for vd := range hv {
+				row[vd] += kk * delta[vd]
+				out[vd] += row[vd] * qq
 			}
-			delta := (v[vd] - kv) * beta
-			var o float32
-			for kd := range hk {
-				S[kd*hv+vd] += k[kd] * delta
-				o += S[kd*hv+vd] * q[kd]
-			}
-			out[vd] = o
 		}
 		if deltaNetTiming {
 			dnRecurNs.Add(int64(time.Since(t0)))
