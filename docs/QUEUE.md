@@ -916,6 +916,8 @@ supports.
 | `docs/audit-2026-09-02.md|chat/tools.go:56` | goinfer | `func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segm` |
 | `docs/audit-2026-09-02.md|chat/tools_test.go:100` | goinfer | `// TestGemma4_declaration_byteExact pins the Gemma 4 declaration micro-language` |
 | `docs/audit-2026-09-02.md|cmd/gate/configs.go:34` | goinfer | `Env: map[string]string{` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1015` | goinfer | `func (g *gpuGate) metalSuite() {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1029` | goinfer | `func (g *gpuGate) metalCgoFree() {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1107` | goinfer | `func (g *gpuGate) metalModel() string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1123` | goinfer | `_, cr, out := g.run(cell{` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1157` | goinfer | `_, cr, out := g.run(cell{` |
@@ -933,8 +935,6 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:793` | goinfer | `bin := filepath.Join(os.TempDir(), "gpu_gate_serve")` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:864` | goinfer | `if v := os.Getenv("GOINFER_NVRTC_DIRS"); v != "" {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:938` | goinfer | `ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1015` | goinfer | `func (g *gpuGate) metalSuite() {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1029` | goinfer | `func (g *gpuGate) metalCgoFree() {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:158` | goinfer | `// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:19` | goinfer | `// THIS IS A CHECKSET, NOT A TALLY, and that is the whole reason it needs its own decisi` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:283` | goinfer | `cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure` |
@@ -1104,7 +1104,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/forwardn_test.go:160` | goinfer | `for i := range K {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn_test.go:97` | goinfer | `// TestForwardN_matchesSequential checks the batched multi-position forward` |
 | `docs/audit-2026-09-02.md|decoder/fp8.go:124` | goinfer | `// Shape is checked against the ARCHITECTURE (in/out from the config), not just against` |
-| `docs/audit-2026-09-02.md|decoder/fusedattn.go:101` | goinfer | `a0, a1 := max(lo[i], k0), min(hi[i], k1-1)` |
+| `docs/audit-2026-09-02.md|decoder/fusedattn.go:114` | goinfer | `a0, a1 := max(lo[i], k0), min(hi[i], k1-1)` |
 | `docs/audit-2026-09-02.md|decoder/fusedattn.go:45` | goinfer | `func fusedAttention() bool { return os.Getenv("GOINFER_FUSED_ATTENTION") != "0" }` |
 | `docs/audit-2026-09-02.md|decoder/fusedattn.go:85` | goinfer | `anchor: func attendTileFused(` |
 | `docs/audit-2026-09-02.md|decoder/gguf.go:1251` | goinfer | `// canSerialize once refused MLA / Mamba-2 / Gemma-4 PLE / Llama-4 here; since v6 the wr` |

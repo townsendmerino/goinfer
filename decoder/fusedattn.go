@@ -83,9 +83,13 @@ func attendTileFused(
 	// causality buys, and it is worth nothing on the LAST tile of a prompt and a
 	// great deal on the first — which is why the measurement had to sum tiles.
 	hiMax := -1
+	loMin := nKeys
 	for i := range kt {
 		if hi[i] > hiMax {
 			hiMax = hi[i]
+		}
+		if lo[i] < loMin {
+			loMin = lo[i]
 		}
 	}
 	for k0 := 0; k0 < nKeys; k0 += fusedKeyBlock {
@@ -94,6 +98,15 @@ func attendTileFused(
 		}
 		k1 := min(k0+fusedKeyBlock, nKeys)
 		n := k1 - k0
+		// P-02: a block entirely below every row's window start contributes nothing —
+		// every row's [lo,hi] fails to overlap it, so the per-row a0>a1 branch below
+		// would zero it and `continue` without touching acc/mRun/lRun. Skipping the two
+		// matmuls for that block changes nothing about the result; it just stops paying
+		// for output every row already discards. Sliding-window only: loMin stays 0 (nKeys
+		// initial lo) for causal/full attention, where lo[i] is always 0.
+		if k1-1 < loMin {
+			continue
+		}
 		mm(qh, kh[k0*hd:k1*hd], sBlk[:kt*n], kt, hd, n)
 		for i := range kt {
 			row := sBlk[i*n : i*n+n]
