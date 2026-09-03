@@ -124,3 +124,28 @@ func TestMoveToFront(t *testing.T) {
 		}
 	}
 }
+
+// TestBestExtend_stopStringTokensForceColdPrefill is the P-18 gate: a session
+// that ends with tokens generated AFTER a stop-string hit is committed to the
+// session's Tokens() (openai.go's streamTokens appends every generated id to
+// ids regardless of the stop cut, and Session.Generate's commit records the
+// whole thing), even though only the text up to the cut point ever reached the
+// client. The client's NEXT prompt is built from what it actually saw, so it
+// never contains those invisible tokens — bestExtend's whole-containment rule
+// therefore always misses on the very next turn, forcing a cold prefill plus an
+// eviction, even though the decoder's own rewindForReuse could truncate to the
+// shared prefix if bestExtend ever asked it to (L-15's scope, not this fix's).
+func TestBestExtend_stopStringTokensForceColdPrefill(t *testing.T) {
+	turn1 := []int{1, 2, 3, 4} // system preamble + turn 1
+	visible := append(append([]int(nil), turn1...), 10, 11, 12)
+	// The session actually stored a few more tokens: whatever the model emitted
+	// after the stop string before generation was cancelled — committed, never sent.
+	stored := append(append([]int(nil), visible...), 13, 14)
+	sessions := [][]int{stored}
+
+	// Turn 3 continues from what the client saw, not from what the session stored.
+	turn3 := append(append([]int(nil), visible...), 20, 21)
+	if got := bestExtend(sessions, turn3); got != -1 {
+		t.Errorf("bestExtend = %d, want -1 — the session's invisible post-stop tokens should force a cold prefill", got)
+	}
+}

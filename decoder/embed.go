@@ -1,6 +1,9 @@
 package decoder
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // Decoder-as-embedder seam (docs/completed/task-decoder-as-embedder.md).
 //
@@ -61,6 +64,38 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 			return nil, fmt.Errorf("decoder.HiddenLast: token %d at index %d out of vocab [0,%d)", id, i, a.VocabSize)
 		}
 	}
+	// P-17: canBatchN excludes K==1 (nothing to batch), the own-runLayers families (already
+	// rejected above), and the NonGatedMLP/LearnedPosEmbed families runLayersFromEmbedN doesn't
+	// implement — those keep the per-token loop (hiddenLastSequential). Everything else runs the
+	// whole sequence through the SAME batched prefill path plain generation's prompt phase
+	// already uses (the "sequential prefill" this seam took the ~9x-slower name from), instead of
+	// one runLayers call per token.
+	if m.canBatchN(len(ids)) {
+		return m.hiddenLastBatched(ids)
+	}
+	return m.hiddenLastSequential(ids)
+}
+
+// hiddenLastBatched is HiddenLast's fast path: one batched forward over the whole
+// sequence via runLayersFromEmbedN, which returns rows already past the final
+// norm (its own doc: "post-final-norm hidden states") — this must NOT normalize
+// again, unlike hiddenLastSequential.
+func (m *Model) hiddenLastBatched(ids []int) ([]float32, error) {
+	a := m.w.arch
+	cache := m.NewCache(len(ids))
+	hN, err := m.runLayersFromEmbedN(context.TODO(), m.embedN(ids), cache, false) // never fast: exact HF parity is the point
+	if err != nil {
+		return nil, err
+	}
+	last := hN[(len(ids)-1)*a.HiddenDim : len(ids)*a.HiddenDim]
+	return append([]float32(nil), last...), nil
+}
+
+// hiddenLastSequential is HiddenLast's original path: one runLayers call per
+// token. Kept as the fallback for K==1 and the families canBatchN excludes, and
+// callable directly so a test can compare it against hiddenLastBatched.
+func (m *Model) hiddenLastSequential(ids []int) ([]float32, error) {
+	a := m.w.arch
 	cache := m.NewCache(len(ids))
 	var h []float32
 	for _, id := range ids {

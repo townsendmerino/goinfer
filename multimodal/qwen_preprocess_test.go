@@ -3,8 +3,10 @@ package multimodal
 import (
 	"encoding/json"
 	"errors"
+	"image"
 	"io/fs"
 	"math"
+	"math/rand"
 	"os"
 	"testing"
 )
@@ -117,5 +119,75 @@ func TestQwenPreprocess_resize(t *testing.T) {
 	t.Logf("qwen preprocess resize (bicubic): cosine %.6f, maxAbs %.4g", cos, maxAbs)
 	if cos < 0.999 {
 		t.Errorf("resized pixel_values cosine %.6f < 0.999 (bicubic parity off)", cos)
+	}
+}
+
+// genericImage wraps an image.Image and forwards nothing but the interface
+// methods, so qwenExtractRGB's type switch can never match a concrete fast-path
+// case — forcing the generic img.At(x,y).RGBA() loop regardless of what src
+// actually is. This is the reference oracle for TestQwenExtractRGB_fastPathsMatchGeneric.
+type genericImage struct{ image.Image }
+
+// TestQwenExtractRGB_fastPathsMatchGeneric is the P-19 gate: the *image.YCbCr
+// and *image.RGBA fast paths must produce EXACTLY the same bytes as the generic
+// img.At(x,y).RGBA() path they replace — proven, not just close, by the >>8
+// round-trip identity in qwenExtractRGB's own doc comment. Also checks
+// *image.NRGBA WITH a non-255 alpha channel, which is deliberately NOT
+// fast-pathed (RGBA() premultiplies by alpha for NRGBA, so a naive raw-buffer
+// read would silently diverge from the generic path on any transparent pixel);
+// confirming it still goes through the (correct) generic loop is itself a proof
+// that leaving it out was the right call, not an oversight.
+func TestQwenExtractRGB_fastPathsMatchGeneric(t *testing.T) {
+	const h, w = 5, 7
+	rng := rand.New(rand.NewSource(1))
+
+	mkYCbCr := func() *image.YCbCr {
+		im := image.NewYCbCr(image.Rect(0, 0, w, h), image.YCbCrSubsampleRatio420)
+		for i := range im.Y {
+			im.Y[i] = uint8(rng.Intn(256))
+		}
+		for i := range im.Cb {
+			im.Cb[i] = uint8(rng.Intn(256))
+			im.Cr[i] = uint8(rng.Intn(256))
+		}
+		return im
+	}
+	mkRGBA := func() *image.RGBA {
+		im := image.NewRGBA(image.Rect(0, 0, w, h))
+		rng.Read(im.Pix)
+		return im
+	}
+	mkNRGBAWithAlpha := func() *image.NRGBA {
+		im := image.NewNRGBA(image.Rect(0, 0, w, h))
+		rng.Read(im.Pix)
+		for y := range h { // force a genuinely non-255 alpha so premultiplication actually matters
+			for x := range w {
+				im.Pix[im.PixOffset(x, y)+3] = uint8(rng.Intn(255))
+			}
+		}
+		return im
+	}
+
+	cases := []struct {
+		name string
+		img  image.Image
+	}{
+		{"YCbCr", mkYCbCr()},
+		{"RGBA", mkRGBA()},
+		{"NRGBA-with-alpha", mkNRGBAWithAlpha()},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := qwenExtractRGB(c.img, h, w)
+			want := qwenExtractRGB(genericImage{c.img}, h, w)
+			if len(got) != len(want) {
+				t.Fatalf("len(got)=%d, len(want)=%d", len(got), len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("mismatch at %d: got %v, want %v (fast path diverged from the generic path)", i, got[i], want[i])
+				}
+			}
+		})
 	}
 }

@@ -1055,9 +1055,10 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/deltanet_chunked.go:137` | goinfer | `// decay of ~0.2 gives 0.2^64 ≈ 1e-45, below f32 min-normal. c[m] then rounds to ZERO an` |
 | `docs/audit-2026-09-02.md|decoder/deltanet_chunked_test.go:62` | goinfer | `aLog[i] = -2 * rng.Float32() // A_log in [-2,0] → gt = exp(g) in (0,1), stable` |
 | `docs/audit-2026-09-02.md|decoder/dflash.go:651` | goinfer | `scale := 1 / math.Sqrt(float64(hd))` |
-| `docs/audit-2026-09-02.md|decoder/embed.go:40` | goinfer | `if _, own := a.ownForward(); own {` |
-| `docs/audit-2026-09-02.md|decoder/embed.go:64` | goinfer | `cache := m.NewCache(len(ids))` |
-| `docs/audit-2026-09-02.md|decoder/embed.go:66` | goinfer | `for _, id := range ids {` |
+| `docs/audit-2026-09-02.md|decoder/embed.go:101` | goinfer | `for _, id := range ids {` |
+| `docs/audit-2026-09-02.md|decoder/embed.go:36` | goinfer | `func (m *Model) HiddenLast(ids []int) ([]float32, error) {` |
+| `docs/audit-2026-09-02.md|decoder/embed.go:43` | goinfer | `if _, own := a.ownForward(); own {` |
+| `docs/audit-2026-09-02.md|decoder/embed.go:85` | goinfer | `cache := m.NewCache(len(ids))` |
 | `docs/audit-2026-09-02.md|decoder/features.go:261` | goinfer | `// residentBackendMoECap is the router-kernel capacity of each backend whose MoE scorebo` |
 | `docs/audit-2026-09-02.md|decoder/features.go:273` | goinfer | `"webgpu": {experts: 512, groups: 32}, // gpu/moe.go: MAXE 512, array<f32,512> score/sel ` |
 | `docs/audit-2026-09-02.md|decoder/features.go:433` | goinfer | `//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU` |
@@ -1224,7 +1225,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/session.go:86` | goinfer | `func (s *Session) reconcile(seq []int) {` |
 | `docs/audit-2026-09-02.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/audit-2026-09-02.md|decoder/session_test.go:217` | goinfer | `bad := append([]byte(nil), blob...)` |
-| `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:163` | goinfer | `case "cuda":` |
+| `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:177` | goinfer | `case "cuda":` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:82` | goinfer | `if a.Theta >= 1 {` |
 | `docs/audit-2026-09-02.md|decoder/spec_eagle.go:254` | goinfer | `feats = make([][]float32, len(ids))` |
 | `docs/audit-2026-09-02.md|decoder/spec_eagle.go:82` | goinfer | `feats[i] = fuseAt(i)` |
@@ -1326,6 +1327,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:158` | goinfer | `// default must never conflict with an already-baked bundle.` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:376` | goinfer | `flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exa` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:385` | goinfer | `flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefille` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:410` | goinfer | `// and a divergence a user opts into should be spelled out in --help rather than` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:421` | goinfer | `// contradiction the user did not realise they had expressed.` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:422` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
@@ -1336,6 +1338,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:762` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:880` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1054` | goinfer | `for id := range stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1058` | goinfer | `ids = append(ids, id)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1064` | goinfer | `text, _ := lm.tk.DecodeContinuation(ids)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1065` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1131` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
@@ -1419,9 +1422,9 @@ supports.
 | `docs/audit-2026-09-02.md|metal/qwen35_35b_paged_test.go:95` | goinfer | `r, err := buildResident(m)` |
 | `docs/audit-2026-09-02.md|metal/snapshot_golden_test.go:40` | goinfer | `// N-29: the re-bake this note demanded HAS happened — TestMetalSnapshotGolden reports` |
 | `docs/audit-2026-09-02.md|metal/snapshot_golden_test.go:57` | goinfer | `// no heavy-model dependency). Coverage: mixtral-tiny is full-causal (attention softmax ` |
-| `docs/audit-2026-09-02.md|multimodal/qwen_preprocess.go:217` | goinfer | `func qwenExtractRGB(img image.Image, h, w int) []float32 {` |
-| `docs/audit-2026-09-02.md|multimodal/qwen_preprocess.go:24` | goinfer | `// patch-row, patch-col). The resize is BICUBIC (qwenBicubicU8, called at the resize sit` |
-| `docs/audit-2026-09-02.md|multimodal/qwen_preprocess_test.go:12` | goinfer | `// TestQwenPreprocess_exact gates the Qwen2.5-VL preprocessing (normalize +` |
+| `docs/audit-2026-09-02.md|multimodal/qwen_preprocess.go:233` | goinfer | `func qwenExtractRGB(img image.Image, h, w int) []float32 {` |
+| `docs/audit-2026-09-02.md|multimodal/qwen_preprocess.go:25` | goinfer | `// patch-row, patch-col). The resize is BICUBIC (qwenBicubicU8, called at the resize sit` |
+| `docs/audit-2026-09-02.md|multimodal/qwen_preprocess_test.go:14` | goinfer | `// TestQwenPreprocess_exact gates the Qwen2.5-VL preprocessing (normalize +` |
 | `docs/audit-2026-09-02.md|scripts/apidiff_check.sh:11` | goinfer | `#   scripts/apidiff_check.sh                 # baseline v0.13.0 (the last released tag)` |
 | `docs/audit-2026-09-02.md|scripts/asset_registry.py:45` | goinfer | `def models_root():` |
 | `docs/audit-2026-09-02.md|scripts/ci_checks.py:51` | goinfer | `HYGIENE = re.compile(r"gofmt\|staticcheck\|^vet\|^build\|cleanliness\|lint", re.I)` |
@@ -1481,7 +1484,7 @@ supports.
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:96` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/prefill.go:161` | goinfer | `if r.moe \|\| r.gemma4Moe {` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
-| `docs/measurements/spec-x-pager-2026-09-02.md|decoder/spec_adaptive.go:163` | goinfer | `case "cuda":` |
+| `docs/measurements/spec-x-pager-2026-09-02.md|decoder/spec_adaptive.go:177` | goinfer | `case "cuda":` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|internal/serveapp/blockdrafter.go:13` | goinfer | `// IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wan` |
 | `docs/measurements/spec-x-pager-prereg-2026-09-02.md|cuda/prefill.go:162` | goinfer | `return fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe): %w", er` |
 | `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:280` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |

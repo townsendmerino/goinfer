@@ -157,3 +157,57 @@ func TestNgramAdaptiveGreedyParity(t *testing.T) {
 		}
 	}
 }
+
+// countingDrafter wraps a Drafter and counts calls to Draft, so a test can prove
+// the speculative round-trip (history clone + n-gram scan) never ran.
+type countingDrafter struct {
+	Drafter
+	calls int
+}
+
+func (d *countingDrafter) Draft(ctx []int, k int) []int {
+	d.calls++
+	return d.Drafter.Draft(ctx, k)
+}
+
+// TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate is the P-16 gate:
+// Theta >= 1 makes Depth() always return 0 (no acceptance rate ever pays for a
+// verify node), so GenerateNgramSpeculativeAdaptive must skip straight to plain
+// Generate instead of paying for a wasted draft/verify round. Checks both that
+// the drafter is never invoked and that output matches plain Generate exactly.
+func TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate(t *testing.T) {
+	m, err := loadBenchModel()
+	if err != nil {
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
+	}
+	const n = 16
+	ctx := context.Background()
+	greedy := SamplingParams{Temperature: 0}
+	prompt := specPrompts[0]
+
+	refCh, _ := m.Generate(ctx, prompt, n, greedy)
+	ref := collectTokens(refCh)
+
+	cd := &countingDrafter{Drafter: &NgramDrafter{}}
+	ad := &AdaptiveDepth{MaxDraft: 8, Theta: 1} // >= 1: the decline path
+	ch, g, err := m.GenerateNgramSpeculativeAdaptive(ctx, prompt, n, cd, ad, greedy)
+	if err != nil {
+		t.Fatalf("GenerateNgramSpeculativeAdaptive: %v", err)
+	}
+	got := collectTokens(ch)
+	if g.Err() != nil {
+		t.Fatalf("stream err %v", g.Err())
+	}
+	if !slices.Equal(got, ref) {
+		t.Fatalf("Theta>=1 output != plain Generate\n got %v\n ref %v", got, ref)
+	}
+	if cd.calls != 0 {
+		t.Errorf("drafter.Draft called %d times, want 0 — Theta>=1 should decline before any n-gram scan", cd.calls)
+	}
+
+	// Validation must still run: a nil drafter still errors, exactly as genNgram
+	// would, rather than silently succeeding through the decline path.
+	if _, _, err := m.GenerateNgramSpeculativeAdaptive(ctx, prompt, n, nil, &AdaptiveDepth{Theta: 1}, greedy); err == nil {
+		t.Error("nil drafter with Theta>=1: expected an error (same as genNgram would give), got nil")
+	}
+}

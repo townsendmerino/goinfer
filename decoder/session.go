@@ -181,6 +181,17 @@ func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt [
 		ad.Theta = s.m.verifyTheta()
 	}
 	ad.ensure()
+	if ad.Theta >= 1 {
+		// P-16: see *Model.GenerateNgramSpeculativeAdaptive's comment — Depth()
+		// always returns 0, so every round would still pay to draft and verify
+		// nothing. Session.Generate reuses the warm KV prefix exactly as genSpec
+		// does, so this loses no session behavior.
+		if err := validateNgramSpec(s.m, drafter, sp); err != nil {
+			return nil, nil, err
+		}
+		ch, gen := s.Generate(ctx, prompt, maxTokens, sp)
+		return ch, gen, nil
+	}
 	return s.genSpec(ctx, prompt, maxTokens, drafter, ad.MaxDraft, sp, ad)
 }
 

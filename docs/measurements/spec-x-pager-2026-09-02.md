@@ -160,7 +160,7 @@ mismatch as the ONLY intended per-request exception. An arch-level property is n
 The operator pays the drafter's VRAM and gets no drafting, with nothing said.
 
 **2. `thetaFor` keys the adaptive controller's cost constant on BACKEND NAME, not on whether the
-verify is actually batched.** `decoder/spec_adaptive.go:163` returns 0.251 for "cuda", measured by
+verify is actually batched.** `decoder/spec_adaptive.go:177` returns 0.251 for "cuda", measured by
 `cuda/theta_probe_test.go` on qwen2.5-coder 0.5B and 1.5B — both DENSE, where `ForwardN` runs
 `prefillCore` and one weight stream covers the block. A MoE gets the same 0.251 while its `ForwardN`
 is a per-token loop, which is precisely the condition under which the Metal constant was measured

@@ -117,6 +117,48 @@ func TestHiddenLast_guards(t *testing.T) {
 	}
 }
 
+// TestHiddenLast_batchedMatchesSequential is the P-17 gate: hiddenLastBatched
+// (one runLayersFromEmbedN call over the whole sequence) must agree with
+// hiddenLastSequential (the original one-runLayers-call-per-token loop) on a
+// real checkpoint — same model, same ids, only the batching differs. Checked at
+// several lengths, including one long enough that canBatchN would clearly
+// select the batched path in HiddenLast itself.
+func TestHiddenLast_batchedMatchesSequential(t *testing.T) {
+	requireHeavyModel(t)
+	m := loadQwen3ForEmbed(t)
+
+	base := []int{9707, 1879, 374, 264, 1273, 40, 1079, 264, 2155, 1273, 30, 8112}
+	for _, n := range []int{2, 3, 5, len(base)} {
+		ids := base[:n]
+		if !m.canBatchN(len(ids)) {
+			t.Fatalf("n=%d: canBatchN false — test assumes the batched path applies here", n)
+		}
+		seq, err := m.hiddenLastSequential(ids)
+		if err != nil {
+			t.Fatalf("n=%d: hiddenLastSequential: %v", n, err)
+		}
+		batched, err := m.hiddenLastBatched(ids)
+		if err != nil {
+			t.Fatalf("n=%d: hiddenLastBatched: %v", n, err)
+		}
+		if len(seq) != len(batched) {
+			t.Fatalf("n=%d: len(sequential)=%d, len(batched)=%d", n, len(seq), len(batched))
+		}
+		if c := cosine(seq, batched); c < 0.999999 {
+			t.Errorf("n=%d: batched vs sequential cosine = %.8f, want ~1.0", n, c)
+		}
+		var maxDiff float32
+		for i := range seq {
+			if d := seq[i] - batched[i]; d > maxDiff || -d > maxDiff {
+				maxDiff = max(d, -d)
+			}
+		}
+		if maxDiff > 1e-3 {
+			t.Errorf("n=%d: max|sequential-batched| = %v, want ~0", n, maxDiff)
+		}
+	}
+}
+
 func allZero(v []float32) bool {
 	for _, x := range v {
 		if x != 0 {

@@ -129,6 +129,20 @@ func (target *Model) GenerateNgramSpeculativeAdaptive(ctx context.Context, promp
 		ad.Theta = target.verifyTheta()
 	}
 	ad.ensure()
+	if ad.Theta >= 1 {
+		// P-16: Theta >= 1 means Depth() always returns 0 (see its own comment) --
+		// no acceptance rate can pay for even one verify node, on ANY round,
+		// regardless of the stream. Every round would still pay for a history
+		// clone, an n-gram scan, and a full-logits ForwardN to draft and verify
+		// nothing (measured 1.01x of plain Generate on Metal, where this is the
+		// live case). Validate first so an invalid drafter/sp still errors exactly
+		// as genNgram would, then decline straight to the cheap path.
+		if err := validateNgramSpec(target, drafter, sp); err != nil {
+			return nil, nil, err
+		}
+		ch, gen := target.Generate(ctx, prompt, maxTokens, sp)
+		return ch, gen, nil
+	}
 	return target.genNgram(ctx, prompt, maxTokens, drafter, ad.MaxDraft, sp, nil, ad)
 }
 

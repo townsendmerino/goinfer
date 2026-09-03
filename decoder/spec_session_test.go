@@ -77,3 +77,40 @@ func TestSessionNgramSpecParity(t *testing.T) {
 
 // first adapts the (chan, *Generation) pair to just the channel for collectTokens.
 func first(ch <-chan int, _ *Generation) <-chan int { return ch }
+
+// TestSessionNgramAdaptiveThetaAtLeastOne_declinesToGenerate is TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate's
+// Session counterpart (P-16): Session.GenerateNgramSpeculativeAdaptive must also
+// decline straight to Session.Generate when Theta >= 1, preserving warm-KV reuse.
+func TestSessionNgramAdaptiveThetaAtLeastOne_declinesToGenerate(t *testing.T) {
+	m, err := loadBenchModel()
+	if err != nil {
+		t.Skipf("no model (%v); set GOINFER_PREQUANT_GGUF", err)
+	}
+	const n = 16
+	ctx := context.Background()
+	greedy := SamplingParams{Temperature: 0}
+	prompt := specPrompts[0]
+
+	ref := collectTokens(first(m.Generate(ctx, prompt, n, greedy)))
+
+	cd := &countingDrafter{Drafter: &NgramDrafter{}}
+	s := m.NewSession(len(prompt) + 4*n)
+	ch, g, err := s.GenerateNgramSpeculativeAdaptive(ctx, prompt, n, cd, &AdaptiveDepth{MaxDraft: 8, Theta: 1}, greedy)
+	if err != nil {
+		t.Fatalf("GenerateNgramSpeculativeAdaptive: %v", err)
+	}
+	got := collectTokens(ch)
+	if g.Err() != nil {
+		t.Fatalf("stream err %v", g.Err())
+	}
+	if !slices.Equal(got, ref) {
+		t.Fatalf("Theta>=1 output != plain Generate\n got %v\n ref %v", got, ref)
+	}
+	if cd.calls != 0 {
+		t.Errorf("drafter.Draft called %d times, want 0 — Theta>=1 should decline before any n-gram scan", cd.calls)
+	}
+
+	if _, _, err := s.GenerateNgramSpeculativeAdaptive(ctx, prompt, n, nil, &AdaptiveDepth{Theta: 1}, greedy); err == nil {
+		t.Error("nil drafter with Theta>=1: expected an error, got nil")
+	}
+}
