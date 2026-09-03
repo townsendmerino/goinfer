@@ -157,7 +157,16 @@ func (s *server) startDrain(lm *loadedModel, ml *modelLiveness, last bool) <-cha
 		// KV is settled now (no in-flight generation). Checkpoint before the buffers it lives in are
 		// freed — for a resident backend the KV is inside the model's device memory.
 		if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
+			// N-20: lm.mu is the sessionLRU's guard (sessions.go documents the LRU as NOT
+			// goroutine-safe), and demoteLoop mutates it on its own ticker. The drain has
+			// waited out in-flight REQUESTS, which is a different thing — the idle-demote
+			// goroutine is not a request and does not hold ml.rw. Narrow window
+			// (-kv-idle-demote + -session-dir + an unload landing on a tick), but it is a map
+			// mutated concurrently, which is a process crash rather than a wrong answer.
+			// admin.go takes lm.mu around the LOAD-side restore for exactly this reason.
+			lm.mu.Lock()
 			_ = lm.sessions.save(sessionSubdir(s.cfg.sessionDir, lm.fp))
+			lm.mu.Unlock()
 		}
 		lm.closeEntryNatives()
 		if last && lm.model != nil {

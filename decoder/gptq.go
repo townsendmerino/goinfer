@@ -48,8 +48,13 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 		GroupSize   int    `json:"group_size"`
 		DescAct     bool   `json:"desc_act"`
 		Sym         *bool  `json:"sym"`
-		Fmt         string `json:"fmt"`               // fp8: "e4m3" | "e5m2"
-		WeightBlock []int  `json:"weight_block_size"` // fp8: [blockR, blockC]
+		// N-05: GPTQModel's v2 export stores zero-points WITHOUT the v1 "+1" bias. This loader
+		// applies the +1 unconditionally, so a gptq_v2 checkpoint dequantizes every weight one
+		// scale step low — finite, plausible, and wrong everywhere at once. The field was not
+		// even parsed, so there was nothing to notice.
+		CheckpointFormat string `json:"checkpoint_format"`
+		Fmt              string `json:"fmt"`               // fp8: "e4m3" | "e5m2"
+		WeightBlock      []int  `json:"weight_block_size"` // fp8: [blockR, blockC]
 	}
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("quantization_config: %w", err)
@@ -80,6 +85,20 @@ func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 	}
 	if obj.GroupSize <= 0 {
 		return nil, fmt.Errorf("quantization_config(%s): group_size %d unsupported (need a positive group)", obj.QuantMethod, obj.GroupSize)
+	}
+	// N-05: gptqReconstruct applies the v1 "+1" zero-point bias UNCONDITIONALLY. GPTQModel's
+	// v2 export drops that bias, so a v2 checkpoint would dequantize every weight one scale
+	// step low — no error, no NaN, just a uniformly wrong model. Refuse rather than guess:
+	// implementing the v2 path without a v2 checkpoint to validate against would be the same
+	// unverified change this audit has declined elsewhere, and the failure mode here is
+	// specifically the silent kind.
+	//
+	// "" and "gptq" both mean v1 (the field predates v2 and older exports omit it).
+	if obj.QuantMethod == "gptq" && obj.CheckpointFormat != "" && obj.CheckpointFormat != "gptq" {
+		return nil, fmt.Errorf("quantization_config(gptq): checkpoint_format %q unsupported "+
+			"(have: gptq / v1). This loader adds the v1 +1 zero-point bias unconditionally, so a "+
+			"%s checkpoint would load one scale step low on EVERY weight without erroring",
+			obj.CheckpointFormat, obj.CheckpointFormat)
 	}
 	sym := true
 	if obj.Sym != nil {

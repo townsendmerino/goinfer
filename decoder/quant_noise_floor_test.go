@@ -62,7 +62,7 @@ func TestQuantNoiseFloor_gemma4MoE(t *testing.T) {
 	defer func() { routerCapture = false }()
 
 	run := func(m *Model) (logits [][]float32, routes [][]int, margins []float32) {
-		routerCaptureBuf = nil
+		routerCaptureReset() // N-27: clears every buffer AND re-arms the cap
 		routerMarginBuf = nil
 		cache := m.NewCache(len(prompt))
 		for i, tok := range prompt {

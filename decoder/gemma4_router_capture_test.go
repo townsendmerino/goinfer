@@ -43,7 +43,7 @@ func TestGemma4RouterCapture(t *testing.T) {
 	}
 	ids, _ := tk.Encode("The capital of France is Paris, one of the most visited cities in the world, known for the Eiffel Tower and its museums.", true)
 
-	routerCaptureBuf = nil
+	routerCaptureReset() // N-27: clears every buffer AND re-arms the cap
 	c := m.NewCache(len(ids))
 	for _, id := range ids {
 		if _, err := m.runLayers(id, c); err != nil {

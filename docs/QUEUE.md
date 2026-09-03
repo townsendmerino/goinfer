@@ -1107,7 +1107,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/rope.go:168` | goinfer | `if img >= len(grids) {` |
 | `docs/audit-2026-09-02.md|decoder/rope.go:29` | goinfer | `half := len(invFreq) // == rotaryDim/2` |
 | `docs/audit-2026-09-02.md|decoder/rope.go:31` | goinfer | `for d := range half {` |
-| `docs/audit-2026-09-02.md|decoder/routercapture.go:23` | goinfer | `var routerCaptureBuf [][]int` |
+| `docs/audit-2026-09-02.md|decoder/routercapture.go:27` | goinfer | `var routerCaptureBuf [][]int` |
 | `docs/audit-2026-09-02.md|decoder/sampler.go:116` | goinfer | `//   - Temperature > 0: softmax at that temperature, optionally restricted to` |
 | `docs/audit-2026-09-02.md|decoder/sampler.go:149` | goinfer | `// `top_p` / `min_p` at any value are safe alongside it: both cuts clamp at ≥1 retained ` |
 | `docs/audit-2026-09-02.md|decoder/sampler.go:286` | goinfer | `func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {` |
@@ -1129,15 +1129,15 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/scratch.go:84` | goinfer | `ws := &linalg.Workspace{}` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:105` | goinfer | `func canSerialize(a *Architecture) *SerializeError {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:119` | goinfer | `anchor: func canSerialize(a *Architecture) *SerializeError {` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:1239` | goinfer | `anchor: func (r *giwReader) rawAlias() []byte {` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:1326` | goinfer | `func (r *giwReader) layer(l *LayerWeights) {` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:1239` | goinfer | `return unsafe.Slice((*int8)(unsafe.Pointer(&b[0])), n)` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:1334` | goinfer | `func (r *giwReader) layer(l *LayerWeights) {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:24` | goinfer | `// Discipline mirrors ken's index_serialize.go: magic + version + a config/quant` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:271` | goinfer | `// LoadSerializedWeights reconstructs a *Weights from a SerializeWeights blob` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:305` | goinfer | `// CRC: verify the whole payload (everything before the trailing crc word)` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:315` | goinfer | `var cfg Config` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:352` | goinfer | `n := int(r.u32())` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:387` | goinfer | `func validateShapes(w *Weights, arch *Architecture) *SerializeError {` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:959` | goinfer | `func (w *giwWriter) layer(l *LayerWeights) {` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:395` | goinfer | `func validateShapes(w *Weights, arch *Architecture) *SerializeError {` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:967` | goinfer | `func (w *giwWriter) layer(l *LayerWeights) {` |
 | `docs/audit-2026-09-02.md|decoder/serialize_census_test.go:135` | goinfer | `// "passed" while the new code went unexercised.` |
 | `docs/audit-2026-09-02.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/audit-2026-09-02.md|decoder/session.go:86` | goinfer | `func (s *Session) reconcile(seq []int) {` |
@@ -1219,7 +1219,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/prequant/prequant.go:206` | goinfer | `func cacheFresh(cache, src string) bool {` |
 | `docs/audit-2026-09-02.md|internal/prequant/prequant.go:234` | goinfer | `// selfCheck verifies a freshly written bundle loads through the real mmap path` |
 | `docs/audit-2026-09-02.md|internal/serveapp/admin.go:64` | goinfer | `anchor: func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/admin.go:71` | goinfer | `lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, c)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/admin.go:85` | goinfer | `lm, err := loadDecoder(r.Context(), modelSpec{name: name, path: req.Path}, c)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/admin_test.go:80` | goinfer | `// old contract was "busy → 409"; unload now DRAINS instead of refusing — the in-flight-` |
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:127` | goinfer | `writeAnthropicErr(w, http.StatusRequestEntityTooLarge, "invalid_request_error", msg)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:357` | goinfer | `func anthropicForcedTool(mode, name string, tools []chat.Tool) *chat.Tool {` |
@@ -1236,11 +1236,11 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:31` | goinfer | `// positions. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes ` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
 | `docs/audit-2026-09-02.md|internal/serveapp/heartbeat_test.go:161` | goinfer | `// G21 end-to-end. What this asserts is bounded by the model available: the 1.5B` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:130` | goinfer | `// (audit-2026-09-02 N-16).` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:171` | goinfer | `// --- SSE ---` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:207` | goinfer | `// writes to a streaming ResponseWriter.` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:216` | goinfer | `// support — so the error is deliberately dropped rather than made sticky.` |
-| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:493` | goinfer | `var reqCounter atomic.Uint64` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:131` | goinfer | `// (audit-2026-09-02 N-16).` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:172` | goinfer | `// --- SSE ---` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:208` | goinfer | `// writes to a streaming ResponseWriter.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:217` | goinfer | `// support — so the error is deliberately dropped rather than made sticky.` |
+| `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:504` | goinfer | `func reqID() string {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:158` | goinfer | `// default must never conflict with an already-baked bundle.` |
@@ -1286,11 +1286,11 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:125` | goinfer | `sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:129` | goinfer | `stopBeat() // joins the ticker goroutine before anything else writes to w` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:154` | goinfer | `usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:223` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:23` | goinfer | `func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req chatReq,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:231` | goinfer | `// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k ent` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:269` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:284` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:240` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:248` | goinfer | `// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k ent` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:286` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:301` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:83` | goinfer | `if req.Stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:120` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:203` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
@@ -1439,7 +1439,7 @@ supports.
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:733` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
-| `docs/queue-engineering.md|decoder/serialize.go:737` | goinfer | `func (w *Weights) hasPopulatedLayers() bool {` |
+| `docs/queue-engineering.md|decoder/serialize.go:745` | goinfer | `func (w *Weights) hasPopulatedLayers() bool {` |
 | `docs/queue-engineering.md|decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |

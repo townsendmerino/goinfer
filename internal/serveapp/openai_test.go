@@ -538,21 +538,29 @@ func TestConstrainForcedTool_M05(t *testing.T) {
 	// gemma4: SupportsTools true, ToolCallWrapper ok=false → unconstrainable.
 	lmG := &loadedModel{tmpl: chat.Gemma4(), vocab: 32, tk: nil}
 	// named force on an unconstrainable family → error (becomes 400).
-	if err := constrainForcedTool(lmG, &genRequest{}, tool, true); err == nil {
+	if err := constrainForcedTool(lmG, &genRequest{}, tool, true, []chat.Tool{*tool}); err == nil {
 		t.Error("named tool_choice on gemma4 (no constrainable form) should error, got nil (M-05)")
 	}
 	// lone-tool convenience on the same family → no error (optimization only).
-	if err := constrainForcedTool(lmG, &genRequest{}, tool, false); err != nil {
+	if err := constrainForcedTool(lmG, &genRequest{}, tool, false, []chat.Tool{*tool}); err != nil {
 		t.Errorf("lone-tool on gemma4 should not error, got %v", err)
 	}
-	// no forced tool at all → no error.
-	if err := constrainForcedTool(lmG, &genRequest{}, nil, true); err != nil {
-		t.Errorf("nil forced tool should not error, got %v", err)
+	// N-18: forced == nil now depends on WHY. With namedForce, the caller named a function that
+	// is not in tools — a typo or a stale tool list — and generating unconstrained answers a
+	// different question than the one asked, so it is a 400. This case previously asserted the
+	// opposite ("nil forced tool should not error"), which is the defect N-18 describes.
+	if err := constrainForcedTool(lmG, &genRequest{}, nil, true, []chat.Tool{*tool}); err == nil {
+		t.Error("a named tool_choice matching no tool returned nil: the request generates " +
+			"completely unconstrained after asking for one specific function (N-18)")
+	}
+	// Without namedForce it is just "no lone-tool convenience available" — not an error.
+	if err := constrainForcedTool(lmG, &genRequest{}, nil, false, []chat.Tool{*tool}); err != nil {
+		t.Errorf("nil forced tool without a named choice should not error, got %v", err)
 	}
 	// constrainable family (chatml): wires the masker, returns nil.
 	lmC := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
 	gr := &genRequest{}
-	if err := constrainForcedTool(lmC, gr, tool, true); err != nil {
+	if err := constrainForcedTool(lmC, gr, tool, true, []chat.Tool{*tool}); err != nil {
 		t.Fatalf("chatml named force should succeed, got %v", err)
 	}
 	if gr.masker == nil || gr.sp.LogitProcessor == nil {

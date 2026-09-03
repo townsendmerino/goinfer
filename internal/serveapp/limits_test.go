@@ -10,11 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
 	"go/ast"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"math/big"
 )
 
 // C-08: top_logprobs was the one sampling field `prepare` passed through without a range check.
@@ -394,5 +396,156 @@ func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
 	if checked != 1 {
 		t.Errorf("found %d post-load 409 branches, want 1 — the guard is watching the wrong "+
 			"code (the PRE-load duplicate check must not match: it has nothing to close)", checked)
+	}
+}
+
+// N-17: response/message/tool-call ids were a SEQUENTIAL counter. Seeding it from UnixNano hid
+// that without fixing it — each id is exactly one more than the previous, so a client holding
+// its own `resp_<hex>` can walk ±1 onto other clients' ids. `previous_response_id` continues a
+// stored conversation from an id, so with `-addr 0.0.0.0` and one shared key that reads back
+// someone else's turns.
+func TestReqID_isNotGuessable(t *testing.T) {
+	const n = 512
+	seen := make(map[string]bool, n)
+	ids := make([]string, 0, n)
+	for range n {
+		id := reqID()
+		if seen[id] {
+			t.Fatalf("duplicate id %q in %d draws", id, n)
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids[0]) < 24 {
+		t.Errorf("id %q is %d chars — too short to resist enumeration", ids[0], len(ids[0]))
+	}
+	// THE PROPERTY THAT WAS BROKEN: consecutive ids must not be consecutive integers. Parsed as
+	// big-endian hex, a counter gives a difference of exactly 1 every time.
+	var consecutive int
+	for i := 1; i < len(ids); i++ {
+		a, ok1 := new(big.Int).SetString(ids[i-1], 16)
+		b, ok2 := new(big.Int).SetString(ids[i], 16)
+		if !ok1 || !ok2 {
+			t.Fatalf("ids are not hex: %q %q", ids[i-1], ids[i])
+		}
+		if new(big.Int).Sub(b, a).CmpAbs(big.NewInt(1)) == 0 {
+			consecutive++
+		}
+	}
+	if consecutive > 0 {
+		t.Errorf("%d of %d consecutive id pairs differ by exactly 1 — the ids are a counter, so "+
+			"holding one id gives you the next (N-17)", consecutive, len(ids)-1)
+	}
+}
+
+// N-20: demoteLoop mutates the session LRU on its own ticker while the unload drain saved it
+// without holding lm.mu. The drain waits out in-flight REQUESTS, which is a different thing —
+// the idle-demote goroutine is not a request and holds no ml.rw. sessions.go documents the LRU
+// as not goroutine-safe, so this is a concurrently-mutated map: a process crash, not a wrong
+// answer.
+//
+// Asserted on the source. Reproducing it needs -kv-idle-demote and -session-dir and an unload
+// landing inside a tick, and a test that raced for it would be flaky in the direction that
+// reports success.
+func TestStartDrain_savesSessionsUnderTheLRULock(t *testing.T) {
+	src, err := os.ReadFile("liveness.go")
+	if err != nil {
+		t.Fatalf("read liveness.go: %v", err)
+	}
+	lines := strings.Split(string(src), "\n")
+	var found bool
+	for i, ln := range lines {
+		if !strings.Contains(ln, "lm.sessions.save(") {
+			continue
+		}
+		found = true
+		// lm.mu must be held: look for the Lock in the few lines above.
+		var locked bool
+		for j := i - 1; j >= 0 && j >= i-6; j-- {
+			if strings.Contains(lines[j], "lm.mu.Lock()") {
+				locked = true
+				break
+			}
+		}
+		if !locked {
+			t.Errorf("liveness.go:%d saves the session LRU without taking lm.mu — demoteLoop "+
+				"mutates the same map on its ticker (N-20):\n\t%s", i+1, strings.TrimSpace(ln))
+		}
+	}
+	if !found {
+		t.Error("no lm.sessions.save( in liveness.go — this guard is watching the wrong file")
+	}
+}
+
+// N-19: admin-load set c.quant from the request but inherited c.quantSet from the CLI, and
+// explicitQuant() — which drives the .giw baked-quant mismatch check — reads quantSet. Both
+// directions were wrong, and they are opposite failures, so a fix has to be checked both ways:
+//
+//	no CLI --quant + admin asks int8  → not treated as explicit → the bundle's baked int4
+//	                                    loads SILENTLY under an int8 request
+//	CLI --quant given + admin asks nothing → treated as explicit → the request is rejected
+//	                                    against a quant it never named
+func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cliQuant    string
+		cliQuantSet bool
+		reqQuant    string
+		want        string // what explicitQuant should report for this load
+	}{
+		"request names a quant, no CLI default": {"", false, "int8", "int8"},
+		"request names a quant, CLI differs":    {"int4", true, "int8", "int8"},
+		"request names nothing, CLI was passed": {"int4", true, "", ""},
+		"request names nothing, no CLI either":  {"", false, "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := config{quant: tc.cliQuant, quantSet: tc.cliQuantSet}
+			// The admin handler's resolution, verbatim.
+			if tc.reqQuant != "" {
+				c.quant, c.quantSet = tc.reqQuant, true
+			} else {
+				c.quantSet = false
+			}
+			if got := (modelSpec{}).explicitQuant(c); got != tc.want {
+				t.Errorf("explicitQuant = %q, want %q — the .giw mismatch check keys on this, so "+
+					"a wrong answer either loads a differently-baked bundle silently or rejects "+
+					"a request that named nothing (N-19)", got, tc.want)
+			}
+		})
+	}
+
+	// And the handler must actually do that resolution — the table above is the RULE, this is
+	// the call site. Same gap that made M-25's component test vouch for nothing.
+	src, err := os.ReadFile("admin.go")
+	if err != nil {
+		t.Fatalf("read admin.go: %v", err)
+	}
+	if !strings.Contains(string(src), "c.quant, c.quantSet = req.Quant, true") {
+		t.Error("admin.go does not set quantSet from the request: c.quant moves and quantSet " +
+			"stays inherited from the CLI, which is N-19 exactly")
+	}
+}
+
+// N-18: a NAMED tool_choice whose function is not in tools decoded completely unconstrained,
+// having asked for one specific function. The 2026-08-05 audit made "named but unconstrainable"
+// a 400 and left "named but nonexistent" falling through — the louder of the two, since it
+// means a typo or a stale tool list and the prose answer looks like a free choice.
+func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
+	tools := []chat.Tool{{Name: "get_weather"}, {Name: "get_time"}}
+	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+
+	err := constrainForcedTool(lm, &genRequest{}, nil, true, tools)
+	if err == nil {
+		t.Fatal("a named tool_choice matching no tool returned nil (N-18)")
+	}
+	// The message must name what IS available, or the caller cannot tell a typo from a
+	// server-side omission.
+	for _, want := range []string{"get_weather", "get_time"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not list the available tool %q", err, want)
+		}
+	}
+	// Not an error when no specific function was named — that is just "no lone-tool shortcut".
+	if err := constrainForcedTool(lm, &genRequest{}, nil, false, tools); err != nil {
+		t.Errorf("unnamed choice with no forced tool errored: %v", err)
 	}
 }

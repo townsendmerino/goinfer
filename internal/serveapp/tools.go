@@ -54,7 +54,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	// decode (audit M-05).
 	forced := forcedTool(req.ToolChoice, tools)
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
-	if cerr := constrainForcedTool(lm, &gr, forced, namedForce); cerr != nil {
+	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, tools); cerr != nil {
 		writeErr(w, http.StatusBadRequest, cerr.Error())
 		return
 	}
@@ -209,8 +209,25 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 // lone-tool convenience (namedForce=false) never errors — it is only an optimization, and
 // the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses,
 // and the Anthropic Messages surface so all three degrade identically.
-func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, namedForce bool) error {
+func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, namedForce bool, tools []chat.Tool) error {
 	if forced == nil {
+		// N-18: a NAMED tool_choice that matched no tool used to land here and return nil —
+		// the request then generated completely unconstrained, having asked for one specific
+		// function. The 2026-08-05 audit made "named but unconstrainable" a 400 and left
+		// "named but nonexistent" falling through, which is the louder of the two errors: the
+		// caller has a typo or a stale tool list, and a prose answer looks like the model
+		// simply chose not to call anything.
+		if namedForce {
+			names := make([]string, 0, len(tools))
+			for _, t := range tools {
+				names = append(names, t.Name)
+			}
+			avail := "none were supplied"
+			if len(names) > 0 {
+				avail = "available: " + strings.Join(names, ", ")
+			}
+			return fmt.Errorf("tool_choice names a function that is not in tools (%s)", avail)
+		}
 		return nil
 	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()

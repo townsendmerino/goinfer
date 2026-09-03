@@ -65,7 +65,7 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	matmul(be, &w.mlpDown, gate, x1, 1)
 	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
 	if routerCapture {
-		routerX1Buf = append(routerX1Buf, append([]float32(nil), x1...))
+		routerCaptureDo(func() { routerX1Buf = append(routerX1Buf, append([]float32(nil), x1...)) })
 	}
 
 	// moe branch — router on the RAW residual h (its own weightless RMSNorm + learned
@@ -82,12 +82,12 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	probs := softmaxF32(scores)
 	idx, topv := topK(probs, w.topK)
 	if routerCapture { // DIAGNOSTIC (default-off, observe-only): record the selected experts; see routercapture.go
-		routerCaptureBuf = append(routerCaptureBuf, append([]int(nil), idx...))
+		routerCaptureDo(func() { routerCaptureBuf = append(routerCaptureBuf, append([]int(nil), idx...)) })
 		// rn is the FINALIZED router input (weightless-norm · routerScale · hidden^-0.5) that feeds
 		// routerProj — captured so a resident-router unit test can replay the SAME input through the
 		// CUDA selection kernels and gate its idx against these (routerCaptureBuf), isolating a routing
 		// flip from any expert-GEMV numeric difference. Copy: rn is mutated/reused after this.
-		routerRnBuf = append(routerRnBuf, append([]float32(nil), rn...))
+		routerCaptureDo(func() { routerRnBuf = append(routerRnBuf, append([]float32(nil), rn...)) })
 		// top-k boundary margin: min selected prob − max rejected prob (the gap a quant flip must cross).
 		sel := map[int]bool{}
 		for _, e := range idx {
@@ -103,7 +103,7 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 				maxRej = p
 			}
 		}
-		routerMarginBuf = append(routerMarginBuf, minSel-maxRej)
+		routerCaptureDo(func() { routerMarginBuf = append(routerMarginBuf, minSel-maxRej) })
 	}
 	// Weight residency (idea #2): the router selection is the demand signal. Touch each
 	// chosen expert before its matmuls so the pager faults it in and evicts the LRU tail
@@ -123,7 +123,7 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 		wts[j] = (topv[j] / sum) * w.perExpertScale[e]
 	}
 	if routerCapture {
-		routerWtsBuf = append(routerWtsBuf, append([]float32(nil), wts...))
+		routerCaptureDo(func() { routerWtsBuf = append(routerWtsBuf, append([]float32(nil), wts...)) })
 	}
 
 	// experts on pre_ffn_norm_2(h): gelu-tanh GeGLU, gate/up = contiguous halves.
@@ -146,7 +146,7 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	}
 	rmsNorm(x2, w.postFFNNorm2, 1, hidden, eps, addOne)
 	if routerCapture {
-		routerX2Buf = append(routerX2Buf, append([]float32(nil), x2...))
+		routerCaptureDo(func() { routerX2Buf = append(routerX2Buf, append([]float32(nil), x2...)) })
 	}
 
 	// join: out = (h + post_ffn_norm(x1 + x2)) * layer_scalar.

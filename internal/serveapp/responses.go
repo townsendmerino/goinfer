@@ -212,7 +212,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	forced := forcedTool(req.ToolChoice, tools)
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
-	if cerr := constrainForcedTool(lm, &gr, forced, namedForce); cerr != nil {
+	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, tools); cerr != nil {
 		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)
 		return
 	}

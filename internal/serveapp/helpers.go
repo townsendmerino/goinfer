@@ -1,7 +1,9 @@
 package serveapp
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -490,11 +491,26 @@ func completeUTF8(s string) int {
 }
 
 // reqID is a short, monotonically increasing id suffix (unique per process run).
-var reqCounter atomic.Uint64
-
-func init() { reqCounter.Store(uint64(time.Now().UnixNano())) }
-
-func reqID() string { return fmt.Sprintf("%x", reqCounter.Add(1)) }
+// reqID returns an opaque, UNGUESSABLE id for a response/message/tool-call.
+//
+// N-17: this was a sequential counter (seeded from UnixNano, then +1 per id). Seeding hid the
+// problem without fixing it — an id is still exactly one more than the id before it, so a
+// client holding its own `resp_<hex>` can walk ±1 and land on other clients' ids. That matters
+// because `previous_response_id` continues a stored conversation: with `-addr 0.0.0.0` and one
+// shared API key, guessing an id reads back someone else's turns.
+//
+// crypto/rand, not math/rand: guessability is the whole property. 16 bytes because these ids go
+// in URLs and logs, and 128 bits is beyond enumeration.
+func reqID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand does not fail on any supported platform; if it somehow does, a panic is
+		// correct — silently falling back to a predictable id restores the defect this exists
+		// to close, and would do so invisibly.
+		panic("serveapp: crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}
 
 // humanBytes formats a byte count as MiB/GiB for the startup line (whole MiB is exact here —
 // every cap is a multiple of a MiB or a small model-derived product).

@@ -62,8 +62,22 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 	// Per-request quant/lora override the global defaults; everything else
 	// (backend, kv-sessions, session-dir) comes from the server config.
 	c := s.cfg
+	// N-19: quantSet, not just quant. explicitQuant() drives the .giw baked-quant mismatch
+	// check, and it reads cfg.quantSet — which was inherited from the CLI and said nothing
+	// about THIS request. Both directions were wrong:
+	//
+	//   no CLI --quant + admin asks int8  → quantSet false → no check → the bundle's baked
+	//                                       int4 loads silently under an int8 request
+	//   CLI --quant given + admin asks nothing → quantSet true → this request is checked
+	//                                       against a quant it never named, and is rejected
+	//
+	// The admin request is the authority for its own load: if it names a quant that is the
+	// explicit choice, and if it does not, the CLI value stays as a DEFAULT but is not an
+	// explicit choice to conflict with.
 	if req.Quant != "" {
-		c.quant = req.Quant
+		c.quant, c.quantSet = req.Quant, true
+	} else {
+		c.quantSet = false
 	}
 	if req.Lora != "" {
 		c.lora = req.Lora

@@ -79,6 +79,13 @@ finish, returning `200` if that completes within `--unload-drain-wait` (default 
 and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a full queue
 returns 429 + Retry-After (single decode worker per model; no continuous batching).
 
+**`top_k` + `top_p` together are not HF/llama.cpp semantics** (N-03). When both are set, the
+nucleus mass is computed over the FULL distribution and the result is then intersected with the
+top-k set. HuggingFace and llama.cpp apply `top_k` first and take the nucleus over the
+RENORMALIZED survivors, which is a strictly wider set for the same `top_p`. Either is a defensible
+reading of two filters that OpenAI's API never defined together, but a client that tuned `top_p`
+against HF will see a tighter cut here. Each filter alone matches.
+
 **Sampling: pass `top_k` alongside your temperature.** Since v0.10.3, `top_k`/`top_p`/`min_p` use
 bounded selection instead of a full-vocabulary sort, so they are cheap. Plain `temperature` with
 *neither* set is the one configuration that still normalizes over the **entire** vocabulary every
@@ -112,10 +119,18 @@ the second de-facto standard (the one llama.cpp, Ollama, and LM Studio also
 serve), so Anthropic-speaking tools — **Claude Code** included — can point at a
 pure-Go single-binary runtime. It honors `system` (string or block array),
 content blocks (`text`, `tool_use`/`tool_result` replay), `tools` (note:
-`input_schema`), `tool_choice` (`auto`/`any`/`tool` — `any`/`tool` ride the same
-constrained decoding, so a malformed tool call is impossible), `stop_sequences`,
+`input_schema`), `tool_choice` (`auto`/`any`/`tool`), `stop_sequences`,
 and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
 → `message_delta` → `message_stop`, no `[DONE]`).
+
+**What `tool_choice` actually constrains** (N-18): a NAMED tool (`{"type":"tool","name":…}`, and
+OpenAI's `{"type":"function",…}`) rides constrained decoding, so its call cannot be malformed —
+and naming a function that is not in `tools` is now a 400 rather than an unconstrained
+generation. `any`/`required` constrain only when there is exactly ONE tool, where the choice is
+unambiguous; with two or more the model decides freely and the output is NOT grammar-constrained.
+Constraining that case needs a union grammar over the tool set, which does not exist yet. This
+paragraph previously said `any` "rides the same constrained decoding, so a malformed tool call is
+impossible", which was true only for the lone-tool case.
 
 The `messages` array accepts **only `user` and `assistant`**, as upstream does; any
 other role is a `400 invalid_request_error` naming the offending role. In particular

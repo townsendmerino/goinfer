@@ -1,6 +1,10 @@
 package decoder
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"sync"
+)
 
 // routerCapture (GOINFER_ROUTER_CAPTURE=1) is a DIAGNOSTIC (default-off, single load-time
 // env read): when on, gemma4MoEFFN appends each MoE-layer call's selected top-k expert
@@ -50,3 +54,57 @@ var (
 	routerX1Buf  [][]float32
 	routerX2Buf  [][]float32
 )
+
+// N-27: THE BUFFERS ABOVE ARE PACKAGE-LEVEL AND WERE APPENDED FROM INSIDE THE FORWARD WITH NO
+// LOCK AND NO BOUND.
+//
+// Two separate problems, and the diagnostic framing hid both. Under the documented
+// concurrent-sequence contract two goroutines can be in a forward at once, so the appends are a
+// data race on a slice header — a crash, not a wrong number. And there is no cap: set on a long
+// running `serve` process this grows without limit, one entry per MoE decision per layer per
+// token, each carrying a copy of a hidden-sized vector.
+//
+// Fixed here rather than by refusing under `serve`: the decoder cannot see who its caller is,
+// and a diagnostic that is safe everywhere is better than one that is refused in the one place
+// it is dangerous. The mutex removes the race; the cap turns an unbounded leak into a bounded
+// buffer that says when it stopped.
+var (
+	routerCaptureMu  sync.Mutex
+	routerCaptureOff bool // set once the cap is hit, so the warning prints once
+)
+
+// routerCaptureMax bounds each buffer. Generous for the diagnostic's actual use — a
+// teacher-forced pass of a few hundred tokens over 30 layers — and small enough that a
+// forgotten env var on a serving process costs bounded memory instead of the process.
+const routerCaptureMax = 1 << 16
+
+// routerCaptureDo runs fn under the capture lock if capture is on and the cap is not reached.
+// Every append site goes through it, so neither the lock nor the bound can be forgotten at one
+// of the six.
+func routerCaptureDo(fn func()) {
+	if !routerCapture {
+		return
+	}
+	routerCaptureMu.Lock()
+	defer routerCaptureMu.Unlock()
+	if len(routerCaptureBuf) >= routerCaptureMax {
+		if !routerCaptureOff {
+			routerCaptureOff = true
+			fmt.Fprintf(os.Stderr, "[goinfer] GOINFER_ROUTER_CAPTURE: reached %d decisions; "+
+				"capture stopped (it is a diagnostic, not a log — unset the variable)\n",
+				routerCaptureMax)
+		}
+		return
+	}
+	fn()
+}
+
+// routerCaptureReset clears every buffer and re-arms the cap. The realckpt capture test calls
+// it between passes.
+func routerCaptureReset() {
+	routerCaptureMu.Lock()
+	defer routerCaptureMu.Unlock()
+	routerCaptureBuf, routerRnBuf, routerMarginBuf = nil, nil, nil
+	routerWtsBuf, routerX1Buf, routerX2Buf = nil, nil, nil
+	routerCaptureOff = false
+}

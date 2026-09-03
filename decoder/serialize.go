@@ -353,6 +353,14 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	if n < 0 || n > maxSerializedLayers {
 		return nil, &SerializeError{"implausible layer count"}
 	}
+	// N-07: compare with the ARCH BEFORE allocating, not after. validateShapes catches a
+	// mismatched count, but only once every layer struct exists — maxSerializedLayers is ~40x a
+	// real model, so a hostile count amplifies that far on an EXPORTED entry point before any
+	// check runs. The arch is already resolved by this point; the comparison is free.
+	if arch != nil && arch.NumLayers > 0 && n != arch.NumLayers {
+		return nil, &SerializeError{fmt.Sprintf(
+			"layer count: blob has %d, arch expects %d", n, arch.NumLayers)}
+	}
 	w.Layers = make([]LayerWeights, n)
 	for i := range w.Layers {
 		r.layer(&w.Layers[i])
@@ -1350,6 +1358,14 @@ func (r *giwReader) layer(l *LayerWeights) {
 	ne := int(r.u32())
 	if ne < 0 || ne > maxSerializedExperts {
 		r.fail("implausible expert count")
+		return
+	}
+	// N-07, the per-layer half: same amplification, multiplied by the layer count. The reader
+	// already holds the resolved arch, so a blob claiming more experts than the family has is
+	// refused before the structs exist rather than after.
+	if r.arch != nil && r.arch.MoE != nil && r.arch.MoE.NumExperts > 0 && ne > r.arch.MoE.NumExperts {
+		r.fail(fmt.Sprintf("expert count: blob has %d, arch expects at most %d",
+			ne, r.arch.MoE.NumExperts))
 		return
 	}
 	if ne > 0 {

@@ -124,6 +124,15 @@ func fp8Reconstruct(st *embed.SafetensorsFile, name string, in, out, blockR, blo
 	// Shape is checked against the ARCHITECTURE (in/out from the config), not just against
 	// the scale grid: a weight/scale pair can be self-consistent and still be the wrong
 	// tensor, which is the check gptoss_safetensors.go's own comment insists on.
+	//
+	// N-06: this comment was true of the INTENT and false of the code, which compared only the
+	// element COUNT. out*in == in*out, so a [in,out]-shaped tensor passed and then loaded
+	// transposed — every weight present, every one in the wrong place. The declared shape is
+	// what distinguishes them, so compare that.
+	if len(wT.Shape) != 2 || wT.Shape[0] != out || wT.Shape[1] != in {
+		return nil, fmt.Errorf("fp8 %q: shape %v, arch expects [%d,%d] — a transposed tensor has "+
+			"the same element count and would load silently", name, wT.Shape, out, in)
+	}
 	if len(raw) != out*in {
 		return nil, fmt.Errorf("fp8 %q: %d payload bytes for [%d,%d]", name, len(raw), out, in)
 	}
