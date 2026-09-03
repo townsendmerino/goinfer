@@ -1072,9 +1072,9 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/forward_llama4.go:16` | goinfer | `// Chunked (local) attention on the RoPE layers: a query at position p attends only with` |
 | `docs/audit-2026-09-02.md|decoder/forward_llama4.go:93` | goinfer | `attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*no sliding win` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:106` | goinfer | `if _, own := a.ownForward(); own {` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:1096` | goinfer | `// position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:1138` | goinfer | `h, err := m.forwardLayersN(reqCtx, ids, cache, fastAttn)` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:1177` | goinfer | `h, err := m.forwardLayersN(ctx, prompt, cache, cpuFastAttention())` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:1104` | goinfer | `// position ([K][VocabSize]) — used by the speculative verifier. Bit-identical to` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:1146` | goinfer | `h, err := m.forwardLayersN(reqCtx, ids, cache, fastAttn)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:1185` | goinfer | `h, err := m.forwardLayersN(ctx, prompt, cache, cpuFastAttention())` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:125` | goinfer | `// It is the arch-side view of KVCache.hasRecurrentState(), read from the dispatch table` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:176` | goinfer | `// reused across the K rows (aikit's column-blocked W8A8 kernel); attention stays` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:222` | goinfer | `norm := make([]float32, K*hidden)` |
@@ -1082,24 +1082,24 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:312` | goinfer | `if fastAttn && K < fastAttnMinPrompt {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:32` | goinfer | `// WHAT IT GIVES UP IS BIGGER THAN "prefill != decode", and the help text understated it` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:337` | goinfer | `attnPool := newHeadWorkerPool(prefillAttnWorkers(K, maxKeys, hd, arch.maxHeads()), K, ma` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:348` | goinfer | `var ws linalg.Workspace` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:385` | goinfer | `if err := reqCtx.Err(); err != nil {` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:410` | goinfer | `matmul(be, &lw.QProj, norm, q, K)` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:416` | goinfer | `addBias(row(q, i, qDim), lw.QBias)` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:431` | goinfer | `if arch.QKNorm {` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:355` | goinfer | `var ws linalg.Workspace` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:393` | goinfer | `if err := reqCtx.Err(); err != nil {` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:418` | goinfer | `matmul(be, &lw.QProj, norm, q, K)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:424` | goinfer | `addBias(row(q, i, qDim), lw.QBias)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:439` | goinfer | `if arch.QKNorm {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:44` | goinfer | `// TestSessionFastAttnDivergence pins the new behaviour; the equality is still gated, un` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:453` | goinfer | `if isLocal {` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:454` | goinfer | `base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:461` | goinfer | `if isLocal {` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:462` | goinfer | `base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:50` | goinfer | `// MoE IS *NOT* EXCLUDED, and that is deliberate: 66d0a05 removed the exclusion after me` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:547` | goinfer | `if moeExpertMajor() {` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:548` | goinfer | `emOut = make([]float32, K*hidden)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:555` | goinfer | `if moeExpertMajor() {` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:556` | goinfer | `emOut = make([]float32, K*hidden)` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:59` | goinfer | `func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") != "0" }` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:653` | goinfer | `cache.advanceTo(startPos + K)` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:725` | goinfer | `nKeys := len(keys) / kvDim` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:752` | goinfer | `fusedOK := !useAcc64 && cache.treeMask == nil` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:776` | goinfer | `tile := attendTileFor(ws, K, nKeys, hd)` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:781` | goinfer | `copy(qh[i*hd:i*hd+hd], q[b:b+hd])` |
-| `docs/audit-2026-09-02.md|decoder/forwardn.go:944` | goinfer | `gatherKV := func(ws *headWorkerScratch, kvh int) {` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:661` | goinfer | `cache.advanceTo(startPos + K)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:733` | goinfer | `nKeys := len(keys) / kvDim` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:760` | goinfer | `fusedOK := !useAcc64 && cache.treeMask == nil` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:784` | goinfer | `tile := attendTileFor(ws, K, nKeys, hd)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:789` | goinfer | `copy(qh[i*hd:i*hd+hd], q[b:b+hd])` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:952` | goinfer | `gatherKV := func(ws *headWorkerScratch, kvh int) {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:99` | goinfer | `func (m *Model) canBatchN(K int) bool {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn_test.go:160` | goinfer | `for i := range K {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn_test.go:97` | goinfer | `// TestForwardN_matchesSequential checks the batched multi-position forward` |
@@ -1471,7 +1471,7 @@ supports.
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1101` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:549` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:962` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
-| `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:576` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, moePrefillScr, m.pager)` |
+| `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:584` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, moePrefillScr, m.pager)` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/mlp.go:292` | goinfer | `matmul(be, &ex.Gate, h, gate, 1)` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:96` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/prefill.go:161` | goinfer | `if r.moe \|\| r.gemma4Moe {` |
@@ -1504,8 +1504,8 @@ supports.
 | `docs/post-v1.0-models.md|decoder/registry.go:534` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
 | `docs/post-v1.0-models.md|decoder/registry.go:58` | goinfer | `"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-hea` |
 | `docs/post-v1.0-models.md|decoder/registry.go:844` | goinfer | `Name:            "qwen3_5_moe",` |
-| `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:701` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
-| `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:911` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
+| `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:709` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
+| `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:919` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
 | `docs/prompts/goinfer-w4a8-opsperbyte-citations.md|linalg/quant.go:206` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/sampler_chunked.go:111` | goinfer | `workers := min(runtime.GOMAXPROCS(0), numChunks)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:365` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
@@ -1518,7 +1518,7 @@ supports.
 | `docs/queue-engineering.md|cuda/prefill.go:259` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:301` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:532` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
-| `docs/queue-engineering.md|decoder/forwardn.go:1078` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `docs/queue-engineering.md|decoder/forwardn.go:1086` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:733` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
@@ -1556,9 +1556,9 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:541` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
-| `docs/task-attention-decode-cost.md|decoder/forwardn.go:701` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
-| `docs/task-attention-decode-cost.md|decoder/forwardn.go:811` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |
-| `docs/task-attention-decode-cost.md|decoder/forwardn.go:911` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
+| `docs/task-attention-decode-cost.md|decoder/forwardn.go:709` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
+| `docs/task-attention-decode-cost.md|decoder/forwardn.go:819` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |
+| `docs/task-attention-decode-cost.md|decoder/forwardn.go:919` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
 | `docs/task-attention-decode-cost.md|internal/serveapp/main.go:371` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/task-attention-decode-cost.md|linalg/linalg.go:58` | aikit | `var parThreshold = 1 << 24 // 16.78M MACs` |
 | `docs/task-attention-decode-cost.md|linalg/matmul_strided.go:30` | aikit | `func MatmulBTAcc64Strided(a, bMat, dst []float32, M, K, N, bOff, bRowStride, bElemStride` |
@@ -1600,7 +1600,7 @@ supports.
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:287` | goinfer | `#define SA_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:330` | goinfer | `// N-32: dnValueDim is DeltaNet's out-projection staging width. deltanet.go dispatches p` |
-| `docs/task-moe-streaming.md|decoder/forwardn.go:494` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
+| `docs/task-moe-streaming.md|decoder/forwardn.go:502` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/task-moe-streaming.md|decoder/forwardn.go:97` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/task-moe-streaming.md|decoder/mlp.go:83` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
 | `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |

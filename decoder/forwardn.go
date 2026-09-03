@@ -345,7 +345,15 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	}
 	// Batch the qkv and gate/up projections (shared activation) so a GPU backend
 	// runs each group as one submit (BatchTiled) instead of per-matmul syncs.
+	//
+	// P-04: an unset Workspace keeps aikit's own conservative default (16.78M MACs), tuned for
+	// prefill-scale work — but this same ws also carries small-K forwardN calls (spec verify,
+	// K<=8), whose per-round matmuls sit well under that bar and so ran serial while decode's
+	// identical-shape M=1 matmul, which sets DefaultDecodeParallelThreshold (300K) on its own
+	// Workspace (scratch.go's newDecodeScratch), fans out. Large-K prefill matmuls clear both
+	// thresholds comfortably, so this only changes behavior for the small-K case it was missing.
 	var ws linalg.Workspace
+	ws.SetThreshold(DefaultDecodeParallelThreshold)
 	var qkvOps [3]linalg.W8A8Op
 	var guOps [2]linalg.W8A8Op
 	// Laguna attention-gate scratch, grown on first use. Its width depends on the
