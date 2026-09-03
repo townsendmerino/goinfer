@@ -105,7 +105,10 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 		budget = mmap.AutoBudget()
 	}
 	const ahead = 1
-	window := max(int(budget/maxLayer),
+	// enterLayer prefetches l+ahead before releasing l-window, so the resident
+	// set at steady state is window+ahead layers (P-12), not window — subtract
+	// ahead here so window+ahead layers' bytes actually fit budget.
+	window := max(int(budget/maxLayer)-ahead,
 		// never evict a layer we just prefetched
 		ahead+2)
 	if window >= n {
@@ -139,7 +142,7 @@ func (p *layerPager) enterLayer(l int) {
 }
 
 // finishLayers releases every layer still hinted resident at the end of a forward,
-// so resident RAM returns to ~zero between tokens and stays bounded by `window`
+// so resident RAM returns to ~zero between tokens and stays bounded by `window+ahead`
 // during the loop (the cross-token re-read of one window is negligible for a model
 // that doesn't fit anyway). Idempotent.
 func (p *layerPager) finishLayers() {

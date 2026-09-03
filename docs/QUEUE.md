@@ -1093,6 +1093,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:50` | goinfer | `// MoE IS *NOT* EXCLUDED, and that is deliberate: 66d0a05 removed the exclusion after me` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:555` | goinfer | `if moeExpertMajor() {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:556` | goinfer | `emOut = make([]float32, K*hidden)` |
+| `docs/audit-2026-09-02.md|decoder/forwardn.go:559` | goinfer | `ok, err := moeMLPBatch(norm[c0*hidden:c1*hidden], c1-c0, lw, arch, be, m.pager,` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:59` | goinfer | `func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") != "0" }` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:661` | goinfer | `cache.advanceTo(startPos + K)` |
 | `docs/audit-2026-09-02.md|decoder/forwardn.go:733` | goinfer | `nKeys := len(keys) / kvDim` |
@@ -1145,6 +1146,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/mamba2_chunked.go:91` | goinfer | `// checkpoint rates — A_log = log(U(1,16)) with dt in [0.001, 0.1] gives a per-step` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:464` | goinfer | `func moeExpertMajor() bool { return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") != "0" }` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:484` | goinfer | `func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend` |
+| `docs/audit-2026-09-02.md|decoder/mlp.go:486` | goinfer | `if moe == nil \|\| len(lw.Experts) == 0 \|\| moeSelOverride != nil \|\| moeSelTrace != nil \|\| ` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:504` | goinfer | `logits := make([]float32, n*nE)` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:576` | goinfer | `// moePrefillScratch enables the P18 ATTRIBUTION arm: reuse one scratch across the` |
 | `docs/audit-2026-09-02.md|decoder/model.go:1088` | goinfer | `if sp.Logprobs {` |
