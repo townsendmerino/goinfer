@@ -136,11 +136,11 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		for m := 0; m < M; m++ {
 			pos := startPos + m
 			uPos, uNKeys := NewBufferU32(d, uint32(pos)), NewBufferU32(d, uint32(pos+1))
-			e.Dispatch(r.pRope, r.nH*g.half, 64, qkv.At(m*qkvRows*4), L.invf, g.uHd, uPos, g.uQtotal, g.uHalf)
-			e.Dispatch(r.pRope, g.nKV*g.half, 64, qkv.At(m*qkvRows*4+kOff), L.invf, g.uHd, uPos, g.uKtotal, g.uHalf)
+			e.Dispatch(r.pRope, r.nH*g.half, 64, qkv.At(m*qkvRows*4), L.invf, g.uHd, uPos, g.uQtotal, g.uHalf, L.mscale)
+			e.Dispatch(r.pRope, g.nKV*g.half, 64, qkv.At(m*qkvRows*4+kOff), L.invf, g.uHd, uPos, g.uKtotal, g.uHalf, L.mscale)
 			e.Dispatch(r.pKv, g.kvDim, 64, qkv.At(m*qkvRows*4+kOff), qkv.At(m*qkvRows*4+vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
 			ctx := d.NewBufferLen(nHhd)
-			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, qkv.At(m*qkvRows*4), r.kc[l], r.vc[l], ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow)
+			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, qkv.At(m*qkvRows*4), r.kc[l], r.vc[l], ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 			e.Dispatch(r.pQv, 256, 256, ctx, cq.At(m*nHhd), cSc.At(m*4), g.uNHhd)
 		}
 

@@ -1372,7 +1372,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:203` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:221` | goinfer | `if req.Stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:72` | goinfer | `anchor: func encodeVisionSegments(lm *loadedModel, system string, turns []chat.Turn, blo` |
-| `docs/audit-2026-09-02.md|metal/attn_shape_test.go:149` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin)` |
+| `docs/audit-2026-09-02.md|metal/attn_shape_test.go:152` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, ` |
 | `docs/audit-2026-09-02.md|metal/backend.go:116` | goinfer | `if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {` |
 | `docs/audit-2026-09-02.md|metal/backend.go:119` | goinfer | `need := m.ResidentWeightBytes()` |
 | `docs/audit-2026-09-02.md|metal/backend.go:80` | goinfer | `if !residentFitsMemory(m) {` |
@@ -1390,13 +1390,14 @@ supports.
 | `docs/audit-2026-09-02.md|metal/kernels.go:511` | goinfer | `kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],` |
 | `docs/audit-2026-09-02.md|metal/kernels.go:515` | goinfer | `float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;` |
 | `docs/audit-2026-09-02.md|metal/kernels.go:606` | goinfer | `kernel void attention(device const float* q[[buffer(0)]], device const half* kc[[buffer(` |
-| `docs/audit-2026-09-02.md|metal/layer_test.go:145` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindo` |
+| `docs/audit-2026-09-02.md|metal/layer_test.go:148` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindo` |
 | `docs/audit-2026-09-02.md|metal/model.go:1465` | goinfer | `e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L` |
 | `docs/audit-2026-09-02.md|metal/model.go:330` | goinfer | `// N-32: dnValueDim is DeltaNet's out-projection staging width. deltanet.go dispatches p` |
 | `docs/audit-2026-09-02.md|metal/model.go:346` | goinfer | `if words, scales, ok := int4DirectWords(w); ok {` |
 | `docs/audit-2026-09-02.md|metal/model.go:444` | goinfer | `if preciseMathCompile \|\| os.Getenv("GOINFER_PRECISE_MATH") != "" {` |
 | `docs/audit-2026-09-02.md|metal/model.go:489` | goinfer | `r.kvF32 = false` |
 | `docs/audit-2026-09-02.md|metal/model.go:49` | goinfer | `anchor: const (` |
+| `docs/audit-2026-09-02.md|metal/model.go:631` | goinfer | `L.attnSinks, L.uHasSink = NewBufferFloats(d, []float32{0}), NewBufferU32(d, 0)` |
 | `docs/audit-2026-09-02.md|metal/model.go:776` | goinfer | `// Vocab is NOT checked here (2026-08-18): it never routes through an SA-family kernel —` |
 | `docs/audit-2026-09-02.md|metal/model.go:895` | goinfer | `if r.g4moe != nil && r.g4moe.paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && Resid` |
 | `docs/audit-2026-09-02.md|metal/moe.go:106` | goinfer | `for (uint j=0u;j<k;j++) {` |

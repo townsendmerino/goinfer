@@ -143,10 +143,13 @@ func runAttnCase(t *testing.T, d *Device, pAttn Pipeline, nH, nKV, hd, nKeys int
 	uHd, uNKeys := NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(nKeys))
 	uScale := NewBufferFloats(d, []float32{scale})
 	uWin := NewBufferU32(d, window)
+	// No learned attention sink here: hasSink=0 is a true no-op (model.go's no-sink branch,
+	// metal/model.go:631), so a dummy one-element sinks buffer is never read.
+	uSinks, uHasSink0 := NewBufferFloats(d, []float32{0}), NewBufferU32(d, 0)
 
 	cq := d.NewCommandQueue()
 	enc := cq.Begin()
-	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin)
+	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, uSinks, uHasSink0)
 	enc.End()
 
 	got := out.Floats()

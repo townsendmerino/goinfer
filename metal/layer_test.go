@@ -127,6 +127,9 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	uHH := NewBufferU32(d, uint32(nH*hd))
 	uNH, uNKV, uNKeys := NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, pos+1)
 	uWindow0 := NewBufferU32(d, 0) // full causal — the attention kernel's window arg (buffer 9)
+	// No learned attention sink in this synthetic layer: hasSink=0 is a true no-op (model.go's
+	// no-sink branch, metal/model.go:631), so a dummy one-element sinks buffer is never read.
+	uSinks, uHasSink0 := NewBufferFloats(d, []float32{0}), NewBufferU32(d, 0)
 	uScale, uEps := NewBufferFloats(d, []float32{scale}), NewBufferFloats(d, []float32{eps})
 	uInvf := NewBufferFloats(d, invf)
 	uQtotal, uKtotal := NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half))
@@ -142,7 +145,7 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	enc.Dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal, uHalf, uRopeScale)
 	enc.Dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal, uHalf, uRopeScale)
 	enc.Dispatch(pKv, kvDim, 64, kB, vB, kc, vc, uKvDim, uPos)
-	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0) // threadgroup-per-head
+	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, uSinks, uHasSink0) // threadgroup-per-head
 	enc.Dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)
 	enc.Dispatch(pGemv, H, 64, cq, cSc, oqW, oqS, oO, uHH)
 	enc.Dispatch(pRes, H, 64, x, oO)
