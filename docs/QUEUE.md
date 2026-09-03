@@ -1187,14 +1187,16 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/rope.go:29` | goinfer | `half := len(invFreq) // == rotaryDim/2` |
 | `docs/audit-2026-09-02.md|decoder/rope.go:31` | goinfer | `for d := range half {` |
 | `docs/audit-2026-09-02.md|decoder/routercapture.go:27` | goinfer | `var routerCaptureBuf [][]int` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:139` | goinfer | `//   - Temperature > 0: softmax at that temperature, optionally restricted to` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:172` | goinfer | `// `top_p` / `min_p` at any value are safe alongside it: both cuts clamp at ≥1 retained ` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:309` | goinfer | `func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:338` | goinfer | `func computeLogprobs(logits []float32, chosen int, temperature float64, topN int) (float` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:403` | goinfer | `return lastWithMass(probs, 0, len(probs))` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:502` | goinfer | `if topPActive {` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:515` | goinfer | `case minP > 0:` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:617` | goinfer | `func topKByLogit(logits []float32, k int) []int {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:147` | goinfer | `func (s *Sampler) recordHistory(id int) {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:158` | goinfer | `//   - Temperature > 0: softmax at that temperature, optionally restricted to` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:191` | goinfer | `// `top_p` / `min_p` at any value are safe alongside it: both cuts clamp at ≥1 retained ` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:328` | goinfer | `func (s *Sampler) applyPenalties(logits []float32) {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:340` | goinfer | `func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:376` | goinfer | `func computeLogprobs(logits []float32, chosen int, temperature float64, topN int) (float` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:441` | goinfer | `return lastWithMass(probs, 0, len(probs))` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:540` | goinfer | `if topPActive {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:553` | goinfer | `case minP > 0:` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:655` | goinfer | `func topKByLogit(logits []float32, k int) []int {` |
 | `docs/audit-2026-09-02.md|decoder/sampler_chunked.go:110` | goinfer | `func forEachChunk(n int, fn func(c, lo, hi int)) {` |
 | `docs/audit-2026-09-02.md|decoder/sampler_chunked.go:159` | goinfer | `return lastWithMass(e, lo, hi) // N-02: not hi-1, which is often a masked token` |
 | `docs/audit-2026-09-02.md|decoder/sampler_selection_test.go:296` | goinfer | `// RE-BOUNDED after P2b (2026-08-09). This gate compares temp+top_p against temp-only, a` |
@@ -1459,9 +1461,9 @@ supports.
 | `docs/how-inference-works.md|decoder/model.go:1027` | goinfer | `for range maxTokens {` |
 | `docs/how-inference-works.md|decoder/model.go:909` | goinfer | `func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *` |
 | `docs/how-inference-works.md|decoder/registry.go:19` | goinfer | `var registry = map[string]archAdapter{` |
-| `docs/how-inference-works.md|decoder/sampler.go:160` | goinfer | `// can never silently diverge. They are separate predicates, not one widened one, so tha` |
-| `docs/how-inference-works.md|decoder/sampler.go:167` | goinfer | `// though a temperature is set — the `top_k=1` shape. It is TRUE at any temperature, whi` |
-| `docs/how-inference-works.md|decoder/sampler.go:169` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
+| `docs/how-inference-works.md|decoder/sampler.go:179` | goinfer | `// can never silently diverge. They are separate predicates, not one widened one, so tha` |
+| `docs/how-inference-works.md|decoder/sampler.go:186` | goinfer | `// though a temperature is set — the `top_k=1` shape. It is TRUE at any temperature, whi` |
+| `docs/how-inference-works.md|decoder/sampler.go:188` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:69` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |

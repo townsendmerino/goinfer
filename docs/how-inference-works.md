@@ -163,19 +163,19 @@ Now we have 100,000 scores. How do we choose one? That's
 [`SampleWithInfo`](../decoder/sampler.go#L114-L133).
 
 - The simplest choice: just take the highest-scoring token. That's **greedy /
-  argmax** ([decoder/sampler.go:167](../decoder/sampler.go#L129)) — deterministic, the
+  argmax** ([decoder/sampler.go:186](../decoder/sampler.go#L129)) — deterministic, the
   model's single best guess.
 - More commonly we add controlled randomness so output isn't robotic.
   **Temperature** flattens or sharpens the scores (high temperature = more
   adventurous, low = more predictable). Then we usually restrict the random draw
   to the top few candidates — **top-k** (only the k best), **top-p / nucleus**
   (the smallest set covering p% of the probability) — to avoid picking something
-  absurd ([decoder/sampler.go:169-171](../decoder/sampler.go#L131-L133)).
+  absurd ([decoder/sampler.go:188-190](../decoder/sampler.go#L131-L133)).
 
 The scores are turned into actual probabilities via **softmax** (exponentiate and
 normalize so they sum to 1), and one token is drawn. There are also **penalties**
 to discourage the model from repeating itself
-([decoder/sampler.go:160-162](../decoder/sampler.go#L122-L124)).
+([decoder/sampler.go:179-181](../decoder/sampler.go#L122-L124)).
 
 The output is a single integer — the next token.
 

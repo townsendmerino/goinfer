@@ -79,6 +79,10 @@ type Sampler struct {
 	// vectors live at once (spec_ngram.go's verify loop) — so one buffer covers the whole round.
 	specLogitsBuf []float32 // [vocab] scratch for distVectorHist's history-dependent copy (P-14):
 	// same one-position-at-a-time lifetime as distBuf.
+	histCounts map[int]int // per-id occurrence count over the WHOLE of history, maintained
+	// incrementally by recordHistory (P-15) so applyPenalties' unbounded-window case (the
+	// default: RepeatLastN ≤ 0) never rebuilds a map by rescanning all of history — every
+	// history mutation MUST go through recordHistory, or this desyncs from s.history.
 }
 
 // NewSampler builds a sampler from params.
@@ -131,7 +135,22 @@ func (s *Sampler) specLogitsBufN(n int) []float32 {
 // Observe seeds the penalty history with already-seen tokens (the generation
 // loop calls it once with the prompt) so repetition penalties consider them.
 // Each Sample then records the token it draws.
-func (s *Sampler) Observe(ids ...int) { s.history = append(s.history, ids...) }
+func (s *Sampler) Observe(ids ...int) {
+	for _, id := range ids {
+		s.recordHistory(id)
+	}
+}
+
+// recordHistory appends id to history and keeps histCounts (P-15) in sync. Every
+// history mutation must go through this — appending to s.history directly would
+// silently desync histCounts from the count applyPenalties' fast path relies on.
+func (s *Sampler) recordHistory(id int) {
+	s.history = append(s.history, id)
+	if s.histCounts == nil {
+		s.histCounts = map[int]int{}
+	}
+	s.histCounts[id]++
+}
 
 // Sample returns the chosen token id for the given logits ([VocabSize]).
 //
@@ -232,7 +251,7 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 	if s.p.Logprobs {
 		info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs)
 	}
-	s.history = append(s.history, info.ID)
+	s.recordHistory(info.ID)
 	return info, nil
 }
 
@@ -298,8 +317,20 @@ func penaltyWindowOf(history []int, n int) []int {
 // applyPenalties applies repeat/presence/frequency penalties to the logits of
 // tokens in the sampler's own penalty window. Repeat scales (llama.cpp);
 // presence/frequency subtract (OpenAI). They compose.
+//
+// P-15: the default (RepeatLastN ≤ 0) window is the WHOLE history, which grows
+// by one token per step — applyPenaltiesOver used to rebuild a fresh counts map
+// by rescanning all of it every call (O(n) per token, O(n²) over a generation).
+// That window is exactly what histCounts already tracks incrementally (kept in
+// sync by recordHistory), so this case skips the rescan entirely. The windowed
+// case (RepeatLastN > 0) keeps the rebuild — its window is bounded and small, not
+// the O(n²) shape this fixes.
 func (s *Sampler) applyPenalties(logits []float32) {
 	if !s.penaltiesActive() {
+		return
+	}
+	if s.p.RepeatLastN <= 0 {
+		s.applyPenaltiesFromCounts(logits, s.histCounts)
 		return
 	}
 	s.applyPenaltiesOver(logits, s.penaltyWindow())
@@ -311,6 +342,13 @@ func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {
 	for _, id := range window {
 		counts[id]++
 	}
+	s.applyPenaltiesFromCounts(logits, counts)
+}
+
+// applyPenaltiesFromCounts is applyPenaltiesOver's counts-already-known half,
+// factored out so applyPenalties' fast path (P-15) can feed it an incrementally
+// maintained map instead of one rebuilt from a window slice every call.
+func (s *Sampler) applyPenaltiesFromCounts(logits []float32, counts map[int]int) {
 	rep := s.p.RepeatPenalty
 	for id, c := range counts {
 		if id < 0 || id >= len(logits) {

@@ -183,3 +183,43 @@ func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 		t.Fatalf("tie-break: got IDs [%d %d], want [1 3] (smaller id wins a logit tie)", got[0].ID, got[1].ID)
 	}
 }
+
+// TestApplyPenalties_incrementalMatchesRebuild is the P-15 gate: applyPenalties'
+// unbounded-window fast path (RepeatLastN ≤ 0) feeds applyPenaltiesFromCounts the
+// incrementally maintained s.histCounts instead of rebuilding a counts map from
+// s.history every call. This drives a mixed sequence of Observe (prompt-seed
+// shape) and Sample (per-token draw shape) calls — both history-mutation sites —
+// and after every step compares the fast path's logit output against the slow
+// reference (applyPenaltiesOver called directly on a fresh rescan of s.history)
+// bit for bit, with all three penalty kinds active so a miscount of ANY kind
+// would show up numerically.
+func TestApplyPenalties_incrementalMatchesRebuild(t *testing.T) {
+	sp := SamplingParams{RepeatPenalty: 1.3, PresencePenalty: 0.4, FrequencyPenalty: 0.15}
+	s := NewSampler(sp) // RepeatLastN unset -> unbounded -> the fast path under test
+	base := []float32{1, -2, 3, 0.5, -1, 2, 0, -0.5}
+
+	step := func(mutate func()) {
+		mutate()
+		fast := append([]float32(nil), base...)
+		s.applyPenalties(fast)
+
+		ref := NewSampler(sp)
+		ref.history = append([]int(nil), s.history...) // same history, built by direct rescan below
+		slow := append([]float32(nil), base...)
+		ref.applyPenaltiesOver(slow, ref.history) // the pre-P-15 always-correct path
+
+		for i := range fast {
+			if fast[i] != slow[i] {
+				t.Fatalf("history=%v: fast[%d]=%v, slow[%d]=%v (incremental histCounts diverged from a full rescan)", s.history, i, fast[i], i, slow[i])
+			}
+		}
+	}
+
+	step(func() { s.Observe(2, 5, 2, 0) }) // prompt-seed shape: multiple ids in one call
+	step(func() { s.Observe(7) })
+	if _, err := s.Sample(base); err != nil { // per-token draw shape: recordHistory via Sample
+		t.Fatal(err)
+	}
+	step(func() {}) // no new mutation — re-checks the state Sample just recorded
+	step(func() { s.Observe(2, 2, 2) })
+}
