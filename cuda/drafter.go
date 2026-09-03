@@ -9,6 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
+	"math"
 )
 
 // residentDrafter is a block drafter's weights on the device, attached to an existing resident
@@ -93,6 +94,16 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 		return nil, fmt.Errorf("cuda drafter: zero layers")
 	}
 	d := &residentDrafter{r: r, geo: geo}
+	// N-08: r.upW / r.up32 do not return errors — they record into r.setupErr, which the BUILD
+	// path already consumed by the time the drafter is constructed. So every upload failure
+	// below landed in a field nothing reads again, and the drafter was returned successfully
+	// with zeroed weights: a drafter that proposes garbage, which lossless verify then rejects,
+	// so it costs acceptance rather than correctness and no gate can see it.
+	//
+	// Snapshot and compare rather than clear: another goroutine's build is not in flight here
+	// (this runs inside r.do), but leaving an unrelated earlier error in place is not this
+	// function's business either.
+	setupBefore := r.setupErr
 	err := r.do(func() error {
 		fcw, e := packWeight(w.DrafterFC())
 		if e != nil {
@@ -142,6 +153,9 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 	})
 	if err != nil {
 		return nil, err
+	}
+	if r.setupErr != nil && r.setupErr != setupBefore {
+		return nil, fmt.Errorf("cuda drafter: weight upload failed: %w", r.setupErr)
 	}
 	return d, nil
 }
@@ -461,7 +475,14 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 				Arg(s.q), Arg(d.kc[l]), Arg(d.vc[l]),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
-				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.r.attnScale),
+				// N-11: the DRAFTER's scale, not the target's. d.r.attnScale is the target
+				// model's, and this file's own rule three dozen lines up says the norm
+				// constants are the drafter's everywhere — this launch was the exception.
+				// Equal today only because DFlash drafters share head_dim 128 with Qwen3
+				// targets at the default scale, and lossless verify makes any mismatch
+				// perf-only: the drafter proposes worse tokens, verify rejects them,
+				// acceptance falls, and every correctness gate stays green.
+				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.attnScale()),
 				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(s.cctx)); e != nil {
 				return e
 			}
@@ -648,3 +669,9 @@ var (
 	_ decoder.ResidentDrafterHost  = (*cudaResident)(nil)
 	_ decoder.ResidentBlockDrafter = (*residentDrafter)(nil)
 )
+
+// attnScale is the drafter's own 1/sqrt(head_dim), matching decoder/dflash.go's CPU reference.
+// Not the target's r.attnScale — see N-11 at the call site.
+func (d *residentDrafter) attnScale() float32 {
+	return float32(1 / math.Sqrt(float64(d.geo.HeadDim)))
+}

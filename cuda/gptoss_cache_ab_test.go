@@ -37,12 +37,19 @@ func TestGptOssExpertCacheAB(t *testing.T) {
 	seed := []int{3, 14, 7, 42, 1, 99, 5, 60} // gptoss_tiny_golden.json input_ids
 	const steps = 8
 
+	// topK+1 for the fixture (nE=4, topK=2): honoured, below nE, and forces at least one
+	// eviction so slot ≠ expert id.
+	const wantSlots = 3
 	run := func(cache bool) [][]float32 {
 		opts := decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: cache}
 		if cache {
-			opts.MoECacheSlots = 2 // FEWER slots than experts, so slot != expert id and the
-			// two index spaces actually diverge. With slots >= nExpert the mapping can be the
-			// identity and the bug hides even with caching on.
+			// G-07: topK+1 = 3, not 2. The fixture is nE=4/topK=2, and a request of 2 was NOT
+			// honoured — `req > topK` was false, so cacheSlots stayed at min(8·topK, nE) = 4,
+			// i.e. one permanent slot per expert. This gate's whole premise is that slot ≠
+			// expert id, and it was getting the identity mapping; it discriminated on the
+			// 2026-08-31 run by routing luck. 3 is honoured, is below nE=4, and forces at
+			// least one eviction.
+			opts.MoECacheSlots = wantSlots
 		}
 		m, err := decoder.Load(path, opts)
 		if err != nil {
@@ -52,6 +59,23 @@ func TestGptOssExpertCacheAB(t *testing.T) {
 		rf := m.ResidentForwardForTest()
 		if rf == nil {
 			t.Skipf("gpt-oss not resident on cuda (%s) — declare FeatAttnSink+FeatOutBias to run this", m.ResidentDecline())
+		}
+		// G-07: ASSERT THE EFFECTIVE SLOT COUNT. Nothing did, and the request was being
+		// silently floored — with topK=2 the old `req > topK` was false for a request of 2, so
+		// cacheSlots stayed at min(8·topK, nE) = 4 = nE: one permanent slot per expert, and
+		// slot ≠ expert only by first-admit order. This gate's premise is that the two index
+		// spaces diverge, so the premise has to be checked rather than requested.
+		if cache {
+			if cr, ok := rf.(interface{ CacheSlotsForTest() int }); ok {
+				if got := cr.CacheSlotsForTest(); got != wantSlots {
+					t.Fatalf("cacheSlots = %d, requested %d — the request was not honoured, so "+
+						"slot and expert id may still coincide and this A/B proves nothing (G-07)",
+						got, wantSlots)
+				}
+			} else {
+				t.Fatal("resident does not expose CacheSlotsForTest; the slot count cannot be " +
+					"asserted and this gate would run on an unknown configuration (G-07)")
+			}
 		}
 		out := make([][]float32, 0, steps)
 		for i, tok := range seed[:steps] {
@@ -78,5 +102,5 @@ func TestGptOssExpertCacheAB(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("gpt-oss expert cache A/B: %d steps bit-identical with slots=2 vs all-resident", steps)
+	t.Logf("gpt-oss expert cache A/B: %d steps bit-identical with slots=%d (asserted) vs all-resident", steps, wantSlots)
 }

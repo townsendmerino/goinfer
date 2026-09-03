@@ -573,7 +573,21 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// SEPARATE decision — main's comment above states its own precondition ("fixing the margin
 		// FIRST and proving it on the 26B"), which A5 (6091e7a) and A7 have now met — and a change
 		// of default belongs in a change about defaults, not in one promoting env vars to flags.
-		if req := m.MoECacheSlotsRequest(); req > topK {
+		// G-07: `> topK` silently floored a request of topK or less. A request BELOW topK cannot
+		// be honoured — one token's own top-k must fit — but it was neither honoured nor
+		// refused: cacheSlots stayed at the 8·topK default, which on a small fixture is nE, so
+		// every expert gets a permanent slot and slot ≠ expert only by first-admit order. A gate
+		// asking for "fewer slots than experts" therefore got the identity mapping and
+		// discriminated by routing luck. Refuse what cannot be honoured; honour the rest exactly.
+		if req := m.MoECacheSlotsRequest(); req > 0 && req < topK {
+			// A hard error, NOT declined(): declined() swallows the error and falls back to the
+			// staged path, which is right for a shape this backend does not implement and wrong
+			// for an operator flag that cannot mean what it says. The user asked for something
+			// impossible; tell them.
+			return nil, false, fmt.Errorf("cuda: --moe-cache-slots %d is below top-k %d — one "+
+				"token's own routed experts must all be resident at once, so this cannot be "+
+				"honoured (G-07)", req, topK)
+		} else if req >= topK {
 			r.cacheSlots = req
 			r.cacheSlotsReq = req
 			if nE > 0 && r.cacheSlots > nE {
@@ -846,6 +860,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// activations. Both are nil for every other family, and r.af/r.up32 are not called
 		// at all in that case (Alloc(0) is an error, not a no-op).
 		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+			// N-10: the glue `attention` fallback (taken when !prefillReady) has NO sink
+			// parameter in its signature at all — it cannot be passed one, only avoided. So a
+			// gpt-oss model whose prefill_batched.ptx fails to JIT would decode through a
+			// kernel that silently omits the learned per-head sink, with nothing declined and
+			// nothing logged. decoder/features.go says the sink reaches both paths; this is
+			// what makes that true, by refusing the case where it cannot.
+			if !r.prefillReady {
+				return fmt.Errorf("cuda: gpt-oss needs the batched attention kernel " +
+					"for its learned attention sink, and prefill_batched.ptx did not load — the " +
+					"glue attention fallback has no sink parameter, so decoding here would " +
+					"silently drop it (N-10)")
+			}
 			r.gptOssSinks = make([]Buffer, nLayers)
 			r.gptOssExpBias = make([]Buffer, nLayers)
 			r.gptOssDownBias = make([]Buffer, nLayers)

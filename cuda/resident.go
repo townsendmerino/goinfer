@@ -122,6 +122,33 @@ const splitkvNever = 1 << 30
 // Turing part. On a much wider GPU nH=32 would be starved and phi3's "never" would not hold.
 // Re-measure per device class before trusting these on other hardware; do not scale them by SM count
 // on paper.
+// singleBlockAttnShmemLimit is the dynamic shared memory a single-block attention launch may
+// request. The glue/batched attention kernels size their scratch (nWin+128)*4, with no ceiling.
+//
+// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:
+//
+//	CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK        49152 (48 KB)  -> nWin <= 12160 keys
+//	CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN  65536 (64 KB)  -> nWin <= 16256 keys
+//
+// 48 KB is the operative one: nothing here calls cuFuncSetAttribute to raise a kernel into the
+// opt-in range, so the driver enforces the default. Past 12,160 attended keys the launch is
+// refused — decode fails outright at that position, and batched prefill errors at layer 0 and
+// silently falls back to the ~9x slower sequential path.
+//
+// Conservative by choice: the constant is the DEFAULT limit, not the opt-in one, because raising
+// it needs a per-kernel SetAttribute call that does not exist yet. If that lands, this becomes a
+// device query.
+const singleBlockAttnShmemLimit = 48 * 1024
+
+// attnShmemBytes is the dynamic shared memory a single-block attention launch needs for an
+// attended span of nWin keys — the sizing every such launch site uses.
+func attnShmemBytes(nWin int) int { return (nWin + 128) * 4 }
+
+// splitKVRequired reports whether the single-block attention kernel CANNOT run at this span, so
+// split-KV is the only option rather than the faster one (M-16). The perf table below decides
+// when split-KV is preferred; this decides when it is mandatory.
+func splitKVRequired(nWin int) bool { return attnShmemBytes(nWin) > singleBlockAttnShmemLimit }
+
 func splitkvThreshold(nH, hd int) int {
 	switch {
 	case nH >= splitkvMaxHeads:
@@ -297,7 +324,13 @@ type cudaResident struct {
 	// Per-kind timing is gone rather than kept at ~0: with the copies merely appended here and
 	// issued together later, a "weight upload took Xµs" figure would name something that no
 	// longer happens.
-	expBatch      []gpu.HostCopy
+	expBatch []gpu.HostCopy
+	// pendingAdmits are the slot claims loadRoutedExperts made before its DMA, rolled back if
+	// the upload fails so the cache cannot assert residency for bytes never copied (N-09).
+	pendingAdmits []pendingAdmit
+	// resetErr holds the last Reset() failure. Reset cannot return one (the cross-backend
+	// interface returns nothing), so Forward/ForwardN surface it — N-08.
+	resetErr      error
 	profBatchTime time.Duration
 	profSyncCalls uint64
 	profCalls     uint64
@@ -891,6 +924,25 @@ func (c *expertCache) admit(e uint32) (slot int, hit bool) {
 	return victim, false
 }
 
+// unadmit marks slot empty and forgets expert e, so the next admit(e) misses and re-uploads.
+//
+// N-09: admit commits the slot mapping BEFORE the DMA, which is what lets the caller batch a
+// whole layer's copies into one UploadBatch. If that upload fails, the cache is left claiming
+// expert e is resident in a slot that holds the EVICTED expert's bytes — and the next token to
+// route e gets hit=true, skips the DMA, and runs the wrong expert with no error anywhere.
+//
+// Rolled back to EMPTY rather than to the evicted expert: a failed batch may have completed some
+// of its copies, so the slot's contents are unknown. Claiming nothing costs one re-upload;
+// claiming the old expert would be the same bug with a different victim.
+func (c *expertCache) unadmit(slot int, e uint32) {
+	if c.inSlot[slot] == int32(e) {
+		c.inSlot[slot] = -1
+	}
+	if c.slotOf[e] == int32(slot) {
+		c.slotOf[e] = -1
+	}
+}
+
 // appendExpertSlot QUEUES one expert's weight+scales copy from the pinned host source into device
 // slot `slot`. It does not upload: loadRoutedExperts submits the layer's whole batch with a single
 // gpu.UploadBatch, so one synchronize covers every miss in the layer instead of two per miss.
@@ -972,11 +1024,16 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		}
 	}
 	r.expBatch = r.expBatch[:0] // reused across layers; the slice keeps its capacity
+	// N-09: every admit made in THIS call is provisional until the batch lands. On any error
+	// below they are rolled back, so a failed upload cannot leave the cache asserting residency
+	// for bytes that were never copied.
+	r.pendingAdmits = r.pendingAdmits[:0]
 	for j := 0; j < r.topK; j++ {
 		e := r.hostIdx[j]
 		slot, hit := c.admit(e)
 		r.hostSlot[j] = uint32(slot)
 		if !hit {
+			r.pendingAdmits = append(r.pendingAdmits, pendingAdmit{slot: slot, expert: e})
 			var td time.Time
 			if r.cacheProf {
 				r.profHost += time.Since(t0)
@@ -1000,6 +1057,7 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 			tb = time.Now()
 		}
 		if err := gpu.UploadBatch(r.expBatch); err != nil {
+			r.rollbackAdmits(c)
 			return err
 		}
 		if r.cacheProf {
@@ -1010,11 +1068,32 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		}
 	}
 	e := gpu.Upload(r.slotIdx, r.hostSlot[:r.topK])
+	if e != nil {
+		// The expert BYTES landed (UploadBatch succeeded above), so the cache's residency claim
+		// is true here — but the device's slot-index table is now unknown, and the cheap
+		// conservative move is to make the next call re-establish both. One redundant upload on
+		// an error path beats reasoning about a half-applied mapping (N-09).
+		r.rollbackAdmits(c)
+	}
 	if r.cacheProf {
 		r.profHost += time.Since(t0)
 		r.profCalls++
 	}
 	return e
+}
+
+// pendingAdmit is one provisional slot claim made by loadRoutedExperts before its DMA.
+type pendingAdmit struct {
+	slot   int
+	expert uint32
+}
+
+// rollbackAdmits undoes every admit made in the current loadRoutedExperts call (N-09).
+func (r *cudaResident) rollbackAdmits(c *expertCache) {
+	for _, p := range r.pendingAdmits {
+		c.unadmit(p.slot, p.expert)
+	}
+	r.pendingAdmits = r.pendingAdmits[:0]
 }
 
 // CacheProfForTest reports the C′ round-trip decomposition (stall / host / dma) and the call
@@ -1208,6 +1287,9 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 		// Fresh sequence: re-zero the compounding Gated-DeltaNet state so it does not carry over
 		// from a prior Generate on this *Model (audit C-01). No-op for every other family.
 		r.Reset()
+		if r.resetErr != nil {
+			return nil, r.resetErr // N-08: a failed re-zero decodes from the previous sequence
+		}
 	}
 	var out []float32
 	err := r.do(func() error {
@@ -1228,6 +1310,9 @@ func (r *cudaResident) ForwardNoLogits(embedding []float32, pos int) error {
 	}
 	if pos == 0 {
 		r.Reset() // prefill from 0 is also a fresh sequence — same reason as Forward
+		if r.resetErr != nil {
+			return r.resetErr // N-08
+		}
 	}
 	return r.do(func() error {
 		if e := r.launchToken(embedding, pos, false); e != nil {
@@ -1268,6 +1353,9 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	}
 	if startPos == 0 {
 		r.Reset() // fresh sequence — the recurrent state compounds and is not positional
+		if r.resetErr != nil {
+			return nil, r.resetErr // N-08
+		}
 	}
 	out := make([][]float32, len(embeddings))
 	err := r.do(func() error {
@@ -1314,7 +1402,13 @@ func (r *cudaResident) Reset() {
 	if r.dnet == nil {
 		return
 	}
-	_ = r.do(func() error { return r.resetState() })
+	// N-08: the error was dropped. Reset() satisfies the cross-backend ResidentForward interface
+	// and returns nothing, so it cannot be returned — but a failed re-zero is precisely C-01's
+	// shape with a silent failure mode: the next sequence decodes from the PREVIOUS one's
+	// recurrent state, and the state buffers being allocated zeroed means the first generation
+	// is correct either way, so nothing single-sequence can see it. Recorded and surfaced by the
+	// next Forward/ForwardN, which is the same shape gpu/residency.go uses (N-15).
+	r.resetErr = r.do(func() error { return r.resetState() })
 }
 
 // resetState is Reset's body WITHOUT the executor hop, for callers already running on the executor
@@ -1538,10 +1632,24 @@ func (r *cudaResident) describeLaunchErr(f Pipeline, e error) error {
 // capVec copies the first n elements of a device vector to host into dst[l] (diagnostic
 // sublayer capture — n is hidden for the o-proj/down contributions, qDim for the pre-o-proj
 // context). Runs on the executor thread inside launchToken, so it syncs before the readback.
+// N-08: both errors were dropped, and this feeds HiddenCapture() — so a failed sync or download
+// handed the caller a slice of ZEROS that is indistinguishable from a real capture. That is the
+// input a speculative drafter fuses from, and zeros are a plausible-looking vector.
+//
+// capVec cannot return an error (its callers are the capture hooks inside launchToken, which run
+// on the executor thread and have no error channel), so it records into setupErr — the same
+// field the build path uses — and leaves dst[l] nil rather than zero-filled. A nil row is
+// something the caller can notice; a zero row is not.
 func (r *cudaResident) capVec(src Buffer, dst [][]float32, l, n int) {
-	_ = r.stream.Sync()
+	if e := r.stream.Sync(); e != nil {
+		r.recordUpload(fmt.Errorf("cuda capVec: sync: %w", e))
+		return
+	}
 	h := make([]float32, n)
-	_ = gpu.Download(src, h)
+	if e := gpu.Download(src, h); e != nil {
+		r.recordUpload(fmt.Errorf("cuda capVec: download: %w", e))
+		return
+	}
 	dst[l] = h
 }
 
@@ -2325,7 +2433,21 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if Ly.window > 0 && nKeys > int(Ly.window) {
 			nWin = int(Ly.window)
 		}
-		if r.splitkvAttn && r.skScores != (Pipeline{}) && nWin >= r.splitkvMin(Ly.hd) {
+		// M-16: split-KV is REQUIRED, not merely preferred, once the single-block launch would
+		// exceed the device's shared-memory limit. The `r.splitkvAttn` env gate and the
+		// per-geometry perf threshold both describe when split-KV is FASTER; neither knows when
+		// the alternative cannot run at all. Without this, -ctx 16384 on a model whose geometry
+		// says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini) fails at position
+		// 12,160 — or silently drops to the sequential prefill.
+		mustSplit := splitKVRequired(nWin)
+		if mustSplit && (!r.splitkvAttn || r.skScores == (Pipeline{})) {
+			return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
+				"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
+				"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
+				singleBlockAttnShmemLimit,
+				map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
+		}
+		if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.hd)) {
 			// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
 			// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
 			// Gated PER LAYER on nWin (the EFFECTIVE attended span) against a per-geometry threshold, so

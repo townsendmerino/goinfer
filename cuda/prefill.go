@@ -352,7 +352,12 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 				SharedMemBytes: uint32((maxNWin + 128) * 4)},
 				Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
 				gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
-				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), ArgNull()); e != nil {
+				// N-10: r.sinkArg(l), not ArgNull(). The decode launches thread the gpt-oss
+				// learned sink through and this one hard-coded null — unreachable today only
+				// because every gpt-oss model is MoE and MoE declines batched prefill, which
+				// is a property of a DIFFERENT check and not something this call site should
+				// depend on.
+				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l)); e != nil {
 				return e
 			}
 			r.profToc(attnCat, t)

@@ -192,5 +192,38 @@ func (m *Model) verifyTheta() float64 {
 	if m.be == nil {
 		return defaultTheta
 	}
+	// M-14: ASK THE RESIDENT WHETHER ITS ForwardN IS ACTUALLY BATCHED, rather than trusting the
+	// backend name. thetaFor("cuda") returns 0.251 — a number measured on DENSE 0.5B/1.5B, where
+	// the batched pass runs. But cuda's ForwardN falls back to one `step` per row for every
+	// MoE / K=V / non-uniform / non-int4-or-int8 model (prefillStaticDecline), and a loop of
+	// single-token forwards has Theta ≈ 1 by construction — which is exactly what Metal
+	// measured (1.006-1.048) and why Metal's constant disables speculation.
+	//
+	// On a resident MoE (Qwen3-30B-A3B, GLM-4.5-Air — no sliding window, so specRollbackSafe
+	// admits them) the controller was told 0.251 and drafted 8, costing nine sequential steps
+	// per round for ~6.7 committed tokens at high acceptance, and worse below it.
+	//
+	// >= 1 disables speculation, which is the honest answer for a sequential verify: the same
+	// conclusion Metal reached, reached the same way.
+	// Scoped to residents that EXPLICITLY report their path (PrefillPathReporter), not to
+	// Model.PrefillPath(): that helper answers false for any resident which is not a Prefiller
+	// at all, which says nothing about ForwardN and would disable speculation on backends whose
+	// batched verify is fine. Only a resident that says "my batched pass declined" gets the
+	// override — today that is cudaResident, whose ForwardN falls back to the per-row loop under
+	// exactly the predicate it reports (prefillStaticDecline).
+	if pf, ok := m.resident.(Prefiller); ok {
+		if rep, ok := pf.(PrefillPathReporter); ok {
+			if batched, _ := rep.PrefillPath(); !batched {
+				return sequentialVerifyTheta
+			}
+		}
+	}
 	return thetaFor(m.be.Name())
 }
+
+// sequentialVerifyTheta is Theta for a resident whose ForwardN is a loop of single-token
+// forwards. Not measured per backend because it does not need to be: T(n) is n·T(1) by
+// construction, so the ratio is 1 plus whatever per-row overhead the loop adds. Metal MEASURED
+// exactly that shape (1.006-1.048 across four configurations, linear to n=16) and ships 1.02;
+// the same number is used here for the same reason.
+const sequentialVerifyTheta = 1.02
