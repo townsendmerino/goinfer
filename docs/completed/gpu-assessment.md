@@ -311,7 +311,40 @@ economics say small-vector glue belongs on CPU.
 
 §0's measurements were taken on an **RTX 2070 SUPER (448 GB/s GDDR6,
 Vulkan) vs a Ryzen 3700X (dual-ch DDR4-3200, ~51 GB/s peak / ~40 GB/s
-streaming)**. Roofline: the decode ceiling on this pair is **~8–10× CPU**.
+streaming)**.
+
+> **CORRECTION 2026-09-03 — the "~40 GB/s streaming" was an estimate and it is
+> ~30% high. Measured: ~30.5 GB/s.** This line was the only 3700X bandwidth anchor
+> either repo had, and aikit's `docs/task-simd-audit.md` cited it as an estimate
+> for want of anything better. It has now been measured on the idle box (480 MB
+> arrays past the 32 MB L3, pthread, best-of-5):
+>
+> | probe | 1 thread | 2 | 4 | 8 | 16 |
+> |---|--:|--:|--:|--:|--:|
+> | pure read (weights are read-only — the streaming figure) | 22.6 | **30.5** | 30.0 | 28.9 | 27.5 |
+> | STREAM triad (2R+1W, reported as 24 B/iter) | 19.4 | 21.2 | 20.6 | 19.8 | 19.3 |
+>
+> GB/s. **The "~51 GB/s peak" is correct** — that is the DDR4-3200 dual-channel
+> theoretical, and reads reach ~60% of it, which is unremarkable for Zen 2.
+>
+> Read is the right streaming anchor because weights are read-only; triad also
+> writes, and unless the store is non-temporal the line is fetched for ownership
+> first, so triad moves ~32 B of DRAM traffic per 24 B it reports. That reconciles
+> the two numbers (21.2 triad ≈ 28 GB/s actual ≈ the 30.5 read figure).
+>
+> **What it changes downstream:** Ollama's 27.6 GB/s of weights (P14) is ~90% of
+> the real read ceiling rather than ~69% of an imagined one — close to optimal, not
+> anomalous. And the box saturates read bandwidth at TWO threads, then declines, so
+> more decode workers cannot buy memory bandwidth here.
+>
+> **What it does NOT change:** §0.5's roofline conclusion below. A lower CPU
+> bandwidth makes the CPU side *slower*, so the GPU-vs-CPU ceiling this section
+> derives moves the same direction it already argued — the "software gap, not
+> physics" reading stands, with more room rather than less.
+>
+> (Unrelated, in case a reader greps: `docs/task-zeno-compare.md`'s "~40 GB/s at 6
+> workers" is a different quantity — aikit's W4A8 kernel throughput on the M1 Pro,
+> not this box's DRAM. Same number, no relation.) Roofline: the decode ceiling on this pair is **~8–10× CPU**.
 Measured 1.83× ⇒ the GPU GEMV path achieves ~60–90 GB/s effective of 448 —
 roughly 20% of the card. This is a software gap, not physics. Two
 artifact diagnoses:
