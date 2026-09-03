@@ -947,6 +947,8 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:319` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|constrain/constrain.go:153` | goinfer | `logits[id] = neg` |
 | `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `if len(m.eosIDs) > 0 {` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:50` | goinfer | `isEOS  []bool` |
+| `docs/audit-2026-09-02.md|constrain/constrain.go:52` | goinfer | `// plainOK marks ids that are unconditionally legal inside a JSON string and leave the` |
 | `docs/audit-2026-09-02.md|constrain/json.go:100` | goinfer | `func (g *jsonGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-02.md|constrain/json.go:84` | goinfer | `func (g *jsonGrammar) CanEnd() bool {` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:12` | goinfer | `// GrammarFromStruct derives a JSON Schema from a Go struct (via its json tags)` |
@@ -1227,6 +1229,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/session_test.go:217` | goinfer | `bad := append([]byte(nil), blob...)` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:177` | goinfer | `case "cuda":` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:82` | goinfer | `if a.Theta >= 1 {` |
+| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:25` | goinfer | `if sp.Temperature != 0 \|\| sp.LogitProcessor != nil {` |
 | `docs/audit-2026-09-02.md|decoder/spec_eagle.go:254` | goinfer | `feats = make([][]float32, len(ids))` |
 | `docs/audit-2026-09-02.md|decoder/spec_eagle.go:82` | goinfer | `feats[i] = fuseAt(i)` |
 | `docs/audit-2026-09-02.md|decoder/spec_hitrate_probe_test.go:40` | goinfer | `giw := os.Getenv("GOINFER_SPEC_PROBE_GIW")` |
