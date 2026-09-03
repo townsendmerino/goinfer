@@ -290,3 +290,61 @@ func TestGemma4_nestedArgumentsRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// N-37: no family had a `no_system` golden except mellum2, so the no-system shape — the one an
+// API request without a system message takes — was unpinned for every other family. Rendering
+// chatml.json's OWN chat_template with jinja2 shows why that matters: Qwen 2.5 inserts a
+// default system prompt when there is no system turn, and this renderer emits no system turn
+// at all.
+//
+// THE DIVERGENCE IS DELIBERATE AND STAYS. ChatML() is the generic ChatML renderer, shared with
+// families that are not Qwen and carry no such default; hard-coding Qwen's sentence would be
+// wrong for them. What was missing is not the behaviour but the PIN — so this asserts both
+// sides: goinfer emits no system turn, the upstream golden does, and they differ by exactly
+// that block. A change to either is then a test failure rather than a silent drift.
+func TestChatML_noSystem_documentedDivergence(t *testing.T) {
+	g := loadToolGoldenPlain(t, "chatml")
+	if g == nil {
+		return
+	}
+	want := goldenCase(g, "no_system")
+	if want == "" {
+		t.Fatal("chatml.json has no no_system case — it was added for N-37; removing it is not " +
+			"a way to pass this test")
+	}
+	got := ChatML().Render("", []Turn{{Role: "user", Content: "What is the capital of France?"}})
+
+	if got == want {
+		t.Fatalf("ChatML now matches Qwen's no-system rendering exactly. If that was intended, " +
+			"update chat.go's contract note and turn this into an equality assertion — but " +
+			"check first that the default system prompt is right for every family routed to " +
+			"ChatML(), not just Qwen.")
+	}
+	// The difference must be EXACTLY the default system block — not some other drift that
+	// happens to make them unequal.
+	const qwenDefault = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. " +
+		"You are a helpful assistant.<|im_end|>\n"
+	if !strings.HasPrefix(want, qwenDefault) {
+		t.Fatalf("the golden no longer opens with Qwen's default system block; this test's "+
+			"premise is gone:\n%q", want)
+	}
+	if rest := strings.TrimPrefix(want, qwenDefault); rest != got {
+		t.Errorf("ChatML differs from upstream by more than the default system block:\n"+
+			" ours: %q\nupstream minus the system block: %q", got, rest)
+	}
+}
+
+// loadToolGoldenPlain reads a non-tools golden (chatml.json, not tools_chatml.json).
+func loadToolGoldenPlain(t *testing.T, fam string) *toolGolden {
+	t.Helper()
+	raw, err := os.ReadFile("../testdata/chat_goldens/" + fam + ".json")
+	if err != nil {
+		t.Skipf("no golden for %s", fam)
+		return nil
+	}
+	var g toolGolden
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	return &g
+}

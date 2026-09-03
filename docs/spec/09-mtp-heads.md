@@ -25,7 +25,7 @@ written. Our own loader now contradicts it — we detect these heads, name them,
 | site | what it does |
 |---|---|
 | `decoder/gguf_qwen35.go:33` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
-| `decoder/gguf.go:639` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
+| `decoder/gguf.go:644` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
 | `decoder/weights.go:541` | "MTP heads (`mtp.*`) are simply never requested" |
 | `decoder/registry.go:1143` | `num_nextn_predict_layers` MTP head is dropped |
 
@@ -64,7 +64,7 @@ Four facts from the scan worth carrying forward:
 
 ## The binding constraint is the seam, not the checkpoints
 
-`decoder/forwardn.go:120`:
+`decoder/forwardn.go:123`:
 
 ```go
 func (m *Model) specRollbackSafe() bool {
@@ -96,7 +96,7 @@ different lists:
 | gate | refuses |
 |---|---|
 | `ForwardCapture` (`decoder/model.go:707`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
-| `specRollbackSafe` (`decoder/forwardn.go:120`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
+| `specRollbackSafe` (`decoder/forwardn.go:123`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
 
 **qwen35 passes the capture seam and is refused by rollback safety.** The cause is in the arch
 itself: `qwen35Architecture` sets `layerIsLinear: cfg.IsLinearLayer // Gated DeltaNet layers`, and

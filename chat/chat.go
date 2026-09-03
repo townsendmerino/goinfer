@@ -1,8 +1,23 @@
 // Package chat renders a conversation into the exact prompt string a model's
 // chat template expects — no Jinja engine. goinfer loads a handful of families
 // (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral); each has a small native Go
-// renderer here, byte-exact against HuggingFace's apply_chat_template (see the
+// renderer here, checked against HuggingFace's apply_chat_template (see the
 // testdata/chat_goldens fixtures).
+//
+// WHAT "BYTE-EXACT" COVERS, precisely (N-37 — the claim here used to be unqualified):
+//
+//   - The `sys_user` and `sys_multi` shapes are byte-exact for every family.
+//   - The NO-SYSTEM shape is byte-exact only where a family's template has no default system
+//     prompt. ChatML is the exception and it is DELIBERATE: Qwen 2.5's template inserts "You
+//     are Qwen, created by Alibaba Cloud…" when the conversation has no system turn, and this
+//     renderer emits no system turn at all. Adopting that string would be wrong — ChatML() is
+//     the GENERIC ChatML renderer, shared with families that are not Qwen and have no such
+//     default. The divergence is pinned by TestChatML_noSystem_documentedDivergence against a
+//     golden rendered from Qwen's own template, so it cannot drift unnoticed in either
+//     direction.
+//   - Tool rendering is byte-exact for GEMMA 4 ONLY, whose tool syntax is a micro-language the
+//     model parses. For the JSON families the embedded tool JSON's spacing follows Jinja's
+//     tojson and is checked structurally — see TestRenderTools_declarations (M-20).
 //
 // Detect picks the renderer from the GGUF/HF tokenizer.chat_template string
 // (fingerprinted against the known families); for a bare checkpoint with no

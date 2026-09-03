@@ -1588,7 +1588,7 @@ makes 34 unreachable. A9 ran **before A5 landed**, so no override was needed. Re
 at the new cap would simply pass and look like confirmation, leaving no trace of the loss.
 
 **P1 · KV re-gather and V re-transpose on every decode token** — **LANDED `97f824a`, 2026-08-15**.
-Was `decoder/forwardn.go:723` (retargeted 2026-08-24 after later edits shifted the line).
+Was `decoder/forwardn.go:735` (retargeted 2026-08-24 after later edits shifted the line).
 
 Was estimated ~10–15% of per-token traffic at 4k+ context — the largest single item in the group.
 

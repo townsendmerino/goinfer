@@ -16,7 +16,10 @@
 //     JIT'd on the target. This is the kernel WGSL structurally cannot express and
 //     the only real work of the spike.
 //
-// Build with `-tags cuda`. Until the box wires the real kernel + a gocudrv-backed
-// driver (Phase 2), BuildResident declines (ok=false) and the decoder falls back to
-// the staged/CPU path — blank-importing this package is safe and changes nothing.
+// Build with `-tags cuda`. BuildResident is live: it builds a resident forward when the driver
+// and the arch's features allow, and declines (ok=false) otherwise, in which case the decoder
+// falls back to the staged/CPU path. Blank-importing this package is safe either way.
+//
+// N-34: this described the Phase-2 state, in which BuildResident declined unconditionally
+// "until the box wires the real kernel". It has not been true since v0.10.
 package cuda

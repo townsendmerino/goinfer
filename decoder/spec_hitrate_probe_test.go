@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,7 +35,12 @@ func TestSpecHitRate(t *testing.T) {
 	if os.Getenv("GOINFER_SPEC_PROBE") == "" {
 		t.Skip("set GOINFER_SPEC_PROBE=1 to run the speculative hit-rate probe (loads the 26B, ~minutes)")
 	}
-	const giw = "/Users/francistownsend-merino/models/gemma4-26b-int4.giw"
+	// N-41: was a hardcoded /Users/<me>/ path — the last surviving dev-home path after G-06,
+	// so this probe could only ever run on one machine and silently did nothing anywhere else.
+	giw := os.Getenv("GOINFER_SPEC_PROBE_GIW")
+	if giw == "" {
+		giw = filepath.Join(os.Getenv("HOME"), "models", "gemma4-26b-int4.giw")
+	}
 	if _, err := os.Stat(giw); err != nil {
 		t.Skip("no .giw (26B) — this measurement needs the real MoE target")
 	}

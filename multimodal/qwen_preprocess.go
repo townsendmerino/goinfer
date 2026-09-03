@@ -21,9 +21,13 @@ import (
 // pixel budget), resize+rescale+CLIP-normalize, and the spatial-merge patchify
 // rearrange. The patchify order is HF-exact: patches sequence (block-row,
 // block-col, merge-row, merge-col), each patch's values (channel, temporal,
-// patch-row, patch-col). PIL-bicubic resize parity is a separate refinement — the
-// resize here is bilinear (a no-op when the image is already grid-aligned), so a
-// pre-sized image preprocesses bit-exactly (TestQwenPreprocess_exact).
+// patch-row, patch-col). The resize is BICUBIC (qwenBicubicU8, called at the resize site) and is
+// a no-op when the image is already grid-aligned, so a pre-sized image preprocesses bit-exactly
+// (TestQwenPreprocess_exact). It is tolerance-matched to PIL rather than bit-exact, because the
+// coefficients here are float where PIL's are fixed-point.
+//
+// N-34: this said "the resize here is bilinear" and described PIL-bicubic parity as a future
+// refinement, after the bicubic path had already landed.
 
 // QwenPreprocessConfig holds the Qwen2.5-VL image-processor parameters.
 type QwenPreprocessConfig struct {

@@ -278,10 +278,12 @@ not covered by `docs/api-tiers.md`. It is listed here because `go.work` and the 
 treat it as a module — `RELEASING.md` tags five, and a cross-module change that forgets it fails
 there rather than here.
 
-**You normally name only the root.** Its `go.mod` requires the other three at versions known
-to work with it, so `go get github.com/townsendmerino/goinfer` brings all four and a
-`-tags cuda` build resolves without further action. Naming a backend module explicitly is
-only needed to pin, vendor, or audit it:
+**You normally name only the root**, because the root alone is all a pure-Go build needs. Since
+the M-19 split its `go.mod` requires NONE of the backend modules — `go get
+github.com/townsendmerino/goinfer` brings the root only, and a `-tags cuda` build needs the cuda
+module named explicitly. (N-39/N-38: this used to say the root "requires the other three … so a
+`-tags cuda` build resolves without further action", which stopped being true when the requires
+were removed.) Name a backend module to build against it, or to pin, vendor, or audit it:
 
 ```bash
 go get github.com/townsendmerino/goinfer/cuda@latest

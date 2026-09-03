@@ -382,7 +382,11 @@ func (l *sessionLRU) save(dir string) error {
 		}
 		blob := s.Snapshot(l.fp)
 		if blob == nil {
-			continue // sliding-window (ring) cache: not yet persistable (Inc 3)
+			// Snapshot refuses RECURRENT state (Mamba-2 / DeltaNet / LFM2 conv / MLA latent),
+			// which cannot be restored from a KV blob. It used to refuse sliding-window rings
+			// too, and this line still said so — rings have been persistable since
+			// kvSnapVersion 2 (N-34).
+			continue
 		}
 		p := filepath.Join(dir, fmt.Sprintf("session-%02d%s", i, sessionSnapExt))
 		if err := os.WriteFile(p, blob, sessionFilePerm); err != nil {

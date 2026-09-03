@@ -50,9 +50,12 @@ import (
 // MoE IS *NOT* EXCLUDED, and that is deliberate: 66d0a05 removed the exclusion after measuring it
 // (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case this already ships, depth-matched,
 // 48/48 identical greedy continuation). --help still claims "REFUSED for MoE models at any
-// setting"; that text is STALE, not a description of a guard, and is corrected there. That exclusion used to exist only in --help and
-// in prose; with this flag defaulting ON it would otherwise apply to every MoE user who never
-// asked for it, so it is now enforced in code.
+// setting"; that text is STALE, not a description of a guard, and is corrected there.
+//
+// N-34: the sentence that used to end this paragraph — "so it is now enforced in code" — was
+// itself false. cpuFastAttention() below reads one env var and has no arch check; 82dda2a
+// removed the guard when 66d0a05's measurement made the exclusion unnecessary. Two comments
+// naming the same list, and both wrong, in opposite directions.
 func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") != "0" }
 
 // fastAttnMinPrompt is the prompt length below which f32 prefill attention is NOT used, even
@@ -278,6 +281,15 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// arithmetic, rather than at each caller: three call sites pass cpuFastAttention() and a
 	// fourth (speculative verify) passes false, so a per-caller guard would be three chances to
 	// forget and one already-correct site that looks the same.
+	// N-35: THE FLOOR KEYS ON K, THE SUFFIX LENGTH — not on attention work, which is K·nKeys.
+	// A warm 2048+128 suffix therefore does NOT take the fast path (K=128 < 512), even though
+	// it attends over the whole 2176-key prefix and is precisely the shape the divergence note
+	// above cites its 1.32x for. So that measurement describes a case this floor excludes.
+	//
+	// Left keyed on K deliberately rather than moved to K·nKeys: the divergence was measured at
+	// the shapes the floor admits, and re-keying would silently extend an accepted output
+	// change to short suffixes whose divergence nobody has measured. Changing it means
+	// measuring at that shape first, which is the audit's own first option.
 	if fastAttn && K < fastAttnMinPrompt {
 		fastAttn = false
 	}

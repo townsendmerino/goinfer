@@ -118,7 +118,7 @@ In this repo that's [`causalAttention`](../decoder/attention.go#L49-L167).
 "Causal" means each token may only look *backward*, never at future tokens (you
 can't peek at the answer you're trying to predict). The actual
 matching-and-blending kernel `causalAttention` calls is
-[`attendBatchedHeads`](../decoder/forwardn.go#L280).
+[`attendBatchedHeads`](../decoder/forwardn.go#L292).
 
 Two refinements you'll see in the code, worth knowing because they're everywhere
 in modern models:

@@ -85,7 +85,7 @@ Confirmed by reading the code, not the older docs:
   K, sp)`; greedy-only, vocab-matched draft/target, verify = one target pass over
   `[cur, draftTok...]`, greedy accept-prefix, exact-vs-plain-greedy gate
   (`TestSpeculativeGreedyParity`). The verify pass is `Model.forwardN`
-  (`decoder/forwardn.go:386`) — a batched M=K forward that **only exists on CPU**.
+  (`decoder/forwardn.go:398`) — a batched M=K forward that **only exists on CPU**.
 - **`residency.go` documents the exact reason spec-decode can't use the GPU:**
   "Session prefix-reuse and GenerateSpeculative drive a CPU-resident KVCache that
   the GPU-resident KV can't transparently share, so those requests fall back to
@@ -188,7 +188,7 @@ claimed number. The cost discipline: gate on a real E2E tok/s, kill if <1.3×.
 1. **`ForwardN(embeddings [][]float32, startPos int) ([][]float32, error)`** on
    `ResidentForward` / `gpu/decoderunner.go` — a batched M=K forward that appends K
    KV positions and returns K logit rows. This is the GPU analogue of
-   `Model.forwardN` (`decoder/forwardn.go:386`). It is genuinely new shader work:
+   `Model.forwardN` (`decoder/forwardn.go:398`). It is genuinely new shader work:
    the resident attention (`gpu/attention.go`, warp-per-head) is written for one
    query row; M=K needs K query rows against the resident K/V (a small GEMM-shaped
    attention, K≪context so still cheap). The MLP/gemv kernels already handle M>1

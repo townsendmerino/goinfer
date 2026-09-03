@@ -1,4 +1,15 @@
-# `flag-pair-moe-cache` — unblocked; re-derived against the corrected cap (2026-08-12)
+# `flag-pair-moe-cache` — SHIPPED (N-40)
+
+> **This note is a historical record, not open work.** `--moe-cache-experts` and
+> `--moe-cache-slots` are real `serve` flags today (see `internal/serveapp/main.go`). The note
+> was left at the root reading as an in-flight branch, which is what audit N-40 flagged: a
+> stale process artifact in the most visible place in the repo. Kept because the design read it
+> records is still the reference for the cap derivation; retitled so nobody picks it up as a
+> TODO.
+
+## Original title
+
+`flag-pair-moe-cache` — unblocked; re-derived against the corrected cap (2026-08-12)
 
 ## What is here
 

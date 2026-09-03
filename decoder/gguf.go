@@ -24,7 +24,12 @@ import (
 // archs — qwen/gemma — are left as-is, see ggufQKPermuted); and Gemma's (1+w)
 // norm offset, baked into the stored weights by llama.cpp, is subtracted back out.
 //
-// Architectures: llama, qwen2, qwen3, gemma3, mellum. Quant types: F32/F16,
+// Architectures: whatever decoder/registry.go's `registry` map carries (34 as of 2026-09-02 —
+// llama/mistral/mixtral/phi3, the qwen2/qwen3/qwen3_5 family, gemma3/gemma4, gpt2, gpt_oss,
+// cohere, deepseek_v2/v3, kimi_k2, glm4_moe, granitemoehybrid, nemotron_h, internlm2/3, laguna,
+// lfm2, llama4_text, mellum). NOT restated as a fixed list here: this comment carried five names
+// for long enough that it read as a limit rather than an example (N-34). Read the map.
+// Quant types: F32/F16,
 // Q8_0/Q4_0/Q5_0, the K-quants Q2_K/Q3_K/Q4_K/Q5_K/Q6_K, and IQ4_NL/IQ4_XS.
 
 // ggufConfig synthesizes a Config from GGUF metadata, dispatching on

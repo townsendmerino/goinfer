@@ -34,7 +34,8 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > than either speed or RAM.
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
-(Anthropic — see below), `/v1/models`;
+(Anthropic — see below), `/v1/models`, and `GET /health` — which is **auth-gated like every
+other route**, so a liveness probe must send the API key when one is configured (N-36);
 streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 `frequency_penalty`/`presence_penalty`/`stop`/`logprobs`); and **`response_format`**
 — `{"type":"json_schema", …}` or `{"type":"json_object"}` gives schema-constrained

@@ -61,8 +61,10 @@ for a given input IS, because callers pin prompts against it.
   `/v1/messages`, `/v1/messages/count_tokens`; `GET /v1/models`, `/health`. Request/response
   shapes follow the upstream OpenAI and Anthropic specs they implement — **their compatibility is
   the promise; our field ORDER and any extension fields are not.**
-- **Flags**: `-addr`, `-api-key`, `-tls-cert`, `-tls-key`, `-name`, `-quant`, `-backend`,
-  `-ctx-size`, `-max-inflight`, `-max-queue`, `-max-body-bytes`, `-kv-sessions`, `-session-dir`.
+- **Flags**: `-addr`, `-api-key`, `-tls-cert`, `-tls-key`, `-served-model-name`, `-quant`,
+  `-backend`, `-ctx`, `-max-inflight`, `-max-queue`, `-max-body-bytes`, `-kv-sessions`,
+  `-session-dir`. (N-39: this list named `-name` and `-ctx-size`, neither of which the binary
+  has — a Hard-tier contract naming flags that do not exist.)
   Removing or renaming one of these, or changing its default in a way that changes behaviour, is
   breaking.
 - `/admin/models/load` and `/admin/models/unload` are Hard **only in that `-allow-admin` gates

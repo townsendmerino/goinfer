@@ -745,7 +745,7 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:1144` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `cuda/backend.go:1149` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
 - `cuda/resident.go:274` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
@@ -898,7 +898,7 @@ of them:
 |---|---|
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
-| `decoder/forwardn.go:1047` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
+| `decoder/forwardn.go:1059` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
 | `decoder/model.go:733` | unchanged — same freeze |
 | `metal/model.go:1048` | unchanged — Metal is on hold for core-numerics surfaces |
 
@@ -1406,7 +1406,7 @@ needlessly dropping a field the buffered path wrote.
 
 **Fixed by testing the real thing:** `hasPopulatedLayers()` checks whether any body matmul weight
 actually has `Rows() > 0`, and `writeHeadGlobals` gates the label on that instead of on which
-writer is in use. `decoder/serialize.go:732` (`hasPopulatedLayers`).
+writer is in use. `decoder/serialize.go:737` (`hasPopulatedLayers`).
 
 **The other half mattered more than the byte count.** `quantLabel()`'s own "nothing matched" case
 returns `"native"` — a real, valid quant mode, not an empty string. Measured directly on an

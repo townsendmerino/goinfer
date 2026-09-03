@@ -454,9 +454,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hl.qb, hl.kb, hl.vb, hl.hasBias = lw.QBias, lw.KBias, lw.VBias, true
 		}
 		// Captured INDEPENDENTLY of QBias: the two travel together in Qwen2 but not in general —
-		// GPT-2 carries an o_proj bias, and gpt-oss carries one with no q/k/v bias at all, so
-		// folding this into the branch above would silently drop it for exactly the families
-		// FeatOutBias exists for.
+		// GPT-2 carries an o_proj bias with no q/k/v bias, so folding this into the branch above
+		// would silently drop it for exactly the families FeatOutBias exists for.
+		//
+		// N-34: this used to name gpt-oss as that example, saying it carries an o_proj bias
+		// "with no q/k/v bias at all". It does carry them — gptoss_safetensors.go loads q/k/v
+		// bias as REQUIRED (a missing one is an error) and decoder/testdata/gptoss_tiny.gguf
+		// holds attn_q/k/v.bias. The code was right and the comment wrong, which is the
+		// dangerous direction: it invited exactly the fold it warns against.
 		if lw.OBias != nil {
 			hl.ob, hl.hasOBias = lw.OBias, true
 		}

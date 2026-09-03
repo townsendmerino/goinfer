@@ -334,8 +334,9 @@ unobserved.
 
 ### D. Structural work, sequenced
 
-**D3 · Promote the expert-cache env vars to CLI flags** — `linux`, **re-derived `2d28358`; ready to
-rebase**
+**D3 · Promote the expert-cache env vars to CLI flags** — **SHIPPED.** `--moe-cache-experts` and
+`--moe-cache-slots` are real `serve` flags (internal/serveapp/main.go). This entry read "ready to
+rebase" months after the work landed (N-40).
 
 **This entry's own description was wrong at the source, not stale.** It read as a "parked flag-pair"
 with a workaround premise. `BRANCH-NOTE.md` says what it is: **an API-surface promotion** of

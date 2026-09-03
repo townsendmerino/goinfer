@@ -42,12 +42,59 @@ is grep-derivable and enumerated at the bottom.
 | `GOINFER_CUDA_NO_FUSE` | Disable CUDA kernel fusion (debug/A-B). |
 | `GOINFER_MLA_NAIVE` | Use the naive (un-optimized) MLA attention path. |
 
+## Prefill/MoE defaults (2026-08-31 → 09-01) — the four default-ON changes and their opt-outs
+
+**These four turned ON by operator decision and every one of them can change greedy output.** The
+only contract naming them used to be a CHANGELOG bullet (N-42). Each is a developer A/B handle
+rather than a user setting, and each is listed here because an operator who sees an output change
+after upgrading needs one place to look.
+
+| Var | Default | Opt out with | What it changes |
+|---|---|---|---|
+| `GOINFER_CPU_FAST_ATTENTION` | ON | `=0` | f32 prefill attention above a 512-token suffix. NOT split-invariant: a warm session's long suffix can differ in the last ulps from a cold prefill, which at temperature 0 can flip a near-tie. `serve` sets this from `--cpu-exact-prefill`. |
+| `GOINFER_FUSED_ATTENTION` | ON | `=0` | FlashAttention-style fused prefill schedule (P19). Re-associates the softmax denominator, so it is not bit-identical to the materialized path. |
+| `GOINFER_MOE_EXPERT_MAJOR` | ON | `=0` | Expert-major MoE MLP traversal (P18). |
+| `GOINFER_NO_OPTFWD` | (unset) | `=1` | Disables the optimistic-forward speculation gate. Same convention as `GOINFER_NO_GREEDY_FASTPATH`. `GOINFER_OPTFWD_MAX_TEMP` bounds the temperature at which it engages. |
+
+## Operator knobs not in the sections above
+
+| Var | Purpose |
+|---|---|
+| `GOINFER_NO_RESIDENT_MEM_GUARD` | Bypass Metal's resident memory guard — the only remedy the decline message prints. |
+| `GOINFER_SSM_RESIDENT` | Opt Granite/Nemotron SSM layers into the resident path. |
+| `GOINFER_SPLITKV_ATTN` | CUDA split-KV attention rollback knob (sibling of `GOINFER_SPLITKV_MIN_KEYS`). |
+| `GOINFER_MODELS` / `GOINFER_MODEL_TMP` | Model asset root / temp dir for downloads. |
+| `GOINFER_PREFILL_ATTN_WORKERS` / `GOINFER_ATTN_ROW_TILE` / `GOINFER_ATTN_KEYS` | Prefill attention fan-out, row tile, key count. |
+| `GOINFER_W4A8_SPLITHALF` | Select the split-half W4A8 kernel. |
+| `GOINFER_MOE_RESIDENCY` / `GOINFER_MOE_RESIDENCY_SCOPE` | Metal MoE residency mode and scope. |
+| `GOINFER_PRECISE_MATH` | Metal: precise (non-fast) math in generated shaders. |
+| `GOINFER_NO_RESIDENT_REUSE` | Disable resident-forward reuse across requests. |
+| `GOINFER_NVRTC_DIRS` | Extra directories to search for NVRTC when building CUDA kernels. |
+| `GOINFER_CUDA_GRAPHS_SYNC` | Force a synchronize around CUDA graph launches. |
+
+## Diagnostics and experiment knobs — NOT contract
+
+Listed so the registry is complete and `TestEnvVars_docAndCodeAgree` has somewhere to put things
+that are not operator-facing. These may change or disappear without notice:
+
+`GOINFER_A10_PROBE`, `GOINFER_DELTANET_TIMING`, `GOINFER_ROUTER_CAPTURE`,
+`GOINFER_MOE_PREFILL_SCRATCH`, `GOINFER_MOE_CACHE_PROF`,
+`GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`, `GOINFER_FAKEQUANT_PERROW`,
+`GOINFER_SSM_W8A16`, `GOINFER_SSM_F16MAMBA`, `GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
+`GOINFER_SSM_SKIPFFN`, `GOINFER_SSM_STOP_LAYER`.
+
+Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
+`GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_REQUIRE_FIXTURES`,
+`GOINFER_TEST_NOTHINK`, `GOINFER_SPEC_PROBE_GIW`.
+
 ## CUDA graphs (perf, opt-in)
 
 | Var | Purpose |
 |---|---|
 | `GOINFER_CUDA_GRAPHS` | Enable CUDA graph capture/replay on the static decode segments. |
-| `GOINFER_CUDA_GRAPHS_ONLY` / `_SYNC` / `_UNSAFE` | Graph-capture scope / sync / bounds-check-elision variants (investigation flags). |
+| `GOINFER_CUDA_GRAPHS_ONLY` | Restrict graph capture to a scope (investigation flag). |
+| `GOINFER_CUDA_GRAPHS_SYNC` | Force a synchronize around graph launches (investigation flag). |
+| `GOINFER_CUDA_GRAPHS_UNSAFE` | Bounds-check-elision variant. **It also BYPASSES THE TENANCY GATE** (`cuda/graphs_safe.go`), so it is not a pure performance switch — N-42. |
 
 ## Diagnostics, probes & parity debugging
 
@@ -58,7 +105,7 @@ is grep-derivable and enumerated at the bottom.
 | `GOINFER_MEM_PROBE` | RSS/heap attribution probe around the test suite. |
 | `GOINFER_FAKEQUANT` (`_ACT` / `_EXPERTS` / `_PERROW`) | Parity-debugging: simulate a quantization on the f32 path to isolate a numeric gap. |
 | `GOINFER_G4_CAPTURE` / `GOINFER_MOE_PROF_SPLIT` | Gemma-4 / MoE internal capture + profiling splits. |
-| `GOINFER_RESIDENT_DEBUG` | Print why `BuildResident` declined (module/device/arch). |
+
 
 ## CI & test gates
 
@@ -78,7 +125,14 @@ test when unset.
 
 ## The exhaustive list
 
-This registry is curated, not generated. To enumerate every variable the code reads:
+This registry is curated, not generated — but it is no longer allowed to drift from the code.
+`TestEnvVars_docAndCodeAgree` (decoder/envvars_registry_test.go) fails when a variable is read by
+non-test code and missing here, or documented here and referenced by no `.go` file at all. Both
+directions had drifted: 40 variables were missing (including the escape hatches for all four
+default-ON changes), one was documented while nothing in the tree read it, and three CUDA graph
+knobs were written as suffix shorthand so their full names never appeared at all (N-42).
+
+To enumerate every variable the code reads:
 
 ```sh
 grep -rhoE 'GOINFER_[A-Z0-9_]+' --include='*.go' . | sort -u

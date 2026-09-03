@@ -272,8 +272,13 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 // WITHOUT any dequant/requant. Big int8/int4 arrays are aliased into data
 // (zero-copy); float arrays are copied. data MUST stay alive for the returned
 // model's lifetime (the aliased slices point into it). On any magic/version/
-// quant/arch/CRC mismatch it returns a *SerializeError so the caller can fall
-// back to the GGUF.
+// quant/arch/CRC mismatch it returns a *SerializeError.
+//
+// N-34: that used to end "so the caller can fall back to the GGUF". No caller does —
+// decoder/model.go and internal/chatapp both return the error, the latter telling the operator
+// to rebuild the bundle or pass --model <gguf> themselves. The typed error is still worth having
+// (it distinguishes a corrupt bundle from an I/O failure); the fallback it promised was never
+// built.
 func LoadSerializedWeights(data []byte) (*Weights, error) {
 	r := &giwReader{data: data}
 	if got := r.rawN(len(giwMagic)); string(got) != giwMagic {

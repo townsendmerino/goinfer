@@ -19,6 +19,14 @@ type goldenFile struct {
 			Content string `json:"content"`
 		} `json:"messages"`
 		Rendered string `json:"rendered"`
+		// UpstreamOnly marks a case that records what the MODEL'S template produces where this
+		// renderer deliberately differs, rather than what this renderer must produce. Only
+		// chatml/no_system uses it today (N-37: Qwen 2.5 inserts a default system prompt; the
+		// generic ChatML renderer, shared with non-Qwen families, does not). The divergence is
+		// asserted in full by TestChatML_noSystem_documentedDivergence — this flag keeps the
+		// equality sweep below from failing on it, and is opt-in per case so it cannot quietly
+		// excuse a real regression.
+		UpstreamOnly bool `json:"upstream_only"`
 	} `json:"cases"`
 }
 
@@ -72,6 +80,9 @@ func TestRender_goldens(t *testing.T) {
 				} else {
 					turns = append(turns, Turn{Role: m.Role, Content: m.Content})
 				}
+			}
+			if c.UpstreamOnly {
+				continue // see UpstreamOnly's doc comment; asserted by its own test
 			}
 			got := ctor().Render(system, turns)
 			if got != c.Rendered {

@@ -33,12 +33,12 @@ exhausted (`vm.swapusage`: 5.35/6.14 GB used) before the kill. Output `.giw` was
 the process died before writing any real tensor data.
 
 **Mechanism, characterized (not fixed) per this doc's own house discipline:**
-`decoder.StreamTranscodeGGUF` (`decoder/gguf.go:1556-1562`) has an explicit carve-out:
+`decoder.StreamTranscodeGGUF` (`decoder/gguf.go:1561-1567`) has an explicit carve-out:
 
 > `// Dedicated-loader families (qwen35) can't stream; they fit resident.`
 > `if arch.qwen35 != nil { w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, nil, ""); ... }`
 
-and the streaming branch itself refuses the family outright (`decoder/gguf.go:1546-1548`):
+and the streaming branch itself refuses the family outright (`decoder/gguf.go:1551-1553`):
 
 > `if arch.qwen35 != nil || arch.gemma4 != nil { return nil, fmt.Errorf("...streaming transcode
 > unsupported for %s (load resident + prequant instead)", arch.Name) }`
@@ -130,7 +130,7 @@ bytes. P12's 2026-08-19 fix holds for this real streamed prequant checkpoint —
 gap's explanation**, closing the Phase 0 brief's last open item with a clean negative.
 
 **LM head: verified fast, by tracing the actual load call, not just reading the fix.** `embMat`
-(`decoder/gguf.go:1443`), the SAME shared closure used by every family including qwen35 for
+(`decoder/gguf.go:1448`), the SAME shared closure used by every family including qwen35 for
 `w.Embed`/`w.LMHead`, calls `quant.embeddingWith(embedInt4)` — the exact function the 2026-08-24
 W8A8 fix (`a11c56b`) changed to tag int4-mode embed/head `quantInt8I8` instead of weight-only
 `quantInt8`. Confirmed by tracing the call site this model's load actually goes through (the
@@ -889,7 +889,7 @@ scoping), a roadmap target regardless of any Zeno comparison.
 both call sites that currently hit the `sink=nil`/resident-fallback branch (`StreamTranscodeGGUF`'s
 own qwen35 carve-out, which both the general load path and `cmd/prequant` route through, per
 `internal/prequant/prequant.go:65-69`'s own comment — there is exactly one code path to fix, not
-two). gemma4 shares the same carve-out (`decoder/gguf.go:1556`) but is NOT in scope here — it fits
+two). gemma4 shares the same carve-out (`decoder/gguf.go:1561`) but is NOT in scope here — it fits
 resident on the boxes it's been run on; touch only the qwen35 branch unless a gemma4-specific
 gap surfaces independently.
 
