@@ -111,7 +111,7 @@ Why this fits goinfer specifically:
 | 10 | [Gating optimistic forward](./10-optfwd-gate.md) | Not a new drafter: when the SHIPPED optimistic-forward overlap should run. Measured unconditional-on, it wins up to 7.4% on large-vocab models and loses up to 6.8% on small ones, and no temperature constant fits both. | Low–Med (decision logic only) | Recovers ~6% on small-vocab sampled decode without giving up the large-vocab win | 📋 design (cut 2026-08-27), **awaiting sign-off — no code**; kill-gated on window-level variance |
 
 **WHO CANNOT SPECULATE AT ALL, before you design anything for them.** `specRollbackSafe`
-(`decoder/forwardn.go:123`) refuses whole families, and it gates EVERY scheme on this page plus the
+(`decoder/forwardn.go:146`) refuses whole families, and it gates EVERY scheme on this page plus the
 optimistic-forward overlap (10) — not one experiment:
 
 - **recurrent / gated-DeltaNet state** — granite, nemotron, **qwen35**. State is not
@@ -121,7 +121,25 @@ optimistic-forward overlap (10) — not one experiment:
   history and the lossless guarantee breaks. Refused unconditionally rather than per-path, because
   three of four speculative loops use the staged ring even when a resident backend is present.
 
-Both are LOSSLESSNESS constraints, not performance ones, so no measurement can argue past them. This
+**On CUDA two more reasons refuse a model before either of the above is reached**, and they are
+AVAILABILITY rather than losslessness — the verify cannot be built, so there is nothing to be
+lossless about (measured 2026-09-02, `docs/measurements/spec-x-pager-2026-09-02.md`):
+
+- **any MoE, for block-drafted speculation.** `cuda/prefill.go` declines the batched
+  weight-stationary path for `r.moe || r.gemma4Moe`, and `PrefillLastNArgmax` / `PrefillSeedArgmax`
+  reach `prefillCore` with NO sequential fallback — so the verify does not run slowly, it refuses.
+  The n-gram verify goes through `ForwardN`, which does fall back per-token, so where it is allowed
+  at all it runs unamortized rather than declining.
+- **MLA (DeepSeek-V2/V3, Moonlight, Kimi)** — no CUDA resident path at all
+  (`arch needs unimplemented feature(s) [mla]`), so they never reach a resident verify.
+
+The practical consequence, and the reason this matters beyond bookkeeping: **on CUDA the set of
+models that both need the MoE expert pager and may speculate is currently empty.** Anything large
+enough to need expert streaming is refused by one of these four. A `--drafter` passed to such a model
+starts cleanly and then declines every request into plain decode, because `BlockSpecCapable()` tests
+only for the host interface and not for a usable verify.
+
+Both of the first two are LOSSLESSNESS constraints, not performance ones, so no measurement can argue past them. This
 is why Gemma-3 could not serve as 10's third model despite being the obvious different-family
 large-vocab candidate — worth knowing before picking a family for an experiment, since the
 alternative is discovering it after the checkpoint is downloaded.

@@ -238,6 +238,18 @@ type StateCheckpoint interface {
 type Restorer interface{ RestoreTo(prefixLen int) }
 ```
 
+### 6a. Availability on CUDA — see the README
+
+Which families cannot speculate at all, and why, lives in ONE place:
+[README.md](./README.md), under "WHO CANNOT SPECULATE AT ALL". It now covers the two CUDA-specific reasons
+(the MoE batched-verify decline, and MLA having no resident path) alongside the recurrent and
+sliding-window refusals §6 above describes.
+
+A second list here would be a list the code also maintains — the duplication that produced the LFM2
+cluster, one layer up. The durable form is neither list: `serve` check printing
+`speculation: declined (MoE, batched verify unavailable on cuda)` from `specRollbackSafe` and
+`PrefillPath()`, so the statement cannot drift from the runtime.
+
 ## 7. The benchmark / instrumentation harness
 
 One harness, shared by every spoke, so numbers are comparable.

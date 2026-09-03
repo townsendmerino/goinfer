@@ -175,6 +175,50 @@ avoid. Worth a scoping pass of its own before any code, not a quick add-on to le
 **Priority: low for now** — track it, don't start it, until leads 1–2 land and there's
 a clearer read on how much headroom is actually left on the table.
 
+### Pre-registered risk: Lead 5 and the speculation program may be antagonistic
+
+**Nobody had written down that these two collide, and they do.** Lead 5 and the spec
+program (`docs/spec/`) are planned independently; this note exists so a hybrid design
+starts with the constraint rather than discovering it.
+
+Measured 2026-09-02 (`docs/measurements/spec-x-pager-2026-09-02.md`, pre-registered;
+prompted by a field report of a hybrid-split 176B MoE whose throughput collapsed when
+drafting was enabled — that report is the origin of the question and no number from it is
+used). The finding on the paths that exist today:
+
+- **The reported mechanism does not occur here.** A width-K verify does not present K
+  positions' routing to the pager at once, so it cannot overflow a slot budget tuned on
+  decode traffic. The pager's demand instrument reads exactly topK distinct experts per
+  staging event in every configuration, and the behaviour is identical at 16/32/64
+  slots/layer.
+- **It cannot occur, for a more basic reason: on CUDA nothing that needs the pager is
+  allowed to speculate at all.** Four independent gates (MoE batched-verify decline,
+  recurrent-rollback refusal, windowed-rollback refusal, and MLA having no CUDA resident
+  path) between them refuse every model large enough to need expert streaming. The
+  intersection is empty.
+
+**What that means for Lead 5 specifically, and it is not "no risk".** The absence of the
+effect today is an artifact of speculation being unavailable, not of the two mechanisms
+being compatible. Lead 5 would change exactly the terms that produce the absence:
+
+1. A CPU/GPU split needs host-visible routing, which is the "ARCHITECTURAL COST" already on
+   record in `task-moe-streaming.md` §C′ — and a host-visible router is also the thing that
+   would let a batched MoE verify exist. Building one removes the first gate, and the
+   pager-thrash question then becomes live for the first time, **untested**, because it has
+   never been possible to test it.
+2. `thetaFor` (`decoder/spec_adaptive.go`) keys the adaptive controller's cost constant on
+   BACKEND NAME, not on whether the verify is actually batched. A MoE on CUDA already gets
+   0.251 — measured on dense targets — while its verify is a per-token loop. That is
+   currently harmless only because the gates fire first. Any Lead 5 that enables speculation
+   on a split-execution MoE inherits a cost model calibrated on the wrong arch class, and
+   the error direction is over-drafting.
+
+**So: if Lead 5 proceeds, it must pre-register both questions before the first number** —
+whether speculation has to be disabled under split execution, and whether the slot budget
+must be renegotiated per verify width. `cuda/spec_pager_interaction_test.go` and the demand
+instrument (`PagerStageStatsForTest`) are in place to answer them; they currently report a
+refusal, which is the right answer for today and the wrong one to carry forward.
+
 ---
 
 ## Revisit, don't "fix": GPU-resident models skip session/prefix reuse
