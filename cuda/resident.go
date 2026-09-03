@@ -1047,36 +1047,29 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 			}
 		}
 	}
-	// One synchronize for every miss in this layer. All destinations are slot buffers on the one
-	// resident context, so UploadBatch's mixed-context refusal should never fire here — if it does,
-	// something about the layer's buffers is not what this code believes.
-	if len(r.expBatch) > 0 {
-		var tb time.Time
-		if r.cacheProf {
-			r.profHost += time.Since(t0)
-			tb = time.Now()
-		}
-		if err := gpu.UploadBatch(r.expBatch); err != nil {
-			r.rollbackAdmits(c)
-			return err
-		}
-		if r.cacheProf {
-			r.profBatchTime += time.Since(tb)
-			r.profSyncCalls++
-			r.profDMA += time.Since(tb)
-			t0 = time.Now()
-		}
+	// One synchronize for the WHOLE layer: every expert-slot miss plus the per-token slot-index
+	// upload the GEMV reads this round's routing from, folded into the SAME batch (P-21). This
+	// used to be two separate calls — UploadBatch for the misses, then a lone gpu.Upload for
+	// slotIdx — each paying its own synchronize; slotIdx is always present (hit or miss) and
+	// tiny, so there was nothing to gain from keeping it apart. All destinations are slot buffers
+	// on the one resident context, so UploadBatch's mixed-context refusal should never fire here
+	// — if it does, something about the layer's buffers is not what this code believes.
+	r.expBatch = append(r.expBatch, gpu.HostCopy{Dst: r.slotIdx, Src: u32bytes(r.hostSlot[:r.topK])})
+	var tb time.Time
+	if r.cacheProf {
+		r.profHost += time.Since(t0)
+		tb = time.Now()
 	}
-	e := gpu.Upload(r.slotIdx, r.hostSlot[:r.topK])
+	e := gpu.UploadBatch(r.expBatch)
 	if e != nil {
-		// The expert BYTES landed (UploadBatch succeeded above), so the cache's residency claim
-		// is true here — but the device's slot-index table is now unknown, and the cheap
-		// conservative move is to make the next call re-establish both. One redundant upload on
-		// an error path beats reasoning about a half-applied mapping (N-09).
+		// The expert bytes and/or the slot-index table may be partially applied — the cheap
+		// conservative move is to make the next call re-establish both (N-09).
 		r.rollbackAdmits(c)
 	}
 	if r.cacheProf {
-		r.profHost += time.Since(t0)
+		r.profBatchTime += time.Since(tb)
+		r.profSyncCalls++
+		r.profDMA += time.Since(tb)
 		r.profCalls++
 	}
 	return e

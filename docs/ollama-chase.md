@@ -1548,7 +1548,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
   speculation). cuda/metal not frozen.
-- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1461) runs the selected experts
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1454) runs the selected experts
   sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
   association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
   against the added scratch VRAM.

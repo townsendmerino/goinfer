@@ -23,10 +23,10 @@ reason is a complete, successful outcome — not a failure to push past.
 ### Which kernels
 
 Decode's dense per-token projections dispatch through the `gemv_w4a8_sa` family
-(`metal/kernels.go:301-327`, wired at `metal/model.go:462`, called at `metal/model.go:1335,
-1077, 1096, 1130, 1139, 1143, 1196, 1268, 1292, 1314, 1318` for QKV/O-proj/gate-up), plus
+(`metal/kernels.go:301-327`, wired at `metal/model.go:462`, called at `metal/model.go:1352,
+1082, 1101, 1135, 1144, 1148, 1213, 1285, 1309, 1331, 1335` for QKV/O-proj/gate-up), plus
 `gemv_w4a8_coal` (`metal/kernels.go:237-211`, wired at `metal/model.go:460`, called at
-`metal/model.go:1364, 1387` for the down-projection). Both share the identical numeric structure
+`metal/model.go:1381, 1404` for the down-projection). Both share the identical numeric structure
 below — `gemv_w4a8_sa`'s `SA_BODY` macro (`metal/kernels.go:287-252`) and `gemv_w4a8_coal`'s
 `W4A8_BODY` macro (`metal/kernels.go:220-186`) differ only in memory-access pattern (uint4-staged
 vs per-word), not in arithmetic order or precision. This is decode's real, shipped contract for

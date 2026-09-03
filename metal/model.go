@@ -892,7 +892,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// is N × MoE-layers × per-expert-bytes (≈3 GB at N=32), PERMANENTLY requested resident; re-measure
 	// the win if N grows or the box is under other load. Capability-gated (macOS 15+); older OSes keep
 	// the correct, slower per-submit path.
-	if r.g4moe != nil && r.g4moe.paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
+	//
+	// P-22: this used to gate on g4moe alone, so a generic paged-MoE model (moe.go's path — same
+	// per-commit re-validation cost, same pread-invalidated slot buffers) never got a residency set
+	// built at all, regardless of what slotBuffers() enumerated.
+	paged := (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged)
+	if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
 		rs, rerr := d.NewResidencySet()
 		if rerr != nil {
 			fmt.Fprintf(os.Stderr, "metal: residency set unavailable (%v) — per-submit validation stands\n", rerr)
@@ -1150,10 +1155,22 @@ func (r *resident) stopExec() {
 
 // slotBuffers returns the paged MoE slot-pool buffers — GPU-READ-ONLY (phase 2 reads them; the pread
 // stage CPU-writes their contents). Safe to pin resident.
+//
+// P-22: previously enumerated only g4moe's pool, leaving every OTHER paged-MoE family (Mixtral/
+// Qwen/GLM/gpt-oss/qwen3_5_moe/qwen3_next — moe.go's generic path, "same mechanism, same
+// expertPool" per its own doc comment) unpinned and paying the full per-commit re-validation cost
+// the residency set exists to remove. Both pools hold the identical buffer category the five-arm
+// bisect (buildResident, above) found the win in — pread-invalidated slot buffers — so this
+// extends the SAME category to a second architecture family rather than adding a new one.
 func (r *resident) slotBuffers() []Buffer {
 	var out []Buffer
 	for l := range r.layers {
 		if p := r.layers[l].g4moe; p != nil && p.pool != nil {
+			for s := range p.pool.slots {
+				out = append(out, p.pool.slots[s].guW, p.pool.slots[s].guS, p.pool.slots[s].dW, p.pool.slots[s].dS)
+			}
+		}
+		if p := r.layers[l].moe; p != nil && p.pool != nil {
 			for s := range p.pool.slots {
 				out = append(out, p.pool.slots[s].guW, p.pool.slots[s].guS, p.pool.slots[s].dW, p.pool.slots[s].dS)
 			}
