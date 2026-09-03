@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"math"
+	"math/rand"
+	"sort"
 	"testing"
 )
 
@@ -112,5 +114,72 @@ func TestSampler_logprobs(t *testing.T) {
 		if info.Top[i].Logprob > info.Top[i-1].Logprob {
 			t.Errorf("Top not descending at %d: %v > %v", i, info.Top[i].Logprob, info.Top[i-1].Logprob)
 		}
+	}
+}
+
+// referenceTopLogprobs is the pre-P-13 full-sort implementation, kept only here as
+// an independent oracle: build every (id, prob) pair and sort all of them, rather
+// than computeLogprobs' topKByLogit shortcut.
+func referenceTopLogprobs(probs []float64, topN int) []TokenLogprob {
+	type ip struct {
+		id int
+		p  float64
+	}
+	ips := make([]ip, len(probs))
+	for i, p := range probs {
+		ips[i] = ip{i, p}
+	}
+	sort.SliceStable(ips, func(a, b int) bool {
+		if ips[a].p != ips[b].p {
+			return ips[a].p > ips[b].p
+		}
+		return ips[a].id < ips[b].id // matches topKByLogit's smaller-id-wins tie-break
+	})
+	if topN > len(ips) {
+		topN = len(ips)
+	}
+	out := make([]TokenLogprob, topN)
+	for i := range out {
+		out[i] = TokenLogprob{ID: ips[i].id, Logprob: math.Log(ips[i].p)}
+	}
+	return out
+}
+
+// TestComputeLogprobs_matchesFullSort is the P-13 gate: computeLogprobs' topKByLogit
+// shortcut (O(V·log N)) must return exactly the same (id, logprob) pairs, in the same
+// order, as a full O(V·log V) sort — across random logits, a range of topN including
+// topN >= vocab, and a deliberate tie.
+func TestComputeLogprobs_matchesFullSort(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	for trial := 0; trial < 50; trial++ {
+		n := 4 + rng.Intn(200)
+		logits := make([]float32, n)
+		for i := range logits {
+			logits[i] = float32(rng.NormFloat64() * 5)
+		}
+		for _, topN := range []int{1, 3, n / 2, n, n + 5} {
+			probs := softmaxStable(logits, 1)
+			_, got := computeLogprobs(logits, 0, 1, topN)
+			want := referenceTopLogprobs(probs, topN)
+			if len(got) != len(want) {
+				t.Fatalf("trial %d topN=%d: len(got)=%d, want %d", trial, topN, len(got), len(want))
+			}
+			for i := range want {
+				if got[i].ID != want[i].ID {
+					t.Fatalf("trial %d topN=%d idx %d: ID = %d, want %d (n=%d)", trial, topN, i, got[i].ID, want[i].ID, n)
+				}
+				if math.Abs(got[i].Logprob-want[i].Logprob) > 1e-12 {
+					t.Fatalf("trial %d topN=%d idx %d: Logprob = %v, want %v", trial, topN, i, got[i].Logprob, want[i].Logprob)
+				}
+			}
+		}
+	}
+
+	// A deliberate tie: ids 1 and 3 share the highest logit. Both the reference and
+	// the fix must resolve it toward the smaller id.
+	logits := []float32{0, 5, 1, 5, 2}
+	_, got := computeLogprobs(logits, 0, 1, 2)
+	if got[0].ID != 1 || got[1].ID != 3 {
+		t.Fatalf("tie-break: got IDs [%d %d], want [1 3] (smaller id wins a logit tie)", got[0].ID, got[1].ID)
 	}
 }

@@ -1191,10 +1191,10 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/sampler.go:149` | goinfer | `// `top_p` / `min_p` at any value are safe alongside it: both cuts clamp at ≥1 retained ` |
 | `docs/audit-2026-09-02.md|decoder/sampler.go:286` | goinfer | `func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {` |
 | `docs/audit-2026-09-02.md|decoder/sampler.go:315` | goinfer | `func computeLogprobs(logits []float32, chosen int, temperature float64, topN int) (float` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:371` | goinfer | `return lastWithMass(probs, 0, len(probs))` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:470` | goinfer | `if topPActive {` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:483` | goinfer | `case minP > 0:` |
-| `docs/audit-2026-09-02.md|decoder/sampler.go:585` | goinfer | `func topKByLogit(logits []float32, k int) []int {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:380` | goinfer | `return lastWithMass(probs, 0, len(probs))` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:479` | goinfer | `if topPActive {` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:492` | goinfer | `case minP > 0:` |
+| `docs/audit-2026-09-02.md|decoder/sampler.go:594` | goinfer | `func topKByLogit(logits []float32, k int) []int {` |
 | `docs/audit-2026-09-02.md|decoder/sampler_chunked.go:110` | goinfer | `func forEachChunk(n int, fn func(c, lo, hi int)) {` |
 | `docs/audit-2026-09-02.md|decoder/sampler_chunked.go:159` | goinfer | `return lastWithMass(e, lo, hi) // N-02: not hi-1, which is often a masked token` |
 | `docs/audit-2026-09-02.md|decoder/sampler_selection_test.go:296` | goinfer | `// RE-BOUNDED after P2b (2026-08-09). This gate compares temp+top_p against temp-only, a` |

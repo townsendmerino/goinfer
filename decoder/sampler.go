@@ -322,17 +322,26 @@ func computeLogprobs(logits []float32, chosen int, temperature float64, topN int
 	if topN <= 0 {
 		return lp, nil
 	}
-	ips := make([]indexedProb, len(probs))
-	for i, p := range probs {
-		ips[i] = indexedProb{id: i, p: p}
+	if topN > len(probs) {
+		topN = len(probs)
 	}
-	sort.Slice(ips, func(a, b int) bool { return ips[a].p > ips[b].p })
-	if topN > len(ips) {
-		topN = len(ips)
-	}
+	// P-13: topKByLogit finds the top-N indices in O(V·log N) instead of a full
+	// O(V·log V) sort of every id. Ranking by logit agrees with ranking by prob
+	// (softmax is strictly monotone in the logit at a fixed positive temperature),
+	// so the index set is identical; only the N-element result needs a final sort.
+	// Its deterministic ties-toward-smaller-id also replaces sort.Slice's
+	// unspecified tie order (Go's sort.Slice is not required to be stable) with a
+	// reproducible one.
+	idx := topKByLogit(logits, topN)
+	sort.Slice(idx, func(a, b int) bool {
+		if probs[idx[a]] != probs[idx[b]] {
+			return probs[idx[a]] > probs[idx[b]]
+		}
+		return idx[a] < idx[b] // deterministic: smaller id wins a tie, matching topKByLogit's own convention
+	})
 	top := make([]TokenLogprob, topN)
-	for i := range top {
-		top[i] = TokenLogprob{ID: ips[i].id, Logprob: math.Log(ips[i].p)}
+	for i, id := range idx {
+		top[i] = TokenLogprob{ID: id, Logprob: math.Log(probs[id])}
 	}
 	return lp, top
 }
