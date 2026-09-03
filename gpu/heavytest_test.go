@@ -17,7 +17,10 @@ import (
 // and thrashing, never finishing. The asset happening to be on disk is not a request to run a
 // multi-GB test. The per-test os.Stat skip stays as a second guard, so opting in on a bare box is
 // still harmless.
-func requireHeavyModel(t *testing.T) {
+// requireHeavyModel takes testing.TB so the measurement harnesses can be Benchmarks (G-10):
+// they report numbers and assert nothing, and shipping them as Test* made a green suite include
+// a PASS that proves nothing about the win they map.
+func requireHeavyModel(t testing.TB) {
 	t.Helper()
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")

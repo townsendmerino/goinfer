@@ -15,9 +15,12 @@ import (
 // directly so the resident load is a straight CreateBufferInit (PCIe ~<1 s for 7 GB). This
 // extrapolates the per-pass cost to Mellum2's ~12 B params to confirm the lever before
 // building it. Not an assertion — it logs ms; run with -v.
-func TestResidentPackCost(t *testing.T) {
+// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*
+// its green said only that the harness ran — not that the effect it maps is there.
+// Go runs a benchmark this slow exactly once (N=1 already exceeds benchtime).
+func BenchmarkResidentPackCost(b *testing.B) {
 	if testing.Short() {
-		t.Skip("pack-cost measurement")
+		b.Skip("pack-cost measurement")
 	}
 	// A representative slab: 256M params (≈ a couple of Mellum2 expert projections), then
 	// extrapolate to ~12 B. K multiple of 32 (W4A8 group).
@@ -62,8 +65,8 @@ func TestResidentPackCost(t *testing.T) {
 	scaleMs := time.Since(t0).Seconds() * 1000
 
 	perB := (unpackMs + packMs + scaleMs) / float64(params) * 1e9 // ms per 1e9 params
-	t.Logf("int4 CPU pack for %dM params: unpack %.0f ms + packNibbles %.0f ms + scales %.0f ms = %.0f ms total",
+	b.Logf("int4 CPU pack for %dM params: unpack %.0f ms + packNibbles %.0f ms + scales %.0f ms = %.0f ms total",
 		params/1e6, unpackMs, packMs, scaleMs, unpackMs+packMs+scaleMs)
-	t.Logf("→ %.1f ms / 1e9 params  ⇒  ~%.0f s extrapolated to Mellum2's ~12 B params (the per-launch CPU shuffle a GPU-layout .giw removes)",
+	b.Logf("→ %.1f ms / 1e9 params  ⇒  ~%.0f s extrapolated to Mellum2's ~12 B params (the per-launch CPU shuffle a GPU-layout .giw removes)",
 		perB, perB*12/1000)
 }

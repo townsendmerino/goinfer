@@ -26,11 +26,16 @@ func TestTokenText_reconstructs(t *testing.T) {
 		"Hello, world!", `{"name": "Ada", "age": 36, "tags": ["x", "y"]}`,
 		"café 🦄 \t newline\n", "  spaced  ", "12345 -0.5e+10",
 	}
+	// G-10: EXERCISED cases are counted, and zero of them is a SKIP rather than a PASS. Every
+	// case is fixture-gated, so on a checkout without them this loop did nothing at all and the
+	// test still printed PASS — a green that proves the reconstruction property holds nowhere.
+	exercised := 0
 	for _, c := range cases {
 		if _, err := os.Stat(c.dir); errors.Is(err, fs.ErrNotExist) {
 			t.Logf("skip %s (absent)", c.dir)
 			continue
 		}
+		exercised++
 		tk, err := Load(c.dir)
 		if err != nil {
 			t.Fatalf("Load(%s): %v", c.dir, err)
@@ -59,4 +64,9 @@ func TestTokenText_reconstructs(t *testing.T) {
 			}
 		}
 	}
+	if exercised == 0 {
+		t.Skip("no tokenizer fixture present — TokenText reconstruction was checked on nothing; " +
+			"this is a SKIP, not a pass (G-10)")
+	}
+	t.Logf("TokenText reconstruction verified on %d tokenizer(s)", exercised)
 }

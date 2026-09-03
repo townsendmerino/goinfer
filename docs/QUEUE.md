@@ -1024,7 +1024,7 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/theta_probe_test.go:49` | goinfer | `for _, mdl := range []string{` |
 | `docs/audit-2026-09-02.md|decoder/a3_fanout_test.go:190` | goinfer | `func TestAttendF32Fanout_bitIdentical(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|decoder/a3_moe_exclusion_test.go:15` | goinfer | `// forwardn.go excludes MoE from --cpu-fast-attention unconditionally, on a stated` |
-| `docs/audit-2026-09-02.md|decoder/api_tiers_test.go:66` | goinfer | `bare := name` |
+| `docs/audit-2026-09-02.md|decoder/api_tiers_test.go:67` | goinfer | `bare := name` |
 | `docs/audit-2026-09-02.md|decoder/arch.go:559` | goinfer | `func (a *Architecture) finalizeRoPE() {` |
 | `docs/audit-2026-09-02.md|decoder/assets.go:49` | goinfer | `if m := os.Getenv("GOINFER_MODELS"); m != "" {` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:11` | goinfer | `func addBias(x, b []float32) {` |
@@ -1243,7 +1243,7 @@ supports.
 | `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:396` | goinfer | `flush := func(final bool) {` |
 | `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:488` | goinfer | `return constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWh` |
 | `docs/audit-2026-09-02.md|gpu/attention.go:961` | goinfer | `func (c *Context) ensureAttnWide() error {` |
-| `docs/audit-2026-09-02.md|gpu/decode_staged_prize_test.go:23` | goinfer | `func TestDecodeStaged_prize(t *testing.T) {` |
+| `docs/audit-2026-09-02.md|gpu/decode_staged_prize_test.go:23` | goinfer | `// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:1153` | goinfer | `fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:1207` | goinfer | `func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []fl` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:1274` | goinfer | `enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))` |
@@ -1259,7 +1259,7 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:25` | goinfer | `@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] in` |
 | `docs/audit-2026-09-02.md|gpu/gemv_w8a16.go:21` | goinfer | `@group(0) @binding(0) var<storage, read>       act:     array<f32>;        // [kp] f32 a` |
 | `docs/audit-2026-09-02.md|gpu/gpu.go:51` | goinfer | `// not. Not safe for concurrent use by multiple goroutines; wrap in your` |
-| `docs/audit-2026-09-02.md|gpu/kv_longctx_test.go:24` | goinfer | `func TestKVLongCtx(t *testing.T) {` |
+| `docs/audit-2026-09-02.md|gpu/kv_longctx_test.go:24` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-02.md|gpu/mamba_f16.go:34` | goinfer | `func f32ToF16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|gpu/moe.go:25` | goinfer | `const MAXE: u32 = 512u;` |
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8.go:146` | goinfer | `func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32, nE, N,` |
@@ -1276,7 +1276,7 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/residency.go:954` | goinfer | `func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:975` | goinfer | `func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, ` |
 | `docs/audit-2026-09-02.md|gpu/residency_c01_reset_test.go:24` | goinfer | `requireHeavyModel(t)` |
-| `docs/audit-2026-09-02.md|gpu/resident_pack_bench_test.go:18` | goinfer | `func TestResidentPackCost(t *testing.T) {` |
+| `docs/audit-2026-09-02.md|gpu/resident_pack_bench_test.go:21` | goinfer | `func BenchmarkResidentPackCost(b *testing.B) {` |
 | `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |
 | `docs/audit-2026-09-02.md|gpu/vision.go:52` | goinfer | `let mean = smean[0] / f32(p.h);` |
 | `docs/audit-2026-09-02.md|gpu/vision_encoder.go:202` | goinfer | `for head := range nH {` |
@@ -1437,7 +1437,7 @@ supports.
 | `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:466` | goinfer | `if t.mode == modeByteLevel {` |
 | `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:752` | goinfer | `func (t *Tokenizer) Decode(ids []int) (string, error) {` |
 | `docs/audit-2026-09-02.md|tokenizer/sentencepiece_test.go:51` | goinfer | `//	.venv/bin/python scripts/pin_gemma_tokenizer.py` |
-| `docs/audit-2026-09-02.md|tokenizer/tokentext_test.go:30` | goinfer | `if _, err := os.Stat(c.dir); errors.Is(err, fs.ErrNotExist) {` |
+| `docs/audit-2026-09-02.md|tokenizer/tokentext_test.go:34` | goinfer | `if _, err := os.Stat(c.dir); errors.Is(err, fs.ErrNotExist) {` |
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |

@@ -21,18 +21,22 @@ import (
 // model load per precision, reused across depths.
 //
 //	go test -tags gpu -run TestKVLongCtx -v -timeout 5400s
-func TestKVLongCtx(t *testing.T) {
-	requireHeavyModel(t)
+//
+// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*
+// its green said only that the harness ran — not that the effect it maps is there.
+// Go runs a benchmark this slow exactly once (N=1 already exceeds benchtime).
+func BenchmarkKVLongCtx(b *testing.B) {
+	requireHeavyModel(b)
 	path := os.Getenv("GOINFER_GPU_7B")
 	if path == "" {
 		home, _ := os.UserHomeDir()
 		path = filepath.Join(home, "models", "qwen2.5-7b-instruct-q4_k_m.gguf")
 	}
 	if os.Getenv("GOINFER_KV_LONGCTX") == "" {
-		t.Skip("long-context KV measurement (~70 min) — set GOINFER_KV_LONGCTX=1 to run")
+		b.Skip("long-context KV measurement (~70 min) — set GOINFER_KV_LONGCTX=1 to run")
 	}
 	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no 7B GGUF at %s (set GOINFER_GPU_7B)", path)
+		b.Skipf("no 7B GGUF at %s (set GOINFER_GPU_7B)", path)
 	}
 	depths := []int{1024, 4096, 8192}
 	precs := []string{"i8", "f16", "f32"}
@@ -47,11 +51,11 @@ func TestKVLongCtx(t *testing.T) {
 	for _, prec := range precs {
 		m, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: "int4", KVPrecision: prec})
 		if err != nil {
-			t.Fatalf("Load(%s): %v", prec, err)
+			b.Fatalf("Load(%s): %v", prec, err)
 		}
 		if !m.ResidentActive() {
 			m.Close()
-			t.Skipf("7B not GPU-resident in int4 (kv=%s)", prec)
+			b.Skipf("7B not GPU-resident in int4 (kv=%s)", prec)
 		}
 		_, _, _, _, _, _, vocab := m.Dims()
 		for _, d := range depths {
@@ -71,20 +75,20 @@ func TestKVLongCtx(t *testing.T) {
 			if n > 1 {
 				tps[prec][d] = float64(n-1) / time.Since(first).Seconds()
 			}
-			t.Logf("  %-3s @ depth %5d: %.2f tok/s", prec, d, tps[prec][d])
+			b.Logf("  %-3s @ depth %5d: %.2f tok/s", prec, d, tps[prec][d])
 		}
 		m.Close()
 	}
 
-	t.Logf("=== decode tok/s vs context depth (7B int4, RTX 2070 SUPER) ===")
-	t.Logf("  depth |   i8   |  f16   |  f32   | i8/f32 | f16/f32")
+	b.Logf("=== decode tok/s vs context depth (7B int4, RTX 2070 SUPER) ===")
+	b.Logf("  depth |   i8   |  f16   |  f32   | i8/f32 | f16/f32")
 	for _, d := range depths {
 		i8, f16, f32 := tps["i8"][d], tps["f16"][d], tps["f32"][d]
 		r8, r16 := 0.0, 0.0
 		if f32 > 0 {
 			r8, r16 = i8/f32, f16/f32
 		}
-		t.Logf("  %5d | %6.2f | %6.2f | %6.2f | %5.2fx | %5.2fx", d, i8, f16, f32, r8, r16)
+		b.Logf("  %5d | %6.2f | %6.2f | %6.2f | %5.2fx | %5.2fx", d, i8, f16, f32, r8, r16)
 	}
-	t.Logf("(>1 i8/f32 at depth D ⇒ int8 KV-read-bound win realized by D; trend toward 1 ⇒ crossover above 8k)")
+	b.Logf("(>1 i8/f32 at depth D ⇒ int8 KV-read-bound win realized by D; trend toward 1 ⇒ crossover above 8k)")
 }

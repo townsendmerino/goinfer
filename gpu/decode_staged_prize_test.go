@@ -20,10 +20,13 @@ import (
 // measured to confirm the staged cost on weights that REQUIRE the fallback.
 //
 // Pure measurement; reports best (throttle-free) inter-token rate via decoder.Generate.
-func TestDecodeStaged_prize(t *testing.T) {
-	requireHeavyModel(t)
+// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*
+// its green said only that the harness ran — not that the effect it maps is there.
+// Go runs a benchmark this slow exactly once (N=1 already exceeds benchtime).
+func BenchmarkDecodeStaged_prize(b *testing.B) {
+	requireHeavyModel(b)
 	if testing.Short() {
-		t.Skip("staged prize")
+		b.Skip("staged prize")
 	}
 	home, _ := os.UserHomeDir()
 	// best inter-token ms/token over `rounds` Generate calls (prefill/TTFT excluded).
@@ -89,19 +92,19 @@ func TestDecodeStaged_prize(t *testing.T) {
 		{"Qwen2.5-1.5B staged (NO_RESIDENCY)", qwen, true},
 		{"Gemma-4-E2B (softcap → forced staged)", home + "/models/gemma-4-E2B_q4_0-it.gguf", false},
 	}
-	t.Logf("=== §2 staged-vs-resident per-token (best inter-token, resident int8) ===")
+	b.Logf("=== §2 staged-vs-resident per-token (best inter-token, resident int8) ===")
 	var residentMs, stagedMs float64
 	for _, r := range rows {
 		ms, resident, err := bestMsPerTok(r.path, r.staged)
 		if err != nil {
-			t.Logf("  %-38s LOAD FAILED: %v", r.label, err)
+			b.Logf("  %-38s LOAD FAILED: %v", r.label, err)
 			continue
 		}
 		if ms == 0 {
-			t.Logf("  %-38s skipped (model not on box)", r.label)
+			b.Logf("  %-38s skipped (model not on box)", r.label)
 			continue
 		}
-		t.Logf("  %-38s %6.2f ms/token = %5.1f tok/s   [resident=%v]", r.label, ms, 1000/ms, resident)
+		b.Logf("  %-38s %6.2f ms/token = %5.1f tok/s   [resident=%v]", r.label, ms, 1000/ms, resident)
 		if r.label == "Qwen2.5-1.5B resident" {
 			residentMs = ms
 		}
@@ -110,7 +113,7 @@ func TestDecodeStaged_prize(t *testing.T) {
 		}
 	}
 	if residentMs > 0 && stagedMs > 0 {
-		t.Logf("  → §2 prize (same model, staged − resident): %.2f ms/token recoverable (%.0f%% of staged)",
+		b.Logf("  → §2 prize (same model, staged − resident): %.2f ms/token recoverable (%.0f%% of staged)",
 			stagedMs-residentMs, (stagedMs-residentMs)/stagedMs*100)
 	}
 }
