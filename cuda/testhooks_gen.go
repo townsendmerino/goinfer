@@ -73,3 +73,43 @@ func (r *cudaResident) CacheStatsForTest() (hits, misses uint64) {
 	}
 	return hits, misses
 }
+
+// PagerStageStatsForTest sums the expert pager's DEMAND accounting across layers: stages is the
+// number of staging events (one per routed MoE layer per forward POSITION), distinct is the total
+// number of unique experts those stages asked for. Zero unless the model runs with C′ expert
+// staging (GOINFER_MOE_CACHE_EXPERTS), which is the only configuration that has a pager at all.
+//
+// distinct/stages is the number the speculation×paging question turns on, and it is worth being
+// explicit about what each outcome means, because the two are easy to conflate. If a width-K
+// verify presented all K positions' routing to the pager in one event, this ratio would rise with
+// K and a slot budget tuned on decode traffic could be blown by a verify — the field-report
+// mechanism. If verify instead walks position by position, the ratio stays at topK for every K,
+// the slot budget sees exactly the traffic it was tuned on, and any regression that shows up has
+// to be explained by something else. The ratio distinguishes them; wall-clock alone cannot.
+func (r *cudaResident) PagerStageStatsForTest() (stages, distinct uint64) {
+	for i := range r.layers {
+		if c := r.layers[i].expCache; c != nil {
+			stages += c.stages
+			distinct += c.distinct
+		}
+	}
+	return stages, distinct
+}
+
+// ResetPagerStatsForTest zeroes every layer's hit/miss and demand counters so one arm's numbers
+// describe THAT arm. Without it each arm reports the running total of every arm before it — a
+// cumulative average, which lags hardest exactly where an arm differs from its predecessor, i.e.
+// at the only place the measurement is trying to look.
+func (r *cudaResident) ResetPagerStatsForTest() {
+	for i := range r.layers {
+		if c := r.layers[i].expCache; c != nil {
+			c.hits, c.misses, c.stages, c.distinct = 0, 0, 0, 0
+		}
+	}
+}
+
+// CacheSlotsForTest is the per-layer slot depth the resident actually built, which is NOT always
+// the requested one: with GOINFER_MOE_CACHE_SLOTS unset the request is "all experts" and capSlots
+// caps it to measured free VRAM, and an over-request degrades to fewer slots rather than failing.
+// A slot-ladder arm that reported its REQUEST would silently collapse its top rungs into one.
+func (r *cudaResident) CacheSlotsForTest() int { return r.cacheSlots }

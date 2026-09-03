@@ -837,6 +837,16 @@ type expertCache struct {
 	used         []uint64 // [nSlots] last-touch clock (LRU)
 	clock        uint64
 	hits, misses uint64 // reuse accounting (a miss is one expert's H2D DMA)
+
+	// DEMAND accounting, and it answers a different question from hits/misses. hits/misses say how
+	// much DMA reuse SAVED; these say how much the caller ASKED FOR per staging event, which is the
+	// quantity that separates "speculation blows the slot budget" from "speculation is just slow
+	// here". stages counts loadRoutedExperts calls on this layer; distinct sums the UNIQUE experts
+	// each stage requested. The ratio distinct/stages is the causal number: a verify that presented
+	// its whole width to the pager at once would push it ABOVE topK and grow with the width, while
+	// one that stages position-by-position pins it AT topK no matter how wide the verify is.
+	stages   uint64
+	distinct uint64
 }
 
 func newExpertCache(nE, nSlots int) *expertCache {
@@ -944,6 +954,23 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		return e
 	}
 	c := L.expCache
+	// Demand accounting (see expertCache). Counted BEFORE admission on purpose: the number must
+	// describe what this stage REQUESTED, not what the cache happened to already hold, or it would
+	// fall as the cache warmed and stop being a measure of demand at all. topK is ~8, so the
+	// quadratic scan is orders of magnitude cheaper than the DMA it describes.
+	c.stages++
+	for j := 0; j < r.topK; j++ {
+		dup := false
+		for k := 0; k < j; k++ {
+			if r.hostIdx[k] == r.hostIdx[j] {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			c.distinct++
+		}
+	}
 	r.expBatch = r.expBatch[:0] // reused across layers; the slice keeps its capacity
 	for j := 0; j < r.topK; j++ {
 		e := r.hostIdx[j]
