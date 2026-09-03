@@ -25,7 +25,11 @@ func (s *Sampler) distVector(logits []float32) []float64 {
 // have ALREADY had any history-dependent transforms (bias/penalties) applied.
 func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 	if s.p.Temperature <= 0 {
-		v := make([]float64, len(logits))
+		// P-14: distBufN reuses one full-vocab scratch across verify positions instead
+		// of a fresh make() each call — safe because the caller (spec_ngram.go's verify
+		// loop) consumes the returned vector synchronously before requesting the next.
+		v := s.distBufN(len(logits))
+		clear(v)
 		v[argmax(logits)] = 1
 		return v
 	}
@@ -35,7 +39,8 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 	// Same canonical selection the plain sampler uses (topFilterLogits), so the
 	// speculative residual stays lossless against the target distribution.
 	kept := topFilterLogits(logits, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(logits))) // renormalized support
-	v := make([]float64, len(logits))
+	v := s.distBufN(len(logits))
+	clear(v)
 	for _, ip := range kept {
 		v[ip.id] = ip.p
 	}
@@ -53,7 +58,8 @@ func (s *Sampler) distVectorHist(logits []float32, history []int) []float64 {
 	if !s.needsHistory() {
 		return s.distVectorFrom(logits)
 	}
-	work := slices.Clone(logits)
+	work := s.specLogitsBufN(len(logits)) // P-14: reused scratch instead of a fresh slices.Clone
+	copy(work, logits)
 	s.applyLogitBias(work)
 	if s.penaltiesConfigured() {
 		s.applyPenaltiesOver(work, penaltyWindowOf(history, s.p.RepeatLastN))

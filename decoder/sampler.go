@@ -73,6 +73,12 @@ type Sampler struct {
 	vocabBuf []float64 // [vocab] scratch shared by sampleChunked's e and chunkedZ's tmp — one full-vocab
 	// allocation reused every token instead of a fresh make() each draw; the two are never live
 	// simultaneously (Sample's branches are mutually exclusive per call, so one buffer covers both).
+	distBuf []float64 // [vocab] scratch for distVectorFrom's returned distribution (P-14). Each
+	// speculative verify position calls dist(...), which is consumed synchronously by specStep /
+	// drawDist / traceFromDist before the loop moves to the next position — never two positions'
+	// vectors live at once (spec_ngram.go's verify loop) — so one buffer covers the whole round.
+	specLogitsBuf []float32 // [vocab] scratch for distVectorHist's history-dependent copy (P-14):
+	// same one-position-at-a-time lifetime as distBuf.
 }
 
 // NewSampler builds a sampler from params.
@@ -103,6 +109,23 @@ func (s *Sampler) vocabBufN(n int) []float64 {
 		s.vocabBuf = make([]float64, n)
 	}
 	return s.vocabBuf[:n]
+}
+
+// distBufN is vocabBufN's counterpart for distVectorFrom's returned distribution (P-14).
+func (s *Sampler) distBufN(n int) []float64 {
+	if cap(s.distBuf) < n {
+		s.distBuf = make([]float64, n)
+	}
+	return s.distBuf[:n]
+}
+
+// specLogitsBufN is vocabBufN's counterpart for distVectorHist's history-dependent
+// logits copy (P-14): a []float32 scratch instead of []float64.
+func (s *Sampler) specLogitsBufN(n int) []float32 {
+	if cap(s.specLogitsBuf) < n {
+		s.specLogitsBuf = make([]float32, n)
+	}
+	return s.specLogitsBuf[:n]
 }
 
 // Observe seeds the penalty history with already-seen tokens (the generation
