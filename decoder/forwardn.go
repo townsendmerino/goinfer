@@ -120,13 +120,32 @@ func (m *Model) canBatchN(K int) bool {
 // distribution bug, not a crash (00-core §6). Those families need the
 // checkpoint-at-block-start / restore path (not yet built); until then the n-gram
 // speculative entry points refuse them and the caller falls back to plain decode.
+// hasRecurrentState reports whether this model carries state that is mutated IN PLACE per token —
+// a conv window, an SSM state, a linear-attention state — which no positional rewind can restore.
+// It is the arch-side view of KVCache.hasRecurrentState(), read from the dispatch table's Recurrent
+// bit so it can be asked BEFORE any cache exists. That matters for the resident path, which has no
+// KVCache to interrogate.
+//
+// ONE PREDICATE, READ EVERYWHERE, because the family list has now been missed once per consumer.
+// This expression used to be inlined in specRollbackSafe alone; decoder/resident_reuse.go needed
+// the same question and the same answer, and a second hand-written copy is exactly how LFM2's conv
+// window came to be absent from every site that should have named it (audit-2026-09-02 C-02). A new
+// state kind is added to the dispatch table once and every caller here follows.
+func (m *Model) hasRecurrentState() bool {
+	// Nil-safe because residentReuseLen is reachable from a Model with no weights loaded — its unit
+	// test constructs one to exercise the id-matching arithmetic alone. A model with no arch has no
+	// family and so no recurrent state; answering false keeps that test measuring what it is about,
+	// and no real generation can reach here with a nil arch anyway.
+	if m == nil || m.w == nil || m.w.arch == nil {
+		return false
+	}
+	f, own := m.w.arch.ownForward()
+	return own && f.Recurrent
+}
+
 func (m *Model) specRollbackSafe() bool {
 	a := m.w.arch
-	// Derived from the dispatch table's Recurrent bit. LFM2's short-conv window is exactly this
-	// kind of state — mutated in place per token, not rewound by TruncateTo — and the hand-written
-	// list did not mention it, so all six speculative entry points would have "rolled back" a
-	// rejected draft with a truncate that touches only K/V (audit-2026-09-02 C-02).
-	if f, own := a.ownForward(); own && f.Recurrent {
+	if m.hasRecurrentState() {
 		return false
 	}
 	// C1/C-04: a STAGED sliding-window cache stores local layers in physical rings. Once a ring

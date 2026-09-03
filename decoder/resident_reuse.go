@@ -51,6 +51,25 @@ func (m *Model) residentReuseLen(prompt []int) int {
 	if residentReuseDisabled() || len(m.resIDs) == 0 || len(prompt) == 0 {
 		return 0
 	}
+	// RECURRENT FAMILIES REUSE NOTHING. The three rules below all police WHICH PREFIX is matched;
+	// none of them can help a model whose state cannot be rewound to that prefix at all. A Gated
+	// DeltaNet's conv ring and matrix state (and Mamba-2's, and LFM2's conv window) are mutated in
+	// place per token with no per-position history, and the resident path re-zeroes them only at
+	// pos == 0 — which a reused prefix never reaches. So the second generation would decode from
+	// the first one's TAIL state.
+	//
+	// That is not hypothetical: measured 2026-09-02 on qwen3.6-35B-A3B, repeated identical greedy
+	// prompts diverged at token 0, differently on every repeat, decaying to a one-token reply, with
+	// no error anywhere — the failure this file's own header calls out as the whole risk.
+	// TestPagerDeterminism is the gate (reuse-on red before this guard, green after).
+	//
+	// This costs nothing for attention-only families, which is most of what an agent loop runs.
+	// Getting reuse BACK for recurrent families needs a state checkpoint at the reuse point — L-05's
+	// job, not a patch here. The predicate is the shared one so a fourth state kind is added in the
+	// dispatch table once rather than missed here for a ninth time.
+	if m.hasRecurrentState() {
+		return 0
+	}
 	n := len(m.resIDs)
 	if len(prompt)-1 < n {
 		n = len(prompt) - 1
