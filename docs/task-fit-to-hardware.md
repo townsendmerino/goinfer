@@ -54,8 +54,8 @@ Scoped against what exists, the way `task-model-pull.md` was.
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
   (`internal/serveapp/main.go:381`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
-  (`metal/backend.go:101`, `:115`) — the guard whose arithmetic M-01/M-02 found wrong in both
-  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:135`).
+  (`metal/backend.go:102`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
+  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:162`).
 
 **Still the user's decision, with no basis offered for it:**
 
@@ -258,7 +258,7 @@ before this one) · `docs/task-metal-expert-streaming-at-scale.md` (N=64, 2.19 t
 64" with no code) · `docs/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
 `internal/serveapp/main.go:347-374` (the flags the plan subsumes) · `decoder/model.go:127-163`
-(`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:80-135` (the guard) ·
-`decoder/weightbytes.go:54` (`ResidentWeightBytes`, the accountant to replace) ·
+(`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:81-164` (the guard) ·
+`decoder/weightbytes.go:56` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:174` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).

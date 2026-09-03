@@ -37,7 +37,7 @@ after — the batched-CPU `ForwardN` — and wrong everywhere else, which is the
 | 1.5B | 512 | 14 225 µs | **1.019** | 16.07 |
 
 `T(n)/T(1)` is linear to n=16 in every cell. That is not "roughly linear" — it is what a loop
-predicts exactly, and [`metal/backend.go:253`](../../metal/backend.go) is exactly that: a plain
+predicts exactly, and [`metal/backend.go:280`](../../metal/backend.go) is exactly that: a plain
 `for` over single-token `Forward` calls. `ResidentForward`'s own interface doc says `ForwardN` runs
 "K tokens ... in ONE command buffer (one Submit/Poll)". Metal satisfies the bit-identity half of
 that contract trivially and the batching half not at all.

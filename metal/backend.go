@@ -10,6 +10,7 @@ package metal
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -109,6 +110,32 @@ func fitsResidentBudget(need int64, ram uint64) bool {
 	return uint64(need) <= uint64(float64(ram)*residentMemFraction)
 }
 
+// metalMoESlotsFromEnv parses GOINFER_METAL_MOE_SLOTS the same way metal/moe.go and
+// metal/gemma4_moe.go do (the shared paging knob), for the guard's own use. Unlike those two, an
+// invalid or unset value is not an error here — it just means "assume unpaged" (the guard's
+// existing, safe behavior); buildResident itself still validates and declines on a bad value.
+func metalMoESlotsFromEnv() int {
+	n, err := strconv.Atoi(os.Getenv("GOINFER_METAL_MOE_SLOTS"))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// residentNeedBytes is the byte count residentFitsMemory judges against — split out from
+// residentFitsMemory so it can be unit-tested directly, without real RAM or a checkpoint large
+// enough to swing the guard's verdict.
+//
+// M-02: this used to always be m.ResidentWeightBytes() — the UNPAGED number — even when the
+// caller had set GOINFER_METAL_MOE_SLOTS, so a model that fits fine under paging (a few GB) was
+// declined on the number it would need with every expert resident (tens of GB for a large MoE).
+// Reading the same knob buildResident is about to honor and asking for the PAGED estimate instead
+// fixes the audit's Qwen3.5-35B-A3B example without moving the guard itself — it still runs
+// before buildResident, on the byte count that will actually apply once paging is resolved.
+func residentNeedBytes(m *decoder.Model) int64 {
+	return m.ResidentWeightBytesPaged(metalMoESlotsFromEnv())
+}
+
 // residentFitsMemory reports whether this model's weights fit the machine, declining loudly when
 // they do not. True (proceed) whenever the answer is unknown — an unreadable hw.memsize or a
 // model reporting zero bytes must not silently disable residency for everyone.
@@ -116,7 +143,7 @@ func residentFitsMemory(m *decoder.Model) bool {
 	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return true
 	}
-	need := m.ResidentWeightBytes()
+	need := residentNeedBytes(m)
 	if need <= 0 {
 		return true // nothing to compare against; not a reason to refuse
 	}

@@ -2,7 +2,14 @@
 
 package metal
 
-import "testing"
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
 
 // TestResidentMemGuard pins BOTH directions of the fits-in-memory guard, because each failure
 // mode is real and they are opposite: a guard that never fires leaves the swap-exhaustion hang
@@ -40,4 +47,88 @@ func TestResidentMemGuard(t *testing.T) {
 				c.name, float64(c.need)/float64(gb), float64(c.ram)/float64(gb), got, c.want)
 		}
 	}
+}
+
+// TestMetalMoESlotsFromEnv is M-02's gate for the guard's half of the ordering fix:
+// residentFitsMemory must ask ResidentWeightBytesPaged for the SAME N that metal/moe.go and
+// metal/gemma4_moe.go are about to honor, not silently fall back to the unpaged number on
+// anything it cannot parse cleanly. Mirrors those two files' os.Getenv/strconv.Atoi read exactly,
+// except an invalid/unset value means "assume unpaged" here (safe: buildResident still validates
+// and declines on a bad value) rather than a hard error.
+func TestMetalMoESlotsFromEnv(t *testing.T) {
+	for _, tc := range []struct {
+		name, val string
+		want      int
+	}{
+		{"unset", "", 0},
+		{"valid", "64", 64},
+		{"zero", "0", 0},
+		{"negative", "-1", 0},
+		{"not a number", "sixty-four", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.val == "" {
+				orig, wasSet := os.LookupEnv("GOINFER_METAL_MOE_SLOTS")
+				os.Unsetenv("GOINFER_METAL_MOE_SLOTS")
+				t.Cleanup(func() {
+					if wasSet {
+						os.Setenv("GOINFER_METAL_MOE_SLOTS", orig)
+					}
+				})
+			} else {
+				t.Setenv("GOINFER_METAL_MOE_SLOTS", tc.val)
+			}
+			if got := metalMoESlotsFromEnv(); got != tc.want {
+				t.Errorf("metalMoESlotsFromEnv() with %q = %d, want %d", tc.val, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResidentNeedBytes_honorsPagingSlots is M-02's gate for the actual wiring gap: reverting
+// residentNeedBytes to always call ResidentWeightBytes() (the pre-fix behavior) compiles clean
+// and TestMetalMoESlotsFromEnv above still passes, because that test only exercises the parsing
+// function in isolation — it never proves the guard USES what it parses. This does, by loading a
+// real (tiny) MoE checkpoint and comparing residentNeedBytes' output against
+// ResidentWeightBytes/ResidentWeightBytesPaged directly, with no real RAM or a checkpoint large
+// enough to swing residentFitsMemory's verdict required.
+func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
+	// testdata/gemma4-moe-tiny is gitignored (a real, if small, checkpoint) — never present in CI,
+	// so skip rather than fail when it's absent, matching decoder's own convention for this fixture.
+	const ckpt = "../testdata/gemma4-moe-tiny"
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no tiny checkpoint (%s) — run scripts/pin_gemma4_moe_forward.py", ckpt)
+	}
+	m, err := decoder.Load(ckpt, decoder.Options{Quant: "f32"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+
+	unpaged := m.ResidentWeightBytes()
+
+	t.Run("unset env == unpaged", func(t *testing.T) {
+		orig, wasSet := os.LookupEnv("GOINFER_METAL_MOE_SLOTS")
+		os.Unsetenv("GOINFER_METAL_MOE_SLOTS")
+		t.Cleanup(func() {
+			if wasSet {
+				os.Setenv("GOINFER_METAL_MOE_SLOTS", orig)
+			}
+		})
+		if got := residentNeedBytes(m); got != unpaged {
+			t.Errorf("residentNeedBytes() with no slots env = %d, want unpaged %d", got, unpaged)
+		}
+	})
+
+	t.Run("slots=1 matches ResidentWeightBytesPaged and is strictly smaller", func(t *testing.T) {
+		t.Setenv("GOINFER_METAL_MOE_SLOTS", "1")
+		want := m.ResidentWeightBytesPaged(1)
+		if want >= unpaged {
+			t.Fatalf("test fixture has too few experts to make this case meaningful (paged(1)=%d, unpaged=%d)", want, unpaged)
+		}
+		if got := residentNeedBytes(m); got != want {
+			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (ResidentWeightBytesPaged(1)) — "+
+				"the guard is not asking for the paged estimate", got, want)
+		}
+	})
 }

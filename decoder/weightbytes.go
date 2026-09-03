@@ -33,7 +33,9 @@ func wmBytes(w *linalg.WeightMat) int64 {
 func f32SliceBytes(s []float32) int64 { return 4 * int64(len(s)) }
 
 // ResidentWeightBytes is the total byte footprint of this model's weight matrices — what a
-// resident backend must hold to run the whole model on-device.
+// resident backend must hold to run the whole model on-device, assuming every routed MoE expert
+// is resident. See ResidentWeightBytesPaged for the synchronous-paging case
+// (GOINFER_METAL_MOE_SLOTS), where only N experts per layer are.
 //
 // WHY IT EXISTS. A resident backend had no way to ask "will this model fit?" before allocating,
 // and nothing else in the tree answers it: Dims() exposes hidden/layers/heads but NOT the expert
@@ -51,7 +53,22 @@ func f32SliceBytes(s []float32) int64 { return 4 * int64(len(s)) }
 // This is a quantity we COMPUTE, deliberately — not the OS's account of free memory. Darwin's UBC
 // reclaims under pressure, so "available" reports what survived rather than what can be asked
 // for; an RSS-keyed ceiling once reported LESS memory at a known failure point than at baseline.
-func (m *Model) ResidentWeightBytes() int64 {
+func (m *Model) ResidentWeightBytes() int64 { return m.residentWeightBytes(0) }
+
+// ResidentWeightBytesPaged is ResidentWeightBytes under Metal's synchronous MoE paging
+// (metal/moe.go, metal/gemma4_moe.go): GOINFER_METAL_MOE_SLOTS=N keeps only N of each layer's
+// ROUTED experts resident, staging the rest per token. slots<=0 means unpaged (identical to
+// ResidentWeightBytes). SharedExpert is never paged — it is always active, not top-k routed — so
+// it is counted in full either way, same as every dense matrix.
+//
+// M-02: this is what the memory-fit guard was missing. It always summed EVERY expert — the
+// unpaged number — even when the caller had asked to page, so a model that would fit paged (e.g.
+// Qwen3.5-35B-A3B's 22.1 GB unpaged vs. a few GB at N=64) was declined to CPU on a bound it never
+// actually needed. A layer's experts are uniform in shape, so "per-expert bytes" is the full
+// per-layer expert sum divided by the expert count — exact, not an approximation across layers.
+func (m *Model) ResidentWeightBytesPaged(slots int) int64 { return m.residentWeightBytes(slots) }
+
+func (m *Model) residentWeightBytes(slots int) int64 {
 	if m == nil || m.w == nil {
 		return 0
 	}
@@ -60,6 +77,16 @@ func (m *Model) ResidentWeightBytes() int64 {
 	// Gemma 4's model-level PLE tables (per_layer_token_embd / per_layer_model_proj) — empty
 	// WeightMats, so a no-op sum, on every other family.
 	n += wmBytes(&w.PerLayerTokenEmbed) + wmBytes(&w.PerLayerModelProj)
+	// pagedExperts takes the layer's FULL routed-expert byte sum and its expert COUNT (not the
+	// matrix count — each expert contributes multiple matrices, e.g. Gate+Up+Down, so the two
+	// must not be conflated) and caps it at `slots` experts when paging applies. A layer's
+	// experts are uniform in shape, so per-expert bytes = full/nExperts exactly.
+	pagedExperts := func(full int64, nExperts int) int64 {
+		if nExperts == 0 || slots <= 0 || slots >= nExperts {
+			return full
+		}
+		return full / int64(nExperts) * int64(slots)
+	}
 	for i := range w.Layers {
 		l := &w.Layers[i]
 		for _, mat := range []*linalg.WeightMat{
@@ -71,10 +98,12 @@ func (m *Model) ResidentWeightBytes() int64 {
 		}
 		// The experts are the whole point of this accessor — a sparse MoE is mostly experts, and
 		// omitting them is the specific under-report that would let gpt-oss through the guard.
+		var expertBytes int64
 		for j := range l.Experts {
 			e := &l.Experts[j]
-			n += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
+			expertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
 		}
+		n += pagedExperts(expertBytes, len(l.Experts))
 		n += wmBytes(&l.SharedExpert.Gate) + wmBytes(&l.SharedExpert.Up) + wmBytes(&l.SharedExpert.Down)
 
 		// M-01: qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention) — the three
@@ -102,12 +131,14 @@ func (m *Model) ResidentWeightBytes() int64 {
 		}
 		// M-01: Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown ALIAS l.GateProj/UpProj/DownProj
 		// (serialize.go's gemma4Layer comment) — already counted above; only routerProj and the
-		// fused experts are new tensors here.
+		// fused experts are new tensors here. The fused experts page the same way as l.Experts.
 		if mo := l.gemma4moe; mo != nil {
 			n += wmBytes(&mo.routerProj)
+			var fusedBytes int64
 			for e := range mo.expertsGateUp {
-				n += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
+				fusedBytes += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
 			}
+			n += pagedExperts(fusedBytes, len(mo.expertsGateUp))
 		}
 	}
 	return n

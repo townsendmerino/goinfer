@@ -1231,7 +1231,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/spec_sample.go:111` | goinfer | `for i, v := range slices.Backward(p) { // float-rounding guard: last token with mass` |
 | `docs/audit-2026-09-02.md|decoder/spec_sample.go:33` | goinfer | `return softmaxStable(logits, s.p.Temperature) // drawFull draws from this directly` |
 | `docs/audit-2026-09-02.md|decoder/spec_sample.go:76` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
-| `docs/audit-2026-09-02.md|decoder/weightbytes.go:54` | goinfer | `func (m *Model) ResidentWeightBytes() int64 {` |
+| `docs/audit-2026-09-02.md|decoder/weightbytes.go:71` | goinfer | `func (m *Model) residentWeightBytes(slots int) int64 {` |
 | `docs/audit-2026-09-02.md|decoder/weightmat.go:305` | goinfer | `var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""` |
 | `docs/audit-2026-09-02.md|decoder/weights.go:1071` | goinfer | `func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, i` |
 | `docs/audit-2026-09-02.md|decoder/weights.go:114` | goinfer | `gemma4moe *gemma4MoEWeights` |
@@ -1373,9 +1373,9 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:221` | goinfer | `if req.Stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:72` | goinfer | `anchor: func encodeVisionSegments(lm *loadedModel, system string, turns []chat.Turn, blo` |
 | `docs/audit-2026-09-02.md|metal/attn_shape_test.go:152` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, ` |
-| `docs/audit-2026-09-02.md|metal/backend.go:116` | goinfer | `if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {` |
-| `docs/audit-2026-09-02.md|metal/backend.go:119` | goinfer | `need := m.ResidentWeightBytes()` |
-| `docs/audit-2026-09-02.md|metal/backend.go:80` | goinfer | `if !residentFitsMemory(m) {` |
+| `docs/audit-2026-09-02.md|metal/backend.go:143` | goinfer | `if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {` |
+| `docs/audit-2026-09-02.md|metal/backend.go:146` | goinfer | `need := residentNeedBytes(m)` |
+| `docs/audit-2026-09-02.md|metal/backend.go:81` | goinfer | `if !residentFitsMemory(m) {` |
 | `docs/audit-2026-09-02.md|metal/batched_verify_test.go:139` | goinfer | `e.Dispatch(r.pRope, r.nH*g.half, 64, qkv.At(m*qkvRows*4), L.invf, g.uHd, uPos, g.uQtotal` |
 | `docs/audit-2026-09-02.md|metal/close_leak_test.go:182` | goinfer | `requireHeavyModel(t)` |
 | `docs/audit-2026-09-02.md|metal/close_leak_test.go:45` | goinfer | `requireHeavyModel(t)` |
@@ -1479,7 +1479,7 @@ supports.
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/spec_adaptive.go:163` | goinfer | `case "cuda":` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|internal/serveapp/blockdrafter.go:13` | goinfer | `// IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wan` |
 | `docs/measurements/spec-x-pager-prereg-2026-09-02.md|cuda/prefill.go:162` | goinfer | `return fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe): %w", er` |
-| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:253` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
+| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:280` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
 | `docs/multimodal.md|decoder/config.go:1110` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:410` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
@@ -1569,13 +1569,13 @@ supports.
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:328` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:949` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
 | `docs/task-fit-to-hardware.md|decoder/model.go:127` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
-| `docs/task-fit-to-hardware.md|decoder/weightbytes.go:54` | goinfer | `func (m *Model) ResidentWeightBytes() int64 {` |
+| `docs/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.residentWeightBytes(0) }` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:347` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:363` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:381` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
-| `docs/task-fit-to-hardware.md|metal/backend.go:101` | goinfer | `const residentMemFraction = 0.70` |
-| `docs/task-fit-to-hardware.md|metal/backend.go:135` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",` |
-| `docs/task-fit-to-hardware.md|metal/backend.go:80` | goinfer | `if !residentFitsMemory(m) {` |
+| `docs/task-fit-to-hardware.md|metal/backend.go:102` | goinfer | `const residentMemFraction = 0.70` |
+| `docs/task-fit-to-hardware.md|metal/backend.go:162` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",` |
+| `docs/task-fit-to-hardware.md|metal/backend.go:81` | goinfer | `if !residentFitsMemory(m) {` |
 | `docs/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {` |
 | `docs/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
 | `docs/task-fit-to-hardware.md|pull/pull.go:174` | goinfer | `Size   int64` |
