@@ -359,6 +359,29 @@ func detectBackend() string {
 	return "none"
 }
 
+var adapterProbeRe = regexp.MustCompile(`ADAPTER_PROBE: backend=(\S+) software=(\S+)`)
+
+// detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/adapter_probe_test.go's
+// TestAdapterProbe) — cmd/gate stays free of the gpu build tag and its cgo dependency, matching
+// detectBackend's nvidia-smi/uname style. Independent of detectBackend's cuda|metal|none choice on
+// purpose (G-09): a CUDA Linux box can ALSO have a working Vulkan adapter, and before this fix
+// nothing ever checked — the gate saw nvidia-smi, picked "cuda", and the WebGPU resident-parity
+// gates (qwen3.5 DeltaNet, granite/nemotron Mamba-2) ran only when a human remembered a private
+// env var. A software adapter (CI's lavapipe/llvmpipe) still counts as present: the group's own
+// tests already skip hardware-sensitive cases on one (newOrSkipHW), the same way a heavy tier's
+// tests self-skip on a missing checkpoint rather than the gate deciding for them.
+func detectWebGPU() (present bool, backend string) {
+	if os.Getenv("GOINFER_GATE_SKIP_WEBGPU") != "" {
+		return false, ""
+	}
+	out, _ := exec.Command("go", "test", "-tags", "gpu", "./gpu/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
+	m := adapterProbeRe.FindStringSubmatch(string(out))
+	if m == nil {
+		return false, ""
+	}
+	return true, m[1]
+}
+
 func runGPU(w io.Writer, logDir string) int {
 	g := &gpuGate{w: w, logDir: logDir, emitted: map[string]bool{}}
 	g.backend = detectBackend()
@@ -382,12 +405,18 @@ func runGPU(w io.Writer, logDir string) int {
 
 	switch g.backend {
 	case "cuda":
-		g.expect = []string{"cleangpu", "seam", "suite", "parity", "heavy", "graphsforced", "cgofree", "ptx", "repo"}
+		g.expect = []string{"cleangpu", "seam", "suite", "parity", "heavy", "graphsforced", "cgofree", "ptx", "webgpu", "repo"}
 	case "metal":
-		g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "prefill", "repo"}
+		g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "prefill", "webgpu", "repo"}
 	default:
-		g.expect = []string{"cleangpu", "seam", "suite", "repo"}
+		g.expect = []string{"cleangpu", "seam", "suite", "webgpu", "repo"}
 	}
+	// G-09: WebGPU is independent of detectBackend's cuda|metal|none choice — a CUDA Linux box can
+	// ALSO have a working Vulkan adapter — so it is detected and declared unconditionally, not as a
+	// case of the primary-backend switch above. ALWAYS in g.expect (every branch, just added), so a
+	// box with no adapter reads as an explicit SKIP (below) rather than a silent omission — the same
+	// visibility the "no GPU backend" default case already gives the primary suites.
+	hasWebGPU, wgBackend := detectWebGPU()
 
 	prov := gatherProvenance(nil)
 	g.commit, g.dirty = prov.Commit, prov.Dirty
@@ -401,6 +430,11 @@ func runGPU(w io.Writer, logDir string) int {
 	fmt.Fprintf(w, "  host        %s\n", prov.Host)
 	fmt.Fprintf(w, "  backend     %s\n", g.backend)
 	fmt.Fprintf(w, "  models      %s\n", g.models)
+	if hasWebGPU {
+		fmt.Fprintf(w, "  webgpu      adapter present (backend=%s)\n", wgBackend)
+	} else {
+		fmt.Fprintf(w, "  webgpu      no adapter detected\n")
+	}
 	switch g.backend {
 	case "cuda":
 		if b, err := exec.Command("nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader").Output(); err == nil {
@@ -438,6 +472,7 @@ func runGPU(w io.Writer, logDir string) int {
 		g.hdr("2-4. backend suites")
 		g.skip("no GPU backend detected on this host — only the seam gate ran")
 	}
+	g.webgpu(hasWebGPU, wgBackend)
 	g.repoHygiene()
 	return g.verdict()
 }
@@ -1137,6 +1172,55 @@ func (g *gpuGate) metalPrefill() {
 
 // ---- 5. repo hygiene: run what CI runs, DERIVED rather than duplicated (B0) ----
 //
+// ---- W. WebGPU: adapter-independent of the primary backend (audit G-09) ----
+//
+// Before this, the gate never ran ./gpu/ at all on a CUDA or "none" box (only on darwin, and even
+// then only by accident of detectBackend never being asked about WebGPU), and the resident-parity
+// gates it DOES have — qwen3.5 DeltaNet, granite/nemotron Mamba-2 — required a human to remember
+// GOINFER_DNET_PARITY / GOINFER_SSM_PARITY. This group sets both itself, the same way every other
+// group here sets what it needs (see runGPU's header comment on that rule).
+func (g *gpuGate) webgpu(present bool, backend string) {
+	g.grp("webgpu")
+	g.hdr("W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks')")
+	if !present {
+		g.skip("no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note")
+		return
+	}
+	_, cr, out := g.run(cell{
+		Name: "webgpu-suite", Pkgs: []string{"./gpu/"}, Tags: []string{"gpu"},
+		Serial: true, Extra: []string{"-short"},
+	}, false)
+	if cr.RC != 0 {
+		g.bad("webgpu suite (backend=%s)", backend)
+		g.detail(out, failLineRe)
+		return
+	}
+	g.ran++
+	g.ok("webgpu suite (backend=%s)", backend)
+	g.evidence(out, okLineRe)
+
+	// The resident-parity gates G-09 found opt-in-by-private-env-var. qwen3.5's dense sibling
+	// (decoder/testdata/qwen3_5-tiny) is a TRACKED fixture, so this has real coverage on every
+	// clone; the MoE sibling and the granite/nemotron Mamba-2 fixtures are gitignored and skip
+	// gracefully when absent (their own tests stat the weights file, not the directory) — a mix of
+	// real and skipped subtests is not vacuous, only an ALL-skip cell is (cr.vacuous() below).
+	_, cr2, out2 := g.run(cell{
+		Name: "webgpu-parity", Pkgs: []string{"./gpu/"}, Tags: []string{"gpu", "goinfer_testhooks"},
+		Run:     "ResidentParity",
+		Serial:  true,
+		Timeout: "10m",
+		Env:     map[string]string{"GOINFER_DNET_PARITY": "1", "GOINFER_SSM_PARITY": "1"},
+	}, false)
+	if cr2.RC != 0 || cr2.vacuous() {
+		g.bad("webgpu resident parity gates — a WebGPU forward moved, or nothing ran at all")
+		g.detail(out2, failLineRe)
+		return
+	}
+	g.ran++
+	g.ok("webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)")
+	g.evidence(out2, okLineRe)
+}
+
 // This block used to run `gofmt -l .` and `go vet ./decoder/ ./cmd/...` — a hand-written list that
 // was a strict SUBSET of CI's: no staticcheck at all, vet without the goinfer_testhooks tag and over
 // narrower packages, no build. So CI went red on `staticcheck -tags cuda` and stayed red for three

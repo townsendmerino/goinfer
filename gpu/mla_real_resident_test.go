@@ -25,6 +25,14 @@ import (
 // an OOM decline means the build got PAST the guard (the first check in newDecodeRunner) and R-05
 // holds. Point GOINFER_MLA_MODEL at a DeepSeek/Kimi checkpoint (default: the box's V2-Lite GGUF).
 func TestMLAResidency_realDeepSeek_R05(t *testing.T) {
+	// The asset happening to be on disk is not a request to run a multi-GB test
+	// (gpu/heavytest_test.go's requireHeavyModel, which this file — package gpu_test — cannot call
+	// directly). Missing this gate let a checkpoint left over from earlier work make an ordinary
+	// `-short` suite run try to load a real DeepSeek-V2-Lite and get killed (G-09's webgpu gate
+	// group ran ./gpu/ automatically for the first time and caught it).
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
+	}
 	path := os.Getenv("GOINFER_MLA_MODEL")
 	if path == "" {
 		path = os.Getenv("HOME") + "/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"
