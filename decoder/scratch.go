@@ -233,6 +233,19 @@ func prefillAttnWorkers(K, nKeys, hd, nH int) int {
 	// quadratic in prompt length, and therefore why long prompts still fan out.
 	t := attnRowTile(K, nKeys)
 	perSlot := 4 * (t*nKeys + 2*nKeys*hd + 2*t*hd)
+	// P-05: newHeadWorkerPool allocates a fusedScratch (sBlk+tmp+acc+mRun+lRun+vBlk) ALONGSIDE the
+	// materialized shape above whenever the fused schedule is enabled — "both exist while fusion is
+	// a flag" (newHeadWorkerPool's own comment) — and this budget did not count it, undercounting
+	// real per-slot use by ~25% at K=nKeys=8192 (mostly vBlk, hd*nKeys floats, the same order as
+	// kh/vt). vt itself goes UNUSED once fusion is active (it gathers into fused.vBlk instead), but
+	// removing that allocation needs the caller's useAcc64/treeMask state — unavailable here, and
+	// getting it wrong risks a nil vt in the one case fusion doesn't apply — so this fixes the
+	// measurable complaint (the budget undercounting, causing oversubscription) without touching
+	// what newHeadWorkerPool allocates. Conservative: charged whenever fusion COULD apply, not only
+	// when this specific call will use it, matching the budget's other worst-case assumptions.
+	if fusedAttention() {
+		perSlot += 4 * (t*fusedKeyBlock + 2*t*hd + 2*t + hd*nKeys)
+	}
 	if perSlot <= 0 {
 		return 1
 	}

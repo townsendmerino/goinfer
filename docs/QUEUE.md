@@ -1199,9 +1199,9 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/scratch.go:222` | goinfer | `if v := os.Getenv("GOINFER_PREFILL_ATTN_WORKERS"); v != "" {` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:230` | goinfer | `// Per slot, in bytes, at the TILED size (G20): scores (tile*nKeys) + kh + vt` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:234` | goinfer | `t := attnRowTile(K, nKeys)` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:260` | goinfer | `for i := range s.headPool[:n] {` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:313` | goinfer | `func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:330` | goinfer | `kh:     make([]float32, nKeys*hd),` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:273` | goinfer | `for i := range s.headPool[:n] {` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:326` | goinfer | `func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:343` | goinfer | `kh:     make([]float32, nKeys*hd),` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:84` | goinfer | `ws := &linalg.Workspace{}` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:105` | goinfer | `func canSerialize(a *Architecture) *SerializeError {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:119` | goinfer | `anchor: func canSerialize(a *Architecture) *SerializeError {` |

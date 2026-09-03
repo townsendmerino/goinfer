@@ -195,3 +195,39 @@ func TestAttnRowTileBoundsScratch(t *testing.T) {
 		t.Errorf("K=8192: workers = %d, want %d — tiling was supposed to make long prompts affordable", w, maxAttnWorkers)
 	}
 }
+
+// TestPrefillAttnWorkerBudget_countsFusedScratch is P-05's gate: prefillAttnWorkers' budget must
+// bound what newHeadWorkerPool ACTUALLY allocates. newHeadWorkerPool allocates a fusedScratch
+// (sBlk+tmp+acc+mRun+lRun+vBlk) ALONGSIDE the materialized shape (scores/kh/vt/qh/ch) whenever
+// GOINFER_FUSED_ATTENTION is enabled — "both exist while fusion is a flag" — so the real per-slot
+// footprint is the materialized shape PLUS fusedScratch, not the materialized shape alone. Before
+// the fix, the budget counted only the materialized shape and oversubscribed
+// prefillAttnScratchBudget by ~25% at K=nKeys=8192.
+func TestPrefillAttnWorkerBudget_countsFusedScratch(t *testing.T) {
+	os.Unsetenv("GOINFER_PREFILL_ATTN_WORKERS")
+	os.Unsetenv("GOINFER_ATTN_ROW_TILE")
+	t.Setenv("GOINFER_FUSED_ATTENTION", "1") // the default; explicit so this test does not depend on it
+	// hd=128, K up to 65536: large enough that the BUDGET binds below maxAttnWorkers(6) — at
+	// smaller shapes (e.g. hd=64, K=8192) the P-core cap binds first and the budget fix is never
+	// exercised, so a bug here would pass silently.
+	const hd, nH = 128, 16
+
+	for _, K := range []int{512, 3020, 8192, 65536} {
+		n := prefillAttnWorkers(K, K, hd, nH)
+		tile := attnRowTile(K, K)
+		// The REAL per-slot footprint newHeadWorkerPool allocates: materialized (scores+kh+vt+qh+ch)
+		// plus fusedScratch (sBlk+tmp+acc+mRun+lRun+vBlk) — an independent recomputation of both
+		// pieces, not a re-read of prefillAttnWorkers' own formula.
+		materialized := 4 * (tile*K + 2*K*hd + 2*tile*hd)
+		fused := 4 * (tile*fusedKeyBlock + 2*tile*hd + 2*tile + hd*K)
+		real := materialized + fused
+		total := real * n
+		t.Logf("K=%-6d tile=%-5d workers=%d  real per-slot %.2f MB, total %.2f MB (budget %.0f MB)",
+			K, tile, n, float64(real)/(1<<20), float64(total)/(1<<20), float64(prefillAttnScratchBudget)/(1<<20))
+		if total > prefillAttnScratchBudget && n > 1 {
+			t.Errorf("K=%d: %d workers x %.2f MB real per-slot = %.2f MB, exceeds the %.0f MB budget — "+
+				"the budget did not count fusedScratch", K, n, float64(real)/(1<<20), float64(total)/(1<<20),
+				float64(prefillAttnScratchBudget)/(1<<20))
+		}
+	}
+}
