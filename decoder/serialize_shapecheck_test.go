@@ -75,3 +75,53 @@ func TestValidateShapes_catchesArchMismatch(t *testing.T) {
 		}
 	}
 }
+
+// TestValidateShapes_gemma4PLE is a synthetic gate for the model-level Per-Layer-Embedding tail:
+// PerLayerModelProj and PerLayerProjNorm were checked against the wrong axis (HiddenDim instead
+// of NumLayers*HiddenSizePerLayerInput) and only a real gemma4-E2B checkpoint — a heavy,
+// asset-gated test — ever exercised the branch, so both bugs shipped unnoticed. This runs on
+// every invocation with no checkpoint required.
+func TestValidateShapes_gemma4PLE(t *testing.T) {
+	const hidden, pleDim, nLayers = 16, 4, 2
+	pleTotal := nLayers * pleDim
+	arch := &Architecture{
+		HiddenDim: hidden,
+		NumLayers: nLayers,
+		gemma4:    &gemma4Params{HiddenSizePerLayerInput: pleDim},
+	}
+	f := func(rows, cols int) linalg.WeightMat {
+		return linalg.WrapF32(make([]float32, rows*cols), rows, cols)
+	}
+	good := func() *Weights {
+		return &Weights{
+			arch:               arch,
+			Layers:             make([]LayerWeights, nLayers),
+			PerLayerTokenEmbed: f(1, pleTotal), // only Rows()>0 gates the branch; shape unchecked
+			PerLayerModelProj:  f(pleTotal, hidden),
+			PerLayerProjNorm:   make([]float32, pleDim),
+		}
+	}
+	if e := validateShapes(good(), arch); e != nil {
+		t.Fatalf("valid gemma4 PLE bundle rejected: %v", e)
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Weights)
+		want   string
+	}{
+		{"PerLayerModelProj rows swapped with hidden", func(w *Weights) { w.PerLayerModelProj = f(hidden, pleTotal) }, "PerLayerModelProj"},
+		{"PerLayerModelProj cols wrong", func(w *Weights) { w.PerLayerModelProj = f(pleTotal, hidden+1) }, "PerLayerModelProj"},
+		{"PerLayerProjNorm sized to HiddenDim instead of pleDim", func(w *Weights) { w.PerLayerProjNorm = make([]float32, hidden) }, "PerLayerProjNorm"},
+	} {
+		w := good()
+		tc.mutate(w)
+		e := validateShapes(w, arch)
+		if e == nil {
+			t.Errorf("%s: not rejected", tc.name)
+			continue
+		}
+		if !strings.Contains(e.Error(), tc.want) {
+			t.Errorf("%s: error %q does not name %q", tc.name, e.Error(), tc.want)
+		}
+	}
+}

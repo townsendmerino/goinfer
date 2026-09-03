@@ -673,11 +673,29 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 
 	// M-11: the model-level PLE tail. gemma4's forward reads all three unconditionally when
 	// the arch declares PLE, and a bundle from before v4 has none of them.
+	//
+	// PerLayerModelProj is [NumLayers*HiddenSizePerLayerInput, HiddenDim] — gguf.go builds it as
+	// mat("per_layer_model_proj.weight", pleTotal, hidden) and forward_gemma4.go's
+	// matmul(&PerLayerModelProj, h /*[hidden]*/, ctxAware /*[pleTotal]*/, 1) both agree Rows() is
+	// pleTotal, not HiddenDim. This check originally asserted Rows()==HiddenDim — the wrong axis —
+	// so it failed on every real gemma4-E2B round-trip (observed: 8960 rows, "expects" 1536) even
+	// though the loader, forward pass, and serializer all round-trip the tensor correctly. Caught
+	// 2026-09-03 by TestSerializeGemma4E2B_roundTrip on an overnight parity sweep.
 	if arch.gemma4 != nil && w.PerLayerTokenEmbed.Rows() > 0 {
-		if e := eq("PerLayerModelProj", w.PerLayerModelProj.Rows(), arch.HiddenDim); e != nil {
+		pleTotal := arch.NumLayers * arch.gemma4.HiddenSizePerLayerInput
+		if e := eq("PerLayerModelProj", w.PerLayerModelProj.Rows(), pleTotal); e != nil {
 			return e
 		}
-		if e := req("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.HiddenDim); e != nil {
+		if got := w.PerLayerModelProj.Cols(); got != arch.HiddenDim {
+			return &SerializeError{fmt.Sprintf("PerLayerModelProj: %d cols, arch expects %d", got, arch.HiddenDim)}
+		}
+		// Same wrong-axis bug as PerLayerModelProj above, on a second field: gguf.go's
+		// vnorm("per_layer_proj_norm.weight", g4.HiddenSizePerLayerInput) and forward_gemma4.go's
+		// normalize(arch, row, m.w.PerLayerProjNorm, nil, pleDim) both size it at
+		// HiddenSizePerLayerInput (the RMSNorm runs over one pleDim-wide row of ctxAware), not
+		// HiddenDim. Unreached by the real-model round-trip until PerLayerModelProj's check above
+		// was fixed, since validateShapes returns on the first failure.
+		if e := req("PerLayerProjNorm", len(w.PerLayerProjNorm), arch.gemma4.HiddenSizePerLayerInput); e != nil {
 			return e
 		}
 	}

@@ -195,9 +195,13 @@ func TestSession_snapshotRoundTrip(t *testing.T) {
 func TestLoadSession_rejectsCorrupt(t *testing.T) {
 	m := loadTestModel(t)
 	sess := m.NewSession(0)
-	// Hand-build a tiny session state (no generation needed for the guard test).
+	// Hand-build a tiny session state (no generation needed for the guard test). pos must match
+	// len(tokens) — that is the invariant M-04 added LoadSession to enforce (decoder: kv snapshot:
+	// tokens: N ids for pos P), and a real Session never produces anything else: reconcile() only
+	// ever sets s.tokens = seq clamped to s.cache.Pos(). The rings themselves stay unpopulated
+	// (count=0), which the M17 "never-written ring" case (kvsnapshot.go) accepts independent of pos.
 	sess.tokens = []int{1, 2, 3}
-	sess.cache.pos = 0 // empty KV is fine; the guards fire on header/CRC
+	sess.cache.pos = len(sess.tokens) // KV rings unwritten; only the token/pos pairing matters here
 	blob := sess.Snapshot("model-A")
 
 	if _, err := m.LoadSession(blob, ""); err != nil {
