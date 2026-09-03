@@ -25,6 +25,13 @@ func wmBytes(w *linalg.WeightMat) int64 {
 	return n
 }
 
+// f32SliceBytes is wmBytes' counterpart for the families that keep a projection matrix as a plain
+// []float32 rather than a linalg.WeightMat (MLA, Mamba-2, LFM2's short conv — all parity-first,
+// per their own load-time comments). These are real matrices, not [hidden]-sized norms/biases, so
+// they belong in the same sum wmBytes' callers build, not in the "elementwise, rounds to nothing"
+// category ResidentWeightBytes' doc comment excuses.
+func f32SliceBytes(s []float32) int64 { return 4 * int64(len(s)) }
+
 // ResidentWeightBytes is the total byte footprint of this model's weight matrices — what a
 // resident backend must hold to run the whole model on-device.
 //
@@ -50,6 +57,9 @@ func (m *Model) ResidentWeightBytes() int64 {
 	}
 	w := m.w
 	n := wmBytes(&w.Embed) + wmBytes(&w.LMHead) + wmBytes(&w.PosEmbed)
+	// Gemma 4's model-level PLE tables (per_layer_token_embd / per_layer_model_proj) — empty
+	// WeightMats, so a no-op sum, on every other family.
+	n += wmBytes(&w.PerLayerTokenEmbed) + wmBytes(&w.PerLayerModelProj)
 	for i := range w.Layers {
 		l := &w.Layers[i]
 		for _, mat := range []*linalg.WeightMat{
@@ -66,6 +76,39 @@ func (m *Model) ResidentWeightBytes() int64 {
 			n += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
 		}
 		n += wmBytes(&l.SharedExpert.Gate) + wmBytes(&l.SharedExpert.Up) + wmBytes(&l.SharedExpert.Down)
+
+		// M-01: qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention) — the three
+		// dominant projections quantize (WeightMat, 2026-08-19); the rest stay f32 vectors small
+		// enough to fall under the doc's norms/biases exemption. At most one of these is non-nil.
+		if d := l.delta; d != nil {
+			n += wmBytes(&d.inProjQKV) + wmBytes(&d.inProjZ) + wmBytes(&d.outProj)
+		}
+		if q := l.qattn; q != nil {
+			n += wmBytes(&q.qProj) + wmBytes(&q.kProj) + wmBytes(&q.vProj) + wmBytes(&q.oProj)
+		}
+		// M-01: MLA (DeepSeek/Kimi) — parity-first f32, real projection matrices, not norms.
+		if mla := l.mla; mla != nil {
+			n += f32SliceBytes(mla.qAProj) + f32SliceBytes(mla.qBProj) + f32SliceBytes(mla.qProj) +
+				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj)
+		}
+		// M-01: Mamba-2 (Granite/Nemotron) — parity-first f32; the recurrent STATE is per-sequence
+		// and never resident here, only the weights below.
+		if mb := l.mamba; mb != nil {
+			n += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj)
+		}
+		// M-01: LFM2's gated short-convolution mixer — parity-first f32.
+		if sc := l.shortConv; sc != nil {
+			n += f32SliceBytes(sc.inProj) + f32SliceBytes(sc.convW) + f32SliceBytes(sc.outProj)
+		}
+		// M-01: Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown ALIAS l.GateProj/UpProj/DownProj
+		// (serialize.go's gemma4Layer comment) — already counted above; only routerProj and the
+		// fused experts are new tensors here.
+		if mo := l.gemma4moe; mo != nil {
+			n += wmBytes(&mo.routerProj)
+			for e := range mo.expertsGateUp {
+				n += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
+			}
+		}
 	}
 	return n
 }

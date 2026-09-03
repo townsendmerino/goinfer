@@ -1231,7 +1231,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/spec_sample.go:111` | goinfer | `for i, v := range slices.Backward(p) { // float-rounding guard: last token with mass` |
 | `docs/audit-2026-09-02.md|decoder/spec_sample.go:33` | goinfer | `return softmaxStable(logits, s.p.Temperature) // drawFull draws from this directly` |
 | `docs/audit-2026-09-02.md|decoder/spec_sample.go:76` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
-| `docs/audit-2026-09-02.md|decoder/weightbytes.go:47` | goinfer | `func (m *Model) ResidentWeightBytes() int64 {` |
+| `docs/audit-2026-09-02.md|decoder/weightbytes.go:54` | goinfer | `func (m *Model) ResidentWeightBytes() int64 {` |
 | `docs/audit-2026-09-02.md|decoder/weightmat.go:305` | goinfer | `var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""` |
 | `docs/audit-2026-09-02.md|decoder/weights.go:1071` | goinfer | `func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, i` |
 | `docs/audit-2026-09-02.md|decoder/weights.go:114` | goinfer | `gemma4moe *gemma4MoEWeights` |
@@ -1569,7 +1569,7 @@ supports.
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:328` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:949` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
 | `docs/task-fit-to-hardware.md|decoder/model.go:127` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
-| `docs/task-fit-to-hardware.md|decoder/weightbytes.go:47` | goinfer | `func (m *Model) ResidentWeightBytes() int64 {` |
+| `docs/task-fit-to-hardware.md|decoder/weightbytes.go:54` | goinfer | `func (m *Model) ResidentWeightBytes() int64 {` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:347` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:363` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:381` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
