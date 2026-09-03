@@ -125,7 +125,24 @@ func TestQwen35GGUF_vsSafetensors(t *testing.T) {
 	// make red green: the mean bar sits ~0.001 under a measured 0.998114 and the min bar ~0.008
 	// under a measured 0.987835. A real transform bug does not land in that gap — it craters
 	// cosine, which is what the three probes above independently confirm is not happening.
-	const meanFloor, minFloor = 0.997, 0.980
+	//
+	// MEAN RE-BASELINED 2026-09-03 (mechanism confirmed by commit bisection, not inferred). 6d4fc79
+	// ("quantize the projections that were f32 at every quant") stopped keeping the DeltaNet
+	// in/out-proj and gated-softmax q/k/v/o projections f32-always: both loaders now independently
+	// quantize them to int8 via quantizeWM. Previously those tensors stayed in continuous f32 on
+	// both sides of this comparison, so the pre-existing Q8_0-vs-bf16 delta had nothing to round
+	// against; now each side re-quantizes its own slightly-different f32 view, and a delta that is
+	// small in f32 can land the two sides in different int8 buckets — new, systematic divergence on
+	// exactly the tensors this gate compares. Bisected on nobara (same box, same untouched
+	// checkpoints/golden since 2026-06-08): 33879dd (6d4fc79's parent) reproduces the ORIGINAL
+	// 0.998114/0.987835 to six decimals; 6d4fc79 itself reproduces 0.995803/0.985140, also to six
+	// decimals, across four independent runs (three different commits plus the original overnight
+	// sweep). The commit already re-baselined a sibling gate hit by the same mechanism
+	// (TestQwen35Real_gate2FullModel, mean 0.99837->0.99644) but missed this one, which lives
+	// outside the gate-ledger manifest as an unlisted blocker — it went red silently for two weeks
+	// until an overnight parity sweep caught it. Min keeps its 2026-08-18 floor: 0.985140 still
+	// clears 0.980 with real headroom, so only the statistic that actually broke moves.
+	const meanFloor, minFloor = 0.9946, 0.980
 	if mean < meanFloor {
 		t.Errorf("GGUF int8 vs safetensors int8 MEAN cosine %.6f < %.3f — systematic divergence, "+
 			"which quant noise does not produce; run TestQwen35GGUF_weightDiff (is a tensor "+
