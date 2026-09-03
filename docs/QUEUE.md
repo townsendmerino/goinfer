@@ -1146,6 +1146,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/mlp.go:464` | goinfer | `func moeExpertMajor() bool { return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") != "0" }` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:484` | goinfer | `func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend` |
 | `docs/audit-2026-09-02.md|decoder/mlp.go:504` | goinfer | `logits := make([]float32, n*nE)` |
+| `docs/audit-2026-09-02.md|decoder/mlp.go:576` | goinfer | `// moePrefillScratch enables the P18 ATTRIBUTION arm: reuse one scratch across the` |
 | `docs/audit-2026-09-02.md|decoder/model.go:1088` | goinfer | `if sp.Logprobs {` |
 | `docs/audit-2026-09-02.md|decoder/model.go:1120` | goinfer | `fastNext, err = greedyRF.ForwardArgmax(emb, gpuPos)` |
 | `docs/audit-2026-09-02.md|decoder/model.go:1155` | goinfer | `func (m *Model) isStop(id int, sp SamplingParams) bool {` |
