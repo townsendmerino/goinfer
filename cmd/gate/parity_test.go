@@ -745,3 +745,61 @@ func TestExitsHard(t *testing.T) { os.Exit(3) }
 		t.Fatalf("premise broke: the old config already blocked (%d)", got)
 	}
 }
+
+// EVERY GATE-SHAPED, goinfer_testhooks-TAGGED METAL TEST IS LISTED, ONE WAY OR THE OTHER.
+//
+// V-07 (docs/review-2026-09-04.md): TestBatchedVerifyKernelParity — the Metal decode==verify
+// bit-identity gate G-08 repaired — matched none of metal-parity's five -run alternatives, and
+// neither did TestGemma4DenseScaled_metalParity or TestGemma4Router_residentIdxParity. Unlike the
+// realckpt side (TestRealckptGateIsListedOrExplicitlyNotRequired above), there was no scan here
+// at all: a regression of the exact class G-08 fixed could pass `gate gpu` on the Mac with
+// nothing ever forwarded for it, and no report even naming the gap. This is that scan's Metal
+// twin — checked against metalParityRun (a REGEX match, not a JSON-result tally like the
+// realckpt side's parityRealckptGates, since the question here is narrower: does SOME cell's
+// -run even reach this test at all).
+func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("cannot locate the repo root: %v", err)
+	}
+	found := metalGateTests(root)
+	if len(found) == 0 {
+		t.Fatalf("no gate-shaped test found in any //go:build goinfer_testhooks file under %v — "+
+			"the scan is broken, and a broken scan both empties this check and narrows the cell's "+
+			"-run", metalDirs)
+	}
+	runRe, err := regexp.Compile(metalParityRun)
+	if err != nil {
+		t.Fatalf("metalParityRun does not compile as a regexp: %v", err)
+	}
+	for _, test := range found {
+		reason, excluded := metalNotRequired[test]
+		matched := runRe.MatchString(test)
+		switch {
+		case matched && excluded:
+			t.Errorf("%s is BOTH matched by metalParityRun and in metalNotRequired — the two "+
+				"disagree about whether it runs", test)
+		case matched:
+		case excluded && strings.TrimSpace(reason) == "":
+			t.Errorf("%s is in metalNotRequired with an EMPTY reason — an unexplained exemption "+
+				"is the state that map exists to prevent", test)
+		case excluded:
+		default:
+			t.Errorf("metal gate-shaped test %s matches no cell's -run pattern (metalParityRun) "+
+				"and is not in metalNotRequired. Unlisted means the sweep has nothing to say about "+
+				"it — not required, and not even reportable as DID NOT RUN (V-07). Add it to "+
+				"metalParityRun or to metalNotRequired with a reason.", test)
+		}
+	}
+	inTree := map[string]bool{}
+	for _, test := range found {
+		inTree[test] = true
+	}
+	for test := range metalNotRequired {
+		if !inTree[test] {
+			t.Errorf("metalNotRequired names %q, which is not a gate-shaped goinfer_testhooks "+
+				"Metal test found by the scan — a stale exemption reads as a gate somebody "+
+				"considered", test)
+		}
+	}
+}

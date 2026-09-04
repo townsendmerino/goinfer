@@ -918,10 +918,10 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/configs.go:34` | goinfer | `Env: map[string]string{` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1015` | goinfer | `func (g *gpuGate) metalSuite() {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1029` | goinfer | `func (g *gpuGate) metalCgoFree() {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1107` | goinfer | `func (g *gpuGate) metalModel() string {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1123` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1157` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1249` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1111` | goinfer | `func (g *gpuGate) metalModel() string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1127` | goinfer | `_, cr, out := g.run(cell{` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1161` | goinfer | `_, cr, out := g.run(cell{` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1253` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:219` | goinfer | `func (g *gpuGate) noteIfEmpty(c cell, res *results) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:349` | goinfer | `func detectBackend() string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:397` | goinfer | `for _, v := range []string{"GOINFER_HEAVY_TESTS", "GOINFER_DRAIN_GROUP"} {` |
@@ -1544,8 +1544,8 @@ supports.
 | `docs/queue-engineering.md|metal/model.go:1061` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:471` | goinfer | `def gate_cell_idle():` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1089` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1163` | goinfer | `if cr.RC != 0 {` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1202` | goinfer | `// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture` |
+| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1168` | goinfer | `g.bad("prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model")` |
+| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1206` | goinfer | `// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:373` | goinfer | `func detectWebGPU() (present bool, backend string) {` |
 | `docs/review-2026-09-04.md|cmd/gate/run.go:218` | goinfer | `func (r *results) tally(cellName string, topOnly bool) cellResult {` |
 | `docs/review-2026-09-04.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |

@@ -1088,7 +1088,11 @@ func (g *gpuGate) metalParity() {
 	g.hdr("2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)")
 	_, cr, out := g.run(cell{
 		Name: "metal-parity", Pkgs: []string{"./metal/"}, Tags: []string{"goinfer_testhooks"},
-		Run:     "ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity",
+		// metalParityRun (parity.go): named so this cell and
+		// TestMetalGateIsListedOrExplicitlyNotRequired read the same string (V-07,
+		// docs/review-2026-09-04.md) — a hand-copied pattern here is exactly how KernelParity/
+		// metalParity/residentIdxParity went unmatched despite being gate-shaped.
+		Run:     metalParityRun,
 		Serial:  true,
 		Timeout: "20m",
 		Env:     map[string]string{"GOINFER_HEAVY_TESTS": "1"},

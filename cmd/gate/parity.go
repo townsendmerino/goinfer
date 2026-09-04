@@ -678,8 +678,17 @@ func realckptGateTests(root string) []string { return realckptTests(root, gateSh
 
 // realckptTests is realckptGateTests with the name predicate injected.
 func realckptTests(root string, want func(string) bool) []string {
+	return buildTaggedTests(root, realckptDirs, realckptWordRe, want)
+}
+
+// buildTaggedTests scans dirs for *_test.go files whose //go:build line matches tagWord, and
+// returns the sorted set of top-level test function names satisfying want. realckptTests is the
+// original, single-tag caller; metalGateTests (V-07, docs/review-2026-09-04.md) is the second —
+// generalised here rather than duplicated, so the two scans can never drift in HOW they read a
+// build line, only in which one they're looking for.
+func buildTaggedTests(root string, dirs []string, tagWord *regexp.Regexp, want func(string) bool) []string {
 	seen := map[string]bool{}
-	for _, d := range realckptDirs {
+	for _, d := range dirs {
 		files, _ := filepath.Glob(filepath.Join(root, d, "*_test.go"))
 		sort.Strings(files)
 		for _, f := range files {
@@ -692,7 +701,7 @@ func realckptTests(root string, want func(string) bool) []string {
 				src = src[:i]
 			}
 			m := realckptBuildRe.FindStringSubmatch(src)
-			if m == nil || !realckptWordRe.MatchString(m[1]) {
+			if m == nil || !tagWord.MatchString(m[1]) {
 				continue
 			}
 			for _, fm := range funcRe.FindAllStringSubmatch(string(b), -1) {
@@ -704,6 +713,34 @@ func realckptTests(root string, want func(string) bool) []string {
 	}
 	return sortedSet(seen)
 }
+
+// metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged tests
+// (V-07). Mirrors realckptDirs' role for the decoder-side scan.
+var metalDirs = []string{"metal"}
+
+var metalTesthooksWordRe = regexp.MustCompile(`\bgoinfer_testhooks\b`)
+
+// metalGateTests scans metal/'s goinfer_testhooks-tagged test files for gate-shaped top-level
+// tests — the Metal analogue of realckptGateTests, which V-07 found had no equivalent: a
+// regression of the exact class G-08 repaired (TestBatchedVerifyKernelParity, the Metal
+// decode==verify bit-identity gate) could pass `gate gpu` on the Mac simply by not being matched
+// by any cell's -run pattern, with nothing to say the cell had nothing to say about it.
+func metalGateTests(root string) []string {
+	return buildTaggedTests(root, metalDirs, metalTesthooksWordRe, gateShaped)
+}
+
+// metalParityRun is metal-parity's -run pattern (cmd/gate/gpu.go's metalParity), pulled out to a
+// named constant so the cell definition and TestMetalGateIsListedOrExplicitlyNotRequired read the
+// SAME string rather than two copies that can drift the way V-07 found them already had.
+const metalParityRun = "ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity"
+
+// metalNotRequired names a gate-shaped, goinfer_testhooks-tagged Metal test that
+// TestMetalGateIsListedOrExplicitlyNotRequired's scan finds but metalParityRun does not match,
+// with the reason it is deliberately excluded rather than required. Mirrors realckptNotRequired's
+// role and its EMPTY-REASON-IS-AN-ERROR rule (an unexplained exemption is exactly the state that
+// map exists to prevent). Empty for now — every gate-shaped test found as of V-07's fix is
+// covered by metalParityRun; add here, with a reason, if a future one is deliberately not.
+var metalNotRequired = map[string]string{}
 
 // realckptRun derives the realckpt cell's -run from the tree, and returns a note saying how.
 //
