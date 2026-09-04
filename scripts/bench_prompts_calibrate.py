@@ -79,6 +79,11 @@ def main():
     ap.add_argument("--quant", default="int4")
     ap.add_argument("--ctx", type=int, default=0,
                     help="pass -ctx to serve; required to calibrate depths past the default cap")
+    ap.add_argument("--stream-weights", action="store_true",
+                    help="pass -stream-weights to serve -- required for a checkpoint bigger than "
+                    "RAM (e.g. M35/M26 on a 16 GB Mac; a plain load OOMs and the process is "
+                    "SIGKILLed with no server-side error, which otherwise just reads as "
+                    "'server never came up')")
     ap.add_argument("--out", default=DEFAULT_OUT)
     args = ap.parse_args()
 
@@ -100,10 +105,14 @@ def main():
         proc = subprocess.Popen(
             [args.serve, "-model", f"bench={path}", "-backend", args.backend,
              "-addr", f"127.0.0.1:{PORT}", "-quant", args.quant]
-            + (["-ctx", str(args.ctx)] if args.ctx else []),
+            + (["-ctx", str(args.ctx)] if args.ctx else [])
+            + (["-stream-weights"] if args.stream_weights else []),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
         try:
-            if not wait_port(PORT):
+            # CALIB_TIMEOUT, not the 180s default: -stream-weights transcodes a plain .gguf into
+            # a sidecar .giw cache on first use, which for a 15-22 GB checkpoint can itself run
+            # past 180s before the port ever opens.
+            if not wait_port(PORT, timeout=CALIB_TIMEOUT):
                 sys.exit(f"calibrate: server for {key} never came up")
             # Warm the server with a TINY request before any deep probe. wait_port only proves the
             # socket is listening; the first request still pays one-time initialisation, and paying

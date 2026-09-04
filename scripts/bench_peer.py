@@ -108,6 +108,15 @@ GOINFER_MOE_PATH = {
     "M35": os.path.expanduser("~/models/qwen3.6-35b-a3b-int4.giw"),
     "M26": os.path.expanduser("~/models/gemma4-26b-int4.giw"),
 }
+# NOTE (merge 2026-09-05): the Mac box does NOT have qwen3.6-35b-a3b-q4_k_m.gguf,
+# gemma4-26b-q4_k_m.gguf, or the two GOINFER_MOE_PATH .giw files above -- it only has
+# Qwen3.5-35B-A3B-Q4_K_M.gguf and a Q4_0 gemma4-26b GGUF (see the Mac-side results already
+# recorded in docs/measurements/peer-matrix-2026-09/mac-m1pro-m35m26-tier1-2026-09-04.json,
+# which carry their own provenance notes for those paths). M35/M26 are parked on the Mac
+# (kernel panic + swap-thrashing incident, 2026-09-04/05 -- see docs/task-peer-benchmarks.md
+# session notes) so this canonical (nobara-quality, real Q4_K_M) path set is not expected to
+# resolve there; a Mac re-pull/requantize is a separate follow-up if M35/M26 work resumes on
+# that box.
 
 # One goinfer binary per backend. Ollama has no WebGPU build, so the webgpu row is compared
 # against ollama's CUDA row and MUST be labelled cross-backend rather than presented as a
@@ -116,6 +125,13 @@ SERVE = {
     "cpu":    os.environ.get("GOINFER_SERVE_CPU",    "/home/francis/bench-v0.15.0/serve-cpu"),
     "cuda":   os.environ.get("GOINFER_SERVE_CUDA",   "/home/francis/bench-v0.15.0/serve-cuda"),
     "webgpu": os.environ.get("GOINFER_SERVE_WEBGPU", "/home/francis/bench-v0.15.0/serve-webgpu"),
+    # Metal, added 2026-09-04 for the Mac side of docs/task-peer-benchmarks.md. Built from the
+    # `metal/` submodule (M-19: the root cmd/serve builds no backend) -- `go build
+    # github.com/townsendmerino/goinfer/metal/cmd/serve`, darwin-only, no build tag needed. No
+    # Linux-box default exists (there is nothing to default to), so this path is DELIBERATELY
+    # wrong/absent unless GOINFER_SERVE_METAL is set -- it will only ever be selected by
+    # BENCH_BACKENDS=metal on darwin.
+    "metal":  os.environ.get("GOINFER_SERVE_METAL",  "/nonexistent/serve-metal"),
 }
 GPORT, OPORT, LPORT = 8099, 11499, 8098
 # DEEP CONTEXT (§B7). BENCH_DEEP_CTX sets the resident/served context cap in positions; 0 keeps
@@ -817,7 +833,16 @@ def main():
         bes, engs = plan_backends(), plan_engines()
         for eng, be in [("goinfer","cpu"), ("ollama","cpu"), ("llamacpp","cpu"),
                         ("goinfer","cuda"), ("ollama","cuda"), ("llamacpp","cuda"),
-                        ("goinfer","webgpu")]:
+                        ("goinfer","webgpu"),
+                        # Metal (Mac), added 2026-09-04. "ollama"/"metal" and "llamacpp"/"metal"
+                        # map to the SAME code path as their "cuda" siblings (ollama_payload only
+                        # special-cases backend=="cpu"; the llama-server ngl switch only
+                        # special-cases "cpu" too) -- on darwin that default IS each peer's Metal
+                        # backend, so no new branch was needed in run_cell, only this pairing and
+                        # the "metal" SERVE entry above. Inert unless BENCH_BACKENDS includes
+                        # "metal" (plan_backends() default is cpu/cuda/webgpu), so this changes
+                        # nothing for the Linux release sweep.
+                        ("goinfer","metal"), ("ollama","metal"), ("llamacpp","metal")]:
             if be in bes and eng in engs:
                 plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, CUDA only, all engines. "cuda" here is no longer just a label (V-08): every
