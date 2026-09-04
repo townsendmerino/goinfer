@@ -62,7 +62,7 @@
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
-| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:89-111` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); a paired/interleaved A/B on the real 1.5B measured 1.08× mean — the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds — so it stays off by default per this repo's own "ambiguous → parked" rule |
+| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:89-111` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule |
 | **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
 | **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **fixed on the serving hot path, 2026-09-03**: P-13, P-15, and now P-17's `openai.go` `streamTokens` (incremental `DecodePiece` + windowed stop-scan, differentially tested against the old algorithm) are all FIXED; the three demo-CLI copies (`chatapp`/`gemmaapp`/agent) are a different shape and stay open, deliberately deprioritized below the serving path as the original audit itself specified |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
@@ -372,14 +372,27 @@ positions are inherent, not recompute.
   `matmulW4A8Batch` (`decoder/backend.go`) helpers, new `qkvOpsW4`/`guOpsW4` scratch fields
   (`decoder/scratch.go`), and dispatch branches in `attention.go` (q/k/v) and `mlp.go` (gate/up),
   each gated behind `w4a8BatchEnabled` (`GOINFER_W4A8_BATCH=1`), mirroring the existing
-  `w4a8SplitHalfRepackEnabled` precedent. A paired/interleaved before/after A/B (11 runs, first
-  discarded as warm-up, real `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`) measured **1.08× mean**
-  (46.122 → 49.915 tok/s) — inside the pre-registered ambiguous zone between S-02's 1.05× park /
-  1.15× ship thresholds, so it stays off by default rather than shipped, per this repo's own
-  measurement-discipline rule that the zone just below a threshold is where motivated reasoning
-  lives. Correctness proven both toggle-off and toggle-on by `TestInt4_forwardParity`
-  (mutation-checked: corrupting `group` in either batch call is caught by 8+ of 22 fixtures).
-  `docs/env-vars.md` documents the toggle.
+  `w4a8SplitHalfRepackEnabled` precedent. First measured via a git-stash-built before/after A/B
+  (11 runs, real `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`, Mac only): 1.08× mean, noisier
+  per-pair spread (0.984–1.143). **Reproduced 2026-09-04 with a cleaner instrument on two
+  independent architectures** — `scripts/bench_peer.py`'s own `goinfer`-only cell (no peer engine
+  involved; the toggle is the sole variable), n=10 paired/interleaved runs, idle-gated between
+  every cell, same `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`: MacBook (arm64, row4 kernel active)
+  **1.071× mean** (stdev 0.0092, range 1.063–1.089); nobara (amd64, canonical/split-half — no
+  row4, idles at load 0.00) **1.066× mean** (stdev 0.0008, range 1.065–1.067). Both land tightly
+  inside S-02's pre-registered ambiguous zone (≥1.05 park / <1.15 ship) — not noise, a real,
+  reproducible effect on two architectures. The near-identical ratio despite very different
+  underlying kernels (row4 vs canonical) says the win is almost entirely the goroutine-wake-stagger
+  amortization from fusing the fork/joins, not a row4-bandwidth effect. Stays off by default rather
+  than shipped, per this repo's own measurement-discipline rule that the zone just below a
+  threshold is where motivated reasoning lives — now with materially higher confidence than the
+  original single-box reading. Correctness proven both toggle-off and toggle-on by
+  `TestInt4_forwardParity` (mutation-checked: corrupting `group` in either batch call is caught by
+  8+ of 22 fixtures), and re-confirmed against real aikit v1.34.0 by `TestForwardN_matchesSequential`
+  (bit-identical) and `TestMoEExpertMajor_bitIdentical`, run explicitly. `docs/env-vars.md`
+  documents the toggle. Honest next step if this is revisited: dynamic chunking, measured
+  separately by aikit at 1.135× and complementary (it fixes the same stagger from the other
+  direction) — not a looser reading of this gate.
 
 ### R-07 · The embeddings route prefills one token at a time
 
