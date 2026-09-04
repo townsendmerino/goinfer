@@ -43,6 +43,27 @@ OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-032
 # same role/content/finish_reason delta framing, same usage.completion_tokens final chunk --
 # so it reuses parse_openai directly rather than a third parser.
 LLAMACPP = os.environ.get("LLAMACPP_BIN", "llama-server")
+# MLX (Mac only, docs/task-peer-benchmarks.md §1/§7): "mlx_lm.server ... speak[s] OpenAI-compatible
+# chat completions, so one client covers them" -- verified live 2026-09-04, its stream is the same
+# role/content/finish_reason delta framing plus a final usage.completion_tokens chunk parse_openai
+# already handles (the terminal chunk has empty `choices` and `object: chat.completion`, not
+# `.chunk`, but parse_openai checks `usage` before `choices` so this needs no new parser).
+#
+# mlx_lm.server has NO "model name" concept like goinfer/llama.cpp's free-form `model=bench`: it
+# scans its HF cache and serves EVERY cached checkpoint it finds, routing each request by an exact
+# match on the `model` field. The id for a checkpoint loaded via `--model <path>` is that path
+# STRING ITSELF (verified: `/v1/models` echoed back the literal `~/models/...` path, not a
+# huggingface-style repo id) -- so MLX_MODEL_ID below is computed from MLX_MODELS's path, not a
+# separate tag the way Ollama's MODELS tuple carries one.
+MLX_BIN = os.environ.get("MLX_SERVER_BIN", "mlx_lm.server")
+# mlx-community's own 4-bit conversion -- a DIFFERENT quant from every other engine's q4_k_m/int4
+# (task doc §4: "MLX runs its own 4-bit conversion of each ... those rows carry the quality column
+# with extra weight"). Populated per-model as pulled; a model key with no entry here is skipped by
+# plan_engines() rather than failing the whole sweep -- see run_cell's mlx branch.
+MLX_MODELS = {
+    "7B": os.path.expanduser(os.environ.get("MLX_MODEL_7B",
+        "~/models/mlx-community/Qwen2.5-7B-Instruct-4bit")),
+}
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
     "1.5B": (os.path.expanduser("~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "q15"),
@@ -133,7 +154,7 @@ SERVE = {
     # BENCH_BACKENDS=metal on darwin.
     "metal":  os.environ.get("GOINFER_SERVE_METAL",  "/nonexistent/serve-metal"),
 }
-GPORT, OPORT, LPORT = 8099, 11499, 8098
+GPORT, OPORT, LPORT, MPORT = 8099, 11499, 8098, 8097
 # DEEP CONTEXT (§B7). BENCH_DEEP_CTX sets the resident/served context cap in positions; 0 keeps
 # the shallow protocol untouched. A 32k prefill costs orders of magnitude more than the decode being
 # measured, so deep cells deliberately use FEWER requests with MORE decode tokens each — the same
@@ -469,6 +490,17 @@ def llamacpp_payload(prompt, cfg):
     p.update(cfg.get("llamacpp", {}))
     return p
 
+def mlx_payload(model_id, prompt, cfg):
+    """Same shape as llamacpp_payload -- verified live 2026-09-04 -- except `model` MUST be the
+    exact id mlx_lm.server reports for the checkpoint (the local path string), not a free-form
+    name; see MLX_MODELS's note above."""
+    ngen, _, _ = gen_params()
+    p = {"model": model_id, "stream": True, "max_tokens": ngen,
+         "stream_options": {"include_usage": True},
+         "messages": [{"role": "user", "content": prompt}]}
+    p.update(cfg.get("mlx", {}))
+    return p
+
 # Sampling configurations. Each records EXACTLY what is sent to each side.
 CONFIGS = {
     "greedy": {
@@ -527,8 +559,11 @@ CONFIGS = {
 }
 # llama-server speaks goinfer's own OpenAI sampling dialect (same field names), so every config
 # above gets a free "llamacpp" alias of its "goinfer" entry instead of nine duplicated blocks.
+# mlx_lm.server takes the same temperature/top_p/top_k/seed names too (verified 2026-09-04), so it
+# gets the same free alias.
 for _cfg in CONFIGS.values():
     _cfg.setdefault("llamacpp", _cfg.get("goinfer", {}))
+    _cfg.setdefault("mlx", _cfg.get("goinfer", {}))
 
 def gate_cell_idle():
     """Re-check that the box is idle, BEFORE EVERY CELL. Returns nothing; exits on failure.
@@ -645,6 +680,25 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 preexec_fn=os.setsid)
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
                 parse_openai, (lambda: llamacpp_payload(prompt, cfg))
+        elif engine == "mlx":
+            # Mac only (docs/task-peer-benchmarks.md §1): MLX_MODELS holds only the checkpoints
+            # actually pulled -- a model_key with no entry is a clean skip, not a crash, since a
+            # release sweep run without a full mlx-community pull (35B/26B are tens of GB) must
+            # still complete its other cells.
+            if model_key not in MLX_MODELS:
+                return None, f"no MLX checkpoint configured for {model_key} (MLX_MODELS)", None
+            mlx_path = MLX_MODELS[model_key]
+            if not os.path.exists(mlx_path):
+                return None, f"MLX checkpoint missing on disk: {mlx_path}", None
+            proc = subprocess.Popen(
+                [MLX_BIN, "--model", mlx_path, "--port", str(MPORT), "--host", "127.0.0.1"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid)
+            # mlx_lm.server's own httpd only starts listening once the model is loaded (verified
+            # 2026-09-04: no llama-server-style 503-while-loading window), so plain wait_port is a
+            # real readiness check here, not just a connectable-socket one.
+            port, url, parse, mk = MPORT, f"http://127.0.0.1:{MPORT}/v1/chat/completions", \
+                parse_openai, (lambda: mlx_payload(mlx_path, prompt, cfg))
         ready = wait_llamacpp_ready(port, timeout=load_timeout) if engine == "llamacpp" \
             else wait_port(port, timeout=load_timeout)
         if not ready:
@@ -738,7 +792,7 @@ def plan_engines():
     if not raw:
         return ["goinfer", "ollama"]
     picked = [e.strip() for e in raw.split(",") if e.strip()]
-    known = ("goinfer", "ollama", "llamacpp")
+    known = ("goinfer", "ollama", "llamacpp", "mlx")
     unknown = [e for e in picked if e not in known]
     if unknown:
         sys.exit(f"BENCH_ENGINES: unknown engine(s) {unknown}; known: {list(known)}")
@@ -842,7 +896,12 @@ def main():
                         # the "metal" SERVE entry above. Inert unless BENCH_BACKENDS includes
                         # "metal" (plan_backends() default is cpu/cuda/webgpu), so this changes
                         # nothing for the Linux release sweep.
-                        ("goinfer","metal"), ("ollama","metal"), ("llamacpp","metal")]:
+                        ("goinfer","metal"), ("ollama","metal"), ("llamacpp","metal"),
+                        # MLX has no backend switch of its own (always Metal) -- "metal" here is
+                        # just the record label, matching how webgpu's goinfer-only row above has
+                        # no peer counterpart in that pairing either. Skipped per-model rather than
+                        # failing when MLX_MODELS has no entry (run_cell's mlx branch).
+                        ("mlx","metal")]:
             if be in bes and eng in engs:
                 plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, CUDA only, all engines. "cuda" here is no longer just a label (V-08): every
