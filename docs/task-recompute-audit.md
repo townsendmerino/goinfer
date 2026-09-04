@@ -62,9 +62,9 @@
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
-| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:79-81` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | open; aikit-side first — **S-03's NEON quantiser shipped in aikit v1.33.0** (built 2026-09-03, unmeasured per aikit's own tracking; goinfer bumped to it 2026-09-04), but `MatmulBTW4A8Batch` itself does not exist yet — still the blocking half |
+| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:79-101` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | open; aikit-side first — **S-03's NEON quantiser shipped in aikit v1.33.0** (built 2026-09-03, unmeasured per aikit's own tracking; goinfer bumped to it 2026-09-04), but `MatmulBTW4A8Batch` itself does not exist yet — still the blocking half |
 | **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
-| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **2-of-3 done, 2026-09-03**: P-13's vocab sort and P-15's penalty-map rebuild are both FIXED (`topKByLogit`, incremental `histCounts`); only P-17's `streamTokens` re-decode remains open, deferred on genuine complexity (byte-fallback fusing + UTF-8 completeness + stop-string overlap, not lack of ROI) |
+| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **fixed on the serving hot path, 2026-09-03**: P-13, P-15, and now P-17's `openai.go` `streamTokens` (incremental `DecodePiece` + windowed stop-scan, differentially tested against the old algorithm) are all FIXED; the three demo-CLI copies (`chatapp`/`gemmaapp`/agent) are a different shape and stay open, deliberately deprioritized below the serving path as the original audit itself specified |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
 | **R-10** | every KV head's history re-gathered and transposed per layer per token (Gemma-4 CPU) | P-09 | 2–3× attention traffic at long context | store V transposed at append | filed, contingent |
 
@@ -358,7 +358,7 @@ positions are inherent, not recompute.
 
 ### R-06 · One activation, quantised seven times per layer
 
-- **Where:** `decoder/attention.go:79-81` (`matmulInto` ×3 for q, k, v when they are W4A8; the
+- **Where:** `decoder/attention.go:79-101` (`matmulInto` ×3 for q, k, v when they are W4A8; the
   W8A8 case already batches through `qkvOps` at `:74-77`), the gate/up pair in `decoder/mlp.go`.
   Each `MatmulBTW4A8Into` re-quantises its input row.
 - **Fix:** aikit `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (task-simd-audit S-02/S-03),
@@ -401,15 +401,51 @@ positions are inherent, not recompute.
   bytes. P-15: presence/frequency penalties rebuild a `map[int]int` over the whole history every
   token — keep the counts. P-13: `computeLogprobs` full-sorts the vocabulary per token whenever
   `top_logprobs > 0` — `topKByLogit` exists. Each has its own measurement cell in the audit.
-- **Status (2026-09-03): 2 of 3 fixed.** P-13's `computeLogprobs` now uses `topKByLogit` plus a
-  small deterministic tie-break sort instead of a full vocabulary sort (`decoder/sampler.go`),
-  proven against a full-sort reference on random and tied-logit inputs. P-15's penalty path now
-  keeps an incrementally-maintained `histCounts map[int]int` through a single `recordHistory`
-  chokepoint (`decoder/sampler.go`), rebuilt from scratch only when `RepeatLastN>0` forces a
-  windowed count; mutation-checked by bypassing the chokepoint with a raw `append` and confirming
-  the new counts test catches the divergence. P-17's `streamTokens` re-decode/rescan is untouched —
-  still open, deferred on genuine complexity (four call sites: `openai.go`, `chatapp`, `gemmaapp`,
-  the demo agent).
+- **Status (2026-09-03): 3 of 3 pieces addressed; the serving hot path (`openai.go`) is fully
+  fixed, the three demo CLIs remain open by deliberate scope choice.** P-13's `computeLogprobs`
+  now uses `topKByLogit` plus a small deterministic tie-break sort instead of a full vocabulary
+  sort (`decoder/sampler.go`), proven against a full-sort reference on random and tied-logit
+  inputs. P-15's penalty path now keeps an incrementally-maintained `histCounts map[int]int`
+  through a single `recordHistory` chokepoint (`decoder/sampler.go`), rebuilt from scratch only
+  when `RepeatLastN>0` forces a windowed count; mutation-checked by bypassing the chokepoint with
+  a raw `append` and confirming the new counts test catches the divergence.
+  **P-17's `streamTokens` (`internal/serveapp/openai.go`) is now fixed.** Two independent
+  quadratic sources, both removed: (1) `DecodeContinuation(ids)` re-decoded the whole generated
+  sequence every token — replaced with `DecodePiece(id)` appended to a `strings.Builder`
+  incrementally. Safe because `decode()` (`tokenizer/sentencepiece.go`) has no state that depends
+  on chunk boundaries: a byte-fallback token's raw byte is written out whenever a flush lands, and
+  concatenation is associative regardless of when that is, so decoding one token at a time and
+  concatenating is byte-identical to decoding the whole sequence at once — proven directly by
+  `TestDecodeContinuation_isIncrementallyAssociative` (`tokenizer/`) across a real multi-byte-emoji
+  byte-fallback run, the exact case this used to be cautious about. (2) `firstStop`/`completeUTF8`
+  themselves re-scanned the FULL accumulated text every token (`strings.Index` from byte 0,
+  `completeUTF8`'s rune walk from byte 0) — fixing only the decode would have just moved the O(n²)
+  cost, not removed it. Both are now bounded to `text[printed:]` (the not-yet-emitted tail, which
+  does not grow with total output length): `text[:printed]` provably never contains a stop match,
+  complete or in progress, because `stopTailHold`'s own invariant — hold back every suffix of the
+  current text that could be a stop's prefix — means `printed` never advances past the start of a
+  still-possible match. Checked empirically, not just argued: `TestStreamTokens_windowedScanMatchesFullRescan`
+  (`internal/serveapp/`) runs 300 random token streams (including matches split across token
+  boundaries — "EN"+"D" spelling "END" — near-misses, and a 3-token-split match) through both the
+  new windowed implementation and a reference that mirrors the exact pre-fix full-rescan
+  algorithm, comparing emitted text and stop-hit byte-for-byte. Both new tests mutation-checked
+  (a corrupted window, a corrupted decode, and a broken offset translation were each confirmed
+  caught). The existing static M-25 guard (`TestStreamTokens_decodesAsAContinuation`, an AST-based
+  check that streamTokens never calls the leading-space-stripping `Decode`) needed updating to
+  look for `DecodePiece` instead of `DecodeContinuation` — `DecodePiece` is equally non-stripping
+  by its own documented contract, so the property it protects is unchanged; re-verified by
+  mutation (swapping in `Decode` makes the guard fail again). Full `internal/serveapp` suite green
+  (134 pass / 0 fail / 27 skip); `gofmt`/`go vet`/`staticcheck` clean.
+  **`chatapp`/`gemmaapp`/the demo agent are NOT touched.** Their loops have a materially different
+  shape — no stop-string logic at all, and their whole-sequence `Decode(out)` call is semantically
+  *correct* there (no M-25 bug: `out` is exactly the response's own ids from position 0, so
+  stripping its one leading space is the intended behavior, not a continuation-vs-whole-sequence
+  mixup) — so the same DecodePiece-and-window fix doesn't port over unchanged; it would need its
+  own design pass to preserve the "strip once, at the very start" semantic incrementally. The
+  original audit already deprioritized these below the serving hot path ("demo CLIs... lower
+  priority once the mechanism is proven correct in openai.go"); that mechanism is now proven, and
+  extending to the demos remains a legitimate, still-open, appropriately-deferred follow-up rather
+  than something to rush through unverified in this pass.
 
 ### R-09 / R-10 · Filed, not implemented
 

@@ -57,7 +57,7 @@ Qwen3.5-MoE**: copy `layerIsLinear→layerIsConv`, `IsLinearLayer→IsConvLayer`
 
 The brief said "QK LayerNorm (not RMSNorm)." The reference `modeling_lfm2.py` uses **`Lfm2RMSNorm(head_dim)`
 per-head** — RMSNorm. **If RMSNorm (confirm directly), LFM2 uses goinfer's existing hardcoded RMSNorm
-QK-norm path (`decoder/attention.go:97-96`) with ZERO new code.** This is exactly the "quiet wrong answer" risk —
+QK-norm path (`decoder/attention.go:97-116`) with ZERO new code.** This is exactly the "quiet wrong answer" risk —
 verify before building. Contingency if LayerNorm: the `layerNorm(x, weight, bias, …)` primitive already
 exists and handles bias (`decoder/rmsnorm.go:49`; `decoder/config.go:903-706` flags LayerNorm-QK as a known Phase-2
 primitive) → ~25 lines forward-selector + `.bias`-tensor plumbing.

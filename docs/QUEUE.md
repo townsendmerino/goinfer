@@ -1033,7 +1033,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/attention.go:11` | goinfer | `func addBias(x, b []float32) {` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:114` | goinfer | `// 4. Append this position's K/V, then attend over the stored history. Route` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:129` | goinfer | `ctx := cache.scr.ctx[:nH*hd]` |
-| `docs/audit-2026-09-02.md|decoder/attention.go:156` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)` |
+| `docs/audit-2026-09-02.md|decoder/attention.go:138` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:179` | goinfer | `// LOSSLESS BY CONSTRUCTION: every emitted token is one the TARGET's own argmax produced` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:185` | goinfer | `anchor: func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:230` | goinfer | `rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak` |
@@ -1343,11 +1343,9 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:594` | goinfer | `close(stopDemote) // stop demoting before we checkpoint` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:762` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:880` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1054` | goinfer | `for id := range stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1058` | goinfer | `ids = append(ids, id)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1064` | goinfer | `text, _ := lm.tk.DecodeContinuation(ids)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1065` | goinfer | `if cut, which, hit := firstStop(text, gr.stopStrings); hit {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1131` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1069` | goinfer | `ids = append(ids, id)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1073` | goinfer | `piece, _ := lm.tk.DecodePiece(id)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1154` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:424` | goinfer | `type completionReq struct {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:508` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:526` | goinfer | `if !lm.enter(w) {` |

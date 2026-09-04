@@ -114,7 +114,7 @@ matches get high weight; the token then pulls in a weighted blend of those
 tokens' Values. That blend gets added back into its hidden state. That's it —
 that's how "river" reaches forward and disambiguates "bank."
 
-In this repo that's [`causalAttention`](../decoder/attention.go#L49-L167).
+In this repo that's [`causalAttention`](../decoder/attention.go#L49-L187).
 "Causal" means each token may only look *backward*, never at future tokens (you
 can't peek at the answer you're trying to predict). The actual
 matching-and-blending kernel `causalAttention` calls is
@@ -128,7 +128,7 @@ in modern models:
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/attention.go:107-109](../decoder/attention.go#L104-L109).
+  is. [decoder/attention.go:107-129](../decoder/attention.go#L124-L129).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -218,7 +218,7 @@ So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
 [KVCache](../decoder/kvcache.go#L50-L105), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([decoder/attention.go:147](../decoder/attention.go#L144)).
+([decoder/attention.go:147](../decoder/attention.go#L164)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to
