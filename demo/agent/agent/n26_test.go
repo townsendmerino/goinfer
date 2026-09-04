@@ -115,6 +115,60 @@ func TestSpliceImageBlock_imageBlockIsSpecialUserTextIsNot(t *testing.T) {
 	}
 }
 
+// TestSpliceImageBlock_usesTheLastOccurrenceNotTheFirst pins V-19 (docs/review-2026-09-04.md) for
+// this package's ported copy of spliceImageBlock. It used to splice the FIRST non-Special segment
+// containing the block, anywhere in the rendered history — an earlier turn that happens to contain
+// the literal block text as ordinary words would get spliced instead of the real current image
+// turn, reopening the special-token-forging class V-03/M-22 closed. Mirrors
+// internal/serveapp/vision_hardening_test.go's TestVision_spliceUsesTheLastOccurrenceNotTheFirst.
+func TestSpliceImageBlock_usesTheLastOccurrenceNotTheFirst(t *testing.T) {
+	block := multimodal.Gemma3ImageBlock(4) + "\n"
+	turns := []chat.Turn{
+		{Role: "user", Content: "what does " + block + " mean in your logs?"}, // earlier, literal but NOT an image turn
+		{Role: "assistant", Content: "it's the image placeholder run."},
+		{Role: "user", Content: block + "describe this photo"}, // the REAL current image turn
+	}
+	tmpl := chat.Gemma4()
+	segs := tmpl.RenderSegments("", turns)
+
+	out, err := spliceImageBlock(segs, block)
+	if err != nil {
+		t.Fatalf("spliceImageBlock: %v", err)
+	}
+
+	// Splicing EITHER occurrence produces the same local shape (plain-before, Special-block,
+	// plain-after) — the real signal is ADJACENCY: the Special block segment must sit immediately
+	// before the segment carrying "describe this photo" (the real, current turn's own words), not
+	// immediately before "mean in your logs" (the earlier, unrelated turn's own words).
+	imgIdx, earlierIdx, laterIdx := -1, -1, -1
+	for i, sg := range out {
+		if sg.Special && strings.Contains(sg.Text, multimodal.ImageSoftToken) {
+			imgIdx = i
+		}
+		if strings.Contains(sg.Text, "mean in your logs") {
+			earlierIdx = i
+			if sg.Special {
+				t.Error("the EARLIER turn's literal block text landed in a Special segment (V-19)")
+			}
+		}
+		if strings.Contains(sg.Text, "describe this photo") {
+			laterIdx = i
+			if sg.Special {
+				t.Error("the user's own words after the real image block landed in a Special segment")
+			}
+		}
+	}
+	if imgIdx < 0 || earlierIdx < 0 || laterIdx < 0 {
+		t.Fatalf("test setup: expected markers vanished (img=%d earlier=%d later=%d); not "+
+			"exercising what it claims to", imgIdx, earlierIdx, laterIdx)
+	}
+	if laterIdx != imgIdx+1 {
+		t.Errorf("the Special image-block segment (index %d) is not immediately followed by "+
+			"the CURRENT turn's own words (index %d, want %d) — it spliced the wrong occurrence "+
+			"(V-19); the earlier turn's text is at index %d", imgIdx, laterIdx, imgIdx+1, earlierIdx)
+	}
+}
+
 // TestTurnImage_wiresSpliceImageBlockBeforeEncoding is the AST-structural guard: TurnImage must
 // call spliceImageBlock on the rendered segments and encode ITS result, not the raw
 // buildPromptSegments output directly — the exact shape V-03's regression had.

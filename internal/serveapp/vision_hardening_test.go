@@ -79,6 +79,64 @@ func TestVision_missingImageBlockIsAnErrorNotAPlainPrompt(t *testing.T) {
 	}
 }
 
+// TestVision_spliceUsesTheLastOccurrenceNotTheFirst pins V-19 (docs/review-2026-09-04.md):
+// spliceImageBlock used to splice the FIRST non-Special segment containing the block, anywhere in
+// the rendered history. An earlier turn that happens to contain the literal block text as ordinary
+// words — a user asking what the sentinel means, say — would get spliced instead of the real
+// current image turn, reopening the special-token-forging class M-22 closed (for this sentinel
+// instead of a role marker): the earlier turn's unrelated text gets tagged Special and parsed as
+// sentinels, while the real image tokens stay unspliced plain text.
+func TestVision_spliceUsesTheLastOccurrenceNotTheFirst(t *testing.T) {
+	block := multimodal.Gemma3ImageBlock(4) + "\n"
+	turns := []chat.Turn{
+		{Role: "user", Content: "what does " + block + " mean in your logs?"}, // earlier, literal but NOT an image turn
+		{Role: "assistant", Content: "it's the image placeholder run."},
+		{Role: "user", Content: block + "describe this photo"}, // the REAL current image turn
+	}
+	tmpl := chat.Gemma4()
+	segs := tmpl.RenderSegments("", turns)
+
+	out, err := spliceImageBlock(segs, block)
+	if err != nil {
+		t.Fatalf("spliceImageBlock: %v", err)
+	}
+
+	// Splicing EITHER occurrence produces the same shape locally (plain-before, Special-block,
+	// plain-after) — checking the text immediately around the match says nothing about WHICH
+	// occurrence it was. The real signal is ADJACENCY in the output list: the Special block
+	// segment must sit immediately before the segment carrying "describe this photo" (the real,
+	// current turn's own words) — not immediately before "mean in your logs" (the earlier,
+	// unrelated turn's own words), which is what splicing the first occurrence would produce.
+	imgIdx, earlierIdx, laterIdx := -1, -1, -1
+	for i, sg := range out {
+		if sg.Special && strings.Contains(sg.Text, multimodal.ImageSoftToken) {
+			imgIdx = i
+		}
+		if strings.Contains(sg.Text, "mean in your logs") {
+			earlierIdx = i
+			if sg.Special {
+				t.Error("the EARLIER turn's literal block text landed in a Special segment " +
+					"(V-19)")
+			}
+		}
+		if strings.Contains(sg.Text, "describe this photo") {
+			laterIdx = i
+			if sg.Special {
+				t.Error("the user's own words after the real image block landed in a Special segment")
+			}
+		}
+	}
+	if imgIdx < 0 || earlierIdx < 0 || laterIdx < 0 {
+		t.Fatalf("test setup: expected markers vanished (img=%d earlier=%d later=%d); not "+
+			"exercising what it claims to", imgIdx, earlierIdx, laterIdx)
+	}
+	if laterIdx != imgIdx+1 {
+		t.Errorf("the Special image-block segment (index %d) is not immediately followed by "+
+			"the CURRENT turn's own words (index %d, want %d) — it spliced the wrong occurrence "+
+			"(V-19); the earlier turn's text is at index %d", imgIdx, laterIdx, imgIdx+1, earlierIdx)
+	}
+}
+
 // NO ROUTE MAY TOKENIZE A RENDERED CHAT PROMPT WITH Encode.
 //
 // The two tests above prove spliceImageBlock segments correctly — they do NOT prove the vision

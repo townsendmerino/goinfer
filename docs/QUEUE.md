@@ -1252,8 +1252,8 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/weights.go:90` | goinfer | `delta *deltaNetWeights` |
 | `docs/audit-2026-09-02.md|decoder/weights.go:96` | goinfer | `shortConv *shortConvWeights` |
 | `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:335` | goinfer | `ids, err := s.tk.EncodeSegments(segs, s.tmpl == nil)` |
-| `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:442` | goinfer | `flush := func(final bool) {` |
-| `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:534` | goinfer | `return constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWh` |
+| `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:445` | goinfer | `flush := func(final bool) {` |
+| `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:537` | goinfer | `return constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWh` |
 | `docs/audit-2026-09-02.md|gpu/attention.go:961` | goinfer | `func (c *Context) ensureAttnWide() error {` |
 | `docs/audit-2026-09-02.md|gpu/decode_staged_prize_test.go:23` | goinfer | `// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:1153` | goinfer | `fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)` |
@@ -1380,9 +1380,9 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:286` | goinfer | `// toolChoiceMode returns "auto" (default), "none", or "required"/"function" from` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:301` | goinfer | `func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:83` | goinfer | `if req.Stream {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:120` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:203` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:221` | goinfer | `if req.Stream {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:127` | goinfer | `pv, err := vision.Preprocess(img.data, lm.vcfg)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:210` | goinfer | `system, turns := messagesToTurns(req.Messages)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:228` | goinfer | `if req.Stream {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/vision_serve.go:72` | goinfer | `anchor: func encodeVisionSegments(lm *loadedModel, system string, turns []chat.Turn, blo` |
 | `docs/audit-2026-09-02.md|metal/attn_shape_test.go:152` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, ` |
 | `docs/audit-2026-09-02.md|metal/backend.go:143` | goinfer | `if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {` |
@@ -1576,7 +1576,7 @@ supports.
 | `docs/review-2026-09-04.md|internal/serveapp/openai.go:103` | goinfer | `lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)` |
 | `docs/review-2026-09-04.md|internal/serveapp/responses.go:282` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
 | `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:211` | goinfer | `if strings.Contains(cb, "sseSend(") \|\| strings.Contains(cb, "sseEvent(") \|\|` |
-| `docs/review-2026-09-04.md|internal/serveapp/vision_serve.go:84` | goinfer | `for _, sg := range segs {` |
+| `docs/review-2026-09-04.md|internal/serveapp/vision_serve.go:81` | goinfer | `func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, erro` |
 | `docs/review-2026-09-04.md|internal/serveapp/webui.go:114` | goinfer | `func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {` |
 | `docs/review-2026-09-04.md|internal/servecheck/check.go:206` | goinfer | `// Structured checks the promise the README makes: a schema the model cannot violate. Us` |
 | `docs/review-2026-09-04.md|metal/batched_verify_test.go:288` | goinfer | `func TestBatchedVerifyKernelParity(t *testing.T) {` |

@@ -374,30 +374,33 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 // "image placeholder run = 0". The serving path hit the identical gap and was fixed with this same
 // splice (M-22); the agent got the EncodeSegments switch without it.
 func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
-	out := make([]tokenizer.Segment, 0, len(segs)+2)
-	spliced := false
-	for _, sg := range segs {
-		i := -1
-		if !spliced && !sg.Special {
-			i = strings.Index(sg.Text, block)
+	// V-19 (docs/review-2026-09-04.md): search from the END and splice the LAST occurrence, not
+	// the first — same fix as internal/serveapp/vision_serve.go's original of this function.
+	// The block is always appended to the CURRENT (last) user turn, which renders last; an
+	// EARLIER turn that happens to contain the same literal text must not be mistaken for it.
+	segIdx := -1
+	for i := len(segs) - 1; i >= 0; i-- {
+		if !segs[i].Special && strings.Contains(segs[i].Text, block) {
+			segIdx = i
+			break
 		}
-		if i < 0 {
-			out = append(out, sg)
-			continue
-		}
-		if before := sg.Text[:i]; before != "" {
-			out = append(out, tokenizer.Segment{Text: before}) // the template's role prefix
-		}
-		out = append(out, tokenizer.Segment{Text: block, Special: true})
-		if after := sg.Text[i+len(block):]; after != "" {
-			out = append(out, tokenizer.Segment{Text: after}) // the user's own words
-		}
-		spliced = true
 	}
-	if !spliced {
+	if segIdx < 0 {
 		return nil, fmt.Errorf("agent: the image block was not found in the rendered prompt " +
 			"(template changed?); refusing to encode its sentinels as ordinary text")
 	}
+	sg := segs[segIdx]
+	i := strings.LastIndex(sg.Text, block)
+	out := make([]tokenizer.Segment, 0, len(segs)+2)
+	out = append(out, segs[:segIdx]...)
+	if before := sg.Text[:i]; before != "" {
+		out = append(out, tokenizer.Segment{Text: before}) // the template's role prefix
+	}
+	out = append(out, tokenizer.Segment{Text: block, Special: true})
+	if after := sg.Text[i+len(block):]; after != "" {
+		out = append(out, tokenizer.Segment{Text: after}) // the user's own words
+	}
+	out = append(out, segs[segIdx+1:]...)
 	return out, nil
 }
 

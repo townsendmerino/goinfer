@@ -79,30 +79,37 @@ func encodeVisionSegments(lm *loadedModel, system string, turns []chat.Turn, blo
 // every vision request — caught by the test, which is why the test drives this function rather than
 // re-implementing its logic beside it.
 func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
-	out := make([]tokenizer.Segment, 0, len(segs)+2)
-	spliced := false
-	for _, sg := range segs {
-		i := -1
-		if !spliced && !sg.Special {
-			i = strings.Index(sg.Text, block)
+	// V-19 (docs/review-2026-09-04.md): search from the END and splice the LAST occurrence, not
+	// the first. The block is always appended to the CURRENT (last) user turn, which renders
+	// last; an EARLIER turn that happens to contain the same literal text — a user asking what
+	// the sentinel means, say, as ordinary words — must not be mistaken for it. Splicing the
+	// wrong occurrence reopens the exact special-token-forging class M-22 closed, just for this
+	// sentinel instead of a role marker: the real image tokens stay unspliced plain text (and
+	// fail downstream with a misleading "template mismatch"), while unrelated earlier text gets
+	// tagged Special and parsed as sentinels it was never meant to be.
+	segIdx := -1
+	for i := len(segs) - 1; i >= 0; i-- {
+		if !segs[i].Special && strings.Contains(segs[i].Text, block) {
+			segIdx = i
+			break
 		}
-		if i < 0 {
-			out = append(out, sg)
-			continue
-		}
-		if before := sg.Text[:i]; before != "" {
-			out = append(out, tokenizer.Segment{Text: before}) // the template's role prefix
-		}
-		out = append(out, tokenizer.Segment{Text: block, Special: true})
-		if after := sg.Text[i+len(block):]; after != "" {
-			out = append(out, tokenizer.Segment{Text: after}) // the user's own words
-		}
-		spliced = true
 	}
-	if !spliced {
+	if segIdx < 0 {
 		return nil, fmt.Errorf("vision: the image block was not found in the rendered prompt " +
 			"(template changed?); refusing to encode its sentinels as ordinary text")
 	}
+	sg := segs[segIdx]
+	i := strings.LastIndex(sg.Text, block) // last occurrence within the segment too, same reason
+	out := make([]tokenizer.Segment, 0, len(segs)+2)
+	out = append(out, segs[:segIdx]...)
+	if before := sg.Text[:i]; before != "" {
+		out = append(out, tokenizer.Segment{Text: before}) // the template's role prefix
+	}
+	out = append(out, tokenizer.Segment{Text: block, Special: true})
+	if after := sg.Text[i+len(block):]; after != "" {
+		out = append(out, tokenizer.Segment{Text: after}) // the user's own words
+	}
+	out = append(out, segs[segIdx+1:]...)
 	return out, nil
 }
 
