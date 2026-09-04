@@ -14,6 +14,8 @@ github.com/segmentio/encoding v0.5.4 h1:OW1VRern8Nw6ITAtwSZ7Idrl3MXCFwXHPgqESYfv
 github.com/segmentio/encoding v0.5.4/go.mod h1:HS1ZKa3kSN32ZHVZ7ZLPLXWvOVIiZtyJnO1gPH1sKt0=
 github.com/townsendmerino/aikit v1.33.0 h1:NKQKPjCBbdlU+UEPbzarQVemMqbLaaaGKNAMDM0UHtI=
 github.com/townsendmerino/aikit v1.33.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
+github.com/townsendmerino/aikit v1.34.0 h1:nnEIQCEYRmdyvwp571N+XRtLS4P+ono+U9FKt/n+mzE=
+github.com/townsendmerino/aikit v1.34.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/goinfer v0.15.0 h1:dcwtk98QG9KtgQl43K3HkaAyuh7gCXQNrOkWQWE3WRg=
 github.com/townsendmerino/goinfer v0.15.0/go.mod h1:BI4dOhyHiB0PB3VFvV7Olp+uAhcSeVTMxDEqInDfvvk=
 github.com/townsendmerino/goinfer/gpu v0.15.0 h1:z3z/+nPFrGi9OiyqVVU57FlmU+OCE2vO3qe6OfTHmrM=
