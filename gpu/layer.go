@@ -157,7 +157,11 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	keep = append(keep, newDeviceBuffer(xn, H))
+	// V-22 (docs/review-2026-09-04.md): wrapped ONCE, into xnDB, and reused at the quantize step
+	// below — a second newDeviceBuffer(xn, H) there double-accounted the same buffer's bytes in
+	// liveBufferBytes, since only the wrapper kept here ever gets Close()d by rel().
+	xnDB := newDeviceBuffer(xn, H)
+	keep = append(keep, xnDB)
 	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rms-p", Contents: wgpu.ToBytes([]uint32{uint32(H), math.Float32bits(eps), boolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
@@ -178,7 +182,6 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	}
 
 	// 2. quantize(xn) → aq/aScale, gate/up matmuls (device)
-	xnDB := newDeviceBuffer(xn, H)
 	qb, sb, err := c.quantizeDevice(xnDB, 1, H)
 	if err != nil {
 		return nil, err
@@ -200,7 +203,9 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	keep = append(keep, newDeviceBuffer(mid, I))
+	// V-22 (docs/review-2026-09-04.md): same reuse-not-rewrap fix as xnDB above.
+	midDB := newDeviceBuffer(mid, I)
+	keep = append(keep, midDB)
 	sp, err := c.dims4("swiglu-p", uint32(I), 0)
 	if err != nil {
 		return nil, err
@@ -221,7 +226,6 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	}
 
 	// 4. quantize(mid) → down matmul
-	midDB := newDeviceBuffer(mid, I)
 	qb2, sb2, err := c.quantizeDevice(midDB, 1, I)
 	if err != nil {
 		return nil, err

@@ -261,6 +261,31 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 	return newDeviceBuffer(dstBuf, M*N), nil
 }
 
+// readbackRaw reads n f32 elements from a raw *wgpu.Buffer whose REAL release stays exactly
+// where it already was — a `defer buf.Release()` in the caller. This function only fixes the
+// ACCOUNTING: newDeviceBuffer's accountAlloc is paired with accountFree before returning,
+// WITHOUT calling Close/Release on buf itself.
+//
+// V-22 (docs/review-2026-09-04.md), and a mutation-testing catch on the fix: the first version
+// of this helper called db.Close() to balance the accounting — which also runs buf.Release(),
+// double-releasing a buffer the caller's OWN defer buf.Release() already owns. That corrupted
+// the allocator: the accounting-only symptom of the ORIGINAL bug (LiveBufferBytes growing
+// unbounded, easy to see) was replaced by a SIGTRAP inside wgpu-native on a LATER, unrelated
+// CreateBuffer call — reproduced on TestZZRepeatLayerNorm's 3rd iteration, harder to see and
+// worse than the bug being fixed. Confirmed against the ORIGINAL (pre-V-22) code with the same
+// repeated-call test: no crash, LiveBufferBytes growing every call — the leak, not a corruption.
+//
+// The original bug this whole helper exists for: every Readback(newDeviceBuffer(buf, n)) call
+// site built a throwaway wrapper, read it, and threw it away — accountAlloc ran, nothing ever
+// ran accountFree, so LiveBufferBytes grew by that buffer's size on every call and never came
+// back down, for a real GPU allocation that WAS correctly released by the caller's own defer.
+func (c *Context) readbackRaw(buf *wgpu.Buffer, n int) ([]float32, error) {
+	db := newDeviceBuffer(buf, n)
+	out, err := c.Readback(db)
+	accountFree(db.bytes) // balances newDeviceBuffer's accountAlloc; buf itself is untouched
+	return out, err
+}
+
 // Readback copies a device f32 buffer to the host — the single sync point at the
 // end of a chain.
 func (c *Context) Readback(db *DeviceBuffer) ([]float32, error) {

@@ -1566,7 +1566,9 @@ supports.
 | `docs/review-2026-09-04.md|demo/agent/agent/agent.go:329` | goinfer | `turns := append([]msg(nil), s.history...)` |
 | `docs/review-2026-09-04.md|gpu/attention.go:272` | goinfer | `// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the ol` |
 | `docs/review-2026-09-04.md|gpu/bufaccount.go:20` | goinfer | `// to the test that caused it. See TestNoBufferLeak.` |
-| `docs/review-2026-09-04.md|gpu/layer.go:160` | goinfer | `keep = append(keep, newDeviceBuffer(xn, H))` |
+| `docs/review-2026-09-04.md|gpu/bufaccount_test.go:25` | goinfer | `func TestNoBufferLeak(t *testing.T) {` |
+| `docs/review-2026-09-04.md|gpu/device.go:282` | goinfer | `func (c *Context) readbackRaw(buf *wgpu.Buffer, n int) ([]float32, error) {` |
+| `docs/review-2026-09-04.md|gpu/layer.go:163` | goinfer | `xnDB := newDeviceBuffer(xn, H)` |
 | `docs/review-2026-09-04.md|gpu/qwen35_resident_parity_test.go:29` | goinfer | `func TestQwen35ResidentParity(t *testing.T) {` |
 | `docs/review-2026-09-04.md|internal/prequant/prequant.go:91` | goinfer | `tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"` |
 | `docs/review-2026-09-04.md|internal/serveapp/decoder_embedder.go:253` | goinfer | `func truncateForContext(ids []int, maxTokens, appendID int) []int {` |

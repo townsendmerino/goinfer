@@ -245,11 +245,11 @@ func (c *Context) softmaxRowsHost(x []float32, rows, n int, scale float32) ([]fl
 	if err != nil {
 		return nil, err
 	}
-	defer xd.buf.Release()
+	defer xd.Close() // V-22 (docs/review-2026-09-04.md): was xd.buf.Release(), bypassing accounting
 	if err := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, xd.buf, []uint32{uint32(rows), uint32(n), math.Float32bits(scale), 0}, rows); err != nil {
 		return nil, err
 	}
-	return c.Readback(newDeviceBuffer(xd.buf, rows*n))
+	return c.Readback(xd)
 }
 
 func (c *Context) geluHost(x []float32) ([]float32, error) {
@@ -260,11 +260,11 @@ func (c *Context) geluHost(x []float32) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer xd.buf.Release()
+	defer xd.Close() // V-22 (docs/review-2026-09-04.md): was xd.buf.Release(), bypassing accounting
 	if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, xd.buf, []uint32{uint32(len(x)), 0, 0, 0}, (len(x)+63)/64); err != nil {
 		return nil, err
 	}
-	return c.Readback(newDeviceBuffer(xd.buf, len(x)))
+	return c.Readback(xd)
 }
 
 // layerNormRowsDevice runs LayerNorm over `rows`×`h`, src→dst device buffers, no
@@ -403,17 +403,17 @@ func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, ep
 	if err != nil {
 		return nil, err
 	}
-	defer sd.buf.Release()
+	defer sd.Close() // V-22 (docs/review-2026-09-04.md): was sd.buf.Release(), bypassing accounting
 	wd, err := c.UploadF32(weight)
 	if err != nil {
 		return nil, err
 	}
-	defer wd.buf.Release()
+	defer wd.Close() // same as sd
 	bd, err := c.UploadF32(bias)
 	if err != nil {
 		return nil, err
 	}
-	defer bd.buf.Release()
+	defer bd.Close() // same as sd
 	out, err := c.newF32("ln-out", rows*h)
 	if err != nil {
 		return nil, err
@@ -422,5 +422,5 @@ func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, ep
 	if err := c.layerNormRowsDevice(sd.buf, wd.buf, bd.buf, out, rows, h, eps); err != nil {
 		return nil, err
 	}
-	return c.Readback(newDeviceBuffer(out, rows*h))
+	return c.readbackRaw(out, rows*h)
 }
