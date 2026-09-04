@@ -544,11 +544,14 @@ func Main() {
 		// page needed the key to load, and there was nowhere to enter the key without the page.
 		// auth stays on the two routes below, which actually act (list a repo, pull a model).
 		mux.HandleFunc("GET /{$}", srv.handleWebUI)
-		mux.HandleFunc("POST /web/models/list", auth(maxBytes(textCap, srv.handleWebList)))
+		// sameOrigin (V-20, docs/review-2026-09-04.md): on the key-free loopback default,
+		// auth() alone is a no-op, and these two routes act — pull triggers a caller-named
+		// multi-gigabyte download. See sameOrigin's own doc comment in webui.go.
+		mux.HandleFunc("POST /web/models/list", sameOrigin(auth(maxBytes(textCap, srv.handleWebList))))
 		// Not wrapped in inf(): the inflight gate bounds INFERENCE, and a download that runs
 		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
 		// its own (pullState), which is the bound that actually fits it.
-		mux.HandleFunc("POST /web/models/pull", auth(maxBytes(textCap, srv.handleWebPull)))
+		mux.HandleFunc("POST /web/models/pull", sameOrigin(auth(maxBytes(textCap, srv.handleWebPull))))
 	}
 
 	// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-body

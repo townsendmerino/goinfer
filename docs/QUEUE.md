@@ -1339,10 +1339,10 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:422` | goinfer | `if cfg.cpuExactPrefill \|\| !cfg.cpuFastAttention {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:483` | goinfer | `if cfg.sessionDir != "" && cfg.kvSessions > 0 {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:516` | goinfer | `// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:554` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:602` | goinfer | `close(stopDemote) // stop demoting before we checkpoint` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:770` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:888` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:557` | goinfer | `// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-bod` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:605` | goinfer | `close(stopDemote) // stop demoting before we checkpoint` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:773` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:891` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1069` | goinfer | `ids = append(ids, id)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1073` | goinfer | `piece, _ := lm.tk.DecodePiece(id)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1154` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
@@ -1539,7 +1539,7 @@ supports.
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:595` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:598` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1061` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:471` | goinfer | `def gate_cell_idle():` |
@@ -1580,7 +1580,8 @@ supports.
 | `docs/review-2026-09-04.md|internal/serveapp/responses.go:305` | goinfer | `func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assist` |
 | `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:211` | goinfer | `if strings.Contains(cb, "sseSend(") \|\| strings.Contains(cb, "sseEvent(") \|\|` |
 | `docs/review-2026-09-04.md|internal/serveapp/vision_serve.go:81` | goinfer | `func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, erro` |
-| `docs/review-2026-09-04.md|internal/serveapp/webui.go:114` | goinfer | `func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {` |
+| `docs/review-2026-09-04.md|internal/serveapp/webui.go:139` | goinfer | `func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {` |
+| `docs/review-2026-09-04.md|internal/serveapp/webui.go:74` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |
 | `docs/review-2026-09-04.md|internal/servecheck/check.go:206` | goinfer | `// Structured checks the promise the README makes: a schema the model cannot violate. Us` |
 | `docs/review-2026-09-04.md|internal/servecheck/check.go:249` | goinfer | `if n.String() != "366" {` |
 | `docs/review-2026-09-04.md|internal/servecheck/cmd.go:99` | goinfer | `if skipped > 0 {` |
@@ -1637,7 +1638,7 @@ supports.
 | `docs/task-embed-and-harness-ux.md|decoder/model.go:197` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
 | `docs/task-embed-and-harness-ux.md|decoder/model.go:806` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:328` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
-| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:957` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
+| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:960` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
 | `docs/task-fit-to-hardware.md|decoder/model.go:127` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
 | `docs/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.residentWeightBytes(0) }` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:347` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |

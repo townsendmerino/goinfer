@@ -137,13 +137,23 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 		if !ok {
 			return true
 		}
+		// Searches the WHOLE wrapper chain, not just the outermost call — V-20
+		// (docs/review-2026-09-04.md) nested list/pull one layer deeper as
+		// sameOrigin(auth(maxBytes(...))), and a check anchored on the outermost call alone
+		// would have silently stopped seeing auth(...) the moment that landed.
 		wrapsInAuth := func(e ast.Expr) bool {
-			c, ok := e.(*ast.CallExpr)
-			if !ok {
-				return false
-			}
-			id, ok := c.Fun.(*ast.Ident)
-			return ok && id.Name == "auth"
+			found := false
+			ast.Inspect(e, func(n ast.Node) bool {
+				c, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "auth" {
+					found = true
+				}
+				return true
+			})
+			return found
 		}
 		switch route.Value {
 		case `"GET /{$}"`:
@@ -174,5 +184,96 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 	if !pullAuthed {
 		t.Error("POST /web/models/pull lost its auth(...) wrapping — this route starts a " +
 			"caller-named multi-GB download and must stay behind the API key")
+	}
+}
+
+// TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone pins V-20 (docs/review-2026-09-04.md):
+// on the key-free loopback default, auth() alone is a no-op (requireAuth returns h unchanged
+// when key==""), so list/pull had NO protection against a cross-origin POST — any page open in
+// the same browser could drive a caller-named multi-GB download onto the user's disk. Mirrors
+// N-26's identical sameOrigin in demo/agent/cmd/agent-web/main.go.
+func TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone(t *testing.T) {
+	called := false
+	h := sameOrigin(func(w http.ResponseWriter, r *http.Request) { called = true })
+
+	for _, tc := range []struct {
+		name     string
+		origin   string
+		wantCode int
+		wantCall bool
+	}{
+		{"no Origin header (curl, a same-origin form post outside a browser)", "", http.StatusOK, true},
+		{"matching Origin", "http://127.0.0.1:8080", http.StatusOK, true},
+		{"foreign Origin (the CSRF-style attack)", "https://evil.example", http.StatusForbidden, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called = false
+			r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/web/models/pull", strings.NewReader("{}"))
+			if tc.origin != "" {
+				r.Header.Set("Origin", tc.origin)
+			}
+			w := httptest.NewRecorder()
+			h(w, r)
+			if w.Code != tc.wantCode {
+				t.Errorf("status = %d, want %d", w.Code, tc.wantCode)
+			}
+			if called != tc.wantCall {
+				t.Errorf("handler called = %v, want %v", called, tc.wantCall)
+			}
+		})
+	}
+}
+
+// TestWebUI_listAndPullAreWrappedInSameOrigin is the wiring guard: the unit test above proves
+// sameOrigin works in isolation, but that says nothing about whether the actual routes call it —
+// the exact shape of gap this session's audit keeps finding (a helper with a test, and a call
+// site nobody checked).
+func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var listFound, pullFound, listSO, pullSO bool
+	ast.Inspect(af, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "HandleFunc" || len(call.Args) != 2 {
+			return true
+		}
+		route, ok := call.Args[0].(*ast.BasicLit)
+		if !ok {
+			return true
+		}
+		outer, ok := call.Args[1].(*ast.CallExpr)
+		isSameOrigin := false
+		if ok {
+			if id, ok := outer.Fun.(*ast.Ident); ok && id.Name == "sameOrigin" {
+				isSameOrigin = true
+			}
+		}
+		switch route.Value {
+		case `"POST /web/models/list"`:
+			listFound = true
+			listSO = isSameOrigin
+		case `"POST /web/models/pull"`:
+			pullFound = true
+			pullSO = isSameOrigin
+		}
+		return true
+	})
+	if !listFound || !pullFound {
+		t.Fatalf("route(s) not found (list=%v pull=%v) — this guard is watching nothing", listFound, pullFound)
+	}
+	if !listSO {
+		t.Error("POST /web/models/list is not wrapped in sameOrigin(...) — a cross-origin POST " +
+			"could list a repo's files on the key-free loopback default (V-20)")
+	}
+	if !pullSO {
+		t.Error("POST /web/models/pull is not wrapped in sameOrigin(...) — a cross-origin POST " +
+			"could start a caller-named multi-GB download on the key-free loopback default (V-20)")
 	}
 }

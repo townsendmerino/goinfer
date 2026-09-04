@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -57,6 +58,30 @@ func (p *pullState) release() {
 	p.mu.Lock()
 	p.running = false
 	p.mu.Unlock()
+}
+
+// sameOrigin refuses a cross-origin request, the same guard N-26 added to the demo/agent web
+// app for its own mutating routes (cmd/agent-web/main.go). V-20 (docs/review-2026-09-04.md):
+// the two routes below (list, pull) act — pull triggers a caller-named multi-gigabyte download
+// — and on the key-free loopback default (requireAuth is a no-op when -api-key is unset) they
+// had NO protection at all: any page open in the same browser can send a cross-origin POST
+// (browsers block reading the response, not sending the request), so a malicious or compromised
+// page could drive a multi-GB download onto the user's disk with no visible prompt. A browser's
+// own fetch()/XHR from the web UI's page always carries a same-origin Origin header; a
+// cross-origin POST either carries a foreign one (refused here) or, for a same-site plain form
+// post, none at all outside a browser context — which is why (like N-26) this only checks an
+// Origin header that IS present, rather than requiring one.
+func sameOrigin(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); o != "" {
+			u, err := url.Parse(o)
+			if err != nil || u.Host != r.Host {
+				writeErr(w, http.StatusForbidden, "cross-origin request refused")
+				return
+			}
+		}
+		h(w, r)
+	}
 }
 
 func (s *server) handleWebUI(w http.ResponseWriter, r *http.Request) {
