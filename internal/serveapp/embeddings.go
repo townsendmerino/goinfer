@@ -103,10 +103,33 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	// Encoder is goroutine-safe and EncodeBatch parallelizes internally, so no
 	// s.mu (that guards only the single shared decoder).
-	vecs, err := s.embed.EncodeBatch(inputs, isQueries, 0)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
-		return
+	//
+	// embedBatchCounter (audit R-07) reports each input's token count as a byproduct of the SAME
+	// tokenize pass EncodeBatch already makes, for encoders that can — the decoder-backed
+	// embedder does. Encoders that can't (the aikit-embed.Tokenizer path, an external interface
+	// this server does not control) fall back to the original EncodeBatch + a second,
+	// count-only tokenize pass (countEmbedTokens).
+	var vecs [][]float32
+	var promptTokens int
+	if bc, ok := s.embed.(embedBatchCounter); ok {
+		var counts []int
+		var err error
+		vecs, counts, err = bc.EncodeBatchCounted(inputs, isQueries, 0)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
+			return
+		}
+		for _, c := range counts {
+			promptTokens += c
+		}
+	} else {
+		var err error
+		vecs, err = s.embed.EncodeBatch(inputs, isQueries, 0)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
+			return
+		}
+		promptTokens = s.countEmbedTokens(inputs, isQuery)
 	}
 
 	data := make([]map[string]any, len(vecs))
@@ -118,8 +141,6 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		}
 		data[i] = map[string]any{"object": "embedding", "index": i, "embedding": emb}
 	}
-
-	promptTokens := s.countEmbedTokens(inputs, isQuery)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"object": "list",
 		"data":   data,
@@ -243,6 +264,16 @@ func float32sToBase64(v []float32) string {
 // response. Preferring this interface keeps usage honest for both embedder kinds.
 type embedTokenCounter interface {
 	CountTokens(text string, isQuery bool) int
+}
+
+// embedBatchCounter is the OPTIONAL capability an embedder implements when it can report each
+// input's token count as a byproduct of the same tokenize pass EncodeBatch already makes,
+// instead of the handler falling back to EncodeBatch + a second, count-only tokenize over every
+// input (embedTokenCounter/countEmbedTokens below) — audit R-07's "tokenises each input twice".
+// The decoder-backed embedder implements it; the aikit-embed.Tokenizer path does not (it is an
+// external interface this server does not control), so it keeps using the two-pass fallback.
+type embedBatchCounter interface {
+	EncodeBatchCounted(texts []string, isQueries []bool, concurrency int) (vecs [][]float32, tokenCounts []int, err error)
 }
 
 // countEmbedTokens sums the wrapped token counts the encoder actually sees

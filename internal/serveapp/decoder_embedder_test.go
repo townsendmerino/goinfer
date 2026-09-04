@@ -137,6 +137,56 @@ func TestDecoderEmbedder_batchMatchesSequential(t *testing.T) {
 	}
 }
 
+// The embedBatchCounter capability (audit R-07) is what lets the /v1/embeddings handler skip a
+// second, count-only tokenize pass over every input — it must actually be satisfied, or the
+// handler silently falls back to the two-pass path and the fix does nothing.
+var _ embedBatchCounter = (*decoderEmbedder)(nil)
+
+// TestDecoderEmbedder_encodeBatchCountedMatchesSeparateCalls pins EncodeBatchCounted (audit R-07)
+// against the two calls it replaces: its vectors must be bit-identical to EncodeBatch's (same
+// tokenize, same forward — nothing about the actual encoding changes), and its counts must equal
+// CountTokens's per-input counts (same ids, just not thrown away and re-derived from scratch).
+func TestDecoderEmbedder_encodeBatchCountedMatchesSeparateCalls(t *testing.T) {
+	e := newTestDecoderEmbedder(t)
+	texts := []string{"the cat sat on the mat", "quantum chromodynamics", "Paris is in France"}
+	flags := []bool{false, true, false}
+
+	vecs, counts, err := e.EncodeBatchCounted(texts, flags, 0)
+	if err != nil {
+		t.Fatalf("EncodeBatchCounted: %v", err)
+	}
+	if len(vecs) != len(texts) || len(counts) != len(texts) {
+		t.Fatalf("got %d vecs, %d counts, want %d of each", len(vecs), len(counts), len(texts))
+	}
+
+	batch, err := e.EncodeBatch(texts, flags, 0)
+	if err != nil {
+		t.Fatalf("EncodeBatch: %v", err)
+	}
+	for i := range texts {
+		for j := range vecs[i] {
+			if vecs[i][j] != batch[i][j] {
+				t.Fatalf("EncodeBatchCounted vecs[%d] differs from EncodeBatch at %d (%v vs %v)",
+					i, j, vecs[i][j], batch[i][j])
+			}
+		}
+		want := e.CountTokens(texts[i], flags[i])
+		if counts[i] != want {
+			t.Errorf("EncodeBatchCounted counts[%d] = %d, want %d (CountTokens on the same input)",
+				i, counts[i], want)
+		}
+		if counts[i] <= 0 {
+			t.Errorf("counts[%d] = %d, want > 0", i, counts[i])
+		}
+	}
+
+	// Mismatched flag length is rejected rather than silently mis-prefixing (same contract as
+	// EncodeBatch).
+	if _, _, err := e.EncodeBatchCounted(texts, []bool{true}, 0); err == nil {
+		t.Error("EncodeBatchCounted must reject a isQueries length mismatch")
+	}
+}
+
 // TestDecoderEmbedder_concurrentEncode is trap 1: /v1/embeddings runs WITHOUT the server mutex
 // because an aikit encoder is goroutine-safe for concurrent Encode. A decoder is not — one KV cache,
 // one scratch. This must be safe under -race AND must still return the correct vector; interleaved

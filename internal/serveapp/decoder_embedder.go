@@ -140,7 +140,8 @@ func (e *decoderEmbedder) HiddenDim() int { return e.dim }
 func (e *decoderEmbedder) Encode(text string, isQuery bool) ([]float32, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.encodeLocked(text, isQuery)
+	v, _, err := e.encodeLocked(text, isQuery)
+	return v, err
 }
 
 // EncodeBatch embeds each text in turn.
@@ -157,7 +158,7 @@ func (e *decoderEmbedder) EncodeBatch(texts []string, isQueries []bool, concurre
 	defer e.mu.Unlock()
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
-		v, err := e.encodeLocked(t, isQueries[i])
+		v, _, err := e.encodeLocked(t, isQueries[i])
 		if err != nil {
 			return nil, fmt.Errorf("embed input %d: %w", i, err)
 		}
@@ -166,8 +167,35 @@ func (e *decoderEmbedder) EncodeBatch(texts []string, isQueries []bool, concurre
 	return out, nil
 }
 
+// EncodeBatchCounted is EncodeBatch plus each input's token count, read off the SAME tokenize
+// call encodeLocked already makes rather than a second pass over the text (audit R-07: this
+// embedder's EncodeBatch's ids were tokenized once and thrown away, then countEmbedTokens
+// (embeddings.go) tokenized every input again from scratch purely to report prompt_tokens).
+// embedBatchCounter in embeddings.go is the optional capability the handler prefers this
+// through; encoders that don't implement it (the aikit-embed.Tokenizer path) are unaffected.
+func (e *decoderEmbedder) EncodeBatchCounted(texts []string, isQueries []bool, concurrency int) ([][]float32, []int, error) {
+	if len(isQueries) != len(texts) {
+		return nil, nil, fmt.Errorf("decoder embedder: %d texts but %d isQuery flags", len(texts), len(isQueries))
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	vecs := make([][]float32, len(texts))
+	counts := make([]int, len(texts))
+	for i, t := range texts {
+		v, ids, err := e.encodeLocked(t, isQueries[i])
+		if err != nil {
+			return nil, nil, fmt.Errorf("embed input %d: %w", i, err)
+		}
+		vecs[i] = v
+		counts[i] = len(ids)
+	}
+	return vecs, counts, nil
+}
+
 // CountTokens reports how many tokens this embedder actually feeds the model for text — prefix
-// included, truncation applied. See embedTokenCounter in embeddings.go for why this exists.
+// included, truncation applied. See embedTokenCounter in embeddings.go for why this exists. Kept
+// for callers that only want a count (not a batch encode) — EncodeBatchCounted is the byproduct
+// path for the /v1/embeddings handler itself.
 func (e *decoderEmbedder) CountTokens(text string, isQuery bool) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -178,13 +206,18 @@ func (e *decoderEmbedder) CountTokens(text string, isQuery bool) int {
 	return len(ids)
 }
 
-// encodeLocked is Encode's body; callers hold e.mu.
-func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, error) {
+// encodeLocked is Encode's body; callers hold e.mu. Returns the token ids alongside the vector
+// so EncodeBatchCounted can report their count without a second tokenize pass (R-07).
+func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, []int, error) {
 	ids, err := e.tokenize(text, isQuery)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return e.m.HiddenLast(ids)
+	v, err := e.m.HiddenLast(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	return v, ids, nil
 }
 
 // tokenize applies the instruction prefix and encodes WITHOUT special tokens (Qwen3-Embedding adds

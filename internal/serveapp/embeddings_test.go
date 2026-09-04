@@ -196,6 +196,83 @@ func (e stubEncoder) EncodeBatch(texts []string, _ []bool, _ int) ([][]float32, 
 	return out, nil
 }
 
+// countingEncoder implements encoder.Encoder AND embedBatchCounter, and records whether
+// EncodeBatchCounted (the byproduct path) or EncodeBatch+a separate count call (the fallback) was
+// actually invoked — the handler test below (audit R-07) needs to prove the DISPATCH prefers the
+// counter capability when it is present, not just that the capability itself works (that's the
+// decoder-backed embedder's own heavy test, TestDecoderEmbedder_encodeBatchCountedMatchesSeparateCalls).
+type countingEncoder struct {
+	dim                    int
+	encodeBatchCalls       int
+	encodeBatchCountedCall int
+}
+
+func (e *countingEncoder) HiddenDim() int                         { return e.dim }
+func (e *countingEncoder) Encode(string, bool) ([]float32, error) { return e.vec(), nil }
+func (e *countingEncoder) vec() []float32 {
+	v := make([]float32, e.dim)
+	for i := range v {
+		v[i] = float32(i + 1)
+	}
+	return v
+}
+func (e *countingEncoder) EncodeBatch(texts []string, _ []bool, _ int) ([][]float32, error) {
+	e.encodeBatchCalls++
+	out := make([][]float32, len(texts))
+	for i := range texts {
+		out[i] = e.vec()
+	}
+	return out, nil
+}
+func (e *countingEncoder) EncodeBatchCounted(texts []string, _ []bool, _ int) ([][]float32, []int, error) {
+	e.encodeBatchCountedCall++
+	out := make([][]float32, len(texts))
+	counts := make([]int, len(texts))
+	for i, text := range texts {
+		out[i] = e.vec()
+		counts[i] = len(text) // deterministic stand-in for a real token count
+	}
+	return out, counts, nil
+}
+
+var _ embedBatchCounter = (*countingEncoder)(nil)
+
+// TestHandleEmbeddings_prefersEncodeBatchCounted is audit R-07's handler-dispatch gate: an
+// embedder that CAN report counts as an EncodeBatch byproduct must be asked that way, not through
+// EncodeBatch followed by a second, count-only tokenize pass (embedTokenCounter/countEmbedTokens)
+// — that fallback is exactly the "tokenises each input twice" this fix removes for embedders that
+// don't need it.
+func TestHandleEmbeddings_prefersEncodeBatchCounted(t *testing.T) {
+	enc := &countingEncoder{dim: 4}
+	s := &server{embed: enc, embedDim: 4, embedID: "counting-embed"}
+	rr := postEmbed(t, s, `{"input":["abc","de"]}`)
+	if rr.Code != 200 {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+	}
+	if enc.encodeBatchCountedCall != 1 {
+		t.Errorf("EncodeBatchCounted called %d times, want 1 — the handler did not prefer the "+
+			"byproduct path", enc.encodeBatchCountedCall)
+	}
+	if enc.encodeBatchCalls != 0 {
+		t.Errorf("EncodeBatch called %d times, want 0 — the handler took the two-pass fallback "+
+			"despite the embedder implementing embedBatchCounter", enc.encodeBatchCalls)
+	}
+
+	var resp struct {
+		Usage struct {
+			PromptTokens int `json:"prompt_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, rr.Body.String())
+	}
+	// "abc" (3) + "de" (2), per countingEncoder's deterministic stand-in count.
+	if resp.Usage.PromptTokens != 5 {
+		t.Errorf("prompt_tokens = %d, want 5 (the EncodeBatchCounted counts, summed) — a fallback "+
+			"to countEmbedTokens would report 0 here (stubs have no tokenizer)", resp.Usage.PromptTokens)
+	}
+}
+
 // newEmbedTestServer is a MATRYOSHKA-capable stub (floor 2 of 4), so the existing dimensions
 // tests keep exercising real truncation. Non-MRL behavior is covered by newNonMRLEmbedTestServer.
 func newEmbedTestServer() *server {
