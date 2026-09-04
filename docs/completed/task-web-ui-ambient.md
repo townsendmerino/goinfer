@@ -1,9 +1,16 @@
-# Task — restyle the web chat UI: AmbientCSS, light surface, blue accent
+# Task — restyle the web chat UI: AmbientCSS, light surface, blue accent — SHIPPED
 
-**Status:** proposed, try-and-revert. Filed 2026-09-02.
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival.
+
+**Status:** SHIPPED 2026-09-04 (`internal/serveapp/webui/index.html`, commit `032d5cd`). Filed
+2026-09-02, proposed as try-and-revert.
 **Venue:** any. No measurement, no hardware.
-**Disposition:** this is a taste change, not a correctness one. Land it on a branch, look at it,
-revert without ceremony if it doesn't work. Nothing downstream depends on it.
+**Disposition:** this was a taste change, not a correctness one. Landed after a look at a rendered
+preview; nothing downstream depended on it, so a plain revert stays available if it doesn't hold up.
 
 ---
 
@@ -121,13 +128,21 @@ before the first look.
 
 ---
 
-## Acceptance
+## Acceptance — closed 2026-09-04
 
-- The UI no longer uses the Claude cream palette.
-- `ambient.css` is vendored and embedded; no network fetch at runtime, verified by loading the
-  page with networking disabled.
-- Contrast checked on the two weak elements named above, with the result recorded.
-- The change is one revertible commit.
-- Do not use the words "honest" or "honesty" in anything written for this task.
+- [x] The UI no longer uses the Claude cream palette — replaced with the light ambient surface
+  above (`#e9ecf1`, blue `#0b6fd4` accent).
+- [x] `ambient.css` is vendored and embedded; no network fetch at runtime — verified by starting
+  the real server and diffing the served bytes against the embedded file, and by
+  `TestWebUI_pageIsSelfContained`, narrowed to catch a real render-blocking asset while allowing
+  the two legitimate exceptions (an out-bound book link, the vendored CSS's own attribution
+  comment) by exact, pinned shape.
+- [x] Contrast checked on the two weak elements named above: the muted mono metadata measured
+  4.07:1 against the new surface (fails WCAG AA for normal text) and was darkened to `#5c6671`
+  (4.93:1); the inset user message uses `amb-surface-concave` (shadow-only depth, no fill tint,
+  per the constraint below).
+- [x] The change is one revertible commit (`032d5cd`).
+- [x] Did not use the words "honest" or "honesty".
 
-Leave uncommitted for review.
+Landed as `032d5cd` (`internal/serveapp/webui/index.html`,
+`internal/serveapp/webui_test.go`), after a look at a rendered preview.

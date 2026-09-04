@@ -52,8 +52,9 @@ func TestWebUI_rejectsBadRepo(t *testing.T) {
 // silently — the page would still look fine on the machine that added it.
 //
 // This does NOT forbid an <a href="https://…"> — an out-bound link the user may click (the
-// AmbientCSS restyle, docs/task-web-ui-ambient.md, added one to the published book) does not
-// cost the page anything at render time; only an asset the page's own load depends on does.
+// AmbientCSS restyle, docs/completed/task-web-ui-ambient.md, added one to the published book)
+// does not cost the page anything at render time; only an asset the page's own load depends on
+// does.
 // A blanket "no http(s):// substring anywhere" check would have banned that link too, which is
 // a different property than the one this test is for.
 func TestWebUI_pageIsSelfContained(t *testing.T) {
