@@ -60,6 +60,12 @@ func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, op
 	linalg.MatmulBTW8A8Batch(ws, a, M, K, ops)
 }
 
+// matmulW4A8Batch runs a shared-activation W4A8 batch (audit R-06) — CPU only, no
+// GPU backend implements an int4 batch dispatch, unlike the W8A8 case above.
+func matmulW4A8Batch(ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.W4A8Op) {
+	linalg.MatmulBTW4A8Batch(ws, a, M, K, group, ops)
+}
+
 var (
 	backendMu       sync.RWMutex
 	backendRegistry = map[string]func() (Backend, error){}

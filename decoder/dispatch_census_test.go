@@ -39,10 +39,12 @@ import (
 // disables, and the thing it is supposed to notice — a member being named in a dispatch — is a
 // property of the CODE, not of where the code sits.
 var declaredIdentityDispatch = map[string]string{
-	"decoder/attention.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {": "fused QKV batched W8A8 kernel — a real fused kernel exists only for W8A8, so the guard selects a capability, not a member",
-	"decoder/forwardn.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":  "same fused QKV path on the batched-prefill forward",
-	"decoder/forwardn.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                   "fused gate+up batched W8A8 kernel — same capability guard",
-	"decoder/mlp.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                        "fused gate+up on the decode path — same capability guard",
+	"decoder/attention.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                            "fused QKV batched W8A8 kernel — a real fused kernel exists only for W8A8, so the guard selects a capability, not a member",
+	"decoder/forwardn.go|if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {":                             "same fused QKV path on the batched-prefill forward",
+	"decoder/forwardn.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                              "fused gate+up batched W8A8 kernel — same capability guard",
+	"decoder/mlp.go|if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {":                                                   "fused gate+up on the decode path — same capability guard",
+	"decoder/attention.go|} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {": "fused QKV batched W4A8 kernel (audit R-06) — same capability guard as the W8A8 site above, one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
+	"decoder/mlp.go|} else if w4a8BatchEnabled && isW4A8(&lw.GateProj) && isW4A8(&lw.UpProj) {":                        "fused gate+up batched W4A8 kernel (audit R-06) — same capability guard as the W8A8 site above, one precision over; gated on w4a8BatchEnabled (default off — measured 1.08x, ambiguous per S-02's own ship/park bar)",
 	"decoder/weightmat.go|if isW8A8(w) {": "matmulInto's W8A8 branch. Legitimate SINCE P7 (91f359f): it now selects the " +
 		"W8A8-specific QuantBackend kernel, and the int4 branch beside it reaches the same Workspace. " +
 		"Before P7 this was the defect — the else-path silently excluded every other quantization",

@@ -75,6 +75,16 @@ func causalAttention(
 		scr.qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
 		scr.qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
 		matmulW8A8Batch(be, scr.ws, h, 1, lw.QProj.Cols(), scr.qkvOps[:])
+	} else if w4a8BatchEnabled && isW4A8(&lw.QProj) && isW4A8(&lw.KProj) && isW4A8(&lw.VProj) {
+		// audit R-06: fused q/k/v W4A8, mirroring the W8A8 batch above. group is shared
+		// across the three (same layer, same quant config), matching
+		// MatmulBTW4A8Batch's single-scalar signature.
+		var group int
+		scr.qkvOpsW4[0], group = wmW4A8Op(&lw.QProj, q)
+		scr.qkvOpsW4[1], _ = wmW4A8Op(&lw.KProj, k)
+		scr.qkvOpsW4[2], _ = wmW4A8Op(&lw.VProj, v)
+		scr.ws.SetThreshold(int4ParThreshold)
+		matmulW4A8Batch(scr.ws, h, 1, lw.QProj.Cols(), group, scr.qkvOpsW4[:])
 	} else {
 		matmulInto(scr.ws, be, &lw.QProj, h, q, 1)
 		matmulInto(scr.ws, be, &lw.KProj, h, k, 1)

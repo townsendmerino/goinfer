@@ -304,6 +304,29 @@ var w4a8SplitHalfRepacked, w4a8SplitHalfSkipped, w4a8SplitHalfBytes atomic.Int64
 // 1.12x, or if canonical can be dropped for a build that only ever decodes.
 var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""
 
+// w4a8BatchEnabled is DEFAULT-OFF, a measured decision (audit R-06). Set
+// GOINFER_W4A8_BATCH=1 to opt in.
+//
+// aikit's MatmulBTW4A8Batch fuses q/k/v (and separately gate/up) into one
+// fork/join, amortizing the goroutine-wake stagger S-02 measured as the real
+// decode-fan-out cost (docs/task-simd-audit.md). Paired, interleaved,
+// run1-discarded-as-warm-up measurement on this box (qwen2.5-coder-1.5b-int4,
+// BenchmarkDecode, 10 pairs): mean before 46.122 tok/s, mean after 49.915,
+// **1.08x** (per-pair ratios 0.984-1.143). S-02's own pre-registered rule is
+// ship at >=1.15x, park below 1.05x; 1.08x lands in neither band. Per this
+// repo's own measurement discipline ("pre-register... an explicit ambiguous ->
+// parked band... the zone just below the threshold is where motivated
+// reasoning lives"), that ambiguous reading parks rather than ships by
+// default — the code is correctness-proven (TestInt4_forwardParity,
+// mutation-checked) and kept, shovel-ready, not rebuilt from zero if a
+// different box or workload clears the bar.
+//
+// Re-open the decision with a fresh paired measurement — ideally on a
+// different day/machine state, per this same repo's own "a single-machine
+// result needs to reproduce before a remedy gets built against it" rule
+// (docs/task-zeno-compare.md's R-05 saga) — before flipping this default.
+var w4a8BatchEnabled = os.Getenv("GOINFER_W4A8_BATCH") != ""
+
 // repackW4A8IfEligible applies whichever ISA-specific W4A8 layout THIS build
 // has a kernel for: row4 on arm64, split-half on amd64. Each is a no-op off its
 // own architecture, so both are called unconditionally and the two stay
@@ -324,6 +347,27 @@ func isW8A8(w *linalg.WeightMat) bool {
 // fuse several matrices into one matmulW8A8Batch dispatch). Both assume isW8A8(w).
 func wmInt8(w *linalg.WeightMat) []int8      { q8, _, _, _ := w.Int8(); return q8 }
 func wmScales(w *linalg.WeightMat) []float32 { _, s, _, _ := w.Int8(); return s }
+
+// isW4A8 reports whether w is int4-resident, the only precision with a batched
+// dispatch on the W4A8 path (audit R-06).
+func isW4A8(w *linalg.WeightMat) bool {
+	_, _, _, ok := w.Int4()
+	return ok
+}
+
+// wmW4A8Op builds one linalg.W4A8Op for the batched W4A8 dispatch: canonical
+// nibbles/scales are always present when isW4A8(w), and Row4/Row4Scales are
+// populated only when RepackInt4Row4 has already run for this tensor (arm64,
+// heap-backed weights only — see repackW4A8Row4IfEligible) — nil otherwise, which
+// linalg.MatmulBTW4A8Batch reads as "run canonical for this op". group is read
+// separately (assumed shared across the batch, exactly like MatmulBTW4A8Into's own
+// single-scalar signature) since every op in one call comes from the same layer's
+// quant config.
+func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) {
+	q4, q4s, group, _ := w.Int4()
+	row4, row4s, _ := w.Int4Row4()
+	return linalg.W4A8Op{W4: q4, Scales: q4s, Row4: row4, Row4Scales: row4s, Dst: dst, N: w.Rows()}, group
+}
 
 // matmulWSPool recycles the Workspace matmul() falls back to when the caller has no
 // decodeScratch to hand in (dflash/dspark/eagle, and every forward_*.go family that

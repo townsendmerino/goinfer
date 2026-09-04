@@ -382,6 +382,13 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		scr.gateUpOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
 		scr.gateUpOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
 		matmulW8A8Batch(be, scr.ws, h, 1, lw.GateProj.Cols(), scr.gateUpOps[:]) // gate/up in one dispatch (GPU: one submit)
+	} else if w4a8BatchEnabled && isW4A8(&lw.GateProj) && isW4A8(&lw.UpProj) {
+		// audit R-06: fused gate/up W4A8, mirroring the W8A8 batch above.
+		var group int
+		scr.guOpsW4[0], group = wmW4A8Op(&lw.GateProj, gate)
+		scr.guOpsW4[1], _ = wmW4A8Op(&lw.UpProj, up)
+		scr.ws.SetThreshold(int4ParThreshold)
+		matmulW4A8Batch(scr.ws, h, 1, lw.GateProj.Cols(), group, scr.guOpsW4[:])
 	} else {
 		matmulInto(scr.ws, be, &lw.GateProj, h, gate, 1)
 		matmulInto(scr.ws, be, &lw.UpProj, h, up, 1)

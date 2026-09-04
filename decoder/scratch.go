@@ -42,9 +42,11 @@ type decodeScratch struct {
 	// K=1 MoE decode path (resident ring history + this token's K/V); ≤ W rows.
 	localK, localV []float32
 
-	ws        *linalg.Workspace // W8A8 activation-quant scratch (zero-alloc Into/Batch)
+	ws        *linalg.Workspace // W8A8/W4A8 activation-quant scratch (zero-alloc Into/Batch)
 	qkvOps    [3]linalg.W8A8Op  // reused q/k/v batch ops
 	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
+	qkvOpsW4  [3]linalg.W4A8Op  // reused q/k/v W4A8 batch ops (audit R-06)
+	guOpsW4   [2]linalg.W4A8Op  // reused gate/up W4A8 batch ops (audit R-06)
 
 	loraTmp []float32 // [>=r] compute-time LoRA A·x scratch (#7); nil until an adapter is active
 

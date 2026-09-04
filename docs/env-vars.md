@@ -66,6 +66,7 @@ after upgrading needs one place to look.
 | `GOINFER_MODELS` / `GOINFER_MODEL_TMP` | Model asset root / temp dir for downloads. |
 | `GOINFER_PREFILL_ATTN_WORKERS` / `GOINFER_ATTN_ROW_TILE` / `GOINFER_ATTN_KEYS` | Prefill attention fan-out, row tile, key count. |
 | `GOINFER_W4A8_SPLITHALF` | Select the split-half W4A8 kernel. |
+| `GOINFER_W4A8_BATCH` | Opt into the fused q/k/v and gate/up batched W4A8 matmul (audit R-06). Default off — measured 1.08x decode on this box, ambiguous against the 1.05x park / 1.15x ship bar, so it ships parked rather than as the default. |
 | `GOINFER_MOE_RESIDENCY` / `GOINFER_MOE_RESIDENCY_SCOPE` | Metal MoE residency mode and scope. |
 | `GOINFER_PRECISE_MATH` | Metal: precise (non-fast) math in generated shaders. |
 | `GOINFER_NO_RESIDENT_REUSE` | Disable resident-forward reuse across requests. |
