@@ -179,6 +179,34 @@ func (r *cudaResident) prefillStaticDecline() error {
 	return nil
 }
 
+// checkPrefillShmem is prefillStaticDecline's PROMPT-dependent twin (V-05, docs/review-2026-09-04.md):
+// the single-block batched-prefill attention launch sizes its dynamic shared memory the same way
+// decode's does, (maxNWin+128)*4 bytes, but — unlike decode — has no split-KV fallback kernel, so
+// there is no case where exceeding singleBlockAttnShmemLimit is survivable here. Without this check
+// the launch itself failed at the driver, prefillCore returned an unnamed error, and the caller
+// (decoder/model.go's PrefillLast handling) silently fell through to the ~9x-slower sequential
+// per-token path with nothing distinguishing "declined" from "crashed". Checked per layer because a
+// sliding-window layer's maxNWin is clamped to its own window and may stay under the limit even when
+// a global layer in the SAME model does not — mirrors the launch site's own per-layer maxNWin
+// computation in prefillCore exactly, so this can never decline a shape the launch would have run,
+// or miss one it would have failed.
+func (r *cudaResident) checkPrefillShmem(startPos, M int) error {
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		maxNWin := startPos + M
+		if Ly.window > 0 && int(Ly.window) < maxNWin {
+			maxNWin = int(Ly.window)
+		}
+		if splitKVRequired(maxNWin) {
+			return fmt.Errorf("cuda prefill: layer %d attention at %d attended keys needs %d B of "+
+				"shared memory, past this device's %d B limit — batched prefill has no split-KV "+
+				"path, so this prompt length needs the sequential path: %w",
+				l, maxNWin, attnShmemBytes(maxNWin), singleBlockAttnShmemLimit, errPrefillDeclined)
+		}
+	}
+	return nil
+}
+
 // nonBatchableKind returns the weight kind of the layer's first projection the batched GEMVs can't
 // handle, or "" when every projection is int4 or int8. The batched path dispatches per projection
 // (bGemvB): int4 → gemv_w4a8_batched/_rn (group-scaled float accumulate), int8 → gemv_w8a8_batched
@@ -234,6 +262,9 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 		return nil, nil, e
 	}
 	if e := r.checkCap(startPos, M); e != nil {
+		return nil, nil, e
+	}
+	if e := r.checkPrefillShmem(startPos, M); e != nil {
 		return nil, nil, e
 	}
 	L0 := &r.layers[0]

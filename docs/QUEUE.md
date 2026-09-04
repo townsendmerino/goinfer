@@ -982,10 +982,10 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/drafter.go:187` | goinfer | `if n > d.ctxCap {` |
 | `docs/audit-2026-09-02.md|cuda/drafter.go:265` | goinfer | `need := d.ctxLen + n` |
 | `docs/audit-2026-09-02.md|cuda/drafter.go:298` | goinfer | `if n > d.extCap {` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:409` | goinfer | `if d.ctxLen+M > d.kvCap {` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:474` | goinfer | `if e := d.r.launch(d.attnBlock, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ:` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:485` | goinfer | `gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.attnScale()),` |
-| `docs/audit-2026-09-02.md|cuda/drafter.go:597` | goinfer | `if M > d.headCap {` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:427` | goinfer | `if d.ctxLen+M > d.kvCap {` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:495` | goinfer | `if e := d.r.launch(d.attnBlock, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ:` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:506` | goinfer | `gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.attnScale()),` |
+| `docs/audit-2026-09-02.md|cuda/drafter.go:618` | goinfer | `if M > d.headCap {` |
 | `docs/audit-2026-09-02.md|cuda/drafter_loop_test.go:267` | goinfer | `const maxNew = 96` |
 | `docs/audit-2026-09-02.md|cuda/drafter_vs_off_test.go:145` | goinfer | `maxNew := 96` |
 | `docs/audit-2026-09-02.md|cuda/foreign_context_test.go:52` | goinfer | `func foreignCUDAContexts() (out []foreignCtx, ok bool) {` |
@@ -997,14 +997,14 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/kernels.go:107` | goinfer | `// this box's NVRTC 12.9.86, not 12.6. moe.ptx was the audited 12.6.85 artifact (R-26) a` |
 | `docs/audit-2026-09-02.md|cuda/kernels.go:179` | goinfer | `func f32tof16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:157` | goinfer | `func (r *cudaResident) prefillStaticDecline() error {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:188` | goinfer | `func nonBatchableKind(Ly *cudaLayer) string {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:236` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:258` | goinfer | `var scratch []Buffer` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:351` | goinfer | `if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, ` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:360` | goinfer | `gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l)); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:468` | goinfer | `for m := first; m < M; m++ {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:521` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:536` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:216` | goinfer | `func nonBatchableKind(Ly *cudaLayer) string {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:264` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:289` | goinfer | `var scratch []Buffer` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:382` | goinfer | `if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, ` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:391` | goinfer | `gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l)); e != nil {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:499` | goinfer | `for m := first; m < M; m++ {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:552` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:567` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1014` | goinfer | `for j := 0; j < r.topK; j++ {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1340` | goinfer | `if r.prefillReady && r.dnet == nil {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1347` | goinfer | `if startPos == 0 {` |
@@ -1527,7 +1527,7 @@ supports.
 | `docs/queue-engineering.md|cmd/gate/gpu.go:388` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:1175` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-engineering.md|cuda/prefill.go:259` | goinfer | `defer func() {` |
+| `docs/queue-engineering.md|cuda/prefill.go:290` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:301` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:532` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/forwardn.go:1086` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
@@ -1550,7 +1550,7 @@ supports.
 | `docs/review-2026-09-04.md|cmd/gate/run.go:218` | goinfer | `func (r *results) tally(cellName string, topOnly bool) cellResult {` |
 | `docs/review-2026-09-04.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
 | `docs/review-2026-09-04.md|cuda/drafter.go:471` | goinfer | `anchor: func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {` |
-| `docs/review-2026-09-04.md|cuda/prefill.go:346` | goinfer | `maxNWin := startPos + M` |
+| `docs/review-2026-09-04.md|cuda/prefill.go:377` | goinfer | `maxNWin := startPos + M` |
 | `docs/review-2026-09-04.md|cuda/resident.go:2435` | goinfer | `mustSplit := splitKVRequired(nWin)` |
 | `docs/review-2026-09-04.md|cuda/spec_pager_interaction_test.go:1259` | goinfer | `UNKEYABLE` |
 | `docs/review-2026-09-04.md|decoder/generate_vl.go:22` | goinfer | `m.residentForgetIDs()` |

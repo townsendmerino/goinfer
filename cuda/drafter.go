@@ -377,6 +377,24 @@ type blockScratch struct {
 	g, u, dScr         Buffer
 }
 
+// checkDrafterShmem is DraftBlock's shared-memory guard, extracted so it is testable without a
+// live device (V-05, docs/review-2026-09-04.md): the drafter's attnBlock launch sizes its dynamic
+// shared memory the same way decode's does, (nKeys+128)*4 bytes, with no split-KV fallback here
+// either. Every drafter layer attends the WHOLE context plus the whole block (no per-layer
+// window, unlike the target's prefill), so one check covers all layers — unlike
+// checkPrefillShmem's per-layer loop. M-15's kvCap = ctxCap means a --drafter run can reach this
+// boundary exactly where the target's own batched prefill does.
+func checkDrafterShmem(ctxLen, M int) error {
+	nKeys := ctxLen + M
+	if splitKVRequired(nKeys) {
+		return fmt.Errorf("cuda drafter: attention at %d attended keys needs %d B of shared "+
+			"memory, past this device's %d B limit — the drafter has no split-KV path, so this "+
+			"context length needs a shorter --drafter block or a lower -ctx", nKeys,
+			attnShmemBytes(nKeys), singleBlockAttnShmemLimit)
+	}
+	return nil
+}
+
 // DraftBlock runs the trunk over one block and returns its output rows.
 //
 // The block occupies absolute positions [ctxLen, ctxLen+M), directly after the context
@@ -408,6 +426,9 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	}
 	if d.ctxLen+M > d.kvCap {
 		return nil, fmt.Errorf("cuda drafter: block at %d..%d exceeds K/V capacity %d", d.ctxLen, d.ctxLen+M, d.kvCap)
+	}
+	if e := checkDrafterShmem(d.ctxLen, M); e != nil {
+		return nil, e
 	}
 	out := make([][]float32, M)
 	err := d.r.do(func() error {
