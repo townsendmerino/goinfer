@@ -42,7 +42,7 @@ CPU-path specific and not a scheduling or serving-layer defect shared by both ba
 
 **The two engines were not running the same quantization.** goinfer was launched with
 `-quant int4`, which is its own W4A8 path (`w.MatmulBTW4A8Into`, see
-`decoder/weightmat.go:365`) — 4-bit weights requantized at load, int8 activations. Ollama ran the
+`decoder/weightmat.go:409`) — 4-bit weights requantized at load, int8 activations. Ollama ran the
 file's **native Q4_K_M** k-quant with llama.cpp's hand-written kernels for that exact format.
 
 Those are different weight formats, different activation precisions, and different kernel families.

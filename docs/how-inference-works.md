@@ -128,7 +128,7 @@ in modern models:
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/attention.go:107-129](../decoder/attention.go#L124-L129).
+  is. [decoder/attention.go:117-139](../decoder/attention.go#L124-L129).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -218,7 +218,7 @@ So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
 [KVCache](../decoder/kvcache.go#L50-L105), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([decoder/attention.go:147](../decoder/attention.go#L164)).
+([decoder/attention.go:157](../decoder/attention.go#L164)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to
