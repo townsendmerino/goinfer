@@ -590,10 +590,23 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             # model", which for some checkpoints is nowhere near 4096 and would silently change the
             # KV footprint being compared. -fa off under DEEP_CTX mirrors ollama's own
             # OLLAMA_FLASH_ATTENTION=false for the same §B7 peer-configuration reason.
-            ngl = "0" if backend == "cpu" else "99"
+            # MOE_MODELS on cuda: an explicit -ngl 99 DEFEATS llama-server's own --fit (on by
+            # default, verified live 2026-09-04 via --help on this build, commit 427291b) --
+            # --fit only adjusts arguments that are UNSET, and -ngl 99 forces full offload of a
+            # 20GB/16.8GB model into an 8GB card regardless. Measured: with -ngl 99 forced,
+            # M35 and M26 both ran the full 900s load-wait and never came up. Dropping -ngl for
+            # this set (cuda backend only -- the "cpu" forcing below is untouched, V-08) lets
+            # --fit place layers automatically; this is the zero-flag mode docs/task-peer-
+            # benchmarks.md §1 calls "--fit on" and docs/task-fit-to-hardware.md's own subject.
+            if backend == "cpu":
+                ngl_args = ["-ngl", "0"]
+            elif model_key in MOE_MODELS:
+                ngl_args = []
+            else:
+                ngl_args = ["-ngl", "99"]
             proc = subprocess.Popen(
                 [LLAMACPP, "--model", path, "--port", str(LPORT), "--host", "127.0.0.1",
-                 "-ngl", ngl, "--ctx-size", str(DEEP_CTX or 4096)]
+                 "--ctx-size", str(DEEP_CTX or 4096)] + ngl_args
                 + (["-fa", "off"] if DEEP_CTX else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
