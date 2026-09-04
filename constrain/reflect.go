@@ -75,7 +75,24 @@ func structSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any
 	props := map[string]any{}
 	var required []string
 	for f := range t.Fields() {
-		if !f.IsExported() {
+		// V-14 (docs/review-2026-09-04.md): an anonymous field's reflect name IS its type
+		// name, so an embedded struct of UNEXPORTED type (type base struct{...}; embedded as
+		// `base`) reads IsExported()==false and used to be skipped here entirely — before ever
+		// reaching the promotion branch below. encoding/json does NOT skip it: its own
+		// typeFields has the identical special case ("do not ignore embedded fields of
+		// unexported struct types since they may have exported fields"), so an exported
+		// promoted field from an unexported-typed embed silently vanished from the schema
+		// while json.Unmarshal still populated it — M-28's exact silent-zero-field outcome,
+		// for the variant M-28's own fix didn't cover.
+		if f.Anonymous {
+			et := f.Type
+			if et.Kind() == reflect.Pointer {
+				et = et.Elem()
+			}
+			if !f.IsExported() && et.Kind() != reflect.Struct {
+				continue // embedded field of unexported NON-struct type — json ignores this one too
+			}
+		} else if !f.IsExported() {
 			continue
 		}
 		name, optional, skip := jsonField(f)

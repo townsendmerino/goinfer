@@ -952,7 +952,7 @@ supports.
 | `docs/audit-2026-09-02.md|constrain/json.go:100` | goinfer | `func (g *jsonGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-02.md|constrain/json.go:84` | goinfer | `func (g *jsonGrammar) CanEnd() bool {` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:12` | goinfer | `// GrammarFromStruct derives a JSON Schema from a Go struct (via its json tags)` |
-| `docs/audit-2026-09-02.md|constrain/reflect.go:178` | goinfer | `case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:` |
+| `docs/audit-2026-09-02.md|constrain/reflect.go:195` | goinfer | `case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:` |
 | `docs/audit-2026-09-02.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
 | `docs/audit-2026-09-02.md|constrain/schema.go:196` | goinfer | `propsRaw, _ := s["properties"].(map[string]any)` |
 | `docs/audit-2026-09-02.md|constrain/schema.go:200` | goinfer | `// An object with no declared properties and no `additionalProperties:false` is the` |
@@ -1549,6 +1549,7 @@ supports.
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:373` | goinfer | `func detectWebGPU() (present bool, backend string) {` |
 | `docs/review-2026-09-04.md|cmd/gate/run.go:218` | goinfer | `func (r *results) tally(cellName string, topOnly bool) cellResult {` |
 | `docs/review-2026-09-04.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
+| `docs/review-2026-09-04.md|constrain/reflect.go:78` | goinfer | `// V-14 (docs/review-2026-09-04.md): an anonymous field's reflect name IS its type` |
 | `docs/review-2026-09-04.md|cuda/drafter.go:471` | goinfer | `anchor: func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {` |
 | `docs/review-2026-09-04.md|cuda/prefill.go:377` | goinfer | `maxNWin := startPos + M` |
 | `docs/review-2026-09-04.md|cuda/resident.go:2435` | goinfer | `mustSplit := splitKVRequired(nWin)` |

@@ -523,6 +523,51 @@ func TestSchemaFromStruct_namedEmbeddedIsNotPromoted(t *testing.T) {
 	}
 }
 
+// TestSchemaFromStruct_unexportedEmbedIsStillPromoted pins V-14 (docs/review-2026-09-04.md):
+// an anonymous field's reflect name IS its type name, so an embedded struct of UNEXPORTED type
+// reads f.IsExported()==false — structSchema used to skip it on that check alone, before ever
+// reaching the promotion logic M-28 added. encoding/json does not skip it: its own typeFields
+// has the identical special case ("do not ignore embedded fields of unexported struct types
+// since they may have exported fields"), so json.Unmarshal still promotes `id`. Same silent
+// zero-field outcome M-28 fixed for the exported-embed case, left open for this one.
+func TestSchemaFromStruct_unexportedEmbedIsStillPromoted(t *testing.T) {
+	type base struct { // unexported embedded TYPE — the field this reads as is "base", not "ID"
+		ID int `json:"id"`
+	}
+	type Person struct {
+		base
+		Name string `json:"name"`
+	}
+	raw, err := SchemaFromStruct(Person{})
+	if err != nil {
+		t.Fatalf("SchemaFromStruct: %v", err)
+	}
+	var doc struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	if _, promoted := doc.Properties["id"]; !promoted {
+		t.Errorf("embedded unexported-type `base` was not promoted; properties = %v. "+
+			"json.Unmarshal still promotes `id` at the top level, so the un-promoted schema "+
+			"lets the model skip a field that ends up silently zero (V-14)",
+			slices.Sorted(maps.Keys(doc.Properties)))
+	}
+	if !slices.Contains(doc.Required, "id") {
+		t.Errorf("promoted `id` is not required; required = %v", doc.Required)
+	}
+
+	// THE END-TO-END CHECK: json.Unmarshal really does promote the unexported embed's
+	// exported field, which is the premise the whole finding rests on.
+	var p Person
+	if err := json.Unmarshal([]byte(`{"id":7,"name":"x"}`), &p); err != nil || p.ID != 7 {
+		t.Fatalf("premise: json.Unmarshal promotes id through an unexported embed "+
+			"(got ID=%d, err=%v)", p.ID, err)
+	}
+}
+
 // The other two halves of the false contract, both of which used to compile to a schema the
 // model could satisfy and json.Unmarshal could not accept.
 func TestSchemaFromStruct_selfUnmarshalingTypes(t *testing.T) {
