@@ -1561,7 +1561,50 @@ makes a HANG indistinguishable from a slow real-model gate for the first hour.
 **Deferred to post-1.0 deliberately** (the v1.0 gate's §7 scope discipline): it changes the release
 tool during a release. File, do not touch mid-flight.
 
-## B15 — the manifest EMITTER promotes experimental → validated on tiny-golden evidence
+## B20 — `residentPrefillSeed`'s batched-prefill decline is invisible to the operator
+
+**Found 2026-09-04, deliberately left open by V-05 of `docs/review-2026-09-04.md`**, which fixed the
+finding it names (a shared-memory launch past 48 KB failing SILENTLY, ~9x slower prefill with no
+error) by making `PrefillLast`'s launch REFUSE loudly instead of crashing — but the caller one level
+up still throws the refusal away.
+
+`decoder/model.go`'s `residentPrefillSeed`:
+
+```go
+if pf, ok := m.resident.(Prefiller); ok {
+    ...
+    if lg, perr := pf.PrefillLast(embs, from); perr == nil {
+        return lg, nil
+    }
+    // perr is never read past this point.
+}
+// falls through to the sequential per-token loop
+```
+
+`perr` is discarded unconditionally — not logged, not counted, not surfaced anywhere. An operator
+whose long prompt silently takes the ~9x-slower sequential path (V-05's own trigger: a prompt past
+the shared-memory boundary on `-ctx 16384`) sees only a slow TTFT, with nothing in the logs naming
+why. V-05's own fix (`checkPrefillShmem` naming the layer, the bytes needed, the device limit) is
+reachable and CORRECT, but this swallow means the message it constructs never reaches anyone.
+
+**Why V-05 did not fix this too.** The swallow is not new and not scoped to V-05's shmem case — it
+covers EVERY static decline that can reach `PrefillLast` (MoE, K=V, non-uniform geometry, all
+pre-existing, all accepted as "the batched path does not implement this shape"). Logging only the
+ONE new class this review added, while leaving the rest silent, would be inconsistent: an operator
+would see logs for shmem declines and nothing for the others, with no way to tell "this decline is
+now visible" from "this decline is still silent" without reading the source. Fixing this properly
+means deciding, for ALL of `PrefillLast`'s decline reasons at once: log at what level (a slow first
+prompt is normal for MANY operators and should not be a startup-log-volume regression), rate-limit
+or dedupe per reason so a chatty decline doesn't spam a long session, and whether `checkPrefillShmem`
+et al. should carry a machine-readable reason code rather than only a formatted string, so the
+caller can decide log-vs-silent per REASON rather than blanket-logging everything `PrefillLast`
+declines.
+
+**Fix, sketched, not designed:** thread `perr` (or a summarized reason) through to a single
+warn-once-per-reason log at `residentPrefillSeed`'s fallback, keyed on the error's message or a new
+typed reason so repeats within one session do not spam. Needs its own gate: a fixture that forces a
+decline and asserts the operator-visible log line names the reason, mirroring how V-05's own tests
+verify the decline message's CONTENT rather than only that a decline occurred.
 
 **Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
 
