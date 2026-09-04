@@ -1199,11 +1199,21 @@ func (g *gpuGate) webgpu(present bool, backend string) {
 	g.ok("webgpu suite (backend=%s)", backend)
 	g.evidence(out, okLineRe)
 
-	// The resident-parity gates G-09 found opt-in-by-private-env-var. qwen3.5's dense sibling
-	// (decoder/testdata/qwen3_5-tiny) is a TRACKED fixture, so this has real coverage on every
-	// clone; the MoE sibling and the granite/nemotron Mamba-2 fixtures are gitignored and skip
-	// gracefully when absent (their own tests stat the weights file, not the directory) — a mix of
-	// real and skipped subtests is not vacuous, only an ALL-skip cell is (cr.vacuous() below).
+	// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture
+	// (dense AND MoE) has its model.safetensors gitignored — only config.json is tracked — same
+	// as the granite/nemotron Mamba-2 fixtures; all skip gracefully when absent (their own tests
+	// stat the weights file, not the directory).
+	//
+	// V-06 (docs/review-2026-09-04.md): this comment used to claim the dense qwen3.5 fixture WAS
+	// tracked, "so this has real coverage on every clone" — wrong, and it hid a real bug: on a
+	// clone without the fixtures, TestQwen35ResidentParity's two t.Run subtests both skip, and Go
+	// reports a parent whose subtests ALL skipped as a top-level PASS, not SKIP. This cell counts
+	// top-level results only (TopLevelOnly: true, gpu.go's gateConfig above), so that vacuous pass
+	// registered as Pass=1 and made cr.vacuous() (Pass==0 && Fail==0 && Skip>0) false — a webgpu
+	// forward could be broken with nothing ever forwarded here and this cell would still print
+	// PASS. Fixed at the source: TestQwen35ResidentParity now tracks each subtest's own
+	// t.Skipped() and skips itself when none of them ran, so the tally sees a real Skip instead of
+	// a vacuous Pass.
 	_, cr2, out2 := g.run(cell{
 		Name: "webgpu-parity", Pkgs: []string{"./gpu/"}, Tags: []string{"gpu", "goinfer_testhooks"},
 		Run:     "ResidentParity",

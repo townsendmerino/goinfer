@@ -921,7 +921,7 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1107` | goinfer | `func (g *gpuGate) metalModel() string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1123` | goinfer | `_, cr, out := g.run(cell{` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1157` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1239` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1249` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:219` | goinfer | `func (g *gpuGate) noteIfEmpty(c cell, res *results) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:349` | goinfer | `func detectBackend() string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:397` | goinfer | `for _, v := range []string{"GOINFER_HEAVY_TESTS", "GOINFER_DRAIN_GROUP"} {` |
@@ -1276,7 +1276,7 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/moe.go:25` | goinfer | `const MAXE: u32 = 512u;` |
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8.go:146` | goinfer | `func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32, nE, N,` |
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8_expert_test.go:37` | goinfer | `stack, err := ctx.UploadStackedExpertsInt4(nib, sc, nE, N, K)` |
-| `docs/audit-2026-09-02.md|gpu/qwen35_resident_parity_test.go:26` | goinfer | `if os.Getenv("GOINFER_DNET_PARITY") == "" {` |
+| `docs/audit-2026-09-02.md|gpu/qwen35_resident_parity_test.go:30` | goinfer | `if os.Getenv("GOINFER_DNET_PARITY") == "" {` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:1069` | goinfer | `func (rd *residentDecoder) Reset() {` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:112` | goinfer | `_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:134` | goinfer | `// M-31: the cap is READ from decoder's declaration, not restated here. This site had it` |
@@ -1545,7 +1545,7 @@ supports.
 | `docs/queue-engineering.md|scripts/bench_peer.py:471` | goinfer | `def gate_cell_idle():` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1089` | goinfer | `_, cr, out := g.run(cell{` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1163` | goinfer | `if cr.RC != 0 {` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1202` | goinfer | `// The resident-parity gates G-09 found opt-in-by-private-env-var. qwen3.5's dense sibli` |
+| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1202` | goinfer | `// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:373` | goinfer | `func detectWebGPU() (present bool, backend string) {` |
 | `docs/review-2026-09-04.md|cmd/gate/run.go:218` | goinfer | `func (r *results) tally(cellName string, topOnly bool) cellResult {` |
 | `docs/review-2026-09-04.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
@@ -1566,7 +1566,7 @@ supports.
 | `docs/review-2026-09-04.md|gpu/attention.go:272` | goinfer | `// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the ol` |
 | `docs/review-2026-09-04.md|gpu/bufaccount.go:20` | goinfer | `// to the test that caused it. See TestNoBufferLeak.` |
 | `docs/review-2026-09-04.md|gpu/layer.go:160` | goinfer | `keep = append(keep, newDeviceBuffer(xn, H))` |
-| `docs/review-2026-09-04.md|gpu/qwen35_resident_parity_test.go:25` | goinfer | `func TestQwen35ResidentParity(t *testing.T) {` |
+| `docs/review-2026-09-04.md|gpu/qwen35_resident_parity_test.go:29` | goinfer | `func TestQwen35ResidentParity(t *testing.T) {` |
 | `docs/review-2026-09-04.md|internal/prequant/prequant.go:91` | goinfer | `tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"` |
 | `docs/review-2026-09-04.md|internal/serveapp/helpers.go:103` | goinfer | `func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {` |
 | `docs/review-2026-09-04.md|internal/serveapp/limits_test.go:187` | goinfer | `func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {` |

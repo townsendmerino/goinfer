@@ -3,8 +3,12 @@
 package gpu
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -34,11 +38,39 @@ func TestQwen35ResidentParity(t *testing.T) {
 	// mixer with a plain SwiGLU; the MoE one pairs it with the sparse router + stacked experts +
 	// shared expert in the same layer. Mixer+MoE is gated for Mamba-2 (Granite) and the mixer
 	// alone is gated by the dense fixture — neither gates THIS pairing.
+	//
+	// V-06 (docs/review-2026-09-04.md): BOTH fixtures' model.safetensors are gitignored
+	// (qwen35ResidentParity's own comment says so — only config.json is tracked), so on a fresh
+	// clone every t.Run below skips. Go reports a parent whose subtests all skipped as a top-level
+	// PASS, not SKIP -- and cmd/gate/gpu.go's webgpu-parity cell counts top-level results only
+	// (TopLevelOnly: true), so that vacuous pass registered as real coverage and made
+	// cr.vacuous() return false. subTs captures each subtest's *testing.T so the parent can check
+	// Skipped() itself after every t.Run returns (checking it INSIDE the subtest closure, after
+	// calling qwen35ResidentParity, would never run: Skip/Skipf call runtime.Goexit, which unwinds
+	// the rest of that closure) and skip itself when nothing actually ran.
+	var subTs []*testing.T
 	for _, fx := range []string{"qwen3_5-tiny", "qwen3_5_moe-tiny"} {
-		t.Run(fx, func(t *testing.T) { qwen35ResidentParity(t, "../decoder/testdata/"+fx) })
+		fx := fx
+		t.Run(fx, func(st *testing.T) {
+			subTs = append(subTs, st)
+			qwen35ResidentParity(st, "../decoder/testdata/"+fx)
+		})
 	}
 	if ck := os.Getenv("GOINFER_DNET_CKPT"); ck != "" { // a bigger/real checkpoint, opt-in
-		t.Run("env", func(t *testing.T) { qwen35ResidentParity(t, ck) })
+		t.Run("env", func(st *testing.T) {
+			subTs = append(subTs, st)
+			qwen35ResidentParity(st, ck)
+		})
+	}
+	ran := false
+	for _, st := range subTs {
+		if !st.Skipped() {
+			ran = true
+		}
+	}
+	if !ran {
+		t.Skip("no qwen3_5 fixture anywhere (model.safetensors is gitignored for both — run " +
+			"scripts/pin_qwen3_5_forward.py [--moe] or set GOINFER_DNET_CKPT)")
 	}
 }
 
@@ -162,4 +194,76 @@ func qwen35ResidentParity(t *testing.T, ckpt string) {
 			"%.9f): the recurrent state carried over from the first sequence. residentDecoder.Reset "+
 			"must zero {win, dnState}, not just Mamba's {win, ssm}", worstReplay)
 	}
+}
+
+// TestParentSelfSkipsWhenNoSubtestRan pins the anti-vacuity mechanism V-06 (docs/review-2026-09-04.md)
+// added to TestQwen35ResidentParity, portably: a stub in place of qwen35ResidentParity so this runs
+// on any machine regardless of whether the real fixtures are present, and asserts on go test's own
+// JSON action rather than hardware behaviour.
+//
+// The bug: Go reports a parent test whose every t.Run subtest skipped as a top-level PASS, not
+// SKIP — and cmd/gate's webgpu-parity cell counts top-level results only, so that vacuous pass
+// registered as real coverage and cr.vacuous() stayed false. The fix tracks each subtest's own
+// t.Skipped() (checked from the OUTER test after t.Run returns — checking it inside the subtest
+// closure, after a call that itself calls Skip, would never run: Skip calls runtime.Goexit, which
+// unwinds the rest of that closure) and has the parent skip itself when nothing ran.
+func TestParentSelfSkipsWhenNoSubtestRan(t *testing.T) {
+	bin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go binary on PATH")
+	}
+	dir := t.TempDir()
+	src := `package p
+import "testing"
+func TestParent(t *testing.T) {
+	var subTs []*testing.T
+	for _, name := range []string{"a", "b"} {
+		t.Run(name, func(st *testing.T) {
+			subTs = append(subTs, st)
+			st.Skip("stub: simulated fixture absent")
+		})
+	}
+	ran := false
+	for _, st := range subTs {
+		if !st.Skipped() {
+			ran = true
+		}
+	}
+	if !ran {
+		t.Skip("nothing ran")
+	}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "p_test.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module p\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "test", "-json", "./...")
+	cmd.Dir = dir
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		if _, ok := runErr.(*exec.ExitError); !ok {
+			t.Fatalf("running stub module: %v\n%s", runErr, out)
+		}
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if !strings.Contains(line, `"Test":"TestParent"`) {
+			continue
+		}
+		var ev struct{ Action string }
+		if jerr := json.Unmarshal([]byte(line), &ev); jerr != nil {
+			continue
+		}
+		switch ev.Action {
+		case "pass":
+			t.Fatal("the all-subtests-skipped parent reported PASS, not SKIP — this is exactly " +
+				"the vacuous-coverage bug: a webgpu forward could be broken with nothing ever " +
+				"forwarded, and a gate counting top-level results only would still print PASS")
+		case "skip":
+			return // correct
+		}
+	}
+	t.Fatal("never saw a terminal action for TestParent — this guard is watching nothing")
 }
