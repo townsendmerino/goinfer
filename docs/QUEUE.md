@@ -1542,7 +1542,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/main.go:587` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1061` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
-| `docs/queue-engineering.md|scripts/bench_peer.py:407` | goinfer | `def gate_cell_idle():` |
+| `docs/queue-engineering.md|scripts/bench_peer.py:463` | goinfer | `def gate_cell_idle():` |
 | `docs/scoping-lfm2.md|decoder/arch.go:186` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:107` | goinfer | `if arch.QKNorm {` |
 | `docs/scoping-lfm2.md|decoder/config.go:903` | goinfer | `case c.UseQKNorm:` |

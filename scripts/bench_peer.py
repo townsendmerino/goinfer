@@ -38,6 +38,11 @@ import json, os, signal, socket, subprocess, sys, time, urllib.request, statisti
 GOINFER = os.environ.get("GOINFER_SERVE", "./goinfer-serve")
 OLLAMA = os.environ.get("OLLAMA_BIN", os.path.expanduser("~/ollama-0325/bin/ollama"))
 OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models"))
+# llama-server (docs/task-peer-benchmarks.md §1): verified live 2026-09-04 that its
+# /v1/chat/completions stream is byte-for-byte the shape parse_openai already handles --
+# same role/content/finish_reason delta framing, same usage.completion_tokens final chunk --
+# so it reuses parse_openai directly rather than a third parser.
+LLAMACPP = os.environ.get("LLAMACPP_BIN", "llama-server")
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
     "1.5B": (os.path.expanduser("~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "q15"),
@@ -66,7 +71,7 @@ SERVE = {
     "cuda":   os.environ.get("GOINFER_SERVE_CUDA",   "/home/francis/bench-v0.15.0/serve-cuda"),
     "webgpu": os.environ.get("GOINFER_SERVE_WEBGPU", "/home/francis/bench-v0.15.0/serve-webgpu"),
 }
-GPORT, OPORT = 8099, 11499
+GPORT, OPORT, LPORT = 8099, 11499, 8098
 # DEEP CONTEXT (§B7). BENCH_DEEP_CTX sets the resident/served context cap in positions; 0 keeps
 # the shallow protocol untouched. A 32k prefill costs orders of magnitude more than the decode being
 # measured, so deep cells deliberately use FEWER requests with MORE decode tokens each — the same
@@ -173,6 +178,20 @@ def _ollama_version():
     m = re.search(r"\d+\.\d+\.\d+", _sh([OLLAMA, "--version"]))
     return m.group(0) if m else None
 
+def _llamacpp_version():
+    """`llama-server --version` prints e.g. 'version: 0.3.0 (build 10621, commit c1d0e7a00)' --
+    to STDERR, not stdout. Verified live 2026-09-04: reusing `_sh()` (stdout-only) here silently
+    returned null. ollama's --version is on stdout, so _ollama_version's `_sh()` reuse is fine;
+    llama-server's stream choice is just different, hence the separate capture here."""
+    import re
+    try:
+        out = subprocess.run([LLAMACPP, "--version"], capture_output=True, text=True,
+                             timeout=15).stderr
+    except Exception:
+        return None
+    m = re.search(r"\d+\.\d+\.\d+", out)
+    return m.group(0) if m else None
+
 def provenance():
     """Everything a reader needs to know whether these numbers are comparable to another set."""
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -186,6 +205,7 @@ def provenance():
         "goinfer_commit": git("rev-parse", "--short", "HEAD"),
         "goinfer_tree_dirty": bool(git("status", "--porcelain")),
         "peer": {"ollama_bin": OLLAMA, "version": _ollama_version()},
+        "peer_llamacpp": {"bin": LLAMACPP, "version": _llamacpp_version()},
         "serve_binaries": {k: {"path": v, "mtime": (time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                                                   time.gmtime(os.path.getmtime(v)))
                                                    if os.path.exists(v) else None)}
@@ -227,6 +247,25 @@ def wait_port(port, timeout=180):
                 return True
         except OSError:
             time.sleep(0.5)
+    return False
+
+def wait_llamacpp_ready(port, timeout=180):
+    """llama-server binds its port and starts answering /health with a 503 "Loading model" WHILE
+    the checkpoint is still loading -- verified live 2026-09-04 on the 1.5B (503 for ~2s). The
+    generic wait_port() above only checks that the socket accepts a connection, which is already
+    true at that point; sending run_cell's warmup completion against a still-loading llama-server
+    would 503, land in the try/except as "warmup failed", and misreport a working peer as broken.
+    On the larger Tier-1 cells (M35, H27) the load window is much longer than 1.5B's ~2s, so this
+    polls /health for status=="ok" instead of merely a connectable socket."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as r:
+                if json.loads(r.read()).get("status") == "ok":
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.5)
     return False
 
 def post_stream(url, payload, parse):
@@ -347,6 +386,19 @@ def ollama_payload(tag, prompt, cfg, backend="cuda"):
     p["options"].update(cfg.get("ollama", {}))
     return p
 
+def llamacpp_payload(prompt, cfg):
+    """llama-server's /v1/chat/completions takes the identical field names goinfer's does
+    (temperature/top_p/top_k/seed, stream_options.include_usage) -- verified live 2026-09-04 --
+    so this mirrors goinfer_payload rather than inventing a third shape. Sampling values are
+    shared with goinfer's CONFIGS entry (see the setdefault loop below CONFIGS) rather than
+    duplicated per config."""
+    ngen, _, _ = gen_params()
+    p = {"model": "bench", "stream": True, "max_tokens": ngen,
+         "stream_options": {"include_usage": True},
+         "messages": [{"role": "user", "content": prompt}]}
+    p.update(cfg.get("llamacpp", {}))
+    return p
+
 # Sampling configurations. Each records EXACTLY what is sent to each side.
 CONFIGS = {
     "greedy": {
@@ -403,6 +455,10 @@ CONFIGS = {
         "note": "UNMATCHED — no sampling params sent; each side uses its own defaults",
     },
 }
+# llama-server speaks goinfer's own OpenAI sampling dialect (same field names), so every config
+# above gets a free "llamacpp" alias of its "goinfer" entry instead of nine duplicated blocks.
+for _cfg in CONFIGS.values():
+    _cfg.setdefault("llamacpp", _cfg.get("goinfer", {}))
 
 def gate_cell_idle():
     """Re-check that the box is idle, BEFORE EVERY CELL. Returns nothing; exits on failure.
@@ -456,7 +512,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 preexec_fn=os.setsid)
             port, url, parse, mk = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", parse_openai, \
                 (lambda: goinfer_payload(path, prompt, cfg))
-        else:
+        elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS,
                        OLLAMA_HOST=f"127.0.0.1:{OPORT}")
             if DEEP_CTX:
@@ -468,7 +524,16 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                                     preexec_fn=os.setsid)
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
                 (lambda: ollama_payload(tag, prompt, cfg, backend))
-        if not wait_port(port):
+        elif engine == "llamacpp":
+            proc = subprocess.Popen(
+                [LLAMACPP, "--model", path, "--port", str(LPORT), "--host", "127.0.0.1"]
+                + (["--ctx-size", str(DEEP_CTX)] if DEEP_CTX else []),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid)
+            port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
+                parse_openai, (lambda: llamacpp_payload(prompt, cfg))
+        ready = wait_llamacpp_ready(port) if engine == "llamacpp" else wait_port(port)
+        if not ready:
             return None, "server did not come up", None
         # warm: one discarded completion (model load + first-run outlier)
         try:
@@ -559,9 +624,10 @@ def plan_engines():
     if not raw:
         return ["goinfer", "ollama"]
     picked = [e.strip() for e in raw.split(",") if e.strip()]
-    unknown = [e for e in picked if e not in ("goinfer", "ollama")]
+    known = ("goinfer", "ollama", "llamacpp")
+    unknown = [e for e in picked if e not in known]
     if unknown:
-        sys.exit(f"BENCH_ENGINES: unknown engine(s) {unknown}; known: ['goinfer', 'ollama']")
+        sys.exit(f"BENCH_ENGINES: unknown engine(s) {unknown}; known: {list(known)}")
     return picked
 
 
