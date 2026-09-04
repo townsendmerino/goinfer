@@ -70,7 +70,8 @@ too, or it re-dangles from the section people actually read.
 ## Item 4 — small misattribution
 
 `:96` credits "goinfer's own `QuantizeActivationsInto`". It is aikit's —
-`linalg/quant.go:206`. goinfer calls it; it doesn't own it.
+`linalg/quant.go:283` (shifted from `:206` by the 2026-09-03 aikit v1.33.0 bump). goinfer calls it;
+it doesn't own it.
 
 ## What "fixed" looks like
 
