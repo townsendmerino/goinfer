@@ -61,7 +61,7 @@
 | **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | **fixed 2026-09-03** |
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
-| **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | open |
+| **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
 | **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:79-81` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | open; aikit-side first — **S-03's NEON quantiser shipped in aikit v1.33.0** (built 2026-09-03, unmeasured per aikit's own tracking; goinfer bumped to it 2026-09-04), but `MatmulBTW4A8Batch` itself does not exist yet — still the blocking half |
 | **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
 | **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **2-of-3 done, 2026-09-03**: P-13's vocab sort and P-15's penalty-map rebuild are both FIXED (`topKByLogit`, incremental `histCounts`); only P-17's `streamTokens` re-decode remains open, deferred on genuine complexity (byte-fallback fusing + UTF-8 completeness + stop-string overlap, not lack of ROI) |
@@ -308,6 +308,53 @@ positions are inherent, not recompute.
   (P18) take the tile.
 - **Gate:** `TestMoEExpertMajor_bitIdentical` and the pager determinism tests; measure on the
   CPU-paged hybrid cell paired with `off`.
+- **Status (2026-09-03): mechanism as described does not exist; the underlying premise is
+  UNRESOLVED per this repo's own prior investigation — not implemented.**
+  The "Mechanism" bullet's "the pager's fetch already copies into an owned buffer (the `pread`
+  rewrite)" describes the **Metal** expert pool (`metal/expertpool.go`, `metal/gemma4_moe.go` —
+  `preadIntoU32Buf`, GPU slot staging), not the CPU pager `decoder/moepaging.go:62-77` actually
+  cites. That CPU pager (`expertPager.touch` → `mmap.SpanCache.Touch`) is zero-copy mmap +
+  `MADV_WILLNEED`/`DONTNEED` — there is no copy step to repack during, so "repack during the copy
+  that already happens" is not available as described; building it would mean adding an entirely
+  new copy-and-own fetch path to a pager whose whole design is zero-copy residency bounding.
+  That gap was already found and closed a different way, before this doc was scoped: the `.giw`
+  kind-4 format (`SHIPPED 2026-08-24`, `docs/task-w4a8-neon-bandwidth.md`'s "Format follow-on")
+  bakes row4 onto DISK at prequant time (`cmd/prequant -row4`) instead of repacking at fetch
+  time — "simpler than \[that doc\] anticipated: the owned-buffer `pread` architecture turned out
+  NOT to be required" (its own words) — and `decoder/moepaging.go`'s `addExpert` (the exact
+  function this item cites) already prefers the row4 span when present. So the mechanism R-05
+  proposes is not just imprecise, it is a MORE complex reimplementation of a
+  SIMPLER approach this repo already built and shipped for the identical goal.
+  **That simpler, already-shipped approach's own performance case is explicitly unresolved.**
+  `docs/task-zeno-compare.md`'s "At-scale acceptance run" through "Supersession (2026-08-25)"
+  is an unusually thorough saga on two real checkpoints (gemma4-26b, qwen3.5-35B-A3B): kind-4
+  under paging first measured a REAL 25-34% regression (root-caused and fixed — the pager was
+  registering both canonical AND row4 spans per tensor, doubling I/O per miss); post-fix it
+  measured roughly at parity with kind-3 on a busy machine, then a **47-49% regression** on a
+  quiet one (ruling out both I/O waste and hit-rate as causes via `AdvisedBytes` and a
+  budget-invariance check); then a follow-on pass **withdrew** that regression entirely,
+  measuring kind-4 **27-49% FASTER** on the identical configs — with the same untouched kind-3
+  control drifting 29% between the two sessions with zero code change, meaning neither the
+  "slower" nor the "faster" reading is distinguishable from noise. The doc's own conclusion:
+  "reversed pending different-day confirmation... nothing here is a green light to dispatch
+  row4 under `-stream-weights`," with `TestGemma4EndToEndThroughput`
+  (`decoder/gemma4_endtoend_throughput_test.go`) kept specifically as that gate and two real
+  `.giw` bundles kept on disk for it — a re-run nobody has executed since 2026-08-25 (not
+  attempted here either: the bundles aren't on this machine, and at 46 GB free this box could
+  not hold even one model's kind-3+kind-4 pair, ~35-75 GB, without risking the exact
+  near-full-disk state suspected as the original swings' confound).
+  **Also found and fixed as a byproduct:** `cmd/prequant -row4`'s own `-h` text still stated the
+  withdrawn "69% SLOWER... regresses paged throughput 12-49%" finding as settled fact, with no
+  mention of the 2026-08-25 retraction — corrected to describe the actual UNRESOLVED state
+  (CLAUDE.md's own rule: a retraction must reach every place quoting the figure), while keeping
+  the same "do NOT use with `-stream-weights`" caution the source doc itself argues for keeping
+  until a confirmed reproduction lands either way.
+  **Recommended next step, if this is pursued:** run `TestGemma4EndToEndThroughput` on a
+  different machine/session/disk-fill state per the doc's own gate — not write new pager code.
+  This repo's own measurement-discipline rule, written directly out of this saga
+  ("any single-machine micro-benchmark result that will drive more than a day of downstream
+  implementation work must reproduce on a different day... before any remedy gets built against
+  it"), argues directly against building anything further on this premise before that happens.
 
 ### R-06 · One activation, quantised seven times per layer
 
