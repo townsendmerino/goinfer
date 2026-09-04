@@ -1561,7 +1561,7 @@ supports.
 | `docs/review-2026-09-04.md|decoder/model.go:862` | goinfer | `if lg, perr := pf.PrefillLast(embs, from); perr == nil {` |
 | `docs/review-2026-09-04.md|decoder/residency.go:596` | goinfer | `rf, ok, err := rb.BuildResident(m)` |
 | `docs/review-2026-09-04.md|decoder/spec_eagle.go:21` | goinfer | `m.residentForgetIDs()` |
-| `docs/review-2026-09-04.md|decoder/speculative.go:161` | goinfer | `l, err := draft.resident.Forward(draft.embedResident(tok), dpos)` |
+| `docs/review-2026-09-04.md|decoder/speculative.go:167` | goinfer | `l, err := draft.resident.Forward(draft.embedResident(tok), dpos)` |
 | `docs/review-2026-09-04.md|demo/agent/agent/agent.go:329` | goinfer | `turns := append([]msg(nil), s.history...)` |
 | `docs/review-2026-09-04.md|gpu/attention.go:272` | goinfer | `// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the ol` |
 | `docs/review-2026-09-04.md|gpu/bufaccount.go:20` | goinfer | `// to the test that caused it. See TestNoBufferLeak.` |

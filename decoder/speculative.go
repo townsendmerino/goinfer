@@ -137,6 +137,12 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		if draftResident {
 			if atomic.CompareAndSwapInt32(&draft.resBusy, 0, 1) {
 				defer atomic.StoreInt32(&draft.resBusy, 0)
+				// R-00's shape on the second Model (V-09, docs/review-2026-09-04.md): the
+				// target's own claim just above forgets first for exactly this reason — from
+				// here until this generation completes, draft's resident KV is mid-write, so a
+				// later unrelated generation on this SAME draft model must not trust whatever
+				// resIDs happened to be set from before. Missed when R-00 fixed the target half.
+				draft.residentForgetIDs()
 			} else {
 				draftResident = false
 			}

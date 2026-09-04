@@ -193,3 +193,42 @@ func TestGenerateNgramSpeculative_residentCommitsAcceptedSequence(t *testing.T) 
 			"must never claim tokens it did not actually forward", m.resIDs, want)
 	}
 }
+
+// TestGenerateSpeculative_forgetsDraftResIDs is R-00's shape on the SECOND Model (V-09,
+// docs/review-2026-09-04.md): GenerateSpeculative's target claim forgets resIDs before any
+// resident write (R-00), but the draft's own claim just below it skipped the forget entirely.
+// GenerateSpeculative never COMMITS either model's resIDs (only R-01 phase 1/2 would let it), so
+// the correct postcondition for BOTH is nil after any call — the same invariant target's own
+// claim already held, now held by draft too.
+//
+// A stale resIDs matters here specifically because it is reachable through the public API on
+// its own: a caller holding a draft *Model can call target.GenerateSpeculative once (which used
+// to leave draft.resIDs however it was BEFORE this call, silently) and then call draft.Generate
+// directly — a completely unrelated turn — which would trust a resIDs value describing content
+// the draft's resident KV no longer holds (this call already overwrote it).
+func TestGenerateSpeculative_forgetsDraftResIDs(t *testing.T) {
+	target, _ := loadWithFakeResident(t)
+	draft, _ := loadWithFakeResident(t)
+	draft.resIDs = []int{9, 9, 9} // stale, from an unrelated prior generation
+
+	prompt := []int{1, 2, 3}
+	ch, gen, err := target.GenerateSpeculative(context.Background(), prompt, 8, draft, 4, SamplingParams{Temperature: 0})
+	if err != nil {
+		t.Fatalf("GenerateSpeculative: %v", err)
+	}
+	for range ch {
+	}
+	if gen.Err() != nil {
+		t.Fatalf("gen.Err() = %v, want nil", gen.Err())
+	}
+
+	if draft.resIDs != nil {
+		t.Errorf("draft.resIDs = %v after GenerateSpeculative, want nil — the stale value from "+
+			"before this call was never forgotten, so a later unrelated draft.Generate would "+
+			"trust it against a resident KV this call already overwrote", draft.resIDs)
+	}
+	if target.resIDs != nil {
+		t.Errorf("target.resIDs = %v after GenerateSpeculative, want nil (R-00's own invariant, "+
+			"unaffected by this fix — checked as a control)", target.resIDs)
+	}
+}
