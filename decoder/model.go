@@ -1095,6 +1095,15 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		select {
 		case <-ctx.Done():
 			g.err = ctx.Err()
+			// audit R-02: at this exit `next` has been sampled but never forwarded (its own
+			// K/V write is later in this same iteration, which cancellation skips), so the
+			// resident cache is consistent with exactly prompt+generated — record it instead
+			// of leaving resIDs nil and forcing the next turn to cold-prefill an interrupt
+			// that left nothing inconsistent behind. Agent harnesses cancel constantly
+			// (interrupts, timeouts, disconnects), so today every one of them pays this cost.
+			if useGPU {
+				m.residentCommitIDs(prompt, generated)
+			}
 			return
 		case out <- next:
 		}

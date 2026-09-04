@@ -329,8 +329,28 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			stats.Emitted++
 			return stats.Emitted < maxTokens
 		}
+		// audit R-03: every return below that follows a successful (or stop/cancelled) emit —
+		// as opposed to a targetVerify/prefill error, which can leave a partial write and must
+		// stay forgotten (resIDs is already nil from the forget above) — happens at a point
+		// where hist is exactly what the resident cache holds, NEVER ahead of it: targetVerify's
+		// ForwardN writes a round's [cur, accepted draft…] K/V before this loop streams any of
+		// them, and hist is appended in the same step. The one asymmetry is the round's OWN
+		// trailing token: `cur = nextTok` is streamed here but not forwarded until the START of
+		// the NEXT round (as that round's targetVerify seq[0]), so a return right after that
+		// specific emit leaves hist one token BEHIND what was just streamed — safe (the cache
+		// is never claimed to hold more than it does), just one token short of the reuse this
+		// round could otherwise offer, at exactly the exit that also ends the whole generation.
+		// Recurrent families never reach here at all (validateNgramSpec's specRollbackSafe check
+		// rejects them before this goroutine starts), so there is no forget-otherwise branch to
+		// add, unlike R-01/R-03's general shape.
+		commitResident := func() {
+			if resident {
+				target.residentCommitIDs(prompt, hist[len(prompt):])
+			}
+		}
 
 		if !emit(cur) {
+			commitResident()
 			return
 		}
 		for {
@@ -463,11 +483,13 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// 6. Stream the accepted draft tokens, then the correction/bonus.
 			for i := 0; i < accepted; i++ {
 				if !emit(draftTok[i]) {
+					commitResident()
 					return
 				}
 			}
 			cur = nextTok
 			if !emit(cur) {
+				commitResident()
 				return
 			}
 		}
