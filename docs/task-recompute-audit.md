@@ -56,9 +56,9 @@
 | id | what is recomputed | where | size of the redo | fix shape | status |
 |---|---|---|---|---|---|
 | **R-00** | a plain turn reuses resident KV rows a block-spec or draft-model generation overwrote | `decoder/blockspec.go:195`, `decoder/speculative.go:125-130` — neither calls `residentForgetIDs` | wrong output, silently | forget (or commit) on both paths; a test that alternates the paths | **bug — fix first** |
-| **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:50` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | open; L-05 |
-| **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | open |
-| **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | open |
+| **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:50` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | **phase 0 fixed 2026-09-03** (exact-extension reuse; CUDA-hardware scenarios unrun); phase 1/2 open; L-05 |
+| **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | **fixed 2026-09-03** |
+| **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | open |
 | **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:79-81` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | open; aikit-side first — **S-03's NEON quantiser shipped in aikit v1.33.0** (built 2026-09-03, unmeasured per aikit's own tracking; goinfer bumped to it 2026-09-04), but `MatmulBTW4A8Batch` itself does not exist yet — still the blocking half |
@@ -85,7 +85,7 @@ positions are inherent, not recompute.
   `resident_reuse.go`, `spec_eagle.go`, `spec_ngram.go`. `blockspec.go` does not claim `resBusy`
   either.
 - **Mechanism:** `resIDs` is written only by `residentCommitIDs` at the end of a completed plain
-  generation (`decoder/model.go:1141-1143`) and read by `residentReuseLen` at the start of the next
+  generation (`decoder/model.go:1150-1152`) and read by `residentReuseLen` at the start of the next
   (`decoder/model.go:949-955`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
   sampled one to `Model.Generate` on the **same** `*Model` (`internal/serveapp/openai.go`, the
   `--drafter` branch). So: plain turn A commits A's ids → greedy turn B prefills B over the same
@@ -194,11 +194,27 @@ positions are inherent, not recompute.
 - **Confidence:** high on phase 0 (the staged path is the existence proof, and the invariant is the
   one 3358e6b already relies on); high on phase 1's plumbing being present (read in aikit at
   438acfa); medium on the projected device-side numbers until measured.
+- **Status (2026-09-03): Phase 0 fixed.** `residentReuseLen` (`decoder/resident_reuse.go`) no
+  longer blanket-refuses a recurrent family: it now returns `len(m.resIDs)` when the prompt is an
+  exact, strict extension of the entire committed sequence (`m.resIDs` is a full prefix of
+  `prompt` and `len(prompt) > len(m.resIDs)`), else 0 — narrower than the generic branch's
+  longest-common-prefix match, on purpose, since a recurrent state has no per-position history to
+  rewind into. Mutation-checked against the generic branch's own test cases carried over
+  (a mid-sequence divergence the generic branch WOULD reuse now correctly returns 0 for a recurrent
+  model — `TestResidentReuseLen_recurrentExactExtensionOnly`). Full decoder suite green. The Gate
+  bullet's CUDA half (`TestPagerDeterminism` on a real qwen3.6-35B-A3B checkpoint) is unrun here
+  (no CUDA hardware) but verified by inspection: it repeats an IDENTICAL prompt, and
+  `len(prompt) <= len(m.resIDs)` for a resend still returns 0 under the new rule exactly as the old
+  blanket refusal did, so its pass/fail is unaffected by this change. The two-turn/three-turn
+  token-identity-vs-cold-prefill scenarios also need real hardware and are not run; the portable
+  test instead pins the id-arithmetic those scenarios exercise (which is all `residentReuseLen`
+  is — no backend interaction). L-05's decision rule (TTFT funding gate) needs the same hardware
+  and is unattempted.
 
 ### R-02 · A cancelled generation forgets a prefix that is intact
 
 - **Where:** `generateInto`'s `select { case <-ctx.Done(): g.err = ctx.Err(); return ... }` before
-  `out <- next` (`decoder/model.go:1096-1100`, the send that M8 made cancellable).
+  `out <- next` (`decoder/model.go:1096-1109`, the send that M8 made cancellable).
 - **Mechanism:** at that point the last forward has completed and been sampled, `next` has not been
   forwarded, and `generated` holds exactly the tokens whose K/V (and, for a hybrid, whose recurrent
   state) the cache holds. The cache is as consistent as it is at the commit two branches later; the
@@ -207,6 +223,17 @@ positions are inherent, not recompute.
 - **Fix:** `if useGPU { m.residentCommitIDs(prompt, generated) }` on that exit only. The `err !=
   nil` exit after a forward stays a forget (a partial write is possible there).
 - **Gate:** cancel mid-stream, then extend the prompt with what was emitted; equals cold.
+- **Status (2026-09-03): fixed**, exactly as specified — the fix is the literal one-line addition
+  quoted above, at the `ctx.Done()` exit only. Gated portably (no GPU/checkpoint needed) with the
+  same fake-resident harness `resident_seam_test.go` already uses:
+  `TestGenerateResident_cancelCommitsExactlyWhatWasEmitted` cancels mid-stream and asserts
+  `resIDs == prompt+received` (the exact invariant, not a hardcoded token count, since the
+  cancel-vs-send race can let one extra token through); `TestGenerateResident_forwardErrorStillForgets`
+  pins the sibling negative case — the `err != nil` exit must keep forgetting. Mutation-checked
+  (disabling the new call breaks the first test with `resIDs = []`, confirming it is load-bearing).
+  `decoder/model.go` is a parity-manifest core file; `scripts/refresh_parity_hashes.sh` was run
+  after this edit (31/31 forward goldens that ran stayed green, `deps_hash` refreshed for 28
+  families, `validated_at` untouched). Full decoder suite green.
 
 ### R-03 · Speculative generations forget the prefix — and could commit it
 
@@ -221,6 +248,36 @@ positions are inherent, not recompute.
   `!hasRecurrentState()`, forget otherwise. With `--drafter` this is the difference between an agent
   loop that gets prefix reuse and one that never does.
 - **Gate:** the same token-identity-vs-cold test as R-01, run through each loop.
+- **Status (2026-09-03): `spec_ngram.go` fixed; `spec_eagle.go` does not apply, corrected below.**
+  `genNgramInto`'s resident branch (`decoder/spec_ngram.go`, `cache == nil && target.resident !=
+  nil && target.DecodeRunnerEligible()`) now commits at every exit that follows a successful (or
+  stop/cancelled) `emit` — as opposed to a `targetVerify`/prefill error, which can leave a partial
+  write and correctly stays forgotten. The commit is `hist` (the loop's own name for "the prompt
+  plus every token whose K/V is actually in the cache"), not always literally `prompt + accepted`:
+  a round's own trailing token is streamed before it is forwarded (forwarding happens at the START
+  of the next round, as that round's `targetVerify` `seq[0]`), so a return right after that
+  specific emit is one token behind the stream — safe (never claims more than the cache holds),
+  gated by `TestGenerateNgramSpeculative_residentCommitsAcceptedSequence`'s prefix check rather
+  than exact equality. No conditional forget-for-recurrent was needed: `validateNgramSpec`'s
+  `specRollbackSafe` check already rejects recurrent families before the goroutine starts, on
+  every entry point (`GenerateNgramSpeculative` and `Session.genSpec` both call it), so
+  `hasRecurrentState()` is always false inside this branch.
+  **`spec_eagle.go`'s two functions (`GenerateEagleSpeculative`,
+  `GenerateEagleSpeculativeTree`) never touch `m.resident` at all** — both use `m.embedToken`
+  (not `embedResident`) and a local `tc := m.NewCache(...)` for every forward
+  (`m.forwardNAttn(ctx, ids, tc, fastAttn)` routes to `m.forward`/`m.forwardLayersN` with that
+  explicit CPU cache, never `m.resident.Forward`/`ForwardN`). Their `residentForgetIDs()` calls at
+  entry are therefore not a partial-write guard against anything these functions themselves do —
+  the resident device state, if any, is genuinely unmodified by an EAGLE generation, so
+  R-03's "commit prompt+accepted" fix does not apply here: committing would claim the resident
+  device holds tokens it never received, which is a worse bug than the one being fixed. Whether
+  the forget itself is even necessary (the resident KV a prior turn committed remains valid and
+  reusable after a CPU-only EAGLE call) is a real, separate recompute-avoidance opportunity in
+  this document's own theme, but changing it needs the same care as everything else here and is
+  left unstarted rather than risked on inference — filed as a candidate follow-up, not attempted.
+  Mutation-checked (disabling `spec_ngram.go`'s commit call breaks the gate test). Full decoder
+  suite green; `spec_ngram.go`/`spec_eagle.go` are not parity-manifest core files, no hash refresh
+  needed.
 
 ### R-04 · A second conversation, or a stop string, means a cold prefill
 
