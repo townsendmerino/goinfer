@@ -283,6 +283,55 @@ func TestSidecar_failedTranscodeLeavesNoFinalFile(t *testing.T) {
 	}
 }
 
+// V-01 (docs/review-2026-09-04.md): no existing test ever drove a SUCCESSFUL GGUF Transcode —
+// the M-12 tests above assert failure on a non-GGUF source and an AST shape, neither of which
+// exercises selfCheck on a real bundle. That is exactly why the temp name `out + ".tmp"` (not
+// ending in ".giw", so decoder.Load's suffix dispatch in selfCheck could never route to the
+// bundle loader) went unnoticed: every real Transcode failed its own self-check unconditionally.
+// This drives the whole function end to end on a real tokenizer-bearing GGUF (glm-tiny.gguf has
+// no tokenizer -- see giwFixture's own comment elsewhere -- so this needs a different, real small
+// checkpoint) and loads the PUBLISHED bundle afterward, proving both that Transcode succeeds and
+// that the file it left behind is loadable.
+//
+// GOINFER_HEAVY_TESTS-gated like every other real-checkpoint test in this repo (decoder's
+// requireHeavyModel), but deliberately NOT through testdata/assets.json's GOINFER_PREQUANT_GGUF:
+// that name is enforced single-resolution-site by TestAssetRegistry_noDirectReads
+// (decoder/asset_registry_test.go), which flags any os.Getenv read of a registered name outside
+// that file. A local path check avoids colliding with that enforcement rather than fighting it.
+func TestTranscode_realGGUFSucceedsAndPublishedBundleLoads(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real GGUF)")
+	}
+	var gguf string
+	for _, cand := range []string{
+		filepath.Join("..", "..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		filepath.Join(os.Getenv("HOME"), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+	} {
+		if fi, err := os.Stat(cand); err == nil && fi.Size() > 1<<20 {
+			gguf = cand
+			break
+		}
+	}
+	if gguf == "" {
+		t.Skip("no small tokenizer-bearing GGUF found (testdata/ or ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf)")
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "qwen05.int4.giw")
+
+	if err := Transcode(context.Background(), gguf, out, "int4", false, false); err != nil {
+		t.Fatalf("Transcode: %v", err)
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Fatalf("Transcode reported success but left no bundle at %s: %v", out, err)
+	}
+	m, err := decoder.Load(out, decoder.Options{})
+	if err != nil {
+		t.Fatalf("published bundle does not load: %v", err)
+	}
+	m.Close()
+}
+
 // The temp+rename half of M-12 cannot be shown by a failing Transcode: the error paths remove
 // the file either way, so an in-place writer passes the tests above unchanged (measured — that
 // is why this exists). The property is about what is on disk DURING the write, and the

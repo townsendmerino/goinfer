@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -78,7 +79,16 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool)
 	// With a temp file, an interrupted run leaves out.tmp and no `out` at all, so the next run
 	// simply rebuilds. The rename is atomic within a directory, so `out` only ever appears
 	// once the bytes are complete AND selfCheck has passed.
-	tmp := out + ".tmp"
+	//
+	// The temp name MUST still end in ".giw" (V-01, docs/review-2026-09-04.md): selfCheck below
+	// calls decoder.Load(tmp, ...), and Load's only entry to the bundle loader is
+	// strings.HasSuffix(dir, ".giw") -- anything else falls to loadWeights, which wants a .gguf
+	// file or a safetensors directory and finds neither. A plain `out + ".tmp"` (e.g.
+	// "model.int4.giw.tmp") does not end in ".giw", so selfCheck failed for every GGUF Transcode
+	// unconditionally, deleted the temp file, and returned "self-check: ..." -- the rename was
+	// never reached. Boxes that already had a sidecar from before this bug never called
+	// Transcode again and so never saw it, which is how it stayed green.
+	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
 	f, err := os.Create(tmp)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", tmp, err)

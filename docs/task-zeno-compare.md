@@ -43,7 +43,7 @@ and the streaming branch itself refuses the family outright (`decoder/gguf.go:15
 > `if arch.qwen35 != nil || arch.gemma4 != nil { return nil, fmt.Errorf("...streaming transcode
 > unsupported for %s (load resident + prequant instead)", arch.Name) }`
 
-`cmd/prequant`'s own doc comment names the assumption directly (`internal/prequant/prequant.go:65-69`):
+`cmd/prequant`'s own doc comment names the assumption directly (`internal/prequant/prequant.go:66-70`):
 "transcode the GGUF straight into the bundle, ONE LAYER at a time... peak RAM is ~one layer rather
 than the whole resident model... The dedicated qwen35/gemma4 loaders fall back to a resident build
 inside StreamTranscodeGGUF (**those models fit**)." **That assumption is what broke**: it held for
@@ -888,7 +888,7 @@ scoping), a roadmap target regardless of any Zeno comparison.
 **Shape:** mirror the generic path's per-layer stream-and-free inside qwen35's dedicated loader —
 both call sites that currently hit the `sink=nil`/resident-fallback branch (`StreamTranscodeGGUF`'s
 own qwen35 carve-out, which both the general load path and `cmd/prequant` route through, per
-`internal/prequant/prequant.go:65-69`'s own comment — there is exactly one code path to fix, not
+`internal/prequant/prequant.go:66-70`'s own comment — there is exactly one code path to fix, not
 two). gemma4 shares the same carve-out (`decoder/gguf.go:1561`) but is NOT in scope here — it fits
 resident on the boxes it's been run on; touch only the qwen35 branch unless a gemma4-specific
 gap surfaces independently.
