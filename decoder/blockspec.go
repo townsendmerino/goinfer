@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 )
 
 // errBlockSpecUnsupported is returned when the backend cannot host a block drafter, so a caller
@@ -12,6 +13,15 @@ var errBlockSpecUnsupported = errors.New("decoder: backend does not support bloc
 
 // ErrBlockSpecUnsupported reports whether err is the decline above.
 func ErrBlockSpecUnsupported(err error) bool { return errors.Is(err, errBlockSpecUnsupported) }
+
+// errBlockSpecResidentBusy is returned when another generation already holds the model's single
+// shared resident KV (audit R-00). Returned before any device write, so a caller's existing
+// fallback to plain Generate (internal/serveapp/openai.go) is exact — Generate makes its own CAS
+// attempt and, finding the same claim held, drops to the staged CPU path itself (M9).
+var errBlockSpecResidentBusy = errors.New("decoder: resident KV is busy with another generation")
+
+// ErrBlockSpecResidentBusy reports whether err is the concurrent-claim decline above.
+func ErrBlockSpecResidentBusy(err error) bool { return errors.Is(err, errBlockSpecResidentBusy) }
 
 // The backend-side interfaces block-drafting speculation drives, mirroring ResidentForward.
 //
@@ -193,6 +203,25 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	}
 	if width < 2 {
 		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d is too narrow", width)
+	}
+	// Claim the single shared resident KV before any device write (audit R-00): this path drives
+	// the same positional cache as Model.Generate and the n-gram/speculative paths, none of which
+	// it coordinated with before this fix. A loser returns before touching state, so the caller's
+	// existing fallback to plain Generate is exact (M9's "concurrent distinct sequences still
+	// complete correctly, only resident speed is lost"). Gated on m.resident != nil, mirroring
+	// model.go's useGPU check: NewCPUBlockSpec's host never touches the resident device KV (it
+	// has its own CPU cache — decoder/blockspec_cpu.go), so it must not contend for resBusy or
+	// forget a resIDs commit it never wrote.
+	if m.resident != nil {
+		if !atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
+			return nil, 0, errBlockSpecResidentBusy
+		}
+		defer atomic.StoreInt32(&m.resBusy, 0)
+		// Forget FIRST — from here until the generation completes (or this call returns early)
+		// the resident KV is mid-write, so the next turn must cold-prefill rather than trust it
+		// (decoder/resident_reuse.go). This path always prefills the whole prompt from position 0
+		// (no reuse attempted), so there is nothing to preserve by deferring the forget.
+		m.residentForgetIDs()
 	}
 	if err := host.SetBatchedCapture(s.taps); err != nil {
 		return nil, 0, err

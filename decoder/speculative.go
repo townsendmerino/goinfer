@@ -124,6 +124,12 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		if resident {
 			if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {
 				defer atomic.StoreInt32(&target.resBusy, 0)
+				// Forget FIRST (audit R-00) — from here until this generation completes (or
+				// returns early) the resident KV is mid-write, so the next turn must
+				// cold-prefill rather than trust a half-written cache
+				// (decoder/resident_reuse.go). This path always seeds from position 0 (no
+				// reuse attempted below), so there is nothing to preserve by deferring it.
+				target.residentForgetIDs()
 			} else {
 				resident = false
 			}

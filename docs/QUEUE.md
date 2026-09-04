@@ -1034,16 +1034,16 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/attention.go:114` | goinfer | `// 4. Append this position's K/V, then attend over the stored history. Route` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:129` | goinfer | `ctx := cache.scr.ctx[:nH*hd]` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:156` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:169` | goinfer | `// LOSSLESS BY CONSTRUCTION: every emitted token is one the TARGET's own argmax produced` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:175` | goinfer | `anchor: func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:201` | goinfer | `rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:209` | goinfer | `for i := range n {` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:257` | goinfer | `for opt.MaxTokens <= 0 \|\| len(out) < opt.MaxTokens {` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:320` | goinfer | `blockIn := make([][]float32, width)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:325` | goinfer | `trunk, e := rd.DraftBlock(blockIn)` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:356` | goinfer | `// TRUNCATE BEFORE EOS INSIDE THE BURST. A round commits several tokens at once, so a` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:453` | goinfer | `func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens int,` |
-| `docs/audit-2026-09-02.md|decoder/blockspec.go:501` | goinfer | `stats.Emitted = len(toks)` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:179` | goinfer | `// LOSSLESS BY CONSTRUCTION: every emitted token is one the TARGET's own argmax produced` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:185` | goinfer | `anchor: func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:230` | goinfer | `rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:238` | goinfer | `for i := range n {` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:286` | goinfer | `for opt.MaxTokens <= 0 \|\| len(out) < opt.MaxTokens {` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:349` | goinfer | `blockIn := make([][]float32, width)` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:354` | goinfer | `trunk, e := rd.DraftBlock(blockIn)` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:385` | goinfer | `// TRUNCATE BEFORE EOS INSIDE THE BURST. A round commits several tokens at once, so a` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:482` | goinfer | `func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens int,` |
+| `docs/audit-2026-09-02.md|decoder/blockspec.go:530` | goinfer | `stats.Emitted = len(toks)` |
 | `docs/audit-2026-09-02.md|decoder/blockspec_cpu_test.go:87` | goinfer | `n := min(len(base), len(got))` |
 | `docs/audit-2026-09-02.md|decoder/config.go:1048` | goinfer | `// resolveEOSIDs returns the ids that end generation: config.json's` |
 | `docs/audit-2026-09-02.md|decoder/config.go:1090` | goinfer | `func loadConfig(fsys fs.FS, name string) (*Config, error) {` |
@@ -1558,7 +1558,7 @@ supports.
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:44` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,      // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:268` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:275` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
-| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:521` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:550` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:147` | goinfer | `// head). Fixed size — independent of sequence length, and NOT position-` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:150` | goinfer | `type deltaState struct {` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:184` | goinfer | `win := st.convWin` |
@@ -1622,7 +1622,7 @@ supports.
 | `docs/task-moe-streaming.md|decoder/residency.go:130` | goinfer | `return m.residentProjsInt4()` |
 | `docs/task-recompute-audit.md|cuda/resident.go:275` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/task-recompute-audit.md|decoder/attention.go:79` | goinfer | `matmulInto(scr.ws, be, &lw.QProj, h, q, 1)` |
-| `docs/task-recompute-audit.md|decoder/blockspec.go:185` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
+| `docs/task-recompute-audit.md|decoder/blockspec.go:195` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
 | `docs/task-recompute-audit.md|decoder/forwardn.go:134` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
 | `docs/task-recompute-audit.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/task-recompute-audit.md|decoder/kvcache.go:448` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
@@ -1634,7 +1634,7 @@ supports.
 | `docs/task-recompute-audit.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/task-recompute-audit.md|decoder/speculative.go:125` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
-| `docs/task-verification-surface-audit.md|decoder/blockspec.go:521` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/task-verification-surface-audit.md|decoder/blockspec.go:550` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1448` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1551` | goinfer | `if g.Has("output.weight") {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1561` | goinfer | `if arch.gemma4 != nil {` |

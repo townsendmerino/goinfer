@@ -34,7 +34,11 @@
 > Cross-references: `docs/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
 > `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
 > narrow state snapshot"), `docs/task-freetoken-techniques.md` (Lead 1), aikit
-> `docs/task-simd-audit.md` (S-02, S-03).
+> `docs/task-simd-audit.md` (S-02, S-03). **R-00 (the correctness bug, fixed 2026-09-03):**
+> `BlockSpec.generate` now claims `resBusy` and forgets `resIDs` before any resident write;
+> `GenerateSpeculative` already claimed `resBusy` and now forgets too. Mutation-checked; the full
+> mixed-traffic CUDA scenario from R-00's own Gate bullet is still unrun (no CUDA hardware here) —
+> a portable stub-host test covers the same postcondition instead. See R-00 below for detail.
 
 ## 0. What must not change
 
@@ -51,7 +55,7 @@
 
 | id | what is recomputed | where | size of the redo | fix shape | status |
 |---|---|---|---|---|---|
-| **R-00** | a plain turn reuses resident KV rows a block-spec or draft-model generation overwrote | `decoder/blockspec.go:185`, `decoder/speculative.go:125-130` — neither calls `residentForgetIDs` | wrong output, silently | forget (or commit) on both paths; a test that alternates the paths | **bug — fix first** |
+| **R-00** | a plain turn reuses resident KV rows a block-spec or draft-model generation overwrote | `decoder/blockspec.go:195`, `decoder/speculative.go:125-130` — neither calls `residentForgetIDs` | wrong output, silently | forget (or commit) on both paths; a test that alternates the paths | **bug — fix first** |
 | **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:50` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | open; L-05 |
 | **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | open |
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | open |
@@ -74,7 +78,7 @@ positions are inherent, not recompute.
 
 ### R-00 · Correctness — two paths write the resident KV and never clear `resIDs`
 
-- **Where:** `decoder/blockspec.go:185` (`BlockSpec.generate`: `PrefillLastNArgmax(embs, 0)` /
+- **Where:** `decoder/blockspec.go:195` (`BlockSpec.generate`: `PrefillLastNArgmax(embs, 0)` /
   `PrefillSeedArgmax` prefill the prompt from position 0, then every verify round writes rows) and
   `decoder/speculative.go:125-130` (`GenerateSpeculative` claims `resBusy` and runs the target's
   verify on the resident KV). The five files that forget are `generate_vl.go`, `model.go`,
@@ -96,6 +100,27 @@ positions are inherent, not recompute.
   pin the `resIDs == nil` postcondition without a device.
 - **Confidence:** high on the mechanism (both call sites read); the scenario needs mixed
   greedy/sampled traffic on one model, which an agent harness supplies.
+- **Status (2026-09-03): fixed.** `BlockSpec.generate` (`decoder/blockspec.go`) now claims
+  `m.resBusy` via CAS before any device write when `m.resident != nil` (gated to match
+  `model.go`'s `useGPU` check, so `NewCPUBlockSpec`'s CPU-only host — which never touches the
+  resident device KV — doesn't contend for a claim it doesn't need), returns the new
+  `ErrBlockSpecResidentBusy` on a losing claim, and calls `m.residentForgetIDs()` immediately on a
+  winning one, before `SetBatchedCapture`/`PrefillLastNArgmax` touch the cache. `speculative.go`'s
+  `GenerateSpeculative` already claimed `target.resBusy` (C-03) but never forgot; it now calls
+  `target.residentForgetIDs()` right after the claim succeeds, same ordering. Both mutation-checked
+  (disabling the new guard makes `blockspec_residentbusy_test.go`'s two tests fail — one to a panic
+  on the now-nil drafter, confirming the claim is load-bearing, not just present). The full
+  mixed-traffic scenario in the Gate bullet above (plain(A)→block-spec(B)→plain(A+suffix) token
+  parity) still needs CUDA hardware and is not run here; what's covered instead is the narrower,
+  portable postcondition the Gate bullet itself proposed as a fallback: a stub
+  `ResidentDrafterHost` pins `resIDs == nil` after a claimed generation and confirms a losing claim
+  returns before touching the host or `resIDs` at all (`TestBlockSpecGenerate_forgetsResIDsBeforeAnyWrite`,
+  `TestBlockSpecGenerate_residentBusyDeclines`). `GenerateSpeculative`'s one-line addition has no
+  equivalent unit coverage — driving its full goroutine (draft/verify/accept loop, channel output)
+  needs a much heavier harness than `BlockSpec.generate`'s synchronous call, and R-03 (which
+  upgrades the forget to a commit) is the natural point to build that harness rather than
+  duplicating it now for a single-line change whose shape is otherwise identical to the
+  already-tested `decoder/model.go:949-950` pattern.
 
 ### R-01 · The hybrid families re-prefill the whole conversation every turn (resident path)
 
