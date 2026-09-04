@@ -10,11 +10,11 @@ import (
 
 // DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it
 // runs M token rows (a speculative block at consecutive positions) through the dense
-// W8A8 layers in ONE command buffer, with the weight-heavy PROJECTIONS done as M=K
-// tiled GEMMs — each weight streamed once across all M rows — and the cheap per-row
-// ops (rmsnorm, RoPE, attention, SwiGLU, residual, KV-store) looped over the rows.
-// This is the projection-side weight-stream collapse that the per-row resident
-// verify (runBatch: M separate M=1 GEMVs) cannot do.
+// W8A8 layers, with the weight-heavy PROJECTIONS done as M=K tiled GEMMs — each
+// weight streamed once across all M rows — and the cheap per-row ops (rmsnorm, RoPE,
+// attention, SwiGLU, residual, KV-store) looped over the rows. This is the
+// projection-side weight-stream collapse that the per-row resident verify (runBatch:
+// M separate M=1 GEMVs) cannot do.
 //
 // It is bit-equivalent to M sequential DecodeTokenFused calls at positions[0..M-1]
 // (same int8 inputs, same int32 accumulation; the tiled GEMM equals the GEMV): all
@@ -22,6 +22,21 @@ import (
 // row i attends to rows 0..i-1 exactly as sequential decode would. Gated by
 // TestDecodeTokenFusedBatched_parity. Dense W8A8 only (no MoE/MLA/SSM/bias/QK-norm)
 // — the first arch of the Stage-B rollout.
+//
+// NOT one command buffer end to end, despite the name's original intent: cogentcore/webgpu's
+// Metal backend allocates a fresh native MTLCommandBuffer inside every ComputePassEncoder.End()
+// (wgpuComputePassEncoderEnd -> wgpu_hal Metal begin_encoding -> -[MTLCommandQueue
+// commandBufferWithUnretainedReferences]), and MTLCommandQueue caps how many can exist
+// uncommitted at once — block on that cap and Submit() is unreachable because nothing already
+// queued will ever be committed to free a slot. A single encoder spanning all M rows x all
+// layers hit that cap even at the smallest tested dims (qwen0.5b, M=8/L=8, ~1000+ passes) and
+// deadlocked forever (confirmed by sampling the live process: near-zero CPU, parked on
+// semaphore_wait_trap under Metal's command-buffer allocator — TestDecodeTokenFusedBatched_microbench
+// and _largedim both hung this way, unrelated to any dependency version). flushPasses below
+// commits periodically (Submit with no intervening Poll — same-queue submissions are ordered by
+// WebGPU/Metal automatically, so KV-cache writes still happen-before later attention reads) to
+// stay under the cap while keeping the weight-stream-once-per-layer win this function exists to
+// measure: the amortization is across M rows within a layer, not across the whole block.
 func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, nKV, hd, inter int, positions []int, start int, eps, scale float32, addOne bool) ([][]float32, error) {
 	M := len(xs)
 	if M == 0 {
@@ -57,7 +72,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	if err != nil {
 		return nil, err
 	}
-	defer enc.Release()
+	defer func() { enc.Release() }()
 
 	// buildErr accumulates the FIRST device-allocation/bind failure (audit C-27): the helpers
 	// short-circuit once set and the function returns it before Submit, so VRAM exhaustion is an
@@ -107,6 +122,34 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		keepBG(bg)
 		return bg
 	}
+	// flushPasses commits the passes recorded so far and opens a fresh encoder, WITHOUT waiting
+	// for the GPU (no Poll) — same-queue submissions are ordered by WebGPU/Metal automatically, so
+	// a later row's KV-cache read still happens-after an earlier row's KV-cache write even across
+	// this boundary. Its only job is to keep the number of UNCOMMITTED native command buffers
+	// under Metal's cap (see the doc comment above); it is not a synchronization point.
+	flushPasses := func() {
+		if buildErr != nil {
+			return
+		}
+		cmd, e := enc.Finish(nil)
+		if e != nil {
+			buildErr = e
+			return
+		}
+		c.queue.Submit(cmd)
+		cmd.Release()
+		enc.Release()
+		enc, e = c.device.CreateCommandEncoder(nil)
+		if e != nil {
+			buildErr = e
+		}
+	}
+	// passesPerFlush is well under the smallest dispatch count (~139, the sequential per-row
+	// path's total for an 8-layer decode) observed to run without hitting Metal's uncommitted-
+	// command-buffer cap, so it stays safe across every M/L combination this function is called
+	// with rather than depending on a per-config layer or row count.
+	const passesPerFlush = 32
+	dispCount := 0
 	disp := func(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, gx, gy uint32) {
 		if buildErr != nil || bg == nil {
 			return
@@ -117,6 +160,11 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		pass.DispatchWorkgroups(gx, gy, 1)
 		pass.End()
 		pass.Release()
+		dispCount++
+		if dispCount >= passesPerFlush {
+			flushPasses()
+			dispCount = 0
+		}
 	}
 	// cpy is a buildErr/nil-guarded CopyBufferToBuffer — a nil src/dst here means an upstream
 	// storF/tiledProj already failed, so skip rather than deref (audit C-27).
@@ -270,7 +318,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		return nil, err
 	}
 	defer cmd.Release()
-	c.queue.Submit(cmd) // the ONE submit for the whole block
+	c.queue.Submit(cmd) // the FINAL submit — everything since the last flushPasses, plus the readback copies
 
 	statuses := make([]wgpu.BufferMapAsyncStatus, M)
 	for r := range stag {
