@@ -67,6 +67,11 @@ type Ref struct {
 	// the bytes under a name goinfer vouches for, and the API-declared digest would happily
 	// verify the NEW file. Empty for user-supplied refs, which pin nothing by construction.
 	Pin string
+	// Bytes is the file size this build pins for a curated demo: ref, alongside Pin — the two
+	// together are what let Resolve verify a cache hit OFFLINE (V-16, docs/review-2026-09-04.md)
+	// without a List call to ask HuggingFace how big the file is. 0 for a user-supplied ref,
+	// which pins nothing by construction (same reasoning as Pin).
+	Bytes int64
 }
 
 //go:embed curated.json
@@ -126,7 +131,7 @@ func ParseRef(s string) (Ref, error) {
 		if !ok {
 			return Ref{}, fmt.Errorf("unknown demo model %q; have: %s", sel, strings.Join(CuratedNames(), ", "))
 		}
-		return Ref{Repo: t.Repo, File: t.File, Pin: t.SHA256}, nil
+		return Ref{Repo: t.Repo, File: t.File, Pin: t.SHA256, Bytes: t.Bytes}, nil
 	}
 	if !validRepo(repo) {
 		return Ref{}, fmt.Errorf("%q: want owner/repo[:quant|:file.gguf] (e.g. Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m)", s)
@@ -374,15 +379,9 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 	}
 	final := filepath.Join(dir, filepath.Base(f.Path))
 
-	// Already present and intact ⇒ nothing to do. Re-verifies rather than trusting the
-	// filename, so a truncated earlier attempt is re-fetched instead of silently served.
-	if st, err := os.Stat(final); err == nil && st.Size() == f.Size {
-		if f.SHA256 == "" {
-			return final, nil
-		}
-		if sum, err := fileSHA256(final); err == nil && sum == f.SHA256 {
-			return final, nil
-		}
+	// Already present and intact ⇒ nothing to do.
+	if path, ok := cachedIntact(dir, f); ok {
+		return path, nil
 	}
 
 	// Resume from a previous interrupted attempt when one is on disk. Worth doing precisely
@@ -465,6 +464,25 @@ func hashPrefix(h io.Writer, path string) (int64, error) {
 	}
 	defer fh.Close()
 	return io.Copy(h, fh)
+}
+
+// cachedIntact reports whether dir already holds f, verified — re-checks the digest rather
+// than trusting the filename, so a truncated earlier attempt is re-fetched instead of silently
+// served. Shared by Download's own cache check and Resolve's offline-capable early return
+// (V-16, docs/review-2026-09-04.md) so the two never verify a "cache hit" differently.
+func cachedIntact(dir string, f File) (string, bool) {
+	final := filepath.Join(dir, filepath.Base(f.Path))
+	st, err := os.Stat(final)
+	if err != nil || st.Size() != f.Size {
+		return "", false
+	}
+	if f.SHA256 == "" {
+		return final, true
+	}
+	if sum, err := fileSHA256(final); err == nil && sum == f.SHA256 {
+		return final, true
+	}
+	return "", false
 }
 
 func fileSHA256(path string) (string, error) {

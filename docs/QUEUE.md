@@ -1583,7 +1583,9 @@ supports.
 | `docs/review-2026-09-04.md|metal/batched_verify_test.go:288` | goinfer | `func TestBatchedVerifyKernelParity(t *testing.T) {` |
 | `docs/review-2026-09-04.md|metal/gemma4_dense_scaled_test.go:25` | goinfer | `func TestGemma4DenseScaled_metalParity(t *testing.T) {` |
 | `docs/review-2026-09-04.md|metal/gemma4_router_parity_test.go:31` | goinfer | `func TestGemma4Router_residentIdxParity(t *testing.T) {` |
-| `docs/review-2026-09-04.md|pull/resolve.go:26` | goinfer | `// An already-cached file with the right size and digest is returned without touching th` |
+| `docs/review-2026-09-04.md|pull/pull.go:473` | goinfer | `func cachedIntact(dir string, f File) (string, bool) {` |
+| `docs/review-2026-09-04.md|pull/resolve.go:32` | goinfer | `func resolveOffline(ref Ref) (string, bool) {` |
+| `docs/review-2026-09-04.md|pull/resolve.go:55` | goinfer | `func Resolve(ctx context.Context, spec string, progress func(done, total int64)) (string` |
 | `docs/review-2026-09-04.md|scripts/bench_peer.py:719` | goinfer | `# Keep whichever identifying keys the previous header actually had. A reconstructed` |
 | `docs/review-2026-09-04.md|scripts/bench_peer_prefill.py:88` | goinfer | `OLLAMA_MODELS_DEFAULT = os.environ.get("OLLAMA_MODELS", "")` |
 | `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:28` | goinfer | `base=args[0] if args else "HEAD~1"` |
@@ -1642,7 +1644,7 @@ supports.
 | `docs/task-fit-to-hardware.md|metal/backend.go:81` | goinfer | `if !residentFitsMemory(m) {` |
 | `docs/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {` |
 | `docs/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
-| `docs/task-fit-to-hardware.md|pull/pull.go:174` | goinfer | `Size   int64` |
+| `docs/task-fit-to-hardware.md|pull/pull.go:179` | goinfer | `Size   int64` |
 | `docs/task-fp4-formats.md|decoder/forward_gptoss.go:17` | goinfer | `// speed on x86, and bench numbers are deferred (docs/task-mxfp4-gptoss.md §6.6).` |
 | `docs/task-fp4-formats.md|decoder/gguf.go:1755` | goinfer | `anchor: func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu` |
 | `docs/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
