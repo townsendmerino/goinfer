@@ -833,6 +833,14 @@ func (t *Tokenizer) TokenText(id int) []byte {
 		return nil
 	}
 	if t.mode == modeByteLevel {
+		// V-13 (docs/review-2026-09-04.md): an ADDED token's surface is stored verbatim, NOT
+		// byte-level-encoded (same category error N-24 fixed in decodeByteLevel) — pushing it
+		// through byteDecoder maps a rune in U+0080–U+0143 (é ü ñ) back to a single raw byte.
+		// This function feeds the constrained-decoding mask table and logprobs, so the wrong
+		// surface here is a wrong grammar mask, not just a display glitch.
+		if id < len(t.isAdded) && t.isAdded[id] {
+			return []byte(t.idToPiece[id])
+		}
 		var buf []byte
 		for _, r := range t.idToPiece[id] {
 			if b, ok := t.byteDecoder[r]; ok {

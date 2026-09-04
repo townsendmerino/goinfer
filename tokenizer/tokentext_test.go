@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestTokenText_reconstructs: concatenating TokenText over an encoding must
@@ -69,4 +70,38 @@ func TestTokenText_reconstructs(t *testing.T) {
 			"this is a SKIP, not a pass (G-10)")
 	}
 	t.Logf("TokenText reconstruction verified on %d tokenizer(s)", exercised)
+}
+
+// TestTokenText_addedTokenIsVerbatimInByteLevelMode pins V-13 (docs/review-2026-09-04.md):
+// TokenText's byte-level branch pushed EVERY id through byteDecoder, including added/special
+// tokens, whose surface is stored VERBATIM rather than byte-level-encoded — the exact category
+// error N-24 fixed in decodeByteLevel (tokenizer/bytelevel.go), left unfixed here. A rune in
+// U+0080–U+0143 in an added token's text (é, ü, ñ — any chat template spelling a role in a
+// non-ASCII language) is itself one of the byte-level table's "printable" targets, so pushing it
+// through byteDecoder maps it back to a SINGLE raw byte instead of its real multi-byte UTF-8
+// encoding: invalid UTF-8, and a wrong surface for the constrained-decoding mask table this
+// function feeds. No tokenizer fixture needed — the Tokenizer is built directly, byteDecoder from
+// the same buildByteLevelTables the real byte-level tokenizers use.
+func TestTokenText_addedTokenIsVerbatimInByteLevelMode(t *testing.T) {
+	_, dec := buildByteLevelTables()
+	const added = "café" // added token surface, stored verbatim — 'é' is U+00E9, in the printable byte-table range
+	tk := &Tokenizer{
+		mode:        modeByteLevel,
+		idToPiece:   []string{added, "hi"}, // id 1: an ordinary byte-level piece (ASCII, byte-encoded == itself)
+		isAdded:     []bool{true, false},
+		byteDecoder: dec,
+	}
+	got := tk.TokenText(0)
+	if string(got) != added {
+		t.Errorf("TokenText(added token %q) = %q (% x), want the verbatim surface unchanged (V-13)",
+			added, got, got)
+	}
+	if !utf8.Valid(got) {
+		t.Errorf("TokenText(added token) produced invalid UTF-8: % x", got)
+	}
+	// Regression guard: an ordinary (non-added) byte-level piece must still decode through the
+	// byte table, or this fix would have just special-cased the wrong condition.
+	if got := tk.TokenText(1); string(got) != "hi" {
+		t.Errorf("TokenText(ordinary byte-level token) = %q, want %q", got, "hi")
+	}
 }

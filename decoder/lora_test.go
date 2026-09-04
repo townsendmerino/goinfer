@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -324,5 +325,79 @@ func writeSafetensors(t *testing.T, path string, tensors map[string]stTensor) {
 	buf = append(buf, blob...)
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestLoadAdapter_rejectsEveryOwnForwardFamily pins V-12 (docs/review-2026-09-04.md):
+// LoadAdapter used to hand-list arch.gemma4/arch.qwen35 as the own-forward families to
+// reject, instead of deriving the check from arch.ownForward() — the single table
+// (decoder/arch.go's ownForwards) that runLayers itself dispatches on. LFM2 fell out of
+// that hand-list (it wasn't in it to begin with), so LoadAdapter validated an LFM2 adapter
+// cleanly and registered it — but runLayersLFM2 takes no lora parameter at all, so the
+// registered adapter silently did nothing at generate time. This is the same "one
+// predicate, seven consumers" bug class canBatchN (decoder/forwardn.go) was fixed for
+// after an identical LFM2 omission crashed decode (audit-2026-09-02 C-01/C-02).
+//
+// The rejection happens before any file I/O (loadLoRA is only called after the switch),
+// so a bogus dir is enough to isolate the check.
+func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
+	schema := &tensorSchema{}
+	for _, fam := range ownForwards {
+		t.Run(fam.Name, func(t *testing.T) {
+			arch := &Architecture{Name: fam.Name}
+			// Set exactly the field this family's predicate checks, mirroring how
+			// gguf.go/weights.go resolve a real checkpoint into one of these.
+			switch fam.Name {
+			case "gemma4":
+				arch.gemma4 = &gemma4Params{}
+			case "qwen3_5_moe":
+				arch.qwen35 = &qwen35Params{}
+			case "lfm2":
+				arch.lfm2 = &lfm2Params{} // the actual V-12 regression
+			case "granitemoehybrid":
+				arch.granite = &graniteParams{}
+			case "nemotron_h":
+				arch.nemotron = &nemotronParams{}
+			case "deepseek_v2/v3":
+				arch.mla = &mlaParams{}
+			case "llama4_text":
+				arch.llama4 = &llama4Params{}
+			case "gpt-oss":
+				arch.gptoss = &gptOssParams{}
+			default:
+				t.Fatalf("ownForwards grew a family (%s) this test doesn't know how to build — "+
+					"add a case above", fam.Name)
+			}
+			if _, own := arch.ownForward(); !own {
+				t.Fatalf("test setup: %s does not read back as its own ownForward() entry", fam.Name)
+			}
+			m := &Model{w: &Weights{schema: schema, arch: arch}}
+			err := m.LoadAdapter("a", "/nonexistent-adapter-dir")
+			if err == nil {
+				t.Fatalf("LoadAdapter accepted an own-forward family (%s) — the adapter would "+
+					"register and silently never apply (V-12)", fam.Name)
+			}
+			if !strings.Contains(err.Error(), "own forward path") {
+				t.Errorf("%s: got %q, want the own-forward-path rejection (V-12)", fam.Name, err)
+			}
+		})
+	}
+}
+
+// A generic dense family (no own forward, no MoE, no non-gated MLP) must NOT hit the
+// own-forward rejection — it should fall through to loadLoRA and fail there instead
+// (a different error), or this test would be trivially satisfied by rejecting everything.
+func TestLoadAdapter_denseFamilyDoesNotHitOwnForwardRejection(t *testing.T) {
+	arch := &Architecture{Name: "qwen2"}
+	if _, own := arch.ownForward(); own {
+		t.Fatal("test setup: qwen2 unexpectedly reads as an own-forward family")
+	}
+	m := &Model{w: &Weights{schema: &tensorSchema{}, arch: arch}}
+	err := m.LoadAdapter("a", "/nonexistent-adapter-dir")
+	if err == nil {
+		t.Fatal("LoadAdapter accepted a nonexistent adapter dir")
+	}
+	if strings.Contains(err.Error(), "own forward path") {
+		t.Errorf("a plain dense family was rejected as own-forward: %v", err)
 	}
 }

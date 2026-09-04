@@ -254,15 +254,23 @@ func buildLoraRuntime(name string, a *loraAdapter, numLayers int, s *tensorSchem
 // LoadAdapter loads a PEFT LoRA adapter for compute-time application (#7) and
 // registers it under name. Unlike the merge-at-load path (Options.Lora), the base
 // stays immutable, so many adapters of one base share its resident weights — the
-// density win. Only the generic dense forward is wired: MoE, non-gated, and the
-// special-forward families (gemma4, qwen3_5_moe) are rejected, as is a
+// density win. Only the generic dense forward is wired: MoE, non-gated, and every
+// own-forward family (arch.ownForward — gemma4, qwen3_5_moe, lfm2, granitemoehybrid,
+// nemotron_h, deepseek_v2/v3, llama4_text, gpt-oss) are rejected, as is a
 // GGUF/serialized base (the adapter is HF-named — it needs the safetensors schema).
+//
+// V-12 (docs/review-2026-09-04.md): this used to hand-list gemma4/qwen35 instead of
+// deriving from arch.ownForward() — the same "one predicate, seven consumers" bug class
+// canBatchN (decoder/forwardn.go) was fixed for after LFM2 fell out of ITS hand-copied
+// list (audit-2026-09-02 C-01/C-02). LoRA against LFM2 loaded and validated cleanly —
+// runLayersLFM2 takes no lora parameter at all — so the adapter silently did nothing.
 func (m *Model) LoadAdapter(name, dir string) error {
 	arch := m.w.arch
+	_, hasOwnForward := arch.ownForward()
 	switch {
 	case m.w.schema == nil:
 		return fmt.Errorf("decoder: compute-time LoRA needs a safetensors base (HF tensor names)")
-	case arch.gemma4 != nil || arch.qwen35 != nil:
+	case hasOwnForward:
 		return fmt.Errorf("decoder: compute-time LoRA unsupported for %s (own forward path)", arch.Name)
 	case arch.MoE != nil:
 		return fmt.Errorf("decoder: compute-time LoRA unsupported for MoE (expert FFN not wired)")

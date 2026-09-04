@@ -1450,7 +1450,7 @@ supports.
 | `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:466` | goinfer | `if t.mode == modeByteLevel {` |
 | `docs/audit-2026-09-02.md|tokenizer/sentencepiece.go:752` | goinfer | `func (t *Tokenizer) Decode(ids []int) (string, error) {` |
 | `docs/audit-2026-09-02.md|tokenizer/sentencepiece_test.go:51` | goinfer | `//	.venv/bin/python scripts/pin_gemma_tokenizer.py` |
-| `docs/audit-2026-09-02.md|tokenizer/tokentext_test.go:34` | goinfer | `if _, err := os.Stat(c.dir); errors.Is(err, fs.ErrNotExist) {` |
+| `docs/audit-2026-09-02.md|tokenizer/tokentext_test.go:35` | goinfer | `if _, err := os.Stat(c.dir); errors.Is(err, fs.ErrNotExist) {` |
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
@@ -1554,7 +1554,7 @@ supports.
 | `docs/review-2026-09-04.md|cuda/resident.go:2435` | goinfer | `mustSplit := splitKVRequired(nWin)` |
 | `docs/review-2026-09-04.md|cuda/spec_pager_interaction_test.go:1259` | goinfer | `UNKEYABLE` |
 | `docs/review-2026-09-04.md|decoder/generate_vl.go:22` | goinfer | `// forget here was copy-pasted from a resident-path template and was doubly wrong: the` |
-| `docs/review-2026-09-04.md|decoder/lora.go:265` | goinfer | `case arch.gemma4 != nil \|\| arch.qwen35 != nil:` |
+| `docs/review-2026-09-04.md|decoder/lora.go:273` | goinfer | `case hasOwnForward:` |
 | `docs/review-2026-09-04.md|decoder/model.go:1027` | goinfer | `for range maxTokens {` |
 | `docs/review-2026-09-04.md|decoder/model.go:1029` | goinfer | `case <-ctx.Done():` |
 | `docs/review-2026-09-04.md|decoder/model.go:214` | goinfer | `if strings.HasSuffix(dir, ".giw") {` |
@@ -1589,6 +1589,7 @@ supports.
 | `docs/review-2026-09-04.md|tokenizer/bytelevel.go:206` | goinfer | `// N-24: an ADDED token's surface is stored verbatim, NOT byte-level-encoded, so pushing` |
 | `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:456` | goinfer | `func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error) {` |
 | `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:831` | goinfer | `func (t *Tokenizer) TokenText(id int) []byte {` |
+| `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:841` | goinfer | `if id < len(t.isAdded) && t.isAdded[id] {` |
 | `docs/review-2026-09-04.md|tokenizer/splitshape.go:42` | goinfer | `// shapeGPT2Original is GPT-2's own ` ?\p{L}+\| ?\p{N}+\| ?[^\s\p{L}\p{N}]+\|\s+(?!\S)\|\s+`` |
 | `docs/scoping-lfm2.md|decoder/arch.go:186` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:107` | goinfer | `if arch.QKNorm {` |
