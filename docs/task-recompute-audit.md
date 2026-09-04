@@ -16,12 +16,25 @@
 > unpacked on every use, the same activation quantised seven times per layer, an embeddings route that
 > prefills one token at a time, and three O(n²)-per-token loops in serving.
 >
-> **Status: SCOPED 2026-09-03, nothing started.** Read at goinfer `3e45469` and aikit `438acfa`
-> (v1.32.0). Static; every cost figure is quoted from the record that measured it and says so.
-> Cross-references: `docs/audit-2026-09-02.md` (P-13, P-15, P-17, P-18 open; P-09, P-10 filed not
-> implemented; P-06 and C-12 closed), its L-05 and L-15, `docs/QUEUE.md` §A (the single-conversation
-> limit), `docs/spec/09-mtp-heads.md` ("Pricing the narrow state snapshot"),
-> `docs/task-freetoken-techniques.md` (Lead 1), aikit `docs/task-simd-audit.md` (S-02, S-03).
+> **Status: SCOPED 2026-09-03, nothing started as of the scoping.** Read at goinfer `3e45469` and
+> aikit `438acfa` (v1.32.0). Static; every cost figure is quoted from the record that measured it
+> and says so. **Updated 2026-09-04** against `docs/audit-2026-09-02.md`'s full remediation, which
+> landed after this doc was scoped (goinfer `f1d98d3`) — several of its cross-references were stale
+> within a day: P-13 is FIXED; P-15 is 2-of-3 fixed (the penalty-map rebuild this doc's R-08 names is
+> done; `forEachChunk` measured not-worth-it; batched-verify buffer churn deferred); P-17 is 1-of-3
+> fixed (the decoder-as-embedder batching this doc's R-07 names is done; `streamTokens`'s re-decode
+> and the embeddings double-tokenize are deferred, the former for genuine complexity — three
+> interacting correctness invariants — not lack of ROI); P-18 is confirmed and measured (148× TTFT
+> at 2k tokens on the real production path) with its fix explicitly assigned to L-15, not itself.
+> P-09/P-10 stand as filed, not implemented — no change there. See each item below for the
+> corrected status. Also: aikit was bumped to v1.33.0 in the same round (`gpu` stays v0.32.0,
+> pinned consistently by every module now — metal's go.mod was itself stale at v0.30.1 until this
+> bump); v1.33.0 ships S-03's NEON quantiser (built 2026-09-03, per aikit's own tracking, unmeasured
+> as of that note) but not yet `MatmulBTW4A8Batch` — R-06 still needs the batch-matmul half.
+> Cross-references: `docs/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
+> `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
+> narrow state snapshot"), `docs/task-freetoken-techniques.md` (Lead 1), aikit
+> `docs/task-simd-audit.md` (S-02, S-03).
 
 ## 0. What must not change
 
@@ -42,11 +55,11 @@
 | **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:50` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | open; L-05 |
 | **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | open |
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | open |
-| **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; P-18, L-15 |
+| **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | open |
-| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:79-81` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | open; aikit-side first |
-| **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | open; P-17 |
-| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | open; P-13, P-15, P-17 |
+| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:79-81` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | open; aikit-side first — **S-03's NEON quantiser shipped in aikit v1.33.0** (built 2026-09-03, unmeasured per aikit's own tracking; goinfer bumped to it 2026-09-04), but `MatmulBTW4A8Batch` itself does not exist yet — still the blocking half |
+| **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **half done, 2026-09-03**: `decoder/embed.go`'s per-token forward is FIXED (`hiddenLastBatched`, ~12-14× measured); `embeddings.go`'s double-tokenize is still open |
+| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **2-of-3 done, 2026-09-03**: P-13's vocab sort and P-15's penalty-map rebuild are both FIXED (`topKByLogit`, incremental `histCounts`); only P-17's `streamTokens` re-decode remains open, deferred on genuine complexity (byte-fallback fusing + UTF-8 completeness + stop-string overlap, not lack of ROI) |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
 | **R-10** | every KV head's history re-gathered and transposed per layer per token (Gemma-4 CPU) | P-09 | 2–3× attention traffic at long context | store V transposed at append | filed, contingent |
 
@@ -124,14 +137,28 @@ positions are inherent, not recompute.
   `Upload`/`Download`, so state already on the device crosses PCIe twice — ~100% of a decode step".
   **That blocker no longer exists.** aikit's `gpu` module has `CopyDevice` (one `cuMemcpyDtoD_v2`)
   and `CopyDeviceBatch` (every copy issued, one synchronize, adjacent pairs coalesced) on CUDA and
-  Metal, since gpu v0.30.1; goinfer's `cuda/go.mod` pins gpu v0.32.0 and `metal/go.mod` v0.30.1. The
+  Metal, since gpu v0.30.1; goinfer's `cuda/go.mod` and `metal/go.mod` both pin gpu v0.32.0 as of the
+  2026-09-04 aikit bump (`metal/go.mod` had drifted to v0.30.1 before that — already fixed, not a
+  blocker either way since `CopyDeviceBatch` predates both pins). The
   same record measured the composition cost the batch form is for: 36 separate copies on the 0.8B
   ran at 174 GB/s against 347 for one contiguous copy, ~446 → ~250 µs. Allocate each layer's
   `dnWin`+`dnState` adjacent (or all layers' in one arena) and the batch collapses further. Sizes
   from the same record: 62.8 MiB for the 35B-A3B, 149.6 MiB for the 27B — at DtoD rates, well under
   a millisecond against a 60–95 ms decode step on the 2070S. Consumers: Qwen3.8-27B's native MTP
   head (spec/09), DFlash pairings on hybrid targets, and R-03's commit-after-speculation for
-  recurrent families.
+  recurrent families. `specRollbackSafe` is `decoder/forwardn.go:146` exactly.
+
+  Three design notes from spec/09's own pricing record, carried forward here so they aren't
+  re-derived: (1) **reuse one buffer across rounds** — allocating fresh each time more than doubles
+  the cost (5.2-6.2 ms at int8 vs 2.9 ms reused); (2) **copy `convWin`, not only `S`** — a width-4
+  verify replaces the whole conv window, so skipping it is only 6.6% of the bytes but gives WRONG
+  logits with no error, not a slower-but-correct path; (3) **make the windows contiguous** (per-layer
+  or one arena) so `CopyDeviceBatch`'s adjacent-pair coalescing actually collapses them, which is
+  where the 174 to 347 GB/s composition win comes from. CUDA's `DeltaNet` layer holds
+  `dnWin`+`dnState` at `cuda/resident.go:275`; Metal has the same `CopyDeviceBatch` available.
+  WebGPU is NOT covered by this plumbing at all -- its `dnState` lives in `gpu/decoderunner.go`
+  (`*wgpu.Buffer`, transposed `[nv*hv*hk]` relative to the CPU's `[hk,hv]`) and would need its own
+  copy path; not scoped here.
   - **Gate:** restore is bit-exact (`convWin` included — spec/09 shows a width-4 verify replaces the
     whole window), so speculative output on a hybrid equals greedy; `TestDFlashLoop_lossless`'s
     shape on a hybrid target. Measure snapshot+restore in situ per round as spec/09 did.
@@ -213,6 +240,12 @@ positions are inherent, not recompute.
 - **Where:** P-17's second half — `decoder/embed.go` runs one forward per token ("the sequential
   prefill the flags call ~9× slower"); `internal/serveapp/embeddings.go` tokenises each input twice.
 - **Fix:** `forwardLayersN` over the whole input; tokenise once.
+- **Status (2026-09-03): the `decoder/embed.go` half is FIXED.** `HiddenLast` now dispatches to
+  `hiddenLastBatched` (one `runLayersFromEmbedN` call, `canBatchN`-gated, falling back to the
+  original per-token `hiddenLastSequential` for `K==1` and the families that path excludes) —
+  measured ~12-14× at K=64 on a real Qwen3-0.6B checkpoint, cosine 1.0000000000 against the old
+  per-token path across four sequence lengths. `internal/serveapp/embeddings.go`'s double-tokenize
+  is untouched; still open.
 
 ### R-08 · Three O(n²)-per-token loops in serving
 
@@ -222,6 +255,15 @@ positions are inherent, not recompute.
   bytes. P-15: presence/frequency penalties rebuild a `map[int]int` over the whole history every
   token — keep the counts. P-13: `computeLogprobs` full-sorts the vocabulary per token whenever
   `top_logprobs > 0` — `topKByLogit` exists. Each has its own measurement cell in the audit.
+- **Status (2026-09-03): 2 of 3 fixed.** P-13's `computeLogprobs` now uses `topKByLogit` plus a
+  small deterministic tie-break sort instead of a full vocabulary sort (`decoder/sampler.go`),
+  proven against a full-sort reference on random and tied-logit inputs. P-15's penalty path now
+  keeps an incrementally-maintained `histCounts map[int]int` through a single `recordHistory`
+  chokepoint (`decoder/sampler.go`), rebuilt from scratch only when `RepeatLastN>0` forces a
+  windowed count; mutation-checked by bypassing the chokepoint with a raw `append` and confirming
+  the new counts test catches the divergence. P-17's `streamTokens` re-decode/rescan is untouched —
+  still open, deferred on genuine complexity (four call sites: `openai.go`, `chatapp`, `gemmaapp`,
+  the demo agent).
 
 ### R-09 / R-10 · Filed, not implemented
 
