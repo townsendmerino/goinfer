@@ -182,15 +182,23 @@ def _llamacpp_version():
     """`llama-server --version` prints e.g. 'version: 0.3.0 (build 10621, commit c1d0e7a00)' --
     to STDERR, not stdout. Verified live 2026-09-04: reusing `_sh()` (stdout-only) here silently
     returned null. ollama's --version is on stdout, so _ollama_version's `_sh()` reuse is fine;
-    llama-server's stream choice is just different, hence the separate capture here."""
+    llama-server's stream choice is just different, hence the separate capture here.
+
+    Captures the WHOLE 'version: ...' line, not just the X.Y.Z prefix (V-08,
+    docs/review-2026-09-04.md): llama.cpp cuts frequent builds under the same release tag, so two
+    different daily builds can share "0.3.0" while differing in exactly the build number and commit
+    this line also carries -- dropping them made two different binaries record identical
+    provenance. A build whose version string doesn't even start with X.Y.Z (some llama.cpp builds
+    print 'version: NNNN (sha)') used to record null from the old digit.digit.digit-only regex;
+    this falls back to the raw line so provenance is never silently empty for a real binary."""
     import re
     try:
         out = subprocess.run([LLAMACPP, "--version"], capture_output=True, text=True,
                              timeout=15).stderr
     except Exception:
         return None
-    m = re.search(r"\d+\.\d+\.\d+", out)
-    return m.group(0) if m else None
+    m = re.search(r"version:\s*(.+)", out)
+    return m.group(1).strip() if m else (out.strip() or None)
 
 def provenance():
     """Everything a reader needs to know whether these numbers are comparable to another set."""
@@ -525,9 +533,21 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
                 (lambda: ollama_payload(tag, prompt, cfg, backend))
         elif engine == "llamacpp":
+            # V-08 (docs/review-2026-09-04.md): this branch used to launch with NO -ngl at all,
+            # so llama-server fell back to its own auto-offload default -- Metal on a Mac, meaning
+            # a "cpu" cell silently ran on GPU while goinfer's cpu cell and ollama's num_gpu=0 cell
+            # did not, and the backend column lied. -ngl now mirrors goinfer's own -backend switch:
+            # 0 (CPU-only) for "cpu", full offload for anything else. --ctx-size is now sent
+            # UNCONDITIONALLY (matching ollama_payload's own `num_ctx: DEEP_CTX or 4096`, always
+            # set) rather than only under DEEP_CTX -- llama-server's own default is "load from the
+            # model", which for some checkpoints is nowhere near 4096 and would silently change the
+            # KV footprint being compared. -fa off under DEEP_CTX mirrors ollama's own
+            # OLLAMA_FLASH_ATTENTION=false for the same §B7 peer-configuration reason.
+            ngl = "0" if backend == "cpu" else "99"
             proc = subprocess.Popen(
-                [LLAMACPP, "--model", path, "--port", str(LPORT), "--host", "127.0.0.1"]
-                + (["--ctx-size", str(DEEP_CTX)] if DEEP_CTX else []),
+                [LLAMACPP, "--model", path, "--port", str(LPORT), "--host", "127.0.0.1",
+                 "-ngl", ngl, "--ctx-size", str(DEEP_CTX or 4096)]
+                + (["-fa", "off"] if DEEP_CTX else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
@@ -711,17 +731,20 @@ def main():
         json.dump(out, f, indent=1)
 
     plan = []
-    # A) the backend table, greedy, one depth. goinfer on all three backends; ollama on the
-    #    two it actually has. webgpu has NO ollama counterpart -- it is scored against the
-    #    ollama CUDA row and labelled cross-backend in the writeup, never as a peer cell.
+    # A) the backend table, greedy, one depth. goinfer on all three backends; ollama and llamacpp
+    #    on the two they actually have (both now -ngl/num_gpu forced, not left to auto-offload --
+    #    V-08). webgpu has NO ollama/llamacpp counterpart -- it is scored against the CUDA row and
+    #    labelled cross-backend in the writeup, never as a peer cell.
     for mk in plan_models():
         bes, engs = plan_backends(), plan_engines()
-        for eng, be in [("goinfer","cpu"), ("ollama","cpu"),
-                        ("goinfer","cuda"), ("ollama","cuda"),
+        for eng, be in [("goinfer","cpu"), ("ollama","cpu"), ("llamacpp","cpu"),
+                        ("goinfer","cuda"), ("ollama","cuda"), ("llamacpp","cuda"),
                         ("goinfer","webgpu")]:
             if be in bes and eng in engs:
                 plan.append(("A", eng, be, mk, 128, "greedy"))
-    # B) depth curve, CUDA only, both engines
+    # B) depth curve, CUDA only, all engines. "cuda" here is no longer just a label (V-08): every
+    #    engine's launch now maps it to a real GPU-offload flag (goinfer -backend cuda, ollama's
+    #    default un-forced GPU, llamacpp -ngl 99), so a Phase-B cell is genuinely GPU on all three.
     for mk in plan_models():
         for d in plan_depths():
             for eng in plan_engines():
