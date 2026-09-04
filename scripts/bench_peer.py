@@ -63,6 +63,13 @@ MLX_BIN = os.environ.get("MLX_SERVER_BIN", "mlx_lm.server")
 MLX_MODELS = {
     "7B": os.path.expanduser(os.environ.get("MLX_MODEL_7B",
         "~/models/mlx-community/Qwen2.5-7B-Instruct-4bit")),
+    # Pulled 2026-09-04 once the disk-space blocker cleared (user archived unrelated checkpoints,
+    # 18 -> 61 GB free). mlx-community's own conversions, confirmed via HfApi.model_info before
+    # pulling (not guessed): Qwen3.5-35B-A3B-4bit is 20.4 GB, gemma-4-26b-a4b-it-4bit is 15.4 GB.
+    "M35": os.path.expanduser(os.environ.get("MLX_MODEL_M35",
+        "~/models/mlx-community/Qwen3.5-35B-A3B-4bit")),
+    "M26": os.path.expanduser(os.environ.get("MLX_MODEL_M26",
+        "~/models/mlx-community/gemma-4-26b-a4b-it-4bit")),
 }
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
@@ -160,6 +167,19 @@ GPORT, OPORT, LPORT, MPORT = 8099, 11499, 8098, 8097
 # measured, so deep cells deliberately use FEWER requests with MORE decode tokens each — the same
 # protocol difference §B7 recorded, not a shortcut.
 DEEP_CTX = int(os.environ.get("BENCH_DEEP_CTX", "0"))
+# STREAM WEIGHTS, added 2026-09-04 for M35/M26 on a 16 GB Mac: their plain GGUFs (20-22 GB) OOM a
+# normal load (SIGKILLed, exit 137, no server-side error -- reads as "server never came up").
+# -stream-weights pages MoE experts out of an mmap'd .giw cache under a RAM budget instead; a
+# plain .gguf is transparently transcoded to a sidecar .giw on first use (one-time, costs
+# ~model-size in disk during the transcode -- verified live: killing it mid-transcode leaves a
+# harmless .tmp.giw, cleaned up by re-running). Listed per model_key, not a single bool, because a
+# small model (D7 and below) has no business paying the transcode cost even by accident.
+STREAM_WEIGHTS_MODELS = {m.strip() for m in os.environ.get("BENCH_STREAM_WEIGHTS", "").split(",")
+                         if m.strip()}
+# LOAD TIMEOUT, added 2026-09-04 alongside stream-weights: the default 180s wait_port/
+# wait_llamacpp_ready window is sized for a small model's load, not a 15-22 GB checkpoint's
+# first-use .gguf->.giw transcode, which can itself run past 180s before the port ever opens.
+LOAD_TIMEOUT = int(os.environ.get("BENCH_LOAD_TIMEOUT", "180"))
 
 NGEN = int(os.environ.get("BENCH_NGEN", "64"))  # tokens generated per completion
 # BENCH_NGEN exists for spec/10's window-variance question: one completion IS a decode window at
@@ -612,7 +632,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     # cell using it would misreport a working peer as "server did not come up". MOE_MODELS gets a
     # longer wait; 900s matches this repo's other MoE-scale timeout (bench_prompts_calibrate.py's
     # CALIB_TIMEOUT) rather than a number nobody has measured against.
-    load_timeout = 900 if model_key in MOE_MODELS else 180
+    load_timeout = 900 if model_key in MOE_MODELS else LOAD_TIMEOUT
     proc = None
     try:
         if engine == "goinfer":
@@ -630,7 +650,8 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             proc = subprocess.Popen(
                 [SERVE[backend], "-model", f"bench={gpath}", "-backend", backend,
                  "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
-                + (["-ctx", str(DEEP_CTX)] if DEEP_CTX else []),
+                + (["-ctx", str(DEEP_CTX)] if DEEP_CTX else [])
+                + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
             port, url, parse, mk = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", parse_openai, \
