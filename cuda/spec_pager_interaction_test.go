@@ -228,26 +228,18 @@ func TestSpecPagerInteraction(t *testing.T) {
 	slots := r.CacheSlotsForTest()
 	req := os.Getenv("GOINFER_MOE_CACHE_SLOTS")
 	hb("pager: %d slots/layer BUILT (requested %q), topK=%d", slots, req, r.topK)
-	// A REQUEST AT OR BELOW topK IS SILENTLY IGNORED. backend.go only adopts the request under
-	// `req > topK`, so with topK=8 a GOINFER_MOE_CACHE_SLOTS=8 leaves the 8*topK=64 default in
-	// place and the rung lands on the same configuration as "unset". A ladder that reported its
-	// REQUEST would show three rungs where the machine built two. Say so loudly instead.
+	// V-24 (docs/review-2026-09-04.md): this used to say a request AT OR BELOW topK was
+	// SILENTLY IGNORED. That was true before G-07 (cuda/backend.go) and is false now: a request
+	// BELOW topK is a HARD ERROR at Load time — the `t.Fatalf("Load(35B, cuda int4): %v", err)`
+	// above already ends the test for one, so this line is never reached with n < r.topK. A
+	// request AT OR ABOVE topK is honoured UNIFORMLY (backend.go no longer distinguishes `==`
+	// from `>`), then possibly capped — first to the model's own expert count, then to measured
+	// free VRAM by capSlots (cuda/resident.go). Either cap is a real rung, just not the
+	// requested one; say so rather than assert a mechanism that no longer exists.
 	if n, e := strconv.Atoi(req); e == nil && n != slots {
-		// TWO different causes land here and they are not interchangeable, so name the one that
-		// actually applies instead of asserting whichever was written first. A request AT OR BELOW
-		// topK is ignored outright (backend.go adopts it only under `req > topK`), which silently
-		// collapses a low rung onto the 8*topK default. A request ABOVE topK is honoured and then
-		// TRIMMED by capSlots to measured free VRAM, which is a real rung, just not the requested
-		// one. Reporting the first explanation for a case that is the second would have put a
-		// wrong mechanism in the log next to a correct number.
-		switch {
-		case n <= r.topK:
-			hb("NOTE: requested %d but BUILT %d — a request <= topK (%d) does not take effect "+
-				"(cuda/backend.go: `req > topK`), so this rung fell back to the default depth", n, slots, r.topK)
-		default:
-			hb("NOTE: requested %d but BUILT %d — the request was honoured and then capped to free "+
-				"VRAM by capSlots; this rung is a real depth, just not the requested one", n, slots)
-		}
+		hb("NOTE: requested %d but BUILT %d — honoured (n=%d is at or above topK=%d) and then "+
+			"capped, either to the model's expert count or to free VRAM by capSlots; this rung "+
+			"is a real depth, just not the requested one", n, slots, n, r.topK)
 	}
 
 	tk, err := specPagerTokenizer(path)
