@@ -64,7 +64,8 @@ after upgrading needs one place to look.
 | `GOINFER_SSM_RESIDENT` | Opt Granite/Nemotron SSM layers into the resident path. |
 | `GOINFER_SPLITKV_ATTN` | CUDA split-KV attention rollback knob (sibling of `GOINFER_SPLITKV_MIN_KEYS`). |
 | `GOINFER_MODELS` / `GOINFER_MODEL_TMP` | Model asset root / temp dir for downloads. |
-| `GOINFER_PREFILL_ATTN_WORKERS` / `GOINFER_ATTN_ROW_TILE` / `GOINFER_ATTN_KEYS` | Prefill attention fan-out, row tile, key count. |
+| `GOINFER_PREFILL_ATTN_WORKERS` / `GOINFER_ATTN_ROW_TILE` | Prefill attention fan-out, row tile. |
+| `GOINFER_ATTN_KEYS` | WebGPU **decode** key-split attention kernel kill switch — set to `0` to force the old dim-split kernel instead (A/B in the same binary). Not a prefill knob and not a key count (V-23, docs/review-2026-09-04.md). |
 | `GOINFER_W4A8_SPLITHALF` | Select the split-half W4A8 kernel. |
 | `GOINFER_W4A8_BATCH` | Opt into the fused q/k/v and gate/up batched W4A8 matmul (audit R-06). Default off — measured 1.08x decode on this box, ambiguous against the 1.05x park / 1.15x ship bar, so it ships parked rather than as the default. |
 | `GOINFER_MOE_RESIDENCY` / `GOINFER_MOE_RESIDENCY_SCOPE` | Metal MoE residency mode and scope. |
