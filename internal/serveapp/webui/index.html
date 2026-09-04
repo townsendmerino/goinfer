@@ -3,69 +3,1538 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>goinfer</title>
 <style>
-:root{
-  --bg:#fbfbfa; --panel:#fff; --ink:#1b1b19; --dim:#6b6b66; --line:#e4e3df;
-  --accent:#b4530a; --accent-ink:#fff; --err:#a3241b; --ok:#2f6f3e;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+/* Vendored from @ambientcss/css (packages/ambient-css/src/ambient.css),
+   https://github.com/kikkupico/ambientcss, MIT License, Copyright (c)
+   2026 Ramakrishnan Veeraragavan. Pulled in rather than loaded from a CDN
+   so this page keeps working with no network at runtime
+   (docs/task-web-ui-ambient.md). Unmodified below. */
+/* ==========================================================================
+   Ambient CSS v0.1
+   A CSS framework for skeuomorphic interfaces
+
+   Physically-based lighting, shadows, textures and shading for creating
+   realistic UI elements - buttons, knobs, sliders, panels, indicators,
+   and any interface that benefits from depth and materiality.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   LIGHTING MODEL (HSL-based)
+
+   Light Direction:
+   --amb-light-x : Horizontal component (-1 = left, 1 = right)
+   --amb-light-y : Vertical component (-1 = up, 1 = down)
+
+   Light Intensity:
+   --amb-key-light-intensity : Main light (0-1), creates primary highlights/shadows
+   --amb-fill-light-intensity : Secondary light (0-1), softens shadows
+
+   Light Hue (HSL):
+   --amb-light-hue        : Hue of the light color (0-360)
+   --amb-light-saturation  : Saturation of the light color (with % suffix)
+   -------------------------------------------------------------------------- */
+
+@property --amb-elevation {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
 }
-@media (prefers-color-scheme:dark){
-  :root{ --bg:#191917; --panel:#212120; --ink:#eceae4; --dim:#9d9a92; --line:#33322f;
-         --accent:#d97a35; --accent-ink:#191917; --err:#e8877e; --ok:#7fc08f; }
+
+:root {
+  --amb-light-x: -1;
+  --amb-light-y: -1;
+  --amb-key-light-intensity: 0.9;
+  --amb-fill-light-intensity: 0.7;
+  --amb-light-hue: 234;
+  --amb-light-saturation: 15%;
+  --amb-light-distance: 0px;
+  --amb-chamfer: 0;
+  --amb-fillet: 0;
+  --amb-thickness: 0;
+  --amb-elevation: 0;
+  --amb-chamfer-width: 1;
+  --amb-fillet-width: 1;
+  --amb-highlight-color: coral;
+  --amb-lume-hue: 17;
+  /* MATERIAL COLOUR — the surface's own diffuse reflectance, i.e. the
+     colour it would show under full white illumination. Any CSS colour:
+     `--amb-albedo: crimson` gives a crimson panel that still darkens with
+     the key light, still takes the light's cast, and still shades in its
+     grooves and dishes, because every surface tone in this file is
+     albedo x exposure rather than a hardcoded lightness.
+
+     The default is the reference ground the whole rig is calibrated
+     against — a linear reflectance of 0.82, spelled in srgb-linear so it
+     IS the physical number (ambient3d/amb_model.GROUND_ALBEDO) rather
+     than a gamma-encoded stand-in for it. Under the default lights it
+     lands on the same ~90% lightness the old .amb-surface painted.
+
+     It inherits, so setting it on a panel colours everything inside. */
+  --amb-albedo: color(srgb-linear 0.82 0.82 0.82);
+  /* Shade: a plain multiplier on --amb-albedo's reflectance, for tones of
+     one material rather than a different one. Unlike --amb-albedo it
+     composes with whatever colour is inherited, which is what makes it
+     the right knob for a darker well or a lighter cap inside a themed
+     panel. The tones the removed .amb-surface-* variants painted, for
+     reference: darkest 0.07, darker 0.38, lighter 1.11, lightest 1.16. */
+  --amb-shade: 1;
+  /* Depth of every curved face, as a multiple of the grounded curvature
+     (see --amb-curve-delta below): the input knob, so it inherits like an
+     ordinary variable and can be themed from :root or any subtree. 1 =
+     the measured dish. */
+  --amb-curve-scale: 1;
+  --amb-mat-specular: 0;
+  --amb-mat-roughness: 1;
+  --amb-mat-opacity: 1;
+  /* GRAIN AMOUNT — the consumer's knob on the micro-relief the
+     .amb-mat-brushed / .amb-mat-blasted materials carry. 1 is the fitted
+     amplitude, 0 turns the relief off and leaves the flat material,
+     above 1 exaggerates it. It inherits, so a panel can dial the grain
+     of everything inside it.
+
+     A material's own directional term is deliberately NOT this property
+     (brushed metal's lives in the private --_grain-aniso): turning the
+     grain down must not be able to delete the anisotropy that is the
+     whole of what a brushed surface is. */
+  --amb-grain-amount: 1;
+  /* max(min()) instead of clamp() throughout this file: postcss-preset-env's
+     clamp downlevel mangles clamp() whose middle argument is an expression
+     (it drops all but the last operand), which zeroed the elevation shadow in
+     any consumer running that pipeline. max/min pass through untouched. */
+  --amb-lume: color-mix(
+    in oklab,
+    hsl(var(--amb-lume-hue) 100% 74%) calc(max(0, min((0.5 - var(--amb-key-light-intensity)) / 0.2, 1)) * 100%),
+    hsl(
+      var(--amb-light-hue)
+      var(--amb-light-saturation)
+      calc((1 - sign(var(--amb-key-light-intensity) - 0.5)) * 50% + 25%)
+    )
+  );
+  --amb-label: hsl(
+    var(--amb-light-hue)
+    var(--amb-light-saturation)
+    calc((1 - var(--amb-key-light-intensity)) * 60% + 20%)
+  );
+}
+
+/* Curvature magnitude — DERIVED output, like --amb-lume and --amb-label:
+   read it, and theme it through --amb-curve-scale above rather than by
+   assigning to it.
+
+   How far a curved face departs from its flat tone at the ends of the
+   curve — the grounded end delta from ambient3d/derived/notes/curved.md,
+   which .amb-surface-concave, -concave-h and -convex all ride. Affine in
+   light contrast rather than proportional: a dish still shades when the
+   key equals the fill, so the intercept is not optional.
+
+   In POINTS OF LIGHTNESS and deliberately UNITLESS — multiply by 1% to use
+   it in a color. Unitless so it can also be DIVIDED, which is what turns it
+   into an overlay alpha over a known base (@ambientcss/components dishes
+   its button cap that way).
+
+   The universal selector is load-bearing, not laziness. A custom property's
+   var()s are substituted on the element that DECLARES it, so the same
+   expression on :root would freeze at the document's light and ignore every
+   subtree that scopes its own — an AmbientProvider, a .amb-light-* class, a
+   calibration harness frame (the compare gate caught exactly this). Declaring
+   per element re-substitutes it against whatever light that element actually
+   inherits.
+
+   The flip side is that a value assigned to --amb-curve-delta on an ancestor
+   cannot reach descendants: this rule re-declares it on each one. That is why
+   the themeable knob is the separate --amb-curve-scale, which is declared on
+   :root only and therefore inherits normally. */
+* {
+  --amb-curve-delta: calc(
+    (
+      (var(--amb-key-light-intensity) - var(--amb-fill-light-intensity))
+        * 3.16 + 3.78
+    ) * var(--amb-curve-scale)
+  );
+
+  /* EXPOSURE — the irradiance reaching a face-on surface, in units where 1
+     is full white illumination. DERIVED output; theme it through the two
+     light intensities.
+
+     Grounded fit (ambient3d/derived/notes/surface.md): irradiance is what
+     is linear in the light intensities, so the law is proportional, with
+     no floor — lights off is black, not a mystery grey. The five separate
+     affine-in-LIGHTNESS fits this replaces were that same law seen through
+     sRGB gamma, one linearisation per albedo, which is why each needed its
+     own intercept. Refit as exposure, ONE two-parameter law reproduces all
+     54 measured plate frames across five albedos to within 0.03 points of
+     lightness (R^2 0.9999998, against 0.996 and ~1.1 points before).
+
+     The measured box is key 0.1-1.0 at fill 0.7 and key 0.9 at fill 0-0.7;
+     everything below that is extrapolation for both models, and this one
+     extrapolates to black where the affine fits extrapolated to a lit grey
+     under no lights. Dim themes therefore sit darker here than they did. */
+  --amb-exposure: calc(
+    var(--amb-key-light-intensity) * 0.6396 +
+      var(--amb-fill-light-intensity) * 0.5496
+  );
+
+  /* Reflected light before the lamp's own colour: albedo x exposure, done
+     per channel in LINEAR light, which is the only space the multiply is
+     physics in. Over-exposure is left to clip per channel — the physical
+     blow-out — rather than being clamped away. */
+  --_amb-diffuse: color(
+    from var(--amb-albedo) srgb-linear
+    calc(r * var(--amb-shade) * var(--amb-exposure))
+    calc(g * var(--amb-shade) * var(--amb-exposure))
+    calc(b * var(--amb-shade) * var(--amb-exposure))
+  );
+
+  /* LIT COLOUR — the finished tone of a flat face under the current light.
+     DERIVED output, like --amb-lume and --amb-label: read it (the surface,
+     groove, dish and every component tone in @ambientcss/components do),
+     and theme it through --amb-albedo, --amb-shade and the lights.
+
+     The lamp's cast is a mix toward its hue at --amb-light-saturation, and
+     the tint's own saturation is (100 - s): the LESS chromatic the surface,
+     the more completely it takes the lamp's colour. On a grey that is the
+     HSL identity hsl(H,S,L) = mix(grey(L), hsl(H,100%,L), S), so neutral
+     surfaces land exactly where they always did — but a crimson panel
+     under a cyan lamp washes toward grey instead of rotating to green,
+     which is what a coloured lamp does to a colour it cannot light.
+
+     `s` and `l` are substituted as NUMBERS in relative colour syntax, so
+     it is calc(100 - s), not calc(100% - s) — the percentage spelling is
+     invalid and takes the whole declaration with it. */
+  --amb-lit: color-mix(
+    in srgb,
+    var(--_amb-diffuse),
+    hsl(from var(--_amb-diffuse) var(--amb-light-hue) calc(100 - s) l)
+      var(--amb-light-saturation)
+  );
+}
+
+/* --------------------------------------------------------------------------
+   EDGE TREATMENTS
+   -------------------------------------------------------------------------- */
+
+/* An edge treatment implies physical material to cut, so these classes
+   default the element to thickness 1 (button-scale). The .amb-thickness-*
+   classes are declared after these and therefore win when combined. */
+
+.amb-chamfer {
+  --amb-chamfer: 1;
+  --amb-thickness: 1;
+}
+
+/* A width-2 cut needs a knob-scale body: level-for-level, edge width N
+   requires thickness >= N (a 4mm round-over on a 4.5mm slab would round
+   off the entire edge). The .ambient rule also caps the effective width
+   at the thickness level, so a width-2 class forced onto a thinner body
+   degrades to the widest cut the material allows instead of lying. */
+.amb-chamfer-2 {
+  --amb-chamfer: 1;
+  --amb-chamfer-width: 2;
+  --amb-thickness: 2;
+}
+
+.amb-fillet {
+  --amb-fillet: 1;
+  --amb-thickness: 1;
+}
+
+.amb-fillet-2 {
+  --amb-fillet: 1;
+  --amb-fillet-width: 2;
+  --amb-thickness: 2;
+}
+
+/* A groove is a recess CUT into material, so like the edge treatments it
+   defaults the thickness (here: recess depth) to 1; the .amb-thickness-*
+   classes are declared after and win when combined. Visual styling lives
+   in the .amb-groove rule further down. */
+.amb-groove {
+  --amb-thickness: 1;
+}
+
+/* --------------------------------------------------------------------------
+   THICKNESS LEVELS
+
+   Physical body height of the element (grounded in the ambient3d rig):
+   0 = paper-thin sheet — imperceptible at rest on a matching surface (no
+   edge bands, no shadow); only elevation reveals it. 1 = button-scale
+   slab (4.5 physical mm). 2 = knob-scale (9 mm). Thickness contributes
+   to the drop shadow like elevation does (the shadow is cast by the top
+   silhouette at h = 8px * elevation + 4.5px * thickness) and gates the
+   edge treatments, which need material to cut into.
+   -------------------------------------------------------------------------- */
+
+.amb-thickness-0 { --amb-thickness: 0; }
+.amb-thickness-1 { --amb-thickness: 1; }
+.amb-thickness-2 { --amb-thickness: 2; }
+
+/* --------------------------------------------------------------------------
+   ELEVATION LEVELS
+   -------------------------------------------------------------------------- */
+
+.amb-elevation-0 { --amb-elevation: 0; }
+.amb-elevation-1 { --amb-elevation: 1; }
+.amb-elevation-2 { --amb-elevation: 2; }
+.amb-elevation-3 { --amb-elevation: 3; }
+
+/* --------------------------------------------------------------------------
+   CORE AMBIENT CLASS
+
+   Applies physically-based lighting via box-shadow:
+   1. Drop shadow - offset by light direction, scaled by elevation + thickness
+   2. Chamfer highlight - inner lit edge (white on light side)
+   3. Chamfer shadow - inner dark edge (black on shadow side)
+   4. Fillet highlight - softer inner edge (light side)
+   5. Fillet shadow - softer inner edge (shadow side)
+   -------------------------------------------------------------------------- */
+
+.ambient {
+  /* Effective edge widths, capped level-for-level: the cut cannot be wider
+     than the body is thick (negative widths cap symmetrically). */
+  --_amb-chamfer-w: max(-1 * var(--amb-thickness), min(var(--amb-chamfer-width), var(--amb-thickness)));
+  --_amb-fillet-w: max(-1 * var(--amb-thickness), min(var(--amb-fillet-width), var(--amb-thickness)));
+  /* Sweep-shadow helpers: the overall gate (a sheet at rest casts
+     nothing), the body gate (sheets have no body: the sweep collapses to
+     the single top-silhouette layer), and the shared alpha of the three
+     body layers (harness-balanced against the render's contact depth). */
+  --_amb-sh-gate: max(0, min(var(--amb-elevation) + var(--amb-thickness), 1));
+  --_amb-body-gate: max(0, min(var(--amb-thickness), 1));
+  --_amb-sweep-a: calc(
+    var(--_amb-sh-gate) * var(--_amb-body-gate) *
+      max(0, 1 - var(--amb-elevation) / 3) *
+      (var(--amb-thickness) * 0.02 + 0.047)
+  );
+  /* Drop shadow, grounded (ambient3d/derived/notes/shadow.md): the umbra
+     is the silhouette projection SWEPT from the body's bottom (elevation)
+     to its top (elevation + thickness) — at rest a smooth wedge hugging
+     the shadow-side edges with a mitred corner and fading outward;
+     elevated, a detached blurred square. FOUR stacked layers sample the
+     sweep at 1/4, 1/2, 3/4 and the full body height (offset 0.85px/mm of
+     silhouette height, blur 0.60px/mm, R^2 0.99): overlaps composite
+     multiplicatively, so the geometric stack itself produces the graded
+     falloff, with each layer's blur erasing the steps. The FAR layer
+     carries the fitted alpha model (thickness sheds part of it to the
+     body layers); the three body layers share one small harness-balanced
+     alpha and vanish for sheets, which keep the single-layer model.
+     Residual: axis-aligned lights read deeper than diagonal,
+     inexpressible in one alpha. */
+  box-shadow: hsl(
+        var(--amb-light-hue)
+        var(--amb-light-saturation)
+        0%
+        / calc(
+            var(--_amb-sh-gate) *
+              (
+                (var(--amb-key-light-intensity) - var(--amb-fill-light-intensity))
+                  * 0.13 + var(--amb-elevation) * -0.077 + 0.368 -
+                  var(--_amb-body-gate) * max(0, 1 - var(--amb-elevation)) * 0.14
+              )
+          )
+      )
+      calc(
+        var(--amb-light-x) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 3.8px) * -1
+      )
+      calc(
+        var(--amb-light-y) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 3.8px) * -1
+      )
+      calc(var(--amb-elevation) * 4.8px + var(--amb-thickness) * 2.7px)
+      0.8px,
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 0% / var(--_amb-sweep-a))
+      calc(
+        var(--amb-light-x) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 2.85px) * -1
+      )
+      calc(
+        var(--amb-light-y) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 2.85px) * -1
+      )
+      calc(var(--amb-elevation) * 4.8px + var(--amb-thickness) * 2px)
+      calc(var(--amb-thickness) * 0.9px),
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 0% / var(--_amb-sweep-a))
+      calc(
+        var(--amb-light-x) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 1.9px) * -1
+      )
+      calc(
+        var(--amb-light-y) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 1.9px) * -1
+      )
+      calc(var(--amb-elevation) * 4.8px + var(--amb-thickness) * 1.35px)
+      calc(var(--amb-thickness) * 0.6px),
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 0% / var(--_amb-sweep-a))
+      calc(
+        var(--amb-light-x) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 0.95px) * -1
+      )
+      calc(
+        var(--amb-light-y) *
+          (var(--amb-elevation) * 6.8px + var(--amb-thickness) * 0.95px) * -1
+      )
+      calc(var(--amb-elevation) * 4.8px + var(--amb-thickness) * 0.7px)
+      calc(var(--amb-thickness) * 0.3px),
+    /* Chamfer bands, grounded (ambient3d/derived/notes/chamfer.md): both
+       alphas are affine and the highlight rides the fill light too — a
+       45deg face keeps a residual band even when key equals fill, which
+       the old proportional formulas zeroed out. hl R^2 0.99, sh R^2 0.98
+       (residual: a faint band on edges perpendicular to an axis-aligned
+       light, inexpressible per-edge in box-shadow). */
+    inset calc(var(--amb-light-x) * var(--_amb-chamfer-w) * -1px)
+      calc(var(--amb-light-y) * var(--_amb-chamfer-w) * -1px) 0px 0px
+      hsl(
+        var(--amb-light-hue)
+        var(--amb-light-saturation)
+        100%
+        / calc(
+            var(--amb-chamfer) * max(0, min(var(--amb-thickness), 1)) *
+              (
+                var(--amb-key-light-intensity) * 1.57 +
+                  var(--amb-fill-light-intensity) * 0.85 - 1.03
+              )
+          )
+      ),
+    inset calc(var(--amb-light-x) * var(--_amb-chamfer-w) * 1px)
+      calc(var(--amb-light-y) * var(--_amb-chamfer-w) * 1px) 0px 0px
+      hsl(
+        var(--amb-light-hue)
+        var(--amb-light-saturation)
+        0%
+        / calc(
+            var(--amb-chamfer) * max(0, min(var(--amb-thickness), 1)) *
+              (
+                (var(--amb-key-light-intensity) - var(--amb-fill-light-intensity))
+                  * 0.19 + 0.24
+              )
+          )
+      ),
+    /* Fillet bands, grounded (ambient3d/derived/notes/fillet.md): same
+       affine structure as the chamfer, softer and slightly wider — the
+       round-over's highlight concentrates at 1.4px per width unit.
+       hl R^2 0.97, sh R^2 0.96; the shadow alpha is compensated for the
+       2px blur's dilution of the painted band. */
+    inset calc(var(--amb-light-x) * var(--_amb-fillet-w) * -1.4px)
+      calc(var(--amb-light-y) * var(--_amb-fillet-w) * -1.4px) 2px 0px
+      hsl(
+        var(--amb-light-hue)
+        var(--amb-light-saturation)
+        100%
+        / calc(
+            var(--amb-fillet) * max(0, min(var(--amb-thickness), 1)) *
+              (
+                var(--amb-key-light-intensity) * 1.44 +
+                  var(--amb-fill-light-intensity) * 0.85 - 0.99
+              )
+          )
+      ),
+    inset calc(var(--amb-light-x) * var(--_amb-fillet-w) * 1.4px)
+      calc(var(--amb-light-y) * var(--_amb-fillet-w) * 1.4px) 2px 0px
+      hsl(
+        var(--amb-light-hue)
+        var(--amb-light-saturation)
+        0%
+        / calc(
+            var(--amb-fillet) * max(0, min(var(--amb-thickness), 1)) *
+              (
+                (var(--amb-key-light-intensity) - var(--amb-fill-light-intensity))
+                  * 0.23 + 0.3
+              )
+          )
+      );
+}
+
+/* --------------------------------------------------------------------------
+   SURFACES
+   -------------------------------------------------------------------------- */
+
+.amb-surface {
+  /* One line, because every surface tone in this file is now albedo x
+     exposure (see --amb-lit above). The .amb-surface-lighter, -lightest,
+     -darker and -darkest variants this replaces were five hardcoded
+     lightness fits of the same law at five fixed albedos; set --amb-albedo
+     for a different material, or --amb-shade for a different tone of the
+     one the panel already carries. */
+  background-color: var(--amb-lit);
+}
+
+/* --------------------------------------------------------------------------
+   GROOVE (recessed slot)
+   -------------------------------------------------------------------------- */
+
+.amb-groove {
+  /* Grounded on a recess cut into the reference ground
+     (ambient3d/derived/notes/groove.md). A groove is negative space: the
+     recess depth reuses the thickness vocabulary (4.5 physical mm per
+     level; a recess implies material to cut into, so the class defaults
+     to depth 1 — .amb-thickness-* combine to deepen or, at 0, flatten it
+     away). Three grounded features: the floor is affine in both light
+     intensities like every surface (R^2 0.99 — under the studio fill it
+     sits within a hair of the open ground: the overhead softbox reaches
+     in, and the walls bounce light back); the lit-side walls cast a
+     crisp shadow band onto the floor (reach 0.80 px per recess mm per
+     light component, alpha affine in contrast, R^2 0.95); and the far
+     walls catch the key and bounce it onto the floor beside them as a
+     soft brightening — the physical origin of the classic inset
+     highlight. The interior composes with --amb-lume, or with an
+     --amb-shade below 1, for track styling.
+
+     The floor is the SAME material as the ground around it — same
+     --amb-albedo, same --amb-shade — under its own exposure, refit from
+     those 15 frames the way .amb-surface was: the walls bounce the key
+     back in, so a recess floor takes 3.5% more key and 0.6% more fill
+     than the open ground (within 1.3 points of lightness of the affine
+     floor formula it replaces). Riding --amb-albedo is the whole point —
+     a groove cut into a crimson panel is crimson, not grey. */
+  --_amb-groove-exposure: calc(
+    var(--amb-key-light-intensity) * 0.6623 +
+      var(--amb-fill-light-intensity) * 0.5527
+  );
+  --_amb-groove-diffuse: color(
+    from var(--amb-albedo) srgb-linear
+    calc(r * var(--amb-shade) * var(--_amb-groove-exposure))
+    calc(g * var(--amb-shade) * var(--_amb-groove-exposure))
+    calc(b * var(--amb-shade) * var(--_amb-groove-exposure))
+  );
+  background-color: color-mix(
+    in srgb,
+    var(--_amb-groove-diffuse),
+    hsl(from var(--_amb-groove-diffuse) var(--amb-light-hue) calc(100 - s) l)
+      var(--amb-light-saturation)
+  );
+  box-shadow:
+    inset calc(var(--amb-light-x) * var(--amb-thickness) * -3.6px)
+      calc(var(--amb-light-y) * var(--amb-thickness) * -3.6px)
+      calc(var(--amb-thickness) * 2.7px) 0px
+      hsl(
+        var(--amb-light-hue)
+        var(--amb-light-saturation)
+        0%
+        / calc(
+            max(0, min(var(--amb-thickness), 1)) *
+              (
+                (var(--amb-key-light-intensity) - var(--amb-fill-light-intensity))
+                  * 0.24 + 0.31
+              )
+          )
+      ),
+    inset calc(var(--amb-light-x) * var(--amb-thickness) * 2.7px)
+      calc(var(--amb-light-y) * var(--amb-thickness) * 2.7px)
+      calc(var(--amb-thickness) * 5.1px) 0px
+      hsl(
+        var(--amb-light-hue)
+        var(--amb-light-saturation)
+        100%
+        / calc(
+            max(0, min(var(--amb-thickness), 1)) *
+              max(0, min(
+                var(--amb-key-light-intensity) * 1.5 +
+                  var(--amb-fill-light-intensity) * 0.72 - 0.96,
+                1
+              ))
+          )
+      );
+}
+
+/* --------------------------------------------------------------------------
+   MATERIALS
+   -------------------------------------------------------------------------- */
+
+.amb-mat-matte {
+  /* Default: no additional treatment */
+}
+
+.amb-mat-shiny {
+  --amb-mat-specular: 1;
+  --amb-mat-roughness: 0;
+  --amb-mat-opacity: 1;
+  --_shiny-angle: calc(atan2(var(--amb-light-y), var(--amb-light-x)) + 270deg);
+  --_spec-peak: var(--amb-key-light-intensity);
+  background-image:
+    /* Specular, grounded on a glossy dome referent
+       (ambient3d/derived/notes/shiny.md): TWO features. A grazing
+       Fresnel RIM at the lit edge (alpha = 0.09*Ik + 0.07) — the old
+       edge band was this rim all along — and the key light's MIRROR
+       band at 30% from the lit edge (physics: sin of half the light
+       zenith), ~11% wide, clipping toward white almost independently of
+       key. Band geometry is gated against the render; amplitudes are
+       base-dependent and residual-only. */
+    linear-gradient(
+      var(--_shiny-angle),
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / calc(var(--amb-key-light-intensity) * 0.09 + 0.07)) 0%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 10%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 24%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / calc(var(--_spec-peak) * 0.04 + 0.31)) 30%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 36%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 100%
+    ),
+    /* Studio environment reflection (the same 'white studio' world the
+       renders are lit by, amb_model.studio_*): the overhead softbox
+       veils the top, the walls stay neutral, the floor grades the bottom
+       gently darker. The reflection rides the FILL — a dim room kills
+       it — and never flips with the key light: the softbox is part of
+       the room, not the key. */
+    linear-gradient(
+      to bottom,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / calc(var(--amb-fill-light-intensity) * 0.22)) 0%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 45%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 0% / 0) 60%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 0% / calc(var(--amb-fill-light-intensity) * 0.10)) 100%
+    );
+  filter: brightness(1.04) contrast(1.01);
+}
+
+.amb-mat-glass {
+  --amb-mat-specular: 0.05;
+  --amb-mat-roughness: 0.9;
+  --amb-mat-opacity: 0;
+  /* Soft diffuse brightening — wide and faint, no sharp specular or env reflection */
+  --_shiny-angle: calc(atan2(var(--amb-light-y), var(--amb-light-x)) + 270deg);
+  --_spec-peak: var(--amb-key-light-intensity);
+  background-image:
+    linear-gradient(
+      var(--_shiny-angle),
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / calc(var(--_spec-peak) * 0.12)) 0%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / calc(var(--_spec-peak) * 0.06)) 40%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 75%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 100%
+    );
+  background-blend-mode: screen;
+  /* Glass layer — translucency + frosted blur, scaling with light */
+  --_glass-lightness: calc(var(--amb-key-light-intensity) * 100%);
+  --_glass-alpha: calc(0.05 + var(--amb-key-light-intensity) * 0.1);
+  --_glass-blur: calc(8px + var(--amb-key-light-intensity) * 8px);
+  background-color: hsl(
+    var(--amb-light-hue) var(--amb-light-saturation)
+    var(--_glass-lightness) / var(--_glass-alpha)
+  );
+  /* Unprefixed ONLY: the build (lightningcss, scripts/build-css.mjs)
+     autoprefixes this itself against the browser targets. A hand-written
+     -webkit- copy AFTER this line is not redundant but destructive — the
+     minifier collapses the pair to the last one it sees and ships the
+     prefixed form alone, which current Chrome no longer accepts, leaving
+     glass with no backdrop blur at all in the built package. */
+  backdrop-filter: blur(var(--_glass-blur)) saturate(160%);
+  border: 1px solid hsl(
+    var(--amb-light-hue) var(--amb-light-saturation) 100% /
+    calc(0.1 + var(--amb-key-light-intensity) * 0.15)
+  );
+}
+
+/* MICRO-RELIEF MATERIALS — brushed aluminium (linear and spun), and
+   bead-blasted rubber. What they add is relief, so they compose with
+   .amb-surface, the edge treatments and the elevations like any other
+   material.
+
+   TWO OF THE THREE ARE FITTED. The linear metal and the rubber are measured
+   against photographed crops (.plans/amb-mat-brushed-rubber.md); the spun
+   metal is not, and says so under its own constants below.
+
+   The rubber is matte in the specular sense. THE TWO METALS ARE NOT: a
+   ground finish is still metal, and its scattered key reads as one broad
+   sheen sitting over the grain rather than as the tight mirror band
+   .amb-mat-shiny paints. That sheen is a SEPARATE feature from the relief
+   below, painted on the host's own background-image the way every other
+   material's specular is, so it gets its own amplitude instead of being
+   scaled by the grain's fitted alpha — and it is anisotropic in the same
+   direction the grain is, which is what makes the two read as one surface.
+   The shape of each is stated with its material below.
+
+   HOW THE RELIEF IS LIT. Nothing is ever transformed. The tile carries
+   the RAW HEIGHT FIELD — one feTurbulence, one feComponentTransfer, no
+   lighting primitive — and a second tile carries its exact inverse. One
+   is offset toward the lamp, the other away from it, so the pair
+   evaluates f(x + d*l) - f(x - d*l) ~= 2d * df/dl: the slope of the
+   surface along the light, which is what shading a bumpy surface is to
+   first order. Only background-position moves, so every bump stays on
+   the same pixel and the shading crosses over it, where a lit relief
+   rotated to follow the lamp is a photograph of a relief and visibly
+   swims across the surface.
+
+   The two tiles must be INVERSES, not complementary halves. Inverses
+   subtract where they overlap; peaks-only/valleys-only halves leave the
+   raw height field showing as brightness wherever the offsets coincide,
+   which is the swimming look again at a different angle. Measured, not
+   assumed.
+
+   Anisotropy then comes free: offsetting ALONG a brushed grain samples
+   two points at the same height, the pair cancels, and the metal goes
+   smooth. "Only the across-grain component shades it" stops being a
+   special case and becomes geometry.
+
+   WHY screen + multiply. multiply is the only mode with the right tone
+   law — multiplying in a power-law-encoded space scales linear luminance
+   by a constant factor, putting grain amplitude proportional to Y^(1/3),
+   which is what Lambertian roughness does. Over L* 36/74/93, physics
+   wants 1.00/1.73/2.09 and multiply gives 1.00/1.87/2.29, against
+   1.00/0.91/0.88 for normal and a collapse to 0.19 for soft-light at the
+   pale end where this file's default ground sits. The bright screen
+   layer is not merely the second term of the subtraction: both
+   references skew bright (bright/dark half-range 1.45 on the rubber,
+   1.11 on the aluminium), because on a dark body the diffuse floor is
+   low and what you see of the roughness is facets catching the key.
+
+   ACCEPTED LIMITS. Each overlay alpha is calibrated at its own
+   material's tone and does not follow the tone law away from it — refit
+   --_grain-alpha if you retone a material far from its reference. These
+   three carry no --amb-albedo of their own, the same as .amb-mat-matte
+   and .amb-mat-shiny: left alone they render at whatever the surface
+   already inherits (the reference ground, by default). Set --amb-albedo
+   to the reference tone stated with each material below for the exact
+   calibrated look, or to anything else for your own colour — the grain
+   just reads a little strong or weak the further that colour's lightness
+   sits from the reference.
+
+   The signed derivative is symmetric by construction, so the references'
+   bright skew is not reproduced; the rotating build matched the skew and
+   got the relief wrong, and this is the deliberate other side of that
+   trade. Both pseudo-elements are consumed, so a control that already
+   owns one (@ambientcss/components' .amb-button-cap::after paints its
+   dish there) has to put the grain on an inner layer instead. And the
+   constants are calibrated at 1:1 CSS pixels: after the sub-pixel
+   finding below, the tile has to stay near the pixel grid it was fitted
+   on, so --_grain-scale is not a free knob. */
+
+/* Positioning the overlays, at ZERO specificity. The pseudo-elements
+   need a positioned host, but a material class must never relayout the
+   control it dresses — .amb-knob-face and .amb-knob-body are
+   `position: absolute; inset: 0`, and a plain `position: relative` here
+   would clobber them or not, depending on which stylesheet a consumer
+   happens to load second. :where() loses to every class rule in either
+   order, so a host that positions itself always keeps its own. */
+:where(.amb-mat-brushed) {
+  position: relative;
+}
+
+:where(.amb-mat-brushed-round) {
+  position: relative;
+}
+
+:where(.amb-mat-blasted) {
+  position: relative;
+}
+
+.amb-mat-brushed,
+.amb-mat-brushed-round,
+.amb-mat-blasted {
+  /* isolate: the overlays must blend with THIS element's surface, not
+     with whatever is painted behind it. overflow: hidden: mix-blend-mode
+     is not clipped by border-radius on its own, so a rounded surface
+     would show square corners of grain — and it clips real children too,
+     which is the price. */
+  isolation: isolate;
+  overflow: hidden;
+  /* Half the separation between the two samples. 2px is the fitted
+     baseline; see the round() note below before changing it. */
+  --_grain-offset: 2px;
+  /* OFFSETS SNAP TO WHOLE PIXELS. A fractional background-position
+     resamples the tile and erases grain about a pixel across, which for
+     grain this fine is most of it. Axis-aligned offsets happen to be
+     integers; diagonals are not, and all four corner .amb-light-*
+     presets are diagonal. Rubber's RMS L* by lamp angle, 0/45/90/135deg:
+     plain calc() gives 2.31/1.01/2.29/1.01 (consistency 0.44) and
+     round() gives 2.31/2.29/2.29/2.31 (0.99). Coarsening the grain 4x
+     also fixes it, by discarding the fidelity that was just measured;
+     round() fixes it for free, quantising the emboss DIRECTION instead,
+     which at sub-pixel grain is invisible.
+
+     The stock .amb-light-* presets are unnormalised +/-1, so they land
+     on integers with or without this — round() is what keeps an app
+     driving a continuous light vector from losing the relief. */
+  --_grain-x: round(var(--amb-light-x) * var(--_grain-offset), 1px);
+  --_grain-y: round(var(--amb-light-y) * var(--_grain-offset), 1px);
+  /* The material's own directional term, deliberately NOT spelled
+     --amb-grain-amount: a consumer writing `--amb-grain-amount: 0.6`
+     must not be able to silently delete the anisotropy that is the whole
+     of what brushed metal is. Isotropic materials leave it at 1. */
+  --_grain-aniso: 1;
+  /* Light contrast, NORMALISED TO THE CALIBRATION POINT. Relief needs
+     directional light and should wash out under a flat fill, but the
+     naive form evaluates to 0.64 at this file's default key 0.9 / fill
+     0.7 — which would silently render every material at 64% of the
+     amplitude its fitted alpha claims. Written this way it is exactly
+     1.0 there, and falls to the 0.45 floor when the fill equals the
+     key. */
+  --_grain-lit: max(0.45, min(1.5,
+    0.45 + 2.75 * (var(--amb-key-light-intensity) - var(--amb-fill-light-intensity))
+  ));
+}
+
+.amb-mat-brushed::before,
+.amb-mat-brushed::after,
+.amb-mat-brushed-round::before,
+.amb-mat-brushed-round::after,
+.amb-mat-blasted::before,
+.amb-mat-blasted::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  /* Under the element's own content, over its background. Relief is a
+     property of the surface, so it must not wash over a label sitting on
+     it or over controls laid out inside a textured panel. The isolate
+     above is what makes this safe: it gives the negative index a
+     stacking context of its own to sit at the bottom of, instead of
+     escaping behind the surface it is meant to texture. */
+  z-index: -1;
+  background-size: var(--_grain-scale);
+  background-repeat: repeat;
+  /* Four factors, kept separate: the material's own directional term,
+     light contrast, the fitted constant, and the user's knob. */
+  opacity: calc(
+    var(--_grain-aniso) * var(--_grain-lit) *
+      var(--_grain-alpha) * var(--amb-grain-amount)
+  );
+}
+
+.amb-mat-brushed::before,
+.amb-mat-brushed-round::before,
+.amb-mat-blasted::before {
+  background-image: var(--_grain-tile);
+  background-position: var(--_grain-x) var(--_grain-y);
+  mix-blend-mode: screen;
+}
+
+.amb-mat-brushed::after,
+.amb-mat-brushed-round::after,
+.amb-mat-blasted::after {
+  background-image: var(--_grain-tile-inv);
+  background-position: calc(var(--_grain-x) * -1) calc(var(--_grain-y) * -1);
+  mix-blend-mode: multiply;
+}
+
+/* Brushed aluminium sheet: pale, anisotropic, very low contrast. It carries
+   no --amb-albedo of its own — same as .amb-mat-matte and .amb-mat-shiny,
+   it renders at whatever the surface already inherits. The reference tone
+   below is what the relief was fitted AT, for a consumer who wants the
+   exact calibrated look: `--amb-albedo: color(srgb-linear 0.482 0.482 0.482)`
+   puts the surface PLUS its grain on the Blender rig's measured tone
+   (ambient3d/derived/notes/brushed.md: fit_grain solves the albedo through
+   the already-grounded surface exposure law, at mean L* 74.5 off the
+   mat_brushed_default render). Grounded on ambient3d's Blender rig now
+   (a parametric Noise-Texture/Anisotropic-BSDF metal, calibrate.py's
+   brushed_angle sweep — see ambient3d/amb_params.py's grain_material),
+   superseding the .plans/amb-mat-brushed-rubber.md photographed-crop fit:
+   mean RMS L* target 2.21 (this file's default light, key 0.9/fill 0.7),
+   anisotropy (row/col pixel-derivative ratio, screen rows = object-space Y
+   = across the grain) 7.5 — both closed-loop matched here by rendering this
+   file's own SVG turbulence tile at candidate baseFrequency/alpha pairs
+   and re-measuring with the same statistic (ambient3d/measure/metrics.py's
+   grain_texture) until it converged, since the CSS mechanism's own
+   pixel-sampling regime does not respond to baseFrequency/alpha the way
+   the Blender render does.
+
+   BASEFREQUENCY-X 0.02 LOOKED RIGHT AND WASN'T: it hit both targets above
+   (RMS L* 2.207, close enough) but rendered as discontinuous dashes, not
+   continuous streaks — visible once tiled at this file's own 128px
+   --_grain-scale, invisible in a single untiled tile, which is why the
+   first pass missed it. Cause: stitchTiles="stitch" snaps 0.02 to the
+   nearest integral cycle count across the 128px tile, landing on 3 — only
+   3 Perlin lattice cells span the width, so with numOctaves 1 the fine
+   per-row noise (baseFrequency-y 20) exposes each cell's own smooth
+   Hermite arch as a visible seam every ~43px. More octaves does not fix
+   this: fBm halves amplitude per octave, so the fundamental (the arch)
+   still carries the majority of the energy. The fix is more cells, not
+   more detail — raised to 0.28125 (36/128, exact so stitching is a
+   no-op), re-closed-loop-matched (RMS L* 2.219 against the 2.2145 target,
+   anisotropy 7.60 against 7.50) at a slightly lower --_grain-alpha (0.47
+   -> 0.45, since more cells at the same alpha read fractionally busier).
+   Confirmed by re-tiling the candidate at --_grain-scale before accepting
+   it — a single-tile render cannot see this failure mode.
+
+   RE-SOLVED 2026-08-21, target only. Nothing above is retracted: the tile,
+   its baseFrequency and its anisotropy all stand. But blasted's
+   regrounding moved every grain entry in the manifest onto one shared
+   aluminium albedo (0.49), which re-exposed this material at a slightly
+   higher tone, so mat_brushed_default was re-rendered and its grain target
+   moved 2.2145 -> 2.5334 (+14%). Alpha was rescaled by that ratio rather
+   than re-searched: the response is linear here (measured 0.124 / 1.472 /
+   2.997 at alpha 0 / 0.45 / 0.90, so the excess over baseline doubles when
+   alpha doubles), which makes the ratio the whole answer and makes it
+   independent of the blur radius the measurement happens to use.
+   --_grain-alpha 0.45 -> 0.515, verified at x1.159 against the x1.144 the
+   target moved (tools/css-harness/ladder.mjs +
+   ambient3d/measure/panel_split.py). The reference tone above follows the same move,
+   0.468 -> 0.482.
+
+   HAND-TUNED 2026-08-21, and this is the one constant in this block chosen
+   by eye rather than fitted. The ask was blurrier grain with longer
+   streaks, and those are one lever apart: streak length is the number of
+   turbulence cells spanning the tile, blur is the across-grain frequency.
+   Moved together — tile 128px -> 512px at 8 cells across (baseFrequency-x
+   8/512 = 0.015625, exact so stitching stays a no-op), so streaks run 64px
+   instead of 3.6px; across-grain frequency 20 -> 0.9, a 1.1px period
+   instead of a 0.05px one. --_grain-alpha 0.515 -> 0.42, rescaled so the
+   grain CONTRAST does not move: 1.680 RMS L* against the old tile's 1.695.
+   (0.417 through 0.420 all measure 1.680 — that plateau is 8-bit
+   quantisation, so a third decimal on this alpha would be false
+   precision.) Only the shape changed; the fitted contrast is untouched.
+
+   THE ACROSS-GRAIN FREQUENCY LANDED AT 0.9 IN TWO STEPS. 0.35 (a 2.9px
+   period) went first and read as thick soft bands rather than brushed
+   lines. 1.0 is the value not to reach for: at exactly one cycle per CSS
+   pixel the Perlin lattice coincides with the pixel grid and every sample
+   lands on a lattice node, where gradient noise is zero by construction —
+   contrast collapses to 1.212 and the anisotropy falls back to 8.4. That
+   alignment, not the frequency's magnitude, is what the old 20 was doing
+   wrong. 0.9 snaps to 461 cycles over 512px, which stays off the grid, and
+   holds at 1.68 +/- 0.05 across every device pixel ratio tested (1, 1.11,
+   1.25, 1.5, 1.75, 2). The rule to carry forward is "avoid integer cycles
+   per device pixel", not "stay under Nyquist".
+
+   WHY THIS IS NOT A STEP AWAY FROM THE BLENDER GROUND TRUTH: the old tile
+   never delivered the anisotropy it was fitted to. brushed.md records
+   row/col 7.60 against the render's 7.4963, but measured off a real Chrome
+   raster the shipped tile reads 1.55 at dpr 1 (2.70 at dpr 2) — near
+   isotropic, which is why it read as woven cross-hatch rather than grain.
+   Its across-grain frequency was 20 cycles per CSS pixel, forty times
+   Nyquist, so what reached the screen was that grain's aliasing, and
+   aliasing carries no direction. This tile stays off the pixel grid on
+   both axes and measures 12.15 at dpr 1 (10.44 at dpr 2), which OVERSHOOTS
+   the fitted 7.4963 — deliberately: the ratio climbs as the across-grain
+   period gets finer, and the look asked for is finer than the fit. Hold
+   both facts at once. The old tile undershot by reading 1.55 while
+   claiming 7.60, and that was a defect; this one overshoots knowingly,
+   which is a choice. The intermediate 0.35 measured 7.13, the closest to
+   the fit of anything tried here, and was rejected on looks.
+
+   --_grain-scale moved 128px -> 512px, which the ACCEPTED LIMITS note near
+   the top of this section calls not a free knob. That warning is not
+   violated: what it protects is the tile rendering at 1:1 CSS pixels, and
+   a 512px background-size on a 512px tile is still 1:1. The cost is a
+   larger rasterised filter, decoded once per URL by the browser rather
+   than once per element.
+
+   SEAMS RE-CHECKED, because a bigger tile has further to wrap and the
+   2026-08-20 correction above is exactly that failure mode. Rendered
+   across two full repeats in each axis at 4x amplitude: no seam is
+   visible, and on a boundary-jump ratio (mean |dL| across the tile
+   boundary over the median column's) this tile measures 1.09, against the
+   old tile's own 1.17 and the 1.31 of the baseFrequency 0.02 tile that
+   correction rejected. Its 8 cells DO sit under the ~10-cell floor that
+   correction set; that floor was measured at a 128px tile, and at 512px
+   the cell arch it warns about does not appear. Rendered with
+   tools/css-harness/variants.mjs (specs/handtune-2026-08-21-brushed.json),
+   measured with ambient3d/measure/variant_grid.py. */
+.amb-mat-brushed {
+  /* Ground metal, not a mirror and not a matte plastic: enough specular to
+     carry a sheen, enough roughness to spread it across most of the face.
+     Not re-grounded this pass — see --_sheen-alpha below. */
+  --amb-mat-specular: 0.3;
+  --amb-mat-roughness: 0.72;
+  --_grain-tile: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22512%22%20height%3D%22512%22%3E%3Cfilter%20id%3D%22t%22%20x%3D%220%22%20y%3D%220%22%20width%3D%22100%25%22%20height%3D%22100%25%22%20color-interpolation-filters%3D%22linearRGB%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.015625%200.9%22%20numOctaves%3D%221%22%20seed%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22saturate%22%20values%3D%220%22%2F%3E%3CfeComponentTransfer%3E%3CfeFuncR%20type%3D%22linear%22%20slope%3D%222%22%20intercept%3D%22-0.5%22%2F%3E%3CfeFuncG%20type%3D%22linear%22%20slope%3D%222%22%20intercept%3D%22-0.5%22%2F%3E%3CfeFuncB%20type%3D%22linear%22%20slope%3D%222%22%20intercept%3D%22-0.5%22%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23t)%22%2F%3E%3C%2Fsvg%3E");
+  --_grain-tile-inv: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22512%22%20height%3D%22512%22%3E%3Cfilter%20id%3D%22t%22%20x%3D%220%22%20y%3D%220%22%20width%3D%22100%25%22%20height%3D%22100%25%22%20color-interpolation-filters%3D%22linearRGB%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.015625%200.9%22%20numOctaves%3D%221%22%20seed%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22saturate%22%20values%3D%220%22%2F%3E%3CfeComponentTransfer%3E%3CfeFuncR%20type%3D%22linear%22%20slope%3D%22-2%22%20intercept%3D%221.5%22%2F%3E%3CfeFuncG%20type%3D%22linear%22%20slope%3D%22-2%22%20intercept%3D%221.5%22%2F%3E%3CfeFuncB%20type%3D%22linear%22%20slope%3D%22-2%22%20intercept%3D%221.5%22%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23t)%22%2F%3E%3C%2Fsvg%3E");
+  --_grain-scale: 512px;
+  /* SOFTENED twice by eye after the 2026-08-21 hand-tune: 0.42 -> 0.28 ->
+     0.20 so the streaks read as a finish rather than a texture. Linear
+     response means contrast scales by the same ratio (~ -52% total). */
+  --_grain-alpha: 0.20;
+  /* The cost of snapping to whole pixels: at a 2px baseline the
+     across-grain offset is either 0 or 1, so brushed metal SWITCHES
+     rather than fades as the lamp swings along the grain. It therefore
+     keeps the across-grain component on its amount explicitly — the same
+     physical statement the offsets make, written out longhand. */
+  --_grain-across: calc(
+    abs(var(--amb-light-y)) /
+      max(0.001, hypot(var(--amb-light-x), var(--amb-light-y)))
+  );
+  --_grain-aniso: calc(0.3 + 0.7 * var(--_grain-across));
+
+  /* THE SHEEN. Anisotropic specular from a linear grain is a BAND ACROSS
+     THE GRAIN — the grooves smear the lamp's image out along themselves,
+     so one dimension of the highlight goes to infinity and the other stays
+     tight. The grain here is horizontal (the tile's baseFrequency is coarse
+     in x, fine in y), so the band is horizontal too, and its POSITION is
+     the only thing the lamp moves: --amb-light-y slides it from the top of
+     the face to the bottom, and --amb-light-x does nothing at all. That
+     last part is the anisotropy, stated as geometry rather than as a
+     coefficient — the same statement --_grain-aniso makes about the relief.
+
+     Amplitude rides the key alone, as .amb-mat-shiny's does, with a small
+     floor so the sheen survives a dim scene the way a metal face does. It
+     is a plain alpha over --amb-lit, so it lands on L + a(100 - L) and
+     cannot blow out a pale face.
+
+     GROUNDED now (ambient3d/derived/notes/brushed_sheen.md), in two parts
+     fit from two separate sweeps, because the sweep that gives a clean
+     AMPLITUDE read does not give a clean POSITION read. Amplitude:
+     axis_profile (a fixed vertical screen scan — cyl_profile's light
+     diagonal mostly missed this band, see the superseded note below) minus
+     its relief-only twin, MEAN excess over a key-intensity sweep — mean,
+     not peak, because the material's own fine relief noise is comparable
+     in amplitude to the sheen and only averaging separates them; this
+     stays robust regardless of the sweep's light contrast. Position: the
+     amplitude sweep's own low light contrast (key 0.3-0.9 against a fixed
+     fill 0.7 — key<fill at the low end) turns out to wash the band out
+     enough that its PEAK is argmax-of-noise, not signal — a dedicated
+     high-contrast (key 0.9, fill 0.1) sweep across 3 --amb-light-y values recovers
+     a real, clearly light-tracking peak instead (r2 0.975), confirming
+     the slide-with-light-y model this file already assumed, just at a
+     different rate. The half-width below (42%) is NOT re-grounded: the
+     high-contrast sweep's own half-max width comes out either near-zero
+     (a sharp edge-concentrated glint at the top/bottom silhouette, not a
+     broad band, at the two light_y extremes) or ~100% (no resolvable
+     peak, light straight-on) — too inconsistent across only 3 samples to
+     safely replace the existing broad-band shape, left as a flagged open
+     question rather than acted on. */
+  /* REGROUNDED 2026-08-21, and the number it is NOT fit to matters most.
+     The 0.0207/0.0103 this replaces came from a sheen sweep on the
+     calibration rig, and that rig cannot see this quantity at all: its
+     camera is orthographic (amb_params.py:426), so every view ray is
+     parallel, reflects off the flat plate in one direction and samples a
+     single point of the environment. Positional variation can only reach
+     it through perturbed normals — 24 renders across roughness x
+     anisotropy x bump strength reach a sweep RMS of 1.04 against the
+     reference crops' 16.2, and with the bump removed it is exactly 0.00.
+     The old constant measured the rig's blindness, not the material, and
+     cut the amplitude 4-5x on the strength of it.
+
+     The reference crops cannot supply a replacement target either, and
+     that is a rejection rather than a miss: 16.2 is the low-frequency RMS
+     across a photograph of a large aluminium sheet, so most of that
+     energy is scene-scale illumination falloff across a big object. A
+     240px control has no scene-scale falloff to reproduce. Measured on
+     the panel ladder (tools/css-harness/ladder.mjs, split by
+     ambient3d/measure/panel_split.py): a FULLY OPAQUE white band (alpha
+     1.0) reaches a sweep of only 6.28 for brushed and 8.29 for spun, and
+     the exposure-invariant sweep/grain RATIO tops out at 3.7 against the
+     crops' 6.5 — which rules out exposure difference as the explanation
+     and leaves non-commensurability. The target has no solution at any
+     alpha, because it is not the same quantity. Do not re-run that fit.
+
+     So this is grounded visually, on the ladder in
+     ambient3d/derived/notes/brushed_sheen.md: 0.0289 (the shipped value)
+     is invisible, 0.139 barely present, 0.30 is where the band reads as
+     brushed metal. The floor:slope proportion is the hand-authored
+     original's (0.04:0.11), kept because it encodes a real intent — the
+     sheen survives a dim scene the way a metal face does — and rescaled
+     so key 0.9 lands on 0.30. Shared verbatim with
+     .amb-mat-brushed-round: spun needs less help (its conic tile already
+     carries a sweep of 2.32 where brushed has 0.19) but reads correctly
+     at the same value, and one metal in two finishes should not carry
+     two different sheen formulas. */
+  /* SOFTENED twice alongside the grain above: rescaled from the 0.237/0.0863
+     that put key 0.9 at 0.30 down to key 0.9 at ~0.14, so the band stays
+     present but quiet. Shared verbatim with .amb-mat-brushed-round. */
+  --_sheen-alpha: calc(var(--amb-key-light-intensity) * 0.11 + 0.04);
+  /* The band's centre, and a half-width either side of it. Written as three
+     calc()s off one position rather than as a gradient rotated to the lamp:
+     the highlight of a linear grain does not tilt, it slides. Stops that run
+     off either end are corrected back in place by the gradient itself, which
+     is what keeps the band from wrapping when the lamp is straight overhead.
+     The 54%/42% below are grounded (54% + light_y*42%, was 50% + light_y*30%);
+     the 42% half-width two lines down is a DIFFERENT, ungrounded number —
+     see the comment above. */
+  --_sheen-at: calc(54% + var(--amb-light-y) * 42%);
+  background-image: linear-gradient(
+    to bottom,
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 0%,
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0)
+      calc(var(--_sheen-at) - 42%),
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / var(--_sheen-alpha))
+      var(--_sheen-at),
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0)
+      calc(var(--_sheen-at) + 42%),
+    hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 100%
+  );
+}
+
+/* Bead-blasted aluminium: light grey, isotropic, dense sparkle. Carries no
+   --amb-albedo of its own, the same as every other material here — the
+   reference tone is `--amb-albedo: color(srgb-linear 0.446 0.446 0.446)`,
+   worth setting explicitly for the calibrated look.
+
+   REGROUNDED 2026-08-21. This block used to describe a dark ELASTOMER at
+   albedo 0.0594, which was a fossil: the material was renamed
+   .amb-mat-rubber -> .amb-mat-blasted in commit fe347b8 and the grounding
+   never followed the rename. The reference is bead-blasted aluminium, so
+   the Blender material is now a conductor (BLAST_METALLIC = 1.0) and the
+   albedo moved 0.0594 -> 0.4457, within 8% of brushed's and spun's — one
+   aluminium reflectance now shared by three finishes, not two.
+
+   --amb-mat-specular: 0 / --amb-mat-roughness: 1 are KEPT, deliberately,
+   even though the Blender material is now a metal at roughness 0.25. The
+   two scales are modelled separately: the bead craters are the height
+   field, so what is left for the BSDF is the smooth metal BETWEEN craters,
+   and that low roughness exists to make each crater glitter — which on
+   this side is the grain tile's job, not a broad highlight's. The
+   reference crop's sweep is 3.4 against its grain of 11.9, i.e. no
+   distinct highlight band to paint, so specular 0 stays correct. (With
+   specular at 0 the roughness beside it is inert anyway; it is left at 1
+   so the pair still reads as "fully matte, by decision".)
+
+   Grounded on ambient3d's Blender rig (calibrate.py's blasted_angle sweep;
+   see amb_params.py's grain_material and derived/notes/blasted.md):
+   grain RMS L* target 11.7355 (this file's default light, key 0.9/fill
+   0.7), up from the 1.27 the elastomer-era render gave — an order of
+   magnitude, since the glitter IS this material.
+
+   THAT TARGET IS NOT REACHED, and the shortfall is recorded rather than
+   tuned away. --_grain-alpha is one factor of an opacity product whose
+   other factors are all 1 for this isotropic material, so it hard-rails at
+   1.0; the target needs ~1.27. Worse, the response stays linear right up
+   to the rail, so the rail is a real ceiling and not a saturation point:
+   alpha 1.0 buys 7.6x the shipped contrast where 9.2x is wanted. And at
+   the rail the panel reads as sensor static rather than bead-blast —
+   which is derived/notes/blasted.md's scale caveat biting for real, since
+   this tile's features are ~1px where the render's craters are ~10px, so
+   equal per-pixel RMS is equal contrast at very different feature sizes.
+   Stopped at 0.85 on that visual read (ladder measured with
+   tools/css-harness/ladder.mjs + ambient3d/measure/panel_split.py): 6.3x
+   the shipped contrast, ~68% of the target, dense sparkle rather than
+   noise. Be precise about what headroom that leaves: the product clamps
+   once --_grain-lit reaches ~1.18, and --_grain-lit ranges to 1.5, so the
+   grain still fades correctly in a dim scene but stops brightening about
+   18% above the default light rather than tracking all the way up. The two levers that could close the rest are the tile's
+   own contrast stretch (feComponentTransfer slope 2) and its feature size
+   (baseFrequency 0.9 at a 96px tile); both are out of scope here and are
+   the identified next step.
+
+   HAND-TUNED 2026-08-21: --_grain-alpha 0.85 -> 0.666, asked for as
+   slightly less contrast, and it lands on an exact edge worth keeping.
+   The opacity product above clamps at 1, and 0.666 is the highest alpha
+   that never reaches it — --_grain-lit tops out at 1.50, and 1.50 x 0.666
+   = 0.999. So the headroom cost the paragraph above records is paid back:
+   the grain now tracks the light across its whole range instead of
+   stopping brightening about 18% above the default scene. (0.667 would
+   clamp, but only in the top 0.05% of the range, so the choice between
+   the two is bookkeeping rather than looks. All of this assumes
+   --amb-grain-amount at 1: a consumer who raises that knob moves the
+   clamp point down in proportion.)
+
+   The contrast that buys: 4.212 RMS L* against 0.85's 5.468, -23%, which
+   puts this at about 52% of the Blender target rather than 68%. That
+   target was already unreachable for the reasons above, so this trades a
+   shortfall that could not be closed for a light response that could.
+   Measured with tools/css-harness/variants.mjs
+   (specs/handtune-2026-08-21-blasted.json) +
+   ambient3d/measure/variant_grid.py. */
+.amb-mat-blasted {
+  --amb-mat-specular: 0;
+  --amb-mat-roughness: 1;
+  --_grain-tile: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2296%22%20height%3D%2296%22%3E%3Cfilter%20id%3D%22t%22%20x%3D%220%22%20y%3D%220%22%20width%3D%22100%25%22%20height%3D%22100%25%22%20color-interpolation-filters%3D%22linearRGB%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.9%200.9%22%20numOctaves%3D%222%22%20seed%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22saturate%22%20values%3D%220%22%2F%3E%3CfeComponentTransfer%3E%3CfeFuncR%20type%3D%22linear%22%20slope%3D%222%22%20intercept%3D%22-0.5%22%2F%3E%3CfeFuncG%20type%3D%22linear%22%20slope%3D%222%22%20intercept%3D%22-0.5%22%2F%3E%3CfeFuncB%20type%3D%22linear%22%20slope%3D%222%22%20intercept%3D%22-0.5%22%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url%28%23t%29%22%2F%3E%3C%2Fsvg%3E");
+  --_grain-tile-inv: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2296%22%20height%3D%2296%22%3E%3Cfilter%20id%3D%22t%22%20x%3D%220%22%20y%3D%220%22%20width%3D%22100%25%22%20height%3D%22100%25%22%20color-interpolation-filters%3D%22linearRGB%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.9%200.9%22%20numOctaves%3D%222%22%20seed%3D%223%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22saturate%22%20values%3D%220%22%2F%3E%3CfeComponentTransfer%3E%3CfeFuncR%20type%3D%22linear%22%20slope%3D%22-2%22%20intercept%3D%221.5%22%2F%3E%3CfeFuncG%20type%3D%22linear%22%20slope%3D%22-2%22%20intercept%3D%221.5%22%2F%3E%3CfeFuncB%20type%3D%22linear%22%20slope%3D%22-2%22%20intercept%3D%221.5%22%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url%28%23t%29%22%2F%3E%3C%2Fsvg%3E");
+  --_grain-scale: 96px;
+  /* SOFTENED twice by eye after the 2026-08-21 hand-tune: 0.666 -> 0.45 ->
+     0.32 for a much quieter sparkle. Note this reintroduces the clamp
+     headroom cost recorded above (1.50 x 0.32 = 0.48, well under the
+     rail), which is accepted here — subtlety was the ask, not light
+     tracking. */
+  --_grain-alpha: 0.32;
+}
+
+/* Spun (circular-brushed) aluminium: the same metal as .amb-mat-brushed with
+   the grain turned round the centre instead of run across the face — the
+   finish a part gets on a lathe rather than under a belt, and what the top
+   cap of a hi-fi knob wears.
+
+   THE GRAIN IS A CONIC GRADIENT, not a tile. Circular grain has no
+   translational period to tile, so the pattern is stated once in the only
+   coordinate it varies in: 64 jittered streaks of angle, generated from a
+   fixed seed with the same contrast stretch the SVG tiles' feComponentTransfer
+   applies (slope 2 about mid-grey), and closed at the seam so 0deg and 360deg
+   carry the same value. --_grain-tile-inv is the exact per-stop inverse, which
+   is what the screen/multiply pair subtracts against; the two lists are
+   generated together and must be regenerated together.
+
+   THE LIGHTING IS THE SAME MECHANISM AS THE LINEAR METAL and needs nothing
+   new: the pair is still offset +/-d along the lamp, so it still evaluates the
+   directional derivative of the height field. On a circular field that
+   derivative is proportional to the TANGENTIAL component of the offset, which
+   vanishes at the two points where the offset points straight out from the
+   centre. So the shading comes out as two bright arcs with dark lobes 90deg
+   away, swinging as the lamp does — the dominant feature of every spun disc,
+   arrived at as geometry rather than painted in.
+
+   Two consequences worth stating. The tile is sized to twice the box and
+   centred, so its conic centre lands on the element's centre and the +/-2px
+   offset never drags an edge into view (the linear grain repeats instead, and
+   has no centre to place). And the angular pitch of the streaks shrinks toward
+   that centre until it passes the offset, at which point the two samples stop
+   being correlated and the derivative becomes noise: the inner tenth of the
+   face reads as a bright converged hotspot rather than as streaks. That is
+   what the referent does too, so it is left alone. */
+.amb-mat-brushed-round {
+  --amb-mat-specular: 0.3;
+  --amb-mat-roughness: 0.72;
+  /* No --amb-albedo of its own, like the other two relief materials. Its
+     reference tone is the SAME as .amb-mat-brushed's — this IS that metal,
+     turned a different way, one reflectance shared by two finishes — so set
+     `--amb-albedo: color(srgb-linear 0.480 0.480 0.480)` for the calibrated
+     look on either: ambient3d's Blender rig (a radial Tangent-node
+     Anisotropic BSDF over the same Noise-Texture height field brushed uses,
+     see amb_params.py's grain_material) independently fits albedo 0.4795
+     for spun against 0.4819 for brushed off its own render — the "one
+     reflectance shared by two finishes" claim confirmed to within 0.5%,
+     not just asserted (ambient3d/derived/notes/spun.md). Since 2026-08-21
+     it extends to THREE: .amb-mat-blasted's 0.4457 is within 8% of both.
+
+     The grain alpha is NOT a shared fit, and the equal number below is not
+     evidence that it is: the linear tile's across-grain period is
+     sub-pixel, so most of what sets its rendered contrast is the pixel
+     averaging the round() note above exists to protect, while these
+     streaks are several pixels wide at knob radius and take none of it.
+     Formerly matched BY EYE against the linear metal's apparent relief —
+     grounded now by rendering THIS conic-gradient tile at candidate alphas
+     and matching the Blender rig's mean RMS L* target (2.28 at this file's
+     default light) with the same statistic
+     (ambient3d/measure/metrics.py's grain_texture): the eyeballed 0.169
+     turned out to need only a 3.5% bump to 0.175 — the tile's own jittered
+     stops were left untouched, only the opacity multiplying them changed. */
+  --_grain-tile: conic-gradient(
+    from 0deg at 50% 50%,
+      #a4a4a4 0deg, #ffffff 2.4deg, #b0b0b0 9.6deg, #ffffff 13.3deg, #ffffff 18.4deg, #000000 24.6deg,
+      #ffffff 30.9deg, #525252 36.0deg, #ffffff 43.0deg, #000000 48.2deg, #343434 53.0deg, #1b1b1b 59.1deg,
+      #ffffff 64.2deg, #000000 69.1deg, #ebebeb 75.5deg, #737373 83.0deg, #000000 87.0deg, #ebebeb 94.1deg,
+      #ffffff 98.9deg, #ffffff 102.7deg, #7d7d7d 110.3deg, #000000 114.4deg, #000000 120.8deg, #9a9a9a 127.1deg,
+      #cfcfcf 131.9deg, #ffffff 137.1deg, #000000 142.1deg, #d9d9d9 148.1deg, #b5b5b5 154.7deg, #ffffff 158.9deg,
+      #ffffff 166.2deg, #ffffff 172.0deg, #ededed 177.4deg, #161616 182.6deg, #e2e2e2 187.6deg, #000000 195.2deg,
+      #e3e3e3 200.9deg, #000000 206.4deg, #252525 209.9deg, #5b5b5b 215.1deg, #ffffff 222.1deg, #cdcdcd 228.9deg,
+      #ffffff 234.4deg, #cacaca 239.5deg, #484848 244.5deg, #000000 250.8deg, #000000 257.1deg, #000000 260.8deg,
+      #c0c0c0 268.5deg, #ffffff 274.0deg, #535353 279.6deg, #dfdfdf 284.9deg, #f6f6f6 290.5deg, #000000 294.6deg,
+      #ffffff 299.7deg, #d1d1d1 308.1deg, #444444 312.1deg, #ffffff 318.2deg, #525252 323.4deg, #c4c4c4 328.4deg,
+      #747474 333.2deg, #000000 340.4deg, #636363 346.1deg, #8d8d8d 350.4deg, #000000 355.7deg, #a4a4a4 360deg
+  );
+  --_grain-tile-inv: conic-gradient(
+    from 0deg at 50% 50%,
+      #5b5b5b 0deg, #000000 2.4deg, #4f4f4f 9.6deg, #000000 13.3deg, #000000 18.4deg, #ffffff 24.6deg,
+      #000000 30.9deg, #adadad 36.0deg, #000000 43.0deg, #ffffff 48.2deg, #cbcbcb 53.0deg, #e4e4e4 59.1deg,
+      #000000 64.2deg, #ffffff 69.1deg, #141414 75.5deg, #8c8c8c 83.0deg, #ffffff 87.0deg, #141414 94.1deg,
+      #000000 98.9deg, #000000 102.7deg, #828282 110.3deg, #ffffff 114.4deg, #ffffff 120.8deg, #656565 127.1deg,
+      #303030 131.9deg, #000000 137.1deg, #ffffff 142.1deg, #262626 148.1deg, #4a4a4a 154.7deg, #000000 158.9deg,
+      #000000 166.2deg, #000000 172.0deg, #121212 177.4deg, #e9e9e9 182.6deg, #1d1d1d 187.6deg, #ffffff 195.2deg,
+      #1c1c1c 200.9deg, #ffffff 206.4deg, #dadada 209.9deg, #a4a4a4 215.1deg, #000000 222.1deg, #323232 228.9deg,
+      #000000 234.4deg, #353535 239.5deg, #b7b7b7 244.5deg, #ffffff 250.8deg, #ffffff 257.1deg, #ffffff 260.8deg,
+      #3f3f3f 268.5deg, #000000 274.0deg, #acacac 279.6deg, #202020 284.9deg, #090909 290.5deg, #ffffff 294.6deg,
+      #000000 299.7deg, #2e2e2e 308.1deg, #bbbbbb 312.1deg, #000000 318.2deg, #adadad 323.4deg, #3b3b3b 328.4deg,
+      #8b8b8b 333.2deg, #ffffff 340.4deg, #9c9c9c 346.1deg, #727272 350.4deg, #ffffff 355.7deg, #5b5b5b 360deg
+  );
+  /* Twice the box in BOTH axes. A single value would leave the height at
+     `auto`, which for a gradient is 100% of the box, and a conic gradient
+     drawn into a 2:1 image is an ellipse of streaks rather than a circle. */
+  --_grain-scale: 200% 200%;
+  /* RE-SOLVED 2026-08-21 by the same ratio method as brushed's, and for
+     the same reason: the shared-aluminium albedo re-exposed this material,
+     so mat_spun_default's grain target moved 2.28 -> 2.5677 (+12.6%). The
+     conic tile is unchanged — only the alpha multiplying it. Linearity
+     checked first (0.203 / 2.078 / 4.235 at alpha 0 / 0.175 / 0.35), then
+     0.175 -> 0.197, verified at x1.125 against the x1.126 wanted
+     (tools/css-harness/ladder.mjs + ambient3d/measure/panel_split.py). */
+  /* SOFTENED twice by eye alongside the linear metal: 0.197 -> 0.135 ->
+     0.10, the same proportional move, keeping spun matched to brushed's
+     apparent relief. */
+  --_grain-alpha: 0.10;
+
+  /* The sheen, in this material's own geometry: the linear metal's band
+     across the grain, wrapped round the centre. The grain is tangential
+     everywhere, so "across it" is radial everywhere, and the band becomes a
+     pair of opposed lobes lying on the lamp's own axis — plus the hotspot
+     where every streak converges.
+
+     AMPLITUDE GROUNDED (ambient3d/derived/notes/spun_sheen.md); the
+     directional SHAPE below is NOT, and this time that is a checked
+     conclusion, not just a gap. ring_profile (angular wedges of an
+     annulus, aligned to the light bearing) minus its relief-only twin
+     gives the same mean excess vs key as brushed's axis_profile does, to
+     3 decimal places — the two finishes share one Anisotropic BSDF
+     amount and specular setting in the rig, so a shared amplitude is
+     expected and is why both keep ONE shared formula below, same as
+     before. But a dedicated high-contrast sweep across 4 light bearings
+     (spun_sheen_pos, the same design that DID recover a real
+     light-tracking peak for brushed under identical contrast) finds no
+     matching peak here: the excess reads as flat across angle at every
+     bearing tested, not concentrated where a conic lobe locked to the
+     light would put it. Same rig, same camera, same extraction method,
+     different result for the two grain orientations — this rules out
+     "not enough signal" as the explanation. The conic stops' 62deg
+     half-width and the hotspot's 1.5x factor below are therefore left at
+     their prior hand-tuned shape: unconfirmed, not disconfirmed, by a
+     rig that does not resolve this finish's directionality at all. */
+  /* REGROUNDED 2026-08-21, and the number it is NOT fit to matters most.
+     The 0.0207/0.0103 this replaces came from a sheen sweep on the
+     calibration rig, and that rig cannot see this quantity at all: its
+     camera is orthographic (amb_params.py:426), so every view ray is
+     parallel, reflects off the flat plate in one direction and samples a
+     single point of the environment. Positional variation can only reach
+     it through perturbed normals — 24 renders across roughness x
+     anisotropy x bump strength reach a sweep RMS of 1.04 against the
+     reference crops' 16.2, and with the bump removed it is exactly 0.00.
+     The old constant measured the rig's blindness, not the material, and
+     cut the amplitude 4-5x on the strength of it.
+
+     The reference crops cannot supply a replacement target either, and
+     that is a rejection rather than a miss: 16.2 is the low-frequency RMS
+     across a photograph of a large aluminium sheet, so most of that
+     energy is scene-scale illumination falloff across a big object. A
+     240px control has no scene-scale falloff to reproduce. Measured on
+     the panel ladder (tools/css-harness/ladder.mjs, split by
+     ambient3d/measure/panel_split.py): a FULLY OPAQUE white band (alpha
+     1.0) reaches a sweep of only 6.28 for brushed and 8.29 for spun, and
+     the exposure-invariant sweep/grain RATIO tops out at 3.7 against the
+     crops' 6.5 — which rules out exposure difference as the explanation
+     and leaves non-commensurability. The target has no solution at any
+     alpha, because it is not the same quantity. Do not re-run that fit.
+
+     So this is grounded visually, on the ladder in
+     ambient3d/derived/notes/brushed_sheen.md: 0.0289 (the shipped value)
+     is invisible, 0.139 barely present, 0.30 is where the band reads as
+     brushed metal. The floor:slope proportion is the hand-authored
+     original's (0.04:0.11), kept because it encodes a real intent — the
+     sheen survives a dim scene the way a metal face does — and rescaled
+     so key 0.9 lands on 0.30. Shared verbatim with
+     .amb-mat-brushed-round: spun needs less help (its conic tile already
+     carries a sweep of 2.32 where brushed has 0.19) but reads correctly
+     at the same value, and one metal in two finishes should not carry
+     two different sheen formulas. */
+  /* SOFTENED twice, same rescale as .amb-mat-brushed's: key 0.9 lands at
+     ~0.14 instead of 0.30. Kept verbatim-shared with the linear metal. */
+  --_sheen-alpha: calc(var(--amb-key-light-intensity) * 0.11 + 0.04);
+  /* atan2 of the light vector is the lamp's bearing; +90deg turns it into
+     the CSS angle convention (0 = up, clockwise) pointing AT the lamp, the
+     same rotation .amb-mat-shiny's --_shiny-angle makes in reverse to point
+     away from it. */
+  --_sheen-angle: calc(atan2(var(--amb-light-y), var(--amb-light-x)) + 90deg);
+  background-image:
+    radial-gradient(
+      circle closest-side at 50% 50%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / calc(var(--_sheen-alpha) * 1.5)) 0%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 40%
+    ),
+    conic-gradient(
+      from var(--_sheen-angle) at 50% 50%,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / var(--_sheen-alpha)) 0deg,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 62deg,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 118deg,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / var(--_sheen-alpha)) 180deg,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 242deg,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / 0) 298deg,
+      hsl(var(--amb-light-hue) var(--amb-light-saturation) 100% / var(--_sheen-alpha)) 360deg
+    );
+}
+
+/* Centred, not corner-anchored: the shared rules position the tile from the
+   top-left, which is right for something that repeats and wrong for a single
+   image whose centre has to land on the element's. The lamp offset is added
+   to that centre rather than replacing it, and the inverse layer subtracts
+   the same offset from it — which is why these two cannot be folded back
+   into --_grain-x / --_grain-y. */
+.amb-mat-brushed-round::before {
+  background-position: calc(50% + var(--_grain-x)) calc(50% + var(--_grain-y));
+}
+
+.amb-mat-brushed-round::after {
+  background-position: calc(50% - var(--_grain-x)) calc(50% - var(--_grain-y));
+}
+
+/* --------------------------------------------------------------------------
+   SURFACE SHAPES (Concave/Convex)
+   -------------------------------------------------------------------------- */
+
+/* Curved surfaces, grounded (ambient3d/derived/notes/curved.md): stops
+   ride the grounded .amb-surface base; the end-stop delta is --amb-curve-delta
+   (declared per element above, affine in light contrast — a dish shades even
+   at Ik = If), with the 35/65% stops at 0.33 of it. R^2 0.94 over the
+   light/intensity sweeps. Each class supplies its own axis and sign; the
+   magnitude is shared, so the three curves can never drift apart.
+
+   The delta lands on `l` inside hsl(from ...), where the channel keywords
+   are NUMBERS — which is exactly why --amb-curve-delta is documented as
+   unitless points of lightness and carries no % of its own. */
+
+.amb-surface-concave {
+  --_concave-y: max(-1, min(var(--amb-light-y), 1));
+  --_concave-delta: calc(var(--_concave-y) * var(--amb-curve-delta));
+  background: linear-gradient(
+    hsl(from var(--amb-lit) h s calc(l + var(--_concave-delta))) 0%,
+    hsl(from var(--amb-lit) h s calc(l + var(--_concave-delta) * 0.33)) 35%,
+    hsl(from var(--amb-lit) h s l) 50%,
+    hsl(from var(--amb-lit) h s calc(l - var(--_concave-delta) * 0.33)) 65%,
+    hsl(from var(--amb-lit) h s calc(l - var(--_concave-delta))) 100%
+  );
+}
+
+.amb-surface-concave-h {
+  --_concave-h-x: max(-1, min(var(--amb-light-x), 1));
+  --_concave-h-delta: calc(var(--_concave-h-x) * var(--amb-curve-delta));
+  background: linear-gradient(
+    to right,
+    hsl(from var(--amb-lit) h s calc(l + var(--_concave-h-delta))) 0%,
+    hsl(from var(--amb-lit) h s calc(l + var(--_concave-h-delta) * 0.33)) 35%,
+    hsl(from var(--amb-lit) h s l) 50%,
+    hsl(from var(--amb-lit) h s calc(l - var(--_concave-h-delta) * 0.33)) 65%,
+    hsl(from var(--amb-lit) h s calc(l - var(--_concave-h-delta))) 100%
+  );
+}
+
+.amb-surface-convex {
+  --_convex-y: max(-1, min(var(--amb-light-y), 1));
+  --_convex-delta: calc(var(--_convex-y) * var(--amb-curve-delta));
+  background: linear-gradient(
+    hsl(from var(--amb-lit) h s calc(l - var(--_convex-delta))) 0%,
+    hsl(from var(--amb-lit) h s calc(l - var(--_convex-delta) * 0.33)) 35%,
+    hsl(from var(--amb-lit) h s l) 50%,
+    hsl(from var(--amb-lit) h s calc(l + var(--_convex-delta) * 0.33)) 65%,
+    hsl(from var(--amb-lit) h s calc(l + var(--_convex-delta))) 100%
+  );
+}
+
+/* --------------------------------------------------------------------------
+   LIGHT POSITIONS
+   -------------------------------------------------------------------------- */
+
+.amb-light-tl { --amb-light-x: -1; --amb-light-y: -1; }
+.amb-light-tr { --amb-light-x: 1; --amb-light-y: -1; }
+.amb-light-bl { --amb-light-x: -1; --amb-light-y: 1; }
+.amb-light-br { --amb-light-x: 1; --amb-light-y: 1; }
+.amb-light-top { --amb-light-x: 0; --amb-light-y: -1; }
+.amb-light-bottom { --amb-light-x: 0; --amb-light-y: 1; }
+.amb-light-left { --amb-light-x: -1; --amb-light-y: 0; }
+.amb-light-right { --amb-light-x: 1; --amb-light-y: 0; }
+
+/* --------------------------------------------------------------------------
+   EMISSIVE (LEDs, Displays)
+   -------------------------------------------------------------------------- */
+
+.amb-emit-red { --amb-emit-color: #ef4444; }
+.amb-emit-green { --amb-emit-color: #4ade80; }
+.amb-emit-amber { --amb-emit-color: #f59e0b; }
+.amb-emit-cyan { --amb-emit-color: #22d3d3; }
+.amb-emit-blue { --amb-emit-color: #3b82f6; }
+.amb-emit-white { --amb-emit-color: #ffffff; }
+
+/* --------------------------------------------------------------------------
+   UTILITY CLASSES
+   -------------------------------------------------------------------------- */
+
+.amb-rounded { border-radius: 4px; }
+.amb-rounded-md { border-radius: 8px; }
+.amb-rounded-lg { border-radius: 12px; }
+.amb-rounded-xl { border-radius: 16px; }
+.amb-rounded-full { border-radius: 9999px; }
+
+.amb-glow {
+  /* Halo radius grounded on the emissive-plate bloom (6.2px = 2 sigma of
+     the measured falloff); the lume color's bright/dark switching is a
+     deliberate design semantic the physical white halo does not gate. */
+  box-shadow: 0 0 6.2px var(--amb-lume);
+}
+
+/* --------------------------------------------------------------------------
+   ANIMATIONS
+   -------------------------------------------------------------------------- */
+
+@keyframes amb-bounce-elevation {
+  0%, 100% { --amb-elevation: 0; }
+  15%      { --amb-elevation: 3; }
+  30%      { --amb-elevation: 0; }
+  42%      { --amb-elevation: 2; }
+  54%      { --amb-elevation: 0; }
+  64%      { --amb-elevation: 1; }
+  74%      { --amb-elevation: 0; }
+}
+
+.amb-bounce {
+  animation: amb-bounce-elevation 2s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   goinfer web UI — AmbientCSS restyle (docs/task-web-ui-ambient.md)
+
+   A light ambient surface: one background colour throughout (decision 1),
+   a single top-left light everywhere (decision 2, and AmbientCSS's own
+   default), inset for what you type into / raised for what the engine
+   produces (decision 3), and runtime stats as first-class chrome, not an
+   afterthought (decision 4). Bright-blue accent, chosen because at the
+   saturation that reads right, orange could not carry white text — blue
+   at #0b6fd4 does (4.95:1), so the send button can be the brightest
+   thing on screen instead of a tinted outline.
+   ========================================================================== */
+/* Consistent light direction, no exceptions (decision 2): AmbientCSS's own
+   :root default is already --amb-light-x:-1 / -y:-1 (top-left), so this
+   pass leaves it untouched rather than re-stating it with .amb-light-tl. */
+:root{
+  --gi-surface:#e9ecf1;
+  --gi-ink:#28303a;
+  /* #69737f darkened toward --gi-ink until it clears WCAG AA for normal
+     text on --gi-surface (4.5:1) — the muted tone the task doc flagged
+     as a contrast risk measured at 4.07:1, just under the line. */
+  --gi-muted:#5c6671;
+  --gi-accent:#0b6fd4;
+  --gi-accent-ink:#fff;
+  --gi-err:#b3261e;
+  --gi-ok:#1e7d43;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --amb-albedo:var(--gi-surface);
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);
+body{margin:0;background:var(--gi-surface);color:var(--gi-ink);
   font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line)}
-h1{font-size:15px;margin:0;font-weight:640;letter-spacing:.01em}
-h1 span{color:var(--dim);font-weight:400}
-nav{display:flex;gap:4px;margin-left:auto}
-button{font:inherit;color:inherit;background:none;border:1px solid transparent;
-  border-radius:7px;padding:5px 11px;cursor:pointer}
-button:hover{background:var(--line)}
-nav button[aria-selected=true]{background:var(--panel);border-color:var(--line);font-weight:560}
-main{max-width:920px;margin:0 auto;padding:20px 18px 40px}
+
+/* One background colour throughout (decision 1) — header and main share
+   the page's own --amb-albedo; nothing here paints a second surface. */
+header{display:flex;align-items:center;gap:16px;padding:14px 20px}
+.brand{font-size:15px;margin:0;font-weight:640;letter-spacing:.01em}
+.stats{display:flex;gap:14px;font-family:var(--mono);font-size:12px;color:var(--gi-muted)}
+.stats b{color:var(--gi-ink);font-weight:600}
+.book-link{margin-left:auto;color:var(--gi-muted);text-decoration:none;font-size:13px}
+.book-link:hover{color:var(--gi-accent)}
+nav{display:flex;gap:6px}
+button{font:inherit;color:inherit;background:none;border:0;
+  border-radius:9px;padding:6px 13px;cursor:pointer}
+nav button.ambient{padding:6px 13px}
+nav button[aria-selected=true]{color:var(--gi-accent);font-weight:600}
+main{max-width:920px;margin:0 auto;padding:16px 20px 44px}
 section[hidden]{display:none}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:14px}
-label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px;letter-spacing:.02em}
-input,select,textarea{font:inherit;width:100%;padding:8px 10px;border:1px solid var(--line);
-  border-radius:7px;background:var(--bg);color:var(--ink)}
-textarea{resize:vertical;min-height:74px}
-input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
-.row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+
+/* Flat neutral panels — the README's own recipe
+   (.ambient .amb-surface .amb-chamfer .amb-elevation-1 .amb-rounded). */
+.card{padding:18px;margin-bottom:16px}
+label{display:block;font-size:12px;color:var(--gi-muted);margin-bottom:6px;letter-spacing:.02em}
+input,select,textarea{font:inherit;width:100%;padding:9px 11px;border:0;
+  border-radius:9px;background:transparent;color:var(--gi-ink)}
+textarea{resize:vertical;min-height:78px}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--gi-accent);outline-offset:1px}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
 .row>*{flex:1;min-width:150px}
 .row>.fit{flex:0 0 auto;min-width:0}
-.go{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:560;padding:8px 16px}
-.go:hover{filter:brightness(1.08);background:var(--accent)}
-.go[disabled]{opacity:.5;cursor:default;filter:none}
-#log{display:flex;flex-direction:column;gap:12px;margin-bottom:16px}
-.msg{padding:11px 13px;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap;word-wrap:break-word}
-.msg.you{background:var(--bg)}
-.msg.bot{background:var(--panel)}
-.who{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+
+/* The send button: raised, elevated ABOVE ordinary panels, and the only
+   accent-coloured surface on screen — the brightest thing here, on
+   purpose (task doc: "a real fix for this style's main accessibility
+   weakness, not a cosmetic one"). */
+.go{--amb-albedo:var(--gi-accent);color:var(--gi-accent-ink);font-weight:600;padding:9px 18px}
+.go[disabled]{opacity:.5;cursor:default}
+#stop{padding:9px 16px}
+
+#log{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
+.msg{padding:12px 14px;white-space:pre-wrap;word-wrap:break-word}
+.who{font-size:11px;color:var(--gi-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.meta{font-family:var(--mono);font-size:11px;color:var(--gi-muted);margin-top:8px}
+
 table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
-th{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-weight:560}
+th,td{text-align:left;padding:8px 9px}
+th{font-size:11px;color:var(--gi-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
 td.f{font-family:var(--mono);font-size:12.5px;word-break:break-all}
-td.n{text-align:right;color:var(--dim);white-space:nowrap}
-.bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin:10px 0 7px}
-.bar>div{height:100%;width:0;background:var(--accent);transition:width .25s}
-.note{font-size:13px;color:var(--dim)}
-.err{color:var(--err)} .ok{color:var(--ok)}
-code{font-family:var(--mono);font-size:12.5px;background:var(--bg);border:1px solid var(--line);
-  border-radius:5px;padding:1px 5px;word-break:break-all}
+td.n{text-align:right;color:var(--gi-muted);white-space:nowrap}
+.bar{height:8px;border-radius:5px;overflow:hidden;margin:11px 0 8px;padding:1px}
+.bar>div{height:100%;width:0;border-radius:4px;background:var(--gi-accent);transition:width .25s}
+.note{font-size:13px;color:var(--gi-muted)}
+.err{color:var(--gi-err)} .ok{color:var(--gi-ok)}
+code{font-family:var(--mono);font-size:12.5px;padding:2px 6px;border-radius:6px}
 </style>
 
-<header>
-  <h1>goinfer <span id="badge"></span></h1>
+<header class="ambient amb-surface amb-elevation-1">
+  <h1 class="brand">goinfer</h1>
+  <div class="stats" id="stats"></div>
+  <a class="book-link" href="https://townsendmerino.github.io/goinfer/" target="_blank" rel="noopener">Book</a>
   <nav>
-    <button id="tab-chat" aria-selected="true">Chat</button>
-    <button id="tab-models" aria-selected="false">Models</button>
+    <button class="ambient amb-surface amb-rounded" id="tab-chat" aria-selected="true">Chat</button>
+    <button class="ambient amb-surface amb-rounded" id="tab-models" aria-selected="false">Models</button>
   </nav>
 </header>
 
 <main>
 <section id="pane-chat">
-  <div class="card">
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded">
     <div class="row">
       <div><label for="model">Model</label><select id="model"></select></div>
       <div class="fit" style="flex:0 0 110px"><label for="temp">Temperature</label>
@@ -75,38 +1544,38 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--bg);border:1px so
     </div>
   </div>
   <div id="log"></div>
-  <div class="card">
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded">
     <label for="prompt">Message</label>
-    <textarea id="prompt" placeholder="Ask something…  (Ctrl/Cmd+Enter to send)"></textarea>
-    <div class="row" style="margin-top:10px">
+    <textarea id="prompt" class="ambient amb-surface-concave amb-rounded" placeholder="Ask something…  (Ctrl/Cmd+Enter to send)"></textarea>
+    <div class="row" style="margin-top:12px">
       <div class="note" id="chat-status"></div>
-      <div class="fit"><button id="stop" hidden>Stop</button>
-      <button class="go" id="send">Send</button></div>
+      <div class="fit"><button class="ambient amb-surface amb-rounded" id="stop" hidden>Stop</button>
+      <button class="ambient amb-surface-convex amb-elevation-2 amb-rounded go" id="send">Send</button></div>
     </div>
   </div>
 </section>
 
 <section id="pane-models" hidden>
-  <div class="card">
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded">
     <label for="repo">HuggingFace GGUF repo</label>
     <div class="row">
-      <input id="repo" placeholder="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF" spellcheck="false">
-      <div class="fit"><button class="go" id="list">List files</button></div>
+      <input id="repo" class="ambient amb-surface-concave amb-rounded" placeholder="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF" spellcheck="false">
+      <div class="fit"><button class="ambient amb-surface-convex amb-elevation-1 amb-rounded go" id="list">List files</button></div>
     </div>
     <p class="note" style="margin:10px 0 0">Anonymous only. Gated repos are detected before
     the download starts — a community GGUF re-upload is usually ungated.</p>
   </div>
-  <div class="card" id="files-card" hidden>
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded" id="files-card" hidden>
     <div id="files"></div>
   </div>
-  <div class="card" id="pull-card" hidden>
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded" id="pull-card" hidden>
     <div id="pull-what" class="note"></div>
-    <div class="bar"><div id="bar"></div></div>
+    <div class="bar ambient amb-surface-concave amb-rounded"><div id="bar"></div></div>
     <div id="pull-status" class="note"></div>
   </div>
-  <div class="card">
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded">
     <label>Server API key <span class="note">— only needed if the server was started with -api-key</span></label>
-    <input id="key" type="password" placeholder="(none)" autocomplete="off">
+    <input id="key" class="ambient amb-surface-concave amb-rounded" type="password" placeholder="(none)" autocomplete="off">
     <p class="note" style="margin:8px 0 0">Kept in this tab only (sessionStorage); cleared when the tab closes.</p>
   </div>
 </section>
@@ -138,6 +1607,8 @@ $("tab-chat").onclick = () => tab("chat");
 $("tab-models").onclick = () => tab("models");
 
 // --- models -----------------------------------------------------------------
+// Runtime stats as first-class chrome (decision 4): model, and whatever the
+// server's own decode_path names, in the header — not buried in a status line.
 async function loadModels() {
   try {
     const r = await fetch("/v1/models", {headers: headers()});
@@ -151,10 +1622,22 @@ async function loadModels() {
       sel.appendChild(o);
     }
     const n = (j.data || []).length;
-    $("badge").textContent = n ? "— " + n + " model" + (n > 1 ? "s" : "") + " loaded" : "— no model loaded";
-    if (n && j.data[0].decode_path) $("badge").textContent += " · " + j.data[0].decode_path;
+    const stats = $("stats");
+    stats.textContent = "";
+    if (!n) {
+      stats.textContent = "no model loaded";
+    } else {
+      const add = (label, val) => {
+        const s = document.createElement("span");
+        const b = document.createElement("b"); b.textContent = val;
+        s.appendChild(document.createTextNode(label + " ")); s.appendChild(b);
+        stats.appendChild(s);
+      };
+      add("model", j.data[0].id);
+      if (j.data[0].decode_path) add("path", j.data[0].decode_path);
+    }
   } catch (e) {
-    $("badge").textContent = "— " + e.message;
+    $("stats").textContent = e.message;
   }
 }
 loadModels();
@@ -165,7 +1648,7 @@ let ac = null;
 
 function bubble(who, cls) {
   const d = document.createElement("div");
-  d.className = "msg " + cls;
+  d.className = "msg ambient amb-rounded " + cls;
   const h = document.createElement("div");
   h.className = "who"; h.textContent = who;
   const b = document.createElement("div");
@@ -181,10 +1664,13 @@ async function send() {
   const model = $("model").value;
   if (!model) { $("chat-status").textContent = "no model loaded"; return; }
 
-  bubble("you", "you").textContent = text;
+  // What you type is recessed (amb-surface-concave, decision 3); the echo of
+  // it in the log is a quieter flat surface — neither is the "product".
+  bubble("you", "you amb-surface").textContent = text;
   history.push({role: "user", content: text});
   $("prompt").value = "";
-  const out = bubble(model, "bot");
+  // What the engine produces sits proud (amb-surface-convex, decision 3).
+  const out = bubble(model, "bot amb-surface-convex amb-elevation-1");
   $("send").disabled = true; $("stop").hidden = false;
   $("chat-status").textContent = "generating…";
 
@@ -209,10 +1695,18 @@ async function send() {
     }
     history.push({role: "assistant", content: acc});
     const s = (performance.now() - started) / 1000;
-    $("chat-status").textContent = got ? got + " tokens · " + (got / s).toFixed(1) + " tok/s" : "no output";
+    // Per-response stats live WITH the response, not in a status line that
+    // the next turn overwrites (decision 4).
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = got
+      ? got + " tok · " + (got / s).toFixed(1) + " tok/s · " + s.toFixed(1) + "s"
+      : "no output";
+    out.parentElement.appendChild(meta);
+    $("chat-status").textContent = "";
   } catch (e) {
     if (e.name === "AbortError") { $("chat-status").textContent = "stopped"; history.push({role: "assistant", content: acc}); }
-    else { out.textContent = String(e.message || e); out.className = "err"; $("chat-status").textContent = ""; }
+    else { out.textContent = String(e.message || e); out.parentElement.classList.add("err"); $("chat-status").textContent = ""; }
   } finally {
     ac = null; $("send").disabled = false; $("stop").hidden = true;
   }
@@ -258,7 +1752,7 @@ $("list").onclick = async () => {
     if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
     renderFiles(repo, j.files || []);
   } catch (e) {
-    $("files").textContent = ""; 
+    $("files").textContent = "";
     const p = document.createElement("p"); p.className = "err"; p.textContent = String(e.message || e);
     $("files").appendChild(p);
   } finally { $("list").disabled = false; }
@@ -276,7 +1770,7 @@ function renderFiles(repo, files) {
     const a = document.createElement("td"); a.className = "f"; a.textContent = f.path;
     const b = document.createElement("td"); b.className = "n"; b.textContent = f.human;
     const c = document.createElement("td"); c.className = "n";
-    const btn = document.createElement("button"); btn.className = "go"; btn.textContent = "Pull";
+    const btn = document.createElement("button"); btn.className = "ambient amb-surface-convex amb-elevation-1 amb-rounded go"; btn.textContent = "Pull";
     btn.onclick = () => pull(repo, f.path);
     c.appendChild(btn);
     tr.appendChild(a); tr.appendChild(b); tr.appendChild(c);

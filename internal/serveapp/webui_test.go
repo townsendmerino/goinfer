@@ -48,17 +48,45 @@ func TestWebUI_rejectsBadRepo(t *testing.T) {
 }
 
 // TestWebUI_pageIsSelfContained guards the offline property: the UI of an engine that runs
-// offline must not need the network to render. A CDN <script>/<link> would break that
+// offline must not need the network to RENDER. A CDN <script>/<link> would break that
 // silently — the page would still look fine on the machine that added it.
+//
+// This does NOT forbid an <a href="https://…"> — an out-bound link the user may click (the
+// AmbientCSS restyle, docs/task-web-ui-ambient.md, added one to the published book) does not
+// cost the page anything at render time; only an asset the page's own load depends on does.
+// A blanket "no http(s):// substring anywhere" check would have banned that link too, which is
+// a different property than the one this test is for.
 func TestWebUI_pageIsSelfContained(t *testing.T) {
 	page := string(webUIPage)
 	if len(page) == 0 {
 		t.Fatal("embedded page is empty")
 	}
-	for _, bad := range []string{"http://", "https://", "//cdn", "<link rel=\"stylesheet\" href", "integrity="} {
+	for _, bad := range []string{
+		"<script src=\"http", "<script src='http",
+		"<link rel=\"stylesheet\" href", "//cdn", "integrity=",
+	} {
 		if strings.Contains(page, bad) {
 			t.Errorf("embedded page references %q — it must be fully self-contained (no external assets)", bad)
 		}
+	}
+	// The two allowed external references, neither a render-time asset: an out-bound link to
+	// the book, and a plain-text attribution comment naming the vendored CSS's source (never
+	// fetched — browsers strip CSS comments). Both pinned exactly rather than left as
+	// "anything goes" — a DIFFERENT http(s) reference slipping in later (a tracking pixel, a
+	// font @import, a fetch to an analytics host) is still exactly the kind of silent
+	// offline-break this test exists to catch.
+	bookLink := `<a class="book-link" href="https://townsendmerino.github.io/goinfer/" target="_blank" rel="noopener">`
+	if !strings.Contains(page, bookLink) {
+		t.Errorf("embedded page's book link is missing or no longer matches the pinned shape: want %q", bookLink)
+	}
+	attribution := "https://github.com/kikkupico/ambientcss"
+	if !strings.Contains(page, attribution) {
+		t.Errorf("embedded page's AmbientCSS attribution comment is missing: want %q", attribution)
+	}
+	if n := strings.Count(page, "http://") + strings.Count(page, "https://"); n != 2 {
+		t.Errorf("embedded page has %d http(s):// reference(s), want exactly 2 (the book link, the "+
+			"AmbientCSS attribution comment) — a new one needs the SAME scrutiny those two already "+
+			"got, not a free pass", n)
 	}
 	// And it must actually be the UI, so this test cannot pass on an empty/placeholder file.
 	for _, want := range []string{"/v1/chat/completions", "/web/models/pull", "<title>goinfer</title>"} {
