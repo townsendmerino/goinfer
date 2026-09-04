@@ -177,7 +177,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			"type": "response.completed", "response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp),
 		})
 		sseDone(ss)
-		s.maybeStore(store, id, lm.name, messages, sb.String())
+		s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
 		return
 	}
 
@@ -189,7 +189,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
 	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp))
-	s.maybeStore(store, id, lm.name, messages, sb.String())
+	s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
 }
 
 // respondTools generates a (buffered) tool-calling response and emits
@@ -253,6 +253,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
 
 	var out []any
+	var toolCalls []apiToolCall // V-18 (docs/review-2026-09-04.md): stored for previous_response_id continuity below
 	if lead != "" {
 		out = append(out, outputMessage(id+"-msg", lead))
 	}
@@ -265,6 +266,10 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 			"type": "function_call", "id": fmt.Sprintf("%s-fc%d", id, i),
 			"call_id": callID, "name": c.Name, "arguments": string(c.Arguments), "status": "completed",
 		})
+		tc := apiToolCall{ID: callID, Type: "function"}
+		tc.Function.Name = c.Name
+		tc.Function.Arguments = string(c.Arguments)
+		toolCalls = append(toolCalls, tc)
 	}
 	if len(out) == 0 { // model produced nothing parseable → empty message
 		out = append(out, outputMessage(id+"-msg", sb.String()))
@@ -280,15 +285,29 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeJSON(w, http.StatusOK, resp)
 	}
 	// Tool-call continuations round-trip via the next request's input; store the
-	// assistant text (the lead, if any) for previous_response_id continuity.
-	s.maybeStore(store, id, lm.name, messages, lead)
+	// assistant text (the lead, if any) AND the tool calls for previous_response_id continuity.
+	s.maybeStore(store, id, lm.name, messages, lead, toolCalls)
 }
 
-func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assistant string) {
+// maybeStore records this turn's assistant output for a later previous_response_id
+// continuation — serveResponsesWith appends prior.messages VERBATIM onto the next request's
+// input, so whatever is missing here is missing from every stateful continuation.
+//
+// V-18 (docs/review-2026-09-04.md): toolCalls used to be dropped — only the lead text (often
+// empty, when the model went straight into a tool call) was stored. M-18's fix taught the DECODE
+// side to turn a resent function_call/function_call_output pair back into ToolCalls/a tool turn,
+// but that only helps a STATELESS caller that resends the whole conversation itself. The SDK
+// DEFAULT is previous_response_id (stateful): the client sends only the new
+// function_call_output, and the server is expected to have kept the matching function_call from
+// its own prior turn. Without ToolCalls here, that turn reconstructs as user → assistant("") →
+// tool(result) — a tool result answering a call that, as far as the stored conversation shows,
+// was never made.
+func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assistant string, toolCalls []apiToolCall) {
 	if !store || s.responses == nil {
 		return
 	}
-	full := append(append([]chatMessage(nil), messages...), chatMessage{Role: "assistant", Content: rawStr(assistant)})
+	full := append(append([]chatMessage(nil), messages...),
+		chatMessage{Role: "assistant", Content: rawStr(assistant), ToolCalls: toolCalls})
 	s.responses.put(id, &responseEntry{model: model, messages: full})
 }
 

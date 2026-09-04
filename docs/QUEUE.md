@@ -1360,8 +1360,8 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:932` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:139` | goinfer | `ids, err := lm.chatPrompt(messages)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:236` | goinfer | `var stopBeat func()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:282` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:299` | goinfer | `func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:287` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:318` | goinfer | `func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:94` | goinfer | `if req.PreviousResponseID != "" {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses_test.go:133` | goinfer | `// 4. Tool round-trip: forced function call → a function_call output item.` |
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:136` | goinfer | `func (l *sessionLRU) acquire(prompt []int) *decoder.Session {` |
@@ -1575,7 +1575,9 @@ supports.
 | `docs/review-2026-09-04.md|internal/serveapp/main.go:538` | goinfer | `anchor: func Main() {` |
 | `docs/review-2026-09-04.md|internal/serveapp/main.go:546` | goinfer | `mux.HandleFunc("GET /{$}", srv.handleWebUI)` |
 | `docs/review-2026-09-04.md|internal/serveapp/openai.go:103` | goinfer | `lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)` |
-| `docs/review-2026-09-04.md|internal/serveapp/responses.go:282` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
+| `docs/review-2026-09-04.md|internal/serveapp/responses.go:272` | goinfer | `toolCalls = append(toolCalls, tc)` |
+| `docs/review-2026-09-04.md|internal/serveapp/responses.go:287` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
+| `docs/review-2026-09-04.md|internal/serveapp/responses.go:305` | goinfer | `func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assist` |
 | `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:211` | goinfer | `if strings.Contains(cb, "sseSend(") \|\| strings.Contains(cb, "sseEvent(") \|\|` |
 | `docs/review-2026-09-04.md|internal/serveapp/vision_serve.go:81` | goinfer | `func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, erro` |
 | `docs/review-2026-09-04.md|internal/serveapp/webui.go:114` | goinfer | `func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {` |
