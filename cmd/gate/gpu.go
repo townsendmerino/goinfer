@@ -361,6 +361,12 @@ func detectBackend() string {
 
 var adapterProbeRe = regexp.MustCompile(`ADAPTER_PROBE: backend=(\S+) software=(\S+)`)
 
+// adapterProbeNoneRe matches TestAdapterProbe's OWN explicit "no adapter" line
+// (gpu/adapter_probe_test.go: `fmt.Printf("ADAPTER_PROBE: none (%v)\n", err)`) — the genuine,
+// the-test-ran-and-found-nothing case, as opposed to the probe subprocess never reaching that
+// line at all (see detectWebGPU).
+var adapterProbeNoneRe = regexp.MustCompile(`ADAPTER_PROBE: none`)
+
 // detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/adapter_probe_test.go's
 // TestAdapterProbe) — cmd/gate stays free of the gpu build tag and its cgo dependency, matching
 // detectBackend's nvidia-smi/uname style. Independent of detectBackend's cuda|metal|none choice on
@@ -370,16 +376,45 @@ var adapterProbeRe = regexp.MustCompile(`ADAPTER_PROBE: backend=(\S+) software=(
 // env var. A software adapter (CI's lavapipe/llvmpipe) still counts as present: the group's own
 // tests already skip hardware-sensitive cases on one (newOrSkipHW), the same way a heavy tier's
 // tests self-skip on a missing checkpoint rather than the gate deciding for them.
-func detectWebGPU() (present bool, backend string) {
+//
+// V-21 (docs/review-2026-09-04.md): the subprocess's error was discarded and a REGEX MISS on the
+// success line was read as "no adapter" regardless of WHY it missed — a genuine "TestAdapterProbe
+// ran and found nothing" (which prints its OWN "ADAPTER_PROBE: none" line) looked identical to a
+// build break of ./gpu/, a panic, or any other reason the subprocess never reached that line at
+// all. An operator debugging "why didn't WebGPU get detected" saw "no adapter" and had no way to
+// tell a driver/hardware question from a build failure. w gets a visible note when the probe's
+// own output shows NEITHER recognized line — present/backend still resolve to false/"" either
+// way, because there is genuinely nothing to report as detected, but now it says so instead of
+// looking exactly like the hardware case.
+func detectWebGPU(w io.Writer) (present bool, backend string) {
 	if os.Getenv("GOINFER_GATE_SKIP_WEBGPU") != "" {
 		return false, ""
 	}
-	out, _ := exec.Command("go", "test", "-tags", "gpu", "./gpu/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
-	m := adapterProbeRe.FindStringSubmatch(string(out))
-	if m == nil {
-		return false, ""
+	out, err := exec.Command("go", "test", "-tags", "gpu", "./gpu/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
+	present, backend, note := classifyAdapterProbe(out, err)
+	if note != "" {
+		fmt.Fprint(w, note)
 	}
-	return true, m[1]
+	return present, backend
+}
+
+// classifyAdapterProbe is detectWebGPU's pure classification of the probe subprocess's captured
+// output, pulled out so a test can drive it with synthetic output instead of needing a real
+// build break to reproduce (V-21, docs/review-2026-09-04.md). note is non-empty exactly when
+// out shows NEITHER the found-adapter line nor TestAdapterProbe's own explicit no-adapter line —
+// meaning the subprocess never reached either print, which is what a build break, a panic, or
+// any other reason the test body never ran looks like, as opposed to the test genuinely running
+// and finding nothing.
+func classifyAdapterProbe(out []byte, err error) (present bool, backend, note string) {
+	if m := adapterProbeRe.FindStringSubmatch(string(out)); m != nil {
+		return true, m[1], ""
+	}
+	if adapterProbeNoneRe.Match(out) {
+		return false, "", ""
+	}
+	return false, "", fmt.Sprintf("note: WebGPU adapter probe produced neither a found-adapter nor "+
+		"an explicit no-adapter line — the subprocess likely failed to build or run (err=%v), not "+
+		"\"no hardware\"; treating as no adapter present but this is NOT the same finding (V-21).\n", err)
 }
 
 func runGPU(w io.Writer, logDir string) int {
@@ -416,7 +451,7 @@ func runGPU(w io.Writer, logDir string) int {
 	// case of the primary-backend switch above. ALWAYS in g.expect (every branch, just added), so a
 	// box with no adapter reads as an explicit SKIP (below) rather than a silent omission — the same
 	// visibility the "no GPU backend" default case already gives the primary suites.
-	hasWebGPU, wgBackend := detectWebGPU()
+	hasWebGPU, wgBackend := detectWebGPU(w)
 
 	prov := gatherProvenance(nil)
 	g.commit, g.dirty = prov.Commit, prov.Dirty
@@ -1164,8 +1199,14 @@ func (g *gpuGate) metalPrefill() {
 		// GOINFER_HEAVY_TESTS for the same reason as metal-lifecycle above (G-01).
 		Env: map[string]string{"GOINFER_METAL_MODEL": m, "GOINFER_HEAVY_TESTS": "1"},
 	}, false)
-	if cr.RC != 0 {
-		g.bad("prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model")
+	// V-21 (docs/review-2026-09-04.md): the sibling cells above (metal-parity, metal-lifecycle)
+	// already check cr.vacuous() alongside cr.RC != 0 — a cell whose named tests ALL skipped
+	// (Pass==0 && Fail==0 && Skip>0, e.g. TestPrefillParity/TestPrefillNoNaN both declining for a
+	// reason unrelated to "the gate needs a checkpoint," which os.Stat above already handles) has
+	// RC==0 and would otherwise print PASS despite verifying nothing. This one lacked the check.
+	if cr.RC != 0 || cr.vacuous() {
+		g.bad("prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model, " +
+			"or every test in it skipped and verified nothing")
 		g.detail(out, regexp.MustCompile(`^--- FAIL|parity FAIL|contain NaN|\.go:[0-9]+:`))
 		return
 	}

@@ -916,25 +916,25 @@ supports.
 | `docs/audit-2026-09-02.md|chat/tools.go:56` | goinfer | `func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segm` |
 | `docs/audit-2026-09-02.md|chat/tools_test.go:100` | goinfer | `// TestGemma4_declaration_byteExact pins the Gemma 4 declaration micro-language` |
 | `docs/audit-2026-09-02.md|cmd/gate/configs.go:34` | goinfer | `Env: map[string]string{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1015` | goinfer | `func (g *gpuGate) metalSuite() {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1029` | goinfer | `func (g *gpuGate) metalCgoFree() {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1111` | goinfer | `func (g *gpuGate) metalModel() string {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1127` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1161` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1253` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1050` | goinfer | `func (g *gpuGate) metalSuite() {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1064` | goinfer | `func (g *gpuGate) metalCgoFree() {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1146` | goinfer | `func (g *gpuGate) metalModel() string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1162` | goinfer | `_, cr, out := g.run(cell{` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1196` | goinfer | `_, cr, out := g.run(cell{` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:1294` | goinfer | `lint := exec.Command("python3", "scripts/queue_citation_lint.py")` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:219` | goinfer | `func (g *gpuGate) noteIfEmpty(c cell, res *results) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:349` | goinfer | `func detectBackend() string {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:397` | goinfer | `for _, v := range []string{"GOINFER_HEAVY_TESTS", "GOINFER_DRAIN_GROUP"} {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:406` | goinfer | `switch g.backend {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:409` | goinfer | `case "metal":` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:456` | goinfer | `switch g.backend {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:543` | goinfer | `// The header used to read "CUDA kernels + parity" while running NEITHER the resident pa` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:544` | goinfer | `// NOR anything that asserts a forward. Every resident parity gate is behind `goinfer_te` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:578` | goinfer | `// ---- 2b. resident PARITY gates — the forward is asserted here ----` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:692` | goinfer | `Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:793` | goinfer | `bin := filepath.Join(os.TempDir(), "gpu_gate_serve")` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:864` | goinfer | `if v := os.Getenv("GOINFER_NVRTC_DIRS"); v != "" {` |
-| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:938` | goinfer | `ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:432` | goinfer | `for _, v := range []string{"GOINFER_HEAVY_TESTS", "GOINFER_DRAIN_GROUP"} {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:441` | goinfer | `switch g.backend {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:444` | goinfer | `case "metal":` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:491` | goinfer | `switch g.backend {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:578` | goinfer | `// The header used to read "CUDA kernels + parity" while running NEITHER the resident pa` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:579` | goinfer | `// NOR anything that asserts a forward. Every resident parity gate is behind `goinfer_te` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:613` | goinfer | `// ---- 2b. resident PARITY gates — the forward is asserted here ----` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:727` | goinfer | `Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:828` | goinfer | `bin := filepath.Join(os.TempDir(), "gpu_gate_serve")` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:899` | goinfer | `if v := os.Getenv("GOINFER_NVRTC_DIRS"); v != "" {` |
+| `docs/audit-2026-09-02.md|cmd/gate/gpu.go:973` | goinfer | `ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:158` | goinfer | `// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:19` | goinfer | `// THIS IS A CHECKSET, NOT A TALLY, and that is the whole reason it needs its own decisi` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:283` | goinfer | `cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure` |
@@ -1524,7 +1524,7 @@ supports.
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:286` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
 | `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:381` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
-| `docs/queue-engineering.md|cmd/gate/gpu.go:388` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
+| `docs/queue-engineering.md|cmd/gate/gpu.go:423` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:1175` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:290` | goinfer | `defer func() {` |
@@ -1543,10 +1543,10 @@ supports.
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1061` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:471` | goinfer | `def gate_cell_idle():` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1089` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1168` | goinfer | `g.bad("prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model")` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1206` | goinfer | `// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:373` | goinfer | `func detectWebGPU() (present bool, backend string) {` |
+| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1124` | goinfer | `_, cr, out := g.run(cell{` |
+| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1207` | goinfer | `if cr.RC != 0 \|\| cr.vacuous() {` |
+| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1247` | goinfer | `// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture` |
+| `docs/review-2026-09-04.md|cmd/gate/gpu.go:408` | goinfer | `func classifyAdapterProbe(out []byte, err error) (present bool, backend, note string) {` |
 | `docs/review-2026-09-04.md|cmd/gate/run.go:218` | goinfer | `func (r *results) tally(cellName string, topOnly bool) cellResult {` |
 | `docs/review-2026-09-04.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
 | `docs/review-2026-09-04.md|constrain/reflect.go:78` | goinfer | `// V-14 (docs/review-2026-09-04.md): an anonymous field's reflect name IS its type` |
@@ -1569,6 +1569,7 @@ supports.
 | `docs/review-2026-09-04.md|gpu/layer.go:160` | goinfer | `keep = append(keep, newDeviceBuffer(xn, H))` |
 | `docs/review-2026-09-04.md|gpu/qwen35_resident_parity_test.go:29` | goinfer | `func TestQwen35ResidentParity(t *testing.T) {` |
 | `docs/review-2026-09-04.md|internal/prequant/prequant.go:91` | goinfer | `tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"` |
+| `docs/review-2026-09-04.md|internal/serveapp/decoder_embedder.go:253` | goinfer | `func truncateForContext(ids []int, maxTokens, appendID int) []int {` |
 | `docs/review-2026-09-04.md|internal/serveapp/helpers.go:103` | goinfer | `func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {` |
 | `docs/review-2026-09-04.md|internal/serveapp/limits_test.go:187` | goinfer | `func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {` |
 | `docs/review-2026-09-04.md|internal/serveapp/main.go:457` | goinfer | `if !addrIsLoopback(*addr) && authKey == "" {` |
@@ -1578,7 +1579,8 @@ supports.
 | `docs/review-2026-09-04.md|internal/serveapp/responses.go:272` | goinfer | `toolCalls = append(toolCalls, tc)` |
 | `docs/review-2026-09-04.md|internal/serveapp/responses.go:287` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
 | `docs/review-2026-09-04.md|internal/serveapp/responses.go:305` | goinfer | `func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assist` |
-| `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:211` | goinfer | `if strings.Contains(cb, "sseSend(") \|\| strings.Contains(cb, "sseEvent(") \|\|` |
+| `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:211` | goinfer | `if unconditionalStreamCall(cb) {` |
+| `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:276` | goinfer | `func unconditionalStreamCall(cb string) bool {` |
 | `docs/review-2026-09-04.md|internal/serveapp/vision_serve.go:81` | goinfer | `func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, erro` |
 | `docs/review-2026-09-04.md|internal/serveapp/webui.go:139` | goinfer | `func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {` |
 | `docs/review-2026-09-04.md|internal/serveapp/webui.go:74` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |

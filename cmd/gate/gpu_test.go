@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -341,5 +342,92 @@ func TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged(t *testing.T) {
 	g.noteIfEmpty(cell{Name: "phantom", Run: "TestGone"}, newResults())
 	if len(g.emptyCells) != 1 {
 		t.Errorf("a filtered cell with no results must be flagged, got %v", g.emptyCells)
+	}
+}
+
+// TestGPU_metalPrefillCellChecksVacuous pins V-21 (docs/review-2026-09-04.md): the sibling
+// cells (metal-parity, metal-lifecycle) already gate on `cr.RC != 0 || cr.vacuous()`, but
+// metal-prefill checked only cr.RC != 0 — a cell whose named tests (TestPrefillParity,
+// TestPrefillNoNaN) all skipped for a reason unrelated to the os.Stat guard above it would have
+// RC==0 and print PASS despite verifying nothing. Source-text guard rather than driving the real
+// cell (which shells out to `go test` against a Metal checkpoint): the fix is a one-line addition
+// to an existing condition, and what needs pinning is that the addition stays, not the mechanics
+// of vacuous() itself (already exercised by the sibling cells' identical shape).
+func TestGPU_metalPrefillCellChecksVacuous(t *testing.T) {
+	src, err := os.ReadFile("gpu.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	i := strings.Index(body, `Name: "metal-prefill"`)
+	if i < 0 {
+		t.Fatal("metal-prefill cell not found — this guard is watching nothing")
+	}
+	j := strings.Index(body[i:], "\n}\n")
+	if j < 0 {
+		j = len(body) - i
+	}
+	block := body[i : i+j]
+	// Comment lines are not the check — only look at actual code, or a stray comment mentioning
+	// cr.vacuous() near removed code would fool this the same way a doc comment fooled the audit's
+	// own G-07 finding.
+	found := false
+	for _, line := range strings.Split(block, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		if strings.Contains(line, "cr.vacuous()") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("metal-prefill's failure check lost cr.vacuous() — an all-skip run of " +
+			"TestPrefillParity/TestPrefillNoNaN would print PASS having verified nothing (V-21)")
+	}
+}
+
+// TestClassifyAdapterProbe_distinguishesNoAdapterFromProbeFailure pins the other half of V-21:
+// a regex miss on the found-adapter line used to mean "no adapter" regardless of WHY it missed —
+// a genuine "TestAdapterProbe ran and found nothing" (which prints its own explicit
+// "ADAPTER_PROBE: none" line) looked identical to a build break of ./gpu/, a panic, or anything
+// else that kept the subprocess from ever reaching either print.
+func TestClassifyAdapterProbe_distinguishesNoAdapterFromProbeFailure(t *testing.T) {
+	for name, tc := range map[string]struct {
+		out          string
+		wantPresent  bool
+		wantBackend  string
+		wantNoteText string // "" = no note expected
+	}{
+		"found an adapter": {
+			out:         "=== RUN   TestAdapterProbe\nADAPTER_PROBE: backend=vulkan software=false\n--- PASS: TestAdapterProbe (0.01s)\n",
+			wantPresent: true, wantBackend: "vulkan",
+		},
+		"genuinely no adapter (the test ran and said so)": {
+			out:          "=== RUN   TestAdapterProbe\nADAPTER_PROBE: none (no adapter found)\n--- SKIP: TestAdapterProbe (0.00s)\n",
+			wantPresent:  false,
+			wantNoteText: "", // no note — this IS the hardware case
+		},
+		"build break (V-21): neither line ever printed": {
+			out:          "# github.com/townsendmerino/goinfer/gpu\ngpu/adapter_probe_test.go:9:2: undefined: someSymbol\nFAIL\tgithub.com/townsendmerino/goinfer/gpu [build failed]\n",
+			wantPresent:  false,
+			wantNoteText: "not \"no hardware\"",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			present, backend, note := classifyAdapterProbe([]byte(tc.out), nil)
+			if present != tc.wantPresent {
+				t.Errorf("present = %v, want %v", present, tc.wantPresent)
+			}
+			if backend != tc.wantBackend {
+				t.Errorf("backend = %q, want %q", backend, tc.wantBackend)
+			}
+			if tc.wantNoteText == "" && note != "" {
+				t.Errorf("unexpected note for %q: %q", name, note)
+			}
+			if tc.wantNoteText != "" && !strings.Contains(note, tc.wantNoteText) {
+				t.Errorf("note = %q, want it to contain %q (V-21)", note, tc.wantNoteText)
+			}
+		})
 	}
 }

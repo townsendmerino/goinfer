@@ -193,16 +193,10 @@ func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
 	if e.maxTokens == 0 {
 		t.Fatal("premise broke: maxTokens 0 is the unbounded state this test is about")
 	}
-	// tokenize() needs a tokenizer; the truncation arithmetic is what matters and is exercised
-	// directly, since a real BPE would only obscure the boundary.
-	ids := make([]int, window*4)
-	room := e.maxTokens
-	if e.appendID >= 0 {
-		room--
-	}
-	if room > 0 && len(ids) > room {
-		ids = ids[:room]
-	}
+	// truncateForContext is the EXACT function tokenize() calls (V-21, docs/review-2026-09-04.md):
+	// this used to re-derive the room--/ids[:room] arithmetic beside it instead of calling it, so
+	// a bug in the real code — not a paraphrase of it — would have passed this test unnoticed.
+	ids := truncateForContext(make([]int, window*4), e.maxTokens, e.appendID)
 	if len(ids) != window {
 		t.Fatalf("truncated to %d, want %d", len(ids), window)
 	}
@@ -210,14 +204,7 @@ func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {
 	// With an appended pooling token, the slot must be RESERVED — the appended token has to stay
 	// last because it is the pooled position, so truncation must not be what drops it.
 	e2 := &decoderEmbedder{maxTokens: window, appendID: 7}
-	ids2 := make([]int, window*4)
-	room2 := e2.maxTokens
-	if e2.appendID >= 0 {
-		room2--
-	}
-	if room2 > 0 && len(ids2) > room2 {
-		ids2 = ids2[:room2]
-	}
+	ids2 := truncateForContext(make([]int, window*4), e2.maxTokens, e2.appendID)
 	ids2 = append(ids2, e2.appendID)
 	if len(ids2) != window {
 		t.Errorf("with an appended token the total is %d, want %d", len(ids2), window)

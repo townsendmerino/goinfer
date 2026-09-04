@@ -237,19 +237,29 @@ func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {
 		// would look like a legitimate embedding.
 		return nil, fmt.Errorf("decoder embedder: input tokenized to zero tokens (empty input?)")
 	}
-	// Truncate BEFORE appending, reserving the slot, so the appended token is never the thing
-	// truncation drops — it must stay last, because it is the pooled position.
-	if e.maxTokens > 0 {
-		room := e.maxTokens
-		if e.appendID >= 0 {
-			room--
-		}
-		if room > 0 && len(ids) > room {
-			ids = ids[:room]
-		}
-	}
+	ids = truncateForContext(ids, e.maxTokens, e.appendID)
 	if e.appendID >= 0 {
 		ids = append(ids, e.appendID)
 	}
 	return ids, nil
+}
+
+// truncateForContext is tokenize's C-07 truncation arithmetic, pulled out so a test can call the
+// SAME code the request path runs instead of re-deriving it beside it (V-21,
+// docs/review-2026-09-04.md: the old test re-implemented room--/ids[:room], so a bug in tokenize's
+// own arithmetic — not this function's, since it didn't exist yet — would have passed unnoticed).
+// Truncates BEFORE the caller appends appendID, reserving its slot, so the appended token is
+// never the thing truncation drops — it must stay last, because it is the pooled position.
+func truncateForContext(ids []int, maxTokens, appendID int) []int {
+	if maxTokens <= 0 {
+		return ids
+	}
+	room := maxTokens
+	if appendID >= 0 {
+		room--
+	}
+	if room > 0 && len(ids) > room {
+		ids = ids[:room]
+	}
+	return ids
 }

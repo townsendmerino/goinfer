@@ -208,8 +208,7 @@ func TestSSE_everyBufferedStreamSiteHeartbeats(t *testing.T) {
 			if cb == "" {
 				continue // not the literal-callback shape this classifier understands
 			}
-			if strings.Contains(cb, "sseSend(") || strings.Contains(cb, "sseEvent(") ||
-				strings.Contains(cb, "anthropicEvent(") || strings.Contains(cb, "ss.frame(") {
+			if unconditionalStreamCall(cb) {
 				continue // streams as it generates: the client hears from it either way
 			}
 			buffered = append(buffered, f+":"+name)
@@ -257,4 +256,41 @@ func driveCallback(body string) string {
 		}
 	}
 	return ""
+}
+
+// unconditionalStreamCall reports whether cb — a driveCallback result — calls one of the
+// per-token streaming sends AT THE CALLBACK'S OWN TOP LEVEL, i.e. on every invocation, not
+// merely somewhere inside it behind a conditional.
+//
+// V-21 (docs/review-2026-09-04.md): a plain strings.Contains(cb, "sseSend(") used to exempt a
+// call site the moment the literal substring appeared anywhere in the callback — including
+// inside an `if` that is frequently false. serveChatToolsWith's callback is exactly that shape:
+// sb.WriteString(t); if prose == nil { return }; if out := prose.Push(t); out != "" {
+// sseSend(...) } — sseSend is reachable only for incremental families, and even then only once
+// prose.Push has enough content to flush, so most tokens (and the whole non-incremental family
+// case) hit NEITHER branch. The old check still saw the substring and skipped the site entirely,
+// so it never even looked for sseHeartbeat(...) in the enclosing function — dropping that
+// heartbeat would have failed nothing. This walks brace depth relative to the callback's own `{`
+// (depth 1 = the callback's own top level) and only counts a marker call found there, exactly as
+// driveCallback already walks depth to find the callback's closing brace.
+func unconditionalStreamCall(cb string) bool {
+	markers := []string{"sseSend(", "sseEvent(", "anthropicEvent(", "ss.frame("}
+	depth := 0
+	for i := 0; i < len(cb); i++ {
+		switch cb[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		}
+		if depth != 1 {
+			continue
+		}
+		for _, m := range markers {
+			if strings.HasPrefix(cb[i:], m) {
+				return true
+			}
+		}
+	}
+	return false
 }
