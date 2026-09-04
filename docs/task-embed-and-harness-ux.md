@@ -132,7 +132,7 @@ now with a reason to exist beyond release hygiene.
 | tool calls that round-trip | M-18 (Responses loop) fixed | M-20 Gemma-4 tool template; N-18 `tool_choice` required/any; M-26 usage chunk on tool streams |
 | structured output through the API | works for objects | M-27 top-level scalars; M-30 no-arg tool schema |
 | an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30; **resident prefix reuse shipped 2026-09-02 (3358e6b)** — agent turn 3 went 9.13 → 0.42 s, so a turn now costs its suffix, not its history | reuse is token-id bookkeeping only (`residentReuseLen`, `decoder/resident_reuse.go`) and nothing rewinds a recurrent state: on the Gated-DeltaNet/Mamba hybrids a reused prefix runs against the state decode left behind, and it was found silently corrupting Qwen3.5 output on CUDA (2026-09-02 run on the 8 GB box; its QUEUE §A entry was still uncommitted there when this line was written) — needs a family exclusion until the state is snapshotted with the prefix; also single-conversation (QUEUE §A) |
-| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:949-932`) | the rest of §3.3 |
+| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:957-932`) | the rest of §3.3 |
 | finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
 
 ### 3.2 One command

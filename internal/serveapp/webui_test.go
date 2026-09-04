@@ -2,6 +2,9 @@ package serveapp
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -99,5 +102,77 @@ func TestPullState_singleFlight(t *testing.T) {
 	wg.Wait()
 	if won != 1 {
 		t.Errorf("concurrent acquire: %d winners, want exactly 1", won)
+	}
+}
+
+// TestWebUI_rootRouteIsUnauthenticated guards V-02 (docs/review-2026-09-04.md): GET /{$} used to
+// be wrapped in auth(...), so a browser's plain navigation -- which sends no Authorization header
+// -- got the 401 JSON instead of the page, whenever -api-key was set (required off loopback). The
+// page is the ONLY place a user could type the key in, so this was a deadlock: loading the page
+// needed the key, and there was nowhere to enter the key without the page. auth stays on
+// /web/models/list and /web/models/pull, which actually act.
+//
+// main()'s mux-building is inline, not a separately testable function (this is exactly why the
+// bug went unguarded -- webui_test.go could exercise handleWebUI directly but never through the
+// auth-wrapped mux registration), so this is asserted structurally: mux.HandleFunc("GET /{$}", ...)
+// must NOT wrap its handler in the auth closure, while the /web/models/* registrations must.
+func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var rootAuthed, listAuthed, pullAuthed bool
+	var rootFound, listFound, pullFound bool
+	ast.Inspect(af, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "HandleFunc" || len(call.Args) != 2 {
+			return true
+		}
+		route, ok := call.Args[0].(*ast.BasicLit)
+		if !ok {
+			return true
+		}
+		wrapsInAuth := func(e ast.Expr) bool {
+			c, ok := e.(*ast.CallExpr)
+			if !ok {
+				return false
+			}
+			id, ok := c.Fun.(*ast.Ident)
+			return ok && id.Name == "auth"
+		}
+		switch route.Value {
+		case `"GET /{$}"`:
+			rootFound = true
+			rootAuthed = wrapsInAuth(call.Args[1])
+		case `"POST /web/models/list"`:
+			listFound = true
+			listAuthed = wrapsInAuth(call.Args[1])
+		case `"POST /web/models/pull"`:
+			pullFound = true
+			pullAuthed = wrapsInAuth(call.Args[1])
+		}
+		return true
+	})
+	if !rootFound || !listFound || !pullFound {
+		t.Fatalf("route(s) not found (root=%v list=%v pull=%v) — this guard is watching nothing",
+			rootFound, listFound, pullFound)
+	}
+	if rootAuthed {
+		t.Error("GET /{$} is wrapped in auth(...) — a browser's plain navigation sends no " +
+			"Authorization header, so the page (the only place to type the key in) 401s " +
+			"whenever -api-key is set, and there is no way to ever load it (V-02)")
+	}
+	if !listAuthed {
+		t.Error("POST /web/models/list lost its auth(...) wrapping — this route lists a repo " +
+			"and should stay behind the API key")
+	}
+	if !pullAuthed {
+		t.Error("POST /web/models/pull lost its auth(...) wrapping — this route starts a " +
+			"caller-named multi-GB download and must stay behind the API key")
 	}
 }

@@ -535,7 +535,15 @@ func Main() {
 		// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and
 		// would turn every unknown GET into the UI page instead of a 404, which is worse than
 		// unhelpful for an API server — a typo'd route would render HTML to an SDK.
-		mux.HandleFunc("GET /{$}", auth(srv.handleWebUI))
+		//
+		// UNAUTHENTICATED on purpose (V-02, docs/review-2026-09-04.md): the page embeds no
+		// secrets (handleWebUI's own comment), but a browser's plain navigation sends no
+		// Authorization header, and the page is the ONLY place a user could type the key in —
+		// its own JS holds it for the fetch() calls to /web/models/*. Wrapping this route in
+		// auth() made that impossible whenever -api-key was set (required off loopback): the
+		// page needed the key to load, and there was nowhere to enter the key without the page.
+		// auth stays on the two routes below, which actually act (list a repo, pull a model).
+		mux.HandleFunc("GET /{$}", srv.handleWebUI)
 		mux.HandleFunc("POST /web/models/list", auth(maxBytes(textCap, srv.handleWebList)))
 		// Not wrapped in inf(): the inflight gate bounds INFERENCE, and a download that runs
 		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
