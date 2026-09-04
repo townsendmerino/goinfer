@@ -143,6 +143,25 @@ func TestStructured_conformingPasses(t *testing.T) {
 	}
 }
 
+// TestStructured_truncatedDigitFails pins V-17 (docs/review-2026-09-04.md): the prompt asks for
+// "366" specifically because that is M-27's shape (StopWhenComplete used to stop at the first
+// complete document and return a single truncated digit). The old check only confirmed the
+// output parsed as SOME json.Number — a truncated "3" parses exactly as cleanly as "366" and
+// would report OK against the very regression this row exists to catch.
+func TestStructured_truncatedDigitFails(t *testing.T) {
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"3"}}]}`)) // M-27's truncation shape
+	})
+	res := c.Structured(context.Background(), "m")
+	if res.OK {
+		t.Error("a truncated single digit (M-27's exact shape) passed the structured-output check (V-17)")
+	}
+	if !strings.Contains(res.Detail, "366") {
+		t.Errorf("the reason must name the expected value, got %q", res.Detail)
+	}
+}
+
 // An HTTP error must be reported with its body, not swallowed into a bare "failed".
 func TestErrorsCarryTheServersReason(t *testing.T) {
 	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {

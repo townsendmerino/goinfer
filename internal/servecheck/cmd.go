@@ -73,12 +73,13 @@ func Run(args []string, self string) int {
 		rows = append(rows, Result{Name: "chat, streamed", Skip: true, Detail: "no generative model loaded"})
 	}
 
-	failed := 0
+	failed, skipped := 0, 0
 	for _, r := range rows {
 		status := "ok  "
 		switch {
 		case r.Skip:
 			status = "skip"
+			skipped++
 		case !r.OK:
 			status = "FAIL"
 			failed++
@@ -89,6 +90,16 @@ func Run(args []string, self string) int {
 	if failed > 0 {
 		fmt.Printf("%d of %d checks FAILED\n", failed, len(rows))
 		return 1
+	}
+	// V-17 (docs/review-2026-09-04.md): "all N checks passed" against a server with zero models
+	// loaded used to print unconditionally — but with no model, Chat/Structured/Stop/CountTokens
+	// never even run (see the else-if above), so N was a shrunk-without-explanation total and the
+	// one row that DID run (models list) plus one skip read as full coverage. Same "a SKIP IS NOT
+	// A PASS" doctrine this repo already applies to Go test output.
+	if skipped > 0 {
+		fmt.Printf("%d of %d checks passed (%d skipped, see above)\n",
+			len(rows)-skipped-failed, len(rows), skipped)
+		return 0
 	}
 	fmt.Printf("all %d checks passed\n", len(rows))
 	return 0

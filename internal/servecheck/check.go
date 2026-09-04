@@ -241,6 +241,16 @@ func (c *Client) Structured(ctx context.Context, model string) Result {
 		res.Detail = fmt.Sprintf("%q does not parse as the schema's integer", txt)
 		return res
 	}
+	// V-17 (docs/review-2026-09-04.md): the prompt asks for "366" specifically BECAUSE that is
+	// M-27's shape — StopWhenComplete used to stop at the first complete document and return a
+	// single truncated digit. A check that only confirms the output PARSES as SOME json.Number
+	// cannot detect that: a truncated "3" parses exactly as cleanly as the real "366" and this
+	// row would report OK against the very regression it exists to catch. Compare the VALUE.
+	if n.String() != "366" {
+		res.Detail = fmt.Sprintf(`{"type":"integer"} → %s, want 366 (truncated at the first `+
+			`complete digit? M-27)`, n)
+		return res
+	}
 	res.OK, res.Detail = true, fmt.Sprintf(`{"type":"integer"} → %s`, n)
 	return res
 }
