@@ -33,12 +33,24 @@ func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {
 	// C-10: compare the declared regex against the shape the walker actually implements. A Digits
 	// pre-tokenizer (Mellum2) carries no Split regex and is handled by splitDigits, so an empty
 	// regex is not a mismatch — only a regex that IS present and is a different alternation.
-	if re != "" {
+	//
+	// V-15 (docs/review-2026-09-04.md): a bare (non-Sequence) `{"type":"ByteLevel",
+	// "use_regex":true}` pre_tokenizer — a real HF `gpt2` export's actual shape
+	// (testdata/gpt2/onnx/tokenizer.json), no separate Split node at all — also carries an empty
+	// splitRegex, but "empty regex" here does NOT mean "no opinion" the way Mellum2's Digits case
+	// does: use_regex:true on a bare ByteLevel is HF's own way of saying "use my built-in GPT-2
+	// regex". Treating it as an unclassified no-op silently walked it with the cl100k alternation
+	// instead — no error, no PreTokenizerDecline, just wrong ids on exactly the inputs (` 2020`,
+	// a `\r\n` after punctuation) where the two shapes diverge.
+	switch {
+	case re != "":
 		t.preShape = classifySplit(re)
 		if !walkerImplements(t.preShape) {
 			t.preDecline = "pre-tokenizer regex is the " + t.preShape.String() + " alternation, " +
 				"which this build does not walk; this model's token ids differ from HF"
 		}
+	case isBareByteLevelUseRegex(tj.PreTokenizer):
+		t.preShape = shapeGPT2Original // walkerImplements is true for this shape — no decline
 	}
 
 	t.special = SpecialTokens{BOS: -1, EOS: -1, Pad: -1, StartOfTurn: -1, EndOfTurn: -1}
@@ -440,6 +452,29 @@ func splitRegex(raw json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// isBareByteLevelUseRegex reports whether pre_tokenizer is a TOP-LEVEL (not Sequence-wrapped)
+// `{"type":"ByteLevel", "use_regex":true}` node with no separate Split component — HF's own way
+// of saying "use my built-in GPT-2 regex" rather than "no opinion". A real HF `gpt2` export takes
+// exactly this shape (testdata/gpt2/onnx/tokenizer.json carries no `pattern.Regex` anywhere), so
+// splitRegex above returns "" for it — the same empty result a genuinely regex-agnostic
+// pre-tokenizer (Mellum2's Digits+ByteLevel Sequence) produces. The `type` check is what tells
+// them apart: a Sequence's own top-level type is "Sequence", not "ByteLevel", so this is false for
+// Mellum2's shape without needing to inspect its sub-pretokenizers at all (V-15,
+// docs/review-2026-09-04.md).
+func isBareByteLevelUseRegex(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var node struct {
+		Type     string `json:"type"`
+		UseRegex bool   `json:"use_regex"`
+	}
+	if json.Unmarshal(raw, &node) != nil {
+		return false
+	}
+	return node.Type == "ByteLevel" && node.UseRegex
 }
 
 // digitSegments splits s the way a Digits{individual_digits:true} pretokenizer

@@ -1435,11 +1435,11 @@ supports.
 | `docs/audit-2026-09-02.md|scripts/gate_ledger.py:151` | goinfer | `if e is None:` |
 | `docs/audit-2026-09-02.md|scripts/gptoss_tiny_golden.py:32` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-02.md|scripts/queue_citation_lint.py:574` | goinfer | `update = "--update" in sys.argv` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:196` | goinfer | `// decodeByteLevel inverts the byte-level map: render each piece (special tokens` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:244` | goinfer | `// splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:269` | goinfer | `for i := 0; i < n; {` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:208` | goinfer | `// decodeByteLevel inverts the byte-level map: render each piece (special tokens` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:256` | goinfer | `// splitGPT2 reproduces the Qwen/Llama-3 pretokenizer split — the GPT-2 regex` |
 | `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:27` | goinfer | `func (t *Tokenizer) initByteLevel(tj *tokenizerJSON, dir string) error {` |
-| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:388` | goinfer | `func normalizerForm(raw json.RawMessage) (norm.Form, bool) {` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:281` | goinfer | `for i := 0; i < n; {` |
+| `docs/audit-2026-09-02.md|tokenizer/bytelevel.go:400` | goinfer | `func normalizerForm(raw json.RawMessage) (norm.Form, bool) {` |
 | `docs/audit-2026-09-02.md|tokenizer/bytelevel_test.go:18` | goinfer | `//	.venv/bin/python scripts/pin_qwen3_tokenizer.py` |
 | `docs/audit-2026-09-02.md|tokenizer/doc.go:26` | goinfer | `// Golden parity against HF `tokenizers` is the gate for every family (M2 /` |
 | `docs/audit-2026-09-02.md|tokenizer/gguf.go:119` | goinfer | `for i, tok := range tokens {` |
@@ -1587,11 +1587,14 @@ supports.
 | `docs/review-2026-09-04.md|scripts/bench_peer.py:719` | goinfer | `# Keep whichever identifying keys the previous header actually had. A reconstructed` |
 | `docs/review-2026-09-04.md|scripts/bench_peer_prefill.py:88` | goinfer | `OLLAMA_MODELS_DEFAULT = os.environ.get("OLLAMA_MODELS", "")` |
 | `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:28` | goinfer | `base=args[0] if args else "HEAD~1"` |
-| `docs/review-2026-09-04.md|tokenizer/bytelevel.go:206` | goinfer | `// N-24: an ADDED token's surface is stored verbatim, NOT byte-level-encoded, so pushing` |
+| `docs/review-2026-09-04.md|tokenizer/bytelevel.go:218` | goinfer | `// N-24: an ADDED token's surface is stored verbatim, NOT byte-level-encoded, so pushing` |
+| `docs/review-2026-09-04.md|tokenizer/bytelevel.go:466` | goinfer | `func isBareByteLevelUseRegex(raw json.RawMessage) bool {` |
+| `docs/review-2026-09-04.md|tokenizer/bytelevel.go:52` | goinfer | `case isBareByteLevelUseRegex(tj.PreTokenizer):` |
 | `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:456` | goinfer | `func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error) {` |
 | `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:831` | goinfer | `func (t *Tokenizer) TokenText(id int) []byte {` |
 | `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:841` | goinfer | `if id < len(t.isAdded) && t.isAdded[id] {` |
-| `docs/review-2026-09-04.md|tokenizer/splitshape.go:42` | goinfer | `// shapeGPT2Original is GPT-2's own ` ?\p{L}+\| ?\p{N}+\| ?[^\s\p{L}\p{N}]+\|\s+(?!\S)\|\s+`` |
+| `docs/review-2026-09-04.md|tokenizer/splitshape.go:101` | goinfer | `case gpt2Letters.MatchString(c) && gpt2LeadContraction.MatchString(c):` |
+| `docs/review-2026-09-04.md|tokenizer/splitshape.go:42` | goinfer | `// shapeGPT2Original is GPT-2's own` |
 | `docs/scoping-lfm2.md|decoder/arch.go:186` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:107` | goinfer | `if arch.QKNorm {` |
 | `docs/scoping-lfm2.md|decoder/config.go:903` | goinfer | `case c.UseQKNorm:` |

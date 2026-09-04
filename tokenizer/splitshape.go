@@ -39,8 +39,10 @@ const (
 	// shapeO200k is the gpt-4o / o200k family: contractions ATTACH to the preceding word, case
 	// transitions split, combining marks are word content, and the punctuation run swallows `/`.
 	shapeO200k
-	// shapeGPT2Original is GPT-2's own ` ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`:
-	// no contraction clause and no [\r\n] handling, so ` 2020` is ONE pre-token.
+	// shapeGPT2Original is GPT-2's own
+	// `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
+	// (see split_gpt2orig.go): a CASE-SENSITIVE contraction clause (no `(?i:)`, unlike cl100k's)
+	// and no [\r\n] handling, so ` 2020` is ONE pre-token.
 	shapeGPT2Original
 )
 
@@ -69,10 +71,17 @@ var (
 	// The o200k markers, each necessary and none of them present in the cl100k shape.
 	o200kCaseSplit = regexp.MustCompile(`\[\\p\{Lu\}\\p\{Lt\}\\p\{Lm\}\\p\{Lo\}\\p\{M\}\]`)
 	o200kAttached  = regexp.MustCompile(`\+\(\?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d\)\?`)
-	// The cl100k contraction clause stands alone at the head of the alternation.
+	// The cl100k contraction clause stands alone at the head of the alternation, wrapped
+	// case-INSENSITIVE.
 	cl100kLeadContraction = regexp.MustCompile(`^\(\?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d\)\|`)
-	// GPT-2's own: a ` ?\p{L}+` clause with no contraction group anywhere.
+	// GPT-2's own: a ` ?\p{L}+` letters clause.
 	gpt2Letters = regexp.MustCompile(` \?\\p\{L\}\+`)
+	// GPT-2's own contraction clause stands alone at the head too, but UNWRAPPED and
+	// case-SENSITIVE — no `(?i:)`. This is the positive marker V-15 (docs/review-2026-09-04.md)
+	// added: the real GPT-2 regex (split_gpt2orig.go's own docstring, transcribed from OpenAI's
+	// source) DOES carry a contraction clause, so a Split spelling it was misclassified as
+	// shapeUnknown by an exclusion that assumed the opposite.
+	gpt2LeadContraction = regexp.MustCompile(`^'s\|'t\|'re\|'ve\|'m\|'ll\|'d\|`)
 )
 
 // classifySplit names the alternation a Split regex expresses.
@@ -89,7 +98,7 @@ func classifySplit(re string) splitShape {
 		return shapeO200k
 	case cl100kLeadContraction.MatchString(c):
 		return shapeCl100k
-	case gpt2Letters.MatchString(c) && !strings.Contains(c, "'s|'t|'re"):
+	case gpt2Letters.MatchString(c) && gpt2LeadContraction.MatchString(c):
 		return shapeGPT2Original
 	}
 	return shapeUnknown

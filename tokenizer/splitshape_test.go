@@ -1,6 +1,11 @@
 package tokenizer
 
-import "testing"
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"testing"
+)
 
 // The three real alternations, verbatim. The cl100k and o200k ones are what
 // ~/models/qwen3-0.6b-bf16 and the o200k family ship; the GPT-2 one is GPT-2's own.
@@ -8,7 +13,7 @@ const (
 	reCl100kQwen  = `(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
 	reCl100kLlama = `(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
 	reO200k       = `[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+`
-	reGPT2        = ` ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
+	reGPT2        = `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
 )
 
 // C-10: splitGPT2 implements ONE alternation and was applied to every family. Nothing compared a
@@ -147,5 +152,80 @@ func TestByteLevelKnobs_gptOssSelectsTheO200kWalker(t *testing.T) {
 	// the classifier ever disagree, the mapping above is resting on nothing.
 	if classifySplit(reO200k) != shapeO200k {
 		t.Error("reO200k no longer classifies as o200k")
+	}
+}
+
+// TestClassifySplit_realGPT2PatternIsNotUnknown pins V-15 (docs/review-2026-09-04.md): the real
+// GPT-2 regex (split_gpt2orig.go's own docstring, transcribed from OpenAI's source) DOES carry a
+// contraction clause — just case-sensitive and unwrapped, unlike cl100k's `(?i:...)` one.
+// classifySplit's shapeGPT2Original case used to require the clause's ABSENCE
+// (`!strings.Contains(c, "'s|'t|'re")`), so a Split spelling the actual pattern classified as
+// shapeUnknown and silently fell back to the cl100k walker instead — never reaching the walker
+// (splitGPT2Original) written specifically for it.
+func TestClassifySplit_realGPT2PatternIsNotUnknown(t *testing.T) {
+	const real = `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
+	if got := classifySplit(real); got != shapeGPT2Original {
+		t.Errorf("classifySplit(the real GPT-2 pattern) = %v, want shapeGPT2Original (V-15) — "+
+			"it was misclassified as shapeUnknown by an exclusion that assumed the clause absent",
+			got)
+	}
+	// Regression guard in the other direction: cl100k's case-INSENSITIVE, wrapped spelling of the
+	// same six contractions must still classify as cl100k, not gpt2-original — the discriminator
+	// is the (?i:) wrapping, not merely whether a contraction clause is present at all.
+	if got := classifySplit(reCl100kQwen); got != shapeCl100k {
+		t.Errorf("classifySplit(cl100k) = %v, want shapeCl100k — the fix must not blur the two "+
+			"contraction spellings together", got)
+	}
+}
+
+// TestInitByteLevel_bareByteLevelUseRegexIsGPT2Original pins V-15's second half: a real HF `gpt2`
+// export's pre_tokenizer is a bare (non-Sequence) `{"type":"ByteLevel","use_regex":true}` with no
+// separate Split node at all (testdata/gpt2/onnx/tokenizer.json — verified by reading the file,
+// not assumed). splitRegex returns "" for it, the same empty result Mellum2's genuinely
+// regex-agnostic Digits+ByteLevel Sequence produces — but here "empty" means "use my built-in
+// GPT-2 regex" (HF's own semantics for use_regex:true), not "no opinion". The old code treated
+// both the same way and silently kept the cl100k walker with no PreTokenizerDecline at all.
+func TestInitByteLevel_bareByteLevelUseRegexIsGPT2Original(t *testing.T) {
+	const dir = "../testdata/gpt2/onnx"
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("skip: %s absent", dir)
+	}
+	tk, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load(%s): %v", dir, err)
+	}
+	if tk.mode != modeByteLevel {
+		t.Fatalf("gpt2 fixture loaded as mode %d, want modeByteLevel", tk.mode)
+	}
+	if tk.preShape != shapeGPT2Original {
+		t.Errorf("preShape = %v, want shapeGPT2Original (V-15) — a bare ByteLevel{use_regex:true} "+
+			"with no Split node was not recognised as GPT-2's own regex", tk.preShape)
+	}
+	if got := tk.PreTokenizerDecline(); got != "" {
+		t.Errorf("PreTokenizerDecline = %q, want \"\" — this build DOES have a walker "+
+			"(splitGPT2Original) for this shape", got)
+	}
+	// THE END-TO-END CHECK: ` 2020` must walk as one pre-token (GPT-2's own unbounded digit run),
+	// not five (the cl100k walker's 1-digit cap) — the exact divergence this finding is about.
+	if got := tk.splitPre(" 2020"); len(got) != 1 {
+		t.Errorf("splitPre(\" 2020\") = %q (%d pre-tokens), want 1 — the cl100k walker was used "+
+			"instead of GPT-2's own (V-15)", got, len(got))
+	}
+}
+
+// A Sequence-wrapped pre_tokenizer (Mellum2: Digits + ByteLevel) must NOT be mistaken for the
+// bare-ByteLevel case — its top-level `type` is "Sequence", not "ByteLevel", so
+// isBareByteLevelUseRegex must read false for it, or Mellum2 would be silently reclassified as a
+// side effect of a fix aimed at plain gpt2.
+func TestIsBareByteLevelUseRegex_sequenceWrappedIsNotBare(t *testing.T) {
+	const sequenceWrapped = `{"type":"Sequence","pretokenizers":[` +
+		`{"type":"Digits","individual_digits":true},` +
+		`{"type":"ByteLevel","add_prefix_space":false,"trim_offsets":true,"use_regex":true}]}`
+	if isBareByteLevelUseRegex([]byte(sequenceWrapped)) {
+		t.Error("a Sequence-wrapped ByteLevel{use_regex:true} (Mellum2's real shape) read as bare")
+	}
+	const bare = `{"type":"ByteLevel","add_prefix_space":false,"trim_offsets":true,"use_regex":true}`
+	if !isBareByteLevelUseRegex([]byte(bare)) {
+		t.Error("a top-level ByteLevel{use_regex:true} (real gpt2's shape) did not read as bare")
 	}
 }
