@@ -51,24 +51,37 @@ func (m *Model) residentReuseLen(prompt []int) int {
 	if residentReuseDisabled() || len(m.resIDs) == 0 || len(prompt) == 0 {
 		return 0
 	}
-	// RECURRENT FAMILIES REUSE NOTHING. The three rules below all police WHICH PREFIX is matched;
-	// none of them can help a model whose state cannot be rewound to that prefix at all. A Gated
-	// DeltaNet's conv ring and matrix state (and Mamba-2's, and LFM2's conv window) are mutated in
-	// place per token with no per-position history, and the resident path re-zeroes them only at
-	// pos == 0 — which a reused prefix never reaches. So the second generation would decode from
-	// the first one's TAIL state.
+	// RECURRENT FAMILIES CAN ONLY REUSE AN EXACT, STRICT EXTENSION. The three rules below (LCP
+	// matching, capping at len(prompt)-1) police WHICH PREFIX of the resident KV is matched for an
+	// attention-only family; none of them can help a recurrent one, because its state cannot be
+	// rewound to an arbitrary earlier position at all. A Gated DeltaNet's conv ring and matrix
+	// state (and Mamba-2's, and LFM2's conv window) are mutated in place per token with no
+	// per-position history, and the resident path re-zeroes them only at pos == 0. So the ONLY
+	// safe continuation point is exactly len(m.resIDs): the live recurrent state right now already
+	// equals the state after resIDs (residentCommitIDs's invariant, held by R-00 forgetting on
+	// every other writer), so a prompt that is resIDs plus at least one new token can decode
+	// forward from there with no rewind needed at all — which is exactly what an agent turn is
+	// (previous prompt + reply + tool result, a strict prefix extension).
 	//
-	// That is not hypothetical: measured 2026-09-02 on qwen3.6-35B-A3B, repeated identical greedy
-	// prompts diverged at token 0, differently on every repeat, decaying to a one-token reply, with
-	// no error anywhere — the failure this file's own header calls out as the whole risk.
-	// TestPagerDeterminism is the gate (reuse-on red before this guard, green after).
-	//
-	// This costs nothing for attention-only families, which is most of what an agent loop runs.
-	// Getting reuse BACK for recurrent families needs a state checkpoint at the reuse point — L-05's
-	// job, not a patch here. The predicate is the shared one so a fourth state kind is added in the
-	// dispatch table once rather than missed here for a ninth time.
+	// Anything else — an edited earlier message, a shorter resend, an identical resend — has no
+	// safe continuation point (the state would have to run BACKWARD) and falls to 0, cold. An
+	// identical resend is the qwen3.6-35B-A3B repro that motivated the original blanket refusal:
+	// measured 2026-09-02, repeated identical greedy prompts diverged at token 0, differently on
+	// every repeat, decaying to a one-token reply, with no error anywhere. len(prompt) <= n below
+	// is exactly that case (no new token to extend with) and keeps falling to 0.
+	// TestPagerDeterminism is the gate (reuse-on red before this guard, green after; still green
+	// with this narrower rule since an identical resend has len(prompt) == n).
 	if m.hasRecurrentState() {
-		return 0
+		n := len(m.resIDs)
+		if len(prompt) <= n {
+			return 0
+		}
+		for i := range n {
+			if m.resIDs[i] != prompt[i] {
+				return 0
+			}
+		}
+		return n
 	}
 	n := len(m.resIDs)
 	if len(prompt)-1 < n {

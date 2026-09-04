@@ -49,6 +49,49 @@ func TestResidentReuseLen_neverClaimsTheSeed(t *testing.T) {
 	}
 }
 
+// recurrentTestModel builds a *Model whose hasRecurrentState() is true (qwen3_5_moe's dispatch
+// table entry has Recurrent: true), without loading any real weights — residentReuseLen's id
+// arithmetic never touches them.
+func recurrentTestModel(resIDs []int) *Model {
+	return &Model{w: &Weights{arch: &Architecture{qwen35: &qwen35Params{}}}, resIDs: resIDs}
+}
+
+// TestResidentReuseLen_recurrentExactExtensionOnly is audit R-01 Phase 0: a recurrent family's
+// state cannot be rewound to an arbitrary earlier position (unlike a positional KV, which the
+// generic branch above LCP-matches into), so the ONLY safe reuse is a strict extension of the
+// entire committed sequence — anything else, including a partial/diverging match the generic
+// branch WOULD reuse, must fall to 0.
+func TestResidentReuseLen_recurrentExactExtensionOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cached []int
+		prompt []int
+		want   int
+	}{
+		{"nothing cached", nil, []int{1, 2, 3}, 0},
+		{"exact prefix extension (the agent-turn case)", []int{1, 2, 3}, []int{1, 2, 3, 4, 5}, 3},
+		{"single-token extension", []int{1, 2, 3}, []int{1, 2, 3, 4}, 3},
+		{"identical resend — no new token to extend with, must fall to 0 (the qwen3.6-35B-A3B repro)",
+			[]int{1, 2, 3}, []int{1, 2, 3}, 0},
+		{"shorter resend", []int{1, 2, 3}, []int{1, 2}, 0},
+		{"diverges at 0 — the generic branch would still reuse 0 here too, but for a different reason",
+			[]int{9, 2, 3}, []int{1, 2, 3, 4}, 0},
+		{"diverges midway — the generic branch would reuse 2 here; recurrent must not", []int{1, 2, 9}, []int{1, 2, 3, 4}, 0},
+		{"an edited earlier message with a coincidental later match must not resynchronise",
+			[]int{1, 9, 3}, []int{1, 2, 3, 4}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := recurrentTestModel(tc.cached)
+			if !m.hasRecurrentState() {
+				t.Fatal("test setup broke: recurrentTestModel is not recognised as recurrent")
+			}
+			if got := m.residentReuseLen(tc.prompt); got != tc.want {
+				t.Errorf("residentReuseLen(%v | cached %v) = %d, want %d", tc.prompt, tc.cached, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestResidentForgetIDs: forgetting must be total, because a PARTIALLY stale id list is worse
 // than none — it would match a prefix that the cache no longer holds.
 func TestResidentForgetIDs(t *testing.T) {
