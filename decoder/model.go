@@ -1028,6 +1028,19 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		select {
 		case <-ctx.Done():
 			g.err = ctx.Err()
+			// V-04 (docs/review-2026-09-04.md): a cancel that arrives during the PREVIOUS
+			// iteration's Forward -- the dominant per-iteration cost, milliseconds against the
+			// send-select's microseconds -- is not observed until here, at the top of the next
+			// iteration, because nothing between generated=append(...,next) and Forward
+			// returning is select-guarded. By the time we reach this select, that iteration's
+			// `next` has both been appended to `generated` AND had its own Forward already run
+			// (the resident cache write happens synchronously inside it), so the cache is
+			// exactly as consistent as the natural-completion commit below -- this was the
+			// ORIGINAL R-02 fix's blind spot: it only committed at the send-select exit, which
+			// is the rarer of the two cancel-observation points, not the common one.
+			if useGPU {
+				m.residentCommitIDs(prompt, generated)
+			}
 			return
 		default:
 		}
