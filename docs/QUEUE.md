@@ -1224,10 +1224,12 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/serialize.go:395` | goinfer | `func validateShapes(w *Weights, arch *Architecture) *SerializeError {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:985` | goinfer | `func (w *giwWriter) layer(l *LayerWeights) {` |
 | `docs/audit-2026-09-02.md|decoder/serialize_census_test.go:135` | goinfer | `// "passed" while the new code went unexercised.` |
+| `docs/audit-2026-09-02.md|decoder/session.go:176` | goinfer | `func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt []int, ma` |
 | `docs/audit-2026-09-02.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/audit-2026-09-02.md|decoder/session.go:86` | goinfer | `func (s *Session) reconcile(seq []int) {` |
 | `docs/audit-2026-09-02.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/audit-2026-09-02.md|decoder/session_test.go:217` | goinfer | `bad := append([]byte(nil), blob...)` |
+| `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:124` | goinfer | `func (target *Model) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt []int,` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:177` | goinfer | `case "cuda":` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:82` | goinfer | `if a.Theta >= 1 {` |
 | `docs/audit-2026-09-02.md|decoder/spec_eagle.go:25` | goinfer | `if sp.Temperature != 0 \|\| sp.LogitProcessor != nil {` |
