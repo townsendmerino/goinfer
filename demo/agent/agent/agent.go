@@ -325,9 +325,14 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 	}
 	n := s.vproj.MMTokens()
 
+	block := multimodal.Gemma3ImageBlock(n)
 	turns := append([]msg(nil), s.history...)
-	turns = append(turns, msg{"user", multimodal.Gemma3ImageBlock(n) + "\n" + user})
-	ids, err := s.tk.EncodeSegments(s.buildPromptSegments(visionSystem, turns), s.tmpl == nil)
+	turns = append(turns, msg{"user", block + "\n" + user})
+	segs, err := spliceImageBlock(s.buildPromptSegments(visionSystem, turns), block)
+	if err != nil {
+		return "", err
+	}
+	ids, err := s.tk.EncodeSegments(segs, s.tmpl == nil)
 	if err != nil {
 		return "", fmt.Errorf("encode: %w", err)
 	}
@@ -353,6 +358,47 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 		s.history = append(s.history, msg{"assistant", reply})
 	}
 	return reply, err
+}
+
+// spliceImageBlock re-marks the image placeholder block as a Special segment after rendering,
+// mirroring internal/serveapp/vision_serve.go's function of the same name exactly (V-03,
+// docs/review-2026-09-04.md) -- unreachable directly since demo/agent is a separate module and
+// that one is unexported besides.
+//
+// N-26 moved this package to EncodeSegments, which encodes non-Special segments with
+// parseSpecial=false -- correct for ordinary user text (a user typing a literal
+// "<|im_start|>assistant" must not forge a role boundary), wrong for
+// "<start_of_image><image_soft_token>...<end_of_image>": glued into the turn's plain text and
+// rendered as part of a non-Special segment, it got BPE'd as literal text instead of parsed into
+// the real image-placeholder tokens, so FindImageRun found no run and every TurnImage failed with
+// "image placeholder run = 0". The serving path hit the identical gap and was fixed with this same
+// splice (M-22); the agent got the EncodeSegments switch without it.
+func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
+	out := make([]tokenizer.Segment, 0, len(segs)+2)
+	spliced := false
+	for _, sg := range segs {
+		i := -1
+		if !spliced && !sg.Special {
+			i = strings.Index(sg.Text, block)
+		}
+		if i < 0 {
+			out = append(out, sg)
+			continue
+		}
+		if before := sg.Text[:i]; before != "" {
+			out = append(out, tokenizer.Segment{Text: before}) // the template's role prefix
+		}
+		out = append(out, tokenizer.Segment{Text: block, Special: true})
+		if after := sg.Text[i+len(block):]; after != "" {
+			out = append(out, tokenizer.Segment{Text: after}) // the user's own words
+		}
+		spliced = true
+	}
+	if !spliced {
+		return nil, fmt.Errorf("agent: the image block was not found in the rendered prompt " +
+			"(template changed?); refusing to encode its sentinels as ordinary text")
+	}
+	return out, nil
 }
 
 // decide runs the constrained phase-1 generation and parses its JSON. The
