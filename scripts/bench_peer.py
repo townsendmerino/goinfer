@@ -176,6 +176,19 @@ DEEP_CTX = int(os.environ.get("BENCH_DEEP_CTX", "0"))
 # small model (D7 and below) has no business paying the transcode cost even by accident.
 STREAM_WEIGHTS_MODELS = {m.strip() for m in os.environ.get("BENCH_STREAM_WEIGHTS", "").split(",")
                          if m.strip()}
+# QUANT OVERRIDE, found live 2026-09-04 debugging M35's -stream-weights transcode: goinfer's
+# on-first-use .gguf->.giw cache bakes to whatever internal quant scheme fits the checkpoint's own
+# tensor layout, NOT necessarily the literal "-quant" string passed on the command line -- M35's
+# GGUF (a MoE model) bakes to "int4mix" and a plain "-quant int4" (the hardcoded default below)
+# then FAILS TO LOAD the cache it just spent 7+ minutes building ("--quant int4 cannot apply to
+# the prequantized .giw bundle ... baked at int4mix"). M26's GGUF happened to bake to plain
+# "int4" and needed no override -- this is per-model, not something -stream-weights implies
+# uniformly, so it is its own dict rather than folded into STREAM_WEIGHTS_MODELS.
+GOINFER_QUANT_OVERRIDE = {}
+for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix").split(","):
+    if "=" in _kv:
+        _k, _v = _kv.split("=", 1)
+        GOINFER_QUANT_OVERRIDE[_k.strip()] = _v.strip()
 # LOAD TIMEOUT, added 2026-09-04 alongside stream-weights: the default 180s wait_port/
 # wait_llamacpp_ready window is sized for a small model's load, not a 15-22 GB checkpoint's
 # first-use .gguf->.giw transcode, which can itself run past 180s before the port ever opens.
@@ -640,12 +653,14 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             # MoE actually runs resident-with-streaming on CUDA instead of silently declining to
             # the CPU path. GOINFER_MOE_PATH is the NARROWER subset (M35/M26) that also load
             # goinfer's OWN kind-4 .giw bundle instead of the peer GGUF in `path` -- that bundle
-            # bakes its own quant, so `-quant int4` is dropped for those two (it refuses to start
+            # bakes its own quant, so `-quant` is dropped for those two (it refuses to start
             # otherwise). G20 is in MOE_MODELS but not GOINFER_MOE_PATH: it loads the SAME GGUF as
-            # the peers and takes the normal `-quant int4` unmodified -- see the MODELS/G20 comment.
+            # the peers and takes a normal `-quant` flag -- GOINFER_QUANT_OVERRIDE lets a specific
+            # model_key request a non-default quant (e.g. "int4mix") instead of the "int4" default.
             has_own_bundle = model_key in GOINFER_MOE_PATH
             gpath = GOINFER_MOE_PATH[model_key] if has_own_bundle else path
-            quant_args = [] if has_own_bundle else ["-quant", "int4"]
+            quant_args = [] if has_own_bundle else \
+                ["-quant", GOINFER_QUANT_OVERRIDE.get(model_key, "int4")]
             moe_args = ["-moe-cache-experts"] if (model_key in MOE_MODELS and backend == "cuda") else []
             proc = subprocess.Popen(
                 [SERVE[backend], "-model", f"bench={gpath}", "-backend", backend,
