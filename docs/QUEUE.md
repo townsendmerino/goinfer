@@ -1595,9 +1595,12 @@ supports.
 | `docs/review-2026-09-04.md|pull/pull.go:473` | goinfer | `func cachedIntact(dir string, f File) (string, bool) {` |
 | `docs/review-2026-09-04.md|pull/resolve.go:32` | goinfer | `func resolveOffline(ref Ref) (string, bool) {` |
 | `docs/review-2026-09-04.md|pull/resolve.go:55` | goinfer | `func Resolve(ctx context.Context, spec string, progress func(done, total int64)) (string` |
+| `docs/review-2026-09-04.md|scripts/bench_peer.py:40` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
 | `docs/review-2026-09-04.md|scripts/bench_peer.py:719` | goinfer | `# Keep whichever identifying keys the previous header actually had. A reconstructed` |
-| `docs/review-2026-09-04.md|scripts/bench_peer_prefill.py:88` | goinfer | `OLLAMA_MODELS_DEFAULT = os.environ.get("OLLAMA_MODELS", "")` |
-| `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:28` | goinfer | `base=args[0] if args else "HEAD~1"` |
+| `docs/review-2026-09-04.md|scripts/bench_peer_prefill.py:97` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
+| `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:28` | goinfer | `UNKEYABLE` |
+| `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:49` | goinfer | `def mapline(o):` |
+| `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:83` | goinfer | `file_basename = path.split('/')[-1]` |
 | `docs/review-2026-09-04.md|tokenizer/bytelevel.go:218` | goinfer | `// N-24: an ADDED token's surface is stored verbatim, NOT byte-level-encoded, so pushing` |
 | `docs/review-2026-09-04.md|tokenizer/bytelevel.go:466` | goinfer | `func isBareByteLevelUseRegex(raw json.RawMessage) bool {` |
 | `docs/review-2026-09-04.md|tokenizer/bytelevel.go:52` | goinfer | `case isBareByteLevelUseRegex(tj.PreTokenizer):` |

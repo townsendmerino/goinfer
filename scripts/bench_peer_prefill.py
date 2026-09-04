@@ -85,7 +85,15 @@ GPORT, OPORT = 8098, 11498
 SERVE_CUDA = os.environ.get("GOINFER_SERVE_CUDA", os.path.expanduser("~/bench-cur/serve-cuda"))
 SERVE_CPU = os.environ.get("GOINFER_SERVE_CPU", os.path.expanduser("~/bench-cur/serve-cpu"))
 OLLAMA = os.environ.get("OLLAMA_BIN", os.path.expanduser("~/ollama-0325/bin/ollama"))
-OLLAMA_MODELS_DEFAULT = os.environ.get("OLLAMA_MODELS", "")
+# V-26 (docs/review-2026-09-04.md): this used to carry a SEPARATE OLLAMA_MODELS_DEFAULT
+# ("" when the operator's shell had no OLLAMA_MODELS exported), passed to the launched
+# ollama serve's own env only when truthy -- so an operator who never exported OLLAMA_MODELS
+# got the CUSTOM store here silently and ollama's OWN built-in default in the subprocess,
+# while bench_peer.py (scripts/bench_peer.py:40,524) always resolves and passes this SAME
+# variable unconditionally. Same variable, same fallback, matching bench_peer.py exactly --
+# the two harnesses must agree on which ollama store they point at, or a same-session
+# interleaved comparison (CLAUDE.md's own peer-comparison rule) silently compares different
+# checkpoints.
 OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models"))
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
@@ -183,9 +191,7 @@ class Engine:
             self.url = f"http://127.0.0.1:{GPORT}/v1/chat/completions"
             self.parse = parse_openai
         else:
-            env = dict(os.environ, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
-            if OLLAMA_MODELS_DEFAULT:
-                env["OLLAMA_MODELS"] = OLLAMA_MODELS_DEFAULT
+            env = dict(os.environ, OLLAMA_HOST=f"127.0.0.1:{OPORT}", OLLAMA_MODELS=OLLAMA_MODELS)
             self.proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                          preexec_fn=os.setsid)
