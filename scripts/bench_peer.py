@@ -61,6 +61,37 @@ MODELS = {
     # exposed the split-KV gate testing nKeys instead of the window-clamped nWin.
     "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m"),
     "gemma3-1b":  (os.path.expanduser("~/models/gemma3-1b-q4_k_m.gguf"), "g31b"),
+    # M35/M26 added 2026-09-04 (docs/task-peer-benchmarks.md §2, tier 1). The GGUF path here is
+    # what ollama and llama-server load -- Q4_K_M, same quant family as every other row. Neither
+    # checkpoint had a Q4_K_M GGUF on this box: the archive only carried M35 as Q8_0 and M26 as a
+    # legacy Q4_0, so both were REQUANTIZED locally with llama-quantize --allow-requantize (source
+    # was already quantized, not f32/f16 -- llama-quantize refuses a q8_0 source without that flag
+    # for exactly this reason). M35's source was q8_0 (near-lossless), so Q4_K_M off it is close to
+    # quantizing from full precision; M26's source was already q4_0 (lossy), so its Q4_K_M here is a
+    # DOUBLE quantization and is NOT the same provenance as a real from-f16 Q4_K_M -- flag this
+    # wherever M26's row gets quoted for quality, not just speed. See GOINFER_MOE_PATH below: goinfer
+    # itself does NOT load this GGUF -- it runs its own kind-4 .giw bundle (the shipped-default path
+    # for these two MoE models), so the GGUF here is the PEER-ONLY artifact.
+    "M35": (os.path.expanduser("~/models/qwen3.6-35b-a3b-q4_k_m.gguf"), "m35q4km"),
+    "M26": (os.path.expanduser("~/models/gemma4-26b-q4_k_m.gguf"), "m26q4km"),
+}
+
+# MoE cells whose VRAM footprint exceeds this box's 8 GB card: goinfer needs -moe-cache-experts
+# (host<->VRAM expert streaming) or it silently declines resident CUDA and falls back to the CPU
+# path -- a "cuda" row that is actually CPU, with nothing in the response to say so (measured
+# 2026-09-04: without the flag the server logs the decline and keeps serving on CPU). These models
+# also load through a pre-quantized .giw bundle, which BAKES ITS OWN QUANT -- passing the harness's
+# usual `-quant int4` at these two REFUSES TO START ("cannot apply to the prequantized .giw bundle
+# ... it is baked at int4mix"), so goinfer's quant flag is omitted for this set, not just changed.
+MOE_MODELS = {"M35", "M26"}
+
+# goinfer's OWN path for the MOE_MODELS set, distinct from MODELS[key][0] above (which is the
+# Q4_K_M GGUF ollama/llama-server load). goinfer runs its native kind-4 .giw bundle instead --
+# the shipped-default configuration for these two models (docs/task-peer-benchmarks.md §2) -- so
+# the two engines are NOT reading the same file for these cells, only the same nominal quant tier.
+GOINFER_MOE_PATH = {
+    "M35": os.path.expanduser("~/models/qwen3.6-35b-a3b-int4.giw"),
+    "M26": os.path.expanduser("~/models/gemma4-26b-int4.giw"),
 }
 
 # One goinfer binary per backend. Ollama has no WebGPU build, so the webgpu row is compared
@@ -240,7 +271,7 @@ def preflight():
         sys.exit(f"REFUSED: 1-min load average {la[0]:.2f} exceeds {cap:.2f}. The box is not idle, "
                  f"and a number measured on a busy box is not distinguishable afterwards from a "
                  f"number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.")
-    check_bench_disk([p for p, _ in MODELS.values()])
+    check_bench_disk([p for p, _ in MODELS.values()] + list(GOINFER_MOE_PATH.values()))
     apps = _gpu_compute_apps()
     if len(apps) > 1:
         sys.exit("REFUSED: %d compute processes already hold the GPU (1 = the compositor, expected):\n  %s"
@@ -509,12 +540,28 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     path, tag = MODELS[model_key]
     cfg = CONFIGS[cfg_name]
     prompt = prompt_for_depth(depth, model_key)
+    # M35/M26 load a 16-26 GB checkpoint (mmap page-in + CUDA expert-cache fill for goinfer;
+    # weight load for llama-server); the generic 180s default (sized for 0.5B-7B) measured a real
+    # M35 goinfer load STILL not listening at 359s on this box (2026-09-04 smoke test) -- so a
+    # cell using it would misreport a working peer as "server did not come up". MOE_MODELS gets a
+    # longer wait; 900s matches this repo's other MoE-scale timeout (bench_prompts_calibrate.py's
+    # CALIB_TIMEOUT) rather than a number nobody has measured against.
+    load_timeout = 900 if model_key in MOE_MODELS else 180
     proc = None
     try:
         if engine == "goinfer":
+            # MOE_MODELS: goinfer loads its OWN kind-4 .giw bundle (GOINFER_MOE_PATH), not the
+            # peer GGUF in `path` -- see the MODELS/MOE_MODELS comment above. The .giw bakes its
+            # own quant, so `-quant int4` is dropped for this set (it refuses to start otherwise);
+            # `-moe-cache-experts` is added so a >8GB-VRAM MoE actually runs resident-with-
+            # streaming on CUDA instead of silently declining to the CPU path.
+            is_moe = model_key in MOE_MODELS
+            gpath = GOINFER_MOE_PATH[model_key] if is_moe else path
+            quant_args = [] if is_moe else ["-quant", "int4"]
+            moe_args = ["-moe-cache-experts"] if (is_moe and backend == "cuda") else []
             proc = subprocess.Popen(
-                [SERVE[backend], "-model", f"bench={path}", "-backend", backend,
-                 "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
+                [SERVE[backend], "-model", f"bench={gpath}", "-backend", backend,
+                 "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
                 + (["-ctx", str(DEEP_CTX)] if DEEP_CTX else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
@@ -552,7 +599,8 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 preexec_fn=os.setsid)
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
                 parse_openai, (lambda: llamacpp_payload(prompt, cfg))
-        ready = wait_llamacpp_ready(port) if engine == "llamacpp" else wait_port(port)
+        ready = wait_llamacpp_ready(port, timeout=load_timeout) if engine == "llamacpp" \
+            else wait_port(port, timeout=load_timeout)
         if not ready:
             return None, "server did not come up", None
         # warm: one discarded completion (model load + first-run outlier)
