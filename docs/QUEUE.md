@@ -1317,10 +1317,10 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic.go:571` | goinfer | `func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, lm *loade` |
 | `docs/audit-2026-09-02.md|internal/serveapp/anthropic_stream.go:94` | goinfer | `// THE THIRD BUFFER-THEN-STREAM SITE. G19 gave the OpenAI tool path and /v1/responses a` |
 | `docs/audit-2026-09-02.md|internal/serveapp/cpufastattn_test.go:12` | goinfer | `//  1. It is OFF unless asked for. A speed flag that turns itself on is how a user` |
-| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:182` | goinfer | `func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, error) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:193` | goinfer | `func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:211` | goinfer | `func (e *decoderEmbedder) encodeLocked(text string, isQuery bool) ([]float32, []int, err` |
+| `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:226` | goinfer | `func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/decoder_embedder.go:84` | goinfer | `// "nothing shorter" is not "unbounded": HiddenLast preallocates KV for len(ids) positio` |
-| `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:122` | goinfer | `promptTokens := s.countEmbedTokens(inputs, isQuery)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:122` | goinfer | `for _, c := range counts {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:31` | goinfer | `// positions. maxEmbedInputs matches OpenAI's per-request batch cap; maxEmbedInputBytes ` |
 | `docs/audit-2026-09-02.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
 | `docs/audit-2026-09-02.md|internal/serveapp/heartbeat_test.go:161` | goinfer | `// G21 end-to-end. What this asserts is bounded by the model available: the 1.5B` |

@@ -21,10 +21,11 @@
 > and says so. **Updated 2026-09-04** against `docs/audit-2026-09-02.md`'s full remediation, which
 > landed after this doc was scoped (goinfer `f1d98d3`) — several of its cross-references were stale
 > within a day: P-13 is FIXED; P-15 is 2-of-3 fixed (the penalty-map rebuild this doc's R-08 names is
-> done; `forEachChunk` measured not-worth-it; batched-verify buffer churn deferred); P-17 is 1-of-3
-> fixed (the decoder-as-embedder batching this doc's R-07 names is done; `streamTokens`'s re-decode
-> and the embeddings double-tokenize are deferred, the former for genuine complexity — three
-> interacting correctness invariants — not lack of ROI); P-18 is confirmed and measured (148× TTFT
+> done; `forEachChunk` measured not-worth-it; batched-verify buffer churn deferred); P-17 is now
+> 2-of-3 fixed as of this doc's own R-07 work below (the decoder-as-embedder batching AND the
+> embeddings double-tokenize are both done; only `streamTokens`'s re-decode remains, deferred for
+> genuine complexity — three interacting correctness invariants — not lack of ROI, tracked under
+> R-08); P-18 is confirmed and measured (148× TTFT
 > at 2k tokens on the real production path) with its fix explicitly assigned to L-15, not itself.
 > P-09/P-10 stand as filed, not implemented — no change there. See each item below for the
 > corrected status. Also: aikit was bumped to v1.33.0 in the same round (`gpu` stays v0.32.0,
@@ -62,7 +63,7 @@
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | open |
 | **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:79-81` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | open; aikit-side first — **S-03's NEON quantiser shipped in aikit v1.33.0** (built 2026-09-03, unmeasured per aikit's own tracking; goinfer bumped to it 2026-09-04), but `MatmulBTW4A8Batch` itself does not exist yet — still the blocking half |
-| **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **half done, 2026-09-03**: `decoder/embed.go`'s per-token forward is FIXED (`hiddenLastBatched`, ~12-14× measured); `embeddings.go`'s double-tokenize is still open |
+| **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
 | **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **2-of-3 done, 2026-09-03**: P-13's vocab sort and P-15's penalty-map rebuild are both FIXED (`topKByLogit`, incremental `histCounts`); only P-17's `streamTokens` re-decode remains open, deferred on genuine complexity (byte-fallback fusing + UTF-8 completeness + stop-string overlap, not lack of ROI) |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
 | **R-10** | every KV head's history re-gathered and transposed per layer per token (Gemma-4 CPU) | P-09 | 2–3× attention traffic at long context | store V transposed at append | filed, contingent |
@@ -322,12 +323,28 @@ positions are inherent, not recompute.
 - **Where:** P-17's second half — `decoder/embed.go` runs one forward per token ("the sequential
   prefill the flags call ~9× slower"); `internal/serveapp/embeddings.go` tokenises each input twice.
 - **Fix:** `forwardLayersN` over the whole input; tokenise once.
-- **Status (2026-09-03): the `decoder/embed.go` half is FIXED.** `HiddenLast` now dispatches to
-  `hiddenLastBatched` (one `runLayersFromEmbedN` call, `canBatchN`-gated, falling back to the
-  original per-token `hiddenLastSequential` for `K==1` and the families that path excludes) —
-  measured ~12-14× at K=64 on a real Qwen3-0.6B checkpoint, cosine 1.0000000000 against the old
-  per-token path across four sequence lengths. `internal/serveapp/embeddings.go`'s double-tokenize
-  is untouched; still open.
+- **Status (2026-09-03): both halves FIXED.** `HiddenLast` now dispatches to `hiddenLastBatched`
+  (one `runLayersFromEmbedN` call, `canBatchN`-gated, falling back to the original per-token
+  `hiddenLastSequential` for `K==1` and the families that path excludes) — measured ~12-14× at
+  K=64 on a real Qwen3-0.6B checkpoint, cosine 1.0000000000 against the old per-token path across
+  four sequence lengths.
+  `internal/serveapp/embeddings.go`'s double-tokenize traced to `decoderEmbedder.encodeLocked`
+  (`internal/serveapp/decoder_embedder.go`): it tokenizes to get `ids`, uses them for the forward,
+  and discards them; `CountTokens` then re-tokenized the SAME text from scratch purely to report
+  `usage.prompt_tokens`. Fixed with a new optional capability, `embedBatchCounter`
+  (`EncodeBatchCounted`, mirroring the existing `embedTokenCounter` pattern), that the
+  decoder-backed embedder implements by returning `len(ids)` from the SAME `encodeLocked` call
+  already made for the vector — no second tokenize. `handleEmbeddings` prefers it when the
+  embedder implements it, falling back to the original `EncodeBatch` + `countEmbedTokens` for
+  encoders that can't (the aikit `encoder.Encoder` interface — an external dependency —
+  can't have `EncodeBatch` itself changed to return counts, unlike R-06's aikit blocker this one
+  didn't need an aikit change at all, since the fix lives entirely in goinfer's own
+  `decoderEmbedder` wrapper). Gated by
+  `TestDecoderEmbedder_encodeBatchCountedMatchesSeparateCalls` (heavy: real Qwen3-0.6B checkpoint;
+  vectors bit-identical to `EncodeBatch`, counts identical to `CountTokens`) and
+  `TestHandleEmbeddings_prefersEncodeBatchCounted` (portable: a counting fake proves the handler
+  actually dispatches to the byproduct path and never calls the two-pass fallback). Both
+  mutation-checked. Full `internal/serveapp` suite green (133 pass / 0 fail / 27 skip).
 
 ### R-08 · Three O(n²)-per-token loops in serving
 
