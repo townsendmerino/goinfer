@@ -1232,9 +1232,9 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:124` | goinfer | `func (target *Model) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt []int,` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:177` | goinfer | `case "cuda":` |
 | `docs/audit-2026-09-02.md|decoder/spec_adaptive.go:82` | goinfer | `if a.Theta >= 1 {` |
-| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:25` | goinfer | `if sp.Temperature != 0 \|\| sp.LogitProcessor != nil {` |
-| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:254` | goinfer | `feats = make([][]float32, len(ids))` |
-| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:82` | goinfer | `feats[i] = fuseAt(i)` |
+| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:260` | goinfer | `feats = make([][]float32, len(ids))` |
+| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:28` | goinfer | `if sp.Temperature != 0 \|\| sp.LogitProcessor != nil {` |
+| `docs/audit-2026-09-02.md|decoder/spec_eagle.go:85` | goinfer | `feats[i] = fuseAt(i)` |
 | `docs/audit-2026-09-02.md|decoder/spec_hitrate_probe_test.go:40` | goinfer | `giw := os.Getenv("GOINFER_SPEC_PROBE_GIW")` |
 | `docs/audit-2026-09-02.md|decoder/spec_ngram.go:358` | goinfer | `lookupCtx := append(slices.Clone(hist), cur)` |
 | `docs/audit-2026-09-02.md|decoder/spec_ngram.go:405` | goinfer | `p := dist(logitsN[i], ph)` |
@@ -1553,14 +1553,14 @@ supports.
 | `docs/review-2026-09-04.md|cuda/prefill.go:377` | goinfer | `maxNWin := startPos + M` |
 | `docs/review-2026-09-04.md|cuda/resident.go:2435` | goinfer | `mustSplit := splitKVRequired(nWin)` |
 | `docs/review-2026-09-04.md|cuda/spec_pager_interaction_test.go:1259` | goinfer | `UNKEYABLE` |
-| `docs/review-2026-09-04.md|decoder/generate_vl.go:22` | goinfer | `m.residentForgetIDs()` |
+| `docs/review-2026-09-04.md|decoder/generate_vl.go:22` | goinfer | `// forget here was copy-pasted from a resident-path template and was doubly wrong: the` |
 | `docs/review-2026-09-04.md|decoder/lora.go:265` | goinfer | `case arch.gemma4 != nil \|\| arch.qwen35 != nil:` |
 | `docs/review-2026-09-04.md|decoder/model.go:1027` | goinfer | `for range maxTokens {` |
 | `docs/review-2026-09-04.md|decoder/model.go:1029` | goinfer | `case <-ctx.Done():` |
 | `docs/review-2026-09-04.md|decoder/model.go:214` | goinfer | `if strings.HasSuffix(dir, ".giw") {` |
 | `docs/review-2026-09-04.md|decoder/model.go:862` | goinfer | `if lg, perr := pf.PrefillLast(embs, from); perr == nil {` |
 | `docs/review-2026-09-04.md|decoder/residency.go:596` | goinfer | `rf, ok, err := rb.BuildResident(m)` |
-| `docs/review-2026-09-04.md|decoder/spec_eagle.go:21` | goinfer | `m.residentForgetIDs()` |
+| `docs/review-2026-09-04.md|decoder/spec_eagle.go:21` | goinfer | `// resident-commit fix that applied to genNgramInto does NOT apply here for the same` |
 | `docs/review-2026-09-04.md|decoder/speculative.go:167` | goinfer | `l, err := draft.resident.Forward(draft.embedResident(tok), dpos)` |
 | `docs/review-2026-09-04.md|demo/agent/agent/agent.go:329` | goinfer | `turns := append([]msg(nil), s.history...)` |
 | `docs/review-2026-09-04.md|gpu/attention.go:272` | goinfer | `// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the ol` |
@@ -1638,6 +1638,9 @@ supports.
 | `docs/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {` |
 | `docs/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
 | `docs/task-fit-to-hardware.md|pull/pull.go:174` | goinfer | `Size   int64` |
+| `docs/task-fp4-formats.md|decoder/forward_gptoss.go:17` | goinfer | `// speed on x86, and bench numbers are deferred (docs/task-mxfp4-gptoss.md §6.6).` |
+| `docs/task-fp4-formats.md|decoder/gguf.go:1755` | goinfer | `anchor: func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu` |
+| `docs/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
 | `docs/task-freetoken-techniques.md|decoder/model.go:167` | goinfer | `MoECacheSlots int` |
 | `docs/task-freetoken-techniques.md|internal/serveapp/main.go:278` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
 | `docs/task-gpu-batched-prefill.md|decoder/residency.go:54` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |

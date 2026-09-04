@@ -16,10 +16,13 @@ import "context"
 // owns the returned channel: range over it to consume tokens, then check
 // Generation.Err for a terminal error.
 func (m *Model) GenerateVL(ctx context.Context, ids []int, features []float32, imgPos, imgLen, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
-	// Not generateInto's resident path: this entry point may drive the resident KV on its
-	// own schedule, so the recorded id list stops being true the moment it does. Forget it —
-	// the next turn cold-prefills, which is slow, not wrong (resident_reuse.go).
-	m.residentForgetIDs()
+	// V-11 (docs/review-2026-09-04.md): this entry point is stateless and CPU-only by design
+	// (see the doc comment above) — it never touches m.resident at all, so whatever resIDs
+	// described before this call is still accurate and must NOT be forgotten. The removed
+	// forget here was copy-pasted from a resident-path template and was doubly wrong: the
+	// premise it stated ("this entry point may drive the resident KV") is false for a
+	// CPU-only path, AND it wrote m.resIDs unconditionally, racing the resBusy claim every
+	// resident-touching caller (R-00 onward) takes before doing exactly that.
 	out := make(chan int)
 	g := &Generation{}
 	cache := m.NewCache(len(ids) + maxTokens)
@@ -87,10 +90,13 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, features []float32, i
 // in the ViT). Decode past the prompt resumes scalar positions at the block max + 1
 // (handled by the cache's m-RoPE delta). Stateless + CPU-only, like GenerateVL.
 func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, features []float32, imgPos, imgLen int, gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
-	// Not generateInto's resident path: this entry point may drive the resident KV on its
-	// own schedule, so the recorded id list stops being true the moment it does. Forget it —
-	// the next turn cold-prefills, which is slow, not wrong (resident_reuse.go).
-	m.residentForgetIDs()
+	// V-11 (docs/review-2026-09-04.md): this entry point is stateless and CPU-only by design
+	// (see the doc comment above) — it never touches m.resident at all, so whatever resIDs
+	// described before this call is still accurate and must NOT be forgotten. The removed
+	// forget here was copy-pasted from a resident-path template and was doubly wrong: the
+	// premise it stated ("this entry point may drive the resident KV") is false for a
+	// CPU-only path, AND it wrote m.resIDs unconditionally, racing the resBusy claim every
+	// resident-touching caller (R-00 onward) takes before doing exactly that.
 	out := make(chan int)
 	g := &Generation{}
 	go func() {

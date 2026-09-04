@@ -15,10 +15,13 @@ import (
 // correct token is in the head's top-B but not top-1, and continuing from the TRUE token.
 // Wider/deeper trees cover more but cost B^D-ish verify work — tune B, D to the workload.
 func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, maxTokens int, head *EagleHead, capLayers []int, B, D int, sp SamplingParams) (<-chan int, *Generation, error) {
-	// Not generateInto's resident path: this entry point may drive the resident KV on its
-	// own schedule, so the recorded id list stops being true the moment it does. Forget it —
-	// the next turn cold-prefills, which is slow, not wrong (resident_reuse.go).
-	m.residentForgetIDs()
+	// V-11 (docs/review-2026-09-04.md): removed. This function never touches m.resident at
+	// all — it uses m.embedToken (not embedResident) and a local tc := m.NewCache(...) for
+	// every forward via m.forwardNAttn (confirmed when R-03 investigated this file: the
+	// resident-commit fix that applied to genNgramInto does NOT apply here for the same
+	// reason). Whatever resIDs described before this call is still accurate; the removed
+	// forget wrote m.resIDs unconditionally, racing the resBusy claim every resident-touching
+	// caller takes before doing exactly that.
 	if head == nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculativeTree: nil head")
 	}
@@ -191,10 +194,13 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 // acceptance is the head's (~1.6 tok/verify measured), so the speedup is modest and
 // backend-dependent. capLayers selects the 3 fused target layers (e.g. {2,L/2,L-3}).
 func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxTokens int, head *EagleHead, capLayers []int, K int, sp SamplingParams) (<-chan int, *Generation, error) {
-	// Not generateInto's resident path: this entry point may drive the resident KV on its
-	// own schedule, so the recorded id list stops being true the moment it does. Forget it —
-	// the next turn cold-prefills, which is slow, not wrong (resident_reuse.go).
-	m.residentForgetIDs()
+	// V-11 (docs/review-2026-09-04.md): removed. This function never touches m.resident at
+	// all — it uses m.embedToken (not embedResident) and a local tc := m.NewCache(...) for
+	// every forward via m.forwardNAttn (confirmed when R-03 investigated this file: the
+	// resident-commit fix that applied to genNgramInto does NOT apply here for the same
+	// reason). Whatever resIDs described before this call is still accurate; the removed
+	// forget wrote m.resIDs unconditionally, racing the resBusy claim every resident-touching
+	// caller takes before doing exactly that.
 	if head == nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateEagleSpeculative: nil head")
 	}
