@@ -164,15 +164,23 @@ func TestSendUsage_onlyWhenRequested(t *testing.T) {
 	}
 }
 
-// M-25, AT THE CALL SITE. The tokenizer tests prove DecodeContinuation keeps the leading
-// space; they cannot prove the streaming loop calls it. Measured: reverting streamTokens to
-// Decode broke NO test — the component was correct and vouched for behaviour the system did
-// not produce, which is the trap CLAUDE.md names. So the assertion belongs here.
+// M-25, AT THE CALL SITE. The tokenizer tests prove DecodePiece/DecodeContinuation keep the
+// leading space; they cannot prove the streaming loop calls one of them. Measured: reverting
+// streamTokens to Decode broke NO test — the component was correct and vouched for behaviour
+// the system did not produce, which is the trap CLAUDE.md names. So the assertion belongs here.
 //
 // streamTokens is shared by chat, /v1/completions and vision, so all three carried the defect
-// the audit scoped to /v1/completions. Both decodes of the accumulated GENERATED ids must use
-// DecodeContinuation: those ids continue the prompt, and Decode applies SentencePiece's
-// sequence-level dummy-prefix strip to them.
+// the audit scoped to /v1/completions. The generated ids must never go through Decode: those
+// ids continue the prompt, and Decode applies SentencePiece's sequence-level dummy-prefix strip
+// to them — eating the response's leading space on Llama-2/Mistral.
+//
+// R-08 (audit-2026-09-02 / task-recompute-audit.md) replaced the per-token DecodeContinuation(ids)
+// re-decode of the WHOLE generated sequence (O(n^2) in output length) with DecodePiece(id)
+// appended incrementally. DecodePiece is the same non-stripping contract DecodeContinuation was
+// relied on for here — its own doc comment states it explicitly ("does NOT apply the
+// whole-sequence dummy-prefix strip... a caller printing piece-by-piece emitted
+// 'Theanswerisfour'" if it did) — so this guard now requires DecodePiece instead of
+// DecodeContinuation, and forbids Decode exactly as before.
 func TestStreamTokens_decodesAsAContinuation(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "openai.go", nil, 0)
@@ -189,15 +197,15 @@ func TestStreamTokens_decodesAsAContinuation(t *testing.T) {
 	if fn == nil {
 		t.Fatal("streamTokens not found — this guard is watching nothing")
 	}
-	var cont, whole int
+	var piece, whole int
 	ast.Inspect(fn, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
 		switch sel.Sel.Name {
-		case "DecodeContinuation":
-			cont++
+		case "DecodePiece":
+			piece++
 		case "Decode":
 			whole++
 		}
@@ -208,8 +216,8 @@ func TestStreamTokens_decodesAsAContinuation(t *testing.T) {
 			"applies to the generated ids and eats the response's leading space on Llama-2 / "+
 			"Mistral (M-25)", whole)
 	}
-	if cont != 2 {
-		t.Errorf("streamTokens has %d DecodeContinuation call(s), want 2 — the decode sites "+
-			"moved and this guard is now counting the wrong thing", cont)
+	if piece != 1 {
+		t.Errorf("streamTokens has %d DecodePiece call(s), want 1 — the decode site moved and "+
+			"this guard is now counting the wrong thing", piece)
 	}
 }

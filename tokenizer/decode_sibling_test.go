@@ -108,6 +108,66 @@ func TestDecodeContinuation_identicalWhenNothingIsStripped(t *testing.T) {
 	}
 }
 
+// TestDecodeContinuation_isIncrementallyAssociative is audit R-08's gate: streamTokens re-decoded
+// the WHOLE generated id sequence on every token (O(n^2) in output length) instead of decoding
+// just the new suffix and appending, out of caution that byte-fallback fusion — a run of raw
+// bytes accumulated across CONSECUTIVE byte-fallback tokens, only written out as one unit — might
+// make an arbitrary split point unsafe.
+//
+// It does not: decode()'s per-token loop has NO state that depends on chunk boundaries. A
+// byte-fallback token appends its raw byte to `pending`; flush() writes pending as-is
+// (unconditionally, with no UTF-8 interpretation) whenever a non-byte-fallback token arrives OR
+// the slice ends. Splitting a call into several shorter calls just moves WHEN a flush happens,
+// never WHAT gets written — string concatenation is associative regardless of where the pending
+// bytes get flushed, and a flush that lands mid-multibyte-rune produces the identical bytes a
+// later flush of the same bytes would have. So decode(ids) == concat(decode([ids[i]]) for i in
+// ids), token by token, for every split point — proven here across a real multi-byte-emoji
+// boundary (🦄 = 4 UTF-8 bytes = 4 consecutive byte-fallback tokens) with normal pieces on both
+// sides, exactly the shape a real generation produces.
+func TestDecodeContinuation_isIncrementallyAssociative(t *testing.T) {
+	emoji := "🦄" // F0 9F A6 84 — a 4-byte UTF-8 rune, the classic byte-fallback stress case
+	if len(emoji) != 4 {
+		t.Fatalf("test setup: %q is %d bytes, want 4", emoji, len(emoji))
+	}
+	byteToVal := map[int32]byte{}
+	idToPiece := []string{"x", "", "", "", "", "y", "", "", "z"}
+	// ids 1-4: 🦄's four bytes, byte-fallback. ids 6-7: "€"'s three... use 2 bytes for variety
+	// (a truncated/lone continuation byte is still just raw bytes to decode(), no validation).
+	for i, b := range []byte(emoji) {
+		byteToVal[int32(1+i)] = b
+	}
+	euro := []byte("€") // E2 82 AC, 3 bytes — a second, separate run later in the sequence
+	idToPiece = append(idToPiece, "", "", "")
+	for i, b := range euro {
+		byteToVal[int32(9+i)] = b
+	}
+	tk := &Tokenizer{idToPiece: idToPiece, byteToVal: byteToVal}
+
+	ids := []int{0, 1, 2, 3, 4, 5, 9, 10, 11, 8} // x + 🦄 + y + € + z
+	full, err := tk.DecodeContinuation(ids)
+	if err != nil {
+		t.Fatalf("DecodeContinuation: %v", err)
+	}
+	want := "x" + emoji + "y" + string(euro) + "z"
+	if full != want {
+		t.Fatalf("test setup: full decode = %q, want %q", full, want)
+	}
+
+	var incremental string
+	for _, id := range ids {
+		piece, err := tk.DecodePiece(id)
+		if err != nil {
+			t.Fatalf("DecodePiece(%d): %v", id, err)
+		}
+		incremental += piece
+	}
+	if incremental != full {
+		t.Errorf("incremental DecodePiece concatenation = %q, want %q (DecodeContinuation of the "+
+			"whole sequence) — decode is not associative at every split point, so streamTokens "+
+			"cannot decode just the new suffix per token", incremental, full)
+	}
+}
+
 // N-24: byte-level decode pushed ADDED-token content through the byte table. An added token's
 // surface is stored VERBATIM (it is not byte-level-encoded), so a rune in U+0080–U+0143 — é, ü,
 // ñ, and every chat template that spells a role in a non-ASCII language — mapped back to ONE raw

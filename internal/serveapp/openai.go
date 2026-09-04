@@ -1047,6 +1047,17 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 // that was hit (empty unless a stop sequence ended the turn).
 func (lm *loadedModel) streamTokens(parent context.Context, cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
 	var ids []int
+	// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole `ids`
+	// sequence every token (audit R-08: was O(n^2) in output length). decode()'s per-token loop
+	// (tokenizer/sentencepiece.go) has no state that depends on chunk boundaries — a byte-fallback
+	// token's raw byte is written out whenever a later flush happens, and concatenation is
+	// associative regardless of WHEN that flush lands — so DecodePiece(id) appended one token at a
+	// time is byte-identical to DecodeContinuation(ids) computed fresh each time.
+	// TestDecodeContinuation_isIncrementallyAssociative (tokenizer/) proves this directly across a
+	// multi-byte-emoji byte-fallback run, the case this used to be cautious about. strings.Builder,
+	// not `text += piece`: Go strings are immutable, so naive concatenation is itself O(n) per
+	// append and would silently reintroduce the O(n^2) this exists to remove.
+	var sb strings.Builder
 	printed := 0
 	finish := ""
 	stopHit := ""
@@ -1056,13 +1067,25 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			continue // drain so the generation goroutine exits cleanly
 		}
 		ids = append(ids, id)
-		// DecodeContinuation, not Decode: these ids CONTINUE the prompt, and Decode
-		// applies SentencePiece's sequence-level dummy-prefix strip — which ate the
-		// leading space of the response on Llama-2/Mistral (M-25). Shared by chat,
-		// /v1/completions and vision, so all three were affected, not just the one
-		// the audit names.
-		text, _ := lm.tk.DecodeContinuation(ids)
-		if cut, which, hit := firstStop(text, gr.stopStrings); hit {
+		// DecodePiece, not Decode/DecodeContinuation: these ids CONTINUE the prompt (no
+		// sequence-level dummy-prefix strip — M-25), and appending each token's own piece is
+		// exactly what the whole-sequence decode does internally, one token at a time.
+		piece, _ := lm.tk.DecodePiece(id)
+		sb.WriteString(piece)
+		text := sb.String() // O(1): a view over the Builder's buffer, not a copy
+		// tail is text[printed:] — the not-yet-emitted suffix, bounded (does not grow with total
+		// output length). Scanning it instead of the whole text is the other half of R-08's fix:
+		// text[:printed] provably never contains a stop match, complete or in progress. Any
+		// complete match either lies entirely in tail (found here), or would have to start before
+		// printed and extend into it — impossible, because stopTailHold's own invariant is exactly
+		// "hold back every suffix of the CURRENT text that could be a stop's prefix", so printed
+		// never advances past the start of a still-possible match; if one completes, it completes
+		// within what stopTailHold already held back, i.e. within tail. firstStop returns an
+		// offset into whatever string it searches, so cut/end below are translated back to
+		// absolute offsets into text (+= printed) before use.
+		tail := text[printed:]
+		if cut, which, hit := firstStop(tail, gr.stopStrings); hit {
+			cut += printed
 			if cut > printed {
 				onText(text[printed:cut])
 			}
@@ -1072,8 +1095,8 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		}
 		// Emit up to the UTF-8 boundary, but never past a trailing partial stop
 		// match — those bytes wait until the next token proves them stop or not (M2).
-		end := completeUTF8(text)
-		if safe := len(text) - stopTailHold(text, gr.stopStrings); safe < end {
+		end := completeUTF8(tail) + printed
+		if safe := printed + len(tail) - stopTailHold(tail, gr.stopStrings); safe < end {
 			end = safe
 		}
 		if end > printed {
@@ -1082,7 +1105,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		}
 	}
 	if !stopping { // flush any held-back trailing bytes
-		if text, _ := lm.tk.DecodeContinuation(ids); len(text) > printed {
+		if text := sb.String(); len(text) > printed {
 			onText(text[printed:])
 		}
 		// Compare against the EFFECTIVE budget, not the requested max_tokens: a resident
