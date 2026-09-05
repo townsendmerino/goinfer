@@ -74,16 +74,31 @@ MODELS = {
     # for these two MoE models), so the GGUF here is the PEER-ONLY artifact.
     "M35": (os.path.expanduser("~/models/qwen3.6-35b-a3b-q4_k_m.gguf"), "m35q4km"),
     "M26": (os.path.expanduser("~/models/gemma4-26b-q4_k_m.gguf"), "m26q4km"),
+    # G20 added 2026-09-05 (docs/task-peer-benchmarks.md §2/§5, tier 2: "fits the Mac, not the
+    # card: a resident cell on one box and an offload cell on the other"). gpt-oss-20b's OWN
+    # shipped MXFP4 quant (OpenAI's native format) -- the only GGUF for it on this box, and the
+    # SAME file all three engines load (unlike M35/M26 below): decoder/gguf.go's gptOssArchitecture
+    # routes expert weights through stackedExperts/RowDequantizer regardless of the harness's
+    # `-quant` flag, so there is no separate pre-quantized .giw bundle for goinfer here and no
+    # quant-flag refusal either -- confirmed live 2026-09-05 with a smoke test (`-quant int4
+    # -moe-cache-experts` loaded it CUDA-resident at 7269 MiB VRAM in ~90s). 20B total / ~3.6B
+    # active MoE -- past the 8 GB card, hence MOE_MODELS membership below, but it is NOT in
+    # GOINFER_MOE_PATH (no path substitution, no quant-flag omission -- see the is_moe split in
+    # run_cell's goinfer branch).
+    "G20": (os.path.expanduser("~/models/gpt-oss-20b-MXFP4.gguf"), "g20"),
 }
 
 # MoE cells whose VRAM footprint exceeds this box's 8 GB card: goinfer needs -moe-cache-experts
 # (host<->VRAM expert streaming) or it silently declines resident CUDA and falls back to the CPU
 # path -- a "cuda" row that is actually CPU, with nothing in the response to say so (measured
-# 2026-09-04: without the flag the server logs the decline and keeps serving on CPU). These models
-# also load through a pre-quantized .giw bundle, which BAKES ITS OWN QUANT -- passing the harness's
-# usual `-quant int4` at these two REFUSES TO START ("cannot apply to the prequantized .giw bundle
-# ... it is baked at int4mix"), so goinfer's quant flag is omitted for this set, not just changed.
-MOE_MODELS = {"M35", "M26"}
+# 2026-09-04: without the flag the server logs the decline and keeps serving on CPU). Also drives
+# the longer load timeout and (on llama.cpp) dropping -ngl so its own --fit can place layers.
+# NOTE this is a SUPERSET of GOINFER_MOE_PATH's keys: M35/M26 additionally load through a
+# pre-quantized .giw bundle that BAKES ITS OWN QUANT (so goinfer's `-quant` flag must be omitted
+# for those two, not just changed -- "cannot apply to the prequantized .giw bundle ... baked at
+# int4mix"); G20 has no such bundle and takes the harness's normal `-quant int4` unmodified (see
+# the MODELS/G20 comment above) while still needing everything else in this set.
+MOE_MODELS = {"M35", "M26", "G20"}
 
 # goinfer's OWN path for the MOE_MODELS set, distinct from MODELS[key][0] above (which is the
 # Q4_K_M GGUF ollama/llama-server load). goinfer runs its native kind-4 .giw bundle instead --
@@ -550,15 +565,17 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     proc = None
     try:
         if engine == "goinfer":
-            # MOE_MODELS: goinfer loads its OWN kind-4 .giw bundle (GOINFER_MOE_PATH), not the
-            # peer GGUF in `path` -- see the MODELS/MOE_MODELS comment above. The .giw bakes its
-            # own quant, so `-quant int4` is dropped for this set (it refuses to start otherwise);
-            # `-moe-cache-experts` is added so a >8GB-VRAM MoE actually runs resident-with-
-            # streaming on CUDA instead of silently declining to the CPU path.
-            is_moe = model_key in MOE_MODELS
-            gpath = GOINFER_MOE_PATH[model_key] if is_moe else path
-            quant_args = [] if is_moe else ["-quant", "int4"]
-            moe_args = ["-moe-cache-experts"] if (is_moe and backend == "cuda") else []
+            # MOE_MODELS: `-moe-cache-experts` is added for every model in this set so a >8GB-VRAM
+            # MoE actually runs resident-with-streaming on CUDA instead of silently declining to
+            # the CPU path. GOINFER_MOE_PATH is the NARROWER subset (M35/M26) that also load
+            # goinfer's OWN kind-4 .giw bundle instead of the peer GGUF in `path` -- that bundle
+            # bakes its own quant, so `-quant int4` is dropped for those two (it refuses to start
+            # otherwise). G20 is in MOE_MODELS but not GOINFER_MOE_PATH: it loads the SAME GGUF as
+            # the peers and takes the normal `-quant int4` unmodified -- see the MODELS/G20 comment.
+            has_own_bundle = model_key in GOINFER_MOE_PATH
+            gpath = GOINFER_MOE_PATH[model_key] if has_own_bundle else path
+            quant_args = [] if has_own_bundle else ["-quant", "int4"]
+            moe_args = ["-moe-cache-experts"] if (model_key in MOE_MODELS and backend == "cuda") else []
             proc = subprocess.Popen(
                 [SERVE[backend], "-model", f"bench={gpath}", "-backend", backend,
                  "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
