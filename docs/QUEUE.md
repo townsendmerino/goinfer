@@ -1687,6 +1687,13 @@ supports.
 | `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
 | `docs/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
 | `docs/task-moe-streaming.md|decoder/residency.go:130` | goinfer | `return m.residentProjsInt4()` |
+| `docs/task-prefill-gap.md|internal/serveapp/main.go:318` | goinfer | `const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion: use the f64-accumulating ` |
+| `docs/task-prefill-gap.md|internal/serveapp/main.go:372` | goinfer | `flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "batch the WHOLE prompt` |
+| `docs/task-prefill-gap.md|internal/serveapp/main.go:373` | goinfer | `flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)` |
+| `docs/task-prefill-gap.md|metal/backend.go:228` | goinfer | `// DECLINE BY DEFAULT — Metal's batched prefill is NOT bit-identical to the sequential d` |
+| `docs/task-prefill-gap.md|metal/backend.go:240` | goinfer | `if os.Getenv("GOINFER_METAL_BATCHED_PREFILL") != "1" {` |
+| `docs/task-prefill-gap.md|metal/prefill.go:10` | goinfer | `// Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unli` |
+| `docs/task-prefill-gap.md|metal/prefill.go:210` | goinfer | `// attention_prefill: one threadgroup per (row m, query head qh). Row m attends CAUSALLY` |
 | `docs/task-recompute-audit.md|cuda/resident.go:276` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/task-recompute-audit.md|decoder/attention.go:89` | goinfer | `matmulInto(scr.ws, be, &lw.QProj, h, q, 1)` |
 | `docs/task-recompute-audit.md|decoder/blockspec.go:195` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
