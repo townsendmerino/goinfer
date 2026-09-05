@@ -10,6 +10,7 @@ package decoder
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"math"
 	"os"
@@ -17,6 +18,19 @@ import (
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
+
+// PrefillLogitsForTest exposes the CPU backend's batched prompt prefill (prefillLogits) — weights
+// streamed once and reused across all K positions rather than K separate M=1 passes, ~1.7-2x
+// faster than the sequential loop, bit-identical to it (the seed token's math is unchanged; only
+// the earlier positions' unused logits are skipped). Used by
+// decoder/prefill_ref_gen_test.go so building the §3.1 CPU reference doesn't pay the sequential
+// loop's cost twice over (once here, once again on the Metal side, which has no batched CPU
+// equivalent to borrow). Caller controls exact vs fast attention via GOINFER_CPU_FAST_ATTENTION
+// (t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") for the exact f64-accumulating kernel the reference
+// needs) exactly as it would calling the production path.
+func (m *Model) PrefillLogitsForTest(ctx context.Context, prompt []int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogits(ctx, prompt, cache)
+}
 
 // NearTieHardFailPct is the bar NearTieArgmaxForTest hard-fails at -- the same 3% every existing
 // near-tie gate in this tree already uses inline (cuda/realforward_test.go's argmaxF comparison,

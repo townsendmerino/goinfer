@@ -3,9 +3,12 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,10 +32,22 @@ import (
 //     GGUF cannot load under "int8" this subtest logs why and skips — D7 is the confirmation
 //     model, S is the one the decision rests on.
 //
-// The reference is the plain sequential per-token forward (ForwardForTest — the same seam the GPU
-// resident-vs-CPU parity gates already use), which carries the f64-accumulating attention
-// unconditionally: GOINFER_CPU_FAST_ATTENTION only ever gates the BATCHED/chunked prefill attention
-// path, which this per-token loop never engages, so there is nothing to disable here.
+// The reference is the CPU backend's own prefill (PrefillLogitsForTest, the batched prompt path —
+// weights streamed once and reused across all K positions, ~1.7-2x faster than a naive per-token
+// loop and bit-identical to it) with GOINFER_CPU_FAST_ATTENTION forced to "0", i.e. the exact
+// f64-accumulating attention kernel, never the f32-fast one that is default ON elsewhere in this
+// tree. The 64-token greedy continuation past the prompt still runs one token at a time
+// (ForwardForTest) — inherent to greedy decoding (each step needs the previous step's own choice),
+// and cheap next to K up to 3900.
+//
+// PARALLEL ACROSS PROMPTS: the 10 prompts per (model, K) run concurrently, one goroutine per CPU
+// (capped), each with its own *KVCache. This is safe because a CPU forward's mutable scratch state
+// lives on the KVCache it's given (decoder/model.go's cache.scr), not on the shared *Model — the
+// only mutex on *Model guards LoRA adapter swaps, a different concern. Verified empirically, not
+// just argued: before the real run, a short preflight sends the SAME prompt through N concurrent
+// workers on independent caches and requires bit-identical seed logits; a real corruption would
+// show up there in seconds rather than being discovered hours into results that already cost the
+// wall-clock this parallelism exists to avoid.
 //
 // Output is NOT written into the repo — these are large, per-machine, per-session binaries
 // (10 prompts x 65 x vocab float32s per cell) meant only for the Phase B run on this box, not a
@@ -47,6 +62,7 @@ func TestPrefillGateReference(t *testing.T) {
 	if testing.Short() {
 		t.Skip("long-running reference build: skipped in -short")
 	}
+	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") // exact f64-accumulating attention, not the fast f32 default
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -58,6 +74,7 @@ func TestPrefillGateReference(t *testing.T) {
 	}
 
 	const continuationN = 64
+	workers := min(8, runtime.NumCPU())
 	models := []struct {
 		name        string
 		pathEnv     string
@@ -103,47 +120,141 @@ func TestPrefillGateReference(t *testing.T) {
 				prompts = append(prompts, PrefillGateProseIDsForTest(t, tk, f, maxK))
 			}
 
+			preflightConcurrencySafety(t, m, prompts[0], workers)
+
 			for _, K := range mc.ks {
-				t0 := time.Now()
-				for pi, ids := range prompts {
-					if len(ids) < K {
-						t.Fatalf("prompt %d: only %d tokens, need >= %d", pi, len(ids), K)
-					}
-					seedLogits, refTokens, refLogits := prefillReferenceCell(t, m, ids[:K], continuationN, K)
-					outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", mc.name, K, pi))
-					if err := WritePrefillReferenceForTest(outPath, seedLogits, refTokens, refLogits); err != nil {
-						t.Fatalf("write %s: %v", outPath, err)
-					}
-					fmt.Printf("[ref] %s K=%d prompt %2d/%2d -> %s elapsed=%s\n",
-						mc.name, K, pi+1, len(prompts), outPath, time.Since(t0).Round(time.Second))
-				}
+				runPrefillReferenceKConcurrent(t, m, mc.name, K, prompts, outDir, continuationN, workers)
 			}
 		})
 	}
 }
 
-// prefillReferenceCell runs the sequential CPU forward over ids, then continuationN more greedy
-// steps, returning the seed logits, the greedy continuation tokens, and that continuation's own
-// per-position logits — all cloned at capture time (ForwardForTest's underlying buffer ownership
-// is not guaranteed across calls; cloning defensively costs nothing at this scale and is the exact
-// class of bug metal/prefill_gate_test.go's runPrefillGateCell already had to fix once).
-func prefillReferenceCell(t *testing.T, m *Model, ids []int, continuationN, K int) (seedLogits []float32, refTokens []int, refLogits [][]float32) {
+// preflightConcurrencySafety sends the SAME (short) prompt through `workers` concurrent goroutines,
+// each with its own *KVCache, and requires bit-identical seed logits from every one. It exists to
+// verify — not merely argue — that concurrent CPU forward on independent caches doesn't corrupt
+// shared state, before the real run spends hours of wall-clock trusting that. A short prompt (<=64
+// tokens) keeps this to a few seconds regardless of model size.
+func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers int) {
 	t.Helper()
-	cache := m.NewCache(K + continuationN + 4)
-
-	lastLog := time.Now()
-	var seed []float32
-	for i, id := range ids {
-		lg, err := m.ForwardForTest(id, cache)
+	probe := prompt
+	if len(probe) > 64 {
+		probe = probe[:64]
+	}
+	results := make([][]float32, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		w := w
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cache := m.NewCache(len(probe) + 4)
+			lg, err := m.PrefillLogitsForTest(context.Background(), probe, cache)
+			if err != nil {
+				errs[w] = err
+				return
+			}
+			results[w] = append([]float32(nil), lg...)
+		}()
+	}
+	wg.Wait()
+	for w, err := range errs {
 		if err != nil {
-			t.Fatalf("forward pos=%d: %v", i, err)
-		}
-		seed = append([]float32(nil), lg...)
-		if time.Since(lastLog) > 20*time.Second {
-			fmt.Printf("[ref]   ... K=%d at pos %d/%d\n", K, i+1, K)
-			lastLog = time.Now()
+			t.Fatalf("concurrency preflight: worker %d: %v", w, err)
 		}
 	}
+	for w := 1; w < workers; w++ {
+		if len(results[w]) != len(results[0]) {
+			t.Fatalf("CONCURRENCY UNSAFE: worker %d returned %d logits, worker 0 returned %d — "+
+				"parallel CPU forward on this model is corrupting shared state; do not trust the "+
+				"parallel run below", w, len(results[w]), len(results[0]))
+		}
+		for i := range results[0] {
+			if results[w][i] != results[0][i] {
+				t.Fatalf("CONCURRENCY UNSAFE: worker %d's seed logits differ from worker 0's on an "+
+					"IDENTICAL prompt at index %d (%v vs %v) — parallel CPU forward on this model is "+
+					"corrupting shared state; do not trust the parallel run below", w, i, results[w][i], results[0][i])
+			}
+		}
+	}
+	fmt.Printf("[ref] concurrency preflight OK: %d parallel workers, identical prompt, bit-identical seed logits\n", workers)
+}
+
+// runPrefillReferenceKConcurrent processes every prompt for one (model, K) cell across a bounded
+// worker pool, each worker owning its own *KVCache (see the concurrency-safety note on
+// TestPrefillGateReference and the preflight above).
+func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName string, K int, prompts [][]int, outDir string, continuationN, workers int) {
+	t.Helper()
+	type job struct {
+		pi  int
+		ids []int
+	}
+	jobs := make(chan job, len(prompts))
+	for pi, ids := range prompts {
+		if len(ids) < K {
+			t.Fatalf("prompt %d: only %d tokens, need >= %d", pi, len(ids), K)
+		}
+		jobs <- job{pi, ids[:K]}
+	}
+	close(jobs)
+
+	var (
+		mu       sync.Mutex
+		firstErr error
+		done     int
+		wg       sync.WaitGroup
+	)
+	t0 := time.Now()
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				seedLogits, refTokens, refLogits, err := prefillReferenceCell(m, j.ids, continuationN, K)
+				if err != nil {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("prompt %d: %w", j.pi, err)
+					}
+					mu.Unlock()
+					continue
+				}
+				outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, j.pi))
+				if err := WritePrefillReferenceForTest(outPath, seedLogits, refTokens, refLogits); err != nil {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = fmt.Errorf("write %s: %w", outPath, err)
+					}
+					mu.Unlock()
+					continue
+				}
+				mu.Lock()
+				done++
+				fmt.Printf("[ref] %s K=%d prompt %2d done (%d/%d) -> %s elapsed=%s\n",
+					modelName, K, j.pi+1, done, len(prompts), outPath, time.Since(t0).Round(time.Second))
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		t.Fatalf("%s K=%d: %v", modelName, K, firstErr)
+	}
+}
+
+// prefillReferenceCell runs the CPU batched prefill over ids, then continuationN more greedy
+// steps, returning the seed logits, the greedy continuation tokens, and that continuation's own
+// per-position logits — all cloned at capture time (no assumption about buffer ownership across
+// calls, the exact class of bug metal/prefill_gate_test.go's runPrefillGateCell already had to fix
+// once). Plain error return, not *testing.T: called from worker goroutines, and t.Fatalf from a
+// non-test goroutine is unsafe.
+func prefillReferenceCell(m *Model, ids []int, continuationN, K int) (seedLogits []float32, refTokens []int, refLogits [][]float32, err error) {
+	cache := m.NewCache(K + continuationN + 4)
+	seed, err := m.PrefillLogitsForTest(context.Background(), ids, cache)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("prefill K=%d: %w", K, err)
+	}
+	seed = append([]float32(nil), seed...)
 
 	refTokens = make([]int, continuationN)
 	refLogits = make([][]float32, continuationN)
@@ -156,11 +267,11 @@ func prefillReferenceCell(t *testing.T, m *Model, ids []int, continuationN, K in
 		}
 		lg, err := m.ForwardForTest(refTokens[i], cache)
 		if err != nil {
-			t.Fatalf("continuation forward step=%d: %v", i, err)
+			return nil, nil, nil, fmt.Errorf("continuation step=%d: %w", i, err)
 		}
 		cur = append([]float32(nil), lg...)
 	}
-	return seed, refTokens, refLogits
+	return seed, refTokens, refLogits, nil
 }
 
 func refArgmax(v []float32) int {
