@@ -1477,6 +1477,26 @@ section is written; the numbers above are the pre-fix baseline and will be repla
 wall-clock delta reported alongside) once it lands — do not quote the 21.4/15.5 pair as current
 without checking this note's edit date.**
 
+**A latent correctness bug in that same batched-prefill work was caught and fixed same-night,
+before any shipped row was actually wrong — worth recording here because it bears directly on
+M35's row.** `654fa481` removed an `r.moe` refusal that was, by accident, the only thing keeping
+M35 (Gated-DeltaNet) off the batched path at all — batched prefill has no notion of recurrent
+state, and a DeltaNet layer's conv/matrix state must advance one token at a time; a batched pass
+would silently return plausible-but-wrong logits. `ForwardN` already excluded this deliberately
+(`r.prefillReady && r.dnet == nil`); the new `PrefillLast` path never had to, because `r.moe` was
+still declining M35 for an unrelated reason. Checked, not assumed: no shipped commit was actually
+unsafe, because DeltaNet layers load no q/k/o weights, so an existing empty-string sentinel in
+`nonBatchableKind` still caught M35 by coincidence — **an accident of this family's weight layout,
+not a guard.** A hybrid whose recurrent layers also carried q/k/o would have sailed through into
+the dense attention stack — the same silent-wrong-computation bug class as the LFM2 incident this
+repo's `CLAUDE.md` already tracks (reached `main` twice). Fixed in `9453430e`:
+`prefillStaticDecline` now refuses `r.dnet != nil` directly, for the true reason, with a
+mutation-proven test fixture (a synthetic DeltaNet model carrying valid int4 q/k/o — the one shape
+the accidental guard could not have caught, which no real checkpoint here produces). **Net effect
+on the numbers above: none** — M35 declined the batched path both before and after, so its M35 row
+is unaffected either way; the fix is about correctness-by-construction going forward, not a
+retraction of anything measured here.
+
 **S's `--cpu-fast-attention` row is decode-only and does not yet answer the question it was run
 for.** The flag is documented as prefill-only, so the ~2% decode gap above is expected and not
 the finding — but the harness that produced it reused `bench_peer.py`'s decode-only timing design
