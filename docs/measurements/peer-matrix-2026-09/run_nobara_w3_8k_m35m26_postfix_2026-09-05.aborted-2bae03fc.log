@@ -1,0 +1,14 @@
+# preflight OK: loadavg [0.3984375, 0.4951171875, 0.21484375] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 50, 'mem_used_mib': 464, 'mem_total_mib': 8192} · compute apps ['1777, 16 MiB']
+# 4 cells planned, 0 already done
+#   tokens/chunks = 1.0000  (512 tok / 512 chunks)
+{"phase": "A", "engine": "goinfer", "backend": "cuda", "model": "M35", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [22.67168077503933, 25.281147653112733], "error": null, "machine": {"loadavg": [0.3984375, 0.4951171875, 0.21484375], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 50, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 215.8, "counts": {"tokens": 512, "chunks": 512, "tokens_per_chunk": 1.0, "completion_rates": [19.162128073765352, 26.18123347631331, 23.504652109702185, 27.057643196523276], "ngen": 128}, "mean": 24.0, "spread": 2.6}
+# cell gate: loadavg 3.42 > 1.00, waiting (0/600s)
+# cell gate: loadavg 3.18 > 1.00, waiting (20/600s)
+# cell gate: loadavg 2.35 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.68 > 1.00, waiting (60/600s)
+# cell gate: loadavg 1.20 > 1.00, waiting (80/600s)
+#   tokens/chunks = 1.0000  (512 tok / 512 chunks)
+{"phase": "A", "engine": "goinfer", "backend": "cuda", "model": "M26", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [19.043971363938315, 19.08109682077921], "error": null, "machine": {"loadavg": [0.859375, 1.29150390625, 0.67578125], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 49, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 110.1, "counts": {"tokens": 512, "chunks": 512, "tokens_per_chunk": 1.0, "completion_rates": [19.019654908894317, 19.068287818982313, 19.096737196057347, 19.06545644550107], "ngen": 128}, "mean": 19.1, "spread": 0.0}
+# cell gate: loadavg 2.42 > 1.00, waiting (0/600s)
+# cell gate: loadavg 1.73 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.24 > 1.00, waiting (40/600s)
