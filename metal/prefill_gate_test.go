@@ -318,7 +318,7 @@ var prefillGateProseFiles = []string{
 	"../docs/benchmarks.md",
 	"../docs/parity-coverage-policy.md",
 	"../docs/task-w4a8-neon-bandwidth.md",
-	"../docs/benchmarks-archive.md",
+	"../docs/legacy-benchmarks.md",
 	"../docs/task-zeno-compare.md",
 	"../docs/queue-release.md",
 }

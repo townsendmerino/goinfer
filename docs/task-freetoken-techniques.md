@@ -229,7 +229,7 @@ one. `README.md:828-831` states the reasoning directly: "the resident decode pat
 fast enough that the per-request session optimization isn't worth it. The OpenAI API
 is stateless [clients resend the whole conversation], so this is a throughput trade,
 not a correctness change." That's a considered decision, not an oversight, and
-`docs/benchmarks.md:799` and `docs/scoping-dsh-goinfer.md:32` both restate it as a
+`docs/legacy-benchmarks.md:361` and `docs/scoping-dsh-goinfer.md:32` both restate it as a
 known, documented trade-off rather than a bug.
 
 Worth reopening only for the specific regime where the reasoning is least likely to
@@ -251,7 +251,7 @@ forever for every model size.
   Lever 4 (`:226`)
 - `README.md` — the GPU-resident session-skip note (`:828-831`); the Gemma-4 26B slot
   table
-- `docs/benchmarks.md:799`, `docs/scoping-dsh-goinfer.md:32`
+- `docs/legacy-benchmarks.md:361`, `docs/scoping-dsh-goinfer.md:32`
 - `decoder/moepaging.go`, `decoder/layerpaging.go`, `decoder/session.go`,
   `cuda/resident.go` (`mapBytes`)
 - FreeToken: arXiv:2608.16157; github.com/FlashML-org/FreeToken

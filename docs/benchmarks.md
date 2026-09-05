@@ -5,6 +5,13 @@
 > without a traceable source — every cell is either measured (with the goinfer commit +
 > date + machine), copied from an in-repo measurement with its doc/commit cited, or
 > marked `—` (not applicable / not verified). If you can't trace it, it isn't here.
+>
+> **This page carries CURRENT claims only.** Every section below is either the current anchor
+> for what it measures or a dated row nothing has superseded. Everything superseded, retired or
+> withdrawn — with its chronology and its retraction reasoning — lives in
+> [`legacy-benchmarks.md`](legacy-benchmarks.md), moved there verbatim. Section IDs (§B2, §B4.1,
+> §B8 …) are stable and are cited from code; the *Retired section IDs* index near the end maps
+> the IDs that no longer have a block here to where their record went.
 
 ## TL;DR — 2026-08-31
 
@@ -18,7 +25,8 @@ SUPER, driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2) against **Ollama
 deliberately withdrawn. Mac rows (§A) were never affected; last measured 2026-08-24. **Not covered,
 and each says so in place:** peer *prefill* (no harness exists — see the table), the Mellum2 MoE
 prefill row, and the SigLIP vision-prefill row. The last two are Linux rows from June that the
-re-anchor never scoped; they are marked stale rather than quietly carried.
+re-anchor never scoped; they are marked stale and now sit in `legacy-benchmarks.md` §A rather
+than being quietly carried here.
 
 | | verdict | source |
 |---|---|---|
@@ -26,7 +34,7 @@ re-anchor never scoped; they are marked stale rather than quietly carried.
 | **CUDA decode, deep context** (2048+) | **Ollama wins, and the gap widens with depth** — goinfer 0.95×→0.78× (0.5B), 0.89×→0.71× (1.5B), 0.82×→0.71× (7B) by 3900 | §B8 |
 | ↳ *unless the model is windowed* | gemma3-1b **does not degrade at all** — goinfer ahead 1.06–1.12× at *every* depth. The depth loss is a property of full attention over a growing KV, not of the engine | §B5.1 |
 | **Prefill** | **Depth-dependent, and it crosses over.** goinfer is FASTER to first token below ~600–1000 prompt tokens (0.13× at K=128) and slower above, reaching 4.8×/6.1× behind at K=3900 (0.5B/1.5B). On overhead-free *throughput* the deficit is larger: marginal cost per token is **12–15× behind at depth**, and it GROWS with K while Ollama's is flat. **Re-anchored 2026-09-01** on the §B8 stack | §B2 |
-| **Total request time** | goinfer wins prompts up to **~320 tokens** at 1.5B, loses beyond — decode edge vs prefill cost. Also pre-re-anchor | archive §B2 |
+| **Total request time** | **not re-derived** since the 2026-09-01 prefill re-anchor. The pre-re-anchor crossover (~320-token prompts at 1.5B) is a legacy figure and is not quoted here | legacy §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
@@ -66,17 +74,12 @@ bit-for-bit. Where it loses it loses honestly, and the losses are in this table 
 > vision-in only — no audio, CPU-slow — 11 architectures) for a static binary that
 > boots in ~0.5 s.
 
-> **Re-anchored, and CLOSED 2026-08-31.** The box's OS and driver stack was replaced on 2026-08-25
-> (Nobara 43 → 44: driver `595.58.03` → **`595.91.07`**, kernel `7.0.5` → **`7.2.0`**, glibc fc43 →
-> **2.43-8.fc44**, CUDA 13.2 reported by the driver), which under this repo's rules invalidates
-> comparability and forces a deliberate re-anchor. **That work is finished.** Every section is now
-> either re-anchored — §B4.1/§B4.2, §B5.1, §B6.3, §B7.1, §B8 — or deliberately withdrawn (§B, and
-> the v0.11.0 qualification). Parity was re-established *before* any timing: `gate gpu` PASS at
-> `a161bd6` with **24/24 PTX byte-identical**, so the driver's new compiler did not move the
-> numerics.
->
-> Full chronology — what moved, per-leg discharge notes, and the retirements — in
-> [`benchmarks-archive.md`](benchmarks-archive.md). Re-measure with `scripts/bench_peer.py` (peer
+> **Anchor stack for every CUDA row: driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2, since
+> 2026-08-26.** The box's OS and driver stack was replaced on 2026-08-25, which under this repo's
+> rules forced a deliberate re-anchor of every Linux row; that work is **finished** (closed
+> 2026-08-31) and parity was re-established before any timing — `gate gpu` PASS at `a161bd6`,
+> 24/24 PTX byte-identical. The chronology, per-leg discharge notes and the retirements are in
+> [`legacy-benchmarks.md`](legacy-benchmarks.md). Re-measure with `scripts/bench_peer.py` (peer
 > Ollama v0.32.5 at `~/ollama-0325`, both sides over HTTP, interleaved) — **not**
 > `bench_compare.sh`, which by its own design note never drives the peer.
 
@@ -168,8 +171,9 @@ measured against the *current* peer; a *reproducible* historical row is kept bes
   OLLAMA_MODELS=~/ollama-0325/models LD_LIBRARY_PATH=~/ollama-0325/lib/ollama
   ~/ollama-0325/bin/ollama serve`). **All current §B2 claims use this** (see the re-anchor box in §B2).
 - **Historical: Ollama 0.5.7** (2025-01-16) at `~/ollama-587/bin/ollama` (port 11435). Kept ONLY to
-  reproduce the labeled-historical rows — it is **~18 months stale** and must **never** back a current
-  claim. The original §B2 tables were measured against it; that was the bug corrected on 2026-08-04.
+  reproduce the labeled-historical rows, all of which are now in `legacy-benchmarks.md` §B2 — it is
+  **~18 months stale** and must **never** back a current claim. The original §B2 tables were measured
+  against it; that was the bug corrected on 2026-08-04.
 
 Both import the 1.5B as `q15`. When re-measuring, use v0.32.5; keep 0.5.7 for the historical rows.
 
@@ -262,7 +266,7 @@ absent — this pass read the engine and packaging, not the library surface.
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ | — |
 | GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only | ✗ no GPU backend ᵏ |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ | — |
-| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`**, no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
+| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`** — 2026-06-11 row, pre-re-anchor, legacy §A; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
 | Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
 | Multi-threaded CPU decode | ✓ | — | — | — | — | — | — | ✗ single-threaded ᵏ |
 
@@ -316,6 +320,8 @@ driver-JIT / MSL, **CGO_ENABLED=0**, admission-gated by
 
 ---
 
+---
+
 ## Table 2 — Measured performance
 
 Two rigs, both the repo's existing ones. Apple-Silicon CPU is the pure-Go lane; the
@@ -331,7 +337,7 @@ without the reader having to guess what that means:
 | machine | MacBook Pro `MacBookPro18,3` (14", 2021) | desktop |
 | CPU | Apple M1 Pro — **8 cores: 6 performance + 2 efficiency** | Ryzen 7 3700X — 8c/16t |
 | RAM | **16 GB** unified | **62 GB** |
-| GPU | integrated (Metal) | RTX 2070 SUPER, **8 GB** | ✗ no GPU backend ᵏ |
+| GPU | integrated (Metal) | RTX 2070 SUPER, **8 GB** |
 | OS at the time of writing | macOS 26.6.2 | Nobara 44, kernel 7.2.0, CUDA 13.2 |
 
 **Several numbers on this page are properties of those rigs, not of the code, and the
@@ -352,36 +358,17 @@ different Mac is a new rig and a new row, not an update to these.
 
 ### A. Apple Silicon CPU (the pure-Go lane)
 
-Rig: **Apple M1 Pro** (6P+2E), prequant `.giw` int8, greedy + fixed prompt/seed,
-plugged in. Source: `docs/ARCHITECTURE.md` §2 + `docs/completed/perf-campaign.md`, "after the
-v0.5.0 perf work." goinfer commit for these: the v0.5.0-era CPU campaign (see
-completed/perf-campaign.md). Peers were **not** run on this rig at the time → `—` (use the script).
+Rig: **Apple M1 Pro** (6P+2E), plugged in. Every row below states its own provenance; the
+cold-start/footprint table is from the v0.5.0-era CPU campaign (`docs/ARCHITECTURE.md` §2 +
+`docs/completed/perf-campaign.md`, "after the v0.5.0 perf work"), the rest is 2026-08-24 or later.
 
-**Peer run added 2026-08-22** (`docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`,
-`bench_peer.py` method, decode-only, GGUF weights verified tensor-identical): ollama/llama.cpp
-CPU (native Q4_K_M, its own default 6 threads) vs goinfer CPU at depth 128, same two models —
-
-| model | goinfer int4 (default) | goinfer int8int8 | ollama Q4_K_M | int4 ratio | int8int8 ratio |
-|---|---|---|---|---|---|
-| 0.5B | 34.5 tok/s | 56.3 tok/s | 109.0 tok/s | 0.32x | 0.52x |
-| 1.5B | 17.0 tok/s | 26.7 tok/s | 68.3 tok/s | 0.25x | 0.39x |
-
-Diagnosis: the gap is not thread-count/E-core related (measured — capping goinfer to 6 threads
-made no real difference) and only partly a quant-format artifact (int4→int8int8 recovers ~60% by
-itself, reproducing a 2026-06-14 aikit finding that W4A8's NEON kernel is compute-bound on its
-nibble-unpack). A residual ~2x gap survives even at the closest comparable format; see the
-measurement doc for the bandwidth analysis and open questions.
-
-**SUPERSEDED 2026-08-24 — the ranking flipped, do not use the int4/int8int8 ratio above.** The
-diagnosis above was correct when written: at that point the int8int8 ratio (0.52x/0.39x) beat the
-int4 ratio (0.32x/0.25x) specifically because int8int8's own LM head happened to already run the
-fast W8A8 path, while int4's LM head ran a slow weight-only-Q8 path that was, at the time,
-undiagnosed — int8int8 wasn't faster because int4 was slow at matmul, it was faster because int4's
-*head* was slow and int8int8's wasn't. Once the W4A8 NEON kernel (`docs/task-w4a8-neon-bandwidth.md`,
-item-3+4 harness) and the int4-mode LM head (same doc's LM-head follow-up, `embedding()` moved from
-weight-only Q8 to full W8A8) both shipped, that asymmetry closed. Provenance: **Apple M1 Pro**,
+**Decode vs Ollama, 2026-08-24 — the current Mac CPU peer row.** Provenance: **Apple M1 Pro**,
 `bench_peer.py` method, decode-only, greedy, depth 128, quiet box, goinfer commit **`a11c56b`**
-(2026-08-24, the LM-head W8A8 default) —
+(2026-08-24, the LM-head W8A8 default). An earlier reading (2026-08-22, `d469c7c`) had the ranking
+the other way — int8int8 ahead of int4 at 0.52×/0.39× vs 0.32×/0.25× of Ollama — because int4's LM
+head ran a slow weight-only-Q8 path that was, at the time, undiagnosed; once the W4A8 NEON kernel
+(`docs/task-w4a8-neon-bandwidth.md`) and the int4-mode LM head both shipped, that asymmetry closed.
+That reading and its diagnosis are preserved in `legacy-benchmarks.md` §A —
 
 | model | goinfer int4 | goinfer int8int8 | ollama Q4_K_M | int4 ratio | int8int8 ratio |
 |---|---|---|---|---|---|
@@ -394,25 +381,16 @@ re-measured for this correction: the LM-head fix only touches `embedding()`'s `q
 `quantInt4Mix` branch — int8int8's base mode passes through unchanged, so its LM head was already
 full W8A8 before and after that fix, and its decode rate did not move. **Current guidance: `int4`
 is the right default on Apple Silicon CPU decode** — equal-or-better speed at half the RAM, the
-inverse of what this section said as of `d469c7c`. That advice is not deleted (above) because it
-was an honest, correctly-diagnosed reading of the box at the time; it is superseded because the
+inverse of what this section said as of `d469c7c`. That advice is not deleted (legacy §A) because it
+was a correctly-diagnosed reading of the box at the time; it is superseded because the
 thing it was measuring around — the LM head's drag — no longer exists.
 
-**Re-measured under load 2026-08-02 (`14dfc47`) — consistent with the baseline.** The
-table's ~70/~36 remain the headline: they were measured on a clean rig (v0.5.0 campaign).
-A spot re-run of `BenchmarkDecode` this pass came back at ~68 (best 69.8) tok/s for 0.5B
-and ~34 (best 34.5) for 1.5B (best-of-8 × 2 s, `qwen2.5-coder-{0.5b,1.5b}-instruct-q4_k_m.gguf`
-loaded `int8int8`), but that run had the IDE holding ~4 cores (load avg 3.8), so those are a
-*lower bound*, not a replacement — landing just under the clean baseline is exactly what a
-contended re-run should do. The takeaway is that the ~70/~36 held across both
-decode-parallelism-threshold fixes (the M1-Pro int8 crossover was already optimal, so unlike
-the Ryzen path it had no room to move; see `tune.go` sweep note); a clean re-measure would be
-needed to *revise* the headline. The end-to-end demo row (~57/~26) was **not** re-measured.
+**Cold start & footprint** (v0.5.0-era CPU campaign, M1 Pro, `.giw` int8 — dated, and nothing has
+superseded it; the decode rows that used to share this table are in legacy §A, replaced by the
+2026-08-24 peer row above):
 
 | metric (M1 Pro · `.giw` int8 · greedy/fixed seed) | goinfer 0.5B | goinfer 1.5B | peers |
 |---|---|---|---|
-| decode tok/s — `BenchmarkDecode` (pure forward+sample) | ~70 | ~36 | — |
-| decode tok/s — end-to-end demo (incl. UI/stream) | ~57 | ~26 | — |
 | cold start → first token | **0.48 s** | **1.23 s** | — |
 | resident heap (`phys_footprint`) | **77 MB** | **87 MB** | — |
 | install footprint | one static binary, model included | one static binary, model included | — |
@@ -422,135 +400,70 @@ embedded-GGUF path → prequant `.giw` cuts **cold start 2.30 s → 0.48 s (~5×
 **resident heap 772 MB → 78 MB (~10×)** — the weights are mapped from the binary's
 read-only image, not heap-copied.
 
-**Prefill (relative, CPU):** vectorizing prefill attention onto the SIMD path gave
-**~3.4× dense prompt prefill** and **~1.7× Gemma 4** (M1 Pro; `CHANGELOG` v0.5.0,
-`7fa82c2`/`88b7aaa`).
+#### CPU prefill — re-anchored 2026-09-01
 
-> ## ⚠ STALE as of 2026-09-01 — CPU prefill changed four times in one day and this block predates all of it
->
-> **Everything below is retained as the record of a state the engine has left.** Four changes
-> landed 2026-09-01, none of them reflected in the numbers or the prose here:
->
-> | change | effect | record |
-> |---|---|---|
-> | **A3 head fan-out** — f32 prefill attention parallelised over query heads | 1.58× @K=2048, **1.92× @K=4096** (dense 0.5B, e2e) | `measurements/a3-f32-attention-fanout-2026-09-01.md` |
-> | **P18 expert-major MoE prefill** (default ON) | **4.364×** at K=4096 on 28-layer Mellum2, bit-identical | `measurements/p18-expert-major-e2e-2026-09-01.md` |
-> | **P19 fused attention** (default ON, changes output) | +8.0% e2e; 1.69–1.73× at the kernel | `measurements/p19-fused-attention-2026-09-01.md` |
-> | (earlier) f32 prefill attention became the default above a 512-token floor | 1.15×–2.28× by depth | CHANGELOG |
->
-> **THE PROSE BELOW IS NOW FACTUALLY WRONG, not merely dated.** Specifically: *"CPU prefill is
-> SINGLE-THREADED"*, *"the attention half is serial … attention's heads do not [fan out] — A1's
-> deferral"*, and *"the process sits at ~100% CPU through a large prefill"*. A1's deferral was
-> resolved by A3; measured utilization on the same class of run is now **1.67× before the fan-out
-> and 5.27× after** it, and the profile arms today ran at 250–300% CPU.
->
-> ### RE-MEASURED 2026-09-01 — and the RATE NO LONGER FALLS WITH LENGTH
->
-> Same configuration as the original cells (dense **1.5B**, `int8int8`, prefill + 1 token, M1 Pro),
-> best of 3 rather than the original's single shot — an improvement to the method, stated so the
-> two are not read as identically obtained. goinfer `cfec302`.
->
-> | prompt | recorded (pre-2026-09-01) | **measured** | **tok/s** | speedup |
-> |---|---|---|---|---|
-> | 170 | 3.3 s | **2.2 s** | **78.4** | 1.52× |
-> | 620 | 19.7 s | **7.0 s** | **89.0** | 2.83× |
-> | 1520 | 93.2 s | **18.1 s** | **84.1** | 5.16× |
-> | 3020 | 334.9 s | **38.9 s** | **77.7** | **8.61×** |
->
-> **The structural claim is the flat rate, not the speedup.** The recorded cells fell from
-> 51.5 tok/s to 9.0 tok/s across this range — a 5.7× collapse — and the prose below attributes that
-> to the serial attention half. It is now **78.4 → 77.7 tok/s, flat**, because that is precisely
-> what A3's head fan-out removed. The speedup grows with length (1.52× → 8.61×) for the same
-> reason: the term that was superlinear is the one that got fixed.
->
-> Attribution, since three changes landed together: the f32 prefill default and **A3's head
-> fan-out** do the work here, plus **P19's fused schedule** (+8%). **P18 is inert for this row** —
-> it is MoE-only and this is a dense model.
->
-> ### AND THE FIRST PEER CPU-PREFILL COMPARISON — 2026-09-01
->
-> > **SUPERSEDED 2026-09-05 — CPU prefill is now at parity and past it on the marginal; do not
-> > quote the 2.98×/1.80× ratios or the int4/int8int8 inversion below.** aikit's S-01
-> > register-blocked int4 tile landed in v1.34.0. Re-measured on the same box against the same
-> > Ollama 0.32.5: **1.54× behind at K=512, 0.91× at K=3900 (AHEAD), whole-curve marginal ratio
-> > 0.86×.** The table below was taken on aikit v1.31.0. It is stale, not wrong — a pre-tile arm
-> > re-run on 2026-09-05 reproduced it to within 4% (3.10× / 1.81×), which is what makes the new
-> > row comparable to it. **The QUANT NOTE below is also superseded**: int8int8 no longer beats
-> > int4 at M>1; the tile removed the unpack repetition that caused that inversion, and int4 now
-> > wins by 1.10–1.14×. Record: `measurements/cpu-peer-prefill-2026-09-05.md`.
->
-> The table above is goinfer-vs-goinfer. Against **Ollama v0.32.5** (same GGUF both sides, Ollama
-> forced to CPU with `num_gpu: 0`, goinfer at **int4** so the weights match q4_K_M, 4 distinct
-> prompts per cell, engines interleaved) on the same M1 Pro:
->
-> | K | goinfer | Ollama | ratio |
-> |---|---|---|---|
-> | 512 | 68.4 tok/s | 203.7 | **2.98×** |
-> | 1024 | 68.7 | 187.9 | **2.74×** |
-> | 2048 | 67.6 | 145.4 | **2.15×** |
-> | 3900 | 61.9 | 111.2 | **1.80×** |
->
-> **The gap closes with depth**, and the scaling says why: over 512→3900 goinfer slows 8.35× while
-> Ollama slows **13.37×**. At the deepest interval the marginal rates are 56.5 vs 87.8 tok/s.
->
-> **QUANT NOTE, because the first attempt got it wrong.** These use goinfer at int4 to match the
-> peer's q4_K_M. A first sweep ran int8int8 — mirroring §A's own table — which is 8-bit against
-> 4-bit and not a peer comparison at all. Re-run weight-matched. The difference is itself worth
-> knowing: **int8int8 CPU prefill is 25–33% FASTER than int4** (90.7 vs 68.4 tok/s at K=512),
-> because the W4A8 unpack costs more at M>1 than the halved weight bytes save. §A's absolute table
-> is int8int8 and this peer table is int4; they are not the same configuration and must not be read
-> as one series.
->
-> **Ollama caches prompts hard on CPU** — repeat/fresh 0.05 → 0.00 across these depths. Every
-> request here carries a unique prefix; reusing one would have compared our prefill against its
-> cache lookup. Record: `measurements/cpu-peer-prefill-2026-09-01.md`.
->
-> "Long prompts on the CPU backend are much slower than the speedup suggests" — the practical
-> warning below — no longer holds in the form it is written. A 3020-token prompt is 38.9 s, not
-> 334.9 s.
->
-> **Everything from here to the end of this block is the pre-2026-09-01 record:**
->
-> **Read those as RELATIVE speedups over their own predecessor — they are not a rate, and CPU
-> prefill is SINGLE-THREADED.** Both facts are compatible and both were true when written; the
-> second was simply never stated anywhere a reader could see it (added 2026-08-25, queue G16).
-> Absolute numbers on an M1 Pro (dense 1.5B, `int8int8`, prefill + 1 token): **170 tok 3.3 s
-> (51.5 tok/s) · 620 tok 19.7 s · 1520 tok 93.2 s · 3020 tok 334.9 s (9.0 tok/s)** — the best-case
-> rate is the same order as this model's *decode* rate, and it falls as the prompt grows because
-> the attention half is serial (aikit's weight matmuls do fan out; attention's heads do not — A1's
-> deferral, `docs/task-attention-decode-cost.md`). On a 6-performance-core box the process sits at
-> ~100% CPU through a large prefill. **Practical consequence:** long prompts on the CPU backend are
-> much slower than "3.4× faster prefill" suggests — size expectations from the absolute table, not
-> the speedup. GPU backends do not share this (`PrefillLast` is batched on-device). Sparse-MoE prefill is now batched too — **2.4×** on Mellum2
-12B-A2.5B (**3.36 → 8.11 tok/s** at a 1024-token prompt), measured on the RTX-box CPU
-(**Ryzen 7 3700X**, `08acc11`, 2026-06-10) — a *different* rig, listed separately so it
-isn't conflated with the M1 numbers above. **⚠ STALE (flagged 2026-08-31): measured on the
-pre-2026-08-25 stack (Nobara 43) and never scoped by the re-anchor, which covered the peer
-comparisons only. The 2.4× is a goinfer-vs-goinfer ratio on one binary, so it is the safer half;
-the absolute 3.36 → 8.11 tok/s is not a current rate.**
+Four changes landed on 2026-09-01, and every CPU-prefill number before them is superseded (the
+pre-2026-09-01 record, including the *"CPU prefill is single-threaded"* prose that is no longer
+true, is in legacy §A):
 
-**Vision prefill (SigLIP, gemma-3-4b-it, 896², 4096 patches):** ~171 s/image on
-CPU (compute-bound matmul; int8 is a wash on AVX2 — no VNNI). On `-tags gpu` with
-`--backend webgpu` the resident GPU encoder runs the whole tower on-device:
-**18.8 s/image** (~9×) on an **RTX 2070 SUPER**, parity cosine 1.000000 vs the CPU
-W8A8 encoder (`886c8fd`/`5d7c572`, 2026-06-11). **⚠ STALE (flagged 2026-08-31): also a
-pre-2026-08-25 Linux row the re-anchor did not scope — the ~9× is same-binary, the absolute
-18.8 s/image is not current.** The attention matmuls are still naive f32 — a tiled GEMM there is the next lever (`docs/completed/task-gpu-vision-tower.md`).
+| change | effect | record |
+|---|---|---|
+| **A3 head fan-out** — f32 prefill attention parallelised over query heads | 1.58× @K=2048, **1.92× @K=4096** (dense 0.5B, e2e) | `measurements/a3-f32-attention-fanout-2026-09-01.md` |
+| **P18 expert-major MoE prefill** (default ON) | **4.364×** at K=4096 on 28-layer Mellum2, bit-identical | `measurements/p18-expert-major-e2e-2026-09-01.md` |
+| **P19 fused attention** (default ON, changes output) | +8.0% e2e; 1.69–1.73× at the kernel | `measurements/p19-fused-attention-2026-09-01.md` |
+| (earlier) f32 prefill attention became the default above a 512-token floor | 1.15×–2.28× by depth | CHANGELOG |
 
-### B. GPU residency vs native CUDA, at equal quant
+**Re-measured 2026-09-01 — and the rate no longer falls with length.**
 
-> **RETIRED 2026-08-27 — both rows withdrawn, not corrected, and not re-measured.** What stood here
-> (WebGPU int8 vs native q8_0, and the 60–70%-of-CUDA headline derived from it) is preserved with
-> its retirement reasoning in [`benchmarks-archive.md`](benchmarks-archive.md).
-> Current GPU-vs-GPU numbers: **§B8**, whose backend table places goinfer's WebGPU against its own
-> CUDA (38 / 41 / 63% at 0.5B / 1.5B / 7B) — a cross-backend row, not a peer cell.
+Same configuration as the original cells (dense **1.5B**, `int8int8`, prefill + 1 token, M1 Pro),
+best of 3 rather than the original's single shot — an improvement to the method, stated so the
+two are not read as identically obtained. goinfer `cfec302`.
+
+| prompt | recorded (pre-2026-09-01) | **measured** | **tok/s** | speedup |
+|---|---|---|---|---|
+| 170 | 3.3 s | **2.2 s** | **78.4** | 1.52× |
+| 620 | 19.7 s | **7.0 s** | **89.0** | 2.83× |
+| 1520 | 93.2 s | **18.1 s** | **84.1** | 5.16× |
+| 3020 | 334.9 s | **38.9 s** | **77.7** | **8.61×** |
+
+**The structural claim is the flat rate, not the speedup.** The recorded cells fell from
+51.5 tok/s to 9.0 tok/s across this range — a 5.7× collapse — and the pre-2026-09-01 prose (legacy
+§A) attributed that to the serial attention half. It is now **78.4 → 77.7 tok/s, flat**, because that is precisely
+what A3's head fan-out removed. The speedup grows with length (1.52× → 8.61×) for the same
+reason: the term that was superlinear is the one that got fixed.
+
+Attribution, since three changes landed together: the f32 prefill default and **A3's head
+fan-out** do the work here, plus **P19's fused schedule** (+8%). **P18 is inert for this row** —
+it is MoE-only and this is a dense model.
+
+
+**First peer CPU-prefill comparison — re-anchored 2026-09-05.** aikit's S-01 register-blocked
+int4 tile landed in v1.34.0. Re-measured on the same M1 Pro against the same Ollama v0.32.5 (same
+GGUF both sides, Ollama forced to CPU with `num_gpu: 0`, goinfer at **int4** so the weights match
+q4_K_M, engines interleaved): **1.54× behind at K=512, 0.91× at K=3900 (goinfer AHEAD), whole-curve
+marginal ratio 0.86×, goinfer faster.** The tile roughly doubled goinfer's rate (67.6 → 141.7 tok/s
+at K=512, measured pre/post on one box), and a pre-tile arm re-run the same day reproduced the
+2026-09-01 row to within 4% (3.10× / 1.81×), which is what makes the two comparable. int8int8 no
+longer beats int4 at M>1 — the tile removed the unpack repetition behind that inversion, and int4
+now wins by 1.10–1.14×. Record: `measurements/cpu-peer-prefill-2026-09-05.md`. The 2026-09-01 row
+(2.98× / 1.80×, aikit v1.31.0) and its quant note are superseded and sit in legacy §A under the box
+that superseded them.
+
+**Ollama caches prompts hard on CPU** — repeat/fresh 0.05 → 0.00 across these depths. Every
+request here carries a unique prefix; reusing one would have compared our prefill against its
+cache lookup. Record: `measurements/cpu-peer-prefill-2026-09-01.md`.
+
+**Not re-anchored, and moved off this page:** the Mellum2 sparse-MoE CPU prefill row (2.4×,
+Ryzen 7 3700X, `08acc11`, 2026-06-10) and the SigLIP vision-prefill row (~171 s/image CPU, 18.8 s
+on `-tags gpu`, 2026-06-11) are pre-2026-08-25 Linux rows the re-anchor never scoped. Both are
+kept in legacy §A, marked stale; neither is a current rate.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
-> **The historical rows moved.** The peer tables against **Ollama 0.5.7** (2025-01-16), the
-> 2026-08-04 v0.32.5 re-anchor box, and the full batched-prefill engineering chronology are in
-> [`benchmarks-archive.md`](benchmarks-archive.md).
-> **Decode is superseded by §B8.** What remains below is what §B8 does not carry.
+> **Decode is §B8** (the current anchor). This section keeps what §B8 does not carry: the
+> 2026-09-01 **prefill** re-anchor and the peer-independent engineering results. The historical
+> peer tables (Ollama 0.5.7, the 2026-08-04 v0.32.5 box) and the full batched-prefill chronology are
+> in [`legacy-benchmarks.md`](legacy-benchmarks.md) §B2.
 
 The `cuda/` backend is a **driver-JIT, CGO_ENABLED=0** path (dlopen `libcuda` via purego; PTX
 embedded, no toolkit at build or run time — `ldd` shows no `libcuda`/`libnvrtc` linked). It admits
@@ -591,15 +504,10 @@ distinct prompts per cell, engines interleaved with a server restart between:
 > prefill against the peer's cache lookup and reported ~6.3× where that cell reads ~3.4×. Every
 > request in this sweep carries a unique prefix; the check is recorded per cell in the results.
 
-**Consequence for total request time** — ⚠ the paragraph below is computed from the RETIRED
-pre-re-anchor prefill figure and its crossover numbers have not been recomputed against the
-2026-09-01 sweep. The direction survives (a decode edge cannot cover a per-token prefill deficit at
-depth) but the specific token counts should be treated as stale until re-derived, and the re-anchor
-moves them in goinfer's favour at the short end. On the same pre-re-anchor stack: with a small short-context
-decode edge and ~4–5× slower prefill, goinfer wins *total* time only up to **~320-token prompts**
-at 1.5B (~128 before the batched-prefill campaign, ~230 mid-campaign). Past that Ollama wins. At 7B
-the crossover is **below 128 tokens** — the ~10% decode edge there cannot cover a 5–7× per-token
-prefill penalty. **goinfer's total-time advantage is a small-model, short-prompt phenomenon.**
+**Consequence for total request time — not re-derived.** The crossover-prompt-length paragraph
+that used to sit here was computed from the retired pre-re-anchor prefill figure; its direction
+survives (a decode edge cannot cover a per-token prefill deficit at depth) but its token counts
+have not been recomputed against the 2026-09-01 sweep, so it is held in legacy §B2 until it is.
 
 **What is peer-independent, and where the release should lead:**
 
@@ -624,8 +532,8 @@ prefill penalty. **goinfer's total-time advantage is a small-model, short-prompt
 **Scope:** these are dense-lane numbers. Coverage is `decoder/features.go`, which grants `cuda` MoE
 (routed + ungated shared) + partial rotary + the Gemma set; MoE-resident *speed* is unmeasured here.
 
-*The archive's most reusable content is not a number: it is the record of the prefill GEMV gap being
-**mis-attributed five times**, each refuted by the next measurement, before `ncu` named it
+*The most reusable content in legacy §B2 is not a number: it is the record of the prefill GEMV
+gap being **mis-attributed five times**, each refuted by the next measurement, before `ncu` named it
 (L1TEX latency from 49.99%-bytes-per-sector uncoalesced loads). Read it before recording a mechanism
 as a bound.*
 
@@ -693,7 +601,7 @@ inside the resident KV.
 | 4000 | 18.2 tok/s | +9.33 |
 
 The per-position term is a **~9–12 µs/pos plateau** — roughly an order of magnitude above the same
-model's CUDA coefficients (§B7: +0.55 / +0.99 µs/pos) and far above the peer's ~0.03–0.09. Decode
+model's CUDA coefficients (legacy §B7: +0.55 / +0.99 µs/pos) and far above the peer's ~0.03–0.09. Decode
 falls 3.4× over 128→4000 (vs 1.8× on CUDA), i.e. Metal degrades harder at depth. This is the
 latency/occupancy-bound attention the half-width KV probe confirmed (plan §P4: q8 costs 88% of full,
 so byte reduction is not the lever) plus the absence of split-KV — not a bandwidth wall. The lever is
@@ -701,13 +609,11 @@ the occupancy/latency rewrite, not KV-quant; q8 on Metal buys VRAM/reachability,
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
-> **RE-ANCHORED 2026-08-27 on driver `595.91.07` / Nobara 44 — see §B4.1 below.** The throughput did
-> not move: at the same 16 slots/layer this stack measures **11.42 tok/s** against the 11.3 recorded
-> here, and the hit rate is identical at 57.3%. What DID move is what the card will grant — the same
-> `GOINFER_MOE_CACHE_SLOTS=48` request now caps to **30** slots where it once reached 38, so the
-> **16.98 tok/s @ 38 figure below is not reproducible on this stack because that configuration is no
-> longer grantable**, not because the path got slower. The rows below are kept as the
-> `595.58.03` record they are.
+> **Current rows: §B4.1** (re-anchored 2026-08-27 on driver `595.91.07` / Nobara 44) — **16.12 tok/s**
+> at the 30 slots the card now grants, **17.62 tok/s** at 40 slots with the resident context halved.
+> The **16.98 tok/s @ 38 slots** figure measured 2026-08-02 on driver `595.58.03` is preserved in
+> [`legacy-benchmarks.md`](legacy-benchmarks.md) §B4 as *measured-but-unsafe, not retracted*: that
+> configuration is no longer grantable (§B4.2 has the arithmetic), so it is not a current rate.
 
 > **⚠ RE-VERIFIED against current Ollama (v0.32.5) — the "peers fail to load it" claim was
 > false and has been retracted.** On the same RTX 2070 SUPER, Ollama **v0.32.5 loads and runs**
@@ -729,34 +635,6 @@ cache (host↔VRAM "C′" path, `docs/task-moe-streaming.md`) — the experts ex
 CPU. Current Ollama runs the same model by CPU-offloading the part that doesn't fit (measured
 above); the two take opposite approaches to the same over-capacity problem.
 
-| RTX 2070 SUPER · 8 GB · driver 595.58.03 · 2026-08-02 | value |
-| --- | --- |
-| model | Gemma 4 **26B-A4B**, int4 (128 experts, top-8, 30 layers) — experts ~11.4 GB, **does not fit 8 GB** |
-| decode | **16.98 tok/s** (64-tok greedy, capture-free, synchronous H2D) — *see the reproducibility note below; not currently reproducible on this card* |
-| expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate over the whole run** (17816 / 4024) — the steady-state decode figure is higher, **89.1%**, because this one includes the cold-cache fill (see §"production-config decomposition", `docs/task-moe-streaming.md`) |
-| **configuration (required — not the default)** | `GOINFER_MOE_CACHE_EXPERTS=1` (host→VRAM expert streaming) + `GOINFER_MOE_CACHE_SLOTS=48` (auto-caps to 38). Omitting the second leaves the cache at its `topK` default — fresh-load per token, ~5 tok/s, not 17. *(`GOINFER_GEMMA4_RESIDENT=1` was also required when this was measured; Gemma-4 residency became unconditional in `a5ebb35` and the variable is now inert.)* |
-| resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
-| coherence | greedy through the real chat template: distinct-trigram 0.818, *"…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**"* |
-| peers | **Ollama v0.32.5: loads + runs** via 42% GPU / 58% CPU-RAM split, **~24.5 tok/s** (faster than goinfer here) — the old "fail to load" claim was outdated and is retracted |
-| commit | `cuda/gemma4_26b_cache_test.go` (`GOINFER_HEAVY_TESTS=1`), host↔VRAM track through `2f51449` |
-
-- The number is a **floor**: synchronous H2D with no async overlap yet, and it still clears
-  fieldfare's 5.1–6.3 tok/s on its own 8 GB M2 Air (the closest analogue either project has —
-  *different silicon, so a floor in the peer's constrained regime, not a comparison row*).
-- **REPRODUCIBILITY (2026-08-12).** This row is **not currently reproducible on the same card**. It
-  was measured at 38 slots/layer, which requires materially more free VRAM than the 26B gates now
-  observe; at the free VRAM they see, the cap lands at **34 slots, and 34 fails outright** with
-  `CUDA_ERROR_OUT_OF_MEMORY` at the first forward (both real-26B gates, plus a direct sweep — 30
-  runs, 34 does not). The measurement was real; the configuration was narrow, running with roughly
-  the forward's own demand left over. Why the cap can choose a value that allocates and then cannot
-  launch is an open defect (A1, `docs/QUEUE.md`). Until it resolves, the README recommends the
-  highest **measured-safe** value (30) rather than a computed one, and this row should be read as a
-  ceiling reached once, not a configuration to aim at.
-- **Reproducing this row needs three environment variables** (listed in the table above); a default
-  build runs this model on CPU. The three hit-rate figures in the docs are three different
-  measurements, not a disagreement: **77.5%** is 32 slots whole-run, **81.6%** is 38 slots whole-run
-  (same 21840 expert reads, more slots), and **89.1%** is 38 slots *steady-state decode only*,
-  which excludes the cold-cache fill. Quote the basis with the number.
 - The 81.6%-hit-rate-at-30%-residency is the empirical basis of the design: trained MoE routing
   is a stationary skew, so an LRU cache over a small resident fraction captures most reads
   (`turbo-fieldfare` reaches the same conclusion via 16-slot LFU — two mechanisms, one property).
@@ -770,52 +648,6 @@ above); the two take opposite approaches to the same over-capacity problem.
   26B's low rate is a **hardware-mismatch** result (`docs/completed/task-26b-prefill-bound.md`), and "other
   MoE models run faster" reduces to "other MoE models fit." Do not read this as an MoE or kernel
   deficiency and do not point IMMA/kernel work at it — the fix is memory, or a model that fits.
-- **Which number to quote: 16.98 tok/s** (capture-free, the headline). The **4.98 tok/s** that also
-  appears in `docs/task-moe-streaming.md` is the `GOINFER_G4_CAPTURE` readback / fresh-load
-  (`nSlots=topK`, no reuse) FLOOR — informative, not the benchmark. Don't cite 4.98 as the rate.
-
-> **serve caveat (both GPU backends).** GPU-resident models bypass the session cache in
-> `cmd/serve` (`7557723`), so they skip prompt-prefix reuse and speculative decode. That
-> is a deliberate trade — resident decode is worth far more than the TTFT optimization —
-> but it means a resident server re-prefills each request. The numbers above include
-> that re-prefill on goinfer's side.
-
-> **Fresh re-measure (2026-07-14, CUDA-spike step 0):** the 1.5B-int8 row is re-measured
-> on this 2070 SUPER after the buffer-coalescing win (`f8ef42b`/`5c3777f`) that postdated
-> the 89.7 figure — **89.7 → 111.6 tok/s** (best of 6 × 48-tok greedy, resident int8,
-> `TestDecodeRealModel_throughput`), closing the native-CUDA gap **61% → 76%**. This is
-> the number the CUDA-megakernel-spike GO bar keys off: **≥1.3× = 145 tok/s int8**. The
-> 7B-int4 row was not re-measured (also predates coalescing — treat as stale).
-
-- The 7B-int4 row is the *footprint* headline: it **fits and decodes pure-GPU on an
-  8 GB card** — the model class that does not fit at int8.
-- goinfer-GPU is portable **WebGPU** (cgo quarantined behind `-tags gpu`) measured
-  against years-tuned **native CUDA** — 60–70% of the CUDA engines at equal quant is
-  the ceiling `gpu-assessment.md` predicted and hit (decode is glue-serialization-
-  bound near a WebGPU wall, not bandwidth-bound; see §0.5 there).
-- **Provenance gap (disclosed):** the 2026-06-08 source run did not pin the exact
-  Ollama / llama.cpp **version**. Treat the ratios as "as-of-2026-06-08"; re-pin peer
-  versions on the next run via `scripts/bench_compare.sh`. The checkpoints, quants,
-  card, and greedy/warm conditions *are* matched.
-
----
-
-## Reproduce it
-
-`scripts/bench_compare.sh` runs **goinfer's** side end-to-end on your machine —
-`BenchmarkDecode` (decode tok/s), `BenchmarkPrefillLong` (prefill), cold-start wall
-clock to first token, and resident memory (`phys_footprint` on macOS, max-RSS on
-Linux) — stamping each with the goinfer commit + date + machine. It then **prints the
-peer commands verbatim** (`ollama run --verbose`, `llama-bench -ngl 99`, vLLM) for you
-to run yourself on the same machine; it never drives the peers (their install is
-yours). Peers absent → it still emits goinfer's column.
-
-```bash
-GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
-  scripts/bench_compare.sh            # add GOINFER_GPU=1 for the -tags gpu residency row
-```
-
----
 
 ### B4.1 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
 
@@ -878,7 +710,7 @@ distinction here is all-experts-on-GPU, which is an architecture difference rath
 ### B4.2 — What the expert-cache cap actually is, and why 38 was never safe
 
 **This section is arithmetic plus already-published measurements — it adds no new timing row.** The
-closed form is A1's (`docs/queue-performance.md`); the measured caps and rates are §B4 and §B4.1.
+closed form is A1's (`docs/queue-performance.md`); the measured caps and rates are legacy §B4 and §B4.1.
 
 The cache asks for `GOINFER_MOE_CACHE_SLOTS` slots per layer and the runtime caps the request to
 what free VRAM allows. **The cap is not a property of the card or of the build** — it is a function
@@ -932,7 +764,7 @@ is the worst step in the range, and it is the value that was once recommended.
 | `595.91.07` | 4096 | ~3.6 GB | **30** | 402,653,184 – 465,567,744 | 76.1% | **16.12** |
 | `595.91.07` | 2048 | ~4.5 GB | **40** | 402,653,184 – 528,482,304 | 82.2% | **17.62** |
 
-**Leftover is what the 38-slot figure was missing.** `16.98 tok/s @ 38 slots` (§B4) is recorded as
+**Leftover is what the 38-slot figure was missing.** `16.98 tok/s @ 38 slots` (legacy §B4) is recorded as
 **measured-but-unsafe, not retracted** — it ran, and it produced coherent output. It was granted by
 the old, quantum-blind cap, which sized the request without rounding each of the four buffers up
 independently and so believed 38 fit.
@@ -957,29 +789,17 @@ grants whatever fits); the default of 8 is **inert** on this model, because top-
 exactly and nothing survives to the next token. If you want more slots, the lever is the resident
 context, not the request.
 
-## B5 — Anchored re-measure, 2026-08-09 (goinfer `686c9f8` vs Ollama v0.32.6)
-
-> **SUPERSEDED — moved to [`benchmarks-archive.md`](benchmarks-archive.md).**
-> Greedy rows are superseded by **§B8**; the sampled (`temp` / `temp+top_p`) and phi3-mini /
-> gemma3-1b cells by **§B5.1** immediately below, which re-measured them on the current stack.
-> The **v0.11.0 release qualification** that sat here was **RETIRED** rather than re-measured — its
-> numbers were §B6/§B7 by code-identity, and both are now re-anchored.
->
-> Two findings in the archived block are mechanism rather than measurement and were not withdrawn:
-> the per-segment coefficients showing **the depth step is a kernel switch, not depth**, and the
-> note that Ollama's depth behaviour must **not** be attributed to flash attention.
-
 ### B5.1 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
 
 **Provenance.** RTX 2070 SUPER · driver `595.91.07` · Nobara 44 · 2026-08-27 · harness
 `scripts/bench_peer.py` at goinfer `61b1e03`, serve binaries **built from `74718c2`** (cpu / cuda /
 webgpu — the binaries are what was measured, not the harness commit) · peer **Ollama v0.32.5**
-(`~/ollama-0325`); the superseded rows above used **v0.32.6** · both sides over HTTP, interleaved,
+(`~/ollama-0325`); the superseded §B5 rows (legacy) used **v0.32.6** · both sides over HTTP, interleaved,
 servers restarted per cell · 64 tokens × 8 completions × 2 runs, spread shown · sampling sent
 explicitly to both sides, never assumed · int4 / q4_K_M · raw cells `b5-reanchor-61b1e03.json`
 (34 cells) and `b5-reanchor-05b-61b1e03.json` (15), zero errors.
 
-**Sampled configurations, depth 128, CUDA** — the rows §B5 could not carry forward:
+**Sampled configurations, depth 128, CUDA** — the rows legacy §B5 could not carry forward:
 
 | config | model | goinfer | Ollama v0.32.5 | verdict | old goinfer |
 |---|---|---|---|---|---|
@@ -1026,7 +846,7 @@ explanation gets attached to a right number.
 > realistic prose prompt the same A/B moves by up to **9.4 points** on one cell. See
 > `docs/spec/10-optfwd-gate.md` and G28.
 
-**Greedy backends, depth 128** (the other cells §B5 could not carry):
+**Greedy backends, depth 128** (the other cells legacy §B5 could not carry):
 
 | model | goinfer CPU | Ollama CPU | goinfer CUDA | Ollama CUDA | goinfer WebGPU |
 |---|---|---|---|---|---|
@@ -1046,14 +866,6 @@ then 1.18× and 1.30× behind. **gemma3-1b does not degrade at all**: 164 / 159 
 depth. Its sliding window is 512, so attention stops growing past it and the decode-depth penalty
 never arrives. Stated as the mechanism rather than a general claim: goinfer's depth problem is a
 property of full attention over a growing KV, and a windowed model does not have one.
-
-## B6 — Split-KV decode attention, re-gated (2026-08-09, P6a)
-
-> **SUPERSEDED — moved to [`benchmarks-archive.md`](benchmarks-archive.md).**
-> Re-measured on the current stack with a committed harness (`scripts/bench_splitkv.py`); the ratios
-> did not move, most cells agreeing to ±0.005. Current rows: **§B6.3** below. The archived block
-> keeps B6.1 (what the new default recovers) and B6.2 (anchored depth rows on the fixed binary),
-> including the note that these thresholds are **not device-portable**.
 
 ### B6.3 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
 
@@ -1075,7 +887,7 @@ gate, which then decides per geometry from the table this section produced. Conf
 yields a table of 1.000s that looks like a null result.
 
 **Mode `force` — split-KV itself (`GOINFER_SPLITKV_MIN_KEYS=0`) ÷ off.** This is the question the
-2026-08-09 table asked, and the comparison against it is direct at 256+:
+2026-08-09 table (legacy §B6) asked, and the comparison against it is direct at 256+:
 
 | geometry | 128 | 256 | 512 | 1024 | 2048 | 3900 |
 |---|---|---|---|---|---|---|
@@ -1118,23 +930,12 @@ because the gate correctly takes the split path exactly where it pays.
 The three cells reading 0.974–0.984 (0.5B and 1.5B at 256, gemma3-1b at 512) are small and sit
 near the crossover; they are recorded, not explained.
 
-## B7 — Deep context: 8k/16k/32k decode (2026-08-09, cap-raise leg)
-
-> **SUPERSEDED — moved to [`benchmarks-archive.md`](benchmarks-archive.md).**
-> Current rows: **§B7.1** below — goinfer unchanged (39.1 vs 39.0 at the depth-matched 32000 cell),
-> so the improved ratio is the peer moving, not a goinfer win.
->
-> The archived block keeps two things that were not withdrawn: the per-segment µs-per-KV-position
-> coefficients, and the finding that **the deep gap is NOT DRAM bandwidth** — where the alternative
-> is falsified rather than merely assumed. *(Its `B7.1 — Control` subsection was renumbered to
-> `B7 control` in the move; it collided with the §B7.1 re-anchor below.)*
-
-## B7.1 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
+### B7.1 — Re-anchored 2026-08-27 (driver `595.91.07`, Nobara 44)
 
 **Provenance.** RTX 2070 SUPER · driver `595.91.07` · Nobara 44 · 2026-08-27 · goinfer `444b9a9`,
 serve binaries built from `74718c2` · peer **Ollama v0.32.5** (`~/ollama-0325`) — the superseded
 rows used **v0.32.6** · `-ctx 32768` on goinfer, `num_ctx 32768` and `OLLAMA_FLASH_ATTENTION=false`
-on the peer, matching §B7's recorded configuration · deep protocol as §B7 defined it (`num_predict`
+on the peer, matching legacy §B7's recorded configuration · deep protocol as §B7 defined it (`num_predict`
 128, 1 warm + 2×2, not the shallow 17 completions) · token-calibrated prompts · decode-only,
 client-timed from the first streamed token · 11 cells, zero errors · raw cells
 `b7-deep-444b9a9.json`.
@@ -1172,13 +973,14 @@ cell whose own note says no decision turns on it, and the 0.5B 32000 pair is the
 probe. It shows no second regime change past 16k: the goinfer curve continues its established
 decline rather than bending.
 
-## B8 — RE-ANCHORED to the Nobara 44 / driver 595.91.07 stack (2026-08-26, goinfer `a161bd6`)
+### B8 — RE-ANCHORED to the Nobara 44 / driver 595.91.07 stack (2026-08-26, goinfer `a161bd6`)
 
 **This section is the current anchor for goinfer-vs-Ollama greedy CUDA decode.** It supersedes the
-peer rows in §B2 and §B5. §B4, §B6 and §B7 are **not** re-anchored by it and stay marked STALE —
-`bench_peer.py` does not produce them, and marking them off this run would bless rows nothing
-measured. The sampled (`temp` / `temp+top_p`) rows and the phi3-mini / gemma3-1b cells in §B5 are
-likewise **not** covered: this sweep is greedy-only, qwen2.5-coder-only.
+peer rows in §B2 and §B5. §B4, §B6 and §B7 are **not** re-anchored by it — `bench_peer.py` does not
+produce them, and marking them off this run would bless rows nothing measured; each was re-anchored
+separately on 2026-08-27 (§B4.1, §B6.3, §B7.1). The sampled (`temp` / `temp+top_p`) rows and the
+phi3-mini / gemma3-1b cells are likewise **not** covered here (this sweep is greedy-only,
+qwen2.5-coder-only); they are §B5.1.
 
 **Provenance, every row below:** goinfer **`a161bd6`** · peer **Ollama v0.32.5** (`~/ollama-0325`) ·
 RTX 2070 SUPER, **driver 595.91.07**, **Nobara 44 / kernel 7.2.0-202.fc44 / glibc 2.43-8**, CUDA
@@ -1199,7 +1001,7 @@ card) · **parity established first**: `gate gpu` PASS at the same sha, 39 minut
 > attestation as equivalent to that record — the archived results JSON marks the header
 > `RECONSTRUCTED` and separates instrument-read from attested fields, field by field.
 
-### Greedy decode by KV depth — the anchor table
+#### Greedy decode by KV depth — the anchor table
 
 | depth | goinfer 0.5B | Ollama 0.5B | goinfer 1.5B | Ollama 1.5B | goinfer 7B | Ollama 7B |
 |---|---|---|---|---|---|---|
@@ -1224,7 +1026,7 @@ session. Treat the 1.15× at that cell as indicative.
 **The picture is unchanged by the upgrade**: a real win on tiny models at short context, parity at
 7B/128, and a widening loss with depth on every model. Depth still stops at 3900 (`cudaCtxCap`).
 
-### The backend table, 128 context, greedy
+#### The backend table, 128 context, greedy
 
 | model | goinfer CPU | Ollama CPU | goinfer CUDA | Ollama CUDA | goinfer WebGPU ⁱ |
 |---|---|---|---|---|---|
@@ -1237,7 +1039,7 @@ and must never be presented as a like-for-like comparison. It is here to place g
 backend against its own native one: WebGPU runs at **38 / 41 / 63%** of goinfer's own CUDA at 0.5B /
 1.5B / 7B — the gap narrows as the model grows, which is what a dispatch-overhead story predicts.
 
-### The peer is the control, and it held to <0.5%
+#### The peer is the control, and it held to <0.5%
 
 The point of re-measuring both sides is that the peer becomes a control on everything that is not
 goinfer. Across a **distro major upgrade** — new driver, new kernel, new libc, new graphics stack —
@@ -1266,107 +1068,7 @@ goinfer's own cells moved **+0.7% to +4.3%** against 2026-08-09 at every depth e
 honest reading is that the old 512 cells were suspect, not that something got 25% faster. **The
 comparison in this subsection is cross-session and indicative; the anchor is the table above it.**
 
-## B9 — tables relocated from the README front page (2026-08-27)
-
-> **STALE, and moved to [`benchmarks-archive.md`](benchmarks-archive.md).**
-> Measured against **Ollama v0.32.6** on the pre-2026-08-25 stack. Greedy rows are superseded by
-> **§B8**; the sampled configurations the block was kept for are superseded by **§B5.1**, which
-> re-measured them on the current stack the same day the block was written — so its own claim to
-> hold the only sampling table no longer holds. Nothing here is a current claim.
-
-## Measurement notes worth keeping
-
-- **Interleaving is not optional, and skipping it is invisible in the output.** Absolute sampled
-  numbers on this box drift ~3.5% between sessions (proven: the same binary read 112.4 in one session
-  and 116.5 in another, while a *different* binary read 116.4 alongside it). A ratio built from two
-  engines measured in different sessions silently absorbs that drift — which is what made the original
-  phi3-mini row read 1.12× where the same-session pair reads 1.08×. If a cell's two sides were not
-  measured back-to-back, the verdict column is not a measurement of the engines.
-- **A fresh server per cell does not protect you from the PREVIOUS engine.** Interleaved peer
-  benchmarking kills engine A and starts engine B, but Ollama keeps a model resident for minutes after
-  its last request, so B's first cells can contend with A still unloading. This produced a −52.9%
-  phantom regression in §B7.1 that was arm-specific — the tell that it was an artifact, not a result.
-  Wait for a verified-idle device (`nvidia-smi` at ~0% and baseline memory) between engines, and treat
-  any anomaly in the FIRST cells of a run as suspect until re-run.
-- **Early EOS at `temperature 1.0` shortens completions.** In the 2026-08-09 sweep, **4 of 16**
-  completions at goinfer's default sampling terminated before the 64-token cap (11/36/45/61 tokens);
-  greedy hit the cap all 16 times. Short completions make a per-token rate noisier. This is a
-  property of *that configuration* (untruncated sampling reaches EOS sooner), **not a measurement
-  fault** — the rate itself is unaffected. Any future sweep at `temperature > 0` without truncation
-  should expect it and report run counts.
-- **One peer cell is genuinely high-variance.** Ollama v0.32.5 at 1.5B/512 measured 146–182 tok/s
-  across ten runs (mean 162.7, stdev 11.2) while goinfer was stable at 184.7 ±1.2 in the same cell,
-  interleaved. A two-run sample there read as a near-tie; ten runs read as a ~1.11× goinfer win.
-  Do not quote that cell without its run count.
-
-## Maintenance rules (so this page never rots into a lie)
-
-- **Every number carries its date + goinfer commit + peer version + sampling config, inline.**
-  No floating "~90 tok/s" without the run that produced it — and no number without its
-  **sampling configuration** (greedy, or `temperature`/`top_p` with their values), for goinfer
-  *and* the peer. Sampling config is a REQUIRED per-number field, on the same footing as machine,
-  driver, peer version, and date: a row's throughput is only interpretable once you know whether
-  it was sampled greedily or with temperature+top_p (the two can differ by an order of magnitude
-  on the same engine). Any existing row that does not state one is marked **sampling: unrecorded**
-  and must **not** be assumed greedy.
-- **A host-stack change re-anchors; it never carries forward.** The NVIDIA driver is already a
-  required per-row field, and the rule extends to what sits under it: **kernel, libc and distro**.
-  When any of them moves, mark every affected row STALE *the same day* — before any re-measurement
-  exists — and record what moved from the package manager's own log (`dnf history info <id>`), not
-  from memory. A stale row that still reads as current is the failure mode this page exists to
-  prevent, and the window between "the stack moved" and "the numbers are back" is exactly where it
-  happens. Re-measure with `scripts/bench_peer.py`; `bench_compare.sh` does not drive the peer and
-  cannot produce a comparison.
-- **Re-run `scripts/bench_compare.sh` at each tag.** A number more than one minor
-  version stale is re-measured or struck — never silently carried forward.
-- **Re-verify the capability matrix against peer release notes at each tag** (cheap —
-  it's mostly booleans). Peers move: Ollama dropped its CGO runner for a `llama-server`
-  subprocess (PR #16031, merged 2026-05-29); mistral.rs shipped multi-model + an OpenAI
-  Responses API. A stale ✓/✗ is as misleading as a stale tok/s.
-- **The bar is provenance, not flattery.** If a cell can't be traced to a measurement
-  or a peer's own docs, cut it.
-
----
-
-## Sources
-
-**goinfer (in-repo):** `docs/completed/gpu-assessment.md` §0.0 (GPU residency: 89.7 / 51.7 tok/s;
-61% / 71% of CUDA at equal quant; the discarded wrong-model 191 tok/s; commit `eaf9a6c`,
-2026-06-08) · `docs/ARCHITECTURE.md` §2 (cold-start / heap / binary tiers; embedded-GGUF
-vs `.giw`) · `docs/completed/perf-campaign.md` (M1 Pro CPU decode, measurement conventions) ·
-`CHANGELOG.md` v0.4.0/v0.5.0 (prefill 3.4× / 1.7×; MoE prefill `08acc11`) ·
-`decoder/registry.go` (13 `model_type` keys, 11 distinct architectures) · `CHANGELOG.md`
-v0.5.0 (the 7B int4 row: **51.7 vs llama.cpp-CUDA 72.8 tok/s = ~71%** — this peer
-figure lives in CHANGELOG, not gpu-assessment) · `README.md` (capabilities) ·
-**§B2 (cgo-free CUDA)** — measured 2026-07-16 on this repo at commit `7557723`, RTX 2070
-SUPER / driver 595.58.03, peer Ollama 0.5.7 via `/api/generate`; goinfer via `cmd/serve`
-`/v1/chat/completions`; both wall-clock, best of 3 warm; lab notes in
-`docs/completed/task-cuda-cgofree-spike.md` · **§B3 (cgo-free Metal)** — **re-anchored 2026-08-04** on
-Apple M1 Pro 16 GB / macOS 26.5.2, goinfer `38e5cd7` (W4A8) via `cmd/serve` `/v1/chat/completions`,
-peer **Ollama v0.32.5** (FA-on) via `/api/chat`, both from the identical local q4_K_M GGUF, same
-server-to-server wall-clock method; notes in `docs/completed/metal-model-coverage.md`.
-
-**Peers (verified 2026-06-10, against each project's repo/docs):**
-llama.cpp — github.com/ggml-org/llama.cpp (README; `tools/server/README.md`;
-`grammars/README.md`; `docs/multimodal.md`).
-Ollama — github.com/ollama/ollama PR #16031 (CGO runner removed → `llama-server` + MLX,
-merged 2026-05-29); docs.ollama.com (modelfile/LoRA, structured outputs, OpenAI API).
-mistral.rs — github.com/EricLBuehler/mistral.rs (README; `guides/serve/openai-responses-api.md`;
-`guides/serve/multiple-models.md`; v0.8.3, 2026-06-01).
-vLLM — github.com/vllm-project/vllm (README, 200+ archs); docs.vllm.ai
-(structured outputs / xgrammar); en.wikipedia.org/wiki/VLLM (V1 engine).
-gollama.cpp — github.com/dianlight/gollama.cpp (README: purego bindings, dlopen native
-llama.cpp; v0.2.2-llamacpp.b6862).
-yzma — github.com/hybridgroup/yzma (README: purego+ffi, `llama.Load(libPath)`, VLM
-examples; v1.16.1, 2026-06-08).
-llama2.go — github.com/nikolaydubina/llama2.go (README; **archived 2024-11-30**, CPU-only).
-
-> *Peer-state note:* the web sweep that populated the peer columns read each project's
-> canonical repo files/READMEs (GitHub) and search summaries; a couple of cells were
-> marked "unverified" by the sweep and are `—` here rather than guessed. Before a
-> release that leans on this page, re-open the flagged primary URLs to confirm wording.
-
-## B10 — decode-path decision matrix, re-measured (2026-09-02, goinfer `cd6895c2`)
+### B10 — decode-path decision matrix, re-measured (2026-09-02, goinfer `cd6895c2`)
 
 Replaces `docs/completed/gpu-assessment.md` §1, whose table dates from 2026-06-08. That page is
 archived and its numbers are left as the record they are; **this is the current one.** Two
@@ -1405,6 +1107,7 @@ Non-resident paths show `—` rather than 0: they cannot reuse at all (it is gat
 *and* has a lower cold TTFT, but the gap between them is far smaller than the gap either has to
 its own warm number — which is the practical point: on a multi-turn workload the prefill term,
 not the quant, dominates what a user feels.
+
 
 ---
 
@@ -1588,3 +1291,132 @@ second look on the CUDA side before treating this as settled either way.
 - **`go-llama`/`goccy`** (the Go-lane CPU peer) — not installed on either box.
 - **W3 at 2k/32k** — only 8k has been run.
 - **M35/M26 W3 post-fix re-run** — in progress, see the note above.
+
+## Measurement notes worth keeping
+
+- **Interleaving is not optional, and skipping it is invisible in the output.** Absolute sampled
+  numbers on this box drift ~3.5% between sessions (proven: the same binary read 112.4 in one session
+  and 116.5 in another, while a *different* binary read 116.4 alongside it). A ratio built from two
+  engines measured in different sessions silently absorbs that drift — which is what made the original
+  phi3-mini row read 1.12× where the same-session pair reads 1.08×. If a cell's two sides were not
+  measured back-to-back, the verdict column is not a measurement of the engines.
+- **A fresh server per cell does not protect you from the PREVIOUS engine.** Interleaved peer
+  benchmarking kills engine A and starts engine B, but Ollama keeps a model resident for minutes after
+  its last request, so B's first cells can contend with A still unloading. This produced a −52.9%
+  phantom regression in §B7.1 that was arm-specific — the tell that it was an artifact, not a result.
+  Wait for a verified-idle device (`nvidia-smi` at ~0% and baseline memory) between engines, and treat
+  any anomaly in the FIRST cells of a run as suspect until re-run.
+- **Early EOS at `temperature 1.0` shortens completions.** In the 2026-08-09 sweep, **4 of 16**
+  completions at goinfer's default sampling terminated before the 64-token cap (11/36/45/61 tokens);
+  greedy hit the cap all 16 times. Short completions make a per-token rate noisier. This is a
+  property of *that configuration* (untruncated sampling reaches EOS sooner), **not a measurement
+  fault** — the rate itself is unaffected. Any future sweep at `temperature > 0` without truncation
+  should expect it and report run counts.
+- **One peer cell is genuinely high-variance.** Ollama v0.32.5 at 1.5B/512 measured 146–182 tok/s
+  across ten runs (mean 162.7, stdev 11.2) while goinfer was stable at 184.7 ±1.2 in the same cell,
+  interleaved. A two-run sample there read as a near-tie; ten runs read as a ~1.11× goinfer win.
+  Do not quote that cell without its run count.
+
+## Maintenance rules (so this page never rots into a lie)
+
+- **Every number carries its date + goinfer commit + peer version + sampling config, inline.**
+  No floating "~90 tok/s" without the run that produced it — and no number without its
+  **sampling configuration** (greedy, or `temperature`/`top_p` with their values), for goinfer
+  *and* the peer. Sampling config is a REQUIRED per-number field, on the same footing as machine,
+  driver, peer version, and date: a row's throughput is only interpretable once you know whether
+  it was sampled greedily or with temperature+top_p (the two can differ by an order of magnitude
+  on the same engine). Any existing row that does not state one is marked **sampling: unrecorded**
+  and must **not** be assumed greedy.
+- **A host-stack change re-anchors; it never carries forward.** The NVIDIA driver is already a
+  required per-row field, and the rule extends to what sits under it: **kernel, libc and distro**.
+  When any of them moves, mark every affected row STALE *the same day* — before any re-measurement
+  exists — and record what moved from the package manager's own log (`dnf history info <id>`), not
+  from memory. A stale row that still reads as current is the failure mode this page exists to
+  prevent, and the window between "the stack moved" and "the numbers are back" is exactly where it
+  happens. Re-measure with `scripts/bench_peer.py`; `bench_compare.sh` does not drive the peer and
+  cannot produce a comparison.
+- **Re-run `scripts/bench_compare.sh` at each tag.** A number more than one minor
+  version stale is re-measured or struck — never silently carried forward.
+- **Re-verify the capability matrix against peer release notes at each tag** (cheap —
+  it's mostly booleans). Peers move: Ollama dropped its CGO runner for a `llama-server`
+  subprocess (PR #16031, merged 2026-05-29); mistral.rs shipped multi-model + an OpenAI
+  Responses API. A stale ✓/✗ is as misleading as a stale tok/s.
+- **The bar is provenance, not flattery.** If a cell can't be traced to a measurement
+  or a peer's own docs, cut it.
+
+---
+
+## Reproduce it
+
+`scripts/bench_compare.sh` runs **goinfer's** side end-to-end on your machine —
+`BenchmarkDecode` (decode tok/s), `BenchmarkPrefillLong` (prefill), cold-start wall
+clock to first token, and resident memory (`phys_footprint` on macOS, max-RSS on
+Linux) — stamping each with the goinfer commit + date + machine. It then **prints the
+peer commands verbatim** (`ollama run --verbose`, `llama-bench -ngl 99`, vLLM) for you
+to run yourself on the same machine; it never drives the peers (their install is
+yours). Peers absent → it still emits goinfer's column.
+
+```bash
+GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
+  scripts/bench_compare.sh            # add GOINFER_GPU=1 for the -tags gpu residency row
+```
+
+---
+
+## Retired section IDs
+
+Section IDs are cited from code comments and other docs, so they are never reused. The IDs below no
+longer have a block on this page; their full text is in
+[`legacy-benchmarks.md`](legacy-benchmarks.md), verbatim.
+
+| ID | what it was | status | current counterpart |
+|---|---|---|---|
+| **§B** | GPU residency vs native CUDA at equal quant (WebGPU int8 vs q8_0; the 60–70%-of-CUDA headline) | **RETIRED** 2026-08-27 — withdrawn, not corrected, not re-measured | none as a peer cell; §B8's backend table places goinfer's WebGPU against its own CUDA (38 / 41 / 63% at 0.5B / 1.5B / 7B) |
+| **§B2** (historical rows) | peer tables against Ollama 0.5.7 and the 2026-08-04 v0.32.5 box; the batched-prefill chronology; the pre-re-anchor total-request-time crossover | superseded | §B8 (decode), §B2 above (prefill, 2026-09-01) |
+| **§B4** (595.58.03 record) | 16.98 tok/s @ 38 slots, 2026-08-02 | measured-but-unsafe; the configuration is no longer grantable | §B4.1 |
+| **§B5** | anchored re-measure 2026-08-09 vs Ollama v0.32.6, plus the v0.11.0 release qualification | superseded; the qualification was **RETIRED** rather than re-measured | §B5.1 (sampled, phi3-mini, gemma3-1b), §B8 (greedy) |
+| **§B6** | split-KV decode attention, re-gated 2026-08-09 (with B6.1 / B6.2) | superseded — ratios reproduced to ±0.005 | §B6.3 |
+| **§B7** | deep context 8k/16k/32k, 2026-08-09, and its control | superseded — goinfer unchanged, the peer moved | §B7.1 |
+| **§B9** | tables relocated from the README front page, 2026-08-27 | **STALE** — v0.32.6 on the pre-2026-08-25 stack | §B8 (greedy), §B5.1 (sampled) |
+| §A (parts) | the 2026-08-22 Mac decode table and its diagnosis; the v0.5.0-era decode rows; the pre-2026-09-01 CPU-prefill record; the Mellum2 MoE-prefill and SigLIP rows | superseded / stale | §A above |
+
+Two mechanism findings in the legacy §B5 and §B7 blocks were **not** withdrawn with their numbers
+and are still cited: the per-segment coefficients showing the depth step is a **kernel switch, not
+depth**, and **the deep gap is NOT DRAM bandwidth** (the alternative is falsified, not assumed).
+
+---
+
+## Sources
+
+**goinfer (in-repo):** `docs/completed/gpu-assessment.md` §0.0 (the discarded wrong-model 191 tok/s;
+commit `eaf9a6c`, 2026-06-08 — its residency rows are retired, legacy §B) · `docs/ARCHITECTURE.md`
+§2 (cold-start / heap / binary tiers; embedded-GGUF vs `.giw`) · `docs/completed/perf-campaign.md`
+(M1 Pro CPU decode, measurement conventions) · `decoder/registry.go` (13 `model_type` keys, 11
+distinct architectures) · `README.md` (capabilities) · **§B2 (cgo-free CUDA, prefill)** — re-anchored
+2026-09-01, goinfer `fb43caf`, driver `595.91.07`, peer Ollama v0.32.5, `scripts/bench_peer_prefill.py`;
+record `docs/measurements/cuda-prefill-reanchor-2026-09-01.md` (the 2026-07-16 Ollama 0.5.7 rows and
+their provenance are legacy §B2) · **§B8 (CUDA decode anchor)** — 2026-08-26, goinfer `a161bd6`,
+`scripts/bench_peer.py` · **§B3 (cgo-free Metal)** — **re-anchored 2026-08-04** on
+Apple M1 Pro 16 GB / macOS 26.5.2, goinfer `38e5cd7` (W4A8) via `cmd/serve` `/v1/chat/completions`,
+peer **Ollama v0.32.5** (FA-on) via `/api/chat`, both from the identical local q4_K_M GGUF, same
+server-to-server wall-clock method; notes in `docs/completed/metal-model-coverage.md`.
+
+**Peers (verified 2026-06-10, against each project's repo/docs):**
+llama.cpp — github.com/ggml-org/llama.cpp (README; `tools/server/README.md`;
+`grammars/README.md`; `docs/multimodal.md`).
+Ollama — github.com/ollama/ollama PR #16031 (CGO runner removed → `llama-server` + MLX,
+merged 2026-05-29); docs.ollama.com (modelfile/LoRA, structured outputs, OpenAI API).
+mistral.rs — github.com/EricLBuehler/mistral.rs (README; `guides/serve/openai-responses-api.md`;
+`guides/serve/multiple-models.md`; v0.8.3, 2026-06-01).
+vLLM — github.com/vllm-project/vllm (README, 200+ archs); docs.vllm.ai
+(structured outputs / xgrammar); en.wikipedia.org/wiki/VLLM (V1 engine).
+gollama.cpp — github.com/dianlight/gollama.cpp (README: purego bindings, dlopen native
+llama.cpp; v0.2.2-llamacpp.b6862).
+yzma — github.com/hybridgroup/yzma (README: purego+ffi, `llama.Load(libPath)`, VLM
+examples; v1.16.1, 2026-06-08).
+llama2.go — github.com/nikolaydubina/llama2.go (README; **archived 2024-11-30**, CPU-only).
+
+> *Peer-state note:* the web sweep that populated the peer columns read each project's
+> canonical repo files/READMEs (GitHub) and search summaries; a couple of cells were
+> marked "unverified" by the sweep and are `—` here rather than guessed. Before a
+> release that leans on this page, re-open the flagged primary URLs to confirm wording.

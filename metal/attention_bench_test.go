@@ -12,7 +12,7 @@ import (
 // launch shape (nH*128, 128) one threadgroup per Q head) at a realistic long-context depth --
 // the V-read loop (`for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d])`) is the
 // per-token cost this isolates; qk-scoring/softmax are the same kernel but the V-read dominates
-// at depth (docs/benchmarks.md: attention ~56% of a token at 2048 ctx).
+// at depth (docs/legacy-benchmarks.md §B2: attention ~56% of a token at 2048 ctx).
 func BenchmarkAttention(b *testing.B) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

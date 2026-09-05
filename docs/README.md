@@ -25,8 +25,8 @@ These are the pages to trust, and to update when reality moves.
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | modules, packages, the forward pass, where cgo is quarantined |
 | [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 27 model families. The registry is the source of truth; do not hand-edit |
-| [benchmarks.md](benchmarks.md) | every measured number, provenance-gated: machine, checkpoint, quant, date, thermal note |
-| [benchmarks-archive.md](benchmarks-archive.md) | the retired, superseded and historical rows `benchmarks.md` used to carry — moved verbatim 2026-08-31. **Never a current claim**; kept so a retraction can be audited |
+| [benchmarks.md](benchmarks.md) | **current claims only**, provenance-gated: machine, checkpoint, quant, date, thermal note. Section IDs are stable; a *Retired section IDs* index maps the ones that moved |
+| [legacy-benchmarks.md](legacy-benchmarks.md) | the retired, superseded and historical rows `benchmarks.md` used to carry — moved verbatim 2026-08-31 and 2026-09-05 (was `benchmarks-archive.md`). **Never a current claim**; kept so a retraction can be audited |
 | [server.md](server.md) | the HTTP surface — OpenAI, Anthropic, vision, embeddings, admin |
 | [api-tiers.md](api-tiers.md) | which surfaces v1.0 semver-binds, and which are explicitly Experimental |
 | [positioning.md](positioning.md) | what goinfer is for and is not — the long form of the README's framing |
