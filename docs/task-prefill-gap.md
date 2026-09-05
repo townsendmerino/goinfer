@@ -5,7 +5,7 @@
 > K≈512 and 12.7–14.8× at K≈3900**, and it *grows* with K while Ollama's is flat
 > (`measurements/cuda-prefill-reanchor-2026-09-01.md`); on Mac Metal the **shipped default is
 > sequential prefill through the decode path** (~40–60 tok/s on 1.5B) because the batched kernel is
-> declined for not being bit-identical (`metal/backend.go:228`); on Mac CPU the gap has shrunk to
+> declined for not being bit-identical (`metal/backend.go:236`); on Mac CPU the gap has shrunk to
 > ~1.8× at K=512 and about parity at depth since the S-01 tile (`897fb18`), which §A of
 > `benchmarks.md` does not yet say. The workload that matters most — W4, the agent turn
 > (`task-peer-benchmarks.md:71`) — is prefill of each turn's new 500–3000 tokens, which sits exactly
@@ -134,7 +134,7 @@ The CPU backend already faced this and split the contract: f32 prefill attention
 above 512 tokens, P19's fused schedule ships under the same flag, and `--cpu-exact-prefill` is the
 documented way back to `decode == prefill` byte-identity (`internal/serveapp/main.go:318`). Metal
 built the fast path and then declined it by default on a *stream-divergence* number (54%,
-`metal/backend.go:228`–`:241`) — a measure of whether any token ever differs, which is the wrong
+`metal/backend.go:236`–`:241`) — a measure of whether any token ever differs, which is the wrong
 gate for quality: CUDA decode is not held to it either (`benchmarks.md` §B2, "3% near-tie parity
 rule"). The GPU prefill paths are the only place in the tree where bit-identity still governs the
 *default*, and it costs 5–15× on the workload W4 measures.
@@ -173,7 +173,7 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 - **What exists:** `PrefillLast` on Metal is a working f16-MMA batched prefill, measured 3.93–4.56×
   over sequential at P=128…2048 and 3.74× end to end on a real 1450-token prompt through the
   server (`ollama-chase.md:1578`–`:1611`). It is declined unless `GOINFER_METAL_BATCHED_PREFILL=1`
-  (`metal/backend.go:240`), which `--metal-fast-prefill` sets (`internal/serveapp/main.go:372`).
+  (`metal/backend.go:248`), which `--metal-fast-prefill` sets (`internal/serveapp/main.go:372`).
 - **Work:** run the §3 gate on Metal for S and D7. If it passes, flip the default and route the
   flag through `--exact-prefill`. If it fails, record the cell and stop — L1 is then "not
   quality-neutral as built", which is a finding about the f16 activation path, not about the
