@@ -473,8 +473,12 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 // same shape of untestable promise as the "one pass" claim that let an OOM decline hide behind a
 // green startup line for every prompt long enough to matter (prefill-chunking-d7-2026-09-04.md).
 func (r *cudaResident) fusedAttnNote() string {
-	if !r.fastPrefill {
+	if !r.fastAttn && !r.fastGemm {
 		return ""
+	}
+	if !r.fastAttn {
+		return "; weight term: gemm_w4a8_mma (L3) where M>=" + strconv.Itoa(gemmMMAMinRows) +
+			"; attention: attn_batched (exact)"
 	}
 	if r.bAttnFused64 == (Pipeline{}) && r.bAttnFused128 == (Pipeline{}) {
 		return "; fused attention REQUESTED but its module did not load — attn_batched (exact) throughout"
@@ -489,14 +493,33 @@ func (r *cudaResident) fusedAttnNote() string {
 		strings.Join(served, "/"), attnFusedMinRows)
 }
 
-// fastPrefillEnabled reports whether the L2/L3 fast prefill kernels are selected.
+// fastPrefillEnabled reports which fast prefill kernels are selected, PER LEVER.
 //
 // OPT-IN, and it stays opt-in until §3's reference gate passes on CUDA (docs/task-prefill-gap.md
 // Phase 3). The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains what
 // spec-decode verify and the parity gates run, and serves every shape the fast kernels decline.
-func fastPrefillEnabled() bool {
-	v := os.Getenv("GOINFER_CUDA_FAST_PREFILL")
-	return v == "1" || strings.EqualFold(v, "true")
+//
+// THE LEVERS ARE SEPARATELY SELECTABLE ON PURPOSE. L2 (fused attention) and L3 (tensor-core GEMM)
+// touch DIFFERENT categories of prefill — attention and the weight term — and §5 requires each to
+// be measured against the exact path alone before the two are measured together, "so the end-to-end
+// number has an attribution". §3.1 needs the same split for a different reason: if the combined
+// fast path ever scores worse than exact under the fidelity gate, the first question is WHICH
+// kernel, and an all-or-nothing flag cannot answer it.
+//
+//	GOINFER_CUDA_FAST_PREFILL=1 | true   both levers
+//	                            =attn    L2 only (fused attention; exact GEMV)
+//	                            =gemm    L3 only (tensor-core GEMM; exact attention)
+//	                            unset|0  neither — the shipped default
+func fastPrefillEnabled() (attn, gemm bool) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_CUDA_FAST_PREFILL"))) {
+	case "1", "true":
+		return true, true
+	case "attn":
+		return true, false
+	case "gemm":
+		return false, true
+	}
+	return false, false
 }
 
 // prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
@@ -998,7 +1021,7 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 // sites. Every "no" means attn_batched, which is the exact path, is bit-identical to decode, and is
 // what spec-decode verify and the parity gates run.
 func (r *cudaResident) useAttnFused(hd, M int) (Pipeline, uint32, bool) {
-	if !r.fastPrefill || M < attnFusedMinRows {
+	if !r.fastAttn || M < attnFusedMinRows {
 		return Pipeline{}, 0, false
 	}
 	p, sh := r.attnFusedFor(hd)
@@ -1006,6 +1029,35 @@ func (r *cudaResident) useAttnFused(hd, M int) (Pipeline, uint32, bool) {
 		return Pipeline{}, 0, false
 	}
 	return p, sh, true
+}
+
+// gemmMMA* MUST match GBM / GBN / GWARPS*32 / GKSTEP / GAPAD in gemm_w4a8_mma.cu.
+const (
+	gemmMMABM      = 64
+	gemmMMABN      = 64
+	gemmMMAThreads = 128
+	gemmMMAKStep   = 128
+	gemmMMAAPad    = 4
+	// gemmMMAMinRows: tensor cores lose below a warp's worth of rows, and §4 L3 pre-registers
+	// gemv_w4a8_rn — the EXACT path — as the M<16 path for that reason. 16 is two m8n8k16 M-tiles.
+	gemmMMAMinRows = 16
+)
+
+// gemmMMAShmem is the activation panel: [GBM][GKSTEP/4 + GAPAD] int words. Constant, 9 KB.
+func gemmMMAShmem() uint32 {
+	return uint32(gemmMMABM * (gemmMMAKStep/4 + gemmMMAAPad) * 4)
+}
+
+// useGemmMMA is the ONE place the L3 kernel is chosen. Every "no" means gemv_w4a8_rn, which is the
+// exact path, is bit-identical to the M=1 decode GEMV, and is what the parity gates run.
+//
+// The K constraints are not defensive padding: the kernel contracts 32 elements per group scale and
+// 8 per packed weight word, so a K that is not a multiple of 32 would misalign the group-scale fold.
+// Every production shape here satisfies it (1536, 3584, 8960, 18944 are all multiples of 32), and a
+// shape that does not is served correctly by the exact path rather than by a special case.
+func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {
+	return r.fastGemm && kind == "int4" && M >= gemmMMAMinRows &&
+		r.bGemmMMA != (Pipeline{}) && K%32 == 0
 }
 
 // rnBlockRows must equal RN in gemv_w4a8_rn.cu — each warp computes this many output rows, so the grid
@@ -1019,6 +1071,16 @@ const rnBlockRows = 2
 func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
 	switch wt.kind {
 	case "int4":
+		if r.useGemmMMA(wt.kind, wt.K, M) {
+			// L3: block tile 64(M) x 64(N), 4 warps, activation panel staged in shared.
+			cfg := LaunchConfig{
+				GridX: uint32((wt.N + gemmMMABN - 1) / gemmMMABN),
+				GridY: uint32((M + gemmMMABM - 1) / gemmMMABM), GridZ: 1,
+				BlockX: gemmMMAThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: gemmMMAShmem()}
+			return r.launch(r.bGemmMMA, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
+				gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
+				gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
+		}
 		warps := (wt.N + rnBlockRows - 1) / rnBlockRows
 		cfg := LaunchConfig{GridX: uint32((warps + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		return r.launch(r.bRN, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,

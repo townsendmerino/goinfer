@@ -418,7 +418,11 @@ type cudaResident struct {
 	// loaded; every selection site treats the zero Pipeline as "use attn_batched". Kept in its own
 	// alignment group so adding them does not re-align (and so re-diff) the fields above.
 	bAttnFused64, bAttnFused128 Pipeline
-	fastPrefill                 bool
+	// L3 (§4 L3): the tensor-core int4 GEMM. Zero-valued unless selected AND loaded; bGemvB
+	// treats the zero Pipeline as "use gemv_w4a8_rn", which is the exact path.
+	bGemmMMA Pipeline
+	// Per-lever selection (§5 attribution): fastAttn drives L2, fastGemm drives L3.
+	fastAttn, fastGemm bool
 	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the
 	// kernels stay bit-identical): the clamped interleaved-SwiGLU expert epilogue, plus the
 	// per-layer attention sinks and the per-expert gate‖up bias table it needs.

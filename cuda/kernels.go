@@ -137,6 +137,13 @@ var attnBlockPTX []byte
 //go:embed testdata/attn_fused.ptx
 var attnFusedPTX []byte
 
+// gemmMMAPTX: gemm_w4a8_mma — the L3 tensor-core int4xint8 GEMM with group scales
+// (docs/task-prefill-gap.md §4 L3). Own module, same isolation reason as attn_fused.cu: the
+// audited moe.ptx / glue.ptx / prefill_batched.ptx must not be regenerated to add a kernel.
+//
+//go:embed testdata/gemm_w4a8_mma.ptx
+var gemmMMAPTX []byte
+
 // moePTX: sparse mixture-of-experts — moe_route (on-GPU router), gemv_f32_a8 (the f32 router
 // projection), gemv_w4a8_moe / _wacc (indexed stacked-expert GEMVs), shared_gate_combine.
 //

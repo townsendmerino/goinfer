@@ -752,9 +752,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// only when asked. Own module — prefill_batched.ptx is untouched, the isolation pattern
 		// attn_block.cu established. A load failure is not fatal: it leaves bAttnFused* zero and
 		// every selection site falls back to attn_batched, which is the exact path anyway.
-		r.fastPrefill = fastPrefillEnabled()
-		if r.fastPrefill && r.prefillReady {
-			if fmod, e6 := r.dev.CompileLibrary(attnFusedPTX); e6 == nil {
+		r.fastAttn, r.fastGemm = fastPrefillEnabled()
+		if (r.fastAttn || r.fastGemm) && r.prefillReady {
+			if fmod, e6 := r.dev.CompileLibrary(attnFusedPTX); r.fastAttn && e6 == nil {
 				loadF := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {
 						*dst = pl
@@ -762,6 +762,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 				loadF(&r.bAttnFused64, "attn_fused_hd64")
 				loadF(&r.bAttnFused128, "attn_fused_hd128")
+			}
+			// L3 tensor-core GEMM, its own module and its own half of the gate.
+			if gmod, e7 := r.dev.CompileLibrary(gemmMMAPTX); r.fastGemm && e7 == nil {
+				if pl, pe := r.dev.NewComputePipeline(gmod, "gemm_w4a8_mma"); pe == nil {
+					r.bGemmMMA = pl
+				}
 			}
 		}
 		// Campaign-A split-KV decode attention: a high-occupancy, bit-identical alternative to the A1
