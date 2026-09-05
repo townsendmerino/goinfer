@@ -747,6 +747,23 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.prefillReady = ok
 			}
 		}
+		// L2 fused prefill attention (docs/task-prefill-gap.md §4 L2). OPT-IN: the fast path becomes
+		// a default only when §3's reference gate passes on CUDA (Phase 3), so until then this loads
+		// only when asked. Own module — prefill_batched.ptx is untouched, the isolation pattern
+		// attn_block.cu established. A load failure is not fatal: it leaves bAttnFused* zero and
+		// every selection site falls back to attn_batched, which is the exact path anyway.
+		r.fastPrefill = fastPrefillEnabled()
+		if r.fastPrefill && r.prefillReady {
+			if fmod, e6 := r.dev.CompileLibrary(attnFusedPTX); e6 == nil {
+				loadF := func(dst *Pipeline, name string) {
+					if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {
+						*dst = pl
+					}
+				}
+				loadF(&r.bAttnFused64, "attn_fused_hd64")
+				loadF(&r.bAttnFused128, "attn_fused_hd128")
+			}
+		}
 		// Campaign-A split-KV decode attention: a high-occupancy, bit-identical alternative to the A1
 		// attn_batched(M=1) decode launch (it replaces exactly that launch, so it needs prefillReady).
 		// Opt-in via GOINFER_SPLITKV_ATTN so it can be A/B'd and gated before default-on. Own module.

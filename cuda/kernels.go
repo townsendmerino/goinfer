@@ -128,6 +128,15 @@ var argmaxPTX []byte
 //go:embed testdata/attn_block.ptx
 var attnBlockPTX []byte
 
+// attnFusedPTX: attn_fused_hd64 / attn_fused_hd128 — the L2 FlashAttention-style fused prefill
+// attention (docs/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
+// attn_block.cu records: adding a kernel to prefill_batched.cu regenerates that PTX and risks
+// shifting codegen for the kernels every batched-prefill parity gate rests on. Verified at build
+// time: prefill_batched.ptx, moe.ptx and glue.ptx are byte-unchanged. See cuda/attn_fused.cu.
+//
+//go:embed testdata/attn_fused.ptx
+var attnFusedPTX []byte
+
 // moePTX: sparse mixture-of-experts — moe_route (on-GPU router), gemv_f32_a8 (the f32 router
 // projection), gemv_w4a8_moe / _wacc (indexed stacked-expert GEMVs), shared_gate_combine.
 //

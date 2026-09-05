@@ -412,6 +412,13 @@ type cudaResident struct {
 	bNormF32                                     Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
 	skScores, skSoftmax, skVsum                  Pipeline // Campaign-A split-KV decode attention (high-occupancy, bit-identical)
 	skScoreBuf, skInvBuf                         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+
+	// L2 (docs/task-prefill-gap.md §4 L2): the fused prefill attention, one instantiation per
+	// supported head dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module
+	// loaded; every selection site treats the zero Pipeline as "use attn_batched". Kept in its own
+	// alignment group so adding them does not re-align (and so re-diff) the fields above.
+	bAttnFused64, bAttnFused128 Pipeline
+	fastPrefill                 bool
 	// gpt-oss only (nil elsewhere, and every other family's launches pass ArgNull so the
 	// kernels stay bit-identical): the clamped interleaved-SwiGLU expert epilogue, plus the
 	// per-layer attention sinks and the per-expert gate‖up bias table it needs.

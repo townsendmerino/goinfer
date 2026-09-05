@@ -454,7 +454,8 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 		// the positional KV rather than one — same numbers (TestPrefillChunked_bitIdentical), bounded
 		// scratch. Claiming "one pass" was what let the O(M·inter) OOM decline hide behind a green
 		// startup line for every prompt long enough to matter.
-		return true, fmt.Sprintf("batched (weight-stationary CUDA passes of up to %d rows)", prefillChunkRows())
+		return true, fmt.Sprintf("batched (weight-stationary CUDA passes of up to %d rows)%s",
+			prefillChunkRows(), r.fusedAttnNote())
 	}
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
@@ -464,6 +465,38 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 		}
 	}
 	return false, "sequential — " + detail + " (slower TTFT: one forward per prompt token)"
+}
+
+// fusedAttnNote describes the attention kernel PrefillPath is reporting on. It deliberately states
+// the CONDITION rather than a verdict: which kernel runs depends on the layer's head dim and on M,
+// and M is a call-time property PrefillPath never sees. Claiming "fused" flat out here would be the
+// same shape of untestable promise as the "one pass" claim that let an OOM decline hide behind a
+// green startup line for every prompt long enough to matter (prefill-chunking-d7-2026-09-04.md).
+func (r *cudaResident) fusedAttnNote() string {
+	if !r.fastPrefill {
+		return ""
+	}
+	if r.bAttnFused64 == (Pipeline{}) && r.bAttnFused128 == (Pipeline{}) {
+		return "; fused attention REQUESTED but its module did not load — attn_batched (exact) throughout"
+	}
+	var served []string
+	for _, hd := range []int{64, 128} {
+		if p, _ := r.attnFusedFor(hd); p != (Pipeline{}) {
+			served = append(served, strconv.Itoa(hd))
+		}
+	}
+	return fmt.Sprintf("; attention: attn_fused (L2, head dim %s, M>=%d) else attn_batched (exact)",
+		strings.Join(served, "/"), attnFusedMinRows)
+}
+
+// fastPrefillEnabled reports whether the L2/L3 fast prefill kernels are selected.
+//
+// OPT-IN, and it stays opt-in until §3's reference gate passes on CUDA (docs/task-prefill-gap.md
+// Phase 3). The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains what
+// spec-decode verify and the parity gates run, and serves every shape the fast kernels decline.
+func fastPrefillEnabled() bool {
+	v := os.Getenv("GOINFER_CUDA_FAST_PREFILL")
+	return v == "1" || strings.EqualFold(v, "true")
 }
 
 // prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
@@ -629,8 +662,18 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				maxNWin = int(Ly.window)
 			}
 			t = r.profTic()
-			if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
-				SharedMemBytes: uint32((maxNWin + 128) * 4)},
+			// L2: the fused kernel when it serves this (hd, M), else attn_batched. Identical
+			// argument list by construction, so the two launches differ only in pipeline, grid and
+			// shared memory — see useAttnFused for the selection rule.
+			attnPipe, attnCfg := r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}
+			if fp, fsh, use := r.useAttnFused(hd, M); use {
+				attnPipe = fp
+				attnCfg = LaunchConfig{GridX: uint32(r.nH),
+					GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
+					BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
+			}
+			if e := r.launch(attnPipe, attnCfg,
 				Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
 				gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
 				// N-10: r.sinkArg(l), not ArgNull(). The decode launches thread the gpt-oss
@@ -911,6 +954,58 @@ func (r *cudaResident) bNormF32B(x, w Buffer, H, M int) error {
 	}
 	return r.launch(r.bNormF32, LaunchConfig{GridX: 1, GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
 		Arg(x), Arg(w), gpu.ArgValue(int32(H)), gpu.ArgValue(r.eps), gpu.ArgValue(r.addOneArg()), gpu.ArgValue(int32(M)))
+}
+
+// attnFusedBM / attnFusedThreads / attnFusedKPAD MUST equal BM / (WARPS*32) / KPAD in
+// attn_fused.cu. BN equals BM there, so one constant serves both the query tile and the key tile.
+const (
+	attnFusedBM      = 64
+	attnFusedThreads = 128
+	attnFusedKPAD    = 8
+	// attnFusedMinRows: below a full warp-tile of query rows the fused kernel is doing 64 rows'
+	// worth of K/V staging for a handful of real ones, and attn_batched — which is ALSO the exact
+	// path — is both faster and bit-identical. 16 is one mma tile (m16n8k8's M).
+	attnFusedMinRows = 16
+)
+
+// attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus
+// Vtsh[hd][BN+KPAD], in halves.
+//
+// IT IS CONSTANT IN K, and that is a property worth stating rather than a detail. The exact path
+// sizes its attention scratch (maxNWin+128)*4, so checkPrefillShmem must decline any layer
+// attending more than 12,160 keys (resident.go:143) — past that a prompt falls back to the
+// sequential per-token path. This kernel's footprint does not grow with the attended span at all.
+func attnFusedShmem(hd int) uint32 {
+	return uint32(2 * (attnFusedBM*(hd+attnFusedKPAD) + hd*(attnFusedBM+attnFusedKPAD)))
+}
+
+// attnFusedFor returns the fused pipeline serving this head dim, or the zero Pipeline if none does.
+// hd 64 and 128 are the two instantiations attn_fused.cu emits; anything else — and any hd on a
+// build where the module did not load — is served by attn_batched instead. Declining is the whole
+// answer for an unsupported shape: there is no special case to write, because the exact path
+// already handles every shape correctly.
+func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
+	switch hd {
+	case 64:
+		return r.bAttnFused64, attnFusedShmem(64)
+	case 128:
+		return r.bAttnFused128, attnFusedShmem(128)
+	}
+	return Pipeline{}, 0
+}
+
+// useAttnFused is the ONE place the L2 kernel is chosen, so the fallback cannot drift between call
+// sites. Every "no" means attn_batched, which is the exact path, is bit-identical to decode, and is
+// what spec-decode verify and the parity gates run.
+func (r *cudaResident) useAttnFused(hd, M int) (Pipeline, uint32, bool) {
+	if !r.fastPrefill || M < attnFusedMinRows {
+		return Pipeline{}, 0, false
+	}
+	p, sh := r.attnFusedFor(hd)
+	if p == (Pipeline{}) {
+		return Pipeline{}, 0, false
+	}
+	return p, sh, true
 }
 
 // rnBlockRows must equal RN in gemv_w4a8_rn.cu — each warp computes this many output rows, so the grid

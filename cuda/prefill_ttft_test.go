@@ -5,6 +5,9 @@ package cuda
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,12 +21,35 @@ import (
 // (weight-bandwidth-bound), so its TTFT grows ~linearly; the batched path reads each weight once for
 // all M tokens. Heavy (loads a 1.5B model); gated on GOINFER_HEAVY_TESTS + a GPU.
 //
+// THE DEFAULTS ARE THE REGRESSION TEST AND DO NOT MOVE. The four env knobs below only widen what a
+// deliberate measurement run can ask for; with none of them set this test runs exactly the model,
+// quants and depths it always has, so its role as a standing check is unchanged. They exist because
+// docs/task-prefill-gap.md §4 L2 sets its band on an END-TO-END cell this test could not reach —
+// S at K=3900 — and prices L2/L3 on D7 as a second model, while the fixed list stops at K=2048 on a
+// 1.5B (which is exactly the blind spot prefill-chunking-d7-2026-09-04.md records: "TestPrefillTTFT,
+// the harness built for exactly this question, stops at M=2048 on a 1.5B model — a shape that fits,
+// on a model that fits").
+//
+//	GOINFER_TTFT_MODEL   checkpoint name under the models dir, or an absolute path (default: S)
+//	GOINFER_TTFT_QUANTS  comma-separated quants          (default: "int4,int8int8")
+//	GOINFER_TTFT_K       comma-separated prompt lengths  (default: "128,512,2048")
+//	GOINFER_TTFT_NOSEQ=1 skip the sequential arm — it is the "before" for a DIFFERENT question
+//	                     (batched-vs-sequential), and at K=3900 it costs minutes per rep while
+//	                     contributing nothing to a fast-vs-exact prefill comparison.
+//
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestPrefillTTFT -v
 func TestPrefillTTFT(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)")
 	}
 	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	if v := os.Getenv("GOINFER_TTFT_MODEL"); v != "" {
+		if filepath.IsAbs(v) {
+			path = v
+		} else {
+			path = modelPath(v)
+		}
+	}
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}
@@ -35,7 +61,7 @@ func TestPrefillTTFT(t *testing.T) {
 	}
 	// int8's "before" is the sequential column (what int8int8 fell back to pre-§C6); "after" is the
 	// batched column. int4 is measured at the same lengths so the remaining int8-vs-int4 gap is visible.
-	for _, quant := range []string{"int4", "int8int8"} {
+	for _, quant := range ttftCSV("GOINFER_TTFT_QUANTS", []string{"int4", "int8int8"}) {
 		t.Run(quant, func(t *testing.T) { ttftMeasure(t, path, quant) })
 	}
 }
@@ -86,24 +112,65 @@ func ttftMeasure(t *testing.T, path, quant string) {
 		return best
 	}
 
+	noSeq := os.Getenv("GOINFER_TTFT_NOSEQ") != ""
+	depths := make([]int, 0, 4)
+	for _, f := range ttftCSV("GOINFER_TTFT_K", []string{"128", "512", "2048"}) {
+		k, err := strconv.Atoi(f)
+		if err != nil || k <= 0 {
+			t.Fatalf("GOINFER_TTFT_K: bad depth %q", f)
+		}
+		depths = append(depths, k)
+	}
 	t.Logf("%-6s %12s %12s %8s", "N", "sequential", "batched", "speedup")
-	for _, n := range []int{128, 512, 2048} {
+	for _, n := range depths {
 		embs := build(n)
-		seq := median(func() {
-			for i := 0; i < n-1; i++ {
-				if e := rf.ForwardNoLogits(embs[i], i); e != nil {
-					t.Fatalf("seq pos %d: %v", i, e)
+		seq := time.Duration(0)
+		if !noSeq {
+			seq = median(func() {
+				for i := 0; i < n-1; i++ {
+					if e := rf.ForwardNoLogits(embs[i], i); e != nil {
+						t.Fatalf("seq pos %d: %v", i, e)
+					}
 				}
-			}
-			if _, e := rf.Forward(embs[n-1], n-1); e != nil {
-				t.Fatalf("seq last: %v", e)
-			}
-		}, 3)
+				if _, e := rf.Forward(embs[n-1], n-1); e != nil {
+					t.Fatalf("seq last: %v", e)
+				}
+			}, 3)
+		}
 		bat := median(func() {
 			if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 				t.Fatalf("batched n=%d: %v", n, e)
 			}
 		}, 3)
+		// PREFILL_TTFT_ROW is a grep target: these runs are read back out of a detached log, and a
+		// t.Logf table with a per-quant subtest prefix is awkward to machine-read across models.
+		if noSeq {
+			t.Logf("%-6d %12s %12v %8s", n, "(skipped)", bat, "-")
+			t.Logf("PREFILL_TTFT_ROW model=%s quant=%s K=%d seq=- batched=%v speedup=-",
+				filepath.Base(path), quant, n, bat)
+			continue
+		}
 		t.Logf("%-6d %12v %12v %7.2fx", n, seq, bat, float64(seq)/float64(bat))
+		t.Logf("PREFILL_TTFT_ROW model=%s quant=%s K=%d seq=%v batched=%v speedup=%.2f",
+			filepath.Base(path), quant, n, seq, bat, float64(seq)/float64(bat))
 	}
+}
+
+// ttftCSV reads a comma-separated env override, trimming blanks, and falls back to def when unset
+// or empty after trimming. Shared by the quant and depth knobs so both behave the same way.
+func ttftCSV(env string, def []string) []string {
+	v := os.Getenv(env)
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	out := make([]string, 0, 4)
+	for _, f := range strings.Split(v, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	if len(out) == 0 {
+		return def
+	}
+	return out
 }
