@@ -1,0 +1,179 @@
+=== RUN   TestPrefillGate
+=== RUN   TestPrefillGate/D7
+
+=== PREFILL GATE — model=D7 path=/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf ===
+[gate]   ... exact prefill K=256 at pos 43/256
+[gate] D7 K=256 prompt  1/10 seed=AGREE(gap=0.000%) contAgree=92.2% contHardFails=1/64 firstDiv=5 KLseed=0.0698 KLcont=0.0443 elapsed=42s
+[gate] D7 K=256 prompt  2/10 seed=FLIP(gap=1.757%) contAgree=84.4% contHardFails=0/64 firstDiv=0 KLseed=0.0987 KLcont=0.0602 elapsed=1m5s
+[gate] D7 K=256 prompt  3/10 seed=FLIP(gap=0.110%) contAgree=81.2% contHardFails=0/64 firstDiv=0 KLseed=0.0532 KLcont=0.0649 elapsed=1m31s
+[gate] D7 K=256 prompt  4/10 seed=FLIP(gap=1.679%) contAgree=87.5% contHardFails=1/64 firstDiv=0 KLseed=0.1112 KLcont=0.0468 elapsed=1m56s
+[gate] D7 K=256 prompt  5/10 seed=AGREE(gap=0.000%) contAgree=92.2% contHardFails=0/64 firstDiv=5 KLseed=0.0120 KLcont=0.0338 elapsed=2m22s
+[gate] D7 K=256 prompt  6/10 seed=FLIP(gap=1.747%) contAgree=89.1% contHardFails=0/64 firstDiv=0 KLseed=0.1129 KLcont=0.0521 elapsed=2m48s
+[gate] D7 K=256 prompt  7/10 seed=AGREE(gap=0.000%) contAgree=76.6% contHardFails=2/64 firstDiv=3 KLseed=0.0787 KLcont=0.0827 elapsed=3m14s
+[gate] D7 K=256 prompt  8/10 seed=AGREE(gap=0.000%) contAgree=79.7% contHardFails=1/64 firstDiv=3 KLseed=0.0112 KLcont=0.0510 elapsed=3m39s
+[gate] D7 K=256 prompt  9/10 seed=AGREE(gap=0.000%) contAgree=90.6% contHardFails=1/64 firstDiv=6 KLseed=0.0351 KLcont=0.0681 elapsed=4m2s
+[gate] D7 K=256 prompt 10/10 seed=AGREE(gap=0.000%) contAgree=93.8% contHardFails=0/64 firstDiv=17 KLseed=0.1376 KLcont=0.0511 elapsed=4m25s
+=== D7 K=256 SUMMARY (n=10 prompts): seedHardFails=0/10 (worst gap 1.757%) contHardFails=6/640 (worst gap 5.740%) meanTeacherForcedAgreement=86.7% meanSeedKL=0.0720 meanContKL=0.0555 — §3 GATE FAILED
+    prefill_gate_test.go:91: D7 K=256: seedHardFails=0 contHardFails=6 meanAgreement=86.7% meanSeedKL=0.0720 meanContKL=0.0555 gate=FAILED
+[gate]   ... exact prefill K=1024 at pos 428/1024
+[gate]   ... exact prefill K=1024 at pos 822/1024
+[gate] D7 K=1024 prompt  1/10 seed=AGREE(gap=0.000%) contAgree=87.5% contHardFails=1/64 firstDiv=4 KLseed=0.0760 KLcont=0.0483 elapsed=1m22s
+[gate]   ... exact prefill K=1024 at pos 437/1024
+[gate]   ... exact prefill K=1024 at pos 847/1024
+[gate] D7 K=1024 prompt  2/10 seed=FLIP(gap=1.229%) contAgree=81.2% contHardFails=0/64 firstDiv=0 KLseed=0.1849 KLcont=0.0629 elapsed=2m41s
+[gate]   ... exact prefill K=1024 at pos 427/1024
+[gate]   ... exact prefill K=1024 at pos 837/1024
+[gate] D7 K=1024 prompt  3/10 seed=FLIP(gap=1.204%) contAgree=81.2% contHardFails=1/64 firstDiv=0 KLseed=0.0735 KLcont=0.0722 elapsed=4m1s
+[gate]   ... exact prefill K=1024 at pos 433/1024
+[gate]   ... exact prefill K=1024 at pos 848/1024
+[gate] D7 K=1024 prompt  4/10 seed=AGREE(gap=0.000%) contAgree=90.6% contHardFails=0/64 firstDiv=3 KLseed=0.0467 KLcont=0.0434 elapsed=5m19s
+[gate]   ... exact prefill K=1024 at pos 438/1024
+[gate]   ... exact prefill K=1024 at pos 857/1024
+[gate] D7 K=1024 prompt  5/10 seed=AGREE(gap=0.000%) contAgree=93.8% contHardFails=0/64 firstDiv=1 KLseed=0.0003 KLcont=0.0328 elapsed=6m33s
+[gate]   ... exact prefill K=1024 at pos 438/1024
+[gate]   ... exact prefill K=1024 at pos 857/1024
+[gate] D7 K=1024 prompt  6/10 seed=AGREE(gap=0.000%) contAgree=92.2% contHardFails=0/64 firstDiv=12 KLseed=0.0001 KLcont=0.0592 elapsed=7m47s
+[gate]   ... exact prefill K=1024 at pos 438/1024
+[gate]   ... exact prefill K=1024 at pos 857/1024
+[gate] D7 K=1024 prompt  7/10 seed=AGREE(gap=0.000%) contAgree=89.1% contHardFails=1/64 firstDiv=4 KLseed=0.0705 KLcont=0.0410 elapsed=9m2s
+[gate]   ... exact prefill K=1024 at pos 438/1024
+[gate]   ... exact prefill K=1024 at pos 857/1024
+[gate] D7 K=1024 prompt  8/10 seed=AGREE(gap=0.000%) contAgree=96.9% contHardFails=0/64 firstDiv=1 KLseed=0.1279 KLcont=0.0328 elapsed=10m16s
+[gate]   ... exact prefill K=1024 at pos 439/1024
+[gate]   ... exact prefill K=1024 at pos 858/1024
+[gate] D7 K=1024 prompt  9/10 seed=AGREE(gap=0.000%) contAgree=95.3% contHardFails=0/64 firstDiv=1 KLseed=0.1618 KLcont=0.0408 elapsed=11m30s
+[gate]   ... exact prefill K=1024 at pos 438/1024
+[gate]   ... exact prefill K=1024 at pos 857/1024
+[gate] D7 K=1024 prompt 10/10 seed=AGREE(gap=0.000%) contAgree=84.4% contHardFails=3/64 firstDiv=6 KLseed=0.1676 KLcont=0.0663 elapsed=12m44s
+=== D7 K=1024 SUMMARY (n=10 prompts): seedHardFails=0/10 (worst gap 1.229%) contHardFails=6/640 (worst gap 4.546%) meanTeacherForcedAgreement=89.2% meanSeedKL=0.0909 meanContKL=0.0500 — §3 GATE FAILED
+    prefill_gate_test.go:91: D7 K=1024: seedHardFails=0 contHardFails=6 meanAgreement=89.2% meanSeedKL=0.0909 meanContKL=0.0500 gate=FAILED
+[gate]   ... exact prefill K=3900 at pos 439/3900
+[gate]   ... exact prefill K=3900 at pos 858/3900
+[gate]   ... exact prefill K=3900 at pos 1260/3900
+[gate]   ... exact prefill K=3900 at pos 1648/3900
+[gate]   ... exact prefill K=3900 at pos 2022/3900
+[gate]   ... exact prefill K=3900 at pos 2385/3900
+[gate]   ... exact prefill K=3900 at pos 2736/3900
+[gate]   ... exact prefill K=3900 at pos 3077/3900
+[gate]   ... exact prefill K=3900 at pos 3409/3900
+[gate]   ... exact prefill K=3900 at pos 3722/3900
+[gate] D7 K=3900 prompt  1/10 seed=AGREE(gap=0.000%) contAgree=98.4% contHardFails=0/64 firstDiv=8 KLseed=0.0399 KLcont=0.0110 elapsed=5m49s
+[gate]   ... exact prefill K=3900 at pos 432/3900
+[gate]   ... exact prefill K=3900 at pos 846/3900
+[gate]   ... exact prefill K=3900 at pos 1243/3900
+[gate]   ... exact prefill K=3900 at pos 1626/3900
+[gate]   ... exact prefill K=3900 at pos 1995/3900
+[gate]   ... exact prefill K=3900 at pos 2352/3900
+[gate]   ... exact prefill K=3900 at pos 2697/3900
+[gate]   ... exact prefill K=3900 at pos 3032/3900
+[gate]   ... exact prefill K=3900 at pos 3356/3900
+[gate]   ... exact prefill K=3900 at pos 3673/3900
+[gate] D7 K=3900 prompt  2/10 seed=FLIP(gap=2.701%) contAgree=90.6% contHardFails=0/64 firstDiv=0 KLseed=0.0873 KLcont=0.0579 elapsed=11m38s
+[gate]   ... exact prefill K=3900 at pos 436/3900
+[gate]   ... exact prefill K=3900 at pos 851/3900
+[gate]   ... exact prefill K=3900 at pos 1248/3900
+[gate]   ... exact prefill K=3900 at pos 1630/3900
+[gate]   ... exact prefill K=3900 at pos 1999/3900
+[gate]   ... exact prefill K=3900 at pos 2355/3900
+[gate]   ... exact prefill K=3900 at pos 2700/3900
+[gate]   ... exact prefill K=3900 at pos 3035/3900
+[gate]   ... exact prefill K=3900 at pos 3361/3900
+[gate]   ... exact prefill K=3900 at pos 3678/3900
+[gate] D7 K=3900 prompt  3/10 seed=FLIP(gap=0.727%) contAgree=79.7% contHardFails=1/64 firstDiv=0 KLseed=0.1152 KLcont=0.0832 elapsed=17m27s
+[gate]   ... exact prefill K=3900 at pos 436/3900
+[gate]   ... exact prefill K=3900 at pos 851/3900
+[gate]   ... exact prefill K=3900 at pos 1249/3900
+[gate]   ... exact prefill K=3900 at pos 1631/3900
+[gate]   ... exact prefill K=3900 at pos 2000/3900
+[gate]   ... exact prefill K=3900 at pos 2357/3900
+[gate]   ... exact prefill K=3900 at pos 2702/3900
+[gate]   ... exact prefill K=3900 at pos 3036/3900
+[gate]   ... exact prefill K=3900 at pos 3361/3900
+[gate]   ... exact prefill K=3900 at pos 3678/3900
+[gate] D7 K=3900 prompt  4/10 seed=AGREE(gap=0.000%) contAgree=92.2% contHardFails=0/64 firstDiv=6 KLseed=0.0536 KLcont=0.0611 elapsed=23m16s
+[gate]   ... exact prefill K=3900 at pos 436/3900
+[gate]   ... exact prefill K=3900 at pos 851/3900
+[gate]   ... exact prefill K=3900 at pos 1248/3900
+[gate]   ... exact prefill K=3900 at pos 1630/3900
+[gate]   ... exact prefill K=3900 at pos 1999/3900
+[gate]   ... exact prefill K=3900 at pos 2355/3900
+[gate]   ... exact prefill K=3900 at pos 2700/3900
+[gate]   ... exact prefill K=3900 at pos 3035/3900
+[gate]   ... exact prefill K=3900 at pos 3360/3900
+[gate]   ... exact prefill K=3900 at pos 3677/3900
+[gate] D7 K=3900 prompt  5/10 seed=AGREE(gap=0.000%) contAgree=90.6% contHardFails=0/64 firstDiv=18 KLseed=0.0431 KLcont=0.0448 elapsed=29m4s
+[gate]   ... exact prefill K=3900 at pos 436/3900
+[gate]   ... exact prefill K=3900 at pos 851/3900
+[gate]   ... exact prefill K=3900 at pos 1249/3900
+[gate]   ... exact prefill K=3900 at pos 1632/3900
+[gate]   ... exact prefill K=3900 at pos 2001/3900
+[gate]   ... exact prefill K=3900 at pos 2357/3900
+[gate]   ... exact prefill K=3900 at pos 2702/3900
+[gate]   ... exact prefill K=3900 at pos 3037/3900
+[gate]   ... exact prefill K=3900 at pos 3363/3900
+[gate]   ... exact prefill K=3900 at pos 3678/3900
+[gate] D7 K=3900 prompt  6/10 seed=AGREE(gap=0.000%) contAgree=82.8% contHardFails=1/64 firstDiv=3 KLseed=0.1090 KLcont=0.0805 elapsed=34m53s
+[gate]   ... exact prefill K=3900 at pos 437/3900
+[gate]   ... exact prefill K=3900 at pos 852/3900
+[gate]   ... exact prefill K=3900 at pos 1249/3900
+[gate]   ... exact prefill K=3900 at pos 1631/3900
+[gate]   ... exact prefill K=3900 at pos 1999/3900
+[gate]   ... exact prefill K=3900 at pos 2355/3900
+[gate]   ... exact prefill K=3900 at pos 2700/3900
+[gate]   ... exact prefill K=3900 at pos 3035/3900
+[gate]   ... exact prefill K=3900 at pos 3361/3900
+[gate]   ... exact prefill K=3900 at pos 3678/3900
+[gate] D7 K=3900 prompt  7/10 seed=AGREE(gap=0.000%) contAgree=85.9% contHardFails=1/64 firstDiv=3 KLseed=0.1472 KLcont=0.0904 elapsed=40m42s
+[gate]   ... exact prefill K=3900 at pos 436/3900
+[gate]   ... exact prefill K=3900 at pos 851/3900
+[gate]   ... exact prefill K=3900 at pos 1249/3900
+[gate]   ... exact prefill K=3900 at pos 1632/3900
+[gate]   ... exact prefill K=3900 at pos 2001/3900
+[gate]   ... exact prefill K=3900 at pos 2358/3900
+[gate]   ... exact prefill K=3900 at pos 2703/3900
+[gate]   ... exact prefill K=3900 at pos 3038/3900
+[gate]   ... exact prefill K=3900 at pos 3364/3900
+[gate]   ... exact prefill K=3900 at pos 3681/3900
+[gate] D7 K=3900 prompt  8/10 seed=AGREE(gap=0.000%) contAgree=96.9% contHardFails=0/64 firstDiv=30 KLseed=0.0511 KLcont=0.0406 elapsed=46m29s
+[gate]   ... exact prefill K=3900 at pos 437/3900
+[gate]   ... exact prefill K=3900 at pos 852/3900
+[gate]   ... exact prefill K=3900 at pos 1250/3900
+[gate]   ... exact prefill K=3900 at pos 1633/3900
+[gate]   ... exact prefill K=3900 at pos 2002/3900
+[gate]   ... exact prefill K=3900 at pos 2359/3900
+[gate]   ... exact prefill K=3900 at pos 2705/3900
+[gate]   ... exact prefill K=3900 at pos 3041/3900
+[gate]   ... exact prefill K=3900 at pos 3367/3900
+[gate]   ... exact prefill K=3900 at pos 3684/3900
+[gate] D7 K=3900 prompt  9/10 seed=AGREE(gap=0.000%) contAgree=89.1% contHardFails=0/64 firstDiv=4 KLseed=0.0028 KLcont=0.0502 elapsed=52m17s
+[gate]   ... exact prefill K=3900 at pos 436/3900
+[gate]   ... exact prefill K=3900 at pos 851/3900
+[gate]   ... exact prefill K=3900 at pos 1249/3900
+[gate]   ... exact prefill K=3900 at pos 1632/3900
+[gate]   ... exact prefill K=3900 at pos 2001/3900
+[gate]   ... exact prefill K=3900 at pos 2358/3900
+[gate]   ... exact prefill K=3900 at pos 2703/3900
+[gate]   ... exact prefill K=3900 at pos 3038/3900
+[gate]   ... exact prefill K=3900 at pos 3364/3900
+[gate]   ... exact prefill K=3900 at pos 3681/3900
+[gate] D7 K=3900 prompt 10/10 seed=AGREE(gap=0.000%) contAgree=85.9% contHardFails=1/64 firstDiv=1 KLseed=0.0989 KLcont=0.0710 elapsed=58m4s
+=== D7 K=3900 SUMMARY (n=10 prompts): seedHardFails=0/10 (worst gap 2.701%) contHardFails=4/640 (worst gap 4.098%) meanTeacherForcedAgreement=89.2% meanSeedKL=0.0748 meanContKL=0.0591 — §3 GATE FAILED
+    prefill_gate_test.go:91: D7 K=3900: seedHardFails=0 contHardFails=4 meanAgreement=89.2% meanSeedKL=0.0748 meanContKL=0.0591 gate=FAILED
+[gate] D7: greedy stream divergence — NOT re-measured here; see TestMetalPrefillDivergenceRate (54%, metal/backend.go PrefillLast decline comment, §A2-Metal). Reported, not gating (§3).
+    prefill_gate_test.go:92: §3 GATE FAILED for model D7 — see log above for which (model, K) cell; the default stays exact there (docs/task-prefill-gap.md §3, §7)
+--- FAIL: TestPrefillGate (4578.63s)
+    --- FAIL: TestPrefillGate/D7 (4578.63s)
+=== RUN   TestPrefillTTFT
+
+PREFILL TTFT — /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, int4, sequential (today's shipped default) vs batched PrefillLast
+P      sequential_ms    batched_ms       speedup   
+256    3463.32          880.79           3.93      x
+    prefill_ttft_test.go:86: P=256 sequential=3463.32ms batched=880.79ms speedup=3.93x
+1024   14705.25         4718.41          3.12      x
+    prefill_ttft_test.go:86: P=1024 sequential=14705.25ms batched=4718.41ms speedup=3.12x
+3900   74157.50         36739.51         2.02      x
+    prefill_ttft_test.go:86: P=3900 sequential=74157.50ms batched=36739.51ms speedup=2.02x
+--- PASS: TestPrefillTTFT (140.23s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	4719.539s
+FAIL

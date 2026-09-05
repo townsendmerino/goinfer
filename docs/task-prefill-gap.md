@@ -18,13 +18,20 @@
 > — `--cpu-fast-attention` is default ON and `--cpu-exact-prefill` buys identity back
 > (`internal/serveapp/main.go:373`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
 > rather than to bytes (`benchmarks.md` §B2). This doc extends that contract to the GPU backends and
-> sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on
-> (measured 3.7–4.6×, already in the tree); **L2** a fused attention kernel on CUDA; **L3** a
-> tensor-core int4 GEMM on CUDA that keeps group scales; **L4** the remaining CPU items, which now
-> live in aikit's SIMD audit and are the smallest prize.
+> sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on —
+> **measured 2026-09-05, GATE FAILED, does not ship** (§4 L1, `measurements/prefill-gate-l1-
+> 2026-09-05.md`); **L2** a fused attention kernel on CUDA; **L3** a tensor-core int4 GEMM on CUDA
+> that keeps group scales; **L4** the remaining CPU items, which now live in aikit's SIMD audit and
+> are the smallest prize.
 >
-> **Status: SCOPED 2026-09-05, nothing built.** goinfer `3b20f74`, aikit v1.34.0. Path:line
-> citations were taken at that commit; `scripts/queue_citation_lint.py --update` re-indexes them.
+> **Status: L1 MEASURED and CLOSED 2026-09-05 — gate FAILED, does not ship.** §3's gate ran for
+> real on Metal (S and D7, K ∈ {256, 1024, 3900}, `measurements/prefill-gate-l1-2026-09-05.md`):
+> the continuation-fidelity check fails at every cell on both models (worse on D7, 86.7–89.2%
+> teacher-forced agreement, than S, 96.4–96.6%), and TTFT speedup decays with depth (3.93×→3.12×→
+> 2.02× at K=256/1024/3900) rather than holding the ~3.9× this doc had cited. Metal's default stays
+> sequential; `--metal-fast-prefill` stays opt-in; Phase 2 below does not proceed. L2/L3/L4 remain
+> SCOPED, nothing built. goinfer `3b20f74` (scoped) / `6022b29` (measured). Path:line citations
+> were taken at `3b20f74`; `scripts/queue_citation_lint.py --update` re-indexes them.
 > Not filed in `queue-performance.md` yet — another session was editing it while this was written.
 
 ## 0. What must not change
@@ -168,23 +175,35 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 
 ## 4. Levers, cheapest first
 
-### L1 · Metal: make the batched prefill the default (gate-conditional)
+### L1 · Metal: make the batched prefill the default — MEASURED, GATE FAILED, does not ship
 
 - **What exists:** `PrefillLast` on Metal is a working f16-MMA batched prefill, measured 3.93–4.56×
   over sequential at P=128…2048 and 3.74× end to end on a real 1450-token prompt through the
   server (`ollama-chase.md:1578`–`:1611`). It is declined unless `GOINFER_METAL_BATCHED_PREFILL=1`
   (`metal/backend.go:248`), which `--metal-fast-prefill` sets (`internal/serveapp/main.go:372`).
-- **Work:** run the §3 gate on Metal for S and D7. If it passes, flip the default and route the
-  flag through `--exact-prefill`. If it fails, record the cell and stop — L1 is then "not
-  quality-neutral as built", which is a finding about the f16 activation path, not about the
-  contract. Either way, **run W2's Mac cells** (`scripts/bench_peer_prefill.py` needs a Metal
-  backend option; the harness is CPU/CUDA today) so `benchmarks.md` carries a Metal prefill row in
-  both arms, default and fast.
-- **Band (TTFT, S at K=2048, vs the shipped default):** ≥3× ships (the measured figure is 3.9×);
-  <2× means the serve path is eating it and the item reopens as a serving investigation.
+- **Result (2026-09-05, `measurements/prefill-gate-l1-2026-09-05.md`):** the §3 gate ran for real —
+  S (1.5B) and D7 (7B), K ∈ {256, 1024, 3900}, 10 real-prose prompts each, exact sequential decode
+  as the oracle. **Seed-logit argmax agreement passes cleanly at every cell** (0/10 hard-fails,
+  worst gap 2.7%, under the 3% bar). **The teacher-forced continuation check fails at every cell on
+  both models**, worse at 7B: mean agreement 86.7–89.2% on D7 against 96.4–96.6% on S, with 4–6
+  hard-fails per 640 scored positions on D7 vs 1–2 on S. This is a finding about the f16 activation
+  path exactly as anticipated below, not about the §3 contract itself — the contract did its job.
+- **Band (TTFT, S, this run):** ≥3× ships, <2× reopens as a serving investigation (S at K=2048 was
+  the original band cell; this run used K ∈ {256, 1024, 3900} instead to match the gate). Measured
+  **3.93× at K=256, 3.12× at K=1024, 2.02× at K=3900** — the speedup decays with depth rather than
+  holding flat, landing at the edge of the reopen threshold at the deepest, most W4-relevant K.
+  Speed alone would be ambiguous here; combined with the quality gate's clean failure the overall
+  verdict is not ambiguous.
+- **Disposition:** Metal's default stays the sequential path. `--metal-fast-prefill` /
+  `GOINFER_METAL_BATCHED_PREFILL=1` remains the documented, disclosed opt-in it already is. Phase 2
+  (flip the default, build `--exact-prefill`) does not proceed from this doc's plan. **W2's Mac
+  cells are still not run** (`scripts/bench_peer_prefill.py` still has no Metal backend option) —
+  that remains open regardless of the gate's outcome, since `benchmarks.md` still has no Metal
+  prefill peer row at all.
 - **Then, not now:** a `simdgroup_matrix` flash attention for `attention_prefill` — the Metal twin
-  of L2. Scoped after L1's peer row exists, because that row decides how much of the remaining gap
-  is attention.
+  of L2. Not funded by this result: a fused schedule doesn't fix an activation-precision divergence,
+  and the open question here is WHY the continuation check fails (§2.2/§2.3's f16-vs-int8-activation
+  hypothesis, not re-isolated by this run), not throughput.
 
 ### L2 · CUDA: fused (FlashAttention-style) prefill attention
 
@@ -274,13 +293,17 @@ cells. **Do not quote these as results.**
 Reading: with both landed, goinfer is inside ~1.3× of Ollama's overhead-free prefill at K=512 and
 ~2.5× at K=3900 — and on TTFT, ahead below ~2k tokens because of Ollama's floor. The crossover
 moves from ~600 tokens to past the W4 band. Closing the last ~2× at depth is the f16-KV and
-kernel-tuning tail, priced after these two exist. On Metal, L1 alone is the measured 3.9×; the
-peer row decides the rest.
+kernel-tuning tail, priced after these two exist. On Metal, L1's own §3 gate FAILED (§4 L1,
+`measurements/prefill-gate-l1-2026-09-05.md`) — the 3.9× TTFT figure decayed to 2.02× by K=3900 in
+the real measurement and does not ship regardless; the peer row (still unmeasured) would only add
+a comparison point to a lever that already isn't shipping.
 
 ## 7. What this doc does not claim
 
 - No number above for L2/L3 is measured; §6 is arithmetic on measured shares.
-- The §3 gate may fail a backend. That is a result, and the default stays exact there.
+- The §3 gate may fail a backend. That is a result, and the default stays exact there — **this
+  happened for real on Metal, 2026-09-05** (§4 L1): the gate failed on both models tested, and the
+  default stays sequential.
 - M26/M35 prefill is not moved by anything here (P20).
 - The 7B cell is in the harness table and unswept for prefill; D7 is the second model for L2/L3's
   end-to-end rows, not a projection cell here.
