@@ -1,0 +1,46 @@
+# resuming: 13 cells already recorded in docs/measurements/peer-matrix-2026-09/nobara-w1-d7-m35-m26_2026-09-04.json
+# preflight OK: loadavg [0.7861328125, 2.72119140625, 2.49462890625] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 50, 'mem_used_mib': 464, 'mem_total_mib': 8192} · compute apps ['1777, 16 MiB']
+# 12 cells planned, 10 already done
+# skip (done): ('A', 'goinfer', 'cuda', 'M35', 128, 'greedy')
+# skip (done): ('A', 'ollama', 'cuda', 'M35', 128, 'greedy')
+{"phase": "A", "engine": "llamacpp", "backend": "cuda", "model": "M35", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [32.33751042545644, 32.554774806424064], "error": null, "machine": {"loadavg": [0.7861328125, 2.72119140625, 2.49462890625], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 50, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 46.3, "counts": {"tokens": 512, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [32.01348062159062, 32.66154022932227, 32.124570574033065, 32.984979038815055], "ngen": 128}, "mean": 32.4, "spread": 0.2}
+# skip (done): ('A', 'goinfer', 'cuda', 'M26', 128, 'greedy')
+# skip (done): ('A', 'ollama', 'cuda', 'M26', 128, 'greedy')
+# cell gate: loadavg 2.79 > 1.00, waiting (0/600s)
+# cell gate: loadavg 2.00 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.43 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.02 > 1.00, waiting (60/600s)
+{"phase": "A", "engine": "llamacpp", "backend": "cuda", "model": "M26", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [25.992435464886476, 25.92407496237926], "error": null, "machine": {"loadavg": [0.7314453125, 2.23681640625, 2.357421875], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 53, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 54.4, "counts": {"tokens": 512, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [25.996849868515053, 25.988021061257896, 25.93703523672058, 25.911114688037944], "ngen": 128}, "mean": 26.0, "spread": 0.1}
+# cell gate: loadavg 3.55 > 1.00, waiting (0/600s)
+# cell gate: loadavg 2.54 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.82 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.30 > 1.00, waiting (60/600s)
+#   tokens/chunks = 1.0000  (512 tok / 512 chunks)
+{"phase": "B", "engine": "goinfer", "backend": "cuda", "model": "M35", "depth": 8000, "prompt_tokens": 8012, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [21.368888928969284, 21.389513655988935], "error": null, "machine": {"loadavg": [0.9306640625, 2.0791015625, 2.302734375], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 50, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 1528.8, "counts": {"tokens": 512, "chunks": 512, "tokens_per_chunk": 1.0, "completion_rates": [21.391145356978896, 21.346632500959668, 21.36810036220053, 21.41092694977734], "ngen": 128}, "mean": 21.4, "spread": 0.0}
+# cell gate: loadavg 5.00 > 1.00, waiting (0/600s)
+# cell gate: loadavg 3.58 > 1.00, waiting (20/600s)
+# cell gate: loadavg 2.57 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.84 > 1.00, waiting (60/600s)
+# cell gate: loadavg 1.31 > 1.00, waiting (80/600s)
+{"phase": "B", "engine": "ollama", "backend": "cuda", "model": "M35", "depth": 8000, "prompt_tokens": 8012, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [23.22165727119896, 23.18578796001028], "error": null, "machine": {"loadavg": [0.9404296875, 3.6962890625, 4.02490234375], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 50, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 86.1, "counts": {"tokens": 512, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [23.229259566373965, 23.214054976023956, 23.174959972320632, 23.19661594769993], "ngen": 128}, "mean": 23.2, "spread": 0.0}
+# cell gate: loadavg 2.97 > 1.00, waiting (0/600s)
+# cell gate: loadavg 2.12 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.59 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.14 > 1.00, waiting (60/600s)
+{"phase": "B", "engine": "llamacpp", "backend": "cuda", "model": "M35", "depth": 8000, "prompt_tokens": 8012, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [30.97963158219526, 30.60774501963558], "error": null, "machine": {"loadavg": [0.8154296875, 2.69140625, 3.595703125], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 50, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 61.7, "counts": {"tokens": 512, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [30.980830925030972, 30.978432239359552, 30.673721280840127, 30.54176875843103], "ngen": 128}, "mean": 30.8, "spread": 0.4}
+# cell gate: loadavg 2.80 > 1.00, waiting (0/600s)
+# cell gate: loadavg 2.01 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.44 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.03 > 1.00, waiting (60/600s)
+#   tokens/chunks = 1.0000  (512 tok / 512 chunks)
+{"phase": "B", "engine": "goinfer", "backend": "cuda", "model": "M26", "depth": 8000, "prompt_tokens": 8017, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [15.505139693218771, 15.508619902976637], "error": null, "machine": {"loadavg": [0.734375, 2.15380859375, 3.2734375], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 49, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 384.3, "counts": {"tokens": 512, "chunks": 512, "tokens_per_chunk": 1.0, "completion_rates": [15.499098390600318, 15.511180995837224, 15.50844278951244, 15.508797016440832], "ngen": 128}, "mean": 15.5, "spread": 0.0}
+# cell gate: loadavg 3.91 > 1.00, waiting (0/600s)
+# cell gate: loadavg 2.80 > 1.00, waiting (20/600s)
+# cell gate: loadavg 2.00 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.43 > 1.00, waiting (60/600s)
+# cell gate: loadavg 1.03 > 1.00, waiting (80/600s)
+{"phase": "B", "engine": "ollama", "backend": "cuda", "model": "M26", "depth": 8000, "prompt_tokens": 8017, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [19.79818896426076, 19.787497312308787], "error": null, "machine": {"loadavg": [0.7333984375, 2.59326171875, 3.18359375], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 50, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 85.4, "counts": {"tokens": 512, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [19.804802957464492, 19.791574971057024, 19.780125141134015, 19.794869483483563], "ngen": 128}, "mean": 19.8, "spread": 0.0}
+# cell gate: loadavg 2.37 > 1.00, waiting (0/600s)
+# cell gate: loadavg 1.70 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.22 > 1.00, waiting (40/600s)
+{"phase": "B", "engine": "llamacpp", "backend": "cuda", "model": "M26", "depth": 8000, "prompt_tokens": 8017, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [22.75159110073689, 22.71094832868133], "error": null, "machine": {"loadavg": [0.869140625, 2.1298828125, 2.93212890625], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 49, "mem_used_mib": 464, "mem_total_mib": 8192}}, "secs": 67.0, "counts": {"tokens": 512, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [22.759379552739464, 22.74380264873431, 22.69823636185223, 22.723660295510427], "ngen": 128}, "mean": 22.7, "spread": 0.0}
