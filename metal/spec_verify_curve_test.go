@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -57,7 +58,7 @@ func TestSpecVerifyCurveMetal(t *testing.T) {
 	for i := range warm {
 		warm[i] = emb(i)
 	}
-	if _, e := rf.PrefillLast(warm, 0); e != nil {
+	if _, e := rf.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm prefill (forced batched): %v", e)
 	}
 
@@ -97,7 +98,7 @@ func TestSpecVerifyCurveMetal(t *testing.T) {
 			ek[i] = emb(100 + i)
 		}
 		d := timeIt(func() {
-			if _, e := rf.PrefillLast(ek, depth); e != nil {
+			if _, e := rf.PrefillLast(context.Background(), ek, depth); e != nil {
 				t.Fatal(e)
 			}
 		})

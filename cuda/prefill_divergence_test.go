@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -81,7 +82,7 @@ func TestPrefillDivergenceRate(t *testing.T) {
 		}
 
 		// arm A: BATCHED prefill → decode
-		lgA, e := rf.PrefillLast(pe, 0)
+		lgA, e := rf.PrefillLast(context.Background(), pe, 0)
 		if e != nil {
 			t.Fatalf("batched prefill: %v", e)
 		}

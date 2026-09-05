@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -82,7 +83,7 @@ func TestPrefillLast_gemma3(t *testing.T) {
 	seqStream := decodeGreedy(t, mc, rf, seqLogits, n, 64)
 
 	// --- batched.
-	batLogits, err := rf.PrefillLast(embs, 0)
+	batLogits, err := rf.PrefillLast(context.Background(), embs, 0)
 	if err != nil {
 		t.Fatalf("PrefillLast: %v — sandwich family must now batch, not decline", err)
 	}

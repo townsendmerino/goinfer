@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 	}
 	run := func(useSplitKV bool) ([]float32, []int) {
 		rf.splitkvAttn = useSplitKV
-		lg, e := rf.PrefillLast(prefill, 0) // prefill unaffected by the decode-attn choice
+		lg, e := rf.PrefillLast(context.Background(), prefill, 0) // prefill unaffected by the decode-attn choice
 		if e != nil {
 			t.Fatalf("prefill (splitKV=%v): %v", useSplitKV, e)
 		}
@@ -177,7 +178,7 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 	}
 	run := func(useSplitKV bool) ([]float32, []int) {
 		rf.splitkvAttn = useSplitKV
-		lg, e := rf.PrefillLast(prefill, 0)
+		lg, e := rf.PrefillLast(context.Background(), prefill, 0)
 		if e != nil {
 			t.Fatalf("prefill (splitKV=%v): %v", useSplitKV, e)
 		}

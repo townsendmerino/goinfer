@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
@@ -70,14 +71,14 @@ func TestPrefillDecomp(t *testing.T) {
 	for _, n := range depths {
 		embs := build(n)
 		// warm once (JIT/caches), then take the best of 3 by category sum.
-		if _, e := rf.PrefillLast(embs, 0); e != nil {
+		if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 			t.Fatalf("warm n=%d: %v", n, e)
 		}
 		var best prefillProf
 		bestSum := time.Duration(1<<62 - 1)
 		for range 3 {
 			rf.prof = &prefillProf{}
-			if _, e := rf.PrefillLast(embs, 0); e != nil {
+			if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 				t.Fatalf("prof n=%d: %v", n, e)
 			}
 			p := rf.prof

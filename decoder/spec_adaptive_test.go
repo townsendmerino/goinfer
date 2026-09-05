@@ -1,6 +1,9 @@
 package decoder
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // M-14: verifyTheta keyed on the BACKEND NAME, so every CUDA model got 0.251 — a value measured
 // on dense 0.5B/1.5B, where the batched prefill pass actually runs. But cuda's ForwardN falls
@@ -56,7 +59,7 @@ type fakeThetaResident struct {
 	batched bool
 }
 
-func (f *fakeThetaResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
+func (f *fakeThetaResident) PrefillLast(_ context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	return nil, nil
 }
 

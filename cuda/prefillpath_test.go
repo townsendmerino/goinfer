@@ -186,3 +186,44 @@ func TestPrefillPath_recurrentDeclines(t *testing.T) {
 		t.Fatalf("control: the same fixture without dnet must batch, got %v", e)
 	}
 }
+
+// TestPrefillPath_seamGuardsAreMoEOnly pins the SCOPE of the per-token debug-seam declines, which
+// is a different property from whether they exist.
+//
+// They exist because prefill calls layerTail from exactly one site — inside the per-row MoE FFN
+// loop — where a per-token seam would fire M times per layer and hand its consumer M rows where it
+// expects one. On a DENSE model that site is never reached, so refusing there gains nothing and
+// costs a real feature: DFlash's block drafter arms hidCapTaps and verifies through the batched
+// path on a dense model.
+//
+// The first version of the guard was not scoped, and it broke exactly that —
+// TestDFlashRoundComposition and TestDFlashCompositionResidual both failed with "per-token
+// hidden-state taps are armed". They are heavy, GPU-only and 40+ minutes into the suite; this
+// costs microseconds and fails for the same reason, which is the point of writing it down here.
+func TestPrefillPath_seamGuardsAreMoEOnly(t *testing.T) {
+	armed := func(moe bool) *cudaResident {
+		r := declineFixture(2, "int4")
+		r.hidCapTaps = []int{0}
+		r.moe = moe
+		return r
+	}
+	if err := armed(false).prefillStaticDecline(); err != nil {
+		t.Errorf("DENSE model with hidden-state taps armed was refused (%v) — prefill never reaches "+
+			"layerTail on a dense model, so the taps are untouched and this refusal only breaks the "+
+			"block drafter's batched verify", err)
+	}
+	if err := armed(true).prefillStaticDecline(); err == nil {
+		t.Error("MoE model with hidden-state taps armed was ADMITTED — the per-row FFN loop calls " +
+			"layerTail once per row, so each tap would record M residuals instead of one")
+	}
+	// Same shape for the layerCap probe, which rides the same site.
+	r := declineFixture(2, "int4")
+	r.layerCap, r.moe = true, false
+	if err := r.prefillStaticDecline(); err != nil {
+		t.Errorf("DENSE model with layerCap armed was refused: %v", err)
+	}
+	r.moe = true
+	if err := r.prefillStaticDecline(); err == nil {
+		t.Error("MoE model with layerCap armed was ADMITTED — it would append M snapshots per layer")
+	}
+}

@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestSpecDecodeCurve(t *testing.T) {
 			seedEmb[i] = emb(seed[i])
 		}
 		prime := func() []float32 {
-			lg, e := rf.PrefillLast(seedEmb, 0)
+			lg, e := rf.PrefillLast(context.Background(), seedEmb, 0)
 			if e != nil {
 				t.Fatalf("prime(%d): %v", depth, e)
 			}

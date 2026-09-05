@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"testing"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -100,7 +101,7 @@ func prefillE2EGate(t *testing.T, path, quant string) {
 	seqStream := decodeGreedy(t, mc, rf, seqLogits, n, 64)
 
 	// --- batched: PrefillLast overwrites [0,n) → batLogits + KV.
-	batLogits, err := rf.PrefillLast(embs, 0)
+	batLogits, err := rf.PrefillLast(context.Background(), embs, 0)
 	if err != nil {
 		t.Fatalf("PrefillLast: %v — it must handle a dense windowed model, not decline", err)
 	}

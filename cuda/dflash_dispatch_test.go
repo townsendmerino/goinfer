@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestDFlashDispatchAmortization(t *testing.T) {
 	for i := range warm {
 		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(warm, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm: %v", e)
 	}
 	full := r.nLayers
@@ -104,7 +105,7 @@ func TestDFlashDispatchAmortization(t *testing.T) {
 			})
 		})
 		d16 := best(func() error {
-			_, e := r.PrefillLast(block, depth)
+			_, e := r.PrefillLast(context.Background(), block, depth)
 			return e
 		})
 		pl1, pl16 := ms(d1)/float64(n), ms(d16)/float64(n)
@@ -174,7 +175,7 @@ func TestDFlashCaptureSeamCost(t *testing.T) {
 	for i := range warm {
 		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(warm, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm: %v", e)
 	}
 	defer func() { _ = r.SetHiddenCapture(nil) }()
@@ -264,7 +265,7 @@ func TestDFlashRoundComposition(t *testing.T) {
 	for i := range warm {
 		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(warm, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm: %v", e)
 	}
 	full := r.nLayers
@@ -289,7 +290,7 @@ func TestDFlashRoundComposition(t *testing.T) {
 			// --- draft: 5 layers at M=16, capture OFF (the drafter has no seam) ---
 			r.nLayers = 5
 			_ = r.SetHiddenCapture(nil)
-			if _, e := r.PrefillLast(block16, depth); e != nil {
+			if _, e := r.PrefillLast(context.Background(), block16, depth); e != nil {
 				t.Fatalf("draft: %v", e)
 			}
 			// --- verify: full stack at M=k, capture LIVE (the drafter needs the taps) ---
@@ -376,7 +377,7 @@ func TestDFlashCompositionResidual(t *testing.T) {
 	for i := range warm {
 		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(warm, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm: %v", e)
 	}
 	full := r.nLayers
@@ -406,7 +407,7 @@ func TestDFlashCompositionResidual(t *testing.T) {
 				if perRoundSet {
 					_ = r.SetHiddenCapture(nil)
 				}
-				if _, e := r.PrefillLast(block16, depth); e != nil {
+				if _, e := r.PrefillLast(context.Background(), block16, depth); e != nil {
 					t.Fatalf("draft: %v", e)
 				}
 				r.nLayers = full
@@ -492,7 +493,7 @@ func TestDFlashVerifyHeadCost(t *testing.T) {
 	for i := range warm {
 		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(warm, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm: %v", e)
 	}
 	mkrows := func(n int) [][]float32 {
@@ -519,7 +520,7 @@ func TestDFlashVerifyHeadCost(t *testing.T) {
 	t.Logf("%3s | %10s %10s %10s | %10s %9s", "k", "Last(1hd)", "LastN(khd)", "BATCHED", "curve W+Ck", "saved")
 	for _, k := range []int{4, 6, 7, 8, 10, 12, 16} {
 		rows := mkrows(k)
-		one := best(func() error { _, e := r.PrefillLast(rows, depth); return e })
+		one := best(func() error { _, e := r.PrefillLast(context.Background(), rows, depth); return e })
 		all := best(func() error { _, e := r.PrefillLastN(rows, depth); return e })
 		bat := best(func() error { _, e := r.PrefillLastNArgmax(rows, depth); return e })
 		t.Logf("%3d | %10.2f %10.2f %10.2f | %10.2f %8.2f", k, one, all, bat, W+C*float64(k), all-bat)
@@ -562,7 +563,7 @@ func TestPrefillLastNArgmax_matchesPerRow(t *testing.T) {
 	for i := range warm {
 		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(warm, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm: %v", e)
 	}
 	for _, M := range []int{2, 4, 7, 8, 16} {

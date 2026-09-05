@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -117,8 +118,8 @@ func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
 // the sequential KV-only prefill (which is correct for every family). Uniform-only is enforced against
 // layer 0; a non-uniform family trips the guard and declines rather than reading a wrong stride.
 // PrefillLast ingests a whole prompt in one batched pass, returning the last token's logits.
-func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
-	return r.prefillChunked(embeddings, startPos)
+func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	return r.prefillChunked(ctx, embeddings, startPos)
 }
 
 // prefillChunkRows is the row budget for one batched pass — prefillDefaultChunk unless
@@ -149,10 +150,17 @@ func prefillChunkRows() int {
 // chunk's rows only. That combination is not reachable today — the capture is armed by the verify
 // entry points, not by PrefillLast — but a partial capture would be a silent wrong answer rather than
 // a slow one, so it declines to one pass instead of being merely documented as unreachable.
-func (r *cudaResident) prefillChunked(embeddings [][]float32, startPos int) ([]float32, error) {
+func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	// AT ENTRY, before the single-pass branch below. A prompt that fits in one chunk skips the loop
+	// entirely, so without this check the whole M<=chunk case is uncancellable — on a dense model
+	// there is no per-row loop to catch it either, which is exactly the hole the chunk-boundary
+	// check alone leaves open.
+	if e := ctx.Err(); e != nil {
+		return nil, e
 	}
 	chunk := prefillChunkRows()
 	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
@@ -162,13 +170,18 @@ func (r *cudaResident) prefillChunked(embeddings [][]float32, startPos int) ([]f
 		return nil, e
 	}
 	if M <= chunk || len(r.capBTaps) > 0 {
-		outs, _, err := r.prefillCore(embeddings, startPos, tailLastLogits)
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits)
 		if err != nil {
 			return nil, err
 		}
 		return outs[len(outs)-1], nil
 	}
 	for i := 0; i < M; {
+		// Between passes: the coarsest of the two checks, and the one that bounds a cancelled
+		// request to a single chunk's work instead of the whole prompt.
+		if e := ctx.Err(); e != nil {
+			return nil, e
+		}
 		n := chunk
 		if i+n > M {
 			n = M - i
@@ -178,7 +191,7 @@ func (r *cudaResident) prefillChunked(embeddings [][]float32, startPos int) ([]f
 		if last {
 			tail = tailLastLogits
 		}
-		outs, _, err := r.prefillCore(embeddings[i:i+n], startPos+i, tail)
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail)
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 				chunk = max(chunk/2, prefillMinChunk)
@@ -203,7 +216,7 @@ func (r *cudaResident) prefillChunked(embeddings [][]float32, startPos int) ([]f
 // final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
 // row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
 func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
-	outs, _, err := r.prefillCore(embeddings, startPos, tailAllLogits)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits)
 	return outs, err
 }
 
@@ -221,7 +234,7 @@ func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]f
 // weaker requirement than PrefillLastN's, and it is what makes batching the head admissible at
 // all. TestPrefillLastNArgmax_matchesPerRow gates it.
 func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
-	_, ids, err := r.prefillCore(embeddings, startPos, tailAllArgmax)
+	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax)
 	return ids, err
 }
 
@@ -240,7 +253,12 @@ func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) 
 // requirement — the batched capture — comes from the layer loop either way. One row of logits is
 // vocab floats (~0.6 MB) against M x vocab.
 func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
-	outs, _, err := r.prefillCore(embeddings, startPos, tailLastLogits)
+	// context.Background(), and it is a KNOWN GAP of the same class PrefillLast just closed:
+	// decoder.ResidentSeedArgmax carries no context, and this one DOES ingest a whole prompt, so a
+	// cancelled block-spec seed runs to completion. It is not fixed here because the fix is another
+	// interface change on a different seam, and doing it silently as a side effect of this one is
+	// how a surface changes without anyone deciding to. Filed with the P20 cancellation item.
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits)
 	if err != nil {
 		return 0, err
 	}
@@ -280,11 +298,25 @@ func (r *cudaResident) prefillStaticDecline() error {
 	// divergence probe. Both would silently return M× the rows their consumers expect. Declining
 	// sends those runs down the sequential path, where their semantics are the ones they were
 	// written against.
-	if len(r.hidCapTaps) > 0 {
-		return fmt.Errorf("cuda prefill: per-token hidden-state taps are armed: %w", errPrefillDeclined)
-	}
-	if r.layerCap {
-		return fmt.Errorf("cuda prefill: per-layer residual capture is armed: %w", errPrefillDeclined)
+	// SCOPED TO MoE, because that is the only branch that can reach them. layerTail is called from
+	// prefill at exactly ONE site — inside the per-row MoE FFN loop — so on a dense model these
+	// seams are untouched by the batched pass and refusing it gains nothing.
+	//
+	// The first version of this guard was NOT scoped, and it broke a real flow: DFlash's block
+	// drafter arms hidCapTaps and verifies through the batched path on a DENSE model, so
+	// TestDFlashRoundComposition and TestDFlashCompositionResidual both failed with "per-token
+	// hidden-state taps are armed". Caught only by the full heavy suite — the targeted prefill
+	// subset does not run the drafter composition tests, which is the second time in this change
+	// that a guard written for one arch refused another.
+	if r.moe || r.gemma4Moe {
+		if len(r.hidCapTaps) > 0 {
+			return fmt.Errorf("cuda prefill: MoE per-row FFN with per-token hidden-state taps armed "+
+				"would record M rows per tap instead of one: %w", errPrefillDeclined)
+		}
+		if r.layerCap {
+			return fmt.Errorf("cuda prefill: MoE per-row FFN with per-layer residual capture armed "+
+				"would append M snapshots per layer: %w", errPrefillDeclined)
+		}
 	}
 	// RECURRENT STATE (Gated-DeltaNet: qwen3_5_moe / qwen3_next). The batched path runs M rows in ONE
 	// pass over the weights, while a DeltaNet layer's conv ring and matrix state must advance strictly
@@ -447,7 +479,7 @@ const (
 	// [M, hidden] readback are all dead work for a chunk whose logits nobody reads.
 )
 
-func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail int) ([][]float32, []int, error) {
+func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -658,6 +690,14 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 			if Ly.g4moe || Ly.isMoE {
 				t = r.profTic()
 				for m := 0; m < M; m++ {
+					// Between ROWS: this loop is the one that made cancellation coarse. A MoE
+					// chunk is M sequential per-token FFNs, so without this a cancelled 512-row
+					// chunk still runs every one of them — measured ~22 s on M26, against the
+					// ~46 ms the per-token fallback it replaced would have taken to notice.
+					// Checked per row, so the granularity is back to roughly one token.
+					if e := ctx.Err(); e != nil {
+						return e
+					}
 					xm := xB.At(m * hidden * 4)
 					if e := r.segBFFN(Ly, l, xm); e != nil {
 						return e

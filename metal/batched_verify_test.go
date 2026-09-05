@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -463,7 +464,7 @@ func TestBatchedVerifyE2ECurve(t *testing.T) {
 	for i := range warmSeq {
 		warmSeq[i] = embed(i % 4999)
 	}
-	if _, err := seqPF.PrefillLast(warmSeq, 0); err != nil {
+	if _, err := seqPF.PrefillLast(context.Background(), warmSeq, 0); err != nil {
 		t.Fatalf("warm seq (forced batched prefill): %v", err)
 	}
 	warmBatch := make([][]float32, depth)
@@ -471,7 +472,7 @@ func TestBatchedVerifyE2ECurve(t *testing.T) {
 		warmBatch[i] = embed(i % 4999)
 	}
 	rPF := &metalResident{r: r, hidden: r.H}
-	if _, err := rPF.PrefillLast(warmBatch, 0); err != nil {
+	if _, err := rPF.PrefillLast(context.Background(), warmBatch, 0); err != nil {
 		t.Fatalf("warm batch (forced batched prefill): %v", err)
 	}
 	timeIt := func(f func()) time.Duration {

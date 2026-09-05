@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -25,7 +26,7 @@ type prefillingResident struct {
 	reason  string
 }
 
-func (p *prefillingResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
+func (p *prefillingResident) PrefillLast(_ context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	return p.Forward(embeddings[len(embeddings)-1], startPos+len(embeddings)-1)
 }
 
@@ -101,8 +102,8 @@ func (w *prefillerOnly) Forward(e []float32, pos int) ([]float32, error) { retur
 func (w *prefillerOnly) ForwardN(e [][]float32, s int) ([][]float32, error) {
 	return w.p.ForwardN(e, s)
 }
-func (w *prefillerOnly) PrefillLast(e [][]float32, s int) ([]float32, error) {
-	return w.p.PrefillLast(e, s)
+func (w *prefillerOnly) PrefillLast(_ context.Context, e [][]float32, s int) ([]float32, error) {
+	return w.p.PrefillLast(context.Background(), e, s)
 }
 func (w *prefillerOnly) UploadKV(layer int, keys, vals []float32) error { return nil }
 func (w *prefillerOnly) TruncateTo(pos int)                             {}

@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -1346,7 +1347,9 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// strictly one token at a time and in order. Take the sequential loop below, which is the same
 	// r.step this family's decode uses, so prefill and decode see the same state evolution.
 	if r.prefillReady && r.dnet == nil {
-		if outs, _, err := r.prefillCore(embeddings, startPos, tailAllLogits); err == nil {
+		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
+		// interface carries no context. Nothing here is long enough to want cancelling.
+		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits); err == nil {
 			return outs, nil
 		} else if !errors.Is(err, errPrefillDeclined) {
 			return nil, err

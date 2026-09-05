@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func TestB2DenseFlagship(t *testing.T) {
 		t.Fatal("7B did not go cuda-resident")
 	}
 	_, _, _, _, _, _, vocab := mc.Dims()
-	if _, e := rf.PrefillLast(make([][]float32, 8), 0); e == nil {
+	if _, e := rf.PrefillLast(context.Background(), make([][]float32, 8), 0); e == nil {
 		t.Logf("PrefillLast accepts (batched)") // sanity: dense qwen2 is covered
 	}
 
@@ -63,7 +64,7 @@ func TestB2DenseFlagship(t *testing.T) {
 		best := time.Hour
 		for rep := range 3 { // best of 3, first (rep 0) is the warm-up and discarded by "best"
 			t0 := time.Now()
-			lg, e := rf.PrefillLast(embs, 0)
+			lg, e := rf.PrefillLast(context.Background(), embs, 0)
 			if e != nil {
 				t.Fatalf("prefill n=%d: %v", n, e)
 			}

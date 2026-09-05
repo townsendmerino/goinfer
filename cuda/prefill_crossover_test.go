@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func TestPrefillCrossover(t *testing.T) {
 		var pf, dc time.Duration
 		for range 3 {
 			t0 := time.Now()
-			lg, e := rf.PrefillLast(embs, 0)
+			lg, e := rf.PrefillLast(context.Background(), embs, 0)
 			if e != nil {
 				t.Fatalf("prefill n=%d: %v", n, e)
 			}

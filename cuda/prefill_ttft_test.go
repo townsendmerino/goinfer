@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func ttftMeasure(t *testing.T, path, quant string) {
 		return embs
 	}
 	// Confirm the batched path accepts this dense model rather than declining.
-	if _, e := rf.PrefillLast(build(8), 0); e != nil {
+	if _, e := rf.PrefillLast(context.Background(), build(8), 0); e != nil {
 		t.Fatalf("PrefillLast declined a dense qwen2.5 model: %v", e)
 	}
 
@@ -99,7 +100,7 @@ func ttftMeasure(t *testing.T, path, quant string) {
 			}
 		}, 3)
 		bat := median(func() {
-			if _, e := rf.PrefillLast(embs, 0); e != nil {
+			if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 				t.Fatalf("batched n=%d: %v", n, e)
 			}
 		}, 3)

@@ -19,7 +19,7 @@ import (
 // PROMPT LENGTH, which is the signature of per-token prefill.
 //
 // THE DEFECT. decoder/model.go's generateInto uses the optional Prefiller seam on a
-// resident model — `pf.PrefillLast(embs, 0)`, one batched on-device pass — whenever
+// resident model — `pf.PrefillLast(context.Background(), embs, 0)`, one batched on-device pass — whenever
 // len(prompt) >= 8. decoder/spec_ngram.go's genNgramInto does NOT: its resident
 // branch loops `target.resident.Forward(embedResident(id), i)` once per prompt
 // token. cudaResident implements PrefillLast (cuda/prefill.go), so the batched path

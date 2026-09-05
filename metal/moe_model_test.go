@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -310,10 +311,10 @@ func TestMoE_declinesPrefill(t *testing.T) {
 	// bit-identity decline that now gates the Metal backend by default (54% divergence, §A2-Metal).
 	// Opt past that outer gate so the arch logic is what's under test.
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
-	if _, err := load(moeDir).PrefillLast(embs, 0); err == nil {
+	if _, err := load(moeDir).PrefillLast(context.Background(), embs, 0); err == nil {
 		t.Fatal("MoE resident ACCEPTED prefill — it would bind unset dense-FFN buffers")
 	}
-	if _, err := load(denseDir).PrefillLast(embs, 0); err != nil {
+	if _, err := load(denseDir).PrefillLast(context.Background(), embs, 0); err != nil {
 		t.Fatalf("dense resident wrongly declined prefill: %v", err)
 	}
 }

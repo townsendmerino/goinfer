@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -69,7 +70,7 @@ func TestPrefillChunked_bitIdentical(t *testing.T) {
 		t.Setenv("GOINFER_PREFILL_CHUNK", chunk)
 		rf.Reset()
 		start := time.Now()
-		lg, e := rf.PrefillLast(embs, 0)
+		lg, e := rf.PrefillLast(context.Background(), embs, 0)
 		if e != nil {
 			t.Fatalf("PrefillLast(chunk=%s): %v", chunk, e)
 		}

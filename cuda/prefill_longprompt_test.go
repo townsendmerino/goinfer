@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -150,7 +151,7 @@ func TestPrefillLongPrompt(t *testing.T) {
 		embs := build(M)
 		st0, ho0, dm0, c0 := cacheProf()
 		start := time.Now()
-		_, perr := rf.PrefillLast(embs, 0)
+		_, perr := rf.PrefillLast(context.Background(), embs, 0)
 		d := time.Since(start)
 		if perr != nil {
 			fmt.Fprintf(os.Stderr, "[longprompt] M=%-5d DECLINED after %-10s: %v\n", M, d.Round(time.Millisecond), perr)

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -78,7 +79,15 @@ type ResidentPrefillKV interface {
 // for long prompts when the backend has a real batched (e.g. MMA) forward. generateInto type-
 // asserts for this; backends without it fall back to the sequential prefill.
 type Prefiller interface {
-	PrefillLast(embeddings [][]float32, startPos int) (logits []float32, err error)
+	// ctx is checked at whatever granularity the backend can honour — between passes, and inside
+	// them where the backend's own loop allows. It exists because a batched prefill is the ONE
+	// place where a cancelled request keeps a GPU busy with nothing watching: the sequential
+	// fallback checks ctx.Err() per token (G18, "an abandoned client leaves the whole prompt
+	// streaming through the device"), and a backend that ingests the prompt in one pass has no
+	// equivalent unless it is handed the context. Cancellation returns ctx.Err(); the caller
+	// treats that like any other decline and stops, rather than falling back to the sequential
+	// loop it was also cancelling.
+	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched

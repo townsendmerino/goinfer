@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"testing"
@@ -120,7 +121,7 @@ func TestA13_PrefillChurnPoisons(t *testing.T) {
 	// Identical input must give identical logits; a drift or a zero run is the bug.
 	var first []float32
 	for i := range N {
-		lg, e := rf.PrefillLast(embs, 0)
+		lg, e := rf.PrefillLast(context.Background(), embs, 0)
 		if e != nil {
 			t.Fatalf("prefill %d: %v", i, e)
 		}

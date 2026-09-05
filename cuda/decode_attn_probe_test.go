@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -48,7 +49,7 @@ func TestDecodeAttn2048Probe(t *testing.T) {
 		s = s*1664525 + 1013904223
 		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
 	}
-	lg, err := rf.PrefillLast(embs, 0) // builds the 2048-deep cache via attn_batched (not the decode kernel)
+	lg, err := rf.PrefillLast(context.Background(), embs, 0) // builds the 2048-deep cache via attn_batched (not the decode kernel)
 	if err != nil {
 		t.Fatalf("prefill: %v", err)
 	}

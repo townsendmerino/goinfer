@@ -8,6 +8,7 @@ package metal
 // (Qwen2/Llama, DecodeRunnerEligible); declines gracefully to the staged/CPU path otherwise.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -224,7 +225,14 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 // PrefillLast (decoder.Prefiller) ingests the whole prompt in one batched f16-MMA pass and
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // longer than the resident KV/attention cap, so the caller uses the sequential loop.
-func (a *metalResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
+func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	// One pass, so one check: this backend ingests the whole prompt in a single command buffer and
+	// has no inner loop to interrupt. Checking at entry is therefore the ONLY granularity available
+	// here, and it is honest about that rather than pretending finer. A Metal prefill that wants
+	// mid-pass cancellation needs the chunking cuda has (prefillChunked), which is its own change.
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
 	// DECLINE BY DEFAULT — Metal's batched prefill is NOT bit-identical to the sequential decode path.
 	// It runs f16-activation MMA vs decode's int8 activations (+ fast-math contraction/reassociation),
 	// which diverges the greedy stream on real weights (54% — TestMetalPrefillDivergenceRate; §A2-Metal).

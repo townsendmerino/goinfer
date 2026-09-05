@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func TestDecodeDepthThroughput(t *testing.T) {
 		for i := range embs {
 			embs[i] = emb(i)
 		}
-		if _, err := rf.PrefillLast(embs, 0); err != nil {
+		if _, err := rf.PrefillLast(context.Background(), embs, 0); err != nil {
 			t.Fatalf("prefill(%d): %v", depth, err)
 		}
 		const steps = 128

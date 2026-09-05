@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -54,7 +55,7 @@ func TestSpecVerifyCeiling(t *testing.T) {
 	for i := range warm {
 		warm[i] = emb(i)
 	}
-	if _, e := rf.PrefillLast(warm, 0); e != nil {
+	if _, e := rf.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm prefill: %v", e)
 	}
 
@@ -84,7 +85,7 @@ func TestSpecVerifyCeiling(t *testing.T) {
 			ek[i] = emb(100 + i)
 		}
 		batched := timeIt(func() {
-			if _, e := rf.PrefillLast(ek, depth); e != nil {
+			if _, e := rf.PrefillLast(context.Background(), ek, depth); e != nil {
 				t.Fatal(e)
 			}
 		})

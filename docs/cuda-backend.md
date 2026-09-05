@@ -80,10 +80,31 @@ model: it builds a **full resident decode path** — `ResidentActive` is true, d
 prefill, because the batched GEMV was int4-only. Measured on a 300-token prompt (0.5B, RTX 2070
 SUPER): **TTFT 1.73 s vs 0.19 s (9×), 4.56 vs 0.22 CPU-seconds (20×)**, with no compute
 hotspot — the CPU spin-waiting through 300 sequential launches. That specific decline is now
-**fixed**: `gemv_w8a8_batched.cu` batches int8/int8int8/int4mix as well as int4 (§C6), so only
-native-f32 weights (and the non-dense family/MoE/MLA classes) still fall back. But the lesson —
-and the visibility below — stand: a per-call decline that announces nothing is indistinguishable
-from a slow machine, and the remaining fallbacks are exactly as silent as this one was.
+**fixed**: `gemv_w8a8_batched.cu` batches int8/int8int8/int4mix as well as int4 (§C6).
+
+**What still falls back, as of 2026-09-05** (read off `prefillStaticDecline`, not from memory —
+this list has been wrong before): a **native/f32 projection**; a **Gated-DeltaNet** model
+(qwen3_5_moe / qwen3_next — recurrent state advances one token at a time and cannot be batched);
+a K=V layer with no `v_norm` unit weight; and a model with the per-token debug seams armed
+(`hidCapTaps`, `layerCap`), whose consumers expect one row per token. **MoE and Gemma-4 are no
+longer on that list** — a MoE layer's FFN now runs per row off the batched residual, and per-layer
+geometry and K=V are handled, so M26-class models take the batched path.
+
+**The lesson outlived the specific bug, and then repeated itself in a form nothing on this page
+would have caught.** The batched pass allocates M-sized scratch, so it can pass every LOAD-time
+check and still decline at CALL time on a long prompt: a 7B at `-ctx 8192` on an 8 GB card asked
+for 2.28 GB against 1.96 GB free and fell back for **every prompt long enough to need the fast
+path**, at 12.5 ms/token against 2.8. `PrefillPath()` reads static model properties and cannot see
+M, so the startup line said `batched` throughout, and the only symptom was a slow benchmark cell.
+Fixed by chunking the pass (`prefillChunked`, ≤512 rows, bit-identical); the report now states the
+width instead of claiming "one pass". **A load-time report about a call-time-dependent property is
+a check that cannot fail** — that is the general form, and it is worth more than the int8 case that
+started this section.
+
+Call-time declines are no longer entirely silent: `decoder.warnPrefillDeclined` prints one line the
+first time a prefill falls back in a process. One line, not per request — enough to name the cause
+without a log flood, and it exists because the fallback is *correct*, just slow, so it must not
+fail the request.
 
 The runtime now states both resolved paths, because a decline nothing announces is
 indistinguishable from a slow machine:

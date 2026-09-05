@@ -133,15 +133,31 @@
      unchanged, and prefill passes `xB.At(m*hidden*4)`. The routed experts still run per row, so this
      wins the attention half and nothing else — which is exactly what step 2 is measured against.
 
-     **ONE REGRESSION THIS INTRODUCES, not yet fixed.** `Prefiller.PrefillLast` takes no
-     `context.Context`, so a chunk is uncancellable once started. The sequential loop it replaces
-     checks `ctx.Err()` **per token** — G18 put that there because "an abandoned client leaves the
-     whole prompt streaming through the device". On M26 at ~46 ms/token a 512-row chunk is ~23 s of
-     work that cannot be interrupted, against ~46 ms before. Not a correctness bug and not new to
-     MoE (the dense batched path had it too, at ~2.8 ms/token × 512 ≈ 1.4 s), but MoE is where it
-     becomes user-visible. The fix is an optional ctx-aware Prefiller variant checked between rows
-     and between chunks; filed here rather than bolted on, because it is an interface change and the
-     decoder side has to move with it.
+     **~~ONE REGRESSION THIS INTRODUCES, not yet fixed.~~ FIXED 2026-09-05.** `Prefiller.PrefillLast`
+     took no `context.Context`, so a chunk was uncancellable once started — against a sequential
+     loop that checks `ctx.Err()` **per token** (G18: "an abandoned client leaves the whole prompt
+     streaming through the device"). On M26 that was ~23 s of uninterruptible work against ~46 ms.
+
+     The interface now carries a context (Experimental tier, so the signature change is permitted),
+     checked in **three** places: at entry, at each chunk boundary, and between rows of the MoE FFN
+     loop. Measured on the real fixture: cancel at 237 ms returns at **239 ms**, against 1.183 s
+     uncancelled — per-row granularity, i.e. roughly what the per-token fallback gave. A cancelled
+     prefill returns `ctx.Err()` rather than falling through to the sequential loop the caller was
+     also cancelling.
+
+     **Each of the three checks is separately mutation-proven, and that is not ceremony — two of
+     them were untested when first written.** The gate used a MoE fixture, whose per-row check
+     catches a cancel before the chunk boundary can, so deleting the chunk-boundary check left the
+     suite GREEN. A dense fixture (no row loop) at a forced chunk width was needed to make it fail.
+     Chasing that surfaced a real hole in the shipped code: a prompt at or under the chunk width
+     skips the loop entirely and had **no check at all** — fully uncancellable on a dense model.
+     Hence the entry check, which needed a third sub-test because the other two stayed green
+     without it.
+
+     **RESIDUAL, still open:** `PrefillSeedArgmax` (block-spec prompt seed) ingests a whole prompt
+     and remains uncancellable — `decoder.ResidentSeedArgmax` carries no context. It is a second
+     interface on a different seam, deliberately not changed as a side effect of this one, and
+     `cuda/prefill.go`'s `context.Background()` there points at this paragraph.
 
      **~~A trap that goes LIVE the moment the `r.moe` decline is removed.~~ FIXED in the same
      change**, as this said it must be. For the record, because the shape recurs: `nonBatchableKind` returned
@@ -258,6 +274,58 @@
   (bit-identical, `TestPrefillChunked_bitIdentical`), the load-time report states the width instead
   of claiming "one pass", and a call-time decline warns once. **This does nothing for M35/M26** —
   they decline at a different gate, which is this item.
+
+- **P24 · Decode throughput falls off with KV depth ~2× faster than the peers' — OPEN, and it is
+  the deficit the W3 table actually shows.** Filed 2026-09-05 because it was not filed anywhere:
+  *(Filed as P24, not P21: P21–P23 were taken by another session's filing of the 2026-09-01
+  measurements while this was in flight. Renumbered rather than shadowing an existing entry — the
+  same call this queue records making for P19-not-P17.)*
+  it existed only as prose in `docs/task-peer-benchmarks.md` §8 and as a mechanism note inside P19,
+  neither of which is a queue.
+
+  **Measured, `nobara-pc` CUDA, `docs/measurements/peer-matrix-2026-09/nobara-w1-d7-m35-m26_2026-09-04.json`:**
+
+  | model | goinfer @128 | goinfer @8000 | retained | llama.cpp @128 → @8000 | retained |
+  |---|---|---|---|---|---|
+  | D7 (dense 7B) | 73.0 | **35.7** | 0.49 | 80.4 → 58.7 | 0.73 |
+  | M26 | 24.6 | **15.5** | 0.63 | 26.0 → 22.7 | 0.87 |
+  | M35 | 23.5 | **21.4** | 0.91 | 32.4 → 30.8 | 0.95 |
+
+  **This is a DECODE deficit and no amount of prefill work touches it** — P20 moved M26's cell wall
+  clock 384.3 s → 368.4 s and left its decode rate at 15.5 tok/s, exactly as a prefill-only change
+  should. Quoting the tok/s table as evidence for or against P20 conflates the two, which is the
+  mistake §8 now warns against.
+
+  **The design record already exists — do NOT write a second one.**
+  `docs/task-decode-splitkv-attention.md` is this problem, written up and cited from
+  `cuda/resident.go`, `cuda/kernels.go` and `cuda/splitkv_bitident_test.go`: decode attention at M=1
+  launches one block per query head, 11.9% achieved occupancy on a 40-SM card, "latency-bound purely
+  because there are too few blocks to hide memory latency", against Ollama's flash attention. Its
+  P6a section also records the threshold's own history, including that a constant characterized on
+  one geometry and applied to all of them cost 18–25%. This entry holds the open work; that doc
+  holds the design, and its new "OPEN: every threshold in the table stops around 3900 keys" section
+  is the specific gap.
+
+  **The mechanism is named but NOT confirmed as the dominant term.** Per-token attention cost at 8k:
+  goinfer ~14.3 ms against llama.cpp's ~4.6 ms (back-solved from the rates above, so treat as
+  indicative). D7 has nH=28, and `splitkvThreshold` returns `splitkvNever` for nH ≥ 24 — so at depth
+  8000 its attention runs the single-block kernel, 28 blocks of 128 threads on a 40-SM part, ~70% of
+  the device idle. **That threshold was anchored on phi3-mini measured to depth 3900 and extrapolated
+  to 8000, where it was never measured.** P19 independently recorded the same shape from the other
+  side: goinfer's marginal cost per PREFILL token rises with depth (0.377 → 0.932 ms/tok) while
+  Ollama's stays flat (0.064 → 0.063).
+
+  **Cheapest first step, and it needs no code:** `GOINFER_SPLITKV_MIN_KEYS=0` force-enables the
+  split path on a stock binary — the A/B handle that variable exists for. Run it e2e at depth 8000
+  on D7 against the default. **Do NOT set the shipped threshold from
+  `TestSplitKVCrossover`**: its own doc comment records that it is an in-process microbenchmark
+  whose "break-even at 256" reading was refuted e2e on that very geometry, and thresholds are set
+  from the e2e table in `docs/benchmarks.md` §B6.
+
+  **Pre-register before running**, and pre-register two things that can disagree (the P18/P20
+  lesson): the depth at which split-KV wins on THIS geometry, and the end-to-end tok/s delta at
+  8000. A kernel-level win that does not move the e2e number is the outcome this repo has already
+  had twice.
 
 - **P19 · Fused (FlashAttention-style) tiled attention — SHIPPED 2026-09-01, default ON under
   `--cpu-fast-attention`. 1.69–1.73× at the kernel, +8.0% end to end.**

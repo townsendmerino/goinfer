@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -61,7 +62,7 @@ func TestDFlashDraftCostProbe(t *testing.T) {
 	for i := range warm {
 		warm[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(warm, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), warm, 0); e != nil {
 		t.Fatalf("warm: %v", e)
 	}
 

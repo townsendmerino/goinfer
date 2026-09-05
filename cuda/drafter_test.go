@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"math"
 	"os"
 	"testing"
@@ -382,7 +383,7 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 	for i := range seed {
 		seed[i] = mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
 	}
-	if _, e := r.PrefillLast(seed, 0); e != nil {
+	if _, e := r.PrefillLast(context.Background(), seed, 0); e != nil {
 		t.Fatalf("seed: %v", e)
 	}
 	base := 64

@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -73,7 +74,7 @@ func TestPrefillTTFT(t *testing.T) {
 		// positions [0,P). Overwrites the KV slots the sequential run just wrote;
 		// that's fine, only the timing is compared, not the resulting cache content.
 		t1 := time.Now()
-		if _, e := rf.PrefillLast(embs, 0); e != nil {
+		if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 			t.Fatalf("batched P=%d: %v", p, e)
 		}
 		batched := time.Since(t1)

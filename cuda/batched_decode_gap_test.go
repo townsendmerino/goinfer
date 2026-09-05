@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -53,7 +54,7 @@ func TestBatchedVsDecodeGap(t *testing.T) {
 			for i := range se {
 				se[i] = emb(i*7 + 3)
 			}
-			if _, e := rf.PrefillLast(se, 0); e != nil {
+			if _, e := rf.PrefillLast(context.Background(), se, 0); e != nil {
 				t.Fatalf("prime: %v", e)
 			}
 		}
@@ -67,11 +68,11 @@ func TestBatchedVsDecodeGap(t *testing.T) {
 			for i := range se {
 				se[i] = emb(i*7 + 3)
 			}
-			if _, e := rf.PrefillLast(se, 0); e != nil {
+			if _, e := rf.PrefillLast(context.Background(), se, 0); e != nil {
 				t.Fatalf("re-prime: %v", e)
 			}
 		}
-		pl, e := rf.PrefillLast([][]float32{emb(555)}, startPos)
+		pl, e := rf.PrefillLast(context.Background(), [][]float32{emb(555)}, startPos)
 		if e != nil {
 			t.Fatalf("PrefillLast: %v", e)
 		}

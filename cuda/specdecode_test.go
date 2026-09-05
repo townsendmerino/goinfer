@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func TestSpecDecode(t *testing.T) {
 		seedEmb[i] = emb(tk)
 	}
 	prime := func() []float32 {
-		lg, e := rf.PrefillLast(seedEmb, 0)
+		lg, e := rf.PrefillLast(context.Background(), seedEmb, 0)
 		if e != nil {
 			t.Fatalf("prime: %v", e)
 		}
@@ -76,7 +77,7 @@ func TestSpecDecode(t *testing.T) {
 		// Baseline uses the batched path per-token (PrefillLast M=1) — the SAME forward the verify uses,
 		// so losslessness is w.r.t. the batched forward (the decode-step Forward differs at the last ULP
 		// for pos>0, a batched-vs-decode rope/attention numerics gap under investigation).
-		outs, e := rf.PrefillLast([][]float32{emb(tk)}, pos)
+		outs, e := rf.PrefillLast(context.Background(), [][]float32{emb(tk)}, pos)
 		if e != nil {
 			t.Fatalf("plain decode %d: %v", i, e)
 		}

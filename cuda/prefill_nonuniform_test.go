@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -102,7 +103,7 @@ func TestPrefillNonUniform_bitIdentical(t *testing.T) {
 	seq := append([]float32(nil), seqLogits...)
 
 	rf.Reset()
-	bat, err := rf.PrefillLast(embs, 0)
+	bat, err := rf.PrefillLast(context.Background(), embs, 0)
 	if err != nil {
 		t.Fatalf("PrefillLast: %v", err)
 	}

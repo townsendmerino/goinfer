@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestSplitKVCrossover(t *testing.T) {
 		for i := range embs {
 			embs[i] = emb(i)
 		}
-		if _, e := rf.PrefillLast(embs, 0); e != nil {
+		if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
 			t.Fatalf("prefill(%d): %v", depth, e)
 		}
 		const steps = 96

@@ -165,6 +165,31 @@ Bit-identity is unaffected and still gated on both the GQA/hd=128/no-window path
 winStart>0) — both now force the split path via the override so a raised threshold cannot make them
 pass vacuously by comparing `attn_batched` against itself.
 
+### OPEN: every threshold in the table stops around 3900 keys, and the cells that matter run at 8000
+
+*(2026-09-05.)* The per-geometry lookup this section installed is sound for the depths it was
+measured at, and **it was measured at 2560–3900 attended keys at the most** — `splitkvConservative`
+comes from qwen2.5-0.5b (2560 break-even, 3072 → 1.061), and the `splitkvNever` class is anchored on
+phi3-mini's "monotone loss to 0.754 **at 3900**". The peer matrix's W3 cells run at **8000**, so the
+verdict applied there is an extrapolation past the last data point — the same shape of move P6a
+caught above, one axis over: that was a constant characterized on one GEOMETRY and applied to all of
+them; this is a constant characterized at one DEPTH and applied past it.
+
+What the extrapolation currently decides: D7 (Qwen2.5-7B, **nH=28 ≥ splitkvMaxHeads=24**) takes
+`splitkvNever`, so at depth 8000 its decode attention runs the single-block kernel — 28 blocks of
+128 threads on a 40-SM part. That is the same too-few-blocks condition §"The problem" opens with,
+and the retention numbers are consistent with it: goinfer keeps **0.49** of its shallow decode rate
+out to 8000 where llama.cpp keeps **0.73**
+(`docs/measurements/peer-matrix-2026-09/nobara-w1-d7-m35-m26_2026-09-04.json`).
+
+**Not a refutation of the table — an unmeasured region beyond it.** The note is here rather than in
+a new document because this IS the design record for the decision, and it is cited from three code
+sites; the open work is filed as queue-performance **P24**, which points back here. `nH ≥ 24 ⇒
+never` may well still hold at 8000; nobody has run it, and the honest statement is that the ladder
+was not extended rather than that the answer is known. Re-measure with
+`GOINFER_SPLITKV_MIN_KEYS=0` end-to-end, not from `TestSplitKVCrossover` — for the reason this
+section already gives.
+
 ## Why this one is worth it (recap from §4)
 
 It is the only deficit where the arithmetic says parity is reachable, and occupancy is a *solvable*

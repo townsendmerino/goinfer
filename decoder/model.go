@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -883,9 +884,15 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int)
 			}
 			// startPos is why the batched path needs no change for reuse: it already
 			// places the run at an offset.
-			lg, perr := pf.PrefillLast(embs, from)
+			lg, perr := pf.PrefillLast(ctx, embs, from)
 			if perr == nil {
 				return lg, nil
+			}
+			// A CANCELLED PREFILL IS NOT A DECLINE. Falling through to the sequential loop would
+			// re-ingest the whole prompt the caller just abandoned — and that loop's own ctx check
+			// would abort it one token later anyway, after another forward. Return it.
+			if errors.Is(perr, context.Canceled) || errors.Is(perr, context.DeadlineExceeded) {
+				return nil, perr
 			}
 			warnPrefillDeclined(len(suffix), perr)
 		}

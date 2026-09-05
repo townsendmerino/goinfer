@@ -233,7 +233,10 @@ any surface may still change.
     parameter-count projection that was wrong for a measured reason: M26's expert stack exceeds
     the card, so the host→VRAM expert DMA is **59.5% of prefill wall-clock and identical in both
     arms** (`GOINFER_MOE_CACHE_PROF=1`) — batching removed VRAM weight-reads that were never the
-    constraint. `TestPrefillMoE_real26B`: 0/262,144 logits differ, equality not tolerance
+    constraint. End to end at depth 8000 the *cell wall clock* moved **384.3 s → 368.4 s (4.1%)** with
+    the decode rate unchanged at 15.5 tok/s — the 8.0–8.5% above is per-token prefill, and the cell
+    is prefill plus four decodes under prefix reuse, so the two numbers are consistent and measure
+    different things. `TestPrefillMoE_real26B`: 0/262,144 logits differ, equality not tolerance
     (routing is a discrete argmax, so a small numeric drift runs a different expert, not a
     slightly-off one); mutation-proven (binding row 0 for every row reddens 4095/4096).
   - **Chunking.** Batched prefill was all-or-nothing on `M`, with `O(M×inter)` device scratch — an
@@ -245,6 +248,19 @@ any surface may still change.
     resident. **8012-token D7: 153.9s → 50.9s, 3.02×.** `TestPrefillChunked_bitIdentical`:
     real 1.5B, 0/151,936 seed logits differ and 8 greedy decode steps match id-for-id;
     mutation-proven (an off-by-one position reddens all 151,936 logits).
+  - **`Prefiller.PrefillLast` now takes a `context.Context`** (Experimental tier per
+    `docs/api-tiers.md`, so the signature change is in-contract). The sequential fallback checks
+    `ctx.Err()` **per token** — G18 added that so "an abandoned client leaves the whole prompt
+    streaming through the device" could not happen — and a batched pass had no equivalent, so
+    chunking would have taken a cancelled MoE request from ~46 ms to ~22 s of uninterruptible GPU
+    work. Checked at entry, at each chunk boundary, and between rows of the MoE FFN loop: measured,
+    a cancel at 237 ms returns at **239 ms** against 1.183 s uncancelled. A cancelled prefill
+    returns `ctx.Err()` rather than falling through to the sequential loop the caller was also
+    cancelling. Each of the three checks is separately mutation-proven — two of them were
+    initially untested, because the MoE fixture's per-row check masked the chunk-boundary one and
+    a prompt fitting in a single pass skipped both.
+    **Still open:** `PrefillSeedArgmax` (block-spec seed) ingests a whole prompt and remains
+    uncancellable; `decoder.ResidentSeedArgmax` carries no context.
   - `PrefillPath()` now states chunk width instead of claiming "one pass"; a call-time decline
     warns once via `warnPrefillDeclined`.
   - **Does not touch M35** (Qwen3.6-35B-A3B): 30 of its 40 layers are Gated-DeltaNet with in-place
