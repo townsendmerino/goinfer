@@ -1391,3 +1391,156 @@ Non-resident paths show `—` rather than 0: they cannot reuse at all (it is gat
 *and* has a lower cold TTFT, but the gap between them is far smaller than the gap either has to
 its own warm number — which is the practical point: on a multi-turn workload the prefill term,
 not the quant, dominates what a user feels.
+
+---
+
+## Peer matrix 2026-09 — tier 1/2, first pass (2026-09-04/05, IN PROGRESS)
+
+Executes `docs/task-peer-benchmarks.md`'s redone matrix via `scripts/bench_peer.py`. **This is a
+first pass, not the finished matrix** — W2 (prefill), W4 (agent-turn replay), the fidelity column,
+and the pass@1 row are all still unbuilt (see "Not done yet" below), and one re-measurement is
+still in flight as this section is written. Raw provenance-stamped JSON for every cell below is at
+`docs/measurements/peer-matrix-2026-09/*.json`; this section will be updated in place as the
+missing pieces land — treat a stale-looking gap here as "not yet written up", not "not measured".
+
+**Provenance (both boxes).** Nobara: RTX 2070 SUPER, driver `595.91.07`, Nobara Linux 44 · CUDA ·
+goinfer built from `abcdd1fe` (product code; harness commits on top only change
+`scripts/bench_peer.py`, not the binary) · Ollama `0.32.5` · llama-server `0.4.0-dev (build 1,
+commit 427291b)`, built from source with CUDA. Mac: Apple M1 Pro, macOS 25.6.0/Darwin, 16 GB RAM ·
+Metal · goinfer built from `abcdd1fe` · Ollama `0.32.5` · llama-server `0.3.0 (build 10621, commit
+c1d0e7a00)` · MLX (`mlx-lm` 0.31.3, `mlx` 0.32.2, version not yet in the harness's own provenance
+record — a gap to close). All cells: greedy (temperature 0), depth-128 unless stated, n=5 runs per
+cell except the depth-8000 cells (n=2, ncomp=2 — a single 8k completion costs minutes, see below),
+same-session interleaved with a server restart between cells, idle-gated (box refuses to measure
+above 1-min loadavg 1.0).
+
+### D7 (Qwen2.5-7B-Instruct, GGUF Q4_K_M) — W1, depth 128
+
+| box | backend | goinfer | Ollama | llama.cpp | MLX |
+|---|---|---|---|---|---|
+| nobara | CUDA | 73.0 | 74.3 | 80.4 | — |
+| Mac | Metal | 21.8 | 25.5 | 26.1 | 37.9 |
+
+### S (Qwen2.5-Coder-1.5B, GGUF Q4_K_M) — W1, depth 128
+
+| box | backend | goinfer | Ollama | llama.cpp | MLX |
+|---|---|---|---|---|---|
+| Mac | Metal | 72.7 | 84.3 | 86.2 | 109.8 |
+| nobara | **CPU** (tier-2 pure-Go lane) | 17.7 | 24.3 | 27.1 | n/a |
+
+`go-llama`/`goccy`, the task doc's other CPU-lane peer, is not installed on either box yet — the
+CPU-lane row above is Ollama/llama.cpp/goinfer only.
+
+### M35 (Qwen3.6-35B-A3B) and M26 (Gemma-4-26B-A4B) — W1, depth 128, nobara CUDA only
+
+Both are MoE models past this card's 8 GB VRAM, so goinfer runs `-moe-cache-experts` streaming and
+llama.cpp needs `--fit`'s auto-offload rather than its `-ngl 99` default (see the fix below).
+**Quant note:** neither checkpoint had a real Q4_K_M GGUF in the archive. Both were requantized
+locally with `llama-quantize --allow-requantize` — M35 from Q8_0 (near-lossless), **M26 from an
+existing Q4_0 (a double quantization — flag this wherever M26's row is quoted for quality, not
+just speed)**. goinfer itself does not load either GGUF: it runs its own kind-4 `.giw` bundle for
+both (the shipped-default configuration), so goinfer's column and the peer columns are not reading
+byte-identical files, only the same nominal quant tier.
+
+| model | goinfer | Ollama | llama.cpp (`-ngl 99`, as shipped) | llama.cpp (fixed) |
+|---|---|---|---|---|
+| M35 | 23.5 | 23.9 | never loaded (900s timeout) | **32.9** |
+| M26 | 24.6 | 22.2 | never loaded (900s timeout) | **27.8** |
+
+**The llama.cpp fix, worth keeping as a finding on its own:** llama-server's own `--fit` is on by
+default and auto-places layers across host/GPU — but only for arguments left *unset*. The harness
+was passing `-ngl 99` unconditionally, which forces full GPU offload of a 20 GB/16.8 GB model into
+an 8 GB card regardless of `--fit`, and both cells ran their full 900s load-wait and never came up.
+Dropping `-ngl` for these two model keys on the CUDA backend (CPU-forcing elsewhere untouched) lets
+`--fit` place layers automatically — the exact "zero-flag" mode `docs/task-fit-to-hardware.md`
+is about. llama.cpp went from *unable to run these cells at all* to *winning both of them.*
+
+### W3 — long-context decode at depth 8000
+
+| model | box | goinfer | Ollama | llama.cpp |
+|---|---|---|---|---|
+| D7 | nobara CUDA | 35.7 | 56.7 | 58.7 |
+| M35 | nobara CUDA | 21.4 *(pre-fix, see below)* | 23.2 | 30.8 |
+| M26 | nobara CUDA | 15.5 *(pre-fix, see below)* | 19.8 | 22.7 |
+| S | Mac Metal, `--cpu-fast-attention` | 16.84 (`true`) / 16.53 (`false`) | — | — |
+
+**M35/M26 wall-clock, not the tok/s column above, is the real finding here — and it's mid-fix.**
+`tok/s` is decode-only by construction (timed from the first streamed token), so it doesn't show
+prefill cost. But the *cell wall-clock* did: goinfer's M35 cell took 1528.8s (~25.5 min) and M26's
+took 384.3s (~6.4 min) despite being CUDA-resident, consistent with repaying the full 8k prefill on
+every one of the cell's completions via a **sequential (non-batched) MoE prefill path** — while
+Ollama and llama.cpp's much shorter wall-clocks on the same cells suggest both reuse the repeated
+prefix. A separate, unrelated fix landed on the nobara box the same night this was found
+(`4ee59e15`/`654fa481`/`a9c23c67`/`5cc48545` — "MoE models take the batched prefill path (P20
+blocker 3) — bit-identical, 1.08x"). **A post-fix re-run of these two cells is in progress as this
+section is written; the numbers above are the pre-fix baseline and will be replaced (with the
+wall-clock delta reported alongside) once it lands — do not quote the 21.4/15.5 pair as current
+without checking this note's edit date.**
+
+**S's `--cpu-fast-attention` row is decode-only and does not yet answer the question it was run
+for.** The flag is documented as prefill-only, so the ~2% decode gap above is expected and not
+the finding — but the harness that produced it reused `bench_peer.py`'s decode-only timing design
+without adding TTFT/prefill instrumentation, so the actual prefill-time comparison this row exists
+to answer is still open. Cost 3h38m wall-clock to learn that. A corrected re-run with real TTFT
+capture is a follow-up, not done here.
+
+### G20 (gpt-oss-20b, MXFP4) — W1, depth 128, tier 2
+
+The task doc frames this model as "fits the Mac, not the card" — a resident cell on one box, an
+offload cell on the other. Measured tonight, that framing held on nobara and did **not** hold on
+the Mac.
+
+| box | backend | goinfer | Ollama | llama.cpp |
+|---|---|---|---|---|
+| nobara | CUDA (`-moe-cache-experts`) | **62.4** | 26.5 | 31.6 |
+| Mac | CPU | declined — see below | not attempted | not attempted |
+
+**Mac capability boundary, not a bug.** goinfer's `gpt_oss` architecture has no resident
+CUDA/Metal/WebGPU backend today (`decoder/registry.go`, `decoder/features.go`), so this cell must
+run `-backend cpu` on any box. On the Mac, a plain CPU decode of the 13.8 GB checkpoint — no
+`-stream-weights` paging, the model nominally fits 16 GB RAM on paper — drove swap to 22.6–22.9 GB
+on a 23.5 GB swap file. Caught via a single-request smoke test and killed before a real measurement
+was taken, rather than letting it run — this same night already had one kernel-panic incident from
+a related failure mode (see "M35/M26 on the Mac" below), and this was judged the same class of
+risk. Ollama/llama.cpp legs on the Mac were not attempted for the same reason. Nobara's CUDA
+result stands on its own: goinfer wins by a wide margin here.
+
+### M35/M26 on the Mac — parked, a real capability boundary, not a partial result
+
+The Mac has 16 GB RAM; goinfer's Metal backend measured-declines full residency for both models
+(M35 needs 20.6 GB, M26 14.95 GB, against an 11.2 GB budget — 70% of 16 GB) and falls back
+automatically to a CPU-staged, `-stream-weights` decode path. That path was run for real and killed
+after **2h10min with zero completions** — RSS stayed at ~3.2 GB against a 20 GB model the whole
+time, consistent with re-reading weights from disk per token rather than holding them resident.
+This measured, real slowness is very likely what produced a genuine kernel panic
+(`panic(...): watchdog timeout: no checkins from watchdogd in 92 seconds`) shortly afterward on
+this machine. **M35, M26, and H27 (also too large for this Mac) are off-limits on this box going
+forward, on any path** — not a temporary skip, a hardware boundary for this machine as configured.
+llama.cpp and Ollama, which don't go through goinfer's residency guard, ran fine on the Mac for
+M35/M26 at depth 128 (see the W1 table above) — the boundary is specific to goinfer's own
+CPU-staged fallback, not to running these models on this hardware at all.
+
+### Tier-2 goinfer variants, Mac only
+
+| variant | model | tok/s | vs. int4/on baseline |
+|---|---|---|---|
+| `--quant int8int8` | S | 72.8 | 72.7 (int4) — no meaningful difference |
+| `--quant int8int8` | D7 | 21.9 | 21.8 (int4) — no meaningful difference |
+
+The task doc's own note that "the ordering flipped with the tile" for int8int8 vs int4 did **not**
+replicate on this Mac for either S or D7 — both land within noise of the int4 baseline. Worth a
+second look on the CUDA side before treating this as settled either way.
+
+### Not done yet
+
+- **W2** (prefill at 512/3900 tokens, TTFT) — no cells run.
+- **W4** (the agent-turn transcript replay) — the harness for it doesn't exist; this is the
+  workload the task doc calls the one that "matters most" and hasn't been started.
+- **Fidelity column** (teacher-forced top-1 agreement) and **pass@1** (HumanEval+/MBPP+) — neither
+  scorer is built. Every row above is speed-only; no quality claim should be read into any of them.
+- **FreeToken** (nobara's platform-specialist peer) — investigated and declined: needs CUDA 13
+  (box has 12.6) and only supports RTX 30/40/50-series GPUs (this box is a Turing 2070 SUPER). A
+  real hardware mismatch, not an oversight.
+- **`go-llama`/`goccy`** (the Go-lane CPU peer) — not installed on either box.
+- **W3 at 2k/32k** — only 8k has been run.
+- **M35/M26 W3 post-fix re-run** — in progress, see the note above.
