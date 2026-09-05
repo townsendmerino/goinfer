@@ -22,7 +22,7 @@ is a relocated bottleneck: ~92% of M26's prefill is somewhere batching does not 
 | harness | `cuda/prefill_longprompt_test.go`, `GOINFER_HEAVY_TESTS=1` |
 | versions | go1.27.0, `aikit/gpu v0.32.0`, goinfer at `4ee59e15` + this change |
 | method | **both arms in ONE process**, cache `Reset()` between them, batched arm first then sequential; single timed run per cell |
-| logs | `docs/measurements/prefill-chunking-2026-09-04/` — `m26-paired.log`, `m26-parity.log` |
+| logs | `docs/measurements/prefill-chunking-2026-09-04/` — `m26-paired.log`, `m26-parity.log`, `m26-attribution.log` |
 
 ## Result
 
@@ -49,6 +49,38 @@ Also gated on fixtures: `gemma4-moe-scaled` (real 26B FFN shapes, 4/4 layers MoE
 `gemma4-dense-scaled` (per-layer geometry + K=V, no MoE) 0/256. **Mutation-proven** — binding row 0
 for every row reddens 4095/4096 (max |diff| 13.47); dropping the K=V `v_norm` reddens 255/256;
 re-hoisting layer 0's geometry reddens 255/256.
+
+## Where the other 92% goes — measured, not inferred
+
+`GOINFER_MOE_CACHE_PROF=1`, same model, same M=512, both arms in one process
+(`m26-attribution.log`):
+
+| arm | wall | C′ DMA | share of arm | `loadRoutedExperts` calls | syncs |
+|---|---|---|---|---|---|
+| batched | 22.217 s | **12.839 s** | **59.5%** | 15,360 | 15,360 |
+| sequential | 24.231 s | **12.819 s** | 54.5% | 15,360 | 15,360 |
+
+**The DMA is the same in both arms to within 0.16%** — 12.839 s against 12.819 s, over an identical
+15,360 calls (512 rows × 30 layers). Batching does not touch it and was never going to: the row loop
+performs exactly the transfers the per-token loop did.
+
+Subtract it and the batchable remainder is 11.412 s sequential → **9.378 s batched, −17.8%**. That
+is the real size of what this change does, and it is diluted to 8% by a DMA floor it cannot move.
+
+**Amdahl on the measured share, not on a parameter count: with 59.5% untouchable, everything else
+going to zero caps the win at 1.68×.** Anything further has to attack the transfer itself.
+
+Two properties of that transfer are worth carrying forward. It costs the same per token however
+many tokens are in flight — so it is per-row work, and the one restructuring that changes per-row
+expert traffic is **expert-major** (group a chunk's rows by expert, so a layer fetches each distinct
+expert once per chunk instead of once per row). And it synchronizes once per (row, layer): 15,360
+synchronizes for a 512-token prompt.
+
+**No number is projected for expert-major here.** The bytes moved were not captured in this run,
+only the call count and the time, so the fetch-count reduction cannot be turned into a time
+estimate without assuming the driver is fetch count rather than per-call overhead. That assumption
+is exactly the shape of the one this document exists to record as refuted. Measure it when it is
+built.
 
 ## What the 8% refutes
 
@@ -89,6 +121,10 @@ pre-registration, not a better-worded first one.
 **Ship it anyway, and the reason is not the 8%.** It is bit-identical, it costs nothing to keep,
 and it is the prerequisite for expert-major: the row loop it introduces is exactly the loop an
 expert-major gather replaces.
+
+**The second mechanism the ambiguous band asked for is now named and measured**: the C′ host→VRAM
+expert DMA, 59.5% of the batched arm, unchanged by batching. That is what the next increment has to
+move, and it is a different lever from anything in this change.
 
 ## What this does not touch
 

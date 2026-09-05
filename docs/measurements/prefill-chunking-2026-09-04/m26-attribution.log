@@ -1,0 +1,18 @@
+=== C' attribution, M26, M=512 (2026-09-04T22:44:51-07:00) ===
+=== RUN   TestPrefillLongPrompt
+[longprompt] loading /home/francis/models/gemma4-26b-int4.giw ...
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.8 GB free — capping to 12 (1.3 GB)
+[longprompt] loaded in 1m55.569s
+[longprompt] PrefillPath(load-time) = true — batched (weight-stationary CUDA passes of up to 512 rows)
+[longprompt] guards: prefillReady=true moe=true gemma4Moe=true sandwich=true qkNorm=true
+[longprompt] layers=30 non-uniform-vs-L0=5 kEqV=5 nonBatchableKinds=map[] (L0: hd=256 nKV=8 qDim=4096 kvDim=2048 rhalf=128 window=1024)
+[longprompt] hidden=2816 inter=2112 layers=30 ctxCap=8192
+[longprompt] VRAM free=0.44 GB of 8.16 GB after load
+[longprompt] M=512   batched OK 22.217s    (43.393 ms/token)
+[longprompt]   batched C′: stall 71ms host 302ms dma 12.839s over 15360 calls (batchTime 12.829s, 15360 syncs) — 59.5% of the batched arm
+[longprompt] M=512   SEQUENTIAL 24.231s    (47.326 ms/token)
+[longprompt]   sequential C′: stall 78ms host 303ms dma 12.819s over 15360 calls (batchTime 25.637s, 30720 syncs) — 54.5% of the sequential arm
+--- PASS: TestPrefillLongPrompt (164.59s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	166.011s
+=== ATTRIB DONE (2026-09-04T22:47:39-07:00) ===

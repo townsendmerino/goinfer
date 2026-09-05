@@ -116,15 +116,19 @@
      and between chunks; filed here rather than bolted on, because it is an interface change and the
      decoder side has to move with it.
 
-     **A trap that goes LIVE the moment the `r.moe` decline is removed.** `nonBatchableKind` returns
+     **~~A trap that goes LIVE the moment the `r.moe` decline is removed.~~ FIXED in the same
+     change**, as this said it must be. For the record, because the shape recurs: `nonBatchableKind` returned
      the first projection whose kind is neither int4 nor int8 — and an ABSENT weight has kind `""`,
      which it returns, and which the caller reads as "no problem" (`if k := …; k != ""`). On a pure
      MoE layer (Mixtral-class) `Ly.g/u/d` are unset, so the check passes vacuously, and it never
      looks at `Ly.expGU` / `Ly.expDown` at all — the weights that would actually be batched. It is
-     harmless today only because `r.moe` declines two lines earlier. Fix the sentinel and extend the
-     check to the expert stacks **in the same change** that removes the decline; the probe on M26
-     printed `nonBatchableKinds=map[]` and that empty map is partly this artifact, not purely a
-     clean bill of health.
+     harmless only while `r.moe` declined two lines earlier. It now checks exactly the projections the
+     batched path binds — skipping `Ly.v` on a K=V layer and `g/u/d` on a pure-MoE one, both
+     legitimately absent — and returns `"absent/unquantized"` instead of the empty sentinel. The
+     expert stacks are deliberately still NOT checked: the per-row FFN issues decode's launches on
+     decode's weights, so whatever kind decode accepts it accepts here; only the M-wide GEMVs
+     constrain anything. The M26 probe's `nonBatchableKinds=map[]` was partly this artifact and is
+     now a real reading.
 
   **(3) has a no-new-kernel route that the tree's own comment says does not exist.**
   `resident.go` states "gocudrv exposes no buffer view/offset, so the split is the kernel's
@@ -140,15 +144,38 @@
   dense scratch is ~104 KB/row, so an 8k single pass would need ~855 MB and could never have run;
   at the 512-row chunk it is ~53 MB and fits.
 
+  **WHERE M26'S PREFILL ACTUALLY GOES, measured with `GOINFER_MOE_CACHE_PROF=1`** (M=512, both arms
+  one process, `docs/measurements/prefill-moe-m26-2026-09-04.md`):
+
+  | arm | wall | C′ DMA | share | `loadRoutedExperts` calls | syncs |
+  |---|---|---|---|---|---|
+  | batched | 22.217 s | **12.839 s** | **59.5%** | 15,360 | 15,360 |
+  | sequential | 24.231 s | 12.819 s | 54.5% | 15,360 | 15,360 |
+
+  **The DMA is identical in both arms to within 0.16%.** Strip it out and the batchable remainder is
+  11.412 s → 9.378 s, **−17.8%** — that is the true size of the change, diluted to 8% by a floor it
+  cannot move. **Amdahl on the MEASURED share: with 59.5% untouchable, everything else going to zero
+  caps any further batching at 1.68×.** The transfer is per-row and synchronizes once per
+  (row, layer). Expert-major is the one restructuring that changes per-row expert traffic — a layer
+  would fetch each distinct expert once per chunk instead of once per row.
+
+  **No number is projected for it.** The bytes moved were not captured, only calls and time, so the
+  fetch-count reduction cannot become a time estimate without assuming the driver is fetch count and
+  not per-call overhead — the same shape of assumption this item has already had refuted once today.
+  Capture `UploadProfForTest`'s byte counters in the next probe and size it from those.
+
   **Sequenced work, cheapest first:**
-  1. **M26, steps 1–3 above** — per-layer geometry, `kEqV`, and a per-row-fed FFN off a batched
+  1. ~~**M26, steps 1–3 above**~~ **DONE 2026-09-04 — 1.085×, bit-identical.** Kept for the
+     structure, not the number. — per-layer geometry, `kEqV`, and a per-row-fed FFN off a batched
      residual. No new `.cu`. Do this first: M26 is the cheaper of the two models and its sequential
      cell is 6.4 min rather than 25.5.
-  2. **Expert-major routed experts** (the P18 shape on the GPU): a batched router over M rows, a
-     per-expert row gather, an indexed batched GEMV. This one DOES need a new `.cu` — `moe.ptx` is
-     the audited 12.6.85 artifact and must stay untouched, the same way `decode_splitkv.cu` and
-     `router_f32.cu` were added beside it. NVRTC is available on this box
-     (`~/.venv-vl/…/libnvrtc.so.12`, `~/cuda-toolkit/…`), so `build_ptx.sh` runs.
+  2. **Expert-major routed experts — NOW THE WHOLE ITEM** (the P18 shape on the GPU): a batched
+     router over M rows, a per-expert row gather, an indexed batched GEMV. This one DOES need a new
+     `.cu` — `moe.ptx` is the audited 12.6.85 artifact and must stay untouched, the same way
+     `decode_splitkv.cu` and `router_f32.cu` were added beside it. NVRTC is available on this box
+     (`~/.venv-vl/…/libnvrtc.so.12`, `~/cuda-toolkit/…`), so `build_ptx.sh` runs. **On a model that
+     fits the card this is a compute lever; on M26 it is a DMA lever, and the DMA is 59.5%** — so it
+     is worth pre-registering the two cases separately rather than assuming one number covers both.
   3. **M35 additionally** needs a batched Gated-DeltaNet: 30 of its 40 layers are
      `linear_attention` with in-place recurrent state, which is a chunked delta-rule scan and real
      new math. It is the only part of this item that is not a restructuring.
@@ -159,10 +186,21 @@
   Amdahl projection twice this fortnight. `r.prof` only instruments the batched path, so the
   attribution seam has to be extended (or use `ncu`). **Measure the split before building to it.**
 
-  **Decision rule, pre-registered:** measure step 2 alone end-to-end on M26 at depth 8000, paired
-  and interleaved against today's sequential path. **Fund step 3 if step 2 lands ≥15%; park if
-  <8%; 8–15% is ambiguous → parked pending a profile that names a second mechanism.** The
-  do-nothing arm is the current sequential path and it is in the table above.
+  **~~Decision rule, pre-registered~~ — RESOLVED, AND THE RULE WAS MIS-SPECIFIED.** It read: measure
+  the attention-half slice end-to-end on M26 at depth 8000, paired and interleaved; fund
+  expert-major if it lands ≥15%, park if <8%, 8–15% ambiguous → parked pending a profile naming a
+  second mechanism. Measured **8.3–8.5% ⇒ ambiguous band**, and the profile above names the second
+  mechanism, so on its own terms the item continues.
+
+  Two things to record rather than gloss. **It was not evaluated as written**: the measurement was
+  in-process at M=512/2048, paired within one process but not interleaved and not at depth 8000 —
+  a close proxy (both arms are flat with depth) is not the same as the rule being satisfied.
+  **And its inference ran backwards.** "A small attention-half win ⇒ do not fund expert-major"
+  assumes the two halves compete for one bottleneck. They do not: a small attention-half win means
+  the experts dominate, which argues *for* expert-major. Per CLAUDE.md's own corollary the fix is a
+  second, independent pre-registration — for step 2 that means pre-registering the DMA-bytes
+  reduction and the wall-clock win separately, since on a model that fits the card only the second
+  exists.
 
   **Bit-identity is required, not optional.** Both landed precedents are bit-identical (P18 by
   preserving per-row rank-order folding; the CUDA chunking by construction over a positional KV),
