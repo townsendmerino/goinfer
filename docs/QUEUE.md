@@ -1542,7 +1542,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/main.go:598` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1061` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
-| `docs/queue-engineering.md|scripts/bench_peer.py:517` | goinfer | `def gate_cell_idle():` |
+| `docs/queue-engineering.md|scripts/bench_peer.py:617` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:973` | goinfer | `gpu.HostCopy{Dst: w.W.At(slot * w.perExpertW * 4), Src: srcW[wOff : wOff+wLen]},` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1124` | goinfer | `_, cr, out := g.run(cell{` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1207` | goinfer | `if cr.RC != 0 \|\| cr.vacuous() {` |
@@ -1597,7 +1597,7 @@ supports.
 | `docs/review-2026-09-04.md|pull/resolve.go:32` | goinfer | `func resolveOffline(ref Ref) (string, bool) {` |
 | `docs/review-2026-09-04.md|pull/resolve.go:55` | goinfer | `func Resolve(ctx context.Context, spec string, progress func(done, total int64)) (string` |
 | `docs/review-2026-09-04.md|scripts/bench_peer.py:40` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
-| `docs/review-2026-09-04.md|scripts/bench_peer.py:797` | goinfer | `# Keep whichever identifying keys the previous header actually had. A reconstructed` |
+| `docs/review-2026-09-04.md|scripts/bench_peer.py:919` | goinfer | `# Keep whichever identifying keys the previous header actually had. A reconstructed` |
 | `docs/review-2026-09-04.md|scripts/bench_peer_prefill.py:97` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
 | `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:28` | goinfer | `UNKEYABLE` |
 | `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:49` | goinfer | `def mapline(o):` |

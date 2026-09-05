@@ -933,7 +933,7 @@ marks where else the same class may live.
 rediscoveries** — unclaimed. Filed 2026-08-28.
 
 Within one day the same guard was arrived at twice, by different work, without either knowing about
-the other: `gate_cell_idle()` in `scripts/bench_peer.py:517` (re-check before every cell, refuse on
+the other: `gate_cell_idle()` in `scripts/bench_peer.py:617` (re-check before every cell, refuse on
 timeout), and a `settle()` in the snapshot-cost driver on the `linux` box. Both started as
 check-once-at-start, both were found insufficient the same way, and **both converged on the same
 non-obvious rule: refuse rather than proceed.**
