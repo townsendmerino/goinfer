@@ -997,14 +997,14 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/kernels.go:107` | goinfer | `// this box's NVRTC 12.9.86, not 12.6. moe.ptx was the audited 12.6.85 artifact (R-26) a` |
 | `docs/audit-2026-09-02.md|cuda/kernels.go:179` | goinfer | `func f32tof16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:271` | goinfer | `func (r *cudaResident) prefillStaticDecline() error {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:359` | goinfer | `func nonBatchableKind(Ly *cudaLayer) string {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:440` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:464` | goinfer | `var scratch []Buffer` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:582` | goinfer | `if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, ` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:591` | goinfer | `gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l)); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:739` | goinfer | `for m := first; m < M; m++ {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:792` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:807` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:377` | goinfer | `func nonBatchableKind(Ly *cudaLayer) string {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:458` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:482` | goinfer | `var scratch []Buffer` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:600` | goinfer | `if e := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1, ` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:609` | goinfer | `gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l)); e != nil {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:757` | goinfer | `for m := first; m < M; m++ {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:810` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:825` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1006` | goinfer | `if e := r.stream.Sync(); e != nil {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1022` | goinfer | `for j := 0; j < r.topK; j++ {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1348` | goinfer | `if r.prefillReady && r.dnet == nil {` |
@@ -1527,7 +1527,7 @@ supports.
 | `docs/queue-engineering.md|cmd/gate/gpu.go:423` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:1175` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-engineering.md|cuda/prefill.go:465` | goinfer | `defer func() {` |
+| `docs/queue-engineering.md|cuda/prefill.go:483` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:302` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:540` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |
 | `docs/queue-engineering.md|decoder/forwardn.go:1086` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
@@ -1553,7 +1553,7 @@ supports.
 | `docs/review-2026-09-04.md|constrain/reflect.go:78` | goinfer | `// V-14 (docs/review-2026-09-04.md): an anonymous field's reflect name IS its type` |
 | `docs/review-2026-09-04.md|cuda/backend.go:582` | goinfer | `if req := m.MoECacheSlotsRequest(); req > 0 && req < topK {` |
 | `docs/review-2026-09-04.md|cuda/drafter.go:471` | goinfer | `anchor: func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {` |
-| `docs/review-2026-09-04.md|cuda/prefill.go:339` | goinfer | `maxNWin := startPos + M` |
+| `docs/review-2026-09-04.md|cuda/prefill.go:357` | goinfer | `maxNWin := startPos + M` |
 | `docs/review-2026-09-04.md|cuda/resident.go:2443` | goinfer | `mustSplit := splitKVRequired(nWin)` |
 | `docs/review-2026-09-04.md|decoder/generate_vl.go:22` | goinfer | `// forget here was copy-pasted from a resident-path template and was doubly wrong: the` |
 | `docs/review-2026-09-04.md|decoder/lora.go:273` | goinfer | `case hasOwnForward:` |

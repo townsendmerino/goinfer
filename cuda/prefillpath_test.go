@@ -87,10 +87,27 @@ func TestPrefillPath_matchesPrefillCore(t *testing.T) {
 		{"int4", declineFixture(2, "int4")},
 		{"int8", declineFixture(2, "int8")},
 		{"kernels-unavailable", func() *cudaResident { r := declineFixture(2, "int4"); r.prefillReady = false; return r }()},
+		// moe / gemma4moe / non-uniform NO LONGER DECLINE — the MoE FFN runs per row off the batched
+		// residual and geometry is bound per layer. They stay in this list because the property under
+		// test is that the GUARD and the REPORT agree, whichever way they answer; a case that flipped
+		// from declining to batching still exercises that. The names say what the model is, not what
+		// the verdict is, so they do not go stale a second time.
 		{"moe", func() *cudaResident { r := declineFixture(2, "int4"); r.moe = true; return r }()},
 		{"gemma4moe", func() *cudaResident { r := declineFixture(2, "int4"); r.gemma4Moe = true; return r }()},
-		{"k-eq-v", func() *cudaResident { r := declineFixture(2, "int4"); r.layers[1].kEqV = true; return r }()},
 		{"non-uniform", func() *cudaResident { r := declineFixture(2, "int4"); r.layers[1].nKV = 1; return r }()},
+		// k-eq-v still declines, but for a NARROWER reason than before: K=V itself is handled now, and
+		// what is refused is a K=V layer with no v_norm unit weight to normalise with.
+		{"k-eq-v-no-vnorm", func() *cudaResident { r := declineFixture(2, "int4"); r.layers[1].kEqV = true; return r }()},
+		// A recurrent (Gated-DeltaNet) model whose layers ALSO carry valid int4 q/k/o. This is the
+		// case the weight-kind check cannot catch: qwen3_5_moe declines today only because its
+		// DeltaNet layers load no q/k/o, so the real guard was never exercised by any fixture. Here
+		// the projections are present and valid, so the ONLY thing that can refuse it is the
+		// recurrent-state check itself — remove that check and this case goes batched and wrong.
+		{"deltanet-with-projections", func() *cudaResident {
+			r := declineFixture(2, "int4")
+			r.dnet = &dnetParams{}
+			return r
+		}()},
 		{"mixed-quant-layer1", func() *cudaResident {
 			r := declineFixture(2, "int4")
 			r.layers[1].d.kind = "int8"
@@ -135,5 +152,37 @@ func TestPrefillPath_mixedInt4Int8Batches(t *testing.T) {
 	}
 	if !strings.Contains(why, "layer 2") {
 		t.Errorf("reason should locate the declining layer: %q", why)
+	}
+}
+
+// TestPrefillPath_recurrentDeclines pins the guard TestPrefillPath_matchesPrefillCore cannot: that
+// one asserts the guard and the report AGREE, so it stays green whichever way they answer, and a
+// deleted recurrent check would simply make both say "batched".
+//
+// The fixture is a Gated-DeltaNet model whose layers ALSO carry valid int4 q/k/o. Real qwen3_5_moe
+// does not look like this — its DeltaNet layers load no q/k/o at all, so nonBatchableKind reports
+// the absence and the model declines for a reason that has nothing to do with recurrence. That
+// accident is why no fixture ever exercised the real guard, and why the guard was missing here for
+// as long as `r.moe` happened to be refusing the same models. With the projections present, the
+// recurrent check is the ONLY thing that can refuse this, so deleting it turns this red.
+func TestPrefillPath_recurrentDeclines(t *testing.T) {
+	r := declineFixture(2, "int4")
+	r.dnet = &dnetParams{}
+	err := r.prefillStaticDecline()
+	if err == nil {
+		t.Fatal("a Gated-DeltaNet model was admitted to batched prefill — the recurrent state advances " +
+			"one token at a time and a batched pass would run M rows over it out of order, silently")
+	}
+	if !errors.Is(err, errPrefillDeclined) {
+		t.Errorf("recurrent decline must wrap errPrefillDeclined so the caller falls back: %v", err)
+	}
+	if !strings.Contains(err.Error(), "DeltaNet") {
+		t.Errorf("decline should name recurrence, not some incidental property: %q", err)
+	}
+	// And the same model WITHOUT the recurrent marker must still batch — otherwise this test would
+	// pass against a guard that refuses everything.
+	r2 := declineFixture(2, "int4")
+	if e := r2.prefillStaticDecline(); e != nil {
+		t.Fatalf("control: the same fixture without dnet must batch, got %v", e)
 	}
 }

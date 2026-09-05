@@ -176,6 +176,23 @@
      (`~/.venv-vl/…/libnvrtc.so.12`, `~/cuda-toolkit/…`), so `build_ptx.sh` runs. **On a model that
      fits the card this is a compute lever; on M26 it is a DMA lever, and the DMA is 59.5%** — so it
      is worth pre-registering the two cases separately rather than assuming one number covers both.
+  **A GUARD THAT EXISTED ONLY BY ACCIDENT, now explicit (2026-09-04).** Removing the categorical
+  `r.moe` refusal also removed the only thing keeping **M35** off the batched path — and the batched
+  pass has no notion of recurrent state, so a DeltaNet layer's conv ring and matrix state would have
+  been advanced M rows at a time, out of order. `ForwardN` had excluded this deliberately since it
+  was written (`r.prefillReady && r.dnet == nil`); `PrefillLast` never had to, because qwen3_5_moe is
+  MoE and `r.moe` was refusing it for an unrelated reason.
+
+  It was still refused after the change — but only because a DeltaNet layer loads no q/k/o, so
+  `nonBatchableKind` reported the absence. **That is a fact about this family's weight layout, not a
+  statement about recurrence**, and a hybrid whose recurrent layers also carried q/k/o would have
+  sailed past it into the dense attention stack: the LFM2 bug class (audit-2026-09-02 C-01), which
+  CLAUDE.md records as having reached `main` twice. `prefillStaticDecline` now refuses `r.dnet != nil`
+  for the reason that is true, gated by `TestPrefillPath_recurrentDeclines` — whose fixture is a
+  DeltaNet model *with* valid int4 q/k/o, precisely the case the accidental guard cannot catch, plus
+  a no-dnet control so the test cannot pass against a guard that refuses everything.
+  Mutation-proven: disabling the check turns it red.
+
   3. **M35 additionally** needs a batched Gated-DeltaNet: 30 of its 40 layers are
      `linear_attention` with in-place recurrent state, which is a chunked delta-rule scan and real
      new math. It is the only part of this item that is not a restructuring.

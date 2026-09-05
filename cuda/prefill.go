@@ -286,6 +286,24 @@ func (r *cudaResident) prefillStaticDecline() error {
 	if r.layerCap {
 		return fmt.Errorf("cuda prefill: per-layer residual capture is armed: %w", errPrefillDeclined)
 	}
+	// RECURRENT STATE (Gated-DeltaNet: qwen3_5_moe / qwen3_next). The batched path runs M rows in ONE
+	// pass over the weights, while a DeltaNet layer's conv ring and matrix state must advance strictly
+	// one token at a time and in order — no positional rewind restores them. ForwardN has excluded
+	// this explicitly since it was written (`r.prefillReady && r.dnet == nil`, resident.go); this path
+	// never did, and until MoE stopped declining categorically it never had to: qwen3_5_moe is MoE, so
+	// `r.moe` was refusing it for a reason that had nothing to do with recurrence.
+	//
+	// IT IS ALSO ALREADY REFUSED BY ACCIDENT, WHICH IS WHY THIS IS HERE. A DeltaNet layer loads no
+	// q/k/o (backend.go builds dnQKV/dnZ/dnOut instead), so nonBatchableKind reports the absence and
+	// the model declines — but that is a fact about THIS family's weight layout, not a statement about
+	// recurrence. A hybrid whose recurrent layers also carried q/k/o would sail past it and run the
+	// dense attention stack over them, which is exactly the LFM2 bug class (audit-2026-09-02 C-01,
+	// "a 2-token prompt ran the dense attention stack over conv layers that load no q/k/v/o") — a
+	// class CLAUDE.md records as having reached main twice. Refuse for the reason that is true.
+	if r.dnet != nil {
+		return fmt.Errorf("cuda prefill: Gated-DeltaNet recurrent state advances one token at a "+
+			"time and cannot be batched: %w", errPrefillDeclined)
+	}
 	// PER-LAYER geometry, not layer 0's hoisted and asserted uniform. The batched launches bind
 	// each layer's own hd/nKV/qDim/kvDim/rhalf exactly as the decode launches already do, and the
 	// M-sized scratch is sized by the MAX across layers — so a family whose layers differ (Gemma-4:
