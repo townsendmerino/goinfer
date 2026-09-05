@@ -1,0 +1,45 @@
+[
+ {
+  "kind": "provenance",
+  "cell": "S cpu-fast-attention on/off @ depth 8k",
+  "utc": "2026-09-05T06:06:27Z",
+  "goinfer_commit": "6095062",
+  "goinfer_tree_dirty": true,
+  "loadavg_at_start": [
+   0.92431640625,
+   1.255859375,
+   1.4296875
+  ],
+  "model": "1.5B",
+  "depth": 8000,
+  "serve_cpu_mtime": "2026-09-04T18:43:33Z"
+ },
+ {
+  "fast_attention": true,
+  "runs": [
+   16.95904625867644,
+   16.848806732993086,
+   16.886410434535428,
+   16.724596438808234,
+   16.766941426930945
+  ],
+  "mean": 16.84,
+  "spread": 0.23,
+  "ncomp": 8,
+  "nruns": 5
+ },
+ {
+  "fast_attention": false,
+  "runs": [
+   16.633851987105018,
+   16.61689805113646,
+   16.4609372906707,
+   16.48885025736584,
+   16.44850065339968
+  ],
+  "mean": 16.53,
+  "spread": 0.19,
+  "ncomp": 8,
+  "nruns": 5
+ }
+]
