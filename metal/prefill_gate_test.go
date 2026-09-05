@@ -202,6 +202,15 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 	}
 
 	// EXACT — sequential Forward per token, today's shipped default.
+	//
+	// Forward's return is a REUSED buffer (metal/model.go ForwardEmbPipe: "Returns logits[V]
+	// (reused buffer; consume before the next call)") — every capture below is cloned
+	// immediately. Storing the raw slice instead silently aliases whatever the LAST Forward call
+	// in the whole cell wrote, which is exactly the bug this comment is here to stop someone
+	// from reintroducing: it first shipped that way, and the seed and every continuation position
+	// all came back reading the same final buffer, producing a self-contradictory result (a
+	// "42% seed gap" while position 0 of the continuation — which SHOULD be the same comparison —
+	// quietly agreed).
 	lastLog := time.Now()
 	var exactSeed []float32
 	for i := 0; i < K; i++ {
@@ -209,7 +218,7 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 		if err != nil {
 			t.Fatalf("exact Forward pos=%d: %v", i, err)
 		}
-		exactSeed = lg
+		exactSeed = cloneF32(lg)
 		if time.Since(lastLog) > 20*time.Second {
 			fmt.Printf("[gate]   ... exact prefill K=%d at pos %d/%d\n", K, i+1, K)
 			lastLog = time.Now()
@@ -230,15 +239,17 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 		if err != nil {
 			t.Fatalf("exact continuation Forward pos=%d: %v", pos, err)
 		}
-		cur = lg
+		cur = cloneF32(lg)
 	}
 
 	// FAST — one batched PrefillLast over the same K embeddings, THEN teacher-forced continuation
-	// fed the reference's own tokens (not the fast path's own predictions) at each step.
+	// fed the reference's own tokens (not the fast path's own predictions) at each step. Cloned
+	// for the same reason as the exact pass above.
 	fastSeed, err := rf.PrefillLast(ctx, embs, 0)
 	if err != nil {
 		t.Fatalf("fast PrefillLast: %v", err)
 	}
+	fastSeed = cloneF32(fastSeed)
 	candLogits := make([][]float32, continuationN)
 	candLogits[0] = fastSeed
 	pos = K - 1
@@ -248,7 +259,7 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 		if err != nil {
 			t.Fatalf("fast continuation Forward pos=%d: %v", pos, err)
 		}
-		candLogits[i] = lg
+		candLogits[i] = cloneF32(lg)
 	}
 
 	seedAgree, seedGapPct, seedHardFail := decoder.NearTieArgmaxForTest(exactSeed, fastSeed)
@@ -276,6 +287,11 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 		meanContKL: klSum / float64(len(candLogits)),
 	}
 }
+
+// cloneF32 copies a logits slice at capture time. Forward/PrefillLast return REUSED buffers
+// (see runPrefillGateCell) — every value this test keeps past the next backend call must be a
+// copy, not the returned slice itself.
+func cloneF32(v []float32) []float32 { return append([]float32(nil), v...) }
 
 func prefillGateArgmax(v []float32) int {
 	bi, bv := 0, v[0]
