@@ -535,7 +535,7 @@ forward.** What is measured is that it does not pay *through the copy primitive 
 available*. Those read identically today and diverge completely once a passthrough exists.
 
 `aikit/gpu` exposes `Upload` and `Download` and no device-to-device copy, so a snapshot of state
-that is *already on the device* (`cuda/resident.go:275` — `dnWin`, `dnState`) has to cross PCIe to
+that is *already on the device* (`cuda/resident.go:276` — `dnWin`, `dnState`) has to cross PCIe to
 the host and come back: measured **5.0 GB/s**, about a third of the host memcpy rate. The primitive
 exists one layer down — `gocudrv`'s `memcpyDtoD` / `memcpyDtoDAsync`. The gap is plumbing, and the
 plumbing is worth ~18×.
@@ -635,7 +635,7 @@ synthetic-buffer projection above with an in-situ measurement, and the projectio
 
 Same call, same byte counts, same number of copies. The difference is **buffer layout**: the probe
 allocated its 36 buffers consecutively, so aikit's coalescing had adjacent pairs to merge. The real
-`dnWin`/`dnState` live at bind offsets inside the resident arena (`cuda/resident.go:268` calls them
+`dnWin`/`dnState` live at bind offsets inside the resident arena (`cuda/resident.go:269` calls them
 COMPOUND) interleaved with everything else the model allocated, so there is far less to coalesce.
 A figure measured through a primitive on synthetic buffers is not an integration cost — here the
 gap was 2.6×, not a rounding difference.

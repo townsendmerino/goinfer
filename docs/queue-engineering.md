@@ -330,7 +330,7 @@ invariant, not the invariant itself.
 | **A5 cap search** (`capSlots`) | **no — pure arithmetic.** `fits(n)` compares `slotRequirement(...)+slotMarginBytes` against `free`; nothing is allocated to probe | **CLEAN** |
 | **`allocSlots` failure** | **no.** OOM arrives as a panic from `MustBuf` and *the resident is discarded on decline* — context torn down | **CLEAN** |
 | **expert cache / KV growth** | no mid-life grow/resize path exists in `cuda/` | **CLEAN** |
-| **prefill scratch** (`cuda/prefill.go:290`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
+| **prefill scratch** (`cuda/prefill.go:465`) | **YES.** `scratch` is allocated per call and released by a deferred loop of `r.dev.ReleaseBuf(b)`, inside the live resident context. Its own comment: *"at M=3000 this is hundreds of MB"* | **NEEDS MEASUREMENT — see below** |
 
 **PREFILL SCRATCH IS THE ONE PATH THAT MATCHES THE POISONING CONDITION, and it ships.** Every long
 prompt allocates hundreds of MB of scratch and frees it without leaving the context. That is
@@ -747,7 +747,7 @@ prose**, which no lint covers and which drift silently. Already stale, checked:
 
 - `cuda/backend.go:1175` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
-- `cuda/resident.go:301` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
+- `cuda/resident.go:302` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
   line and a bare `decoder/weightmat.go` one. Both
   are aikit paths written as if they were local ones; the SHA lint learned this distinction for
@@ -763,7 +763,7 @@ replaced by the SIMD widen at `linalg/quant.go:216` (shifted from `:138` by the 
 v1.33.0 bump) once aikit v1.18.0/P2 landed and goinfer bumped to v1.19.0, 2026-08-15 — retargeted
 so the citation still resolves).
 
-**And one turned out not to be a line drift at all.** `cuda/resident.go:301` was cited for audit
+**And one turned out not to be a line drift at all.** `cuda/resident.go:302` was cited for audit
 C-08 — `_ = gpu.Upload(...)` discarding errors. That code is **gone**: `recordUpload` captures the
 first error into `r.setupErr` and the build declines gracefully. The citation was stale because the
 CLAIM was stale, and F2 had been listing a fixed critical as open. A line-number check would have
@@ -933,7 +933,7 @@ marks where else the same class may live.
 rediscoveries** — unclaimed. Filed 2026-08-28.
 
 Within one day the same guard was arrived at twice, by different work, without either knowing about
-the other: `gate_cell_idle()` in `scripts/bench_peer.py:471` (re-check before every cell, refuse on
+the other: `gate_cell_idle()` in `scripts/bench_peer.py:517` (re-check before every cell, refuse on
 timeout), and a `settle()` in the snapshot-cost driver on the `linux` box. Both started as
 check-once-at-start, both were found insufficient the same way, and **both converged on the same
 non-obvious rule: refuse rather than proceed.**
@@ -1149,7 +1149,7 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 |---|---|---|
 | C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
-| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:532` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:540` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
