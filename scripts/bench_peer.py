@@ -61,6 +61,10 @@ MLX_BIN = os.environ.get("MLX_SERVER_BIN", "mlx_lm.server")
 # with extra weight"). Populated per-model as pulled; a model key with no entry here is skipped by
 # plan_engines() rather than failing the whole sweep -- see run_cell's mlx branch.
 MLX_MODELS = {
+    # S / 1.5B, pulled 2026-09-04 (docs/task-peer-benchmarks.md tier-1/tier-2 base cell). Verified
+    # via HfApi.model_info before pulling, same as 7B/M35/M26 below.
+    "1.5B": os.path.expanduser(os.environ.get("MLX_MODEL_1_5B",
+        "~/models/mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit")),
     "7B": os.path.expanduser(os.environ.get("MLX_MODEL_7B",
         "~/models/mlx-community/Qwen2.5-7B-Instruct-4bit")),
     # Pulled 2026-09-04 once the disk-space blocker cleared (user archived unrelated checkpoints,
@@ -70,6 +74,11 @@ MLX_MODELS = {
         "~/models/mlx-community/Qwen3.5-35B-A3B-4bit")),
     "M26": os.path.expanduser(os.environ.get("MLX_MODEL_M26",
         "~/models/mlx-community/gemma-4-26b-a4b-it-4bit")),
+    # G20 / gpt-oss-20b, pulled 2026-09-04. mlx-community's canonical base-model conversion at Q4
+    # (11.2 GB, closest match to the GGUF's native MXFP4) -- NOT one of the several third-party
+    # fine-tuned "gpt-oss-20b-<name>-mxfp4" repos also on the hub, which are a different model.
+    "G20": os.path.expanduser(os.environ.get("MLX_MODEL_G20",
+        "~/models/mlx-community/gpt-oss-20b-MXFP4-Q4")),
 }
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
@@ -112,7 +121,14 @@ MODELS = {
     # -moe-cache-experts` loaded it CUDA-resident at 7269 MiB VRAM in ~90s). 20B total / ~3.6B
     # active MoE -- past the 8 GB card, hence MOE_MODELS membership below, but it is NOT in
     # GOINFER_MOE_PATH (no path substitution, no quant-flag omission -- see the is_moe split in
-    # run_cell's goinfer branch).
+    # run_cell's goinfer branch). goinfer's gpt_oss architecture is CPU-only today
+    # (decoder/registry.go, decoder/features.go FeatAttnSink: no resident CUDA/Metal/WebGPU
+    # backend declares it) -- on ANY box, the goinfer row for this cell MUST run with
+    # BENCH_BACKENDS=cpu, never metal/cuda; passing a resident backend here would exercise the
+    # SAME declined-residency fallback path that produced the M35/M26 catastrophic CPU-staged
+    # run on the Mac on 2026-09-04/05. Because the 13.8 GB checkpoint fits RAM outright on both
+    # boxes, a plain -backend cpu load needs no -stream-weights and is NOT the paging path that
+    # made that run slow -- it is goinfer's normal, fully-supported code path for this family.
     "G20": (os.path.expanduser("~/models/gpt-oss-20b-MXFP4.gguf"), "g20"),
 }
 
