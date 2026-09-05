@@ -54,7 +54,7 @@ func TestPrefillTTFT(t *testing.T) {
 
 	fmt.Printf("\nPREFILL TTFT — %s, int4, sequential (today's shipped default) vs batched PrefillLast\n", path)
 	fmt.Printf("%-6s %-16s %-16s %-10s\n", "P", "sequential_ms", "batched_ms", "speedup")
-	for _, p := range []int{128, 512, 1024, 2048} {
+	for _, p := range []int{256, 1024, 3900} {
 		embs := make([][]float32, p)
 		for i := range embs {
 			embs[i] = emb(i)
