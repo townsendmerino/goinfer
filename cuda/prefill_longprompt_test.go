@@ -112,6 +112,28 @@ func TestPrefillLongPrompt(t *testing.T) {
 		return embs
 	}
 
+	// C′ attribution. The expert cache DMAs routed experts host→VRAM per token, and on a model that
+	// exceeds the card that transfer — not the weight reads batching removes — may be the whole cost.
+	// Reported as a DELTA around each arm so the two are comparable; zero unless
+	// GOINFER_MOE_CACHE_PROF is set, in which case these lines are the attribution and the timings
+	// above them are what it explains.
+	cacheProf := func() (time.Duration, time.Duration, time.Duration, uint64) {
+		st, ho, dm, c := rf.CacheProfForTest()
+		return st, ho, dm, c
+	}
+	reportCache := func(tag string, st0, ho0, dm0 time.Duration, c0 uint64, wall time.Duration) {
+		st, ho, dm, c := cacheProf()
+		if c == c0 {
+			return // caching off, or profiling not enabled — say nothing rather than print zeros
+		}
+		bt, sy := rf.BatchProfForTest()
+		fmt.Fprintf(os.Stderr, "[longprompt]   %s C′: stall %s host %s dma %s over %d calls "+
+			"(batchTime %s, %d syncs) — %.1f%% of the %s arm\n",
+			tag, (st - st0).Round(time.Millisecond), (ho - ho0).Round(time.Millisecond),
+			(dm - dm0).Round(time.Millisecond), c-c0, bt.Round(time.Millisecond), sy,
+			100*float64((st-st0)+(ho-ho0)+(dm-dm0))/float64(wall), tag)
+	}
+
 	lengths := []int{512, 2048, 4096, 8012}
 	if v := os.Getenv("GOINFER_LONGPROMPT_LENGTHS"); v != "" {
 		lengths = nil
@@ -126,6 +148,7 @@ func TestPrefillLongPrompt(t *testing.T) {
 	for _, M := range lengths {
 		rf.Reset()
 		embs := build(M)
+		st0, ho0, dm0, c0 := cacheProf()
 		start := time.Now()
 		_, perr := rf.PrefillLast(embs, 0)
 		d := time.Since(start)
@@ -135,6 +158,7 @@ func TestPrefillLongPrompt(t *testing.T) {
 		}
 		fmt.Fprintf(os.Stderr, "[longprompt] M=%-5d batched OK %-10s (%.3f ms/token)\n",
 			M, d.Round(time.Millisecond), float64(d.Microseconds())/1000/float64(M))
+		reportCache("batched", st0, ho0, dm0, c0, d)
 	}
 
 	// Sequential reference at the SAME lengths, so the fallback's real cost is measured rather than
@@ -143,6 +167,7 @@ func TestPrefillLongPrompt(t *testing.T) {
 	for _, M := range lengths {
 		rf.Reset()
 		embs := build(M)
+		st0, ho0, dm0, c0 := cacheProf()
 		start := time.Now()
 		for i, e := range embs {
 			if err := rf.ForwardNoLogits(e, i); err != nil {
@@ -152,5 +177,6 @@ func TestPrefillLongPrompt(t *testing.T) {
 		d := time.Since(start)
 		fmt.Fprintf(os.Stderr, "[longprompt] M=%-5d SEQUENTIAL %-10s (%.3f ms/token)\n",
 			M, d.Round(time.Millisecond), float64(d.Microseconds())/1000/float64(M))
+		reportCache("sequential", st0, ho0, dm0, c0, d)
 	}
 }

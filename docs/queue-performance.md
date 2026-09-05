@@ -13,9 +13,15 @@
 
 ## What is open
 
-- **P20 · CUDA batched prefill for the MoE families — OPEN. The dense half of this landed
-  2026-09-04; M35 and M26 still ingest long prompts one token at a time, and they are the two
-  slowest cells in the peer matrix by wall clock.**
+- **P20 · CUDA batched prefill for the MoE families — M26 IS ON THE BATCHED PATH as of 2026-09-04,
+  bit-identical, and it is worth ~8%. The batching was never the bottleneck; the host→VRAM expert
+  DMA is. M35 remains sequential (it needs a batched Gated-DeltaNet). OPEN, redirected.**
+
+  **The one-line verdict, so a scanner does not have to reconstruct it:** all three blockers that
+  kept Gemma-4 off the batched prefill path are removed and none needed a new CUDA kernel; the
+  resulting speedup on the real 26B is 47.382 → 43.681 ms/token (M=512, same process, paired),
+  **1.085×**. That lands in the pre-registered AMBIGUOUS band, and the reason it is not larger is
+  the finding — see "What the 8% refutes" below.
 
   **What the W3 depth-8000 cells cost, measured** (`docs/measurements/peer-matrix-2026-09/nobara-w1-d7-m35-m26_2026-09-04.json`,
   the `secs` field — not the tok/s column, which is a different deficit):
@@ -26,10 +32,9 @@
   | M26 @ 8000 | **384.3 s** | 85.4 s | 67.0 s |
   | D7 @ 8000 | 200.7 s | 34.0 s | 22.8 s |
 
-  **`cuda/prefill.go`'s `prefillStaticDecline` refuses `r.moe || r.gemma4Moe` outright**, so
-  neither model has ever taken a batched pass. Every prompt token is one full forward: the
-  attention projections, the router, the shared expert and the dense branch all re-read their
-  weights per token, and only the routed experts have any reason to.
+  **~~`cuda/prefill.go`'s `prefillStaticDecline` refuses `r.moe || r.gemma4Moe` outright~~ — removed
+  2026-09-04.** A MoE layer's FFN now runs row by row off the batched residual, so the attention
+  half batches while the routed experts keep decode's exact per-token sequence.
 
   **The prize is bounded from two directions, both measured, neither on this path.** On CUDA's
   dense path the same restructuring is worth **12.480 → 2.777 ms/token** at shallow depth and
@@ -68,9 +73,10 @@
   ~5× on the weight term at shallow depth), 46.5 ms/token → ~20, i.e. the 6.4 min cell → ~2.8 min,
   with expert-major on top taking it further. **Do not quote those two numbers as results.**
 
-  **Three of the five flags are already handled and two are not, which is smaller than it looked.**
-  `sandwich` and `qkNorm` are batched today (`rmsnorm_f32_batched` / `qk_norm_batched`) and
-  `nonBatchableKinds` is empty — every projection is int4/int8. What actually blocks:
+  **Three of the five flags were already handled and two were not, which was smaller than it
+  looked.** `sandwich` and `qkNorm` are batched today (`rmsnorm_f32_batched` / `qk_norm_batched`).
+  `nonBatchableKinds` read empty, but partly as an artifact — see the sentinel note under (3), now
+  fixed. What blocked, and where each stands:
 
   1. ~~**Per-layer geometry — 5 layers of 30.**~~ **DONE 2026-09-04.** `prefillCore` no longer
      hoists layer 0's `hd/nKV/qDim/kvDim/rhalf`; each launch binds its own layer's, and the M-sized
@@ -80,7 +86,7 @@
      `segA` uses: a second k-projection GEMV into the V buffer, then a scale-less `qk_norm` over it
      before `rope_kv_batched` rotates k. No new kernel — `r.bGemvB` and `r.bQKN` already take an M
      dimension.
-  3. **The FFN — THE REMAINING BLOCKER.** Gemma-4's parallel dense‖MoE branch
+  3. ~~**The FFN.**~~ **DONE 2026-09-04, route (a).** Gemma-4's parallel dense‖MoE branch
      (`gemma4MoeMLPPre/Post`) and the generic `moeMLPPre/Post` read and write `r.x`, the M=1
      residual, and so does everything between them (`segB`, `layerTail`, `segC`). Two ways in, and
      the choice matters:
@@ -95,9 +101,20 @@
        capture `r.x` into `gSegB`/`gSegC`. Safe only while prefill never replays graphs, which is
        true today and is not a property anything asserts.
 
-     **(a) is the recommendation**, with (b) acceptable only behind an assertion that graphs are not
-     in play. Either way the routed experts still run per row, so this slice wins the attention half
-     and nothing else — which is the point of measuring it on its own before funding expert-major.
+     **(a) was taken.** The residual buffer is now a parameter of `segB` / `segBFFN` / `layerTail` /
+     `segC` / `moeMLPPre/Post` / `gemma4MoeMLPPre/Post` (17 `r.x` references), decode passes `r.x`
+     unchanged, and prefill passes `xB.At(m*hidden*4)`. The routed experts still run per row, so this
+     wins the attention half and nothing else — which is exactly what step 2 is measured against.
+
+     **ONE REGRESSION THIS INTRODUCES, not yet fixed.** `Prefiller.PrefillLast` takes no
+     `context.Context`, so a chunk is uncancellable once started. The sequential loop it replaces
+     checks `ctx.Err()` **per token** — G18 put that there because "an abandoned client leaves the
+     whole prompt streaming through the device". On M26 at ~46 ms/token a 512-row chunk is ~23 s of
+     work that cannot be interrupted, against ~46 ms before. Not a correctness bug and not new to
+     MoE (the dense batched path had it too, at ~2.8 ms/token × 512 ≈ 1.4 s), but MoE is where it
+     becomes user-visible. The fix is an optional ctx-aware Prefiller variant checked between rows
+     and between chunks; filed here rather than bolted on, because it is an interface change and the
+     decoder side has to move with it.
 
      **A trap that goes LIVE the moment the `r.moe` decline is removed.** `nonBatchableKind` returns
      the first projection whose kind is neither int4 nor int8 — and an ABSENT weight has kind `""`,

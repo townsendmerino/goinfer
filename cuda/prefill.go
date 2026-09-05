@@ -272,8 +272,19 @@ func (r *cudaResident) prefillStaticDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
-	if r.moe || r.gemma4Moe {
-		return fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe): %w", errPrefillDeclined)
+	// MoE is no longer a categorical refusal: a MoE layer's FFN runs ROW BY ROW off the batched
+	// residual (prefillCore), so the attention half batches and the routed experts keep the exact
+	// per-token sequence decode uses. What must still decline are the PER-TOKEN DEBUG SEAMS, which
+	// that row loop would fire M times per layer instead of once: hidCapTaps records one residual
+	// per tap per TOKEN for a block drafter, and layerCap appends one snapshot per layer for the
+	// divergence probe. Both would silently return M× the rows their consumers expect. Declining
+	// sends those runs down the sequential path, where their semantics are the ones they were
+	// written against.
+	if len(r.hidCapTaps) > 0 {
+		return fmt.Errorf("cuda prefill: per-token hidden-state taps are armed: %w", errPrefillDeclined)
+	}
+	if r.layerCap {
+		return fmt.Errorf("cuda prefill: per-layer residual capture is armed: %w", errPrefillDeclined)
 	}
 	// PER-LAYER geometry, not layer 0's hoisted and asserted uniform. The batched launches bind
 	// each layer's own hd/nKV/qDim/kvDim/rhalf exactly as the decode launches already do, and the
@@ -346,8 +357,32 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int) error {
 // else (e.g. a native/f32 projection) declines. Naming the kind turns "declined" into an actionable
 // startup message.
 func nonBatchableKind(Ly *cudaLayer) string {
-	for _, w := range []cudaWQ{Ly.q, Ly.k, Ly.v, Ly.o, Ly.g, Ly.u, Ly.d} {
+	// CHECK EXACTLY THE PROJECTIONS THIS LAYER'S BATCHED PATH WILL BIND, and no others. Two of them
+	// are legitimately ABSENT on shapes that now reach here, and an absent weight has kind "" —
+	// which this function used to return and its caller reads as "no problem" (`if k := …; k != ""`).
+	// That made the check pass vacuously rather than catch anything, so tightening the sentinel
+	// without narrowing the list would swap a silent hole for a wrong refusal:
+	//
+	//   - Ly.v is absent on a K=V layer (V is derived from the k projection), and
+	//   - Ly.g/u/d are absent on a pure-MoE layer, whose FFN runs per row through doG on the
+	//     expert stacks and never touches a dense gate/up/down.
+	//
+	// The expert stacks themselves are deliberately NOT checked: the per-row MoE FFN issues exactly
+	// decode's launches on exactly decode's weights, so whatever kind decode accepts, it accepts
+	// here. Only the M-wide GEMVs (bGemvB, int4/int8 only) constrain anything, and those are the
+	// attention projections plus a dense layer's gate/up/down.
+	ws := []cudaWQ{Ly.q, Ly.k, Ly.o}
+	if !Ly.kEqV {
+		ws = append(ws, Ly.v)
+	}
+	if !Ly.g4moe && !Ly.isMoE {
+		ws = append(ws, Ly.g, Ly.u, Ly.d)
+	}
+	for _, w := range ws {
 		if w.kind != "int4" && w.kind != "int8" {
+			if w.kind == "" {
+				return "absent/unquantized"
+			}
 			return w.kind
 		}
 	}
@@ -582,43 +617,77 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 				return e
 			}
 			r.profToc(gemvCat, t)
-			t = r.profTic()
-			if e := r.bRmsB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
-				return e
-			}
-			r.profToc(glueCat, t)
-			t = r.profTic()
-			if e := r.bGemvB(Ly.g, mqB, mScB, ArgNull(), gOb, M, 0); e != nil {
-				return e
-			}
-			if e := r.bGemvB(Ly.u, mqB, mScB, ArgNull(), uOb, M, 0); e != nil {
-				return e
-			}
-			r.profToc(gemvCat, t)
-			t = r.profTic()
-			if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-				Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
-				gpu.ArgValue(r.act), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
-				return e
-			}
-			r.profToc(glueCat, t)
-			t = r.profTic()
-			if r.sandwich {
-				// down → temp (accum=0), Gemma post-MLP RMSNorm per row, then add to residual.
-				if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+
+			// --- FFN. Dense batches; MoE runs ROW BY ROW off the batched residual. ---
+			//
+			// The routed-expert GEMVs are indexed by a DEVICE-side routing decision that differs per
+			// token, so there is no M-wide form of them without an expert-major gather and a new
+			// kernel (queue-performance P20 step 2). What there IS, for free, is the attention half
+			// above: on Gemma-4-26B-A4B the attention projections are ~45% of the per-token weight
+			// traffic and the dense FFN branch another ~25%, all of it re-read once per token on the
+			// sequential path and once per PASS here.
+			//
+			// aikit/gpu.Buffer.At gives a zero-copy sub-view that binds as a raw device pointer, so
+			// row m of the batched residual IS a valid single-row residual for the existing per-token
+			// FFN chain — segBFFN → layerTail → segC, the same calls decode makes, in the same order,
+			// including the g4x2 accumulator clear and the C′ routed-expert DMA. Nothing about the
+			// expert path changes; it simply no longer drags the attention weights along with it.
+			//
+			// gC=false: prefill never replays captured graphs (a graph bakes r.x, and these rows are
+			// not r.x). The per-token debug seams layerTail also carries — hidCapTaps, layerCap —
+			// would fire M times per layer here, which is why prefillStaticDecline refuses a model
+			// with either armed rather than quietly returning M× the rows they expect.
+			if Ly.g4moe || Ly.isMoE {
+				t = r.profTic()
+				for m := 0; m < M; m++ {
+					xm := xB.At(m * hidden * 4)
+					if e := r.segBFFN(Ly, l, xm); e != nil {
+						return e
+					}
+					if e := r.layerTail(Ly, l, false, xm); e != nil {
+						return e
+					}
+				}
+				r.profToc(gemvCat, t)
+			} else {
+				t = r.profTic()
+				if e := r.bRmsB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
 					return e
 				}
-				if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
+				r.profToc(glueCat, t)
+				t = r.profTic()
+				if e := r.bGemvB(Ly.g, mqB, mScB, ArgNull(), gOb, M, 0); e != nil {
 					return e
 				}
-				if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-					Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+				if e := r.bGemvB(Ly.u, mqB, mScB, ArgNull(), uOb, M, 0); e != nil {
 					return e
 				}
-			} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
-				return e
+				r.profToc(gemvCat, t)
+				t = r.profTic()
+				if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+					Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
+					gpu.ArgValue(r.act), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+					return e
+				}
+				r.profToc(glueCat, t)
+				t = r.profTic()
+				if r.sandwich {
+					// down → temp (accum=0), Gemma post-MLP RMSNorm per row, then add to residual.
+					if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+						return e
+					}
+					if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
+						return e
+					}
+					if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+						Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+						return e
+					}
+				} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
+					return e
+				}
+				r.profToc(gemvCat, t)
 			}
-			r.profToc(gemvCat, t)
 			// BATCHED HIDDEN-STATE CAPTURE (P10). The per-token seam (capVec) syncs and
 			// downloads once per TAP PER TOKEN; a block drafter needs the taps for every token
 			// the verify commits, so on this path that is 5 taps x M tokens of stalls. Here the

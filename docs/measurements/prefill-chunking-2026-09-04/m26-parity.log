@@ -1,0 +1,7 @@
+=== RUN   TestPrefillMoE_real26B
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.8 GB free — capping to 12 (1.3 GB)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: layers=30 moe=30 (r.moe=true r.gemma4Moe=true cacheExperts=true)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: 0/262144 logits differ (max |diff| 0)
+--- PASS: TestPrefillMoE_real26B (70.13s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	70.529s

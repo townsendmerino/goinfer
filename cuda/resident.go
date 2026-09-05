@@ -1750,10 +1750,10 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 // the router (logits → top-k idx/wgt, left on the device). It ends exactly at the point where the
 // cacheExperts path must read rIdx back to the host — so this half is graph-static (segB), and the
 // loadRoutedExperts D2H stays live in the gap between segB and segC.
-func (r *cudaResident) moeMLPPre(Ly *cudaLayer) error {
+func (r *cudaResident) moeMLPPre(Ly *cudaLayer, x Buffer) error {
 	// Explicit rmsnorm, NOT the fused fGU path: the fused kernel folds the norm into the dense
 	// gate/up GEMV and never writes r.mq, but the router needs that quantized activation too.
-	if e := r.rms(r.x, Ly.postNorm, r.mq, r.mSc); e != nil {
+	if e := r.rms(x, Ly.postNorm, r.mq, r.mSc); e != nil {
 		return e
 	}
 	// Router logits (one block per expert row) → top-k idx/wgt, both left on the device. The
@@ -1903,7 +1903,7 @@ func (r *cudaResident) launchGluSplitExpert(gu Buffer, inter int, outQ, outSc, o
 // ARITHMETIC on r.expIdx(), so the launch geometry is identical regardless of routing — the property
 // that makes this graph-static) weight-accumulating into the residual r.x, then the always-on shared
 // expert. The cacheExperts readback (if any) has already filled the slots when this runs.
-func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
+func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 	gu := 2 * r.moeInter
 	for j := 0; j < r.topK; j++ {
 		// gate‖up for the routed expert, in ONE indexed GEMV: the stack interleaves each
@@ -1933,7 +1933,7 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 				Arg(r.expIdx()), Arg(r.expertBiasIdx()), Arg(db), Arg(r.rWgt),
 				gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),
 				gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
-				Arg(r.x)); e != nil {
+				Arg(x)); e != nil {
 				return e
 			}
 		} else if e := r.launch(r.fMoEWacc, LaunchConfig{GridX: uint32((r.hidden + 7) / 8), GridY: 1, GridZ: 1,
@@ -1941,7 +1941,7 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 			Arg(Ly.expDown.W), Arg(r.moeQ), Arg(Ly.expDown.ws16), Arg(r.moeSc),
 			Arg(r.expIdx()), Arg(r.rWgt), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),
 			gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
-			Arg(r.x)); e != nil {
+			Arg(x)); e != nil {
 			return e
 		}
 	}
@@ -1971,7 +1971,7 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 			gl, ungated = r.shGl, 0
 		}
 		if e := r.launch(r.fSharedCombine, g1cfg(r.hidden, 256),
-			Arg(r.x), Arg(r.shDownOut), Arg(gl), gpu.ArgValue(int32(r.hidden)),
+			Arg(x), Arg(r.shDownOut), Arg(gl), gpu.ArgValue(int32(r.hidden)),
 			gpu.ArgValue(ungated)); e != nil {
 			return e
 		}
@@ -1996,11 +1996,11 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer) error {
 // (→ g4x1), the router (on RAW h → idx/wgt with the per-expert scale folded in), and the expert-branch
 // input norm (xe → mq/mSc). It ends before the g4x2 accumulator clear + the cacheExperts readback,
 // both of which stay live in the segB→segC gap (an H2D and, optionally, a D2H — neither capturable).
-func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int) error {
+func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 	nullBias := ArgNull()
 
 	// --- dense branch → g4x1 ---
-	if e := r.rms(r.x, Ly.g4preFFN, r.mq, r.mSc); e != nil { // xd = preFFNNorm(h), int8
+	if e := r.rms(x, Ly.g4preFFN, r.mq, r.mSc); e != nil { // xd = preFFNNorm(h), int8
 		return e
 	}
 	if e := r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0); e != nil {
@@ -2021,7 +2021,7 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int) error {
 	}
 
 	// --- router (on RAW h): rmsnorm_nw → gemv_f32_f32(folded proj) → moe_route → per-expert-scale fold ---
-	if e := r.launch(r.fRmsNW, onecfg(256, 256*4), Arg(r.x), Arg(r.g4rn), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps)); e != nil {
+	if e := r.launch(r.fRmsNW, onecfg(256, 256*4), Arg(x), Arg(r.g4rn), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps)); e != nil {
 		return e
 	}
 	if e := r.launch(r.fRouterF32, LaunchConfig{GridX: uint32(r.nE), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
@@ -2041,13 +2041,13 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int) error {
 
 	// xe = preFFNNorm2(h); reuse mq/mSc (dense branch done with them). This is the last static op
 	// before the gap: launchToken clears g4x2 (H2D) and, if caching, reads back the routing (D2H).
-	return r.rms(r.x, Ly.g4preFFN2, r.mq, r.mSc)
+	return r.rms(x, Ly.g4preFFN2, r.mq, r.mSc)
 }
 
 // gemma4MoeMLPPost issues the post-readback half: the expert loop accumulating into the (already
 // cleared) g4x2, its post-norm, and the join — sum x1+x2, joint post-norm, add the residual h, then
 // the per-layer scalar. g4x2 was zeroed and the expert slots filled in the gap before this runs.
-func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int) error {
+func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int, x Buffer) error {
 	gu := 2 * r.moeInter
 	for j := 0; j < r.topK; j++ {
 		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
@@ -2097,10 +2097,10 @@ func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int) error {
 	if e := r.normF32(r.g4x1, Ly.g4postFFN); e != nil { // x1 = postFFNNorm(x1 + x2)
 		return e
 	}
-	if e := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.g4x1), gpu.ArgValue(int32(r.hidden))); e != nil { // r.x = h + comb
+	if e := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.g4x1), gpu.ArgValue(int32(r.hidden))); e != nil { // x = h + comb
 		return e
 	}
-	return r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(r.x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))) // r.x *= layerScalar
+	return r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))) // x *= layerScalar
 }
 
 // segA / segB / segC are the three graph-STATIC launch runs of one layer, factored out of
@@ -2197,7 +2197,7 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 // segB: context-quant + o-proj (accum into the residual, or sandwich-norm then add) + the MLP up to
 // the router readback — the whole dense MLP for a dense layer (no readback gap, segC is nil), or the
 // MoE pre-readback half (moeMLPPre / gemma4MoeMLPPre) for a routed layer.
-func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
+func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 	if Ly.qGate { // ctx *= sigmoid(gate), before o_proj (matches the CPU qwen35Attention)
 		if err := r.launch(r.dnAttnGate, g1cfg(Ly.qDim, 256),
 			Arg(r.cctx), Arg(r.dnAGate), gpu.ArgValue(int32(Ly.qDim))); err != nil {
@@ -2225,20 +2225,20 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int) error {
 			return err
 		}
 	}
-	return r.segBFFN(Ly, l)
+	return r.segBFFN(Ly, l, x)
 }
 
 // segBFFN is segB's FFN half, split out so the Gated-DeltaNet mixer can reuse it. The mixer
 // replaces everything segB does BEFORE this point (ctx-quant, o-proj, residual) and nothing after
 // it: a DeltaNet layer's FFN sub-block is the ordinary one, dense or MoE, and the router readback
 // gap + segC that follow in launchToken are likewise unchanged.
-func (r *cudaResident) segBFFN(Ly *cudaLayer, l int) error {
+func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	nullBias := ArgNull()
 	if Ly.g4moe {
-		return r.gemma4MoeMLPPre(Ly, l)
+		return r.gemma4MoeMLPPre(Ly, l, x)
 	}
 	if Ly.isMoE {
-		return r.moeMLPPre(Ly)
+		return r.moeMLPPre(Ly, x)
 	}
 	// Dense MLP (whole): no readback gap, so segC is nil for this layer.
 	if r.fuseQKV {
@@ -2246,7 +2246,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int) error {
 			BlockX: 256, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 		if e := r.launch(r.fGU, cfg,
-			Arg(r.x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+			Arg(x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
 			gpu.ArgValue(r.addOneArg()),
 			Arg(Ly.g.W), Arg(Ly.g.ws16),
 			Arg(Ly.u.W), Arg(Ly.u.ws16),
@@ -2255,7 +2255,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int) error {
 			return e
 		}
 	} else {
-		if err := r.rms(r.x, Ly.postNorm, r.mq, r.mSc); err != nil {
+		if err := r.rms(x, Ly.postNorm, r.mq, r.mSc); err != nil {
 			return err
 		}
 		if err := r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0); err != nil {
@@ -2282,22 +2282,22 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int) error {
 		if r.subCap {
 			r.capVec(r.dO, r.subMLPC, l, r.hidden)
 		}
-		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(r.x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); err != nil {
+		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); err != nil {
 			return err
 		}
-	} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.x, 1); e != nil {
+	} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, x, 1); e != nil {
 		return e
 	}
 	return nil
 }
 
 // segC: the post-readback MoE half (expert loop + combine/join). nil for a dense layer.
-func (r *cudaResident) segC(Ly *cudaLayer, l int) error {
+func (r *cudaResident) segC(Ly *cudaLayer, l int, x Buffer) error {
 	if Ly.g4moe {
-		return r.gemma4MoeMLPPost(Ly, l)
+		return r.gemma4MoeMLPPost(Ly, l, x)
 	}
 	if Ly.isMoE {
-		return r.moeMLPPost(Ly)
+		return r.moeMLPPost(Ly, x)
 	}
 	return nil
 }
@@ -2323,14 +2323,14 @@ func (r *cudaResident) captureGraphs() error {
 				if err := r.deltaNetMixer(Ly, ll); err != nil {
 					return err
 				}
-				return r.segBFFN(Ly, ll)
+				return r.segBFFN(Ly, ll, r.x)
 			})
 			if e != nil {
 				return fmt.Errorf("layer %d deltanet mixer+ffn: %w", l, e)
 			}
 			r.layers[l].gSegA = gM
 			if Ly.g4moe || Ly.isMoE {
-				gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll) })
+				gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll, r.x) })
 				if e != nil {
 					return fmt.Errorf("layer %d segC: %w", l, e)
 				}
@@ -2342,13 +2342,13 @@ func (r *cudaResident) captureGraphs() error {
 		if e != nil {
 			return fmt.Errorf("layer %d segA: %w", l, e)
 		}
-		gB, e := r.stream.Capture(func() error { return r.segB(Ly, ll) })
+		gB, e := r.stream.Capture(func() error { return r.segB(Ly, ll, r.x) })
 		if e != nil {
 			return fmt.Errorf("layer %d segB: %w", l, e)
 		}
 		r.layers[l].gSegA, r.layers[l].gSegB = gA, gB
 		if Ly.g4moe || Ly.isMoE {
-			gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll) })
+			gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll, r.x) })
 			if e != nil {
 				return fmt.Errorf("layer %d segC: %w", l, e)
 			}
@@ -2397,11 +2397,11 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 				if e := r.deltaNetMixer(Ly, l); e != nil {
 					return e
 				}
-				if e := r.segBFFN(Ly, l); e != nil {
+				if e := r.segBFFN(Ly, l, r.x); e != nil {
 					return e
 				}
 			}
-			if e := r.layerTail(Ly, l, gC); e != nil {
+			if e := r.layerTail(Ly, l, gC, r.x); e != nil {
 				return e
 			}
 			continue
@@ -2490,13 +2490,13 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 					return err
 				}
 			}
-		} else if e := r.segB(Ly, l); e != nil {
+		} else if e := r.segB(Ly, l, r.x); e != nil {
 			return e
 		}
 		// --- dynamic gap: clear the g4moe accumulator (H2D), then, if caching, read the routing back
 		// to the host and DMA the routed experts into their VRAM slots (D2H+H2D). Host copies, not
 		// graph-capturable; synchronous, so the slots are filled before segC replays.
-		if e := r.layerTail(Ly, l, gC); e != nil {
+		if e := r.layerTail(Ly, l, gC, r.x); e != nil {
 			return e
 		}
 	}
@@ -2783,7 +2783,7 @@ func (r *cudaResident) deltaNetMixer(Ly *cudaLayer, l int) error {
 // the C′ expert DMA, segC, and the two capture seams. Split out so the Gated-DeltaNet mixer path
 // rejoins it instead of duplicating it — a DeltaNet layer's FFN can be MoE (qwen3_5_moe,
 // qwen3_next) and would otherwise skip the router readback entirely.
-func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool) error {
+func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error {
 	if Ly.g4moe {
 		// segC(l-1) writes AND reads g4x2 on r.stream (CU_STREAM_NON_BLOCKING); gpu.Upload runs the
 		// zero-fill copy on the context's legacy null stream, which has NO ordering vs r.stream
@@ -2814,7 +2814,7 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool) error {
 					return err
 				}
 			}
-		} else if e := r.segC(Ly, l); e != nil {
+		} else if e := r.segC(Ly, l, x); e != nil {
 			return e
 		}
 	}
@@ -2822,7 +2822,7 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool) error {
 	if len(r.hidCapTaps) > 0 {
 		for slot, tap := range r.hidCapTaps {
 			if tap == l {
-				r.capVec(r.x, r.hidCapOut, slot, r.hidden)
+				r.capVec(x, r.hidCapOut, slot, r.hidden)
 				break
 			}
 		}
@@ -2832,7 +2832,7 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool) error {
 			return err
 		}
 		h := make([]float32, r.hidden)
-		if err := gpu.Download(r.x, h); err != nil {
+		if err := gpu.Download(x, h); err != nil {
 			return err
 		}
 		r.layerCapBuf = append(r.layerCapBuf, h)
