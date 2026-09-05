@@ -1,0 +1,50 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-09-05T05:10:41Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "goinfer_commit": "2e6e6d9",
+  "goinfer_tree_dirty": true,
+  "cpu_count": 8,
+  "ram_gb": 16,
+  "loadavg_at_start": [1.33, 1.41, 1.56],
+  "gpu": null,
+  "note": "Single-request smoke test only, per docs/task-peer-benchmarks.md's G20 safety protocol -- watch vm_stat/memory pressure before proceeding to a full sweep. It did not proceed."
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "G20",
+  "checkpoint": "~/models/gpt-oss-20b-MXFP4.gguf",
+  "quant": "int4 (requested; MoE experts stay native MXFP4 regardless -- goinfer's gpt_oss architecture is CPU-only, decoder/registry.go)",
+  "depth": 128,
+  "config": "greedy",
+  "sent": {"temperature": 0, "max_tokens": 16},
+  "runs": null,
+  "error": "declined: CPU decode of a 13.8 GB MXFP4 model induces severe swap pressure (22.6-22.9 GB used of a 23.5 GB dynamic swap file, on a 16 GB machine) on this Mac, killed before a real measurement could be taken -- not a timeout or crash, a real capability boundary. Same failure CLASS as M35/M26's CPU-staged fallback (mac-m1pro-m35m26-tier1-2026-09-04.json), even though this cell used a plain -backend cpu load with no -stream-weights and the checkpoint nominally fits the machine's RAM on paper. In practice the rest of what is normally running on this Mac (browser, Mail, Google Drive, residual post-reboot Spotlight indexing, OS baseline) leaves well under 13.8 GB of real headroom, so the model's working set does not fit once the whole system is counted, and macOS resorts to heavy disk-backed swapping rather than an OOM kill. docs/task-peer-benchmarks.md's own framing of G20 as \"fits the Mac, not the card\" does not hold on THIS machine tonight -- this is a measured, machine-specific finding, not a re-litigation of the doc's scoping in general.",
+  "machine": {
+    "loadavg_at_launch": [1.33, 1.41, 1.56],
+    "loadavg_during_request": [4.20, 2.37, 1.91],
+    "gpu": null
+  },
+  "memory": {
+    "model_load_secs": 91.7,
+    "single_request_secs": 75,
+    "single_request_max_tokens": 16,
+    "server_process_rss_mb_range": [2249, 4300],
+    "swap_before_mb": 0,
+    "swap_peak_used_mb": 23379,
+    "swap_peak_total_mb": 24576,
+    "swap_after_kill_used_mb": 3014,
+    "swapins_pages_16kb": 1651102,
+    "swapouts_pages_16kb": 3113484,
+    "process_state_during_request": "UN (uninterruptible I/O wait)",
+    "vm_stat_log": "see companion .log file for the full per-5s trace"
+  },
+  "secs": 174,
+  "action_taken": "server killed cleanly after the single smoke-test request completed; swap released immediately (23.4GB -> 3.0GB used). No crash, no hang, no kernel panic -- caught and stopped before it became one. Ollama/llama.cpp/MLX legs of G20 were NOT attempted: same checkpoint size against the same 16GB RAM constraint could reproduce the same or worse pressure, and after tonight's kernel panic this is not a call to make unilaterally by trying it.",
+  "disposition": "G20 is PARKED on this Mac for the remainder of tonight's session, in any form (CPU, Metal, partial-context, or otherwise) -- treated the same as M35/M26/H27."
+ }
+]

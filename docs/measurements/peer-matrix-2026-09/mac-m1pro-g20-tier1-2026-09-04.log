@@ -1,0 +1,92 @@
+=== G20 smoke test started 2026-09-04 22:10:41 PDT ===
+--- vm_stat BEFORE launch ---
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                    93740.
+Pages active:                                 329229.
+Pages inactive:                               299218.
+Pages speculative:                             27858.
+Pages throttled:                                   0.
+Pages wired down:                             108342.
+Pages purgeable:                                5301.
+"Translation faults":                       47123045.
+Pages copy-on-write:                         3064533.
+Pages zero filled:                          28782462.
+Pages reactivated:                           1498891.
+Pages purged:                                 361466.
+File-backed pages:                            270302.
+Anonymous pages:                              386003.
+Pages stored in compressor:                   301782.
+Pages occupied by compressor:                 150624.
+Decompressions:                               929055.
+Compressions:                                1515051.
+Pageins:                                     1987094.
+Pageouts:                                      24416.
+Swapins:                                           0.
+Swapouts:                                          0.
+vm.swapusage: total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)
+server pid: 35476
+[t=0s] free_pages=93114 compressor_pages=150624 server_rss_kb=32 total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)
+[t=5s] free_pages=4400 compressor_pages=262789 server_rss_kb=3898944 total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)
+[t=10s] free_pages=3931 compressor_pages=536781 server_rss_kb=3990416 total = 1024.00M  used = 445.62M  free = 578.38M  (encrypted)
+[t=15s] free_pages=3584 compressor_pages=536298 server_rss_kb=4151168 total = 5120.00M  used = 4670.81M  free = 449.19M  (encrypted)
+[t=20s] free_pages=3742 compressor_pages=534926 server_rss_kb=4136496 total = 8192.00M  used = 7525.06M  free = 666.94M  (encrypted)
+[t=25s] free_pages=3299 compressor_pages=560412 server_rss_kb=3756592 total = 11264.00M  used = 10837.44M  free = 426.56M  (encrypted)
+[t=31s] free_pages=3966 compressor_pages=538303 server_rss_kb=4108928 total = 12288.00M  used = 11864.81M  free = 423.19M  (encrypted)
+[t=36s] free_pages=3744 compressor_pages=538272 server_rss_kb=4400752 total = 14336.00M  used = 13523.81M  free = 812.19M  (encrypted)
+[t=41s] free_pages=3863 compressor_pages=539877 server_rss_kb=4348336 total = 16384.00M  used = 15986.75M  free = 397.25M  (encrypted)
+[t=46s] free_pages=19591 compressor_pages=535091 server_rss_kb=4053696 total = 20480.00M  used = 19413.31M  free = 1066.69M  (encrypted)
+[t=51s] free_pages=3880 compressor_pages=536971 server_rss_kb=4283280 total = 21504.00M  used = 20719.31M  free = 784.69M  (encrypted)
+[t=56s] free_pages=3807 compressor_pages=535344 server_rss_kb=3992816 total = 21504.00M  used = 20946.19M  free = 557.81M  (encrypted)
+[t=61s] free_pages=4407 compressor_pages=534332 server_rss_kb=4056160 total = 22528.00M  used = 21320.06M  free = 1207.94M  (encrypted)
+[t=66s] free_pages=4471 compressor_pages=533878 server_rss_kb=4218464 total = 23552.00M  used = 22342.06M  free = 1209.94M  (encrypted)
+[t=71s] free_pages=4336 compressor_pages=536833 server_rss_kb=4020768 total = 23552.00M  used = 22484.69M  free = 1067.31M  (encrypted)
+[t=76s] free_pages=4549 compressor_pages=535470 server_rss_kb=3865456 total = 23552.00M  used = 22849.12M  free = 702.88M  (encrypted)
+[t=81s] free_pages=4577 compressor_pages=536750 server_rss_kb=3749328 total = 23552.00M  used = 23034.31M  free = 517.69M  (encrypted)
+[t=86s] free_pages=4060 compressor_pages=536075 server_rss_kb=3725168 total = 23552.00M  used = 23150.50M  free = 401.50M  (encrypted)
+[t=92s] free_pages=3821 compressor_pages=537772 server_rss_kb=3834528 total = 24576.00M  used = 23297.25M  free = 1278.75M  (encrypted)
+loaded "bench": 24-layer model (vocab 201088) in 1m31.707s [chat: harmony]
+  decode path: cpu (int4)
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: backend default · KV f32
+  session reuse: on (4 conversations kept prefilled)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+goinfer serving on http://127.0.0.1:8299 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) [derived from context window]
+[t=97s] free_pages=3687 compressor_pages=537488 server_rss_kb=2302192 total = 24576.00M  used = 23379.00M  free = 1197.00M  (encrypted)
+port up at t=97s
+--- sending ONE smoke-test completion request ---
+{"choices":[{"finish_reason":"length","index":0,"message":{"content":"\u003c|channel|\u003eanalysis\u003c|message|\u003eThe user says: \"Say hello in one short sentence.\" They","role":"assistant"}}],"created":1788585138,"id":"chatcmpl-de22c726cbaa05a0cc117f3243a30c8c","model":"bench","object":"chat.completion","usage":{"prompt_tokens":74,"completion_tokens":16,"total_tokens":90}}
+
+request took 75s
+--- vm_stat AFTER request ---
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                     4246.
+Pages active:                                 177349.
+Pages inactive:                               173783.
+Pages speculative:                              2842.
+Pages throttled:                                   0.
+Pages wired down:                             118887.
+Pages purgeable:                                 328.
+"Translation faults":                       56003767.
+Pages copy-on-write:                         3150737.
+Pages zero filled:                          31419828.
+Pages reactivated:                           5465426.
+Pages purged:                                 412618.
+File-backed pages:                             72927.
+Anonymous pages:                              281047.
+Pages stored in compressor:                  2299457.
+Pages occupied by compressor:                 531855.
+Decompressions:                              5658075.
+Compressions:                                8323707.
+Pageins:                                     2800790.
+Pageouts:                                      24901.
+Swapins:                                     1651102.
+Swapouts:                                    3113484.
+vm.swapusage: total = 23552.00M  used = 22875.06M  free = 676.94M  (encrypted)
+--- killing server pid 35476 ---
+
+shutting down…
+=== G20 smoke test finished 2026-09-04 22:13:35 PDT ===
