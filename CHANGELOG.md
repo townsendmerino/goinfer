@@ -217,6 +217,67 @@ any surface may still change.
   `tokens_per_chunk` diagnostic per cell so the assumption is a recorded number rather than an
   inherited belief.
 
+### Performance
+
+- **CUDA batched prefill now covers MoE and non-uniform-geometry models, and no longer OOM-declines
+  on long prompts — bit-identical throughout.** Three things kept M26 (Gemma-4-26B-A4B) and
+  similar families on the one-forward-per-token sequential path:
+  - **Per-layer geometry and K=V.** `prefillCore` hoisted layer 0's head/KV dims into every launch
+    (Gemma-4's local/global layers differ), and its global layers have no `v_proj` (V is
+    `v_norm(k_proj)`, handled here as a second k-projection GEMV into the V buffer). Neither needed
+    a new kernel. `TestPrefillNonUniform_bitIdentical`: 0/256 logits differ vs the sequential path
+    on a fixture with both shapes at once; mutation-proven (dropping the v_norm reddens 255/256).
+  - **The MoE FFN guard.** `r.moe || r.gemma4Moe` is gone — a MoE layer's FFN now runs row-by-row
+    off the batched residual (attention batches, routed experts keep decode's exact per-token
+    order). **+8.0–8.5% end-to-end on real M26** (43.7→43.4 ms/tok at M=512/2048), against a 2.3×
+    parameter-count projection that was wrong for a measured reason: M26's expert stack exceeds
+    the card, so the host→VRAM expert DMA is **59.5% of prefill wall-clock and identical in both
+    arms** (`GOINFER_MOE_CACHE_PROF=1`) — batching removed VRAM weight-reads that were never the
+    constraint. `TestPrefillMoE_real26B`: 0/262,144 logits differ, equality not tolerance
+    (routing is a discrete argmax, so a small numeric drift runs a different expert, not a
+    slightly-off one); mutation-proven (binding row 0 for every row reddens 4095/4096).
+  - **Chunking.** Batched prefill was all-or-nothing on `M`, with `O(M×inter)` device scratch — an
+    8012-token prompt on an 8 GB card (D7 int4 at `-ctx 8192`, the peer-benchmark harness's own
+    deep cell) OOM'd on its first allocation and silently fell back to sequential, **4× slower,
+    with `PrefillPath()` still reporting "batched"** because it reads static properties, not the
+    per-call decline. Now runs in passes of ≤512 rows with a KV-only tail on non-final passes; an
+    OOM retries at half width from the same position, and the surviving width is remembered on the
+    resident. **8012-token D7: 153.9s → 50.9s, 3.02×.** `TestPrefillChunked_bitIdentical`:
+    real 1.5B, 0/151,936 seed logits differ and 8 greedy decode steps match id-for-id;
+    mutation-proven (an off-by-one position reddens all 151,936 logits).
+  - `PrefillPath()` now states chunk width instead of claiming "one pass"; a call-time decline
+    warns once via `warnPrefillDeclined`.
+  - **Does not touch M35** (Qwen3.6-35B-A3B): 30 of its 40 layers are Gated-DeltaNet with in-place
+    recurrent state, which needs a chunked delta-rule scan, not this batching — see the Fixed
+    entry below for why that boundary matters. See `docs/measurements/prefill-moe-m26-2026-09-04.md`,
+    `docs/measurements/prefill-chunking-d7-2026-09-04.md`.
+
+### Fixed
+
+- **A batched-prefill change above accidentally removed the only thing keeping Gated-DeltaNet
+  models off it — caught and fixed the same night, before any shipped row was actually wrong.**
+  Removing the categorical `r.moe` refusal also removed the sole guard keeping M35 (`qwen3_5_moe`)
+  off the batched path, which has no notion of recurrent state: a Gated-DeltaNet layer's conv ring
+  and matrix state must advance strictly one token at a time, in order, and a batched pass would
+  advance them `M` rows at a time and return plausible-but-wrong logits. `ForwardN` already
+  excluded this deliberately (`r.prefillReady && r.dnet == nil`); the new `PrefillLast` path never
+  had to, because `r.moe` happened to be refusing M35 for an unrelated reason.
+  - **No shipped commit was actually unsafe — checked, not assumed.** A DeltaNet layer loads no
+    q/k/o (it builds `dnQKV`/`dnZ`/`dnOut` instead), so the same commit's `nonBatchableKind` fix
+    (an absent weight had been reported as kind `""`, read by its caller as "no problem") still
+    caught M35 by coincidence and declined it. **That was an accident of this family's weight
+    layout, not a guard**: a hybrid whose recurrent layers also carried q/k/o would have sailed
+    past the weight-kind check into the dense attention stack — the same silent-wrong-computation
+    bug class as the LFM2 incidents (`docs/audit-2026-09-02.md` C-01), which has reached `main`
+    twice before.
+  - `prefillStaticDecline` now refuses `r.dnet != nil` directly, for the true reason. New fixture,
+    `TestPrefillPath_recurrentDeclines`: a synthetic DeltaNet model **with valid int4 q/k/o** — the
+    one shape the accidental guard could not have caught, and which no real checkpoint here
+    produces, so the real guard had never been exercised by anything before this. Carries a
+    no-`dnet` control and is mutation-proven (disabling the check turns it red).
+    `TestPrefillPath_matchesPrefillCore` could not have caught this on its own: it asserts the
+    guard and the report agree, so deleting the check just makes both sides say "batched" together.
+
 ## [v0.15.0] — 2026-08-27
 
 **CPU decode roughly doubled on Apple Silicon, the Gated-DeltaNet family went GPU-resident on two
