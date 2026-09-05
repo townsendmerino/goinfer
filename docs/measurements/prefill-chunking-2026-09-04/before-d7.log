@@ -1,0 +1,39 @@
+=== RUN   TestPrefillLongPrompt
+[longprompt] loading /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ...
+[longprompt] loaded in 36.774s
+[longprompt] PrefillPath(load-time) = true — batched (one weight-stationary CUDA pass)
+[longprompt] hidden=3584 inter=18944 layers=28 ctxCap=8192
+[longprompt] VRAM free=1.96 GB of 8.16 GB after load
+[longprompt] M=512   batched OK 1.421s     (2.776 ms/token)
+[longprompt] M=2048  batched OK 7.256s     (3.543 ms/token)
+[longprompt] M=4096  batched OK 18.187s    (4.440 ms/token)
+[longprompt] M=8012  DECLINED after 20ms      : cuda prefill: out of device memory for M=8012 scratch (cuda prefill: batched path declined (arch/geometry)): cuda: executor job panicked: cuda: device allocation failed (typed-len, 607117312 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 50 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1197 +0x3d
+panic({0xbc3c40?, 0x490dc866010?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x48ea04e8050, 0x242fe000, 0x90bf800, {0x845857, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.32.0/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.32.0/cuda.go:418
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).af(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:517
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1.2(...)
+	/home/francis/mycode/goinfer/cuda/prefill.go:295
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1()
+	/home/francis/mycode/goinfer/cuda/prefill.go:305 +0x184e
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1200 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:605 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 7
+	/home/francis/mycode/goinfer/cuda/backend.go:601 +0x39e5
+
+[longprompt] M=512   SEQUENTIAL 6.392s     (12.485 ms/token)
+[longprompt] M=2048  SEQUENTIAL 28.364s    (13.850 ms/token)
+--- PASS: TestPrefillLongPrompt (98.83s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	99.272s

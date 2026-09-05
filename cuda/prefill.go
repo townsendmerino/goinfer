@@ -5,6 +5,8 @@ package cuda
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,46 @@ import (
 // errPrefillDeclined) to distinguish "this arch can't batch, use the slow path" (recoverable) from
 // "the batched kernels failed" (propagate). Wrapped into each decline so the message stays specific.
 var errPrefillDeclined = errors.New("cuda prefill: batched path declined (arch/geometry)")
+
+// errPrefillOOM narrows errPrefillDeclined to the one decline that is a function of M rather than of
+// the model: the [M, inter]-sized scratch prefillCore allocates did not fit beside the weights and
+// the KV. It is wrapped alongside errPrefillDeclined (so every existing errors.Is check keeps its
+// meaning) purely so prefillChunked can tell "this prompt is too long for one pass, halve it" from
+// "this model can never batch", which must not be retried at all.
+var errPrefillOOM = errors.New("cuda prefill: M-sized scratch did not fit")
+
+// prefillDefaultChunk is the default number of prompt rows per batched pass.
+//
+// WHY CHUNKING EXISTS. prefillCore's scratch is O(M·inter): at Qwen2.5-7B's inter=18944 it is
+// ~278 KB per row, so an 8k prompt asks for 2.28 GB on top of the weights and the KV. MEASURED on
+// this box (RTX 2070 SUPER, 8 GB, qwen2.5-7b-instruct-q4_k_m at int4, ResidentContext=8192, 1.96 GB
+// free after load — docs/measurements/prefill-chunking-2026-09-04/):
+//
+//	M=512   batched     2.776 ms/token      M=512   sequential  12.485 ms/token
+//	M=2048  batched     3.543 ms/token      M=2048  sequential  13.850 ms/token
+//	M=4096  batched     4.440 ms/token
+//	M=8012  DECLINED — cuMemAlloc_v2 CUDA_ERROR_OUT_OF_MEMORY on the 607 MB gate buffer
+//
+// So the batched path passed its LOAD-time report ("batched (one weight-stationary CUDA pass)") and
+// then declined every prompt long enough to need it, falling back — silently, since
+// residentPrefillSeed discards the decline — to the ~4.5× slower per-token loop. The failure grows
+// with the prompt: it is exactly the deep-context cell where TTFT matters most that lost the path.
+//
+// WHY 512. The per-token cost above is a + b·(average attended keys), and attention is charged per
+// position against its own prefix whatever the chunking, so chunk size buys nothing there — it only
+// sets how many times each weight is re-read. Fitting the three batched points gives a ≈ 2.52
+// ms/token of weight+glue work and b ≈ 1.0 µs/key; at 512 rows each weight is already amortized
+// 512-fold, which is within a hair of the M→∞ limit, and the scratch is ~146 MB rather than 2.3 GB.
+// A 2048-token prompt therefore costs the same chunked as it did in one pass (predicted 3.54 vs
+// measured 3.543 ms/token), so this is not a trade against the lengths that already worked.
+// GOINFER_PREFILL_CHUNK overrides it (0 or unset = this default).
+const prefillDefaultChunk = 512
+
+// prefillMinChunk is the floor prefillChunked halves down to before giving up and letting the caller
+// take the sequential path. At 32 rows each weight is still read once per 32 tokens rather than once
+// per token, so the floor is set by diminishing returns and not by correctness; below it the batched
+// path's fixed per-pass cost stops paying for itself.
+const prefillMinChunk = 32
 
 // prefillProf accumulates PrefillLast's per-category GPU time (test-only). The boundaries are stream
 // syncs, so the category sum slightly exceeds the pipelined wall time (lost launch overlap) — it
@@ -76,11 +118,83 @@ func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
 // layer 0; a non-uniform family trips the guard and declines rather than reading a wrong stride.
 // PrefillLast ingests a whole prompt in one batched pass, returning the last token's logits.
 func (r *cudaResident) PrefillLast(embeddings [][]float32, startPos int) ([]float32, error) {
-	outs, _, err := r.prefillCore(embeddings, startPos, tailLastLogits)
-	if err != nil {
-		return nil, err
+	return r.prefillChunked(embeddings, startPos)
+}
+
+// prefillChunkRows is the row budget for one batched pass — prefillDefaultChunk unless
+// GOINFER_PREFILL_CHUNK says otherwise. An unparseable or non-positive value is ignored rather than
+// failing the request: this is a tuning knob on a path that has a correct fallback, so a typo in it
+// must not be the thing that takes a model off the fast path.
+func prefillChunkRows() int {
+	if n, err := strconv.Atoi(os.Getenv("GOINFER_PREFILL_CHUNK")); err == nil && n > 0 {
+		return n
 	}
-	return outs[len(outs)-1], nil
+	return prefillDefaultChunk
+}
+
+// prefillChunked runs the prompt through the batched path in passes of at most prefillChunkRows()
+// rows, returning the LAST row's logits. Every pass writes its own K/V at absolute positions
+// startPos+i…, and attention reads the cache — so pass k attends the keys passes 0…k-1 wrote exactly
+// as one M=len pass would have, and the result is bit-identical to the unchunked path
+// (TestPrefillChunked_bitIdentical). What changes is only the peak scratch, which is what the
+// unchunked path ran out of.
+//
+// A chunk that OOMs is retried at half the width from the SAME position: the passes already done are
+// committed to the positional KV and stay valid, so a retry re-enters at the boundary rather than
+// restarting. Only errPrefillOOM is retried; a static decline is M-independent and would spin, so it
+// is checked once up front and returned.
+//
+// NOT CHUNKED when a batched hidden-state capture is armed (r.capBTaps): those taps record the
+// residual for ALL M rows of one pass, and a chunked run would leave a block drafter holding the last
+// chunk's rows only. That combination is not reachable today — the capture is armed by the verify
+// entry points, not by PrefillLast — but a partial capture would be a silent wrong answer rather than
+// a slow one, so it declines to one pass instead of being merely documented as unreachable.
+func (r *cudaResident) prefillChunked(embeddings [][]float32, startPos int) ([]float32, error) {
+	M := len(embeddings)
+	if M == 0 {
+		return nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	chunk := prefillChunkRows()
+	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
+		chunk = learned // a previous prompt already found the default too wide for this card
+	}
+	if e := r.prefillStaticDecline(); e != nil {
+		return nil, e
+	}
+	if M <= chunk || len(r.capBTaps) > 0 {
+		outs, _, err := r.prefillCore(embeddings, startPos, tailLastLogits)
+		if err != nil {
+			return nil, err
+		}
+		return outs[len(outs)-1], nil
+	}
+	for i := 0; i < M; {
+		n := chunk
+		if i+n > M {
+			n = M - i
+		}
+		last := i+n == M
+		tail := tailKVOnly
+		if last {
+			tail = tailLastLogits
+		}
+		outs, _, err := r.prefillCore(embeddings[i:i+n], startPos+i, tail)
+		if err != nil {
+			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
+				chunk = max(chunk/2, prefillMinChunk)
+				r.prefillChunkCap.Store(int64(chunk)) // remember: do not re-OOM on the next prompt
+				continue                              // same i: nothing was committed by the pass that failed to allocate
+			}
+			return nil, err
+		}
+		if last {
+			return outs[len(outs)-1], nil
+		}
+		i += n
+	}
+	// Unreachable: the i+n==M pass returns above. Kept as a real error rather than a panic so a
+	// future edit to the loop bounds surfaces as a decline the caller can survive.
+	return nil, fmt.Errorf("cuda prefill: chunked loop ended without heading the last row (M=%d)", M)
 }
 
 // PrefillLastN is the D1 (speculative-decode) verify primitive: the SAME batched pass, but returns
@@ -232,7 +346,12 @@ func nonBatchableKind(Ly *cudaLayer) string {
 func (r *cudaResident) PrefillPath() (bool, string) {
 	err := r.prefillStaticDecline()
 	if err == nil {
-		return true, "batched (one weight-stationary CUDA pass)"
+		// Say ROWS PER PASS, not "one pass". The report is read as a promise about how a long prompt
+		// is ingested, and a prompt past the chunk width is now several weight-stationary passes over
+		// the positional KV rather than one — same numbers (TestPrefillChunked_bitIdentical), bounded
+		// scratch. Claiming "one pass" was what let the O(M·inter) OOM decline hide behind a green
+		// startup line for every prompt long enough to matter.
+		return true, fmt.Sprintf("batched (weight-stationary CUDA passes of up to %d rows)", prefillChunkRows())
 	}
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
@@ -251,6 +370,10 @@ const (
 	tailLastLogits = iota // head the LAST row only (PrefillLast)
 	tailAllLogits         // head every row, per-row loop, full logits (PrefillLastN)
 	tailAllArgmax         // batched head over all rows, return argmax ids (PrefillLastNArgmax)
+	tailKVOnly            // no head at all: the pass exists only to commit K/V (prefillChunked's
+	// non-final chunks). It is the batched twin of the sequential path's
+	// ForwardNoLogits — the final norm, the ~389 M-parameter head GEMV and the
+	// [M, hidden] readback are all dead work for a chunk whose logits nobody reads.
 )
 
 func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail int) ([][]float32, []int, error) {
@@ -485,6 +608,12 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 		if e := r.stream.Sync(); e != nil {
 			return e
 		}
+		// KV-only chunk: the layer stack has run and its K/V is committed, which is the entire point
+		// of a non-final chunk. Return before the [M, hidden] readback and the head. The sync above
+		// has already drained the launches, so r.launchErr is complete here.
+		if tail == tailKVOnly {
+			return r.launchErr
+		}
 		if e := gpu.Download(xB, xhost); e != nil {
 			return e
 		}
@@ -525,7 +654,7 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 		// ~9×-slower sequential path. Errors that are already declines (static guards, checkCap) keep
 		// their own wrapping.
 		if strings.Contains(err.Error(), "device allocation failed") && !errors.Is(err, errPrefillDeclined) {
-			return nil, nil, fmt.Errorf("cuda prefill: out of device memory for M=%d scratch (%w): %v", M, errPrefillDeclined, err)
+			return nil, nil, fmt.Errorf("cuda prefill: out of device memory for M=%d scratch (%w; %w): %v", M, errPrefillDeclined, errPrefillOOM, err)
 		}
 		return nil, nil, err
 	}

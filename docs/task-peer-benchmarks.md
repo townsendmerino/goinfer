@@ -159,6 +159,17 @@ W1 to W4. Rows that read badly are reported at full value with their mechanism n
 known (FreeToken's hybrid execution on M35, MLX's fused attention at 32k) — a peer row is a
 measurement, not a verdict, and the ones goinfer loses are the roadmap.
 
+**Report the cell's wall clock separately from its tok/s, because on the deep cells they say
+different things.** W3 depth-8000 on `nobara-pc` measured goinfer at 21.4 (M35) and 15.5 (M26)
+tok/s against llama.cpp's 30.8 and 22.7 — a DECODE deficit — while the same cells took 1528.8 s and
+384.3 s of wall clock against llama.cpp's 61.7 s and 67.0 s, which is a PREFILL deficit and moves
+none of those tok/s figures. Two causes, two items: the prefill half is queue-performance **P20**
+(the MoE families never take a batched pass; the dense half of it landed 2026-09-04, see
+`docs/measurements/prefill-chunking-d7-2026-09-04.md`), and the decode half belongs with the
+attention-at-depth work P19 already characterizes — goinfer's marginal cost per token rises with
+KV depth where the peers' stays flat. Quoting either number alone attributes the whole gap to
+whichever mechanism the reader already had in mind.
+
 ## 9. Sources
 
 `docs/benchmarks.md` (Methodology, B5/B10), `scripts/bench_peer.py`, `docs/ollama-chase.md`,

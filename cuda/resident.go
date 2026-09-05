@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -419,15 +420,22 @@ type cudaResident struct {
 	dnQSplit, dnAttnGate                     Pipeline // the family's fused double-width q_proj + output gate
 	dnet                                     *dnetParams
 
-	gptOssSw                                                Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
-	gptOssRoute                                             Pipeline // route_gptoss — top-k + softmax over the BIASED logits (moe_route's contract is wrong for this family)
-	gptOssAlpha, gptOssLimit                                float32
-	gptOssSinks                                             []Buffer     // [layer] → [nH] learned per-head attention sink logits
-	gptOssDownBias                                          []Buffer     // [layer] → [nExpert*hidden] per-expert down-projection bias
-	gptOssExpBias                                           []Buffer     // [layer] → [nExpert·2·moeInter] gate‖up biases, indexed on-device by the router
-	splitkvAttn                                             bool         // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
-	skMinKeys                                               int          // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
-	prefillReady                                            bool         // batched kernels loaded; PrefillLast usable
+	gptOssSw                 Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
+	gptOssRoute              Pipeline // route_gptoss — top-k + softmax over the BIASED logits (moe_route's contract is wrong for this family)
+	gptOssAlpha, gptOssLimit float32
+	gptOssSinks              []Buffer // [layer] → [nH] learned per-head attention sink logits
+	gptOssDownBias           []Buffer // [layer] → [nExpert*hidden] per-expert down-projection bias
+	gptOssExpBias            []Buffer // [layer] → [nExpert·2·moeInter] gate‖up biases, indexed on-device by the router
+	splitkvAttn              bool     // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
+	skMinKeys                int      // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
+	prefillReady             bool     // batched kernels loaded; PrefillLast usable
+	// prefillChunkCap is prefillChunked's LEARNED row budget: 0 until a pass OOMs, then the width
+	// that worked. It exists so a card that cannot hold the default chunk is discovered ONCE rather
+	// than on every prompt. Repeatedly driving the context to CUDA_ERROR_OUT_OF_MEMORY is not merely
+	// wasteful: per backend.go's A13 note a context taken to refusal and kept in use can afterwards
+	// launch kernels that "return SUCCESS and execute NOTHING". Atomic because prefillChunked runs on
+	// the CALLER's goroutine (only the per-pass job is serialized through the executor).
+	prefillChunkCap                                         atomic.Int64
 	prof                                                    *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias

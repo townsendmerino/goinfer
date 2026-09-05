@@ -1,0 +1,25 @@
+=== bit-identity gate (2026-09-04T22:07:19-07:00) ===
+=== RUN   TestPrefillChunked_bitIdentical
+[chunked] chunk=4096   M=1024 prefill 874ms
+[chunked] chunk=256    M=1024 prefill 824ms
+[chunked] chunk=300    M=1024 prefill 826ms
+--- PASS: TestPrefillChunked_bitIdentical (10.22s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	10.284s
+=== AFTER: chunked (default 512) (2026-09-04T22:07:31-07:00) ===
+=== RUN   TestPrefillLongPrompt
+[longprompt] loading /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ...
+[longprompt] loaded in 25.351s
+[longprompt] PrefillPath(load-time) = true — batched (one weight-stationary CUDA pass)
+[longprompt] hidden=3584 inter=18944 layers=28 ctxCap=8192
+[longprompt] VRAM free=1.96 GB of 8.16 GB after load
+[longprompt] M=512   batched OK 1.421s     (2.776 ms/token)
+[longprompt] M=2048  batched OK 7.255s     (3.542 ms/token)
+[longprompt] M=4096  batched OK 18.952s    (4.627 ms/token)
+[longprompt] M=8012  batched OK 52.017s    (6.492 ms/token)
+[longprompt] M=512   SEQUENTIAL 6.393s     (12.486 ms/token)
+[longprompt] M=2048  SEQUENTIAL 28.369s    (13.852 ms/token)
+--- PASS: TestPrefillLongPrompt (140.17s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	140.650s
+=== ALL DONE (2026-09-04T22:09:52-07:00) ===

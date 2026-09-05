@@ -845,6 +845,30 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 // See docs/task-batched-prefill-bitidentity.md.
 // from is the first position to compute: prompt[:from] is already committed to the resident
 // KV (prefix reuse, resident_reuse.go) and positions carry through unchanged because the cache
+// prefillDeclineOnce keeps warnPrefillDeclined to one line per process.
+var prefillDeclineOnce sync.Once
+
+// warnPrefillDeclined reports, ONCE, that a backend's batched prefill refused a prompt at call time
+// and this prompt (and every one after it) is being ingested one token at a time instead.
+//
+// It exists because the load-time report and the runtime behaviour could disagree with nothing
+// saying so. PrefillPath() answers from the model's static properties, so a serve banner and
+// /v1/models both said "batched (one weight-stationary CUDA pass)" while every long prompt hit an
+// M-dependent decline — the CUDA scratch is O(M·inter), and an 8k prompt on an 8 GB card asked for
+// 2.28 GB it did not have. Measured on qwen2.5-7b at int4: the fallback runs at 12.5 ms/token
+// against the batched path's 2.8, and the only visible symptom was a slow benchmark cell.
+// prefillChunked now keeps that case on the fast path, so this should be rare — which is exactly why
+// it is worth a line when it happens rather than another silent 4.5×.
+//
+// Stderr and not an error: the fallback is CORRECT, just slow, and failing the request over a
+// performance decline would be worse than serving it.
+func warnPrefillDeclined(n int, err error) {
+	prefillDeclineOnce.Do(func() {
+		fmt.Fprintf(os.Stderr, "goinfer: batched prefill declined for a %d-token prompt, falling back to "+
+			"the per-token path (slower TTFT; this is reported once): %v\n", n, err)
+	})
+}
+
 // is positional. from == 0 is the cold path.
 func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
@@ -859,9 +883,11 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int)
 			}
 			// startPos is why the batched path needs no change for reuse: it already
 			// places the run at an offset.
-			if lg, perr := pf.PrefillLast(embs, from); perr == nil {
+			lg, perr := pf.PrefillLast(embs, from)
+			if perr == nil {
 				return lg, nil
 			}
+			warnPrefillDeclined(len(suffix), perr)
 		}
 	}
 	// KV-only prefill: prompt[:-1] tokens need only their K/V in the cache — skip the LM head

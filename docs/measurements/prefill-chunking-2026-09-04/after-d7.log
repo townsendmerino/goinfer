@@ -1,0 +1,17 @@
+=== RUN   TestPrefillLongPrompt
+[longprompt] loading /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ...
+[longprompt] loaded in 25.804s
+[longprompt] PrefillPath(load-time) = true — batched (weight-stationary CUDA passes of up to 512 rows)
+[longprompt] hidden=3584 inter=18944 layers=28 ctxCap=8192
+[longprompt] VRAM free=1.96 GB of 8.16 GB after load
+[longprompt] M=512   batched OK 1.422s     (2.777 ms/token)
+[longprompt] M=2048  batched OK 7.274s     (3.552 ms/token)
+[longprompt] M=4096  batched OK 19.003s    (4.639 ms/token)
+[longprompt] M=8012  batched OK 50.938s    (6.358 ms/token)
+[longprompt] M=512   SEQUENTIAL 6.39s      (12.480 ms/token)
+[longprompt] M=2048  SEQUENTIAL 28.422s    (13.878 ms/token)
+[longprompt] M=4096  SEQUENTIAL 1m4.164s   (15.665 ms/token)
+[longprompt] M=8012  SEQUENTIAL 2m33.92s   (19.211 ms/token)
+--- PASS: TestPrefillLongPrompt (357.89s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	358.038s

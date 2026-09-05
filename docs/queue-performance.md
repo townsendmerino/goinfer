@@ -13,6 +13,71 @@
 
 ## What is open
 
+- **P20 · CUDA batched prefill for the MoE families — OPEN. The dense half of this landed
+  2026-09-04; M35 and M26 still ingest long prompts one token at a time, and they are the two
+  slowest cells in the peer matrix by wall clock.**
+
+  **What the W3 depth-8000 cells cost, measured** (`docs/measurements/peer-matrix-2026-09/nobara-w1-d7-m35-m26_2026-09-04.json`,
+  the `secs` field — not the tok/s column, which is a different deficit):
+
+  | cell | goinfer | Ollama | llama.cpp |
+  |---|---|---|---|
+  | M35 @ 8000 | **1528.8 s** | 86.1 s | 61.7 s |
+  | M26 @ 8000 | **384.3 s** | 85.4 s | 67.0 s |
+  | D7 @ 8000 | 200.7 s | 34.0 s | 22.8 s |
+
+  **`cuda/prefill.go`'s `prefillStaticDecline` refuses `r.moe || r.gemma4Moe` outright**, so
+  neither model has ever taken a batched pass. Every prompt token is one full forward: the
+  attention projections, the router, the shared expert and the dense branch all re-read their
+  weights per token, and only the routed experts have any reason to.
+
+  **The prize is bounded from two directions, both measured, neither on this path.** On CUDA's
+  dense path the same restructuring is worth **12.480 → 2.777 ms/token** at shallow depth and
+  **3.02× at 8012 tokens** (`docs/measurements/prefill-chunking-d7-2026-09-04.md`). On the CPU
+  path P18's expert-major MoE batching measured **4.364× end to end** on a real 28-layer MoE
+  prefill, bit-identical. Neither transfers as a number — they say the mechanism works twice, on
+  both sides of the machine, not what it is worth here.
+
+  **What is genuinely NOT known, and is the item.** Active-parameter arithmetic on
+  Gemma-4-26B-A4B puts attention at ~45% of the per-token weight traffic and the dense FFN branch
+  at another ~25%, so ~70% of M26's prefill could be batched *without any new expert kernel*. That
+  is arithmetic on config shapes, not a profile, and the repo has retracted an Amdahl projection
+  twice this fortnight — **measure the split before building to it.**
+
+  **Sequenced work, cheapest first:**
+  1. Profile where M26/M35 sequential prefill time actually goes (`r.prof` exists but only on the
+     batched path — the decode-side attribution seam needs extending, or use `ncu`).
+  2. Batch the DENSE parts only: attention, router, shared expert, Gemma-4's parallel dense branch;
+     leave the routed experts per-row. Needs gemma4's per-layer-geometry / K=V bridge on the
+     prefill path — the same bridge the resident DECODE path already has
+     (`docs/measurements/gemma4-resident-cuda.md` territory), so it is a port, not a design.
+  3. Expert-major routed experts (the P18 shape on the GPU): a batched router over M rows, a
+     per-expert row gather, and an indexed batched GEMV. This needs a NEW `.cu` — `moe.ptx` is the
+     audited 12.6.85 artifact and must stay untouched, the same way `decode_splitkv.cu` and
+     `router_f32.cu` were added beside it.
+  4. M35 additionally needs a batched Gated-DeltaNet: 30 of its 40 layers are `linear_attention`
+     with in-place recurrent state, which is a chunked delta-rule scan and real new math. **M26 is
+     the cheaper of the two and should go first** — it is also the one whose sequential cell is
+     6.4 min rather than 25.5.
+
+  **Decision rule, pre-registered:** measure step 2 alone end-to-end on M26 at depth 8000, paired
+  and interleaved against today's sequential path. **Fund step 3 if step 2 lands ≥15%; park if
+  <8%; 8–15% is ambiguous → parked pending a profile that names a second mechanism.** The
+  do-nothing arm is the current sequential path and it is in the table above.
+
+  **Bit-identity is required, not optional.** Both landed precedents are bit-identical (P18 by
+  preserving per-row rank-order folding; the CUDA chunking by construction over a positional KV),
+  and an MoE path that re-associates the expert fold would change output for a speed win — a
+  different, worse trade that would need its own flag and its own argument.
+
+  **What landed on 2026-09-04 (the dense half), so it is not rebuilt:** CUDA batched prefill was
+  all-or-nothing on M and its scratch is O(M·inter), so on an 8 GB card a D7-class model at
+  `-ctx 8192` OOM'd at ~7000 rows and fell back — silently, and only for the prompts long enough to
+  need it. `prefillChunked` now runs the prompt in passes of ≤512 rows over the positional KV
+  (bit-identical, `TestPrefillChunked_bitIdentical`), the load-time report states the width instead
+  of claiming "one pass", and a call-time decline warns once. **This does nothing for M35/M26** —
+  they decline at a different gate, which is this item.
+
 - **P19 · Fused (FlashAttention-style) tiled attention — SHIPPED 2026-09-01, default ON under
   `--cpu-fast-attention`. 1.69–1.73× at the kernel, +8.0% end to end.**
 
