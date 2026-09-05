@@ -75,25 +75,29 @@ func TestPrefillGate(t *testing.T) {
 	depths := []int{256, 1024, 3900}
 	const continuationN = 64
 
-	overallHardFail := false
+	// One subtest per model, so a run can target just one (e.g. -run TestPrefillGate/D7)
+	// without redoing the other's ~20+ minutes — useful after an interrupted run, since this
+	// gate has no other checkpointing. A subtest failure fails TestPrefillGate as a whole (Go's
+	// normal subtest propagation), so the aggregate verdict needs no separate tracking here.
 	for _, mc := range models {
-		path := os.Getenv(mc.pathEnv)
-		if path == "" {
-			path = os.ExpandEnv(mc.defaultPath)
-		}
-		if _, err := os.Stat(path); err != nil {
-			t.Logf("model %s: no fixture at %s (set %s) — skipping this arm", mc.name, path, mc.pathEnv)
-			continue
-		}
-		runPrefillGateModel(t, mc.name, path, depths, continuationN, &overallHardFail)
-	}
-	if overallHardFail {
-		t.Fatalf("§3 GATE FAILED on at least one (model, K) cell — see log above for which; " +
-			"the default stays exact there (docs/task-prefill-gap.md §3, §7)")
+		t.Run(mc.name, func(t *testing.T) {
+			path := os.Getenv(mc.pathEnv)
+			if path == "" {
+				path = os.ExpandEnv(mc.defaultPath)
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Skipf("no fixture at %s (set %s)", path, mc.pathEnv)
+			}
+			if runPrefillGateModel(t, mc.name, path, depths, continuationN) {
+				t.Fatalf("§3 GATE FAILED for model %s — see log above for which (model, K) cell; "+
+					"the default stays exact there (docs/task-prefill-gap.md §3, §7)", mc.name)
+			}
+		})
 	}
 }
 
-func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, continuationN int, overallHardFail *bool) {
+// runPrefillGateModel returns true if any (K, prompt) cell hard-failed the §3 gate for this model.
+func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, continuationN int) bool {
 	t.Helper()
 	fmt.Printf("\n=== PREFILL GATE — model=%s path=%s ===\n", modelName, path)
 	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4"})
@@ -116,6 +120,7 @@ func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, con
 		prompts = append(prompts, ids)
 	}
 
+	anyHardFail := false
 	for _, K := range depths {
 		var (
 			seedHardFails, contHardFails   int
@@ -156,7 +161,7 @@ func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, con
 		meanKL := sumKL / float64(n)
 		gateFail := seedHardFails > 0 || contHardFails > 0
 		if gateFail {
-			*overallHardFail = true
+			anyHardFail = true
 		}
 		fmt.Printf("=== %s K=%d SUMMARY (n=%d prompts): seedHardFails=%d/%d (worst gap %.3f%%) "+
 			"contHardFails=%d/%d (worst gap %.3f%%) meanTeacherForcedAgreement=%.1f%% "+
@@ -170,6 +175,7 @@ func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, con
 	}
 	fmt.Printf("[gate] %s: greedy stream divergence — NOT re-measured here; see TestMetalPrefillDivergenceRate "+
 		"(54%%, metal/backend.go PrefillLast decline comment, §A2-Metal). Reported, not gating (§3).\n", modelName)
+	return anyHardFail
 }
 
 type prefillGateCellResult struct {
