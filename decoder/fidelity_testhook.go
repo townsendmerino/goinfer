@@ -8,7 +8,15 @@
 
 package decoder
 
-import "math"
+import (
+	"bufio"
+	"encoding/binary"
+	"math"
+	"os"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
 
 // NearTieHardFailPct is the bar NearTieArgmaxForTest hard-fails at -- the same 3% every existing
 // near-tie gate in this tree already uses inline (cuda/realforward_test.go's argmaxF comparison,
@@ -84,4 +92,139 @@ func KLDivergenceForTest(pLogits, qLogits []float32) float64 {
 		kl += pi * math.Log(pi/(q[i]+1e-300))
 	}
 	return kl
+}
+
+// PrefillGateProseFiles are real prose read at run time — not scripts/prompts.json's word-
+// repetition filler, which docs/task-prefill-gap.md §0 rules out for anything content-dependent
+// ("the fidelity gate (§3) uses prose"). Ten distinct real technical documents from this repo,
+// chosen only for being real, sizeable (each encodes to well over 3900 tokens on its own, so no
+// prompt needs repeating to reach the deepest K), and stable — not for their content, the same
+// reasoning metal/spec_prefill_regression_test.go's readRepoCorpus gives for reading real
+// repository source instead of a short hand-written corpus.
+//
+// Paths are relative to a package directory one level under the repo root (as metal/'s and
+// decoder/'s own test packages both are), so the same list resolves identically from either —
+// this is shared between metal/prefill_gate_test.go (Metal arms) and
+// decoder/prefill_ref_gen_test.go (the CPU f32-activation reference, §3.1) precisely so the two
+// runs score the SAME ten prompts.
+var PrefillGateProseFiles = []string{
+	"../docs/audit-2026-09-02.md",
+	"../docs/QUEUE.md",
+	"../docs/queue-engineering.md",
+	"../docs/ollama-chase.md",
+	"../docs/benchmarks.md",
+	"../docs/parity-coverage-policy.md",
+	"../docs/task-w4a8-neon-bandwidth.md",
+	"../docs/legacy-benchmarks.md",
+	"../docs/task-zeno-compare.md",
+	"../docs/queue-release.md",
+}
+
+// PrefillGateProseIDsForTest reads f, encodes it with tk, and returns at least minTokens ids
+// (repeating the same real content if one file is somehow too short for a future larger K, rather
+// than padding with filler — a repeated real paragraph is still content-dependent, unlike
+// scripts/prompts.json's "the the the").
+func PrefillGateProseIDsForTest(t *testing.T, tk *tokenizer.Tokenizer, f string, minTokens int) []int {
+	t.Helper()
+	raw, err := os.ReadFile(f)
+	if err != nil {
+		t.Fatalf("read prose seed %s: %v", f, err)
+	}
+	text := string(raw)
+	ids, err := tk.Encode(text, true)
+	if err != nil {
+		t.Fatalf("encode prose seed %s: %v", f, err)
+	}
+	for len(ids) < minTokens {
+		more, err := tk.Encode(text, false)
+		if err != nil {
+			t.Fatalf("encode prose seed %s: %v", f, err)
+		}
+		ids = append(ids, more...)
+	}
+	return ids
+}
+
+// WritePrefillReferenceForTest serializes docs/task-prefill-gap.md §3.1's CPU f32-activation
+// reference for a later cross-process read (ReadPrefillReferenceForTest) — Phase A
+// (decoder/prefill_ref_gen_test.go, its own process, CPU only) writes these; Phase B
+// (metal/prefill_gate_ref_test.go) reads them back to score both Metal arms against a reference
+// neither of them is. Layout, all little-endian: int32 vocab, int32 continuationN, seedLogits
+// [vocab]float32, refTokens [continuationN]int32, then continuationN rows of [vocab]float32
+// (refLogits). This is a private, single-machine, single-session scratch format — not versioned
+// or exported for reuse beyond this pair, which is why it carries no header/magic beyond its two
+// size fields.
+func WritePrefillReferenceForTest(path string, seedLogits []float32, refTokens []int, refLogits [][]float32) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	vocab := int32(len(seedLogits))
+	n := int32(len(refTokens))
+	if err := binary.Write(w, binary.LittleEndian, vocab); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binary.LittleEndian, n); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binary.LittleEndian, seedLogits); err != nil {
+		return err
+	}
+	toks32 := make([]int32, len(refTokens))
+	for i, v := range refTokens {
+		toks32[i] = int32(v)
+	}
+	if err := binary.Write(w, binary.LittleEndian, toks32); err != nil {
+		return err
+	}
+	for _, row := range refLogits {
+		if int32(len(row)) != vocab {
+			return os.ErrInvalid
+		}
+		if err := binary.Write(w, binary.LittleEndian, row); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
+}
+
+// ReadPrefillReferenceForTest is WritePrefillReferenceForTest's reader. See that function for the
+// layout.
+func ReadPrefillReferenceForTest(path string) (seedLogits []float32, refTokens []int, refLogits [][]float32, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	var vocab, n int32
+	if err = binary.Read(r, binary.LittleEndian, &vocab); err != nil {
+		return nil, nil, nil, err
+	}
+	if err = binary.Read(r, binary.LittleEndian, &n); err != nil {
+		return nil, nil, nil, err
+	}
+	seedLogits = make([]float32, vocab)
+	if err = binary.Read(r, binary.LittleEndian, seedLogits); err != nil {
+		return nil, nil, nil, err
+	}
+	toks32 := make([]int32, n)
+	if err = binary.Read(r, binary.LittleEndian, toks32); err != nil {
+		return nil, nil, nil, err
+	}
+	refTokens = make([]int, n)
+	for i, v := range toks32 {
+		refTokens[i] = int(v)
+	}
+	refLogits = make([][]float32, n)
+	for i := range refLogits {
+		row := make([]float32, vocab)
+		if err = binary.Read(r, binary.LittleEndian, row); err != nil {
+			return nil, nil, nil, err
+		}
+		refLogits[i] = row
+	}
+	return seedLogits, refTokens, refLogits, nil
 }

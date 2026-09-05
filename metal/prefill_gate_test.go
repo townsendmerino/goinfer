@@ -114,9 +114,9 @@ func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, con
 		t.Fatalf("model %s: load tokenizer: %v", modelName, err)
 	}
 
-	prompts := make([][]int, 0, len(prefillGateProseFiles))
-	for _, f := range prefillGateProseFiles {
-		ids := prefillGateProseIDs(t, tk, f, depths[len(depths)-1])
+	prompts := make([][]int, 0, len(decoder.PrefillGateProseFiles))
+	for _, f := range decoder.PrefillGateProseFiles {
+		ids := decoder.PrefillGateProseIDsForTest(t, tk, f, depths[len(depths)-1])
 		prompts = append(prompts, ids)
 	}
 
@@ -307,49 +307,4 @@ func prefillGateArgmax(v []float32) int {
 		}
 	}
 	return bi
-}
-
-// prefillGateProseFiles are real prose read at run time — not scripts/prompts.json's word-
-// repetition filler, which docs/task-prefill-gap.md §0 rules out for anything content-dependent
-// ("the fidelity gate (§3) uses prose"). Ten distinct real technical documents from this repo,
-// chosen only for being real, sizeable (each encodes to well over 3900 tokens on its own, so no
-// prompt needs repeating to reach the deepest K), and stable — not for their content, the same
-// reasoning metal/spec_prefill_regression_test.go's readRepoCorpus gives for reading real
-// repository source instead of a short hand-written corpus.
-var prefillGateProseFiles = []string{
-	"../docs/audit-2026-09-02.md",
-	"../docs/QUEUE.md",
-	"../docs/queue-engineering.md",
-	"../docs/ollama-chase.md",
-	"../docs/benchmarks.md",
-	"../docs/parity-coverage-policy.md",
-	"../docs/task-w4a8-neon-bandwidth.md",
-	"../docs/legacy-benchmarks.md",
-	"../docs/task-zeno-compare.md",
-	"../docs/queue-release.md",
-}
-
-// prefillGateProseIDs reads f, encodes it with tk, and returns at least minTokens ids (repeating
-// the same real content if one file is somehow too short for a future larger K, rather than
-// padding with filler — a repeated real paragraph is still content-dependent, unlike
-// scripts/prompts.json's "the the the").
-func prefillGateProseIDs(t *testing.T, tk *tokenizer.Tokenizer, f string, minTokens int) []int {
-	t.Helper()
-	raw, err := os.ReadFile(f)
-	if err != nil {
-		t.Fatalf("read prose seed %s: %v", f, err)
-	}
-	text := string(raw)
-	ids, err := tk.Encode(text, true)
-	if err != nil {
-		t.Fatalf("encode prose seed %s: %v", f, err)
-	}
-	for len(ids) < minTokens {
-		more, err := tk.Encode(text, false)
-		if err != nil {
-			t.Fatalf("encode prose seed %s: %v", f, err)
-		}
-		ids = append(ids, more...)
-	}
-	return ids
 }

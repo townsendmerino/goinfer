@@ -18,20 +18,28 @@
 > — `--cpu-fast-attention` is default ON and `--cpu-exact-prefill` buys identity back
 > (`internal/serveapp/main.go:373`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
 > rather than to bytes (`benchmarks.md` §B2). This doc extends that contract to the GPU backends and
-> sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on —
-> **measured 2026-09-05, GATE FAILED, does not ship** (§4 L1, `measurements/prefill-gate-l1-
-> 2026-09-05.md`); **L2** a fused attention kernel on CUDA; **L3** a tensor-core int4 GEMM on CUDA
-> that keeps group scales; **L4** the remaining CPU items, which now live in aikit's SIMD audit and
-> are the smallest prize.
+> sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on
+> (measured 3.7–4.6×, already in the tree — **gate run 2026-09-05 was against the wrong oracle;
+> re-run pending, see §3.1 and §4 L1**); **L2** a fused attention kernel on CUDA; **L3** a
+> tensor-core int4 GEMM on CUDA that keeps group scales; **L4** the remaining CPU items, which now
+> live in aikit's SIMD audit and are the smallest prize.
 >
-> **Status: L1 MEASURED and CLOSED 2026-09-05 — gate FAILED, does not ship.** §3's gate ran for
-> real on Metal (S and D7, K ∈ {256, 1024, 3900}, `measurements/prefill-gate-l1-2026-09-05.md`):
-> the continuation-fidelity check fails at every cell on both models (worse on D7, 86.7–89.2%
-> teacher-forced agreement, than S, 96.4–96.6%), and TTFT speedup decays with depth (3.93×→3.12×→
-> 2.02× at K=256/1024/3900) rather than holding the ~3.9× this doc had cited. Metal's default stays
-> sequential; `--metal-fast-prefill` stays opt-in; Phase 2 below does not proceed. L2/L3/L4 remain
-> SCOPED, nothing built. goinfer `3b20f74` (scoped) / `6022b29` (measured). Path:line citations
-> were taken at `3b20f74`; `scripts/queue_citation_lint.py --update` re-indexes them.
+> **Status: L1 gate MEASURED 2026-09-05 and the result is INCONCLUSIVE as designed — not a
+> failure, not a pass.** §3's gate ran for real on Metal (S and D7, K ∈ {256, 1024, 3900},
+> `measurements/prefill-gate-l1-2026-09-05.md`) and the measurement is sound: the batched path's
+> continuation logits differ from the sequential path's (D7 86.7–89.2% teacher-forced agreement,
+> S 96.4–96.6%; 4–6 and 1–2 hard flips per 640 positions). What it cannot say is which arm is
+> closer to the truth, because §3 as first written named the *exact* path as the oracle, and the
+> exact path is itself a quantisation of the activations (int8 per row, W4A8) that the batched
+> path does not apply (f16 activations). Two quantisations of one model were compared and the
+> distance was booked against the faster one. **That was an error in this doc's gate, corrected
+> in §3.1** — the oracle is a reference with f32 activations, and both arms are scored against
+> it. Until the re-run: Metal's default stays sequential, `--metal-fast-prefill` stays opt-in,
+> and L1 is OPEN, not closed. The TTFT speedup decay with depth in the same run (3.93× → 3.12× →
+> 2.02× at K=256/1024/3900) is the per-row `attention_prefill` term — L1's own "then, not now"
+> item — not a serving problem. L2/L3/L4 remain SCOPED, nothing built. goinfer `3b20f74`
+> (scoped) / `6022b29` (gate measured) / `3ab5230` (first reading) / this revision. Path:line
+> citations were taken at `3b20f74`; `scripts/queue_citation_lint.py --update` re-indexes them.
 > Not filed in `queue-performance.md` yet — another session was editing it while this was written.
 
 ## 0. What must not change
@@ -156,18 +164,74 @@ until then that backend's default is unchanged.
 
 **Gate — reuse the repo's, do not invent one.** A backend's fast prefill may become the default
 when, on ≥10 realistic prose prompts per model (not `prompts.json`) spanning K ∈ {256, 1024, 3900},
-against the exact path on the same backend:
+**both** the fast path and the exact path are scored against a **reference with f32 activations**
+(§3.1 says which), and the fast path is not further from it than the exact path is:
 
 | check | bar | why this one |
 |---|---|---|
-| seed-logit argmax agreement | the 3% near-tie parity rule, as CUDA decode is already held to CPU (`benchmarks.md:611`) | the same bar the tree already trusts for a non-identical backend |
-| teacher-forced top-1 agreement over 64 continuation positions | reported, and ≥ the CUDA-decode-vs-CPU figure on the same model | the fidelity column `task-peer-benchmarks.md` §4 is building anyway |
-| seed-distribution KL vs exact | reported, not gating | the number a reader will ask for |
+| seed-logit argmax agreement, each arm vs the reference | the 3% near-tie parity rule (`decoder.NearTieArgmaxForTest`, the same rule CUDA decode is held to CPU by — `benchmarks.md:611`); **the fast arm's hard-flip count may not exceed the exact arm's** | the bar the tree already trusts, applied to both arms so the exact path's own cost is visible |
+| teacher-forced top-1 agreement over 64 continuation positions, each arm vs the reference's own greedy continuation | paired per prompt: fast ≥ exact − 1.0 pt on the cell mean, and fast ≥ exact on ≥ half the prompts | the fidelity column `task-peer-benchmarks.md` §4 is building anyway; the exact arm sets the bar because it is what ships today |
+| mean continuation KL(reference ‖ arm) | fast ≤ 1.1 × exact on the cell mean | the number a reader will ask for, with the exact arm's value beside it |
 | greedy stream divergence rate | **reported, not gating** | it is what gated Metal; it measures reproducibility, not quality |
+
+**Floor.** As `--cpu-fast-attention` already does (exact below 512 prompt tokens, because the win
+scales with length and the divergence does not — `internal/serveapp/main.go:320`), each backend's
+fast path engages only above a prompt-length floor set where its measured win starts; short prompts
+stay exact at no cost.
 
 A backend that fails the gate keeps the exact default and the fast path stays opt-in with the
 failure recorded beside it. The gate runs as a heavy test per backend (`GOINFER_HEAVY_TESTS=1`),
-with the exact path as the oracle, so it is a regression gate afterwards, not a one-off.
+with the reference logits computed once per (model, K) and stored, so it is a regression gate
+afterwards, not a one-off — and the exact-vs-reference half of it is the first fidelity number
+the tree has for that backend's shipped path, which the peer matrix needs regardless.
+
+### 3.1 Correction, 2026-09-05 (later the same day) — the oracle was wrong, and it was this doc's error
+
+The first version of the table above scored the fast path **against the exact path** and called any
+non-near-tie disagreement a failure, on the argument that this is "the same bar the tree already
+trusts for a non-identical backend" (CUDA decode vs CPU). That argument does not transfer, and the
+gate it produced cannot answer the question it was built for:
+
+- **CUDA-decode-vs-CPU compares two implementations of the same numerics** — W4A8 on both sides —
+  so a disagreement there is a defect signal. **Fast-vs-exact prefill on Metal compares two
+  different numerics of the same model.** The exact (decode) path quantises activations to int8 per
+  row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:460`); the batched path
+  keeps them in f16 and dequantises the int4 weights to f16 in-kernel (`metal/prefill.go:12`–`:13`).
+  They are guaranteed to disagree. The measurement in `measurements/prefill-gate-l1-2026-09-05.md`
+  is a correct measurement of *how much* — it is not evidence about *which arm is wrong*.
+- **The prior is that the exact arm is the lossier one.** Per-row int8 activation quantisation is the
+  known-lossy step in W4A8 (the LM head's move to W8A8 was precision-gated at 1.5% argmax flips on
+  its own, `docs/task-w4a8-neon-bandwidth.md`), its error grows with model size as activation
+  outliers grow, and the run shows exactly that shape: D7's fast-vs-exact KL is 6–7× S's at every
+  depth, with no depth dependence. A defect in the batched path would not be expected to scale with
+  model size and not with K; an activation-precision difference would.
+- **A zero-hard-flip bar over 640 positions is a bar the exact path itself would likely fail**
+  against an f32-activation reference. The CUDA decode gate applies "0 hard fails" over ~10 argmax
+  checks of one forward, not 640 continuation positions.
+
+**What replaces it.** The reference is the CPU backend on the same GGUF with f32 activations —
+`Options{Backend:"cpu", Quant:""}` (f32 weights) where the model fits, else `Quant:"int8"`
+(weight-only per-row int8, f32 activations; `decoder/model.go:153`). Both Metal arms share identical
+int4 weights, so the weight-requantisation error is common-mode and the comparison isolates the
+activation path. The reference's own greedy 64-token continuation is the teacher-forced token
+stream for both arms. Reference logits are computed once per (model, K) in a separate process and
+written to disk, then the two Metal arms run in one process and are scored against them — this also
+keeps a 7B CPU reference and a 7B Metal resident from sharing 16 GB at the same moment. The decision
+is paired and relative (table above): the fast path ships as the default if it is at least as close
+to the reference as the path that ships today. If it is *closer* — which is the prediction — the
+run is also the first evidence the tree has of what W4A8's activation quantisation costs on the
+Metal decode path itself, which is a separate finding to file, not to act on here.
+
+**Pre-registered for the re-run:** the decision set is K ∈ {256, 1024} on both models — S with the
+f32 reference (1.5B f32 is ~6 GB, fits), D7 with the int8 weight-only reference (the f32 7B does
+not fit 16 GB; the 2026-09-04 kernel panic on this machine came from a model that did not fit).
+The 2026-09-05 run showed no K dependence in either arm's distance, so depth is a confirmation
+axis, not a decision axis: S at K=3900 runs after the decision, as one confirmation cell. The
+reference is the sequential CPU per-token forward (`ForwardForTest`, the seam the GPU parity gates
+already use), so it carries the exact f64-accumulating attention as well as f32 activations. Prediction, written before
+running: fast closer than exact on every cell, by a margin that grows from S to D7. If the
+prediction fails on D7 but not S, the batched attention or the f16 weight dequant is the suspect,
+and the next probe is per-layer, not per-model.
 
 **What the contract does not touch.** Decode (unchanged on every backend), speculative verify
 (exact kernels, lossless contract intact), and the parity gates (which run the exact path). The
@@ -175,35 +239,54 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 
 ## 4. Levers, cheapest first
 
-### L1 · Metal: make the batched prefill the default — MEASURED, GATE FAILED, does not ship
+### L1 · Metal: make the batched prefill the default — gate MEASURED, result INCONCLUSIVE (wrong oracle), re-run pending
 
 - **What exists:** `PrefillLast` on Metal is a working f16-MMA batched prefill, measured 3.93–4.56×
   over sequential at P=128…2048 and 3.74× end to end on a real 1450-token prompt through the
   server (`ollama-chase.md:1578`–`:1611`). It is declined unless `GOINFER_METAL_BATCHED_PREFILL=1`
   (`metal/backend.go:248`), which `--metal-fast-prefill` sets (`internal/serveapp/main.go:372`).
-- **Result (2026-09-05, `measurements/prefill-gate-l1-2026-09-05.md`):** the §3 gate ran for real —
-  S (1.5B) and D7 (7B), K ∈ {256, 1024, 3900}, 10 real-prose prompts each, exact sequential decode
-  as the oracle. **Seed-logit argmax agreement passes cleanly at every cell** (0/10 hard-fails,
-  worst gap 2.7%, under the 3% bar). **The teacher-forced continuation check fails at every cell on
-  both models**, worse at 7B: mean agreement 86.7–89.2% on D7 against 96.4–96.6% on S, with 4–6
-  hard-fails per 640 scored positions on D7 vs 1–2 on S. This is a finding about the f16 activation
-  path exactly as anticipated below, not about the §3 contract itself — the contract did its job.
-- **Band (TTFT, S, this run):** ≥3× ships, <2× reopens as a serving investigation (S at K=2048 was
-  the original band cell; this run used K ∈ {256, 1024, 3900} instead to match the gate). Measured
-  **3.93× at K=256, 3.12× at K=1024, 2.02× at K=3900** — the speedup decays with depth rather than
-  holding flat, landing at the edge of the reopen threshold at the deepest, most W4-relevant K.
-  Speed alone would be ambiguous here; combined with the quality gate's clean failure the overall
-  verdict is not ambiguous.
-- **Disposition:** Metal's default stays the sequential path. `--metal-fast-prefill` /
-  `GOINFER_METAL_BATCHED_PREFILL=1` remains the documented, disclosed opt-in it already is. Phase 2
-  (flip the default, build `--exact-prefill`) does not proceed from this doc's plan. **W2's Mac
+- **Measured (2026-09-05, `measurements/prefill-gate-l1-2026-09-05.md`):** the first-form §3 gate
+  ran for real — S (1.5B) and D7 (7B), K ∈ {256, 1024, 3900}, 10 real-prose prompts each, with the
+  exact sequential path as the oracle. Seed-logit argmax agreement between the two arms is inside
+  the 3% near-tie rule at every cell (0/10 hard flips, worst gap 2.7%). Over 64 teacher-forced
+  continuation positions the two arms' top-1 agree 96.4–96.6% (S) and 86.7–89.2% (D7), with 1–2
+  (S) and 4–6 (D7) non-near-tie flips per 640 positions; fast-vs-exact KL is 6–7× larger on D7
+  than on S and flat in K. **Those numbers stand as a measurement of the distance between the two
+  arms.** The verdict first attached to them — "gate FAILED, does not ship" — does not: with the
+  exact path as oracle the gate cannot tell a defect in the fast path from the exact path's own
+  int8-activation loss (§3.1), and the size-not-depth pattern is the one the second explanation
+  predicts. Read the run as *fast ≠ exact by this much*, which was already known to be nonzero,
+  not as *fast is worse*.
+- **Re-run, pre-registered in §3.1:** both arms against the CPU f32-activation reference (S: f32
+  weights; D7: int8 weight-only), reference logits computed first in their own process and stored,
+  the reference's greedy continuation as the teacher-forced stream, paired relative bars. Ships if
+  fast is at least as close to the reference as exact; prediction is that it is closer, more so on
+  D7. The existing `TestPrefillGate` harness and `decoder/fidelity_testhook.go` scorer carry over —
+  the change is a third arm and which vector is `refLogits` in each `NearTieArgmaxForTest` call.
+- **Band (TTFT, S at K=2048, vs the shipped default):** ≥3× ships (the measured figure is 3.9×);
+  <2× means the serve path is eating it and the item reopens as a serving investigation. The
+  2026-09-05 run measured **3.93× at K=256, 3.12× at K=1024, 2.02× at K=3900** — clearing the
+  ship line at K≤1024, ambiguous at the band's own cell (K=2048 interpolates to ~2.7×), and never
+  reaching the <2× reopen trigger. A ≥2× TTFT win at every depth is worth taking on the fidelity
+  re-run's verdict; the band's job was to catch a serve-path loss, and none is present. The decay
+  itself is not a serving effect and is not ambiguous: per-token batched cost rises from 3.4 ms at P=256 to 9.4 ms
+  at P=3900 because `attention_prefill` is one threadgroup per (row, head) reusing the decode math
+  (`metal/prefill.go:210`–`:214`) — the same O(K²) term §2.2 names on CUDA — while the sequential
+  arm pays it too but hidden under a ~19 ms/token GEMV. So the speedup L1 delivers is the GEMM's
+  and it shrinks as the attention share grows; that is the *next* item's evidence, below, not a
+  reason to hold this one.
+- **Disposition until the re-run:** Metal's default stays the sequential path and
+  `--metal-fast-prefill` / `GOINFER_METAL_BATCHED_PREFILL=1` remains the disclosed opt-in. Phase 2
+  (flip the default, build `--exact-prefill`) proceeds only on the re-run's verdict. **W2's Mac
   cells are still not run** (`scripts/bench_peer_prefill.py` still has no Metal backend option) —
-  that remains open regardless of the gate's outcome, since `benchmarks.md` still has no Metal
-  prefill peer row at all.
-- **Then, not now:** a `simdgroup_matrix` flash attention for `attention_prefill` — the Metal twin
-  of L2. Not funded by this result: a fused schedule doesn't fix an activation-precision divergence,
-  and the open question here is WHY the continuation check fails (§2.2/§2.3's f16-vs-int8-activation
-  hypothesis, not re-isolated by this run), not throughput.
+  that remains open regardless, since `benchmarks.md` still has no Metal prefill peer row at all.
+- **Then, and now sized:** a `simdgroup_matrix` flash attention for `attention_prefill` — the Metal
+  twin of L2. The 2026-09-05 TTFT curve prices it: at K=3900 the batched arm spends ~6 of its 9.4
+  ms/token above the flat ~3.4 ms the GEMM costs, so a fused attention that held per-token cost
+  near flat would take the S/K=3900 speedup from 2.02× to ~5× and is worth more than L1 itself at
+  the depths W4 cares about. Independent of the fidelity question — it changes speed, and its own
+  gate is the same §3 gate. Scoped after the L1 re-run and W2's Mac row exist, because that row
+  says how much of the remaining Metal gap is attention.
 
 ### L2 · CUDA: fused (FlashAttention-style) prefill attention
 
@@ -293,17 +376,20 @@ cells. **Do not quote these as results.**
 Reading: with both landed, goinfer is inside ~1.3× of Ollama's overhead-free prefill at K=512 and
 ~2.5× at K=3900 — and on TTFT, ahead below ~2k tokens because of Ollama's floor. The crossover
 moves from ~600 tokens to past the W4 band. Closing the last ~2× at depth is the f16-KV and
-kernel-tuning tail, priced after these two exist. On Metal, L1's own §3 gate FAILED (§4 L1,
-`measurements/prefill-gate-l1-2026-09-05.md`) — the 3.9× TTFT figure decayed to 2.02× by K=3900 in
-the real measurement and does not ship regardless; the peer row (still unmeasured) would only add
-a comparison point to a lever that already isn't shipping.
+kernel-tuning tail, priced after these two exist. On Metal, L1 is a measured 3.9× at K≤1024 that
+decays to 2.0× at K=3900 (`measurements/prefill-gate-l1-2026-09-05.md`); the Metal fused attention
+is what would hold it near ~5× at depth (§4 L1), and the peer row — still unmeasured — decides how
+much of the remaining Metal gap is that term.
 
 ## 7. What this doc does not claim
 
 - No number above for L2/L3 is measured; §6 is arithmetic on measured shares.
-- The §3 gate may fail a backend. That is a result, and the default stays exact there — **this
-  happened for real on Metal, 2026-09-05** (§4 L1): the gate failed on both models tested, and the
-  default stays sequential.
+- The §3 gate may fail a backend. That is a result, and the default stays exact there. The
+  2026-09-05 Metal run is **not** that result: it was scored against an oracle that cannot
+  distinguish a defect from the exact path's own loss (§3.1), so its verdict is withdrawn and its
+  numbers are kept as the fast-vs-exact distance they measure. The re-run decides.
+- Nothing here claims the batched Metal path is *better* than the sequential one. That is the
+  §3.1 prediction, written down before the re-run so it can be wrong in public.
 - M26/M35 prefill is not moved by anything here (P20).
 - The 7B cell is in the harness table and unswept for prefill; D7 is the second model for L2/L3's
   end-to-end rows, not a projection cell here.

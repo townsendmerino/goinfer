@@ -158,6 +158,15 @@ Anything over a few minutes must be **detached** — `setsid nohup … </dev/nul
 plain background shell dies at session boundaries. Verify it took: `ps -o pid,ppid,sid` should
 show **PPID 1**.
 
+**macOS has no `setsid`.** Use `launchctl submit -l <label> -- /bin/bash -lc "cd <repo> && … >
+<log> 2>&1"` instead (macOS `ps` also lacks the `sid` column — check `ppid` = 1 instead).
+**A `launchctl submit` job restarts itself on exit** — undocumented, found the hard way 2026-09-05:
+a completed run's log was silently overwritten by a fresh, immediately-failing re-invocation of
+the same command within moments of the original process exiting, before it could be read, and the
+real run's per-prompt trace was gone for good (`docs/measurements/prefill-gate-l1-2026-09-05.md`
+records what that cost). Fix: append `; launchctl remove <label>` to the submitted command so the
+job un-registers itself as its own last action, closing the race before launchd can restart it.
+
 **Archive the log; do not leave it in `/tmp`.** `/tmp` gets cleared, and a verdict nobody can
 re-read is not evidence. Write it somewhere durable and reference the path in the writeup.
 
