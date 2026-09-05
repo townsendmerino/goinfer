@@ -72,16 +72,42 @@
   `sandwich` and `qkNorm` are batched today (`rmsnorm_f32_batched` / `qk_norm_batched`) and
   `nonBatchableKinds` is empty — every projection is int4/int8. What actually blocks:
 
-  1. **Per-layer geometry — 5 layers of 30.** `prefillCore` hoists `hd/nKV/qDim/kvDim/rhalf` from
-     layer 0 and `prefillStaticDecline` refuses anything that differs; the DECODE path already
-     reads these per layer (`Ly.hd`, `Ly.nKV` at every launch site). Size the scratch by the max
-     and bind `Ly`'s values per launch. Contained.
-  2. **`kEqV` — the same 5 `full_attention` layers.** Decode handles it in ~10 lines (`segA`): a
-     second k-projection GEMV into `vB`, then a scale-less `qk_norm` over `vB` before `rope_kv`
-     rotates k. **Both kernels already have batched variants taking an M dimension**
-     (`r.bGemvB`, `r.bQKN`), so this needs no new kernel either.
-  3. **The FFN.** Gemma-4's parallel dense‖MoE branch (`gemma4MoeMLPPre/Post`) reads and writes
-     `r.x`, the M=1 residual.
+  1. ~~**Per-layer geometry — 5 layers of 30.**~~ **DONE 2026-09-04.** `prefillCore` no longer
+     hoists layer 0's `hd/nKV/qDim/kvDim/rhalf`; each launch binds its own layer's, and the M-sized
+     scratch is allocated at the max across layers (`prefillMaxGeom`). Removing the hoist removed
+     the only thing the uniformity assertion protected.
+  2. ~~**`kEqV` — the same 5 `full_attention` layers.**~~ **DONE 2026-09-04**, in the ~10 lines
+     `segA` uses: a second k-projection GEMV into the V buffer, then a scale-less `qk_norm` over it
+     before `rope_kv_batched` rotates k. No new kernel — `r.bGemvB` and `r.bQKN` already take an M
+     dimension.
+  3. **The FFN — THE REMAINING BLOCKER.** Gemma-4's parallel dense‖MoE branch
+     (`gemma4MoeMLPPre/Post`) and the generic `moeMLPPre/Post` read and write `r.x`, the M=1
+     residual, and so does everything between them (`segB`, `layerTail`, `segC`). Two ways in, and
+     the choice matters:
+     - **(a) Thread the residual buffer through** `segBFFN` / `layerTail` / `segC` /
+       `moeMLPPre/Post` / `gemma4MoeMLPPre/Post` as a parameter, callers passing `r.x`. Cleaner, and
+       it is the discipline the tree already applies one level down — `kvDim/rhalf` were *removed*
+       from `cudaResident` specifically "so a launch site physically cannot bind the wrong (uniform)
+       source". Cost: it touches the decode hot path.
+     - **(b) Swap `r.x` to `xB.At(m*hidden*4)` for the duration of each row.** Three lines, and
+       correct as written — the whole pass runs inside one executor job on one thread. But it is
+       hidden mutable state of exactly the kind a captured graph bakes in, and this runner does
+       capture `r.x` into `gSegB`/`gSegC`. Safe only while prefill never replays graphs, which is
+       true today and is not a property anything asserts.
+
+     **(a) is the recommendation**, with (b) acceptable only behind an assertion that graphs are not
+     in play. Either way the routed experts still run per row, so this slice wins the attention half
+     and nothing else — which is the point of measuring it on its own before funding expert-major.
+
+     **A trap that goes LIVE the moment the `r.moe` decline is removed.** `nonBatchableKind` returns
+     the first projection whose kind is neither int4 nor int8 — and an ABSENT weight has kind `""`,
+     which it returns, and which the caller reads as "no problem" (`if k := …; k != ""`). On a pure
+     MoE layer (Mixtral-class) `Ly.g/u/d` are unset, so the check passes vacuously, and it never
+     looks at `Ly.expGU` / `Ly.expDown` at all — the weights that would actually be batched. It is
+     harmless today only because `r.moe` declines two lines earlier. Fix the sentinel and extend the
+     check to the expert stacks **in the same change** that removes the decline; the probe on M26
+     printed `nonBatchableKinds=map[]` and that empty map is partly this artifact, not purely a
+     clean bill of health.
 
   **(3) has a no-new-kernel route that the tree's own comment says does not exist.**
   `resident.go` states "gocudrv exposes no buffer view/offset, so the split is the kernel's

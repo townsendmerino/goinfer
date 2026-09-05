@@ -275,22 +275,40 @@ func (r *cudaResident) prefillStaticDecline() error {
 	if r.moe || r.gemma4Moe {
 		return fmt.Errorf("cuda prefill: arch needs the sequential path (moe/gemma4moe): %w", errPrefillDeclined)
 	}
-	L0 := &r.layers[0]
-	hd, nKV, qDim, kvDim, rhalf := L0.hd, L0.nKV, L0.qDim, L0.kvDim, L0.rhalf
-	// Uniform geometry + all-int4 + no K=V, checked across every layer (decline, never mis-stride).
+	// PER-LAYER geometry, not layer 0's hoisted and asserted uniform. The batched launches bind
+	// each layer's own hd/nKV/qDim/kvDim/rhalf exactly as the decode launches already do, and the
+	// M-sized scratch is sized by the MAX across layers — so a family whose layers differ (Gemma-4:
+	// 5 of its 30 are full_attention with a different KV width) strides correctly instead of being
+	// refused. What made the old uniform assertion necessary was hoisting L0 into every launch;
+	// remove the hoist and the assertion has nothing left to protect.
 	for l := range r.layers {
 		Ly := &r.layers[l]
-		if Ly.hd != hd || Ly.nKV != nKV || Ly.qDim != qDim || Ly.kvDim != kvDim || Ly.rhalf != rhalf {
-			return fmt.Errorf("cuda prefill: non-uniform layer geometry at %d: %w", l, errPrefillDeclined)
-		}
-		if Ly.kEqV {
-			return fmt.Errorf("cuda prefill: K=V layer at %d needs the sequential path: %w", l, errPrefillDeclined)
+		// K=V (Gemma-4 global layers) is handled in the batched pass the same ~10 lines decode
+		// handles it in (segA): a second k-projection GEMV into the V buffer, then a scale-less
+		// v_norm over it BEFORE rope rotates k. Both kernels already take an M dimension, so this
+		// costs no new kernel — but it does need the unit-weight buffer segA uses, which is
+		// allocated only when some layer is kEqV. Refuse rather than bind a null weight.
+		if Ly.kEqV && r.vNormUnit == (Buffer{}) {
+			return fmt.Errorf("cuda prefill: K=V layer at %d but no v_norm unit weight: %w", l, errPrefillDeclined)
 		}
 		if k := nonBatchableKind(Ly); k != "" {
 			return fmt.Errorf("cuda prefill: %s weight at layer %d needs the sequential path: %w", k, l, errPrefillDeclined)
 		}
 	}
 	return nil
+}
+
+// prefillMaxGeom returns the largest qDim and kvDim across the layers — the row strides the M-sized
+// Q/K/V/context scratch must be allocated at once geometry is per-layer. Each launch still binds its
+// OWN layer's dims, so a narrower layer simply uses a prefix of each row; the buffers are per-pass
+// scratch with no cross-layer meaning, so that is safe and is what lets one allocation serve a
+// non-uniform stack.
+func (r *cudaResident) prefillMaxGeom() (maxQDim, maxKvDim int) {
+	for l := range r.layers {
+		maxQDim = max(maxQDim, r.layers[l].qDim)
+		maxKvDim = max(maxKvDim, r.layers[l].kvDim)
+	}
+	return maxQDim, maxKvDim
 }
 
 // checkPrefillShmem is prefillStaticDecline's PROMPT-dependent twin (V-05, docs/review-2026-09-04.md):
@@ -390,8 +408,7 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 	if e := r.checkPrefillShmem(startPos, M); e != nil {
 		return nil, nil, e
 	}
-	L0 := &r.layers[0]
-	hd, nKV, qDim, kvDim, rhalf := L0.hd, L0.nKV, L0.qDim, L0.kvDim, L0.rhalf
+	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 
 	var outs [][]float32
@@ -420,9 +437,9 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 
 		xB := af(M * hidden)
 		aqB, aScB := ai(M*hidden/4), af(M)
-		qBb, kBb, vBb := af(M*qDim), af(M*kvDim), af(M*kvDim)
-		cctxB := af(M * qDim)
-		cqB, cScB := ai(M*qDim/4), af(M)
+		qBb, kBb, vBb := af(M*maxQDim), af(M*maxKvDim), af(M*maxKvDim)
+		cctxB := af(M * maxQDim)
+		cqB, cScB := ai(M*maxQDim/4), af(M)
 		mqB, mScB := ai(M*hidden/4), af(M)
 		gOb, uOb := af(M*inter), af(M*inter)
 		dqB, dScB, dScrB := ai(M*inter/4), af(M), af(M*inter)
@@ -445,9 +462,11 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 			return e
 		}
 
-		ropeN := r.nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
 		for l := 0; l < r.nLayers; l++ {
 			Ly := &r.layers[l]
+			// PER-LAYER, read here and bound below — never L0's hoisted and assumed uniform.
+			hd, nKV, qDim, rhalf := Ly.hd, Ly.nKV, Ly.qDim, Ly.rhalf
+			ropeN := r.nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
 			qb, kb, vb := ArgNull(), ArgNull(), ArgNull()
 			if Ly.hasBias {
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
@@ -466,7 +485,16 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 			if e := r.bGemvB(Ly.k, aqB, aScB, kb, kBb, M, 0); e != nil {
 				return e
 			}
-			if e := r.bGemvB(Ly.v, aqB, aScB, vb, vBb, M, 0); e != nil {
+			if Ly.kEqV {
+				// K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW
+				// pre-RoPE k_proj output), so recompute the k projection into the V buffer here and
+				// normalize it below, before rope_kv_batched rotates k. Mirrors segA's decode path
+				// launch for launch; a SECOND GEMV rather than a copy of kBb because that is what
+				// decode does, and the two paths must not differ by so much as an operation order.
+				if e := r.bGemvB(Ly.k, aqB, aScB, kb, vBb, M, 0); e != nil {
+					return e
+				}
+			} else if e := r.bGemvB(Ly.v, aqB, aScB, vb, vBb, M, 0); e != nil {
 				return e
 			}
 			r.profToc(gemvCat, t)
@@ -482,6 +510,20 @@ func (r *cudaResident) prefillCore(embeddings [][]float32, startPos int, tail in
 					Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(Ly.kNorm),
 					gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 					gpu.ArgValue(r.eps), gpu.ArgValue(addOne), gpu.ArgValue(int32(M))); e != nil {
+					return e
+				}
+				r.profToc(glueCat, t)
+			}
+			if Ly.kEqV {
+				// Scale-less v_norm over the raw k sitting in vBb, BEFORE rope rotates k — segA's
+				// decode launch with an M dimension added. nH=0 makes qk_norm_batched treat every
+				// block as a K-head (base = v + m*kvDim + h*hd), and vNormUnit is a unit weight so
+				// addOne=0 gives a pure RMS scale with no learned gain.
+				t = r.profTic()
+				if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(nKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+					Arg(vBb), Arg(vBb), Arg(r.vNormUnit), Arg(r.vNormUnit),
+					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+					gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
 					return e
 				}
 				r.profToc(glueCat, t)

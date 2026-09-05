@@ -1,0 +1,44 @@
+=== RUN   TestKVOnlyPrefill_byteIdentical_tiny
+goinfer: batched prefill declined for a 24-token prompt, falling back to the per-token path (slower TTFT; this is reported once): cuda prefill: arch needs the sequential path (moe/gemma4moe): cuda prefill: batched path declined (arch/geometry)
+    kvonly_prefill_test.go:54: KV-only prefill == full-logits prefill: 24 tokens byte-identical
+--- PASS: TestKVOnlyPrefill_byteIdentical_tiny (0.73s)
+=== RUN   TestPrefillChunked_bitIdentical
+[chunked] chunk=4096   M=1024 prefill 878ms
+[chunked] chunk=256    M=1024 prefill 831ms
+[chunked] chunk=256    0/151936 seed logits differ from the single-pass reference
+[chunked] chunk=300    M=1024 prefill 830ms
+[chunked] chunk=300    0/151936 seed logits differ from the single-pass reference
+--- PASS: TestPrefillChunked_bitIdentical (10.36s)
+=== RUN   TestPrefillDivergenceRate
+    prefill_divergence_test.go:120: DIVERGENCE RATE (real 1.5B, 50 prompts × 48-tok prompt × 128-tok greedy gen):
+    prefill_divergence_test.go:121:   streams diverged: 0 / 50 (0%)
+    prefill_divergence_test.go:126:   no divergence observed — the 2e-6 KV gap did not flip any greedy stream in this sample
+--- PASS: TestPrefillDivergenceRate (74.85s)
+=== RUN   TestPrefillLast_e2e
+=== RUN   TestPrefillLast_e2e/int4
+    prefill_e2e_test.go:131: KV BIT-IDENTICAL across all 3 layers × 56 rows (K and V)
+    prefill_e2e_test.go:144: last-token logits BIT-IDENTICAL (128)
+    prefill_e2e_test.go:158: DECODE BYTE-IDENTICAL: 64 greedy tokens match ([94 115 115 115 115 115 115 115 32 32 32 32 67 67 67 39 67 39 79 88 39 79 88 79 79 79 79 79 79 79 79 79 79 79 79 79 55 55 55 22 22 22 22 22 96 49 9 89 80 96 90 96 82 82 82 82 82 82 82 28 70 70 70 70])
+    prefill_e2e_test.go:159: MILESTONE-2 GATE GREEN: batched prefill ≡ sequential (KV all layers×rows + logits + 64-token decode), window engaged
+=== RUN   TestPrefillLast_e2e/int8int8
+    prefill_e2e_test.go:131: KV BIT-IDENTICAL across all 3 layers × 56 rows (K and V)
+    prefill_e2e_test.go:144: last-token logits BIT-IDENTICAL (128)
+    prefill_e2e_test.go:158: DECODE BYTE-IDENTICAL: 64 greedy tokens match ([94 115 115 115 115 115 115 115 32 32 32 32 32 67 88 88 88 66 79 88 66 79 87 87 113 100 79 117 79 117 79 49 101 117 117 117 89 13 89 13 89 13 89 75 113 75 113 75 113 113 113 54 113 54 54 93 11 11 11 11 11 11 11 51])
+    prefill_e2e_test.go:159: MILESTONE-2 GATE GREEN: batched prefill ≡ sequential (KV all layers×rows + logits + 64-token decode), window engaged
+--- PASS: TestPrefillLast_e2e (0.61s)
+    --- PASS: TestPrefillLast_e2e/int4 (0.29s)
+    --- PASS: TestPrefillLast_e2e/int8int8 (0.32s)
+=== RUN   TestPrefillLast_gemma3
+    prefill_gemma3_test.go:113: KV BIT-IDENTICAL across all 34 layers × 56 rows (K and V) — sandwich batched correctly
+    prefill_gemma3_test.go:128: last-token logits BIT-IDENTICAL (262144)
+    prefill_gemma3_test.go:139: DECODE BYTE-IDENTICAL: 64 greedy tokens match
+    prefill_gemma3_test.go:140: GEMMA3 GATE GREEN: batched prefill ≡ sequential with sandwich norms (KV all layers×rows + logits + 64-token decode)
+--- PASS: TestPrefillLast_gemma3 (16.81s)
+=== RUN   TestPrefillLast_qwen3
+    prefill_qwen3_test.go:112: KV BIT-IDENTICAL across all 28 layers × 56 rows (K and V) — qk-norm batched correctly
+    prefill_qwen3_test.go:127: last-token logits BIT-IDENTICAL (151936)
+    prefill_qwen3_test.go:138: DECODE BYTE-IDENTICAL: 64 greedy tokens match
+    prefill_qwen3_test.go:139: QWEN3 GATE GREEN: batched prefill ≡ sequential with qk-norm (KV all layers×rows + logits + 64-token decode)
+--- PASS: TestPrefillLast_qwen3 (7.63s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	111.060s
