@@ -118,7 +118,7 @@ The IMMA question was scoped and deferred on 2026-08-04 (`a276201`;
 `completed/task-rotation-perrow-imma.md` §1, §11) on two grounds. The first — that group scales
 force float accumulation and therefore per-row scales (and a rotation to make them quality-neutral)
 are a prerequisite for tensor cores — is **not correct as a hardware constraint**. A group-scaled
-GEMM on `mma.sync` accumulates each 32-wide group in int32 (two `m16n8k16.s8` instructions), then
+GEMM on `mma.sync` accumulates each 32-wide group in int32 (two `m8n8k16.s8` instructions on sm_75), then
 folds `float(acc) * groupScale` into an fp32 accumulator, exactly the per-group math the dp4a kernel
 does over 8-value words today. Same int8 products, same group scale, same precision; the only thing
 that changes is the association of the cross-group float sum — which is bit-identity with the M=1
@@ -292,15 +292,20 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 
 - **Kernel shape:** one block per (head, 64-row query tile); K/V streamed in 64-key tiles through
   shared memory, converted f32→f16 on load (the resident KV stays f32 — this is not a KV-quant
-  item, and KV-quant was refuted as a decode lever on this card); `mma.sync.m16n8k16.f16` with f32
-  accumulation for QKᵀ and PV; online softmax with the running max/denominator in registers; causal
+  item, and KV-quant was refuted as a decode lever on this card); `mma.sync.aligned.m16n8k8`
+  f16×f16→f32 for QKᵀ and PV — **the sm_75 shape**; `m16n8k16` needs sm_80, and llama.cpp's
+  `mma.cuh` makes the same Turing/Ampere split; online softmax with the running max/denominator in registers; causal
   mask per row, sliding window per row, GQA head grouping, and the gpt-oss `sinks` term — every
   seam `attn_batched` handles today (`cuda/prefill_batched.cu:156`–`:162`) must be handled here,
   with a test per seam. `attn_batched` stays as the exact path.
 - **Not bit-identical**, by the rescale in the online softmax; this is the P19 category, on the
   backend P19 explicitly left "still not tested".
 - **Band (dense 1.5B int4, K=3900, end to end TTFT, `TestPrefillTTFT` extended to 3900):**
-  attention is 55.0% there, so a perfect kernel caps at 2.22×; a 4× kernel gives ~1.7×.
+  attention is 55.0% there, so a perfect kernel caps at 2.22×; a 4× kernel gives ~1.7×. The
+  kernel's own ceiling is far above 4×: the causal QKᵀ+PV work for this model at K=3900 is ~0.66
+  TMAC (28 layers × 12 heads × 128 × K²/2 × 2), i.e. ~65 ms at 20 TFLOPS of a ~70 TFLOPS f16
+  tensor peak, against the 3.0 s measured — the current kernel is latency-shaped, not
+  compute-shaped, so a fused kernel at even 5% of tensor peak is >10× on the category.
   **Ships at ≥1.4×; ambiguous 1.15–1.4×; parks below 1.15×.** At K=512 the same kernel is worth at
   most 1.17× and is not the cell that decides it. Kernel-level ratio recorded separately via
   `TestPrefillDecomp`'s attention category so the two numbers cannot be confused.
@@ -309,13 +314,20 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 
 ### L3 · CUDA: tensor-core int4 GEMM with group scales
 
-- **Kernel shape:** `mma.sync.m16n8k16.s8.s8.s32` (Turing IMMA). Activations are already per-row
-  int8 with `aScale[m]`, so the A operand is ready; W nibbles are unpacked to int8 into shared
-  memory in fragment order (the pack-time nibble permutation `permuteFast` can be chosen to make
-  this a shift-and-mask, not a gather), loaded with `ldmatrix`. Per 32-wide group: two MMAs into
-  int32, then `facc += float(acc) * gs[n][g]` in fp32; per row: `* aScale[m] + bias`. Weight-
-  stationary over an N-tile, streaming M in 64–128-row tiles. `gemv_w4a8_batched` stays as the exact
-  path and as the M<16 path (tensor cores lose below a warp's worth of rows).
+- **Kernel shape:** `mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32` — **the sm_75 int8 shape**
+  (`m16n8k16`/`k32` need sm_80; llama.cpp's `mma.cuh` issues two `m8n8k16` on Turing for the same
+  reason). Activations are already per-row int8 packed four per int word with `aScale[m]`, which is
+  the A-fragment register format as it stands. The B fragment wants four consecutive k of one
+  weight row per register — and the pack-time nibble permutation (`permuteFast`, `cuda/kernels.go`)
+  already puts elements 8j…8j+3 in the low nibbles of word j and 8j+4…8j+7 in the high nibbles (it
+  is what lets the dp4a kernel pair `lo`/`hi` with two consecutive activation words), so the same
+  two-instruction unpack yields B fragments straight from the packed word with no shared-memory
+  transpose; verify against `kernels.go` before relying on it. Per 32-wide group: two MMAs into a
+  zeroed int32 C fragment, then `facc += float(c) * gs[n][g]` in fp32 per element (the C fragment's
+  two elements per thread are two adjacent n, so two scale loads per thread per group); per row at
+  the end: `* aScale[m] + bias`. Stage the activation tile in shared memory for reuse across the
+  block's N-slices; read weights once per block. `gemv_w4a8_rn` (what `bGemvB` launches today)
+  stays as the exact path and as the M<16 path (tensor cores lose below a warp's worth of rows).
 - **Same products, same per-group scale, same precision as today's kernel**; the cross-group float
   order differs. Quality is expected to be indistinguishable from the exact path under the §3 gate
   — but "expected" is the claim, and the gate is the evidence.
