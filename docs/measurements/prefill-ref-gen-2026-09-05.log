@@ -1,0 +1,60 @@
+=== RUN   TestPrefillGateReference
+=== RUN   TestPrefillGateReference/S
+[ref] concurrency preflight OK: 8 parallel workers, identical prompt, bit-identical seed logits
+[ref] S K=256 prompt  4 done (1/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p3.bin elapsed=49s
+[ref] S K=256 prompt  1 done (2/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p0.bin elapsed=49s
+[ref] S K=256 prompt  8 done (3/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p7.bin elapsed=49s
+[ref] S K=256 prompt  3 done (4/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p2.bin elapsed=50s
+[ref] S K=256 prompt  2 done (5/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p1.bin elapsed=50s
+[ref] S K=256 prompt  6 done (6/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p5.bin elapsed=50s
+[ref] S K=256 prompt  7 done (7/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p6.bin elapsed=50s
+[ref] S K=256 prompt  5 done (8/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p4.bin elapsed=51s
+[ref] S K=256 prompt 10 done (9/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p9.bin elapsed=1m11s
+[ref] S K=256 prompt  9 done (10/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K256-p8.bin elapsed=1m11s
+[ref] S K=1024 prompt  7 done (1/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p6.bin elapsed=2m46s
+[ref] S K=1024 prompt  6 done (2/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p5.bin elapsed=2m46s
+[ref] S K=1024 prompt  8 done (3/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p7.bin elapsed=2m46s
+[ref] S K=1024 prompt  3 done (4/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p2.bin elapsed=2m46s
+[ref] S K=1024 prompt  4 done (5/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p3.bin elapsed=2m47s
+[ref] S K=1024 prompt  5 done (6/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p4.bin elapsed=2m47s
+[ref] S K=1024 prompt  2 done (7/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p1.bin elapsed=2m48s
+[ref] S K=1024 prompt  1 done (8/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p0.bin elapsed=2m51s
+[ref] S K=1024 prompt 10 done (9/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p9.bin elapsed=3m38s
+[ref] S K=1024 prompt  9 done (10/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K1024-p8.bin elapsed=3m39s
+[ref] S K=3900 prompt  2 done (1/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p1.bin elapsed=15m50s
+[ref] S K=3900 prompt  4 done (2/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p3.bin elapsed=15m50s
+[ref] S K=3900 prompt  6 done (3/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p5.bin elapsed=15m52s
+[ref] S K=3900 prompt  1 done (4/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p0.bin elapsed=15m54s
+[ref] S K=3900 prompt  3 done (5/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p2.bin elapsed=15m55s
+[ref] S K=3900 prompt  5 done (6/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p4.bin elapsed=15m57s
+[ref] S K=3900 prompt  8 done (7/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p7.bin elapsed=16m5s
+[ref] S K=3900 prompt  7 done (8/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p6.bin elapsed=16m5s
+[ref] S K=3900 prompt  9 done (9/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p8.bin elapsed=21m10s
+[ref] S K=3900 prompt 10 done (10/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K3900-p9.bin elapsed=21m10s
+=== RUN   TestPrefillGateReference/D7
+[ref] concurrency preflight OK: 8 parallel workers, identical prompt, bit-identical seed logits
+[ref] D7 K=256 prompt  8 done (1/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p7.bin elapsed=5m50s
+[ref] D7 K=256 prompt  3 done (2/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p2.bin elapsed=5m50s
+[ref] D7 K=256 prompt  2 done (3/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p1.bin elapsed=5m50s
+[ref] D7 K=256 prompt  7 done (4/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p6.bin elapsed=5m50s
+[ref] D7 K=256 prompt  6 done (5/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p5.bin elapsed=5m50s
+[ref] D7 K=256 prompt  5 done (6/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p4.bin elapsed=5m51s
+[ref] D7 K=256 prompt  1 done (7/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p0.bin elapsed=5m51s
+[ref] D7 K=256 prompt  4 done (8/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p3.bin elapsed=5m51s
+[ref] D7 K=256 prompt 10 done (9/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p9.bin elapsed=7m20s
+[ref] D7 K=256 prompt  9 done (10/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K256-p8.bin elapsed=7m20s
+[ref] D7 K=1024 prompt  1 done (1/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p0.bin elapsed=21m33s
+[ref] D7 K=1024 prompt  7 done (2/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p6.bin elapsed=21m33s
+[ref] D7 K=1024 prompt  5 done (3/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p4.bin elapsed=21m33s
+[ref] D7 K=1024 prompt  8 done (4/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p7.bin elapsed=21m33s
+[ref] D7 K=1024 prompt  6 done (5/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p5.bin elapsed=21m33s
+[ref] D7 K=1024 prompt  2 done (6/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p1.bin elapsed=21m33s
+[ref] D7 K=1024 prompt  4 done (7/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p3.bin elapsed=21m36s
+[ref] D7 K=1024 prompt  3 done (8/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p2.bin elapsed=21m37s
+[ref] D7 K=1024 prompt 10 done (9/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p9.bin elapsed=25m52s
+[ref] D7 K=1024 prompt  9 done (10/10) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref/D7-K1024-p8.bin elapsed=25m52s
+--- PASS: TestPrefillGateReference (3623.75s)
+    --- PASS: TestPrefillGateReference/S (1569.23s)
+    --- PASS: TestPrefillGateReference/D7 (2054.52s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	3624.191s

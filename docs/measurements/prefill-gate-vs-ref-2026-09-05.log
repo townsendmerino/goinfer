@@ -1,0 +1,126 @@
+=== RUN   TestPrefillGateVsReference
+=== RUN   TestPrefillGateVsReference/S
+[ref-gate] S K=256 prompt  1/10 exact(seed=AGREE agree=89.1% HF=0/64 KL=0.0309) fast(seed=AGREE agree=89.1% HF=1/64 KL=0.0288) diff(agree=+0.0pt KL=-0.0021) elapsed=7s
+[ref-gate] S K=256 prompt  2/10 exact(seed=AGREE agree=100.0% HF=0/64 KL=0.0105) fast(seed=AGREE agree=100.0% HF=0/64 KL=0.0095) diff(agree=+0.0pt KL=-0.0010) elapsed=14s
+[ref-gate] S K=256 prompt  3/10 exact(seed=FLIP agree=85.9% HF=0/64 KL=0.0513) fast(seed=AGREE agree=87.5% HF=0/64 KL=0.0501) diff(agree=+1.6pt KL=-0.0013) elapsed=21s
+[ref-gate] S K=256 prompt  4/10 exact(seed=AGREE agree=89.1% HF=0/64 KL=0.0509) fast(seed=AGREE agree=90.6% HF=0/64 KL=0.0473) diff(agree=+1.6pt KL=-0.0036) elapsed=28s
+[ref-gate] S K=256 prompt  5/10 exact(seed=AGREE agree=89.1% HF=1/64 KL=0.0453) fast(seed=AGREE agree=90.6% HF=1/64 KL=0.0418) diff(agree=+1.6pt KL=-0.0036) elapsed=35s
+[ref-gate] S K=256 prompt  6/10 exact(seed=AGREE agree=92.2% HF=3/64 KL=0.0872) fast(seed=AGREE agree=90.6% HF=2/64 KL=0.0677) diff(agree=-1.6pt KL=-0.0195) elapsed=42s
+[ref-gate] S K=256 prompt  7/10 exact(seed=AGREE agree=95.3% HF=0/64 KL=0.0227) fast(seed=AGREE agree=95.3% HF=0/64 KL=0.0210) diff(agree=+0.0pt KL=-0.0017) elapsed=48s
+[ref-gate] S K=256 prompt  8/10 exact(seed=AGREE agree=95.3% HF=0/64 KL=0.0305) fast(seed=AGREE agree=95.3% HF=0/64 KL=0.0272) diff(agree=+0.0pt KL=-0.0033) elapsed=55s
+[ref-gate] S K=256 prompt  9/10 exact(seed=AGREE agree=95.3% HF=0/64 KL=0.0320) fast(seed=AGREE agree=95.3% HF=0/64 KL=0.0285) diff(agree=+0.0pt KL=-0.0035) elapsed=1m2s
+[ref-gate] S K=256 prompt 10/10 exact(seed=FLIP agree=96.9% HF=0/64 KL=0.0140) fast(seed=AGREE agree=98.4% HF=0/64 KL=0.0130) diff(agree=+1.6pt KL=-0.0010) elapsed=1m9s
+=== S K=256 SUMMARY (n=10 prompts, 64 continuation positions each): exact(meanAgree=92.8% HF=4/640 worstGap=5.811% meanKL=0.0375) fast(meanAgree=93.3% HF=4/640 worstGap=5.811% meanKL=0.0335) critA(hardFlips fast<=exact)=true critB(agree fast>=exact-1pt & >=half prompts)=true critC(KL fast<=1.1x exact)=true — CELL SHIPS
+    prefill_gate_ref_test.go:118: S K=256: exact(agree=92.8% HF=4 KL=0.0375) fast(agree=93.3% HF=4 KL=0.0335) critA=true critB=true critC=true cell=SHIPS
+[ref-gate] S K=1024 prompt  1/10 exact(seed=AGREE agree=89.1% HF=0/64 KL=0.0488) fast(seed=AGREE agree=85.9% HF=1/64 KL=0.0533) diff(agree=-3.1pt KL=+0.0045) elapsed=23s
+[ref-gate] S K=1024 prompt  2/10 exact(seed=AGREE agree=92.2% HF=0/64 KL=0.0355) fast(seed=AGREE agree=89.1% HF=1/64 KL=0.0352) diff(agree=-3.1pt KL=-0.0003) elapsed=46s
+[ref-gate] S K=1024 prompt  3/10 exact(seed=AGREE agree=90.6% HF=0/64 KL=0.0587) fast(seed=AGREE agree=87.5% HF=1/64 KL=0.0555) diff(agree=-3.1pt KL=-0.0031) elapsed=1m9s
+[ref-gate] S K=1024 prompt  4/10 exact(seed=AGREE agree=87.5% HF=0/64 KL=0.0637) fast(seed=AGREE agree=85.9% HF=0/64 KL=0.0614) diff(agree=-1.6pt KL=-0.0023) elapsed=1m32s
+[ref-gate] S K=1024 prompt  5/10 exact(seed=AGREE agree=85.9% HF=3/64 KL=0.0446) fast(seed=AGREE agree=87.5% HF=2/64 KL=0.0405) diff(agree=+1.6pt KL=-0.0041) elapsed=1m55s
+[ref-gate] S K=1024 prompt  6/10 exact(seed=AGREE agree=92.2% HF=0/64 KL=0.0382) fast(seed=AGREE agree=90.6% HF=0/64 KL=0.0396) diff(agree=-1.6pt KL=+0.0014) elapsed=2m17s
+[ref-gate] S K=1024 prompt  7/10 exact(seed=AGREE agree=100.0% HF=0/64 KL=0.0182) fast(seed=AGREE agree=98.4% HF=0/64 KL=0.0168) diff(agree=-1.6pt KL=-0.0014) elapsed=2m40s
+[ref-gate] S K=1024 prompt  8/10 exact(seed=AGREE agree=96.9% HF=1/64 KL=0.0211) fast(seed=AGREE agree=98.4% HF=0/64 KL=0.0193) diff(agree=+1.6pt KL=-0.0018) elapsed=3m3s
+[ref-gate] S K=1024 prompt  9/10 exact(seed=AGREE agree=76.6% HF=4/64 KL=0.0667) fast(seed=AGREE agree=75.0% HF=2/64 KL=0.0671) diff(agree=-1.6pt KL=+0.0003) elapsed=3m26s
+[ref-gate] S K=1024 prompt 10/10 exact(seed=AGREE agree=92.2% HF=0/64 KL=0.0463) fast(seed=FLIP agree=90.6% HF=1/64 KL=0.0436) diff(agree=-1.6pt KL=-0.0027) elapsed=3m48s
+=== S K=1024 SUMMARY (n=10 prompts, 64 continuation positions each): exact(meanAgree=90.3% HF=8/640 worstGap=5.783% meanKL=0.0442) fast(meanAgree=88.9% HF=8/640 worstGap=11.555% meanKL=0.0432) critA(hardFlips fast<=exact)=true critB(agree fast>=exact-1pt & >=half prompts)=false critC(KL fast<=1.1x exact)=true — CELL DOES NOT SHIP
+    prefill_gate_ref_test.go:118: S K=1024: exact(agree=90.3% HF=8 KL=0.0442) fast(agree=88.9% HF=8 KL=0.0432) critA=true critB=false critC=true cell=DOES NOT SHIP
+[ref-gate]   ... exact prefill K=3900 pos 1340/3900
+[ref-gate]   ... exact prefill K=3900 pos 2373/3900
+[ref-gate]   ... exact prefill K=3900 pos 3267/3900
+[ref-gate] S K=3900 prompt  1/10 exact(seed=AGREE agree=96.9% HF=1/64 KL=0.0130) fast(seed=AGREE agree=100.0% HF=0/64 KL=0.0101) diff(agree=+3.1pt KL=-0.0029) elapsed=1m56s
+[ref-gate]   ... exact prefill K=3900 pos 1348/3900
+[ref-gate]   ... exact prefill K=3900 pos 2401/3900
+[ref-gate]   ... exact prefill K=3900 pos 3306/3900
+[ref-gate] S K=3900 prompt  2/10 exact(seed=AGREE agree=98.4% HF=0/64 KL=0.0599) fast(seed=AGREE agree=92.2% HF=1/64 KL=0.0613) diff(agree=-6.2pt KL=+0.0013) elapsed=3m52s
+[ref-gate]   ... exact prefill K=3900 pos 1339/3900
+[ref-gate]   ... exact prefill K=3900 pos 2400/3900
+[ref-gate]   ... exact prefill K=3900 pos 3317/3900
+[ref-gate] S K=3900 prompt  3/10 exact(seed=AGREE agree=84.4% HF=3/64 KL=0.0755) fast(seed=AGREE agree=84.4% HF=2/64 KL=0.0741) diff(agree=+0.0pt KL=-0.0013) elapsed=5m48s
+[ref-gate]   ... exact prefill K=3900 pos 1338/3900
+[ref-gate]   ... exact prefill K=3900 pos 2397/3900
+[ref-gate]   ... exact prefill K=3900 pos 3307/3900
+[ref-gate] S K=3900 prompt  4/10 exact(seed=AGREE agree=95.3% HF=0/64 KL=0.0381) fast(seed=AGREE agree=93.8% HF=1/64 KL=0.0348) diff(agree=-1.6pt KL=-0.0034) elapsed=7m40s
+[ref-gate]   ... exact prefill K=3900 pos 1342/3900
+[ref-gate]   ... exact prefill K=3900 pos 2400/3900
+[ref-gate]   ... exact prefill K=3900 pos 3310/3900
+[ref-gate] S K=3900 prompt  5/10 exact(seed=AGREE agree=89.1% HF=1/64 KL=0.0570) fast(seed=AGREE agree=89.1% HF=1/64 KL=0.0528) diff(agree=+0.0pt KL=-0.0042) elapsed=9m36s
+[ref-gate]   ... exact prefill K=3900 pos 1346/3900
+[ref-gate]   ... exact prefill K=3900 pos 2438/3900
+[ref-gate]   ... exact prefill K=3900 pos 3358/3900
+[ref-gate] S K=3900 prompt  6/10 exact(seed=AGREE agree=87.5% HF=0/64 KL=0.0676) fast(seed=AGREE agree=85.9% HF=0/64 KL=0.0681) diff(agree=-1.6pt KL=+0.0005) elapsed=11m30s
+[ref-gate]   ... exact prefill K=3900 pos 1350/3900
+[ref-gate]   ... exact prefill K=3900 pos 2422/3900
+[ref-gate]   ... exact prefill K=3900 pos 3341/3900
+[ref-gate] S K=3900 prompt  7/10 exact(seed=AGREE agree=93.8% HF=0/64 KL=0.0440) fast(seed=AGREE agree=93.8% HF=0/64 KL=0.0387) diff(agree=+0.0pt KL=-0.0053) elapsed=13m25s
+[ref-gate]   ... exact prefill K=3900 pos 1351/3900
+[ref-gate]   ... exact prefill K=3900 pos 2412/3900
+[ref-gate]   ... exact prefill K=3900 pos 3320/3900
+[ref-gate] S K=3900 prompt  8/10 exact(seed=AGREE agree=93.8% HF=1/64 KL=0.0363) fast(seed=AGREE agree=95.3% HF=1/64 KL=0.0343) diff(agree=+1.6pt KL=-0.0020) elapsed=15m20s
+[ref-gate]   ... exact prefill K=3900 pos 1333/3900
+[ref-gate]   ... exact prefill K=3900 pos 2392/3900
+[ref-gate]   ... exact prefill K=3900 pos 3303/3900
+[ref-gate] S K=3900 prompt  9/10 exact(seed=AGREE agree=95.3% HF=0/64 KL=0.0458) fast(seed=AGREE agree=96.9% HF=0/64 KL=0.0397) diff(agree=+1.6pt KL=-0.0062) elapsed=17m16s
+[ref-gate]   ... exact prefill K=3900 pos 1344/3900
+[ref-gate]   ... exact prefill K=3900 pos 2399/3900
+[ref-gate]   ... exact prefill K=3900 pos 3302/3900
+[ref-gate] S K=3900 prompt 10/10 exact(seed=AGREE agree=89.1% HF=3/64 KL=0.0700) fast(seed=AGREE agree=89.1% HF=1/64 KL=0.0618) diff(agree=+0.0pt KL=-0.0082) elapsed=19m12s
+=== S K=3900 SUMMARY (n=10 prompts, 64 continuation positions each): exact(meanAgree=92.3% HF=9/640 worstGap=6.571% meanKL=0.0507) fast(meanAgree=92.0% HF=7/640 worstGap=5.058% meanKL=0.0476) critA(hardFlips fast<=exact)=true critB(agree fast>=exact-1pt & >=half prompts)=true critC(KL fast<=1.1x exact)=true — CELL SHIPS
+    prefill_gate_ref_test.go:118: S K=3900: exact(agree=92.3% HF=9 KL=0.0507) fast(agree=92.0% HF=7 KL=0.0476) critA=true critB=true critC=true cell=SHIPS
+=== S: §3.1 OVERALL DECISION-SET VERDICT = DOES NOT SHIP ===
+    prefill_gate_ref_test.go:135: S: §3.1 decision-set verdict = DOES NOT SHIP
+    prefill_gate_ref_test.go:137: §3.1 gate: model S does not ship on the decision set — see log above for which cell/criterion
+=== RUN   TestPrefillGateVsReference/D7
+[ref-gate]   ... exact prefill K=256 pos 1/256
+[ref-gate] D7 K=256 prompt  1/10 exact(seed=FLIP agree=90.6% HF=1/64 KL=0.0670) fast(seed=FLIP agree=89.1% HF=2/64 KL=0.0599) diff(agree=-1.6pt KL=-0.0070) elapsed=53s
+[ref-gate] D7 K=256 prompt  2/10 exact(seed=AGREE agree=85.9% HF=1/64 KL=0.0932) fast(seed=FLIP agree=85.9% HF=2/64 KL=0.0893) diff(agree=+0.0pt KL=-0.0040) elapsed=1m20s
+[ref-gate] D7 K=256 prompt  3/10 exact(seed=FLIP agree=87.5% HF=1/64 KL=0.0664) fast(seed=AGREE agree=90.6% HF=0/64 KL=0.0618) diff(agree=+3.1pt KL=-0.0046) elapsed=1m51s
+[ref-gate] D7 K=256 prompt  4/10 exact(seed=AGREE agree=95.3% HF=1/64 KL=0.0389) fast(seed=FLIP agree=93.8% HF=0/64 KL=0.0343) diff(agree=-1.6pt KL=-0.0046) elapsed=2m19s
+[ref-gate] D7 K=256 prompt  5/10 exact(seed=AGREE agree=87.5% HF=1/64 KL=0.0592) fast(seed=AGREE agree=89.1% HF=3/64 KL=0.0583) diff(agree=+1.6pt KL=-0.0009) elapsed=2m48s
+[ref-gate] D7 K=256 prompt  6/10 exact(seed=AGREE agree=81.2% HF=1/64 KL=0.1052) fast(seed=FLIP agree=84.4% HF=1/64 KL=0.1092) diff(agree=+3.1pt KL=+0.0039) elapsed=3m14s
+[ref-gate] D7 K=256 prompt  7/10 exact(seed=AGREE agree=84.4% HF=4/64 KL=0.0986) fast(seed=AGREE agree=84.4% HF=5/64 KL=0.0832) diff(agree=+0.0pt KL=-0.0153) elapsed=3m38s
+[ref-gate] D7 K=256 prompt  8/10 exact(seed=AGREE agree=93.8% HF=0/64 KL=0.0440) fast(seed=AGREE agree=89.1% HF=0/64 KL=0.0364) diff(agree=-4.7pt KL=-0.0076) elapsed=4m1s
+[ref-gate] D7 K=256 prompt  9/10 exact(seed=AGREE agree=84.4% HF=2/64 KL=0.1124) fast(seed=AGREE agree=78.1% HF=3/64 KL=0.1142) diff(agree=-6.2pt KL=+0.0018) elapsed=4m25s
+[ref-gate] D7 K=256 prompt 10/10 exact(seed=AGREE agree=87.5% HF=2/64 KL=0.1104) fast(seed=AGREE agree=85.9% HF=1/64 KL=0.1009) diff(agree=-1.6pt KL=-0.0095) elapsed=4m51s
+=== D7 K=256 SUMMARY (n=10 prompts, 64 continuation positions each): exact(meanAgree=87.8% HF=14/640 worstGap=8.110% meanKL=0.0795) fast(meanAgree=87.0% HF=17/640 worstGap=5.317% meanKL=0.0747) critA(hardFlips fast<=exact)=false critB(agree fast>=exact-1pt & >=half prompts)=true critC(KL fast<=1.1x exact)=true — CELL DOES NOT SHIP
+    prefill_gate_ref_test.go:118: D7 K=256: exact(agree=87.8% HF=14 KL=0.0795) fast(agree=87.0% HF=17 KL=0.0747) critA=false critB=true critC=true cell=DOES NOT SHIP
+[ref-gate]   ... exact prefill K=1024 pos 397/1024
+[ref-gate]   ... exact prefill K=1024 pos 810/1024
+[ref-gate] D7 K=1024 prompt  1/10 exact(seed=AGREE agree=79.7% HF=0/64 KL=0.0853) fast(seed=AGREE agree=85.9% HF=1/64 KL=0.0873) diff(agree=+6.2pt KL=+0.0020) elapsed=1m22s
+[ref-gate]   ... exact prefill K=1024 pos 432/1024
+[ref-gate]   ... exact prefill K=1024 pos 845/1024
+[ref-gate] D7 K=1024 prompt  2/10 exact(seed=FLIP agree=89.1% HF=1/64 KL=0.1085) fast(seed=FLIP agree=92.2% HF=3/64 KL=0.0951) diff(agree=+3.1pt KL=-0.0134) elapsed=2m42s
+[ref-gate]   ... exact prefill K=1024 pos 435/1024
+[ref-gate]   ... exact prefill K=1024 pos 846/1024
+[ref-gate] D7 K=1024 prompt  3/10 exact(seed=FLIP agree=84.4% HF=1/64 KL=0.1148) fast(seed=AGREE agree=93.8% HF=1/64 KL=0.1013) diff(agree=+9.4pt KL=-0.0135) elapsed=4m1s
+[ref-gate]   ... exact prefill K=1024 pos 429/1024
+[ref-gate]   ... exact prefill K=1024 pos 834/1024
+[ref-gate] D7 K=1024 prompt  4/10 exact(seed=AGREE agree=81.2% HF=0/64 KL=0.0908) fast(seed=AGREE agree=81.2% HF=0/64 KL=0.0894) diff(agree=+0.0pt KL=-0.0013) elapsed=5m22s
+[ref-gate]   ... exact prefill K=1024 pos 435/1024
+[ref-gate]   ... exact prefill K=1024 pos 844/1024
+[ref-gate] D7 K=1024 prompt  5/10 exact(seed=AGREE agree=93.8% HF=2/64 KL=0.0564) fast(seed=AGREE agree=93.8% HF=1/64 KL=0.0495) diff(agree=+0.0pt KL=-0.0069) elapsed=6m41s
+[ref-gate]   ... exact prefill K=1024 pos 429/1024
+[ref-gate]   ... exact prefill K=1024 pos 839/1024
+[ref-gate] D7 K=1024 prompt  6/10 exact(seed=AGREE agree=84.4% HF=2/64 KL=0.0907) fast(seed=AGREE agree=85.9% HF=1/64 KL=0.0752) diff(agree=+1.6pt KL=-0.0155) elapsed=8m1s
+[ref-gate]   ... exact prefill K=1024 pos 433/1024
+[ref-gate]   ... exact prefill K=1024 pos 841/1024
+[ref-gate] D7 K=1024 prompt  7/10 exact(seed=AGREE agree=85.9% HF=2/64 KL=0.0903) fast(seed=AGREE agree=89.1% HF=2/64 KL=0.0856) diff(agree=+3.1pt KL=-0.0047) elapsed=9m20s
+[ref-gate]   ... exact prefill K=1024 pos 424/1024
+[ref-gate]   ... exact prefill K=1024 pos 827/1024
+[ref-gate] D7 K=1024 prompt  8/10 exact(seed=AGREE agree=89.1% HF=1/64 KL=0.0375) fast(seed=AGREE agree=92.2% HF=0/64 KL=0.0397) diff(agree=+3.1pt KL=+0.0022) elapsed=10m41s
+[ref-gate]   ... exact prefill K=1024 pos 428/1024
+[ref-gate]   ... exact prefill K=1024 pos 838/1024
+[ref-gate] D7 K=1024 prompt  9/10 exact(seed=AGREE agree=92.2% HF=2/64 KL=0.0816) fast(seed=AGREE agree=87.5% HF=0/64 KL=0.0749) diff(agree=-4.7pt KL=-0.0066) elapsed=12m1s
+[ref-gate]   ... exact prefill K=1024 pos 431/1024
+[ref-gate]   ... exact prefill K=1024 pos 844/1024
+[ref-gate] D7 K=1024 prompt 10/10 exact(seed=AGREE agree=90.6% HF=1/64 KL=0.1006) fast(seed=AGREE agree=85.9% HF=2/64 KL=0.1040) diff(agree=-4.7pt KL=+0.0034) elapsed=13m21s
+=== D7 K=1024 SUMMARY (n=10 prompts, 64 continuation positions each): exact(meanAgree=87.0% HF=12/640 worstGap=6.371% meanKL=0.0857) fast(meanAgree=88.8% HF=11/640 worstGap=7.861% meanKL=0.0802) critA(hardFlips fast<=exact)=true critB(agree fast>=exact-1pt & >=half prompts)=true critC(KL fast<=1.1x exact)=true — CELL SHIPS
+    prefill_gate_ref_test.go:118: D7 K=1024: exact(agree=87.0% HF=12 KL=0.0857) fast(agree=88.8% HF=11 KL=0.0802) critA=true critB=true critC=true cell=SHIPS
+=== D7: §3.1 OVERALL DECISION-SET VERDICT = DOES NOT SHIP ===
+    prefill_gate_ref_test.go:135: D7: §3.1 decision-set verdict = DOES NOT SHIP
+    prefill_gate_ref_test.go:137: §3.1 gate: model D7 does not ship on the decision set — see log above for which cell/criterion
+--- FAIL: TestPrefillGateVsReference (2628.50s)
+    --- FAIL: TestPrefillGateVsReference/S (1454.62s)
+    --- FAIL: TestPrefillGateVsReference/D7 (1173.88s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	2629.377s
+FAIL
