@@ -29,7 +29,7 @@ ever does. If that exceeds the resident slot budget the pager thrashes. The slot
 was tuned on decode traffic; nobody has checked it against a verify.
 
 **H-noamort** (raised by reading the code while scoping this, and it must be
-distinguished, not assumed away). `cuda/prefill.go:163` declines the batched
+distinguished, not assumed away). `cuda/prefill.go:162` declines the batched
 weight-stationary path for MoE. If a width-K verify therefore walks position by
 position, the pager sees exactly decode-shaped traffic — the slot budget is never
 stressed — but the verify pays K full decode steps to commit at most K tokens, so the

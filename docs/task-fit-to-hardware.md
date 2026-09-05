@@ -49,13 +49,13 @@ Scoped against what exists, the way `task-model-pull.md` was.
 **Already automatic, per backend, in pieces:**
 
 - CUDA expert cache: `--moe-cache-slots 0` means "ask for all and auto-cap to free VRAM"
-  (`decoder/model.go:128-135`, the cap that accounts for 2 MiB allocation quanta and the first-launch
+  (`decoder/model.go:127-135`, the cap that accounts for 2 MiB allocation quanta and the first-launch
   reservation — `docs/positioning.md`'s own history of it).
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
   (`internal/serveapp/main.go:381`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
-  (`metal/backend.go:103`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
-  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:163`).
+  (`metal/backend.go:102`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
+  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:162`).
 
 **Still the user's decision, with no basis offered for it:**
 
@@ -257,8 +257,8 @@ M-01, M-02, M-31, M-32, N-42, L-01, L-04 · `docs/task-model-pull.md` (phase 1 s
 before this one) · `docs/task-metal-expert-streaming-at-scale.md` (N=64, 2.19 tok/s; "default to
 64" with no code) · `docs/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:347-374` (the flags the plan subsumes) · `decoder/model.go:128-163`
-(`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:82-164` (the guard) ·
+`internal/serveapp/main.go:347-374` (the flags the plan subsumes) · `decoder/model.go:127-163`
+(`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:81-164` (the guard) ·
 `decoder/weightbytes.go:56` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:179` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).

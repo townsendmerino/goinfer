@@ -57,7 +57,7 @@ and the README example (`README.md:76-88`):
    library caller cannot reach it).~~ **CLOSED by phase 0:** the package is exported as
    `goinfer/pull` (Experimental), and `--model hf:owner/repo:quant` / `demo:tier` fetches on
    first use, so a library caller and a CLI user take the same first step.
-2. `decoder.Load(dir, decoder.Options{...})` (`decoder/model.go:198`), choosing a quant and a
+2. `decoder.Load(dir, decoder.Options{...})` (`decoder/model.go:197`), choosing a quant and a
    backend, and knowing that four default-ON behaviours are set through `os.Setenv` rather than
    `Options` (N-42).
 3. Load the tokenizer separately; detect the chat template (`chat.Detect`, `chat/chat.go:112`);
@@ -65,7 +65,7 @@ and the README example (`README.md:76-88`):
 4. Build `constrain.GrammarFromStruct(Person{})`, then the masker
    `constrain.NewMasker(g, toks, eos).StopWhenComplete().Process`, which needs the token-bytes
    table and the EOS set from somewhere.
-5. `m.Generate(ctx, ids, maxTokens, sp)` → `(<-chan int, *Generation)` (`decoder/model.go:807`);
+5. `m.Generate(ctx, ids, maxTokens, sp)` → `(<-chan int, *Generation)` (`decoder/model.go:806`);
    drain the channel; decode incrementally with UTF-8 holdback; stop on the template's stop ids;
    check `Generation.Err()` after the channel closes.
 6. `json.Unmarshal` — which the README says "always succeeds" and the audit found does not for
@@ -108,7 +108,7 @@ p, err := llm.Into[Person](ctx, m, "Extract the person from: …")   // the READ
   and `Into` says so in the error rather than retrying.
 - **`Options`** carries what today reaches the decoder only through the environment: fast
   attention, fused attention, expert-major prefill, the MoE cache, KV precision, context —
-  the `KVPrecision` pattern `Options` already uses (`decoder/model.go:151-163`). With the field
+  the `KVPrecision` pattern `Options` already uses (`decoder/model.go:150-163`). With the field
   present, the `serve` flags stop transporting through `os.Setenv` (N-42's last paragraph) and a
   library caller and a multi-model `serve` can differ per model.
 - **Typed errors** for the three things a caller must branch on: context length exceeded,
@@ -323,7 +323,7 @@ by default (the banner says how to turn it on); which of the five routes a given
 
 `docs/api-tiers.md` (the Hard tier; the surfaces the facade must not touch) · `README.md:76-88`
 (the six-step example the facade replaces) · `internal/chatapp/main.go` (the 632-line reference
-implementation of mode 2) · `decoder/model.go:151-163`, `:193`, `:802` (`Options`, `Load`,
+implementation of mode 2) · `decoder/model.go:150-163`, `:193`, `:802` (`Options`, `Load`,
 `Generate`) · `chat/chat.go:112` (`Detect`) · `pull/pull.go` (the library `pull`
 exports) · `internal/serveapp/main.go:328`, `:354`, `:927-932` (`-web`, `-require-backend`, the
 resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and dsh today) ·
