@@ -1,0 +1,91 @@
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 12:22:32 PDT ===
+not idle (loadavg 1.76), waited 0s
+not idle (loadavg 1.89), waited 30s
+not idle (loadavg 1.43), waited 60s
+not idle (loadavg 1.56), waited 90s
+not idle (loadavg 1.32), waited 120s
+not idle (loadavg 1.10), waited 150s
+idle at loadavg 0.87, proceeding at 2026-09-04 12:25:33 PDT
+=== bench_peer.py D7 tier-1 (goinfer/ollama/llamacpp/mlx, Metal, depth 128, n=5) ===
+START: 2026-09-04 12:25:33 PDT
+# preflight OK: loadavg [0.87451171875, 1.830078125, 5.22216796875] · gpu None · compute apps []
+# 4 cells planned, 0 already done
+#   tokens/chunks = 1.0000  (2120 tok / 2120 chunks)
+{"phase": "A", "engine": "goinfer", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [21.481689776506723, 21.9183142584899, 21.90412020748618, 21.93179533871023, 21.908577543646047], "error": null, "machine": {"loadavg": [0.87451171875, 1.830078125, 5.22216796875], "gpu": null}, "secs": 178.4, "counts": {"tokens": 2120, "chunks": 2120, "tokens_per_chunk": 1.0, "completion_rates": [21.967727896879005, 21.788237852188885, 21.959252350413013, 21.81991443628316, 19.378939462638048, 21.13912332856134, 21.920719817832097, 21.879603067258234, 21.855927239731344, 21.965745547904653, 21.973211273654574, 21.966010767108, 21.826049501397687, 21.885178391847685, 21.90797848648225, 21.966412859793007, 21.840533236585756, 21.98132823517144, 21.95790704200521, 21.967746066747658, 21.8396346814031, 21.88655741835207, 21.878384088643358, 21.880870890980834, 21.844372531576095, 21.945234758357564, 21.960934801342546, 21.939879108830805, 21.832786885166414, 21.973225582893065, 21.98205031531659, 21.975878726198776, 21.820331431557317, 21.922606631070977, 21.93821453184302, 21.961599508074677, 21.795543415708682, 21.936332356719543, 21.945297272991194, 21.94869520120295], "ngen": 64}, "mean": 21.8, "spread": 0.5}
+# cell gate: loadavg 2.39 > 1.00, waiting (0/600s)
+# cell gate: loadavg 2.76 > 1.00, waiting (20/600s)
+# cell gate: loadavg 2.53 > 1.00, waiting (40/600s)
+# cell gate: loadavg 2.47 > 1.00, waiting (60/600s)
+# cell gate: loadavg 2.07 > 1.00, waiting (80/600s)
+# cell gate: loadavg 1.71 > 1.00, waiting (100/600s)
+# cell gate: loadavg 1.50 > 1.00, waiting (120/600s)
+# cell gate: loadavg 1.29 > 1.00, waiting (140/600s)
+# cell gate: loadavg 1.14 > 1.00, waiting (160/600s)
+# cell gate: loadavg 1.24 > 1.00, waiting (180/600s)
+# cell gate: loadavg 1.03 > 1.00, waiting (200/600s)
+# cell gate: loadavg 1.32 > 1.00, waiting (220/600s)
+# cell gate: loadavg 1.09 > 1.00, waiting (240/600s)
+# cell gate: loadavg 1.99 > 1.00, waiting (260/600s)
+# cell gate: loadavg 2.70 > 1.00, waiting (280/600s)
+# cell gate: loadavg 2.21 > 1.00, waiting (300/600s)
+# cell gate: loadavg 1.94 > 1.00, waiting (320/600s)
+# cell gate: loadavg 1.84 > 1.00, waiting (340/600s)
+# cell gate: loadavg 2.08 > 1.00, waiting (360/600s)
+# cell gate: loadavg 1.76 > 1.00, waiting (380/600s)
+# cell gate: loadavg 1.97 > 1.00, waiting (400/600s)
+# cell gate: loadavg 1.87 > 1.00, waiting (420/600s)
+# cell gate: loadavg 2.26 > 1.00, waiting (440/600s)
+# cell gate: loadavg 2.91 > 1.00, waiting (460/600s)
+# cell gate: loadavg 2.36 > 1.00, waiting (480/600s)
+# cell gate: loadavg 1.97 > 1.00, waiting (500/600s)
+# cell gate: loadavg 1.96 > 1.00, waiting (520/600s)
+# cell gate: loadavg 2.01 > 1.00, waiting (540/600s)
+# cell gate: loadavg 2.50 > 1.00, waiting (560/600s)
+# cell gate: loadavg 2.07 > 1.00, waiting (580/600s)
+REFUSED mid-sweep: 1-min load average 1.78 still exceeds 1.00 after waiting 600s. Another job is on the box. NOT measuring anyway — a cell measured under contention is indistinguishable afterwards from a clean one, which is how a whole sweep gets silently voided. Re-run when the box is free, or raise BENCH_MAX_LOADAVG deliberately.
+=== resume attempt started 2026-09-04 12:39:18 PDT ===
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 12:39:18 PDT ===
+not idle (loadavg 1.97), waited 0s
+not idle (loadavg 2.52), waited 30s
+not idle (loadavg 2.23), waited 60s
+not idle (loadavg 2.82), waited 90s
+not idle (loadavg 3.59), waited 120s
+not idle (loadavg 2.56), waited 150s
+not idle (loadavg 1.90), waited 180s
+not idle (loadavg 1.54), waited 210s
+not idle (loadavg 1.22), waited 240s
+not idle (loadavg 1.14), waited 270s
+not idle (loadavg 1.14), waited 300s
+idle at loadavg 0.95, proceeding at 2026-09-04 12:44:49 PDT
+=== bench_peer.py D7 tier-1 (goinfer/ollama/llamacpp/mlx, Metal, depth 128, n=5) ===
+START: 2026-09-04 12:44:49 PDT
+# resuming: 2 cells already recorded in docs/measurements/peer-matrix-2026-09/mac-m1pro-d7-tier1-2026-09-04.json
+# preflight OK: loadavg [0.94677734375, 1.697265625, 2.7685546875] · gpu None · compute apps []
+# 4 cells planned, 1 already done
+# skip (done): ('A', 'goinfer', 'metal', '7B', 128, 'greedy')
+#   tokens/chunks = 1.0196  (2080 tok / 2040 chunks)
+{"phase": "A", "engine": "ollama", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [25.523031116624434, 25.51526147249984, 25.511429841498153, 25.514850864027995, 25.515457301948086], "error": null, "machine": {"loadavg": [0.94677734375, 1.697265625, 2.7685546875], "gpu": null}, "secs": 98.1, "counts": {"tokens": 2080, "chunks": 2040, "tokens_per_chunk": 1.0196078431372548, "completion_rates": [25.429824807237623, 25.561948320930675, 25.552313569593554, 25.54980988831852, 25.55052349014971, 25.44063850339033, 25.546063281227017, 25.553127072148055, 25.54275272051226, 25.41835624244058, 25.552011658552303, 25.53620447780243, 25.547881523062724, 25.553104142522756, 25.431004629144386, 25.540776385961287, 25.541020472737994, 25.54443294353183, 25.429636196691312, 25.537272709258573, 25.53648578903832, 25.536475663953144, 25.530643690095186, 25.435471266678867, 25.532428839151084, 25.52746755621682, 25.530792804785563, 25.421673168775396, 25.522077121351366, 25.532694614725752, 25.523187279096913, 25.528485528121063, 25.397848269260688, 25.56636228448353, 25.525365310268796, 25.529631389938206, 25.538264299518207, 25.518689784138317, 25.51918298721834, 25.528314090758602], "ngen": 64}, "mean": 25.5, "spread": 0.0}
+#   tokens/chunks = 1.0278  (1480 tok / 1440 chunks)
+{"phase": "A", "engine": "llamacpp", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [26.052507974054663, 26.062273759625988, 26.076146871444834, 26.084481019196804, 26.092902567809656], "error": null, "machine": {"loadavg": [0.5712890625, 1.35009765625, 2.5166015625], "gpu": null}, "secs": 67.3, "counts": {"tokens": 1480, "chunks": 1440, "tokens_per_chunk": 1.0277777777777777, "completion_rates": [26.08373149636435, 26.07764903201499, 26.07386526831133, 25.882167006835427, 26.063563058921684, 26.068319088537073, 26.078303913351384, 26.092464928101073, 26.0881742717565, 26.09076931091284, 25.9320508721781, 26.079581482727285, 26.0795491908302, 26.05700669208954, 26.0835653352863, 26.08749292122713, 25.920739777149024, 26.076684877697083, 26.20217170682292, 26.14092349109461, 26.102297940285666, 26.120893962957147, 26.118885911894886, 25.926577303657343, 26.103312081525708, 26.1127941477022, 26.10191467616611, 26.102954813777934, 26.10661845761735, 26.106862229591993, 25.934451441899657, 26.10694030529349, 26.119039083816677, 26.12318981961235, 26.106307672803908, 26.11211465478505, 26.120119284543232, 25.943011984196342, 26.1110122397283, 26.10842580299139], "ngen": 64}, "mean": 26.1, "spread": 0.0}
+# cell gate: loadavg 1.80 > 1.00, waiting (0/600s)
+# cell gate: loadavg 1.94 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.52 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.43 > 1.00, waiting (60/600s)
+# cell gate: loadavg 1.48 > 1.00, waiting (80/600s)
+# cell gate: loadavg 1.71 > 1.00, waiting (100/600s)
+# cell gate: loadavg 1.50 > 1.00, waiting (120/600s)
+# cell gate: loadavg 2.18 > 1.00, waiting (140/600s)
+# cell gate: loadavg 2.41 > 1.00, waiting (160/600s)
+# cell gate: loadavg 2.01 > 1.00, waiting (180/600s)
+# cell gate: loadavg 1.59 > 1.00, waiting (200/600s)
+# cell gate: loadavg 1.87 > 1.00, waiting (220/600s)
+# cell gate: loadavg 1.63 > 1.00, waiting (240/600s)
+# cell gate: loadavg 2.14 > 1.00, waiting (260/600s)
+# cell gate: loadavg 1.82 > 1.00, waiting (280/600s)
+# cell gate: loadavg 1.60 > 1.00, waiting (300/600s)
+# cell gate: loadavg 1.22 > 1.00, waiting (320/600s)
+# cell gate: loadavg 1.24 > 1.00, waiting (340/600s)
+# cell gate: loadavg 1.17 > 1.00, waiting (360/600s)
+#   tokens/chunks = 1.0222  (1840 tok / 1800 chunks)
+{"phase": "A", "engine": "mlx", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [38.53617408487536, 38.41015644266212, 38.62530626249989, 36.66824821922477, 37.442205314031725], "error": null, "machine": {"loadavg": [0.83740234375, 1.421875, 2.12158203125], "gpu": null}, "secs": 63.9, "counts": {"tokens": 1840, "chunks": 1800, "tokens_per_chunk": 1.0222222222222221, "completion_rates": [37.91255309856795, 39.11931129707333, 39.022530428086895, 38.08006113655899, 37.957267795149896, 38.331393286970226, 38.95149078320197, 38.91478485339364, 38.74561501971199, 38.46829096490881, 38.99057589666582, 37.66509606375684, 38.877096949773545, 38.544773495416614, 37.80043603288996, 38.18936711817341, 39.04032800299821, 38.134936102553084, 38.95364872553508, 38.94901983494588, 37.855497315663136, 38.388230323623134, 38.842063402037496, 38.83872639264312, 38.99129661272616, 37.92763007503408, 38.841349589463945, 38.52486850494684, 28.388458932904122, 35.25167739359773, 37.75317964510191, 37.66752500002341, 36.9775280456664, 38.22457062552298, 37.71529275234255, 37.840123586395066, 36.74693159800831, 37.31606290483049, 38.069361658666296, 36.64777134082169], "ngen": 64}, "mean": 37.9, "spread": 2.0}
+DONE: 2026-09-04 12:54:59 PDT

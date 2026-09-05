@@ -1,0 +1,120 @@
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 14:48:38 PDT ===
+not idle (loadavg 6.03), waited 0s
+not idle (loadavg 4.62), waited 30s
+not idle (loadavg 3.34), waited 60s
+not idle (loadavg 2.42), waited 90s
+not idle (loadavg 2.25), waited 120s
+not idle (loadavg 2.03), waited 150s
+not idle (loadavg 1.69), waited 180s
+not idle (loadavg 1.54), waited 210s
+not idle (loadavg 1.53), waited 240s
+not idle (loadavg 1.20), waited 270s
+not idle (loadavg 1.05), waited 300s
+not idle (loadavg 1.08), waited 330s
+idle at loadavg 0.98, proceeding at 2026-09-04 14:54:39 PDT
+=== bench_peer.py M35/M26 tier-1 (goinfer/ollama/llamacpp/mlx, Metal, depth 128, n=5) ===
+NOTE: goinfer's M35/M26 cells use -stream-weights; Metal residency is expected to DECLINE
+  on this 16GB Mac (measured: weights exceed the 70% RAM guard) and fall back to the
+  metal-staged (CPU) decode path automatically -- this is the real, correct behavior, not
+  a bug, and it is what 'goinfer' rows for these two models will measure.
+  Ollama: only M26 has a local tag (g26q40) -- M35 (would need ~44GB via Ollama's ~2x
+  import cost, too tight after today's disk incident) does not, so that cell will record
+  a clean error rather than a rate. This is a deliberate scope decision, not a bug.
+START: 2026-09-04 14:54:39 PDT
+# preflight OK: loadavg [0.97900390625, 2.3310546875, 3.22119140625] · gpu None · compute apps []
+# 8 cells planned, 0 already done
+{"phase": "A", "engine": "goinfer", "backend": "metal", "model": "M35", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": null, "error": "<urlopen error [Errno 61] Connection refused>", "machine": {"loadavg": [0.97900390625, 2.3310546875, 3.22119140625], "gpu": null}, "secs": 10643.6}
+# cell gate: loadavg 5.12 > 1.00, waiting (0/600s)
+# cell gate: loadavg 3.88 > 1.00, waiting (20/600s)
+# cell gate: loadavg 3.09 > 1.00, waiting (40/600s)
+=== relaunch (goinfer excluded per user-approved kill) started 2026-09-04 17:53:33 PDT ===
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 17:53:33 PDT ===
+not idle (loadavg 2.01), waited 0s
+not idle (loadavg 1.77), waited 30s
+not idle (loadavg 1.43), waited 60s
+not idle (loadavg 7.30), waited 90s
+not idle (loadavg 5.36), waited 120s
+not idle (loadavg 4.88), waited 150s
+not idle (loadavg 3.80), waited 180s
+not idle (loadavg 3.23), waited 210s
+not idle (loadavg 3.13), waited 240s
+not idle (loadavg 3.00), waited 270s
+not idle (loadavg 2.78), waited 300s
+not idle (loadavg 2.51), waited 330s
+not idle (loadavg 2.21), waited 360s
+not idle (loadavg 1.83), waited 390s
+not idle (loadavg 1.58), waited 420s
+not idle (loadavg 1.36), waited 450s
+not idle (loadavg 1.29), waited 480s
+not idle (loadavg 1.36), waited 510s
+not idle (loadavg 1.22), waited 540s
+not idle (loadavg 1.13), waited 570s
+not idle (loadavg 1.54), waited 600s
+not idle (loadavg 1.63), waited 630s
+not idle (loadavg 1.69), waited 660s
+not idle (loadavg 1.75), waited 690s
+not idle (loadavg 2.05), waited 720s
+not idle (loadavg 1.63), waited 750s
+not idle (loadavg 2.21), waited 780s
+not idle (loadavg 2.21), waited 810s
+not idle (loadavg 1.94), waited 840s
+not idle (loadavg 1.72), waited 870s
+not idle (loadavg 2.49), waited 900s
+not idle (loadavg 2.50), waited 930s
+not idle (loadavg 1.89), waited 960s
+not idle (loadavg 1.65), waited 990s
+not idle (loadavg 1.39), waited 1020s
+not idle (loadavg 1.58), waited 1050s
+not idle (loadavg 1.62), waited 1080s
+not idle (loadavg 1.50), waited 1110s
+not idle (loadavg 1.68), waited 1140s
+not idle (loadavg 2.75), waited 1170s
+not idle (loadavg 2.25), waited 1200s
+not idle (loadavg 2.42), waited 1230s
+not idle (loadavg 2.15), waited 1260s
+not idle (loadavg 1.96), waited 1290s
+not idle (loadavg 1.83), waited 1320s
+not idle (loadavg 1.79), waited 1350s
+not idle (loadavg 1.96), waited 1380s
+not idle (loadavg 1.98), waited 1410s
+not idle (loadavg 1.34), waited 1440s
+not idle (loadavg 1.20), waited 1470s
+not idle (loadavg 1.12), waited 1500s
+not idle (loadavg 1.41), waited 1530s
+not idle (loadavg 2.51), waited 1560s
+not idle (loadavg 2.09), waited 1590s
+not idle (loadavg 1.92), waited 1620s
+not idle (loadavg 1.95), waited 1650s
+not idle (loadavg 2.14), waited 1680s
+not idle (loadavg 2.26), waited 1710s
+not idle (loadavg 1.98), waited 1740s
+not idle (loadavg 2.06), waited 1770s
+REFUSED: box not idle after 30 min of waiting
+=== relaunch (found cause: ANECompilerService indexing new MLX files) started 2026-09-04 18:24:32 PDT; wrapper patience raised 30min->90min, idle GATE ITSELF unchanged at loadavg<=1.0 ===
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 18:24:32 PDT ===
+not idle (loadavg 2.03), waited 0s
+not idle (loadavg 1.55), waited 30s
+not idle (loadavg 2.07), waited 60s
+not idle (loadavg 2.30), waited 90s
+=== RELAXED GATE THIS RUN: BENCH_MAX_LOADAVG=2.5 (default 1.0), user-approved, root cause ===
+  is macOS ANECompilerService (~96.5% CPU, unrelated to this sweep) + editor overhead, not
+  contention from the benchmarked engines. Remaining cells are GPU/Metal-timed, not
+  CPU-bound decode, so this is a materially smaller risk to validity than relaxing the gate
+  for a CPU-timed cell would be. See conversation record for the approval.
+=== waiting for idle box (loadavg <= 2.5), started polling 2026-09-04 18:26:42 PDT ===
+idle at loadavg 1.92 (relaxed bar 2.5), proceeding at 2026-09-04 18:26:42 PDT
+=== bench_peer.py M35/M26 tier-1 (ollama/llamacpp/mlx only -- goinfer excluded, see log ===
+  history: goinfer's CPU-staged fallback measured impractically slow, 2h10min/0 completions) ===
+NOTE: goinfer's M35/M26 rows are recorded as a fixed error in this results file (added by
+  hand after a user-approved kill), not measured this run -- see the goinfer/M35 and
+  goinfer/M26 entries' error field for the exact wording.
+  Ollama: only M26 has a local tag (g26q40) -- M35 does not (disk-headroom decision), so
+  that cell will record a clean error rather than a rate. This is a deliberate scope
+  decision, not a bug.
+START: 2026-09-04 18:26:42 PDT
+# resuming: 3 cells already recorded in docs/measurements/peer-matrix-2026-09/mac-m1pro-m35m26-tier1-2026-09-04.json
+# preflight OK: loadavg [1.919921875, 1.95068359375, 2.2314453125] · gpu None · compute apps []
+# 6 cells planned, 0 already done
+{"phase": "A", "engine": "ollama", "backend": "metal", "model": "M35", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": null, "error": "warmup failed: HTTP Error 404: Not Found", "machine": {"loadavg": [1.919921875, 1.95068359375, 2.2314453125], "gpu": null}, "secs": 3.6}
+{"phase": "A", "engine": "llamacpp", "backend": "metal", "model": "M35", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [], "error": null, "machine": {"loadavg": [1.84619140625, 1.9345703125, 2.22412109375], "gpu": null}, "secs": 34.5, "counts": {"tokens": 0, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [], "ngen": 64}}
+# cell gate: loadavg 2.63 > 2.50, waiting (0/600s)

@@ -1,0 +1,391 @@
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 19:06:57 PDT ===
+not idle (loadavg 2.52), waited 0s
+not idle (loadavg 3.72), waited 30s
+not idle (loadavg 4.24), waited 60s
+not idle (loadavg 3.73), waited 90s
+not idle (loadavg 4.18), waited 120s
+not idle (loadavg 4.69), waited 150s
+not idle (loadavg 3.35), waited 180s
+not idle (loadavg 3.64), waited 210s
+not idle (loadavg 2.77), waited 240s
+not idle (loadavg 2.49), waited 270s
+not idle (loadavg 2.12), waited 300s
+not idle (loadavg 3.08), waited 330s
+not idle (loadavg 4.33), waited 360s
+not idle (loadavg 3.29), waited 390s
+not idle (loadavg 4.43), waited 420s
+not idle (loadavg 3.80), waited 450s
+not idle (loadavg 2.79), waited 480s
+not idle (loadavg 2.23), waited 510s
+not idle (loadavg 1.73), waited 540s
+not idle (loadavg 1.55), waited 570s
+not idle (loadavg 1.33), waited 600s
+not idle (loadavg 1.87), waited 630s
+not idle (loadavg 1.78), waited 660s
+not idle (loadavg 1.47), waited 690s
+not idle (loadavg 1.84), waited 720s
+not idle (loadavg 1.78), waited 750s
+not idle (loadavg 1.63), waited 780s
+not idle (loadavg 1.49), waited 810s
+not idle (loadavg 3.58), waited 840s
+not idle (loadavg 2.78), waited 870s
+not idle (loadavg 2.82), waited 900s
+not idle (loadavg 3.14), waited 930s
+not idle (loadavg 11.20), waited 960s
+not idle (loadavg 8.45), waited 990s
+not idle (loadavg 6.44), waited 1020s
+not idle (loadavg 6.13), waited 1050s
+not idle (loadavg 6.57), waited 1080s
+not idle (loadavg 6.83), waited 1110s
+not idle (loadavg 7.09), waited 1140s
+not idle (loadavg 7.01), waited 1170s
+not idle (loadavg 7.79), waited 1200s
+not idle (loadavg 7.69), waited 1230s
+not idle (loadavg 6.13), waited 1260s
+not idle (loadavg 5.58), waited 1290s
+not idle (loadavg 4.23), waited 1320s
+not idle (loadavg 4.32), waited 1350s
+not idle (loadavg 8.04), waited 1380s
+not idle (loadavg 6.88), waited 1410s
+not idle (loadavg 8.15), waited 1440s
+not idle (loadavg 7.72), waited 1470s
+not idle (loadavg 10.45), waited 1500s
+not idle (loadavg 9.85), waited 1530s
+not idle (loadavg 8.85), waited 1560s
+not idle (loadavg 9.87), waited 1590s
+not idle (loadavg 9.92), waited 1620s
+not idle (loadavg 10.21), waited 1650s
+not idle (loadavg 9.84), waited 1680s
+not idle (loadavg 8.48), waited 1710s
+not idle (loadavg 9.12), waited 1740s
+not idle (loadavg 8.52), waited 1770s
+REFUSED: box not idle after 30 min of waiting
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 19:38:02 PDT ===
+not idle (loadavg 9.96), waited 0s
+not idle (loadavg 8.60), waited 30s
+not idle (loadavg 7.84), waited 60s
+not idle (loadavg 9.12), waited 90s
+not idle (loadavg 11.40), waited 120s
+not idle (loadavg 9.83), waited 150s
+not idle (loadavg 9.94), waited 180s
+not idle (loadavg 10.41), waited 210s
+not idle (loadavg 10.86), waited 240s
+not idle (loadavg 8.98), waited 270s
+not idle (loadavg 9.62), waited 300s
+not idle (loadavg 9.98), waited 330s
+not idle (loadavg 9.13), waited 360s
+not idle (loadavg 8.41), waited 390s
+not idle (loadavg 8.33), waited 420s
+not idle (loadavg 9.63), waited 450s
+not idle (loadavg 10.06), waited 480s
+not idle (loadavg 9.72), waited 510s
+not idle (loadavg 7.64), waited 540s
+not idle (loadavg 6.99), waited 570s
+not idle (loadavg 6.98), waited 600s
+not idle (loadavg 7.13), waited 630s
+not idle (loadavg 5.59), waited 660s
+not idle (loadavg 4.72), waited 690s
+not idle (loadavg 6.35), waited 720s
+not idle (loadavg 7.28), waited 750s
+not idle (loadavg 7.25), waited 780s
+not idle (loadavg 8.57), waited 810s
+not idle (loadavg 9.76), waited 840s
+not idle (loadavg 11.17), waited 870s
+not idle (loadavg 9.35), waited 900s
+not idle (loadavg 8.90), waited 930s
+not idle (loadavg 9.34), waited 960s
+not idle (loadavg 11.22), waited 990s
+not idle (loadavg 9.89), waited 1020s
+not idle (loadavg 8.95), waited 1050s
+not idle (loadavg 8.03), waited 1080s
+not idle (loadavg 8.20), waited 1110s
+not idle (loadavg 7.90), waited 1140s
+not idle (loadavg 6.62), waited 1170s
+not idle (loadavg 5.96), waited 1200s
+not idle (loadavg 6.83), waited 1230s
+not idle (loadavg 5.15), waited 1260s
+not idle (loadavg 3.65), waited 1290s
+not idle (loadavg 9.88), waited 1320s
+not idle (loadavg 11.66), waited 1350s
+not idle (loadavg 10.81), waited 1380s
+not idle (loadavg 10.34), waited 1410s
+not idle (loadavg 11.36), waited 1440s
+not idle (loadavg 9.43), waited 1470s
+not idle (loadavg 6.88), waited 1500s
+not idle (loadavg 6.28), waited 1530s
+not idle (loadavg 5.70), waited 1560s
+not idle (loadavg 5.26), waited 1590s
+not idle (loadavg 4.97), waited 1620s
+not idle (loadavg 6.32), waited 1650s
+not idle (loadavg 6.68), waited 1680s
+not idle (loadavg 6.09), waited 1710s
+not idle (loadavg 9.28), waited 1740s
+not idle (loadavg 7.08), waited 1770s
+not idle (loadavg 5.02), waited 1800s
+not idle (loadavg 5.72), waited 1830s
+not idle (loadavg 7.47), waited 1860s
+not idle (loadavg 8.92), waited 1890s
+not idle (loadavg 9.94), waited 1920s
+not idle (loadavg 9.62), waited 1950s
+not idle (loadavg 10.33), waited 1980s
+not idle (loadavg 8.97), waited 2010s
+not idle (loadavg 7.56), waited 2040s
+not idle (loadavg 5.72), waited 2070s
+not idle (loadavg 4.62), waited 2100s
+not idle (loadavg 3.59), waited 2130s
+not idle (loadavg 4.89), waited 2160s
+not idle (loadavg 3.64), waited 2190s
+not idle (loadavg 2.61), waited 2220s
+not idle (loadavg 2.13), waited 2250s
+not idle (loadavg 1.94), waited 2280s
+not idle (loadavg 1.87), waited 2310s
+not idle (loadavg 1.74), waited 2340s
+not idle (loadavg 1.38), waited 2370s
+not idle (loadavg 1.16), waited 2400s
+not idle (loadavg 1.81), waited 2430s
+not idle (loadavg 2.31), waited 2460s
+not idle (loadavg 2.02), waited 2490s
+not idle (loadavg 1.61), waited 2520s
+not idle (loadavg 1.32), waited 2550s
+not idle (loadavg 1.34), waited 2580s
+not idle (loadavg 1.41), waited 2610s
+not idle (loadavg 1.30), waited 2640s
+not idle (loadavg 1.45), waited 2670s
+not idle (loadavg 2.91), waited 2700s
+not idle (loadavg 2.49), waited 2730s
+not idle (loadavg 1.98), waited 2760s
+not idle (loadavg 3.51), waited 2790s
+not idle (loadavg 3.77), waited 2820s
+not idle (loadavg 2.93), waited 2850s
+not idle (loadavg 2.74), waited 2880s
+not idle (loadavg 2.46), waited 2910s
+not idle (loadavg 2.81), waited 2940s
+not idle (loadavg 2.97), waited 2970s
+not idle (loadavg 2.89), waited 3000s
+not idle (loadavg 2.79), waited 3030s
+not idle (loadavg 2.71), waited 3060s
+not idle (loadavg 2.41), waited 3090s
+not idle (loadavg 2.37), waited 3120s
+not idle (loadavg 2.39), waited 3150s
+not idle (loadavg 2.36), waited 3180s
+not idle (loadavg 2.49), waited 3210s
+not idle (loadavg 3.36), waited 3240s
+not idle (loadavg 3.93), waited 3270s
+not idle (loadavg 3.25), waited 3300s
+not idle (loadavg 2.49), waited 3330s
+not idle (loadavg 1.90), waited 3360s
+not idle (loadavg 1.78), waited 3390s
+not idle (loadavg 2.05), waited 3420s
+not idle (loadavg 1.70), waited 3450s
+not idle (loadavg 1.67), waited 3480s
+not idle (loadavg 2.25), waited 3510s
+not idle (loadavg 1.77), waited 3540s
+not idle (loadavg 1.78), waited 3570s
+not idle (loadavg 1.69), waited 3600s
+not idle (loadavg 1.42), waited 3630s
+not idle (loadavg 1.25), waited 3660s
+not idle (loadavg 1.71), waited 3690s
+not idle (loadavg 2.87), waited 3720s
+not idle (loadavg 2.34), waited 3750s
+not idle (loadavg 1.97), waited 3780s
+not idle (loadavg 1.62), waited 3810s
+not idle (loadavg 1.43), waited 3840s
+not idle (loadavg 1.48), waited 3870s
+not idle (loadavg 2.21), waited 3900s
+not idle (loadavg 1.77), waited 3930s
+not idle (loadavg 1.54), waited 3960s
+not idle (loadavg 2.76), waited 3990s
+not idle (loadavg 2.63), waited 4020s
+not idle (loadavg 2.44), waited 4050s
+not idle (loadavg 2.26), waited 4080s
+not idle (loadavg 2.22), waited 4110s
+not idle (loadavg 1.88), waited 4140s
+not idle (loadavg 1.48), waited 4170s
+not idle (loadavg 1.53), waited 4200s
+not idle (loadavg 1.19), waited 4230s
+not idle (loadavg 1.17), waited 4260s
+idle at loadavg 0.99, proceeding at 2026-09-04 20:49:41 PDT
+=== bench_peer.py S / Qwen2.5-Coder-1.5B tier-1 (goinfer/ollama/llamacpp/mlx, Metal, depth 128, n=5) ===
+START: 2026-09-04 20:49:41 PDT
+# preflight OK: loadavg [0.9892578125, 1.62939453125, 2.35498046875] · gpu None · compute apps []
+# 4 cells planned, 0 already done
+#   tokens/chunks = 1.0000  (2400 tok / 2400 chunks)
+{"phase": "A", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [71.9251754332714, 71.34448735713373, 73.44142036791399, 73.34363988410901, 73.45095443010102], "error": null, "machine": {"loadavg": [0.9892578125, 1.62939453125, 2.35498046875], "gpu": null}, "secs": 45.0, "counts": {"tokens": 2400, "chunks": 2400, "tokens_per_chunk": 1.0, "completion_rates": [70.53380536211299, 73.5645062698361, 73.01717001840086, 69.81099117866874, 68.98212108879055, 73.04850606512599, 72.99452184525289, 73.44978163798315, 71.37956279101614, 69.79229000642367, 70.24093832373175, 70.01777887873548, 70.50108248868507, 72.34444908861998, 73.14521850993475, 73.33457876992297, 73.38686117089712, 73.48910220455485, 73.56889022101228, 73.51777187836929, 73.50463610378543, 73.40694868294955, 73.4588694613879, 73.19828322035549, 73.21884687164089, 73.06190525939547, 72.92208368056153, 73.44906540722187, 73.5839111787393, 73.40225306424665, 73.59885784554488, 73.51219576552151, 73.44251308939415, 73.47818426542283, 73.42620576024697, 73.39324771624844, 73.57150486128283, 73.46076741977352, 73.42404697616408, 73.41116535227536], "ngen": 64}, "mean": 72.7, "spread": 2.1}
+# cell gate: loadavg 1.02 > 1.00, waiting (0/600s)
+# cell gate: loadavg 1.23 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.21 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.31 > 1.00, waiting (60/600s)
+# cell gate: loadavg 1.29 > 1.00, waiting (80/600s)
+# cell gate: loadavg 1.35 > 1.00, waiting (100/600s)
+# cell gate: loadavg 1.77 > 1.00, waiting (120/600s)
+# cell gate: loadavg 1.54 > 1.00, waiting (140/600s)
+# cell gate: loadavg 1.51 > 1.00, waiting (160/600s)
+# cell gate: loadavg 2.07 > 1.00, waiting (180/600s)
+# cell gate: loadavg 1.92 > 1.00, waiting (200/600s)
+# cell gate: loadavg 1.80 > 1.00, waiting (220/600s)
+# cell gate: loadavg 1.57 > 1.00, waiting (240/600s)
+# cell gate: loadavg 1.47 > 1.00, waiting (260/600s)
+# cell gate: loadavg 1.48 > 1.00, waiting (280/600s)
+# cell gate: loadavg 1.34 > 1.00, waiting (300/600s)
+# cell gate: loadavg 1.32 > 1.00, waiting (320/600s)
+# cell gate: loadavg 1.17 > 1.00, waiting (340/600s)
+# cell gate: loadavg 1.38 > 1.00, waiting (360/600s)
+# cell gate: loadavg 1.47 > 1.00, waiting (380/600s)
+# cell gate: loadavg 1.34 > 1.00, waiting (400/600s)
+# cell gate: loadavg 1.32 > 1.00, waiting (420/600s)
+# cell gate: loadavg 1.31 > 1.00, waiting (440/600s)
+# cell gate: loadavg 1.31 > 1.00, waiting (460/600s)
+# cell gate: loadavg 1.08 > 1.00, waiting (480/600s)
+# cell gate: loadavg 1.14 > 1.00, waiting (500/600s)
+# cell gate: loadavg 1.23 > 1.00, waiting (520/600s)
+# cell gate: loadavg 1.45 > 1.00, waiting (540/600s)
+# cell gate: loadavg 1.39 > 1.00, waiting (560/600s)
+# cell gate: loadavg 1.29 > 1.00, waiting (580/600s)
+REFUSED mid-sweep: 1-min load average 1.27 still exceeds 1.00 after waiting 600s. Another job is on the box. NOT measuring anyway — a cell measured under contention is indistinguishable afterwards from a clean one, which is how a whole sweep gets silently voided. Re-run when the box is free, or raise BENCH_MAX_LOADAVG deliberately.
+=== waiting for idle box (loadavg <= 1.0), started polling 2026-09-04 21:01:01 PDT ===
+not idle (loadavg 1.53), waited 0s
+not idle (loadavg 1.38), waited 30s
+not idle (loadavg 1.32), waited 60s
+not idle (loadavg 1.29), waited 90s
+not idle (loadavg 1.19), waited 120s
+not idle (loadavg 1.11), waited 150s
+not idle (loadavg 1.33), waited 180s
+not idle (loadavg 1.66), waited 210s
+not idle (loadavg 1.32), waited 240s
+not idle (loadavg 1.49), waited 270s
+not idle (loadavg 1.44), waited 300s
+not idle (loadavg 1.55), waited 330s
+not idle (loadavg 1.26), waited 360s
+not idle (loadavg 1.29), waited 390s
+not idle (loadavg 1.35), waited 420s
+not idle (loadavg 1.39), waited 450s
+not idle (loadavg 1.32), waited 480s
+not idle (loadavg 1.30), waited 510s
+not idle (loadavg 1.18), waited 540s
+not idle (loadavg 1.33), waited 570s
+not idle (loadavg 1.64), waited 600s
+not idle (loadavg 2.10), waited 630s
+not idle (loadavg 1.67), waited 660s
+not idle (loadavg 1.60), waited 690s
+not idle (loadavg 1.36), waited 720s
+not idle (loadavg 1.28), waited 750s
+not idle (loadavg 1.40), waited 780s
+not idle (loadavg 1.52), waited 810s
+not idle (loadavg 1.51), waited 840s
+not idle (loadavg 2.26), waited 870s
+not idle (loadavg 2.00), waited 900s
+not idle (loadavg 1.87), waited 930s
+not idle (loadavg 1.52), waited 960s
+not idle (loadavg 1.45), waited 990s
+not idle (loadavg 1.59), waited 1020s
+not idle (loadavg 1.42), waited 1050s
+not idle (loadavg 1.25), waited 1080s
+not idle (loadavg 1.30), waited 1110s
+not idle (loadavg 1.24), waited 1140s
+not idle (loadavg 1.14), waited 1170s
+not idle (loadavg 1.31), waited 1200s
+not idle (loadavg 1.13), waited 1230s
+not idle (loadavg 1.14), waited 1260s
+not idle (loadavg 3.19), waited 1290s
+not idle (loadavg 2.48), waited 1320s
+not idle (loadavg 2.21), waited 1350s
+not idle (loadavg 1.92), waited 1380s
+not idle (loadavg 1.99), waited 1410s
+not idle (loadavg 1.73), waited 1440s
+not idle (loadavg 1.52), waited 1470s
+not idle (loadavg 1.61), waited 1500s
+not idle (loadavg 1.42), waited 1530s
+not idle (loadavg 1.19), waited 1560s
+not idle (loadavg 1.67), waited 1590s
+not idle (loadavg 1.51), waited 1620s
+not idle (loadavg 1.30), waited 1650s
+not idle (loadavg 1.32), waited 1680s
+not idle (loadavg 1.21), waited 1710s
+not idle (loadavg 1.48), waited 1740s
+not idle (loadavg 1.37), waited 1770s
+not idle (loadavg 1.85), waited 1800s
+not idle (loadavg 1.47), waited 1830s
+not idle (loadavg 1.29), waited 1860s
+not idle (loadavg 1.66), waited 1890s
+not idle (loadavg 1.99), waited 1920s
+not idle (loadavg 2.00), waited 1950s
+not idle (loadavg 1.61), waited 1980s
+not idle (loadavg 1.35), waited 2010s
+not idle (loadavg 1.16), waited 2040s
+not idle (loadavg 1.04), waited 2070s
+not idle (loadavg 1.37), waited 2100s
+not idle (loadavg 1.69), waited 2130s
+not idle (loadavg 1.74), waited 2160s
+not idle (loadavg 1.64), waited 2190s
+not idle (loadavg 1.66), waited 2220s
+not idle (loadavg 1.55), waited 2250s
+not idle (loadavg 1.27), waited 2280s
+not idle (loadavg 1.29), waited 2310s
+not idle (loadavg 1.12), waited 2340s
+not idle (loadavg 1.19), waited 2370s
+not idle (loadavg 1.23), waited 2400s
+not idle (loadavg 1.19), waited 2430s
+not idle (loadavg 1.51), waited 2460s
+not idle (loadavg 2.40), waited 2490s
+not idle (loadavg 1.86), waited 2520s
+not idle (loadavg 1.78), waited 2550s
+not idle (loadavg 1.80), waited 2580s
+not idle (loadavg 1.71), waited 2610s
+not idle (loadavg 1.56), waited 2640s
+not idle (loadavg 1.26), waited 2670s
+not idle (loadavg 1.30), waited 2700s
+not idle (loadavg 1.40), waited 2730s
+not idle (loadavg 1.53), waited 2760s
+not idle (loadavg 1.25), waited 2790s
+not idle (loadavg 1.22), waited 2820s
+not idle (loadavg 1.14), waited 2850s
+not idle (loadavg 1.17), waited 2880s
+not idle (loadavg 1.05), waited 2910s
+not idle (loadavg 1.48), waited 2940s
+not idle (loadavg 1.32), waited 2970s
+not idle (loadavg 2.00), waited 3000s
+not idle (loadavg 1.61), waited 3030s
+not idle (loadavg 1.67), waited 3060s
+not idle (loadavg 1.46), waited 3090s
+not idle (loadavg 1.78), waited 3120s
+not idle (loadavg 1.54), waited 3150s
+not idle (loadavg 1.65), waited 3180s
+not idle (loadavg 1.33), waited 3210s
+not idle (loadavg 1.85), waited 3240s
+not idle (loadavg 2.22), waited 3270s
+not idle (loadavg 1.88), waited 3300s
+not idle (loadavg 2.07), waited 3330s
+not idle (loadavg 2.52), waited 3360s
+not idle (loadavg 3.05), waited 3390s
+not idle (loadavg 2.20), waited 3420s
+not idle (loadavg 2.53), waited 3450s
+not idle (loadavg 2.02), waited 3480s
+not idle (loadavg 2.68), waited 3510s
+not idle (loadavg 2.65), waited 3540s
+not idle (loadavg 2.24), waited 3570s
+not idle (loadavg 2.47), waited 3600s
+not idle (loadavg 2.35), waited 3630s
+not idle (loadavg 1.85), waited 3660s
+not idle (loadavg 1.71), waited 3690s
+not idle (loadavg 1.56), waited 3720s
+not idle (loadavg 1.32), waited 3750s
+not idle (loadavg 1.46), waited 3780s
+not idle (loadavg 1.55), waited 3810s
+not idle (loadavg 1.44), waited 3840s
+not idle (loadavg 1.13), waited 3870s
+not idle (loadavg 1.08), waited 3900s
+not idle (loadavg 1.23), waited 3930s
+idle at loadavg 1.00, proceeding at 2026-09-04 22:07:09 PDT
+=== bench_peer.py S / Qwen2.5-Coder-1.5B tier-1 (goinfer/ollama/llamacpp/mlx, Metal, depth 128, n=5) ===
+START: 2026-09-04 22:07:09 PDT
+# resuming: 2 cells already recorded in docs/measurements/peer-matrix-2026-09/mac-m1pro-s-tier1-2026-09-04.json
+# preflight OK: loadavg [0.9970703125, 1.50927734375, 1.62841796875] · gpu None · compute apps []
+# 4 cells planned, 1 already done
+# skip (done): ('A', 'goinfer', 'metal', '1.5B', 128, 'greedy')
+#   tokens/chunks = 1.0000  (2560 tok / 2560 chunks)
+{"phase": "A", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [82.72424377414445, 84.33049123649133, 84.90456977134448, 85.30392452748916, 84.02749275197046], "error": null, "machine": {"loadavg": [0.9970703125, 1.50927734375, 1.62841796875], "gpu": null}, "secs": 41.6, "counts": {"tokens": 2560, "chunks": 2560, "tokens_per_chunk": 1.0, "completion_rates": [83.6108056348553, 82.41494544115243, 84.10490213802878, 77.926848953587, 84.83639260612058, 82.25277739977136, 85.24139406191105, 81.40588395772917, 85.04506207113668, 79.90160687826116, 84.14930892373269, 85.54997064206684, 84.19259516392722, 85.37372978989582, 84.7968596066083, 85.63479681630191, 84.96519040213428, 85.75040880312278, 82.30956726230913, 83.7413415308346, 85.57804488454009, 85.66511568607834, 85.69985665692492, 85.52703294481175, 84.9620631643294, 85.7240729541158, 85.42872908742615, 85.43157218484158, 85.76627057637316, 84.83093781173079, 84.69750746345807, 85.5902429776383, 85.59089217805622, 85.53923090023495, 82.03633272764827, 82.239391689528, 85.6678628239832, 84.50100646726109, 82.85871783036934, 83.7865073986826], "ngen": 64}, "mean": 84.3, "spread": 2.6}
+#   tokens/chunks = 1.0000  (2560 tok / 2560 chunks)
+{"phase": "A", "engine": "llamacpp", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [84.62513753228474, 86.96493708102386, 86.28965476347189, 85.96769904381979, 87.02799062799781], "error": null, "machine": {"loadavg": [0.966796875, 1.4296875, 1.59130859375], "gpu": null}, "secs": 38.9, "counts": {"tokens": 2560, "chunks": 2560, "tokens_per_chunk": 1.0, "completion_rates": [77.93784710554861, 86.4774690271045, 87.10433557227452, 83.5996783700277, 82.73548464200343, 88.14335467299036, 83.92070891678038, 87.0822219515484, 87.60923277312884, 85.7541196112253, 86.95644168399012, 88.13450206916232, 88.19950685899853, 88.33792199748237, 88.02526829330036, 82.70250336090311, 84.92217465016763, 88.120535879157, 87.829344794906, 83.60094016405817, 88.27293993042257, 88.15761084079831, 87.65872413895691, 81.75496770930847, 87.71540027189053, 88.04971454607231, 85.50338225718953, 83.99551083193403, 87.27345761945122, 82.25266990343727, 85.71404758084753, 87.2374093397359, 88.21028168449098, 88.11168280552927, 87.52056830613617, 87.89278614719261, 85.5402907111886, 85.77931553839124, 85.87560426356129, 87.29339556749228], "ngen": 64}, "mean": 86.2, "spread": 2.4}
+#   tokens/chunks = 1.0000  (2560 tok / 2560 chunks)
+{"phase": "A", "engine": "mlx", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [109.00424045601693, 110.25375599541783, 109.83312177924365, 110.24110864209872, 109.6315375141492], "error": null, "machine": {"loadavg": [0.97021484375, 1.3740234375, 1.5625], "gpu": null}, "secs": 35.2, "counts": {"tokens": 2560, "chunks": 2560, "tokens_per_chunk": 1.0, "completion_rates": [105.86464952494423, 109.57985192350748, 108.69349555705523, 107.29872606049275, 110.94283001343703, 110.67237419916506, 110.45726372185693, 108.52473264767676, 110.04493368692332, 110.43214971399821, 110.50984420038134, 110.65853973728781, 111.17105113006382, 110.5348483042027, 108.26206372913694, 110.41661746134854, 109.7677549348148, 110.46085474905547, 110.33423917118363, 110.85375580795098, 110.67123200157859, 105.93441516635612, 109.83502952888051, 110.80769287412916, 110.80550854159308, 110.53074361259955, 109.68517959538472, 111.10805750125122, 108.3322704876878, 110.25082566837523, 109.96322843628765, 111.25305529361053, 109.45786131116874, 108.511889273795, 110.40387073018165, 109.1616042250484, 109.96080550070039, 110.36986166969652, 110.23491848512202, 108.95148891748087], "ngen": 64}, "mean": 109.8, "spread": 1.2}
+DONE: 2026-09-04 22:09:06 PDT

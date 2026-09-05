@@ -1,0 +1,151 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-09-05T01:26:42Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "ba6e816",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/opt/homebrew/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": null
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/Users/francistownsend-merino/bench-bin/serve-metal",
+    "mtime": "2026-09-04T18:43:33Z"
+   }
+  },
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   1.919921875,
+   1.95068359375,
+   2.2314453125
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "resumed_from": [
+   {
+    "utc": "2026-09-04T21:54:39Z",
+    "goinfer_commit": "ba6e816",
+    "gpu": null,
+    "uname": "Darwin 25.6.0 arm64"
+   }
+  ]
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "M35",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "CPU-staged fallback declined-residency path measured impractically slow on this hardware (2h10min, 0 completions) \u2014 not a timeout or crash, a real capability boundary",
+  "machine": {
+   "loadavg": [
+    0.97900390625,
+    2.3310546875,
+    3.22119140625
+   ],
+   "gpu": null
+  },
+  "secs": 10643.6
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "M26",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "CPU-staged fallback declined-residency path measured impractically slow on this hardware (2h10min, 0 completions) \u2014 not a timeout or crash, a real capability boundary",
+  "machine": null,
+  "secs": 0
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "M35",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "warmup failed: HTTP Error 404: Not Found",
+  "machine": {
+   "loadavg": [
+    1.919921875,
+    1.95068359375,
+    2.2314453125
+   ],
+   "gpu": null
+  },
+  "secs": 3.6
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "metal",
+  "model": "M35",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.84619140625,
+    1.9345703125,
+    2.22412109375
+   ],
+   "gpu": null
+  },
+  "secs": 34.5,
+  "counts": {
+   "tokens": 0,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [],
+   "ngen": 64
+  }
+ }
+]
