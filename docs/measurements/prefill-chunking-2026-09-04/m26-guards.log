@@ -1,0 +1,16 @@
+=== RUN   TestPrefillLongPrompt
+[longprompt] loading /home/francis/models/gemma4-26b-int4.giw ...
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.8 GB free — capping to 12 (1.3 GB)
+[longprompt] loaded in 2m10.908s
+[longprompt] PrefillPath(load-time) = false — sequential — arch needs the sequential path (moe/gemma4moe) (slower TTFT: one forward per prompt token)
+[longprompt] guards: prefillReady=true moe=true gemma4Moe=true sandwich=true qkNorm=true
+[longprompt] layers=30 non-uniform-vs-L0=5 kEqV=5 nonBatchableKinds=map[] (L0: hd=256 nKV=8 qDim=4096 kvDim=2048 rhalf=128 window=1024)
+[longprompt] hidden=2816 inter=2112 layers=30 ctxCap=8192
+[longprompt] VRAM free=0.44 GB of 8.16 GB after load
+[longprompt] M=512   DECLINED after 0s        : cuda prefill: arch needs the sequential path (moe/gemma4moe): cuda prefill: batched path declined (arch/geometry)
+[longprompt] M=2048  DECLINED after 0s        : cuda prefill: arch needs the sequential path (moe/gemma4moe): cuda prefill: batched path declined (arch/geometry)
+[longprompt] M=512   SEQUENTIAL 23.911s    (46.701 ms/token)
+[longprompt] M=2048  SEQUENTIAL 1m35.097s  (46.434 ms/token)
+--- PASS: TestPrefillLongPrompt (252.66s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	253.644s

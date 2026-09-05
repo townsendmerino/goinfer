@@ -38,27 +38,83 @@
   prefill, bit-identical. Neither transfers as a number — they say the mechanism works twice, on
   both sides of the machine, not what it is worth here.
 
-  **What is genuinely NOT known, and is the item.** Active-parameter arithmetic on
-  Gemma-4-26B-A4B puts attention at ~45% of the per-token weight traffic and the dense FFN branch
-  at another ~25%, so ~70% of M26's prefill could be batched *without any new expert kernel*. That
-  is arithmetic on config shapes, not a profile, and the repo has retracted an Amdahl projection
-  twice this fortnight — **measure the split before building to it.**
+  **M26's blockers are now MEASURED, not read off the source** (probe:
+  `cuda/prefill_longprompt_test.go` against `~/models/gemma4-26b-int4.giw` with
+  `-moe-cache-experts`, `-ctx 8192`; log `docs/measurements/prefill-chunking-2026-09-04/m26-guards.log`).
+  Loading it takes 2m11s and the C′ cache self-caps to 12 slots/layer:
+
+  ```
+  guards: prefillReady=true moe=true gemma4Moe=true sandwich=true qkNorm=true
+  layers=30 non-uniform-vs-L0=5 kEqV=5 nonBatchableKinds=map[]
+  (L0: hd=256 nKV=8 qDim=4096 kvDim=2048 rhalf=128 window=1024)
+  hidden=2816 inter=2112   VRAM free after load: 0.44 GB
+  sequential prefill: 46.701 ms/token at M=512, 46.434 ms/token at M=2048
+  ```
+
+  **M26's sequential prefill is FLAT with depth, and that is the single most fundable fact here.**
+  46.701 → 46.434 ms/token from M=512 to M=2048 — no growth at all, against D7's 12.480 → 13.878 →
+  15.665 → 19.211 over the same axis. The mechanism is visible in the geometry above: 25 of its 30
+  layers are sliding-window at 1024, so their attention never grows, and the 5 global layers'
+  growth is invisible under a weight term of ~46 ms.
+
+  **That inverts the usual objection.** P19's whole argument is that attention dominates dense
+  prefill at depth (55% at K=3900 on CUDA), which caps what batching the weight term can buy — and
+  it is why D7's 8k win came out at 3.02× rather than the 4.5× the shallow point suggested.
+  **M26 has no such ceiling: essentially all of its 46.5 ms/token is the weight term batching
+  removes.** Whatever fraction of that traffic gets batched converts almost directly.
+
+  What that is worth is still a projection, not a measurement, and is flagged as one: if the
+  ~70% dense share holds and its weight term compresses the way D7's did (12.48 → 2.78 ms/token,
+  ~5× on the weight term at shallow depth), 46.5 ms/token → ~20, i.e. the 6.4 min cell → ~2.8 min,
+  with expert-major on top taking it further. **Do not quote those two numbers as results.**
+
+  **Three of the five flags are already handled and two are not, which is smaller than it looked.**
+  `sandwich` and `qkNorm` are batched today (`rmsnorm_f32_batched` / `qk_norm_batched`) and
+  `nonBatchableKinds` is empty — every projection is int4/int8. What actually blocks:
+
+  1. **Per-layer geometry — 5 layers of 30.** `prefillCore` hoists `hd/nKV/qDim/kvDim/rhalf` from
+     layer 0 and `prefillStaticDecline` refuses anything that differs; the DECODE path already
+     reads these per layer (`Ly.hd`, `Ly.nKV` at every launch site). Size the scratch by the max
+     and bind `Ly`'s values per launch. Contained.
+  2. **`kEqV` — the same 5 `full_attention` layers.** Decode handles it in ~10 lines (`segA`): a
+     second k-projection GEMV into `vB`, then a scale-less `qk_norm` over `vB` before `rope_kv`
+     rotates k. **Both kernels already have batched variants taking an M dimension**
+     (`r.bGemvB`, `r.bQKN`), so this needs no new kernel either.
+  3. **The FFN.** Gemma-4's parallel dense‖MoE branch (`gemma4MoeMLPPre/Post`) reads and writes
+     `r.x`, the M=1 residual.
+
+  **(3) has a no-new-kernel route that the tree's own comment says does not exist.**
+  `resident.go` states "gocudrv exposes no buffer view/offset, so the split is the kernel's
+  gOff/uOff rather than Go-side pointer arithmetic" — but `aikit/gpu.Buffer.At(byteOff)` returns a
+  zero-copy sub-view, is already used for the C′ expert-slot DMA (`resident.go:973`), and its
+  `arg()` binds the offset as a raw device pointer. So the existing per-row MoE kernels can be fed
+  row *m* of a batched residual as `xB.At(m*hidden*4)`, and the first slice — batch the attention
+  half, loop the FFN per row — becomes a Go refactor (thread the residual buffer through
+  `moeMLPPre/Post` and `gemma4MoeMLPPre/Post` instead of reading `r.x`) rather than a PTX project.
+  **Correct that comment when this is picked up; it is what scoped this item wrong once already.**
+
+  **Chunking is a PREREQUISITE here, not a coincidence.** M26 has 0.44 GB free after load. Its
+  dense scratch is ~104 KB/row, so an 8k single pass would need ~855 MB and could never have run;
+  at the 512-row chunk it is ~53 MB and fits.
 
   **Sequenced work, cheapest first:**
-  1. Profile where M26/M35 sequential prefill time actually goes (`r.prof` exists but only on the
-     batched path — the decode-side attribution seam needs extending, or use `ncu`).
-  2. Batch the DENSE parts only: attention, router, shared expert, Gemma-4's parallel dense branch;
-     leave the routed experts per-row. Needs gemma4's per-layer-geometry / K=V bridge on the
-     prefill path — the same bridge the resident DECODE path already has
-     (`docs/measurements/gemma4-resident-cuda.md` territory), so it is a port, not a design.
-  3. Expert-major routed experts (the P18 shape on the GPU): a batched router over M rows, a
-     per-expert row gather, and an indexed batched GEMV. This needs a NEW `.cu` — `moe.ptx` is the
-     audited 12.6.85 artifact and must stay untouched, the same way `decode_splitkv.cu` and
-     `router_f32.cu` were added beside it.
-  4. M35 additionally needs a batched Gated-DeltaNet: 30 of its 40 layers are `linear_attention`
-     with in-place recurrent state, which is a chunked delta-rule scan and real new math. **M26 is
-     the cheaper of the two and should go first** — it is also the one whose sequential cell is
-     6.4 min rather than 25.5.
+  1. **M26, steps 1–3 above** — per-layer geometry, `kEqV`, and a per-row-fed FFN off a batched
+     residual. No new `.cu`. Do this first: M26 is the cheaper of the two models and its sequential
+     cell is 6.4 min rather than 25.5.
+  2. **Expert-major routed experts** (the P18 shape on the GPU): a batched router over M rows, a
+     per-expert row gather, an indexed batched GEMV. This one DOES need a new `.cu` — `moe.ptx` is
+     the audited 12.6.85 artifact and must stay untouched, the same way `decode_splitkv.cu` and
+     `router_f32.cu` were added beside it. NVRTC is available on this box
+     (`~/.venv-vl/…/libnvrtc.so.12`, `~/cuda-toolkit/…`), so `build_ptx.sh` runs.
+  3. **M35 additionally** needs a batched Gated-DeltaNet: 30 of its 40 layers are
+     `linear_attention` with in-place recurrent state, which is a chunked delta-rule scan and real
+     new math. It is the only part of this item that is not a restructuring.
+
+  **What is still NOT known:** how M26's 46.7 ms/token splits between attention, the dense FFN
+  branch, and the routed experts. Active-parameter arithmetic on its config says ~45% attention and
+  ~25% dense FFN, but that is arithmetic on shapes, not a profile, and this repo has retracted an
+  Amdahl projection twice this fortnight. `r.prof` only instruments the batched path, so the
+  attribution seam has to be extended (or use `ncu`). **Measure the split before building to it.**
 
   **Decision rule, pre-registered:** measure step 2 alone end-to-end on M26 at depth 8000, paired
   and interleaved against today's sequential path. **Fund step 3 if step 2 lands ≥15%; park if
