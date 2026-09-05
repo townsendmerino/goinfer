@@ -8,6 +8,10 @@
 
 ## TL;DR — 2026-08-31
 
+<!-- OPEN DECISION, filed 2026-09-05, carried over from 2026-09-01: should this TL;DR section move
+     ABOVE the "What this page is" blockquote? The Apple Silicon rows below already exist either
+     way (§A) — this is a pure ordering/presentation call, maintainer's judgment. -->
+
 **Re-anchored, with three stated exceptions.** Every row the 2026-08-25 re-anchor scoped — the
 peer comparisons in §B2/§B4/§B5/§B6/§B7 — has been re-measured on the current stack (RTX 2070
 SUPER, driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2) against **Ollama v0.32.5**, or

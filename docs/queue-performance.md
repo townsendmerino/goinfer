@@ -1,8 +1,7 @@
 # Performance queue
 
-> **EMPTY as of 2026-08-31.** Every item that was here is closed, refuted, withdrawn, or has moved
-> to the track that owns it. This file is live — new performance work is filed here — it just has
-> nothing in it right now.
+> **Four open items as of 2026-09-05** (P20–P23) — was briefly empty on 2026-08-31, when every item
+> then on the page was closed, refuted, withdrawn, or moved to the track that owns it.
 >
 > **The closed record is [`docs/completed/queue-performance.md`](./completed/queue-performance.md)**
 > (2,245 lines, G15–G24 · P1–P16 · A1–A11 and the A9-\* series). It moved rather than being deleted
@@ -12,6 +11,34 @@
 > `docs/queue-performance.md` still resolve here.
 
 ## What is open
+
+- **P23 · A3 f32-attention fan-out at K=8192 is unmeasured — deliberately not extrapolated.**
+  Filed 2026-09-05, carried over from the 2026-09-01 A3 fan-out work. The shipped measurement
+  (`docs/measurements/a3-f32-attention-fanout-2026-09-01.md`) covers K=1024/2048/4096 (1.58× at
+  2048, 1.92× at 4096) and stops there on purpose — extrapolating past measured points is the
+  exact error that same campaign spent a morning retracting elsewhere (see P19/CHANGELOG's
+  "the item was costed at ~13% and the estimate was wrong"). The trend is monotone in K, so 8192
+  is *likely* higher than 1.92×, but that is a prediction, not a number to quote.
+
+- **P22 · WebGPU Theta is unmeasured, and falls through to the 0.5 default — explicitly now,
+  rather than by accident.** Filed 2026-09-05, carried over from the same 2026-09-01 work as P21.
+  CPU (0.5), CUDA (0.251) and Metal (≈1.02) all got real probes
+  (`docs/measurements/theta-per-backend-2026-09-01.md`, `theta-cuda-ab-2026-09-01.md`); WebGPU did
+  not. Whether the shipped-default 0.5 is close enough or another over-drafting regression like
+  the pre-fix Metal one is an open question, not assumed either way.
+
+- **P21 · Metal `ForwardN` batching — the controller now tells the truth about Metal's Theta;
+  batching is what would CHANGE the truth.** Filed 2026-09-05, carried over from the
+  2026-09-01 Theta-per-backend work — measured then, never filed. The shipped fix
+  (`docs/measurements/theta-per-backend-2026-09-01.md`) wired Metal's Theta from a real probe
+  (≈1.02, so speculation correctly declines to draft rather than running the shipped-default 0.5
+  and over-drafting). That is honest reporting of the current mechanism, not a change to it.
+  Batching `ForwardN` into one command buffer (one Submit/Poll) is the item with the actual
+  upside — it is what would move Theta itself, at which point the Metal constant gets
+  re-measured and replaced. Note `ResidentForward`'s interface doc already claims `ForwardN` runs
+  "K tokens in ONE command buffer (one Submit/Poll)": Metal satisfies the bit-identity half of
+  that contract and the batching half not at all, so the doc is currently writing a cheque the
+  implementation doesn't honour. `metal/backend.go` is where the CUDA/Metal split lives.
 
 - **P20 · CUDA batched prefill for the MoE families — M26 IS ON THE BATCHED PATH as of 2026-09-04,
   bit-identical, and it is worth ~8%. The batching was never the bottleneck; the host→VRAM expert
