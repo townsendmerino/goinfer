@@ -1003,7 +1003,11 @@ card) · **parity established first**: `gate gpu` PASS at the same sha, 39 minut
 
 #### Greedy decode by KV depth — the anchor table
 
-| depth | goinfer 0.5B | Ollama 0.5B | goinfer 1.5B | Ollama 1.5B | goinfer 7B | Ollama 7B |
+Cells are **tok/s** — decode-only, inter-token rate at that KV depth (prefill excluded; the
+provenance block above states the full protocol). The second table below is the goinfer/Ollama
+ratio at each cell, unitless.
+
+| depth | goinfer 0.5B (tok/s) | Ollama 0.5B (tok/s) | goinfer 1.5B (tok/s) | Ollama 1.5B (tok/s) | goinfer 7B (tok/s) | Ollama 7B (tok/s) |
 |---|---|---|---|---|---|---|
 | 128 | **332.7** ±4.9 | 268.7 ±0.9 | **220.8** ±1.0 | 195.8 ±0.1 | **73.1** ±0.0 | 72.8 ±0.1 |
 | 512 | **304.0** ±10.7 ᵍ | 267.9 ±0.5 | **196.5** ±1.9 | 171.2 ±14.8 ʰ | 69.6 ±0.1 | 72.3 ±0.0 |
@@ -1028,7 +1032,10 @@ session. Treat the 1.15× at that cell as indicative.
 
 #### The backend table, 128 context, greedy
 
-| model | goinfer CPU | Ollama CPU | goinfer CUDA | Ollama CUDA | goinfer WebGPU ⁱ |
+Cells are **tok/s**, same decode-only protocol as the table above (this is depth 128 restated by
+backend rather than by model).
+
+| model | goinfer CPU (tok/s) | Ollama CPU (tok/s) | goinfer CUDA (tok/s) | Ollama CUDA (tok/s) | goinfer WebGPU ⁱ (tok/s) |
 |---|---|---|---|---|---|
 | 0.5B | 23.5 ±0.1 | 57.9 ±0.1 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
 | 1.5B | 17.6 ±0.0 | 24.2 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
