@@ -1457,25 +1457,35 @@ is about. llama.cpp went from *unable to run these cells at all* to *winning bot
 
 ### W3 — long-context decode at depth 8000
 
-| model | box | goinfer | Ollama | llama.cpp |
-|---|---|---|---|---|
-| D7 | nobara CUDA | 35.7 | 56.7 | 58.7 |
-| M35 | nobara CUDA | 21.4 *(pre-fix, see below)* | 23.2 | 30.8 |
-| M26 | nobara CUDA | 15.5 *(pre-fix, see below)* | 19.8 | 22.7 |
-| S | Mac Metal, `--cpu-fast-attention` | 16.84 (`true`) / 16.53 (`false`) | — | — |
+| model | box | goinfer decode tok/s (pre-fix → post-fix) | goinfer wall-clock (pre-fix → post-fix) | Ollama | llama.cpp |
+|---|---|---|---|---|---|
+| D7 | nobara CUDA | 35.7 | — | 56.7 | 58.7 |
+| M35 | nobara CUDA | 21.4 → 21.6 | 1528.8s → 1489.9s (**2.5%, noise-level**) | 23.2 | 30.8 |
+| M26 | nobara CUDA | 15.5 → 15.5 | 384.3s → 368.4s (**4.1%, real**) | 19.8 | 22.7 |
+| S | Mac Metal, `--cpu-fast-attention` | 16.84 (`true`) / 16.53 (`false`) | — | — | — |
 
-**M35/M26 wall-clock, not the tok/s column above, is the real finding here — and it's mid-fix.**
-`tok/s` is decode-only by construction (timed from the first streamed token), so it doesn't show
-prefill cost. But the *cell wall-clock* did: goinfer's M35 cell took 1528.8s (~25.5 min) and M26's
-took 384.3s (~6.4 min) despite being CUDA-resident, consistent with repaying the full 8k prefill on
-every one of the cell's completions via a **sequential (non-batched) MoE prefill path** — while
-Ollama and llama.cpp's much shorter wall-clocks on the same cells suggest both reuse the repeated
-prefix. A separate, unrelated fix landed on the nobara box the same night this was found
-(`4ee59e15`/`654fa481`/`a9c23c67`/`5cc48545` — "MoE models take the batched prefill path (P20
-blocker 3) — bit-identical, 1.08x"). **A post-fix re-run of these two cells is in progress as this
-section is written; the numbers above are the pre-fix baseline and will be replaced (with the
-wall-clock delta reported alongside) once it lands — do not quote the 21.4/15.5 pair as current
-without checking this note's edit date.**
+**M35/M26 wall-clock, not the tok/s column, was the real finding — and it's now been re-measured
+post-fix.** `tok/s` is decode-only by construction (timed from the first streamed token), so it
+never showed prefill cost. The *cell wall-clock* did: goinfer's M35 cell took 1528.8s (~25.5 min)
+and M26's took 384.3s (~6.4 min) despite being CUDA-resident, consistent with repaying the full 8k
+prefill on every completion via a **sequential (non-batched) MoE prefill path** — while Ollama and
+llama.cpp's much shorter wall-clocks on the same cells suggest both reuse the repeated prefix. A
+separate, unrelated fix landed on the nobara box the same night this was found (`4ee59e15`/
+`654fa481`/`a9c23c67`/`5cc48545` — "MoE models take the batched prefill path (P20 blocker 3)"),
+and a same-night correctness fix to it (`9453430e`, see below) — **re-run against a binary built
+at `9453430e` specifically, not the earlier commit, so the numbers reflect the guard's final,
+correct form:**
+
+- **M35: no real change (2.5%, noise-level).** Expected and correct — M35 is Gated-DeltaNet and
+  `9453430e` makes it decline the batched path explicitly, the same path it was already (by
+  accident) taking before the fix. This row was never going to move; it's here as confirmation the
+  guard behaves as designed, not as a finding.
+- **M26: 4.1% faster, a real if modest win.** Consistent with `a9c23c67`'s own attribution finding
+  that the host→VRAM expert DMA is ~59.5% of M26's prefill wall-clock and untouched by batching —
+  batching only speeds up the row-loop compute around it. The in-process paired measurement found
+  8.3–8.5% there; 4.1% end-to-end (which also includes the unaffected decode phase, diluting it
+  further) is consistent with that, not a discrepancy.
+- **Neither model's decode tok/s moved**, as expected — the fix is prefill-only.
 
 **A latent correctness bug in that same batched-prefill work was caught and fixed same-night,
 before any shipped row was actually wrong — worth recording here because it bears directly on
