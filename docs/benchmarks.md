@@ -28,7 +28,7 @@ re-anchor never scoped; they are marked stale rather than quietly carried.
 | **Prefill** | **Depth-dependent, and it crosses over.** goinfer is FASTER to first token below ~600–1000 prompt tokens (0.13× at K=128) and slower above, reaching 4.8×/6.1× behind at K=3900 (0.5B/1.5B). On overhead-free *throughput* the deficit is larger: marginal cost per token is **12–15× behind at depth**, and it GROWS with K while Ollama's is flat. **Re-anchored 2026-09-01** on the §B8 stack | §B2 |
 | **Total request time** | goinfer wins prompts up to **~320 tokens** at 1.5B, loses beyond — decode edge vs prefill cost. Also pre-re-anchor | archive §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
-| **Apple Silicon CPU prefill** | **vs Ollama: 2.98× behind at K=512, narrowing to 1.80× at K=3900** — the gap CLOSES with depth because Ollama's CPU prefill degrades faster (scaling 13.37× vs our 8.35× over the same range). First peer CPU-prefill number this page has had | §A |
+| **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
@@ -468,6 +468,16 @@ read-only image, not heap-copied.
 > it is MoE-only and this is a dense model.
 >
 > ### AND THE FIRST PEER CPU-PREFILL COMPARISON — 2026-09-01
+>
+> > **SUPERSEDED 2026-09-05 — CPU prefill is now at parity and past it on the marginal; do not
+> > quote the 2.98×/1.80× ratios or the int4/int8int8 inversion below.** aikit's S-01
+> > register-blocked int4 tile landed in v1.34.0. Re-measured on the same box against the same
+> > Ollama 0.32.5: **1.54× behind at K=512, 0.91× at K=3900 (AHEAD), whole-curve marginal ratio
+> > 0.86×.** The table below was taken on aikit v1.31.0. It is stale, not wrong — a pre-tile arm
+> > re-run on 2026-09-05 reproduced it to within 4% (3.10× / 1.81×), which is what makes the new
+> > row comparable to it. **The QUANT NOTE below is also superseded**: int8int8 no longer beats
+> > int4 at M>1; the tile removed the unpack repetition that caused that inversion, and int4 now
+> > wins by 1.10–1.14×. Record: `measurements/cpu-peer-prefill-2026-09-05.md`.
 >
 > The table above is goinfer-vs-goinfer. Against **Ollama v0.32.5** (same GGUF both sides, Ollama
 > forced to CPU with `num_gpu: 0`, goinfer at **int4** so the weights match q4_K_M, 4 distinct
