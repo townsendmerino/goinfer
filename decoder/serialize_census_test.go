@@ -81,6 +81,10 @@ var censusList = []string{
 	// llama checkpoints here are the box's gitignored llama3.2-1b / tinyllama-awq /
 	// tinyllama-gptq, none of them tiny. scripts/pin_llama_tiny.py, 720 KB, tracked.
 	"../testdata/llama-tiny",
+	// qwen3moe-tiny / granite-dense-tiny (2026-09-06, docs/task-families-2026-09.md F1/F3): QK-norm
+	// + MoE-with-no-shared-expert and llama+scalar-multipliers respectively are combinations no
+	// other censused fixture exercises together.
+	"../testdata/qwen3moe-tiny", "../testdata/granite-dense-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with

@@ -118,6 +118,7 @@ var parityRealckptGates = []gateCheck{
 	{"cohere2", "TestCohere2R7bReal_gate"},
 	{"qwen3.8-dense", "TestQwen38Real_gate"},
 	{"qwen3.8-gguf", "TestQwen38GGUF_gate"},
+	{"qwen3.8-gguf-weightdiff", "TestQwen38GGUF_weightDiff"},
 }
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -612,6 +613,7 @@ var awaitingFirstConfirmation = map[string]string{
 	"TestQwen3Moe_forwardParity":     "2026-09-06 — newly required (qwen3_moe had no gate); promote from the first sweep that runs it",
 	"TestGraniteDense_forwardParity": "2026-09-06 — newly required (dense granite had no gate); promote from the first sweep that runs it",
 	"TestQwen3MoeReal_oracle":        "2026-09-06 — newly required (F1, docs/task-families-2026-09.md); real-checkpoint T3 for qwen3_moe, not yet run; promote from the first sweep that runs it",
+	"TestQwen38GGUF_weightDiff":      "2026-09-06 — newly required (batch 2 G1, docs/task-families-2026-09.md); GGUF-vs-safetensors weightDiff for the dense qwen3_5 hybrid, not yet run; promote from the first sweep that runs it",
 	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/task-families-2026-09.md); " +
 		"needs the ~60GB bf16 checkpoint on the Linux box, not yet run; promote from the first sweep that runs it",
 }

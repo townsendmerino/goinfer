@@ -522,3 +522,68 @@ No registry key, no tensor schema, no adapter function, no CHANGELOG entry (noth
 changed), no real-checkpoint work, no chunked-scan implementation, no MoE/MLA code (both already
 exist and weren't re-exercised here). This is Phase 0 plus one scoped, verified rehearsal — exactly
 the brief's stated ceiling for this item.
+
+# Batch 2 — one loader gap, three cheap keys, one real family
+
+> **Status: IN PROGRESS.** Order G1 → G3 → G4 → G2 → G5, same independently-shippable rule as
+> batch 1. Summary filled in as each item lands; read its own status line before citing it as done.
+
+## G1 · GGUF loader for the `qwen3_5` dense hybrid (Qwen3.8-27B) — ALREADY BUILT; the real gap was tests + docs
+
+**The brief's own framing ("this is a loader, not a family... build: loader, header-level test,
+T3 parity") assumed the loader didn't exist. Checked before estimating, per this doc's own
+discipline, and it does — has since 2026-08-19 (`e4bbb28`).** `ggufQwen35DenseConfig`
+(`decoder/gguf_qwen35.go`) and `buildWeightsFromGGUF`'s dense branch (`decoder/gguf.go`, gated on
+`arch.MoE == nil`) both exist; `decoder/qwen3_5_gguf_test.go`'s `TestQwen38GGUF_gate` already loads
+a real 16.5 GB Q4_K_M checkpoint, asserts full geometry (64 layers, 5120/256/24/4/17408, the 48
+linear / 16 full 3:1 split computed from `full_attention_interval`), and checks actual generation
+coherence (three named Paris landmarks). It's wired into `parityRealckptGates`,
+`awaitingFirstConfirmation`, and `testdata/assets.json` (`GOINFER_QWEN38_GGUF`) already.
+
+**What was actually stale: the documentation, not the code.** `familyDocs["qwen3_5"]` /
+`["qwen3_5_text"]` (`decoder/capability_matrix_test.go`) hand-annotated Loaders as `"safetensors"`
+only — a real drift, now fixed and regenerated into `docs/capability-matrix.md`.
+
+### Phase 0 — re-verified against a real file independently, not trusted from an 8-month-old commit message
+
+Fetched the first 40 MB of `bartowski/Qwen3.8-27B-GGUF`'s `Q2_K.gguf` via HTTP Range and parsed it
+with `aikit/embed.GGUFFile` directly. Every metadata key and value the loader reads matches exactly
+what `TestQwen38GGUF_gate` already asserts — `qwen35.attention.head_count` 24,
+`head_count_kv` 4, `key_length` 256, `block_count` 65, `embedding_length` 5120,
+`feed_forward_length` 17408, `full_attention_interval` 4, `nextn_predict_layers` 1,
+`rope.dimension_count` 64, plus the `ssm.*` DeltaNet geometry keys — confirming the loader has not
+drifted since it was built, on a freshly re-quantized real file rather than the one the original
+gate ran against. Tensor set: `blk.N.attn_qkv` (fused), `attn_gate`, `ssm_{beta,conv1d,dt.bias,a,
+alpha,norm,out}` (the Gated DeltaNet set), `ffn_{gate,up,down}` (plain SwiGLU — **no router, no
+expert tensors**, confirming the dense delta is exactly "the FFN" as the brief predicted).
+
+### The one real gap: T3 GGUF-vs-safetensors parity had never been built for the DENSE sibling
+
+`qwen35_gguf_weightdiff_test.go` (`TestQwen35GGUF_weightDiff`) already does this for the MoE
+sibling (Qwen3.6-35B-A3B) — needs no HF oracle, since the safetensors loader is already Gate-1
+bit-exact vs HF and stands as the reference; every transform-bearing tensor (V-head un-tile, fused
+q‖gate q_proj, −exp(A_log) bake, (1+w) norm un-bake) is diffed directly, cosine floor 0.999. No
+equivalent existed for the dense checkpoint. Added `decoder/qwen3_5_gguf_weightdiff_test.go`
+(`TestQwen38GGUF_weightDiff`), reusing `loadQwen35Slice`/`loadQwen35GGUFSlice`/`tensorAgreement`
+verbatim (both are already architecture-generic, not MoE-specific) against `GOINFER_QWEN38`
+(safetensors, already registered) and `GOINFER_QWEN38_GGUF` (GGUF, already registered) — no new
+asset needed. The router-comparison block in the MoE version is left as dead code for this arch on
+purpose (`lr.Router.Rows() > 0` is false on both sides), so the two tests stay structurally
+comparable rather than diverging into two designs for one method.
+
+### Also checked while here (batch-1 hygiene, found incidentally)
+
+`TestSerializeCensus_everyFixtureIsListedOrExcluded` (run as part of verifying nothing regressed)
+flagged `qwen3moe-tiny` and `granite-dense-tiny` (batch 1's own fixtures) as present-but-unlisted in
+`censusList`. Added both — round-trip is clean, no field drop, and the census's own bookkeeping is
+now accurate for batch 1's additions too.
+
+### What was deliberately not done
+
+- **`TestQwen38GGUF_weightDiff` has not been run.** Needs both `GOINFER_QWEN38` (55.6 GB bf16
+  safetensors) and `GOINFER_QWEN38_GGUF` (16.5 GB Q4_K_M) on the Linux box — registered in
+  `awaitingFirstConfirmation`, execution owed alongside F1/F2's own owed T3 runs.
+- **Peer row vs Ollama and llama.cpp.** Needs the Linux box and both peers installed; not attempted.
+- **No CHANGELOG entry.** The loader itself shipped in August under its own commit
+  (`e4bbb28`) and already has a CHANGELOG-worthy history; this pass's changes are a familyDoc
+  correction plus new test coverage, not a new capability.

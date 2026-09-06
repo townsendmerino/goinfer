@@ -56,7 +56,7 @@
     "norm": "RMSNorm, pre-norm",
     "activation": "SwiGLU",
     "tied_lm_head": false,
-    "loaders": "safetensors",
+    "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
     "parity": "experimental: tiny-oracle 100.0%/1.00000 +coherent"
