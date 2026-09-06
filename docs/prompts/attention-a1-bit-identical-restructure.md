@@ -34,13 +34,13 @@ From the campaign doc (Gate A0, closed GO, reproduced within noise):
 - Attention is ~11.10 ms/token at 1.5B, depth 130 (404.1 µs/layer isolated), at ~1.0 ns/MAC —
   serial f64 FMA-chain speed. Component split: **QK 47.1%, AV 48.9%**, softmax 3.6%, RoPE 0.5%.
   QK and AV are co-equal: a change that fixes only one caps below 2x.
-- **Single-threaded** — `attendBatchedHeads` (`decoder/forwardn.go:717`) is plain nested loops.
+- **Single-threaded** — `attendBatchedHeads` (`decoder/forwardn.go:730`) is plain nested loops.
   aikit's `MatmulBTAcc64Strided` has a `parallelCols` path, but these calls (~16,640 MACs at
   depth 130) sit ~1000x below its threshold — the second confirmed instance of the
   `int4ParThreshold` bug class. **The fix is NOT lowering that threshold** (over-parallelizing
   tiny calls is the already-learned failure mode); it is parallelizing across the 672
   independent per-head calls per token — move (a).
-- AV reads `vals` with element stride `kvDim` (decoder/forwardn.go:927) — one cache line per f64 MAC.
+- AV reads `vals` with element stride `kvDim` (decoder/forwardn.go:940) — one cache line per f64 MAC.
 - Depth curve (before-baseline, keep for the after-comparison): depth 128 → 10.93 ms; 8192 →
   858.8 ms (attention = 95% of decode, ~1.15 tok/s). Per-key cost drifts +19.5% over that
   range (cache-tier effect).

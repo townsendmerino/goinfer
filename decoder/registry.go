@@ -29,6 +29,7 @@ var registry = map[string]archAdapter{
 	"qwen3_moe":           qwen3MoeArchitecture,   // Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3's attention (QK-norm, no bias) + a sparse MoE on every layer, NO shared expert
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
 	"smollm3":             smollm3Architecture,    // SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers) on every 4th layer, tied embeddings
+	"olmo3":               olmo3Architecture,      // Olmo 3 (7B/32B): NormPostOnly (no pre-norm at all) + whole-vector QK-norm + sliding/full 3:1 + YaRN
 	// InternLM3 is llama-shaped to the tensor name: self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj,
 	// input_layernorm/post_attention_layernorm, embed_tokens/lm_head, no biases, no QK-norm. Its only
 	// config departure is rope_scaling type "dynamic", which is exactly identity within the trained
@@ -621,6 +622,111 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
 	}, &llamaTensorSchema, nil
+}
+
+// olmo3Architecture expresses Olmo 3 (allenai/Olmo-3-{7B,32B}, model_type "olmo3"): a
+// softmax-GQA/MHA model with two real departures from every existing family, BOTH verified
+// against the real `modeling_olmo3.py` rather than assumed from the brief's own framing:
+//
+//  1. **NormPostOnly**: there is NO pre-norm at all — confirmed by instantiating
+//     `Olmo3ForCausalLM` and reading its `state_dict()`, which has no `input_layernorm` tensor
+//     anywhere. `Olmo3DecoderLayer.forward` reads the RAW residual stream directly into both
+//     `self_attn` and `mlp`, and normalizes each sublayer's OUTPUT (`post_attention_layernorm` /
+//     `post_feedforward_layernorm`) before the residual add. Genuinely different from
+//     `NormSandwich4` (which normalizes BOTH input and output) — a new placement, not a variant.
+//  2. **QKNormWhole**: QK-norm is computed over the FULL projected q/k vector
+//     (`Olmo3RMSNorm(config.num_attention_heads * self.head_dim, ...)`), one statistic over
+//     `num_heads*head_dim` elements, not the standard per-head convention (Qwen3/Gemma3/Mellum
+//     normalize each head independently over `head_dim`). Reuses the SAME `rmsNorm` function
+//     with rows/dim swapped (`QKNormWhole`'s own comment on `Architecture`), not new math.
+//
+// Otherwise plain: `num_key_value_heads == num_attention_heads` on the real release (MHA, not
+// GQA — checked, not assumed), sliding-window on 3 of every 4 layers (`layer_types`, reusing
+// `Config.IsGlobalLayer` — the same authoritative layer_types-then-pattern rule cohere2 already
+// uses), `tie_word_embeddings: false`. Tensor names are llama-shaped except the post-only norms
+// and whole-vector QK-norm weight width — `olmo3TensorSchema`.
+//
+// A THIRD real finding, on RoPE specifically: **YaRN scaling applies ONLY to full_attention
+// layers.** The real released config.json carries a single FLAT top-level `rope_scaling` (a
+// plain YaRN object, EXPLICIT `attention_factor` — no DeepSeek/Ministral-style
+// mscale/mscale_all_dim override needed), which reads as "one scaling for the whole model" — but
+// verified against the real `configuration_olmo3.py`'s `convert_rope_params_to_dict`, that flat
+// field is a backward-compat shim: `self.rope_parameters["full_attention"].update(rope_scaling)`,
+// leaving `rope_parameters["sliding_attention"]` at its plain `{"rope_type": "default"}` default —
+// confirmed independently by re-saving a config through current transformers, which expands the
+// same flat input into exactly that per-layer-type split. This is the SAME local/global RoPE
+// split Mellum already implements (`ropeScaling` for global/full, `ropeScalingLocal` for
+// local/sliding) — no new mechanism, just applied via `parseRopeParameters` when the checkpoint
+// ships the nested form directly (a re-saved config; `gemma3Architecture`'s own precedent) and
+// via the flat-applies-to-full-only rule when it ships the flat form (the real release).
+func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	base := cfg.RoPEGlobalBase
+	localBase := base
+	var scaling, localScaling *ropeScaling
+	if len(cfg.RopeParameters) > 0 {
+		full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
+		}
+		if full != nil {
+			base = full.base
+			scaling = full.scaling
+		}
+		localBase = base
+		if sliding != nil {
+			localBase = sliding.base
+			localScaling = sliding.scaling
+		}
+		cfg.RoPEGlobalBase = base // so validateLlama's rope_theta>0 check sees a populated base
+	} else {
+		sc, err := parseRopeScaling(cfg.RopeScaling)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
+		}
+		scaling = sc // the flat form: applies to full_attention (global) only, per the comment above
+	}
+	if err := cfg.validateLlama(); err != nil {
+		return nil, nil, err
+	}
+	hd := cfg.headDim()
+	layerTypes := append([]string(nil), cfg.LayerTypes...) // snapshot so the closure doesn't retain cfg
+	pattern := cfg.SlidingWindowPattern
+	isGlobal := func(i int) bool {
+		if i >= 0 && i < len(layerTypes) {
+			return layerTypes[i] == "full_attention"
+		}
+		if pattern <= 0 {
+			return true
+		}
+		return (i+1)%pattern == 0
+	}
+	return &Architecture{
+		Name:             "olmo3",
+		HiddenDim:        cfg.HiddenDim,
+		NumLayers:        cfg.NumLayers,
+		NumHeads:         cfg.NumHeads,
+		NumKVHeads:       cfg.NumKVHeads,
+		HeadDim:          hd,
+		IntermediateDim:  cfg.IntermediateDim,
+		VocabSize:        cfg.VocabSize,
+		Norm:             NormRMS,
+		RMSAddOne:        false,
+		NormEps:          cfg.RMSNormEps,
+		NormPlacement:    NormPostOnly,
+		Act:              ActSiLU,
+		QKNorm:           true,
+		QKNormWhole:      true,
+		AttnScale:        math.Pow(float64(hd), -0.5),
+		SlidingWindow:    cfg.SlidingWindow,
+		layerIsGlobal:    isGlobal,
+		RoPELocalBase:    localBase,
+		RoPEGlobalBase:   base,
+		RotaryDim:        cfg.rotaryDim(),
+		ropeScaling:      scaling,
+		ropeScalingLocal: localScaling,
+		EmbedScale:       0,
+		TiedLMHead:       false, // finalized from lm_head.weight presence at load
+	}, &olmo3TensorSchema, nil
 }
 
 // cohereArchitecture expresses Cohere / Command-R (model_type "cohere":

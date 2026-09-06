@@ -217,6 +217,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	K := len(h) / hidden
 	startPos := cache.Pos()
 	sandwich := arch.NormPlacement == NormSandwich4
+	// postOnly (Olmo 3/Olmo Hybrid): the batched twin of runLayersFromEmbed's own postOnly —
+	// no pre-norm, sublayer output still normalized before the residual add.
+	postOnly := arch.NormPlacement == NormPostOnly
+	postNorm := sandwich || postOnly
 	parallel := arch.NormPlacement == NormParallel
 
 	norm := make([]float32, K*hidden)
@@ -406,8 +410,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		q, ctx := q[:K*qDim], ctx[:K*qDim]
 
 		copy(norm, h)
-		for i := range K {
-			normalize(arch, row(norm, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+		if !postOnly {
+			for i := range K {
+				normalize(arch, row(norm, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+			}
 		}
 		if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 			qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
@@ -437,8 +443,13 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			}
 			qi, ki, vi := row(q, i, qDim), row(k, i, kvDim), row(v, i, kvDim)
 			if arch.QKNorm {
-				rmsNorm(qi, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
-				rmsNorm(ki, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
+				if arch.QKNormWhole {
+					rmsNorm(qi, lw.QNorm, 1, nH*hd, arch.NormEps, arch.RMSAddOne)
+					rmsNorm(ki, lw.KNorm, 1, nKV*hd, arch.NormEps, arch.RMSAddOne)
+				} else {
+					rmsNorm(qi, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
+					rmsNorm(ki, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
+				}
 			}
 			if !noPE {
 				ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
@@ -501,7 +512,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				addBias(row(att, i, hidden), lw.OBias)
 			}
 		}
-		if sandwich {
+		if postNorm {
 			for i := range K {
 				normalize(arch, row(att, i, hidden), lw.PostAttnNorm, nil, hidden)
 			}
@@ -512,8 +523,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				h[j] += att[j]
 			}
 			copy(norm, h)
-			for i := range K {
-				normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+			if !postOnly {
+				for i := range K {
+					normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+				}
 			}
 		}
 		// Parallel (Cohere/GPT-J): `norm` still holds the single shared input norm and
@@ -594,7 +607,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 						return nil, err
 					}
 				}
-				if sandwich {
+				if postNorm {
 					normalize(arch, ff, lw.PostMLPNorm, nil, hidden)
 				}
 				hi := row(h, i, hidden)
@@ -636,7 +649,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			return nil, errNotImplemented
 		}
 		matmul(be, &lw.DownProj, gate, mlpOut, K)
-		if sandwich {
+		if postNorm {
 			for i := range K {
 				normalize(arch, row(mlpOut, i, hidden), lw.PostMLPNorm, nil, hidden)
 			}

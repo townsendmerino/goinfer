@@ -447,6 +447,26 @@
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
+    "name": "olmo3",
+    "model_types": [
+      "olmo3"
+    ],
+    "display_name": "Olmo 3",
+    "description": "Ai2 Olmo 3 (7B/32B): no pre-norm at all (post-only), whole-vector QK-norm, sliding/full 3:1 + YaRN on full layers only",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, post-only",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "phi3",
     "model_types": [
       "phi3"

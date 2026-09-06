@@ -559,6 +559,11 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 	scr := cache.scr
 	hidden := arch.HiddenDim
 	sandwich := arch.NormPlacement == NormSandwich4
+	// postOnly (Olmo 3/Olmo Hybrid): no pre-norm at all — the sublayer reads the RAW residual
+	// stream — but the sublayer's OUTPUT still gets normalized before the residual add, the
+	// same as Sandwich4's post-norm half. postNorm covers both placements that need it.
+	postOnly := arch.NormPlacement == NormPostOnly
+	postNorm := sandwich || postOnly
 	parallel := arch.NormPlacement == NormParallel
 	if m.layerPager != nil {
 		defer m.layerPager.finishLayers()
@@ -599,14 +604,16 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 			}
 		} else {
 			copy(scr.norm, h)
-			normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+			if !postOnly {
+				normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+			}
 			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
 				return nil, err
 			}
 			if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
 				cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
 			}
-			if sandwich {
+			if postNorm {
 				normalize(arch, scr.sub, lw.PostAttnNorm, nil, hidden)
 			}
 			if cache.subCapture { // scr.sub is now the attention contribution about to hit the residual
@@ -616,14 +623,16 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 				h[i] += scr.sub[i]
 			}
 			copy(scr.norm, h)
-			normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+			if !postOnly {
+				normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+			}
 			if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
 				return nil, err
 			}
 			if cache.subCapture { // scr.sub is the down output BEFORE the post-MLP sandwich norm
 				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
 			}
-			if sandwich {
+			if postNorm {
 				normalize(arch, scr.sub, lw.PostMLPNorm, nil, hidden)
 			}
 			if cache.subCapture { // scr.sub is now the MLP contribution about to hit the residual

@@ -713,6 +713,123 @@ commit that adds them (F1's CI-break lesson applied without re-learning it).
 - **CHANGELOG entry**: added — this IS a new registry key with new adapter code and a new
   cross-cutting primitive, unlike F2/G1's documentation-only outcomes.
 
+## G2 · `olmo3` (Ai2, Olmo 3 7B/32B) — DONE at T1 (mac, 2026-09-06); `olmo_hybrid` — STOPPED at Phase 0, real primitive beyond composition found
+
+**Two keys, one task, per the brief — but the two halves resolved differently.** Olmo 3 is a pure
+composition of existing generic mechanisms and shipped. Olmo Hybrid's DeltaNet layers turned out to
+be a straightforward composition too, but its norm placement does not fit the current one-scalar-
+per-model `Architecture.NormPlacement`, which is exactly the brief's own named stop condition
+("a differing primitive beyond composition"). Documented below rather than built around.
+
+### `olmo3`: two real departures, both provably reusable, no new math
+
+Fetched `allenai/Olmo-3-{7B,32B}-Think`'s real `config.json` and instantiated `Olmo3ForCausalLM`
+(transformers 5.15.0, mainline, no `trust_remote_code`) directly rather than assuming from the
+model card. Two findings, neither anticipated by name in the brief:
+
+- **`NormPlacement`: no pre-norm at all.** Reading `modeling_olmo3.py`'s decoder layer directly:
+  attention and the MLP each consume the RAW residual-stream input (no `input_layernorm`), and only
+  the sublayer OUTPUT is normalized before the residual add
+  (`post_attention_layernorm`/`post_feedforward_layernorm`). This is a fourth `NormPlacement`
+  distinct from the three that already existed (`NormPre2`, `NormSandwich4` — pre AND post,
+  `NormParallel`) — added `NormPostOnly` (`decoder/arch.go`) rather than reusing `NormSandwich4`
+  with the pre-norm weights left nil, so a future reader can't mistake "no pre-norm tensor in the
+  schema" for "pre-norm tensor happens to be identity."
+- **QK-norm over the WHOLE projected vector, not per head.** `q_norm`/`k_norm` in the real
+  `OlmoAttention` are sized `num_attention_heads*head_dim` / `num_key_value_heads*head_dim` — one
+  RMSNorm over the concatenated multi-head projection, not `num_heads` independent per-head norms
+  like every other QK-norm family here (qwen3, glm4_moe, deepseek_v3, …). The existing `rmsNorm(x,
+  weight, rows, dim, eps, addOne)` kernel already computes exactly this when called with `rows=1,
+  dim=nHeads*headDim` instead of `rows=nHeads, dim=headDim` — zero new math, just a different
+  call-site parameterization, gated by a new `QKNormWhole bool` (`decoder/arch.go`) threaded through
+  both the sequential (`decoder/attention.go`) and batched (`decoder/forwardn.go`) QK-norm call
+  sites and the tensor-loading length in `decoder/weights.go`. Fixed a real latent bug while adding
+  it: the existing feature-derivation line, `add(a.QKNorm, FeatQKNorm)`, would have ALSO required
+  the per-head kernel for a whole-vector family; corrected to `add(a.QKNorm && !a.QKNormWhole,
+  FeatQKNorm)` before it could ship as a false admission-taxonomy positive.
+- **YaRN applies to `full_attention` layers only.** Olmo 3 is sliding/full 3:1
+  (`sliding_window_pattern`), and the real config's `rope_scaling` (YaRN, `attention_factor: 1.1`)
+  is nested per-layer-type in `rope_parameters` on a freshly-`transformers`-saved config
+  (`{"full_attention": {...yarn...}, "sliding_attention": {"rope_type": "default"}}`) — confirmed
+  against `configuration_olmo3.py`'s `convert_rope_params_to_dict`
+  (`self.rope_parameters["full_attention"].update(rope_scaling)`, leaving `sliding_attention` at
+  its plain default) rather than assumed. The REAL RELEASE ships the older flat top-level
+  `rope_theta`/`rope_scaling` form instead (`olmo3Architecture` branches on
+  `len(cfg.RopeParameters) > 0` to handle both). Either way this is the exact local/global RoPE
+  split Mellum's own T3-validated gate already implements (`RoPELocalBase`/`RoPEGlobalBase`,
+  `ropeScaling`/`ropeScalingLocal`, dispatched on `arch.layerIsGlobal`) — reused with
+  `ropeScalingLocal` simply left `nil` (no scaling on sliding layers), no new mechanism.
+
+Tensor names otherwise plain llama-shaped GQA (new `olmo3TensorSchema`,
+`decoder/weights.go`, differing from `llamaTensorSchema` only in the norm-tensor name mapping
+implied by `NormPostOnly`). No new forward path — rides the generic uniform-layer dispatch, so
+`canBatchN`/`specRollbackSafe`/`hasRecurrentState` all answer correctly for free, same as every
+other pure-composition family in this doc.
+
+`scripts/pin_olmo3_tiny.py`: 4 layers, MHA (8 heads = 8 kv heads), `sliding_window=8`,
+`layer_types=[sliding,sliding,sliding,full]`, real YaRN (`factor=4.0,
+original_max_position_embeddings=8, attention_factor=1.1`), prompt of 12 tokens (>
+`sliding_window=8`, so the sliding/full split and the local/global RoPE table actually differ
+between layers — a shorter prompt would pass with either mechanism silently absent).
+`TestOlmo3_forwardParity`: **argmax exact, cosine 0.9999999999997883**, plus direct assertions that
+`NormPlacement == NormPostOnly`, `QKNorm && QKNormWhole`, and the loaded QNorm tensor length equals
+`NumHeads*HeadDim` (not `HeadDim` — proves the whole-vector length wasn't silently truncated).
+`archFeatureProfile["olmo3"]` needed `FeatPerLayerRoPE` in addition to the two new flags — caught by
+the chokepoint test itself failing first, not assumed: the local/global RoPE tables genuinely
+differ per layer here, same as every other family that has one.
+
+`parity_manifest.json` row: `status: experimental`, `method: tiny-golden`. Gate registered in
+`cmd/gate/parity.go`'s `parityGates` AND `awaitingFirstConfirmation` in the same commit (F1's
+CI-break lesson applied without re-learning it).
+
+### `olmo_hybrid`: DeltaNet is a plain composition; norm placement is not — stopping here
+
+Fetched the real `allenai/Olmo-Hybrid-7B` config and instantiated `OlmoHybridForCausalLM`
+(transformers 5.15.0, mainline). Read `modeling_olmo_hybrid.py` directly rather than assume from
+field names, per-mixer:
+
+- **The Gated-DeltaNet math is qwen3_5's, field for field** (`Qwen3_5GatedDeltaNet`/
+  `OlmoHybridGatedDeltaNet` share the same chunked recurrence, the same `beta = b_proj(x).sigmoid()`
+  gate, the same `A_log`/`dt_bias` init). One real numeric delta: `linear_allow_neg_eigval`
+  (default `true` on the release) computes `beta = beta * 2.0` after the sigmoid, widening its range
+  from `[0,1)` to `[0,2)` — a config-gated SCALAR multiplier on an existing input, not a new
+  recurrence term. This alone would compose cleanly the same way `AttnTempBeta`/`RopeMscale` do
+  (a new generic field, default off).
+- **Attention layers (`full_attention`) reuse `olmo3`'s `NormPostOnly` + whole-vector QK-norm
+  exactly** (`OlmoHybridAttention` literally inherits `Olmo3Attention`'s behavior; its own docstring
+  says the only difference is optional NoPE). Confirms `olmo3`'s adapter generalizes, doesn't
+  contradict it.
+- **The real released checkpoint sets `rope_theta: null`, disabling RoPE entirely** — `self.rotary_
+  emb` is only constructed `if rope_parameters.get("rope_theta") is not None`; the source comment
+  says so explicitly ("Released ckpt don't use any ROPE"). So despite `layer_types` marking some
+  layers `full_attention`, there is no RoPE/NoPE split to route in the release as shipped — one
+  fewer real difference than the brief's own framing worried about.
+- **The blocker: norm placement is asymmetric BY LAYER TYPE, not a single model-wide choice.**
+  `OlmoHybridAttentionDecoderLayer` (softmax layers) has NO `input_layernorm` at all — same
+  `NormPostOnly` as `olmo3`. `OlmoHybridLinearAttentionDecoderLayer` (DeltaNet layers) has BOTH an
+  `input_layernorm` (before the mixer) and a confusingly-named `post_attention_layernorm` that is
+  actually applied BEFORE the MLP, not after — i.e. plain `NormPre2`, with no post-norm on either
+  sublayer. **Two different `NormPlacement` values are needed within the SAME model, keyed by
+  `layerIsLinear`, not one.** `Architecture.NormPlacement` is currently a single model-wide scalar;
+  every existing hybrid family (`qwen3_5`, `qwen3_next`, `granitemoehybrid`) uses the SAME norm
+  scheme for both its linear and full-attention layers, so this dimension has never needed to vary
+  per layer before. That is a structural difference in how normalization is organized, not a
+  parameter a 0-means-off generic field can express — the brief's own named stop condition
+  ("a differing primitive beyond composition").
+
+**Stopping here rather than building a workaround.** The two shapes this could take — a second
+`NormPlacement`-typed field keyed by layer kind (mirrors how `layerIsLinear` already keys the
+mixer), or a per-layer `[]NormPlacement` table — are both plausible, but which one composes
+correctly with `NormSandwich4`/`NormParallel` families that might gain a linear-attention variant
+later is a real design decision, not a Phase-0-verifiable fact. Left for a decision before
+continuing; no registry key, no adapter, no fixture added for `olmo_hybrid` this pass.
+
+### What was deliberately not done (olmo3)
+
+- **GGUF loader / T3 real-checkpoint parity / peer row.** Same order-of-operations as every family
+  in this doc: ship at T1, move on. 7B fits the Mac's T3 budget; 32B is the Linux-box target.
+- **CHANGELOG entry**: added for `olmo3` only — `olmo_hybrid` shipped nothing.
+
 ## G4 · `smollm3` — SmolLM3-3B — DONE at T1 (mac, 2026-09-06); real-checkpoint embed deliverable pending on disk space
 
 ### Phase 0 (real config.json + real modeling_smollm3.py)

@@ -93,6 +93,10 @@ var censusList = []string{
 	// STATE, so this is the same generic dense field set every llama-shaped fixture already
 	// covers -- added anyway per the census's own default.
 	"../testdata/smollm3-tiny",
+	// olmo3-tiny (2026-09-06, batch 2 G2): NormPostOnly (no pre-norm) and QKNormWhole (whole-vector
+	// QK-norm, not per-head) are per-Architecture scalars affecting layer STRUCTURE, not per-layer
+	// state -- added anyway per the census's own default.
+	"../testdata/olmo3-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with

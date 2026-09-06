@@ -49,6 +49,7 @@ var parityGates = []gateCheck{
 	{"granite-dense", "TestGraniteDense_forwardParity"},
 	{"mistral3", "TestMinistral3_forwardParity"},
 	{"smollm3", "TestSmolLM3_forwardParity"},
+	{"olmo3", "TestOlmo3_forwardParity"},
 	{"mistral3-batched", "TestMinistral3_batchedMatchesSequential"},
 	{"llama", "TestLlama_forwardParity"},
 	{"llama3.2", "TestLlama32_forwardParity"},
@@ -620,6 +621,7 @@ var awaitingFirstConfirmation = map[string]string{
 	"TestMinistral3_forwardParity":            "2026-09-06 — newly required (batch 2 G3, docs/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
 	"TestMinistral3_batchedMatchesSequential": "2026-09-06 — newly required (batch 2 G3, docs/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
 	"TestSmolLM3_forwardParity":               "2026-09-06 — newly required (batch 2 G4, docs/task-families-2026-09.md); new family smollm3, not yet run; promote from the first sweep that runs it",
+	"TestOlmo3_forwardParity":                 "2026-09-06 — newly required (batch 2 G2, docs/task-families-2026-09.md); new family olmo3, not yet run; promote from the first sweep that runs it",
 	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/task-families-2026-09.md); " +
 		"needs the ~60GB bf16 checkpoint on the Linux box, not yet run; promote from the first sweep that runs it",
 }

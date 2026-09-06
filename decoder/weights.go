@@ -794,12 +794,18 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			}
 			// QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim. Gated on arch.QKNorm so a
 			// family whose schema lists the suffix but whose config disables it (GLM's
-			// use_qk_norm=false) doesn't demand the absent tensor.
+			// use_qk_norm=false) doesn't demand the absent tensor. QKNormWhole (Olmo 3/Olmo
+			// Hybrid) normalizes the FULL projected vector, so its weight tensor is
+			// per-layer-query-dim/kv-dim wide instead of head_dim wide.
 			if arch.QKNorm && s.QNorm != "" {
-				if l.QNorm, err = st.TensorF32(tn(i, s.QNorm), headDim); err != nil {
+				qNormLen, kNormLen := headDim, headDim
+				if arch.QKNormWhole {
+					qNormLen, kNormLen = lqDim, kvDim
+				}
+				if l.QNorm, err = st.TensorF32(tn(i, s.QNorm), qNormLen); err != nil {
 					return err
 				}
-				if l.KNorm, err = st.TensorF32(tn(i, s.KNorm), headDim); err != nil {
+				if l.KNorm, err = st.TensorF32(tn(i, s.KNorm), kNormLen); err != nil {
 					return err
 				}
 			}
@@ -1519,6 +1525,30 @@ var qwen3MoeTensorSchema = tensorSchema{
 	ExpertGate:  "mlp.experts.%d.gate_proj.weight",
 	ExpertUp:    "mlp.experts.%d.up_proj.weight",
 	ExpertDown:  "mlp.experts.%d.down_proj.weight",
+}
+
+// olmo3TensorSchema: Olmo 3 / Olmo Hybrid — QKNormWhole's q_norm/k_norm are whole-vector but the
+// TENSOR NAME is identical to the per-head convention; only NormPostOnly's PreAttnNorm/PreMLPNorm
+// being empty (no input_layernorm tensor exists at all — confirmed by instantiating
+// Olmo3ForCausalLM directly) and PostAttnNorm/PostMLPNorm mapping to post_attention_layernorm/
+// post_feedforward_layernorm actually differs from qwen3TensorSchema.
+var olmo3TensorSchema = tensorSchema{
+	Embed:        "model.embed_tokens.weight",
+	LMHead:       "lm_head.weight",
+	FinalNorm:    "model.norm.weight",
+	QProj:        "self_attn.q_proj.weight",
+	KProj:        "self_attn.k_proj.weight",
+	VProj:        "self_attn.v_proj.weight",
+	OProj:        "self_attn.o_proj.weight",
+	QNorm:        "self_attn.q_norm.weight",
+	KNorm:        "self_attn.k_norm.weight",
+	PreAttnNorm:  "", // NormPostOnly: no input_layernorm tensor exists
+	PostAttnNorm: "post_attention_layernorm.weight",
+	GateProj:     "mlp.gate_proj.weight",
+	UpProj:       "mlp.up_proj.weight",
+	DownProj:     "mlp.down_proj.weight",
+	PreMLPNorm:   "", // NormPostOnly: no pre-MLP norm tensor exists
+	PostMLPNorm:  "post_feedforward_layernorm.weight",
 }
 
 var qwen2MoeTensorSchema = tensorSchema{

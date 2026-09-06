@@ -22,6 +22,13 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// FeatNoPE at all yet (cohere2, the only other family needing it, is also CPU-only), so
 	// this is CPU-only too — not a new gap, the SAME undeclared feature cohere2 already has.
 	"smollm3": {FeatNoPE},
+	// Olmo 3: NormPostOnly + QKNormWhole, both brand new this pass, plus the standard
+	// sliding-window/YaRN features every backend already has. Neither new feature is declared
+	// anywhere, so this is CPU-only regardless of the rest.
+	// FeatPerLayerRoPE fires too: YaRN applies to full_attention layers only, so the local
+	// (sliding) and global (full) inv-freq tables genuinely differ (see olmo3Architecture's own
+	// comment on the real config's flat-rope_scaling-applies-to-full-only finding).
+	"olmo3": {FeatPerLayerRoPE, FeatPostOnlyNorm, FeatQKNormWhole, FeatRopeMscale, FeatSlidingWindow},
 	// InternLM3 is a llama alias: same descriptor, so the same (empty) feature profile.
 	// Its dynamic-NTK rope resolves to no scaling at all in-window, so it does not even
 	// need FeatRopeMscale.
@@ -182,6 +189,7 @@ var admissionGolden = map[string][]string{
 	"kimi_k2":          {"webgpu"},
 	"llama":            {"cuda", "metal", "webgpu"},
 	"smollm3":          {}, // FeatNoPE undeclared everywhere, same as cohere2
+	"olmo3":            {}, // FeatPostOnlyNorm/FeatQKNormWhole undeclared everywhere -- both new this pass
 	"internlm2":        {"cuda", "metal", "webgpu"},
 	"internlm3":        {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is

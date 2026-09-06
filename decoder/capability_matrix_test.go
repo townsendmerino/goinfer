@@ -136,6 +136,18 @@ func representativeConfig(modelType string) *Config {
 			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 500000,
 			HiddenAct: "silu",
 		}
+	case "olmo3":
+		// Olmo 3: NormPostOnly + QKNormWhole + sliding/full 3:1 + YaRN-on-full-only. Explicit
+		// LayerTypes (one full among four) so the interleave AND the YaRN-only-on-full split are
+		// both actually exercised, matching the real release's own pattern.
+		return &Config{
+			ModelType: "olmo3", VocabSize: 128, HiddenDim: 16, NumLayers: 4, NumHeads: 4,
+			NumKVHeads: 4, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 500000,
+			HiddenAct: "silu", SlidingWindow: 8,
+			LayerTypes: []string{"sliding_attention", "sliding_attention", "sliding_attention", "full_attention"},
+			RopeScaling: json.RawMessage(`{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":8,` +
+				`"beta_fast":32.0,"beta_slow":1.0,"attention_factor":1.1}`),
+		}
 	case "smollm3":
 		// SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers). NumLayers=4 with the
 		// interval default (4) gives no_rope_layers=[1,1,1,0] -- exactly the real release's own
@@ -438,6 +450,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen3_moe":           {"Qwen3-MoE", "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert", "safetensors, GGUF", "text"},
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
 	"smollm3":             {"SmolLM3", "HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings", "safetensors", "text"},
+	"olmo3":               {"Olmo 3", "Ai2 Olmo 3 (7B/32B): no pre-norm at all (post-only), whole-vector QK-norm, sliding/full 3:1 + YaRN on full layers only", "safetensors", "text"},
 	// InternLM3 shares Llama's ROW deliberately. It is not a family riding llama's code with
 	// its own shape — it IS a llama, down to the tensor names, so the matrix should say
 	// "Llama: llama, internlm3" rather than open a second row that competes for the same

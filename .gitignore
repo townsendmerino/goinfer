@@ -155,6 +155,7 @@ testdata/qwen3moe-tiny/
 testdata/granite-dense-tiny/
 testdata/ministral3-tiny/
 testdata/smollm3-tiny/
+testdata/olmo3-tiny/
 testdata/deepseek-tiny/
 testdata/phi3-tiny/
 testdata/kimi-tiny/

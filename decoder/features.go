@@ -105,6 +105,17 @@ const (
 	// above: otherwise a plain GQA+YaRN model needing nothing else CUDA/Metal/WebGPU lack, so
 	// without this declaration it would be ADMITTED and mis-run rather than correctly declined.
 	FeatAttnTemp ResidentFeature = "attn-temp"
+	// FeatPostOnlyNorm (Olmo 3/Olmo Hybrid, batch 2 G2): NormPostOnly — no pre-norm at all, the
+	// sublayer's OUTPUT is normalized before the residual add. Genuinely different from
+	// FeatSandwichNorm (which normalizes BOTH the input and the output); no resident backend
+	// implements it, so this stays CPU-only until one does, the same shape as FeatAttnTemp.
+	FeatPostOnlyNorm ResidentFeature = "post-only-norm"
+	// FeatQKNormWhole (Olmo 3/Olmo Hybrid): QK-norm computed over the FULL projected q/k vector
+	// (one RMSNorm over num_heads*head_dim) rather than per-head — verified against the real
+	// modeling_olmo3.py (`Olmo3RMSNorm(config.num_attention_heads * self.head_dim, ...)`), not
+	// the standard per-head FeatQKNorm (Qwen3/Gemma3/Mellum). Different statistic AND a
+	// differently-shaped weight tensor, so it is its own feature, not a variant of FeatQKNorm.
+	FeatQKNormWhole ResidentFeature = "qk-norm-whole"
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -115,7 +126,10 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 			f = append(f, x)
 		}
 	}
-	add(a.QKNorm, FeatQKNorm)
+	// FeatQKNorm is the PER-HEAD kernel; QKNormWhole needs FeatQKNormWhole instead (added
+	// separately below), not both — a backend implementing only the per-head kernel must not
+	// be admitted for the whole-vector families.
+	add(a.QKNorm && !a.QKNormWhole, FeatQKNorm)
 	add(a.SlidingWindow > 0, FeatSlidingWindow)
 	// MLA (DeepSeek/Kimi) carries rope on a decoupled qk_rope slice handled INSIDE the MLA kernel
 	// (FeatMLA), so its RotaryDim<HeadDim is not the generic partial-rope path — don't double-count
@@ -148,6 +162,8 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	// Gate on the SPECIFIC placement, not "anything but Pre2" — NormParallel is a
 	// third placement whose kernel is FeatParallelBlock, not sandwich norms.
 	add(a.NormPlacement == NormSandwich4, FeatSandwichNorm)
+	add(a.NormPlacement == NormPostOnly, FeatPostOnlyNorm)
+	add(a.QKNormWhole, FeatQKNormWhole)
 	add(a.NormPlacement == NormParallel, FeatParallelBlock)
 	// Per-layer NoPE (Cohere2 global layers skip RoPE). A backend that ropes every
 	// layer would corrupt the NoPE layers, so it is a distinct implemented-or-decline

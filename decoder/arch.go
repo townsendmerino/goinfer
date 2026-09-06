@@ -30,9 +30,16 @@ type Architecture struct {
 	FirstKDense int        // GLM/DeepSeek (first_k_dense_replace): layers [0,FirstKDense) are plain dense MLPs, the rest MoE. 0 ⇒ every layer MoE (Mixtral/Qwen-MoE/Mellum).
 
 	// Attention.
-	QKVBias         bool    // additive bias on the q/k/v projections (Qwen2, GPT-2)
-	OutBias         bool    // additive bias on the attention output projection (GPT-2)
-	QKNorm          bool    // RMSNorm on Q and K per head before RoPE (Gemma3, Qwen3)
+	QKVBias bool // additive bias on the q/k/v projections (Qwen2, GPT-2)
+	OutBias bool // additive bias on the attention output projection (GPT-2)
+	QKNorm  bool // RMSNorm on Q and K per head before RoPE (Gemma3, Qwen3)
+	// QKNormWhole (Olmo 3/Olmo Hybrid): when QKNorm is also set, normalize the WHOLE projected
+	// q/k vector as one RMSNorm (num_heads*head_dim elements, one statistic) instead of per-head
+	// — verified against the real modeling_olmo3.py, not the standard per-head convention every
+	// other QK-norm family uses. The underlying rmsNorm(x, weight, rows, dim, ...) already
+	// supports this: per-head calls it with (rows=nHeads, dim=headDim); whole-vector calls it
+	// with (rows=1, dim=nHeads*headDim) — same function, different split.
+	QKNormWhole     bool
 	LearnedPosEmbed bool    // GPT-2: add a learned position embedding and SKIP RoPE
 	AttnScale       float64 // explicit q·k multiplier (resolved: query_pre_attn_scalar^-0.5 or 1/sqrt(headDim))
 	// AttnTempBeta/AttnTempOrigMaxPos (Ministral 3): a position-dependent multiplicative scale on
@@ -450,6 +457,15 @@ const (
 	// (residual = x + attn(norm(x)) + mlp(norm(x))). Cohere/Command-R, GPT-J,
 	// Falcon. No pre-MLP norm, no post-sublayer norms.
 	NormParallel
+	// NormPostOnly: NO pre-norm at all — attention/MLP read the RAW residual
+	// stream directly — and the sublayer's OUTPUT is normalized before the
+	// residual add (residual = x + post_attn_norm(attn(x)); same for MLP).
+	// Olmo 3/Olmo Hybrid, verified against the real modeling_olmo3.py: no
+	// input_layernorm exists at all, only post_attention_layernorm /
+	// post_feedforward_layernorm, applied to the SUBLAYER OUTPUT before the
+	// add. Genuinely different from Sandwich4, which normalizes the input
+	// AND (separately) the output; here there is no input norm to skip past.
+	NormPostOnly
 )
 
 // String renders the norm placement for the capability matrix / logs.
@@ -461,6 +477,8 @@ func (p NormPlacement) String() string {
 		return "sandwich"
 	case NormParallel:
 		return "parallel"
+	case NormPostOnly:
+		return "post-only"
 	default:
 		return "unknown"
 	}

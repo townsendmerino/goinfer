@@ -488,8 +488,15 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 				i, g, arch.headsAt(i), qDim)}
 		}
 		// Per-layer f32 vectors: biases feed addBias over the projection output, norm weights feed
-		// rmsNorm at their consumed width (QK-norm is per-head-dim hd; the block norms are hidden).
-		// The blob controls their length; the forward indexes an arch width with no check (R-07).
+		// rmsNorm at their consumed width (QK-norm is per-head-dim hd normally, but the WHOLE
+		// projected width when the family sets QKNormWhole — olmo3's whole-vector QK-norm, which
+		// reuses rmsNorm at rows=1/dim=qDim instead of rows=numHeads/dim=hd; the block norms are
+		// hidden). The blob controls their length; the forward indexes an arch width with no check
+		// (R-07).
+		qNormWant, kNormWant := hd, hd
+		if arch.QKNormWhole {
+			qNormWant, kNormWant = qDim, kvDim
+		}
 		for _, c := range []struct {
 			name string
 			got  int
@@ -497,7 +504,7 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 		}{
 			{"QBias", len(lw.QBias), qDim}, {"KBias", len(lw.KBias), kvDim},
 			{"VBias", len(lw.VBias), kvDim}, {"OBias", len(lw.OBias), arch.HiddenDim},
-			{"QNorm", len(lw.QNorm), hd}, {"KNorm", len(lw.KNorm), hd},
+			{"QNorm", len(lw.QNorm), qNormWant}, {"KNorm", len(lw.KNorm), kNormWant},
 			{"PreAttnNorm", len(lw.PreAttnNorm), arch.HiddenDim}, {"PostAttnNorm", len(lw.PostAttnNorm), arch.HiddenDim},
 			{"PreMLPNorm", len(lw.PreMLPNorm), arch.HiddenDim}, {"PostMLPNorm", len(lw.PostMLPNorm), arch.HiddenDim},
 			{"UpBias", len(lw.UpBias), ffn}, {"DownBias", len(lw.DownBias), arch.HiddenDim},

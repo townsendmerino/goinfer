@@ -103,10 +103,17 @@ func causalAttention(
 		addBias(v, lw.VBias)
 	}
 
-	// 2. QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim, per head, before RoPE.
+	// 2. QK-norm (Gemma 3, Qwen3): RMSNorm over head_dim, per head, before RoPE. Olmo 3/Olmo
+	// Hybrid (QKNormWhole) normalize the WHOLE projected vector as one statistic instead —
+	// same rmsNorm call, rows/dim swapped (see QKNormWhole's own comment).
 	if arch.QKNorm {
-		rmsNorm(q, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
-		rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
+		if arch.QKNormWhole {
+			rmsNorm(q, lw.QNorm, 1, nH*hd, arch.NormEps, arch.RMSAddOne)
+			rmsNorm(k, lw.KNorm, 1, nKV*hd, arch.NormEps, arch.RMSAddOne)
+		} else {
+			rmsNorm(q, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
+			rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
+		}
 	}
 
 	// 3. RoPE at pos with the per-layer inv-freq table (Gemma: local 10k vs

@@ -17,6 +17,23 @@ any surface may still change.
 
 ### Added
 
+- **Olmo 3 as a new family** (`olmo3`; Ai2, 7B/32B): two real departures from every other family
+  here, both verified against the real `modeling_olmo3.py`/`configuration_olmo3.py` rather than
+  assumed. `NormPlacement` gains a fourth value, `NormPostOnly` — no pre-norm at all; only the
+  attention/MLP sublayer OUTPUT is normalized before the residual add. QK-norm applies to the WHOLE
+  projected q/k vector, not per head — a new `QKNormWhole` flag reuses the existing `rmsNorm` kernel
+  with `rows=1, dim=numHeads*headDim` instead of `rows=numHeads, dim=headDim`, so no new math (and
+  fixed a latent bug the addition surfaced: the existing `FeatQKNorm` derivation would have also
+  incorrectly required the per-head kernel for a whole-vector family). YaRN scaling applies only to
+  full-attention layers, sliding layers stay at plain RoPE — the same local/global RoPE split
+  Mellum's own gate already implements, reused with the sliding-layer scaling left unset. Parity-
+  gated against a tiny oracle whose sliding/full split and RoPE tables are actually exercised
+  (prompt length exceeds the fixture's sliding window): 100.0% / 0.9999999999997883. Olmo Hybrid
+  (the sibling MoE-free DeltaNet+softmax hybrid) is documented but not built —
+  `docs/task-families-2026-09.md`'s G2 section: its norm placement differs BY LAYER TYPE within one
+  model, which the current single model-wide `NormPlacement` scalar cannot express without a real
+  design decision.
+
 - **SmolLM3-3B as a new family** (`smollm3`): a plain llama-shaped dense GQA model with per-layer
   NoPE on every 4th layer via `no_rope_layers` — a field whose VALUES are the opposite of what its
   name suggests (1 = has RoPE, 0 = NoPE), verified against the real `modeling_smollm3.py` rather

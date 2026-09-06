@@ -28,7 +28,7 @@ next, and so on, until you decide to stop. Everything below is detail about (a)
 how that one prediction works and (b) the engineering tricks that make running it
 thousands of times not unbearably slow.
 
-That outer loop lives in [`decoder/model.go:942-1131`](../decoder/model.go#L893-L1131), a
+That outer loop lives in [`decoder/model.go:951-1131`](../decoder/model.go#L893-L1131), a
 function called `generateInto`.
 
 ---
@@ -128,7 +128,7 @@ in modern models:
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/attention.go:117-139](../decoder/attention.go#L124-L129).
+  is. [decoder/attention.go:124-139](../decoder/attention.go#L124-L129).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L893-L1131). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:1060-1130](../decoder/model.go#L1004-L1130)).
+   ([decoder/model.go:1069-1130](../decoder/model.go#L1004-L1130)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one
@@ -218,7 +218,7 @@ So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
 [KVCache](../decoder/kvcache.go#L50-L105), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([decoder/attention.go:168](../decoder/attention.go#L164)).
+([decoder/attention.go:175](../decoder/attention.go#L164)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to
