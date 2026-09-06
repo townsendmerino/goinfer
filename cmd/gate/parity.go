@@ -607,6 +607,9 @@ var awaitingFirstConfirmation = map[string]string{
 	"TestCohere2R7bReal_gate":    "2026-09-02 — newly required (cohere2 had no gate); promote from the first sweep that runs it",
 	"TestQwen38Real_gate":        "2026-09-02 — newly required (dense qwen3.8 had no gate); promote from the first sweep that runs it",
 	"TestQwen38GGUF_gate":        "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
+	"TestQwen3Moe_forwardParity": "2026-09-06 — newly required (qwen3_moe had no gate); promote from the first sweep that runs it",
+	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/task-families-2026-09.md); " +
+		"needs the ~60GB bf16 checkpoint on the Linux box, not yet run; promote from the first sweep that runs it",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
