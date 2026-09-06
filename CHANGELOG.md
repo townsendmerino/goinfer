@@ -137,6 +137,25 @@ any surface may still change.
   than retrofitting v6Layer's fixed byte layout, which would have corrupted every already-shipped
   v6/v7/v8 file's read.
 
+### Performance
+
+- **Elementwise activation loops (SwiGLU/GeGLU `silu`/`geluTanh` gate·up) fan out across the same
+  worker pool attention already uses, above an 8192-element threshold** — `decoder/mlp.go`'s new
+  `parallelElementwise`, applied at the dense and MoE-expert SwiGLU sites, the batched dense-MLP
+  switch (`forwardn.go`), and both GeGLU sites in `forward_gemma4.go`. Bit-identical by
+  construction (each output depends only on its own index; splitting the range cannot reorder an
+  accumulation) and verified, not assumed: the full `decoder` suite reproduced every golden
+  unchanged. Measured paired/interleaved on a 1.5B int4 checkpoint (arm order rotated per round):
+  prefill at K=1024 ~1.17× faster (four rounds, 1.15×–1.20×); decode is flat (~1.01× mean,
+  0.95×–1.07× range — inside noise), reported rather than omitted since a step that only speeds
+  prefill is not a decode win. The 8192 threshold came from a standalone microbenchmark of the
+  same fan-out idiom, not from argument: parallel loses below ~4096 elements (fork/join stagger
+  exceeds the work) and wins clearly from 8192 on. Recovers part of the elementwise-activation
+  upper bound aikit measured on this Mac (`docs/task-simd-audit.md` S-06: 24.7% of prefill at
+  K=512, 19.0% at K=3900, stubbed-vs-real) — see `docs/task-prefill-gap.md` §4 L4 for the full
+  writeup. Softmax's own reduction loops, RMSNorm, RoPE, and the recurrent-mixer (DeltaNet/Mamba2/
+  KDA) per-channel convs are untouched, out of scope for this step.
+
 ## [v0.16.0] — 2026-09-05
 
 This release is two things at once. The headline is prefill: CUDA prompt ingestion moves to tensor

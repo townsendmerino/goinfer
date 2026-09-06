@@ -450,6 +450,59 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
   it is only on the table under the §3 contract and is not started without that decision.
 - The brief for the aikit session is separate (issued 2026-09-05 with this doc).
 
+### L4 step 1 result, 2026-09-06 — measured (goinfer)
+
+S-06 step 1 shipped: `parallelElementwise` (`decoder/mlp.go`) fans out the five named
+`silu(gate)*up` / `geluTanh(gate)*up` loops (`forwardn.go:646`, `mlp.go:295/407/556`,
+`forward_gemma4.go:190/205`) across the same `sync.WaitGroup`+`go func` idiom already used for
+attention head-parallel fan-out (`maxAttnWorkers = 6`, this Mac's P-core count) — no second pool.
+Two more `ActGeluTanh` branches (`mlp.go`'s `gatedMLP`, `forwardn.go`'s dense-MLP switch) sit in
+the same switch statements as the named `ActSiLU` cases and were parallelized too, for
+consistency; they were not in the brief's exact list and are called out here rather than folded
+in silently. Left untouched, out of scope as scoped: the softmax reduction loops
+(`attention.go:264/330`, `forwardn.go:889/921` — they accumulate, and belong to step 2/3 once the
+sum order is pinned as part of the numeric contract), RMSNorm and RoPE (the audit's standing
+"leave"), and the DeltaNet/Mamba2/KDA per-channel conv silus plus the MoE-expert-batch geluTanh
+sites (`forward_gemma4_moe.go`, `eagle.go`, `dflash.go`) — same shape, not named in the brief,
+left for a follow-up if its scope is meant to extend there.
+
+**Gate.** Bit-identical, verified rather than assumed: the full `decoder` suite (381 tests) ran
+unchanged before and after, including `TestForwardN_matchesSequential` and
+`TestMoEExpertMajor_bitIdentical`; `TestParityManifest_fresh` re-verified green after a
+`refresh_parity_hashes.sh` deps_hash-only refresh (33 families staled via `core`, 37 goldens
+re-ran green / 0 failed, manifest diff is deps_hash lines only — no numeric drift).
+
+**Threshold.** Chosen from a standalone microbenchmark (same idiom, same 6-worker cap, arms
+alternated rep-by-rep, median of 51 reps, not committed to the tree), not derived by argument:
+parallel *loses* at 1024–2048 elements (0.79×–0.87×), is ambiguous at 4096 (1.04×), and wins
+clearly from 8192 on (1.53×, climbing toward ~5× past 1M). Shipped as
+`activationFanoutThreshold = 8192`.
+
+**Measured** (this Mac, arm64, 1.5B int4, K=1024, paired/interleaved, 4 rounds, arm order rotated
+each round, loadavg 4.6→8.3 rising across the run from desktop background load — both arms see it,
+so the ratio is trustworthy and the absolute tok/s is not):
+
+| | prefill (K=1024) | decode |
+|---|---|---|
+| round 1 | 144.7 vs 120.5 tok/s → **1.20×** | 39.85 vs 37.16 tok/s → 1.07× |
+| round 2 | 138.2 vs 118.8 tok/s → **1.16×** | 39.27 vs 40.44 tok/s → 0.97× |
+| round 3 | 143.6 vs 121.5 tok/s → **1.18×** | 43.42 vs 42.33 tok/s → 1.03× |
+| round 4 | 134.4 vs 116.6 tok/s → **1.15×** | 42.25 vs 44.30 tok/s → 0.95× |
+| mean | **~1.17×** | ~1.01× (noise) |
+
+Prefill recovers a real, consistent slice of the 24.7%/19.0% upper bound aikit measured
+(`docs/task-simd-audit.md` S-06, `0cb558b`) — order-of-magnitude sane for "the parallelisable
+fraction of it, not the whole thing." **Decode is flat, reported as flat per the brief's own
+instruction rather than dropped:** mean ratio ≈1.01×, per-round range 0.95×–1.07×, inside noise.
+This is a different outcome than the brief's own worry, and for a different reason — it predicted
+decode-sized calls (~8960 elements, this model's `intermediate_size`) might not profit because the
+call is small relative to the fork/join stagger, but the isolated microbenchmark above already
+shows 8192 elements alone winning 1.53× on their own. So the real-decode flatness is not a
+stagger-vs-work-size effect; it reads as real-workload dilution (contention with the
+already-running attention fan-out, real memory-bandwidth pressure) that an isolated bench cannot
+see. Neither arm regresses meaningfully — step 1 is a clean prefill win and a decode no-op, which
+the brief explicitly allowed for.
+
 ## 5. Sequencing
 
 | order | item | why here |

@@ -186,9 +186,11 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 			up := make([]float32, ffn)
 			matmul(be, &lw.GateProj, normd, gate, 1)
 			matmul(be, &lw.UpProj, normd, up, 1)
-			for i := range gate {
-				gate[i] = geluTanh(gate[i]) * up[i]
-			}
+			parallelElementwise(len(gate), func(lo, hi int) {
+				for i := lo; i < hi; i++ {
+					gate[i] = geluTanh(gate[i]) * up[i]
+				}
+			})
 			mlpOut := make([]float32, hidden)
 			matmul(be, &lw.DownProj, gate, mlpOut, 1)
 			normalize(arch, mlpOut, lw.PostMLPNorm, nil, hidden) // post-FFN (sandwich)
@@ -201,9 +203,11 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 				pl := perLayer[l*pleDim : (l+1)*pleDim]
 				px := make([]float32, pleDim)
 				matmul(be, &lw.PLEGate, h, px, 1)
-				for i := range px {
-					px[i] = geluTanh(px[i]) * pl[i]
-				}
+				parallelElementwise(len(px), func(lo, hi int) {
+					for i := lo; i < hi; i++ {
+						px[i] = geluTanh(px[i]) * pl[i]
+					}
+				})
 				pout := make([]float32, hidden)
 				matmul(be, &lw.PLEProj, px, pout, 1)
 				normalize(arch, pout, lw.PostPLENorm, nil, hidden)

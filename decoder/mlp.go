@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
@@ -275,6 +276,53 @@ func groupLimit(sel []float32, nGroup, topkGroup int) []float32 {
 	return out
 }
 
+// activationFanoutThreshold gates parallelElementwise's fan-out: below this element count, the
+// fork/join (goroutine-wake stagger) costs more than a short shard's work, so the range runs
+// serially instead. MEASURED on this Mac (arm64, 6 P-cores, `silubench` — a standalone serial-vs-
+// 6-worker fan-out microbenchmark over the exact silu(gate)*up computation, arms alternating
+// rep-by-rep, median of 51 reps): parallel is a clear LOSS at 1024-2048 elements (0.79x-0.87x),
+// roughly break-even at 4096 (1.04x — the ambiguous zone), and a clean win from 8192 onward
+// (1.53x, climbing to ~5x by 1M elements). 8192 sits safely past the ambiguous band rather than
+// riding its edge. This is LOWER than S-06's own attention-fanout stagger estimate (~92us at six
+// workers) would suggest for a "decode-sized" (~8960-element) call — because this fan-out's
+// per-worker setup is a bare closure over a slice range, not headWorkerPool's per-worker
+// gather-then-matmul; a cheaper goroutine body has a cheaper stagger. Re-measure with silubench
+// before changing this constant; do not guess a new value from the attention pool's own number.
+const activationFanoutThreshold = 8192
+
+// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as
+// maxAttnWorkers (scratch.go) — reused directly rather than redefined, so a future change to the
+// core count only has one place to update.
+const activationFanoutWorkers = maxAttnWorkers
+
+// parallelElementwise splits [0,n) into up to activationFanoutWorkers contiguous ranges and runs
+// fn(lo,hi) on each in its own goroutine when n crosses activationFanoutThreshold; otherwise runs
+// fn(0,n) serially. Bit-identical either way BY CONSTRUCTION: fn must depend only on its own
+// index range (no cross-range read, no shared accumulator) — every call site here is a pure
+// elementwise activation (silu/geluTanh × gate), never a reduction (a softmax's `sum += e` would
+// reorder under this split and must NOT use it — see S-06 step 1's own scope note).
+func parallelElementwise(n int, fn func(lo, hi int)) {
+	if n < activationFanoutThreshold {
+		fn(0, n)
+		return
+	}
+	workers := min(activationFanoutWorkers, n)
+	per := (n + workers - 1) / workers
+	var wg sync.WaitGroup
+	for w := range workers {
+		lo, hi := w*per, min((w+1)*per, n)
+		if lo >= hi {
+			continue
+		}
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			fn(lo, hi)
+		}(lo, hi)
+	}
+	wg.Wait()
+}
+
 // swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate
 // width into dst[:hidden]: dst = Down·(silu(Gate·h) ⊙ Up·h).
 // P6: gate/up come from the CALLER so a token's k experts share one pair instead of allocating a
@@ -291,9 +339,11 @@ func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend, ga
 	gate, up = gate[:inter], up[:inter]
 	matmul(be, &ex.Gate, h, gate, 1)
 	matmul(be, &ex.Up, h, up, 1)
-	for i := range gate {
-		gate[i] = silu(gate[i]) * up[i]
-	}
+	parallelElementwise(len(gate), func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			gate[i] = silu(gate[i]) * up[i]
+		}
+	})
 	matmul(be, &ex.Down, gate, dst, 1)
 }
 
@@ -399,13 +449,17 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	}
 	switch arch.Act {
 	case ActGeluTanh:
-		for i := range gate {
-			gate[i] = geluTanh(gate[i]) * up[i]
-		}
+		parallelElementwise(len(gate), func(lo, hi int) {
+			for i := lo; i < hi; i++ {
+				gate[i] = geluTanh(gate[i]) * up[i]
+			}
+		})
 	case ActSiLU:
-		for i := range gate {
-			gate[i] = silu(gate[i]) * up[i]
-		}
+		parallelElementwise(len(gate), func(lo, hi int) {
+			for i := lo; i < hi; i++ {
+				gate[i] = silu(gate[i]) * up[i]
+			}
+		})
 	default:
 		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
 	}
@@ -552,9 +606,11 @@ func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be
 		ex := &lw.Experts[e]
 		matmul(be, &ex.Gate, gathered[:m*hidden], gate[:m*inter], m)
 		matmul(be, &ex.Up, gathered[:m*hidden], up[:m*inter], m)
-		for i := range m * inter {
-			gate[i] = silu(gate[i]) * up[i]
-		}
+		parallelElementwise(m*inter, func(lo, hi int) {
+			for i := lo; i < hi; i++ {
+				gate[i] = silu(gate[i]) * up[i]
+			}
+		})
 		matmul(be, &ex.Down, gate[:m*inter], outBuf[:m*hidden], m)
 		for i, s := range slots { // SCATTER into (row, rank)
 			copy(perRank[(s.row*k+s.rank)*hidden:(s.row*k+s.rank+1)*hidden], outBuf[i*hidden:(i+1)*hidden])

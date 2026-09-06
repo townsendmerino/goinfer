@@ -640,13 +640,17 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		}
 		switch arch.Act {
 		case ActGeluTanh:
-			for j := range gate {
-				gate[j] = geluTanh(gate[j]) * up[j]
-			}
+			parallelElementwise(len(gate), func(lo, hi int) {
+				for j := lo; j < hi; j++ {
+					gate[j] = geluTanh(gate[j]) * up[j]
+				}
+			})
 		case ActSiLU:
-			for j := range gate {
-				gate[j] = silu(gate[j]) * up[j]
-			}
+			parallelElementwise(len(gate), func(lo, hi int) {
+				for j := lo; j < hi; j++ {
+					gate[j] = silu(gate[j]) * up[j]
+				}
+			})
 		default:
 			return nil, errNotImplemented
 		}
