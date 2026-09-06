@@ -1142,7 +1142,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:107` | goinfer | `const ahead = 1` |
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:64` | goinfer | `if _, own := w.arch.ownForward(); own {` |
 | `docs/audit-2026-09-02.md|decoder/lfm2_test.go:178` | goinfer | `for _, id := range g.PromptIDs {` |
-| `docs/audit-2026-09-02.md|decoder/llama4_real_test.go:52` | goinfer | `prompt := "The capital of France is"` |
+| `docs/audit-2026-09-02.md|decoder/llama4_real_test.go:68` | goinfer | `prompt := "The capital of France is"` |
 | `docs/audit-2026-09-02.md|decoder/longprompt_golden_test.go:84` | goinfer | `os.Unsetenv("GOINFER_CPU_FAST_ATTENTION")` |
 | `docs/audit-2026-09-02.md|decoder/mamba2.go:44` | goinfer | `inProj  []float32 // [projDim, hidden]` |
 | `docs/audit-2026-09-02.md|decoder/mamba2.go:76` | goinfer | `if ssmQ8CPU { // confirmation seam: match the resident W8A8 — int8 weights AND int8 acti` |

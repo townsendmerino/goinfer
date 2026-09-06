@@ -24,6 +24,22 @@ import (
 func TestLlama4Real_gate(t *testing.T) {
 	requireHeavyModel(t)
 	gguf := assetPath(t, "GOINFER_LLAMA4_GGUF")
+	// THIS MODEL DOES NOT FIT, AND THE GATE OPTS OUT ON PURPOSE.
+	//
+	// Scout is 107.8B elements; at int4 (0.625 bytes/element including group scales) that is
+	// ~62.7 GB resident, against nobara-pc's 62.7 GB of RAM — 100% of the machine, with nothing
+	// left for the KV cache, activations or the OS. The load-time fit guard (decoder/fitguard.go)
+	// therefore refuses it, and the refusal is CORRECT: measured 2026-09-06 during the parity
+	// sweep, and the estimate was checked rather than trusted (no vision tensors in this GGUF,
+	// element count matches Scout's published 109B).
+	//
+	// What the guard revealed is that this gate has been completing by PAGING, which is the exact
+	// failure mode the guard was written for after a cold-user run watched a 16 GB Mac go +7.8 GB
+	// into swap in five seconds. The gate is kept as-is rather than shrunk, because it is the only
+	// real-checkpoint coverage llama4_text has and it inspects architecture rather than measuring
+	// speed — so paging costs time here, not correctness. The opt-out is explicit so that nobody
+	// reads a passing llama4 gate as evidence that this model fits.
+	t.Setenv("GOINFER_NO_FIT_GUARD", "1")
 	m, err := Load(gguf, Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", gguf, err)
