@@ -6,7 +6,7 @@ require (
 	github.com/eitamring/gocudrv v0.3.2
 	github.com/townsendmerino/aikit v1.34.0
 	github.com/townsendmerino/aikit/gpu v0.32.0
-	github.com/townsendmerino/goinfer v0.15.0
+	github.com/townsendmerino/goinfer v0.16.0
 )
 
 require (

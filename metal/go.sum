@@ -2,14 +2,12 @@ github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/
 github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/eitamring/gocudrv v0.3.2 h1:zjRj3gRSfmbxbQkt1jXSTdGKHPwL1R912qovXnOPUlE=
 github.com/eitamring/gocudrv v0.3.2/go.mod h1:nA+ytiB8A1YvVSHzBQbn+Be+BGR4gAGVIP+7chLn+O4=
-github.com/townsendmerino/aikit v1.33.0 h1:NKQKPjCBbdlU+UEPbzarQVemMqbLaaaGKNAMDM0UHtI=
-github.com/townsendmerino/aikit v1.33.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit v1.34.0 h1:nnEIQCEYRmdyvwp571N+XRtLS4P+ono+U9FKt/n+mzE=
 github.com/townsendmerino/aikit v1.34.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit/gpu v0.32.0 h1:/0XvD3z5q3Aij1vecb4gk4ycZ28gxUuTwVDy9Ie0EaY=
 github.com/townsendmerino/aikit/gpu v0.32.0/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
-github.com/townsendmerino/goinfer v0.15.0 h1:dcwtk98QG9KtgQl43K3HkaAyuh7gCXQNrOkWQWE3WRg=
-github.com/townsendmerino/goinfer v0.15.0/go.mod h1:BI4dOhyHiB0PB3VFvV7Olp+uAhcSeVTMxDEqInDfvvk=
+github.com/townsendmerino/goinfer v0.16.0 h1:IDFfr1l9bbi5WnGflG91suNh2MYbKVjaZedAZmW3rEs=
+github.com/townsendmerino/goinfer v0.16.0/go.mod h1:0xVfUT479JparFFvb+qyP2408ZbbQ2pMhxwO2rTtHqs=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
