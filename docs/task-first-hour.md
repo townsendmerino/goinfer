@@ -274,6 +274,50 @@ tiny GGUF at int4 / int8int8) so the two cannot drift apart.
 
 **Commit:** `db61c833`.
 
+### R3-follow-on — on Apple Silicon, `--quant int4` uses MORE RAM than `--quant int8int8`
+
+**Not a cold-run finding either. R3's gate found it**, and it contradicts what `serve --help` and
+this repo have been telling users.
+
+Measured on darwin/arm64 in CI, 2026-09-06, by pushing a probe matrix through the loader's own
+quantization and asking `wmBytes` what it cost:
+
+| quant | bytes/element, arm64 | bytes/element, amd64+VNNI |
+|---|---|---|
+| `int8` / `int8int8` | **1.0156** | 1.0156 |
+| `int4` / `int4mix` | **1.2500** | 0.6250 |
+
+The cause is `RepackInt4Row4` (`linalg/weightmat_row4_arm64.go:21`): on arm64 with dotprod it
+populates `q4Row4` and `q4Row4Scales` **in addition to** the canonical `q4`/`q4s`, clearing
+neither — so an int4 weight carries two full layouts, 0.625 + 0.625. int8 has no such repack. The
+same shape applies on AVX2-without-VNNI amd64 via the split-half repack.
+
+So on an M-series Mac, `--quant int4` costs about **23% more resident RAM than `--quant
+int8int8`**, at lower accuracy. Two shipped claims are wrong there:
+
+- `serve --help`, `-quant`: *"int4 … smallest"* — it is not, on arm64.
+- `serve --help`, `-quant`: *"int8int8 … ~2x the RAM of int4"* — it is **0.81x**, on arm64.
+
+**This is not a small correction.** The cold run that started this whole pass was a 16 GB M1 Pro
+running out of memory, and the advice the product gave that user — reach for int4, it is the
+smallest — is inverted on their machine. It also means R3's own decline message, which offers
+"`--quant int4` (the smallest…)" as a remedy, was offering the wrong one on arm64; that line is
+now conditioned.
+
+**What is NOT claimed here.** This is a RESIDENT-MEMORY measurement only. int4 remains the faster
+option on Apple Silicon CPU — that is a separate, separately-measured claim
+(`docs/benchmarks.md`, `docs/task-w4a8-neon-bandwidth.md`), and the repack is precisely what buys
+that speed. The trade on arm64 is "int4 is faster and larger", not "int4 is worse". Nothing about
+the speed rows is touched, and no benchmark number is restated.
+
+**Gate.** `TestQuantBytesPerElem_everyModeIsPlausible` pins int4 to one of exactly **two**
+legitimate costs — ~0.625 (encoding only) or ~1.250 (repacked) — rather than to a range spanning
+both, because a wrong measurement lands *between* them and a range wide enough to hold both would
+accept it. Mutation-checked: scaling the measurement by 1.5 lands at 0.9375 and the gate names
+both expected values. It replaces an assertion of mine that int4 must be cheaper than int8, which
+CI proved false on the first arm64 run — the assertion was the bug, and the fact it was hiding was
+worth more than the assertion.
+
 ### R4 — scenarios B and C, the friction entries
 
 **C (embed).** The tester found the entry point by probing 14 package URLs against pkg.go.dev, and

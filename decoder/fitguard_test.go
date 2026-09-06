@@ -189,29 +189,50 @@ func injectHostRAM(t *testing.T, bytes int64) func() {
 // and it is invisible in the ratio test above, which never exercises int4mix.
 func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		mode     quantMode
-		lo, hi   float64
-		alsoLess quantMode // must be strictly cheaper than this mode, or the ordering is broken
+		name   string
+		mode   quantMode
+		lo, hi float64
 	}{
 		{name: "f32", mode: quantNone, lo: 4, hi: 4},
-		{name: "int8", mode: quantInt8, lo: 0.9, hi: 2.4, alsoLess: quantNone},
-		{name: "int8int8", mode: quantInt8I8, lo: 0.9, hi: 2.4, alsoLess: quantNone},
-		// The upper bounds admit the repacked hosts: arm64's row4 and AVX2-without-VNNI's
-		// split-half each keep a SECOND buffer beside the canonical nibbles, so int4 legitimately
-		// costs about twice its 0.625-byte encoding there.
-		{name: "int4", mode: quantInt4, lo: 0.55, hi: 1.5, alsoLess: quantInt8},
-		{name: "int4mix", mode: quantInt4Mix, lo: 0.55, hi: 1.5, alsoLess: quantInt8},
+		{name: "int8", mode: quantInt8, lo: 0.95, hi: 1.20},
+		{name: "int8int8", mode: quantInt8I8, lo: 0.95, hi: 1.20},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := quantBytesPerElem(tc.mode)
-			if got < tc.lo || got > tc.hi {
+			if got := quantBytesPerElem(tc.mode); got < tc.lo || got > tc.hi {
 				t.Errorf("%s costs %.4f bytes/elem, want %.2f..%.2f", tc.name, got, tc.lo, tc.hi)
 			}
-			if tc.alsoLess != tc.mode && got >= quantBytesPerElem(tc.alsoLess) {
-				t.Errorf("%s (%.4f) is not cheaper than the wider mode (%.4f) — the modes are "+
-					"mis-measured or mis-ordered", tc.name, got, quantBytesPerElem(tc.alsoLess))
+		})
+	}
+
+	// int4 has exactly TWO legitimate costs, and which one applies is a property of the host, not
+	// of the encoding:
+	//
+	//   ~0.625  canonical nibbles + one f32 scale per group of 32, and no repack
+	//   ~1.250  the same, PLUS a second repacked buffer that the loader keeps beside it —
+	//           RepackInt4Row4 on arm64-with-dotprod, split-half on AVX2-without-VNNI
+	//
+	// Pinning the pair rather than a range is the point: a wrong measurement usually lands
+	// BETWEEN them, and a range wide enough to hold both would accept it.
+	//
+	// This replaces an assertion that int4 must be cheaper than int8, which CI proved false.
+	// Measured on darwin/arm64 2026-09-06: int4 1.2500 against int8 1.0156 — on Apple Silicon
+	// int4 weights occupy about 23% MORE resident RAM than int8int8, because int8 gets no repack.
+	// See docs/task-first-hour.md for what that means for the help text's "int4 ... smallest".
+	for _, name := range []struct {
+		label string
+		mode  quantMode
+	}{{"int4", quantInt4}, {"int4mix", quantInt4Mix}} {
+		t.Run(name.label, func(t *testing.T) {
+			got := quantBytesPerElem(name.mode)
+			const enc, repacked = 0.625, 1.250
+			near := func(want float64) bool { return got > want*0.95 && got < want*1.05 }
+			if !near(enc) && !near(repacked) {
+				t.Errorf("%s costs %.4f bytes/elem — neither the ~%.3f encoding-only cost nor the "+
+					"~%.3f repacked cost. A value between the two usually means the probe stopped "+
+					"going through the loader's own path", name.label, got, enc, repacked)
 			}
+			t.Logf("%s: %.4f bytes/elem (%s)", name.label, got,
+				map[bool]string{true: "repacked host", false: "encoding only"}[near(repacked)])
 		})
 	}
 }

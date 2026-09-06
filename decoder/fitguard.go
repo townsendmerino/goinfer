@@ -108,9 +108,18 @@ func (f fitCheck) remedy() string {
 func (f fitCheck) declineErr() error {
 	// Suggesting a smaller quant to someone already at int4 is noise, and noise in a refusal is
 	// how the useful line gets skipped.
+	//
+	// AND int4 IS NOT ALWAYS THE SMALLER ONE. On arm64-with-dotprod (and AVX2-without-VNNI) the
+	// loader keeps a repacked second copy of the nibbles beside the canonical ones, so int4
+	// measures ~1.25 bytes/element against int8's ~1.02 — MORE resident memory, not less
+	// (measured in CI on darwin/arm64, docs/task-first-hour.md). Offering "int4, the smallest"
+	// there would send a user who is already out of memory in the wrong direction, so the line is
+	// derived from the same measurement the arithmetic above uses rather than from the nominal
+	// bit width.
 	alt := "  Or run a smaller model.\n"
-	if f.quant != "int4" && f.quant != "int4mix" {
-		alt = "  Or run a smaller model, or --quant int4 (the smallest, and roughly half the RAM of int8).\n"
+	if f.quant != "int4" && f.quant != "int4mix" &&
+		quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8) {
+		alt = "  Or run a smaller model, or --quant int4, which is smaller on this machine.\n"
 	}
 	return fmt.Errorf("decoder: %s.\n"+
 		"  Loading it would page to swap rather than run, so it was NOT loaded.\n"+
