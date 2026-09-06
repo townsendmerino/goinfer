@@ -1127,13 +1127,13 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/gptq.go:41` | goinfer | `func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {` |
 | `docs/audit-2026-09-02.md|decoder/int4f16scales.go:10` | goinfer | `// GOINFER_INT4_F16_SCALES=1 is a DIAGNOSTIC (default-off, one env read per weight at LO` |
 | `docs/audit-2026-09-02.md|decoder/int4f16scales.go:41` | goinfer | `func f32ToF16bits(f float32) uint16 {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:240` | goinfer | `if p >= r.count {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:243` | goinfer | `exact := r.count <= r.w \|\| p >= r.count-1` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:256` | goinfer | `for l := range c.numLayers {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:412` | goinfer | `func (c *KVCache) resetRecurrent() {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:462` | goinfer | `if pos == 0 {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:519` | goinfer | `func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV []float3` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:525` | goinfer | `base = max(startPos-r.w+1, 0)` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:235` | goinfer | `// a deeper rewind on a wrapped ring would need positions already evicted, so it` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:239` | goinfer | `func (r *ring) truncate(p int) bool {` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:408` | goinfer | `anchor: func (c *KVCache) hasRecurrentState() bool {` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:458` | goinfer | `// exactly rewound (audit C-01). Reset it on a full clear (Session.Reset → TruncateTo(0)` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:470` | goinfer | `// reset, outside the recurrent guard (audit M-25).` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:515` | goinfer | `// contiguous in newK/newV from the post-RoPE batch buffers). base = the absolute` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:521` | goinfer | `stride := r.stride` |
 | `docs/audit-2026-09-02.md|decoder/kvcache_recurrent_test.go:13` | goinfer | `c.mamba = []*mamba2State{{ssm: []float32{1, 2, 3}, convWin: [][]float32{{9}}}}` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:214` | goinfer | `// M-04: numLayers == 0 and kvDim == 0 USED TO PASS — only negatives and over-maxes were` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:241` | goinfer | `// TOKENS BEFORE THE ALLOCATION, AND A CEILING ON THE ALLOCATION ITSELF (2026-09-05).` |
