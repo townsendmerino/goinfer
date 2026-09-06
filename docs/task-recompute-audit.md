@@ -132,7 +132,7 @@ positions are inherent, not recompute.
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
   reuses through `rewindForReuse` (`decoder/session.go:73-80`) → `KVCache.TruncateTo`
-  (`decoder/kvcache.go:448-463`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
+  (`decoder/kvcache.go:452-463`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
   is **inexact** (cold prefill), and `pos == c.pos` is **exact**. An agent turn is `previous prompt +
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only

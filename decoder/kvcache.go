@@ -27,13 +27,17 @@ func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) 
 // dequantHeads reconstructs nKV int8 head-rows (each headDim wide, scale per
 // head) back to f32 in dst — the inverse of quantizeHeads, for the batched
 // prefill's dequant-into-scratch (the f32 matmul kernels stay unchanged).
+// dequantHeads expands one position's int8 KV into f32, one scale per KV head. The arithmetic
+// lives in aikit — this is the argument order goinfer's nine call sites use, nothing more.
+//
+// It WAS a duplicate of linalg.DequantizeRowsInt8Into (rows=nKV, cols=headDim, per-row scale), and
+// the duplication was removed rather than assumed: the two were gated RAW-BIT equal
+// (math.Float32bits, not a tolerance) over int8's full range including -128, per-head scales
+// spanning max-normal / min-normal / denormal / ±0 / Inf / NaN, and the tail shapes the cache
+// actually uses — then mutation-checked by perturbing one lane and watching the gate go red.
+// See aikit docs/task-goinfer-kernel-moves.md, M5.
 func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
-	for h := range nKV {
-		o, s := h*headDim, scales[h]
-		for c := range headDim {
-			dst[o+c] = float32(q[o+c]) * s
-		}
-	}
+	linalg.DequantizeRowsInt8Into(dst, q, scales, nKV, headDim)
 }
 
 // KVCache holds the per-layer key/value history for one generation

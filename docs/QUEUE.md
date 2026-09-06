@@ -1127,13 +1127,13 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/gptq.go:41` | goinfer | `func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {` |
 | `docs/audit-2026-09-02.md|decoder/int4f16scales.go:10` | goinfer | `// GOINFER_INT4_F16_SCALES=1 is a DIAGNOSTIC (default-off, one env read per weight at LO` |
 | `docs/audit-2026-09-02.md|decoder/int4f16scales.go:41` | goinfer | `func f32ToF16bits(f float32) uint16 {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:235` | goinfer | `func (r *ring) truncate(p int) bool {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:239` | goinfer | `exact := r.count <= r.w \|\| p >= r.count-1` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:408` | goinfer | `func (c *KVCache) resetRecurrent() {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:458` | goinfer | `if pos == 0 {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:470` | goinfer | `for l := range c.numLayers {` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:515` | goinfer | `func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV []float3` |
-| `docs/audit-2026-09-02.md|decoder/kvcache.go:521` | goinfer | `base = max(startPos-r.w+1, 0)` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:240` | goinfer | `if p >= r.count {` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:243` | goinfer | `exact := r.count <= r.w \|\| p >= r.count-1` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:256` | goinfer | `for l := range c.numLayers {` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:412` | goinfer | `func (c *KVCache) resetRecurrent() {` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:462` | goinfer | `if pos == 0 {` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:519` | goinfer | `func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV []float3` |
+| `docs/audit-2026-09-02.md|decoder/kvcache.go:525` | goinfer | `base = max(startPos-r.w+1, 0)` |
 | `docs/audit-2026-09-02.md|decoder/kvcache_recurrent_test.go:13` | goinfer | `c.mamba = []*mamba2State{{ssm: []float32{1, 2, 3}, convWin: [][]float32{{9}}}}` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:214` | goinfer | `// M-04: numLayers == 0 and kvDim == 0 USED TO PASS — only negatives and over-maxes were` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:241` | goinfer | `// TOKENS BEFORE THE ALLOCATION, AND A CEILING ON THE ALLOCATION ITSELF (2026-09-05).` |
@@ -1461,7 +1461,7 @@ supports.
 | `docs/how-inference-works.md|decoder/attention.go:117` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:157` | goinfer | `cache.Append(layer, k, v)` |
 | `docs/how-inference-works.md|decoder/attention.go:59` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
-| `docs/how-inference-works.md|decoder/kvcache.go:132` | goinfer | `subCapture bool` |
+| `docs/how-inference-works.md|decoder/kvcache.go:136` | goinfer | `subCapture bool` |
 | `docs/how-inference-works.md|decoder/kvcache.go:20` | goinfer | `func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) {` |
 | `docs/how-inference-works.md|decoder/model.go:1060` | goinfer | `for range maxTokens {` |
 | `docs/how-inference-works.md|decoder/model.go:942` | goinfer | `func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *` |
@@ -1616,7 +1616,7 @@ supports.
 | `docs/scoping-lfm2.md|decoder/config.go:956` | goinfer | `case c.UseQKNorm:` |
 | `docs/scoping-lfm2.md|decoder/deltanet.go:176` | goinfer | `// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1` |
 | `docs/scoping-lfm2.md|decoder/forward_qwen35.go:30` | goinfer | `if arch.isLinearLayer(l) {` |
-| `docs/scoping-lfm2.md|decoder/kvcache.go:50` | goinfer | `type KVCache struct {` |
+| `docs/scoping-lfm2.md|decoder/kvcache.go:54` | goinfer | `type KVCache struct {` |
 | `docs/scoping-lfm2.md|decoder/mamba2.go:89` | goinfer | `// 2. Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last` |
 | `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
@@ -1705,7 +1705,7 @@ supports.
 | `docs/task-recompute-audit.md|decoder/blockspec.go:195` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
 | `docs/task-recompute-audit.md|decoder/forwardn.go:134` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
 | `docs/task-recompute-audit.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
-| `docs/task-recompute-audit.md|decoder/kvcache.go:448` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
+| `docs/task-recompute-audit.md|decoder/kvcache.go:452` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
 | `docs/task-recompute-audit.md|decoder/model.go:1062` | goinfer | `case <-ctx.Done():` |
 | `docs/task-recompute-audit.md|decoder/model.go:1196` | goinfer | `// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.` |
 | `docs/task-recompute-audit.md|decoder/model.go:982` | goinfer | `reuseFrom := m.residentReuseLen(prompt)` |
