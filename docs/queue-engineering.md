@@ -591,7 +591,45 @@ project already has the rule — *a skip is not a pass* — and these are the co
 not a failure, and a gate that cannot say which it had is asking the operator to guess.**
 
 **B7 · `aikit_version` is a hand-maintained input to a computed gate** — `linux`, **found 2026-08-12
-during the v1.17.0 bump**
+during the v1.17.0 bump; MEASURED AND STILL LIVE 2026-09-06 — see the box immediately below**
+
+> **STATUS 2026-09-06: CONFIRMED LIVE, AND A RELEASE WAS CUT THROUGH IT. ONE ACTION OUTSTANDING.**
+>
+> The prediction below ("a green that means 'nothing asked'") was checked against the file for the
+> first time during v0.16.0's post-tag queue walk. It was true: `aikit_version` read **v1.19.0**
+> against a `go.mod` of **v1.34.0**, so `deps_hash` had not moved across **fifteen** aikit versions
+> and no goldens re-ran in that span. **v0.16.0 was therefore tagged on a §C1 green that vouched
+> for nothing** — the gate did not fail, it was never asked.
+>
+> **The interlock itself works.** Setting the field to its true value re-stales every family, on
+> demand. And a full `EMIT_MANIFEST=1 go run ./cmd/gate parity` at `d8a62210` (the v0.16.0 tag
+> commit) with the field corrected **passed every real-model gate** — cohere, cohere2,
+> deepseek_v2/v3, gemma3, gemma4-26B, glm4_moe, gpt2, gpt-oss, granite, granitemoehybrid, laguna,
+> lfm2, llama, llama4, mellum, mistral, mixtral, nemotron_h, nemotron3nano, phi3, qwen2,
+> qwen2_5_vl, qwen2_moe, qwen3, qwen3_5_moe, qwen3_next, qwen3.8 — with the only blocker being
+> `TestParityManifest_fresh` itself, correctly reporting its own un-recorded state. **So the
+> numerics did not drift, and that is not luck**: aikit's own bit-identity discipline is the
+> mechanism that held, exactly as this entry predicted. What was luck is that nobody had to
+> discover it from a published tag.
+>
+> **OUTSTANDING, and it needs the Linux box for ~2 hours.** That validating run was against the
+> PRE-REBASE source; eleven commits landed under it (including two new families, qwen3_moe and
+> Granite 4.2 dense, taking the manifest from 28 to 30 families, plus edits to `registry.go`,
+> `gguf.go`, `weights.go`, `config.go`). Its result does not transfer. To close this:
+>
+> 1. set `aikit_version` to the `go.mod` value — every family will go stale, which is correct;
+> 2. `EMIT_MANIFEST=1 go run ./cmd/gate parity -logdir <A DIRECTORY THAT EXISTS>` — the gate writes
+>    per-cell JSON there and a missing dir makes every cell read back EMPTY and report a fabricated
+>    blocker count; that misfire cost two runs on 2026-09-05/06 alone;
+> 3. commit the merged rows and the corrected field together, so the field is never truthful while
+>    the hashes are stale (that state is a red `main`).
+>
+> **Until step 3 lands, `origin/main`'s parity green remains uninformative** — it currently reads
+> "30/30 families enforced" on a `deps_hash` computed from a stale aikit version.
+>
+> The durable fix is still the one below: derive the field, do not type it. This box records what
+> is true today so the next person does not re-derive it from scratch.
+
 
 `testdata/parity_manifest.json` carries an `aikit_version` field that is **mixed into `deps_hash`**,
 so the staleness gate re-stales every family when it changes. That is the right design and it works.
