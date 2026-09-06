@@ -12,6 +12,57 @@
 
 ## What is open
 
+- **P24 · `attn_fused` runs at 1.72% of tensor peak and 12.6% occupancy — the L2 kernel that
+  shipped is nowhere near its ceiling, and the first suspect is the GRID, not the inner loop.**
+  Filed 2026-09-05 from the L2/L3 prefill campaign. Named and deliberately not chased at the time:
+  the kernel had already cleared its pre-registered band (≥1.4× end-to-end; measured 1.70×), and
+  tuning a kernel *before* its band is met is how `gemv_w4a8_batched` accumulated five successive
+  attributions that were each recorded as a conclusion and refuted by the next measurement.
+
+  **Measured, not inferred** (`ncu`, `attn_fused_hd128`, dense 1.5B int4 at K=2048, RTX 2070 SUPER,
+  driver 595.91.07, median of 3 launches — `docs/measurements/prefill-l2l3-phase1-2026-09-05.md` §4):
+
+  | metric | value |
+  |---|---|
+  | tensor pipe utilisation | **1.72%** of peak |
+  | achieved occupancy (warps active) | **12.6%** |
+  | SM throughput | 6.98% |
+  | DRAM / L1TEX throughput | 8.3% / 9.8% |
+
+  **Nothing is saturated**, so the kernel is still latency-shaped — far less so than the
+  `attn_batched` it replaced, but the 3.76× it won on the attention category is not a ceiling.
+
+  **The mechanism, counted rather than guessed.** The grid is `(nH, ceil(M/64))` = **12 × 8 = 96
+  blocks**. `ptxas` reports **178 registers/thread**, so only **2 blocks fit per SM**, and 40 SMs
+  hold **80 concurrently** — **1.2 waves**, with a large tail in which most of the card is idle.
+  That alone bounds achieved occupancy near what was measured. A 32-row query tile (`BM=32`, two
+  warps) doubles the block count to 192 while leaving registers/thread unchanged (the O
+  accumulator is `hd/2 = 64` f32 per lane regardless of BM, since a warp owns 16 query rows either
+  way), which should give ~5 blocks/SM and put the whole grid inside one wave.
+
+  **Pre-registered decision rule, with the ambiguous band and the do-nothing arm:**
+  - **Cell:** `TestPrefillDecomp` attention category, dense 1.5B int4, K=3900. Baseline is the
+    shipped `BM=64` kernel at **805.2 ms** (the same instrument and depth §4 L2's band used).
+  - **Arms:** `BM=64` (do-nothing, the shipped kernel) · `BM=32` · and, only if BM=32 disappoints,
+    a K-split (flash-decoding-style) arm. **The do-nothing arm is not optional here:** the shipped
+    kernel is already 3.76×, so "BM=32 is faster than nothing" is not the question — "BM=32 is
+    faster than what ships" is.
+  - **Ships** at ≥1.25× on the category *and* no regression at K=512 (where the grid is smaller
+    and a narrower tile may lose). **Ambiguous → parked** at 1.05–1.25×, or any gain that comes
+    with a K=512 regression. **Parks** below 1.05×.
+  - **Any change must re-run the §3 fidelity gate at the floor and above.** BM is not a numerics
+    knob in principle — the online softmax is per-row and tile-width-independent — but that is a
+    claim, and the gate is how it gets checked. `TestAttnFused_vsF16Reference` is the cheap
+    pre-check: it compares against exact f64 on the kernel's own f16 operands, so it isolates a
+    tiling bug from operand precision.
+
+  **What would make this NOT worth doing**, stated up front so the negative is publishable: at
+  K=3900 attention is already down to ~25% of prefill after L2 shipped (805 ms of 3255 ms catSum),
+  so even a *perfect* attention kernel is now capped at ~1.33× end-to-end. A 1.25× category win is
+  ~1.06× end-to-end. **The category headroom is large and the end-to-end headroom is not** — L3
+  moved the bottleneck back to the weight term, and that asymmetry is the reason this is filed as
+  an open item rather than started.
+
 - **P23 · A3 f32-attention fan-out at K=8192 is unmeasured — deliberately not extrapolated.**
   Filed 2026-09-05, carried over from the 2026-09-01 A3 fan-out work. The shipped measurement
   (`docs/measurements/a3-f32-attention-fanout-2026-09-01.md`) covers K=1024/2048/4096 (1.58× at
