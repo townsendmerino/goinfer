@@ -1056,11 +1056,41 @@ func (r *resident) forwardLogits(pos int) []float32 {
 func (r *resident) finalizeLogits() {
 	copy(r.logitsHost, r.logits.Floats())
 	if r.finalSoftcap > 0 {
-		sc := r.finalSoftcap
-		for j, v := range r.logitsHost {
-			r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))
-		}
+		softcapParallel(r.logitsHost, r.finalSoftcap)
 	}
+}
+
+// softcapParallel applies Gemma's final-logit softcap sc·tanh(x/sc) in place, across cores. Every
+// element is independent and math.Tanh is deterministic, so splitting the loop is BYTE-IDENTICAL to
+// the serial form (same per-element sc*float32(math.Tanh(float64(v/sc))); disjoint writes, no
+// reduction/ordering) — gated by TestMetalSoftcapParallel_bitIdentical. This runs only on the
+// full-logits path (sampling / temperature / logprobs / parity); greedy decode skips it entirely
+// (argmax is softcap-invariant — the softcap is monotonic). At Gemma's 256k vocab the serial
+// float64 tanh loop is a per-sampling-token tax this fans out over GOMAXPROCS. Serial below the
+// goroutine-spawn threshold (mirrors parallelF32ToF16).
+func softcapParallel(logits []float32, softcap float32) {
+	sc := softcap
+	n := len(logits)
+	workers := min(runtime.GOMAXPROCS(0), 8)
+	if n < 8192 || workers <= 1 {
+		for j, v := range logits {
+			logits[j] = sc * float32(math.Tanh(float64(v/sc)))
+		}
+		return
+	}
+	chunk := (n + workers - 1) / workers
+	var wg sync.WaitGroup
+	for lo := 0; lo < n; lo += chunk {
+		hi := min(lo+chunk, n)
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			for j := lo; j < hi; j++ {
+				logits[j] = sc * float32(math.Tanh(float64(logits[j]/sc)))
+			}
+		}(lo, hi)
+	}
+	wg.Wait()
 }
 
 // ForwardEmbPipe is ForwardEmb through the pipelined executor (encode-ahead) — the production
