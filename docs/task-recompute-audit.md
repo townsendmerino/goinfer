@@ -86,8 +86,8 @@ positions are inherent, not recompute.
   `resident_reuse.go`, `spec_eagle.go`, `spec_ngram.go`. `blockspec.go` does not claim `resBusy`
   either.
 - **Mechanism:** `resIDs` is written only by `residentCommitIDs` at the end of a completed plain
-  generation (`decoder/model.go:1209-1165`) and read by `residentReuseLen` at the start of the next
-  (`decoder/model.go:995-955`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
+  generation (`decoder/model.go:1230-1165`) and read by `residentReuseLen` at the start of the next
+  (`decoder/model.go:1016-955`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
   sampled one to `Model.Generate` on the **same** `*Model` (`internal/serveapp/openai.go`, the
   `--drafter` branch). So: plain turn A commits A's ids → greedy turn B prefills B over the same
   positional rows → sampled turn C whose prompt extends A matches A's ids and skips the prefix,
@@ -121,7 +121,7 @@ positions are inherent, not recompute.
   needs a much heavier harness than `BlockSpec.generate`'s synchronous call, and R-03 (which
   upgrades the forget to a commit) is the natural point to build that harness rather than
   duplicating it now for a single-line change whose shape is otherwise identical to the
-  already-tested `decoder/model.go:995-950` pattern.
+  already-tested `decoder/model.go:1016-950` pattern.
 
 ### R-01 · The hybrid families re-prefill the whole conversation every turn (resident path)
 
@@ -215,7 +215,7 @@ positions are inherent, not recompute.
 ### R-02 · A cancelled generation forgets a prefix that is intact
 
 - **Where:** `generateInto`'s `select { case <-ctx.Done(): g.err = ctx.Err(); return ... }` before
-  `out <- next` (`decoder/model.go:1075-1122`, the send that M8 made cancellable).
+  `out <- next` (`decoder/model.go:1096-1122`, the send that M8 made cancellable).
 - **Mechanism:** at that point the last forward has completed and been sampled, `next` has not been
   forwarded, and `generated` holds exactly the tokens whose K/V (and, for a hybrid, whose recurrent
   state) the cache holds. The cache is as consistent as it is at the commit two branches later; the
@@ -244,7 +244,7 @@ positions are inherent, not recompute.
   consistent there as at the send-select exit — but the top-of-loop exit was never wired to commit,
   so most real cancels (the ones landing during Forward, not during the microsecond sample/send
   window) still cold-prefilled. Fixed: the same `if useGPU { m.residentCommitIDs(prompt, generated)
-  }` added to the top-of-loop exit too (`decoder/model.go:1075`). Mutation-checked at
+  }` added to the top-of-loop exit too (`decoder/model.go:1096`). Mutation-checked at
   `-count 100`: without this second commit the existing test fails intermittently (~35/100 runs,
   confirming V-10's "scheduling-dependent" characterization empirically); with it, 100/100 pass,
   and `-race -count 20` alongside the R-03 sibling test is clean.

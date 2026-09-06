@@ -1087,7 +1087,7 @@ do not have the heads.
 > true when written, and the record of why we thought it is the useful part.
 >
 > What changed is our own loader. `decoder/gguf.go:734`, `decoder/gguf_qwen35.go:33`,
-> `decoder/weights.go:541` and `decoder/registry.go:1610` detect these heads, name them, and skip
+> `decoder/weights.go:545` and `decoder/registry.go:1610` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
 > (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the
@@ -1485,8 +1485,8 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:756`) does
-  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1104/1013`)
-  can't reroute without breaking the batch caller `decoder/model.go:963`
+  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1125/1013`)
+  can't reroute without breaking the batch caller `decoder/model.go:984`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
 - **MoE `moeMLP` allocates MB/token — DONE, P8.** `moeMLP` now takes an optional `*decodeScratch`,

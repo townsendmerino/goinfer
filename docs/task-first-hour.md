@@ -167,7 +167,7 @@ of the engine. Those numbers stand as recorded and are **not** carried into `ben
   darwin-gated), so a tags check there would pass on a binary with no Metal in it. The one asset
   the runner can execute (linux-amd64) additionally has its `--version` output grepped for `cuda`.
 
-**Commits:** `e57fef11` (packaging, R2a) · `86e9e2ff` (banner, `--version`, asset assertions).
+**Commits:** `e57fef11` (packaging, R2a) · `6b731976` (banner, `--version`, asset assertions).
 
 ### R3 — a model bigger than RAM swapped with no warning, and the flag that fixes it was invisible
 
@@ -223,7 +223,7 @@ silent, and an unknown RAM figure proceeds. `TestFitEstimate_agreesWithResidentW
 pins the pre-load estimator against M-01's post-load accountant (measured 0.96 and 1.07 on the
 tiny GGUF at int4 / int8int8) so the two cannot drift apart.
 
-**Commit:** `93897b7e`.
+**Commit:** `db61c833`.
 
 ### R4 — scenarios B and C, the friction entries
 
@@ -248,7 +248,7 @@ object rather than the OpenAI JSON *string*, a server that 400s the tool result,
 round-trip, and a model that simply does not call the tool — which must **skip**, not fail, because
 that is a property of the checkpoint and a red row there trains an operator to ignore the row.
 
-**Commit:** `94d22a1d`.
+**Commit:** `f1b59235`.
 
 ### Not fixed in this pass, deliberately
 
