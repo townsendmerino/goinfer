@@ -289,6 +289,14 @@ The tautological-gate shape was found on CUDA today (four graph tests comparing 
 graphs-off without asserting graphs were admitted). **The same shape is plausibly live on Metal and
 nothing would say so.**
 
+**TRIGGER FIRED 2026-09-05 at `v0.16.0` — C3 IS NOW DUE ON `macbook-arm64`, AND HAS NOT RUN.**
+That release bumped `aikit` v1.28.0 → **v1.34.0** and `aikit/gpu` v0.30.1 → **v0.32.0** against
+`v0.15.0`, which is exactly the condition below. It was cut from `nobara-pc`, so the Metal consumer
+evaluation could not run in the same sitting and is outstanding against tag `v0.16.0`: build with
+no Xcode, decode tok/s vs the 73.6 claim, bit-identity, and whether the tautological-gate shape is
+live on Metal. **This paragraph is the verdict a scanner stops at — the condition below is the rule
+that fired, not a still-open question.**
+
 **DEFERRED BY CHOICE (2026-08-12) — auto-pickup, trigger pinned. Not sunk: deferral is the decision.**
 
 - **Trigger = the next goinfer RELEASE TAG THAT CARRIES AN AIKIT BUMP.** No version floor: the
@@ -539,7 +547,8 @@ Francis**, which is the **second** move of this reservation and the history is k
 |---|---|
 | `v0.12.0` | that number was taken by the CUDA expert-cache campaign |
 | `v0.13.0` | *(superseded, 2026-08-12)* |
-| **`v0.14.0`** | **current** — v0.13.0 is being cut for the aikit bump + D3's flag promotion |
+| `v0.14.0` | *(shipped 2026-08-19)* — v0.13.0 was cut for the aikit bump + D3's flag promotion |
+| **`v0.16.0`** | **current shipped tag (2026-09-05)** — v0.15.0 shipped 2026-08-27; this table's "current" marker had been left on v0.14.0 across two releases, the stale-verdict shape this file warns about |
 
 **The reason, recorded because it is the useful part.** `v0.13.0` is the honest number for what it
 carries: **D3's `--moe-cache-experts` / `--moe-cache-slots` promotion is new user-visible CLI
