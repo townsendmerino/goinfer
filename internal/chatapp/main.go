@@ -255,7 +255,7 @@ func loadFromBytes(raw []byte, opts decoder.Options) (*session, error) {
 func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Options, dt time.Duration) *session {
 	cfg := model.Config()
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
-		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), opts.Backend, model.Quant())
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.BackendReport(), model.Quant())
 	s := &session{tk: tk, model: model, special: tk.Special(), vocab: cfg.VocabSize}
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {

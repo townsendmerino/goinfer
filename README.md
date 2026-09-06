@@ -35,7 +35,7 @@ go install github.com/townsendmerino/goinfer/cmd/serve@latest
 > entrypoint — `-tags metal` on `cmd/serve` does *not* work and fails the build saying so:
 >
 > ```bash
-> go install -tags metal github.com/townsendmerino/goinfer/metal/cmd/serve@latest   # macOS
+> go install github.com/townsendmerino/goinfer/metal/cmd/serve@latest              # macOS
 > go install -tags cuda  github.com/townsendmerino/goinfer/cuda/cmd/serve@latest    # Linux + NVIDIA
 > ```
 >

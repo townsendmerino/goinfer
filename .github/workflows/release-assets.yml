@@ -101,18 +101,33 @@ jobs:
           for t in windows-amd64 windows-arm64; do
             [ -f "dist/goinfer-serve-$t.exe" ] || { echo "MISSING dist/goinfer-serve-$t.exe"; fail=1; }
           done
-          # `go version -m` prints the build settings baked into the binary, including -tags.
-          # This is the check that would have gone red on v0.16.0.
+          # `go version -m` prints the binary's main module and build settings. The MAIN MODULE
+          # is the load-bearing assertion: a darwin asset built from the root cmd/serve reports
+          # `mod github.com/townsendmerino/goinfer` and links no backend, which is exactly what
+          # v0.16.0 shipped. Nothing in `metal/` is gated on a `metal` build TAG (every file is
+          # darwin-gated), so a tags grep there would pass on a binary with no Metal in it.
           for t in darwin-arm64 darwin-amd64; do
-            go version -m "dist/goinfer-serve-$t" | grep -q -- '-tags=metal' \
-              || { echo "dist/goinfer-serve-$t was NOT built with -tags metal"; fail=1; }
+            go version -m "dist/goinfer-serve-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/metal\b' \
+              || { echo "dist/goinfer-serve-$t was NOT built from the metal entrypoint"; fail=1; }
           done
           for t in linux-amd64 linux-arm64; do
+            go version -m "dist/goinfer-serve-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/cuda\b' \
+              || { echo "dist/goinfer-serve-$t was NOT built from the cuda entrypoint"; fail=1; }
             go version -m "dist/goinfer-serve-$t" | grep -q -- '-tags=cuda' \
               || { echo "dist/goinfer-serve-$t was NOT built with -tags cuda"; fail=1; }
           done
+          # The build settings prove how the asset was COMPILED; --version proves what the
+          # linked binary can actually run, which is the question a user has (R2). Only the
+          # native asset can be executed on this runner, so the cross-compiled ones keep the
+          # `go version -m` check above and nothing here pretends otherwise.
+          native="dist/goinfer-serve-linux-amd64"
+          chmod +x "$native"
+          ver="$("$native" --version)"
+          echo "$ver"
+          echo "$ver" | grep -qE '^backends: .*\bcuda\b' \
+            || { echo "$native --version does not list the cuda backend"; fail=1; }
           [ "$fail" = 0 ] || { echo "serve asset assertions FAILED"; exit 1; }
-          echo "serve assets: 6 present, darwin=metal linux=cuda confirmed from build settings"
+          echo "serve assets: 6 present, darwin=metal linux=cuda confirmed from build settings; linux-amd64 --version lists cuda"
       - uses: actions/upload-artifact@v4
         with: { name: plain, path: dist/ }
 

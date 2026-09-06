@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -81,6 +82,24 @@ func RegisterBackend(name string, factory func() (Backend, error)) {
 	backendRegistry[name] = factory
 }
 
+// CompiledBackends lists the backends this BINARY can actually run: "cpu" (always) plus every
+// name a linked module registered from init(). It is the compiled-in truth, not a menu of
+// accepted flag values — --backend accepts "metal" on a Linux CPU-only build and falls back.
+//
+// R2 (docs/measurements/cold-user-2026-09-06.md): the released darwin asset was built from the
+// root cmd/serve, so it contained no Metal backend at all, and nothing on the binary said so.
+// A user could only discover it by loading a model and reading a warning that scrolled past.
+func CompiledBackends() []string {
+	backendMu.RLock()
+	names := make([]string, 0, len(backendRegistry)+1)
+	for name := range backendRegistry {
+		names = append(names, name)
+	}
+	backendMu.RUnlock()
+	sort.Strings(names)
+	return append([]string{"cpu"}, names...)
+}
+
 // NewBackend returns the named backend. "" and "cpu" always resolve to the
 // pure-Go CPU backend. Other names resolve through the registry; "webgpu"
 // falls back to CPU with an explanatory error (rather than hard-failing) when
@@ -126,3 +145,49 @@ func (*cpuBackend) MatmulBT(a, b, dst []float32, M, K, N int) {
 }
 
 func (*cpuBackend) Close() error { return nil }
+
+// backendNames resolves what the caller REQUESTED against what will actually execute, and the
+// reason they differ.
+//
+// NewBackend answers a not-built-in request by returning the CPU backend AND an error — a
+// deliberate fallback, not a failure. Nothing recorded which of the two names was true, so
+// callers printed the requested one. A cold-user run against v0.16.0 caught the result on two
+// consecutive lines: "decoder: metal backend not built in … using cpu", then
+// "loaded 28-layer model … [backend=metal quant=int4]". The warning scrolls; the status line is
+// what gets pasted into an issue. On that Mac it was the difference between 37.9 and 82.3 tok/s
+// (docs/measurements/cold-user-2026-09-06.md, finding #3).
+//
+// req is normalised ("" means cpu) so a caller that passed nothing does not report an empty
+// backend. reason is "" when nothing was declined.
+func backendNames(requested string, beErr error) (req, eff, reason string) {
+	req = requested
+	if req == "" {
+		req = "cpu"
+	}
+	if beErr == nil {
+		return req, req, ""
+	}
+	// The fallback is always to CPU (see the three not-built-in branches in NewBackend).
+	return req, "cpu", beErr.Error()
+}
+
+// BackendSummary renders the load banner's backend field so it can never name a backend that is
+// not executing. When the request was honoured it is just the name; when it was not, it is the
+// transition and the reason, on one line:
+//
+//	metal
+//	requested metal → running on cpu: decoder: metal backend not built in; build the …
+func BackendSummary(req, eff, reason string) string {
+	if reason == "" || req == eff {
+		return eff
+	}
+	return fmt.Sprintf("requested %s → running on %s: %s", req, eff, reason)
+}
+
+// withBackendNames records the requested/effective backend split on a freshly built Model. Every
+// Model construction calls it: there are four, and a fix applied to one of them is how a banner
+// starts lying again the next time a load path is added.
+func (m *Model) withBackendNames(requested string, beErr error) *Model {
+	m.reqBackend, m.effBackend, m.beDecline = backendNames(requested, beErr)
+	return m
+}

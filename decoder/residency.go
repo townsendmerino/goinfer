@@ -914,3 +914,19 @@ func (m *Model) Qwen35AttnWeights(i int) (qProj, kProj, vProj, oProj *linalg.Wei
 	}
 	return &a.qProj, &a.kProj, &a.vProj, &a.oProj, a.qNorm, a.kNorm
 }
+
+// BackendReport renders the load banner's backend field. It NEVER names a backend that is not
+// executing: when the requested one was unavailable it reads
+// "requested metal → running on cpu: <reason>" instead of "metal".
+//
+// See backendNames for why this exists — v0.16.0's banner printed Options.Backend, the REQUEST,
+// one line after the runtime had already said it was falling back to CPU.
+func (m *Model) BackendReport() string {
+	return BackendSummary(m.reqBackend, m.effBackend, m.beDecline)
+}
+
+// EffectiveBackend is the backend actually executing ("cpu" when a request fell back).
+func (m *Model) EffectiveBackend() string { return m.effBackend }
+
+// RequestedBackend is what the caller asked for, normalised ("" → "cpu").
+func (m *Model) RequestedBackend() string { return m.reqBackend }

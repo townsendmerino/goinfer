@@ -333,6 +333,14 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(servecheck.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
+	// --version answers "what is in this binary" WITHOUT a model, which is the question the
+	// cold run could not ask (R2). Handled here rather than only as a parsed flag so it works
+	// on a binary whose other required flags are absent — and registered below as well, so it
+	// appears in --help.
+	if len(os.Args) > 1 && isVersionArg(os.Args[1]) {
+		fmt.Print(versionReport(filepath.Base(os.Args[0])))
+		return
+	}
 	var (
 		cfg     config
 		addr    = flag.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use 0.0.0.0:8080 to expose, and set -api-key and -tls-cert/-tls-key — or put a TLS-terminating reverse proxy in front — when you do)")
@@ -352,6 +360,7 @@ func Main() {
 		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,stream,weight-cache,embed-int4.\n"+
 		"(Paths may not contain commas.)")
 	flag.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise")
+	showVersion := flag.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
 	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide; cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
 	flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/speed/RAM tradeoff (per-model override: --model name=path,quant=…):\n"+
 		"  int4      W4A8 (int4 weights, int8 activations): smallest, and fastest on every backend including\n"+
@@ -397,6 +406,10 @@ func Main() {
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
 	flag.Parse()
+	if *showVersion {
+		fmt.Print(versionReport(filepath.Base(os.Args[0])))
+		return
+	}
 	// --metal-fast-prefill sets the internal gate metal/backend.go's PrefillLast already checks
 	// (GOINFER_METAL_BATCHED_PREFILL) — reusing the existing, already-tested decline/opt-in
 	// machinery rather than threading a new decoder.Options field through frozen core for what is

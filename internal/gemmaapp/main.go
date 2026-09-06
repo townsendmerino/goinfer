@@ -93,7 +93,7 @@ func run(modelDir, prompt string, maxTok int, backend, quant string, jsonMode bo
 		q = "f32"
 	}
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
-		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), backend, q)
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), model.BackendReport(), q)
 
 	// 2b) Constrained decoding: mask every step's logits to the tokens a JSON
 	// grammar permits, so the model physically cannot emit malformed JSON. The

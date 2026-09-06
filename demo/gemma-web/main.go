@@ -118,7 +118,7 @@ func newServer(modelDir, backend, quant string) (*server, error) {
 		q = "f32"
 	}
 	fmt.Printf("loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
-		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), backend, q)
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), model.BackendReport(), q)
 	srv := &server{tk: tk, model: model, special: tk.Special()}
 	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
 		srv.tmpl = tmpl
