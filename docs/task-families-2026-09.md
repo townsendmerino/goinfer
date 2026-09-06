@@ -1,8 +1,27 @@
 # Task: four families, 2026-09 (F1–F4)
 
-> **Status: IN PROGRESS.** One section per family, filled in as each lands (order F1 → F2 → F3 → F4,
-> each independently shippable per `docs/post-v1.0-models.md` "Next up"). Read a family's own
-> status line before citing it as done.
+> **Status: DONE, 2026-09-06.** All four items landed in order (F1 → F2 → F3 → F4), each committed
+> and pushed independently. Summary below; read each section's own status line for the detail.
+>
+> - **F1 `qwen3_moe`** — new registry key, T1 tiny-golden (cosine 0.9999999999999462, argmax
+>   exact), GGUF support, resident-admitted cuda/metal/webgpu. T3 real-checkpoint owed (Linux box).
+> - **F2 Nemotron 3.5 Lightning** — confirmed NOT a new family: config-identical to the already-T3'd
+>   Nemotron 3 Nano in every architecturally meaningful field. No registry change; a real-checkpoint
+>   gate + pin script + asset were added, execution owed (Linux box, bf16 ~60GB).
+> - **F3 `granite`** (dense) — new registry key, reuses `llamaTensorSchema` verbatim, T1 tiny-golden
+>   with non-trivial scalar multipliers (cosine 0.999999999999987, argmax exact), GGUF support,
+>   resident-admitted cuda/metal/webgpu. T3 real-checkpoint owed (this Mac or Linux box; 8B is the
+>   sized target).
+> - **F4 Ling-3.0-tiny (`bailing_hybrid`)** — Phase 0 only, by design: no stop condition fired, but
+>   the brief scoped this item to a synthetic rehearsal, not a shipped family. MLA + MoE are pure
+>   `deepseekArchitecture` composition; KDA (Kimi Delta Attention) is a genuinely new primitive — a
+>   per-channel-gated delta rule, one row of the existing Gated DeltaNet's decay generalized from a
+>   scalar to a vector — proven against `fla-org/flash-linear-attention`'s real reference at cosine
+>   1.00000000 (maxAbsDiff 2.98e-08, float32 rounding). No registry key, no CHANGELOG entry. Filed
+>   explicitly as the KDA rehearsal for Kimi K3's own eventual bring-up.
+> - **Bench rows**: none this pass for any of the four — every family's T3 (the gate a peer-bench
+>   row is conditioned on, per this doc's own rule for F1/F2/F3) is owed, and F4 shipped no loadable
+>   family at all. Zero peer-bench claims were made, which is the correct state given that.
 
 ## F1 · qwen3_moe (Qwen3-30B-A3B / Qwen3-Coder-30B-A3B-Instruct) — DONE at T1 (mac, 2026-09-05/06)
 
@@ -321,3 +340,133 @@ flagged `TestQwen3Moe_forwardParity` as a required gate with no ledger entry. Fi
 adding it, and `TestNemotron35LightningReal_oracle`, to `cmd/gate/parity.go`'s
 `awaitingFirstConfirmation`. F3's own new gate was registered there in the same commit that added
 it, closing the loop this once cost a red `main` to discover.
+
+## F4 · Ling-3.0-tiny (inclusionAI, model_type "bailing_hybrid") — Phase 0 DONE, KDA rehearsal DONE, NO registry work (mac, 2026-09-06)
+
+**Verdict up front, per the brief's own framing: does not STOP, but does not become a registered
+family this pass either.** No stop condition fires (weights are posted, real, and BF16-readable;
+the checkpoint composes from exactly three primitives — nothing beyond KDA+MLA+MoE), so Phase 0
+proceeds; per the brief's explicit scope for this item ("proceed ONLY to a synthetic-tiny bring-up
+… no real-checkpoint work in this pass"), what follows is that rehearsal, not a shipped adapter.
+
+### Phase 0
+
+**(a) Weights are posted, not announced-only** — the specific trap `docs/post-v1.0-models.md`
+already recorded for Ling 3.0's July announcement. Confirmed via the HF API, not a model card:
+32 real safetensors shards (`model-00000-of-00032.safetensors` … `-00031-of-00032`) plus
+`model.safetensors.index.json`, `torch_dtype: "bfloat16"` — readable today (no fp8/mxfp4 blocker,
+the thing that stopped DeepSeek-V4-Flash and gates Kimi K3). MIT license. `custom_code`
+(`trust_remote_code` needed): `configuration_bailing_moe_v3.py` + `modeling_bailing_moe_v3.py`
+ship in the repo.
+
+**(b) Exact mixer inventory**, from the real `config.json` and the real `modeling_bailing_moe_v3.py`
+(fetched directly, not summarized from a description): `model_type: "bailing_hybrid"`,
+`architectures: ["BailingMoeV3ForCausalLM"]`.
+
+- **MLA**: `q_lora_rank` 256, `kv_lora_rank` 512, `qk_nope_head_dim` 128, `qk_rope_head_dim` 64,
+  `qk_head_dim` 192 (= nope+rope), `v_head_dim` 128, `rope_interleave: true` — the SAME field
+  names and shapes `deepseekArchitecture` (`decoder/registry.go`) already reads for DeepSeek-V2/V3.
+  One real delta: `gated_attention_proj_granularity_type: "head_wise"` adds a per-head output gate
+  (`g_proj: Linear(hidden, num_heads)`) that DeepSeek's own MLA doesn't have — structurally the
+  same primitive Laguna's `FeatAttnOutputGate` already ships (`docs/task-laguna.md`), not a new one.
+- **MoE router**: `topk_method: "noaux_tc"`, `scoring_func`/`score_function: "sigmoid"`,
+  `routed_scaling_factor: 2.5`, `n_group` 8 / `topk_group` 4, `num_experts` 128,
+  `num_experts_per_tok` 8, `num_shared_experts` 1, `moe_shared_expert_intermediate_size` 512,
+  `first_k_dense_replace: 1` (one dense-prefix layer) — byte-for-byte DeepSeek-V3's `noaux_tc`
+  shape, already implemented by `routeExperts`/`moeMLP`. `modeling_bailing_moe_v3.py`'s
+  `BailingMoeV3Gate.forward` confirms the shared expert is added UNGATED
+  (`y = y + self.shared_experts(identity)`), the same convention DeepSeek/GLM already use.
+- **KDA:MLA ratio**: `layer_group_size: 4`, `num_hidden_layers: 24`. `BailingMoeV3DecoderLayer`'s
+  actual layer-type decision (quoted from source): every layer where
+  `(layer_idx+1) % layer_group_size == 0` is MLA ("attention"); every other layer is KDA
+  ("linear_attention") — a **repeating 3-KDA-then-1-MLA pattern**, confirming the brief's own
+  "3:1 alternating stacking" description exactly: 18 KDA / 6 MLA over 24 layers.
+- **KDA itself — the one genuinely new primitive, verified against fla-org/flash-linear-attention's
+  actual source** (`fla/ops/kda/{naive,gate}.py`, MIT), not the HF modeling file's paraphrase
+  (which only calls the opaque Triton kernels `chunk_kda`/`fused_recurrent_kda`). Structurally
+  **identical to the Gated DeltaNet this repo already ships** for `qwen3_5_moe`
+  (`gatedDeltaNetStep`, `decoder/deltanet.go`): a q/k/v projection through a depthwise short conv
+  (`short_conv_kernel_size: 4`), a beta write-gate (`sigmoid(b_proj(h))`), an outer-product
+  delta-rule state update, q/k L2-norm-in-kernel, a gated RMSNorm before `o_proj`
+  (`FusedRMSNormGated(..., activation='sigmoid')` — Gated DeltaNet's own gated norm uses SiLU, a
+  real but small delta). **The one load-bearing difference**: Gated DeltaNet's decay is ONE SCALAR
+  per head, multiplying the WHOLE `[head_k_dim, head_v_dim]` state block
+  (`gatedDeltaNetStep`'s `gt := exp(negExpA[headV]*softplus(...))`, applied uniformly to every
+  element of `S`); KDA's decay is **PER-CHANNEL** — shape `[H, head_k_dim]`, one independent value
+  per ROW of the state matrix (`naive_recurrent_kda`: `S = S * g_i[..., None].exp()`, where `g_i`
+  is `[H,K]` and only broadcasts over the value dimension). This is the real, sourced distinction
+  between "Gated DeltaNet" and "Kimi Delta Attention" the literature describes — not a
+  renaming, and not reducible to a config flag on the existing DeltaNet code.
+- Ling-3.0-tiny's own config selects the SIMPLEST variant of two optional wrinkles:
+  `no_kda_lora: true` (a single `f_proj`/`g_proj` linear per gate, not the LoRA'd `a_proj`/`b_proj`
+  split `modeling_bailing_moe_v3.py` also supports) and `kda_safe_gate: true` with
+  `kda_lower_bound: -5` (the gate saturates through `naive_kda_lowerbound_gate`:
+  `g = lower_bound · sigmoid(exp(A_log) · (raw_gate + dt_bias))`, rather than the plain
+  `naive_kda_gate`'s unbounded `-exp(A_log)·softplus(...)`).
+
+**(c) Mapping onto existing primitives** — MLA + MoE ride `deepseekArchitecture` as config
+composition (plus one small new output-gate primitive already shipped via Laguna); KDA needs one
+genuinely new sequence-mixer, structurally a variant of the already-shipped Gated DeltaNet with a
+per-channel instead of per-head-scalar decay.
+
+**(d) dtype**: BF16 primary. Readable — no blocker.
+
+### The rehearsal: KDA's per-channel-gated delta rule, proven against a real reference
+
+Per the brief's scope for this item, built and verified ONLY the new piece — not a full layer, not
+a registered family, no MLA, no MoE, no conv/gated-norm wrapper (those are already-shipped
+primitives with their own existing proof).
+
+- `scripts/pin_kda_rehearsal.py`: `naive_kda_lowerbound_gate` and `naive_recurrent_kda` copied
+  **verbatim** (MIT license) from `fla-org/flash-linear-attention`'s actual source on GitHub —
+  fetched directly, not reconstructed from a description, and not run through the full `fla`
+  package (which pulls in Triton, unavailable without a CUDA toolchain on this Mac; the two
+  reference functions themselves are plain PyTorch/einops). A tiny synthetic input (1 batch, 6
+  timesteps, 2 heads, head_k_dim=4, head_v_dim=4) drives both functions and dumps a golden.
+- `decoder/kda_rehearsal.go`: `kdaLowerBoundGate` + `kdaRecurrentStep`, **not wired to any
+  registered family** — this is deliberately a standalone rehearsal, matching the brief's own
+  framing that no real-checkpoint or registry work belongs in this pass.
+  `TestKDARehearsal_matchesReference` (`decoder/kda_rehearsal_test.go`) checks the gate
+  computation AND the recurrence output independently (so the two could not cancel out and hide
+  behind one passing final comparison): **maxAbsDiff 2.98e-08, cosine 1.00000000** — float32
+  rounding, not an approximation.
+
+### Estimate for the full family (the deliverable this rehearsal earns)
+
+- **KDA layer, full**: the rehearsal proves the core recurrence + gate exactly; remaining work is
+  the wrapper this pass deliberately didn't re-prove — the depthwise short conv (LFM2/Mamba-2
+  precedent exists; `short_conv_kernel_size` 4 matches LFM2's own convention), the gated RMSNorm
+  with **sigmoid** activation (Gated DeltaNet's own gated norm uses SiLU — a real, small,
+  config-driven delta to thread through, not a new primitive), and the **chunked/parallel** scan
+  (`naive_chunk_kda`/`chunk_kda`) for prefill throughput — this rehearsal only covers the
+  sequential form, matching `gatedDeltaNetStep`'s own current scope (no chunked Gated DeltaNet
+  path exists in Go today either, per `decoder/deltanet_chunked.go`'s own scope — worth checking
+  before assuming that work is novel to KDA). Estimate: **small-to-moderate**, closely bounded by
+  Gated DeltaNet's own bring-up cost, now that the one genuinely new piece is de-risked.
+- **MLA + MoE**: composition on `deepseekArchitecture`, config-mapping delta only, plus the
+  Laguna-precedented output gate. Estimate: **cheap**, same class as F1/F3 this doc.
+- **Registry + loader wiring, tiny fixture, T1**: same shape as every family in this doc — a new
+  `model_type` key, a tensor schema (three tensor sets: MLA's, KDA's, MoE's — all individually
+  precedented), `representativeConfig`/`familyDoc`/`archFeatureProfile` entries, a
+  `BailingMoeV3ForCausalLM` tiny fixture via `trust_remote_code=True` (the repo ships the modeling
+  code needed). Estimate: **one focused session**, similar order to F1/F3.
+- **T3 real-checkpoint**: 7.9B total / 1.3B active — small enough to co-reside with an HF f32
+  reference even on this Mac's 16GB, unlike every 30B-A3B-class family in this doc. The cheapest
+  real-checkpoint validation of the four families touched this pass, if and when the family lands.
+- **Total, rough order of magnitude**: comparable to one of F1/F3 above PLUS a Gated-DeltaNet-sized
+  new-primitive cost — not a `qwen3_next`-scale undertaking, because the hardest primitive (KDA's
+  core math) is now de-risked by this rehearsal rather than an open question.
+- **Why this matters beyond Ling itself**: this rehearsal is explicitly filed as the dry run for
+  Kimi K3 (`docs/post-v1.0-models.md`'s "Watch — Kimi K3": MLA on only 24 of 93 layers, the rest
+  KDA, plus a latent-MoE wrapper and a new activation — "closer to qwen3_5_moe's DeltaNet family
+  than to anything MLA-shaped"). K3's own weights are still `mxfp4-pack-quantized` in an unconfirmed
+  layout and its arch should still be re-checked when they actually drop (per that doc's own
+  caution) — but the one piece independent of K3's own quirks, the KDA recurrence itself, is now
+  proven end-to-end against a real upstream reference rather than an open question.
+
+### What was deliberately not done
+
+No registry key, no tensor schema, no adapter function, no CHANGELOG entry (nothing loadable
+changed), no real-checkpoint work, no chunked-scan implementation, no MoE/MLA code (both already
+exist and weren't re-exercised here). This is Phase 0 plus one scoped, verified rehearsal — exactly
+the brief's stated ceiling for this item.
