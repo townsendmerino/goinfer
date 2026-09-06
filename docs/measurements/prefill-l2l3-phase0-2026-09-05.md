@@ -118,7 +118,7 @@ the counted ceiling on the category". Two independent figures disagree with the 
 - **This arithmetic: 11.8–12.0% of dp4a peak**, at both depths.
 - **The kernel's own profiled header**, `cuda/gemv_w4a8_batched.cu:27`, records attribution (2)
   "needs IMMA" being refuted at **"7.9% of dp4a peak — compute ceiling unused"**. `gemv_w4a8_rn`
-  (what `bGemvB` launches today) is ~1.3× that kernel (4.41 → 3.38 ms, `cuda/prefill.go:939`),
+  (what `bGemvB` launches today) is ~1.3× that kernel (4.41 → 3.38 ms, `cuda/prefill.go:950`),
   which lands at ~10.3% — consistent with 11.8%, not with 54%.
 
 54% is close to the complement of the `ncu` "Compute 46%" line in the same header, which is a

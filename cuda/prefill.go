@@ -688,15 +688,10 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			// L2: the fused kernel when it serves this (hd, M), else attn_batched. Identical
 			// argument list by construction, so the two launches differ only in pipeline, grid and
 			// shared memory — see useAttnFused for the selection rule.
-			attnPipe, attnCfg := r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}
-			if fp, fsh, use := r.useAttnFused(hd, M); use {
-				attnPipe = fp
-				attnCfg = LaunchConfig{GridX: uint32(r.nH),
-					GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
-					BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
-			}
-			if e := r.launch(attnPipe, attnCfg,
+			// The argument list is IDENTICAL for all three kernels by construction, so it is built
+			// once; the launches differ only in pipeline, grid and shared memory. Each names its
+			// pipeline field directly — see useAttnFused for why a local variable will not do.
+			attnArgs := []gpu.KernelArg{
 				Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
 				gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
 				// N-10: r.sinkArg(l), not ArgNull(). The decode launches thread the gpt-oss
@@ -704,8 +699,24 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				// because every gpt-oss model is MoE and MoE declines batched prefill, which
 				// is a property of a DIFFERENT check and not something this call site should
 				// depend on.
-				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l)); e != nil {
-				return e
+				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
+			}
+			var attnErr error
+			if fsh, use := r.useAttnFused(hd, M); use {
+				fcfg := LaunchConfig{GridX: uint32(r.nH),
+					GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
+					BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
+				if hd == 64 {
+					attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
+				} else {
+					attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
+				}
+			} else {
+				attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, attnArgs...)
+			}
+			if attnErr != nil {
+				return attnErr
 			}
 			r.profToc(attnCat, t)
 			// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
@@ -1020,15 +1031,21 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 // useAttnFused is the ONE place the L2 kernel is chosen, so the fallback cannot drift between call
 // sites. Every "no" means attn_batched, which is the exact path, is bit-identical to decode, and is
 // what spec-decode verify and the parity gates run.
-func (r *cudaResident) useAttnFused(hd, M int) (Pipeline, uint32, bool) {
+// It returns only the shared-memory size, NOT the pipeline: the launch site names
+// r.bAttnFused64 / r.bAttnFused128 explicitly. Handing back a Pipeline in a local variable would
+// hide WHICH kernel runs from every static reader, including
+// TestPipelineLint_boundKernelsAreLaunched, which flags a field bound at every model load and
+// launched by nothing — the exact state gemv_w4a8_batched sat in while a benchmark quoted its
+// throughput as the shipping kernel's.
+func (r *cudaResident) useAttnFused(hd, M int) (uint32, bool) {
 	if !r.fastAttn || M < attnFusedMinRows {
-		return Pipeline{}, 0, false
+		return 0, false
 	}
 	p, sh := r.attnFusedFor(hd)
 	if p == (Pipeline{}) {
-		return Pipeline{}, 0, false
+		return 0, false
 	}
-	return p, sh, true
+	return sh, true
 }
 
 // gemmMMA* MUST match GBM / GBN / GWARPS*32 / GKSTEP / GAPAD in gemm_w4a8_mma.cu.

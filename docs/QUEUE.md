@@ -963,7 +963,7 @@ supports.
 | `docs/audit-2026-09-02.md|constrain/schema_test.go:183` | goinfer | `out := genConstrained(t, g, int64(i)+1, 15) // cap digits so ints fit int64` |
 | `docs/audit-2026-09-02.md|constrain/tool_grammar.go:31` | goinfer | `if len(paramSchema) == 0 {` |
 | `docs/audit-2026-09-02.md|constrain/tool_grammar.go:37` | goinfer | `name, err := encodeLiteral(toolName)` |
-| `docs/audit-2026-09-02.md|cuda/backend.go:1037` | goinfer | `L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0` |
+| `docs/audit-2026-09-02.md|cuda/backend.go:1043` | goinfer | `L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:204` | goinfer | `hls := make([]hlayer, nLayers)` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:225` | goinfer | `hl.isDeltaNet = true` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:455` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
@@ -973,7 +973,7 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/backend.go:617` | goinfer | `// THESE MODULE AND PIPELINE HANDLES DO NOT SURVIVE DEVICE EXHAUSTION. Read this before` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:703` | goinfer | `// fix didn't force a glue.ptx regen. (glue.ptx and all production PTX except moe.ptx ar` |
 | `docs/audit-2026-09-02.md|cuda/backend.go:719` | goinfer | `if pbmod, e3 := r.dev.CompileLibrary(prefillBatchedPTX); e3 == nil {` |
-| `docs/audit-2026-09-02.md|cuda/backend.go:828` | goinfer | `r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != "0"` |
+| `docs/audit-2026-09-02.md|cuda/backend.go:834` | goinfer | `r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != "0"` |
 | `docs/audit-2026-09-02.md|cuda/blockspec_test.go:63` | goinfer | `maxNew := 96` |
 | `docs/audit-2026-09-02.md|cuda/blockspec_test.go:91` | goinfer | `ch, gen := mc.Generate(context.Background(), prompt, len(got), decoder.SamplingParams{})` |
 | `docs/audit-2026-09-02.md|cuda/doc.go:10` | goinfer | `//     dlopen libcuda.so.1 at runtime, so `CGO_ENABLED=0` and the single-static-` |
@@ -1001,10 +1001,10 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/prefill.go:546` | goinfer | `if e := r.checkCap(startPos, M); e != nil {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:570` | goinfer | `var scratch []Buffer` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:632` | goinfer | `// normalize it below, before rope_kv_batched rotates k. Mirrors segA's decode path` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:707` | goinfer | `gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l)); e != nil {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:863` | goinfer | `for m := first; m < M; m++ {` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:916` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
-| `docs/audit-2026-09-02.md|cuda/prefill.go:931` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:707` | goinfer | `GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:874` | goinfer | `for m := first; m < M; m++ {` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:927` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
+| `docs/audit-2026-09-02.md|cuda/prefill.go:942` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1018` | goinfer | `if e := r.stream.Sync(); e != nil {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1034` | goinfer | `for j := 0; j < r.topK; j++ {` |
 | `docs/audit-2026-09-02.md|cuda/resident.go:1360` | goinfer | `if r.prefillReady && r.dnet == nil {` |
@@ -1484,7 +1484,7 @@ supports.
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:962` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:584` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, moePrefillScr, m.pager)` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/mlp.go:292` | goinfer | `matmul(be, &ex.Gate, h, gate, 1)` |
-| `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/prefill.go:939` | goinfer | `// weight READS of a 195 MB head, and a host argmax over M x vocab costs ~1.1 ms against` |
+| `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/prefill.go:950` | goinfer | `// weight READS of a 195 MB head, and a host argmax over M x vocab costs ~1.1 ms against` |
 | `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/resident.go:147` | goinfer | `func attnShmemBytes(nWin int) int { return (nWin + 128) * 4 }` |
 | `docs/measurements/prefill-l2l3-phase1-2026-09-05.md|metal/backend.go:236` | goinfer | `// DECLINE BY DEFAULT — Metal's batched prefill is NOT bit-identical to the sequential d` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:96` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
@@ -1528,7 +1528,7 @@ supports.
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:423` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
-| `docs/queue-engineering.md|cuda/backend.go:1198` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
+| `docs/queue-engineering.md|cuda/backend.go:1204` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:571` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:303` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:552` | goinfer | `func (r *cudaResident) recordUpload(e error) {` |

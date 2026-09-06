@@ -763,11 +763,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				loadF(&r.bAttnFused64, "attn_fused_hd64")
 				loadF(&r.bAttnFused128, "attn_fused_hd128")
 			}
-			// L3 tensor-core GEMM, its own module and its own half of the gate.
+			// L3 tensor-core GEMM, its own module and its own half of the gate. Bound through the
+			// same &r.<field> loader closure as every other pipeline here, which is what
+			// TestPipelineLint_boundKernelsAreLaunched keys on: a plain `r.F = pl` assignment reads
+			// to that lint as a LAUNCH WITH NO BINDING, i.e. a nil-pipeline dispatch.
 			if gmod, e7 := r.dev.CompileLibrary(gemmMMAPTX); r.fastGemm && e7 == nil {
-				if pl, pe := r.dev.NewComputePipeline(gmod, "gemm_w4a8_mma"); pe == nil {
-					r.bGemmMMA = pl
+				loadG := func(dst *Pipeline, name string) {
+					if pl, pe := r.dev.NewComputePipeline(gmod, name); pe == nil {
+						*dst = pl
+					}
 				}
+				loadG(&r.bGemmMMA, "gemm_w4a8_mma")
 			}
 		}
 		// Campaign-A split-KV decode attention: a high-occupancy, bit-identical alternative to the A1
