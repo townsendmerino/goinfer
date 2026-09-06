@@ -72,11 +72,29 @@ jobs:
         run: |
           set -euo pipefail
           root="$PWD"
+          # THE SUBMODULES MUST BE BUILT AGAINST THE CHECKED-OUT TREE, NOT THE PROXY.
+          # This workflow fires on the ROOT tag, and at that instant cuda/go.mod and metal/go.mod
+          # still require the PREVIOUS root release (RELEASING.md's two-step tag bumps them
+          # afterwards). go.work is gitignored, so a bare `go build` in the submodule resolves
+          # github.com/townsendmerino/goinfer from the proxy at that stale version -- and the
+          # Metal/CUDA serve assets for release N then contain release N-1's decoder and
+          # serveapp, silently, while the windows asset (built from the root) is current.
+          #
+          # MEASURED 2026-09-06, not assumed: a `GOWORK=off` submodule build of this exact shape
+          # produced a binary whose `go version -m` read `dep github.com/townsendmerino/goinfer
+          # v0.16.0 h1:...` and which did not have the --version flag that had just been added to
+          # internal/serveapp. Found because the --version assertion below went red.
+          #
+          # The replace is applied to the ephemeral checkout only; nothing is committed, and
+          # standalone-build.yml still proves a real consumer can resolve the submodule from the
+          # proxy, which is a different question from what WE ship.
           build() { # build <module-dir> <tags> <goos> <goarch>
             local dir="$1" tags="$2" os="$3" arch="$4"
             local out="$root/dist/goinfer-serve-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
             echo "building serve $os/$arch from $dir (tags='$tags')"
-            ( cd "$root/$dir" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS=-mod=mod \
+            ( cd "$root/$dir" \
+                && { [ "$dir" = "." ] || go mod edit -replace github.com/townsendmerino/goinfer="$root"; } \
+                && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS=-mod=mod \
                 go build ${tags:+-tags "$tags"} -ldflags="-s -w" -trimpath -o "$out" ./cmd/serve )
           }
           build metal metal darwin arm64
@@ -115,6 +133,19 @@ jobs:
               || { echo "dist/goinfer-serve-$t was NOT built from the cuda entrypoint"; fail=1; }
             go version -m "dist/goinfer-serve-$t" | grep -q -- '-tags=cuda' \
               || { echo "dist/goinfer-serve-$t was NOT built with -tags cuda"; fail=1; }
+          done
+          # And that each GPU asset carries THIS tree's root, not the previous release's. A root
+          # resolved from the proxy carries an `h1:` module hash on its dep line; one supplied by
+          # the replace above does not. That one character of difference is the whole finding:
+          # without it, release N's Mac and Linux binaries are release N-1's engine.
+          # `if`, not `cmd && {...}`: under `set -e` a short-circuiting && list exits non-zero on
+          # the PASSING case and would abort the job.
+          for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
+            if go version -m "dist/goinfer-serve-$t" \
+                 | grep -qE 'dep[[:space:]]+github.com/townsendmerino/goinfer[[:space:]]+\S+[[:space:]]+h1:'; then
+              echo "dist/goinfer-serve-$t links the ROOT FROM THE PROXY (a previous release), not this tree"
+              fail=1
+            fi
           done
           # The build settings prove how the asset was COMPILED; --version proves what the
           # linked binary can actually run, which is the question a user has (R2). Only the

@@ -169,6 +169,55 @@ of the engine. Those numbers stand as recorded and are **not** carried into `ben
 
 **Commits:** `e57fef11` (packaging, R2a) · `6b731976` (banner, `--version`, asset assertions).
 
+### R2-follow-on — every release's Mac and Linux binaries were the PREVIOUS release's engine
+
+**Not a cold-run finding. R2's own gate found it**, hours later, which is the argument for the
+gate.
+
+Replaying the release workflow's build locally produced a `goinfer-serve` **without the
+`--version` flag that had just been added to `internal/serveapp`** — so the new assertion went
+red. The cause is structural, and it is not new:
+
+- `release-assets.yml` fires on the **root tag**, and builds the GPU assets from
+  `cuda/cmd/serve` and `metal/cmd/serve`.
+- At that instant `cuda/go.mod` and `metal/go.mod` still require the **previous** root release —
+  `RELEASING.md`'s two-step tag bumps them *afterwards*, deliberately.
+- `go.work` is gitignored, so a bare submodule build in CI resolves
+  `github.com/townsendmerino/goinfer` from the **proxy**, at that stale version.
+
+**Measured, not inferred.** A `GOWORK=off` submodule build of exactly the workflow's shape
+produced a binary reporting:
+
+```
+mod  github.com/townsendmerino/goinfer/cuda  v0.16.1-0.20260906162554-d3e7237d1cde
+dep  github.com/townsendmerino/goinfer       v0.16.0  h1:IDFfr1l9bbi5WnGflG91suNh2MYbKVjaZedAZmW3rEs=
+```
+
+The submodule is current; **the engine inside it is the last release**. Every `decoder`,
+`serveapp`, tokenizer and kernel fix between two releases was missing from the Mac and Linux
+binaries of the later one, for as long as the split entrypoints have existed. Only the Windows
+asset — built from the root itself — was ever current.
+
+This compounds the cold run's finding #3 rather than duplicating it: that one was "the Mac binary
+has no GPU backend", this one is "the Mac binary is also a release behind".
+
+**Fixed** by `go mod edit -replace ...=$root` on the ephemeral checkout before each submodule
+build, so the asset carries the tagged tree. Nothing is committed, and `standalone-build.yml`
+still proves a real consumer can resolve the submodule from the proxy — a different question from
+what *we* ship.
+
+**Gate.** A root resolved from the proxy carries an `h1:` module hash on its `dep` line; one
+supplied by the replace does not. The workflow now fails any GPU asset whose `dep` line carries
+that hash. Exercised both ways against real binaries: red on all four slots when filled with the
+proxy-built asset, green when filled with the replace-built one. The darwin half of the
+main-module check could not be exercised on this box (no darwin binary to build here); the linux
+half was, and the code is symmetric.
+
+> Two smaller things this shook out, both in the same block: `-tags=metal` proves nothing (no
+> file in `metal/` is gated on that tag), and a `cmd && { ...; fail=1; }` guard **exits non-zero
+> on the PASSING case** under `set -e` and would abort the job. Both are now `if` blocks and
+> main-module checks.
+
 ### R3 — a model bigger than RAM swapped with no warning, and the flag that fixes it was invisible
 
 **Found** (finding #1 + scenario D's dead end). A 21 GB 35B-A3B on a 16 GB Mac: **+7,819 MB of swap
@@ -303,6 +352,7 @@ to a prediction of the first hour that existed, so it is worth scoring honestly.
 | **the banner prints the requested backend, not the effective one** | **no** — the doc says what the banner should *add*, never that what it prints could be false | §3.3 |
 | **a model bigger than RAM swaps silently** | **partly** — `task-fit-to-hardware.md` owns it and had the guard scoped as Phase 0; nothing said the *flag was undiscoverable* | fit §7.0 |
 | the install command in the README does not build | **no** | — |
+| **the GPU assets are a release behind the tag** | **no** — and no doc anywhere named it; it was found by R2's gate, not by the run | — |
 | `--help` is unusable as a quick reference | **no** | — |
 | no one-shot prompt flag | **no** | — |
 
