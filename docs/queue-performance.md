@@ -540,7 +540,44 @@
 An observation rather than a work item — nothing below is claimed as a bottleneck to go fix.
 
 - **P17 · `TestSamplingThroughputGate` has ~1% headroom on arm64 and fails under suite load** —
-  **DIAGNOSED AND FIXED 2026-08-31. The bar was NOT moved.**
+  **REOPENED 2026-09-06: the best-of-3 fix is still in the code and the x86 spread is back.**
+  The 2026-08-31 diagnosis below stands and the bar still must not move; what does not hold is the
+  claim that best-of-3 cut the run-to-run spread to 0.39x.
+
+  Measured 2026-09-06 on `nobara-pc`, V=262144, five runs of the unchanged tree — one under load
+  from another session's CUDA benchmark, four on an idle box (load average 0.48):
+
+  | run | temp-only (denominator) | temp+top_p (numerator) | ratio |
+  |---|---|---|---|
+  | under load | 1.068 ms | 6.268 ms | **5.04 FAIL** |
+  | idle 1 | 1.359 ms | 6.430 ms | 4.73 |
+  | idle 2 | 1.682 ms | 6.525 ms | 3.88 |
+  | idle 3 | 1.433 ms | 6.473 ms | 4.52 |
+  | idle 4 | 1.234 ms | 6.407 ms | **5.19 FAIL** |
+
+  **Spread 1.31x, against the 0.39x the fix was recorded as achieving** — essentially the pre-fix
+  1.35x. The gate fails roughly one run in four on a tree nobody has touched.
+
+  **Why best-of-3 cannot fix it: the variance is BETWEEN PROCESSES, not within one.** Fifteen
+  consecutive samples inside a single test binary put temp-only at min 1.611 / p50 1.724 / max
+  1.909 ms — a 19% spread around a stable floor, and that process's ratio-at-floor was 4.05x. A
+  minimum taken inside one process faithfully reports *that process's* floor, and the floor itself
+  moves ±30% from one process to the next. More repetitions inside the binary buy nothing.
+
+  **And the failure direction is perverse.** The numerator is the stable quantity (6.27–6.52 ms,
+  4%); every failing run is one where the machine ran the DENOMINATOR *well*. The gate fires when
+  the thing it divides by gets faster — which is exactly the mode its own comment already records
+  from P2b, when a 4.7x denominator improvement forced the bound up.
+
+  Not fixed here, and deliberately not re-bounded: raising the bar to fit today's spread is the
+  move `docs/benchmarks.md`'s methodology exists to prevent. The shape of a real fix is to stop
+  dividing by a co-measured arm — gate the numerator's absolute cost against a recorded floor with
+  provenance — which is a redesign of the gate, not a constant.
+
+  ---
+
+  *Superseded status line, kept because its measurement and its refuted prediction are still the
+  useful record:* **DIAGNOSED AND FIXED 2026-08-31. The bar was NOT moved.**
 
   **The question was: is full-vocab selection genuinely load-sensitive, or was the gate set with no
   headroom on this machine class? Neither, quite.** The gate is a RATIO, and both its level and its
