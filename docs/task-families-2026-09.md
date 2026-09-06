@@ -525,8 +525,60 @@ the brief's stated ceiling for this item.
 
 # Batch 2 — one loader gap, three cheap keys, one real family
 
-> **Status: IN PROGRESS.** Order G1 → G3 → G4 → G2 → G5, same independently-shippable rule as
-> batch 1. Summary filled in as each item lands; read its own status line before citing it as done.
+> **Status: DONE, 2026-09-06.** All five items landed in order (G1 → G3 → G4 → G2 → G5), each
+> committed and pushed independently. Summary below; read each section's own status line for the
+> detail.
+>
+> - **G1 GGUF loader for `qwen3_5` dense** — confirmed ALREADY BUILT (`e4bbb28`, 2026-08-19); the
+>   real gap was a weight-diff test (`TestQwen38GGUF_weightDiff`, added, not yet RUN — needs the
+>   Linux box) and a `familyDoc` Loaders-column correction. No new registry key, no CHANGELOG entry
+>   (a documentation/test-coverage pass on an existing capability, not a new one).
+> - **G3 `mistral3`/`ministral3`** (Ministral 3, 3B/8B/14B) — new registry key; one real new
+>   primitive, `AttnTempBeta`/`AttnTempOrigMaxPos` (Llama 4's own attention-temperature formula,
+>   generalized off its NoPE-only own-forward path onto the generic RoPE-combined case). T1
+>   tiny-golden 100.0% / 0.9999999999999605, CPU-only (`FeatAttnTemp` undeclared everywhere). GGUF
+>   header/tensor names verified against a real file, no loader code written. T3/peer row: owed
+>   (Linux box).
+> - **G4 `smollm3`** (SmolLM3-3B) — new registry key, `llamaTensorSchema` reused verbatim; the one
+>   real finding was `no_rope_layers`' inverted polarity (1 = has RoPE), caught by a deliberate
+>   negative control before trusting the fixture. T1 tiny-golden 100.0% / 0.9999999999999544,
+>   CPU-only (`FeatNoPE`, same undeclared status as `cohere2`). The `pull -embed` int4 deliverable
+>   (binary size + cold-start numbers) is **NOT DONE** — blocked on this Mac's disk space (23 GB
+>   free at time of writing, tight against the ~6 GB bf16 download the quantize/embed/build
+>   round-trip needs); T3/peer row owed on the same download.
+> - **G2 `olmo3` + `olmo_hybrid`** (Ai2, Olmo 3 7B/32B + Olmo Hybrid 7B) — both shipped. `olmo3`:
+>   two new primitives (`NormPostOnly`, whole-vector `QKNormWhole`), pure composition otherwise, T1
+>   100.0% / 0.9999999999997883. `olmo_hybrid` paused mid-session for an explicit design decision
+>   (norm placement genuinely varies BY LAYER KIND within one model — a primitive beyond
+>   composition, per the brief's own stop condition) before shipping with the new
+>   `NormPlacementLinear` mechanism, T1 100.0% / 0.9999999999998704. Both CPU-only. Also found and
+>   fixed a real pre-existing bug this pass's own generated row surfaced: `capability-matrix.md`'s
+>   "GPU-resident" column read the wrong gate for SIX families (five pre-existing, not new), now
+>   pointed at the same gate `hardware-matrix.md` already used.
+> - **G5 `bailing_hybrid`** (inclusionAI, Ling 3.0) — **no stop condition fired**: KDA (Kimi Delta
+>   Attention), the one genuinely new primitive, was already de-risked by batch 1 F4's own
+>   rehearsal (a per-channel-decay delta rule, proven against `fla-org/flash-linear-attention`'s
+>   real reference); MLA + MoE composed cleanly onto `deepseekArchitecture` with real but ordinary
+>   naming departures (`self.attention`/`self.dense`, `expert_bias`, `num_experts`/
+>   `num_shared_experts`); `layer_types` is computed, not a config field, replicated exactly from
+>   the real decoder layer's own formula. The real HF class can't run on this Mac at all (Triton
+>   unavailable), so T1 used a hand-assembled reference instead of a real HF class — weaker
+>   evidence, recorded honestly, backstopped by a negative control (cosine 0.99999994 → 0.93984
+>   when the decay was reverted to Gated DeltaNet's per-head-scalar form). T1 100.0% /
+>   0.9999999999999437, CPU-only (`FeatKDA` undeclared). Also found and fixed a real bug this
+>   family's own build surfaced: `decoder/serialize.go` had no round-trip code for the new `kda`
+>   weights (the same failure class as LFM2's R3/C-03), fixed by a `.giw` v9 format bump.
+>
+> **Rolled up across all five**: five new/confirmed keys (`qwen3_5`/`qwen3_5_text` GGUF,
+> `mistral3`/`ministral3`, `smollm3`, `olmo3`, `olmo_hybrid`, `bailing_hybrid` — six registry keys,
+> five items), one loader confirmed already-shipped (no new loader code landed this batch — G1's
+> GGUF path pre-dates this batch, and no other item added GGUF support). Every item reached T1
+> (tiny-golden, `experimental` in `parity_manifest.json`); **none reached T3** and **zero peer rows
+> landed** — every item's T3/peer work is gated on the Linux box (or, for G4, this Mac's disk
+> space) and is recorded as owed in its own section, not silently dropped. Two real,
+> independent bugs were found and fixed along the way (the capability-matrix GPU-resident gate,
+> the `.giw` KDA/MLA-gate serialization gap) — neither was the family being built at the time; both
+> were caught by this repo's own existing chokepoint tests doing their job.
 
 ## G1 · GGUF loader for the `qwen3_5` dense hybrid (Qwen3.8-27B) — ALREADY BUILT; the real gap was tests + docs
 
