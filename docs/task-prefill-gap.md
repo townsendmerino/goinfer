@@ -157,6 +157,16 @@ rule"). The GPU prefill paths are the only place in the tree where bit-identity 
 
 ## 3. The contract — one flag, one gate, every backend
 
+**Flag — NOT YET BUILT; CUDA ships the env knob instead, and this is the mapping.** As of
+2026-09-05 the CUDA fast prefill is controlled by `GOINFER_CUDA_FAST_PREFILL`
+(`0`/`false`/`off` = exact everywhere; unset/`1` = both levers above the floor; `attn`/`gemm` =
+one lever) plus `GOINFER_CUDA_FAST_PREFILL_FLOOR` (default 512). The universal `--exact-prefill`
+flag below is deliberately still unbuilt — it belongs with L1's Phase 2, where it can subsume the
+CPU and Metal knobs in one change rather than growing a third backend-specific spelling. When it
+lands, `--exact-prefill` maps to `GOINFER_CUDA_FAST_PREFILL=0` on this backend, and the env knob
+becomes the diagnostic override rather than the interface. Recording the mapping now so the flag
+is written against a known target instead of being reverse-engineered from the selector.
+
 **Flag.** `--exact-prefill` (server) / `Options.ExactPrefill` (library): force the bit-identical
 prompt-ingestion path on whichever backend is running. Subsumes `--cpu-exact-prefill` (kept as an
 alias for one release) and inverts `--metal-fast-prefill` (kept as a no-op alias with a deprecation
