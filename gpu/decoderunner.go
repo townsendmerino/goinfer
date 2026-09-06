@@ -25,6 +25,13 @@ type DecodeRunner struct {
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
 	vocab                int
+	// logitsHost is the reused host-side logits buffer Run copies the mapped staging range
+	// into and returns — allocated once (vocab is fixed for the runner's life) instead of a
+	// make([]float32, vocab) every token. The returned slice is reused across calls, so the
+	// caller must consume it before the next Run (the single-request decode loop does, and the
+	// two production callers — backend copy(dst,out) and residency.Forward → generateInto —
+	// both consume per-token). Mirrors CUDA's pinned host scratch and Metal's reused logitsHost.
+	logitsHost []float32
 	// geomVariants is the number of distinct attention geometries in the resident plan
 	// (len of geomFor's cache): 1 for every uniform-geometry family, 2 for Gemma 4's
 	// local/global interleave. A refactor that allocated one uniform per layer instead of
@@ -356,7 +363,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return nil, err
 		}
 	}
-	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows()}
+	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows())}
 	// buildErr accumulates the FIRST device-allocation/bind failure (M21): the storF/uni/
 	// storFZ/bind helpers short-circuit once it's set and the constructor returns it, so VRAM
 	// exhaustion is an error the caller can fall back on — never a panic in library code.
@@ -1289,10 +1296,9 @@ func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
 	if st != wgpu.BufferMapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: DecodeRunner map failed: %v", st)
 	}
-	out := make([]float32, r.vocab)
-	copy(out, wgpu.FromBytes[float32](r.stag.GetMappedRange(0, uint(r.vocab*4))))
+	copy(r.logitsHost, wgpu.FromBytes[float32](r.stag.GetMappedRange(0, uint(r.vocab*4))))
 	r.stag.Unmap()
-	return out, nil
+	return r.logitsHost, nil
 }
 
 // runBatch executes K runners (sharing the resident weights + KV caches, distinct
