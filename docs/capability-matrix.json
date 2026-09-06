@@ -245,6 +245,26 @@
     "parity": "full-oracle 100.0%/0.99128"
   },
   {
+    "name": "granite",
+    "model_types": [
+      "granite"
+    ],
+    "display_name": "Granite 4.2",
+    "description": "IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "internlm2",
     "model_types": [
       "internlm2"

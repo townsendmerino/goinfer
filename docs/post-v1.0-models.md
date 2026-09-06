@@ -23,9 +23,9 @@ hardware, text-only, parity-gateable against HF, weights in safetensors/GGUF. Qu
    (Nemotron-H shape) with the FFN layers replaced by sparse MoE: sigmoid-gated router, shared
    experts, squared-ReLU activation, no positional embeddings, RMSNorm, untied embeddings. Every
    ingredient already exists: the Mamba-2 single-op blocks (`decoder/forward_nemotron.go`,
-   `nemotronhArchitecture` at `decoder/registry.go:1460`), squared-ReLU + sigmoid/shared-expert
-   routing (from `deepseekArchitecture`/`glm4moeArchitecture`, `decoder/registry.go:1576,944`), and
-   NoPE (`cohere2Architecture`, `decoder/registry.go:599-531`). Mostly adapter composition, not new
+   `nemotronhArchitecture` at `decoder/registry.go:1532`), squared-ReLU + sigmoid/shared-expert
+   routing (from `deepseekArchitecture`/`glm4moeArchitecture`, `decoder/registry.go:1648,944`), and
+   NoPE (`cohere2Architecture`, `decoder/registry.go:600-531`). Mostly adapter composition, not new
    kernels. 3.2B active fits the 8 GB expert-streaming path and the 16 GB Mac rig; 1M context lines
    up with the long-context work already measured to 32k. NVIDIA is shipping weights, training
    software, recipes, and most of the training data — real community traction, friendly license.
@@ -33,7 +33,7 @@ hardware, text-only, parity-gateable against HF, weights in safetensors/GGUF. Qu
    demand shows up.)
 
 2. **Qwen3-Next / Qwen3-Coder-Next (80B-A3B) — closes the gap in goinfer's strongest family (`G5`).**
-   `qwen35Architecture` (`decoder/registry.go:909`, forward pass `decoder/forward_qwen35.go`) already
+   `qwen35Architecture` (`decoder/registry.go:910`, forward pass `decoder/forward_qwen35.go`) already
    implements Gated DeltaNet + softmax + MoE; Qwen3-Next is that architecture's direct ancestor —
    likely a config-mapping delta, not a new forward path (verify before estimating further, same
    discipline the DeepSeek-V4 scoping below learned the hard way). Qwen3-Coder-Next is the

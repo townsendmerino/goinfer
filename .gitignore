@@ -152,6 +152,7 @@ testdata/nemotron-tiny/
 testdata/nemotron3nano-tiny/
 testdata/qwen3next-tiny/
 testdata/qwen3moe-tiny/
+testdata/granite-dense-tiny/
 testdata/deepseek-tiny/
 testdata/phi3-tiny/
 testdata/kimi-tiny/

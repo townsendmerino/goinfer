@@ -73,6 +73,8 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 		return ggufGlm4MoeConfig(g)
 	case "granitehybrid":
 		return ggufGraniteConfig(g)
+	case "granite":
+		return ggufGraniteDenseConfig(g)
 	case "nemotron_h":
 		return ggufNemotronConfig(g)
 	case "nemotron_h_moe": // Nemotron 3 Nano — same HF model_type "nemotron_h", llama.cpp gives it its own GGUF arch string
@@ -86,7 +88,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
@@ -132,6 +134,44 @@ func ggufLlamaConfig(g *embed.GGUFFile) (*Config, error) {
 		cfg.RoPEGlobalBase = base
 	} else {
 		cfg.RoPEGlobalBase = 10000 // llama.cpp default
+	}
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufGraniteDenseConfig builds a dense Granite 4.2 Config from the granite.* metadata.
+// Verified against a real file's header (HTTP-Range-fetched, bartowski/granite-4.2-3b-GGUF
+// Q2_K): architecture string "granite" (distinct from the hybrid's "granitehybrid"), and
+// llama.cpp bakes Granite's scalar multipliers directly into metadata — attention.scale (the
+// resolved attention_multiplier, not 1/√d), embedding_scale, logit_scale, residual_scale — so
+// no separate multiplier-vs-default resolution is needed the way the safetensors path does.
+// The tensor set is exactly llama's (no separate ggufLlamaConfig reuse possible here since the
+// metadata NAMESPACE differs, but the loader dispatch for actually reading tensors is identical
+// once resolveArchitecture returns llamaTensorSchema).
+func ggufGraniteDenseConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("granite." + k)
+		return int(v)
+	}
+	f := func(k string) float64 {
+		v, _ := g.Float("granite." + k)
+		return v
+	}
+	cfg := &Config{
+		ModelType:           "granite",
+		HiddenDim:           u("embedding_length"),
+		NumLayers:           u("block_count"),
+		NumHeads:            u("attention.head_count"),
+		NumKVHeads:          u("attention.head_count_kv"),
+		IntermediateDim:     u("feed_forward_length"),
+		HiddenAct:           "silu",
+		VocabSize:           ggufVocabSize(g),
+		RMSNormEps:          f("attention.layer_norm_rms_epsilon"),
+		RoPEGlobalBase:      f("rope.freq_base"),
+		AttentionMultiplier: f("attention.scale"),
+		EmbeddingMultiplier: f("embedding_scale"),
+		LogitsScaling:       f("logit_scale"),
+		ResidualMultiplier:  f("residual_scale"),
 	}
 	ggufEOS(g, cfg)
 	return cfg, nil

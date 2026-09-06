@@ -645,6 +645,37 @@ func (c *Config) validateGranite() error {
 	return nil
 }
 
+// validateGraniteDense pins the dense Granite 4.2 assumptions (ibm-granite/granite-4.2-{3b,8b,30b},
+// model_type "granite"): a plain llama skeleton (GQA, SwiGLU, single-base RoPE, no bias, no
+// QK-norm) plus Granite's scalar multipliers. residual_multiplier is the one multiplier the
+// generic forward path cannot apply (granitemoehybrid's own-forward does, via graniteParams —
+// see graniteDenseArchitecture's comment); every released 4.2 size ships it at 1.0, confirmed
+// directly, so anything else is rejected loudly rather than silently dropped.
+func (c *Config) validateGraniteDense() error {
+	switch {
+	case c.HiddenDim == 0 || c.NumLayers == 0 || c.NumHeads == 0 || c.headDim() == 0:
+		return fmt.Errorf("decoder(granite): missing required dim (hidden=%d layers=%d heads=%d headDim=%d)",
+			c.HiddenDim, c.NumLayers, c.NumHeads, c.headDim())
+	case c.NumKVHeads == 0 || c.NumHeads%c.NumKVHeads != 0:
+		return fmt.Errorf("decoder(granite): num_heads %d not a multiple of num_kv_heads %d (GQA)", c.NumHeads, c.NumKVHeads)
+	case c.VocabSize == 0:
+		return fmt.Errorf("decoder(granite): vocab_size is zero")
+	case c.IntermediateDim == 0:
+		return fmt.Errorf("decoder(granite): intermediate_size is zero")
+	case c.HiddenAct != "" && c.HiddenAct != "silu":
+		return fmt.Errorf("decoder(granite): hidden_act=%q unsupported (silu/SwiGLU only)", c.HiddenAct)
+	case c.RMSNormEps <= 0:
+		return fmt.Errorf("decoder(granite): rms_norm_eps must be >0, got %v", c.RMSNormEps)
+	case c.AttentionBias:
+		return fmt.Errorf("decoder(granite): attention_bias=true (q/k/v/o bias) not yet supported")
+	case c.ResidualMultiplier != 0 && c.ResidualMultiplier != 1:
+		return fmt.Errorf("decoder(granite): residual_multiplier=%v not yet supported — the generic "+
+			"forward path this family rides has no residual-scale hook (only granitemoehybrid's "+
+			"own-forward does); every released 4.2 size ships 1.0", c.ResidualMultiplier)
+	}
+	return nil
+}
+
 // normalizeNemotronBlocks expands NVIDIA's hybrid_override_pattern ("M" mamba, "*"
 // attention, "-" mlp) into the layers_block_type spelling the rest of the loader reads,
 // so a RELEASED NemotronH config.json (which carries only the pattern) and a

@@ -26,6 +26,16 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// is a llama. Same empty profile, same backends.
 	"internlm2": {},
 	"internlm3": {},
+	// Dense Granite 4.2: llama-shaped, and EMPTY on purpose, not by omission — checked against
+	// all three released sizes (3b/8b/30b), which all ship embedding_multiplier and
+	// logits_scaling at their identity value 1.0 (FeatEmbedScale/FeatLogitScale only trigger
+	// above/away-from 1, per their own derivation in this file), and residual_multiplier is
+	// forced to 1.0 by validateGraniteDense. attention_multiplier is NOT gated by any
+	// ResidentFeature flag at all — it is baked into AttnScale, which every backend already
+	// reads generically regardless of value. RequiredResidentFeatures still derives the true
+	// per-model requirement, so a future release with a non-identity multiplier is caught
+	// there even though this table (correctly) shows nothing.
+	"granite": {},
 	// NOTE phi3 is config-DEPENDENT: Phi-4 and the released GGUFs are plain dense, while the
 	// Phi-3-mini-4k safetensors declares sliding_window: 2047 and so also needs
 	// FeatSlidingWindow. This table states the BASE profile; the authoritative requirement is
@@ -163,7 +173,10 @@ var admissionGolden = map[string][]string{
 	"llama":            {"cuda", "metal", "webgpu"},
 	"internlm2":        {"cuda", "metal", "webgpu"},
 	"internlm3":        {"cuda", "metal", "webgpu"},
-	"llama4_text":      {"cuda", "metal", "webgpu"},
+	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
+	// admitted everywhere llama is — same backends, same reason.
+	"granite":     {"cuda", "metal", "webgpu"},
+	"llama4_text": {"cuda", "metal", "webgpu"},
 	// mellum reaches cuda and metal by the SAME coupling and with VERY DIFFERENT evidence, so
 	// the two are not interchangeable rows:
 	//   - cuda (added 2026-08-31, G7): FeatRopeMscale was declared for gpt-oss's YaRN, and

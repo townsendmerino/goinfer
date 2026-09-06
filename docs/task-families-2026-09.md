@@ -221,3 +221,103 @@ RAM. The Linux box (`nobara-pc`, 229 GB free / 62 GB RAM) is the intended target
 own "30B-A3B class on the Linux box" rule, matching where Nano's own T3 ran. **No CHANGELOG entry
 for F2**: nothing loadable changed (no registry key, no adapter code, no tensor schema) — only
 test/asset infrastructure, which is not a capability change.
+
+## F3 · Granite 4.2 (dense, 3B/8B/30B) — DONE at T1 (mac, 2026-09-06)
+
+### Phase 0 (all three released sizes fetched and diffed)
+
+`ibm-granite/granite-4.2-{3b,8b,30b}`: `model_type: "granite"` (`GraniteForCausalLM` — distinct
+from `granitemoehybrid`'s `GraniteMoeHybridForCausalLM`), no key registered for it. All three
+carry `attention_bias: false`, `rms_norm_eps: 1e-05`, both a nested `rope_parameters` object and a
+redundant flat `rope_theta` (transformers 4.57.1 writes both), `tie_word_embeddings: false` on
+**every size** (the brief's own caution — "confirm tie_word_embeddings per size" — checked and
+found NOT to vary here), and Granite's four scalars: `embedding_multiplier`, `attention_multiplier`
+(the only one that varies meaningfully: 0.0078125 / 0.015625 / 0.0078125 for 8b/3b/30b — NOT
+1/√head_dim, e.g. 8b's head_dim 128 would give 0.0884), `residual_multiplier`, `logits_scaling`.
+
+**`embedding_multiplier`, `residual_multiplier` and `logits_scaling` are 1.0 on all three sizes.**
+Only `attention_multiplier` deviates from its HF default. This is a real, checked-not-assumed
+finding with a direct consequence below.
+
+**Confirmed the tensor names are byte-identical to llama's**, not by reading `modeling_granite.py`
+and eyeballing similarity but by instantiating a real `GraniteForCausalLM` (transformers 5.15.0)
+and reading its `state_dict()` keys directly: `model.embed_tokens.weight`,
+`model.layers.N.self_attn.{q,k,v,o}_proj.weight`, `model.layers.N.mlp.{gate,up,down}_proj.weight`,
+`model.layers.N.{input,post_attention}_layernorm.weight`, `model.norm.weight`, `lm_head.weight` —
+no bias tensors, no QK-norm tensors. `llamaTensorSchema` is reused verbatim.
+
+### GGUF — verified against a real file
+
+Fetched the first 15 MB of `bartowski/granite-4.2-3b-GGUF`'s `Q2_K.gguf` via HTTP Range and parsed
+it with `aikit/embed.GGUFFile` directly: `general.architecture` is `"granite"` (distinct from the
+hybrid's `"granitehybrid"`), and llama.cpp bakes the four scalars directly into metadata —
+`granite.attention.scale` (the **resolved** attention_multiplier, 0.015625 for the 3B, matching
+its released config exactly — no 1/√d default-resolution needed on the GGUF side),
+`granite.embedding_scale` / `granite.logit_scale` / `granite.residual_scale` (all 1, confirming the
+Phase 0 finding independently). Tensor set: `blk.N.attn_{q,k,v,output}`, `ffn_{gate,up,down}`,
+`attn_norm`, `ffn_norm`, `token_embd`, `output`, `output_norm` — exactly llama's, no bias, no
+QK-norm tensors.
+
+### Adapter decision: pure composition on three already-generic scalar fields, one hard guard
+
+`EmbedScale` (embedding_multiplier), `AttnScale` (attention_multiplier, in place of the
+1/√head_dim default), and `LogitScale` (logits_scaling) are **already generic** on `Architecture` —
+each is just "multiply by this scalar," applied at the same call sites regardless of which family
+supplies the value or how that value was derived (Gemma's √hidden `EmbedScale` and Cohere's
+`LogitScale` already prove the mechanism is family-agnostic). **`residual_multiplier` is the one
+exception**: `granitemoehybrid`'s own dedicated forward (`runLayersGranite`) applies it via
+`graniteParams.ResidMul`, and the generic uniform-layer path this family rides has no such hook.
+Since every released 4.2 size ships it at the identity value 1.0, `validateGraniteDense` **rejects
+any other value** rather than silently dropping it — the same discipline `validateLlama` already
+applies to scaled RoPE, and cheap today (it costs nothing on any currently-published checkpoint).
+
+`decoder/registry.go`: `graniteDenseArchitecture` (reuses `ropeBaseFlatOrNested`, same as the
+hybrid). `decoder/config.go`: `validateGraniteDense`. `decoder/gguf.go`: `ggufGraniteDenseConfig` +
+one dispatch line. No new tensor schema (reuses `llamaTensorSchema`).
+
+### Chokepoints and resident admission
+
+Registering `"granite"` surfaced the same three registry-wide gates F1 did:
+`TestResidentAdmission_registryCovered`/`archFeatureProfile`, `TestParityManifest_fresh` (manifest
+row), `TestCapabilityMatrix_CoverageComplete` (`representativeConfig`/`familyDoc`) — all satisfied.
+
+**`archFeatureProfile["granite"]` is `{}` — empty on purpose, not by omission.** Checked against
+`FeatEmbedScale`'s and `FeatLogitScale`'s own derivation (`add(a.EmbedScale > 1, ...)`,
+`add(a.LogitScale != 0 && a.LogitScale != 1, ...)`): since every released size's
+`embedding_multiplier`/`logits_scaling` are exactly 1.0, **neither feature flag ever fires for a
+real checkpoint of this family** — the derivation and the Phase 0 finding agree independently.
+`attention_multiplier` isn't gated by any `ResidentFeature` at all; it's baked into `AttnScale`,
+which every backend reads generically regardless of value. So `admissionGolden["granite"]` is
+`{cuda, metal, webgpu}` — the same set `llama` gets, for the same reason: nothing this family needs
+is missing anywhere.
+
+### T1 — tiny-golden, DONE
+
+`scripts/pin_granite_dense_tiny.py` (transformers 5.15.0, `GraniteForCausalLM`, 4 layers, **all
+three tunable multipliers set to non-trivial values** — 12.0 / 0.5 / 6.0 for embedding/attention/
+logits, residual pinned to 1.0 as the adapter requires): `TestGraniteDense_forwardParity` —
+**argmax exact, cosine 0.999999999999987**, plus direct assertions that the resolved
+`EmbedScale`/`AttnScale`/`LogitScale` equal the fixture's non-default values (not just that the
+final logits happen to match, which a dropped-then-cancelled multiplier could also produce).
+
+`parity_manifest.json` row: `status: experimental`, `method: tiny-golden`. Added to
+`cmd/gate/parity.go`'s `parityGates` (`{"granite-dense", "TestGraniteDense_forwardParity"}`) and
+`awaitingFirstConfirmation` (learned from F1's CI break — see below).
+
+### What was deliberately not done
+
+- **T3 real-checkpoint parity.** Same order-of-operations as F1: ship at T1, move on. Granite 4.2
+  8B (bf16 ~16 GB) is the natural T3 target for this Mac per the brief's own sizing note, but
+  wasn't run this pass — no CHANGELOG claim is made about real-checkpoint validation.
+- **30B real-checkpoint / load check.** Explicitly out of scope per the brief ("30B is a load
+  check only") and not attempted.
+- **GGUF real-file round-trip test.** Same posture as F1: the header was verified against real
+  metadata, giving high confidence, but no committed tiny-GGUF fixture exercises it in CI.
+
+### Process note carried over from F1
+
+F1's push broke CI: `TestParity_everyRequiredGateIsConfirmed` (audit G-04's ledger guard) correctly
+flagged `TestQwen3Moe_forwardParity` as a required gate with no ledger entry. Fixed same-day by
+adding it, and `TestNemotron35LightningReal_oracle`, to `cmd/gate/parity.go`'s
+`awaitingFirstConfirmation`. F3's own new gate was registered there in the same commit that added
+it, closing the loop this once cost a red `main` to discover.

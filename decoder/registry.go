@@ -33,30 +33,31 @@ var registry = map[string]archAdapter{
 	// config departure is rope_scaling type "dynamic", which is exactly identity within the trained
 	// window (see parseRopeScaling). So it is a registry ALIAS, not an adapter — the honest expression
 	// of "this is a llama". InternLM2 is NOT an alias: it renames every tensor and fuses qkv.
-	"internlm3":        llamaArchitecture,       // InternLM3 (llama-shaped; dynamic-NTK rope is in-window identity)
-	"internlm2":        internlm2Architecture,   // InternLM2 (llama math; renamed tensors + GROUPED fused wqkv, split at load)
-	"mistral":          mistralArchitecture,     // Llama + all-layer sliding-window attention
-	"gpt2":             gpt2Architecture,        // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
-	"cohere":           cohereArchitecture,      // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
-	"cohere2":          cohere2Architecture,     // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
-	"mixtral":          mixtralArchitecture,     // Llama + sparse MoE FFN (router + top-k experts)
-	"mellum":           mellumArchitecture,      // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
-	"qwen3_5_moe":      qwen35Architecture,      // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
-	"qwen3_5_moe_text": qwen35Architecture,      // the text-only checkpoint's model_type
-	"qwen3_5":          qwen35DenseArchitecture, // Qwen3.8 dense (Gated DeltaNet + softmax hybrid, plain SwiGLU FFN)
-	"qwen3_5_text":     qwen35DenseArchitecture, // the text_config's own model_type, for text-only checkpoints
-	"qwen3_next":       qwen3NextArchitecture,   // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
-	"glm4_moe":         glm4moeArchitecture,     // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
-	"laguna":           lagunaArchitecture,      // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
-	"granitemoehybrid": graniteArchitecture,     // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
-	"lfm2":             lfm2Architecture,        // LFM2 / LFM2.5: gated short-conv + GQA hybrid (layer_types), tied head, per-head RMSNorm QK-norm
-	"nemotron_h":       nemotronhArchitecture,   // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
-	"deepseek_v2":      deepseekArchitecture,    // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
-	"deepseek_v3":      deepseekArchitecture,    // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
-	"kimi_k2":          deepseekArchitecture,    // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
-	"phi3":             phi3Architecture,        // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
-	"llama4_text":      llama4Architecture,      // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
-	"gpt_oss":          gptOssArchitecture,      // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
+	"internlm3":        llamaArchitecture,        // InternLM3 (llama-shaped; dynamic-NTK rope is in-window identity)
+	"internlm2":        internlm2Architecture,    // InternLM2 (llama math; renamed tensors + GROUPED fused wqkv, split at load)
+	"mistral":          mistralArchitecture,      // Llama + all-layer sliding-window attention
+	"gpt2":             gpt2Architecture,         // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
+	"cohere":           cohereArchitecture,       // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
+	"cohere2":          cohere2Architecture,      // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
+	"mixtral":          mixtralArchitecture,      // Llama + sparse MoE FFN (router + top-k experts)
+	"mellum":           mellumArchitecture,       // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
+	"qwen3_5_moe":      qwen35Architecture,       // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
+	"qwen3_5_moe_text": qwen35Architecture,       // the text-only checkpoint's model_type
+	"qwen3_5":          qwen35DenseArchitecture,  // Qwen3.8 dense (Gated DeltaNet + softmax hybrid, plain SwiGLU FFN)
+	"qwen3_5_text":     qwen35DenseArchitecture,  // the text_config's own model_type, for text-only checkpoints
+	"qwen3_next":       qwen3NextArchitecture,    // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
+	"glm4_moe":         glm4moeArchitecture,      // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
+	"laguna":           lagunaArchitecture,       // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
+	"granitemoehybrid": graniteArchitecture,      // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
+	"granite":          graniteDenseArchitecture, // Granite 4.2 (3B/8B/30B) dense: llama skeleton + Granite's four scalar multipliers
+	"lfm2":             lfm2Architecture,         // LFM2 / LFM2.5: gated short-conv + GQA hybrid (layer_types), tied head, per-head RMSNorm QK-norm
+	"nemotron_h":       nemotronhArchitecture,    // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
+	"deepseek_v2":      deepseekArchitecture,     // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
+	"deepseek_v3":      deepseekArchitecture,     // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
+	"kimi_k2":          deepseekArchitecture,     // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
+	"phi3":             phi3Architecture,         // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
+	"llama4_text":      llama4Architecture,       // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
+	"gpt_oss":          gptOssArchitecture,       // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -1448,6 +1449,77 @@ func graniteArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			EmbMul: one(cfg.EmbeddingMultiplier), ResidMul: one(cfg.ResidualMultiplier),
 		},
 	}, &graniteTensorSchema, nil
+}
+
+// graniteDenseArchitecture expresses dense Granite 4.2 (ibm-granite/granite-4.2-{3b,8b,30b},
+// model_type "granite", GraniteForCausalLM): a plain llama skeleton — confirmed byte-identical
+// tensor names (self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj, input_layernorm/
+// post_attention_layernorm, no bias, no QK-norm) by instantiating GraniteForCausalLM directly and
+// reading its state_dict, not assumed from Granite-4.0-H's own tensor names — plus Granite's four
+// scalar multipliers, THREE of which are already generic on Architecture (embedding_multiplier →
+// EmbedScale, attention_multiplier → AttnScale in place of 1/√d, logits_scaling → LogitScale;
+// granitemoehybrid's own comment on EmbedScale notes it applies "the Gemma sqrt path", but the
+// mechanism itself — multiply the embedding by a constant — is generic regardless of how that
+// constant is derived). residual_multiplier is the one exception: granitemoehybrid's own-forward
+// (runLayersGranite) applies it via graniteParams.ResidMul, and the generic uniform-layer forward
+// this family rides has no such hook. Checked against all three released sizes' real config.json
+// (3b/8b/30b): every one ships residual_multiplier 1.0 (identity), so validateGraniteDense rejects
+// anything else rather than silently dropping it — the same discipline validateLlama already
+// applies to scaled RoPE. Verified against a real GGUF header too (bartowski/granite-4.2-3b-GGUF
+// Q2_K, HTTP-Range-fetched): architecture string "granite", metadata carries the multipliers
+// directly (attention.scale/embedding_scale/logit_scale/residual_scale) and the tensor set is
+// exactly llama's — the tensor schema is llamaTensorSchema, reused rather than duplicated.
+func graniteDenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := cfg.validateGraniteDense(); err != nil {
+		return nil, nil, err
+	}
+	// RoPE: the released checkpoints carry both a nested rope_parameters and a redundant
+	// top-level rope_theta (transformers 4.57.1); accept either, same as granitemoehybrid.
+	base, scaling, err := ropeBaseFlatOrNested(cfg, "granite")
+	if err != nil {
+		return nil, nil, err
+	}
+	if base <= 0 {
+		return nil, nil, fmt.Errorf("decoder(granite): rope_theta must be >0, got %v", base)
+	}
+	hd := cfg.headDim()
+	attnMul := cfg.AttentionMultiplier
+	if attnMul == 0 {
+		attnMul = math.Pow(float64(hd), -0.5) // HF default when unset
+	}
+	logitScale := cfg.LogitsScaling
+	if logitScale == 0 {
+		logitScale = 1
+	}
+	embedScale := cfg.EmbeddingMultiplier
+	if embedScale == 0 {
+		embedScale = 1
+	}
+	return &Architecture{
+		Name:            "granite",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   NormPre2,
+		Act:             ActSiLU,
+		QKVBias:         false,
+		QKNorm:          false,
+		AttnScale:       attnMul, // Granite attention_multiplier (not 1/√d)
+		RoPELocalBase:   base,
+		RoPEGlobalBase:  base,
+		ropeScaling:     scaling,
+		RotaryDim:       0, // full rotary
+		EmbedScale:      embedScale,
+		LogitScale:      logitScale,
+		TiedLMHead:      false, // finalized from lm_head.weight presence at load; all three released sizes are untied
+	}, &llamaTensorSchema, nil
 }
 
 // nemotronhArchitecture expresses Nemotron-H (model_type nemotron_h): a SINGLE-OP-

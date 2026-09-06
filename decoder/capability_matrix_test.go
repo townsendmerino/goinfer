@@ -280,6 +280,21 @@ func representativeConfig(modelType string) *Config {
 			EmbeddingMultiplier: 12.0, AttentionMultiplier: 0.5, ResidualMultiplier: 0.22, LogitsScaling: 6.0,
 			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000.0}`),
 		}
+	case "granite":
+		// Dense Granite 4.2: a plain llama skeleton plus Granite's four scalar multipliers.
+		// Matches every released 4.2 size (3b/8b/30b), not a config chosen to maximize
+		// feature coverage: embedding_multiplier/residual_multiplier/logits_scaling are all
+		// 1.0 on every real checkpoint (archFeatureProfile's "granite": {} depends on this),
+		// and only attention_multiplier deviates from its 1/√head_dim default — which isn't
+		// gated by any ResidentFeature at all, so a non-default value here is safe and still
+		// exercises the real per-size variation (the granite-dense-tiny T1 fixture is where
+		// non-trivial embedding_multiplier/logits_scaling actually get forward-path coverage).
+		return &Config{
+			ModelType: "granite", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 10000000,
+			HiddenAct:           "silu",
+			AttentionMultiplier: 0.5,
+		}
 	case "lfm2":
 		// LFM2/LFM2.5: a conv/attention hybrid whose per-layer kind rides on LayerTypes.
 		// 4 layers with both kinds present so the conv path and the attention path are each
@@ -419,6 +434,7 @@ var familyDocs = map[string]familyDoc{
 	"glm4_moe":         {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
 	"laguna":           {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
 	"granitemoehybrid": {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
+	"granite":          {"Granite 4.2", "IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers", "safetensors, GGUF", "text"},
 	"nemotron_h":       {"Nemotron-H", "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)", "safetensors, GGUF", "text"},
 	"deepseek_v2":      {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},
 	"deepseek_v3":      {"DeepSeek-V3", "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)", "safetensors, GGUF", "text"},

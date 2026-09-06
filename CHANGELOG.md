@@ -27,6 +27,17 @@ any surface may still change.
   against a real file's header via HTTP Range, not assumed). Parity-gated against a tiny oracle
   (100.0% / 1.00000); real-checkpoint T3 is a follow-up (`docs/task-families-2026-09.md`).
 
+- **Dense Granite 4.2 (3B/8B/30B) as a new family** (`granite`; distinct from the existing
+  `granitemoehybrid` Granite-4.0-H). A plain llama skeleton — confirmed byte-identical tensor names
+  to llama by instantiating `GraniteForCausalLM` directly — plus three of Granite's four scalar
+  multipliers, all already generic on the shared `Architecture` descriptor (embedding/attention/
+  logits scale); `residual_multiplier` is rejected unless 1.0, the only value any released 4.2 size
+  ships. Reuses `llamaTensorSchema` verbatim — no new tensor schema. GGUF support included
+  (`general.architecture == "granite"`, verified against a real file). Resident-admitted on
+  cuda/metal/webgpu from day one (empty feature profile — every scalar that varies from identity on
+  a real checkpoint is either baked into the generic attention scale or checked to be 1.0).
+  Parity-gated against a tiny oracle with non-trivial multipliers (100.0% / 0.9999999999999).
+
 ## [v0.16.0] — 2026-09-05
 
 This release is two things at once. The headline is prefill: CUDA prompt ingestion moves to tensor
