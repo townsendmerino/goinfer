@@ -157,6 +157,15 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
   unsupported declines at load and falls back to CPU rather than dropping a feature silently.
   See [docs/cuda-backend.md](docs/cuda-backend.md) and
   [docs/gpu-residency-coverage.md](docs/gpu-residency-coverage.md).
+- **Tensor-core prompt prefill on CUDA** (new, 2026-09-05) — a fused FlashAttention-style
+  attention kernel and a tensor-core int4 GEMM, on by default for prompts of **512 tokens or
+  more**. End-to-end prefill is **3.9× faster** on a 1.5B int4 at a 3900-token prompt, and the
+  overhead-free gap to Ollama at depth narrows from 12.1× to **3.2×** (1.5B) and 14.5× to **1.9×**
+  (0.5B). Shorter prompts keep the exact path, because that is where a fidelity gate against an
+  f32 reference says the fast kernels do not earn their place; at depth the same gate finds them
+  **closer to that reference than the path they replaced**. `GOINFER_CUDA_FAST_PREFILL=0` restores
+  the previous behaviour in full. Details:
+  [docs/measurements/prefill-l2l3-phase3-2026-09-05.md](docs/measurements/prefill-l2l3-phase3-2026-09-05.md).
 - **Serving** — OpenAI-compatible and Anthropic Messages endpoints, multi-model, vision,
   embeddings: [docs/server.md](docs/server.md).
 

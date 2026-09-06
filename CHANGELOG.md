@@ -17,6 +17,45 @@ any surface may still change.
 
 ### Changed
 
+- **CUDA prompt prefill runs on tensor cores, and is ON BY DEFAULT for prompts of 512 tokens or
+  more.** Two new kernels — `attn_fused` (FlashAttention-style attention, `mma.sync m16n8k8`) and
+  `gemm_w4a8_mma` (int4×int8 GEMM with group scales, `mma.sync m8n8k16`) — replace the batched
+  decode-shaped kernels for prompt ingestion. **End-to-end prefill 3.91× faster** at a 3900-token
+  prompt on a 1.5B int4 (5.451 s → 1.393 s) and **4.10×** at 512; against Ollama v0.32.5 the
+  overhead-free marginal gap at depth narrows from **12.1× to 3.16×** (1.5B) and **14.5× to 1.89×**
+  (0.5B), and goinfer is now faster to first token at every swept depth on the 0.5B.
+
+  **These kernels are NOT bit-identical to decode** — the fused attention uses f16 K/V with an
+  online-rescaled softmax, and the GEMM re-associates the cross-group float sum. They ship as a
+  default only because `docs/task-prefill-gap.md` §3's fidelity gate passed: both arms scored
+  against a CPU reference with f32 weights *and* f32 activations, teacher-forced on the reference's
+  own continuation, over 10 prose prompts per cell on two models. **At depth the fast path is
+  measurably CLOSER to that reference than the exact path it replaces** (hard flips 7 vs 10 at
+  K=1024, 8 vs 12 at K=3900). It **fails at K=256**, which is why the 512-token floor exists and
+  why it is 512 — a K=512 reference was generated specifically so the floor rests on a measured
+  cell rather than an interpolation.
+
+  `GOINFER_CUDA_FAST_PREFILL=0` restores the previous behaviour completely; `=attn` / `=gemm`
+  select one lever. The exact path stays bit-identical to the M=1 decode kernels and is what
+  spec-decode verify and the parity gates run regardless of this setting.
+
+  **If you have prefill numbers from before this change, they measured the exact path.** In
+  particular `TestPrefillTTFT`'s "batched" column now times the fast path at K ≥ 512 without the
+  test having changed; set `=0` to reproduce the older rows.
+
+### Fixed
+
+- **`LoadSession` rejected valid session snapshots.** The guard bounding a blob's `pos` by
+  `len(body)/(numLayers·kvDim)` assumed every position stores at least one byte of KV — which
+  `kvsnapshot.go`'s own writer contradicts: a never-written ring and a KV-shared layer each
+  serialise zero KV bytes, and a ring layer stores only `min(count, W)` rows. In production that
+  rejected any session longer than ~8× the window on an all-sliding-window model. Replaced with two
+  checks that do not assume a body layout: `pos == len(tokens)` moved *before* the allocation (a
+  tighter bound than the old ratio for the OOM it was written for, and an invariant the format
+  actually guarantees), plus an explicit ceiling on the bytes the cache would occupy. The original
+  hostile-header protections are unchanged and still tested.
+
+
 - **Prefill attention now uses a FUSED (FlashAttention-style) schedule under `--cpu-fast-attention`,
   and THIS CHANGES OUTPUT.** The score block is kept resident and folded into the output
   accumulator with a running max and running sum, instead of materialising a `kt × nKeys` matrix

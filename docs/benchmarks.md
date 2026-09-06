@@ -474,18 +474,28 @@ staged/CPU path (`decoder/features.go`, the authoritative set).
 `fb43caf`, Ollama v0.32.5), via the new `scripts/bench_peer_prefill.py`. Full record:
 [`docs/measurements/cuda-prefill-reanchor-2026-09-01.md`](measurements/cuda-prefill-reanchor-2026-09-01.md).
 
+**SUPERSEDED 2026-09-05 by the tensor-core prefill (L2+L3), which is now the DEFAULT above a
+512-token prompt floor.** The re-anchor rows below are retained as the "before", and remain what
+`GOINFER_CUDA_FAST_PREFILL=0` reproduces. Full record:
+[`prefill-l2l3-phase4-peer-2026-09-05.md`](measurements/prefill-l2l3-phase4-peer-2026-09-05.md),
+goinfer `f966fa0c`, same box/driver/peer, both arms interleaved against Ollama per cell.
+
 **There is no single ratio. It crosses over.** TTFT rate (`prompt_tokens / TTFT`), medians of 6
-distinct prompts per cell, engines interleaved with a server restart between:
+distinct prompts per cell, engines interleaved with a server restart between. **(<1 means goinfer
+is faster.)**
 
-| K | 0.5B | 1.5B |
-|---|---|---|
-| 128 | **0.13×** | **0.27×** |
-| 512 | **0.51×** | **0.91×** |
-| 1024 | 1.06× | 1.76× |
-| 2048 | 2.33× | 3.37× |
-| 3900 | **4.82×** | **6.13×** |
+| K | 0.5B before | **0.5B now** | 1.5B before | **1.5B now** |
+|---|---|---|---|---|
+| 128 | 0.11× | **0.07×** | 0.26× | **0.14×** |
+| 512 | 0.49× | **0.10×** | 0.92× | **0.22×** |
+| 1024 | 1.00× | **0.17×** | 1.77× | **0.43×** |
+| 2048 | 2.21× | **0.38×** | 3.21× | **0.85×** |
+| 3900 | **4.45×** | **0.66× (AHEAD)** | **5.92×** | **1.52×** |
 
-(<1 means goinfer is faster.) goinfer wins below ~1024 prompt tokens at 0.5B and ~600 at 1.5B.
+**The crossover moves from ~K=600 to past K=2048 on the 1.5B, and off the measured ladder entirely
+on the 0.5B — goinfer is now faster to first token at every depth swept there.** The "before"
+column is this session's own exact arm, which reproduces the 2026-09-01 re-anchor within a few
+percent on every cell (1.5B K=3900: 707.1 vs 702 tok/s), so the two columns are comparable.
 
 > **TTFT RATE IS NOT PREFILL THROUGHPUT, AND THE GAP IS WORSE THAN THE TABLE.** TTFT carries each
 > engine's fixed per-request overhead, and that overhead is not common-mode: Ollama's fitted floor
@@ -494,6 +504,14 @@ distinct prompts per cell, engines interleaved with a server restart between:
 > token** is 0.377 → 0.932 ms on goinfer across the ladder (**2.5× growth**, the O(K²) attention
 > signature) against Ollama's flat 0.064 → 0.063. At the deepest interval that is **14.8× (0.5B)
 > and 12.7× (1.5B) behind** — the honest number for a prefill-speed claim.
+>
+> **AFTER L2+L3 (2026-09-05), that honest number is 1.89× (0.5B) and 3.16× (1.5B).** Marginal
+> ms/token at the deepest interval: 0.8905 → **0.1173** (0.5B, 7.59×) and 1.8391 → **0.4810**
+> (1.5B, 3.82×), against Ollama's 0.0616 / 0.1521. Ollama's own marginal is identical across both
+> arms (0.1520 vs 0.1521 on the 1.5B), which is the control that makes the delta goinfer's.
+> goinfer's marginal STILL RISES with K (0.0402 → 0.1173 on the 1.5B) where Ollama's is flat: the
+> residual O(K²) attention term. It is headroom rather than a floor — `ncu` puts the fused kernel
+> at **1.72% of tensor peak and 12.6% achieved occupancy**.
 >
 > The retired `4.7×` was not wrong at the depth it was taken; it was one point on a curve running
 > 0.13× → 6.13×, published without a depth. It also hid a real win: goinfer is 2–8× faster to

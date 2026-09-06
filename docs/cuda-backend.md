@@ -90,6 +90,44 @@ a K=V layer with no `v_norm` unit weight; and a model with the per-token debug s
 longer on that list** — a MoE layer's FFN now runs per row off the batched residual, and per-layer
 geometry and K=V are handled, so M26-class models take the batched path.
 
+### Tensor-core fast prefill (2026-09-05) — default ON above 512 prompt tokens
+
+Two kernels replace the batched-but-decode-shaped ones for prompt ingestion, and they are the first
+CUDA prefill code NOT bit-identical to decode:
+
+- **`attn_fused.cu`** (L2) — FlashAttention-style: one block per (head, 64-query tile), K/V streamed
+  in 64-key tiles through shared memory as f16, QK^T and PV both on `mma.sync.aligned.m16n8k8` (the
+  sm_75 shape; `m16n8k16` needs sm_80), softmax online in f32. No `BM × nKeys` score row is ever
+  materialised, which is the O(M·K) traffic with an O(K) serial tail that `attn_batched` pays.
+  Its shared memory is **constant in K**, so it is also immune to the 12,160-attended-key ceiling
+  `checkPrefillShmem` enforces for the exact path.
+- **`gemm_w4a8_mma.cu`** (L3) — a real GEMM on `mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32`,
+  64×64 block tile, activation panel staged once in shared and reused across the block's N-slice,
+  weights read once per block. The pack-time nibble permutation already yields four consecutive k
+  per unpacked register, so B-fragments come straight from the packed weight word with no
+  shared-memory transpose.
+
+**Measured** (1.5B int4, RTX 2070 SUPER, driver 595.91.07): attention category **3.76×**, gemv
+category **4.52×**, end-to-end prefill **3.91×** at K=3900 (5.451 s → 1.393 s) and **4.10×** at
+K=512. Against Ollama v0.32.5 the overhead-free marginal gap at depth goes **12.1× → 3.16×** (1.5B)
+and **14.5× → 1.89×** (0.5B).
+
+**Why there is a 512-token floor, and why it is not a round number.** These kernels are not
+bit-identical — L2 uses f16 K/V with an online-rescaled softmax, L3 re-associates the cross-group
+float sum — so they went through `task-prefill-gap.md` §3's fidelity gate: both arms scored against
+a CPU reference with f32 weights AND f32 activations, teacher-forced on the reference's own tokens.
+The gate **fails at K=256** and **passes at 512, 1024 and 3900 on both bench models**, so short
+prompts keep the exact path. At depth the fast path is *closer to the reference than the exact path
+is* (hard flips 7 vs 10 and 8 vs 12 on the 1.5B). The floor is 512 because that is the shallowest
+depth with a passing cell — a K=512 reference was generated specifically to avoid resting it on an
+interpolation between the gate's standing 256 and 1024 cells.
+
+`GOINFER_CUDA_FAST_PREFILL=0` is a complete undo; `=attn` / `=gemm` select one lever. The exact
+path (`attn_batched` + `gemv_w4a8_rn`) remains bit-identical to the M=1 decode kernels, remains what
+spec-decode verify and the parity gates run whatever this knob says, and still serves every shape
+the fast kernels decline: head dims outside {64, 128}, M below the mma row floors, int8 bundles,
+K not a multiple of 32, and every prompt below the floor.
+
 **The lesson outlived the specific bug, and then repeated itself in a form nothing on this page
 would have caught.** The batched pass allocates M-sized scratch, so it can pass every LOAD-time
 check and still decline at CALL time on a long prompt: a 7B at `-ctx 8192` on an 8 GB card asked

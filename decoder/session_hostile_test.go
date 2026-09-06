@@ -5,6 +5,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -150,5 +151,56 @@ func TestCheckGlobalLen(t *testing.T) {
 				"count from `keys` and indexes `vals` at the same positions, so a short one is "+
 				"an out-of-range read in the generation goroutine (M-04)", got)
 		}
+	}
+}
+
+// TestLoadSession_allocationCeilingNotBodyRatio pins the guard that replaced the body-ratio bound
+// on 2026-09-05, from both sides — the valid blob the old bound REJECTED, and the hostile one the
+// new bound must still refuse.
+//
+// The old check bounded pos by `len(body)/(numLayers·kvDim)`, asserting that "each of the pos
+// positions stores at least one byte across the numLayers·kvDim KV". kvsnapshot.go's own writer
+// contradicts that: a never-written ring serialises count/nLive/stride and stops, and a KV-shared
+// layer stores nothing, so a well-formed body can carry zero KV bytes at pos > 0. That made the
+// guard reject valid snapshots — including, in production, any session longer than ~8·W on an
+// all-sliding-window model, since a ring layer only ever stores min(count, W) rows.
+//
+// CI CANNOT SEE THIS FILE'S FAILURES WITHOUT A FIXTURE. loadTestModel skips when no model is
+// present, so on a fixture-less runner these tests skip and the package reports ok — which is how
+// the original defect sat on main unnoticed. If this test starts skipping in an environment that
+// is supposed to have a model, that is the finding, not a pass.
+func TestLoadSession_allocationCeilingNotBodyRatio(t *testing.T) {
+	m := loadTestModel(t)
+
+	// 1. THE CASE THE OLD BOUND GOT WRONG: pos > 0 with a body that carries no KV payload.
+	sess := m.NewSession(0)
+	sess.tokens = []int{11, 22, 33, 44, 55}
+	sess.cache.pos = len(sess.tokens)
+	blob := sess.Snapshot("m")
+	ref := m.NewCache(0)
+	if perPos := ref.numLayers * ref.kvDim; int64(len(sess.tokens)) <= int64(len(blob))/int64(perPos) {
+		t.Skipf("this model's geometry (perPos=%d, blob=%d B) does not exercise the old bound; "+
+			"the regression needs a body smaller than pos·perPos", perPos, len(blob))
+	}
+	if _, err := m.LoadSession(blob, ""); err != nil {
+		t.Errorf("a snapshot with unwritten rings and pos=%d must load; the body-ratio bound is "+
+			"what used to refuse it: %v", len(sess.tokens), err)
+	}
+
+	// 2. THE PROPERTY THE OLD BOUND EXISTED FOR, which the new one must keep: a header declaring a
+	//    pos whose cache would not fit in memory is refused BEFORE the allocation. Tokens are made
+	//    to agree with pos so the cheaper len(tokens) check cannot be what rejects it — otherwise
+	//    this would pass without the ceiling existing at all.
+	perPos := int64(ref.numLayers) * int64(ref.kvDim)
+	hugePos := int(maxSnapshotCacheBytes/(perPos*8)) + 1024
+	big := m.NewSession(0)
+	big.tokens = make([]int, hugePos)
+	big.cache.pos = hugePos
+	var se *SnapshotError
+	if _, err := m.LoadSession(big.Snapshot("m"), ""); !errors.As(err, &se) {
+		t.Errorf("pos=%d would allocate ~%d B and must be refused, got %v",
+			hugePos, int64(hugePos)*perPos*8, err)
+	} else if !strings.Contains(se.Error(), "ceiling") {
+		t.Errorf("refused for the wrong reason (want the allocation ceiling): %v", se)
 	}
 }

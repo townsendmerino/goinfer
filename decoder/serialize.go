@@ -86,6 +86,14 @@ const (
 	// layer count is the worst offender.
 	maxSerializedLayers  = 4096
 	maxSerializedExperts = 4096
+
+	// maxSnapshotCacheBytes caps the KV cache a SESSION SNAPSHOT may ask LoadSession to allocate
+	// (kvsnapshot.go). It bounds the ALLOCATION rather than the blob, because the allocation is
+	// what OOM'd (M-04) and because a well-formed snapshot body can be SMALL while pos is LARGE:
+	// a never-written ring and a KV-shared layer each serialise zero KV bytes, and a ring layer
+	// stores only min(count, W) rows. 16 GiB is far above any legitimate session (a 7B at
+	// pos 32768 wants ~3.8 GB) and far below the TBs the unbounded path could reach.
+	maxSnapshotCacheBytes int64 = 1 << 34
 )
 
 // SerializeError is returned by LoadSerializedWeights on any magic/version/

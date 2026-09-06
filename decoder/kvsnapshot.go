@@ -238,13 +238,27 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			"geometry mismatch: snapshot {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d} vs model {layers:%d kvDim:%d window:%d headDim:%d manualPos:%v quant:%d}",
 			numLayers, kvDim, window, headDim, manualPos, quant, ref.numLayers, ref.kvDim, ref.window, ref.headDim, ref.manualPos, ref.quant)}
 	}
-	// Each of the pos positions stores at least one byte across the numLayers·kvDim KV, so the
-	// body length caps pos. Division rather than multiplication, to avoid overflowing.
-	if perPos := ref.numLayers * ref.kvDim; int64(pos) > int64(len(data))/int64(perPos) {
-		return nil, &SnapshotError{"pos exceeds snapshot body capacity — corrupt or malicious"}
-	}
-	ref = m.NewCache(pos)
-
+	// TOKENS BEFORE THE ALLOCATION, AND A CEILING ON THE ALLOCATION ITSELF (2026-09-05).
+	//
+	// This used to bound pos by `len(data)/(numLayers·kvDim)`, on the stated premise that "each of
+	// the pos positions stores at least one byte across the numLayers·kvDim KV". THAT PREMISE IS
+	// CONTRADICTED BY THIS FILE'S OWN WRITER: a never-written ring serialises as count/nLive/stride
+	// and then `continue`s, and a KV-shared layer stores nothing, so a WELL-FORMED body can carry
+	// ZERO KV bytes while pos > 0 — the writer says so in as many words ("Empty fields (KV-shared /
+	// never-written rings) serialize as len 0"). The bound therefore rejected valid snapshots, and
+	// not only the hand-built one in TestLoadSession_rejectsCorrupt: a ring layer stores only
+	// min(count, W) rows, so on an ALL-sliding-window model any session longer than ~8·W failed it.
+	//
+	// The guard's actual purpose (M17/M-04) is to stop a blob-controlled pos from driving a huge
+	// m.NewCache(pos) — "a 20-byte header was a fatal runtime: out of memory at server boot". Two
+	// checks serve that better, and neither assumes anything about payload sizes:
+	//
+	//   1. pos == len(tokens), moved BEFORE the allocation. r.ints() already refuses to allocate
+	//      more than the body holds (`!r.need(n*4)`), so a 20-byte header yields no tokens and is
+	//      rejected here having allocated nothing. For the attack this was written for that is a
+	//      TIGHTER bound than the old ratio, and unlike it, an invariant the format guarantees.
+	//   2. an explicit ceiling on the BYTES the cache would occupy. The thing that OOM'd was the
+	//      allocation, so bound the allocation rather than a proxy that legitimate blobs fail.
 	tokens := r.ints()
 	// M-04: len(tokens) is blob-controlled and was never compared with pos. Too MANY tokens is
 	// the quiet one — rewindForReuse computes matched > c.pos, TruncateTo treats an
@@ -255,6 +269,14 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 			"tokens: %d ids for pos %d — a longer token list makes rewindForReuse report an "+
 				"exact match it never performed", len(tokens), pos)}
 	}
+	// K and V, f32 or int8 plus scales; 8 B per position per kvDim is the f32 upper bound and the
+	// one to budget against. Refused before makeslice ever sees it.
+	if want := int64(pos) * int64(ref.numLayers) * int64(ref.kvDim) * 8; want > maxSnapshotCacheBytes {
+		return nil, &SnapshotError{fmt.Sprintf(
+			"snapshot would allocate %d B of KV cache (pos %d × %d layers × %d kvDim), past the "+
+				"%d B ceiling — corrupt or malicious", want, pos, ref.numLayers, ref.kvDim, maxSnapshotCacheBytes)}
+	}
+	ref = m.NewCache(pos)
 	// Same per-layer structure order as Snapshot; ref already has the right rings
 	// + quant from NewCache, so fill its fields in place.
 	for l := range numLayers {

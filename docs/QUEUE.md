@@ -1136,9 +1136,9 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/kvcache.go:521` | goinfer | `base = max(startPos-r.w+1, 0)` |
 | `docs/audit-2026-09-02.md|decoder/kvcache_recurrent_test.go:13` | goinfer | `c.mamba = []*mamba2State{{ssm: []float32{1, 2, 3}, convWin: [][]float32{{9}}}}` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:214` | goinfer | `// M-04: numLayers == 0 and kvDim == 0 USED TO PASS — only negatives and over-maxes were` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:241` | goinfer | `// Each of the pos positions stores at least one byte across the numLayers·kvDim KV, so ` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:279` | goinfer | `if st != kvDim \|\| rr.count < 0 \|\| nLive > rr.w \|\| rr.count < nLive {` |
-| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:312` | goinfer | `} else if quant == kvI8 {` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:241` | goinfer | `// TOKENS BEFORE THE ALLOCATION, AND A CEILING ON THE ALLOCATION ITSELF (2026-09-05).` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:301` | goinfer | `if st != kvDim \|\| rr.count < 0 \|\| nLive > rr.w \|\| rr.count < nLive {` |
+| `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:334` | goinfer | `} else if quant == kvI8 {` |
 | `docs/audit-2026-09-02.md|decoder/kvsnapshot.go:71` | goinfer | `if c.hasRecurrentState() \|\| len(c.mlaLatent) > 0 {` |
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:107` | goinfer | `const ahead = 1` |
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:64` | goinfer | `if _, own := w.arch.ownForward(); own {` |
@@ -1212,17 +1212,17 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/scratch.go:328` | goinfer | `func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:345` | goinfer | `kh:     make([]float32, nKeys*hd),` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:86` | goinfer | `ws := &linalg.Workspace{}` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:105` | goinfer | `func canSerialize(a *Architecture) *SerializeError {` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:119` | goinfer | `anchor: func canSerialize(a *Architecture) *SerializeError {` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:1257` | goinfer | `return unsafe.Slice((*int8)(unsafe.Pointer(&b[0])), n)` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:1352` | goinfer | `func (r *giwReader) layer(l *LayerWeights) {` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:113` | goinfer | `func canSerialize(a *Architecture) *SerializeError {` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:119` | goinfer | `// The v6 completeness tail writes GProj, AttnSinks, per-expert biases, and the MLA / Ma` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:1265` | goinfer | `return unsafe.Slice((*int8)(unsafe.Pointer(&b[0])), n)` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:1360` | goinfer | `func (r *giwReader) layer(l *LayerWeights) {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:24` | goinfer | `// Discipline mirrors ken's index_serialize.go: magic + version + a config/quant` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:271` | goinfer | `// LoadSerializedWeights reconstructs a *Weights from a SerializeWeights blob` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:305` | goinfer | `// CRC: verify the whole payload (everything before the trailing crc word)` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:315` | goinfer | `var cfg Config` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:352` | goinfer | `n := int(r.u32())` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:395` | goinfer | `func validateShapes(w *Weights, arch *Architecture) *SerializeError {` |
-| `docs/audit-2026-09-02.md|decoder/serialize.go:985` | goinfer | `func (w *giwWriter) layer(l *LayerWeights) {` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:279` | goinfer | `// LoadSerializedWeights reconstructs a *Weights from a SerializeWeights blob` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:313` | goinfer | `// CRC: verify the whole payload (everything before the trailing crc word)` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:323` | goinfer | `var cfg Config` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:360` | goinfer | `n := int(r.u32())` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:403` | goinfer | `func validateShapes(w *Weights, arch *Architecture) *SerializeError {` |
+| `docs/audit-2026-09-02.md|decoder/serialize.go:993` | goinfer | `func (w *giwWriter) layer(l *LayerWeights) {` |
 | `docs/audit-2026-09-02.md|decoder/serialize_census_test.go:135` | goinfer | `// "passed" while the new code went unexercised.` |
 | `docs/audit-2026-09-02.md|decoder/session.go:176` | goinfer | `func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt []int, ma` |
 | `docs/audit-2026-09-02.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
@@ -1536,7 +1536,7 @@ supports.
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:734` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
-| `docs/queue-engineering.md|decoder/serialize.go:763` | goinfer | `func (w *Weights) hasPopulatedLayers() bool {` |
+| `docs/queue-engineering.md|decoder/serialize.go:771` | goinfer | `func (w *Weights) hasPopulatedLayers() bool {` |
 | `docs/queue-engineering.md|decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
@@ -1719,7 +1719,7 @@ supports.
 | `docs/task-zeno-compare.md|decoder/gguf.go:1448` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1551` | goinfer | `if g.Has("output.weight") {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1561` | goinfer | `if arch.gemma4 != nil {` |
-| `docs/task-zeno-compare.md|decoder/serialize.go:177` | goinfer | `anchor: func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error)` |
+| `docs/task-zeno-compare.md|decoder/serialize.go:177` | goinfer | `anchor: func SerializeWeightsRow4(w *Weights, id string) ([]byte, error) {` |
 | `docs/task-zeno-compare.md|decoder/weightmat.go:125` | goinfer | `func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) ` |
 | `docs/task-zeno-compare.md|internal/prequant/prequant.go:66` | goinfer | `// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a` |
 
