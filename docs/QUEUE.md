@@ -1109,9 +1109,9 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/forwardn_test.go:160` | goinfer | `for i := range K {` |
 | `docs/audit-2026-09-02.md|decoder/forwardn_test.go:97` | goinfer | `// TestForwardN_matchesSequential checks the batched multi-position forward` |
 | `docs/audit-2026-09-02.md|decoder/fp8.go:124` | goinfer | `// Shape is checked against the ARCHITECTURE (in/out from the config), not just against` |
-| `docs/audit-2026-09-02.md|decoder/fusedattn.go:114` | goinfer | `a0, a1 := max(lo[i], k0), min(hi[i], k1-1)` |
-| `docs/audit-2026-09-02.md|decoder/fusedattn.go:45` | goinfer | `func fusedAttention() bool { return os.Getenv("GOINFER_FUSED_ATTENTION") != "0" }` |
-| `docs/audit-2026-09-02.md|decoder/fusedattn.go:85` | goinfer | `anchor: func attendTileFused(` |
+| `docs/audit-2026-09-02.md|decoder/fusedattn.go:114` | goinfer | `anchor: func (f *fusedScratch) fits(kt, hd, nKeys int) bool {` |
+| `docs/audit-2026-09-02.md|decoder/fusedattn.go:46` | goinfer | `func fusedAttention() bool { return os.Getenv("GOINFER_FUSED_ATTENTION") != "0" }` |
+| `docs/audit-2026-09-02.md|decoder/fusedattn.go:85` | goinfer | `// The materialized path wants [hd, nKeys] and a key-range slice of THAT is not` |
 | `docs/audit-2026-09-02.md|decoder/gguf.go:1341` | goinfer | `// canSerialize once refused MLA / Mamba-2 / Gemma-4 PLE / Llama-4 here; since v6 the wr` |
 | `docs/audit-2026-09-02.md|decoder/gguf.go:1651` | goinfer | `if arch.gemma4 != nil {` |
 | `docs/audit-2026-09-02.md|decoder/gguf.go:1654` | goinfer | `if err := sink.writeHeadGlobals(w, id); err != nil {` |
