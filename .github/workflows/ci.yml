@@ -157,6 +157,21 @@ jobs:
   # workspace (the committed repo has none — go.work is gitignored). Once
   # goinfer is tagged, bump gpu/go.mod's goinfer require to the real version
   # and these workspace steps become unnecessary.
+  readme-smoke:
+    name: readme-smoke (a stranger's install, from an empty dir)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: 'go.mod' }
+      # Runs the README's <!-- smoke --> commands in a temp dir OUTSIDE the checkout with
+      # GOWORK=off, then BUILDS against what they installed. The build step is the one that
+      # matters: `go get github.com/townsendmerino/goinfer` exits 0 and still leaves you unable
+      # to compile, which is how v0.16.0 shipped an install line that did not work
+      # (docs/measurements/cold-user-2026-09-06.md, scenario C). Verified to go red on that line.
+      - name: readme-smoke
+        run: bash scripts/readme_smoke.sh README.md
+
   gpu:
     runs-on: ubuntu-latest
     steps:

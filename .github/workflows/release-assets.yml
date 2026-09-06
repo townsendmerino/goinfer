@@ -46,6 +46,73 @@ jobs:
               go build -ldflags="-s -w" -trimpath -o "$out" ./demo/chat
           done
           ls -lh dist
+
+      # goinfer-serve, per platform, WITH the backend that platform can actually use.
+      #
+      # THE COLD-USER RUN (docs/measurements/cold-user-2026-09-06.md) FOUND BOTH HALVES OF THIS
+      # MISSING AT v0.16.0, and they compound:
+      #   - the release shipped 21 assets and NOT ONE contained the string "serve", while the
+      #     README used `goinfer-serve` as a runnable command three times. A stranger reached a
+      #     server only by probing pkg.go.dev URLs for an HTTP 200.
+      #   - the chat binaries above are built with NO -tags, so the darwin asset cannot use the
+      #     GPU. That is what the control leg measured as "Ollama is 2.2x faster at decode": a
+      #     PACKAGING gap wearing an engine gap's clothes.
+      #
+      # THE ENTRYPOINT IS PER-BACKEND, NOT A TAG ON THE ROOT. Since v0.10.0 the root cmd/serve
+      # imports no backend, and `-tags metal` on it builds a CPU binary that says otherwise —
+      # cmd/serve/backendtag_guard_*.go turns that into a build failure naming the right command.
+      # So darwin builds ./metal/cmd/serve, linux builds ./cuda/cmd/serve, and windows (no GPU
+      # backend) builds the root. Each submodule is its own Go module: cd in, and let it resolve
+      # the root from the proxy at THIS tag, which is exactly what standalone-build.yml proves is
+      # possible at tag time.
+      #
+      # All of these are CGO_ENABLED=0. `-tags gpu` (WebGPU) is deliberately NOT here: it needs
+      # cgo, so it cannot be in a static release asset.
+      - name: cross-compile goinfer-serve per platform
+        run: |
+          set -euo pipefail
+          root="$PWD"
+          build() { # build <module-dir> <tags> <goos> <goarch>
+            local dir="$1" tags="$2" os="$3" arch="$4"
+            local out="$root/dist/goinfer-serve-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
+            echo "building serve $os/$arch from $dir (tags='$tags')"
+            ( cd "$root/$dir" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS=-mod=mod \
+                go build ${tags:+-tags "$tags"} -ldflags="-s -w" -trimpath -o "$out" ./cmd/serve )
+          }
+          build metal metal darwin arm64
+          build metal metal darwin amd64
+          build cuda  cuda  linux  amd64
+          build cuda  cuda  linux  arm64
+          build .     ""    windows amd64
+          build .     ""    windows arm64
+          ls -lh dist
+
+      # ASSERT WHAT SHIPPED, rather than trusting the loop above. Two checks, because the two
+      # failures are different: a missing binary is a release that contradicts its own README, and
+      # a binary built without its backend is the v0.16.0 defect recurring silently.
+      - name: assert serve assets exist and carry their backend
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in dist/goinfer-serve-*; do [ -f "$f" ] || { echo "no serve assets built"; exit 1; }; done
+          for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
+            [ -f "dist/goinfer-serve-$t" ] || { echo "MISSING dist/goinfer-serve-$t"; fail=1; }
+          done
+          for t in windows-amd64 windows-arm64; do
+            [ -f "dist/goinfer-serve-$t.exe" ] || { echo "MISSING dist/goinfer-serve-$t.exe"; fail=1; }
+          done
+          # `go version -m` prints the build settings baked into the binary, including -tags.
+          # This is the check that would have gone red on v0.16.0.
+          for t in darwin-arm64 darwin-amd64; do
+            go version -m "dist/goinfer-serve-$t" | grep -q -- '-tags=metal' \
+              || { echo "dist/goinfer-serve-$t was NOT built with -tags metal"; fail=1; }
+          done
+          for t in linux-amd64 linux-arm64; do
+            go version -m "dist/goinfer-serve-$t" | grep -q -- '-tags=cuda' \
+              || { echo "dist/goinfer-serve-$t was NOT built with -tags cuda"; fail=1; }
+          done
+          [ "$fail" = 0 ] || { echo "serve asset assertions FAILED"; exit 1; }
+          echo "serve assets: 6 present, darwin=metal linux=cuda confirmed from build settings"
       - uses: actions/upload-artifact@v4
         with: { name: plain, path: dist/ }
 

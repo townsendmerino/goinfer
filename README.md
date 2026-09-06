@@ -14,16 +14,56 @@ usual render target — a `darwin-arm64` binary is what actually ran); a desktop
 roughly half the on-screen tok/s on the identical harness — see
 `docs/measurements/demo-chat-macbook-2026-08-22.md`.</sub>
 
+## Install
+
+Two ways in. **Download a binary** — nothing to build, no Go toolchain:
+
+```bash
+# macOS arm64; swap the suffix for your platform
+curl -fsSL -o goinfer-serve https://github.com/townsendmerino/goinfer/releases/latest/download/goinfer-serve-darwin-arm64
+chmod +x goinfer-serve
+```
+
+Or **build from source** with Go 1.27+:
+
+```bash
+# <!-- smoke --> installs as `serve` (the directory name); rename it if you want
+go install github.com/townsendmerino/goinfer/cmd/serve@latest
+```
+
+> That builds the **CPU** server. For the GPU on your machine, build the backend's own
+> entrypoint — `-tags metal` on `cmd/serve` does *not* work and fails the build saying so:
+>
+> ```bash
+> go install -tags metal github.com/townsendmerino/goinfer/metal/cmd/serve@latest   # macOS
+> go install -tags cuda  github.com/townsendmerino/goinfer/cuda/cmd/serve@latest    # Linux + NVIDIA
+> ```
+>
+> The downloaded `goinfer-serve` assets already have this built in — Metal on macOS, CUDA on
+> Linux. `goinfer-serve --version` prints which backends a given binary carries.
+
+**Using it as a library?** `go get github.com/townsendmerino/goinfer` fetches the module but is
+**not enough to build against** — the packages live in their own import paths, and you will get
+`missing go.sum entry for module providing package …`. Get the packages you import:
+
+```bash
+# <!-- smoke --> from inside your own module (`go mod init …` first)
+go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest
+```
+
+See [`examples/embed/main.go`](examples/embed/main.go) for a complete 40-line program.
+
 ## Download and run
 
-Two kinds of binary on the [latest release](https://github.com/townsendmerino/goinfer/releases/latest)
-(macOS / Linux / Windows, Intel + ARM):
+Binaries on the [latest release](https://github.com/townsendmerino/goinfer/releases/latest)
+(macOS / Linux / Windows, Intel + ARM). Sizes are the darwin-arm64 assets of v0.16.0:
 
 | asset | size | what it is |
 |---|---|---|
-| `goinfer-chat-<os>-<arch>` | ~5 MB | the runtime; point it at your own GGUF |
-| `goinfer-chat-0.5b-<os>-<arch>` | ~615 MB | runtime **and** model in one file — no download, no install |
-| `goinfer-chat-1.5b-<os>-<arch>` | ~1.7 GB | same, with the 1.5B coder model |
+| `goinfer-serve-<os>-<arch>` | ~16 MB | the **server** — OpenAI + Anthropic APIs, web UI, GPU built in |
+| `goinfer-chat-<os>-<arch>` | 8.3 MB | the single-shot runtime; point it at your own GGUF |
+| `goinfer-chat-0.5b-<os>-<arch>` | 652 MB | runtime **and** model in one file — no download, no install |
+| `goinfer-chat-1.5b-<os>-<arch>` | 1.81 GB | same, with the 1.5B coder model |
 
 ```bash
 # model included — nothing else to fetch
@@ -94,6 +134,31 @@ From source, against any supported checkpoint (the chat template is applied auto
 ```bash
 go run ./demo/chat --model ~/models/gemma-4-E2B_q4_0-it.gguf
 ```
+
+## Running a model bigger than your RAM
+
+A 30B-class MoE does not fit in 16 GB, and loading it anyway will drive your machine into swap
+before anything says so. `-stream-weights` is the answer, and it is not a fallback mode — it is
+how these models are meant to run here:
+
+```bash
+# <!-- smoke-help --> pages weights on demand out of an mmap'd .giw
+goinfer-serve -stream-weights -weight-cache 6GiB -model ~/models/qwen3.5-35b-a3b-q4_k_m.gguf
+```
+
+**Rule of thumb:** if the checkpoint file is larger than about half your physical RAM, use
+`-stream-weights`. Resident memory is then capped near `-weight-cache` rather than the model
+size — a 35B-A3B runs in ~16–20 GB of machine instead of the ~21 GB the weights alone would
+need, because only the experts a token actually routes to are resident.
+
+Measured on an M1 Pro / 16 GB with a 21 GB 35B-A3B: without the flag, **+7.8 GB of swap in five
+seconds**; with it, RSS peaked at **8.95 GB** and fell back to 2.7 GB, with zero swapouts
+([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
+scenario D).
+
+**This is `goinfer-serve`'s job, not `goinfer-chat`'s.** The single-shot chat runtime holds all
+weights resident by design; it has no `-stream-weights`. If your model is bigger than your RAM,
+reach for the server.
 
 ## A Go struct the model cannot violate
 
@@ -207,12 +272,6 @@ what the demos and `serve` use: load a model, tokenize, render a chat prompt,
 generate, optionally constrain. The backend/residency seam, family descriptors,
 drafters, multimodal and serialization plumbing are named Experimental and stay
 outside the promise. The split takes effect at the v1.0 tag, not before.
-
-## Install
-
-```bash
-go get github.com/townsendmerino/goinfer
-```
 
 ## License
 
