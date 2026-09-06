@@ -17,6 +17,66 @@ any surface may still change.
 
 ## [v0.16.0] — 2026-09-05
 
+This release is two things at once. The headline is prefill: CUDA prompt ingestion moves to tensor
+cores and is on by default above 512 tokens, MoE prefill runs expert-major, and the CPU path gets
+head fan-out, a fused schedule and aikit's register-blocked int4 tile — so the prefill deficit
+against Ollama, the repo's largest open gap, narrows on every backend. Underneath that is a
+whole-repo audit (`docs/audit-2026-09-02.md`) and its review (`docs/review-2026-09-04.md`) worked
+through in a fortnight, plus the first pieces of the onboarding work: a `pull` command, a browser
+UI, a `serve check` doctor and a startup banner. Three defaults in this release change output at
+temperature 0 on long prompts; all three are called out below with their opt-outs.
+
+### Added
+
+- **LFM2 / LFM2.5 as an experimental family** (`lfm2`; gated short convolution on most layers, GQA +
+  QK-norm on the rest). CPU-only — no backend implements the short-conv feature yet — and
+  parity-gated against a tiny oracle (100.0% / 1.00000). The bring-up found two silent bugs the
+  forward hid (a zeroed `NormEps` read from the wrong JSON key, an absent `AttnScale`), which is why
+  `resolveArchitecture` now runs a `validateResolved()` chokepoint for every family, written or not
+  yet. The first cut also fell through seven family-dispatch lists (any prompt of two or more tokens
+  panicked) and serialized without its conv weights; both were caught by the audit before the tag
+  and are fixed here (`audit-2026-09-02.md` C-01/C-02/C-03).
+
+- **`pull` — fetch a model without leaving the tool.** `goinfer-chat pull <owner/repo>[:quant]` and
+  `serve pull` fetch a GGUF from HuggingFace, sha256-verified from the tree API, resumable; `demo:`
+  shortcuts carry pinned digests, and a cached `demo:` ref resolves offline before any network call.
+  `--model` accepts `hf:` and `demo:` refs directly. `pull -embed` bakes a pulled model into a single
+  static binary. The package is exported as `pull` for embedders. HF repo names are validated
+  against an allow-list rather than a slash count.
+
+- **`serve -web`** — a local browser UI for chat and model pulls, served from the same binary. The
+  root page is reachable without the API key so a browser can load it; the pull/list routes behind
+  it are same-origin-checked and authenticated like the rest of the API.
+
+- **`serve check`** — drives a running server the way an agent harness would (chat, streaming,
+  tool call, structured output) and reports each surface; the structured-output check verifies the
+  returned value, not only that JSON parsed, and the summary names what it skipped.
+
+- **The startup banner now reports the state a harness otherwise has to discover** — backend,
+  residency and prefill path (with its chunk width), and the declines that change what the server
+  can do, including a pre-tokenizer shape this build cannot walk (`PreTokenizerDecline`).
+
+- **gpt-oss decodes GPU-resident on CUDA.** The resident gate (G7) ran for the first time and
+  failed: CUDA never applied gpt-oss's per-expert down-projection bias, and under expert caching the
+  bias table was indexed by slot id rather than expert id. With `gemv_w4a8_moe_wacc_bias` the parity
+  cosine went 0.750 → 0.9993 and the gate is green.
+
+- **Release binaries are attached to the GitHub Release** (the README's download link previously
+  pointed at nothing), the embedded 1.5B tier ships, and `NOTICE` now lists the Qwen2.5-Coder
+  weights those binaries embed, with their licence (`audit-2026-09-02.md` M-33).
+
+- **Peer benchmarking:** `scripts/bench_peer.py` gains llama.cpp as a third engine (with `--fit`
+  left to place MoE layers rather than a forced `-ngl 99`) and MLX on the Mac; a new
+  `scripts/bench_peer_prefill.py` measures TTFT-derived prefill rate with unique prefixes per
+  request so a peer's prompt cache cannot stand in for its prefill. The redone matrix is scoped in
+  `docs/task-peer-benchmarks.md`; its first pass is in `docs/benchmarks.md`.
+
+- **MTP / NextN self-draft head loader** (`decoder/mtp.go`) — reads the head that every existing
+  load path skips, by two detection routes because the formats disagree (GGUF declares a count in
+  arch-prefixed metadata; the safetensors Qwen checkpoints declare nothing and are discoverable only
+  by tensor presence). **Measurement adapter only**: nothing is wired into serving, the router or any
+  generation path.
+
 ### Changed
 
 - **CUDA prompt prefill runs on tensor cores, and is ON BY DEFAULT for prompts of 512 tokens or
@@ -45,19 +105,6 @@ any surface may still change.
   particular `TestPrefillTTFT`'s "batched" column now times the fast path at K ≥ 512 without the
   test having changed; set `=0` to reproduce the older rows.
 
-### Fixed
-
-- **`LoadSession` rejected valid session snapshots.** The guard bounding a blob's `pos` by
-  `len(body)/(numLayers·kvDim)` assumed every position stores at least one byte of KV — which
-  `kvsnapshot.go`'s own writer contradicts: a never-written ring and a KV-shared layer each
-  serialise zero KV bytes, and a ring layer stores only `min(count, W)` rows. In production that
-  rejected any session longer than ~8× the window on an all-sliding-window model. Replaced with two
-  checks that do not assume a body layout: `pos == len(tokens)` moved *before* the allocation (a
-  tighter bound than the old ratio for the OOM it was written for, and an invariant the format
-  actually guarantees), plus an explicit ceiling on the bytes the cache would occupy. The original
-  hostile-header protections are unchanged and still tested.
-
-
 - **Prefill attention now uses a FUSED (FlashAttention-style) schedule under `--cpu-fast-attention`,
   and THIS CHANGES OUTPUT.** The score block is kept resident and folded into the output
   accumulator with a running max and running sum, instead of materialising a `kt × nKeys` matrix
@@ -77,80 +124,6 @@ any surface may still change.
     user-facing flag for that reason. `GOINFER_FUSED_ATTENTION=0` restores the materialized path.
   - Declines, rather than approximating, for acc64 (whose bit-identity it would break) and for tree
     attention. See `docs/measurements/p19-fused-attention-2026-09-01.md`.
-
-### Performance
-
-- **MoE prefill runs the experts EXPERT-MAJOR — 4.36× end-to-end, bit-identical.** At K=4096 on a
-  full 28-layer Mellum2, batched prefill went 1206.9 s → 276.6 s (second pair 4.50×). Previously
-  the FFN ran one row at a time, issuing its three expert matmuls at M=1, so an expert's weights
-  were re-read for every token routed to it — ~10³ times per expert per layer at K=8192.
-  - **Bit-identical, so nothing about the output changes** — no golden updates, no documented
-    divergence, no flag to reason about. Achieved by computing every (row, rank) expert output
-    first and folding each row in *routing-rank* order, since float addition is not associative and
-    an expert-major visit order would otherwise change results.
-  - It declines, rather than approximating, for a live expert pager, a shared expert, and the
-    routing test seams; those fall through to the per-row path unchanged.
-  - `GOINFER_MOE_EXPERT_MAJOR=0` restores the old path.
-  - **The obvious explanation is wrong and was measured, not assumed:** per-row allocation churn
-    (339,293 GCs / 20.9 GB in the profile) accounts for *none* of it — reusing one scratch across
-    the row loop is worth 0.99×. See `docs/measurements/p18-expert-major-e2e-2026-09-01.md`.
-
-### Fixed
-
-- **Speculative decode's `Theta` could not express Metal, so Metal drafted when it should not
-  draft at all.** `AdaptiveDepth.Theta` was documented and enforced in `[0,1)` and reset anything
-  outside that to 0.5. Metal measures **1.006–1.048** (two models, two depths), so every value
-  Metal actually has was rejected and replaced by 0.5 — and because depth is
-  `floor(ln Theta / ln alpha)`, a *smaller* Theta drafts *deeper*, so the substitute was the most
-  over-drafting setting available. Measured effect on Metal: speculation was **1.07× slower than
-  not speculating**; wiring the measured value recovers it (**~6%**) by declining to draft.
-  - `Theta >= 1` is now legal and means what it measures — a verify node costing at least a whole
-    target step, which no acceptance rate repays.
-  - The periodic probe that forces `D>=1` to refresh a stale estimate is skipped under
-    `Theta >= 1`, where it can never change the answer and is pure wasted draft work.
-  - **Theta is now wired per backend from the probes** (CPU 0.5, CUDA 0.251, Metal 1.02) instead of
-    every backend running the CPU constant. It keys on *resident vs staged*, not on the requested
-    backend, because a declined-residency model verifies on the CPU path.
-  - **Validated end-to-end on the RTX 2070 SUPER** (driver 595.91.07): on two of four cells the
-    shipped 0.5 was *slower than not speculating at all* (0.91× and 0.92× of no-drafter), and the
-    wired value returns both to parity (+9.3%, +6.0%) while leaving the already-winning cells
-    unchanged. Zero lossless violations. The conservative 0.251 lands within ~1% of the true
-    measured 0.155/0.235 on every cell, so under-claiming the win cost nothing here — a result,
-    not a guarantee.
-  - **Read the size honestly: this buys back a regression rather than adding a speedup**, on both
-    Metal and CUDA. See `docs/measurements/theta-per-backend-2026-09-01.md` and
-    `docs/measurements/theta-cuda-ab-2026-09-01.md`.
-
-### Performance
-
-- **f32 prefill attention now fans out over query heads — 1.58× at K=2048 and 1.92× at K=4096
-  end-to-end, with byte-identical output.** CPU only; CUDA and Metal attention are separate
-  implementations and are untouched. Applies to the f32 prefill path, i.e. prompts above the
-  512-token floor with the default `--cpu-fast-attention`.
-  - **It is bit-identical, so nothing about the output changes** — this is the same computation on
-    more cores. The committed long-prompt golden, which pins real token ids through this exact
-    path, passes unchanged, and the A/B asserts the two arms' logits match bitwise before timing
-    anything.
-  - **The item was costed at ~13% and the estimate was wrong for an instructive reason.** It rested
-    on "the f32 branch is single-threaded by construction". That is true of the head loop but not
-    of the work: `MatmulBT` already fanned out internally over output columns, so the path was
-    running at 1.67× utilization, not 1.0×. The ~13% came from feeding a *serial-vs-serial* kernel
-    ratio into an Amdahl model built on a *parallel-path* profile share. What was actually left on
-    the table was the ~58% of the arm outside any matmul — the K/V gather, the per-row softmax and
-    the scatter — which only head-level fan-out reaches.
-  - Every worker slot already owned a full-size `kh`/`vt` pair (`prefillAttnWorkers` had budgeted
-    them on every prefill all along, including the acc64 path that never touches them), so the
-    fan-out needed no new allocation. `GOINFER_PREFILL_ATTN_WORKERS=1` restores the previous
-    single-worker shape.
-  - **SCOPE, measured after the fact and worth reading before quoting the number:** the 1.92× is a
-    0.5B *dense* model at K=4096. On the full 28-layer Mellum2 **MoE** at K=8192 the fan-out adds
-    nothing resolvable — 1.597× against the 1.59× that f32 alone already delivered — because at
-    that size attention is ~70% of the work under acc64 and the f32 kernel swap alone collapses
-    most of it. Do not quote these figures for large-MoE prefill.
-  - Measurement, method and the retraction: `docs/measurements/a3-f32-attention-fanout-2026-09-01.md`,
-    `docs/measurements/mellum2-fullmodel-profile-RESULT.md`.
-
-### Changed
 
 - **`--cpu-fast-attention` is now ON BY DEFAULT, floored at 512 prompt tokens, with
   `--cpu-exact-prefill` as the opt-out.** Prompt attention on the CPU backend runs in f32 unless
@@ -195,7 +168,70 @@ any surface may still change.
   1.1% at T = 0.2 — an asymmetry that settles the question independently of exactly where the
   crossover sits.
 
+- `scripts/bench_peer.py` now takes its token count from each engine's own reported `usage` where
+  the engine provides one, falling back to frame counting only where it does not, and records a
+  `tokens_per_chunk` diagnostic per cell so the assumption is a recorded number rather than an
+  inherited belief.
+
 ### Performance
+
+- **Resident prefix reuse — an agent's third turn goes 9.13 s → 0.42 s (21.7×).** A GPU-resident
+  model used to re-prefill the whole conversation on every request; it now reuses the resident KV
+  for the longest matching prefix and prefills only the suffix, so a turn costs its new tokens, not
+  its history. In `docs/benchmarks.md` §B10 that is a warm TTFT of 7 ms against a cold 1.7–1.9 s on
+  the same 256-token prompt. The reused prefix is held to the same bit-identity contract as a cold
+  prefill.
+  - Recurrent families (Gated-DeltaNet, Mamba-2 hybrids) are handled rather than assumed: reuse
+    first excluded them outright after it was found returning wrong output on Qwen3.5 (the
+    positional bookkeeping has no notion of recurrent state), and now reuses an *exact extension*
+    only — the same exactness rule the CPU `Session` already applied (`docs/task-recompute-audit.md`
+    R-01 phase 0). A rewind still costs a cold prefill on those families.
+  - The cache is committed wherever it is provably consistent — natural completion, both cancel
+    exits, and speculative completion — and cleared by every path that writes it without completing
+    (R-00, R-02, R-03; review V-04, V-09, V-11). Agent harnesses cancel constantly, and each of
+    those used to cost the next turn a full re-prefill.
+
+- **MoE prefill runs the experts EXPERT-MAJOR — 4.36× end-to-end, bit-identical.** At K=4096 on a
+  full 28-layer Mellum2, batched prefill went 1206.9 s → 276.6 s (second pair 4.50×). Previously
+  the FFN ran one row at a time, issuing its three expert matmuls at M=1, so an expert's weights
+  were re-read for every token routed to it — ~10³ times per expert per layer at K=8192.
+  - **Bit-identical, so nothing about the output changes** — no golden updates, no documented
+    divergence, no flag to reason about. Achieved by computing every (row, rank) expert output
+    first and folding each row in *routing-rank* order, since float addition is not associative and
+    an expert-major visit order would otherwise change results.
+  - It declines, rather than approximating, for a live expert pager, a shared expert, and the
+    routing test seams; those fall through to the per-row path unchanged.
+  - `GOINFER_MOE_EXPERT_MAJOR=0` restores the old path.
+  - **The obvious explanation is wrong and was measured, not assumed:** per-row allocation churn
+    (339,293 GCs / 20.9 GB in the profile) accounts for *none* of it — reusing one scratch across
+    the row loop is worth 0.99×. See `docs/measurements/p18-expert-major-e2e-2026-09-01.md`.
+
+- **f32 prefill attention now fans out over query heads — 1.58× at K=2048 and 1.92× at K=4096
+  end-to-end, with byte-identical output.** CPU only; CUDA and Metal attention are separate
+  implementations and are untouched. Applies to the f32 prefill path, i.e. prompts above the
+  512-token floor with the default `--cpu-fast-attention`.
+  - **It is bit-identical, so nothing about the output changes** — this is the same computation on
+    more cores. The committed long-prompt golden, which pins real token ids through this exact
+    path, passes unchanged, and the A/B asserts the two arms' logits match bitwise before timing
+    anything.
+  - **The item was costed at ~13% and the estimate was wrong for an instructive reason.** It rested
+    on "the f32 branch is single-threaded by construction". That is true of the head loop but not
+    of the work: `MatmulBT` already fanned out internally over output columns, so the path was
+    running at 1.67× utilization, not 1.0×. The ~13% came from feeding a *serial-vs-serial* kernel
+    ratio into an Amdahl model built on a *parallel-path* profile share. What was actually left on
+    the table was the ~58% of the arm outside any matmul — the K/V gather, the per-row softmax and
+    the scatter — which only head-level fan-out reaches.
+  - Every worker slot already owned a full-size `kh`/`vt` pair (`prefillAttnWorkers` had budgeted
+    them on every prefill all along, including the acc64 path that never touches them), so the
+    fan-out needed no new allocation. `GOINFER_PREFILL_ATTN_WORKERS=1` restores the previous
+    single-worker shape.
+  - **SCOPE, measured after the fact and worth reading before quoting the number:** the 1.92× is a
+    0.5B *dense* model at K=4096. On the full 28-layer Mellum2 **MoE** at K=8192 the fan-out adds
+    nothing resolvable — 1.597× against the 1.59× that f32 alone already delivered — because at
+    that size attention is ~70% of the work under acc64 and the f32 kernel swap alone collapses
+    most of it. Do not quote these figures for large-MoE prefill.
+  - Measurement, method and the retraction: `docs/measurements/a3-f32-attention-fanout-2026-09-01.md`,
+    `docs/measurements/mellum2-fullmodel-profile-RESULT.md`.
 
 - **CUDA C′ expert cache batches its uploads** through `gpu.UploadBatch` (aikit `gpu/v0.32.0`),
   submitting one batch per layer instead of two synchronizes per admitted expert:
@@ -210,55 +246,39 @@ any surface may still change.
   denominator: against the **CPU pager** measured in the same session the Metal path's advantage is
   **1.23×**, not 3.23× — the byte-copy arm was not the shippable alternative.
 
-### Added
+- **aikit v1.32.0 → v1.34.0, across all five modules.** The register-blocked W4A8 int4 tile (S-01)
+  roughly doubled Apple Silicon CPU prefill (67.6 → 141.7 tok/s at K=512 on the M1 Pro, pre/post on
+  one box): the Mac CPU-prefill peer row went from **2.98× behind Ollama at K=512 and 1.80× at 3900**
+  to **1.54× behind at 512 and 0.91× — ahead — at 3900**, marginal ratio 0.86× goinfer-faster
+  (`docs/measurements/cpu-peer-prefill-2026-09-05.md`); int8int8 no longer beats int4 at M>1.
+  v1.33.0 replaced three Go fallback blocks with NEON — the int8 quantiser (13–19×), and the f64
+  attention AV/QK accumulators (2.3–2.5× / 1.7–2.0×), worth **2.14× on depth-8192 attention** on the
+  M1 — all bit-identical to the blocks they replace. v1.34.0 adds `MatmulBTW4A8Batch`.
+  `aikit/gpu` v0.31.0 brings the device-to-device copy that spec/09's state-snapshot design was
+  waiting on.
 
-- **MTP / NextN self-draft head loader** (`decoder/mtp.go`) — reads the head that every existing
-  load path skips, by two detection routes because the formats disagree (GGUF declares a count in
-  arch-prefixed metadata; the safetensors Qwen checkpoints declare nothing and are discoverable only
-  by tensor presence). **Measurement adapter only**: nothing is wired into serving, the router or any
-  generation path.
+- **WebGPU decode attention splits over keys, not head dims — 2.4× at 1k context**; and the
+  quantize kernel no longer computes its row max-abs serially on lane 0 (**104.8 → 118.4 tok/s**,
+  bit-identical). §B10 measures the resident WebGPU paths **~1.25–1.35× up** on the June table.
 
-### Measured and NOT shipped
+- **Constrained decoding: an exact plain-string bitmap** replaces the per-token automaton walk for
+  literal strings — mask **6.03 → 0.35 ms**, constrained decode **1.21×** end-to-end; the EOS map
+  became a slice (mask −15%). Measured under `docs/audit-2026-09-02.md` P-20.
 
-- **Expert-major MoE prefill batching is parked.** Its ceiling was measured at **under 5%** at
-  K=1–2k and was **not resolvable above run-to-run spread** at K ≥ 4096 — the two passes disagreed
-  in sign at K=8192. Attention runs **77.3% → 97.1%** of MoE prefill work from K=1024 to K=8192
-  while all weight matmul falls to 2.9%, so the two levers scale in opposite directions. The case
-  for it has to be made on streaming I/O, not compute, and measured there.
+- **Loading and CPU MoE:** `loadFusedExperts` no longer materialises whole 3-D f32 expert tensors per
+  layer × GOMAXPROCS (P-11); the Gated-DeltaNet state update walks its `[hk,hv]` state row-major
+  instead of stride-`hv` (P-07); the fused-attention scratch that the P19 default allocated per
+  decoded token and never read — 11.9 MB/token at context 256, 42.6 MB at 1024 — is allocated only
+  where it is used (M-03); the safetensors source mapping is released at end of load, not at `Close`
+  (P13); the layer pager's resident set is sized at window+ahead, which is what it peaks at (P-12).
 
-- **MTP acceptance (spec/09 Gate 1) passes on all three suites** — 2.024 / 2.905 / 2.476 tokens per
-  verify on code / math / chat against a 1.60 cross-target reference, on a 0.8B target. Read as
-  pre-registered: a pass on **mechanism**, not economics. Gate 2 was not evaluated and is not
-  evaluable at that scale, one prompt per suite makes the third digit noise, and the MTP-bearing
-  families are exactly the ones `specRollbackSafe` refuses — so shipping would require the
-  state-checkpoint track first.
-
-### Fixed
-
-- **`stream_options: {"include_usage": true}` is now honoured on the OpenAI-compatible streaming
-  surface**, emitting the spec's final usage-only chunk (empty `choices`, populated `usage`) after
-  the finish chunk. Previously the field was accepted and silently dropped, so a streaming client had
-  **no way to obtain a token count from goinfer at all** — it either guessed or counted SSE frames.
-  This is an OpenAI spec conformance point, not a convenience: clients use it for cost accounting,
-  rate display and context-budget tracking, and its absence is the kind of thing that reads as
-  "goinfer does not support usage" rather than as a bug worth reporting.
-
-  **The practical consequence for anyone who worked around it: counting SSE chunks under-reads
-  goinfer's token rate, and only ever downward.** A chunk is not a token — the stream holds bytes
-  back for UTF-8 continuation and for stop-string matching, so several tokens can arrive in one
-  frame. Measured across 92 goinfer cells on this fix: chunks equal tokens exactly at temperature 0,
-  and diverge with sampling to as much as **1.046 tokens per chunk (a 4.4% under-read)** on
-  phi3-mini at T=0.6. A client measuring that way sees goinfer as slower than it is, silently and
-  with no error to notice.
-
-### Changed
-
-- `scripts/bench_peer.py` now takes its token count from each engine's own reported `usage` where
-  the engine provides one, falling back to frame counting only where it does not, and records a
-  `tokens_per_chunk` diagnostic per cell so the assumption is a recorded number rather than an
-  inherited belief.
-
-### Performance
+- **Serving hot paths:** `/v1/embeddings` tokenized each input twice and prefilled one token at a
+  time — it now tokenizes once and prefills batched (R-07); the streaming path re-decoded and
+  rescanned the whole generated sequence on every token (R-08); `top_logprobs` no longer full-sorts
+  the vocabulary per token (P-13); sampled n-gram speculation reuses its scratch instead of two
+  full-vocab vectors per position (P-14); the repetition-penalty map rebuild was O(n²) over a
+  generation (P-15). CUDA expert-cache uploads fold the slot index into the batch and the generic
+  MoE pool is pinned like the Gemma-4 one (P-21, P-22).
 
 - **CUDA batched prefill now covers MoE and non-uniform-geometry models, and no longer OOM-declines
   on long prompts — bit-identical throughout.** Three things kept M26 (Gemma-4-26B-A4B) and
@@ -311,6 +331,89 @@ any surface may still change.
 
 ### Fixed
 
+- **`LoadSession` rejected valid session snapshots.** The guard bounding a blob's `pos` by
+  `len(body)/(numLayers·kvDim)` assumed every position stores at least one byte of KV — which
+  `kvsnapshot.go`'s own writer contradicts: a never-written ring and a KV-shared layer each
+  serialise zero KV bytes, and a ring layer stores only `min(count, W)` rows. In production that
+  rejected any session longer than ~8× the window on an all-sliding-window model. Replaced with two
+  checks that do not assume a body layout: `pos == len(tokens)` moved *before* the allocation (a
+  tighter bound than the old ratio for the OOM it was written for, and an invariant the format
+  actually guarantees), plus an explicit ceiling on the bytes the cache would occupy. The original
+  hostile-header protections are unchanged and still tested.
+
+- **Speculative decode's `Theta` could not express Metal, so Metal drafted when it should not
+  draft at all.** `AdaptiveDepth.Theta` was documented and enforced in `[0,1)` and reset anything
+  outside that to 0.5. Metal measures **1.006–1.048** (two models, two depths), so every value
+  Metal actually has was rejected and replaced by 0.5 — and because depth is
+  `floor(ln Theta / ln alpha)`, a *smaller* Theta drafts *deeper*, so the substitute was the most
+  over-drafting setting available. Measured effect on Metal: speculation was **1.07× slower than
+  not speculating**; wiring the measured value recovers it (**~6%**) by declining to draft.
+  - `Theta >= 1` is now legal and means what it measures — a verify node costing at least a whole
+    target step, which no acceptance rate repays.
+  - The periodic probe that forces `D>=1` to refresh a stale estimate is skipped under
+    `Theta >= 1`, where it can never change the answer and is pure wasted draft work.
+  - **Theta is now wired per backend from the probes** (CPU 0.5, CUDA 0.251, Metal 1.02) instead of
+    every backend running the CPU constant. It keys on *resident vs staged*, not on the requested
+    backend, because a declined-residency model verifies on the CPU path.
+  - **Validated end-to-end on the RTX 2070 SUPER** (driver 595.91.07): on two of four cells the
+    shipped 0.5 was *slower than not speculating at all* (0.91× and 0.92× of no-drafter), and the
+    wired value returns both to parity (+9.3%, +6.0%) while leaving the already-winning cells
+    unchanged. Zero lossless violations. The conservative 0.251 lands within ~1% of the true
+    measured 0.155/0.235 on every cell, so under-claiming the win cost nothing here — a result,
+    not a guarantee.
+  - **Read the size honestly: this buys back a regression rather than adding a speedup**, on both
+    Metal and CUDA. See `docs/measurements/theta-per-backend-2026-09-01.md` and
+    `docs/measurements/theta-cuda-ab-2026-09-01.md`.
+
+- **`stream_options: {"include_usage": true}` is now honoured on the OpenAI-compatible streaming
+  surface**, emitting the spec's final usage-only chunk (empty `choices`, populated `usage`) after
+  the finish chunk. Previously the field was accepted and silently dropped, so a streaming client had
+  **no way to obtain a token count from goinfer at all** — it either guessed or counted SSE frames.
+  This is an OpenAI spec conformance point, not a convenience: clients use it for cost accounting,
+  rate display and context-budget tracking, and its absence is the kind of thing that reads as
+  "goinfer does not support usage" rather than as a bug worth reporting.
+
+  **The practical consequence for anyone who worked around it: counting SSE chunks under-reads
+  goinfer's token rate, and only ever downward.** A chunk is not a token — the stream holds bytes
+  back for UTF-8 continuation and for stop-string matching, so several tokens can arrive in one
+  frame. Measured across 92 goinfer cells on this fix: chunks equal tokens exactly at temperature 0,
+  and diverge with sampling to as much as **1.046 tokens per chunk (a 4.4% under-read)** on
+  phi3-mini at T=0.6. A client measuring that way sees goinfer as slower than it is, silently and
+  with no error to notice.
+
+- **From the audit and its review** (`docs/audit-2026-09-02.md`, 2026-09-02/03;
+  `docs/review-2026-09-04.md`, 2026-09-04) — the fixes a user could have hit, each with a gate that
+  can fail:
+  - **One writer per SSE response.** Two goroutines wrote the same `http.ResponseWriter` on the
+    incremental tool-call stream; every frame in both protocols now goes through one `sseWriter`
+    (C-06).
+  - **Paged gpt-oss on Metal applied expert 0's biases to every routed expert** — finite, plausible,
+    wrong (C-09).
+  - **Sampling:** a rounding miss in `drawChunked`/`drawFull` could return a token top-k/top-p had
+    removed (N-02); the chunked scans' decay underflowed f32 at real checkpoint rates (N-01).
+  - **Vision:** user text could forge a turn boundary through the image path (M-22); the demo
+    agent's image turn was encoded as ordinary text after that fix (V-03) and the image block is
+    spliced at its last occurrence, not its first (V-19).
+  - **Constrained output:** four ways the grammar constrained the wrong thing (M-27–M-30); embedded
+    structs are promoted the way `encoding/json` promotes them, unexported-typed embeds included
+    (M-28, V-14); `TokenText` reports an added token's surface verbatim in byte-level mode, so the
+    grammar mask sees the right bytes (V-13).
+  - **`serve`:** `-web` was unreachable when `-api-key` was set (V-02); `/v1/responses` now stores
+    `tool_calls` so `previous_response_id` continuity survives a tool turn (V-18); the split-KV
+    guard covers prefill, verify and the drafter and names its decline at the source (M-16, V-05 —
+    the decline is still swallowed by `residentPrefillSeed`; filed as B20).
+  - **Gemma-4 PLE `validateShapes` checked the wrong axis**; Metal's `DecodeTokenFusedBatched`
+    deadlocked on the command-buffer cap; `LoadSession` validated after allocating (M-04); a
+    header-only `.giw` bundle and a poisoned prequant cache are refused (M-09, M-12).
+  - **Gates that could not fail:** metal-parity never selected `TestBatchedVerifyKernelParity`
+    and now must list or explicitly exclude every gate-shaped test; webgpu-parity and metal-prefill
+    could print PASS having run nothing (V-06, V-21); WebGPU has its own `gate gpu` group instead of
+    a private env var (G-09); the suite frees the resident models that were emptying the card
+    mid-run (peak VRAM 8034 → 274 MiB) and says "out of VRAM" instead of "no GPU".
+
+- **Compute-time LoRA now refuses every own-forward family** (derived from `arch.ownForward()`,
+  LFM2 included) instead of loading cleanly and applying nothing (review V-12).
+
 - **A batched-prefill change above accidentally removed the only thing keeping Gated-DeltaNet
   models off it — caught and fixed the same night, before any shipped row was actually wrong.**
   Removing the categorical `r.moe` refusal also removed the sole guard keeping M35 (`qwen3_5_moe`)
@@ -334,6 +437,21 @@ any surface may still change.
     no-`dnet` control and is mutation-proven (disabling the check turns it red).
     `TestPrefillPath_matchesPrefillCore` could not have caught this on its own: it asserts the
     guard and the report agree, so deleting the check just makes both sides say "batched" together.
+
+### Measured and NOT shipped
+
+- **Expert-major MoE prefill batching is parked.** Its ceiling was measured at **under 5%** at
+  K=1–2k and was **not resolvable above run-to-run spread** at K ≥ 4096 — the two passes disagreed
+  in sign at K=8192. Attention runs **77.3% → 97.1%** of MoE prefill work from K=1024 to K=8192
+  while all weight matmul falls to 2.9%, so the two levers scale in opposite directions. The case
+  for it has to be made on streaming I/O, not compute, and measured there.
+
+- **MTP acceptance (spec/09 Gate 1) passes on all three suites** — 2.024 / 2.905 / 2.476 tokens per
+  verify on code / math / chat against a 1.60 cross-target reference, on a 0.8B target. Read as
+  pre-registered: a pass on **mechanism**, not economics. Gate 2 was not evaluated and is not
+  evaluable at that scale, one prompt per suite makes the third digit noise, and the MTP-bearing
+  families are exactly the ones `specRollbackSafe` refuses — so shipping would require the
+  state-checkpoint track first.
 
 ## [v0.15.0] — 2026-08-27
 
