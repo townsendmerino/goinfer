@@ -6,9 +6,10 @@
 > restore points, FreeToken and the current MLX. They were also almost all one number, decode at
 > depth 128, which is the number the audience can least feel. This doc scopes a matrix that asks
 > the questions a user of each mode would ask: **six models × two boxes × the peers people actually
-> run on that box × eight workloads**, with a **quality normaliser beside every speed cell** so a
-> faster row at a worse quant cannot pass as a win. Tier 1 is ~100 cells and two quiet days; tier
-> 2 is everything with its own reason to exist. Method is `docs/benchmarks.md`'s, unchanged.
+> run on that box × eight workloads**, with a **fidelity column beside every speed cell**
+> (teacher-forced agreement with an fp16 reference) so a faster row at a worse quant cannot pass as
+> a win, and **one pass@1 row per model cell** for the quality a reader actually asks about. Tier 1
+> is ~100 cells and two quiet days; tier 2 is everything with its own reason to exist. Method is `docs/benchmarks.md`'s, unchanged.
 >
 > **Status: SCOPED 2026-09-03, nothing run.** goinfer `66288c2`, aikit v1.34.0. Peer versions are
 > pinned on the day each box runs, in the header record `bench_peer.py` already writes.
@@ -87,14 +88,34 @@ turn 6, so the non-extending case is measured too.
 
 A tok/s row at a different quality is not a comparison. goinfer's group-32 W4A8 is not
 llama.cpp's Q4_K_M even from the same file; MLX's 4-bit and FreeToken's format are further away;
-and a 32k cell with f32 KV on one side and f16 on the other is two different models.
+and a 32k cell with f32 KV on one side and f16 on the other is two different models. Two kinds of
+quality are in play and the matrix keeps them apart: **fidelity** — how faithfully an engine
+reproduces the model, which is the engine's whole job and the property a wrong kernel or a wrong
+reuse path damages first, fluently and silently — and **task quality**, which is a property of
+model + quant and belongs beside a model cell, not a workload.
 
-- **Greedy agreement with an fp16 reference.** For each cell, 20 prompts (10 code, 10 prose, ≥256
-  generated tokens each), greedy, every engine; report the **mean agreement length** (tokens until
-  first divergence) and the **exact-match rate** against the reference. The reference is HF fp16
-  greedy from the existing pin scripts where the model fits the Linux box's RAM (S, D7); llama.cpp's
-  f16 GGUF greedy where it does not (M35, M26, G20, H27) — stated per cell. Two engines within a
-  few tokens of each other are comparable; a row that wins speed and loses agreement says both.
+- **Fidelity, primary: teacher-forced top-1 agreement.** For each cell, 20 prompts (10 code, 10
+  prose) with a ≥256-token fp16 reference continuation each. Feed every engine the prompt plus
+  the reference continuation and count, position by position, how often the engine's argmax at
+  that position equals the reference's next token — the engine measured without the cascade a
+  greedy run has, where one near-tie early makes the rest of the text diverge. goinfer computes it
+  through the batched argmax path (`PrefillLastNArgmax`), llama.cpp through `/completion` with
+  `n_probs`, MLX through `mlx_lm`'s logprobs; report the agreement rate and the position of the
+  first disagreement.
+- **Fidelity, fallback: greedy agreement.** For an engine that cannot be teacher-forced (Ollama),
+  the same 20 prompts run greedy; report the **mean agreement length** (tokens until first
+  divergence) and the **exact-match rate**, and mark the cell as the strict form. Where both exist,
+  both are printed.
+- **The reference** is HF fp16 greedy from the existing pin scripts where the model fits the Linux
+  box's RAM (S, D7); llama.cpp's f16 GGUF where it does not (M35, M26, G20, H27) — stated per cell.
+  Two engines within a few points of each other are comparable; a row that wins speed and loses
+  fidelity says both.
+- **Task quality: one pass@1 row per model cell.** HumanEval+ and MBPP+ pass@1, greedy, through
+  each engine's OpenAI endpoint, once per model cell in tier 1 — not per workload. Engines at the
+  same quant should land within noise of each other; when one does not, the fidelity column has
+  already said why. It is the number a reader trusts more than an agreement length, and it is the
+  harness the expert-pruning experiment needs anyway. No judge-scored quality: it is noisy and
+  measures nothing an engine changes.
 - **KV precision is part of the cell.** Peers default to f16 KV; goinfer's default is f32. Every
   long-context cell states both, and the 32k card cell runs goinfer at `-kv f16` beside a note
   that this is not its default. No silent precision trades (the fit doc's rule).
@@ -105,7 +126,8 @@ and a 32k cell with f32 KV on one side and f16 on the other is two different mod
 
 **Tier 1 — both boxes, two quiet days.** D7, M35, M26 × {Ollama, llama.cpp default, the platform
 specialist: MLX on the Mac, FreeToken on Linux} × {W1, W2 at 3900, W3 at 8k, W4}. Roughly 100
-cells. This is the matrix that answers "how does goinfer compare today" for mode 3 and mode 4 users.
+cells, plus the pass@1 row for each of the three model cells (§4). This is the matrix that answers
+"how does goinfer compare today" for mode 3 and mode 4 users.
 
 **Tier 2 — each with its own reason.** S and the CPU lane (llama.cpp `-ngl 0`, Ollama CPU,
 go-llama) on both boxes — the pure-Go story; G20 on both boxes; H27 with the MTP head (W5) on the
@@ -143,8 +165,13 @@ compares; they double the run count wherever they appear, so they are limited to
   tool result, and proceeds. Records per-turn TTFT, tokens reused where the engine reports it
   (goinfer's `PrefillReused`), and whether the engine's cache survived.
 - **Concurrency (W7)**: `asyncio` clients over the same transcript, four conversations.
-- **Agreement (§4)**: a `--reference` run that stores each engine's greedy output per prompt;
-  scoring is offline against the reference file.
+- **Fidelity (§4)**: a `--reference` run that stores the fp16 reference continuations; a
+  teacher-forced scorer per engine (goinfer's batched argmax, llama-server `/completion` with
+  `n_probs`, `mlx_lm` logprobs) and the greedy-agreement fallback; both score offline against the
+  reference file.
+- **pass@1 (§4)**: HumanEval+ / MBPP+ driven through each engine's chat endpoint at temperature 0,
+  scored by the reference harness's own sandbox; one run per model cell, cached by (engine
+  version, checkpoint sha256).
 - **Void rules, pre-registered**: a cell is void if any arm's spread exceeds 10%, if the Mac reports
   a thermal event mid-cell, if the model path is under a forbidden root, or if a peer's version
   changed mid-matrix. Void cells are re-run, not dropped and not averaged in.

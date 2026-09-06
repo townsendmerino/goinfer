@@ -19,13 +19,17 @@
 > (`internal/serveapp/main.go:373`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
 > rather than to bytes (`benchmarks.md` §B2). This doc extends that contract to the GPU backends and
 > sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on —
-> **re-run 2026-09-05 against a real f32-activation reference: neither model ships on the decision
-> set, on two DIFFERENT narrow criteria, not a shared cause — see §3.1 and §4 L1**; **L2** a fused
-> attention kernel on CUDA; **L3** a tensor-core int4 GEMM on CUDA that keeps group scales; **L4**
-> the remaining CPU items, which now live in aikit's SIMD audit and are the smallest prize.
+> **measured twice on 2026-09-05; against a real f32-activation reference the fast path is equal
+> on argmax counts and better on KL, and the pre-registered thresholds it failed are shown to
+> have had no resolving power (§3.2) — one fresh-prompt run under the corrected gate decides**;
+> **L2** a fused attention kernel on CUDA; **L3** a tensor-core int4 GEMM on CUDA that keeps group
+> scales; **L4** the remaining CPU items, which now live in aikit's SIMD audit and are the
+> smallest prize.
 >
-> **Status: L1 gate RE-RUN 2026-09-05 against a reference (§3.1) — CLOSED, does not ship, but not
-> for the reason the first-form gate suggested.** `measurements/prefill-gate-l1-ref-2026-09-05.md`:
+> **Status: L1 gate RE-RUN 2026-09-05 against a reference (§3.1) — did not clear the thresholds as
+> pre-registered; those thresholds are found in §3.2 to fail an equal arm ~95% of the time, so L1
+> is OPEN pending one fresh-prompt run under the corrected gate, not closed.** The re-run's
+> record, as its author read it: `measurements/prefill-gate-l1-ref-2026-09-05.md`:
 > both Metal arms (exact sequential, fast batched) scored against a CPU f32-activation reference,
 > teacher-forced on the reference's own tokens, paired per prompt. **S fails its decision set at
 > K=1024** (fast's agreement trails exact's by 1.4pt, just past the 1.0pt tolerance); **D7 fails at
@@ -35,11 +39,13 @@
 > time** — the continuous measure never favors exact, only the two discrete pass/fail thresholds
 > occasionally do, by small margins. This is not the "fast is worse" the first-form gate implied,
 > and not the "fast is closer, more so on D7" §3.1 predicted — it's real, narrow, cell-level noise
-> around a boundary where the two arms are genuinely close. Metal's default stays sequential;
-> `--metal-fast-prefill` stays the disclosed opt-in; Phase 2 (`--exact-prefill`, the default flip)
-> does not proceed from this doc's plan. L2/L3/L4 remain SCOPED, nothing built. goinfer `3b20f74`
-> (scoped) / `6022b29` (first gate) / `3ab5230` (first reading, withdrawn by §3.1) / `556523a`
-> (re-run code) / this revision (re-run result). Path:line citations were taken at `3b20f74`;
+> around a boundary where the two arms are genuinely close. Pooled over the decision set the arms
+> read 89.5% vs 89.5% agreement and 38 vs 40 hard flips of 2,560, with fast's KL lower in 5 of 5
+> cells (§3.2). Metal's default stays sequential and `--metal-fast-prefill` stays the disclosed
+> opt-in until the fresh-prompt run; Phase 2 (`--exact-prefill`, the default flip) proceeds on
+> that run's verdict. L2/L3/L4 remain SCOPED, nothing built. goinfer `3b20f74` (scoped) /
+> `6022b29` (first gate) / `3ab5230` (first reading, withdrawn by §3.1) / `556523a` (re-run code) /
+> `42084db` (re-run result) / this revision (§3.2). Path:line citations were taken at `3b20f74`;
 > `scripts/queue_citation_lint.py --update` re-indexes them.
 > Not filed in `queue-performance.md` yet — another session was editing it while this was written.
 
@@ -178,11 +184,12 @@ when, on ≥10 realistic prose prompts per model (not `prompts.json`) spanning K
 **both** the fast path and the exact path are scored against a **reference with f32 activations**
 (§3.1 says which), and the fast path is not further from it than the exact path is:
 
-| check | bar | why this one |
+| check | bar (§3.2 form — pooled over the decision set, paired per position) | why this one |
 |---|---|---|
-| seed-logit argmax agreement, each arm vs the reference | the 3% near-tie parity rule (`decoder.NearTieArgmaxForTest`, the same rule CUDA decode is held to CPU by — `benchmarks.md:611`); **the fast arm's hard-flip count may not exceed the exact arm's** | the bar the tree already trusts, applied to both arms so the exact path's own cost is visible |
-| teacher-forced top-1 agreement over 64 continuation positions, each arm vs the reference's own greedy continuation | paired per prompt: fast ≥ exact − 1.0 pt on the cell mean, and fast ≥ exact on ≥ half the prompts | the fidelity column `task-peer-benchmarks.md` §4 is building anyway; the exact arm sets the bar because it is what ships today |
-| mean continuation KL(reference ‖ arm) | fast ≤ 1.1 × exact on the cell mean | the number a reader will ask for, with the exact arm's value beside it |
+| hard flips under the 3% near-tie rule (`decoder.NearTieArgmaxForTest`, the rule CUDA decode is held to CPU by — `benchmarks.md:611`), each arm vs the reference, seed + every continuation position | pooled over the decision cells (2 × 640 positions per model): **fast ≤ exact + 2·√exact** | the bar the tree already trusts, applied to both arms, with the Poisson noise of a count of ~40 written into it instead of ignored |
+| teacher-forced top-1 agreement, each arm vs the reference's own greedy continuation | pooled: **fast ≥ exact − 2·√d / N**, where d is the number of positions on which exactly one arm matches the reference and N the pooled positions (the paired, McNemar-shaped noise); if d is not recorded, the conservative independent-errors bound 2·√(2·N·p·(1−p)) / N with p = exact's agreement | the fidelity column `task-peer-benchmarks.md` §4 is building anyway; the exact arm sets the bar because it is what ships today |
+| mean continuation KL(reference ‖ arm) — **the gating continuous measure** | pooled mean: **fast ≤ exact**, and fast lower on ≥ half the prompts (paired sign); a hard ceiling of 1.1 × exact in any single cell | per-position and continuous, so 2,560 samples resolve differences the two counts above cannot |
+| per-cell values of all three | **reported, no per-cell veto** | a per-cell veto multiplies the false-fail rate by the number of cells (§3.2) |
 | greedy stream divergence rate | **reported, not gating** | it is what gated Metal; it measures reproducibility, not quality |
 
 **Floor.** As `--cpu-fast-attention` already does (exact below 512 prompt tokens, because the win
@@ -264,13 +271,57 @@ running: fast closer than exact on every cell, by a margin that grows from S to 
 prediction fails on D7 but not S, the batched attention or the f16 weight dequant is the suspect,
 and the next probe is per-layer, not per-model.
 
+### 3.2 Second correction, 2026-09-05 (evening) — the discrete thresholds had no resolving power, and that too was this doc's error
+
+The §3.1 re-run (`measurements/prefill-gate-l1-ref-2026-09-05.md`) was run and scored exactly as
+pre-registered, and under those thresholds neither model ships: S fails agreement at K=1024 by
+1.4 pt against a 1.0 pt tolerance, D7 fails hard flips at K=256 by 17 against 14. The run is
+sound. The thresholds are not, and the arithmetic that shows it was available before the run and
+was not done:
+
+- **The agreement tolerance was about one standard deviation.** Per cell there are 640 positions.
+  The paired difference between the arms is a count over the *discordant* positions — those where
+  exactly one arm matches the reference. Two arms at ~90% agreement whose errors are partly shared
+  have on the order of 30–115 such positions per cell (5–18%), so the paired difference has a
+  standard deviation of roughly √30–√115 ≈ 5–11 positions ≈ **0.9–1.7 pt**. A 1.0 pt tolerance at
+  that noise fails an arm of *equal* quality about 16–28% of the time per cell.
+- **"Fast's hard-flip count ≤ exact's" is a coin flip at counts of ~4–17.** Under equal quality the
+  two Poisson-ish counts land fast-above-exact roughly 35–45% of the time per cell.
+- **Per-cell vetoes multiply the false-fail rate.** Four decision cells, each with both criteria:
+  an arm exactly as good as the shipped one passes the whole gate with probability on the order of
+  (0.8)⁴ × (0.6)⁴ ≈ **5%**. The gate as pre-registered was built to fail an equal arm ~19 times in
+  20. It did.
+- **Pooled, the two arms are indistinguishable on the counts and separated on the continuous
+  measure.** Over the four decision cells (2,560 positions per model set): agreement 89.475% exact
+  vs 89.500% fast; hard flips 38 exact vs 40 fast; over all five cells, 47 vs 47. Mean KL from the
+  reference is lower for fast in 5 of 5 cells (4–15% lower) — by a sign test alone, P ≈ 0.03 under
+  equality, and the per-position KL means carry far more resolution than any argmax count.
+
+So the substantive question is answered by the run: **the f16-activation path is at least as
+faithful to an f32-activation reference as the shipped int8-activation path — equal on argmax
+counts, better on distributions.** What is *not* yet answered on a pre-registered basis is the
+gate itself, because the corrected gate above was written after seeing this data, and this repo's
+rule is that a gate written after the data does not decide that data. The way out that keeps the
+rule: **re-score the existing run under the §3 form above and report it as the prediction, then
+run the same two phases once more on ten fresh prose prompts** (new files, same K set, same
+harness — `TestPrefillGateReference` then `TestPrefillGateVsReference`, ~2 hours with the
+concurrent reference generator) **and let that run decide.** Pre-registered for it: both models
+pass the pooled gate; fast's pooled KL is lower than exact's on both; the per-cell veto being gone
+is the only reason the outcome differs from the first re-run. If the fresh run fails the pooled
+gate on either model, L1 closes for real and the note beside it says so.
+
+**What does not change.** The exact path and the opt-in stay as they are until that run. The
+first re-run's exact-vs-reference numbers remain the tree's first Metal W4A8 fidelity figures for
+the peer matrix. And the CUDA §3 gate (L2/L3 Phase 3) uses the §3.2 form from the start — it is
+the same table.
+
 **What the contract does not touch.** Decode (unchanged on every backend), speculative verify
 (exact kernels, lossless contract intact), and the parity gates (which run the exact path). The
 change is confined to prompt ingestion, which is why `--exact-prefill` is a complete undo.
 
 ## 4. Levers, cheapest first
 
-### L1 · Metal: make the batched prefill the default — RE-RUN AGAINST A REFERENCE, CLOSED, does not ship
+### L1 · Metal: make the batched prefill the default — measured against a reference; thresholds re-derived (§3.2); one fresh-prompt run decides
 
 - **What exists:** `PrefillLast` on Metal is a working f16-MMA batched prefill, measured 3.93–4.56×
   over sequential at P=128…2048 and 3.74× end to end on a real 1450-token prompt through the
