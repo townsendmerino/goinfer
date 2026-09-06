@@ -360,3 +360,143 @@ func trunc(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+
+// Tools drives the round-trip a harness actually needs: the model asks for a tool, the caller
+// answers, and the model uses the answer. Both halves are checked, because they fail separately —
+// a server can emit a well-formed tool_call and then choke on the `role:"tool"` message coming
+// back, which a harness experiences as a conversation that dies on turn two.
+//
+// Cold-user run 2026-09-06 scenario B could not test this at all: no OpenAI-speaking agent CLI was
+// installed on the machine, so the sub-test did not run
+// (docs/measurements/cold-user-2026-09-06.md). This row is the part of that coverage which does
+// not depend on a third-party CLI being present, and it is the "checkable" half
+// docs/task-embed-and-harness-ux.md §3.4 lists under `serve check`.
+//
+// The tool is deliberately one a small model can get right: one required string argument, an
+// obvious call site. A model too small to emit a tool call at all is reported as a SKIP, not a
+// failure — that is a fact about the model, and reporting it red would train an operator to
+// ignore the row.
+func (c *Client) Tools(ctx context.Context, model string) Result {
+	res := Result{Name: "tools, OpenAI"}
+	tools := []map[string]any{{
+		"type": "function",
+		"function": map[string]any{
+			"name":        "get_weather",
+			"description": "Get the current weather in a given city.",
+			"parameters": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"city": map[string]any{"type": "string"}},
+				"required":   []string{"city"},
+			},
+		},
+	}}
+	msgs := []map[string]any{
+		{"role": "user", "content": "What is the weather in Paris? Use the get_weather tool."},
+	}
+	body := map[string]any{
+		"model": model, "temperature": 0, "max_tokens": 96,
+		"messages": msgs, "tools": tools,
+	}
+	call, res := c.toolCall(ctx, body, res)
+	if call.id == "" {
+		return res
+	}
+
+	// Turn two: hand the result back and require the model to consume it. The assistant message
+	// must be echoed verbatim-enough that the server can pair the tool result with its call.
+	msgs = append(msgs,
+		map[string]any{"role": "assistant", "content": nil, "tool_calls": []map[string]any{{
+			"id": call.id, "type": "function",
+			"function": map[string]any{"name": call.name, "arguments": call.args},
+		}}},
+		map[string]any{"role": "tool", "tool_call_id": call.id, "content": `{"temp_c":14,"sky":"rain"}`},
+	)
+	body["messages"] = msgs
+	resp, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", body)
+	if err != nil {
+		res.Detail = "tool result rejected: " + err.Error()
+		return res
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		res.Detail = "tool result rejected: " + errBody(resp)
+		return res
+	}
+	var out struct {
+		Choices []struct {
+			Message struct{ Content string } `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) == 0 {
+		res.Detail = "unparseable response to the tool result"
+		return res
+	}
+	res.OK = true
+	res.Detail = fmt.Sprintf("call %s(%s) → result → answer in 2 turns", call.name, trunc(call.args, 32))
+	return res
+}
+
+// toolCallInfo is the one tool call Tools cares about.
+type toolCallInfo struct{ id, name, args string }
+
+// toolCall runs turn one and extracts the call. It returns the updated Result so the caller can
+// return it directly on any non-call outcome; a zero id means "stop here", with Skip already set
+// when the reason is the model rather than the server.
+func (c *Client) toolCall(ctx context.Context, body map[string]any, res Result) (toolCallInfo, Result) {
+	resp, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", body)
+	if err != nil {
+		res.Detail = err.Error()
+		return toolCallInfo{}, res
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		res.Detail = errBody(resp)
+		return toolCallInfo{}, res
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) == 0 {
+		res.Detail = "unparseable response"
+		return toolCallInfo{}, res
+	}
+	calls := out.Choices[0].Message.ToolCalls
+	if len(calls) == 0 {
+		// The server answered cleanly; this model just did not choose the tool. That is a
+		// property of the checkpoint, not a broken route.
+		res.Skip = true
+		res.Detail = fmt.Sprintf("model answered without calling the tool (finish_reason=%q) — "+
+			"too small for tool use, or its template has no tool section",
+			out.Choices[0].FinishReason)
+		return toolCallInfo{}, res
+	}
+	call := toolCallInfo{id: calls[0].ID, name: calls[0].Function.Name, args: calls[0].Function.Arguments}
+	if call.id == "" {
+		res.Detail = "tool_call has no id — a harness cannot pair the result with the call"
+		return toolCallInfo{}, res
+	}
+	if call.name != "get_weather" {
+		res.Detail = fmt.Sprintf("called %q, not the only tool offered", call.name)
+		return toolCallInfo{}, res
+	}
+	// Arguments are a JSON STRING in the OpenAI shape, not an object; a server that emits an
+	// object here breaks every client that json.Unmarshal's the field.
+	var args map[string]any
+	if err := json.Unmarshal([]byte(call.args), &args); err != nil {
+		res.Detail = fmt.Sprintf("arguments are not a JSON string: %q", trunc(call.args, 60))
+		return toolCallInfo{}, res
+	}
+	return call, res
+}

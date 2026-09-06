@@ -185,3 +185,115 @@ func TestModels_emptyIsReportedNotFailed(t *testing.T) {
 		t.Errorf("an empty model list is a valid server state, got ok=%v detail=%q", res.OK, res.Detail)
 	}
 }
+
+// A checker that cannot go red is not a checker (see the header). These drive Tools against
+// servers that are wrong in one specific way each — the ways that actually break a harness on
+// turn two rather than turn one.
+
+// toolServer answers turn one with a tool call built from `call`, and turn two with plain text.
+// nil `call` means "answer without calling the tool".
+func toolServer(t *testing.T, call map[string]any) *Client {
+	t.Helper()
+	return newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		turnTwo := false
+		for _, m := range req.Messages {
+			if m["role"] == "tool" {
+				turnTwo = true
+			}
+		}
+		msg := map[string]any{"content": "It is raining in Paris, 14C."}
+		if !turnTwo {
+			if call == nil {
+				msg = map[string]any{"content": "I do not know.", "role": "assistant"}
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"choices": []map[string]any{{"message": msg, "finish_reason": "stop"}}})
+				return
+			}
+			msg = map[string]any{"content": nil, "tool_calls": []any{call}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": msg}}})
+	})
+}
+
+func goodCall() map[string]any {
+	return map[string]any{"id": "call_1", "type": "function",
+		"function": map[string]any{"name": "get_weather", "arguments": `{"city":"Paris"}`}}
+}
+
+func TestTools_roundTripOK(t *testing.T) {
+	res := toolServer(t, goodCall()).Tools(context.Background(), "m")
+	if !res.OK {
+		t.Fatalf("a correct two-turn tool round-trip must pass: %+v", res)
+	}
+	if !strings.Contains(res.Detail, "2 turns") {
+		t.Errorf("detail should say the round-trip completed, got %q", res.Detail)
+	}
+}
+
+// The id is what pairs a result with its call. Without it a harness has nothing to send back,
+// and the turn-one response still looks well-formed.
+func TestTools_missingIDFails(t *testing.T) {
+	call := goodCall()
+	delete(call, "id")
+	res := toolServer(t, call).Tools(context.Background(), "m")
+	if res.OK || res.Skip {
+		t.Fatalf("a tool_call with no id must FAIL, got %+v", res)
+	}
+	if !strings.Contains(res.Detail, "id") {
+		t.Errorf("the reason must name the missing id, got %q", res.Detail)
+	}
+}
+
+// OpenAI's arguments field is a JSON *string*. A server that emits an object there breaks every
+// client that unmarshals the field, and the response is otherwise perfectly shaped.
+func TestTools_argumentsAsObjectFails(t *testing.T) {
+	call := goodCall()
+	call["function"] = map[string]any{"name": "get_weather", "arguments": map[string]any{"city": "Paris"}}
+	res := toolServer(t, call).Tools(context.Background(), "m")
+	if res.OK || res.Skip {
+		t.Fatalf("arguments as an object must FAIL, got %+v", res)
+	}
+}
+
+// The half that fails separately: turn one is fine and the server then rejects the tool result.
+// This is the failure a harness sees as a conversation that dies after the first tool.
+func TestTools_rejectedToolResultFails(t *testing.T) {
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		for _, m := range req.Messages {
+			if m["role"] == "tool" {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"message":"unsupported role: tool"}}`))
+				return
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{
+			{"message": map[string]any{"content": nil, "tool_calls": []any{goodCall()}}}}})
+	})
+	res := c.Tools(context.Background(), "m")
+	if res.OK || res.Skip {
+		t.Fatalf("a server that rejects the tool result must FAIL, got %+v", res)
+	}
+	if !strings.Contains(res.Detail, "tool result rejected") {
+		t.Errorf("the reason must say the tool RESULT was rejected, got %q", res.Detail)
+	}
+}
+
+// A model that answers without calling the tool is a fact about the checkpoint, not a broken
+// route. Reporting it red trains an operator to ignore the row.
+func TestTools_noCallIsSkipNotFail(t *testing.T) {
+	res := toolServer(t, nil).Tools(context.Background(), "m")
+	if res.OK {
+		t.Fatal("a turn with no tool call must not report OK")
+	}
+	if !res.Skip {
+		t.Fatalf("a model declining to call the tool must SKIP, not fail: %+v", res)
+	}
+}
