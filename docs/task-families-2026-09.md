@@ -8,10 +8,14 @@
 > - **F2 Nemotron 3.5 Lightning** — confirmed NOT a new family: config-identical to the already-T3'd
 >   Nemotron 3 Nano in every architecturally meaningful field. No registry change; a real-checkpoint
 >   gate + pin script + asset were added, execution owed (Linux box, bf16 ~60GB).
-> - **F3 `granite`** (dense) — new registry key, reuses `llamaTensorSchema` verbatim, T1 tiny-golden
->   with non-trivial scalar multipliers (cosine 0.999999999999987, argmax exact), GGUF support,
->   resident-admitted cuda/metal/webgpu. T3 real-checkpoint owed (this Mac or Linux box; 8B is the
->   sized target).
+> - **F3 `granite`** (dense) — new registry key, reuses `llamaTensorSchema` verbatim. Of Granite's
+>   four scalar multipliers: `embedding_multiplier` → `EmbedScale`, `attention_multiplier` →
+>   `AttnScale`, `logits_scaling` → `LogitScale` (all three already-generic fields, all exercised
+>   non-trivially by the T1 fixture below); `residual_multiplier` has no generic hook and is
+>   HARD-REJECTED unless 1.0 (the identity value every released 4.2 size ships — see the F3 section
+>   below for the check). T1 tiny-golden with the three non-trivial multipliers (cosine
+>   0.999999999999987, argmax exact), GGUF support, resident-admitted cuda/metal/webgpu. T3
+>   real-checkpoint owed (this Mac or Linux box; 8B is the sized target).
 > - **F4 Ling-3.0-tiny (`bailing_hybrid`)** — Phase 0 only, by design: no stop condition fired, but
 >   the brief scoped this item to a synthetic rehearsal, not a shipped family. MLA + MoE are pure
 >   `deepseekArchitecture` composition; KDA (Kimi Delta Attention) is a genuinely new primitive — a
@@ -48,26 +52,39 @@ q/k/v bias, single-base RoPE) with `qwen2_moe`'s router shape (top-k of `num_exp
 `moe_intermediate_size`, `norm_topk_prob`) — **minus the shared expert**, confirmed by the absent
 config field rather than assumed from the "no shared expert" phrasing in the original scoping note.
 
-### GGUF — verified against a real file, not assumed
+### GGUF — header and tensor names/dims verified against a real file; VALUES are not (T3 item)
 
 Fetched the first 30 MB of `unsloth/Qwen3-30B-A3B-GGUF`'s `Q2_K.gguf` via HTTP Range (well under
 the ~12 GB full file — GGUF metadata + tensor-info lives at the front) and parsed it with goinfer's
-own `aikit/embed.GGUFFile` reader, the same ground-truth method the Nemotron 3 Nano T3 handoff used:
+own `aikit/embed.GGUFFile` reader, the same ground-truth method the Nemotron 3 Nano T3 handoff used
+— but be precise about what that method proves here: it read `general.architecture`, the metadata
+keys, and every tensor's NAME and DIMS. It did **not** dequantize a single tensor or run a forward
+pass, so it cannot rule out the exact failure mode `docs/completed/queue-correctness.md` G4 already
+named for this shape of loader: "a fused expert stack read with the wrong stride gives finite
+values, correct shapes and confident nonsense." That check — hand-dequantizing a real
+`ffn_*_exps` tensor's expert slices, or a real forward — is not done and belongs to T3, not this
+pass.
+
+What WAS confirmed this way:
 
 - `general.architecture` is literally `"qwen3moe"`.
 - Metadata is the plain, un-exotic `{arch}.attention.head_count/head_count_kv/key_length/
   layer_norm_rms_epsilon`, `{arch}.expert_count/expert_used_count/expert_feed_forward_length`,
   `{arch}.rope.freq_base` — **no sliding-window or YaRN keys at all** (unlike Mellum's per-layer-type
   split; qwen3_moe is single global RoPE).
-- Tensor set: `blk.N.attn_{q,k,v,output}`, `attn_{q,k}_norm`, `ffn_norm`, `ffn_gate_inp`,
-  `ffn_{gate,up,down}_exps` — **no `ffn_*_shexp` tensors**, confirming the no-shared-expert finding
-  independently on the GGUF side.
+- Tensor set and dims: `blk.N.attn_{q,k,v,output}`, `attn_{q,k}_norm`, `ffn_norm`, `ffn_gate_inp`,
+  `ffn_{gate,up,down}_exps` (dims `[768 2048 128]` / `[2048 768 128]`, matching
+  `moe_intermediate_size`/`hidden_size`/`expert_count`) — **no `ffn_*_shexp` tensors**, confirming
+  the no-shared-expert finding independently on the GGUF side, at the name/shape level.
 
 Because both findings are "this is exactly the generic shape, just missing the shared-expert
 piece," **zero new code was needed in the generic GGUF `loadLayer` path** (`decoder/gguf.go`) — it
 already gates QK-norm on `arch.QKNorm`, the router+experts on `arch.MoE != nil`, and the shared
 expert on `arch.MoE.SharedIntermediateDim > 0`. Only a per-family `Config` builder
-(`ggufQwen3MoeConfig`) and a `case "qwen3moe":` dispatch line were needed.
+(`ggufQwen3MoeConfig`) and a `case "qwen3moe":` dispatch line were needed. That reasoning is sound
+independent of the T3 gap above — it follows from the generic loader's existing gating logic, not
+from this file's tensor values — but the T3 gap is the honest place a stride/layout bug would
+actually be caught, and isn't closed yet.
 
 ### Adapter decision: pure composition, no new primitive, no new forward path
 
@@ -145,10 +162,13 @@ other family's tiny gate.
 - **One decode benchmark row** (the brief's "one cell each" bench requirement) is gated on T3 —
   measuring a resident quant path before the numerics are validated against a real oracle would be
   exactly the kind of ungated claim `docs/benchmarks.md`'s Methodology section exists to prevent.
-- **GGUF real-file round-trip test.** The header was verified (above); a full tiny-GGUF fixture +
-  parity gate (mirroring `TestGGUF_qwen3_parity`) is not built — the generic loader path gives high
-  confidence, but "high confidence" is not the same claim as "gated," and this is named here rather
-  than silently skipped.
+- **GGUF real-file round-trip test — this is a T3 item, not a T1 gap.** The header, metadata, and
+  tensor names/dims were verified against a real file (above); the tensor VALUES were not — no
+  dequantization, no forward pass. A full tiny-GGUF fixture + parity gate (mirroring
+  `TestGGUF_qwen3_parity`) is not built, and neither is the hand-dequant spot-check G4 used for
+  Nemotron 3 Nano's fused expert tensors. The fused-expert stride/layout is exactly where a GGUF
+  MoE loader goes wrong per that precedent, so this is named as an open correctness question, not
+  a formality.
 - **CUDA/Metal/WebGPU resident kernel work.** None is needed — see the admission section above —
   but no resident-parity test was run on real hardware for this family specifically; it rides the
   same generic MoE dispatch `mixtral`/`qwen2_moe` already exercise on real backends elsewhere.
@@ -176,6 +196,24 @@ transformers' `modeling_nemotron_h.py`, not assumed from Nano's T3 alone — gen
 reference forward; Nemotron-H's attention is NoPE in practice regardless of these fields, which is
 why `nemotronhArchitecture`'s `Architecture` literal hardcodes `RotaryDim: 0` unconditionally).
 
+**Every one of those matching values is READ FROM CONFIG, not hardcoded** — which is the actual
+claim "no registry change" rests on, not just that Lightning happens to match Nano. Named against
+the Go `Config` field each maps to, all already wired by the existing `nemotronhArchitecture` /
+`MoEConfig` construction:
+
+| config.json field | Go `Config` field | consumed as |
+|---|---|---|
+| `n_routed_experts` | `NRoutedExperts` | `MoEConfig.NumExperts` |
+| `num_experts_per_tok` | `NumExpertsPerTok` | `MoEConfig.TopK` |
+| `routed_scaling_factor` | `RoutedScalingFactor` | `MoEConfig.RoutedScale` |
+| `n_groups` (mamba) | `NGroups` | `nemotronParams.NGroups` (Mamba-2 group count — a DIFFERENT
+  field from the MoE router's own `n_group`/`topk_group`, which both configs set to 1) |
+| `moe_shared_expert_intermediate_size` | `MoeSharedExpertIntermediateSize` | `MoEConfig.SharedIntermediateDim` |
+
+None of these is a value the adapter assumes or defaults to — if Lightning's release had shipped
+different numbers here, the loader would have read and used THOSE, not Nano's. The identity is a
+fact about the two checkpoints, not about what the code does with whatever it's given.
+
 **Decoded and diffed the actual layer PATTERN, not just its summary counts.** Nano ships the
 compact `hybrid_override_pattern` string (`"MEMEM*EMEMEM*EMEMEM*EMEMEM*EMEMEM*EMEMEMEM*EMEMEMEME"`,
 52 chars); Lightning ships the expanded `layers_block_type` array directly. Decoded Nano's string
@@ -195,9 +233,19 @@ rather than assumed inert:**
   inference-engine (vLLM/TensorRT-LLM-class) scheduling hint to overlap the shared-expert compute
   with routed-expert dispatch, with no effect on the computed result.
 - `num_nextn_predict_layers: 1` / `mtp_layers_block_type` (Lightning only) — also zero occurrences
-  in `modeling_nemotron_h.py`; the MTP head isn't implemented in the mainline forward class at all,
-  so it is dropped the same way GLM/DeepSeek's MTP heads already are (only `num_hidden_layers`,
-  i.e. 52, loads).
+  in `modeling_nemotron_h.py`; the MTP head isn't implemented in the mainline forward class at all.
+  **This is the one field pair the Nano-shaped tiny fixture cannot exercise**, since it never had
+  an MTP head to begin with — checked what actually happens, not assumed benign:
+  `decoder/config.go`'s `Config` struct has **no field mapped to either JSON key**, so Go's
+  `encoding/json` silently drops both on unmarshal (unknown-field behavior, not a parsing error).
+  `cfg.NumLayers` is derived purely as `len(cfg.LayersBlockType)` (52) inside
+  `nemotronhArchitecture` — a count that never reads `num_nextn_predict_layers`, so its presence
+  or value cannot inflate or shrink the layer count the loader iterates. That reasoning is
+  code-verified (both fields are genuinely absent from `Config`, checked by grep), but **it is
+  reasoned from code, not confirmed against the real checkpoint's tensor index** — whether the
+  actual safetensors shards carry a 53rd layer's worth of MTP-head tensors under some naming the
+  main load loop could accidentally touch is unknown until the checkpoint is actually inspected or
+  loaded. If T3 fails on a tensor-count or shape mismatch, this is the first place to look.
 
 ### Adapter decision: no registry change
 
@@ -330,8 +378,9 @@ final logits happen to match, which a dropped-then-cancelled multiplier could al
   wasn't run this pass — no CHANGELOG claim is made about real-checkpoint validation.
 - **30B real-checkpoint / load check.** Explicitly out of scope per the brief ("30B is a load
   check only") and not attempted.
-- **GGUF real-file round-trip test.** Same posture as F1: the header was verified against real
-  metadata, giving high confidence, but no committed tiny-GGUF fixture exercises it in CI.
+- **GGUF real-file round-trip test.** Same posture as F1: the header, metadata, and tensor
+  names/dims were verified against a real file; the tensor values were not (no dequant, no
+  forward). No committed tiny-GGUF fixture exercises this in CI.
 
 ### Process note carried over from F1
 
