@@ -347,6 +347,24 @@
       "note": "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 (63 GB safetensors) \u2014 the MoE variant's T3 oracle. BF16 and not the -FP8 release: goinfer has no fp8 reader anywhere in the tree (the blocker that stopped DeepSeek V4-Flash scoping), so the FP8 repo is unusable here regardless of its smaller size."
     },
     {
+      "env": "GOINFER_NEMOTRON35LIGHTNING_HF",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/nemotron35lightning-30b-bf16"
+      ],
+      "used_by": [
+        "TestNemotron35LightningReal_oracle"
+      ],
+      "note": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 \u2014 config-identical to Nemotron 3 Nano (docs/task-families-2026-09.md F2) in every architecturally meaningful field, including the exact 52-block layer pattern; this checkpoint's own T3 confirms the trained weights, not the architecture, which the identical config already established."
+    },
+    {
       "env": "GOINFER_NEMOTRON3NANO_GGUF",
       "kind": "file",
       "min_bytes": 1048576,

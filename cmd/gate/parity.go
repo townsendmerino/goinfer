@@ -96,6 +96,7 @@ var parityRealckptGates = []gateCheck{
 	{"phi3-gguf", "TestPhi3GGUFReal_gate"},
 	{"llama4-scout-gguf", "TestLlama4Real_gate"},
 	{"qwen3next-oracle", "TestQwen3NextReal_oracle"},
+	{"nemotron35lightning-oracle", "TestNemotron35LightningReal_oracle"},
 	// ONE OR TWO CANONICAL GATES FOR SIX FAMILIES THAT HAD NONE (2026-09-02, audit G-05 follow-up).
 	// gpt_oss, granite, laguna, glm4_moe, cohere, cohere2 and dense qwen3.8 were shipped families
 	// with no required gate ANYWHERE in the checkset — not in parityGates either, since none has a

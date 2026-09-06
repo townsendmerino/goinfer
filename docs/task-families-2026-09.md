@@ -133,3 +133,91 @@ other family's tiny gate.
 - **CUDA/Metal/WebGPU resident kernel work.** None is needed — see the admission section above —
   but no resident-parity test was run on real hardware for this family specifically; it rides the
   same generic MoE dispatch `mixtral`/`qwen2_moe` already exercise on real backends elsewhere.
+
+## F2 · Nemotron 3.5 Lightning 30B-A3B — Phase 0 DONE: same family, not a new one; T3 code ready, run pending
+
+**The question this section answers, per the brief's own framing ("probably a parity pin, not a
+family"): is it?** Yes — confirmed, not assumed.
+
+### Phase 0 (config-verified against both real releases, field-by-field, not from the brief's own transcription)
+
+Fetched `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`'s real `config.json` directly (the
+brief's own quoted fields checked out, but transcriptions get re-verified here the same as every
+other family in this doc) and diffed it programmatically, field-by-field, against
+`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`'s real `config.json` — the checkpoint `nemotron_h`'s
+existing T3 (`docs/completed/queue-correctness.md` G4) already validated.
+
+**Every architecturally meaningful field is identical**, not merely similar: `hidden_size` 2688,
+`num_attention_heads` 32, `num_key_value_heads` 2, `head_dim` 128, `mamba_num_heads` 64,
+`mamba_head_dim` 64, `n_groups` 8, `ssm_state_size` 128, `n_routed_experts` 128,
+`num_experts_per_tok` 6, `moe_shared_expert_intermediate_size` 3712, `routed_scaling_factor` 2.5,
+`n_group`/`topk_group` both 1 (degenerate, plain top-k — same as Nano), `rope_theta` 10000,
+`partial_rotary_factor` 1.0 (present in BOTH configs, and — checked directly against mainline
+transformers' `modeling_nemotron_h.py`, not assumed from Nano's T3 alone — genuinely unused by the
+reference forward; Nemotron-H's attention is NoPE in practice regardless of these fields, which is
+why `nemotronhArchitecture`'s `Architecture` literal hardcodes `RotaryDim: 0` unconditionally).
+
+**Decoded and diffed the actual layer PATTERN, not just its summary counts.** Nano ships the
+compact `hybrid_override_pattern` string (`"MEMEM*EMEMEM*EMEMEM*EMEMEM*EMEMEM*EMEMEMEM*EMEMEMEME"`,
+52 chars); Lightning ships the expanded `layers_block_type` array directly. Decoded Nano's string
+with the same M/E/*/− alphabet `decoder/config.go`'s `normalizeNemotronBlocks` uses and compared
+position-by-position against Lightning's array: **byte-identical sequence**, 23 mamba / 23 moe / 6
+attention, same order. `normalizeNemotronBlocks` already no-ops when `layers_block_type` is
+present (its very first line), so Lightning's array-shaped release needs no loader change either.
+
+**The only field-level differences are vestigial or presentational, each checked against source
+rather than assumed inert:**
+
+- `moe_latent_size: null` on both — checked against `modeling_nemotron_h.py` directly: non-null
+  would add an `fc1_latent_proj` bottleneck before the expert FFN; null (both checkpoints) means
+  that branch never executes. No LatentMoE on either family member.
+- `moe_shared_expert_overlap: true` (Lightning only) — grepped mainline transformers'
+  `modeling_nemotron_h.py`: **zero occurrences**. Not read by the HF reference forward at all — an
+  inference-engine (vLLM/TensorRT-LLM-class) scheduling hint to overlap the shared-expert compute
+  with routed-expert dispatch, with no effect on the computed result.
+- `num_nextn_predict_layers: 1` / `mtp_layers_block_type` (Lightning only) — also zero occurrences
+  in `modeling_nemotron_h.py`; the MTP head isn't implemented in the mainline forward class at all,
+  so it is dropped the same way GLM/DeepSeek's MTP heads already are (only `num_hidden_layers`,
+  i.e. 52, loads).
+
+### Adapter decision: no registry change
+
+Because every field above already round-trips through `nemotronhArchitecture` /
+`validateNemotron` / `nemotronTensorSchema` unmodified, **this is not a new registry entry** — the
+manifest's `nemotron_h` row (keyed by registry `model_type`, per G4's own precedent: "recorded on
+the existing nemotron_h manifest row rather than a sibling") already covers this checkpoint's
+architecture. The existing `nemotron3nano-tiny` T1 fixture already exercises this exact geometry
+(identical shape), so no new tiny fixture was built — doing so would duplicate a fixture that
+tests nothing new, which the repo's own anti-duplication instinct argues against.
+
+### What T3 here actually checks (and what's ready, vs run)
+
+A tiny fixture proves the *shape*; it cannot catch a wrong tensor name, a transposed expert stack,
+or a router-bias read from the wrong key on **these specific trained weights** — every one of
+which produces correct shapes and plausible values regardless of the training run behind them.
+That is the one thing Phase 0's config-identity finding cannot establish, so it is still worth a
+real-checkpoint gate.
+
+**Built and merged, not yet run:**
+
+- `scripts/pin_nemotron35lightning_real.py` — `pin_nemotron3nano_real.py` with the checkpoint path
+  swapped; same prompt, same greedy-continuation-6 shape.
+- `decoder/nemotron35lightning_real_test.go` (tag `realckpt`), `TestNemotron35LightningReal_oracle`
+  — reuses the same `realLogitOracleQuant` helper Nano's own gate uses, same `int8`
+  weights/f32-activations quant (Nano's own measured finding: int8 *activations* cliffed this
+  family's router from cosine 0.997668 to 0.978086 at 6-of-128 sparsity — expected to transfer
+  given the identical router shape, but that transfer is itself unverified until this gate runs).
+  **Deliberately left out of `cmd/gate/parity.go`'s `emitGates`** (added to `parityRealckptGates`
+  instead): the manifest's `nemotron_h` row is already `validated` from Nano specifically, and a
+  routine sweep re-emitting this gate's `PARITY_ROW` would silently overwrite Nano's own
+  already-recorded numbers with Lightning's on every `EMIT_MANIFEST=1` sweep, discarding real
+  evidence for no gain. `TestNemotron3NanoReal_oracle` itself sets the precedent — it isn't in
+  `emitGates` either.
+- Asset registered: `GOINFER_NEMOTRON35LIGHTNING_HF` → `$MODELS/nemotron35lightning-30b-bf16`
+  (`testdata/assets.json`), same `dir` shape as Nano's own entry.
+
+**Not run this pass:** the checkpoint is bf16 ~60 GB+, well past this Mac's 29 GB free disk / 16 GB
+RAM. The Linux box (`nobara-pc`, 229 GB free / 62 GB RAM) is the intended target per the brief's
+own "30B-A3B class on the Linux box" rule, matching where Nano's own T3 ran. **No CHANGELOG entry
+for F2**: nothing loadable changed (no registry key, no adapter code, no tensor schema) — only
+test/asset infrastructure, which is not a capability change.
