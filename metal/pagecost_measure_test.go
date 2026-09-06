@@ -83,9 +83,9 @@ func TestPageCost_submissionStructure(t *testing.T) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		best := 1e18
-		for run := 0; run < 4; run++ {
+		for run := range 4 {
 			start := time.Now()
-			for pos := 0; pos < nTok; pos++ {
+			for pos := range nTok {
 				_ = fwd(pos)
 			}
 			ms := float64(time.Since(start).Microseconds()) / 1000.0 / float64(nTok)

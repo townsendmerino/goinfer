@@ -41,7 +41,7 @@ func TestW4A8Row4_loadTimeAndMemoryDelta(t *testing.T) {
 	tOff := time.Duration(1<<63 - 1)
 	tOn := time.Duration(1<<63 - 1)
 	var mOff, mOn *Model
-	for rep := 0; rep < 3; rep++ {
+	for rep := range 3 {
 		firstOff := rep%2 == 0
 		var dOff, dOn time.Duration
 		var mo, mn *Model

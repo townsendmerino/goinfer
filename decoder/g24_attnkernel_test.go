@@ -61,7 +61,7 @@ func TestG24AttnKernelRatio(t *testing.T) {
 	timeIt := func(name string, fn func()) time.Duration {
 		fn() // warm
 		best := time.Duration(1<<62 - 1)
-		for i := 0; i < reps; i++ {
+		for range reps {
 			t0 := time.Now()
 			fn()
 			if d := time.Since(t0); d < best {

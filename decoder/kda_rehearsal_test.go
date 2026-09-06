@@ -43,8 +43,8 @@ func TestKDARehearsal_matchesReference(t *testing.T) {
 	// Cross-check kdaLowerBoundGate against the golden's own "gate" field BEFORE using it to
 	// drive the recurrence, so a gate bug and a recurrence bug can't cancel out and hide behind
 	// one passing final-output comparison.
-	for h := 0; h < H; h++ {
-		for ti := 0; ti < T; ti++ {
+	for h := range H {
+		for ti := range T {
 			got := kdaLowerBoundGate(g.RawGateIn[0][ti][h], g.DtBias[h], g.ALog[h], g.LowerBound)
 			want := g.Gate[0][ti][h]
 			for i := range got {
@@ -61,8 +61,8 @@ func TestKDARehearsal_matchesReference(t *testing.T) {
 	}
 	var maxAbsDiff float64
 	var sumDot, sumGot, sumWant float64
-	for ti := 0; ti < T; ti++ {
-		for h := 0; h < H; h++ {
+	for ti := range T {
+		for h := range H {
 			q := l2normScaled(g.Q[0][ti][h], qScale)
 			k := l2normScaled(g.K[0][ti][h], 1)
 			v := g.V[0][ti][h]

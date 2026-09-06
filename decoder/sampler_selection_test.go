@@ -339,7 +339,7 @@ func TestSamplingThroughputGate(t *testing.T) {
 // estimator fixes.
 func benchSample(logits []float32, p SamplingParams) int64 {
 	best := int64(0)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		res := testing.Benchmark(func(b *testing.B) {
 			s := NewSampler(p)
 			b.ResetTimer()

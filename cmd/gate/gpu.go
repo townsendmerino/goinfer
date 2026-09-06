@@ -111,7 +111,7 @@ func (g *gpuGate) detail(out string, re *regexp.Regexp) {
 	if re.String() == failLineRe.String() {
 		hits = failureLines(out)
 	} else {
-		for _, ln := range strings.Split(out, "\n") {
+		for ln := range strings.SplitSeq(out, "\n") {
 			if re.MatchString(ln) {
 				hits = append(hits, ln)
 			}
@@ -243,7 +243,7 @@ func (g *gpuGate) skipCensus(res *results, indent string) int {
 // `ok github.com/…/metal 31.2s` says what actually ran and for how long. Acceptance (d) is that
 // whatever the script printed about what it validated, the runner prints too.
 func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		if re.MatchString(ln) {
 			fmt.Fprintf(g.w, "      %s\n", strings.TrimRight(ln, "\r"))
 		}
@@ -289,7 +289,7 @@ var registerDumpRe = regexp.MustCompile(`^(r[0-9]+|x[0-9]+|sp|pc|lr|fp|fault)\s+
 func failureLines(out string) []string {
 	var hits []string
 	inFail := false
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		switch {
 		case failLineRe.MatchString(ln):
 			inFail = true
@@ -537,7 +537,7 @@ func (g *gpuGate) cleanGPU() {
 		return
 	}
 	fmt.Fprintf(g.w, "  processes holding the GPU:\n")
-	for _, ln := range strings.Split(procs, "\n") {
+	for ln := range strings.SplitSeq(procs, "\n") {
 		fmt.Fprintf(g.w, "    %s\n", ln)
 	}
 	// Only OUR leftovers are a problem to call out; a display server legitimately holds some.
@@ -651,7 +651,7 @@ func drainingTests() []string {
 			continue
 		}
 		name := ""
-		for _, ln := range strings.Split(string(b), "\n") {
+		for ln := range strings.SplitSeq(string(b), "\n") {
 			if m := fnRe.FindStringSubmatch(ln); m != nil {
 				name = m[1]
 				continue
@@ -690,7 +690,7 @@ func (g *gpuGate) cudaHeavy() {
 	lst := exec.Command("go", "test", "-tags", "cuda goinfer_testhooks", "./cuda/", "-list", ".*")
 	lst.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if b, err := lst.Output(); err == nil {
-		for _, ln := range strings.Split(string(b), "\n") {
+		for ln := range strings.SplitSeq(string(b), "\n") {
 			if strings.HasPrefix(ln, "Test") {
 				total++
 			}
@@ -836,18 +836,18 @@ func (g *gpuGate) cudaCgoFree() {
 	}
 	defer os.Remove(bin)
 	g.ran++
-	linked := ""
+	var linked strings.Builder
 	if b, err := exec.Command("ldd", bin).Output(); err == nil {
-		for _, ln := range strings.Split(string(b), "\n") {
+		for ln := range strings.SplitSeq(string(b), "\n") {
 			l := strings.ToLower(ln)
 			if strings.Contains(l, "libcuda") || strings.Contains(l, "libnvrtc") || strings.Contains(l, "libcudart") {
-				linked += ln + "\n"
+				linked.WriteString(ln + "\n")
 			}
 		}
 	}
-	if linked != "" {
+	if linked.String() != "" {
 		g.bad("binary links CUDA libraries — the cgo-free claim is false:")
-		for _, ln := range strings.Split(strings.TrimRight(linked, "\n"), "\n") {
+		for ln := range strings.SplitSeq(strings.TrimRight(linked.String(), "\n"), "\n") {
 			fmt.Fprintf(g.w, "      %s\n", ln)
 		}
 		return
@@ -1084,19 +1084,19 @@ func (g *gpuGate) metalCgoFree() {
 	// framework at RUNTIME, so a link-time reference to it would falsify the
 	// cgo-free claim exactly as a libcuda link falsifies the CUDA one. Checking the
 	// build succeeds proves only that it compiles.
-	linked := ""
+	var linked strings.Builder
 	if b, err := exec.Command("otool", "-L", bin).Output(); err == nil {
-		for _, ln := range strings.Split(string(b), "\n") {
+		for ln := range strings.SplitSeq(string(b), "\n") {
 			l := strings.ToLower(ln)
 			if strings.Contains(l, "metal.framework") || strings.Contains(l, "metalperformanceshaders") {
-				linked += ln + "\n"
+				linked.WriteString(ln + "\n")
 			}
 		}
 	}
 	os.Remove(bin)
-	if linked != "" {
+	if linked.String() != "" {
 		g.bad("binary links the Metal framework — the cgo-free claim is false:")
-		for _, ln := range strings.Split(strings.TrimRight(linked, "\n"), "\n") {
+		for ln := range strings.SplitSeq(strings.TrimRight(linked.String(), "\n"), "\n") {
 			fmt.Fprintf(g.w, "        %s\n", strings.TrimSpace(ln))
 		}
 		return
@@ -1329,7 +1329,7 @@ func (g *gpuGate) repoHygiene() {
 		other = "linux"
 	}
 	ciOK, ciBad, ciSkipped := 0, 0, 0
-	for _, line := range strings.Split(strings.TrimRight(string(rows), "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(string(rows), "\n"), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -1342,8 +1342,8 @@ func (g *gpuGate) repoHygiene() {
 			ciSkipped++
 			continue
 		}
-		if strings.HasPrefix(kind, "runner:") {
-			g.skip("CI[%s] %s — %s", job, name, strings.TrimPrefix(kind, "runner:"))
+		if after, ok := strings.CutPrefix(kind, "runner:"); ok {
+			g.skip("CI[%s] %s — %s", job, name, after)
 			continue
 		}
 		// The ENVIRONMENT is part of the check. CI's root job has no go.work, so the module-boundary

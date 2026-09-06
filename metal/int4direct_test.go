@@ -49,7 +49,7 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 	}
 	seed := seedPrompt(t, path, probeText)
 	pos := len(seed) - 1
-	for i := 0; i < pos; i++ {
+	for i := range pos {
 		r.forwardTrunkForTest(m4.EmbedResidentForTest(seed[i]), i, r.nL)
 	}
 	_, _, _, mctx, _ := r.forwardSubCaptureForTest(m4.EmbedResidentForTest(seed[pos]), pos)
@@ -69,7 +69,7 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 	_, nL, _, nKV, hd, _, _ := ref.Dims()
 	cr := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
 	ct := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
-	for i := 0; i < pos; i++ {
+	for i := range pos {
 		if _, err := ref.ForwardForTest(seed[i], cr); err != nil {
 			t.Fatalf("ref walk: %v", err)
 		}
@@ -98,7 +98,7 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 
 	t.Logf("=== int4-DIRECT context vs int4-ref (identical weights now) ===")
 	var l0, l1 float64
-	for l := 0; l < nL; l++ {
+	for l := range nL {
 		vr := cos(mctx[l], rctx[l])
 		vt := cos(mctx[l], tctx[l])
 		if l == 0 {

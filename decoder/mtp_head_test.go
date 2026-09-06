@@ -232,20 +232,20 @@ func mtpAccept(t *testing.T, m *Model, head *MTPHead, tk *tokenizer.Tokenizer, t
 	emb := make([]float32, head.hidden)
 	m.embedToken(toks[0], emb)
 	stT := m.NewMTPState(head, 16)
-	for i := 0; i < 3; i++ { // warm
+	for i := range 3 { // warm
 		_, _ = m.MTPStep(head, emb, feats[0], i, stT)
 		_, _, _ = m.ForwardCapture(toks[0], cache, []int{last})
 	}
 	const reps = 20
 	t0 := time.Now()
-	for i := 0; i < reps; i++ {
+	for i := range reps {
 		if _, err := m.MTPStep(head, emb, feats[0], i, stT); err != nil {
 			t.Fatalf("MTPStep: %v", err)
 		}
 	}
 	cHead := time.Since(t0) / reps
 	t1 := time.Now()
-	for i := 0; i < reps; i++ {
+	for range reps {
 		if _, _, err := m.ForwardCapture(toks[0], cache, []int{last}); err != nil {
 			t.Fatalf("ForwardCapture: %v", err)
 		}

@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"math"
+	"slices"
 	"testing"
 	"time"
 )
@@ -29,8 +30,8 @@ func TestDecodeRunnerW4A8_7B_fit(t *testing.T) {
 	// with "failed to request device" — an out-of-memory wearing an unrelated message.
 	var owned []interface{ Close() error }
 	defer func() {
-		for i := len(owned) - 1; i >= 0; i-- {
-			_ = owned[i].Close()
+		for _, o := range slices.Backward(owned) {
+			_ = o.Close()
 		}
 	}()
 

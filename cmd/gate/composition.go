@@ -150,7 +150,7 @@ func goldenAxes() (quants, loaders map[string]bool, ok bool) {
 func atoms(xs map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for x := range xs {
-		for _, a := range strings.Split(x, "/") {
+		for a := range strings.SplitSeq(x, "/") {
 			out[a] = true
 		}
 	}

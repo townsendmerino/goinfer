@@ -322,7 +322,7 @@ func trackedFixtureNames() (map[string]bool, bool) {
 		return nil, false
 	}
 	names := map[string]bool{}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

@@ -78,7 +78,7 @@ func TestThetaProbe_Metal(t *testing.T) {
 		// already measured, so one cell would not characterise it.
 		for _, depth := range []int{128, 512} {
 			rf.Reset()
-			for p := 0; p < depth; p++ {
+			for p := range depth {
 				if _, err := rf.Forward(emb(), p); err != nil {
 					t.Fatalf("%s seed at %d: %v", mdl, p, err)
 				}
@@ -91,7 +91,7 @@ func TestThetaProbe_Metal(t *testing.T) {
 				}
 				const reps = 9
 				samples := make([]float64, 0, reps)
-				for r := 0; r < reps+2; r++ {
+				for r := range reps + 2 {
 					rf.TruncateTo(depth)
 					t0 := time.Now()
 					if _, err := rf.ForwardN(embs, depth); err != nil {

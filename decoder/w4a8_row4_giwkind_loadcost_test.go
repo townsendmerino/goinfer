@@ -60,7 +60,7 @@ func TestW4A8Row4GiwKind_loadTimeAndMemoryDelta(t *testing.T) {
 	tKind4 := time.Duration(1<<63 - 1)
 	var mGGUFBest *Model
 	var wKind4Best *Weights
-	for rep := 0; rep < 3; rep++ {
+	for rep := range 3 {
 		ggufFirst := rep%2 == 0
 		var dG time.Duration
 		var dK time.Duration

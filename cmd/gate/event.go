@@ -32,6 +32,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -231,10 +232,8 @@ func (r *results) lookupTop(name string) (string, bool) {
 }
 
 func (r *results) noteOrder(key testKey) {
-	for _, k := range r.order {
-		if k == key {
-			return
-		}
+	if slices.Contains(r.order, key) {
+		return
 	}
 	r.order = append(r.order, key)
 }

@@ -67,7 +67,7 @@ func TestGPU_verdictHasThreeStates(t *testing.T) {
 		g.dirty, g.commit, g.ran = dirty, "abc1234", ran
 		g.grp("alpha")
 		if fails > 0 {
-			for i := 0; i < fails; i++ {
+			for range fails {
 				g.bad("something broke")
 			}
 		} else {
@@ -372,7 +372,7 @@ func TestGPU_metalPrefillCellChecksVacuous(t *testing.T) {
 	// cr.vacuous() near removed code would fool this the same way a doc comment fooled the audit's
 	// own G-07 finding.
 	found := false
-	for _, line := range strings.Split(block, "\n") {
+	for line := range strings.SplitSeq(block, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "//") {
 			continue
 		}

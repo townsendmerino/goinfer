@@ -77,7 +77,7 @@ func TestThetaProbe_CPU(t *testing.T) {
 			}
 			const reps = 7
 			samples := make([]float64, 0, reps)
-			for r := 0; r < reps+1; r++ {
+			for r := range reps + 1 {
 				cache.TruncateTo(depth)
 				t0 := time.Now()
 				if _, err := m.forwardN(ctx, seq, cache); err != nil {

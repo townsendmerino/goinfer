@@ -47,9 +47,9 @@ func TestZZ_metalSoftcapTokenShare(t *testing.T) {
 	}
 	const K = 64
 	best := time.Duration(1 << 62)
-	for rep := 0; rep < 3; rep++ {
+	for range 3 {
 		start := time.Now()
-		for i := 0; i < K; i++ {
+		for range K {
 			r.ForwardEmb(emb, pos) // full-logits sampling path (includes the parallel softcap)
 			pos++
 		}

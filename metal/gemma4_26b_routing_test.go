@@ -115,7 +115,7 @@ func TestGemma4_26B_routingAgreement(t *testing.T) {
 	topK := len(idxCPU[0])
 	t.Logf("=== router top-%d agreement CPUint4 vs paged-Metal, %d MoE layers, prompt %v ===", topK, nMoE, prompt)
 	firstFlip := -1
-	for li := 0; li < nMoE; li++ {
+	for li := range nMoE {
 		row := ""
 		for pos := range prompt {
 			cpu := idxCPU[pos*nMoE+li]
@@ -150,7 +150,7 @@ func TestGemma4_26B_routingAgreement(t *testing.T) {
 	var sumFlip, sumMatch float64
 	var nFlip, nMatch int
 	for pos := range prompt {
-		for li := 0; li < nMoE; li++ {
+		for li := range nMoE {
 			d := pos*nMoE + li
 			if d >= len(marginCPU) {
 				continue

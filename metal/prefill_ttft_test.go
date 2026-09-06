@@ -63,7 +63,7 @@ func TestPrefillTTFT(t *testing.T) {
 		// SEQUENTIAL — today's shipped default: one Forward call per prompt token,
 		// from an empty cache (position 0), matching how a real prompt is ingested.
 		t0 := time.Now()
-		for i := 0; i < p; i++ {
+		for i := range p {
 			if _, e := rf.Forward(embs[i], i); e != nil {
 				t.Fatalf("sequential P=%d pos=%d: %v", p, i, e)
 			}

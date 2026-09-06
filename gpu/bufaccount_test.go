@@ -35,7 +35,7 @@ func TestNoBufferLeak(t *testing.T) {
 			t.Fatalf("warm-up FusedMLP: %v", err)
 		}
 		base := LiveBufferBytes()
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			if _, err := ctx.FusedMLP(f.x, f.rmsWDev, f.gateRM, f.upRM, f.downRM, f.eps, false); err != nil {
 				t.Fatalf("FusedMLP iter %d: %v", i, err)
 			}
@@ -71,7 +71,7 @@ func TestNoBufferLeak(t *testing.T) {
 			t.Fatalf("warm-up geluHost: %v", err)
 		}
 		base := LiveBufferBytes()
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			if _, err := ctx.LayerNormRowsHost(src, w, b, rows, h, 1e-6); err != nil {
 				t.Fatalf("LayerNormRowsHost iter %d: %v", i, err)
 			}

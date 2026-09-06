@@ -103,7 +103,7 @@ func TestEagle_prefillsWithTheSameKernelAsGenerate(t *testing.T) {
 		t.Fatalf("read spec_eagle.go: %v", err)
 	}
 	var prefill, exact int
-	for _, ln := range strings.Split(string(src), "\n") {
+	for ln := range strings.SplitSeq(string(src), "\n") {
 		s := strings.TrimSpace(ln)
 		if strings.HasPrefix(s, "//") || !strings.Contains(s, "captureN(") {
 			continue

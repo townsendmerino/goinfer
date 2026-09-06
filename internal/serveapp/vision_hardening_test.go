@@ -165,7 +165,7 @@ func TestServe_noRouteEncodesARenderedPrompt(t *testing.T) {
 			continue
 		}
 		scanned++
-		for _, line := range strings.Split(string(b), "\n") {
+		for line := range strings.SplitSeq(string(b), "\n") {
 			// Comments describing the old code are not the old code — this check fired on its own
 			// explanation of the defect the first time it ran.
 			if strings.HasPrefix(strings.TrimSpace(line), "//") {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -671,10 +672,8 @@ func TestRealckptRunIsAdditiveOverTheLegacyPattern(t *testing.T) {
 func realckptCell(t *testing.T) cell {
 	t.Helper()
 	for _, c := range parityCells(nil, true, "1m") {
-		for _, tag := range c.Tags {
-			if tag == "realckpt" {
-				return c
-			}
+		if slices.Contains(c.Tags, "realckpt") {
+			return c
 		}
 	}
 	t.Fatal("no realckpt cell built with realckpt=true")

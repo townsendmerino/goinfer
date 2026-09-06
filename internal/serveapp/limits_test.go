@@ -309,7 +309,7 @@ func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
 	// Code lines only. The comment above the constants NAMES the old modes, and a substring scan
 	// over the whole file matches its own explanation of the defect — the second time a check in
 	// this batch did that, so it is worth doing deliberately rather than rediscovering.
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "//") {
 			continue
 		}

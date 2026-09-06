@@ -248,7 +248,7 @@ func runPrefillRefCell(t *testing.T, rf *metalResident, m *decoder.Model, ids []
 
 	lastLog := time.Now()
 	var exactSeed []float32
-	for i := 0; i < K; i++ {
+	for i := range K {
 		lg, err := rf.Forward(embs[i], i)
 		if err != nil {
 			t.Fatalf("exact Forward pos=%d: %v", i, err)

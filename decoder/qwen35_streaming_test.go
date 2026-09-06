@@ -165,7 +165,7 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 	if !bytes.Equal(oldAfter, newAfter) {
 		n := min(len(oldAfter), len(newAfter))
 		firstDiff := -1
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if oldAfter[i] != newAfter[i] {
 				firstDiff = i
 				break

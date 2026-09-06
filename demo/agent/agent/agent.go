@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -379,8 +380,8 @@ func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segme
 	// The block is always appended to the CURRENT (last) user turn, which renders last; an
 	// EARLIER turn that happens to contain the same literal text must not be mistaken for it.
 	segIdx := -1
-	for i := len(segs) - 1; i >= 0; i-- {
-		if !segs[i].Special && strings.Contains(segs[i].Text, block) {
+	for i, seg := range slices.Backward(segs) {
+		if !seg.Special && strings.Contains(seg.Text, block) {
 			segIdx = i
 			break
 		}
@@ -410,8 +411,8 @@ func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segme
 // text) to keep the demo resilient.
 func (s *Session) decide(ctx context.Context, user string) decision {
 	turns := append(append([]msg(nil), s.history...), msg{"user", user})
-	sp := decoder.SamplingParams{Temperature: 0}
-	sp.LogitProcessor = s.schemaMasker([]byte(decisionSchema))
+	sp := decoder.SamplingParams{Temperature: 0,
+		LogitProcessor: s.schemaMasker([]byte(decisionSchema))}
 	raw, _ := s.generate(ctx, decideSystem, turns, sp, 96, nil)
 
 	var d decision

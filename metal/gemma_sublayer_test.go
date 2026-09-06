@@ -53,7 +53,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 
 	// Walk pos 0..pos-1 so Metal's KV holds real history, then capture the sublayer contributions
 	// at the probe position.
-	for i := 0; i < pos; i++ {
+	for i := range pos {
 		r.forwardTrunkForTest(m8.EmbedResidentForTest(seed[i]), i, r.nL)
 	}
 	attn, mlp, _, ctx, cqDeq := r.forwardSubCaptureForTest(m8.EmbedResidentForTest(seed[pos]), pos)
@@ -123,7 +123,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 	}
 	_, nL, _, nKV, hd, _, _ := m8w.Dims()
 	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
-	for i := 0; i < pos; i++ {
+	for i := range pos {
 		if _, err := m8w.ForwardForTest(seed[i], cache); err != nil {
 			t.Fatalf("cpu walk: %v", err)
 		}
@@ -144,7 +144,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 		t.Fatalf("load int4 ctx reference: %v", e4)
 	}
 	c4 := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
-	for i := 0; i < pos; i++ {
+	for i := range pos {
 		if _, err := m4.ForwardForTest(seed[i], c4); err != nil {
 			t.Fatalf("int4 walk: %v", err)
 		}
@@ -169,7 +169,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 	// trunk: a break from layer 0 = a per-layer attention-op bug (RoPE base / window / QKV); a
 	// clean early trunk that degrades late = accumulated drift feeding attention.
 	t.Logf("=== per-layer cos(Metal ctx, int4-ref ctx) — where the attention context first breaks ===")
-	for l := 0; l < nL; l++ {
+	for l := range nL {
 		tag := "global"
 		if m4.LayerIsLocalResident(l) {
 			tag = "local "

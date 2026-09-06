@@ -85,7 +85,7 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 
 	runCanon := func(samples []sample) time.Duration {
 		start := time.Now()
-		for r := 0; r < reps; r++ {
+		for r := range reps {
 			s := samples[r%len(samples)]
 			linalg.MatmulBTW4A8Into(&ws, s.act, s.q4, s.q4s, s.dstA, 1, s.cols, s.rows, s.group)
 		}
@@ -93,7 +93,7 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 	}
 	runRow4 := func(samples []sample) time.Duration {
 		start := time.Now()
-		for r := 0; r < reps; r++ {
+		for r := range reps {
 			s := samples[r%len(samples)]
 			linalg.MatmulBTW4A8Row4Into(&ws, s.act, s.q4Row4, s.q4Row4Scales, s.dstB, 1, s.cols, s.rows, s.group)
 		}

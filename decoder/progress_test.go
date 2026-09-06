@@ -97,9 +97,7 @@ func newProgress(t *testing.T, label string, total int) *progress {
 		return p // silenced — the mutators below stay valid, they just never print
 	}
 	fmt.Fprintf(os.Stderr, "%s [%s] start%s\n", time.Now().Format("15:04:05"), p.label, p.totalSuffix())
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		tk := time.NewTicker(iv)
 		defer tk.Stop()
 		for {
@@ -110,7 +108,7 @@ func newProgress(t *testing.T, label string, total int) *progress {
 				p.emit("")
 			}
 		}
-	}()
+	})
 	return p
 }
 
@@ -234,7 +232,7 @@ func procReadBytes() (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	for _, ln := range strings.Split(string(b), "\n") {
+	for ln := range strings.SplitSeq(string(b), "\n") {
 		rest, ok := strings.CutPrefix(ln, "read_bytes:")
 		if !ok {
 			continue

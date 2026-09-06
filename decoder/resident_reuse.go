@@ -83,10 +83,7 @@ func (m *Model) residentReuseLen(prompt []int) int {
 		}
 		return n
 	}
-	n := len(m.resIDs)
-	if len(prompt)-1 < n {
-		n = len(prompt) - 1
-	}
+	n := min(len(prompt)-1, len(m.resIDs))
 	i := 0
 	for i < n && m.resIDs[i] == prompt[i] {
 		i++

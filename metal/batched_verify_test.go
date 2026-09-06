@@ -113,7 +113,7 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 
 		// --- attention block ---
 		aq, asc := byteBuf(d, M*H), NewBufferFloats(d, make([]float32, M))
-		for m := 0; m < M; m++ {
+		for m := range M {
 			e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, bx.At(m*H*4), L.preNorm, aq.At(m*H), asc.At(m*4), uH, r.uEps, r.uAddOne)
 		}
 		if tgb := bvkThreadgroupBytes(H, M); tgb > limit {
@@ -123,18 +123,18 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		e.DispatchTG(pipes.bias, qkvRows*32, 256, bvkThreadgroupBytes(H, M), L.qkvW, L.qkvS, aq, asc, qkv, L.qkvBias, uH, uQkvRows, uKK)
 
 		if r.qkNorm {
-			for m := 0; m < M; m++ {
+			for m := range M {
 				e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, qkv.At(m*qkvRows*4), L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 			}
 		}
 		if g.kEqV {
-			for m := 0; m < M; m++ {
+			for m := range M {
 				e.Dispatch(r.pQKNorm, g.nKV*tgReduceAttn, tgReduceAttn, qkv.At(m*qkvRows*4+vOff), r.vNormUnit, r.vNormUnit, r.uZero, g.uNKV, g.uHd, r.uZero, r.uEps, r.uZero)
 			}
 		}
 
 		cq, cSc := byteBuf(d, M*nHhd), NewBufferFloats(d, make([]float32, M))
-		for m := 0; m < M; m++ {
+		for m := range M {
 			pos := startPos + m
 			uPos, uNKeys := NewBufferU32(d, uint32(pos)), NewBufferU32(d, uint32(pos+1))
 			e.Dispatch(r.pRope, r.nH*g.half, 64, qkv.At(m*qkvRows*4), L.invf, g.uHd, uPos, g.uQtotal, g.uHalf, L.mscale)
@@ -154,10 +154,10 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 			// bit-identical match here — mirrors metal/model.go's r.sandwich branch exactly.
 			oOut := d.NewBufferLen(M * H)
 			e.DispatchTG(pipes.plain, H*32, 256, bvkThreadgroupBytes(nHhd, M), L.oW, L.oS, cq, cSc, oOut, uNHhdOut, uH, uKK)
-			for m := 0; m < M; m++ {
+			for m := range M {
 				e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, oOut.At(m*H*4), L.postAttnNorm, uH, r.uEps, r.uAddOne)
 			}
-			for m := 0; m < M; m++ {
+			for m := range M {
 				e.Dispatch(r.pRes, H, 256, bx.At(m*H*4), oOut.At(m*H*4))
 			}
 		} else {
@@ -170,7 +170,7 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 
 		// --- ffn block (dense SwiGLU/GeGLU only) ---
 		mq, mSc := byteBuf(d, M*H), NewBufferFloats(d, make([]float32, M))
-		for m := 0; m < M; m++ {
+		for m := range M {
 			e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, bx.At(m*H*4), L.postNorm, mq.At(m*H), mSc.At(m*4), uH, r.uEps, r.uAddOne)
 		}
 		if tgb := bvkThreadgroupBytes(H, M); tgb > limit {
@@ -180,7 +180,7 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		e.DispatchTG(pipes.plain, (2*I)*32, 256, bvkThreadgroupBytes(H, M), L.guW, L.guS, mq, mSc, guOut, uH, u2I, uKK)
 
 		dq, dSc := byteBuf(d, M*I), NewBufferFloats(d, make([]float32, M))
-		for m := 0; m < M; m++ {
+		for m := range M {
 			e.Dispatch(r.pSw, 256, 256, guOut.At(m*2*I*4), guOut.At(m*2*I*4+I*4), dq.At(m*I), dSc.At(m*4), uI, r.uAct)
 		}
 
@@ -188,10 +188,10 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 		if r.sandwich {
 			downOut := d.NewBufferLen(M * H)
 			e.Dispatch(pipes.coal, H*32, 32, L.dW, L.dS, dq, dSc, downOut, uI, uH, uKK)
-			for m := 0; m < M; m++ {
+			for m := range M {
 				e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, downOut.At(m*H*4), L.postMLPNorm, uH, r.uEps, r.uAddOne)
 			}
-			for m := 0; m < M; m++ {
+			for m := range M {
 				e.Dispatch(r.pRes, H, 256, bx.At(m*H*4), downOut.At(m*H*4))
 			}
 		} else {
@@ -204,18 +204,18 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 	// --- final norm + LM head (per-token: the int8 LM head is out of scope for this W4A8
 	// investigation, and is decode's own unmodified pipeline either way) ---
 	finalAq, finalAsc := byteBuf(d, M*H), NewBufferFloats(d, make([]float32, M))
-	for m := 0; m < M; m++ {
+	for m := range M {
 		e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, bx.At(m*H*4), r.finalNorm, finalAq.At(m*H), finalAsc.At(m*4), uH, r.uEps, r.uAddOne)
 	}
 	logitsOut := d.NewBufferLen(M * r.V)
-	for m := 0; m < M; m++ {
+	for m := range M {
 		e.Dispatch(r.pGemvW8, r.V*32, 32, finalAq.At(m*H), finalAsc.At(m*4), r.lmW, r.lmS, logitsOut.At(m*r.V*4), uH)
 	}
 	e.End()
 
 	res := bvkResult{}
 	lf, hf := logitsOut.Floats(), bxf
-	for m := 0; m < M; m++ {
+	for m := range M {
 		res.logits = append(res.logits, append([]float32(nil), lf[m*r.V:(m+1)*r.V]...))
 		res.hidden = append(res.hidden, append([]float32(nil), hf[m*H:(m+1)*H]...))
 	}
@@ -318,7 +318,7 @@ func TestBatchedVerifyKernelParity(t *testing.T) {
 					embs := make([][]float32, M)
 					wantLogits := make([][]float32, M)
 					wantHidden := make([][]float32, M)
-					for m := 0; m < M; m++ {
+					for m := range M {
 						tok := (m*997 + 13) % 5000 // arbitrary but deterministic and reproducible token ids
 						embs[m] = embed(tok)
 						l, err := seq.Forward(embs[m], m)
@@ -339,7 +339,7 @@ func TestBatchedVerifyKernelParity(t *testing.T) {
 					if !ok || rfHidden == nil {
 						t.Fatal("hidden-capture resident DECLINED")
 					}
-					for m := 0; m < M; m++ {
+					for m := range M {
 						wantHidden[m] = rfHidden.r.forwardTrunkForTest(embs[m], m, rfHidden.r.nL)
 					}
 
@@ -349,7 +349,7 @@ func TestBatchedVerifyKernelParity(t *testing.T) {
 					}
 
 					mismatchedLogits, mismatchedHidden := 0, 0
-					for m := 0; m < M; m++ {
+					for m := range M {
 						if !exactEqual(wantLogits[m], got.logits[m]) {
 							mismatchedLogits++
 							if mismatchedLogits <= 3 {
@@ -394,10 +394,7 @@ func f32bits(f float32) uint32 {
 // firstDiff reports the index and values of the first bit-differing element, for a useful failure
 // message without dumping the whole vector.
 func firstDiff(a, b []float32) string {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
+	n := min(len(b), len(a))
 	for i := 0; i < n; i++ {
 		if f32bits(a[i]) != f32bits(b[i]) {
 			return fmt.Sprintf("[%d] want=%v got=%v (bits %08x vs %08x)", i, a[i], b[i], f32bits(a[i]), f32bits(b[i]))

@@ -219,7 +219,7 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 	// quietly agreed).
 	lastLog := time.Now()
 	var exactSeed []float32
-	for i := 0; i < K; i++ {
+	for i := range K {
 		lg, err := rf.Forward(embs[i], i)
 		if err != nil {
 			t.Fatalf("exact Forward pos=%d: %v", i, err)
@@ -234,7 +234,7 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 	exactLogits := make([][]float32, continuationN)
 	pos := K - 1
 	cur := exactSeed
-	for i := 0; i < continuationN; i++ {
+	for i := range continuationN {
 		refTokens[i] = prefillGateArgmax(cur)
 		exactLogits[i] = cur
 		if i == continuationN-1 {

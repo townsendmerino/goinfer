@@ -88,8 +88,8 @@ func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segme
 	// fail downstream with a misleading "template mismatch"), while unrelated earlier text gets
 	// tagged Special and parsed as sentinels it was never meant to be.
 	segIdx := -1
-	for i := len(segs) - 1; i >= 0; i-- {
-		if !segs[i].Special && strings.Contains(segs[i].Text, block) {
+	for i, seg := range slices.Backward(segs) {
+		if !seg.Special && strings.Contains(seg.Text, block) {
 			segIdx = i
 			break
 		}

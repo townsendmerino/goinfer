@@ -73,7 +73,7 @@ func TestGemma4Router_residentIdxParity(t *testing.T) {
 	// MoE layer indices (routerProj differs per layer). Decisions are token-outer, layer-inner, so
 	// decision d → moeLayers[d % nMoELayers] (asserted below).
 	var moeLayers []int
-	for l := 0; l < 64; l++ {
+	for l := range 64 {
 		if _, _, _, _, _, ok := m.Gemma4MoERouterForTest(l); ok {
 			moeLayers = append(moeLayers, l)
 		}

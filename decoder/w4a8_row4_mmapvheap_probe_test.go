@@ -95,7 +95,7 @@ func TestRow4_mmapVsHeapResident(t *testing.T) {
 
 	timeRuns := func() time.Duration {
 		start := time.Now()
-		for r := 0; r < reps; r++ {
+		for r := range reps {
 			s := samples[r%len(samples)]
 			s.wm.MatmulBTW4A8Into(&ws, s.act, s.dst, 1)
 		}

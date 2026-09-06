@@ -36,7 +36,7 @@ func seedPrompt(t *testing.T, path, text string) []int {
 		if bos, ok := tk.TokenID("<bos>"); ok {
 			ids = append(ids, bos)
 		}
-		for _, word := range strings.Fields(text) {
+		for word := range strings.FieldsSeq(text) {
 			id, ok := tk.TokenID("▁" + word) // SPM marks a leading space with ▁
 			if !ok {
 				t.Skipf("vocab lookup failed for %q — cannot build a verified prompt", word)
@@ -92,7 +92,7 @@ func residentParity(t *testing.T, path string, seed []int, steps int) parityStat
 
 	st := parityStats{steps: steps, minCos: 1}
 	tok := seed[0]
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		cpuL, err := mcpu.ForwardForTest(tok, cache)
 		if err != nil {
 			t.Fatalf("cpu forward: %v", err)

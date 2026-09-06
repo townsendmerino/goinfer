@@ -52,9 +52,9 @@ func TestZZ_attnM3ThreadWidth(t *testing.T) {
 
 	run := func(tw int) float64 {
 		best := time.Hour.Seconds()
-		for rep := 0; rep < 20; rep++ {
+		for range 20 {
 			e := qu.BeginNP()
-			for l := 0; l < nL; l++ {
+			for range nL {
 				e.Dispatch(pipe, nH*tw, tw, q, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWindow)
 			}
 			e.FinishEncoding()

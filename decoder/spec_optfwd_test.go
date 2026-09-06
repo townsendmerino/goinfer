@@ -20,7 +20,7 @@ func TestOptFwdGate_hysteresis(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	hit := func() bool { return rng.Float64() < 0.73 } // i.i.d., matching the measured T=1.0 rate
 	turnedOff := -1
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		g.Observe(hit())
 		if !g.Should() && turnedOff < 0 {
 			turnedOff = i
@@ -30,7 +30,7 @@ func TestOptFwdGate_hysteresis(t *testing.T) {
 		t.Fatalf("gate never turned off under a sustained ~75%% hit rate (alpha=%.3f)", g.Alpha())
 	}
 	// Must STAY off — check a further run of the same rate doesn't flap back on immediately.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		g.Observe(hit())
 	}
 	if g.Should() {
@@ -43,7 +43,7 @@ func TestOptFwdGate_hysteresis(t *testing.T) {
 func TestOptFwdGate_highHitRateStaysOn(t *testing.T) {
 	g := &optFwdGate{}
 	rng := rand.New(rand.NewSource(2))
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		g.Observe(rng.Float64() < 0.997) // i.i.d., matching the measured T=0.2 rate
 		if !g.Should() {
 			t.Fatalf("gate turned off under a sustained ~99.7%% hit rate at step %d (alpha=%.3f)", i, g.Alpha())
@@ -58,12 +58,12 @@ func TestOptFwdGate_marginalRateHoldsSteady(t *testing.T) {
 	g := &optFwdGate{}
 	rng := rand.New(rand.NewSource(93))
 	hit := func() bool { return rng.Float64() < 0.93 } // i.i.d., not a periodic burst pattern
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		g.Observe(hit()) // warm up past the optimistic seed
 	}
 	flips := 0
 	was := g.Should()
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		g.Observe(hit())
 		if g.Should() != was {
 			flips++

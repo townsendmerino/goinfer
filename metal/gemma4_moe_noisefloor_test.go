@@ -24,7 +24,6 @@ import (
 // logs everything, and fails only if a fixture is degenerate enough that it could not gate.
 func TestGemma4MoE_noiseFloor(t *testing.T) {
 	for _, fx := range []string{"gemma4-moe-tiny", "gemma4-moe-kv-tiny"} {
-		fx := fx
 		t.Run(fx, func(t *testing.T) {
 			dir := "../testdata/" + fx
 			if _, err := os.Stat(dir); err != nil {
@@ -86,7 +85,7 @@ func TestGemma4MoE_noiseFloor(t *testing.T) {
 			}
 			// (3) routing agreement: fraction of decisions whose top-k SET matches, + min margin.
 			agree, total := 0, min(len(idxF), len(idx4))
-			for i := 0; i < total; i++ {
+			for i := range total {
 				if sameSet(idxF[i], idx4[i]) {
 					agree++
 				}

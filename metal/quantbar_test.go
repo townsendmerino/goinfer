@@ -88,7 +88,7 @@ func cpuQuantFork(t *testing.T, path string, seed []int, steps int) forkStats {
 
 	st := forkStats{steps: steps, minCos: 1}
 	tok := seed[0]
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		l8, err := m8.ForwardForTest(tok, c8)
 		if err != nil {
 			t.Fatalf("int8 forward: %v", err)

@@ -110,10 +110,7 @@ func BenchmarkDecodeSerialVsParallel(b *testing.B) {
 			<-done
 
 			// base+1 is this sampler goroutine itself; anything above that is fan-out.
-			excess := atomic.LoadInt64(&maxG) - atomic.LoadInt64(&baseG) - 1
-			if excess < 0 {
-				excess = 0
-			}
+			excess := max(atomic.LoadInt64(&maxG)-atomic.LoadInt64(&baseG)-1, 0)
 			b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "tok/s")
 			b.ReportMetric(float64(excess), "excess-goroutines")
 			b.Logf("%s: threshold=%d peak goroutines %d (baseline %d, excess %d)",

@@ -46,10 +46,7 @@ func TestRow4_coldTouchLatency(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(2))
 		var ws linalg.Workspace
-		stride := len(m.w.Layers[0].gemma4moe.expertsGateUp) * len(m.w.Layers) / nExperts
-		if stride < 1 {
-			stride = 1
-		}
+		stride := max(len(m.w.Layers[0].gemma4moe.expertsGateUp)*len(m.w.Layers)/nExperts, 1)
 		count := 0
 		for li := 0; li < len(m.w.Layers) && count < nExperts; li++ {
 			gm := m.w.Layers[li].gemma4moe

@@ -39,7 +39,7 @@ func TestReleasing_standaloneBuildGateExists(t *testing.T) {
 	// lines are skipped: the workflow EXPLAINS why it does not run `go work init`, and matching
 	// that explanation is the same "a check that matches its own comment" trap this audit has
 	// now produced three times.
-	for _, ln := range strings.Split(src, "\n") {
+	for ln := range strings.SplitSeq(src, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(ln), "#") {
 			continue
 		}

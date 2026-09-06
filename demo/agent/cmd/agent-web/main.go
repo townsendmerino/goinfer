@@ -224,11 +224,11 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 func decodeImage(s string) ([]byte, error) {
 	payload := s
 	if strings.HasPrefix(s, "data:") {
-		i := strings.IndexByte(s, ',')
-		if i < 0 {
+		_, after, ok := strings.Cut(s, ",")
+		if !ok {
 			return nil, fmt.Errorf("malformed data: URI")
 		}
-		payload = s[i+1:]
+		payload = after
 	} else if strings.Contains(s, "://") {
 		return nil, fmt.Errorf("image must be base64 (a remote URL is not fetched)")
 	}

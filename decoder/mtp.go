@@ -284,7 +284,7 @@ func (m *Model) MTPDraftFrom(h *MTPHead, st *MTPState, firstTok int, seedFeature
 	out := make([]int, 0, k)
 	emb := make([]float32, h.hidden)
 	tok, feat := firstTok, seedFeature
-	for i := 0; i < k; i++ {
+	for i := range k {
 		m.embedToken(tok, emb)
 		hid, err := m.MTPStep(h, emb, feat, pos+i, st)
 		if err != nil {

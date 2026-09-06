@@ -32,7 +32,7 @@ func TestGemma4Paging_bitExact(t *testing.T) {
 		t.Fatalf("load probe: %v", err)
 	}
 	nE, topK := 0, 0
-	for l := 0; l < 64; l++ {
+	for l := range 64 {
 		if _, _, e, k, _, ok := mProbe.Gemma4MoERouterForTest(l); ok {
 			nE, topK = e, k
 			break

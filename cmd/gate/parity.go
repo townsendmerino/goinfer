@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -210,9 +211,7 @@ func assetPreflight(w io.Writer) map[string]string {
 		fmt.Fprintf(w, "   !! counted as a blocker. THAT COUNT IS ABOUT THIS FAILURE, NOT ABOUT THE TREE.\n")
 		return env
 	}
-	for k, v := range parseExports(path) {
-		env[k] = v
-	}
+	maps.Copy(env, parseExports(path))
 	fmt.Fprintf(w, "   GOINFER_HEAVY_TESTS=1 set by this gate — the release sweep loads real checkpoints\n")
 	return env
 }
@@ -517,11 +516,11 @@ func jsonField(line, key string) string {
 		return ""
 	}
 	rest := line[i+len(key)+4:]
-	j := strings.Index(rest, `"`)
-	if j < 0 {
+	before, _, ok := strings.Cut(rest, `"`)
+	if !ok {
 		return ""
 	}
-	return rest[:j]
+	return before
 }
 
 func sortedSet(m map[string]bool) []string {

@@ -24,14 +24,14 @@ func TestLoadFusedExperts_perExpertSlicing(t *testing.T) {
 	tag := func(e, base, i int) float32 { return float32(e*100000 + base + i) }
 
 	guData := make([]float32, nExpert*guStride)
-	for e := 0; e < nExpert; e++ {
-		for i := 0; i < guStride; i++ {
+	for e := range nExpert {
+		for i := range guStride {
 			guData[e*guStride+i] = tag(e, 1000, i)
 		}
 	}
 	dnData := make([]float32, nExpert*downStride)
-	for e := 0; e < nExpert; e++ {
-		for i := 0; i < downStride; i++ {
+	for e := range nExpert {
+		for i := range downStride {
 			dnData[e*downStride+i] = tag(e, 9000, i)
 		}
 	}
@@ -57,7 +57,7 @@ func TestLoadFusedExperts_perExpertSlicing(t *testing.T) {
 		t.Fatalf("got %d experts, want %d", len(experts), nExpert)
 	}
 
-	for e := 0; e < nExpert; e++ {
+	for e := range nExpert {
 		gate, ok := experts[e].Gate.F32()
 		if !ok || len(gate) != half {
 			t.Fatalf("expert %d: Gate.F32() ok=%v len=%d, want %d", e, ok, len(gate), half)

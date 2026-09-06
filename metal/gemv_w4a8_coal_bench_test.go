@@ -95,10 +95,10 @@ func gemvW4A8CoalDrift(t *testing.T, src string) (worst gemvW4A8CoalResult, skip
 		// Recover the exact quantized nibbles the kernel will unpack (round-trip through the
 		// same words), so the CPU reference matches the on-device int4×int8 dot exactly.
 		var acc float64
-		for wi := 0; wi < nWords; wi++ {
+		for wi := range nWords {
 			x := words[wi]
 			var gi int
-			for j := 0; j < 8; j++ {
+			for j := range 8 {
 				nib := int((x>>(4*uint(j)))&0xF) - 8
 				gi += nib * int(aq[wi*8+j])
 			}

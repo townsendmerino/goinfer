@@ -207,7 +207,7 @@ func pipelineFieldNames(c *Context) map[uintptr]string {
 	out := map[uintptr]string{}
 	v := reflect.ValueOf(c).Elem()
 	tt := v.Type()
-	want := reflect.TypeOf((*wgpu.ComputePipeline)(nil))
+	want := reflect.TypeFor[*wgpu.ComputePipeline]()
 	for i := range tt.NumField() {
 		f := v.Field(i)
 		if f.Kind() == reflect.Pointer && f.Type() == want && !f.IsNil() {

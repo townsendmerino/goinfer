@@ -94,9 +94,9 @@ func TestPageCost_sharedEventReal(t *testing.T) {
 
 	best := func(fwd func(pos int)) float64 {
 		b := 1e18
-		for run := 0; run < 4; run++ {
+		for run := range 4 {
 			start := time.Now()
-			for pos := 0; pos < nTok; pos++ {
+			for pos := range nTok {
 				fwd(pos)
 			}
 			ms := float64(time.Since(start).Microseconds()) / 1000.0 / float64(nTok)

@@ -118,15 +118,13 @@ func TestPullState_singleFlight(t *testing.T) {
 	var mu sync.Mutex
 	won := 0
 	for range 32 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if p.acquire() {
 				mu.Lock()
 				won++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if won != 1 {

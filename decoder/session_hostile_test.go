@@ -70,7 +70,6 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 		t.Fatalf("the clean blob does not load: %v", err)
 	}
 
-	var se *SnapshotError
 	for name, blob := range map[string][]byte{
 		// THE FATAL ONE. numLayers=0 passed the "implausible dims" check (only negatives were
 		// rejected), which made perPos 0, which skipped the `pos` bound entirely, and
@@ -95,7 +94,7 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := m.LoadSession(blob, "")
-			if !errors.As(err, &se) {
+			if _, ok := errors.AsType[*SnapshotError](err); !ok {
 				t.Fatalf("accepted (or wrong error type): session=%v err=%v — this blob is "+
 					"CRC-valid, so nothing but an explicit check can reject it (M-04)", got != nil, err)
 			}

@@ -126,7 +126,7 @@ func TestGPU_deviceBoundaryErrorsAreNotDropped(t *testing.T) {
 		t.Fatal("residentDecoder.Reset not found")
 	}
 	reset := rs[j:min(j+1600, len(rs))]
-	for _, ln := range strings.Split(reset, "\n") {
+	for ln := range strings.SplitSeq(reset, "\n") {
 		s := strings.TrimSpace(ln)
 		if strings.HasPrefix(s, "//") {
 			continue

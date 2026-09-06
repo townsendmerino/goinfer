@@ -68,7 +68,7 @@ func TestGemma4_26B_localize(t *testing.T) {
 	// L.uWindow, so those are safe; a collision that shares a pipeline WHERE SHAPE differs is the bug).
 	type key struct{ hd, nKV, half, kEqV int }
 	seen := map[key][]int{}
-	for l := 0; l < 64; l++ {
+	for l := range 64 {
 		half := len(m.RopeInvFreqLayerResident(l))
 		if half == 0 {
 			continue

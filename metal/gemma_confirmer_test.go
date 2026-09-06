@@ -106,7 +106,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 		}
 		var f32n, i8n, amax float64
 		var crushed, amaxCh int
-		for i := 0; i < I; i++ {
+		for i := range I {
 			s := gelu(gateUp[i]) * gateUp[I+i] // f32 geglu
 			f32n += float64(s) * float64(s)
 			if a := math.Abs(float64(s)); a > amax {
@@ -176,7 +176,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 	// (B) Matched residual + Metal's OWN walked f16 KV history — isolates the KV drift. A Metal
 	// walk populates r.kc[1] with Metal's drifted f16 KV for positions 0..4; the confirmer then
 	// computes pos-5 K/V from the matched residual and attends over that mixed history.
-	for i := 0; i < probe; i++ {
+	for i := range probe {
 		r.forwardTrunkForTest(m.EmbedResidentForTest(prompt[i]), i, r.nL)
 	}
 	// Diagnostic: is Metal's WALKED K (now f32) close to goinfer's K, or does the KV VALUE drift?
@@ -196,9 +196,9 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 		// Per-position: pos 0's input is the IDENTICAL embedding, so a faithful K-compute MUST
 		// match goinfer there. If pos 0 drifts too, the K-compute itself is wrong; if only later
 		// positions drift, it's residual drift feeding a faithful K-compute.
-		for p := 0; p < probe; p++ {
+		for p := range probe {
 			var dot, na, nb float64
-			for j := 0; j < kvDim; j++ {
+			for j := range kvDim {
 				i := p*kvDim + j
 				dot += float64(mk[i]) * float64(kL1[i])
 				na += float64(mk[i]) * float64(mk[i])
@@ -213,7 +213,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 
 	// (C) Same as (B) but OVERWRITE just position 0's K/V with goinfer's (the BOS, cos 0.40). If
 	// (C) recovers, the whole crater is Metal's position-0/BOS K being wrong.
-	for i := 0; i < probe; i++ {
+	for i := range probe {
 		r.forwardTrunkForTest(m.EmbedResidentForTest(prompt[i]), i, r.nL)
 	}
 	kvDim := r.layers[injectLayer].geom.kvDim
@@ -222,7 +222,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 		copy(r.vc[injectLayer].Floats()[:kvDim], vL1[:kvDim])
 	} else {
 		kc, vc := r.kc[injectLayer].U16s(), r.vc[injectLayer].U16s()
-		for j := 0; j < kvDim; j++ {
+		for j := range kvDim {
 			kc[j], vc[j] = f32ToF16(kL1[j]), f32ToF16(vL1[j])
 		}
 	}

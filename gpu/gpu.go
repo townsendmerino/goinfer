@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"slices"
 	"sync/atomic"
 
 	"github.com/cogentcore/webgpu/wgpu"
@@ -469,8 +470,8 @@ func (c *Context) Close() error {
 	// Drain every lazily-created pipeline/shader, newest first. Registered at the allocation site
 	// (mkPipeline / track), so this stays complete as new ensure* builders are added — unlike the
 	// hand-maintained field list this replaces, which covered 14 of ~40.
-	for i := len(c.releases) - 1; i >= 0; i-- {
-		c.releases[i]()
+	for _, v := range slices.Backward(c.releases) {
+		v()
 	}
 	c.releases = nil
 	// The base objects created by New, released last (pipelines depend on the device). Each is

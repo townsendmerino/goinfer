@@ -64,15 +64,13 @@ func TestRouterCapture_isBoundedAndRaceFree(t *testing.T) {
 	// slice append.
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 256 {
 				routerCaptureDo(func() {
 					routerCaptureBuf = append(routerCaptureBuf, []int{1, 2})
 				})
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if got := len(routerCaptureBuf); got != 8*256 {

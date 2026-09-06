@@ -94,7 +94,7 @@ func bisectModel(t *testing.T, path string) {
 		layers[i] = i
 	}
 	var hidden [][]float32
-	for i := 0; i < len(seed); i++ {
+	for i := range seed {
 		var cerr error
 		_, hidden, cerr = m4.ForwardCapture(seed[i], cache, layers)
 		if cerr != nil {
@@ -160,7 +160,7 @@ func bisectModel(t *testing.T, path string) {
 	}
 	c8w := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
 	var trueHidden []float32
-	for i := 0; i < len(seed); i++ {
+	for i := range seed {
 		_, h, cerr := m8w.ForwardCapture(seed[i], c8w, []int{nL - 1})
 		if cerr != nil {
 			t.Skipf("ForwardCapture (int8w): %v", cerr)
@@ -242,7 +242,7 @@ func TestGemmaBisect_Head(t *testing.T) {
 			layers := []int{nL - 1}
 			var cpuLogits []float32
 			var lastHidden []float32
-			for i := 0; i < len(seed); i++ {
+			for i := range seed {
 				lg, hid, cerr := m4.ForwardCapture(seed[i], cache, layers)
 				if cerr != nil {
 					t.Skipf("ForwardCapture: %v", cerr)
@@ -304,7 +304,7 @@ func topDivergentDims(t *testing.T, what string, metal, cpu []float32, norm func
 		m, c, amp, cmag float64
 	}
 	dims := make([]dim, H)
-	for i := 0; i < H; i++ {
+	for i := range H {
 		oneHot := make([]float32, H)
 		oneHot[i] = 100
 		amp := float64(norm(oneHot)[i]) / (100 / sqrtH * sqrtH) // = (1+w_i)
@@ -414,7 +414,7 @@ func TestGemmaTraceDims(t *testing.T) {
 	// diverges, the fault is in Metal's compute.
 	cache8 := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
 	var hidden, hidden8 [][]float32
-	for i := 0; i < len(seed); i++ {
+	for i := range seed {
 		_, hidden, _ = m4.ForwardCapture(seed[i], cache, layers)
 		_, hidden8, _ = m8.ForwardCapture(seed[i], cache8, layers)
 		r.forwardTrunkForTest(m8.EmbedResidentForTest(seed[i]), i, nL)

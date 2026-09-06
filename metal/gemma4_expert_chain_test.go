@@ -53,7 +53,7 @@ func TestGemma4Expert_geluTanhChain(t *testing.T) {
 
 	// first MoE layer, expert 0.
 	layer := -1
-	for l := 0; l < 64; l++ {
+	for l := range 64 {
 		if _, _, _, _, _, ok := m.Gemma4MoERouterForTest(l); ok {
 			layer = l
 			break

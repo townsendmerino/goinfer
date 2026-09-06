@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -126,7 +127,7 @@ func medianDur(d []time.Duration) time.Duration {
 		return 0
 	}
 	c := append([]time.Duration(nil), d...)
-	sort.Slice(c, func(i, j int) bool { return c[i] < c[j] })
+	slices.Sort(c)
 	return c[len(c)/2]
 }
 

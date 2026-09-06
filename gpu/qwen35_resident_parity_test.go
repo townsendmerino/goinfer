@@ -50,7 +50,6 @@ func TestQwen35ResidentParity(t *testing.T) {
 	// the rest of that closure) and skip itself when nothing actually ran.
 	var subTs []*testing.T
 	for _, fx := range []string{"qwen3_5-tiny", "qwen3_5_moe-tiny"} {
-		fx := fx
 		t.Run(fx, func(st *testing.T) {
 			subTs = append(subTs, st)
 			qwen35ResidentParity(st, "../decoder/testdata/"+fx)

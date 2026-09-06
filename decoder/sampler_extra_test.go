@@ -151,7 +151,7 @@ func referenceTopLogprobs(probs []float64, topN int) []TokenLogprob {
 // topN >= vocab, and a deliberate tie.
 func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
-	for trial := 0; trial < 50; trial++ {
+	for trial := range 50 {
 		n := 4 + rng.Intn(200)
 		logits := make([]float32, n)
 		for i := range logits {

@@ -37,7 +37,7 @@ func TestAgentWeb_hardening(t *testing.T) {
 			t.Errorf("route %s is not registered; this guard is watching the wrong file", route)
 			continue
 		}
-		line := strings.SplitN(src[i:], "\n", 2)[0]
+		line, _, _ := strings.Cut(src[i:], "\n")
 		if !strings.Contains(line, "sameOrigin(") || !strings.Contains(line, "limitBody(") {
 			t.Errorf("%s is not wrapped in sameOrigin+limitBody: %s", route, line)
 		}

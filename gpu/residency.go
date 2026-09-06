@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 
 	"github.com/cogentcore/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
@@ -1111,8 +1112,8 @@ func (rd *residentDecoder) release() {
 		rd.runner.Release()
 		rd.runner = nil
 	}
-	for i := len(rd.keep) - 1; i >= 0; i-- {
-		rd.keep[i]()
+	for _, v := range slices.Backward(rd.keep) {
+		v()
 	}
 	rd.keep = nil
 }

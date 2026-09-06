@@ -50,7 +50,7 @@ func TestSSEWriter_heartbeatAndHandlerDoNotRace(t *testing.T) {
 	// Every frame must be intact: a ": ping" spliced into a "data:" line is the non-panicking
 	// failure, and it is the one a client silently drops.
 	body := rec.Body.String()
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if line == "" {
 			continue
 		}

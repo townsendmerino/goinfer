@@ -71,7 +71,7 @@ func competingRun() (string, bool) {
 		return "", false
 	}
 	self := fmt.Sprint(os.Getpid())
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		f := strings.Fields(line)
 		if len(f) < 2 || f[0] == self {
 			continue

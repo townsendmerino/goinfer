@@ -121,7 +121,7 @@ func TestMetalResident_C11_argmaxEqualsFullLogits(t *testing.T) {
 	// produces at the SAME (tok, pos). Both entry points apply the identical embed path (loadEmbedRow)
 	// and write the same KV at pos, so they are directly comparable.
 	tok := 1
-	for pos := 0; pos < 12; pos++ {
+	for pos := range 12 {
 		want := argmaxF(r.Forward(tok, pos))  // full lm head → host argmax
 		got := int(r.ForwardArgmax(tok, pos)) // fused block-argmax (ceil-tiled reduce)
 		if got != want {

@@ -63,16 +63,16 @@ func TestSAQVFusion_correctnessAndThroughput(t *testing.T) {
 	G := K / group
 	wq := make([]uint32, N*(K/8))
 	sct := make([]uint16, N*G)
-	for row := 0; row < N; row++ {
-		for gi := 0; gi < G; gi++ {
+	for row := range N {
+		for gi := range G {
 			var nibs [32]int8
 			for i := range nibs {
 				nibs[i] = int8(rng.Intn(16) - 8) // nibble range, pre-bias
 			}
 			base := row*(K/8) + gi*4
-			for w4 := 0; w4 < 4; w4++ {
+			for w4 := range 4 {
 				var word uint32
-				for n := 0; n < 8; n++ {
+				for n := range 8 {
 					v := uint32(nibs[w4*8+n]+8) & 0xF
 					word |= v << (n * 4)
 				}
