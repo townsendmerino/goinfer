@@ -101,6 +101,10 @@ var censusList = []string{
 	// SAME DeltaNet state qwen35-tiny already round-trips -- added anyway per the census's own
 	// default.
 	"../testdata/olmo_hybrid-tiny",
+	// bailing_hybrid-tiny (2026-09-06, batch 2 G5): a THIRD hybrid-cache shape (KDA's per-head
+	// conv-window-triple + matrix state, alongside MLA's latent cache on the same family's other
+	// layers) -- added anyway per the census's own default.
+	"../testdata/bailing_hybrid-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with

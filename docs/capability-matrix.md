@@ -35,11 +35,14 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Kimi K2** — Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)
 
+> **Ling 3.0** — inclusionAI Ling 3.0 (tiny/flash): DeepSeek-style MLA alternating with Kimi Delta Attention (per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN
+
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | DeepSeek-V2 | `deepseek_v2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99924 |
 | DeepSeek-V3 | `deepseek_v3` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99951 |
 | Kimi K2 | `kimi_k2` | sparse +shared | none | no | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | shared-path: deepseek_v3 |
+| Ling 3.0 | `bailing_hybrid` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 
 ## softmax-GQA
 

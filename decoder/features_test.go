@@ -88,7 +88,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"deepseek_v2": {FeatMLA, FeatMoE},
 	"deepseek_v3": {FeatMLA, FeatMoE},
 	"kimi_k2":     {FeatMLA, FeatMoE},
-	"qwen3_5_moe": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
+	// Bailing Hybrid (Ling 3.0): FeatMLA + FeatMoE are declared (webgpu), but FeatKDA is not —
+	// CPU-only overall despite the other two being ordinary DeepSeek-shaped features.
+	"bailing_hybrid": {FeatMLA, FeatMoE, FeatKDA},
+	"qwen3_5_moe":    {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	// Qwen3.8 dense (qwen3_5): the MoE sibling's profile MINUS the two MoE features. The
 	// remaining three are unchanged and each was checked against the released 27B rather
 	// than inherited — partial rotary (0.25 × head_dim 256 = 64 < 256), q_norm/k_norm on
@@ -193,6 +196,7 @@ var admissionGolden = map[string][]string{
 	"gpt_oss":          {"cuda", "metal"},
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"webgpu"},
+	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
 	"llama":            {"cuda", "metal", "webgpu"},
 	"smollm3":          {}, // FeatNoPE undeclared everywhere, same as cohere2
 	"olmo3":            {}, // FeatPostOnlyNorm/FeatQKNormWhole undeclared everywhere -- both new this pass

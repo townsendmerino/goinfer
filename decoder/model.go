@@ -499,6 +499,19 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		c.manualPos = true
 		c.mlaLatent = make([][]float32, a.NumLayers)
 	}
+	if a.kda != nil {
+		// Bailing Hybrid (Ling 3.0): a THIRD hybrid-cache shape, alongside qwen35's and mla's
+		// above — the MLA layers' latent cache is already handled by the a.mla block above
+		// (bailingHybridArchitecture sets both), so only the KDA linear layers' recurrent
+		// state needs its own array here.
+		c.manualPos = true
+		c.kda = make([]*kdaState, a.NumLayers)
+		for l := 0; l < a.NumLayers; l++ {
+			if a.isLinearLayer(l) {
+				c.kda[l] = newKDAState(*a.kda)
+			}
+		}
+	}
 	return c
 }
 

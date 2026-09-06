@@ -172,6 +172,15 @@ type Architecture struct {
 	// nil for every other family.
 	mla *mlaParams
 
+	// kda, when non-nil, marks Bailing Hybrid's (Ling 3.0) Kimi Delta Attention linear-attention
+	// layers, alternating with MLA (mla, above) every LayerGroupSize-th layer — layerIsLinear
+	// picks which, the SAME hook qwen35's Gated-DeltaNet hybrid uses. Structurally a delta-rule
+	// recurrence like Gated DeltaNet, but with a PER-CHANNEL decay (one value per row of the state
+	// matrix) where Gated DeltaNet's is one scalar per head — verified against fla-org/
+	// flash-linear-attention's actual source, not the HF modeling file's opaque Triton-kernel
+	// call. Own forward (forward_bailing.go). nil for every other family.
+	kda *kdaParams
+
 	// llama4, when non-nil, marks a Llama 4 text decoder (llama4_text): the iRoPE
 	// stack — per-layer RoPE/NoPE interleave, parameter-free L2 QK-norm on the RoPE
 	// layers, attention-temperature tuning on the NoPE layers, and a dense/MoE
@@ -248,6 +257,32 @@ type mlaParams struct {
 	QKRopeHeadDim  int  // per-head Q/K dims carrying decoupled RoPE (one K shared across heads)
 	VHeadDim       int  // per-head V width (≠ QKNopeHeadDim+QKRopeHeadDim)
 	ropeInterleave bool // GPT-J pairwise (true, V3 default) vs NeoX half-split RoPE on the rope dims
+	// AttnPrefix/DenseSuffix override the tensor-name prefix/output-projection suffix. ""
+	// (deepseek_v2/v3, kimi_k2) ⇒ "self_attn"/"o_proj.weight". Bailing Hybrid (Ling 3.0) uses
+	// "attention"/"dense.weight" instead — verified against the real modeling_bailing_moe_v3.py,
+	// whose BailingMoeV3DecoderLayer assigns BOTH its MLA and KDA mixers to self.attention (not
+	// self.self_attn), and whose MLA class names its output projection self.dense.
+	AttnPrefix, DenseSuffix string
+	// GateGranularity ("" | "head_wise" | "element_wise"): Bailing Hybrid's optional per-head or
+	// per-element sigmoid output gate (self.g_proj) applied to the attention context BEFORE the
+	// output projection — the same STRUCTURE Laguna's own attention-output gate already ships, but
+	// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ""
+	// (every DeepSeek family) ⇒ no gate.
+	GateGranularity string
+}
+
+// kdaParams carries Bailing Hybrid's (Ling 3.0) Kimi Delta Attention geometry for the
+// linear-attention layers; the MLA layers use mlaParams above. HeadDim/NumHeads are shared by
+// q/k/v (no GVA — verified against the real modeling_bailing_moe_v3.py, where
+// BailingMoeV3KimiDeltaAttention sets head_k_dim = head_dim and num_k_heads = num_heads
+// unconditionally). NoLora selects a single f_proj/g_proj linear per gate (Ling-3.0-tiny's own
+// value) over a LoRA'd a/b-split pair — the LoRA'd path is NOT implemented (no released
+// checkpoint needs it yet; see kdaArchitecture's own "what was deliberately not done").
+type kdaParams struct {
+	HeadDim, NumHeads, ConvKernel int
+	NoLora                        bool
+	SafeGate                      bool
+	LowerBound                    float64
 }
 
 // attnChunkStart returns the first key position a query at pos may attend on this layer, or 0
@@ -746,6 +781,11 @@ var ownForwards = []ownForwardFamily{
 	{"granitemoehybrid", func(a *Architecture) bool { return a.granite != nil }, (*Model).runLayersGranite, false, true},
 	// nemotron_h: single-op-per-block hybrid.
 	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true},
+	// bailing_hybrid: MLA / KDA hybrid (Ling 3.0). MUST precede deepseek_v2/v3 below —
+	// bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse mlaAttention
+	// directly), so a.mla != nil alone would also match it and misroute to runLayersDeepseek,
+	// which has no KDA branch at all.
+	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, false},
 	// deepseek_v2/v3: Multi-head Latent Attention.
 	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false},
 	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).

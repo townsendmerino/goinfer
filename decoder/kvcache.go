@@ -117,6 +117,11 @@ type KVCache struct {
 	mlaLatent [][]float32
 	latentDim int
 
+	// kda holds Bailing Hybrid's (Ling 3.0) KDA recurrent state (three conv windows + the
+	// [headDim,headDim]-per-head matrix state) for the linear layers (nil entry on the MLA
+	// layers, which use mlaLatent above instead; nil slice on every other family).
+	kda []*kdaState
+
 	scr *decodeScratch // per-stream reusable forward buffers (Model.NewCache sets it)
 
 	// captureLayers, when non-nil, requests that runLayersFromEmbed copy the residual

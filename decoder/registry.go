@@ -36,33 +36,34 @@ var registry = map[string]archAdapter{
 	// config departure is rope_scaling type "dynamic", which is exactly identity within the trained
 	// window (see parseRopeScaling). So it is a registry ALIAS, not an adapter — the honest expression
 	// of "this is a llama". InternLM2 is NOT an alias: it renames every tensor and fuses qkv.
-	"internlm3":        llamaArchitecture,        // InternLM3 (llama-shaped; dynamic-NTK rope is in-window identity)
-	"internlm2":        internlm2Architecture,    // InternLM2 (llama math; renamed tensors + GROUPED fused wqkv, split at load)
-	"mistral":          mistralArchitecture,      // Llama + all-layer sliding-window attention
-	"mistral3":         ministral3Architecture,   // Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning on every layer, text_config extracted from the Mistral3ForConditionalGeneration VL wrapper
-	"ministral3":       ministral3Architecture,   // the nested text_config's own model_type (a plain, unwrapped Ministral3Config save carries this directly, not "mistral3")
-	"gpt2":             gpt2Architecture,         // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
-	"cohere":           cohereArchitecture,       // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
-	"cohere2":          cohere2Architecture,      // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
-	"mixtral":          mixtralArchitecture,      // Llama + sparse MoE FFN (router + top-k experts)
-	"mellum":           mellumArchitecture,       // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
-	"qwen3_5_moe":      qwen35Architecture,       // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
-	"qwen3_5_moe_text": qwen35Architecture,       // the text-only checkpoint's model_type
-	"qwen3_5":          qwen35DenseArchitecture,  // Qwen3.8 dense (Gated DeltaNet + softmax hybrid, plain SwiGLU FFN)
-	"qwen3_5_text":     qwen35DenseArchitecture,  // the text_config's own model_type, for text-only checkpoints
-	"qwen3_next":       qwen3NextArchitecture,    // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
-	"glm4_moe":         glm4moeArchitecture,      // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
-	"laguna":           lagunaArchitecture,       // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
-	"granitemoehybrid": graniteArchitecture,      // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
-	"granite":          graniteDenseArchitecture, // Granite 4.2 (3B/8B/30B) dense: llama skeleton + Granite's four scalar multipliers
-	"lfm2":             lfm2Architecture,         // LFM2 / LFM2.5: gated short-conv + GQA hybrid (layer_types), tied head, per-head RMSNorm QK-norm
-	"nemotron_h":       nemotronhArchitecture,    // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
-	"deepseek_v2":      deepseekArchitecture,     // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
-	"deepseek_v3":      deepseekArchitecture,     // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
-	"kimi_k2":          deepseekArchitecture,     // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
-	"phi3":             phi3Architecture,         // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
-	"llama4_text":      llama4Architecture,       // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
-	"gpt_oss":          gptOssArchitecture,       // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
+	"internlm3":        llamaArchitecture,         // InternLM3 (llama-shaped; dynamic-NTK rope is in-window identity)
+	"internlm2":        internlm2Architecture,     // InternLM2 (llama math; renamed tensors + GROUPED fused wqkv, split at load)
+	"mistral":          mistralArchitecture,       // Llama + all-layer sliding-window attention
+	"mistral3":         ministral3Architecture,    // Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning on every layer, text_config extracted from the Mistral3ForConditionalGeneration VL wrapper
+	"ministral3":       ministral3Architecture,    // the nested text_config's own model_type (a plain, unwrapped Ministral3Config save carries this directly, not "mistral3")
+	"gpt2":             gpt2Architecture,          // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
+	"cohere":           cohereArchitecture,        // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
+	"cohere2":          cohere2Architecture,       // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
+	"mixtral":          mixtralArchitecture,       // Llama + sparse MoE FFN (router + top-k experts)
+	"mellum":           mellumArchitecture,        // JetBrains Mellum2: MoE + sliding/full interleave + YaRN
+	"qwen3_5_moe":      qwen35Architecture,        // Qwen3.5/3.6-MoE: Gated DeltaNet (linear) + softmax hybrid + MoE
+	"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type
+	"qwen3_5":          qwen35DenseArchitecture,   // Qwen3.8 dense (Gated DeltaNet + softmax hybrid, plain SwiGLU FFN)
+	"qwen3_5_text":     qwen35DenseArchitecture,   // the text_config's own model_type, for text-only checkpoints
+	"qwen3_next":       qwen3NextArchitecture,     // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
+	"glm4_moe":         glm4moeArchitecture,       // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
+	"laguna":           lagunaArchitecture,        // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
+	"granitemoehybrid": graniteArchitecture,       // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
+	"granite":          graniteDenseArchitecture,  // Granite 4.2 (3B/8B/30B) dense: llama skeleton + Granite's four scalar multipliers
+	"lfm2":             lfm2Architecture,          // LFM2 / LFM2.5: gated short-conv + GQA hybrid (layer_types), tied head, per-head RMSNorm QK-norm
+	"nemotron_h":       nemotronhArchitecture,     // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
+	"deepseek_v2":      deepseekArchitecture,      // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
+	"deepseek_v3":      deepseekArchitecture,      // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
+	"kimi_k2":          deepseekArchitecture,      // Kimi K2/K2.x (architectures=DeepseekV3ForCausalLM): MLA + DeepSeekMoE, "basically V3" — 64 heads / 384 experts, config scalars only
+	"bailing_hybrid":   bailingHybridArchitecture, // Ling 3.0 (inclusionAI): MLA (DeepSeek-shaped, reused) alternating with KDA (Kimi Delta Attention, per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN
+	"phi3":             phi3Architecture,          // Phi-3 / Phi-4 dense: llama skeleton + fused qkv_proj / gate_up_proj (split at load) + partial rotary
+	"llama4_text":      llama4Architecture,        // Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)
+	"gpt_oss":          gptOssArchitecture,        // gpt-oss (20b/120b): sparse MoE + per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; CPU-only)
 }
 
 // resolveArchitecture picks the adapter for cfg.ModelType and builds the
@@ -2164,6 +2165,117 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			VHeadDim: cfg.VHeadDim, ropeInterleave: ropeInterleave,
 		},
 	}, &deepseekTensorSchema, nil
+}
+
+// bailingHybridArchitecture expresses Bailing Hybrid (inclusionAI, model_type "bailing_hybrid";
+// Ling 3.0 — Ling-3.0-tiny/flash): DeepSeek-style Multi-head Latent Attention (MLA) alternating
+// with Kimi Delta Attention (KDA) linear-attention layers every LayerGroupSize-th layer being MLA,
+// over a DeepSeekMoE FFN — verified field-for-field against the real modeling_bailing_moe_v3.py
+// (fetched directly, plus a real checkpoint's actual safetensors header via HTTP Range, not
+// downloaded in full), not the task brief's own paraphrase:
+//
+//   - layer_types is NOT a config.json field for this family at all (no released checkpoint
+//     carries it) — the pattern is COMPUTED from layer_group_size, replicated exactly in
+//     normalizeBailingLayerTypes (including a tail-cleanup clause the brief's own description
+//     omitted).
+//   - MLA is reused via forward_deepseek.go's mlaAttention UNCHANGED, parameterized for two real
+//     departures: both mixers are named self.attention (not self.self_attn — mlaParams.AttnPrefix)
+//     and the output projection is self.dense (not self_attn.o_proj — mlaParams.DenseSuffix). An
+//     optional per-head sigmoid output gate (gated_attention_proj_granularity_type) rides the same
+//     mechanism Laguna's own attention-output gate already ships, activation aside.
+//   - MoE reuses moeMLP/routeExperts UNCHANGED (sigmoid + expert_bias + group-limited top-k +
+//     routed_scaling_factor + an ungated shared expert is byte-for-byte DeepSeek-V3's noaux_tc
+//     shape — confirmed from BailingMoeV3Gate/SparseMoeBlock's own forward, not assumed from field
+//     names), but this family spells its expert counts num_experts/num_shared_experts (not
+//     DeepSeek's n_routed_experts/n_shared_experts) and its bias buffer expert_bias (not
+//     e_score_correction_bias) — real, checked-not-assumed naming departures.
+//   - KDA (kda.go) is the one genuinely new primitive: a delta-rule recurrence structurally
+//     identical to Gated DeltaNet but with a PER-CHANNEL decay (fla-org/flash-linear-attention's
+//     actual source, not HF's opaque Triton-kernel call — see F4's own rehearsal,
+//     docs/task-families-2026-09.md). Only the no_kda_lora + kda_safe_gate variant Ling-3.0-tiny's
+//     own config selects is implemented; validateBailingHybrid refuses anything else rather than
+//     silently mis-running an unimplemented variant.
+//
+// No YaRN/rope_scaling override is wired (the DeepSeek-style mscale/mscale_all_dim ratio
+// deepseekArchitecture applies): Ling-3.0-tiny's own released config carries rope_scaling: null,
+// so nothing exercises it; a future Bailing checkpoint that sets YaRN would need it added, same as
+// deepseekArchitecture's own.
+func bailingHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := cfg.normalizeBailingLayerTypes(); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.validateBailingHybrid(); err != nil {
+		return nil, nil, err
+	}
+	if !cfg.NoKDALora {
+		return nil, nil, fmt.Errorf("decoder(bailing_hybrid): no_kda_lora=false (the LoRA'd a_proj/b_proj gate split) is not implemented — only Ling-3.0-tiny's own no_kda_lora=true variant is")
+	}
+	if !cfg.KDASafeGate {
+		return nil, nil, fmt.Errorf("decoder(bailing_hybrid): kda_safe_gate=false (the plain unbounded decay gate) is not implemented — only Ling-3.0-tiny's own kda_safe_gate=true variant is")
+	}
+	base := cfg.RoPEGlobalBase
+	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(bailing_hybrid): %w", err)
+	}
+	normTopK := true
+	if cfg.NormTopKProb != nil {
+		normTopK = *cfg.NormTopKProb
+	}
+	qk := cfg.QKNopeHeadDim + cfg.QKRopeHeadDim
+	ropeInterleave := true
+	if cfg.RopeInterleave != nil {
+		ropeInterleave = *cfg.RopeInterleave
+	}
+	return &Architecture{
+		Name:            "bailing_hybrid",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumHeads, // MLA reconstructs per-head K/V; KDA has no GVA either (verified)
+		HeadDim:         cfg.HeadDim,  // KDA's per-head width; MLA reads its own qkHeadDim/VHeadDim via mlaParams
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   NormPre2, // uniform for BOTH mixer kinds — verified against the real decoder layer forward
+		Act:             ActSiLU,
+		QKVBias:         false,
+		QKNorm:          false,
+		FirstKDense:     cfg.FirstKDenseReplace,
+		MoE: &MoEConfig{
+			NumExperts:            cfg.NumExperts,
+			TopK:                  cfg.NumExpertsPerTok,
+			NormTopKProb:          normTopK,
+			IntermediateDim:       cfg.MoeIntermediateSize,
+			SharedIntermediateDim: cfg.NumSharedExperts * cfg.MoeSharedExpertIntermediateSize,
+			RouterSigmoid:         true, // unconditional for this family's router; no scoring_func key exists to check
+			RoutedScale:           cfg.RoutedScalingFactor,
+			SharedUngated:         true,
+			NGroup:                cfg.NGroup,
+			TopkGroup:             cfg.TopkGroup,
+		},
+		AttnScale:      math.Pow(float64(qk), -0.5), // plain qk_head_dim^-0.5, the MLA layers' own scale
+		RoPELocalBase:  base,
+		RoPEGlobalBase: base,
+		ropeScaling:    scaling,
+		RotaryDim:      cfg.QKRopeHeadDim,
+		EmbedScale:     0,
+		TiedLMHead:     false, // finalized from lm_head.weight presence at load; tie_word_embeddings false on the release
+		layerIsLinear:  cfg.IsLinearLayer,
+		mla: &mlaParams{
+			QLoRARank: cfg.QLoRARank, KVLoRARank: cfg.KVLoRARank,
+			QKNopeHeadDim: cfg.QKNopeHeadDim, QKRopeHeadDim: cfg.QKRopeHeadDim,
+			VHeadDim: cfg.VHeadDim, ropeInterleave: ropeInterleave,
+			AttnPrefix: "attention", DenseSuffix: "dense.weight",
+			GateGranularity: cfg.GatedAttentionProjGranularity,
+		},
+		kda: &kdaParams{
+			HeadDim: cfg.HeadDim, NumHeads: cfg.NumHeads, ConvKernel: cfg.ShortConvKernelSize,
+			NoLora: cfg.NoKDALora, SafeGate: cfg.KDASafeGate, LowerBound: cfg.KDALowerBound,
+		},
+	}, &bailingHybridTensorSchema, nil
 }
 
 // phi3Architecture expresses Phi-3 / Phi-4 (model_type phi3): the llama skeleton —

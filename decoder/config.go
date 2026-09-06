@@ -126,6 +126,34 @@ type Config struct {
 	RopeInterleave *bool   `json:"rope_interleave"`
 	AttnScaleMul   float64 `json:"-"` // yarn mscale² folded into the attention scale (0 ⇒ plain qk_head_dim^-0.5)
 
+	// Bailing Hybrid (Ling 3.0, model_type "bailing_hybrid"): MLA (above) alternating with Kimi
+	// Delta Attention (KDA) every LayerGroupSize-th layer being MLA instead — verified against the
+	// real modeling_bailing_moe_v3.py's BailingMoeV3DecoderLayer.__init__, not assumed from the
+	// task brief's paraphrase: `layer_types` is NOT a config.json field at all for this family (no
+	// released checkpoint carries it); the pattern is COMPUTED from LayerGroupSize, same shape as
+	// Qwen3-Next's FullAttentionInterval. NumSharedExperts/ShortConvKernelSize etc. use this
+	// family's OWN JSON key spellings (num_shared_experts, not DeepSeek's n_shared_experts) —
+	// confirmed against the real inclusionAI/Ling-3.0-tiny config.json, which uses num_experts/
+	// num_shared_experts throughout, not deepseek_v3's n_routed_experts/n_shared_experts.
+	LayerGroupSize   int `json:"layer_group_size"`
+	NumSharedExperts int `json:"num_shared_experts"`
+	// GatedAttentionProjGranularity ("head_wise" | "element_wise" | absent): MLA's optional
+	// per-head or per-element output gate (self.g_proj, sigmoid-activated, applied to the
+	// attention context BEFORE the output projection — the same STRUCTURE Laguna's own
+	// FeatAttnOutputGate already ships, but sigmoid where Laguna's is softplus, a real difference
+	// verified against source, not assumed identical).
+	GatedAttentionProjGranularity string `json:"gated_attention_proj_granularity_type"`
+	// KDA's own wrapper geometry: a depthwise short causal conv (kernel ShortConvKernelSize,
+	// SiLU-activated, THREE separate q/k/v convs — modeling_bailing_moe_v3.py's
+	// BailingMoeV3KimiDeltaAttention has independent self.q_conv1d/k_conv1d/v_conv1d modules, not
+	// one combined conv like Gated DeltaNet's), NoKDALora selecting a single f_proj/g_proj linear
+	// per gate (true on the release) vs a LoRA'd a/b-split pair, and the safe (lower-bounded)
+	// decay gate Ling-3.0-tiny selects.
+	ShortConvKernelSize int     `json:"short_conv_kernel_size"`
+	NoKDALora           bool    `json:"no_kda_lora"`
+	KDASafeGate         bool    `json:"kda_safe_gate"`
+	KDALowerBound       float64 `json:"kda_lower_bound"`
+
 	// Llama 4 text decoder (llama4_text): iRoPE. NoRopeLayers[i]==1 ⇒ layer i uses
 	// RoPE, ==0 ⇒ NoPE (no positional). MoeLayers lists the MoE layer indices (the
 	// rest are dense at IntermediateSizeMLP; experts + shared expert use
@@ -601,6 +629,40 @@ func (c *Config) validateDeepseek() error {
 	return nil
 }
 
+// validateBailingHybrid pins Bailing Hybrid's (Ling 3.0) assumptions: a valid MLA geometry
+// (same checks as validateDeepseek), a valid KDA geometry (conv kernel, per-head dim), and a
+// routed+shared MoE using THIS family's own field spellings (num_experts/num_shared_experts, not
+// DeepSeek's n_routed_experts/n_shared_experts — verified against the real config.json).
+func (c *Config) validateBailingHybrid() error {
+	switch {
+	case c.KVLoRARank <= 0:
+		return fmt.Errorf("decoder(bailing_hybrid): kv_lora_rank must be >0, got %d", c.KVLoRARank)
+	case c.QKNopeHeadDim <= 0 || c.QKRopeHeadDim <= 0 || c.VHeadDim <= 0:
+		return fmt.Errorf("decoder(bailing_hybrid): bad MLA head dims (qk_nope=%d qk_rope=%d v=%d)", c.QKNopeHeadDim, c.QKRopeHeadDim, c.VHeadDim)
+	case c.QLoRARank < 0:
+		return fmt.Errorf("decoder(bailing_hybrid): q_lora_rank must be ≥0, got %d", c.QLoRARank)
+	case c.LayerGroupSize <= 0:
+		return fmt.Errorf("decoder(bailing_hybrid): layer_group_size must be >0, got %d", c.LayerGroupSize)
+	case c.HeadDim <= 0 || c.ShortConvKernelSize <= 0:
+		return fmt.Errorf("decoder(bailing_hybrid): bad KDA dims (head_dim=%d short_conv_kernel_size=%d)", c.HeadDim, c.ShortConvKernelSize)
+	case c.NumExperts <= 0:
+		return fmt.Errorf("decoder(bailing_hybrid): num_experts must be >0, got %d", c.NumExperts)
+	case c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NumExperts:
+		return fmt.Errorf("decoder(bailing_hybrid): num_experts_per_tok %d out of range (1..%d)", c.NumExpertsPerTok, c.NumExperts)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(bailing_hybrid): moe_intermediate_size must be >0, got %d", c.MoeIntermediateSize)
+	case c.NumSharedExperts <= 0:
+		return fmt.Errorf("decoder(bailing_hybrid): num_shared_experts must be >0, got %d", c.NumSharedExperts)
+	case c.FirstKDenseReplace < 0 || c.FirstKDenseReplace >= c.NumLayers:
+		return fmt.Errorf("decoder(bailing_hybrid): first_k_dense_replace %d out of range (0..%d)", c.FirstKDenseReplace, c.NumLayers-1)
+	case c.NGroup > 1 && (c.TopkGroup <= 0 || c.TopkGroup > c.NGroup):
+		return fmt.Errorf("decoder(bailing_hybrid): topk_group %d out of range (1..%d)", c.TopkGroup, c.NGroup)
+	case c.NGroup > 1 && c.NumExperts%c.NGroup != 0:
+		return fmt.Errorf("decoder(bailing_hybrid): num_experts %d not divisible by n_group %d", c.NumExperts, c.NGroup)
+	}
+	return nil
+}
+
 // validateGranite pins the Granite-4.0-H (granitemoehybrid) assumptions: a layer_types
 // list covering every layer (mamba | attention), a valid Mamba-2 geometry, and a
 // routed+shared MoE (num_local_experts / num_experts_per_tok / intermediate_size /
@@ -723,6 +785,41 @@ func (c *Config) normalizeQwen3NextLayerTypes() error {
 	types := make([]string, c.NumLayers)
 	for i := range types {
 		if (i+1)%c.FullAttentionInterval == 0 {
+			types[i] = "full_attention"
+		} else {
+			types[i] = "linear_attention"
+		}
+	}
+	c.LayerTypes = types
+	return nil
+}
+
+// normalizeBailingLayerTypes synthesizes LayerTypes from LayerGroupSize for Bailing Hybrid
+// (Ling 3.0), whose real released config.json has NO layer_types field at all. Formula verified
+// against the real modeling_bailing_moe_v3.py's BailingMoeV3DecoderLayer.__init__:
+//
+//	"attention" if (i+1)%group==0 or i >= (numLayers//group)*group else "linear_attention"
+//
+// 0-indexed i. The second clause is a tail-cleanup for a NumLayers that isn't a clean multiple of
+// LayerGroupSize (irrelevant for Ling-3.0-tiny's exact 24/4, but replicated anyway rather than
+// dropped, since the release-verified formula is the authority, not a simplification of it).
+// Synthesizes "full_attention" (this tree's own spelling) for HF's "attention", so the existing
+// IsGlobalLayer/IsLinearLayer helpers read it with no new predicate. A no-op if LayerTypes is
+// already populated.
+func (c *Config) normalizeBailingLayerTypes() error {
+	if len(c.LayerTypes) > 0 || c.LayerGroupSize == 0 {
+		return nil
+	}
+	if c.LayerGroupSize < 0 {
+		return fmt.Errorf("decoder(bailing_hybrid): layer_group_size must be >0, got %d", c.LayerGroupSize)
+	}
+	if c.NumLayers <= 0 {
+		return fmt.Errorf("decoder(bailing_hybrid): num_hidden_layers must be >0 before layer_types can be derived")
+	}
+	tailStart := (c.NumLayers / c.LayerGroupSize) * c.LayerGroupSize
+	types := make([]string, c.NumLayers)
+	for i := range types {
+		if (i+1)%c.LayerGroupSize == 0 || i >= tailStart {
 			types[i] = "full_attention"
 		} else {
 			types[i] = "linear_attention"

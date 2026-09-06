@@ -167,6 +167,13 @@ func (m *Model) mlaAttentionNaive(n []float32, lw *LayerWeights, arch *Architect
 		}
 	}
 
+	// 5.5. Bailing Hybrid's optional MLA output gate (Laguna-shaped, sigmoid-activated — see
+	// applySigmoidGateRow's own comment). nil for every DeepSeek family.
+	if w.gProj != nil {
+		gate := matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
+		applySigmoidGateRow(gate, ctx, p.GateGranularity == "head_wise", H, vHead)
+	}
+
 	// 6. Output projection (over the v_head_dim-wide context).
 	return matvec(w.oProj, hidden, H*vHead, ctx)
 }
@@ -301,6 +308,12 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 			}
 			out[e] = s
 		}
+	}
+
+	// 6.5. Bailing Hybrid's optional MLA output gate (see mlaAttentionNaive's own comment).
+	if w.gProj != nil {
+		gate := matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
+		applySigmoidGateRow(gate, ctx, p.GateGranularity == "head_wise", H, vHead)
 	}
 
 	// 7. Output projection (over the v_head_dim-wide context).

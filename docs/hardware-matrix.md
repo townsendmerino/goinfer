@@ -25,6 +25,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Kimi K2 | ✅ | ✅ resident | CPU | CPU |
 | LFM2.5 | ✅ | CPU | CPU | CPU |
 | Laguna | ✅ | CPU | CPU | CPU |
+| Ling 3.0 | ✅ | CPU | CPU | CPU |
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Llama 4 | ✅ | CPU | CPU | CPU |
 | Mellum2 | ✅ | ✅ resident | ✅ resident | ✅ resident |

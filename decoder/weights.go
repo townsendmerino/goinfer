@@ -100,10 +100,15 @@ type LayerWeights struct {
 	// family. Stored f32 (parity-first, like the qwen35 hybrid).
 	mamba *mamba2Weights
 
-	// DeepSeek MLA attention weights (deepseek_v2 / deepseek_v3). nil for every
-	// other family. Stored f32 (parity-first). The FFN side (dense prefix / MoE /
-	// shared expert) reuses the generic Router/Experts/SharedExpert fields above.
+	// DeepSeek MLA attention weights (deepseek_v2 / deepseek_v3, and Bailing Hybrid's own
+	// full-attention layers). nil for every other family. Stored f32 (parity-first). The FFN
+	// side (dense prefix / MoE / shared expert) reuses the generic Router/Experts/SharedExpert
+	// fields above.
 	mla *mlaWeights
+
+	// Bailing Hybrid (Ling 3.0) KDA attention weights, set on the linear layers (the
+	// non-linear layers use mla above). nil for every other family.
+	kda *kdaWeights
 
 	// Gemma 4 26B-A4B parallel dense+MoE FFN sub-block (enable_moe_block). Set only
 	// on gemma4 layers when arch.MoE != nil; nil for the dense E2B/E4B/12B variants
@@ -143,6 +148,7 @@ type mlaWeights struct {
 	kvALayernorm []float32 // [kv_lora_rank]
 	kvBProj      []float32 // [numHeads*(qk_nope+v_head_dim), kv_lora_rank]
 	oProj        []float32 // [hidden, numHeads*v_head_dim]
+	gProj        []float32 // [numHeads] (head_wise) or [numHeads*v_head_dim] (element_wise); nil ⇒ no gate (every DeepSeek family)
 }
 
 // expertWeights is one MoE expert: a gated (SwiGLU) MLP. Mixtral names these
@@ -712,6 +718,14 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if err = loadQwen35Attn(st, i, l, arch, hd, tn, loadMatQ, quant); err != nil {
 				return err
 			}
+		} else if arch.kda != nil && arch.isLinearLayer(i) {
+			// Bailing Hybrid (Ling 3.0): KDA linear layers. Non-linear layers of the SAME
+			// family fall through to the arch.mla branch below (bailingHybridArchitecture
+			// sets both kda and mla; this check must come first so the else-if chain
+			// dispatches KDA-vs-MLA per layer, not by family alone).
+			if err = loadBailingKDA(st, i, l, arch, hd, tn, loadMatQ); err != nil {
+				return err
+			}
 		} else if arch.mla != nil {
 			if err = loadDeepseekAttn(st, i, l, arch, hd, tn); err != nil {
 				return err
@@ -1105,6 +1119,62 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 	return nil
 }
 
+// loadBailingKDA loads one Bailing Hybrid (Ling 3.0) KDA layer's tensors. All under the
+// "attention." prefix (BailingMoeV3DecoderLayer assigns BOTH its MLA and KDA mixers to
+// self.attention, not self.self_attn — see mlaParams.AttnPrefix's own comment). Only the
+// no_kda_lora path (a single f_proj/g_proj linear per gate) is implemented — see kdaArchitecture's
+// own "what was deliberately not done" for the LoRA'd a/b-split variant, which validateBailingHybrid
+// refuses before this is ever reached.
+func loadBailingKDA(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int,
+	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error)) error {
+	g := arch.kda
+	projSize := g.NumHeads * g.HeadDim
+	nm := func(suf string) string { return tn(i, "attention."+suf) }
+	w := &kdaWeights{}
+	var err error
+	if w.qProj, err = mkQ(nm("q_proj.weight"), projSize, hidden); err != nil {
+		return err
+	}
+	if w.kProj, err = mkQ(nm("k_proj.weight"), projSize, hidden); err != nil {
+		return err
+	}
+	if w.vProj, err = mkQ(nm("v_proj.weight"), projSize, hidden); err != nil {
+		return err
+	}
+	if w.qConvW, err = st.TensorF32(nm("q_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
+		return err
+	}
+	if w.kConvW, err = st.TensorF32(nm("k_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
+		return err
+	}
+	if w.vConvW, err = st.TensorF32(nm("v_conv1d.weight"), projSize, 1, g.ConvKernel); err != nil {
+		return err
+	}
+	if w.fProj, err = mkQ(nm("f_proj.weight"), projSize, hidden); err != nil {
+		return err
+	}
+	if w.dtBias, err = st.TensorF32(nm("dt_bias"), projSize); err != nil {
+		return err
+	}
+	if w.aLog, err = st.TensorF32(nm("A_log"), g.NumHeads); err != nil {
+		return err
+	}
+	if w.bProj, err = st.TensorF32(nm("b_proj.weight"), g.NumHeads, hidden); err != nil {
+		return err
+	}
+	if w.gProj, err = mkQ(nm("g_proj.weight"), projSize, hidden); err != nil {
+		return err
+	}
+	if w.oNormW, err = st.TensorF32(nm("o_norm.weight"), g.HeadDim); err != nil {
+		return err
+	}
+	if w.oProj, err = mkQ(nm("o_proj.weight"), hidden, projSize); err != nil {
+		return err
+	}
+	l.kda = w
+	return nil
+}
+
 // loadDeepseekAttn loads one DeepSeek MLA layer's attention tensors as f32 (the
 // parity-first forward uses plain matvec). q-LoRA (q_a_proj→norm→q_b_proj) when
 // arch.mla.QLoRARank > 0, else a direct q_proj (V2-Lite). The KV down-proj
@@ -1115,35 +1185,55 @@ func loadDeepseekAttn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *A
 	qkHeadDim := p.qkHeadDim()
 	qOut := arch.NumHeads * qkHeadDim
 	kvUp := arch.NumHeads * (p.QKNopeHeadDim + p.VHeadDim)
-	nm := func(suf string) string { return tn(i, suf) }
+	// AttnPrefix/DenseSuffix (Bailing Hybrid: "attention"/"dense.weight") override the
+	// deepseek_v2/v3 defaults — see mlaParams' own comment.
+	prefix := p.AttnPrefix
+	if prefix == "" {
+		prefix = "self_attn"
+	}
+	oProjSuffix := p.DenseSuffix
+	if oProjSuffix == "" {
+		oProjSuffix = "o_proj.weight"
+	}
+	nm := func(suf string) string { return tn(i, prefix+"."+suf) }
 	w := &mlaWeights{}
 	var err error
 	if p.QLoRARank > 0 {
-		if w.qAProj, err = st.TensorF32(nm("self_attn.q_a_proj.weight"), p.QLoRARank, hidden); err != nil {
+		if w.qAProj, err = st.TensorF32(nm("q_a_proj.weight"), p.QLoRARank, hidden); err != nil {
 			return err
 		}
-		if w.qALayernorm, err = st.TensorF32(nm("self_attn.q_a_layernorm.weight"), p.QLoRARank); err != nil {
+		if w.qALayernorm, err = st.TensorF32(nm("q_a_layernorm.weight"), p.QLoRARank); err != nil {
 			return err
 		}
-		if w.qBProj, err = st.TensorF32(nm("self_attn.q_b_proj.weight"), qOut, p.QLoRARank); err != nil {
+		if w.qBProj, err = st.TensorF32(nm("q_b_proj.weight"), qOut, p.QLoRARank); err != nil {
 			return err
 		}
 	} else {
-		if w.qProj, err = st.TensorF32(nm("self_attn.q_proj.weight"), qOut, hidden); err != nil {
+		if w.qProj, err = st.TensorF32(nm("q_proj.weight"), qOut, hidden); err != nil {
 			return err
 		}
 	}
-	if w.kvAProj, err = st.TensorF32(nm("self_attn.kv_a_proj_with_mqa.weight"), p.KVLoRARank+p.QKRopeHeadDim, hidden); err != nil {
+	if w.kvAProj, err = st.TensorF32(nm("kv_a_proj_with_mqa.weight"), p.KVLoRARank+p.QKRopeHeadDim, hidden); err != nil {
 		return err
 	}
-	if w.kvALayernorm, err = st.TensorF32(nm("self_attn.kv_a_layernorm.weight"), p.KVLoRARank); err != nil {
+	if w.kvALayernorm, err = st.TensorF32(nm("kv_a_layernorm.weight"), p.KVLoRARank); err != nil {
 		return err
 	}
-	if w.kvBProj, err = st.TensorF32(nm("self_attn.kv_b_proj.weight"), kvUp, p.KVLoRARank); err != nil {
+	if w.kvBProj, err = st.TensorF32(nm("kv_b_proj.weight"), kvUp, p.KVLoRARank); err != nil {
 		return err
 	}
-	if w.oProj, err = st.TensorF32(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*p.VHeadDim); err != nil {
+	if w.oProj, err = st.TensorF32(nm(oProjSuffix), hidden, arch.NumHeads*p.VHeadDim); err != nil {
 		return err
+	}
+	switch p.GateGranularity {
+	case "head_wise":
+		if w.gProj, err = st.TensorF32(nm("g_proj.weight"), arch.NumHeads, hidden); err != nil {
+			return err
+		}
+	case "element_wise":
+		if w.gProj, err = st.TensorF32(nm("g_proj.weight"), arch.NumHeads*p.VHeadDim, hidden); err != nil {
+			return err
+		}
 	}
 	l.mla = w
 	return nil
@@ -1764,6 +1854,36 @@ var deepseekTensorSchema = tensorSchema{
 	SharedUp:   "mlp.shared_experts.up_proj.weight",
 	SharedDown: "mlp.shared_experts.down_proj.weight",
 	// SharedExpertGate empty: DeepSeek adds the shared expert ungated.
+}
+
+// bailingHybridTensorSchema (Ling 3.0): only the tensors shared by BOTH layer kinds — the FFN
+// (dense prefix / MoE + shared expert, otherwise identical to DeepSeek's own) and the block norms.
+// Attention tensors are NOT here: both mixers (MLA via loadDeepseekAttn, KDA via loadBailingKDA)
+// use their own bespoke loaders, same as deepseek_v2/v3's own QProj/KProj/etc being unused.
+// Verified against the real modeling_bailing_moe_v3.py, which departs from deepseek_v2/v3's own
+// naming in three places: the embedding is word_embeddings (not embed_tokens), the router's
+// expert-bias buffer is expert_bias (not e_score_correction_bias), and both MLA/KDA mixers are
+// named self.attention (not self.self_attn — see mlaParams.AttnPrefix's own comment).
+var bailingHybridTensorSchema = tensorSchema{
+	Embed:       "model.word_embeddings.weight",
+	LMHead:      "lm_head.weight",
+	FinalNorm:   "model.norm.weight",
+	PreAttnNorm: "input_layernorm.weight",
+	PreMLPNorm:  "post_attention_layernorm.weight",
+	// dense prefix (first_k_dense_replace) layers use these
+	GateProj: "mlp.gate_proj.weight",
+	UpProj:   "mlp.up_proj.weight",
+	DownProj: "mlp.down_proj.weight",
+	// MoE layers use these
+	Router:     "mlp.gate.weight",
+	RouterBias: "mlp.gate.expert_bias",
+	ExpertGate: "mlp.experts.%d.gate_proj.weight",
+	ExpertUp:   "mlp.experts.%d.up_proj.weight",
+	ExpertDown: "mlp.experts.%d.down_proj.weight",
+	SharedGate: "mlp.shared_experts.gate_proj.weight",
+	SharedUp:   "mlp.shared_experts.up_proj.weight",
+	SharedDown: "mlp.shared_experts.down_proj.weight",
+	// SharedExpertGate empty: Bailing adds the shared expert ungated too (verified above).
 }
 
 // graniteTensorSchema is a marker — Granite-4.0-H's per-layer-kind tensors (Mamba-2

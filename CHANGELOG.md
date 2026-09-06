@@ -47,6 +47,27 @@ any surface may still change.
   existing position-information guard (alongside GPT-2/Nemotron-H/MLA). Parity-gated against a tiny
   oracle whose fixture reproduces the release's actual tensor layout: 100.0% / 0.9999999999998704.
 
+- **Bailing Hybrid as a new family** (`bailing_hybrid`; inclusionAI, Ling 3.0): DeepSeek-style
+  Multi-head Latent Attention alternating with Kimi Delta Attention (KDA) every `layer_group_size`
+  layers being MLA, over a DeepSeekMoE FFN. MLA and the MoE router compose `deepseekArchitecture`'s
+  existing code, parameterized for two real naming departures (both mixers are `self.attention`,
+  not `self.self_attn`; MLA's output projection is `self.dense`, not `o_proj`) plus an optional
+  per-head sigmoid attention-output gate riding the same mechanism Laguna's own gate already ships
+  (sigmoid where Laguna's is softplus — a real, checked difference, not an assumption). KDA is the
+  one genuinely new primitive: a delta-rule recurrence structurally identical to Gated DeltaNet but
+  with a PER-CHANNEL decay (one value per row of the state matrix, where Gated DeltaNet's is a
+  single scalar per head) — proven against `fla-org/flash-linear-attention`'s actual reference
+  implementation, not the HF modeling file's opaque Triton-kernel call (this was proven ahead of
+  time as a standalone rehearsal; see the "Fixed" entry below for what shipping it as a real family
+  found). `layer_types` is not a config.json field for this family at all — the MLA/KDA pattern is
+  computed from `layer_group_size`, replicated exactly from the real decoder layer's own layer-type
+  formula. The real `BailingMoeV3ForCausalLM` can't be instantiated on this Mac (its modeling file
+  imports Triton transitively, unavailable on this platform), so the tiny fixture is a hand-assembled
+  reference verified piece by piece against the real source, with KDA's own recurrence calling
+  `fla-org`'s real reference functions directly. Parity-gated: argmax exact, cosine
+  0.9999999999999437; a deliberate negative control (reverting the decay to a per-head scalar)
+  dropped cosine to 0.93984, confirming the gate actually discriminates the new primitive.
+
 - **SmolLM3-3B as a new family** (`smollm3`): a plain llama-shaped dense GQA model with per-layer
   NoPE on every 4th layer via `no_rope_layers` — a field whose VALUES are the opposite of what its
   name suggests (1 = has RoPE, 0 = NoPE), verified against the real `modeling_smollm3.py` rather
@@ -106,6 +127,15 @@ any surface may still change.
   recurring here through undeclared FEATURES instead. Fixed by pointing the column at the same
   `ResidentEligible` gate the other doc uses, so the two generated docs can't disagree about the
   same family again.
+
+- **`decoder/serialize.go` (`.giw`) had no idea Bailing Hybrid's KDA mixer, or MLA's optional
+  attention-output gate, existed** — the exact failure class `audit-2026-09-02`'s R3/C-03 already
+  named for LFM2 (a field added to `LayerWeights` with no corresponding round-trip code, nil-
+  dereferencing in the decode goroutine on the first token). Caught by
+  `TestSerializeCensus_noSilentFieldDrop` panicking on a round-tripped `bailing_hybrid` fixture.
+  Fixed by bumping the format to v9 (`kda.go`'s nine tensors, plus `mlaWeights`' `gProj`) rather
+  than retrofitting v6Layer's fixed byte layout, which would have corrupted every already-shipped
+  v6/v7/v8 file's read.
 
 ## [v0.16.0] — 2026-09-05
 

@@ -402,6 +402,28 @@ func applyGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
 	}
 }
 
+// applySigmoidGateRow multiplies ONE position's attention context by its sigmoid gate, in place —
+// Bailing Hybrid's (Ling 3.0) MLA output gate. Mirrors applyGateRow's shape (perHead broadcast
+// vs per-element) but with sigmoid instead of softplus: a real, small difference verified against
+// the real modeling_bailing_moe_v3.py (`F.sigmoid(gate)`), not assumed identical to Laguna's
+// mechanism just because the STRUCTURE (a per-head/per-element scalar gating the context before
+// the output projection) is the same.
+func applySigmoidGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
+	if perHead {
+		for head := range nH {
+			g := sigmoidf(gates[head])
+			row := ctx[head*hd : head*hd+hd]
+			for i := range row {
+				row[i] *= g
+			}
+		}
+		return
+	}
+	for i := range ctx {
+		ctx[i] *= sigmoidf(gates[i])
+	}
+}
+
 // softplus32 is log(1+exp(x)) with the standard large-x guard: for x above the
 // threshold exp(x) overflows while log1p(exp(x)) is x to within f32 resolution, so
 // returning x avoids an Inf that would otherwise poison the whole head. torch's

@@ -360,6 +360,8 @@ func TestLoadAdapter_rejectsEveryOwnForwardFamily(t *testing.T) {
 				arch.nemotron = &nemotronParams{}
 			case "deepseek_v2/v3":
 				arch.mla = &mlaParams{}
+			case "bailing_hybrid":
+				arch.kda = &kdaParams{} // must precede deepseek_v2/v3 in ownForwards; also sets arch.mla
 			case "llama4_text":
 				arch.llama4 = &llama4Params{}
 			case "gpt-oss":

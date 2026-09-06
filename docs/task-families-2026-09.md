@@ -961,3 +961,122 @@ T1/adapter work above does not depend on it.
   the same download; doing one first would set up the other.
 - **Peer row vs Ollama** — gated on T3, per this doc's own rule.
 - **GGUF loader** — not attempted; not requested by the brief for this family, unlike G1/G3.
+
+## G5 · `bailing_hybrid` (inclusionAI, Ling 3.0) — DONE at T1 (mac, 2026-09-06); no stop condition fired
+
+**Verdict up front, per the brief's own framing: no primitive beyond KDA + MLA + MoE composition
+appeared, and the weights are (would be) loadable, so this became a real family** — building
+directly on batch 1 F4's Phase 0 and KDA rehearsal (the per-channel-decay delta rule, proven
+against `fla-org/flash-linear-attention`'s actual reference at cosine 1.0, maxAbsDiff 2.98e-08).
+
+### Phase 0 refresh — the real checkpoint and its real modeling source, re-verified
+
+F4 already established the shape (MLA + MoE ride `deepseekArchitecture` composition; KDA is the
+one new primitive). Building the real adapter surfaced departures F4's Phase-0 pass, scoped to a
+rehearsal, hadn't needed to check:
+
+- **`layer_types` is not a `config.json` field for this family at all** — no released checkpoint
+  carries it (confirmed on the real `inclusionAI/Ling-3.0-tiny` fetch). The MLA/KDA pattern is
+  COMPUTED from `layer_group_size`, replicated exactly from `BailingMoeV3DecoderLayer.__init__`
+  (`normalizeBailingLayerTypes`), including a tail-cleanup clause for a layer count that isn't a
+  clean multiple of the group size — a detail the brief's own paraphrase omitted.
+- **Both mixers are named `self.attention`, not `self.self_attn`** — confirmed from the real
+  decoder layer's `__init__` (`self.attention = BailingMoeV3MultiLatentAttention(...)` /
+  `BailingMoeV3KimiDeltaAttention(...)`), and MLA's own output projection is `self.dense`, not
+  `o_proj`. `mlaParams` gained `AttnPrefix`/`DenseSuffix` overrides (both empty/default for every
+  existing DeepSeek family) so `loadDeepseekAttn`/`mlaAttention` stay shared code, not a fork.
+- **An optional per-head sigmoid output gate on MLA** (`gated_attention_proj_granularity_type:
+  "head_wise"`, `self.g_proj`, applied to the attention context BEFORE `dense`) — structurally the
+  same mechanism Laguna's own attention-output gate already ships, but sigmoid-activated where
+  Laguna's is softplus (`applySigmoidGateRow`, a sibling to the existing `applyGateRow`, not a
+  parameter — the two activations are genuinely different functions). `mlaWeights` gained an
+  optional `gProj` field, nil for every non-Bailing MLA family.
+- **The MoE spells its own field names**: `num_experts`/`num_experts_per_tok`/
+  `num_shared_experts`/`moe_shared_expert_intermediate_size` (the qwen3_moe/nemotron_h
+  convention), NOT DeepSeek's own `n_routed_experts`/`n_shared_experts` — a new
+  `Config.NumSharedExperts` field, and `bailingHybridArchitecture` reads `cfg.NumExperts` directly
+  rather than `cfg.NRoutedExperts`. The router's expert-bias buffer is `expert_bias`, not
+  DeepSeek's `e_score_correction_bias` — otherwise BYTE-FOR-BYTE DeepSeek-V3's `noaux_tc` shape
+  (sigmoid + bias + group-limited top-k + `routed_scaling_factor`, an ungated shared expert),
+  confirmed from `BailingMoeV3Gate`/`SparseMoeBlock`'s own forward, not assumed from the field-name
+  similarity.
+- **KDA's wrapper has real departures beyond the per-channel decay F4 already proved**: q/k/v are
+  three FULLY SEPARATE projections AND three separate depthwise causal convs
+  (`self.q_conv1d`/`k_conv1d`/`v_conv1d`, not one combined conv like Gated DeltaNet's), `dt_bias` is
+  shaped `[H·head_dim]` (per-channel, matching the decay) rather than Gated DeltaNet's per-head
+  `[H]`, and the output gated-RMSNorm is sigmoid-activated (`FusedRMSNormGated(activation=
+  'sigmoid')`) where Gated DeltaNet's is SiLU. None of these are new math — every one is a
+  parameterization or an extra tensor, reusing `kdaLowerBoundGate`/`kdaRecurrentStep`
+  (F4's rehearsal) UNCHANGED for the actual recurrence (`decoder/kda.go`).
+- **Norm placement is uniform Pre2 for BOTH mixer kinds** — confirmed directly from
+  `BailingMoeV3DecoderLayer.forward`: `input_layernorm` before either mixer, `residual+hidden`,
+  `post_attention_layernorm` before the MLP, for both `attention_layer_type` branches alike. Unlike
+  Olmo Hybrid (G2), this family needed NO `NormPlacementLinear` — one real hybrid finding that
+  didn't repeat the last one.
+
+### Building and instantiating a real checkpoint — blocked, worked around, not skipped
+
+The real `BailingMoeV3ForCausalLM` (`trust_remote_code=True`) cannot be instantiated on this Mac:
+`modeling_bailing_moe_v3.py` imports `fla.ops.kda` at module top level, which transitively imports
+Triton (`fla/ops/__init__.py` → `fla/ops/abc/chunk.py` → `import triton`) — no Triton wheel exists
+for this platform, the same constraint F4's rehearsal already hit and worked around for the KDA
+core alone. `scripts/pin_bailing_hybrid_tiny.py` extends that workaround to a full tiny model:
+RMSNorm/MLP/Gate/SparseMoeBlock/MLA are reproduced near-verbatim from the real source (none of
+them import `fla` at all — confirmed by reading the file), and KDA's wrapper is hand-assembled
+around `naive_kda_lowerbound_gate`/`naive_recurrent_kda` (`fla-org`'s own reference, copied
+verbatim, MIT — the SAME functions F4's rehearsal already proved match `decoder/kda.go`) instead of
+the Triton-only `chunk_kda`/`fused_recurrent_kda` entry points, which are a different
+parallelization of the identical recurrence per `fla`'s own naming convention, not a different
+model. Tensor attribute names match the real checkpoint's actual tensor names exactly (verified
+against real names read earlier in Phase 0), so the resulting fixture loads through the real
+`bailingHybridArchitecture` adapter unmodified.
+
+This is weaker evidence than a real-HF-class T1 (every other family in this doc): the WRAPPER
+around KDA's core (conv/gates/gated-norm) and the MLA+MoE composition are checked against a
+hand-assembled model, not an independently-executed real one — only the recurrence itself has a
+genuinely external oracle. Recorded honestly, not glossed over.
+
+### T1 result and its verification
+
+`TestBailingHybrid_forwardParity`: **argmax exact, cosine 0.9999999999999437**, plus direct
+assertions that layer 0 (KDA, per `layer_group_size=4`) loaded `kda` weights and no `mla`, and
+layer 3 (MLA) the reverse. Given the reduced-strength reference above, ran a NEGATIVE CONTROL
+before trusting the pass: deliberately flipped KDA's decay from per-channel back to a per-head
+scalar (Gated DeltaNet's own convention) — cosine dropped to **0.93984**, confirming the test
+actually discriminates the one genuinely new piece of math rather than passing regardless.
+
+Building the loader also caught a REAL bug, independent of this family's own correctness: adding
+`l.kda` to `LayerWeights` without teaching `decoder/serialize.go` about it reproduced the exact
+failure class `audit-2026-09-02`'s R3/C-03 already named (LFM2's short-conv weights silently
+missing from the `.giw` format, nil-dereferencing in the decode goroutine on the first token) —
+caught here by `TestSerializeCensus_noSilentFieldDrop`, which panicked with a nil `*kdaWeights` on
+round-trip. Fixed by bumping the `.giw` format to v9 (`kda.go`'s nine tensors, plus `mlaWeights`'
+own `gProj` addition, which had the identical gap for any MLA family using the output gate) rather
+than retrofitting v6Layer's fixed byte layout, which would have corrupted every already-shipped
+v6/v7/v8 file's read.
+
+`archFeatureProfile["bailing_hybrid"]` = `{FeatMLA, FeatMoE, FeatKDA}` — CPU-only overall: FeatMLA/
+FeatMoE are ordinary and declared (webgpu), but the new `FeatKDA` (Gated DeltaNet's own
+per-head-scalar-decay taxonomy would have been the wrong bucket for a genuinely different
+recurrence) is undeclared everywhere. `parity_manifest.json` row: `status: experimental`,
+`method: tiny-golden`. Gate registered in `parityGates` and `awaitingFirstConfirmation` in the same
+commit.
+
+### What was deliberately not done
+
+- **T3 real-checkpoint parity** on the real Ling-3.0-tiny (7.9B total / 1.3B active — the cheapest
+  real-checkpoint validation of any family this batch touched, per F4's own estimate). Not
+  attempted: the real HF class still can't run END-TO-END on this Mac (the Triton blocker above
+  applies to VALIDATION the same way it did to fixture-building), so a real-checkpoint T3 needs
+  either the Linux box (if Triton installs there) or a from-scratch reference forward at real
+  scale — a bigger undertaking than this pass's own ceiling.
+- **GGUF loader / peer row** — gated on T3, per this doc's own rule.
+- **The LoRA'd KDA gate variant (`no_kda_lora: false`) and the plain unbounded decay gate
+  (`kda_safe_gate: false`)** — `validateBailingHybrid` refuses both rather than silently
+  mis-running an unimplemented variant. Only Ling-3.0-tiny's own released config (`no_kda_lora:
+  true`, `kda_safe_gate: true`) is supported; Ling-3.0-flash or a future release using either
+  unimplemented variant would need it added, not assumed to already work.
+- **KDA's chunked/parallel scan** (`chunk_kda`) for prefill throughput — this family, like
+  `qwen3_5_moe`'s own Gated DeltaNet, only implements the sequential form
+  (`decoder/deltanet_chunked.go` has no chunked Gated DeltaNet path either, so this isn't a gap
+  novel to KDA).

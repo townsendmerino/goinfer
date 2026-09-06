@@ -73,11 +73,12 @@ import (
 
 const (
 	giwMagic       = "GINFW"
-	giwVersion     = 8 // v8: the per-layer LFM2 short-conv mixer — see the format comment above
-	giwMinReadV    = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv; older bundles stay valid and fall back to inference)
+	giwVersion     = 9 // v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+	giwMinReadV    = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate; older bundles stay valid and fall back to inference)
 	giwV4Gemma4    = 4 // the version at/after which the gemma4 tail is present
 	giwV6Tail      = 6 // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
 	giwV8ShortConv = 8 // the version at/after which the LFM2 short-conv tail is present
+	giwV9KDAGate   = 9 // the version at/after which the KDA tail + MLA's optional attention-output gate are present
 	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
 	// (largest models: ~120 layers, a few hundred experts) but low enough that a
@@ -1037,6 +1038,7 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	}
 	w.v6Layer(l) // v6 completeness tail — see below
 	w.v8Layer(l) // v8 LFM2 short-conv tail — see below
+	w.v9Layer(l) // v9 KDA + MLA-gate tail — see below
 }
 
 // v6Layer writes the state that made five families unrepresentable, in one unconditional tail.
@@ -1115,6 +1117,40 @@ func (w *giwWriter) v8Layer(l *LayerWeights) {
 	w.f32(c.inProj)
 	w.f32(c.convW)
 	w.f32(c.outProj)
+}
+
+// v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attention-output
+// gate (l.mla.gProj — added to mlaWeights after v6Layer's MLA block already shipped, so it rides a
+// new version rather than retrofitting v6Layer's fixed byte layout, which would corrupt every
+// existing v6/v7/v8 file's read), then the KDA mixer (presence byte + the nine tensors) —
+// caught by TestSerializeCensus_noSilentFieldDrop the same way v8Layer's LFM2 gap was (R3/C-03):
+// l.kda existed and this file did not mention it once, so a round-tripped bailing_hybrid bundle
+// nil-dereferenced in kdaMixerStep on the first KDA layer.
+func (w *giwWriter) v9Layer(l *LayerWeights) {
+	var gProj []float32
+	if l.mla != nil {
+		gProj = l.mla.gProj // nil for deepseek_v2/v3/kimi_k2 (no gate); set for Bailing Hybrid
+	}
+	w.f32(gProj)
+	if l.kda == nil {
+		w.raw([]byte{0})
+		return
+	}
+	w.raw([]byte{1})
+	k := l.kda
+	w.weightMat(&k.qProj)
+	w.weightMat(&k.kProj)
+	w.weightMat(&k.vProj)
+	w.f32(k.qConvW)
+	w.f32(k.kConvW)
+	w.f32(k.vConvW)
+	w.weightMat(&k.fProj)
+	w.f32(k.dtBias)
+	w.f32(k.aLog)
+	w.f32(k.bProj)
+	w.weightMat(&k.gProj)
+	w.f32(k.oNormW)
+	w.weightMat(&k.oProj)
 }
 
 // gemma4Layer writes the v4 Gemma 4 per-layer tail: the PLE branch, the per-layer
@@ -1423,6 +1459,9 @@ func (r *giwReader) layer(l *LayerWeights) {
 	if r.version >= giwV8ShortConv { // v8 LFM2 short-conv tail
 		r.v8Layer(l)
 	}
+	if r.version >= giwV9KDAGate { // v9 KDA + MLA-gate tail
+		r.v9Layer(l)
+	}
 }
 
 // v6Layer mirrors giwWriter.v6Layer: the state that made five families unrepresentable before v6.
@@ -1477,6 +1516,36 @@ func (r *giwReader) v8Layer(l *LayerWeights) {
 	c.convW = r.f32()
 	c.outProj = r.f32()
 	l.shortConv = c
+}
+
+// v9Layer mirrors giwWriter.v9Layer. gProj is always present in the byte stream (possibly
+// zero-length) regardless of l.mla, since the writer runs unconditionally — read it first and
+// only attach it when this layer actually has MLA weights (v6Layer, read earlier, already set
+// l.mla by the time this runs). Version-gated the same way v8Layer is, so a pre-v9 bundle's layer
+// block ends where it always did.
+func (r *giwReader) v9Layer(l *LayerWeights) {
+	gProj := r.f32()
+	if l.mla != nil {
+		l.mla.gProj = gProj
+	}
+	if r.u8() == 0 {
+		return
+	}
+	k := &kdaWeights{}
+	k.qProj = r.weightMat()
+	k.kProj = r.weightMat()
+	k.vProj = r.weightMat()
+	k.qConvW = r.f32()
+	k.kConvW = r.f32()
+	k.vConvW = r.f32()
+	k.fProj = r.weightMat()
+	k.dtBias = r.f32()
+	k.aLog = r.f32()
+	k.bProj = r.f32()
+	k.gProj = r.weightMat()
+	k.oNormW = r.f32()
+	k.oProj = r.weightMat()
+	l.kda = k
 }
 
 // gemma4Layer reads the v4 Gemma 4 per-layer tail and, when the MoE sub-block is

@@ -26,8 +26,8 @@ written. Our own loader now contradicts it — we detect these heads, name them,
 |---|---|
 | `decoder/gguf_qwen35.go:33` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
 | `decoder/gguf.go:734` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
-| `decoder/weights.go:545` | "MTP heads (`mtp.*`) are simply never requested" |
-| `decoder/registry.go:1610` | `num_nextn_predict_layers` MTP head is dropped |
+| `decoder/weights.go:547` | "MTP heads (`mtp.*`) are simply never requested" |
+| `decoder/registry.go:1611` | `num_nextn_predict_layers` MTP head is dropped |
 
 ## Gate 0 — inventory (RUN 2026-08-27, PASSED on availability)
 
@@ -95,7 +95,7 @@ different lists:
 
 | gate | refuses |
 |---|---|
-| `ForwardCapture` (`decoder/model.go:742`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
+| `ForwardCapture` (`decoder/model.go:734`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
 | `specRollbackSafe` (`decoder/forwardn.go:146`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
 
 **qwen35 passes the capture seam and is refused by rollback safety.** The cause is in the arch

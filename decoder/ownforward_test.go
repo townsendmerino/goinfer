@@ -217,6 +217,7 @@ func archWithFamily(t *testing.T, f ownForwardFamily) *Architecture {
 		func(a *Architecture) { a.granite = &graniteParams{} },
 		func(a *Architecture) { a.nemotron = &nemotronParams{} },
 		func(a *Architecture) { a.mla = &mlaParams{} },
+		func(a *Architecture) { a.kda = &kdaParams{} }, // bailing_hybrid; must precede deepseek_v2/v3 in ownForwards
 		func(a *Architecture) { a.llama4 = &llama4Params{} },
 		func(a *Architecture) { a.gptoss = &gptOssParams{} },
 	}

@@ -142,6 +142,26 @@
     "parity": "shared-path: deepseek_v3"
   },
   {
+    "name": "bailing_hybrid",
+    "model_types": [
+      "bailing_hybrid"
+    ],
+    "display_name": "Ling 3.0",
+    "description": "inclusionAI Ling 3.0 (tiny/flash): DeepSeek-style MLA alternating with Kimi Delta Attention (per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "cohere",
     "model_types": [
       "cohere"

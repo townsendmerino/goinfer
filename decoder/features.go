@@ -116,6 +116,13 @@ const (
 	// the standard per-head FeatQKNorm (Qwen3/Gemma3/Mellum). Different statistic AND a
 	// differently-shaped weight tensor, so it is its own feature, not a variant of FeatQKNorm.
 	FeatQKNormWhole ResidentFeature = "qk-norm-whole"
+	// FeatKDA (Bailing Hybrid / Ling 3.0, batch 2 G5): Kimi Delta Attention's linear-attention
+	// mixer — a delta-rule recurrence structurally identical to Gated DeltaNet (FeatDeltaNet) but
+	// with a PER-CHANNEL decay (one value per row of the state matrix) where Gated DeltaNet's is a
+	// single scalar per head — verified against fla-org/flash-linear-attention's actual source,
+	// not the HF modeling file's opaque Triton-kernel call. A genuinely different recurrence, so
+	// its own feature rather than a FeatDeltaNet variant; no resident backend implements it.
+	FeatKDA ResidentFeature = "kda"
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -199,6 +206,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.mla != nil, FeatMLA)
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
 	add(a.qwen35 != nil, FeatDeltaNet)
+	add(a.kda != nil, FeatKDA)
 	add(a.lfm2 != nil, FeatShortConv)
 	add(a.gptoss != nil, FeatAttnSink)
 	// Laguna's attention output gate AND its per-layer query-head count. Both live on

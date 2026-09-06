@@ -398,6 +398,24 @@ func representativeConfig(modelType string) *Config {
 			FirstKDenseReplace: 1, RoutedScalingFactor: 2.827, ScoringFunc: "sigmoid",
 			RopeParameters: json.RawMessage(`{"rope_theta":50000.0,"rope_type":"default"}`),
 		}
+	case "bailing_hybrid":
+		// Ling 3.0: MLA (DeepSeek-shaped, reused) alternating with KDA every layer_group_size-th
+		// layer being MLA (3 KDA + 1 MLA at group=4, matching the real release's own ratio) — no
+		// layer_types field at all (computed, unlike every other hybrid here), num_experts/
+		// num_shared_experts (not DeepSeek's n_routed_experts/n_shared_experts, a real naming
+		// departure this family's own config uses).
+		return &Config{
+			ModelType: "bailing_hybrid", HiddenDim: 64, NumLayers: 4, NumHeads: 8, NumKVHeads: 8,
+			VocabSize: 128, IntermediateDim: 128, RMSNormEps: 1e-6,
+			LayerGroupSize: 4,
+			QLoRARank:      24, KVLoRARank: 16, QKNopeHeadDim: 16, QKRopeHeadDim: 8, VHeadDim: 16,
+			NumExperts: 8, NumSharedExperts: 1, NumExpertsPerTok: 2, MoeIntermediateSize: 32,
+			MoeSharedExpertIntermediateSize: 32, NGroup: 2, TopkGroup: 1,
+			FirstKDenseReplace: 1, RoutedScalingFactor: 2.5,
+			HeadDim: 8, ShortConvKernelSize: 4, NoKDALora: true, KDASafeGate: true, KDALowerBound: -5,
+			GatedAttentionProjGranularity: "head_wise",
+			RoPEGlobalBase:                10000.0,
+		}
 	case "phi3":
 		return &Config{
 			ModelType: "phi3", HiddenDim: 64, NumLayers: 3, NumHeads: 4, NumKVHeads: 2,
@@ -494,6 +512,7 @@ var familyDocs = map[string]familyDoc{
 	"deepseek_v2":      {"DeepSeek-V2", "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)", "safetensors, GGUF", "text"},
 	"deepseek_v3":      {"DeepSeek-V3", "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)", "safetensors, GGUF", "text"},
 	"kimi_k2":          {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
+	"bailing_hybrid":   {"Ling 3.0", "inclusionAI Ling 3.0 (tiny/flash): DeepSeek-style MLA alternating with Kimi Delta Attention (per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN", "safetensors", "text"},
 	"phi3":             {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
 	"llama4_text":      {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
 	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)", "safetensors, GGUF", "text"},
