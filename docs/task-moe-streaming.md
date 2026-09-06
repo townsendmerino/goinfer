@@ -31,7 +31,7 @@ this is on the critical path for that number, not a nice-to-have.
 | `layerPager` — dense windowed prefetch, `WILLNEED` L+1 while computing L | `decoder/layerpaging.go` |
 | generic span residency + budget | `aikit/mmap.SpanCache`, `mmap.Advise`, `mmap.AutoBudget` |
 | bit-exactness by read-only re-fault | `TestMadvise_dontneedRefaultsIntact`, `TestExpertPaging_bitExact`, `TestLayerPaging_bitExact` |
-| the demand-signal seam | `moeMLP` top-k → `pager.touch` (`decoder/mlp.go:83`) |
+| the demand-signal seam | `moeMLP` top-k → `pager.touch` (`decoder/mlp.go:84`) |
 | an access trace + cost model for the real 35B-A3B | `decoder/moepaging_spike_test.go` |
 
 Validated 2026-06-13 on the real Qwen3.6-35B-A3B: 512 MB expert cache against ~16 GB of
@@ -569,7 +569,7 @@ lever for long prompts.
 
 In-repo: `docs/ideas-weight-memory.md` §2 (shipped 2026-06-13; skew and hit-rate/latency
 tables; the "unhideable" claim) and §4 (dense layer streaming), `decoder/moepaging.go`,
-`decoder/layerpaging.go`, `decoder/moepaging_spike_test.go`, `decoder/mlp.go:83`,
+`decoder/layerpaging.go`, `decoder/moepaging_spike_test.go`, `decoder/mlp.go:84`,
 `decoder/forwardn.go:97`/`:228`, `decoder/residency.go:139`, `go.mod:6`,
 `docs/completed/task-gemma4-moe.md`, `docs/benchmarks.md`.
 aikit: `mmap/spancache.go`, `mmap/madvise_darwin.go` (the darwin no-op eviction),

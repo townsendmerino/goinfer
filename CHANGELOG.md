@@ -142,7 +142,7 @@ any surface may still change.
 - **Elementwise activation loops (SwiGLU/GeGLU `silu`/`geluTanh` gate·up) fan out across the same
   worker pool attention already uses, above an 8192-element threshold** — `decoder/mlp.go`'s new
   `parallelElementwise`, applied at the dense and MoE-expert SwiGLU sites, the batched dense-MLP
-  switch (`forwardn.go`), and both GeGLU sites in `forward_gemma4.go`. Bit-identical by
+  switch (`decoder/forwardn.go`), and both GeGLU sites in `decoder/forward_gemma4.go`. Bit-identical by
   construction (each output depends only on its own index; splitting the range cannot reorder an
   accumulation) and verified, not assumed: the full `decoder` suite reproduced every golden
   unchanged. Measured paired/interleaved on a 1.5B int4 checkpoint (arm order rotated per round):

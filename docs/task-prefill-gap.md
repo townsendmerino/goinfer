@@ -453,14 +453,14 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 ### L4 step 1 result, 2026-09-06 — measured (goinfer)
 
 S-06 step 1 shipped: `parallelElementwise` (`decoder/mlp.go`) fans out the five named
-`silu(gate)*up` / `geluTanh(gate)*up` loops (`forwardn.go:646`, `mlp.go:295/407/556`,
-`forward_gemma4.go:190/205`) across the same `sync.WaitGroup`+`go func` idiom already used for
+`silu(gate)*up` / `geluTanh(gate)*up` loops (`decoder/forwardn.go:645/651`, `decoder/mlp.go:344/460/611`,
+`decoder/forward_gemma4.go:191/208`) across the same `sync.WaitGroup`+`go func` idiom already used for
 attention head-parallel fan-out (`maxAttnWorkers = 6`, this Mac's P-core count) — no second pool.
 Two more `ActGeluTanh` branches (`mlp.go`'s `gatedMLP`, `forwardn.go`'s dense-MLP switch) sit in
 the same switch statements as the named `ActSiLU` cases and were parallelized too, for
 consistency; they were not in the brief's exact list and are called out here rather than folded
 in silently. Left untouched, out of scope as scoped: the softmax reduction loops
-(`attention.go:264/330`, `forwardn.go:889/921` — they accumulate, and belong to step 2/3 once the
+(`decoder/attention.go:264/330`, `decoder/forwardn.go:893/925` — they accumulate, and belong to step 2/3 once the
 sum order is pinned as part of the numeric contract), RMSNorm and RoPE (the audit's standing
 "leave"), and the DeltaNet/Mamba2/KDA per-channel conv silus plus the MoE-expert-batch geluTanh
 sites (`forward_gemma4_moe.go`, `eagle.go`, `dflash.go`) — same shape, not named in the brief,

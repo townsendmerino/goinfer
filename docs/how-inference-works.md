@@ -137,7 +137,7 @@ processes that enriched vector through a couple of big matrix multiplications wi
 a nonlinear squashing function in between. Loosely: attention is *gathering
 information from neighbors*, the MLP is *computing on it*. This is where a lot of
 the model's stored "knowledge" lives. The standard form here is
-[`gatedMLP`](../decoder/mlp.go#L262).
+[`gatedMLP`](../decoder/mlp.go#L263).
 
 (There's an important variant, **Mixture of Experts**, covered in the engineering
 section — it's central to this repo's recent work.)
@@ -252,8 +252,8 @@ faster.
 
 Some modern models replace the single MLP with *many* parallel MLPs called
 **experts**, plus a little **router** that, for each token, picks just the top few
-experts to actually run ([`moeMLP`](../decoder/mlp.go#L67),
-[`routeExperts`](../decoder/mlp.go#L133)). The payoff: the model can have
+experts to actually run ([`moeMLP`](../decoder/mlp.go#L68),
+[`routeExperts`](../decoder/mlp.go#L134)). The payoff: the model can have
 huge total knowledge (many experts) while only doing a little work per token (a
 few experts). The cost: all those experts have to *exist in memory* even though
 most go unused each step.

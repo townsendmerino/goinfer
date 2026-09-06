@@ -615,7 +615,7 @@ faces of this:
   matmuls — the seam is already in the forward): fault in selected experts, hold a
   hot-expert LRU. Headline: *35B-A3B on a 24 GB box.* **Implementation seam:** the
   residency hook belongs at `moeMLP`'s router output (`idx, wts := topK(probs, k)`,
-  `decoder/mlp.go:69`), where the **whole selected set** for the layer is known — prefetch
+  `decoder/mlp.go:70`), where the **whole selected set** for the layer is known — prefetch
   that set (and ideally the next layer's likely experts) in one shot, *before* the
   expert loop dereferences `&lw.Experts[e]`. **Not** a per-expert, error-returning
   call inside the loop after the matmul (that faults the expert *after* using it and

@@ -123,14 +123,14 @@ Note `top_k_experts`, **not** `num_experts_per_tok` — see §A4.
 |---|---|
 | `gemma4` model_type + descriptor | `decoder/registry.go:22`, `:165` |
 | global wide head / single-KV / K=V / partial rotary | `gemma4Params` — `GlobalHeadDim`, `NumGlobalKVHeads`, `KVShared`, `GlobalRotaryDim` |
-| proportional (p-)RoPE on global layers | `decoder/forward_gemma4.go:237–241` |
+| proportional (p-)RoPE on global layers | `decoder/forward_gemma4.go:241–241` |
 | 5:1 local:global interleave, dual-base RoPE | `layerIsGlobal` + `RoPELocalBase`/`RoPEGlobalBase` |
 | final-logit softcap 30 | `FinalLogitSoftcap` (already wired for this family) |
 | sandwich norms, GeGLU, √hidden embed scale, tied head | `NormSandwich4`, `ActGeluTanh`, `EmbedScale`, `TiedLMHead` |
 | `text_config` flattening for nested configs | `decoder/config.go:673–684` |
 | per-layer FFN width dispatch | `arch.ffnAt` (`decoder/arch.go:233`) |
-| softmax top-k router + renorm | `routeExperts` (`decoder/mlp.go:159`) |
-| routed-expert MLP driver | `moeMLP` (`decoder/mlp.go:81`) |
+| softmax top-k router + renorm | `routeExperts` (`decoder/mlp.go:160`) |
+| routed-expert MLP driver | `moeMLP` (`decoder/mlp.go:82`) |
 | **fused stacked expert loader** (`gate_up_proj` / `down_proj`) | `loadFusedExperts` (`decoder/weights.go:641`, gpt-oss path) |
 | GGUF stacked-expert reader | `stackedExperts` (`decoder/gguf.go:1212`) |
 
@@ -287,7 +287,7 @@ rig for Part A is an M1 Pro 16 GB.
 | `layerPager` — dense windowed prefetch, `WILLNEED` L+1 while computing L | `decoder/layerpaging.go` |
 | generic span residency + budget | `aikit/mmap.SpanCache`, `mmap.Advise`, `mmap.AutoBudget` |
 | bit-exactness by read-only re-fault | `TestMadvise_dontneedRefaultsIntact`, `TestExpertPaging_bitExact`, `TestLayerPaging_bitExact` |
-| the demand-signal seam | `moeMLP` top-k → `pager.touch` (`decoder/mlp.go:81`) |
+| the demand-signal seam | `moeMLP` top-k → `pager.touch` (`decoder/mlp.go:82`) |
 | an access trace + cost model for the real 35B-A3B | `decoder/moepaging_spike_test.go` |
 
 Validated 2026-06-13 on the real Qwen3.6-35B-A3B: 512 MB expert cache against ~16 GB of
