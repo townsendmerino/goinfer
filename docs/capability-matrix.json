@@ -506,6 +506,26 @@
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
+    "name": "qwen3_moe",
+    "model_types": [
+      "qwen3_moe"
+    ],
+    "display_name": "Qwen3-MoE",
+    "description": "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "gpt-oss",
     "model_types": [
       "gpt_oss"

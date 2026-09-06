@@ -78,6 +78,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3** — Alibaba Qwen3 dense (QK-norm, no bias)
 
+> **Qwen3-MoE** — Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert
+
 > **gpt-oss** — OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
@@ -101,6 +103,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | experimental: tiny-oracle 100.0%/0.99998 |
 | Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
+| Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99843 |
 
 ## state-space hybrid (Mamba-2)

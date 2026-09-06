@@ -444,6 +444,28 @@ func (c *Config) validateMixtral() error {
 	return nil
 }
 
+// validateQwen3Moe pins the Qwen3-MoE assumptions (Qwen3-30B-A3B /
+// Qwen3-Coder-30B-A3B-Instruct, both model_type "qwen3_moe"): the qwen3 dense
+// constraints (QK-norm, no q/k/v bias, single-base RoPE) plus a valid sparse
+// MoE on every layer (num_experts / num_experts_per_tok / moe_intermediate_size).
+// Unlike qwen2_moe there is NO shared expert — confirmed against the real
+// released config.json, which carries no shared_expert_intermediate_size field
+// at all, and against a real GGUF's tensor list, which has no ffn_*_shexp.
+func (c *Config) validateQwen3Moe() error {
+	if err := c.validateQwen3(); err != nil {
+		return err
+	}
+	switch {
+	case c.NumExperts <= 0:
+		return fmt.Errorf("decoder(qwen3_moe): num_experts must be >0, got %d", c.NumExperts)
+	case c.NumExpertsPerTok <= 0 || c.NumExpertsPerTok > c.NumExperts:
+		return fmt.Errorf("decoder(qwen3_moe): num_experts_per_tok %d out of range (1..%d)", c.NumExpertsPerTok, c.NumExperts)
+	case c.MoeIntermediateSize <= 0:
+		return fmt.Errorf("decoder(qwen3_moe): moe_intermediate_size must be >0, got %d", c.MoeIntermediateSize)
+	}
+	return nil
+}
+
 // validateQwen2Moe pins the Qwen2-MoE assumptions: the qwen2 dense constraints
 // (llama + q/k/v bias) plus a valid sparse MoE on every layer (num_experts /
 // num_experts_per_tok / moe_intermediate_size) and an always-on shared expert

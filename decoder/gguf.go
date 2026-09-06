@@ -65,6 +65,8 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 		return ggufQwen35Config(g)
 	case "qwen35":
 		return ggufQwen35DenseConfig(g)
+	case "qwen3moe":
+		return ggufQwen3MoeConfig(g)
 	case "laguna":
 		return ggufLagunaConfig(g)
 	case "glm4moe":
@@ -84,7 +86,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, glm4moe, laguna, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
@@ -441,6 +443,54 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 		base, gf("rope.scaling.factor"), gf("rope.scaling.original_context_length"),
 		gf("rope.scaling.yarn_beta_fast"), gf("rope.scaling.yarn_beta_slow"),
 		gf("rope.scaling.yarn_attn_factor"), baseSwa))
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
+// ggufQwen3MoeConfig builds a Qwen3-MoE Config from the qwen3moe.* metadata.
+// Verified against a real file's header (HTTP-Range-fetched, first 30MB of
+// unsloth/Qwen3-30B-A3B-GGUF's Q2_K — well under the 15GB+ full file), not
+// assumed: architecture string is literally "qwen3moe", the metadata is the
+// plain {arch}.attention.head_count/head_count_kv/key_length/
+// layer_norm_rms_epsilon, {arch}.expert_count/expert_used_count/
+// expert_feed_forward_length, {arch}.rope.freq_base — no sliding-window or YaRN
+// keys at all (single global RoPE, unlike Mellum's per-layer-type split) — and
+// the tensor set carries attn_q_norm/attn_k_norm and
+// ffn_gate_inp/ffn_{gate,up,down}_exps but NO ffn_*_shexp (no shared expert,
+// matching the real config.json's absent shared_expert_intermediate_size).
+// norm_topk_prob isn't carried as GGUF metadata; hardcoded true to match the
+// real config (HF Qwen3MoeConfig's own default, same convention ggufMellumConfig
+// uses for its own missing metadata).
+func ggufQwen3MoeConfig(g *embed.GGUFFile) (*Config, error) {
+	u := func(k string) int {
+		v, _ := g.Uint("qwen3moe." + k)
+		return int(v)
+	}
+	gf := func(k string) float64 {
+		if v, ok := g.Float("qwen3moe." + k); ok {
+			return v
+		}
+		v, _ := g.Uint("qwen3moe." + k)
+		return float64(v)
+	}
+	normTopK := true
+	cfg := &Config{
+		ModelType:           "qwen3_moe",
+		HiddenDim:           u("embedding_length"),
+		NumLayers:           u("block_count"),
+		NumHeads:            u("attention.head_count"),
+		NumKVHeads:          u("attention.head_count_kv"),
+		HeadDim:             u("attention.key_length"),
+		IntermediateDim:     u("feed_forward_length"), // dense (vestigial): decoder_sparse_step=1 makes every layer MoE
+		MoeIntermediateSize: u("expert_feed_forward_length"),
+		NumExperts:          u("expert_count"),
+		NumExpertsPerTok:    u("expert_used_count"),
+		NormTopKProb:        &normTopK,
+		HiddenAct:           "silu",
+		VocabSize:           ggufVocabSize(g),
+		RMSNormEps:          gf("attention.layer_norm_rms_epsilon"),
+		RoPEGlobalBase:      gf("rope.freq_base"),
+	}
 	ggufEOS(g, cfg)
 	return cfg, nil
 }

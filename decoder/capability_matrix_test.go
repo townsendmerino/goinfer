@@ -121,6 +121,15 @@ func representativeConfig(modelType string) *Config {
 			HiddenAct: "silu", NumExperts: 8, NumExpertsPerTok: 2, MoeIntermediateSize: 16,
 			SharedExpertIntermediateSize: 16,
 		}
+	case "qwen3_moe":
+		// No SharedExpertIntermediateSize on purpose: qwen3_moe has no shared
+		// expert (confirmed against the real Qwen3-30B-A3B config.json), unlike
+		// its qwen2_moe sibling above — the matrix should show that difference.
+		return &Config{
+			ModelType: "qwen3_moe", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 1000000,
+			HiddenAct: "silu", NumExperts: 8, NumExpertsPerTok: 2, MoeIntermediateSize: 16,
+		}
 	case "llama":
 		return &Config{
 			ModelType: "llama", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
@@ -387,6 +396,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen2":               {"Qwen2 / Qwen2.5", "Alibaba Qwen2/2.5 dense (q/k/v bias)", "safetensors, GGUF", "text"},
 	"qwen2_5_vl":          {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},
 	"qwen2_moe":           {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
+	"qwen3_moe":           {"Qwen3-MoE", "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert", "safetensors, GGUF", "text"},
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
 	// InternLM3 shares Llama's ROW deliberately. It is not a family riding llama's code with
 	// its own shape — it IS a llama, down to the tensor names, so the matrix should say

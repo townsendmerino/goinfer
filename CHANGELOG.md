@@ -15,6 +15,18 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added
+
+- **Qwen3-MoE as a new family** (`qwen3_moe`; Qwen3-30B-A3B / Qwen3-Coder-30B-A3B-Instruct): qwen3's
+  QK-norm dense attention with the FFN replaced on every layer by a sparse MoE, and — unlike its
+  `qwen2_moe` sibling — no always-on shared expert, confirmed against the real released config.json
+  and a real GGUF's tensor list. Pure composition of two already-shipped adapters: no new forward
+  path, so the family rides the generic uniform-layer dispatch (`canBatchN`/`specRollbackSafe` answer
+  correctly for free) and is resident-admitted on cuda/metal/webgpu from day one, same backends as
+  `qwen2_moe` and `qwen3`. GGUF support included (`general.architecture == "qwen3moe"`, verified
+  against a real file's header via HTTP Range, not assumed). Parity-gated against a tiny oracle
+  (100.0% / 1.00000); real-checkpoint T3 is a follow-up (`docs/task-families-2026-09.md`).
+
 ## [v0.16.0] — 2026-09-05
 
 This release is two things at once. The headline is prefill: CUDA prompt ingestion moves to tensor

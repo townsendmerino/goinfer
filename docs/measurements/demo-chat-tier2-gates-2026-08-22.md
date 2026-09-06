@@ -20,7 +20,7 @@ piece it worried about is already handled:
 
 | what | found | goinfer |
 |---|---|---|
-| config nesting | `text_config` | flattened at `decoder/config.go:1101` |
+| config nesting | `text_config` | flattened at `decoder/config.go:1123` |
 | weight prefix | `model.language_model.*` | detected at `decoder/weights.go:549` |
 | DeltaNet tensors | `in_proj_qkv` / `_z` / `_a` / `_b`, `A_log`, `conv1d`, `dt_bias` | the separate-tensor branch, `decoder/weights.go:962` |
 | layer pattern | `DDDSDDDSDDDSDDDSDDDSDDDS` — 18 DeltaNet + 6 softmax | the 3:1 hybrid this adapter was built for |

@@ -40,6 +40,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"mellum":    {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
 	"mixtral":   {FeatMoE},
 	"qwen2_moe": {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert
+	// qwen3_moe: qwen3's QK-norm attention + a routed MoE FFN with NO shared expert (confirmed
+	// against the real Qwen3-30B-A3B config.json), so unlike qwen2_moe it does NOT need
+	// FeatMoEGatedShared.
+	"qwen3_moe": {FeatMoE, FeatQKNorm},
 	"glm4_moe":  {FeatMoE, FeatPartialRotary, FeatQKNorm},
 	// Laguna: sigmoid-routed MoE with an UNGATED shared expert (so FeatMoE, not
 	// FeatMoEGatedShared), QK-norm, partial rotary on the full-attention layers, a
@@ -181,6 +185,13 @@ var admissionGolden = map[string][]string{
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
 	"qwen2_moe":  {"cuda", "metal", "webgpu"}, // cuda joined 2026-08-20 (the gate weight, not a kernel)
 	"qwen3":      {"cuda", "metal", "webgpu"},
+	// qwen3_moe needs {FeatMoE, FeatQKNorm} — strictly WEAKER than qwen2_moe's
+	// {FeatMoE, FeatMoEGatedShared} (no shared expert to gate) and the same FeatQKNorm
+	// qwen3 dense already clears on all three backends. Since qwen2_moe and qwen3 are
+	// both already admitted everywhere on those exact features, qwen3_moe's subset is
+	// too — no new kernel needed, same generic MoE + QK-norm dispatch every backend
+	// already has.
+	"qwen3_moe": {"cuda", "metal", "webgpu"},
 	// The Gated-DeltaNet family collapses to the backends that implement BOTH the recurrence AND
 	// the fused attention output gate (FeatDeltaNet) — the whole point of adding it as one taxon
 	// bundling both departures rather than two. CUDA and WebGPU landed it first (2026-08-19/20);

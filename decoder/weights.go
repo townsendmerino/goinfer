@@ -1498,6 +1498,29 @@ var qwen35TensorSchema = tensorSchema{
 	SharedExpertGate: "mlp.shared_expert_gate.weight",
 }
 
+// qwen3MoeTensorSchema: qwen3's attention tensor names (per-head q_norm/k_norm,
+// no q/k/v bias) with the FFN replaced on every layer by a sparse MoE (router
+// mlp.gate + per-expert mlp.experts.%d.*) — no shared expert (Shared* fields
+// left empty; arch.MoE.SharedIntermediateDim stays 0, which both the
+// safetensors and GGUF loaders already read as "no shared expert").
+var qwen3MoeTensorSchema = tensorSchema{
+	Embed:       "model.embed_tokens.weight",
+	LMHead:      "lm_head.weight",
+	FinalNorm:   "model.norm.weight",
+	QProj:       "self_attn.q_proj.weight",
+	KProj:       "self_attn.k_proj.weight",
+	VProj:       "self_attn.v_proj.weight",
+	OProj:       "self_attn.o_proj.weight",
+	QNorm:       "self_attn.q_norm.weight",
+	KNorm:       "self_attn.k_norm.weight",
+	PreAttnNorm: "input_layernorm.weight",
+	PreMLPNorm:  "post_attention_layernorm.weight",
+	Router:      "mlp.gate.weight",
+	ExpertGate:  "mlp.experts.%d.gate_proj.weight",
+	ExpertUp:    "mlp.experts.%d.up_proj.weight",
+	ExpertDown:  "mlp.experts.%d.down_proj.weight",
+}
+
 var qwen2MoeTensorSchema = tensorSchema{
 	Embed:            "model.embed_tokens.weight",
 	LMHead:           "lm_head.weight",

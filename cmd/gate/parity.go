@@ -44,6 +44,7 @@ var parityGates = []gateCheck{
 	{"qwen3", "TestQwen3_forwardParity"},
 	{"qwen3-gguf", "TestGGUF_qwen3_parity"},
 	{"qwen2moe", "TestQwen2Moe_forwardParity"},
+	{"qwen3moe", "TestQwen3Moe_forwardParity"},
 	{"llama", "TestLlama_forwardParity"},
 	{"llama3.2", "TestLlama32_forwardParity"},
 	{"mistral", "TestMistral_forwardParity"},
