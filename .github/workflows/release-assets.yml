@@ -157,6 +157,19 @@ jobs:
           echo "$ver"
           echo "$ver" | grep -qE '^backends: .*\bcuda\b' \
             || { echo "$native --version does not list the cuda backend"; fail=1; }
+          # EVERY BINARY THE README NAMES MUST EXIST — derived from the README, not hardcoded.
+          # The hardcoded list above catches a build that broke; this catches the defect that
+          # actually happened (cold run finding #2): the README grew a command name that the
+          # release does not ship, and 21 assets contained no binary matching it. A fixed list
+          # cannot notice that, because the thing that changed was the README.
+          named=$(grep -ohE '\bgoinfer-[a-z]+' README.md | sort -u)
+          echo "binaries the README names: $(echo $named)"
+          for b in $named; do
+            if ! ls dist/ | grep -q "^${b}-"; then
+              echo "README names '$b' but no dist/${b}-* asset was built"
+              fail=1
+            fi
+          done
           [ "$fail" = 0 ] || { echo "serve asset assertions FAILED"; exit 1; }
           echo "serve assets: 6 present, darwin=metal linux=cuda confirmed from build settings; linux-amd64 --version lists cuda"
       - uses: actions/upload-artifact@v4

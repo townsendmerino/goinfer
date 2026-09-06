@@ -61,6 +61,17 @@ the source's comments — the 2026-09-06 run flagged this itself rather than let
    including its contamination note. It is a measurement record; it is not edited to look better
    afterwards, and a later fix does not rewrite it.
 
+**Per-scenario assertions the next run must record**, so a repeat measures the fixes rather than
+re-discovering the findings:
+
+- **Scenario D — "the tool told me before the machine did."** The run passes this leg only if a
+  refusal or a budget warning appeared BEFORE any swap growth. On 2026-09-06 the machine told the
+  tester and the tool never did; R3's guard exists precisely to invert that, and a cold run is the
+  only place it gets tested the way a user meets it.
+- **Every scenario — record `--version` for each binary used** (R2). The 2026-09-06 run could not,
+  which is how a Mac asset with no Metal in it reached a release.
+- **Scenario A — the cold-start total**, which is the number goinfer wins and worth tracking.
+
 **Scenario D stays one class above the brief.** The 2026-09-06 run substituted a 35B-A3B on 16 GB
 for the brief's "20–30B", because the README named no MoE and the tester would not download 15–20
 GB onto a disk with 23 GB free. That is a *harder* test, and it is the one that found the real

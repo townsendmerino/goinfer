@@ -55,6 +55,13 @@ See [`examples/embed/main.go`](examples/embed/main.go) for a complete 40-line pr
 
 ## Download and run
 
+**From nothing to an answer in 25 seconds** — download, pull a model, get a reply. Measured on an
+Apple M1 Pro / 16 GB against Ollama 0.32.5 doing the same thing on the same box: **25 s vs 33 s**,
+from an 8 MB binary with no daemon to install and nothing left running afterwards
+([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
+scenario E). That leg is a cold start only; steady-state decode on that machine is a separate
+measurement and Ollama led it on the release build that run tested.
+
 Binaries on the [latest release](https://github.com/townsendmerino/goinfer/releases/latest)
 (macOS / Linux / Windows, Intel + ARM). Sizes are the darwin-arm64 assets of v0.16.0:
 
