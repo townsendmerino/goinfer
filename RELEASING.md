@@ -62,6 +62,11 @@ survives to a tag unless caught here.
 2. `docs/completed/audit-2026-08-05.md` §9 "before the tag" set (C-18/C-19 in; confirm nothing regressed).
 3. **§C1 parity re-validation** (below, real T3 on the box) is scheduled — it is the one ⛔ gate.
 4. Working tree clean; on `main`; `gh auth switch --user townsendmerino`.
+5. **A cold-user run on the previous tag**, per `docs/task-first-hour.md` §1 — a fresh window, an
+   empty directory outside the repo, the published assets only. It is a 15-minute run and it is the
+   only gate that reads the product from outside: v0.16.0 shipped a README naming a binary that was
+   not in the release and a Mac asset that could not use the GPU, and every internal gate was green.
+   The report goes in `docs/measurements/cold-user-<date>.md`, verbatim.
 
 ## The two-step tag (post-M-19)
 

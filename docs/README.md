@@ -44,11 +44,15 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
 
-## Design records — `task-*.md` (31)
+## Design records — `task-*.md` (37)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
 A `task-*.md` is not a claim that the work is open — read its status header.
+
+One is the outside view rather than a design: [`task-first-hour.md`](task-first-hour.md)
+records what a cold user hit against a published tag, what was fixed, and the protocol for running
+it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.

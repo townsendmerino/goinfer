@@ -49,10 +49,10 @@ Scoped against what exists, the way `task-model-pull.md` was.
 **Already automatic, per backend, in pieces:**
 
 - CUDA expert cache: `--moe-cache-slots 0` means "ask for all and auto-cap to free VRAM"
-  (`decoder/model.go:128-135`, the cap that accounts for 2 MiB allocation quanta and the first-launch
+  (`decoder/model.go:140-135`, the cap that accounts for 2 MiB allocation quanta and the first-launch
   reservation — `docs/positioning.md`'s own history of it).
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
-  (`internal/serveapp/main.go:381`).
+  (`internal/serveapp/main.go:390`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
   (`metal/backend.go:103`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
   directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:163`).
@@ -61,7 +61,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
 
 | decision | today's surface | what the user has to know |
 |---|---|---|
-| which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/serveapp/main.go:363`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
+| which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/serveapp/main.go:372`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
 | Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:207`, `metal/moe.go:319`), env only, no flag, no auto | the measured optimum was N=64 (`docs/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it |
 | context cap and KV precision | `-ctx` (`:361`, ignored by WebGPU — M-32), `-kv` (`:360`, breaks three families on WebGPU — M-32), `-kv-quant` (`:362`) | the VRAM a 16k f32 KV costs on their card |
 | quant | `-quant int4` default (`:340`), `--embed-int4` (`:374`) | that int4 is now as fast as int8int8 on CPU (the in-repo guidance was reversed 2026-08-25) |
@@ -257,7 +257,7 @@ M-01, M-02, M-31, M-32, N-42, L-01, L-04 · `docs/task-model-pull.md` (phase 1 s
 before this one) · `docs/task-metal-expert-streaming-at-scale.md` (N=64, 2.19 tok/s; "default to
 64" with no code) · `docs/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:347-374` (the flags the plan subsumes) · `decoder/model.go:128-163`
+`internal/serveapp/main.go:355-374` (the flags the plan subsumes) · `decoder/model.go:140-163`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:82-164` (the guard) ·
 `decoder/weightbytes.go:56` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:179` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
