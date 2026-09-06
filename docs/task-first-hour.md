@@ -68,8 +68,23 @@ thing. Keep it there.
 
 **Scenario B needs an agent CLI installed.** The 2026-09-06 run could not test one: aider,
 opencode, cline, `llm` and codex were all absent, and `continue` matched a shell builtin — a false
-positive worth knowing about. Install one on both boxes before the next run and name it in the
-report.
+positive worth knowing about.
+
+**`nobara-pc`: `opencode` 1.18.29**, installed into a contained prefix
+(`npm install --prefix ~/.local/opt/opencode opencode-ai`; the binary is at
+`~/.local/opt/opencode/node_modules/.bin/opencode`). A contained prefix rather than a global
+install because npm's global prefix here is `/usr/local` and needs root; nothing on `PATH` and
+nothing in `npm config` was changed, so the next tester must use the full path or add it
+themselves — which is a step to note in their report, not a hidden one.
+
+**`aider` was tried first and does not install on this box:** the system Python is 3.14.7, and
+pip only offers `aider-chat` up to **0.16.0** there — every current version declares an upper
+Python bound that excludes 3.14, and pip backtracks to a 2023 release whose pinned `multidict`
+6.0.4 then fails to build. This is a fact about aider and 3.14, not about goinfer; if the next
+run wants aider specifically it needs an older interpreter.
+
+**The MacBook is still unprovisioned** — it cannot be reached from `nobara-pc`, so whoever runs
+scenario B there installs one first and names it.
 
 **Next run:** the **Linux box**, after the R1–R3 tags land. The CUDA path makes "bigger than my
 hardware" a different story (expert streaming vs `-stream-weights`), so it is not a repeat. Its
