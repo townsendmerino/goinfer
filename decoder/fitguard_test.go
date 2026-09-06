@@ -155,11 +155,14 @@ func TestFitEstimate_agreesWithResidentWeightBytes(t *testing.T) {
 				t.Skip("accountant reported 0 for this fixture")
 			}
 			ratio := float64(est) / float64(actual)
-			// A wide band on purpose: the estimator prices every tensor uniformly and the
-			// accountant reads the backing slices, so they legitimately differ on packing and
-			// on tensors the loader drops. What must not happen is a factor-of-two drift, which
-			// is what a wrong bytes-per-element constant looks like.
-			if ratio < 0.6 || ratio > 1.6 {
+			// TIGHT on purpose, and it was not always. The band started at 0.6-1.6 and passed on
+			// linux/amd64 at 0.96 while darwin/arm64 sat at 0.53 — the arm64 W4A8 row4 repack
+			// keeps a second buffer, so int4 costs about twice its encoding there and a
+			// hand-derived constant was ~1.8x low on the one platform the guard exists for.
+			// quantBytesPerElem now MEASURES through quantizeWM, so a wide band would only hide
+			// the next such divergence. Some slack remains because the estimator prices every
+			// tensor uniformly while the accountant reads the real backing slices.
+			if ratio < 0.85 || ratio > 1.25 {
 				t.Errorf("estimate %d vs accounted %d (ratio %.2f) — the pre-load estimate has "+
 					"drifted from ResidentWeightBytes", est, actual, ratio)
 			}
@@ -177,4 +180,38 @@ func injectHostRAM(t *testing.T, bytes int64) func() {
 	restore := func() { hostRAM = prev }
 	t.Cleanup(restore)
 	return restore
+}
+
+// Every quant mode must produce a plausible measured cost. The trap this pins: quantInt4Mix is a
+// load-time POLICY, not a resident precision, so quantizeWM does not handle it and hands back the
+// untouched f32 — pricing an int4mix model at 4 bytes/element, six times its real cost, and
+// refusing models that fit comfortably. That is the one direction the guard must never fail in,
+// and it is invisible in the ratio test above, which never exercises int4mix.
+func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mode     quantMode
+		lo, hi   float64
+		alsoLess quantMode // must be strictly cheaper than this mode, or the ordering is broken
+	}{
+		{name: "f32", mode: quantNone, lo: 4, hi: 4},
+		{name: "int8", mode: quantInt8, lo: 0.9, hi: 2.4, alsoLess: quantNone},
+		{name: "int8int8", mode: quantInt8I8, lo: 0.9, hi: 2.4, alsoLess: quantNone},
+		// The upper bounds admit the repacked hosts: arm64's row4 and AVX2-without-VNNI's
+		// split-half each keep a SECOND buffer beside the canonical nibbles, so int4 legitimately
+		// costs about twice its 0.625-byte encoding there.
+		{name: "int4", mode: quantInt4, lo: 0.55, hi: 1.5, alsoLess: quantInt8},
+		{name: "int4mix", mode: quantInt4Mix, lo: 0.55, hi: 1.5, alsoLess: quantInt8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := quantBytesPerElem(tc.mode)
+			if got < tc.lo || got > tc.hi {
+				t.Errorf("%s costs %.4f bytes/elem, want %.2f..%.2f", tc.name, got, tc.lo, tc.hi)
+			}
+			if tc.alsoLess != tc.mode && got >= quantBytesPerElem(tc.alsoLess) {
+				t.Errorf("%s (%.4f) is not cheaper than the wider mode (%.4f) — the modes are "+
+					"mis-measured or mis-ordered", tc.name, got, quantBytesPerElem(tc.alsoLess))
+			}
+		})
+	}
 }

@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // The load-time fit guard: refuse a model that cannot fit in RAM BEFORE allocating it, naming
@@ -137,22 +139,69 @@ func guardFit(f fitCheck) error {
 }
 
 // quantBytesPerElem is the resident cost of one weight ELEMENT of a 2-D matmul matrix under each
-// quant mode, scales included. int8 carries one f32 scale per ROW and int4 one per group of
-// int4GroupSize, so the per-element cost is 1 + 4/cols and 0.5 + 4/32 respectively; the row term
-// is bounded by the group term for any real matrix, so 1.125 covers it.
+// quant mode — MEASURED by running a probe matrix through the loader's own quantization, not
+// derived from the nominal bit width.
 //
-// int4mix is deliberately given int4's cost even though it keeps attention at int8: this is a
-// LOWER BOUND on the real footprint, which is the safe direction — the guard may fail to refuse a
-// marginal model, but it cannot refuse one that would have fit.
+// WHY IT IS MEASURED. The arithmetic answer ("int4 is 0.5 bytes plus a scale per group of 32, so
+// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader repacks:
+// repackW4A8Row4IfEligible on arm64 and repackW4A8SplitHalfIfEligible on AVX2-without-VNNI amd64
+// both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside it, so an int4 weight
+// really costs about twice its encoding on those hosts. wmBytes counts both, correctly.
+//
+// Caught by CI, not by reasoning: TestFitEstimate_agreesWithResidentWeightBytes passed on
+// linux/amd64 (ratio 0.96) and failed on darwin/arm64 at ratio 0.53 — estimate 104256 against
+// 195584 accounted. Apple Silicon is exactly the platform the fit guard exists for
+// (docs/measurements/cold-user-2026-09-06.md was a 16 GB M1 Pro), so a constant tuned on the
+// developer's box was ~1.8x low precisely where it mattered. Measuring through the real path
+// tracks the arch, the CPU features, and any repack added later, none of which a constant can.
+//
+// THE RESIDUAL, stated rather than hidden. The probe is 256x256, which the repacks accept (rows a
+// multiple of 4, cols a multiple of int4GroupSize). A model built entirely from matrices the
+// repack REJECTS would be over-priced by up to that factor — the direction that can refuse a
+// model which would have fit. Real transformer matrices are multiples of 4 and 32 by
+// construction, the 70% budget carries slack of its own, and GOINFER_NO_FIT_GUARD is named in the
+// refusal; that is the trade, taken deliberately, because the alternative was a guard that
+// under-reports by ~2x on the platform it was written for.
 func quantBytesPerElem(q quantMode) float64 {
-	switch q {
-	case quantInt4, quantInt4Mix:
-		return 0.5 + 4.0/float64(int4GroupSize)
-	case quantInt8, quantInt8I8:
-		return 1.125
-	default: // quantNone — f32
-		return 4
+	bpeMu.Lock()
+	defer bpeMu.Unlock()
+	if v, ok := bpeCache[q]; ok {
+		return v
 	}
+	v := measureBytesPerElem(q)
+	bpeCache[q] = v
+	return v
+}
+
+var (
+	bpeMu    sync.Mutex
+	bpeCache = map[quantMode]float64{}
+)
+
+// measureBytesPerElem quantizes a probe matrix through quantizeWM — the loader's own path,
+// repacks included — and asks wmBytes what it costs. Sub-millisecond, and cached per mode.
+func measureBytesPerElem(q quantMode) float64 {
+	const n = 256 // rows and cols: a multiple of 4 and of int4GroupSize, so the repacks apply
+	f32 := make([]float32, n*n)
+	for i := range f32 {
+		// Non-degenerate values: byte counts do not depend on them, but a matrix of zeros is the
+		// kind of probe that quietly stops exercising a scale path if one is ever added.
+		f32[i] = float32(i%251) - 125
+	}
+	// quantInt4Mix is a LOAD-TIME POLICY, not a resident precision — quantizeWM does not handle it
+	// and would hand back the untouched f32, pricing the model at 4 bytes/element and refusing
+	// models that fit six times over. Measure its dominant class instead: the FFN bulk it puts at
+	// int4. Attention stays int8, so this stays a lower bound, which is the safe direction.
+	probe := q
+	if probe == quantInt4Mix {
+		probe = quantInt4
+	}
+	wm := quantizeWM(linalg.WrapF32(f32, n, n), probe)
+	if b := wmBytes(&wm); b > 0 {
+		return float64(b) / float64(n*n)
+	}
+	// quantizeWM is a no-op for quantNone and anything it does not handle; f32 is the answer then.
+	return 4
 }
 
 // estimateGGUFWeightBytes sums every tensor's element count from the GGUF's metadata and prices
