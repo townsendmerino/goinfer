@@ -935,14 +935,14 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:828` | goinfer | `bin := filepath.Join(os.TempDir(), "gpu_gate_serve")` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:899` | goinfer | `if v := os.Getenv("GOINFER_NVRTC_DIRS"); v != "" {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:973` | goinfer | `ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:162` | goinfer | `// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:164` | goinfer | `// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:20` | goinfer | `// THIS IS A CHECKSET, NOT A TALLY, and that is the whole reason it needs its own decisi` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:285` | goinfer | `cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:294` | goinfer | `for _, c := range cfg.Cells {` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:316` | goinfer | `// Safety net: any OTHER parity/gate-shaped test that skipped — a family the lists forgo` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:384` | goinfer | `// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting ` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:538` | goinfer | `// This exists because the distinction cost five weeks. TestQwen3NextReal_oracle was rep` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:547` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:287` | goinfer | `cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:296` | goinfer | `for _, c := range cfg.Cells {` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:318` | goinfer | `// Safety net: any OTHER parity/gate-shaped test that skipped — a family the lists forgo` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:386` | goinfer | `// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting ` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:540` | goinfer | `// This exists because the distinction cost five weeks. TestQwen3NextReal_oracle was rep` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:549` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:284` | goinfer | `func TestRealckptCellCanReachEveryGate(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:320` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|constrain/constrain.go:153` | goinfer | `logits[id] = neg` |

@@ -329,6 +329,24 @@
       "note": "Qwen/Qwen3-Next-80B-A3B-Instruct (41 shards / 162.6 GB bf16) \u2014 the family's T3 oracle. The FULL checkpoint, not the 6-shard slice pulled 2026-08-17: a slice proves real weights at real distributions but not depth, and the T3 claim is about the whole model. goinfer loads it at int4 (~40 GB); int8 would be ~80 GB against 62 GB of RAM, so the quant is forced by capacity rather than chosen. The bf16 reference is NOT co-resident \u2014 scripts/pin_qwen3next_real.py pins it to testdata/qwen3next_real_golden.json first, through accelerate disk offload."
     },
     {
+      "env": "GOINFER_QWEN3MOE_HF",
+      "kind": "dir",
+      "members": [
+        "config.json"
+      ],
+      "members_any": [
+        "model.safetensors.index.json",
+        "model.safetensors"
+      ],
+      "candidates": [
+        "$MODELS/qwen3moe-30b-a3b-bf16"
+      ],
+      "used_by": [
+        "TestQwen3MoeReal_oracle"
+      ],
+      "note": "Qwen/Qwen3-30B-A3B (bf16 safetensors) — the family's T3 oracle (docs/task-families-2026-09.md F1)."
+    },
+    {
       "env": "GOINFER_NEMOTRON3NANO_HF",
       "kind": "dir",
       "members": [

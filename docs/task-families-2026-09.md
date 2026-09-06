@@ -153,12 +153,15 @@ other family's tiny gate.
 
 ### What was deliberately not done
 
-- **T3 real-checkpoint parity.** Qwen3-30B-A3B bf16 is ~61 GB; the doc's own order-of-operations
-  ("if F1's T3 cannot run, ship at T1 and move on") applies — this pass didn't have Linux-box CUDA
-  time budgeted. Row stays `experimental` until a real oracle run lands, same posture `qwen3_5_moe`
-  and `qwen3_next` shipped at before their own T3s.
-  `models-pull Qwen3-30B-A3B` (or the Coder variant) + a real-checkpoint gate mirroring
-  `decoder/nemotron3nano_real_test.go`'s shape is the follow-up.
+- **T3 real-checkpoint parity — infra built, not yet run.** Qwen3-30B-A3B bf16 is ~61 GB; the
+  doc's own order-of-operations ("if F1's T3 cannot run, ship at T1 and move on") applied at first
+  landing. `scripts/pin_qwen3moe_real.py` + `decoder/qwen3moe_real_test.go` (tag `realckpt`,
+  `TestQwen3MoeReal_oracle`, `GOINFER_QWEN3MOE_HF` asset registered) now exist, mirroring
+  `decoder/nemotron3nano_real_test.go`'s shape — starting quant `int8` (weights) / f32
+  (activations), not `int8int8`, per Nano's own measured router-flip cliff at similar sparsity
+  (G4). Added to both `parityRealckptGates` and `emitGates` (unlike F2's Lightning gate, this one
+  has no prior real-checkpoint evidence in the manifest to protect, so a passing sweep may
+  legitimately promote the row). Row stays `experimental` until the run actually happens.
 - **One decode benchmark row** (the brief's "one cell each" bench requirement) is gated on T3 —
   measuring a resident quant path before the numerics are validated against a real oracle would be
   exactly the kind of ungated claim `docs/benchmarks.md`'s Methodology section exists to prevent.

@@ -99,6 +99,7 @@ var parityRealckptGates = []gateCheck{
 	{"llama4-scout-gguf", "TestLlama4Real_gate"},
 	{"qwen3next-oracle", "TestQwen3NextReal_oracle"},
 	{"nemotron35lightning-oracle", "TestNemotron35LightningReal_oracle"},
+	{"qwen3moe-oracle", "TestQwen3MoeReal_oracle"},
 	// ONE OR TWO CANONICAL GATES FOR SIX FAMILIES THAT HAD NONE (2026-09-02, audit G-05 follow-up).
 	// gpt_oss, granite, laguna, glm4_moe, cohere, cohere2 and dense qwen3.8 were shipped families
 	// with no required gate ANYWHERE in the checkset — not in parityGates either, since none has a
@@ -130,6 +131,7 @@ var emitGates = []gateCheck{
 	{"cohere", "TestCohereAyaReal_gate"},
 	{"cohere2", "TestCohere2R7bReal_gate"},
 	{"qwen3_next", "TestQwen3NextReal_oracle"},
+	{"qwen3_moe", "TestQwen3MoeReal_oracle"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -609,6 +611,7 @@ var awaitingFirstConfirmation = map[string]string{
 	"TestQwen38GGUF_gate":            "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
 	"TestQwen3Moe_forwardParity":     "2026-09-06 — newly required (qwen3_moe had no gate); promote from the first sweep that runs it",
 	"TestGraniteDense_forwardParity": "2026-09-06 — newly required (dense granite had no gate); promote from the first sweep that runs it",
+	"TestQwen3MoeReal_oracle":        "2026-09-06 — newly required (F1, docs/task-families-2026-09.md); real-checkpoint T3 for qwen3_moe, not yet run; promote from the first sweep that runs it",
 	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/task-families-2026-09.md); " +
 		"needs the ~60GB bf16 checkpoint on the Linux box, not yet run; promote from the first sweep that runs it",
 }
