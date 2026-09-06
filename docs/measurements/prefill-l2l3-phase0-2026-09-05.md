@@ -78,7 +78,7 @@ currently at 1.5% of the relevant tensor peak. The bar is not the binding risk; 
 is whether a fused schedule actually converts a latency bound into a throughput one on this card.
 
 **A capability win that is not a speed win, and is worth recording separately.** Today's launch
-sizes dynamic shared memory as `(maxNWin + 128) × 4` (`cuda/resident.go:147`), so
+sizes dynamic shared memory as `(maxNWin + 128) × 4` (`cuda/resident.go:155`), so
 `checkPrefillShmem` declines any layer attending more than **12,160 keys** — past that a prompt
 falls back to the sequential per-token path. A 64-query × 64-key tiled kernel's shared memory is
 **constant in K**, so it removes that ceiling entirely. That is independent of any ratio measured

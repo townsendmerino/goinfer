@@ -50,7 +50,7 @@ branch bypassing the uniform-GQA gates), both `✅ resident`. This is the same s
   512 — the fixed-128-thread block decomposes 512-dim heads (4 elements/thread) correctly. `hd=256`
   was already proven independently (Gemma 3 is `✅ resident` on CUDA, `hardware-matrix.md:20`; Gemma 3
   is *not* own-forward). The kernel launches `GridX=nH, BlockX=128 (fixed), SharedMem=(nWin+128)·4`
-  (cuda/resident.go:549), `hd` as an arg, shared-mem sized by *keys* — hd-parametric, as the probe
+  (cuda/resident.go:557), `hd` as an arg, shared-mem sized by *keys* — hd-parametric, as the probe
   confirms. So **CUDA is "bridge + 0 attention kernels."** (WebGPU's kernel *does* hard-cap
   `hd ≤ 128` at gpu/attention.go:52 — a real kernel rewrite, another reason it is 9d. Metal handles
   256 already, `metal/attn_shape_test.go`, but that table tops at 256 — a Mac-side item is to add the

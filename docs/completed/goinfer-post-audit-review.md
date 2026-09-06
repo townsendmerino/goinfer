@@ -43,7 +43,7 @@ Failure: paged 26B decode (the documented 16 GB MacBook config) hits a transient
 Fix shape: return an error from the staging path (plumb through `ensureResident`), or add a recover→`execErr` boundary around the paged forward.
 
 ### R-03 · CUDA gemma-4 MoE: accumulator zero-fill is unordered against the previous layer's still-running kernels
-`cuda/resident.go:1296` (`gpu.Upload(r.g4x2, r.g4zero)` in launchToken) · **silently wrong logits, timing-dependent** · audit-missed
+`cuda/resident.go:1304` (`gpu.Upload(r.g4x2, r.g4zero)` in launchToken) · **silently wrong logits, timing-dependent** · audit-missed
 
 `r.stream` is non-blocking; aikit's `Upload` runs the copy on the context (legacy null stream) and does a full sync only **after** enqueuing — aikit's own doc-comment (gpu/cuda.go:308-321) spells out that these two streams have "no ordering guarantee at all" (that sync fixes upload→next-launch, not pending-launch→upload). At the moment layer *l*'s zero-fill is issued, segC(*l−1*) — the kernels that **write and then read `g4x2`** (fMoEWacc accumulate, the fRes join) — may still be executing on `r.stream`. If the DMA lands mid-segC, layer *l−1*'s expert contribution is partially or wholly zeroed before the join consumes it.
 
@@ -109,9 +109,9 @@ Fix shape: mirror the OpenAI 400 (or implement tools-in-vision) on the Anthropic
 
 **cuda**
 - **R-20** `cuda/prefill.go:402` — the C-24 decline classifier is `strings.Contains(err.Error(), "panicked")`: **every** recovered executor panic (including future programming bugs) is relabeled "out of device memory … declining" and silently absorbed into the ~9×-slower sequential path. Match a sentinel from the OOM site instead of any panic.
-- **R-21** `cuda/resident.go:596` + `prefill.go:169` — `ForwardN(nil, pos)` returns "empty prompt" error when `prefillReady` instead of the interface-documented no-op (cpu/webgpu no-op). Latent; contract drift.
-- **R-25** `cuda/resident.go:344` — C-25 residual: the `perLayer <= 0` decline leaves `r.cacheExperts` true with no slots/`expCache` allocated → first decode would nil-deref (recovered into a persistent "executor job panicked"). Unreachable today; the branch's comment promises a fallback that doesn't exist. Clear `cacheExperts` in the guard.
-- **R-26** docs drift, worth fixing because both misdescribe the exact C-24 invariant: `cuda/resident.go:233` still claims BuildResident's defer catches executor panics (it cannot — that was the C-24 finding; runJob does); `cuda/backend.go:389` claims oversized `GOINFER_MOE_CACHE_SLOTS` "crashes rather than declining" (false post-C-24). Also the "audited 12.6 glue.ptx" provenance underpinning the C-14 split rationale is wrong: only `moe.ptx` (+bench kernels) are 12.6.85; `glue.ptx` and all other production PTX are NVRTC **12.9.86**.
+- **R-21** `cuda/resident.go:604` + `prefill.go:169` — `ForwardN(nil, pos)` returns "empty prompt" error when `prefillReady` instead of the interface-documented no-op (cpu/webgpu no-op). Latent; contract drift.
+- **R-25** `cuda/resident.go:352` — C-25 residual: the `perLayer <= 0` decline leaves `r.cacheExperts` true with no slots/`expCache` allocated → first decode would nil-deref (recovered into a persistent "executor job panicked"). Unreachable today; the branch's comment promises a fallback that doesn't exist. Clear `cacheExperts` in the guard.
+- **R-26** docs drift, worth fixing because both misdescribe the exact C-24 invariant: `cuda/resident.go:241` still claims BuildResident's defer catches executor panics (it cannot — that was the C-24 finding; runJob does); `cuda/backend.go:389` claims oversized `GOINFER_MOE_CACHE_SLOTS` "crashes rather than declining" (false post-C-24). Also the "audited 12.6 glue.ptx" provenance underpinning the C-14 split rationale is wrong: only `moe.ptx` (+bench kernels) are 12.6.85; `glue.ptx` and all other production PTX are NVRTC **12.9.86**.
 
 **metal**
 - **R-12** `metal/snapshot_golden_test.go:1` — the one metal test file with no `//go:build darwin` tag (touched by N-10). Native-GOOS `go vet ./metal/` / `go test ./metal/` on the Linux box fails with `undefined: resident` (reproduced here). One-line tag.

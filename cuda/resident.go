@@ -34,6 +34,14 @@ var (
 // path handles longer. It is a DEFAULT, not a ceiling: decoder.Options.ResidentContext raises it (see
 // resolveCtxCap). It stays 4096 so that a caller who did not ask never allocates deep-KV VRAM —
 // raising the default would silently multiply every resident model's KV footprint.
+//
+// 4096 is a round, conservative choice, NOT a value tuned against real VRAM headroom — nothing has
+// ever measured how much of a real card's free VRAM it leaves unused. Measured 2026-09-06
+// (docs/task-kv-cache-streaming.md): on an RTX 2070 SUPER (8 GB) with a dense 7B at int4,
+// checkKVFits accepts -ctx 20000 (7257/8192 MiB used) and refuses -ctx 24576 (needs 2.82 GB of KV,
+// 2.90 GB free) — a true per-card ceiling roughly 5-6x this default. Whether that ratio holds for
+// other model sizes/quants/cards is unmeasured; raise -ctx and read checkKVFits' own error to find
+// the real number for a given deployment rather than assuming this default reflects it.
 const cudaCtxCapDefault = 4096
 
 // ctxCapMarginBytes is the VRAM left free beside weights+KV at the load-time fit check: driver

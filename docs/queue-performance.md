@@ -227,7 +227,7 @@
   **(3) has a no-new-kernel route that the tree's own comment says does not exist.**
   `resident.go` states "gocudrv exposes no buffer view/offset, so the split is the kernel's
   gOff/uOff rather than Go-side pointer arithmetic" — but `aikit/gpu.Buffer.At(byteOff)` returns a
-  zero-copy sub-view, is already used for the C′ expert-slot DMA (`cuda/resident.go:991`), and its
+  zero-copy sub-view, is already used for the C′ expert-slot DMA (`cuda/resident.go:999`), and its
   `arg()` binds the offset as a raw device pointer. So the existing per-row MoE kernels can be fed
   row *m* of a batched residual as `xB.At(m*hidden*4)`, and the first slice — batch the attention
   half, loop the FFN per row — becomes a Go refactor (thread the residual buffer through

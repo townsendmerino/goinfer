@@ -47,10 +47,22 @@ defaults to **4096 positions** and is raised with `-ctx N` (or per model, `--mod
 cap = min(model context window, -ctx)        # -ctx unset (0) ⇒ 4096
 ```
 
-**The default is deliberately unchanged by this knob's existence.** Raising the default would
-multiply every resident model's KV footprint for callers who never asked; a caller who does not pass
-`-ctx` allocates exactly what they always did, and a request past 4096 still fails cleanly and takes
-the staged path.
+**4096 is a round, conservative DEFAULT — it has never been tuned against real VRAM headroom, and
+the code does not claim otherwise.** It was chosen (`ca29d6c`) purely so a caller who never passes
+`-ctx` never allocates deep-KV VRAM; no measurement set it to 4096 specifically. The real per-card
+ceiling is typically much higher and is worth measuring for your own model/quant: on an RTX 2070
+SUPER (8 GB) with D7 (Qwen2.5-7B-Instruct) at `int4`, resident loads fine at `-ctx 20000`
+(7257/8192 MiB used) and fails at `-ctx 24576` (needs 2.82 GB of KV, only 2.90 GB free) — a true
+ceiling roughly 5-6× the default, left on the table for anyone who does not know to raise it
+(`docs/task-kv-cache-streaming.md`).
+
+**A prompt beyond the ACTIVE cap (4096, or whatever `-ctx` set) is rejected with a clean HTTP 400
+`context_length_exceeded` — there is no per-request fallback to the staged path.** This paragraph
+used to say there was; that was true when written (`ca29d6c`, 2026-08-09) and stopped being true
+once a later audit (R-10) found the fallback attempt produced a 500 leaking an internal "use the
+staged path" hint on the stateless resident path, and replaced it with the clean 400 instead
+(`internal/serveapp/openai.go`). The decline below is a DIFFERENT decision — whether the whole
+model builds resident at all, made once at load — not a per-request prompt-length check.
 
 The cap costs VRAM linearly and it is **not** small: **24.0 KB/position** on qwen2.5-coder-0.5b
 (24 layers × 128 kvDim × K+V × f32) and **56.0 KB/position** on the 1.5B, so 32k positions is
@@ -64,6 +76,12 @@ allocated and after the weights are on the device, so `free` means what is actua
   cannot have it should not discover that as a latency mystery under load.
 - **Default cap that does not fit → ordinary decline** to the staged path, as it always has. This
   path must not start failing to boot on deployments that never configured anything.
+
+**Either decline is silent WITHOUT `-require-backend`:** the model loads and serves every
+subsequent request over the CPU-staged path instead. Measured cost, D7 at `int4`, same box: **~15×
+slower decode** (69.9→4.7 tok/s at depth 512, 48.9→3.2 tok/s at depth 4096;
+`docs/task-kv-cache-streaming.md`) — not a slope from the request depth, a flat cost of being on
+the wrong engine.
 
 Measured against the formula: at `-ctx 8192` the 1.5B's VRAM rose exactly **+224 MiB** over the
 default, and at `-ctx 32768` **+1570 MiB** (predicted +1568). Depth measurements at these caps:
@@ -89,6 +107,22 @@ a K=V layer with no `v_norm` unit weight; and a model with the per-token debug s
 (`hidCapTaps`, `layerCap`), whose consumers expect one row per token. **MoE and Gemma-4 are no
 longer on that list** — a MoE layer's FFN now runs per row off the batched residual, and per-layer
 geometry and K=V are handled, so M26-class models take the batched path.
+
+### The CPU-staged fallback inherits the resident quant — which can itself be a bad choice for CPU
+
+Whichever decline above lands the model on the CPU-staged path, that path keeps whatever `-quant`
+the resident config asked for. Measured on `nobara` (Ryzen 7 3700X — AVX2 only, no AVX-512/VNNI):
+D7 (Qwen2.5-7B-Instruct) staged decode at `int4` is slow but normal, ~4-5 tok/s across depth
+512-4096 (numbers above). The SAME staged path at `int8int8` did not finish a single depth-512
+measurement (prefill + 40 decode tokens) in over 7 minutes before being killed. Not chased to a
+root cause, but consistent with `aikit/linalg`'s own int8 dispatch preferring AVX-512 VNNI over
+AVX2 (`quant_i8_tile_amd64.go`, `dot_i8_avx512vnni_amd64.go`) while int4's split-half kernel is
+AVX2-native — this box has the latter tier, not the former. An operator who picked `int8int8` for
+the resident config's own accuracy/VRAM tradeoff (a real, plausible choice — it is
+`decode_bench_test.go`'s own default) and then drifts past the VRAM ceiling on a non-VNNI box gets
+a fallback that is not just slow, it is close to unusable. Not measured on a VNNI box, so this may
+be specific to non-VNNI CPUs rather than `int8int8` generally. Full numbers:
+`docs/task-kv-cache-streaming.md`.
 
 ### Tensor-core fast prefill (2026-09-05) — default ON above 512 prompt tokens
 
