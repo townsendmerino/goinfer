@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +62,13 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 	if testing.Short() {
 		t.Skip("long-running gate: skipped in -short")
 	}
+	// THE GATE MEASURES THE KERNELS; THE FLOOR IS A PRODUCTION POLICY BUILT ON WHAT THE GATE
+	// MEASURES. Leaving the floor in force here would make every sub-floor cell silently score the
+	// EXACT path in both arms and report a pass — the same "scored the exact path twice" failure
+	// SetFastPrefillForTest guards against, arriving by a different route. Disabling it keeps the
+	// K=256 cell a real measurement of what the fast kernels do there, which is precisely the
+	// evidence the floor rests on.
+	t.Setenv("GOINFER_CUDA_FAST_PREFILL_FLOOR", "0")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
@@ -74,8 +83,23 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 		{"S", "GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
 		{"D7", "GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"},
 	}
+	// The pre-registered §3 decision set. GOINFER_CUDA_GATE_KS overrides it for a run that needs a
+	// depth the standing set does not cover — which is how the production floor was justified: §3's
+	// cells are 256 and 1024, so placing a floor between them without measuring there would be
+	// interpolating a fidelity result nobody took. An override run labels itself in the log and
+	// does not silently become the decision set.
 	decisionKs := []int{256, 1024}
 	confirmKsByModel := map[string][]int{"S": {3900}}
+	if v := os.Getenv("GOINFER_CUDA_GATE_KS"); strings.TrimSpace(v) != "" {
+		decisionKs = decisionKs[:0]
+		for _, f := range strings.Split(v, ",") {
+			if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
+				decisionKs = append(decisionKs, k)
+			}
+		}
+		confirmKsByModel = map[string][]int{}
+		t.Logf("GOINFER_CUDA_GATE_KS override: cells %v (NOT the pre-registered decision set)", decisionKs)
+	}
 
 	for _, mc := range models {
 		t.Run(mc.name, func(t *testing.T) {

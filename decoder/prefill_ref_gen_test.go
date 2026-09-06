@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -82,8 +84,8 @@ func TestPrefillGateReference(t *testing.T) {
 		quant       string // "" = f32 weights+activations (S); "int8" = weight-only, f32 activations (D7)
 		ks          []int  // decision-set + confirmation K's for THIS model, in run order
 	}{
-		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", []int{256, 1024, 3900}},
-		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), []int{256, 1024}},
+		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", refKs([]int{256, 1024, 3900})},
+		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), refKs([]int{256, 1024})},
 	}
 
 	for _, mc := range models {
@@ -127,6 +129,30 @@ func TestPrefillGateReference(t *testing.T) {
 			}
 		})
 	}
+}
+
+// refKs lets a run build references at depths beyond the standing set, via
+// GOINFER_CPU_REF_KS (comma-separated). The defaults are the §3 decision + confirmation cells and
+// do not move.
+//
+// It exists because a FLOOR must be measured at the depth it is set to. The §3 cells are 256 and
+// 1024; a floor placed anywhere between them would be interpolating a fidelity result that was
+// never taken, which is how an unmeasured number ends up quoted as one.
+func refKs(def []int) []int {
+	v := os.Getenv("GOINFER_CPU_REF_KS")
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	out := make([]int, 0, 4)
+	for _, f := range strings.Split(v, ",") {
+		if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
+			out = append(out, k)
+		}
+	}
+	if len(out) == 0 {
+		return def
+	}
+	return out
 }
 
 // d7RefQuant picks D7's reference weight precision. The default is "int8" — weight-only per-row

@@ -495,9 +495,22 @@ func (r *cudaResident) fusedAttnNote() string {
 
 // fastPrefillEnabled reports which fast prefill kernels are selected, PER LEVER.
 //
-// OPT-IN, and it stays opt-in until §3's reference gate passes on CUDA (docs/task-prefill-gap.md
-// Phase 3). The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains what
-// spec-decode verify and the parity gates run, and serves every shape the fast kernels decline.
+// DEFAULT ON above fastPrefillFloor (512 prompt tokens) as of 2026-09-05, and `=0` is a complete
+// undo. It became a default only after §3's fidelity gate passed at every cell at or above that
+// floor, on BOTH bench models, against a CPU reference with f32 weights and f32 activations:
+//
+//	S  K=512 SHIPS (agree 93.91% vs exact 93.75%, flips 5 v 5, KL 0.03208 v 0.03321)
+//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three criteria
+//	D7 K=512 SHIPS (agree 86.41% v 86.56%, flips 16 v 16), D7 K=1024 SHIPS
+//
+// It FAILS at K=256, which is why the floor exists and why it is 512 and not lower; that cell
+// stands on the record and is not withdrawn (docs/task-prefill-gap.md §3, and
+// measurements/prefill-l2l3-phase3-2026-09-05.md).
+//
+// The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-identical to
+// the M=1 decode kernels, remains what spec-decode verify and the parity gates run, and still
+// serves every shape the fast kernels decline (hd not in {64,128}, M below the mma row floors,
+// int8 bundles, K%32 != 0, and every prompt below the floor).
 //
 // THE LEVERS ARE SEPARATELY SELECTABLE ON PURPOSE. L2 (fused attention) and L3 (tensor-core GEMM)
 // touch DIFFERENT categories of prefill — attention and the weight term — and §5 requires each to
@@ -506,20 +519,23 @@ func (r *cudaResident) fusedAttnNote() string {
 // fast path ever scores worse than exact under the fidelity gate, the first question is WHICH
 // kernel, and an all-or-nothing flag cannot answer it.
 //
-//	GOINFER_CUDA_FAST_PREFILL=1 | true   both levers
-//	                            =attn    L2 only (fused attention; exact GEMV)
-//	                            =gemm    L3 only (tensor-core GEMM; exact attention)
-//	                            unset|0  neither — the shipped default
+//	GOINFER_CUDA_FAST_PREFILL  unset | 1 | true   both levers — THE DEFAULT, above the floor
+//	                           0 | false | off    neither: the exact path everywhere (complete undo)
+//	                           attn                L2 only (fused attention; exact GEMV)
+//	                           gemm                L3 only (tensor-core GEMM; exact attention)
 func fastPrefillEnabled() (attn, gemm bool) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_CUDA_FAST_PREFILL"))) {
-	case "1", "true":
-		return true, true
+	case "0", "false", "off":
+		return false, false
 	case "attn":
 		return true, false
 	case "gemm":
 		return false, true
 	}
-	return false, false
+	// unset, "1", "true", or anything else: both levers. Defaulting an UNRECOGNISED value to the
+	// default rather than to off is deliberate — a typo'd knob should not silently change which
+	// kernels serve production, and PrefillPath() reports what is actually in use either way.
+	return true, true
 }
 
 // prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
@@ -549,6 +565,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if e := r.checkPrefillShmem(startPos, M); e != nil {
 		return nil, nil, e
 	}
+	// The fast-prefill floor is judged on the WHOLE prompt, so record it once here rather than
+	// letting each selector see only this chunk's M (prefillChunked passes <=512 rows at a time).
+	r.passPromptLen = startPos + M
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 
@@ -1002,6 +1021,41 @@ const (
 	attnFusedMinRows = 16
 )
 
+// fastPrefillFloor is the PROMPT-LENGTH floor below which neither fast lever engages.
+//
+// It is set from measurement, not chosen. Two independent lines of evidence put it here and they
+// were taken in that order:
+//
+//   - PERFORMANCE (Phase 1/2, measured before any fidelity run): L2 is 0.94x — SLOWER — at K=128,
+//     where attention is 5.0% of prefill and a 64-row query tile still stages 64 keys per block.
+//     The win begins by K=512 (1.13x) and grows. L3 wins at every depth measured (1.85x at K=128).
+//   - FIDELITY (Phase 3, docs/measurements/prefill-l2l3-phase3-2026-09-05.md): the §3 gate PASSES
+//     at K>=512 and FAILS at K=256 for the two levers combined, on both S and D7.
+//
+// THE FLOOR IS AT A DEPTH THAT WAS ACTUALLY MEASURED. The §3 decision cells were 256 and 1024; a
+// floor placed between them would have been interpolating a fidelity result nobody took, so a
+// K=512 cell was generated and run specifically to justify this number. Moving it DOWN requires a
+// passing gate cell at the new depth — not an argument that the curve looks smooth.
+const fastPrefillFloor = 512
+
+// fastPrefillFloorFor returns the floor, allowing an experiment to move it. Set
+// GOINFER_CUDA_FAST_PREFILL_FLOOR to override; 0 disables the floor entirely (both levers engage
+// at any length), which is how the sub-floor cells are measured at all.
+func fastPrefillFloorFor() int {
+	if v := os.Getenv("GOINFER_CUDA_FAST_PREFILL_FLOOR"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return fastPrefillFloor
+}
+
+// aboveFastPrefillFloor reports whether THIS PROMPT is long enough for the fast levers. It reads
+// passPromptLen (the whole prompt) rather than M (this chunk) — see the field's note.
+func (r *cudaResident) aboveFastPrefillFloor() bool {
+	return r.passPromptLen >= fastPrefillFloorFor()
+}
+
 // attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus
 // Vtsh[hd][BN+KPAD], in halves.
 //
@@ -1038,7 +1092,7 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 // launched by nothing — the exact state gemv_w4a8_batched sat in while a benchmark quoted its
 // throughput as the shipping kernel's.
 func (r *cudaResident) useAttnFused(hd, M int) (uint32, bool) {
-	if !r.fastAttn || M < attnFusedMinRows {
+	if !r.fastAttn || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
 		return 0, false
 	}
 	p, sh := r.attnFusedFor(hd)
@@ -1073,7 +1127,7 @@ func gemmMMAShmem() uint32 {
 // Every production shape here satisfies it (1536, 3584, 8960, 18944 are all multiples of 32), and a
 // shape that does not is served correctly by the exact path rather than by a special case.
 func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {
-	return r.fastGemm && kind == "int4" && M >= gemmMMAMinRows &&
+	return r.fastGemm && kind == "int4" && M >= gemmMMAMinRows && r.aboveFastPrefillFloor() &&
 		r.bGemmMMA != (Pipeline{}) && K%32 == 0
 }
 

@@ -447,8 +447,14 @@ type cudaResident struct {
 	// wasteful: per backend.go's A13 note a context taken to refusal and kept in use can afterwards
 	// launch kernels that "return SUCCESS and execute NOTHING". Atomic because prefillChunked runs on
 	// the CALLER's goroutine (only the per-pass job is serialized through the executor).
-	prefillChunkCap                                         atomic.Int64
-	prof                                                    *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
+	prefillChunkCap atomic.Int64
+	prof            *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
+	// passPromptLen is the TOTAL prompt length this batched pass belongs to (startPos+M), set once
+	// at the top of prefillCore. The fast-prefill floor is a property of the PROMPT, not of the
+	// chunk: prefillChunked splits a long prompt into passes of <=512 rows, so gating on M alone
+	// would judge a 3900-token prompt by its 512-row chunk. Per-pass mutable state on the resident,
+	// the same shape as prof above.
+	passPromptLen                                           int
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
 	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)

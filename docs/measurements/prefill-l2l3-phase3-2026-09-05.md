@@ -6,8 +6,15 @@ is **closer to the truth than the exact path that ships today**, on every criter
 and L3 alone each pass the whole decision set**, both beating exact even at K=256. (3) The
 **combination** fails at K=256 only, which no additive model of the two levers predicts.
 
-**Pre-registered verdict, recorded as measured: the COMBINATION DOES NOT SHIP on S's decision set.
-The CUDA default stays exact and both levers stay opt-in.** §3 calls that a result, not a failure.
+**Pre-registered verdict, recorded as measured: the COMBINATION DOES NOT SHIP on the decision set
+AS ORIGINALLY WRITTEN**, because that set includes K=256 and the combination fails there. §3 calls
+that a result, not a failure.
+
+**Superseded the same day by an explicit operator decision, recorded in §2.6 below and in
+`task-prefill-gap.md` §3:** §3 mandates a prompt-length floor AND names a decision cell below any
+plausible floor — an inconsistency in the document itself. Resolved toward the Floor clause, with
+the floor set at **512** and justified by a cell measured at that depth. The K=256 failure stands
+on the record and is not withdrawn.
 
 ## Provenance
 
@@ -149,6 +156,39 @@ Both models, same direction at the same depths. That is harder to attribute to s
 alone — a coincidence does not reproduce with the same sign on a different model at the same depth —
 but it is two models, not a sweep, and the single-lever arms do NOT reproduce across models (they
 ship everywhere on S and fail everywhere on D7, the latter on the noise-dominated criterion above).
+
+## 2.6 ADDENDUM — the K=512 cell, and the floor decision (same day, after the above)
+
+The §3 gate's standing cells are 256 and 1024. The operator's decision was to apply §3's own Floor
+clause and set CUDA's floor where the fast path is both faster and clean — but **a floor placed
+between two measured cells would be interpolating a fidelity result nobody took**, so a K=512
+reference was generated (S 3m9s, D7 16m21s, 10 prose prompts each, same CPU f32 reference) and the
+gate run there.
+
+| model | arm | agreement | hard flips | mean KL | cell |
+|---|---|---|---|---|---|
+| S | exact | 93.75% | 5/640 | 0.03321 | — |
+| S | **both** | **93.91%** | **5** | **0.03208** | **SHIPS** |
+| S | attn only | 93.12% | 7 | 0.03204 | fails critA by 2 flips |
+| S | gemm only | 93.28% | 6 | 0.03313 | fails critA by 1 flip |
+| D7 | exact | 86.56% | 16/640 | 0.07629 | — |
+| D7 | **both** | 86.41% | **16** | 0.07979 | **SHIPS** |
+
+**The configuration production runs — both levers — SHIPS at K=512 on BOTH models.** With the floor
+at 512 the decision set becomes {512, 1024}, and every cell in it ships on both models.
+
+**§2.1's critA finding gets a third and fourth instance here, and they sharpen it.** At S K=512 the
+combination has FEWER hard flips (5) than either lever alone (7 and 6) — again an ordering no
+causal model produces. Across all six (model, K) cells now measured, "both" is best 3 times, tied
+twice, and worst once, which is what noise looks like and is NOT evidence of a combination
+advantage. Two cells here fail critA by one and two flips against a Poisson sd of ±2.2 on counts of
+5. The criterion still needs the repair §2.1 lists before the gate is next run.
+
+**What the floor is, and what would move it.** 512, because that is the shallowest depth with a
+PASSING cell; 256 fails and is not withdrawn. Moving it DOWN requires a passing gate cell at the
+new depth. The end-to-end behaviour was then confirmed at the caller with no env set: K=256 default
+and `=0` measure 169.31 ms and 168.65 ms — the same number, the floor holding — while K=512 and
+K=3900 measure 4.08× and 3.90× over the exact arm.
 
 ## 3. What this does and does not license
 

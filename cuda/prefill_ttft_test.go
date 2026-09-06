@@ -21,6 +21,13 @@ import (
 // (weight-bandwidth-bound), so its TTFT grows ~linearly; the batched path reads each weight once for
 // all M tokens. Heavy (loads a 1.5B model); gated on GOINFER_HEAVY_TESTS + a GPU.
 //
+// WHAT THE "batched" COLUMN MEANS CHANGED ON 2026-09-05, without this file changing. CUDA fast
+// prefill (attn_fused + gemm_w4a8_mma) became the DEFAULT above a 512-token floor, so at K >= 512
+// the batched column now times the FAST path, not the exact one. That is the right thing for a
+// standing test — it measures what ships — but it means a number from this test taken before that
+// date and one taken after are not the same quantity. Set GOINFER_CUDA_FAST_PREFILL=0 to time the
+// exact batched path, which is what every pre-2026-09-05 row in benchmarks.md holds.
+//
 // THE DEFAULTS ARE THE REGRESSION TEST AND DO NOT MOVE. The four env knobs below only widen what a
 // deliberate measurement run can ask for; with none of them set this test runs exactly the model,
 // quants and depths it always has, so its role as a standing check is unchanged. They exist because

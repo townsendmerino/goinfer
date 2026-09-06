@@ -55,6 +55,9 @@ func (r *cudaResident) SetFastPrefillForTest(attn, gemm bool) error {
 // both levers decline below their row floors, so at small M the fast arm legitimately runs the
 // exact kernels and a gate that did not check would be comparing the exact path with itself.
 func (r *cudaResident) FastPrefillActiveForTest(hd, M int) (attn, gemm bool) {
+	saved := r.passPromptLen
+	r.passPromptLen = M // ask about a prompt of exactly this length
+	defer func() { r.passPromptLen = saved }()
 	_, a := r.useAttnFused(hd, M)
 	return a, r.useGemmMMA("int4", 1536, M) && r.bGemmMMA != (Pipeline{})
 }

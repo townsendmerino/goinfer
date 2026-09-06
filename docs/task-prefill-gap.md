@@ -180,6 +180,26 @@ scales with length and the divergence does not — `internal/serveapp/main.go:32
 fast path engages only above a prompt-length floor set where its measured win starts; short prompts
 stay exact at no cost.
 
+**Floor vs decision set — an inconsistency in this section, resolved 2026-09-05 by explicit
+decision, and recorded rather than quietly applied.** The clause above mandates a floor. The gate
+below names a decision set spanning **K ∈ {256, 1024, 3900}** — and 256 is below any floor either
+backend would plausibly set, since the CPU precedent this clause cites is 512. So §3 as written
+asks a backend to pass a fidelity cell at a depth its own Floor clause says the fast path will
+never run at. On CUDA that is exactly what happened: the combined fast path FAILED at K=256 and
+SHIPPED at 512, 1024 and 3900 (`measurements/prefill-l2l3-phase3-2026-09-05.md`).
+
+The resolution taken, on the operator's decision: **the decision set is the cells at or above that
+backend's floor.** CUDA's floor is **512**, and the honest part is that 512 was not interpolated —
+§3's standing cells are 256 and 1024, so a K=512 reference was generated and the gate run there
+specifically to avoid resting a floor on a fidelity result nobody took.
+
+**What this does not license, stated so a later reader can check it.** The K=256 measurement is not
+withdrawn; it stands on the record as a real failure of the combination at that depth. No bar was
+relaxed and no criterion was reinterpreted. Moving the floor DOWN requires a passing gate cell at
+the new depth, not an argument that the curve looks smooth. And this was a change made AFTER seeing
+results — defensible because the Floor clause predates them and the CPU precedent lands on the same
+number, but a reader should weigh it knowing the order.
+
 A backend that fails the gate keeps the exact default and the fast path stays opt-in with the
 failure recorded beside it. The gate runs as a heavy test per backend (`GOINFER_HEAVY_TESTS=1`),
 with the reference logits computed once per (model, K) and stored, so it is a regression gate
@@ -383,24 +403,59 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 L2 and L3 are independent kernels on independent categories; measure each against the exact
 path alone, then together, so the end-to-end number has an attribution.
 
-## 6. Projection — counted, not measured, and labelled so
+## 6. Projection vs measurement — the counted numbers, and what they got right
 
-Dense 1.5B int4, RTX 2070 SUPER, from the `TestPrefillDecomp` categories
-(`measurements/cuda-prefill-attention-share-2026-09-01.md:23`, `:25`) and the re-anchor's TTFT
-cells. **Do not quote these as results.**
+**L2 and L3 are now BUILT AND MEASURED** (`measurements/prefill-l2l3-phase{1,2,4}-2026-09-05.md`),
+so this section is no longer a projection. The original counted table is kept because comparing it
+against the measurement says something useful about the method the bands were set with.
 
-| K | today (catSum) | L2 alone (attn ÷4) | L3 alone (gemv ÷4) | L2+L3 | Ollama TTFT − floor |
-|---|---|---|---|---|---|
-| 512 | 374 ms | ~334 ms (1.12×) | ~143 ms (2.6×) | ~103 ms (3.6×) | ~78 ms |
-| 3900 | 5466 ms | ~3211 ms (1.70×) | ~3669 ms (1.49×) | ~1414 ms (3.9×) | ~560 ms |
+### 6.1 What was projected, and what happened
 
-Reading: with both landed, goinfer is inside ~1.3× of Ollama's overhead-free prefill at K=512 and
-~2.5× at K=3900 — and on TTFT, ahead below ~2k tokens because of Ollama's floor. The crossover
-moves from ~600 tokens to past the W4 band. Closing the last ~2× at depth is the f16-KV and
-kernel-tuning tail, priced after these two exist. On Metal, L1 is a measured 3.9× at K≤1024 that
-decays to 2.0× at K=3900 (`measurements/prefill-gate-l1-2026-09-05.md`); the Metal fused attention
-is what would hold it near ~5× at depth (§4 L1), and the peer row — still unmeasured — decides how
-much of the remaining Metal gap is that term.
+Dense 1.5B int4, RTX 2070 SUPER. Projection from measured category shares; measurement is
+end-to-end `TestPrefillTTFT`, same box, same session as its baseline.
+
+| cell | §6 projected | **measured** | error |
+|---|---|---|---|
+| K=512, L2 alone | ~334 ms (1.12×) | **329.9 ms (1.13×)** | +1.2% |
+| K=512, L3 alone | ~143 ms (2.6×) | **130.4 ms (2.85×)** | +9.7% |
+| K=512, L2+L3 | ~103 ms (3.6×) | **90.5 ms (4.10×)** | +13.8% |
+| K=3900, L2 alone | ~3211 ms (1.70×) | **3213 ms (1.70×)** | **−0.1%** |
+| K=3900, L3 alone | ~3669 ms (1.49×) | **3617 ms (1.51×)** | +1.4% |
+| K=3900, L2+L3 | ~1414 ms (3.9×) | **1393 ms (3.91×)** | +1.5% |
+
+**Amdahl on measured category shares held, and held conservatively.** Every projection
+over-estimated the time — it under-promised — and at K=3900 all three arms landed within 1.5%,
+L2-alone within 0.1%. The loosest cell is K=512 L2+L3 at 13.8%, because L3 beat the 4× the
+projection assumed for it.
+
+### 6.2 The peer extrapolation on top of it did NOT hold, and that is a separable claim
+
+§6 also read: *"with both landed, goinfer is inside ~1.3× of Ollama's overhead-free prefill at
+K=512 and ~2.5× at K=3900."* Measured at the deepest interval (`prefill-l2l3-phase4-peer`):
+**3.16× behind** on the 1.5B, **1.89×** on the 0.5B.
+
+So the internal arithmetic was accurate and the peer claim built on it was **optimistic by ~25% at
+depth**. The two are separable and only one failed: the internal projection extrapolated nothing,
+while the peer claim assumed goinfer's marginal cost would flatten to meet Ollama's flat curve. It
+did not — goinfer's marginal still RISES with K (1.5B fast: 0.0402 → 0.1173 ms/token across the
+ladder). That residual curvature is the remaining O(K²) attention term, and Phase 1's `ncu` capture
+prices the headroom: the fused kernel runs at **1.72% of tensor peak and 12.6% occupancy**, so it
+is not a floor.
+
+### 6.3 Where CUDA prefill actually stands
+
+| cell | before | after (both levers) |
+|---|---|---|
+| e2e prefill, 1.5B K=3900 | 5.451 s | **1.393 s (3.91×)** |
+| e2e prefill, 1.5B K=512 | 371.5 ms | **90.5 ms (4.10×)** |
+| marginal vs Ollama, 1.5B, deepest | 12.1× behind | **3.16× behind** |
+| marginal vs Ollama, 0.5B, deepest | 14.5× behind | **1.89× behind** |
+| TTFT crossover vs Ollama, 1.5B | ~K=600 | **past K=2048** |
+| TTFT crossover vs Ollama, 0.5B | ~K=1024 | **off the measured ladder — ahead everywhere** |
+
+On Metal, L1's re-run against a real reference is CLOSED and does not ship (narrow, mixed —
+`measurements/prefill-gate-l1-ref-2026-09-05.md`); the Metal fused attention is what would move it,
+and the Metal peer row is still unmeasured.
 
 ## 7. What this doc does not claim
 

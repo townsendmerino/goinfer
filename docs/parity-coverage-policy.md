@@ -295,7 +295,7 @@ carries a content-keyed citation and CI fails on the commit that makes one stale
   once, at most.
 
 **Production-side status (checked, `f5ec7a2`).** The CUDA launch path hand-rolls its arguments
-too: `launch(f Pipeline, cfg LaunchConfig, args ...KernelArg)` (`cuda/resident.go:1251`), called
+too: `launch(f Pipeline, cfg LaunchConfig, args ...KernelArg)` (`cuda/resident.go:1257`), called
 variadically from 48 sites (`resident.go` 36, `prefill.go` 11, `testhooks_gen.go` 1). There are
 no typed per-kernel wrappers, so **the compiler enforces neither arity nor argument order** — a
 missing trailing argument is silent, and so is a transposition between same-typed parameters,

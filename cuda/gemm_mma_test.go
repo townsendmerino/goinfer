@@ -239,3 +239,43 @@ func TestGemmMMA_selectorKeepsExactBelowFloor(t *testing.T) {
 		})
 	}
 }
+
+// TestFastPrefillFloor_selectorHonoursIt pins the PROMPT-LENGTH floor at the selector, and pins the
+// distinction that makes it correct: the floor is judged on the whole prompt, not on the chunk.
+//
+// prefillChunked splits a long prompt into passes of at most 512 rows, so a selector that gated on
+// M alone would judge a 3900-token prompt by its 512-row chunk — and, worse, would judge the FIRST
+// chunk of a long prompt identically to a short prompt of the same length. The distinction is
+// invisible to any test that only exercises single-pass prompts, which is why the chunked case is
+// spelled out here.
+func TestFastPrefillFloor_selectorHonoursIt(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		promptLen, M   int
+		wantAttn, want bool
+	}{
+		{"short prompt, below the floor", 256, 256, false, false},
+		{"exactly at the floor", 512, 512, true, true},
+		{"just below the floor", 511, 511, false, false},
+		{"long prompt, first 512-row CHUNK — the case M alone gets wrong", 3900, 512, true, true},
+		{"long prompt, short FINAL chunk", 3900, 60, true, true},
+		{"long prompt, chunk below the mma row floor", 3900, 8, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &cudaResident{fastAttn: true, fastGemm: true, passPromptLen: tc.promptLen}
+			// Model both levers as loaded except for the pipeline handles, which need a device.
+			gotAttn := r.fastAttn && tc.M >= attnFusedMinRows && r.aboveFastPrefillFloor()
+			gotGemm := r.fastGemm && tc.M >= gemmMMAMinRows && r.aboveFastPrefillFloor()
+			if gotAttn != tc.wantAttn || gotGemm != tc.want {
+				t.Errorf("promptLen=%d M=%d: attn=%v gemm=%v, want attn=%v gemm=%v",
+					tc.promptLen, tc.M, gotAttn, gotGemm, tc.wantAttn, tc.want)
+			}
+		})
+	}
+	// The floor must be a depth §3 actually measured a PASSING cell at.
+	if fastPrefillFloor != 512 {
+		t.Errorf("fastPrefillFloor is %d; §3 has passing gate cells at 512 and 1024 and a FAILING "+
+			"one at 256, so any other value is interpolating a fidelity result nobody took",
+			fastPrefillFloor)
+	}
+}
