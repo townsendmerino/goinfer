@@ -1256,13 +1256,13 @@ supports.
 | `docs/audit-2026-09-02.md|demo/agent/agent/agent.go:537` | goinfer | `return constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWh` |
 | `docs/audit-2026-09-02.md|gpu/attention.go:961` | goinfer | `func (c *Context) ensureAttnWide() error {` |
 | `docs/audit-2026-09-02.md|gpu/decode_staged_prize_test.go:23` | goinfer | `// G-10: a Benchmark, not a Test. It reports numbers and asserts nothing, so as a Test*` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1153` | goinfer | `fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1207` | goinfer | `func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []fl` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1274` | goinfer | `enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:294` | goinfer | `ssmStopLayer := -1 // GOINFER_SSM_STOP_LAYER debug (resident SSM bring-up): truncate the` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:303` | goinfer | `w8a16 := os.Getenv("GOINFER_SSM_W8A16") != ""` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:488` | goinfer | `gemv := func(aq, as *wgpu.Buffer, w decodeWeight) *wgpu.Buffer {` |
-| `docs/audit-2026-09-02.md|gpu/decoderunner.go:745` | goinfer | `r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1160` | goinfer | `fq, fs := rmsQuant(r.xd, m.finalNorm, hidden)` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1214` | goinfer | `func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []fl` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:1281` | goinfer | `enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:301` | goinfer | `ssmStopLayer := -1 // GOINFER_SSM_STOP_LAYER debug (resident SSM bring-up): truncate the` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:310` | goinfer | `w8a16 := os.Getenv("GOINFER_SSM_W8A16") != ""` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:495` | goinfer | `gemv := func(aq, as *wgpu.Buffer, w decodeWeight) *wgpu.Buffer {` |
+| `docs/audit-2026-09-02.md|gpu/decoderunner.go:728` | goinfer | `r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {` |
 | `docs/audit-2026-09-02.md|gpu/decodetoken_batched.go:11` | goinfer | `// DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it` |
 | `docs/audit-2026-09-02.md|gpu/deltanet.go:13` | goinfer | `// This is the mixer that makes every DeltaNet hybrid CPU-only on every backend today: 4` |
 | `docs/audit-2026-09-02.md|gpu/doc.go:19` | goinfer | `// Status: FOUNDATION cut. A single `dst = a·bᵀ` GEMM offloaded to the GPU` |
@@ -1402,7 +1402,7 @@ supports.
 | `docs/audit-2026-09-02.md|metal/kernels.go:515` | goinfer | `float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;` |
 | `docs/audit-2026-09-02.md|metal/kernels.go:606` | goinfer | `kernel void attention(device const float* q[[buffer(0)]], device const half* kc[[buffer(` |
 | `docs/audit-2026-09-02.md|metal/layer_test.go:148` | goinfer | `enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindo` |
-| `docs/audit-2026-09-02.md|metal/model.go:1482` | goinfer | `e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L` |
+| `docs/audit-2026-09-02.md|metal/model.go:1512` | goinfer | `e.Dispatch(r.pRope, r.nH*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uHalf, L` |
 | `docs/audit-2026-09-02.md|metal/model.go:330` | goinfer | `// N-32: dnValueDim is DeltaNet's out-projection staging width. deltanet.go dispatches p` |
 | `docs/audit-2026-09-02.md|metal/model.go:346` | goinfer | `if words, scales, ok := int4DirectWords(w); ok {` |
 | `docs/audit-2026-09-02.md|metal/model.go:444` | goinfer | `if preciseMathCompile \|\| os.Getenv("GOINFER_PRECISE_MATH") != "" {` |
@@ -1454,8 +1454,8 @@ supports.
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
 | `docs/cuda-megakernel-spec.md|gpu/attention.go:18` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
-| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:828` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
-| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:933` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
+| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:835` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
+| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:940` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
 | `docs/cuda-megakernel-spec.md|gpu/forward_parity_test.go:36` | goinfer | `func TestWebGPU_forwardParity(t *testing.T) {` |
 | `docs/cuda-megakernel-spec.md|gpu/gemv.go:41` | goinfer | `@compute @workgroup_size(64)` |
 | `docs/gpu-residency-coverage.md|decoder/registry.go:262` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
@@ -1543,7 +1543,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/main.go:598` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
-| `docs/queue-engineering.md|metal/model.go:1061` | goinfer | `r.logitsHost[j] = sc * float32(math.Tanh(float64(v/sc)))` |
+| `docs/queue-engineering.md|metal/model.go:1061` | goinfer | `anchor: func (r *resident) finalizeLogits() {` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:617` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:991` | goinfer | `gpu.HostCopy{Dst: w.W.At(slot * w.perExpertW * 4), Src: srcW[wOff : wOff+wLen]},` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1124` | goinfer | `_, cr, out := g.run(cell{` |
@@ -1677,8 +1677,8 @@ supports.
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:301` | goinfer | `kernel void gemv_w4a8_sa(device const uint4* wq[[buffer(0)]], device const half* sct[[bu` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:307` | goinfer | `if (lane==0) out[row] = acc*asc[0];` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:51` | goinfer | `float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float inv=1/sc;` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:1352` | goinfer | `e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qk` |
-| `docs/task-int4-int8-exact-mma.md|metal/model.go:1381` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:1382` | goinfer | `e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qk` |
+| `docs/task-int4-int8-exact-mma.md|metal/model.go:1411` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:460` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:462` | goinfer | `r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("ge` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
