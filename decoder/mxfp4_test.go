@@ -6,7 +6,20 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/aikit/embed"
 )
+
+// M2 of aikit's goinfer-kernel-moves task: the MXFP4 arithmetic that used to live in
+// decoder/mxfp4.go now lives in aikit (embed.MXFP4Scale / DequantMXFP4Blocks /
+// DequantMXFP4Split), gated there raw-bit against frozen copies of these bodies.
+//
+// THIS FILE STAYS, pointed at aikit, because it holds something aikit's gate cannot: a fixture
+// extracted from a REAL gpt-oss:20b tensor and dequantized by the reference `gguf` Python library
+// (TestMXFP4_bitExactGolden). aikit has no Python, so its own vectors are Go-generated and
+// self-referential by construction; this one is an independent oracle. Deleting it with the
+// implementation would have removed the only check that the packing matches what the reference
+// library actually produces for bytes off a real checkpoint.
 
 // TestMXFP4_referenceValues pins the format constants and the e8m0 scale against hand-derived
 // values from the OCP MX spec / gguf reference — asset-free, so it runs in CI regardless of the
@@ -26,24 +39,43 @@ func TestMXFP4_referenceValues(t *testing.T) {
 		{255, uint32(254) << 23}, // 2^127
 	}
 	for _, c := range cases {
-		got := math.Float32bits(e8m0ToF32Half(c.x))
+		got := math.Float32bits(embed.MXFP4Scale(c.x))
 		if got != c.bits {
-			t.Errorf("e8m0ToF32Half(%d) bits=%#08x, want %#08x", c.x, got, c.bits)
+			t.Errorf("embed.MXFP4Scale(%d) bits=%#08x, want %#08x", c.x, got, c.bits)
 		}
 	}
-	// kvalues: e2m1 doubled (gguf/quants.py MXFP4.kvalues).
+	// The e2m1 table is aikit's now and is not exported, so it is asserted THROUGH the kernel
+	// rather than by reading the variable: one block at scale byte 128 (d = 1.0) makes each
+	// element exactly its table entry, so all 16 codes are pinned by their outputs.
 	want := [16]int8{0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12}
-	if mxfp4KValues != want {
-		t.Errorf("mxfp4KValues = %v, want %v", mxfp4KValues, want)
+	tbl := make([]byte, embed.MXFP4BlockBytes)
+	tbl[0] = 128
+	for j := range 8 {
+		tbl[1+j] = byte(2*j) | byte(2*j+1)<<4 // codes 0..15 across the first 8 bytes
+	}
+	tblOut := make([]float32, embed.MXFP4BlockElems)
+	if err := embed.DequantMXFP4Blocks(tbl, 1, tblOut); err != nil {
+		t.Fatal(err)
+	}
+	for j := range 8 {
+		// GGML order: byte j carries elements j (low nibble) and j+16 (high nibble).
+		if got, exp := tblOut[j], float32(want[2*j]); got != exp {
+			t.Errorf("code %d dequantizes to %v, want %v", 2*j, got, exp)
+		}
+		if got, exp := tblOut[j+16], float32(want[2*j+1]); got != exp {
+			t.Errorf("code %d dequantizes to %v, want %v", 2*j+1, got, exp)
+		}
 	}
 	// A synthetic block: scale byte 128 (d=1.0) so element = kvalues[idx] exactly. Byte j packs
 	// element j (low nibble) and element j+16 (high nibble).
-	blk := make([]byte, mxfp4BlockBytes)
+	blk := make([]byte, embed.MXFP4BlockBytes)
 	blk[0] = 128  // d = 1.0
 	blk[1] = 0x07 // low=7 (→+12), high=0 (→0)  ⇒ elem 0 = 12, elem 16 = 0
 	blk[2] = 0x9F // low=0xF (→-12), high=9 (→-1) ⇒ elem 1 = -12, elem 17 = -1
-	var dst [mxfp4BlockElems]float32
-	mxfp4DequantBlock(blk, dst[:])
+	var dst [embed.MXFP4BlockElems]float32
+	if err := embed.DequantMXFP4Blocks(blk, 1, dst[:]); err != nil {
+		t.Fatal(err)
+	}
 	for idx, exp := range map[int]float32{0: 12, 16: 0, 1: -12, 17: -1} {
 		if dst[idx] != exp {
 			t.Errorf("block elem %d = %v, want %v", idx, dst[idx], exp)
@@ -79,23 +111,24 @@ func TestMXFP4_bitExactGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode raw_hex: %v", err)
 	}
-	if len(blocks) != g.NBlocks*mxfp4BlockBytes {
-		t.Fatalf("raw is %d bytes, want %d (%d blocks × %d)", len(blocks), g.NBlocks*mxfp4BlockBytes, g.NBlocks, mxfp4BlockBytes)
+	if len(blocks) != g.NBlocks*embed.MXFP4BlockBytes {
+		t.Fatalf("raw is %d bytes, want %d (%d blocks × %d)", len(blocks), g.NBlocks*embed.MXFP4BlockBytes, g.NBlocks, embed.MXFP4BlockBytes)
 	}
-	if len(g.WantBits) != g.NBlocks*mxfp4BlockElems {
-		t.Fatalf("golden has %d values, want %d", len(g.WantBits), g.NBlocks*mxfp4BlockElems)
+	if len(g.WantBits) != g.NBlocks*embed.MXFP4BlockElems {
+		t.Fatalf("golden has %d values, want %d", len(g.WantBits), g.NBlocks*embed.MXFP4BlockElems)
 	}
 
-	got, err := mxfp4Dequant(blocks, g.NBlocks)
+	got := make([]float32, g.NBlocks*embed.MXFP4BlockElems)
+	err = embed.DequantMXFP4Blocks(blocks, g.NBlocks, got)
 	if err != nil {
-		t.Fatalf("mxfp4Dequant: %v", err)
+		t.Fatalf("embed.DequantMXFP4Blocks: %v", err)
 	}
 	mism := 0
 	for i, w := range g.WantBits {
 		if b := math.Float32bits(got[i]); b != w {
 			if mism < 8 {
 				t.Errorf("value %d (block %d, elem %d): got bits %#08x (%v), want %#08x (%v)",
-					i, i/mxfp4BlockElems, i%mxfp4BlockElems, b, got[i], w, math.Float32frombits(w))
+					i, i/embed.MXFP4BlockElems, i%embed.MXFP4BlockElems, b, got[i], w, math.Float32frombits(w))
 			}
 			mism++
 		}
@@ -121,21 +154,22 @@ func TestMXFP4_bitExactGolden(t *testing.T) {
 // implementation shared their shared mistake).
 func TestMXFP4_splitIsSequentialNotGGML(t *testing.T) {
 	// One block: byte j holds low nibble = code (j % 15), high nibble = code ((j + 7) % 15).
-	// Codes stay < 15 so every value is distinct and non-zero under mxfp4KValues.
+	// Codes stay < 15 so every value is distinct and non-zero under the e2m1 table.
+	kvals := [16]int8{0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12}
 	blocks := make([]byte, 16)
 	for j := range 16 {
 		blocks[j] = byte((j%15)&0x0F | (((j+7)%15)&0x0F)<<4)
 	}
 	scales := []byte{127} // e8m0 127 -> a clean power of two, so the codes are readable
 
-	got, err := mxfp4DequantSplit(blocks, scales, 1)
-	if err != nil {
+	got := make([]float32, embed.MXFP4BlockElems)
+	if err := embed.DequantMXFP4Split(blocks, scales, 1, got); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	d := e8m0ToF32Half(127)
+	d := embed.MXFP4Scale(127)
 	for j := range 16 {
-		wantLo := d * float32(mxfp4KValues[blocks[j]&0x0F])
-		wantHi := d * float32(mxfp4KValues[blocks[j]>>4])
+		wantLo := d * float32(kvals[blocks[j]&0x0F])
+		wantHi := d * float32(kvals[blocks[j]>>4])
 		// SEQUENTIAL: byte j carries elements 2j and 2j+1.
 		if got[2*j] != wantLo || got[2*j+1] != wantHi {
 			t.Fatalf("byte %d: got (%v,%v) at [2j,2j+1], want (%v,%v) — safetensors packs "+
@@ -145,8 +179,13 @@ func TestMXFP4_splitIsSequentialNotGGML(t *testing.T) {
 
 	// And the GGML core on the same bytes must produce a DIFFERENT vector. If these ever
 	// agree, one of the two orders has been silently changed to match the other.
-	ggml := make([]float32, mxfp4BlockElems)
-	mxfp4Block(scales[0], blocks, ggml)
+	ggml := make([]float32, embed.MXFP4BlockElems)
+	raw := make([]byte, embed.MXFP4BlockBytes)
+	raw[0] = scales[0]
+	copy(raw[1:], blocks)
+	if err := embed.DequantMXFP4Blocks(raw, 1, ggml); err != nil {
+		t.Fatal(err)
+	}
 	same := true
 	for i := range ggml {
 		if ggml[i] != got[i] {
@@ -161,10 +200,10 @@ func TestMXFP4_splitIsSequentialNotGGML(t *testing.T) {
 
 	// Mismatched pairs are corruption, not something to interpret: these are two
 	// independently-shaped tensors, so a length disagreement between them must be refused.
-	if _, err := mxfp4DequantSplit(blocks, nil, 1); err == nil {
+	if err := embed.DequantMXFP4Split(blocks, nil, 1, got); err == nil {
 		t.Error("missing scales accepted; want an error")
 	}
-	if _, err := mxfp4DequantSplit(blocks[:8], scales, 1); err == nil {
+	if err := embed.DequantMXFP4Split(blocks[:8], scales, 1, got); err == nil {
 		t.Error("short blocks accepted; want an error")
 	}
 }

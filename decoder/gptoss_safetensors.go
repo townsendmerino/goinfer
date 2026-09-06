@@ -31,7 +31,7 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
 	nE := arch.MoE.NumExperts
 	expInter := arch.MoE.IntermediateDim
-	const blockElems = mxfp4BlockElems
+	const blockElems = embed.MXFP4BlockElems
 
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
 	var err error
@@ -83,7 +83,7 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return func(expert, row int, dst []float32) error {
 			r := expert*rows + row
-			return mxfp4DequantSplitInto(blocks[r*nB*16:(r+1)*nB*16], scales[r*nB:(r+1)*nB], nB, dst)
+			return embed.DequantMXFP4Split(blocks[r*nB*16:(r+1)*nB*16], scales[r*nB:(r+1)*nB], nB, dst)
 		}, nil
 	}
 
