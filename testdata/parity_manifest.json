@@ -215,8 +215,7 @@
         "decoder/forward_gptoss.go",
         "decoder/gptoss120_test.go",
         "decoder/gptoss_safetensors.go",
-        "decoder/gptoss_safetensors_test.go",
-        "decoder/mxfp4.go"
+        "decoder/gptoss_safetensors_test.go"
       ],
       "deps_hash": "sha256:56e4fb11c6faa610378670e5efcf417aaab362eef41380d161b4ea767c3077f4",
       "status": "validated",
