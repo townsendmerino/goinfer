@@ -142,6 +142,18 @@ From source, against any supported checkpoint (the chat template is applied auto
 go run ./demo/chat --model ~/models/gemma-4-E2B_q4_0-it.gguf
 ```
 
+## Which quantization to use
+
+`--quant int4` is the default and the one to reach for; `--quant int8int8` when accuracy matters
+more than RAM, and on Apple Silicon when you want the *smaller* resident footprint (int4 is faster
+there but larger — the NEON repack keeps a second copy of the weights).
+
+goinfer **reads** 15 GGUF types and **computes** in five precisions, which are different
+questions: loading a Q2_K file at `--quant int8int8` gives you Q2_K quality computed carefully,
+not int8 quality. [`docs/quantization.md`](docs/quantization.md) states which quants the project
+stands behind, which it has measured and refused, and — importantly — which read paths have no
+quality evidence at all.
+
 ## Running a model bigger than your RAM
 
 A 30B-class MoE does not fit in 16 GB, and loading it anyway will drive your machine into swap
