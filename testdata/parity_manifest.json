@@ -217,7 +217,7 @@
         "decoder/gptoss_safetensors.go",
         "decoder/gptoss_safetensors_test.go"
       ],
-      "deps_hash": "sha256:56e4fb11c6faa610378670e5efcf417aaab362eef41380d161b4ea767c3077f4",
+      "deps_hash": "sha256:bcb4bd90f57ff91e2ac5c40c55e072f6daec195d316f03b2ec635cbbad0261d5",
       "status": "validated",
       "validated_at": "25a4711",
       "date": "2026-07-27",
