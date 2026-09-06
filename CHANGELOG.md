@@ -28,11 +28,24 @@ any surface may still change.
   full-attention layers, sliding layers stay at plain RoPE — the same local/global RoPE split
   Mellum's own gate already implements, reused with the sliding-layer scaling left unset. Parity-
   gated against a tiny oracle whose sliding/full split and RoPE tables are actually exercised
-  (prompt length exceeds the fixture's sliding window): 100.0% / 0.9999999999997883. Olmo Hybrid
-  (the sibling MoE-free DeltaNet+softmax hybrid) is documented but not built —
-  `docs/task-families-2026-09.md`'s G2 section: its norm placement differs BY LAYER TYPE within one
-  model, which the current single model-wide `NormPlacement` scalar cannot express without a real
-  design decision.
+  (prompt length exceeds the fixture's sliding window): 100.0% / 0.9999999999997883.
+
+- **Olmo Hybrid as a new family** (`olmo_hybrid`; Ai2, 7B): the sibling MoE-free DeltaNet+softmax
+  hybrid — qwen3_5's Gated DeltaNet on 3-of-4 layers, olmo3's own full-attention shape on the rest.
+  Its norm placement differs BY LAYER KIND within one model (full-attention layers: `NormPostOnly`;
+  DeltaNet layers: plain `NormPre2`) — the first family here where that varies, so `Architecture`
+  gains `NormPlacementLinear`, a per-layer override keyed on the same `layerIsLinear` hook that
+  already selects the mixer (nil for every other family, unaffected). Every other departure is a
+  parameterization of the shared DeltaNet code, not new math: `linear_allow_neg_eigval` doubles the
+  write-gate beta after the sigmoid; q/k/v projections AND the depthwise conv are separate tensors
+  rather than qwen3_5's pre-concatenated ones (the conv split's true q/k/v-boundary layout was only
+  confirmed by fetching the real checkpoint's safetensors header directly — both the source and a
+  local re-save produced different, wrong splits); the output gated-RMSNorm is named `o_norm`/
+  `o_proj` with a hardcoded 1e-5 epsilon independent of the model's own `rms_norm_eps`. The released
+  checkpoint's `rope_parameters` is `{"rope_theta": null}` — no RoPE anywhere, on any layer — handled
+  by a new `NoPositionEncoding` flag naming this as a fourth legitimate "no RoPE table" case in the
+  existing position-information guard (alongside GPT-2/Nemotron-H/MLA). Parity-gated against a tiny
+  oracle whose fixture reproduces the release's actual tensor layout: 100.0% / 0.9999999999998704.
 
 - **SmolLM3-3B as a new family** (`smollm3`): a plain llama-shaped dense GQA model with per-layer
   NoPE on every 4th layer via `no_rope_layers` — a field whose VALUES are the opposite of what its
@@ -79,6 +92,20 @@ any surface may still change.
   cuda/metal/webgpu from day one (empty feature profile — every scalar that varies from identity on
   a real checkpoint is either baked into the generic attention scale or checked to be 1.0).
   Parity-gated against a tiny oracle with non-trivial multipliers (100.0% / 0.9999999999999).
+
+### Fixed
+
+- **`docs/capability-matrix.md`'s "GPU-resident" column read the wrong gate for six families**
+  (`cohere`, `cohere2`, `mistral3`, `smollm3`, `olmo3`, `olmo_hybrid`): it derived from
+  `decodeRunnerEligible()` alone — an arch-SHAPE predicate, "can the generic resident forward
+  represent this at all" — instead of the full admission truth (`decoder/features.go`'s own
+  `ResidentEligible`, which additionally checks whether any real backend's declared feature set
+  covers what the arch needs), which `docs/hardware-matrix.md`'s generator already used. All six
+  read "GPU-resident: yes" despite their own `admissionGolden` rows being empty (CPU-only) — the
+  same failure mode the 2026-08-31 LFM2 fix patched for one family via a shape-level special case,
+  recurring here through undeclared FEATURES instead. Fixed by pointing the column at the same
+  `ResidentEligible` gate the other doc uses, so the two generated docs can't disagree about the
+  same family again.
 
 ## [v0.16.0] — 2026-09-05
 

@@ -27,7 +27,7 @@ written. Our own loader now contradicts it — we detect these heads, name them,
 | `decoder/gguf_qwen35.go:33` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
 | `decoder/gguf.go:734` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
 | `decoder/weights.go:541` | "MTP heads (`mtp.*`) are simply never requested" |
-| `decoder/registry.go:1497` | `num_nextn_predict_layers` MTP head is dropped |
+| `decoder/registry.go:1610` | `num_nextn_predict_layers` MTP head is dropped |
 
 ## Gate 0 — inventory (RUN 2026-08-27, PASSED on availability)
 
@@ -95,7 +95,7 @@ different lists:
 
 | gate | refuses |
 |---|---|
-| `ForwardCapture` (`decoder/model.go:717`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
+| `ForwardCapture` (`decoder/model.go:721`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
 | `specRollbackSafe` (`decoder/forwardn.go:146`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
 
 **qwen35 passes the capture seam and is refused by rollback safety.** The cause is in the arch
@@ -475,7 +475,7 @@ The CPU figures must not be read as a bound on a GPU-resident path in either dir
 
 This one is answerable from the code rather than by measurement, and the answer is not "probably".
 `gatedDeltaNetStep` reads `convWin` as the depthwise conv's left context every step
-(`decoder/deltanet.go:184`, taps `j = 0..K-2`) and mutates it every step, appending the current
+(`decoder/deltanet.go:190`, taps `j = 0..K-2`) and mutates it every step, appending the current
 mixed vector and sliding to the last `K-1`. A verify of width K advances that window by K tokens.
 
 **With `ConvKernel = 4` the window is 3 vectors, so any verify of width K ≥ 4 replaces it

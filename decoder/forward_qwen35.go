@@ -23,14 +23,34 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
 
-		// Attention sub-block (Pre2: norm → mix → residual).
+		// Resolved per layer, not assumed Pre2: Olmo Hybrid's full-attention layers
+		// use NormPostOnly (NormPlacementLinear nil for every other qwen35-shaped
+		// family, so placement is always arch.NormPlacement == NormPre2 there and
+		// postOnly is always false — behaviorally unchanged for them).
+		postOnly := arch.normPlacementAt(l) == NormPostOnly
+
+		// Attention sub-block (Pre2: norm → mix → residual; postOnly: mix reads the
+		// raw residual directly, its OUTPUT is normalized before the add instead).
 		n := append([]float32(nil), h...)
-		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		if !postOnly {
+			rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		}
 		var attn []float32
 		if arch.isLinearLayer(l) {
 			attn = gatedDeltaNetStep(m.be, n, lw.delta, *g, hidden, eps, cache.delta[l])
+		} else if g.PlainFullAttn {
+			// Olmo Hybrid: a PLAIN olmo3-shaped self-attention (whole-vector QK-norm,
+			// generic RoPE/NoPE, single-width q/k/v/o) — reuse the shared
+			// causalAttention rather than qwen3.5's own double-width gated one.
+			attn = make([]float32, hidden)
+			if err := causalAttention(l, n, attn, lw, arch, cache, m.be, nil); err != nil {
+				return nil, err
+			}
 		} else {
 			attn = m.qwen35Attention(n, lw, arch, cache, l, pos)
+		}
+		if postOnly {
+			normalize(arch, attn, lw.PostAttnNorm, nil, hidden)
 		}
 		for i := range h {
 			h[i] += attn[i]
@@ -44,7 +64,9 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		// attention, the hybrid cache and the sequential prefill are all untouched — so it
 		// branches here rather than getting a forward of its own.
 		n2 := append([]float32(nil), h...)
-		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+		if !postOnly {
+			rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+		}
 		var ffn []float32
 		var err error
 		if arch.MoE == nil {
@@ -55,6 +77,9 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		}
 		if err != nil {
 			return nil, err
+		}
+		if postOnly {
+			normalize(arch, ffn, lw.PostMLPNorm, nil, hidden)
 		}
 		for i := range h {
 			h[i] += ffn[i]

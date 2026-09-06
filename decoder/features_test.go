@@ -29,6 +29,12 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// (sliding) and global (full) inv-freq tables genuinely differ (see olmo3Architecture's own
 	// comment on the real config's flat-rope_scaling-applies-to-full-only finding).
 	"olmo3": {FeatPerLayerRoPE, FeatPostOnlyNorm, FeatQKNormWhole, FeatRopeMscale, FeatSlidingWindow},
+	// Olmo Hybrid: qwen3_5's own FeatDeltaNet (shared math), plus olmo3's FeatPostOnlyNorm/
+	// FeatQKNormWhole (its full-attention layers only, but the arch-level check reads
+	// NormPlacement/QKNormWhole model-wide, not per-layer) and FeatNoPE (layerNoPE set
+	// unconditionally — the release has no RoPE at all). None of these four is declared by
+	// any backend, so this is CPU-only regardless of the DeltaNet math being shared.
+	"olmo_hybrid": {FeatDeltaNet, FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole},
 	// InternLM3 is a llama alias: same descriptor, so the same (empty) feature profile.
 	// Its dynamic-NTK rope resolves to no scaling at all in-window, so it does not even
 	// need FeatRopeMscale.
@@ -190,6 +196,7 @@ var admissionGolden = map[string][]string{
 	"llama":            {"cuda", "metal", "webgpu"},
 	"smollm3":          {}, // FeatNoPE undeclared everywhere, same as cohere2
 	"olmo3":            {}, // FeatPostOnlyNorm/FeatQKNormWhole undeclared everywhere -- both new this pass
+	"olmo_hybrid":      {}, // FeatDeltaNet IS declared (qwen3_5's backends), but FeatNoPE/FeatPostOnlyNorm/FeatQKNormWhole are not — CPU-only overall
 	"internlm2":        {"cuda", "metal", "webgpu"},
 	"internlm3":        {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is

@@ -167,6 +167,12 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	K := p.ConvKernel
 	rep := nv / nk
 	qScale := float32(1 / math.Sqrt(float64(hk)))
+	// onEps (Olmo Hybrid): the output gated-RMSNorm's own epsilon, hardcoded in HF's
+	// source independent of the model's rms_norm_eps — see ONormEps's own comment.
+	onEps := eps
+	if p.ONormEps != 0 {
+		onEps = p.ONormEps
+	}
 
 	var t0 time.Time
 	if deltaNetTiming {
@@ -218,6 +224,9 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
 		gt := float32(math.Exp(float64(g)))
 		beta := sigmoidf(bt[headV])
+		if p.NegEigval {
+			beta *= 2 // Olmo Hybrid: widen sigmoid's [0,1) write-gate to [0,2) — see NegEigval's own comment
+		}
 		if deltaNetTiming {
 			dnOtherNs.Add(int64(time.Since(t0))) // l2normScaled × 2 + gate scalars
 			t0 = time.Now()
@@ -267,7 +276,11 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		capGate = make([]float32, 2*nv)
 		for headV := range nv {
 			g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV])
-			capGate[headV*2+0] = sigmoidf(bt[headV])
+			capBeta := sigmoidf(bt[headV])
+			if p.NegEigval {
+				capBeta *= 2
+			}
+			capGate[headV*2+0] = capBeta
 			capGate[headV*2+1] = float32(math.Exp(float64(g)))
 		}
 	}
@@ -283,7 +296,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		for _, x := range seg {
 			ss += float64(x) * float64(x)
 		}
-		inv := float32(1 / math.Sqrt(ss/float64(hv)+eps))
+		inv := float32(1 / math.Sqrt(ss/float64(hv)+onEps))
 		for vd := range hv {
 			seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
 		}

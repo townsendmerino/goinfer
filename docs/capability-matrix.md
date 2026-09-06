@@ -12,6 +12,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 ## gated-linear hybrid (Gated DeltaNet)
 
+> **Olmo Hybrid** — Ai2 Olmo Hybrid (7B): qwen3.5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, MIXED norm placement per layer kind, no RoPE at all
+
 > **Qwen3-Next** — Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern
 
 > **Qwen3.5-MoE** — Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE
@@ -20,6 +22,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Olmo Hybrid | `olmo_hybrid` | dense | none | yes | none | RMSNorm, post-only | SwiGLU | no | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | Qwen3-Next | `qwen3_next` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | real-oracle 100.0%/0.98988 |
 | Qwen3.5-MoE | `qwen3_5_moe`, `qwen3_5_moe_text` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 77.5%/0.99069 |
 | Qwen3.8 | `qwen3_5`, `qwen3_5_text` | dense | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 +coherent |
@@ -92,8 +95,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
-| Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
+| Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | no | full-oracle 100.0%/1.00000 |
+| Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | no | full-oracle 100.0%/1.00000 |
 | GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
@@ -105,17 +108,17 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Llama | `internlm3`, `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | full-oracle 100.0%/1.00000 |
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 +coherent |
 | Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99969 |
-| Ministral 3 | `ministral3`, `mistral3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower, ignored) | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| Ministral 3 | `ministral3`, `mistral3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower, ignored) | no | experimental: tiny-oracle 100.0%/1.00000 |
 | Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
-| Olmo 3 | `olmo3` | dense | interleave | yes | full | RMSNorm, post-only | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| Olmo 3 | `olmo3` | dense | interleave | yes | full | RMSNorm, post-only | SwiGLU | no | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | experimental: tiny-oracle 100.0%/0.99998 |
 | Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
-| SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99843 |
 
 ## state-space hybrid (Mamba-2)

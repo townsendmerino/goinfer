@@ -713,13 +713,18 @@ commit that adds them (F1's CI-break lesson applied without re-learning it).
 - **CHANGELOG entry**: added — this IS a new registry key with new adapter code and a new
   cross-cutting primitive, unlike F2/G1's documentation-only outcomes.
 
-## G2 · `olmo3` (Ai2, Olmo 3 7B/32B) — DONE at T1 (mac, 2026-09-06); `olmo_hybrid` — STOPPED at Phase 0, real primitive beyond composition found
+## G2 · `olmo3` + `olmo_hybrid` (Ai2, Olmo 3 7B/32B + Olmo Hybrid 7B) — BOTH DONE at T1 (mac, 2026-09-06)
 
-**Two keys, one task, per the brief — but the two halves resolved differently.** Olmo 3 is a pure
-composition of existing generic mechanisms and shipped. Olmo Hybrid's DeltaNet layers turned out to
-be a straightforward composition too, but its norm placement does not fit the current one-scalar-
-per-model `Architecture.NormPlacement`, which is exactly the brief's own named stop condition
-("a differing primitive beyond composition"). Documented below rather than built around.
+**Two keys, one task, per the brief.** Olmo 3 is a pure composition of existing generic mechanisms.
+Olmo Hybrid's norm placement genuinely does NOT fit the pre-existing one-scalar-per-model
+`Architecture.NormPlacement` — the brief's own named stop condition ("a differing primitive beyond
+composition") — so this paused for a design decision (asked directly, mid-session) rather than
+building a workaround unreviewed. Decided: extend `Architecture` with a second, optional
+`NormPlacement`-typed field keyed on the SAME `layerIsLinear` hook that already selects the mixer
+(`NormPlacementLinear *NormPlacement`, nil for every existing family), mirroring the precedent
+`RoPELocalBase`/`RoPEGlobalBase` + `layerIsGlobal` already set for Mellum's local/global RoPE
+split — not a fully general per-layer `[]NormPlacement` table, which would solve a generality
+nothing in this tree has needed yet. Both keys shipped once that was settled.
 
 ### `olmo3`: two real departures, both provably reusable, no new math
 
@@ -782,53 +787,111 @@ differ per layer here, same as every other family that has one.
 `cmd/gate/parity.go`'s `parityGates` AND `awaitingFirstConfirmation` in the same commit (F1's
 CI-break lesson applied without re-learning it).
 
-### `olmo_hybrid`: DeltaNet is a plain composition; norm placement is not — stopping here
+### `olmo_hybrid`: the norm-placement mechanism, plus every other departure — all parameterizations, no new math
 
-Fetched the real `allenai/Olmo-Hybrid-7B` config and instantiated `OlmoHybridForCausalLM`
-(transformers 5.15.0, mainline). Read `modeling_olmo_hybrid.py` directly rather than assume from
-field names, per-mixer:
+Fetched the real `allenai/Olmo-Hybrid-7B` config, instantiated `OlmoHybridForCausalLM`
+(transformers 5.15.0), and — critically — went a step further than source-reading: fetched the
+REAL published checkpoint's safetensors HEADER via HTTP Range (61KB, not the full 7.43GB file) to
+check actual tensor names and shapes. That last step mattered: source-reading alone, and even a
+local `save_pretrained` round-trip through this transformers version's own registered
+`conversion_mapping.py`, BOTH produced tensor names/splits that turned out not to match the real
+release. Neither substitute for reading the real artifact.
 
+- **`Architecture.NormPlacementLinear` (new mechanism, decided above):** full-attention layers use
+  `NormPostOnly` (`Architecture.NormPlacement`, olmo3's own scheme, confirmed identical — see
+  below); DeltaNet layers use plain `NormPre2` (`NormPlacementLinear`, a pointer, keyed on
+  `isLinearLayer(i)`). Threaded through both generic forward paths
+  (`decoder/model.go`'s `runLayersFromEmbed`, `decoder/forwardn.go`'s batched twin) — resolved PER
+  LAYER inside the loop now rather than hoisted once, so a family whose placement varies by layer
+  gets the right answer without a new forward path — AND through `olmo_hybrid`'s own forward
+  (`runLayersQwen35`, extended, since this family still needs its own loop for the DeltaNet
+  recurrence). Also required the LOADER to become layer-kind-aware for norm tensor NAMES, not just
+  placement: `tensorSchema` gained `PreAttnNormLinear`/`PostAttnNormLinear`/`PreMLPNormLinear`/
+  `PostMLPNormLinear`, since the real checkpoint's `post_attention_layernorm.weight` is one tensor
+  playing TWO different roles depending on layer kind (full-attention: post-attn norm;
+  DeltaNet: pre-MLP norm) — confirmed directly from the real file's per-layer tensor list, not
+  assumed from the reused name.
 - **The Gated-DeltaNet math is qwen3_5's, field for field** (`Qwen3_5GatedDeltaNet`/
   `OlmoHybridGatedDeltaNet` share the same chunked recurrence, the same `beta = b_proj(x).sigmoid()`
-  gate, the same `A_log`/`dt_bias` init). One real numeric delta: `linear_allow_neg_eigval`
-  (default `true` on the release) computes `beta = beta * 2.0` after the sigmoid, widening its range
-  from `[0,1)` to `[0,2)` — a config-gated SCALAR multiplier on an existing input, not a new
-  recurrence term. This alone would compose cleanly the same way `AttnTempBeta`/`RopeMscale` do
-  (a new generic field, default off).
+  gate, the same `A_log`/`dt_bias` init, the same gated-RMSNorm-then-`out_proj` tail) — reused
+  `gatedDeltaNetStep` unmodified in its MATH, parameterized for every real packing/naming
+  difference the real file actually has:
+  - `linear_allow_neg_eigval` (default `true`) doubles `beta` after the sigmoid, `[0,1)→[0,2)` —
+    `qwen35Params.NegEigval`, a scalar multiplier, same shape as `AttnTempBeta`/`RopeMscale`.
+  - `q_proj`/`k_proj`/`v_proj` are three fully separate tensors — more unfused than qwen3_5's own
+    pre-concatenated `in_proj_qkv` — `SeparateQKVProj`, concatenated at load time (a plain row
+    stack; each `nn.Linear`'s output-feature order is already head-major, so no per-group
+    interleaving like the qwen3-next fused-tensor split needs).
+  - The depthwise causal conv is ALSO three separate tensors, `q_conv1d`/`k_conv1d`/`v_conv1d` —
+    `SeparateConv`. **This one needed the real file to get right**: the source shows one combined
+    `self.conv1d`, and a local `save_pretrained` round-trip produced an ARBITRARY roughly-equal
+    three-way split (43/43/42 rows on a 128-row test conv) that has nothing to do with q/k/v
+    boundaries; the REAL release splits at the EXACT q/k/v channel boundaries instead (verified via
+    the HTTP-Range-fetched header: `key_dim`/`key_dim`/`value_dim` rows precisely). Two different
+    wrong answers, from two different indirect sources, before the real file settled it.
+  - The output gate is named `o_norm`/`o_proj` (qwen3_5: `norm`/`out_proj`) —
+    `DeltaNetNormSuffix`/`DeltaNetOutProjSuffix`. Its epsilon is HARDCODED `1e-5` in HF's source
+    regardless of config ("FLA's FusedRMSNormGated uses eps=1e-5 by default"), diverging from the
+    release's own `rms_norm_eps=1e-6` used everywhere else in the model — `ONormEps`. A silent-wrong
+    trap if skipped: reusing the model's `NormEps` here is off by 10x on exactly the one norm most
+    sensitive to it.
 - **Attention layers (`full_attention`) reuse `olmo3`'s `NormPostOnly` + whole-vector QK-norm
-  exactly** (`OlmoHybridAttention` literally inherits `Olmo3Attention`'s behavior; its own docstring
-  says the only difference is optional NoPE). Confirms `olmo3`'s adapter generalizes, doesn't
-  contradict it.
-- **The real released checkpoint sets `rope_theta: null`, disabling RoPE entirely** — `self.rotary_
-  emb` is only constructed `if rope_parameters.get("rope_theta") is not None`; the source comment
-  says so explicitly ("Released ckpt don't use any ROPE"). So despite `layer_types` marking some
-  layers `full_attention`, there is no RoPE/NoPE split to route in the release as shipped — one
-  fewer real difference than the brief's own framing worried about.
-- **The blocker: norm placement is asymmetric BY LAYER TYPE, not a single model-wide choice.**
-  `OlmoHybridAttentionDecoderLayer` (softmax layers) has NO `input_layernorm` at all — same
-  `NormPostOnly` as `olmo3`. `OlmoHybridLinearAttentionDecoderLayer` (DeltaNet layers) has BOTH an
-  `input_layernorm` (before the mixer) and a confusingly-named `post_attention_layernorm` that is
-  actually applied BEFORE the MLP, not after — i.e. plain `NormPre2`, with no post-norm on either
-  sublayer. **Two different `NormPlacement` values are needed within the SAME model, keyed by
-  `layerIsLinear`, not one.** `Architecture.NormPlacement` is currently a single model-wide scalar;
-  every existing hybrid family (`qwen3_5`, `qwen3_next`, `granitemoehybrid`) uses the SAME norm
-  scheme for both its linear and full-attention layers, so this dimension has never needed to vary
-  per layer before. That is a structural difference in how normalization is organized, not a
-  parameter a 0-means-off generic field can express — the brief's own named stop condition
-  ("a differing primitive beyond composition").
+  exactly** (`OlmoHybridAttention` literally inherits `Olmo3Attention`'s behavior). Routed through
+  the SAME generic `tensorSchema`-driven loader and `causalAttention` every non-hybrid family uses
+  — `qwen35Params.PlainFullAttn` skips qwen3_5's own bespoke double-width gated attention for this
+  family's full-attention layers, confirming `olmo3`'s adapter generalizes rather than needing its
+  own copy.
+- **The real released checkpoint sets `rope_theta: null`, disabling RoPE entirely, on EVERY layer**
+  — `self.rotary_emb` is only constructed `if rope_parameters.get("rope_theta") is not None`; the
+  source comment says so explicitly ("Released ckpt don't use any ROPE"). A new generic
+  `Architecture.NoPositionEncoding` flag names this as a FOURTH legitimate "no RoPE table" reason in
+  `validateResolved`'s M-06 guard, alongside `LearnedPosEmbed`/`nemotron`/`mla` — named explicitly,
+  same as those three, so a family that simply forgot to read `rope_theta` still can't look like one
+  that deliberately has none.
 
-**Stopping here rather than building a workaround.** The two shapes this could take — a second
-`NormPlacement`-typed field keyed by layer kind (mirrors how `layerIsLinear` already keys the
-mixer), or a per-layer `[]NormPlacement` table — are both plausible, but which one composes
-correctly with `NormSandwich4`/`NormParallel` families that might gain a linear-attention variant
-later is a real design decision, not a Phase-0-verifiable fact. Left for a decision before
-continuing; no registry key, no adapter, no fixture added for `olmo_hybrid` this pass.
+Tensor schema: `olmoHybridTensorSchema` (`decoder/weights.go`), identical to `olmo3TensorSchema` for
+full-attention layers plus the four `*Linear` norm overrides above. No MoE variant; dense SwiGLU FFN
+on every layer, shared with `olmo3`/llama tensor names.
 
-### What was deliberately not done (olmo3)
+`scripts/pin_olmo_hybrid_tiny.py`: 4 layers (3 linear + 1 full, matching the release's own 3:1
+ratio), MHA (`linear_num_key_heads == linear_num_value_heads`, no GVA — matching the one released
+size), `rope_parameters: {"rope_theta": null}`. Bypasses `m.save_pretrained`'s own safetensors write
+entirely (per the conv1d finding above) — builds `state_dict()` directly and manually re-splits
+each linear layer's conv1d weight at the true q/k/v boundaries before writing with
+`safetensors.torch.save_file`, reproducing the real release's actual tensor layout rather than
+either wrong intermediate guess. `TestOlmoHybrid_forwardParity`: **argmax exact, cosine
+0.9999999999998704**, plus direct assertions on `NormPlacement`/`NormPlacementLinear`,
+`qwen35.NegEigval`, and that layer 0 (linear) loaded DeltaNet state with no plain `QProj` while
+layer 3 (full-attention) loaded the reverse. `archFeatureProfile["olmo_hybrid"]` needed
+`{FeatDeltaNet, FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole}` — CPU-only overall despite
+`FeatDeltaNet` being GPU-declared (qwen3_5's own backends), since the other three are not.
+
+`parity_manifest.json` row: `status: experimental`, `method: tiny-golden`. Gate registered in
+`cmd/gate/parity.go`'s `parityGates` AND `awaitingFirstConfirmation` in the same commit as `olmo3`'s
+(F1's CI-break lesson applied without re-learning it, for both keys at once).
+
+### A found-along-the-way bug: `capability-matrix.md`'s "GPU-resident" column believed the wrong gate
+
+Checking `olmo_hybrid`'s own generated row surfaced a pre-existing defect, not something this pass
+introduced: `docs/capability-matrix.md`'s "GPU-resident" column was computed from
+`arch.decodeRunnerEligible()` ALONE — an arch-SHAPE predicate ("can the generic resident forward
+represent this at all") — rather than the full admission truth ("does at least one real backend's
+declared feature set actually cover what this arch needs"), which `decoder/features.go`'s own
+`ResidentEligible(arch, backend)` already computes and which `hardware-matrix.md`'s generator
+already uses. This is the EXACT failure mode the 2026-08-31 LFM2 fix patched for one family
+(`decodeRunnerEligible` gained a special-case decline once the matrix was caught reading
+"GPU-resident: yes" for a family no backend could run) — except this time it was hitting FIVE
+families through undeclared FEATURES rather than an arch-shape incompatibility: `cohere`, `cohere2`,
+`mistral3`, `smollm3`, and `olmo3` all read "yes" while their own `admissionGolden` rows are empty
+(CPU-only). Fixed by pointing `capability_matrix_test.go`'s `GPUResident` column at the same
+`ResidentEligible` gate `hardware-matrix.md` uses, rather than adding a sixth one-off special case —
+the two generated docs can no longer disagree about the same family. All six corrected rows (the
+five pre-existing plus `olmo_hybrid`) flip from "yes" to "no"; no other row changed.
 
 - **GGUF loader / T3 real-checkpoint parity / peer row.** Same order-of-operations as every family
-  in this doc: ship at T1, move on. 7B fits the Mac's T3 budget; 32B is the Linux-box target.
-- **CHANGELOG entry**: added for `olmo3` only — `olmo_hybrid` shipped nothing.
+  in this doc: ship at T1, move on. `olmo3` 7B fits the Mac's T3 budget; 32B and `olmo_hybrid` 7B
+  are Linux-box targets.
+- **CHANGELOG entry**: added for both `olmo3` and `olmo_hybrid`.
 
 ## G4 · `smollm3` — SmolLM3-3B — DONE at T1 (mac, 2026-09-06); real-checkpoint embed deliverable pending on disk space
 

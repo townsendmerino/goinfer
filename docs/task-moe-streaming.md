@@ -237,7 +237,7 @@ becomes the binding constraint after the batched GEMV lands.
 
 `decoder/forwardn.go:97` states it plainly: batched prefill vectorizes attention but "the
 MoE FFN itself stays per-row (router picks different experts per token)" — the per-row call
-is `decoder/forwardn.go:521`. Under streaming that is the worst case: the same expert can be
+is `decoder/forwardn.go:523`. Under streaming that is the worst case: the same expert can be
 fetched once per row.
 
 fieldfare's fix is chunks of ≤128 tokens so one fetched expert serves multiple rows.

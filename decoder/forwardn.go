@@ -216,12 +216,6 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	maxQDim, kvDim, inter := arch.maxHeads()*hd, nKV*hd, arch.IntermediateDim
 	K := len(h) / hidden
 	startPos := cache.Pos()
-	sandwich := arch.NormPlacement == NormSandwich4
-	// postOnly (Olmo 3/Olmo Hybrid): the batched twin of runLayersFromEmbed's own postOnly —
-	// no pre-norm, sublayer output still normalized before the residual add.
-	postOnly := arch.NormPlacement == NormPostOnly
-	postNorm := sandwich || postOnly
-	parallel := arch.NormPlacement == NormParallel
 
 	norm := make([]float32, K*hidden)
 	q := make([]float32, K*maxQDim)
@@ -401,6 +395,14 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			m.layerPager.enterLayer(l) // dense weight streaming (#4)
 		}
 		lw := &m.w.Layers[l]
+		// Resolved per layer, not hoisted: NormPlacementLinear (Olmo Hybrid) can give
+		// this layer a different placement than the rest of the model. The batched twin
+		// of runLayersFromEmbed's own per-layer resolution.
+		placement := arch.normPlacementAt(l)
+		sandwich := placement == NormSandwich4
+		postOnly := placement == NormPostOnly
+		postNorm := sandwich || postOnly
+		parallel := placement == NormParallel
 		global := arch.isGlobalLayer(l)
 		// This layer's query width. q/ctx are sliced to it so every row stride, RoPE
 		// call and matmul below sees the layer's OWN head count — the batched twin of

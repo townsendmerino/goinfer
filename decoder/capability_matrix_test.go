@@ -148,6 +148,20 @@ func representativeConfig(modelType string) *Config {
 			RopeScaling: json.RawMessage(`{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":8,` +
 				`"beta_fast":32.0,"beta_slow":1.0,"attention_factor":1.1}`),
 		}
+	case "olmo_hybrid":
+		// Olmo Hybrid: qwen3_5's Gated DeltaNet (3-of-4 layers) + olmo3's own full-attention
+		// shape (1-of-4), with MIXED NormPlacement per layer kind (the reason G2 paused for a
+		// decision) and NO RoPE at all (rope_theta: null, the real release's own value) — so
+		// this config exercises NoPositionEncoding for real, not the trivial "never checked"
+		// case. MHA (NumKVHeads == NumHeads), matching the one released size fetched.
+		return &Config{
+			ModelType: "olmo_hybrid", VocabSize: 128, HiddenDim: 64, NumLayers: 4, NumHeads: 8,
+			NumKVHeads: 8, IntermediateDim: 128, RMSNormEps: 1e-6, HiddenAct: "silu",
+			LayerTypes:          []string{"linear_attention", "linear_attention", "linear_attention", "full_attention"},
+			LinearConvKernelDim: 4, LinearKeyHeadDim: 8, LinearValueHeadDim: 16,
+			LinearNumKeyHeads: 4, LinearNumValueHeads: 4, LinearAllowNegEigval: true,
+			RopeParameters: json.RawMessage(`{"rope_theta":null}`),
+		}
 	case "smollm3":
 		// SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers). NumLayers=4 with the
 		// interval default (4) gives no_rope_layers=[1,1,1,0] -- exactly the real release's own
@@ -451,6 +465,7 @@ var familyDocs = map[string]familyDoc{
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
 	"smollm3":             {"SmolLM3", "HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings", "safetensors", "text"},
 	"olmo3":               {"Olmo 3", "Ai2 Olmo 3 (7B/32B): no pre-norm at all (post-only), whole-vector QK-norm, sliding/full 3:1 + YaRN on full layers only", "safetensors", "text"},
+	"olmo_hybrid":         {"Olmo Hybrid", "Ai2 Olmo Hybrid (7B): qwen3.5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, MIXED norm placement per layer kind, no RoPE at all", "safetensors", "text"},
 	// InternLM3 shares Llama's ROW deliberately. It is not a family riding llama's code with
 	// its own shape — it IS a llama, down to the tensor names, so the matrix should say
 	// "Llama: llama, internlm3" rather than open a second row that competes for the same
@@ -660,6 +675,26 @@ func normColumn(a *Architecture) string {
 	return a.Norm.String() + ", " + a.NormPlacement.String()
 }
 
+// gpuResidentEligible is the FULL truth the "GPU-resident" column claims: at least one real
+// backend actually admits this arch (features.go's ResidentEligible — the same
+// decodeRunnerEligible-shape-AND-feature-coverage-AND-MoE-capacity gate hardware_matrix_test.go's
+// rows already use, so the two generated docs can never disagree about the same family) — NOT
+// decodeRunnerEligible() alone, which only answers "is the shape representable" and previously let
+// LFM2 read "GPU-resident: yes" for a family no backend could run at all (caught 2026-08-31, fixed
+// there with a special-case shape decline). olmo3/olmo_hybrid (and, it turns out on checking,
+// cohere/cohere2/mistral3/smollm3 too — five PRE-EXISTING rows, not new ones) hit the same failure
+// mode a different way, through undeclared features rather than a shape incompatibility; using the
+// existing, more complete ResidentEligible here instead of a second one-off special case fixes all
+// of them at once and can't drift from hardware-matrix.md's own answer again.
+func gpuResidentEligible(arch *Architecture) bool {
+	for be := range residentBackendFeatures {
+		if ResidentEligible(arch, be) {
+			return true
+		}
+	}
+	return false
+}
+
 // buildMatrix resolves every registry key, groups aliases by resolved
 // Architecture.Name, and returns the rows sorted deterministically (by coverage
 // axis, then display name, then name). The second return is the list of any keys
@@ -722,7 +757,7 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 				TiedLMHead:    arch.TiedLMHead,
 				Loaders:       doc.Loaders,
 				Modality:      doc.Modality,
-				GPUResident:   arch.decodeRunnerEligible(),
+				GPUResident:   gpuResidentEligible(arch),
 				Parity:        parity,
 			}
 			rows[arch.Name] = r

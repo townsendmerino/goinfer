@@ -558,13 +558,6 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 	}
 	scr := cache.scr
 	hidden := arch.HiddenDim
-	sandwich := arch.NormPlacement == NormSandwich4
-	// postOnly (Olmo 3/Olmo Hybrid): no pre-norm at all — the sublayer reads the RAW residual
-	// stream — but the sublayer's OUTPUT still gets normalized before the residual add, the
-	// same as Sandwich4's post-norm half. postNorm covers both placements that need it.
-	postOnly := arch.NormPlacement == NormPostOnly
-	postNorm := sandwich || postOnly
-	parallel := arch.NormPlacement == NormParallel
 	if m.layerPager != nil {
 		defer m.layerPager.finishLayers()
 	}
@@ -577,6 +570,17 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		if cache.lora != nil {
 			ld = &cache.lora.layers[l]
 		}
+		// Resolved per layer, not hoisted: NormPlacementLinear (Olmo Hybrid) can give
+		// this layer a different placement than the rest of the model.
+		placement := arch.normPlacementAt(l)
+		sandwich := placement == NormSandwich4
+		// postOnly (Olmo 3, and Olmo Hybrid's full-attention layers): no pre-norm at all —
+		// the sublayer reads the RAW residual stream — but the sublayer's OUTPUT still gets
+		// normalized before the residual add, the same as Sandwich4's post-norm half.
+		// postNorm covers both placements that need it.
+		postOnly := placement == NormPostOnly
+		postNorm := sandwich || postOnly
+		parallel := placement == NormParallel
 		if parallel {
 			// Cohere/GPT-J parallel block: ONE shared input norm feeds both
 			// sublayers, whose outputs sum into a SINGLE residual add —

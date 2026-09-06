@@ -65,7 +65,7 @@ and the README example (`README.md:76-88`):
 4. Build `constrain.GrammarFromStruct(Person{})`, then the masker
    `constrain.NewMasker(g, toks, eos).StopWhenComplete().Process`, which needs the token-bytes
    table and the EOS set from somewhere.
-5. `m.Generate(ctx, ids, maxTokens, sp)` → `(<-chan int, *Generation)` (`decoder/model.go:816`);
+5. `m.Generate(ctx, ids, maxTokens, sp)` → `(<-chan int, *Generation)` (`decoder/model.go:820`);
    drain the channel; decode incrementally with UTF-8 holdback; stop on the template's stop ids;
    check `Generation.Err()` after the channel closes.
 6. `json.Unmarshal` — which the README says "always succeeds" and the audit found does not for

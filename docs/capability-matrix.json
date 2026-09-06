@@ -1,5 +1,25 @@
 [
   {
+    "name": "olmo_hybrid",
+    "model_types": [
+      "olmo_hybrid"
+    ],
+    "display_name": "Olmo Hybrid",
+    "description": "Ai2 Olmo Hybrid (7B): qwen3.5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, MIXED norm placement per layer kind, no RoPE at all",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "none",
+    "norm": "RMSNorm, post-only",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "qwen3_next",
     "model_types": [
       "qwen3_next"
@@ -138,7 +158,7 @@
     "tied_lm_head": true,
     "loaders": "safetensors",
     "modality": "text",
-    "gpu_residency_eligible": true,
+    "gpu_residency_eligible": false,
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
@@ -158,7 +178,7 @@
     "tied_lm_head": true,
     "loaders": "safetensors",
     "modality": "text",
-    "gpu_residency_eligible": true,
+    "gpu_residency_eligible": false,
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
@@ -403,7 +423,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors",
     "modality": "text (+ vision tower, ignored)",
-    "gpu_residency_eligible": true,
+    "gpu_residency_eligible": false,
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
@@ -463,7 +483,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors",
     "modality": "text",
-    "gpu_residency_eligible": true,
+    "gpu_residency_eligible": false,
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
@@ -603,7 +623,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors",
     "modality": "text",
-    "gpu_residency_eligible": true,
+    "gpu_residency_eligible": false,
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {

@@ -30,6 +30,7 @@ var registry = map[string]archAdapter{
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
 	"smollm3":             smollm3Architecture,    // SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers) on every 4th layer, tied embeddings
 	"olmo3":               olmo3Architecture,      // Olmo 3 (7B/32B): NormPostOnly (no pre-norm at all) + whole-vector QK-norm + sliding/full 3:1 + YaRN
+	"olmo_hybrid":         olmoHybridArchitecture, // Olmo Hybrid (7B): qwen3_5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, mixed NormPlacement per layer kind, NoPE (rope_theta null)
 	// InternLM3 is llama-shaped to the tensor name: self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj,
 	// input_layernorm/post_attention_layernorm, embed_tokens/lm_head, no biases, no QK-norm. Its only
 	// config departure is rope_scaling type "dynamic", which is exactly identity within the trained
@@ -132,11 +133,12 @@ func (a *Architecture) validateResolved() error {
 	// flat rope_theta, and transformers >= 5.10 nests it under rope_parameters; for
 	// llama/mistral/qwen3 that is a loud error, and for these two it was silence.
 	//
-	// The three legitimate ways to have no global RoPE table are named explicitly rather
+	// The four legitimate ways to have no global RoPE table are named explicitly rather
 	// than inferred, so a new family that simply forgot cannot look like one of them:
-	// GPT-2 has learned positions, Nemotron-H encodes NoPE layers as base 0, and MLA
-	// carries its own decoupled rope dims.
-	if !a.LearnedPosEmbed && a.nemotron == nil && a.mla == nil && len(a.ropeInvFreqGlobal) == 0 {
+	// GPT-2 has learned positions, Nemotron-H encodes NoPE layers as base 0, MLA carries its
+	// own decoupled rope dims, and Olmo Hybrid's released checkpoint genuinely has none at
+	// all (NoPositionEncoding, verified against rope_parameters: {"rope_theta": null}).
+	if !a.LearnedPosEmbed && !a.NoPositionEncoding && a.nemotron == nil && a.mla == nil && len(a.ropeInvFreqGlobal) == 0 {
 		return fmt.Errorf("decoder(%s): no position information — RoPEGlobalBase=%v yields no "+
 			"inv-freq table, and the arch is not learned-position, Nemotron-H or MLA. The adapter "+
 			"most likely did not read rope_theta (transformers >=5.10 nests it under "+
@@ -727,6 +729,117 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
 	}, &olmo3TensorSchema, nil
+}
+
+// olmoHybridArchitecture expresses Olmo Hybrid (Ai2, model_type "olmo_hybrid"; Olmo Hybrid 7B):
+// the SAME Gated DeltaNet as qwen3_5 on 3-of-4 layers (verified field-for-field against the real
+// modeling_olmo_hybrid.py), olmo3's own full-attention shape (whole-vector QK-norm) on the rest —
+// but the two are NOT simply composed side by side: the full-attention layers use olmo3's
+// NormPostOnly while the DeltaNet layers use plain NormPre2, two placements in ONE model, which is
+// what NormPlacementLinear exists for (docs/task-families-2026-09.md's G2 section has the full
+// norm-placement writeup).
+//
+// Real, checked-not-assumed departures from a straight qwen3_5-DeltaNet + olmo3-attention
+// composition — every one is a parameterization of shared code, not new math:
+//   - linear_allow_neg_eigval (default true): doubles the write-gate beta to [0,2) after the
+//     sigmoid, widening the delta-rule's eigenvalue range — NegEigval.
+//   - q_proj/k_proj/v_proj are THREE fully separate tensors, more unfused than qwen3_5's own
+//     pre-concatenated in_proj_qkv — SeparateQKVProj. The depthwise causal conv is ALSO three
+//     separate tensors (q_conv1d/k_conv1d/v_conv1d), split at the same q/k/v channel boundaries —
+//     SeparateConv. Both verified against a REAL Olmo-Hybrid-7B checkpoint's safetensors header
+//     (HTTP Range on the file, not downloaded in full): the modeling code alone shows one combined
+//     self.conv1d, and a locally re-saved probe checkpoint round-tripped through this
+//     transformers version's own conversion_mapping.py produced YET ANOTHER shape (an arbitrary
+//     equal three-way split, and renamed norm tensors neither the source nor the real file uses)
+//     — source code and a local round-trip both looked like real answers and were both wrong; only
+//     the actual published file settled it.
+//   - The DeltaNet output gated-RMSNorm is named o_norm (qwen3_5: norm) and its out_proj is named
+//     o_proj (qwen3_5: out_proj) — DeltaNetNormSuffix/DeltaNetOutProjSuffix. Its epsilon is
+//     hardcoded 1e-5 in HF's source ("FLA's FusedRMSNormGated uses eps=1e-5 by default")
+//     regardless of config, diverging from the release's own rms_norm_eps=1e-6 used everywhere
+//     else in the model — ONormEps. A silent-wrong trap if skipped: reusing NormEps here is off by
+//     10x on exactly the one norm most sensitive to it.
+//   - rope_parameters is {"rope_theta": null} on the release: NO RoPE at all, on any layer — the
+//     comment in modeling_olmo_hybrid.py's OlmoHybridModel.__init__ says so explicitly ("Released
+//     ckpt don't use any ROPE"). Handled via the existing layerNoPE hook (SmolLM3/Cohere2's own
+//     mechanism), unconditional here since a nested per-attention-type rope_parameters (Olmo 3's
+//     own shape) is not used by this family — verified there is no partial_rotary_factor either.
+//   - MHA, not GQA, on the one released size fetched (num_attention_heads == num_key_value_heads
+//     == 30, linear_num_key_heads == linear_num_value_heads == 30) — validated, not assumed.
+//
+// No MoE variant exists; the FFN is a plain dense SwiGLU on every layer, same tensor names as
+// olmo3/llama.
+func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := cfg.validateOlmoHybrid(); err != nil {
+		return nil, nil, err
+	}
+	// rope_parameters on this family is always the FLAT {"rope_theta": ...} shape (never Olmo 3's
+	// nested per-attention-type one — there is no sliding_attention layer kind here at all to
+	// split on), so a plain pointer-field unmarshal distinguishes "absent/null" (NoPE) from a real
+	// value cleanly, mirroring Ministral 3's own llama_4_scaling_beta read.
+	var ropeFlat struct {
+		RopeTheta *float64 `json:"rope_theta"`
+	}
+	_ = json.Unmarshal(cfg.RopeParameters, &ropeFlat)
+	noRope := ropeFlat.RopeTheta == nil
+	var base float64
+	var scaling *ropeScaling
+	if !noRope {
+		base = *ropeFlat.RopeTheta
+		if base <= 0 {
+			return nil, nil, fmt.Errorf("decoder(olmo_hybrid): rope_theta must be >0, got %v", base)
+		}
+		sc, err := parseRopeScaling(cfg.RopeScaling)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decoder(olmo_hybrid): %w", err)
+		}
+		scaling = sc
+	}
+	hd := cfg.headDim()
+	linearPlacement := NormPre2
+	return &Architecture{
+		Name:                "olmo_hybrid",
+		HiddenDim:           cfg.HiddenDim,
+		NumLayers:           cfg.NumLayers,
+		NumHeads:            cfg.NumHeads,
+		NumKVHeads:          cfg.NumKVHeads,
+		HeadDim:             hd,
+		IntermediateDim:     cfg.IntermediateDim,
+		VocabSize:           cfg.VocabSize,
+		Norm:                NormRMS,
+		RMSAddOne:           false,
+		NormEps:             cfg.RMSNormEps,
+		NormPlacement:       NormPostOnly, // full-attention layers (olmo3's own scheme)
+		NormPlacementLinear: &linearPlacement,
+		Act:                 ActSiLU,
+		QKNorm:              true,
+		QKNormWhole:         true,
+		AttnScale:           math.Pow(float64(hd), -0.5),
+		layerIsGlobal:       cfg.IsGlobalLayer,
+		layerIsLinear:       cfg.IsLinearLayer,
+		layerNoPE:           func(i int) bool { return noRope },
+		NoPositionEncoding:  noRope,
+		RoPELocalBase:       base,
+		RoPEGlobalBase:      base,
+		ropeScaling:         scaling,
+		ropeScalingLocal:    scaling,
+		EmbedScale:          0,
+		TiedLMHead:          false, // finalized from lm_head.weight presence at load
+		qwen35: &qwen35Params{
+			ConvKernel:            cfg.LinearConvKernelDim,
+			KeyHeadDim:            cfg.LinearKeyHeadDim,
+			ValueHeadDim:          cfg.LinearValueHeadDim,
+			NumKeyHeads:           cfg.LinearNumKeyHeads,
+			NumValueHeads:         cfg.LinearNumValueHeads,
+			SeparateQKVProj:       true,
+			SeparateConv:          true,
+			NegEigval:             cfg.LinearAllowNegEigval,
+			DeltaNetNormSuffix:    "linear_attn.o_norm.weight",
+			DeltaNetOutProjSuffix: "linear_attn.o_proj.weight",
+			ONormEps:              1e-5,
+			PlainFullAttn:         true,
+		},
+	}, &olmoHybridTensorSchema, nil
 }
 
 // cohereArchitecture expresses Cohere / Command-R (model_type "cohere":

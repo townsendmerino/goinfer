@@ -97,6 +97,10 @@ var censusList = []string{
 	// QK-norm, not per-head) are per-Architecture scalars affecting layer STRUCTURE, not per-layer
 	// state -- added anyway per the census's own default.
 	"../testdata/olmo3-tiny",
+	// olmo_hybrid-tiny (2026-09-06, batch 2 G2): mixed NormPlacement per layer kind, on top of the
+	// SAME DeltaNet state qwen35-tiny already round-trips -- added anyway per the census's own
+	// default.
+	"../testdata/olmo_hybrid-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with

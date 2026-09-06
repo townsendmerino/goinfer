@@ -22,6 +22,17 @@ type Architecture struct {
 	RMSAddOne     bool // Gemma's (1+w) scaling; false for Llama/Qwen
 	NormEps       float64
 	NormPlacement NormPlacement // Pre2 (Llama) | Sandwich4 (Gemma)
+	// NormPlacementLinear overrides NormPlacement on layers where isLinearLayer(i) is
+	// true — Olmo Hybrid's real departure from every other DeltaNet hybrid in this
+	// tree (qwen3_5/qwen3_next/granitemoehybrid all use ONE scheme for both their
+	// linear and full-attention layers). Verified against the real
+	// modeling_olmo_hybrid.py: full-attention layers use NormPostOnly (olmo3's own
+	// scheme, confirmed identical), but the DeltaNet layers use plain NormPre2 — two
+	// placements in ONE model, keyed by the SAME layerIsLinear hook that already
+	// selects the mixer. nil (every family so far, including olmo3 itself, which has
+	// no linear layers at all) ⇒ NormPlacement applies uniformly, exactly as before
+	// this field existed. See normPlacementAt.
+	NormPlacementLinear *NormPlacement
 
 	// MLP.
 	Act         ActKind
@@ -40,8 +51,16 @@ type Architecture struct {
 	// supports this: per-head calls it with (rows=nHeads, dim=headDim); whole-vector calls it
 	// with (rows=1, dim=nHeads*headDim) — same function, different split.
 	QKNormWhole     bool
-	LearnedPosEmbed bool    // GPT-2: add a learned position embedding and SKIP RoPE
-	AttnScale       float64 // explicit q·k multiplier (resolved: query_pre_attn_scalar^-0.5 or 1/sqrt(headDim))
+	LearnedPosEmbed bool // GPT-2: add a learned position embedding and SKIP RoPE
+	// NoPositionEncoding (Olmo Hybrid): true when the family genuinely has NO positional
+	// encoding at all — neither RoPE nor learned — on any layer. The released checkpoint's
+	// rope_parameters is {"rope_theta": null}; modeling_olmo_hybrid.py's own comment says so
+	// explicitly ("Released ckpt don't use any ROPE"). A fourth legitimate "no RoPEGlobalBase"
+	// reason alongside LearnedPosEmbed/nemotron/mla in validateResolved's M-06 check, named
+	// explicitly for the SAME reason those three are: so a family that simply forgot to read
+	// rope_theta cannot look like one that deliberately has none.
+	NoPositionEncoding bool
+	AttnScale          float64 // explicit q·k multiplier (resolved: query_pre_attn_scalar^-0.5 or 1/sqrt(headDim))
 	// AttnTempBeta/AttnTempOrigMaxPos (Ministral 3): a position-dependent multiplicative scale on
 	// the query, applied AFTER RoPE, on every layer — get_llama_4_attn_scale in Ministral3's own
 	// HF source (modular_ministral3.py), literally named after Llama 4's attention-temperature
@@ -288,6 +307,55 @@ type qwen35Params struct {
 	// loadQwen35Attn splits the fused tensors into the same four deltaNetWeights
 	// fields so the rest of the pipeline (forward, gguf, serialize) is untouched.
 	FusedDeltaNetProj bool
+	// SeparateQKVProj (Olmo Hybrid): the checkpoint stores q_proj/k_proj/v_proj as
+	// THREE fully independent tensors — more unfused than qwen3_5_moe's own
+	// in_proj_qkv (which is already pre-concatenated on disk into one [convDim,
+	// hidden] tensor). loadQwen35Attn concatenates them at load time into the same
+	// internal inProjQKV layout, so gatedDeltaNetStep and every downstream consumer
+	// stay untouched. Verified against the real modeling_olmo_hybrid.py
+	// (OlmoHybridGatedDeltaNet.__init__: separate self.q_proj/k_proj/v_proj
+	// nn.Linear modules, vs. qwen3.5's single mixed_qkv projection).
+	SeparateQKVProj bool
+	// NegEigval (Olmo Hybrid): doubles the write-gate beta from sigmoid's [0,1)
+	// range to [0,2) after the sigmoid — config's linear_allow_neg_eigval, default
+	// true on the release. Same recurrence, wider gate range; not a new primitive.
+	NegEigval bool
+	// SeparateConv (Olmo Hybrid): the checkpoint stores the depthwise causal conv
+	// as THREE separate tensors, q_conv1d/k_conv1d/v_conv1d, split at the SAME
+	// q/k/v channel boundaries the mixed_qkv activation uses (keyDim, keyDim,
+	// valueDim rows respectively) — verified against a real Olmo-Hybrid-7B
+	// checkpoint's safetensors header, not assumed from source (the modeling code
+	// alone shows one combined self.conv1d; only the real file's actual tensor
+	// names and shapes revealed the three-way split). loadQwen35Attn concatenates
+	// them in q,k,v order to reconstruct the same [convDim,1,K] layout
+	// gatedDeltaNetStep's conv step already expects.
+	SeparateConv bool
+	// DeltaNetNormSuffix/DeltaNetOutProjSuffix override the DeltaNet gated-RMSNorm
+	// and out_proj tensor suffixes. "" (qwen3_5/qwen3_5_moe/qwen3_next) means
+	// "linear_attn.norm.weight" / "linear_attn.out_proj.weight". Olmo Hybrid's real
+	// modeling_olmo_hybrid.py names these attributes o_norm/o_proj instead — same
+	// math, different attribute name and therefore different on-disk tensor name,
+	// checked against real source rather than assumed identical to qwen3.5's own
+	// DeltaNet.
+	DeltaNetNormSuffix, DeltaNetOutProjSuffix string
+	// ONormEps overrides the DeltaNet output gated-RMSNorm's epsilon; 0 ⇒ use the
+	// family's own NormEps (qwen3_5/qwen3_5_moe/qwen3_next: their gated-RMSNorm
+	// reads rms_norm_eps like every other norm in the model). Olmo Hybrid hardcodes
+	// eps=1e-5 for this ONE norm regardless of config — "FLA's FusedRMSNormGated
+	// uses eps=1e-5 by default", per modeling_olmo_hybrid.py's own comment — which
+	// differs from the release's rms_norm_eps=1e-6 used everywhere else in the
+	// model. A silent-wrong trap if copied: reusing NormEps here would be off by an
+	// order of magnitude on exactly the one norm most sensitive to it (the
+	// recurrence's own output gate).
+	ONormEps float64
+	// PlainFullAttn (Olmo Hybrid): this family's full-attention layers are a PLAIN
+	// olmo3-shaped self-attention (single-width q/k/v/o, optional whole-vector
+	// QK-norm, generic RoPE/NoPE) — NOT qwen3_5's own double-width gated softmax
+	// attention. false (every other qwen35-shaped family) routes non-linear layers
+	// through loadQwen35Attn's/runLayersQwen35's bespoke qwen3.5 attention; true
+	// routes them through the shared generic loader path and causalAttention
+	// instead, reusing olmo3's own adapter rather than inventing a second one.
+	PlainFullAttn bool
 }
 
 // gemma4Params describes how Gemma 4's global (full-attention) layers diverge
@@ -460,11 +528,13 @@ const (
 	// NormPostOnly: NO pre-norm at all — attention/MLP read the RAW residual
 	// stream directly — and the sublayer's OUTPUT is normalized before the
 	// residual add (residual = x + post_attn_norm(attn(x)); same for MLP).
-	// Olmo 3/Olmo Hybrid, verified against the real modeling_olmo3.py: no
-	// input_layernorm exists at all, only post_attention_layernorm /
-	// post_feedforward_layernorm, applied to the SUBLAYER OUTPUT before the
-	// add. Genuinely different from Sandwich4, which normalizes the input
-	// AND (separately) the output; here there is no input norm to skip past.
+	// Olmo 3, verified against the real modeling_olmo3.py: no input_layernorm
+	// exists at all, only post_attention_layernorm / post_feedforward_layernorm,
+	// applied to the SUBLAYER OUTPUT before the add. Genuinely different from
+	// Sandwich4, which normalizes the input AND (separately) the output; here
+	// there is no input norm to skip past. Olmo Hybrid's full-attention layers
+	// use this SAME scheme, but its DeltaNet layers use NormPre2 instead — see
+	// NormPlacementLinear, not a second value of this enum.
 	NormPostOnly
 )
 
@@ -546,6 +616,17 @@ func (a *Architecture) isConvLayer(i int) bool {
 // per-layer function is set (every non-hybrid family).
 func (a *Architecture) isLinearLayer(i int) bool {
 	return a.layerIsLinear != nil && a.layerIsLinear(i)
+}
+
+// normPlacementAt resolves the NormPlacement for layer i, honoring
+// NormPlacementLinear's per-layer override (Olmo Hybrid: DeltaNet layers use
+// NormPre2 while its full-attention layers use NormPostOnly) when set. Returns
+// NormPlacement unchanged for every family that leaves NormPlacementLinear nil.
+func (a *Architecture) normPlacementAt(i int) NormPlacement {
+	if a.NormPlacementLinear != nil && a.isLinearLayer(i) {
+		return *a.NormPlacementLinear
+	}
+	return a.NormPlacement
 }
 
 // isMambaLayer reports whether layer i is a Mamba-2 mixer rather than softmax

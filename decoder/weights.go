@@ -700,7 +700,11 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if err = loadLFM2Conv(st, i, l, arch, hd, tn); err != nil {
 				return err
 			}
-		} else if arch.qwen35 != nil {
+		} else if arch.qwen35 != nil && (arch.isLinearLayer(i) || !arch.qwen35.PlainFullAttn) {
+			// PlainFullAttn (Olmo Hybrid): its full-attention layers are NOT
+			// qwen3.5's own double-width gated softmax attention, so only the
+			// linear (DeltaNet) layers come through here; the rest fall through
+			// to the generic tensorSchema-driven path below (olmo3's own shape).
 			if err = loadQwen35Attn(st, i, l, arch, hd, tn, loadMatQ, quant); err != nil {
 				return err
 			}
@@ -810,17 +814,25 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 				}
 			}
 		}
-		// Block norms — Pre2 has only Pre*; Sandwich4 adds Post*.
-		if l.PreAttnNorm, err = optNorm(i, s.PreAttnNorm); err != nil {
+		// Block norms — Pre2 has only Pre*; Sandwich4 adds Post*. A hybrid whose norm
+		// tensor NAMES (not just placement) differ between linear and full-attention
+		// layers — Olmo Hybrid — uses the *Linear suffixes on isLinearLayer(i)
+		// layers instead (see their own comment on tensorSchema).
+		preAttn, postAttn, preMLP, postMLP := s.PreAttnNorm, s.PostAttnNorm, s.PreMLPNorm, s.PostMLPNorm
+		hasLinearNormOverride := s.PreAttnNormLinear != "" || s.PostAttnNormLinear != "" || s.PreMLPNormLinear != "" || s.PostMLPNormLinear != ""
+		if hasLinearNormOverride && arch.isLinearLayer(i) {
+			preAttn, postAttn, preMLP, postMLP = s.PreAttnNormLinear, s.PostAttnNormLinear, s.PreMLPNormLinear, s.PostMLPNormLinear
+		}
+		if l.PreAttnNorm, err = optNorm(i, preAttn); err != nil {
 			return err
 		}
-		if l.PostAttnNorm, err = optNorm(i, s.PostAttnNorm); err != nil {
+		if l.PostAttnNorm, err = optNorm(i, postAttn); err != nil {
 			return err
 		}
-		if l.PreMLPNorm, err = optNorm(i, s.PreMLPNorm); err != nil {
+		if l.PreMLPNorm, err = optNorm(i, preMLP); err != nil {
 			return err
 		}
-		if l.PostMLPNorm, err = optNorm(i, s.PostMLPNorm); err != nil {
+		if l.PostMLPNorm, err = optNorm(i, postMLP); err != nil {
 			return err
 		}
 		// Gemma 4 FFN: the dense gated MLP is always present (the parallel dense
@@ -964,6 +976,41 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			d.inProjQKV = quantizeWM(linalg.WrapF32(qkvF, convDim, hidden), quant)
 			d.inProjZ = quantizeWM(linalg.WrapF32(zF, valueDim, hidden), quant)
 			d.inProjB, d.inProjA = splitQwen3NextBA(ba, g, hidden)
+		} else if g.SeparateQKVProj {
+			// Olmo Hybrid: q_proj/k_proj/v_proj are three fully independent tensors —
+			// more unfused than qwen3.5's own pre-concatenated in_proj_qkv. Each
+			// nn.Linear's weight is already [out_features, hidden] with out_features
+			// in head-major order (view(...,-1,head_dim) is a reshape, not a
+			// reorder), so vertically stacking the three f32 matrices in q,k,v order
+			// reproduces the SAME flat [convDim, hidden] layout in_proj_qkv already
+			// has — a plain row concat, no per-group interleaving like
+			// splitQwen3NextQKVZ needs for the head-grouped fused case.
+			qf, e := st.TensorF32(nm("linear_attn.q_proj.weight"), keyDim, hidden)
+			if e != nil {
+				return e
+			}
+			kf, e := st.TensorF32(nm("linear_attn.k_proj.weight"), keyDim, hidden)
+			if e != nil {
+				return e
+			}
+			vf, e := st.TensorF32(nm("linear_attn.v_proj.weight"), valueDim, hidden)
+			if e != nil {
+				return e
+			}
+			qkv := make([]float32, 0, convDim*hidden)
+			qkv = append(qkv, qf...)
+			qkv = append(qkv, kf...)
+			qkv = append(qkv, vf...)
+			d.inProjQKV = quantizeWM(linalg.WrapF32(qkv, convDim, hidden), quant)
+			if d.inProjZ, err = mkQ(nm("linear_attn.g_proj.weight"), valueDim, hidden); err != nil {
+				return err
+			}
+			if d.inProjB, err = st.TensorF32(nm("linear_attn.b_proj.weight"), g.NumValueHeads, hidden); err != nil {
+				return err
+			}
+			if d.inProjA, err = st.TensorF32(nm("linear_attn.a_proj.weight"), g.NumValueHeads, hidden); err != nil {
+				return err
+			}
 		} else {
 			if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err != nil {
 				return err
@@ -978,7 +1025,28 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 				return err
 			}
 		}
-		if d.convW, err = st.TensorF32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
+		if g.SeparateConv {
+			// Olmo Hybrid: q_conv1d/k_conv1d/v_conv1d, split at the SAME q/k/v
+			// channel boundaries as q_proj/k_proj/v_proj (keyDim, keyDim,
+			// valueDim rows) — see SeparateConv's own comment.
+			qc, e := st.TensorF32(nm("linear_attn.q_conv1d.weight"), keyDim, 1, g.ConvKernel)
+			if e != nil {
+				return e
+			}
+			kc, e := st.TensorF32(nm("linear_attn.k_conv1d.weight"), keyDim, 1, g.ConvKernel)
+			if e != nil {
+				return e
+			}
+			vc, e := st.TensorF32(nm("linear_attn.v_conv1d.weight"), valueDim, 1, g.ConvKernel)
+			if e != nil {
+				return e
+			}
+			conv := make([]float32, 0, convDim*g.ConvKernel)
+			conv = append(conv, qc...)
+			conv = append(conv, kc...)
+			conv = append(conv, vc...)
+			d.convW = conv
+		} else if d.convW, err = st.TensorF32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
 			return err
 		}
 		if d.dtBias, err = st.TensorF32(nm("linear_attn.dt_bias"), g.NumValueHeads); err != nil {
@@ -989,10 +1057,20 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			return aerr
 		}
 		d.negExpA = negExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
-		if d.normW, err = st.TensorF32(nm("linear_attn.norm.weight"), g.ValueHeadDim); err != nil {
+		// DeltaNetNormSuffix/DeltaNetOutProjSuffix (Olmo Hybrid: o_norm/o_proj instead of
+		// qwen3.5's norm/out_proj) — see their own comment on qwen35Params.
+		normSuffix := "linear_attn.norm.weight"
+		if g.DeltaNetNormSuffix != "" {
+			normSuffix = g.DeltaNetNormSuffix
+		}
+		outProjSuffix := "linear_attn.out_proj.weight"
+		if g.DeltaNetOutProjSuffix != "" {
+			outProjSuffix = g.DeltaNetOutProjSuffix
+		}
+		if d.normW, err = st.TensorF32(nm(normSuffix), g.ValueHeadDim); err != nil {
 			return err
 		}
-		if d.outProj, err = mkQ(nm("linear_attn.out_proj.weight"), hidden, valueDim); err != nil {
+		if d.outProj, err = mkQ(nm(outProjSuffix), hidden, valueDim); err != nil {
 			return err
 		}
 		l.delta = d
@@ -1251,6 +1329,18 @@ type tensorSchema struct {
 	PreAttnNorm, PostAttnNorm  string
 	GateProj, UpProj, DownProj string
 	PreMLPNorm, PostMLPNorm    string
+	// PreAttnNormLinear/PostAttnNormLinear/PreMLPNormLinear/PostMLPNormLinear
+	// override the corresponding suffix above on layers where isLinearLayer(i) is
+	// true. "" (every family so far) ⇒ no override, same suffix on every layer.
+	// Olmo Hybrid needs this: its two decoder-layer CLASSES each independently
+	// define an attribute literally NAMED "post_attention_layernorm", but in
+	// DIFFERENT POSITIONAL ROLES — a post-attn norm on full-attention layers
+	// (NormPostOnly), a pre-MLP norm on linear/DeltaNet layers (NormPre2) — and
+	// only its linear layers carry an input_layernorm tensor at all (full-attention
+	// layers have none, per NormPostOnly). One static per-family schema can't route
+	// one on-disk name to two different LayerWeights fields depending on layer
+	// kind; these four give linear layers their own suffix set instead.
+	PreAttnNormLinear, PostAttnNormLinear, PreMLPNormLinear, PostMLPNormLinear string
 	// MoE (Mixtral): router + per-expert gate/up/down. The Expert* templates
 	// contain a single %d for the expert index. Empty ⇒ dense FFN.
 	Router                           string
@@ -1527,10 +1617,10 @@ var qwen3MoeTensorSchema = tensorSchema{
 	ExpertDown:  "mlp.experts.%d.down_proj.weight",
 }
 
-// olmo3TensorSchema: Olmo 3 / Olmo Hybrid — QKNormWhole's q_norm/k_norm are whole-vector but the
-// TENSOR NAME is identical to the per-head convention; only NormPostOnly's PreAttnNorm/PreMLPNorm
-// being empty (no input_layernorm tensor exists at all — confirmed by instantiating
-// Olmo3ForCausalLM directly) and PostAttnNorm/PostMLPNorm mapping to post_attention_layernorm/
+// olmo3TensorSchema: Olmo 3 — QKNormWhole's q_norm/k_norm are whole-vector but the TENSOR NAME
+// is identical to the per-head convention; only NormPostOnly's PreAttnNorm/PreMLPNorm being empty
+// (no input_layernorm tensor exists at all — confirmed by instantiating Olmo3ForCausalLM
+// directly) and PostAttnNorm/PostMLPNorm mapping to post_attention_layernorm/
 // post_feedforward_layernorm actually differs from qwen3TensorSchema.
 var olmo3TensorSchema = tensorSchema{
 	Embed:        "model.embed_tokens.weight",
@@ -1549,6 +1639,37 @@ var olmo3TensorSchema = tensorSchema{
 	DownProj:     "mlp.down_proj.weight",
 	PreMLPNorm:   "", // NormPostOnly: no pre-MLP norm tensor exists
 	PostMLPNorm:  "post_feedforward_layernorm.weight",
+}
+
+// olmoHybridTensorSchema: Olmo Hybrid's full-attention layers only (its linear/DeltaNet layers
+// are loaded entirely by loadQwen35Attn, gated on PlainFullAttn — see qwen35Params). Identical to
+// olmo3TensorSchema for those layers (verified against the real modeling_olmo_hybrid.py:
+// OlmoHybridAttention literally inherits Olmo3Attention's behavior), plus the *Linear norm
+// overrides: linear layers carry an input_layernorm the full-attention layers lack, and reuse the
+// SAME on-disk name as the full-attention layers' PostAttnNorm ("post_attention_layernorm.weight")
+// for a DIFFERENT role — pre-MLP norm, not post-attn norm — because the two decoder-layer classes
+// each independently define an attribute with that name (see PreAttnNormLinear's own comment).
+var olmoHybridTensorSchema = tensorSchema{
+	Embed:              "model.embed_tokens.weight",
+	LMHead:             "lm_head.weight", // tie_word_embeddings false on the released checkpoint
+	FinalNorm:          "model.norm.weight",
+	QProj:              "self_attn.q_proj.weight",
+	KProj:              "self_attn.k_proj.weight",
+	VProj:              "self_attn.v_proj.weight",
+	OProj:              "self_attn.o_proj.weight",
+	QNorm:              "self_attn.q_norm.weight",
+	KNorm:              "self_attn.k_norm.weight",
+	PreAttnNorm:        "", // NormPostOnly (full-attention layers): no input_layernorm tensor
+	PostAttnNorm:       "post_attention_layernorm.weight",
+	GateProj:           "mlp.gate_proj.weight",
+	UpProj:             "mlp.up_proj.weight",
+	DownProj:           "mlp.down_proj.weight",
+	PreMLPNorm:         "", // NormPostOnly (full-attention layers): no pre-MLP norm tensor
+	PostMLPNorm:        "post_feedforward_layernorm.weight",
+	PreAttnNormLinear:  "input_layernorm.weight",          // NormPre2 (linear layers)
+	PostAttnNormLinear: "",                                // NormPre2: no post-attn norm
+	PreMLPNormLinear:   "post_attention_layernorm.weight", // SAME name, pre-MLP role here
+	PostMLPNormLinear:  "",                                // NormPre2: no post-MLP norm
 }
 
 var qwen2MoeTensorSchema = tensorSchema{
