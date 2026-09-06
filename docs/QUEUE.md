@@ -1646,6 +1646,7 @@ supports.
 | `docs/task-embed-and-harness-ux.md|decoder/model.go:854` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:328` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:973` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
+| `docs/task-first-hour.md|linalg/weightmat_row4_arm64.go:21` | aikit | `func (w *WeightMat) RepackInt4Row4() bool {` |
 | `docs/task-fit-to-hardware.md|decoder/model.go:140` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
 | `docs/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.residentWeightBytes(0) }` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:355` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
