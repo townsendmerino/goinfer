@@ -287,6 +287,14 @@ func Load(dir string, opts Options) (*Model, error) {
 		defer lora.close()
 	}
 
+	// The fit guard runs HERE — after the quant is resolved (it moves the weight term more than
+	// anything else) and before loadWeights allocates a byte. Refusing after the allocation would
+	// be refusing after the swap storm, which is the failure it exists to prevent.
+	if err := guardFit(fitCheckFor(dir, opts.Quant, quant, opts)); err != nil {
+		closeBackend(be)
+		return nil, err
+	}
+
 	w, err := loadWeights(dir, quant, opts.EmbedInt4, lora)
 	if err != nil {
 		closeBackend(be)

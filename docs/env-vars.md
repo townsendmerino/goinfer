@@ -63,6 +63,7 @@ after upgrading needs one place to look.
 | Var | Purpose |
 |---|---|
 | `GOINFER_NO_RESIDENT_MEM_GUARD` | Bypass Metal's resident memory guard — the only remedy the decline message prints. |
+| `GOINFER_NO_FIT_GUARD` | Bypass the **load-time fit guard** (`decoder/fitguard.go`): the CPU/GGUF sibling of the line above, which refuses a model whose estimated resident weights exceed 70% of physical RAM instead of letting it page to swap. Set it when the threshold is wrong about your machine. |
 | `GOINFER_SSM_RESIDENT` | Opt Granite/Nemotron SSM layers into the resident path. |
 | `GOINFER_SPLITKV_ATTN` | CUDA split-KV attention rollback knob (sibling of `GOINFER_SPLITKV_MIN_KEYS`). |
 | `GOINFER_CUDA_FAST_PREFILL_FLOOR` | Move the CUDA fast-prefill prompt-length floor (default **512**). `0` disables the floor entirely, which is how the §3 gate measures cells the floor excludes. **Lowering it is not free**: 512 is the shallowest depth with a PASSING fidelity cell, and the gate FAILS at 256 — moving it down needs a passing cell at the new depth, not a smooth-looking curve. |

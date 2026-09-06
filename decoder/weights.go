@@ -330,6 +330,10 @@ func parallelLayers(n int, fn func(i int) error) error {
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
 func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter) (*Weights, error) {
+	// One atomic add per model load, so the fit guard's test can OBSERVE that a refused load
+	// allocated nothing rather than infer it from an error string. Inferring is how a guard that
+	// fires after the allocation still looks correct (docs/task-first-hour.md, R3).
+	weightAllocs.Add(1)
 	if strings.HasSuffix(dir, ".gguf") {
 		return loadGGUFWeights(dir, quant, embedInt4) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
 	}
