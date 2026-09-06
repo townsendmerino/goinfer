@@ -121,6 +121,17 @@ func causalAttention(
 		ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
 	}
 
+	// 3.5. Attention-temperature tuning (Ministral 3): a position-dependent scale on the query,
+	// ON TOP OF RoPE (not instead of it — see AttnTempBeta's own comment on why this can't reuse
+	// llama4Architecture's own-forward attnTemp branch, which is an either/or with RoPE).
+	// AttnTempBeta == 0 for every family that doesn't set it, so this is a no-op elsewhere.
+	if arch.AttnTempBeta != 0 {
+		scale := float32(1 + arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/arch.AttnTempOrigMaxPos)))
+		for i := range q {
+			q[i] *= scale
+		}
+	}
+
 	// 4. Append this position's K/V, then attend over the stored history. Route
 	// single-token decode through the SAME attendBatchedHeads kernel (at K=1) the
 	// batched prefill/verify (forwardN) uses, with f64 accumulation (acc64) — so

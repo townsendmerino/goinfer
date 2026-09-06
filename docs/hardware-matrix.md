@@ -28,6 +28,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Llama 4 | ✅ | CPU | CPU | CPU |
 | Mellum2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| Ministral 3 | ✅ | CPU | CPU | CPU |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Nemotron-H | ✅ | ✅ resident | CPU | CPU |

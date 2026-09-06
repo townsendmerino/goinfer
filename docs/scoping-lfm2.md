@@ -39,7 +39,7 @@ matches DeltaNet's bias-free form. **New: ~15 lines** (a 4th copy, or extract a 
 
 `KVCache` (`decoder/kvcache.go:54-146`) already holds parallel per-layer arrays (`keys/vals`, `rings`, `mamba`,
 `delta`, `mlaLatent`), populated only on layers of the matching kind. Granite/Nemotron are live
-Mamba+attention hybrids; Nemotron's `blockKind []uint8` (`decoder/arch.go:186-174`) is the per-layer-type
+Mamba+attention hybrids; Nemotron's `blockKind []uint8` (`decoder/arch.go:201-174`) is the per-layer-type
 template. LFM2's rolling conv state is a **strict subset of `mamba2State`** (the `convWin` field already
 exists in both `mamba2State` and `deltaState`). New: `shortConvState` + `conv []*shortConvState` slice +
 alloc/reset/truncate, ~30-50 lines verbatim from `mamba`/`delta`. All recurrent hybrids run

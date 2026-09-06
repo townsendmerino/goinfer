@@ -41,15 +41,21 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// FeatSlidingWindow. This table states the BASE profile; the authoritative requirement is
 	// derived per-model at load (RequiredResidentFeatures), which is what admission uses. The
 	// table's job is to force a new arch to be classified, not to be the runtime check.
-	"phi3":      {},
-	"gpt2":      {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
-	"cohere":    {FeatLayerNorm, FeatLogitScale, FeatParallelBlock},
-	"cohere2":   {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
-	"mistral":   {FeatSlidingWindow},
-	"qwen3":     {FeatQKNorm},
-	"mellum":    {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
-	"mixtral":   {FeatMoE},
-	"qwen2_moe": {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert
+	"phi3":    {},
+	"gpt2":    {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
+	"cohere":  {FeatLayerNorm, FeatLogitScale, FeatParallelBlock},
+	"cohere2": {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
+	"mistral": {FeatSlidingWindow},
+	// Ministral 3: no sliding window on the real releases (confirmed null), so the only feature
+	// this family needs at all is the new attn-temp query scale — CPU-only until a resident
+	// backend implements it (see FeatAttnTemp's own comment). Otherwise a plain GQA+YaRN model
+	// needing nothing else any backend lacks.
+	"mistral3":   {FeatAttnTemp},
+	"ministral3": {FeatAttnTemp},
+	"qwen3":      {FeatQKNorm},
+	"mellum":     {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	"mixtral":    {FeatMoE},
+	"qwen2_moe":  {FeatMoE, FeatMoEGatedShared}, // sigmoid-gated always-on shared expert
 	// qwen3_moe: qwen3's QK-norm attention + a routed MoE FFN with NO shared expert (confirmed
 	// against the real Qwen3-30B-A3B config.json), so unlike qwen2_moe it does NOT need
 	// FeatMoEGatedShared.
@@ -189,8 +195,12 @@ var admissionGolden = map[string][]string{
 	//     checkpoint was reachable there, so it was resolved by an owner call. G11 tracks the
 	//     real-weight Metal proof. It is here because it IS what the code does, not because it
 	//     is trusted.
-	"mellum":     {"cuda", "metal", "webgpu"},
-	"mistral":    {"cuda", "metal", "webgpu"},
+	"mellum":  {"cuda", "metal", "webgpu"},
+	"mistral": {"cuda", "metal", "webgpu"},
+	// Ministral 3: CPU-only. FeatAttnTemp is brand new to this pass and no backend declares it,
+	// so every one correctly declines rather than silently dropping the attn-temp scale.
+	"mistral3":   {},
+	"ministral3": {},
 	"mixtral":    {"cuda", "metal", "webgpu"},
 	"nemotron_h": {"webgpu"},
 	"phi3":       {"cuda", "metal", "webgpu"},

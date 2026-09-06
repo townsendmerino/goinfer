@@ -96,6 +96,15 @@ const (
 	FeatAttnOutputGate ResidentFeature = "attn-output-gate" // Laguna: ctx *= softplus(g_proj·h) applied BEFORE o_proj, plus a per-layer QUERY head count. CPU-only — no resident backend implements either, so CUDA/Metal/WebGPU all decline. Without this the family needs nothing CUDA lacks and would be ADMITTED-but-mis-run: the resident path would skip the gate entirely and still produce plausible logits.
 	FeatShortConv      ResidentFeature = "short-conv"       // LFM2/LFM2.5: the gated short-convolution mixer that replaces attention on 22 of 30 layers (B,C,x = in_proj(h); conv = depthwise_causal_conv(B*x), no activation; out_proj(C*conv)), carrying a per-layer rolling window of the last K-1 inputs. CPU-only — no resident backend implements the conv OR its recurrent state. Declared for the SAME reason as FeatAttnOutputGate above: LFM2 is otherwise a plain GQA+QK-norm+SwiGLU model that needs nothing CUDA lacks, so without this it would be ADMITTED and then mis-run, with the resident path treating every conv layer as attention. The window also makes it stateful, so a resident runner would need the state plumbing FeatSSM/FeatDeltaNet have and this has not.
 	FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.
+	// FeatAttnTemp (Ministral 3, batch 2 G3): the Llama4-style attn-temp query scale
+	// (AttnTempBeta/AttnTempOrigMaxPos) is new to the GENERIC forward path (decoder/attention.go,
+	// decoder/forwardn.go) — no resident (GPU) backend's own kernels apply it, so admitting
+	// mistral3 to any resident path today would silently drop the scale for every position past
+	// original_max_position_embeddings, producing plausible-but-wrong logits at exactly the
+	// context lengths the mechanism exists for. Same shape as FeatAttnOutputGate/FeatShortConv
+	// above: otherwise a plain GQA+YaRN model needing nothing else CUDA/Metal/WebGPU lack, so
+	// without this declaration it would be ADMITTED and mis-run rather than correctly declined.
+	FeatAttnTemp ResidentFeature = "attn-temp"
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -126,6 +135,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	}
 	add(yarnMscale, FeatRopeMscale)
 	add(a.RMSAddOne, FeatRMSAddOne)
+	add(a.AttnTempBeta != 0, FeatAttnTemp)
 	add(a.EmbedScale > 1, FeatEmbedScale)
 	// Split (9a-P2): the old single FeatLogitSoftcap conflated two different capabilities. The
 	// attention-score softcap is a per-layer KERNEL; the final-logit softcap is one host-side

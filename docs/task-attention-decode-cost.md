@@ -29,7 +29,7 @@ scope: ... CPU") — so the CPU side of this lever is genuinely new territory, n
 Not a forgotten loop. Decode deliberately routes through `attendBatchedHeads` at K=1 with
 `acc64 := true` (`decoder/attention.go` ~130 and its comment block) so that decode is
 bit-identical to batched prefill/verify. The cost structure, from reading
-`decoder/forwardn.go:709` (`attendBatchedHeads`) and the arithmetic:
+`decoder/forwardn.go:717` (`attendBatchedHeads`) and the arithmetic:
 
 - **The work is tiny; the rate is the problem.** At 1.5B, depth ~130: QK^T + AV ≈ 2 × 28 layers
   × 12 Q-heads × 130 keys × 128 dims ≈ 11M MACs, plus ~44K exps. 15.16 ms for 11M MACs is
@@ -40,12 +40,12 @@ bit-identical to batched prefill/verify. The cost structure, from reading
   goroutines anywhere in the function. 12 independent query heads × 28 layers of exploitable
   parallelism, none used.
 - **Serial chains per output.** `MatmulBTAcc64Strided` runs "the SAME sequential f64 reduction
-  as `MatmulBTAcc64`" (comment at decoder/forwardn.go:819). Whether it interleaves *independent
+  as `MatmulBTAcc64`" (comment at decoder/forwardn.go:827). Whether it interleaves *independent
   outputs* (different keys' dots in QK, different dims in AV — legal without touching any
   single output's order) is an aikit-internal question Gate A0 must answer by reading the
   kernel.
 - **AV's element reads are 1KB-strided.** The scores·V call reads `vals` with element stride
-  `kvDim` (decoder/forwardn.go:919) — each successive f64 MAC touches a new cache line. The f32 path's
+  `kvDim` (decoder/forwardn.go:927) — each successive f64 MAC touches a new cache line. The f32 path's
   gather/transpose that fixed this is skipped on the acc64 path (and the f32 path itself is
   test-only today: "every live caller passes useAcc64=true").
 - RoPE and softmax ride along in the measured number but are O(heads·hd) and O(nKeys)

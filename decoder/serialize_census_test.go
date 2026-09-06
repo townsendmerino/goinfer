@@ -85,6 +85,10 @@ var censusList = []string{
 	// + MoE-with-no-shared-expert and llama+scalar-multipliers respectively are combinations no
 	// other censused fixture exercises together.
 	"../testdata/qwen3moe-tiny", "../testdata/granite-dense-tiny",
+	// ministral3-tiny (2026-09-06, batch 2 G3): the new AttnTempBeta/AttnTempOrigMaxPos fields
+	// are per-Architecture scalars, not per-layer state, so this is really about the same llama
+	// field set every dense fixture already covers -- added anyway per the census's own default.
+	"../testdata/ministral3-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with

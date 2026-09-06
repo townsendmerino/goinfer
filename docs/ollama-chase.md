@@ -1087,7 +1087,7 @@ do not have the heads.
 > true when written, and the record of why we thought it is the useful part.
 >
 > What changed is our own loader. `decoder/gguf.go:734`, `decoder/gguf_qwen35.go:33`,
-> `decoder/weights.go:541` and `decoder/registry.go:1209` detect these heads, name them, and skip
+> `decoder/weights.go:541` and `decoder/registry.go:1315` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
 > (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the

@@ -386,6 +386,27 @@
     "parity": "real-oracle 100.0%/0.99969"
   },
   {
+    "name": "mistral3",
+    "model_types": [
+      "ministral3",
+      "mistral3"
+    ],
+    "display_name": "Ministral 3",
+    "description": "Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ vision tower, ignored)",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "mistral",
     "model_types": [
       "mistral"

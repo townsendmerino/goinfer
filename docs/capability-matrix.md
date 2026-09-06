@@ -66,6 +66,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Mellum2** — JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)
 
+> **Ministral 3** — Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window
+
 > **Mistral** — Mistral dense (all-layer sliding window)
 
 > **Mixtral** — Mistral + sparse MoE FFN (router + top-k experts)
@@ -99,6 +101,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Llama | `internlm3`, `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | full-oracle 100.0%/1.00000 |
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 +coherent |
 | Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99969 |
+| Ministral 3 | `ministral3`, `mistral3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower, ignored) | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |

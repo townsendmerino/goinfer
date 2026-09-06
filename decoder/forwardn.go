@@ -444,6 +444,14 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
 				ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
 			}
+			// Batched twin of causalAttention's attn-temp step (see AttnTempBeta's own comment):
+			// per-position, since pos varies across this batch's K rows.
+			if arch.AttnTempBeta != 0 {
+				scale := float32(1 + arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/arch.AttnTempOrigMaxPos)))
+				for j := range qi {
+					qi[j] *= scale
+				}
+			}
 			if !isLocal {
 				cache.Append(l, ki, vi) // global: append now; local: deferred to commitBatch below
 			}

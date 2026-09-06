@@ -17,6 +17,20 @@ any surface may still change.
 
 ### Added
 
+- **Ministral 3 as a new family** (`mistral3`/`ministral3`; 3B/8B/14B): Mistral's GQA skeleton
+  (tensor names byte-identical, reused verbatim) plus two real deltas found by checking the
+  release rather than assuming a config alias: no sliding window at all on any released size, and
+  YaRN RoPE with an extra field, `llama_4_scaling_beta`, that scales the query by
+  `1 + beta·ln(1 + floor(pos/original_max_position_embeddings))` after RoPE, on every layer —
+  Llama 4's own attention-temperature-tuning formula, generalized here into two new generic
+  `Architecture` fields (`AttnTempBeta`/`AttnTempOrigMaxPos`, 0 = off) and wired into both generic
+  forward paths (sequential decode and batched prefill/verify), proven to agree bit-for-bit. A new
+  `FeatAttnTemp` resident-admission flag keeps this CPU-only until a GPU backend implements it —
+  no backend declares it, so cuda/metal/webgpu all correctly decline rather than silently dropping
+  the scale. Parity-gated against a tiny oracle whose prompt is deliberately longer than its
+  `original_max_position_embeddings`, so the new mechanism is actually exercised, not identity
+  (100.0% / 0.9999999999999605).
+
 - **Qwen3-MoE as a new family** (`qwen3_moe`; Qwen3-30B-A3B / Qwen3-Coder-30B-A3B-Instruct): qwen3's
   QK-norm dense attention with the FFN replaced on every layer by a sparse MoE, and — unlike its
   `qwen2_moe` sibling — no always-on shared expert, confirmed against the real released config.json

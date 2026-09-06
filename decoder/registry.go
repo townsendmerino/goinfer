@@ -36,6 +36,8 @@ var registry = map[string]archAdapter{
 	"internlm3":        llamaArchitecture,        // InternLM3 (llama-shaped; dynamic-NTK rope is in-window identity)
 	"internlm2":        internlm2Architecture,    // InternLM2 (llama math; renamed tensors + GROUPED fused wqkv, split at load)
 	"mistral":          mistralArchitecture,      // Llama + all-layer sliding-window attention
+	"mistral3":         ministral3Architecture,   // Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning on every layer, text_config extracted from the Mistral3ForConditionalGeneration VL wrapper
+	"ministral3":       ministral3Architecture,   // the nested text_config's own model_type (a plain, unwrapped Ministral3Config save carries this directly, not "mistral3")
 	"gpt2":             gpt2Architecture,         // GPT-2: LayerNorm, learned pos, non-gated GELU MLP, fused QKV
 	"cohere":           cohereArchitecture,       // Cohere / Command-R (+ Aya): bias-free LayerNorm + parallel attn/MLP block + logit_scale + GPT-J interleaved RoPE
 	"cohere2":          cohere2Architecture,      // Cohere2 / Command-R7B (+ Command-A): cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm
@@ -708,6 +710,110 @@ func mistralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		ropeScaling:     scaling,
 		EmbedScale:      0,
 		TiedLMHead:      false, // finalized from lm_head.weight presence at load
+	}, &llamaTensorSchema, nil
+}
+
+// ministral3Architecture expresses Ministral 3 (mistralai/Ministral-3-{3b,8b,14b}, model_type
+// "mistral3" — the OUTER Mistral3ForConditionalGeneration wrapper's type, which `loadConfig`'s
+// generic text_config flattening re-applies LAST over whatever the nested text_config's own
+// model_type ("ministral3") set; confirmed by reading that flattening code directly rather than
+// assumed, since it decides which registry key this family actually resolves under): Mistral's
+// GQA skeleton (reused verbatim: same tensor names, confirmed by instantiating
+// Ministral3ForCausalLM directly and reading its state_dict) with two real deltas Phase 0 found,
+// both checked against the released config rather than assumed from the brief's own framing:
+//
+//  1. `sliding_window: null` on the real release — mistralArchitecture already treats
+//     SlidingWindow<=0 as full attention (its own "0 ⇒ full attention" comment), so this needs
+//     no new code; the brief's own caution ("verify... whether it is every layer") was answered
+//     "there is no window at all", not "yes, every layer".
+//  2. `rope_parameters` is `rope_type: "yarn"` with a real, load-bearing THIRD field alongside
+//     the standard YaRN ones: `llama_4_scaling_beta`. Verified against the real
+//     modular_ministral3.py (not guessed): `get_llama_4_attn_scale` multiplies the QUERY by
+//     `1 + beta·ln(1 + floor(pos/original_max_position_embeddings))`, AFTER RoPE, on EVERY
+//     layer — the exact formula llama4Architecture's own attnTemp/floorScale primitive already
+//     implements (`decoder/forward_llama4.go`), but Llama4 applies it INSTEAD of RoPE on NoPE
+//     layers only, never combined with RoPE the way this family needs. Generalized to the two
+//     new Architecture fields AttnTempBeta/AttnTempOrigMaxPos (see their own comment) and wired
+//     into the GENERIC causalAttention/forwardN paths rather than copied into an own-forward
+//     function, since every existing family leaves both fields at their zero-value no-op.
+//
+// Also confirmed: `mscale`/`mscale_all_dim` (both 1.0 on the release) are DeepSeek's own spelling
+// of the YaRN attention_factor, not the generic `attention_factor` key parseRopeScaling reads —
+// left unhandled, its own default (0.1·ln(16)+1 ≈ 1.277) would silently override the correct
+// value (1.0, since mscale == mscale_all_dim here, same reasoning deepseekArchitecture's own
+// comment gives for V2-Lite). Overridden the same way deepseekArchitecture already does.
+func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	// backfillFlatRope BEFORE validateLlama: the released checkpoints carry ONLY a nested
+	// rope_parameters (no flat rope_theta), and validateLlama itself requires RoPEGlobalBase > 0
+	// — the same ordering mistralArchitecture uses, for the same reason.
+	if err := backfillFlatRope(cfg, "mistral3"); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.validateLlama(); err != nil {
+		return nil, nil, err
+	}
+	base, scaling, err := ropeBaseFlatOrNested(cfg, "mistral3")
+	if err != nil {
+		return nil, nil, err
+	}
+	if base <= 0 {
+		return nil, nil, fmt.Errorf("decoder(mistral3): rope_theta must be >0, got %v", base)
+	}
+	if scaling != nil && scaling.kind == ropeScaleYarn {
+		var y struct {
+			Factor       float64  `json:"factor"`
+			Mscale       *float64 `json:"mscale"`
+			MscaleAllDim *float64 `json:"mscale_all_dim"`
+		}
+		_ = json.Unmarshal(cfg.RopeParameters, &y)
+		if y.Mscale != nil || y.MscaleAllDim != nil {
+			m, mAll := 1.0, 1.0
+			if y.Mscale != nil {
+				m = *y.Mscale
+			}
+			if y.MscaleAllDim != nil {
+				mAll = *y.MscaleAllDim
+			}
+			scaling.mscale = yarnGetMscale(y.Factor, m) / yarnGetMscale(y.Factor, mAll)
+		}
+	}
+	var attnTemp struct {
+		Beta       float64 `json:"llama_4_scaling_beta"`
+		OrigMaxPos float64 `json:"original_max_position_embeddings"`
+	}
+	_ = json.Unmarshal(cfg.RopeParameters, &attnTemp)
+
+	hd := cfg.headDim()
+	var layerIsGlobal func(int) bool
+	if cfg.SlidingWindow > 0 {
+		layerIsGlobal = func(int) bool { return false }
+	}
+	return &Architecture{
+		Name:               "mistral3",
+		HiddenDim:          cfg.HiddenDim,
+		NumLayers:          cfg.NumLayers,
+		NumHeads:           cfg.NumHeads,
+		NumKVHeads:         cfg.NumKVHeads,
+		HeadDim:            hd,
+		IntermediateDim:    cfg.IntermediateDim,
+		VocabSize:          cfg.VocabSize,
+		Norm:               NormRMS,
+		RMSAddOne:          false,
+		NormEps:            cfg.RMSNormEps,
+		NormPlacement:      NormPre2,
+		Act:                ActSiLU,
+		QKNorm:             false,
+		AttnScale:          math.Pow(float64(hd), -0.5),
+		AttnTempBeta:       attnTemp.Beta,
+		AttnTempOrigMaxPos: attnTemp.OrigMaxPos,
+		SlidingWindow:      cfg.SlidingWindow, // 0 ⇒ full attention — confirmed null on the real release
+		layerIsGlobal:      layerIsGlobal,
+		RoPELocalBase:      base,
+		RoPEGlobalBase:     base,
+		RotaryDim:          cfg.rotaryDim(),
+		ropeScaling:        scaling,
+		EmbedScale:         0,
+		TiedLMHead:         false, // finalized from lm_head.weight presence at load
 	}, &llamaTensorSchema, nil
 }
 

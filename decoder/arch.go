@@ -30,14 +30,29 @@ type Architecture struct {
 	FirstKDense int        // GLM/DeepSeek (first_k_dense_replace): layers [0,FirstKDense) are plain dense MLPs, the rest MoE. 0 ⇒ every layer MoE (Mixtral/Qwen-MoE/Mellum).
 
 	// Attention.
-	QKVBias         bool             // additive bias on the q/k/v projections (Qwen2, GPT-2)
-	OutBias         bool             // additive bias on the attention output projection (GPT-2)
-	QKNorm          bool             // RMSNorm on Q and K per head before RoPE (Gemma3, Qwen3)
-	LearnedPosEmbed bool             // GPT-2: add a learned position embedding and SKIP RoPE
-	AttnScale       float64          // explicit q·k multiplier (resolved: query_pre_attn_scalar^-0.5 or 1/sqrt(headDim))
-	SlidingWindow   int              // 0 = none
-	layerIsGlobal   func(i int) bool // per-layer global(full) vs local(sliding) attention
-	layerNoPE       func(i int) bool // per-layer NoPE: true ⇒ skip RoPE entirely on this layer (Cohere2 global layers; Llama-4 iRoPE style). nil ⇒ every layer ropes.
+	QKVBias         bool    // additive bias on the q/k/v projections (Qwen2, GPT-2)
+	OutBias         bool    // additive bias on the attention output projection (GPT-2)
+	QKNorm          bool    // RMSNorm on Q and K per head before RoPE (Gemma3, Qwen3)
+	LearnedPosEmbed bool    // GPT-2: add a learned position embedding and SKIP RoPE
+	AttnScale       float64 // explicit q·k multiplier (resolved: query_pre_attn_scalar^-0.5 or 1/sqrt(headDim))
+	// AttnTempBeta/AttnTempOrigMaxPos (Ministral 3): a position-dependent multiplicative scale on
+	// the query, applied AFTER RoPE, on every layer — get_llama_4_attn_scale in Ministral3's own
+	// HF source (modular_ministral3.py), literally named after Llama 4's attention-temperature
+	// tuning: scale = 1 + beta·ln(1 + floor(pos/origMaxPos)). It is IDENTICAL in shape to the
+	// attnTemp/floorScale primitive llama4Architecture already has (decoder/forward_llama4.go),
+	// but Llama 4 applies it INSTEAD of RoPE on NoPE layers only; Ministral 3 applies it ON TOP OF
+	// RoPE on every layer, which llama4's own dedicated forward has no path for. Generalized here
+	// as generic Architecture fields (0 ⇒ off, so every existing family is unaffected) rather than
+	// copying llama4's own-forward path, since the formula is a straightforward postfix to the
+	// generic causalAttention RoPE step. scale ≡ 1 for pos < origMaxPos (floor(pos/origMaxPos)=0),
+	// so a SHORT test prompt exercises nothing — this is the "minimal repro hides the bug" trap
+	// this repo's own culture warns about; the tiny fixture's prompt is deliberately longer than
+	// origMaxPos.
+	AttnTempBeta       float64
+	AttnTempOrigMaxPos float64
+	SlidingWindow      int              // 0 = none
+	layerIsGlobal      func(i int) bool // per-layer global(full) vs local(sliding) attention
+	layerNoPE          func(i int) bool // per-layer NoPE: true ⇒ skip RoPE entirely on this layer (Cohere2 global layers; Llama-4 iRoPE style). nil ⇒ every layer ropes.
 
 	// RoPE (dual base for Gemma's local/global layers; equal bases = single-base).
 	RoPELocalBase, RoPEGlobalBase float64

@@ -587,3 +587,128 @@ now accurate for batch 1's additions too.
 - **No CHANGELOG entry.** The loader itself shipped in August under its own commit
   (`e4bbb28`) and already has a CHANGELOG-worthy history; this pass's changes are a familyDoc
   correction plus new test coverage, not a new capability.
+
+## G3 · `mistral3` / `ministral3` — Ministral 3 (3B/8B/14B) — DONE at T1 (mac, 2026-09-06); real new primitive, not a pure reuse
+
+**The brief's own plan ("register the key; reuse the mistral adapter") turned out optimistic —
+checked before estimating, and two of its own explicit Phase 0 questions found real answers that
+change the scope.**
+
+### Phase 0 (both released sizes fetched — 3B and 8B — plus the real HF modeling source)
+
+`mistralai/Ministral-3-{3b,8b,14b}-Instruct-2512`: `architectures:
+["Mistral3ForConditionalGeneration"]`, `model_type: "mistral3"` (outer VL wrapper) with a nested
+`text_config.model_type: "ministral3"`. **The checkpoints ship natively FP8-quantized**
+(`quantization_config.quant_method: "fp8"`) — the exact blocker that stopped DeepSeek-V4-Flash
+scoping (`docs/post-v1.0-models.md`) — but a `-BF16` sibling repo exists for every size
+(`mistralai/Ministral-3-8B-Instruct-2512-BF16`), so this is not a stop condition here; **target
+the `-BF16` repos, not the default FP8 ones.**
+
+Two of the brief's own Phase 0 questions resolved to "no, not what was assumed":
+
+- **Sliding window: `sliding_window: null` on both fetched sizes** — not "every layer", not any
+  layer. `mistralArchitecture` already treats `SlidingWindow<=0` as full attention (its own
+  "0 ⇒ full attention" comment), so this needed no new code — but it's the opposite of the
+  brief's framed caution ("verify... whether it is every layer").
+- **RoPE scaling is `rope_type: "yarn"`**, not "default" — with a real, load-bearing THIRD field
+  inside `rope_parameters` neither the brief nor a `mistralArchitecture` reuse anticipated:
+  `llama_4_scaling_beta` (0.1 on both sizes fetched). Traced into the REAL
+  `modular_ministral3.py`/`modeling_ministral3.py` (transformers 5.15.0, mainline — no
+  `trust_remote_code` needed) rather than guessed: `get_llama_4_attn_scale(position_ids, beta,
+  original_max_position_embeddings)` multiplies the QUERY by
+  `1 + beta·ln(1 + floor(pos/origMaxPos))`, **applied AFTER RoPE, on every layer** — literally
+  Llama 4's own attention-temperature-tuning formula (the function is named after it), generalized
+  from Llama 4's single-branch NoPE-only use to run alongside RoPE.
+
+Also confirmed: `mscale`/`mscale_all_dim` (both 1.0 on every released size) are DeepSeek's own
+spelling of the YaRN `attention_factor`, not the generic `attention_factor` key `parseRopeScaling`
+reads directly — left unhandled, its own default (`0.1·ln(16)+1 ≈ 1.277` at the real `factor: 16`)
+would silently override the correct value (1.0, since `mscale == mscale_all_dim` here — same
+reasoning `deepseekArchitecture`'s own comment gives for V2-Lite).
+
+`tie_word_embeddings` moves BETWEEN the top level (8B: `false`) and nested inside `text_config`
+(3B: `true`) across the two fetched sizes — a real placement inconsistency between releases. Does
+not matter in practice: every family in this tree resolves tied-vs-untied from `lm_head.weight`
+tensor presence at load, never from the config flag (mistralArchitecture's own comment says so
+already), so `loadConfig`'s generic text_config-then-top-level flattening produces the right
+`ModelType` regardless of where any other field lives, and the tie flag is unused either way.
+
+### The tensor names, and the registry key — verified, not assumed
+
+Instantiated a real `Ministral3ForCausalLM` (transformers 5.15.0) and read its `state_dict()`:
+byte-identical to llama/mistral (`self_attn.{q,k,v,o}_proj`, `mlp.{gate,up,down}_proj`, no bias, no
+QK-norm) — `llamaTensorSchema` reused verbatim, no new tensor schema.
+
+**The registry key is `"mistral3"`, not `"ministral3"`** — verified by reading `loadConfig`'s
+generic text_config-flattening code directly (`decoder/config.go`): text_config is unmarshaled
+first (setting `ModelType` to the nested `"ministral3"`), then the FULL top-level JSON is
+re-unmarshaled OVER it ("so anything authoritative there... wins," per that code's own comment),
+which restores `ModelType` to the outer wrapper's `"mistral3"`. A registry key of `"ministral3"`
+alone would never be reached by a real released checkpoint. Registered both anyway
+(`"ministral3"` as an alias to the same adapter, mirroring `gemma3`/`gemma3_text`): a plain,
+unwrapped `Ministral3Config` save (the tiny fixture's own shape, and possibly some future
+re-conversion) carries `"ministral3"` directly with no wrapper to flatten away.
+
+The vision tower (`model.vision_tower.*`, `model.multi_modal_projector.*`) is ignored the same way
+every other VL-wrapped family here already is: the safetensors loader is pull-based (requests
+tensors by the schema's names), so it never queries those prefixes at all — no new code, same
+mechanism `gemma4_unified_text`/`qwen2_5_vl` already rely on.
+
+### The real new primitive: attn-temp, generalized from Llama 4's own-forward path to the generic one
+
+`llama4Architecture` already has this exact formula (`attnTemp`/`floorScale`/`attnScale` on
+`layerParams`, `decoder/forward_llama4.go`) — but as an EITHER/OR with RoPE, gated per-layer on
+`useRope[layer]`, inside Llama 4's own dedicated forward function. Ministral 3 needs it COMBINED
+with RoPE, on every layer, which that own-forward path has no branch for.
+
+Added two generic `Architecture` fields, `AttnTempBeta`/`AttnTempOrigMaxPos` (0 ⇒ off, so every
+existing family — including Llama 4 itself, which keeps its own separate mechanism — is
+unaffected), and wired the same formula into BOTH generic forward paths right after their existing
+RoPE step: `decoder/attention.go`'s `causalAttention` (sequential decode) and
+`decoder/forwardn.go`'s batched-prefill/verify loop (which computes `pos` per-row and could not
+share the sequential helper). `TestMinistral3_batchedMatchesSequential` proves the two independent
+call sites agree bit-for-bit — a family whose only test drove the sequential path would never have
+caught the batched copy drifting, the same class of gap `TestForwardN_matchesSequential` guards
+against generically for every family's ordinary RoPE.
+
+**Registered as `hasRecurrentState`-adjacent risk from day one, the Gated-DeltaNet lesson applied
+in the other direction**: this is a NEW capability with no resident (GPU) backend implementation
+at all, so a new `ResidentFeature`, `FeatAttnTemp`, was added and gated on `AttnTempBeta != 0` —
+with NO backend declaring it, so `TestResidentAdmission_matrix`/`RequiredResidentFeatures`
+correctly decline `mistral3` on cuda/metal/webgpu (CPU-only) rather than silently admitting a
+family whose GPU path would drop the scale entirely and produce plausible-but-wrong logits at
+exactly the context lengths the mechanism exists for.
+
+### T1 — tiny-golden, DONE, deliberately exercising both new mechanisms for real
+
+`scripts/pin_ministral3_tiny.py`: `original_max_position_embeddings=8`, prompt 12 tokens (>8, so
+`floor(pos/8)>0` for the last few positions — a shorter prompt would pass with the mechanism
+entirely absent, the "minimal repro hides the bug" trap this repo's own culture names explicitly);
+`mscale=0.5`, `mscale_all_dim=0.8` (distinct, not both 1.0 like the real releases, so the YaRN
+override is a real ratio computation, not the trivially-1.0 case a broken formula would also
+pass). `TestMinistral3_forwardParity`: **argmax exact, cosine 0.9999999999999605**, plus direct
+assertions that `AttnTempBeta`/`AttnTempOrigMaxPos` resolved correctly and that
+`ropeScaling.mscale` equals the computed ratio (not the generic YaRN default) — not just that the
+final logits happen to match, which two independently wrong values could still cancel into.
+`TestMinistral3_batchedMatchesSequential` (bit-identical, 512/512 logits) as described above.
+
+`parity_manifest.json` row: `status: experimental`, `method: tiny-golden`. Both new gates
+registered in `cmd/gate/parity.go`'s `parityGates` and `awaitingFirstConfirmation` in the same
+commit that adds them (F1's CI-break lesson applied without re-learning it).
+
+### What was deliberately not done
+
+- **GGUF loader.** Verified the real arch string and metadata against a real file (HTTP Range,
+  `mistralai/Ministral-3-8B-Instruct-2512-GGUF`'s Q4_K_M): `general.architecture` is literally
+  `"mistral3"`, and llama.cpp exposes the attn-temp beta directly as
+  `mistral3.attention.temperature_scale` (= 0.1, confirming the finding independently) and the
+  YaRN attention_factor pre-computed as `rope.scaling.yarn_log_multiplier` (no separate
+  mscale/mscale_all_dim tracked in GGUF — the converter already folds the ratio). Tensor names are
+  plain llama-shaped (`attn_output`, `ffn_down`, `attn_k`, no bias/QK-norm), so the generic GGUF
+  `loadLayer` path likely needs zero new code, same as F1/F3's own findings — but no config
+  builder or dispatch case was written this pass. Follow-up, same shape as F1's own GGUF gap.
+- **T3 real-checkpoint parity.** Same order-of-operations as every family in this doc: ship at T1,
+  move on. The 3B or 8B (bf16 ~16GB) is the Linux-box target per the brief's own sizing note.
+- **Peer row vs Ollama.** Needs the GGUF (or the Linux box's T3) first; not attempted.
+- **CHANGELOG entry**: added — this IS a new registry key with new adapter code and a new
+  cross-cutting primitive, unlike F2/G1's documentation-only outcomes.

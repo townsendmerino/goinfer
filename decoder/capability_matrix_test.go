@@ -163,6 +163,20 @@ func representativeConfig(modelType string) *Config {
 			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 1000000,
 			HiddenAct: "silu", SlidingWindow: 4096,
 		}
+	case "mistral3", "ministral3":
+		// Ministral 3: no sliding window on the real releases (SlidingWindow left 0). mscale ==
+		// mscale_all_dim == 1.0 here on purpose, matching EVERY released size (3b/8b/14b) exactly
+		// — the YaRN override's ratio is then exactly 1.0, so FeatRopeMscale correctly does NOT
+		// fire (archFeatureProfile's "mistral3": {FeatAttnTemp} depends on this; the T1 fixture
+		// deliberately uses DISTINCT mscale/mscale_all_dim instead, to exercise the override
+		// arithmetic for real — see scripts/pin_ministral3_tiny.py).
+		return &Config{
+			ModelType: "mistral3", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-5, HiddenAct: "silu",
+			RopeParameters: json.RawMessage(`{"rope_type":"yarn","rope_theta":1000000.0,"factor":4.0,` +
+				`"original_max_position_embeddings":8,"beta_fast":32.0,"beta_slow":1.0,` +
+				`"llama_4_scaling_beta":0.2,"mscale":1.0,"mscale_all_dim":1.0}`),
+		}
 	case "gpt2":
 		return &Config{
 			ModelType: "gpt2", VocabSize: 64, NEmbd: 16, NHead: 4, NLayer: 2,
@@ -421,6 +435,8 @@ var familyDocs = map[string]familyDoc{
 	"internlm2":        {"InternLM2", "InternLM2 dense — llama math, renamed tensors + grouped fused wqkv", "safetensors", "text"},
 	"internlm3":        {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
 	"mistral":          {"Mistral", "Mistral dense (all-layer sliding window)", "safetensors, GGUF", "text"},
+	"mistral3":         {"Ministral 3", "Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window", "safetensors", "text (+ vision tower, ignored)"},
+	"ministral3":       {"Ministral 3", "Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window", "safetensors", "text (+ vision tower, ignored)"},
 	"gpt2":             {"GPT-2", "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)", "safetensors, GGUF", "text"},
 	"cohere":           {"Command-R", "Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)", "safetensors", "text"},
 	"cohere2":          {"Command-R7B", "Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)", "safetensors", "text"},
