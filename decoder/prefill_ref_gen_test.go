@@ -83,7 +83,7 @@ func TestPrefillGateReference(t *testing.T) {
 		ks          []int  // decision-set + confirmation K's for THIS model, in run order
 	}{
 		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", []int{256, 1024, 3900}},
-		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", "int8", []int{256, 1024}},
+		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), []int{256, 1024}},
 	}
 
 	for _, mc := range models {
@@ -127,6 +127,26 @@ func TestPrefillGateReference(t *testing.T) {
 			}
 		})
 	}
+}
+
+// d7RefQuant picks D7's reference weight precision. The default is "int8" — weight-only per-row
+// int8 with f32 ACTIVATIONS — because the machine this generator was written on has 16 GB and a
+// f32 7B is ~28 GB. That default is correct there and is left alone.
+//
+// GOINFER_CPU_REF_QUANT_D7="" selects true f32 weights, which is what the 62 GB Linux box uses for
+// the CUDA gate (docs/task-prefill-gap.md Phase 3 names `Options{Backend:"cpu", Quant:""}` for both
+// models there). Either is a valid reference for the property that matters: §3.1's point is that
+// the reference must have f32 ACTIVATIONS, since that is the axis both arms differ from it on, and
+// the weight-requantisation error is common-mode across the two arms — they share identical int4
+// weights, so it cancels out of the PAIRED comparison the gate actually decides on.
+//
+// A reference built at one precision is not comparable to one built at another, so the choice is
+// recorded in the measurement doc for the run that used it.
+func d7RefQuant() string {
+	if v, ok := os.LookupEnv("GOINFER_CPU_REF_QUANT_D7"); ok {
+		return v
+	}
+	return "int8"
 }
 
 // preflightConcurrencySafety sends the SAME (short) prompt through `workers` concurrent goroutines,
