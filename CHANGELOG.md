@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.16.0] — 2026-09-05
+
 ### Changed
 
 - **CUDA prompt prefill runs on tensor cores, and is ON BY DEFAULT for prompts of 512 tokens or
