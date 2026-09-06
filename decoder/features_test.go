@@ -18,6 +18,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"qwen2":      {},
 	"qwen2_5_vl": {},
 	"llama":      {},
+	// SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). No resident backend declares
+	// FeatNoPE at all yet (cohere2, the only other family needing it, is also CPU-only), so
+	// this is CPU-only too — not a new gap, the SAME undeclared feature cohere2 already has.
+	"smollm3": {FeatNoPE},
 	// InternLM3 is a llama alias: same descriptor, so the same (empty) feature profile.
 	// Its dynamic-NTK rope resolves to no scaling at all in-window, so it does not even
 	// need FeatRopeMscale.
@@ -177,6 +181,7 @@ var admissionGolden = map[string][]string{
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"webgpu"},
 	"llama":            {"cuda", "metal", "webgpu"},
+	"smollm3":          {}, // FeatNoPE undeclared everywhere, same as cohere2
 	"internlm2":        {"cuda", "metal", "webgpu"},
 	"internlm3":        {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is

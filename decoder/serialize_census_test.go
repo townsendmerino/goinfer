@@ -89,6 +89,10 @@ var censusList = []string{
 	// are per-Architecture scalars, not per-layer state, so this is really about the same llama
 	// field set every dense fixture already covers -- added anyway per the census's own default.
 	"../testdata/ministral3-tiny",
+	// smollm3-tiny (2026-09-06, batch 2 G4): layerNoPE is a per-layer function, not per-layer
+	// STATE, so this is the same generic dense field set every llama-shaped fixture already
+	// covers -- added anyway per the census's own default.
+	"../testdata/smollm3-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with

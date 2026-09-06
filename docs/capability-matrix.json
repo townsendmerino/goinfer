@@ -567,6 +567,26 @@
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
+    "name": "smollm3",
+    "model_types": [
+      "smollm3"
+    ],
+    "display_name": "SmolLM3",
+    "description": "HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "gpt-oss",
     "model_types": [
       "gpt_oss"

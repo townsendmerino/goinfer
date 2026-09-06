@@ -28,6 +28,7 @@ var registry = map[string]archAdapter{
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
 	"qwen3_moe":           qwen3MoeArchitecture,   // Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3's attention (QK-norm, no bias) + a sparse MoE on every layer, NO shared expert
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
+	"smollm3":             smollm3Architecture,    // SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers) on every 4th layer, tied embeddings
 	// InternLM3 is llama-shaped to the tensor name: self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj,
 	// input_layernorm/post_attention_layernorm, embed_tokens/lm_head, no biases, no QK-norm. Its only
 	// config departure is rope_scaling type "dynamic", which is exactly identity within the trained
@@ -544,6 +545,81 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		ropeScaling:     scaling,         // llama3 (3.1+/3.2) / linear; nil = none
 		EmbedScale:      0,               // none
 		TiedLMHead:      false,           // finalized from lm_head.weight presence at load
+	}, &llamaTensorSchema, nil
+}
+
+// smollm3Architecture expresses SmolLM3-3B (HuggingFaceTB/SmolLM3-3B, model_type "smollm3"): a
+// plain llama-shaped dense GQA model — tensor names byte-identical, `llamaTensorSchema` reused
+// verbatim — with per-layer NoPE on 9 of 36 layers via `no_rope_layers`, reusing the SAME
+// Config field and boolean convention llama4_text already established (`NoRopeLayers[i]==1` ⇒
+// layer i USES RoPE, `==0` ⇒ NoPE), not a new one — and `layerNoPE`, the SAME generic
+// Architecture hook cohere2Architecture already populates for its own global-layer NoPE. The
+// `layer_types` field on real released checkpoints is a RED HERRING here: every entry reads
+// "full_attention" regardless of which layers are actually NoPE (confirmed against the real
+// config.json, not assumed) — `no_rope_layers` is the only authoritative source, unlike
+// Gemma/cohere2 where `layer_types` itself carries the split.
+//
+// THE FIELD NAME IS THE OPPOSITE OF ITS OWN VALUES, verified against the real
+// modeling_smollm3.py rather than guessed from the name (the exact class of silent-wrong bug
+// this repo's own culture names repeatedly): `self.use_rope = config.no_rope_layers[layer_idx]`
+// — a "no_rope_layers" entry of 1 means the layer HAS rope, 0 means NoPE. The real released
+// config's list is `[1,1,1,0]` repeating (0 at every 4th layer, 0-indexed positions 3,7,11,...) —
+// checked against `configuration_smollm3.py`'s own generation formula
+// (`(layer_idx+1) % no_rope_layer_interval != 0`) for when a checkpoint omits the explicit list,
+// which independently confirms the every-4th-layer pattern the brief itself named. Getting the
+// polarity backwards would silently flip 27 RoPE layers to NoPE and 9 NoPE layers to RoPE —
+// correct shapes, plausible logits, wrong model — with no crash to catch it.
+func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	if err := backfillFlatRope(cfg, "smollm3"); err != nil {
+		return nil, nil, err
+	}
+	if err := cfg.validateLlama(); err != nil {
+		return nil, nil, err
+	}
+	scaling, err := parseRopeScaling(cfg.RopeScaling)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(smollm3): %w", err)
+	}
+	hd := cfg.headDim()
+	noRope := cfg.NoRopeLayers
+	if len(noRope) == 0 {
+		interval := cfg.NoRopeLayerInterval
+		if interval <= 0 {
+			interval = 4 // HF's own default (configuration_smollm3.py)
+		}
+		noRope = make([]int, cfg.NumLayers)
+		for i := range noRope {
+			if (i+1)%interval != 0 {
+				noRope[i] = 1 // has rope
+			}
+		}
+	}
+	layerNoPE := func(i int) bool { return i >= 0 && i < len(noRope) && noRope[i] == 0 }
+	return &Architecture{
+		Name:            "smollm3",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   NormPre2,
+		Act:             ActSiLU,
+		QKNorm:          false,
+		AttnScale:       math.Pow(float64(hd), -0.5),
+		SlidingWindow:   0, // full attention on the RoPE'd layers; confirmed null on the real release
+		layerIsGlobal:   nil,
+		layerNoPE:       layerNoPE,
+		RoPELocalBase:   cfg.RoPEGlobalBase,
+		RoPEGlobalBase:  cfg.RoPEGlobalBase,
+		RotaryDim:       cfg.rotaryDim(),
+		ropeScaling:     scaling,
+		EmbedScale:      0,
+		TiedLMHead:      false, // finalized from lm_head.weight presence at load
 	}, &llamaTensorSchema, nil
 }
 

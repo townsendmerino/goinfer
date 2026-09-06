@@ -136,6 +136,16 @@ func representativeConfig(modelType string) *Config {
 			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 500000,
 			HiddenAct: "silu",
 		}
+	case "smollm3":
+		// SmolLM3-3B: llama dense + per-layer NoPE (no_rope_layers). NumLayers=4 with the
+		// interval default (4) gives no_rope_layers=[1,1,1,0] -- exactly the real release's own
+		// pattern (every 4th layer), so this exercises the derivation for real rather than a
+		// config that never triggers it.
+		return &Config{
+			ModelType: "smollm3", VocabSize: 128, HiddenDim: 16, NumLayers: 4, NumHeads: 4,
+			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 5000000,
+			HiddenAct: "silu",
+		}
 	case "internlm2":
 		// groups = NumHeads/NumKVHeads = 2 (>1) on purpose: at groups == 1 the grouped wqkv
 		// layout and a plain concat coincide, and the matrix would stop describing the thing
@@ -427,6 +437,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen2_moe":           {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
 	"qwen3_moe":           {"Qwen3-MoE", "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert", "safetensors, GGUF", "text"},
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
+	"smollm3":             {"SmolLM3", "HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings", "safetensors", "text"},
 	// InternLM3 shares Llama's ROW deliberately. It is not a family riding llama's code with
 	// its own shape — it IS a llama, down to the tensor names, so the matrix should say
 	// "Llama: llama, internlm3" rather than open a second row that competes for the same

@@ -712,3 +712,72 @@ commit that adds them (F1's CI-break lesson applied without re-learning it).
 - **Peer row vs Ollama.** Needs the GGUF (or the Linux box's T3) first; not attempted.
 - **CHANGELOG entry**: added — this IS a new registry key with new adapter code and a new
   cross-cutting primitive, unlike F2/G1's documentation-only outcomes.
+
+## G4 · `smollm3` — SmolLM3-3B — DONE at T1 (mac, 2026-09-06); real-checkpoint embed deliverable pending on disk space
+
+### Phase 0 (real config.json + real modeling_smollm3.py)
+
+`HuggingFaceTB/SmolLM3-3B`: `model_type: "smollm3"`, `architectures: ["SmolLM3ForCausalLM"]`. Llama
+rails — GQA (16 heads / 4 kv, 36 layers, hidden 2048, inter 11008), no QK-norm, no bias, single-base
+RoPE (theta 5e6, `rope_scaling: null`), `tie_word_embeddings: true`. `layer_types` is present but is
+a RED HERRING: every one of its 36 entries reads `"full_attention"` regardless of which layers are
+actually NoPE — checked directly against the real config, not assumed from how Gemma/cohere2 use
+the same-named field. `no_rope_layer_interval: 4`, `no_rope_layers` an explicit 36-entry list.
+
+**The field name is the opposite of its own values — verified against the real
+`modeling_smollm3.py`, not guessed from the name**: `self.use_rope = config.no_rope_layers[layer_idx]`
+— an entry of `1` means the layer HAS RoPE, `0` means NoPE. The real list is `[1,1,1,0]` repeating
+(0 at 0-indexed positions 3, 7, 11, ..., 35 — 9 of 36 layers), matching `configuration_smollm3.py`'s
+own generation formula for when the list is absent (`(layer_idx+1) % interval != 0`), which
+independently confirms both the polarity and the "every 4th layer" pattern the brief itself named.
+Getting the polarity backwards would silently flip 27 RoPE layers to NoPE and 9 NoPE layers to
+RoPE — correct shapes, plausible logits, wrong model, no crash. **Proved the gate actually catches
+this**: flipped the polarity in the adapter and re-ran the T1 test — it failed, but the final-logit
+cosine only dropped to 0.999797 (NOT catastrophic), confirming a cosine-only threshold would have
+missed it; only the direct per-layer `isNoPELayer` assertions caught it cleanly.
+
+Tensor names confirmed byte-identical to llama (instantiated `SmolLM3ForCausalLM` directly, read
+its `state_dict()`) — `llamaTensorSchema` reused verbatim.
+
+### Adapter decision: pure composition, reusing an EXISTING Config field across two unrelated families
+
+`decoder/registry.go`'s `smollm3Architecture` is `llamaArchitecture` plus a `layerNoPE` closure —
+the SAME generic `Architecture.layerNoPE` hook `cohere2Architecture` already populates for its own
+NoPE layers, reused directly rather than a new mechanism. **`Config.NoRopeLayers` (json
+`no_rope_layers`) already existed** — `llama4_text` set it first, with the IDENTICAL "1 = has RoPE,
+0 = NoPE" convention (its own comment: `NoRopeLayers[i]==1 ⇒ layer i uses RoPE, ==0 ⇒ NoPE`),
+confirmed by reading the field before adding a duplicate. Only one genuinely new field was needed:
+`NoRopeLayerInterval`, the fallback-generation divisor for a checkpoint that omits the explicit
+list (SmolLM3's own default; llama4_text always ships the full list explicitly so never needed it).
+
+### T1 — tiny-golden, DONE
+
+`scripts/pin_smollm3_tiny.py` (transformers, `SmolLM3ForCausalLM`, 4 layers,
+`no_rope_layer_interval=4` giving `no_rope_layers=[1,1,1,0]` — exactly the real release's own
+pattern, so the fixture exercises the identical polarity/interval logic, not a config chosen to
+avoid triggering it): `TestSmolLM3_forwardParity` — **argmax exact, cosine 0.9999999999999544**,
+plus direct per-layer `isNoPELayer` assertions matching `[false,false,false,true]`.
+
+`archFeatureProfile["smollm3"]` = `{FeatNoPE}` — CPU-only, same as `cohere2` (no resident backend
+declares `FeatNoPE` at all yet, so this is not a new gap). `parity_manifest.json` row:
+`status: experimental`, `method: tiny-golden`. Gate registered in `parityGates` and
+`awaitingFirstConfirmation` in the same commit.
+
+### The extra deliverable this key exists for — status
+
+The brief's own framing: "a `pull -embed` build of SmolLM3-3B int4 — record the binary size and
+cold-start-to-first-token on the Mac... That number is the README's 'model compiled into the
+binary' claim made concrete on a model people know." This needs the real ~6 GB bf16 checkpoint
+downloaded to this Mac. **Not done this pass**: this Mac's disk is at 23 GB free (95% full) at
+time of writing — tight enough that a 6 GB download plus the quantize/embed/build round-trip is a
+real risk on a box this close to full, even though 3B itself is comfortably the right SIZE class
+for this machine's 16 GB RAM. Recorded as owed rather than attempted under pressure; the
+T1/adapter work above does not depend on it.
+
+### What was deliberately not done
+
+- **T3 real-checkpoint parity** on the real 3B (bf16 ~6 GB) — sized for this Mac per the brief's
+  own note, but blocked on the same disk-space constraint as the embed deliverable above. Both are
+  the same download; doing one first would set up the other.
+- **Peer row vs Ollama** — gated on T3, per this doc's own rule.
+- **GGUF loader** — not attempted; not requested by the brief for this family, unlike G1/G3.

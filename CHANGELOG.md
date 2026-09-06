@@ -17,6 +17,17 @@ any surface may still change.
 
 ### Added
 
+- **SmolLM3-3B as a new family** (`smollm3`): a plain llama-shaped dense GQA model with per-layer
+  NoPE on every 4th layer via `no_rope_layers` — a field whose VALUES are the opposite of what its
+  name suggests (1 = has RoPE, 0 = NoPE), verified against the real `modeling_smollm3.py` rather
+  than assumed from the name; getting this backwards would silently flip which 9 of 36 layers are
+  NoPE with correct shapes and plausible-but-wrong logits, no crash. Reuses the `Config` field and
+  boolean convention `llama4_text` already established for the same JSON key, and the same
+  `layerNoPE` `Architecture` hook `cohere2` already populates — no new mechanism, just composed
+  onto a third family. Tensor names byte-identical to llama (`llamaTensorSchema` reused verbatim).
+  CPU-only (`FeatNoPE` is undeclared on every resident backend, same as `cohere2`). Parity-gated
+  against a tiny oracle at the release's own every-4th-layer pattern (100.0% / 0.9999999999999544).
+
 - **Ministral 3 as a new family** (`mistral3`/`ministral3`; 3B/8B/14B): Mistral's GQA skeleton
   (tensor names byte-identical, reused verbatim) plus two real deltas found by checking the
   release rather than assuming a config alias: no sliding window at all on any released size, and

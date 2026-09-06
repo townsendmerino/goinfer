@@ -272,6 +272,14 @@ type Config struct {
 	// this is the authoritative source when present (see IsGlobalLayer).
 	LayerTypes []string `json:"layer_types"`
 
+	// NoRopeLayerInterval (SmolLM3): HF's generation formula for NoRopeLayers (above) when the
+	// checkpoint's config.json omits the explicit per-layer list: NoPE exactly when
+	// (layer_idx+1) % interval == 0. SmolLM3 reuses the SAME NoRopeLayers field and the SAME
+	// "1 = has rope, 0 = NoPE" convention Llama 4 already established above — verified against
+	// the real modeling_smollm3.py (`self.use_rope = config.no_rope_layers[layer_idx]`), not
+	// assumed to match from the shared field/JSON-key name alone.
+	NoRopeLayerInterval int `json:"no_rope_layer_interval"`
+
 	// LFM2 (model_type lfm2): the gated short-convolution block's geometry. Its
 	// per-layer pattern rides on LayerTypes above ("conv" | "full_attention").
 	//

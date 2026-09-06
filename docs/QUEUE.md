@@ -935,14 +935,14 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:828` | goinfer | `bin := filepath.Join(os.TempDir(), "gpu_gate_serve")` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:899` | goinfer | `if v := os.Getenv("GOINFER_NVRTC_DIRS"); v != "" {` |
 | `docs/audit-2026-09-02.md|cmd/gate/gpu.go:973` | goinfer | `ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:167` | goinfer | `// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:168` | goinfer | `// DERIVED FROM THE TAGGED FILES, not hand-written. The hand-written pattern could` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:20` | goinfer | `// THIS IS A CHECKSET, NOT A TALLY, and that is the whole reason it needs its own decisi` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:290` | goinfer | `cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:299` | goinfer | `for _, c := range cfg.Cells {` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:321` | goinfer | `// Safety net: any OTHER parity/gate-shaped test that skipped — a family the lists forgo` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:389` | goinfer | `// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting ` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:543` | goinfer | `// This exists because the distinction cost five weeks. TestQwen3NextReal_oracle was rep` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:552` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:291` | goinfer | `cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:300` | goinfer | `for _, c := range cfg.Cells {` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:322` | goinfer | `// Safety net: any OTHER parity/gate-shaped test that skipped — a family the lists forgo` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:390` | goinfer | `// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting ` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:544` | goinfer | `// This exists because the distinction cost five weeks. TestQwen3NextReal_oracle was rep` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:553` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:284` | goinfer | `func TestRealckptCellCanReachEveryGate(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:320` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|constrain/constrain.go:153` | goinfer | `logits[id] = neg` |
@@ -1045,11 +1045,11 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:482` | goinfer | `func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens int,` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:530` | goinfer | `stats.Emitted = len(toks)` |
 | `docs/audit-2026-09-02.md|decoder/blockspec_cpu_test.go:87` | goinfer | `n := min(len(base), len(got))` |
-| `docs/audit-2026-09-02.md|decoder/config.go:1101` | goinfer | `// resolveEOSIDs returns the ids that end generation: config.json's` |
-| `docs/audit-2026-09-02.md|decoder/config.go:1143` | goinfer | `func loadConfig(fsys fs.FS, name string) (*Config, error) {` |
+| `docs/audit-2026-09-02.md|decoder/config.go:1109` | goinfer | `// resolveEOSIDs returns the ids that end generation: config.json's` |
+| `docs/audit-2026-09-02.md|decoder/config.go:1151` | goinfer | `func loadConfig(fsys fs.FS, name string) (*Config, error) {` |
 | `docs/audit-2026-09-02.md|decoder/config.go:143` | goinfer | `AttentionChunkSize     int     `json:"attention_chunk_size"`` |
-| `docs/audit-2026-09-02.md|decoder/config.go:513` | goinfer | `func (c *Config) validateGptOss() error {` |
-| `docs/audit-2026-09-02.md|decoder/config.go:698` | goinfer | `func (c *Config) normalizeQwen3NextLayerTypes() error {` |
+| `docs/audit-2026-09-02.md|decoder/config.go:521` | goinfer | `func (c *Config) validateGptOss() error {` |
+| `docs/audit-2026-09-02.md|decoder/config.go:706` | goinfer | `func (c *Config) normalizeQwen3NextLayerTypes() error {` |
 | `docs/audit-2026-09-02.md|decoder/deepseek_real_test.go:210` | goinfer | `prompt := "The capital of France is"` |
 | `docs/audit-2026-09-02.md|decoder/deltanet.go:21` | goinfer | `var deltaNetTiming = os.Getenv("GOINFER_DELTANET_TIMING") != ""` |
 | `docs/audit-2026-09-02.md|decoder/deltanet.go:226` | goinfer | `S := st.s[headV*hk*hv : (headV+1)*hk*hv] // [hk, hv]` |
@@ -1065,7 +1065,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/features.go:271` | goinfer | `// residentBackendMoECap is the router-kernel capacity of each backend whose MoE scorebo` |
 | `docs/audit-2026-09-02.md|decoder/features.go:283` | goinfer | `"webgpu": {experts: 512, groups: 32}, // gpu/moe.go: MAXE 512, array<f32,512> score/sel ` |
 | `docs/audit-2026-09-02.md|decoder/features.go:443` | goinfer | `//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU` |
-| `docs/audit-2026-09-02.md|decoder/features_test.go:457` | goinfer | `// The cap was raised 256 -> 512 (MOE_MAX_E / MAXE) so Kimi-K2's 384 is now ADMITTED on ` |
+| `docs/audit-2026-09-02.md|decoder/features_test.go:462` | goinfer | `// The cap was raised 256 -> 512 (MOE_MAX_E / MAXE) so Kimi-K2's 384 is now ADMITTED on ` |
 | `docs/audit-2026-09-02.md|decoder/forward_gemma4.go:216` | goinfer | `if lw.LayerScalar != 0 {` |
 | `docs/audit-2026-09-02.md|decoder/forward_gemma4.go:301` | goinfer | `for kvh := range nKV {` |
 | `docs/audit-2026-09-02.md|decoder/forward_gemma4_moe.go:67` | goinfer | `if routerCapture {` |
@@ -1169,15 +1169,15 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/moepaging.go:61` | goinfer | `anchor: func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {` |
 | `docs/audit-2026-09-02.md|decoder/mtp.go:35` | goinfer | `anchor: type MTPHead struct {` |
 | `docs/audit-2026-09-02.md|decoder/prefillattnpool_test.go:83` | goinfer | `os.Unsetenv("GOINFER_PREFILL_ATTN_WORKERS")` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:1082` | goinfer | `var base float64` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:113` | goinfer | `func (a *Architecture) validateResolved() error {` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:1457` | goinfer | `QKNorm:          true, // per-head RMSNorm over head_dim — see the note above` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:1776` | goinfer | `// DeepSeek's YaRN attention_factor (the cos/sin mscale) is NOT the generic` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:1856` | goinfer | `// Plain qk_head_dim^-0.5. ⚠️ Phase 3: the real V2-Lite/V3 fold YaRN's` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:2122` | goinfer | `llama4: &llama4Params{` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:274` | goinfer | `AttnScale:         math.Pow(cfg.QueryPreAttnScalar, -0.5),` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:433` | goinfer | `scaling, err := parseRopeScaling(cfg.RopeScaling)` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:475` | goinfer | `// backfillFlatRope fills the flat rope_theta / rope_scaling fields from transformers >=` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:114` | goinfer | `func (a *Architecture) validateResolved() error {` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:1158` | goinfer | `var base float64` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:1533` | goinfer | `QKNorm:          true, // per-head RMSNorm over head_dim — see the note above` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:1852` | goinfer | `// DeepSeek's YaRN attention_factor (the cos/sin mscale) is NOT the generic` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:1932` | goinfer | `// Plain qk_head_dim^-0.5. ⚠️ Phase 3: the real V2-Lite/V3 fold YaRN's` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:2198` | goinfer | `llama4: &llama4Params{` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:275` | goinfer | `AttnScale:         math.Pow(cfg.QueryPreAttnScalar, -0.5),` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:434` | goinfer | `scaling, err := parseRopeScaling(cfg.RopeScaling)` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:476` | goinfer | `// backfillFlatRope fills the flat rope_theta / rope_scaling fields from transformers >=` |
 | `docs/audit-2026-09-02.md|decoder/residency.go:138` | goinfer | `if m.w.arch.nemotron != nil && os.Getenv("GOINFER_SSM_RESIDENT") == "" {` |
 | `docs/audit-2026-09-02.md|decoder/residency.go:234` | goinfer | `// Nemotron 3 Nano adds a FOURTH block kind (MoE FFN, arch.MoE != nil — plain Nemotron-H` |
 | `docs/audit-2026-09-02.md|decoder/residency.go:61` | goinfer | `type ResidentGreedy interface {` |
@@ -1222,7 +1222,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/serialize.go:360` | goinfer | `n := int(r.u32())` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:403` | goinfer | `func validateShapes(w *Weights, arch *Architecture) *SerializeError {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:993` | goinfer | `func (w *giwWriter) layer(l *LayerWeights) {` |
-| `docs/audit-2026-09-02.md|decoder/serialize_census_test.go:143` | goinfer | `// "passed" while the new code went unexercised.` |
+| `docs/audit-2026-09-02.md|decoder/serialize_census_test.go:147` | goinfer | `// "passed" while the new code went unexercised.` |
 | `docs/audit-2026-09-02.md|decoder/session.go:176` | goinfer | `func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt []int, ma` |
 | `docs/audit-2026-09-02.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/audit-2026-09-02.md|decoder/session.go:86` | goinfer | `func (s *Session) reconcile(seq []int) {` |
@@ -1457,7 +1457,7 @@ supports.
 | `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:940` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
 | `docs/cuda-megakernel-spec.md|gpu/forward_parity_test.go:36` | goinfer | `func TestWebGPU_forwardParity(t *testing.T) {` |
 | `docs/cuda-megakernel-spec.md|gpu/gemv.go:41` | goinfer | `@compute @workgroup_size(64)` |
-| `docs/gpu-residency-coverage.md|decoder/registry.go:266` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
+| `docs/gpu-residency-coverage.md|decoder/registry.go:267` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
 | `docs/how-inference-works.md|decoder/attention.go:117` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:168` | goinfer | `cache.Append(layer, k, v)` |
 | `docs/how-inference-works.md|decoder/attention.go:59` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
@@ -1477,8 +1477,8 @@ supports.
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:252` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2412` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
-| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:366` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1154` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
+| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:367` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1162` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:549` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:962` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:592` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, moePrefillScr, m.pager)` |
@@ -1493,7 +1493,7 @@ supports.
 | `docs/measurements/spec-x-pager-2026-09-02.md|internal/serveapp/blockdrafter.go:13` | goinfer | `// IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wan` |
 | `docs/measurements/spec-x-pager-prereg-2026-09-02.md|cuda/prefill.go:163` | goinfer | `return nil, e` |
 | `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:288` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
-| `docs/multimodal.md|decoder/config.go:1163` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
+| `docs/multimodal.md|decoder/config.go:1171` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `anchor: func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {` |
 | `docs/multimodal.md|decoder/weights.go:410` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
 | `docs/ollama-chase.md|cuda/resident.go:1482` | goinfer | `// All of it runs ON the executor thread — that thread made the context current — and th` |
@@ -1504,19 +1504,19 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1091` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
 | `docs/ollama-chase.md|decoder/model.go:950` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
-| `docs/ollama-chase.md|decoder/registry.go:1315` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
+| `docs/ollama-chase.md|decoder/registry.go:1391` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:756` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
 | `docs/ollama-chase.md|decoder/weightmat.go:380` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:541` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1257` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
-| `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:61` | goinfer | `"llama4_text":      llama4Architecture,       // Llama 4 (Scout/Maverick) text decoder: ` |
+| `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:62` | goinfer | `"llama4_text":      llama4Architecture,       // Llama 4 (Scout/Maverick) text decoder: ` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:551` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
-| `docs/post-v1.0-models.md|decoder/registry.go:1016` | goinfer | `Name:            "qwen3_5_moe",` |
-| `docs/post-v1.0-models.md|decoder/registry.go:1638` | goinfer | `func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
-| `docs/post-v1.0-models.md|decoder/registry.go:1754` | goinfer | `func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
-| `docs/post-v1.0-models.md|decoder/registry.go:602` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
-| `docs/post-v1.0-models.md|decoder/registry.go:61` | goinfer | `"llama4_text":      llama4Architecture,       // Llama 4 (Scout/Maverick) text decoder: ` |
+| `docs/post-v1.0-models.md|decoder/registry.go:1092` | goinfer | `Name:            "qwen3_5_moe",` |
+| `docs/post-v1.0-models.md|decoder/registry.go:1714` | goinfer | `func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
+| `docs/post-v1.0-models.md|decoder/registry.go:1830` | goinfer | `func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
+| `docs/post-v1.0-models.md|decoder/registry.go:62` | goinfer | `"llama4_text":      llama4Architecture,       // Llama 4 (Scout/Maverick) text decoder: ` |
+| `docs/post-v1.0-models.md|decoder/registry.go:678` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
 | `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:717` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:927` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
 | `docs/prompts/goinfer-w4a8-opsperbyte-citations.md|linalg/quant.go:283` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
@@ -1613,15 +1613,15 @@ supports.
 | `docs/review-2026-09-04.md|tokenizer/splitshape.go:42` | goinfer | `// shapeGPT2Original is GPT-2's own` |
 | `docs/scoping-lfm2.md|decoder/arch.go:201` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:107` | goinfer | `if arch.QKNorm {` |
-| `docs/scoping-lfm2.md|decoder/config.go:956` | goinfer | `case c.UseQKNorm:` |
+| `docs/scoping-lfm2.md|decoder/config.go:964` | goinfer | `case c.UseQKNorm:` |
 | `docs/scoping-lfm2.md|decoder/deltanet.go:176` | goinfer | `// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1` |
 | `docs/scoping-lfm2.md|decoder/forward_qwen35.go:30` | goinfer | `if arch.isLinearLayer(l) {` |
 | `docs/scoping-lfm2.md|decoder/kvcache.go:54` | goinfer | `type KVCache struct {` |
 | `docs/scoping-lfm2.md|decoder/mamba2.go:89` | goinfer | `// 2. Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last` |
 | `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
-| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2309` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
-| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:47` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,       // the text-only checkpoint's model_type` |
+| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2385` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
+| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:48` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,       // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:270` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:277` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/spec/09-mtp-heads.md|decoder/blockspec.go:550` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
@@ -1632,7 +1632,7 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/gguf.go:734` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/spec/09-mtp-heads.md|decoder/model.go:708` | goinfer | `// Derived from the dispatch table's Captures bit rather than re-listed: the families wh` |
-| `docs/spec/09-mtp-heads.md|decoder/registry.go:1315` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
+| `docs/spec/09-mtp-heads.md|decoder/registry.go:1391` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:541` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |

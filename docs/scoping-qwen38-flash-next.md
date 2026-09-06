@@ -71,14 +71,14 @@ niche (single-user, consumer hardware, safetensors/GGUF).
 
 **Possibly-relevant, not confirmed:** Tab. 11's comparison baseline is named `Qwen3.8-27B-Base` —
 a plausible match for the dense hybrid goinfer's `qwen35DenseArchitecture` already implements and
-calls "Qwen3.8" in its own code comment (`decoder/registry.go:2309`). If they're the same family,
+calls "Qwen3.8" in its own code comment (`decoder/registry.go:2385`). If they're the same family,
 goinfer already runs a sibling from this exact lineage today, not merely something
 architecturally adjacent. Worth a five-minute config check at pickup — not asserted here.
 
 ## What goinfer already has
 
 **Gated DeltaNet — shipped and parity-gated, real checkpoints, bit-exact.** `qwen35Architecture` /
-`qwen35DenseArchitecture` / `qwen3NextArchitecture` (`decoder/registry.go:47-47,728,787,821,1883`)
+`qwen35DenseArchitecture` / `qwen3NextArchitecture` (`decoder/registry.go:48-47,728,787,821,1883`)
 already implement the same 3-linear-attention : 1-full-attention hybrid, with the MoE and dense
 variants both live. Real-checkpoint slice parity is bit-exact on **two** real checkpoints:
 `Qwen3.6-35B-A3B` (recorded in the completed qwen3.6 real-checkpoint task record — internal and
