@@ -835,6 +835,39 @@ to the measured-quantities table** in `parity-coverage-policy.md` with machine, 
 stops being an estimate here.
 
 
+## Two known reds at tag time — recognise them, do not re-investigate (2026-09-06)
+
+Both were characterised during the pre-release work. Neither blocks a tag; both will waste an hour
+if met cold.
+
+**1. `TestSamplingThroughputGate` — flaky on `nobara-pc`, ~1 run in 4.** It runs in CI on every
+push (the `sampler gates (no -race)` step, linux only). Measured five times on an unchanged tree at
+V=262144: **3.88 / 4.52 / 4.73 / 5.04 / 5.19** against a 5.0× bar — spread 1.31×, essentially the
+pre-fix spread that P17's best-of-3 was recorded as cutting to 0.39×.
+
+The variance is **between processes, not within one**: fifteen samples inside a single binary put
+the denominator at min 1.611 / p50 1.724 / max 1.909 ms, a stable floor that itself moves ±30% per
+process. So more repetitions inside the binary buy nothing. And the failure direction is perverse —
+the numerator is the stable arm (4%), so every failing run is one where the machine ran the
+**denominator** well.
+
+**CI has been green across every push on 2026-09-06**, so this looks specific to this box rather
+than the runners. **If it reds at tag time: re-run once. Do NOT re-bound it** — raising the bar to
+fit today's spread is what `benchmarks.md`'s methodology exists to prevent, and the real fix is to
+stop dividing by a co-measured arm. Full record: `queue-performance.md` P17 (REOPENED).
+
+**2. `TestQwen38GGUF_weightDiff` — red on its first-ever execution.** `k_proj` cosine **0.997047**
+against a 0.999 bar (worst tensor 0.996974, `in_proj_z`); the test's own message attributes it to a
+loader transform rather than Q8_0/Q4_K quantization. `task-families-2026-09.md` records it as
+*"added, not yet RUN"* — the 2026-09-06 parity sweep was the first time it ever ran.
+
+**Not a regression and not a tag risk**: it reproduces **bit-identically** on the pre-M2 tree at
+aikit v1.35.0, and it is `realckpt`+heavy so CI never builds it — only the release sweep runs it.
+The `qwen3_5` family is `status: experimental` / `method: tiny-golden+coherent`, so no validated
+claim is affected. **It is a different test from `TestQwen35GGUF_weightDiff`**, whose failure is
+separately bisected to `6d4fc79`; conflating the two misattributes both. Disposition owed, but not
+before a tag.
+
 ## Draft: contents of the next release
 
 ## C1a's discharge is UNVERIFIABLE, not wrong — retraction 2026-08-13
