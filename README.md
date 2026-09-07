@@ -142,6 +142,22 @@ From source, against any supported checkpoint (the chat template is applied auto
 go run ./demo/chat --model ~/models/gemma-4-E2B_q4_0-it.gguf
 ```
 
+## Which model to download
+
+`goinfer-chat models` lists the checkpoints this project has actually run — size, quantization,
+what each is good for, and what it costs to run:
+
+```bash
+# <!-- smoke-help --> lists known-good checkpoints; every row traces to a parity-gated family
+goinfer-chat models
+goinfer-chat pull qwen2.5-coder-0.5b        # short name, no repo path to look up
+```
+
+Each entry derives from a row in [`docs/capability-matrix.json`](docs/capability-matrix.json), so
+nothing is listed that the parity gates do not back, and each carries a sha256 the download is
+verified against. **goinfer hosts no weights** — downloads come from Hugging Face, and any other
+GGUF works too via the explicit `owner/repo:quant` form.
+
 ## Which quantization to use
 
 `--quant int4` is the default and the one to reach for; `--quant int8int8` when accuracy matters

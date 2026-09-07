@@ -84,6 +84,21 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "pull" {
 		os.Exit(pullcmd.Run(os.Args[2:]))
 	}
+	// `models` lists the checkpoints this project has actually run, so "what should I download"
+	// has an answer that is not "go read Hugging Face". Every row derives from a
+	// docs/capability-matrix.json family with a parity status (pull/registry.go).
+	if len(os.Args) > 1 && (os.Args[1] == "models" || os.Args[1] == "list") {
+		all := pull.RecommendedAll()
+		fmt.Printf("Checkpoints goinfer has run, smallest first. Fetch one with `%s pull <name>`.\n\n", filepath.Base(os.Args[0]))
+		for _, c := range all {
+			fmt.Printf("  %s\n", c.Describe())
+			fmt.Printf("  %-22s %s\n", "", c.Needs)
+			fmt.Printf("  %-22s %s · %s · parity %s\n\n", "", c.Repo, c.Family, c.Parity)
+		}
+		fmt.Printf("Downloads come from Hugging Face and are sha256-verified against a digest this\n" +
+			"build pins; goinfer hosts no weights. Any other GGUF works too — pass owner/repo:quant.\n")
+		os.Exit(0)
+	}
 	// POINT AT THE OTHER BINARY INSTEAD OF SWALLOWING THE ARGUMENT.
 	//
 	// Cold-user run 2026-09-06, scenario B, 06:37:23 — the tester's first error of that leg, and
@@ -110,6 +125,28 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
 `, filepath.Base(os.Args[0]), serveOnly)
 		os.Exit(2)
 	}
+	// A header naming the subcommands, for the same reason serve has one: the cold-user run found
+	// a 39-flag dump nobody could skim, and a feature a user cannot find does not exist. `models`
+	// in particular is the answer to "what should I download", which is worthless if the only way
+	// to discover it is to already know.
+	flag.Usage = func() {
+		self := filepath.Base(os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), `%[1]s — chat with a local model. One binary, no daemon, no Python.
+
+  %[1]s models                          what to download, and what each one costs
+  %[1]s pull <name>                     fetch one, sha256-verified
+  %[1]s --model <file.gguf|dir>         chat with it
+  %[1]s --model <f> --temp 0            greedy, for reproducible output
+
+Reads a .gguf or an HF checkpoint dir. The server (OpenAI/Anthropic routes, --web,
+model zoo) is a separate binary — see goinfer-serve.
+
+All flags:
+
+`, self)
+		flag.PrintDefaults()
+	}
+
 	var (
 		model    = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
 		system   = flag.String("system", defaultSystem, "system prompt that steers the model")
@@ -283,6 +320,12 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Opti
 	cfg := model.Config()
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
 		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.BackendReport(), model.Quant())
+	// The phase split, on the line under the banner. chat is where a first-time user meets a load
+	// time at all -- the cold-user run's scenario A measured 3.314s here and had no way to know
+	// what it was spent on.
+	if sum := model.LoadProfile().Summary(); sum != "" {
+		fmt.Fprintln(os.Stderr, sum)
+	}
 	s := &session{tk: tk, model: model, special: tk.Special(), vocab: cfg.VocabSize}
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {

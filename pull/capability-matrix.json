@@ -1,0 +1,739 @@
+[
+  {
+    "name": "olmo_hybrid",
+    "model_types": [
+      "olmo_hybrid"
+    ],
+    "display_name": "Olmo Hybrid",
+    "description": "Ai2 Olmo Hybrid (7B): qwen3.5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, MIXED norm placement per layer kind, no RoPE at all",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "none",
+    "norm": "RMSNorm, post-only",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "qwen3_next",
+    "model_types": [
+      "qwen3_next"
+    ],
+    "display_name": "Qwen3-Next",
+    "description": "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "real-oracle 100.0%/0.98988"
+  },
+  {
+    "name": "qwen3_5_moe",
+    "model_types": [
+      "qwen3_5_moe",
+      "qwen3_5_moe_text"
+    ],
+    "display_name": "Qwen3.5-MoE",
+    "description": "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 77.5%/0.99069"
+  },
+  {
+    "name": "qwen3_5",
+    "model_types": [
+      "qwen3_5",
+      "qwen3_5_text"
+    ],
+    "display_name": "Qwen3.8",
+    "description": "Qwen3.8 dense: the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE, with a plain SwiGLU in place of the router",
+    "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000 +coherent"
+  },
+  {
+    "name": "deepseek_v2",
+    "model_types": [
+      "deepseek_v2"
+    ],
+    "display_name": "DeepSeek-V2",
+    "description": "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "real-oracle 100.0%/0.99924"
+  },
+  {
+    "name": "deepseek_v3",
+    "model_types": [
+      "deepseek_v3"
+    ],
+    "display_name": "DeepSeek-V3",
+    "description": "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "real-oracle 100.0%/0.99951"
+  },
+  {
+    "name": "kimi_k2",
+    "model_types": [
+      "kimi_k2"
+    ],
+    "display_name": "Kimi K2",
+    "description": "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "shared-path: deepseek_v3"
+  },
+  {
+    "name": "bailing_hybrid",
+    "model_types": [
+      "bailing_hybrid"
+    ],
+    "display_name": "Ling 3.0",
+    "description": "inclusionAI Ling 3.0 (tiny/flash): DeepSeek-style MLA alternating with Kimi Delta Attention (per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN",
+    "coverage_axis": "latent-KV (MLA)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "cohere",
+    "model_types": [
+      "cohere"
+    ],
+    "display_name": "Command-R",
+    "description": "Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "LayerNorm, parallel",
+    "activation": "SwiGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "full-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "cohere2",
+    "model_types": [
+      "cohere2"
+    ],
+    "display_name": "Command-R7B",
+    "description": "Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "LayerNorm, parallel",
+    "activation": "SwiGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "full-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "glm4_moe",
+    "model_types": [
+      "glm4_moe"
+    ],
+    "display_name": "GLM-4.5/4.6",
+    "description": "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "gpt2",
+    "model_types": [
+      "gpt2"
+    ],
+    "display_name": "GPT-2",
+    "description": "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "learned/none",
+    "norm": "LayerNorm, pre-norm",
+    "activation": "GELU-tanh (non-gated)",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "gemma3",
+    "model_types": [
+      "gemma3",
+      "gemma3_text"
+    ],
+    "display_name": "Gemma 3",
+    "description": "Google Gemma 3 dense (270M/1B/4B/12B/27B)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "dual-base",
+    "norm": "RMSNorm, sandwich",
+    "activation": "GeGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text (+ vision via VL text_config)",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/0.99972"
+  },
+  {
+    "name": "gemma4",
+    "model_types": [
+      "gemma4",
+      "gemma4_text",
+      "gemma4_unified_text"
+    ],
+    "display_name": "Gemma 4",
+    "description": "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense ‖ sparse, no-shared",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "dual-base",
+    "norm": "RMSNorm, sandwich",
+    "activation": "GeGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/0.99128"
+  },
+  {
+    "name": "granite",
+    "model_types": [
+      "granite"
+    ],
+    "display_name": "Granite 4.2",
+    "description": "IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "internlm2",
+    "model_types": [
+      "internlm2"
+    ],
+    "display_name": "InternLM2",
+    "description": "InternLM2 dense — llama math, renamed tensors + grouped fused wqkv",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "lfm2",
+    "model_types": [
+      "lfm2"
+    ],
+    "display_name": "LFM2.5",
+    "description": "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "laguna",
+    "model_types": [
+      "laguna"
+    ],
+    "display_name": "Laguna",
+    "description": "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "llama",
+    "model_types": [
+      "internlm3",
+      "llama"
+    ],
+    "display_name": "Llama",
+    "description": "Meta Llama 2/3 dense (single-base RoPE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF, GPTQ, AWQ",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "llama4_text",
+    "model_types": [
+      "llama4_text"
+    ],
+    "display_name": "Llama 4",
+    "description": "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000 +coherent"
+  },
+  {
+    "name": "mellum",
+    "model_types": [
+      "mellum"
+    ],
+    "display_name": "Mellum2",
+    "description": "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "real-oracle 100.0%/0.99969"
+  },
+  {
+    "name": "mistral3",
+    "model_types": [
+      "ministral3",
+      "mistral3"
+    ],
+    "display_name": "Ministral 3",
+    "description": "Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ vision tower, ignored)",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "mistral",
+    "model_types": [
+      "mistral"
+    ],
+    "display_name": "Mistral",
+    "description": "Mistral dense (all-layer sliding window)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "all-layer",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "mixtral",
+    "model_types": [
+      "mixtral"
+    ],
+    "display_name": "Mixtral",
+    "description": "Mistral + sparse MoE FFN (router + top-k experts)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "olmo3",
+    "model_types": [
+      "olmo3"
+    ],
+    "display_name": "Olmo 3",
+    "description": "Ai2 Olmo 3 (7B/32B): no pre-norm at all (post-only), whole-vector QK-norm, sliding/full 3:1 + YaRN on full layers only",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, post-only",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "phi3",
+    "model_types": [
+      "phi3"
+    ],
+    "display_name": "Phi-3 / Phi-4",
+    "description": "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/1.00000",
+    "checkpoint": {
+      "name": "phi3-mini-4k",
+      "repo": "microsoft/Phi-3-mini-4k-instruct-gguf",
+      "file": "Phi-3-mini-4k-instruct-q4.gguf",
+      "quant": "q4",
+      "good_for": "general instruction following at a size that still loads in seconds",
+      "needs": "~3 GB resident at --quant int4",
+      "sha256": "8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef",
+      "bytes": 2393231072
+    }
+  },
+  {
+    "name": "qwen2",
+    "model_types": [
+      "qwen2"
+    ],
+    "display_name": "Qwen2 / Qwen2.5",
+    "description": "Alibaba Qwen2/2.5 dense (q/k/v bias)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/1.00000",
+    "checkpoint": {
+      "name": "qwen2.5-coder-0.5b",
+      "repo": "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+      "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+      "quant": "q4_k_m",
+      "good_for": "code completion and small edits; the smallest checkpoint here that writes usable Go",
+      "needs": "~1 GB resident at --quant int4; runs on any laptop",
+      "sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+      "bytes": 491400064
+    }
+  },
+  {
+    "name": "qwen2_moe",
+    "model_types": [
+      "qwen2_moe"
+    ],
+    "display_name": "Qwen2-MoE",
+    "description": "Qwen1.5/2 MoE (sparse + always-on shared expert)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "qwen2_5_vl",
+    "model_types": [
+      "qwen2_5_vl"
+    ],
+    "display_name": "Qwen2.5-VL",
+    "description": "Qwen2.5-VL text decoder (qwen2 + m-RoPE)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ vision tower)",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/0.99998"
+  },
+  {
+    "name": "qwen3",
+    "model_types": [
+      "qwen3"
+    ],
+    "display_name": "Qwen3",
+    "description": "Alibaba Qwen3 dense (QK-norm, no bias)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "full-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "qwen3_moe",
+    "model_types": [
+      "qwen3_moe"
+    ],
+    "display_name": "Qwen3-MoE",
+    "description": "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "smollm3",
+    "model_types": [
+      "smollm3"
+    ],
+    "display_name": "SmolLM3",
+    "description": "HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
+    "name": "gpt-oss",
+    "model_types": [
+      "gpt_oss"
+    ],
+    "display_name": "gpt-oss",
+    "description": "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "interleave",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "real-oracle 100.0%/0.99843"
+  },
+  {
+    "name": "granitemoehybrid",
+    "model_types": [
+      "granitemoehybrid"
+    ],
+    "display_name": "Granite-4.0-H",
+    "description": "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer",
+    "coverage_axis": "state-space hybrid (Mamba-2)",
+    "moe": "sparse +shared",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "real-oracle 100.0%/0.99566",
+    "checkpoint": {
+      "name": "granite-4.0-h-tiny",
+      "repo": "ibm-granite/granite-4.0-h-tiny-GGUF",
+      "file": "granite-4.0-h-tiny-Q8_0.gguf",
+      "quant": "q8_0",
+      "good_for": "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
+      "needs": "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit",
+      "sha256": "3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
+      "bytes": 7390331328
+    }
+  },
+  {
+    "name": "nemotron_h",
+    "model_types": [
+      "nemotron_h"
+    ],
+    "display_name": "Nemotron-H",
+    "description": "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)",
+    "coverage_axis": "state-space hybrid (Mamba-2, single-op)",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "none",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "ReLU² (non-gated)",
+    "tied_lm_head": false,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "real-oracle 100.0%/0.99574"
+  }
+]
