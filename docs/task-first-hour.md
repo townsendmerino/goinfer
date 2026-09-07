@@ -122,6 +122,31 @@ empty directory, with the library case spelled out — `go get <module>` is *not
 per-package `go get` that is, is shown. Asset sizes corrected (8.3 MB / 652 MB / 1.81 GB against
 the claimed ~5 MB / ~615 MB / ~1.7 GB).
 
+**And the question the brief asked, answered by running it rather than reasoning: the tag's
+module graph was CLEAN. The command was wrong.** Reproduced against the unmodified `v0.16.0` tag
+in an empty module:
+
+```
+$ go get github.com/townsendmerino/goinfer@v0.16.0     # the README's command
+go: added github.com/townsendmerino/goinfer v0.16.0
+$ go build ./...
+missing go.sum entry for module providing package github.com/townsendmerino/aikit/embed …
+    to add: go get github.com/townsendmerino/goinfer/decoder@v0.16.0
+
+$ go get github.com/townsendmerino/goinfer/decoder@v0.16.0   # the PACKAGE, not the module
+$ go build ./...                                              # rc=0
+```
+
+The mechanism is Go 1.17+ **module graph pruning**: `go get <module>` records the requirement and
+only the sums needed to resolve the graph — not the sums needed to *build* packages you have not
+named. goinfer's root module has no root package, so that command yields a `require` line and
+nothing buildable. Go's own error even prints the fix.
+
+So `RELEASING.md`'s B-01…B-05 module-graph invariants are **not implicated**: nothing was wrong
+with what was published, and re-tagging would have fixed nothing. The defect was one line of
+README, which is the cheaper thing to have been wrong — but only checkable by running it, which is
+why the brief asked.
+
 **Gate — `readme-smoke` (CI).** From an **empty temp directory outside the checkout** with
 `GOWORK=off` and no clone, it runs every fenced command the README marks `<!-- smoke -->` and
 fails on non-zero, then **builds a trivial importer against what was installed**.

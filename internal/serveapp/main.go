@@ -333,6 +333,52 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(servecheck.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
+	// A SKIMMABLE HELP HEADER, printed before the 39-flag dump.
+	//
+	// Cold-user run 2026-09-06, scenario B: "--help is 13,583 bytes / 39 flags / 100 lines, with
+	// paragraph-length prose per flag containing commit SHAs and self-critique. Unusable as a quick
+	// reference; I could not skim it for the flag I needed." That is not a style complaint — the
+	// SAME tester then drove a 16 GB machine +7.8 GB into swap because they did not find
+	// -stream-weights, whose help text names their exact model and their exact RAM. The flag was
+	// there and the document was too long to find it in.
+	//
+	// The long text stays: every paragraph in it is a disclosure some measurement earned, and
+	// deleting disclosures to shorten a page is how a trade-off stops being disclosed. This adds a
+	// map ABOVE it rather than trimming it, so skimming and reading are both possible.
+	flag.Usage = func() {
+		out := flag.CommandLine.Output()
+		// The examples use the name the binary was actually INVOKED as, not a hardcoded
+		// "goinfer-serve". `go install .../cmd/serve@latest` drops a binary called `serve`, which
+		// the same cold run flagged ("Not goinfer-serve. On $PATH that is a collision waiting to
+		// happen"), so a help page that shows a name the reader does not have is one more thing to
+		// translate.
+		self := filepath.Base(os.Args[0])
+		fmt.Fprintf(out, `%[1]s — OpenAI/Anthropic-compatible local inference server.
+
+  %[1]s --model <file.gguf|dir|hf:owner/repo:quant>     serve one model
+  %[1]s --model m.gguf --web                            + browser UI at /
+  %[1]s check                                           drive a RUNNING server, per-feature verdicts
+  %[1]s pull <ref>                                      fetch a model, sha256-verified
+  %[1]s --version                                       version + the backends COMPILED IN
+
+The flags people actually reach for:
+
+  --model      what to serve; repeatable as name=path to serve several at once
+  --backend    cpu (default) | cuda | metal | webgpu — --version says which this binary has
+  --quant      int4 (default) | int8int8 | int4mix | f32 — see docs/quantization.md
+  --ctx        KV capacity in positions
+  --addr       listen address (loopback by default)
+  --api-key    required to bind anywhere but loopback
+
+  --stream-weights   RUN A MODEL BIGGER THAN YOUR RAM. Pages weights from disk instead of
+                     holding them resident; the one flag to know before loading something large.
+
+All %[2]d flags, with the trade-offs each one makes, follow.
+
+`, self, countFlags())
+		flag.PrintDefaults()
+	}
+
 	// --version answers "what is in this binary" WITHOUT a model, which is the question the
 	// cold run could not ask (R2). Handled here rather than only as a parsed flag so it works
 	// on a binary whose other required flags are absent — and registered below as well, so it

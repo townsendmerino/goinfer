@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,4 +96,70 @@ func backendsLine(t *testing.T, report string) string {
 	}
 	t.Fatalf("no `backends:` line in version report:\n%s", report)
 	return ""
+}
+
+// TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered is R4's gate for the scenario-B friction
+// entry "--help is 13,583 bytes / 39 flags / 100 lines … I could not skim it for the flag I
+// needed" (docs/measurements/cold-user-2026-09-06.md).
+//
+// That is not a style complaint. The same tester then drove a 16 GB machine +7.8 GB into swap
+// because they never found `-stream-weights`, whose own help text names their exact model and
+// their exact RAM. The flag was present and the page was too long to find it in.
+//
+// So the assertion is not "the help is short" — the long text is deliberate and every paragraph in
+// it is a disclosure some measurement earned. It is that a MAP exists above the dump, that the map
+// names the flag whose absence did the damage, and that it comes FIRST.
+func TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a binary")
+	}
+	bin := filepath.Join(t.TempDir(), "serve")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", bin, "github.com/townsendmerino/goinfer/cmd/serve")
+	build.Dir = ".."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Skipf("cannot build cmd/serve here: %v\n%s", err, out)
+	}
+	// --help exits non-zero by Go's convention; the output is what matters.
+	out, _ := exec.Command(bin, "--help").CombinedOutput()
+	help := string(out)
+
+	idx := strings.Index(help, "-stream-weights")
+	if idx < 0 {
+		t.Fatal("--help never mentions -stream-weights at all")
+	}
+	head := help[:idx]
+	if n := strings.Count(head, "\n"); n > 25 {
+		t.Errorf("-stream-weights first appears %d lines in; the cold run's tester gave up before "+
+			"finding it and paid for that in swap. It belongs in the skimmable header", n)
+	}
+	// The header must say what the flag DOES, not just list it — "-stream-weights" as a bare name
+	// is another thing to go look up.
+	if !strings.Contains(help[:idx+400], "BIGGER THAN YOUR RAM") {
+		t.Error("the header names -stream-weights without saying what it is for")
+	}
+	// The map must precede the dump, or it is just more text.
+	if dump := strings.Index(help, "  -adapter"); dump >= 0 && dump < idx {
+		t.Error("the flag dump starts before the skimmable header — the map must come first")
+	}
+	// The flag count must be DERIVED. A hand-typed count is the same defect class as the parity
+	// manifest's hand-typed aikit_version, which sat seventeen versions stale.
+	// Count only the DUMP's entries. The header's own "  --model" lines start the same way, so
+	// counting the whole page conflates the map with the territory — which this test did on its
+	// first run, reporting 47 against a real 40.
+	dumpAt := strings.Index(help, "flags, with the trade-offs")
+	if dumpAt < 0 {
+		t.Fatal("could not find the boundary between the header and the flag dump")
+	}
+	want := 0
+	for _, l := range strings.Split(help[dumpAt:], "\n") {
+		if strings.HasPrefix(l, "  -") {
+			want++
+		}
+	}
+	if want > 0 && !strings.Contains(help, fmt.Sprintf("All %d flags", want)) {
+		t.Errorf("help claims a flag count that does not match the %d flags it prints", want)
+	}
 }

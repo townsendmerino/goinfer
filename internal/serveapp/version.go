@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"flag"
 	"fmt"
 	"runtime"
 	"runtime/debug"
@@ -77,4 +78,13 @@ func isVersionArg(a string) bool {
 		return true
 	}
 	return false
+}
+
+// countFlags reports how many flags are registered, so the help header's "all N flags" line cannot
+// drift from reality the way a hand-typed count would. That drift is the same defect class as the
+// parity manifest's hand-typed aikit_version, which sat seventeen versions stale.
+func countFlags() int {
+	n := 0
+	flag.VisitAll(func(*flag.Flag) { n++ })
+	return n
 }
