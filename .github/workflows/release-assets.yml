@@ -147,6 +147,11 @@ jobs:
       - name: assert serve assets exist and carry their backend
         run: |
           set -euo pipefail
+          # Each workflow step is its own shell — the TAG set in "cross-compile goinfer-serve per
+          # platform" above does not carry over here. (Found the hard way: v0.17.1's own release
+          # run failed this step with "TAG: unbound variable" under set -u, because this
+          # redefinition was missing on the first pass.)
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           fail=0
           for f in dist/goinfer-serve-*; do [ -f "$f" ] || { echo "no serve assets built"; exit 1; }; done
           for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
