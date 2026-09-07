@@ -1380,3 +1380,16 @@ newly-running test's failure to whoever turned it on.
 at the previous tag. Fails there too → pre-existing, exposed not caused, and it does not block. Passes
 there → the change is implicated and now the investigation is warranted. Report each gate
 independently; two gates enabled by the same variable need not answer the same way.
+
+## Timing: one tiny-oracle → real-oracle promotion (2026-09-07, smollm3)
+
+Total wall time ≈ 7 minutes, on the cleanest possible case (dense, no MoE, no sliding
+window, safetensors-only, 3B/~6GB, single released size). Split: ~2 min reading the
+cohere2 tiny/real pair and adapting `pin_smollm3_3b.py` from it; ~1 min downloading
+HuggingFaceTB/SmolLM3-3B (5.8 GB); ~30 s running the HF f32 reference (26 s of that is
+model load/forward); ~3.5 min writing the `realckpt` gate, registering the asset, and
+running gate → merge → matrix regen. No config surprise, no debugging — cosine 1.00000,
+argmax and greedy continuation both exact on the first run. This is the floor, not a
+typical case: the other eight reachable families each carry at least one axis this one
+was chosen to avoid (MoE routing, GGUF conversion, sliding window, multimodal), so budget
+above this number, not at it.

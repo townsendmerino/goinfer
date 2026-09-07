@@ -550,6 +550,15 @@
       "note": "CohereLabs Command-R7B (Cohere2ForCausalLM), 4 bf16 shards / ~16 GB. A SEPARATE arch from cohere, not a size variant \u2014 interleaved sliding/full attention and no per-layer QK norm \u2014 which is why both families carry their own required gate. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
     },
     {
+      "env": "GOINFER_SMOLLM3_3B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/smollm3-3b"],
+      "used_by": ["TestSmolLM3_3bReal_gate"],
+      "note": "HuggingFaceTB/SmolLM3-3B (SmolLM3ForCausalLM), 2 f32-cast bf16 shards / ~5.8 GB \u2014 the smallest AND only released size in the family. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
+    },
+    {
       "env": "GOINFER_GRANITE_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
