@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -82,6 +83,32 @@ func Main() {
 	// the friction it exists to remove.
 	if len(os.Args) > 1 && os.Args[1] == "pull" {
 		os.Exit(pullcmd.Run(os.Args[2:]))
+	}
+	// POINT AT THE OTHER BINARY INSTEAD OF SWALLOWING THE ARGUMENT.
+	//
+	// Cold-user run 2026-09-06, scenario B, 06:37:23 — the tester's first error of that leg, and
+	// the reason the whole leg started badly. `goinfer-chat serve` IGNORED the subcommand and
+	// complained about --model; `goinfer-chat -web` said "flag provided but not defined: -web".
+	// Neither hinted that `serve` and `-web` belong to a DIFFERENT binary, and the README's own
+	// examples used them — so the tester reasonably concluded the released binary was broken and
+	// went hunting through pkg.go.dev by trial and error to find a server at all.
+	//
+	// The README is fixed, but a stale README, a cached blog post or a year-old shell history will
+	// keep producing this invocation forever. An error that names the replacement costs one
+	// branch; the failure it prevents cost that run its worst dead end.
+	if serveOnly := serveOnlyInvocation(os.Args[1:]); serveOnly != "" {
+		fmt.Fprintf(os.Stderr, `%s: %q belongs to goinfer-serve, not this binary.
+
+goinfer-chat is the single-shot chat runtime; the server (OpenAI/Anthropic routes, -web, model
+zoo, streaming) is a separate binary:
+
+    go install github.com/townsendmerino/goinfer/cmd/serve@latest      # CPU
+    go install github.com/townsendmerino/goinfer/metal/cmd/serve@latest # macOS GPU
+    CGO_ENABLED=0 go install -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve@latest
+
+or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+"`serve`"+`.
+`, filepath.Base(os.Args[0]), serveOnly)
+		os.Exit(2)
 	}
 	var (
 		model    = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
