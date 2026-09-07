@@ -1107,14 +1107,19 @@ and `~/models/qwen15-w4a8-int4.giw`, both on local NVMe · greedy (temperature 0
 `gpu/matrix_bench_test.go` via `decoder.Generate`, so token counts come from the engine, not
 from counting SSE frames · warm (a discarded generation compiles the pipelines first) ·
 **two full runs, both reported** — no peer is involved, so these are goinfer-vs-goinfer only.
+**Every GPU-prefixed row is WebGPU specifically** (`gpu/matrix_bench_test.go`'s `row()` calls all
+pass `Backend: "webgpu"`) — labeled explicitly per R9 (docs/measurements/
+cold-user-2026-09-06-nobara-pc.md): cuda/metal have no staged path at all (their own
+`Backend.MatmulBT` is CPU-only and neither implements `QuantBackend`), so a bare "GPU" label
+would read as if these numbers generalized to those backends, which they do not.
 
 | path | fits / VRAM | decode tok/s | TTFT 256-tok, cold | TTFT, warm |
 |---|---|---|---|---|
 | CPU int8 | yes (host) | 13.7 / 13.7 | 4773 / 4721 ms | — |
 | CPU int4 | yes (host) | 16.6 / 16.4 | 5580 / 5633 ms | — |
-| GPU staged (int8) | yes / 485 MiB | 20.5 / 22.4 | 5686 / 5374 ms | — |
-| **GPU residency int8** | yes / 3237 MiB | **118.3 / 113.9** | 1942 / 1938 ms | **7 / 8 ms** |
-| **GPU residency int4** | yes / 2535 MiB | **137.9 / 137.4** | 1748 / 1713 ms | **7 / 7 ms** |
+| WebGPU staged (int8) | yes / 485 MiB | 20.5 / 22.4 | 5686 / 5374 ms | — |
+| **WebGPU residency int8** | yes / 3237 MiB | **118.3 / 113.9** | 1942 / 1938 ms | **7 / 8 ms** |
+| **WebGPU residency int4** | yes / 2535 MiB | **137.9 / 137.4** | 1748 / 1713 ms | **7 / 7 ms** |
 
 **Decode is up ~1.25–1.35× on the resident paths** against the June table's 95.1 (int8) and
 102.8 (int4) — the G35/G36 kernels, measured here through a different harness than the one that

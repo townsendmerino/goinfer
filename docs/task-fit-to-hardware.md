@@ -52,7 +52,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
   (`decoder/model.go:143-135`, the cap that accounts for 2 MiB allocation quanta and the first-launch
   reservation — `docs/positioning.md`'s own history of it).
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
-  (`internal/serveapp/main.go:436`).
+  (`internal/serveapp/main.go:438`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
   (`metal/backend.go:103`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
   directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:163`).
@@ -61,7 +61,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
 
 | decision | today's surface | what the user has to know |
 |---|---|---|
-| which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/serveapp/main.go:418`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
+| which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/serveapp/main.go:420`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
 | Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:207`, `metal/moe.go:319`), env only, no flag, no auto | the measured optimum was N=64 (`docs/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it |
 | context cap and KV precision | `-ctx` (`:361`, ignored by WebGPU — M-32), `-kv` (`:360`, breaks three families on WebGPU — M-32), `-kv-quant` (`:362`) | the VRAM a 16k f32 KV costs on their card |
 | quant | `-quant int4` default (`:340`), `--embed-int4` (`:374`) | that int4 is now as fast as int8int8 on CPU (the in-repo guidance was reversed 2026-08-25) |
@@ -249,6 +249,19 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
   `CLAUDE.md` rule needs a human to check.
 - **Windows.** Untested for every GPU backend; the planner should say "CPU only" there until a
   row exists, not guess.
+- **This planner plans slots and context, not layer placement — R9 found the cost of that gap
+  (docs/measurements/cold-user-2026-09-06-nobara-pc.md).** The `placement` enum (§2) has five
+  states — resident, expert-cached, host-computed-experts, weight-paged, decline — and none of
+  them is "N dense layers on the GPU, the rest on CPU": on cuda/metal a dense model that does not
+  fit the card declines to CPU in full, because neither backend has a staged/partial GPU path at
+  all (R9's finding — this doc's "adapted from llama.cpp's `--fit`" priority order borrowed the
+  ordering, not that capability). The peer matrix already shows what that costs: llama.cpp's
+  `--fit` partial offload beat goinfer on both the M35 and M26 8 GB-card cells (32.9 vs 23.5,
+  27.8 vs 24.6 tok/s) after going from "never loaded" to winning, by dropping `-ngl 99` for a
+  computed partial placement. Real hybrid CPU/GPU layer placement is the audit's top program item
+  (FreeToken Lead 5); this planner does not attempt it and should not be read as covering it —
+  MoE expert streaming (`expert-cached`, above) is the only bigger-than-the-card story a dense
+  goinfer model has on cuda/metal today.
 
 ## Sources
 

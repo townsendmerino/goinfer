@@ -712,34 +712,59 @@ func (m *Model) DecodePath() string {
 		return fmt.Sprintf("%s-resident (%s)", be, m.Quant())
 	case be == "cpu":
 		return fmt.Sprintf("cpu (%s)", m.Quant())
+	case be != "webgpu":
+		// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md, corrected on review):
+		// "cuda-staged (int4)" on an 8 GB card sat at the idle VRAM baseline (464 MiB,
+		// unchanged) for a full request sampled at 1 Hz. The first pass here found the int4
+		// half (matmul()/weightmat.go's int4 branch calls the CPU integer W4A8 kernel
+		// unconditionally, no backend parameter at all) and wrongly generalized that
+		// int8/int8int8/f32 "reach the backend" on every backend. They do not on cuda or
+		// metal: both backends' own Backend.MatmulBT implementations are themselves bare CPU
+		// calls (cuda/backend.go, metal/backend.go — no device dispatch), and NEITHER
+		// implements QuantBackend at all, so the int8 branch's `be.(QuantBackend)` assertion
+		// fails for them too and falls to the same CPU kernel int4 uses. There is no quant at
+		// which cuda's or metal's staged path ever reaches the device — "cuda-staged"/
+		// "metal-staged" were never a real path, so this reports it the same shape
+		// BackendSummary already uses for a backend that failed to build at all: it is the
+		// same kind of claim (requested vs. actually executing), and hardware-matrix.md
+		// already only ever says "resident" or "CPU" per cell — this makes the banner agree
+		// with that page instead of inventing a third state it doesn't have.
+		return fmt.Sprintf("cpu (%s) — %s", m.Quant(), BackendSummary(be, "cpu", declinedToCPUReason(be, m.resDecline)))
 	case m.resDecline != "":
-		return fmt.Sprintf("%s-staged (%s)%s — %s", be, m.Quant(), stagedDeviceNote(m.Quant()), m.resDecline)
+		return fmt.Sprintf("webgpu-staged (%s)%s — %s", m.Quant(), stagedDeviceNote(m.Quant()), m.resDecline)
 	default:
-		return fmt.Sprintf("%s-staged (%s)%s", be, m.Quant(), stagedDeviceNote(m.Quant()))
+		return fmt.Sprintf("webgpu-staged (%s)%s", m.Quant(), stagedDeviceNote(m.Quant()))
 	}
 }
 
-// stagedDeviceNote names when the staged path's own quant reaches no backend at all, so the
-// path name alone does not overclaim device use.
+// declinedToCPUReason builds the reason BackendSummary needs when cuda or metal has no staged
+// path at all for a resident-ineligible architecture — split out so it is testable without a
+// live Model (see decoder/staged_device_note_test.go).
+func declinedToCPUReason(backend, resDecline string) string {
+	reason := backend + " has no staged decode path"
+	if resDecline != "" {
+		reason = resDecline + ", and " + reason
+	}
+	return reason
+}
+
+// stagedDeviceNote names when webgpu's own staged path — the only one that has one, see
+// DecodePath above — still reaches no device for a given quant, so the path name alone does not
+// overclaim device use.
 //
-// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): "cuda-staged (int4)" on an 8 GB card
-// sat at the idle VRAM baseline (464 MiB, unchanged) for a full request sampled at 1 Hz — the
-// label said "cuda", nothing on the device moved. matmul() (weightmat.go) is why: its int4
-// branch calls w.MatmulBTW4A8Into unconditionally — the CPU integer W4A8 kernel — with no
-// backend parameter passed in at all, for EVERY architecture, not only the one that surfaced
-// this. decoder.QuantBackend (the interface the staged path dispatches through) declares only
-// MatmulW8A8; there is no int4 counterpart anywhere in this tree. So for any architecture that
-// only reaches the staged path (not the fully-resident one), "int4" — the flag's own stated
-// DEFAULT — is CPU-equivalent regardless of --backend, and "int4mix" is half so (its FFN
-// tensors are stored int4 and take the same CPU-only branch; only its attention tensors are
-// int8 and reach QuantBackend). Native f32 and int8/int8int8 DO reach the backend (MatmulBT and
-// MatmulW8A8 respectively) and get no note.
+// WebGPU's Backend.MatmulBT and QuantBackend.MatmulW8A8 (gpu/backend.go) do real device work in
+// the staged path, unlike cuda/metal — but even WebGPU has no int4 dispatch here: its real int4
+// GPU kernel (gpu/gemv_w4a8.go) is wired only into the separate fully-resident runner
+// (gpu/residency.go), not this per-matmul staged path. So int4 is CPU-equivalent even on
+// webgpu's staged path, and int4mix is half so (its FFN tensors are int4 and take the same
+// CPU-only branch; only its attention tensors are int8 and reach QuantBackend). f32/int8/
+// int8int8 DO reach webgpu's device and get no note.
 func stagedDeviceNote(quant string) string {
 	switch quant {
 	case "int4":
-		return " [no GPU dispatch exists for this quant in the staged path — CPU-equivalent regardless of --backend]"
+		return " [no GPU dispatch exists for this quant here either — the real int4 kernel is wired only into the resident runner]"
 	case "int4mix":
-		return " [FFN tensors (int4) have no GPU dispatch in the staged path and run on the host; only attention (int8) reaches the backend]"
+		return " [FFN tensors (int4) have no GPU dispatch in the staged path and run on the host; only attention (int8) reaches webgpu]"
 	}
 	return ""
 }

@@ -618,6 +618,32 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		// guessed) rather than extrapolated from a faster model's result.
 		Tools: "not yet measured",
 	},
+	// R7 follow-up (docs/measurements/cold-user-2026-09-06-nobara-pc.md, and review feedback on
+	// that finding): Gemma-4-26B-A4B — this project's own §B4/§B4.1 host↔VRAM C′-streaming
+	// anchor, the model that section's whole design is measured against — DOES have a real,
+	// official download: `google/gemma-4-26B-A4B-it-qat-q4_0-gguf` (Google's own QAT q4_0 GGUF;
+	// README's existing "bake any model" example at a smaller Gemma-4 tier already used this
+	// exact repo's naming convention). The earlier pass concluded no download existed because
+	// every reference IN THIS TREE'S OWN TESTS is a local, unpinned safetensors dir
+	// (GOINFER_GEMMA4_26B=~/models/gemma-4-26b-a4b-it) — that conclusion was about this tree's
+	// test fixtures, not about whether Google ever published GGUF weights, and it should have
+	// searched HF directly before ruling the model out rather than only grepping this repo.
+	// sha256/bytes: HF API blobs=true on the real repo, 2026-09-07 — then CROSS-VERIFIED against
+	// an actual local copy already on this box (~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf,
+	// byte count matches exactly) via TestRegistry_digestsMatchLocalFiles, same as gpt-oss-20b.
+	"gemma4": {
+		Name: "gemma-4-26b-a4b", Repo: "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
+		File: "gemma-4-26B_q4_0-it.gguf", Quant: "q4_0",
+		Bytes: 14439363584, SHA256: "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+		GoodFor: "the 20-35B-class MoE this project has the most measurements on (docs/benchmarks.md §B4/§B4.1): a 26B-A4B that does not fit an 8 GB card, kept fully GPU-resident via host↔VRAM expert streaming (the C′ cache, -moe-cache-experts) rather than CPU-offloaded",
+		Needs:   "~11.4 GB of int4 experts; does not fit an 8 GB card resident. Measured on an RTX 2070 SUPER: 16.12 tok/s at 30 cached expert slots (§B4.1) — capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency",
+		// Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). This
+		// checkpoint is multimodal (image-text-to-text) and Gemma-4's tool template is a known
+		// partial (docs/task-embed-and-harness-ux.md §3.1: "M-20 Gemma-4 tool template"), so a
+		// harness-scale skip here would need to distinguish "too small" from "template gap" —
+		// worth running deliberately, not inferring from another family's result.
+		Tools: "not yet measured",
+	},
 	// R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the README's own "bigger than
 	// your GPU"/"bigger than your RAM" examples named a size class ("qwen3.5-35b-a3b",
 	// "20-35B MoE") with no resolvable owner/repo anywhere — a cold user could not find any

@@ -218,17 +218,32 @@ scenario D).
 weights resident by design; it has no `-stream-weights`. If your model is bigger than your RAM,
 reach for the server.
 
-**On an 8 GB GPU it is `-moe-cache-experts`, not `-stream-weights`.** The whole model does not
-need to fit VRAM — only the non-expert core plus a slot cache of the experts a token actually
-routes to, streamed host→VRAM per token on demand:
+**On cuda/metal, GPU means fully resident, full stop.** Neither backend has a partial/"staged"
+GPU path (R9, [`docs/measurements/cold-user-2026-09-06-nobara-pc.md`](docs/measurements/cold-user-2026-09-06-nobara-pc.md)):
+a model or architecture that does not build the resident runner declines straight to CPU, at
+whatever quant you asked for. A dense model bigger than your card has no partial-GPU story here —
+only `-stream-weights` (above, RAM-side) or the CPU. **A MoE does**, and that is
+`-moe-cache-experts`: the non-expert core stays resident while a slot cache of the experts a
+token actually routes to streams host→VRAM per token on demand, so the whole model never needs
+to fit VRAM. Measured on this project's own most-benchmarked checkpoint at this size,
+`gemma-4-26b-a4b` (26B-A4B, 128 experts top-8; [`docs/benchmarks.md`](docs/benchmarks.md) §B4/§B4.1),
+on an RTX 2070 SUPER 8 GB: **16.12 tok/s** at 30 cached expert slots — capacity-bound (PCIe
+host→VRAM streaming), not a kernel or MoE deficiency:
+
+```bash
+# <!-- smoke-model --> the checkpoint this project has the most measurements on at this size
+goinfer-chat pull gemma-4-26b-a4b
+```
 
 ```bash
 # <!-- smoke-help --> off by default; a model that does not fit then declines to the CPU path and says why
-goinfer-serve -backend cuda -moe-cache-experts -model ~/models/gpt-oss-20b-MXFP4.gguf
+goinfer-serve -backend cuda -moe-cache-experts -model ~/models/gemma-4-26B_q4_0-it.gguf
 ```
 
-gpt-oss-20b (12 GB at native MXFP4, resident) is the checkpoint this family's own CUDA resident
-gate is measured against on an 8 GB card — see `docs/capability-matrix.md`'s gpt-oss row.
+`gpt-oss-20b` (`goinfer-chat pull gpt-oss-20b`; 12 GB at native MXFP4) is a second real option at
+this size class — its own CUDA resident gate is measured on an 8 GB card too, see
+`docs/capability-matrix.md`'s gpt-oss row — with `-moe-cache-experts` results not yet as
+thoroughly measured as gemma-4-26b-a4b's.
 
 ## A Go struct the model cannot violate
 

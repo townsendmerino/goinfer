@@ -159,9 +159,10 @@ All flags:
 	}
 
 	var (
-		model       = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
-		system      = flag.String("system", defaultSystem, "system prompt that steers the model")
-		backend     = flag.String("backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
+		model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
+		system  = flag.String("system", defaultSystem, "system prompt that steers the model")
+		backend = flag.String("backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (cuda/metal: dense-only, cgo-free native, -tags cuda|metal). "+
+			"On cuda/metal, GPU means fully resident — a model/arch that does not fit or is not resident-eligible declines straight to CPU; neither has a partial \"staged\" GPU path.")
 		quant       = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest; lossier) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM; required for --backend metal) | int8 | \"\" (native f32). All quantized modes get batched CUDA prefill; native f32 falls back to sequential. Default int4")
 		lora        = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
 		maxTok      = flag.Int("max", 512, "max tokens per reply")

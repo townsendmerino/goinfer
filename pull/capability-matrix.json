@@ -282,7 +282,18 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "full-oracle 100.0%/0.99128"
+    "parity": "full-oracle 100.0%/0.99128",
+    "checkpoint": {
+      "name": "gemma-4-26b-a4b",
+      "repo": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
+      "file": "gemma-4-26B_q4_0-it.gguf",
+      "quant": "q4_0",
+      "bytes": 14439363584,
+      "sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+      "good_for": "the 20-35B-class MoE this project has the most measurements on (docs/benchmarks.md §B4/§B4.1): a 26B-A4B that does not fit an 8 GB card, kept fully GPU-resident via host↔VRAM expert streaming (the C′ cache, -moe-cache-experts) rather than CPU-offloaded",
+      "needs": "~11.4 GB of int4 experts; does not fit an 8 GB card resident. Measured on an RTX 2070 SUPER: 16.12 tok/s at 30 cached expert slots (§B4.1) — capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency",
+      "tools": "not yet measured"
+    }
   },
   {
     "name": "granite",

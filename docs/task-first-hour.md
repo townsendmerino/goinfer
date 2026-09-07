@@ -578,26 +578,53 @@ added the entry to the real source (`recommendedCheckpoints["gpt-oss"]` in
 CapabilityMatrix -update` + `cp docs/capability-matrix.json pull/` — the documented,
 already-established workflow.
 
-**README fixed** to use the real checkpoint: the "Running a model bigger than your RAM — or your
-GPU" section now names `goinfer-chat pull gpt-oss-20b` before both the `-stream-weights` and a
-new `-moe-cache-experts` example (the GPU-specific remedy scenario D's own dead end needed and
-never had a runnable example for).
+**Follow-up, same day, on review: Gemma-4-26B-A4B does have a real download — the "no verifiable
+download exists" conclusion above was too narrow.** It was drawn from grepping this tree's OWN
+tests, which reference only a local, unpinned safetensors directory
+(`GOINFER_GEMMA4_26B=~/models/gemma-4-26b-a4b-it`) — but that is a fact about this tree's test
+fixtures, not about whether Google ever published GGUF weights, and the right check is Hugging
+Face directly, not this repo's grep results. It searched: `google/gemma-4-26B-A4B-it-qat-q4_0-gguf`
+is real, official (Google's own QAT q4_0 GGUF — the exact artifact `docs/benchmarks.md` §B4/§B4.1
+already measures, and the one Ollama's own retraction note in that section confirms it loads
+too), and matches the naming convention the README's own "bake any model" example already used at
+a smaller Gemma-4 tier. sha256/bytes came from HF's git-LFS digest (2026-09-07), then — unlike
+gpt-oss-20b, where a 12 GB local re-hash was skipped as impractical — actually cross-verified
+against a real local copy already on this box
+(`~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf`, exact byte match) via
+`TestRegistry_digestsMatchLocalFiles`. Added as `recommendedCheckpoints["gemma4"]` alongside
+`gpt-oss`, not instead of it — both are real, both are 20-35B-class, and Gemma-4-26B-A4B is the
+one this project has by far the most measurements on and the one that specifically exercises the
+8 GB card's host↔VRAM expert-streaming design (`-moe-cache-experts`, §B4's "C′" cache) that
+`-moe-cache-experts`'s own README example now demonstrates with a real number (16.12 tok/s at 30
+slots) instead of a generic claim. The lesson, stated plainly since it very nearly went out
+wrong: **"I could not find a download in this repo's own tests" and "no download exists" are not
+the same claim**, and only the second one licenses refusing to add an entry.
+
+**README fixed** to use real checkpoints: the "Running a model bigger than your RAM — or your
+GPU" section now states the per-backend rule plainly (cuda/metal: fully resident or CPU, no
+partial path — see R9) before naming `goinfer-chat pull gemma-4-26b-a4b` as the primary
+`-moe-cache-experts` example (real, measured numbers) and `goinfer-chat pull gpt-oss-20b` as a
+second option, alongside the `-stream-weights` example scenario D's own dead end needed and never
+had a runnable one for.
 
 **Gates.**
 
 - `pull/registry_test.go`'s existing `TestRegistry_noEntryOutrunsItsParity`,
-  `TestRegistry_everyEntryIsVerifiable` and `TestRegistry_digestsMatchLocalFiles` all cover the
-  new entry with no changes needed — the registry's existing gates were already the right shape.
+  `TestRegistry_everyEntryIsVerifiable` and `TestRegistry_digestsMatchLocalFiles` all cover both
+  new entries with no changes needed — the registry's existing gates were already the right
+  shape. `TestRegistry_digestsMatchLocalFiles` now reports "verified 5 of 5 entries against local
+  files" (up from 4), real hashing, ~28-30s for the full registry including the 14.4 GB
+  Gemma-4-26B-A4B file.
 - New `scripts/readme_smoke.sh` marker, `<!-- smoke-model -->`: resolves every README-named
   `pull`/`--model` reference against the registry (`goinfer-chat models`'s own output, no
   download), `demo:` tiers (`pull/curated.json`), or an HF `owner/repo` (the models API,
-  metadata only) — marked on 5 README lines. **Verified against the actual published v0.17.0
-  module**, not a local build: 4 of 5 resolve; `gpt-oss-20b` correctly FAILS, because this
-  registry addition is not in the published release yet — exactly the red-on-v0.17.0,
-  green-once-tagged shape this pass's gates are supposed to have. Caught and fixed a self-
-  introduced bug while building this: wrapping a `<!-- smoke-help -->` marker's comment across
-  two lines broke the existing one-marker-next-line extraction convention, found only by
-  actually running the script.
+  metadata only) — marked on 6 README lines. **Verified against the actual published v0.17.0
+  module**, not a local build: 4 of 6 resolve; `gpt-oss-20b` and `gemma-4-26b-a4b` correctly
+  FAIL, because neither registry addition is in the published release yet — exactly the
+  red-on-v0.17.0, green-once-tagged shape this pass's gates are supposed to have. Caught and
+  fixed a self-introduced bug while building this: wrapping a `<!-- smoke-help -->` marker's
+  comment across two lines broke the existing one-marker-next-line extraction convention, found
+  only by actually running the script.
 - New `scripts/readme_smoke.sh` step: every `[...](docs/...)` link the README cites must exist
   in the checkout (R12's gate; described there, exercised here too since this item added two new
   citations). Mutation-checked: an appended dead link is caught by name; reverted, clean.
@@ -638,43 +665,68 @@ quoted in the comment.
   new capability-matrix schema column, which would have needed generator changes beyond this
   item's reasonable size; noted as a scope cut, not silently dropped.
 
-### R9 — `cuda-staged (int4)` never touched the GPU, for any architecture, always
+### R9 — CUDA and Metal have no staged GPU path at all; "cuda-staged" was a label for the CPU
 
 **Found** (run 2, scenario D). `granite-4.0-h-tiny --backend cuda` (no `--require-backend`)
 loaded, banner said `decode path: cuda-staged (int4)`, and `nvidia-smi` sampled at 1 Hz through a
 full completion request stayed at the idle baseline (464 MiB) for all 15 samples — the label
 said `cuda`, nothing on the device moved.
 
-**Root-caused precisely, and it is bigger than this one checkpoint.** `decoder/weightmat.go`'s
-`matmul()` dispatches int4-stored tensors to `w.MatmulBTW4A8Into` — a pure CPU/host integer
-kernel — **unconditionally, with no backend parameter at all**. `decoder.QuantBackend` (the
-interface the staged path dispatches through) declares only `MatmulW8A8`; there is no int4
-counterpart anywhere in this tree. So `cuda-staged (int4)` is CPU-equivalent for **every**
-architecture that only reaches the staged (non-resident) path, always, by construction — not a
-one-off decline for this family. `int4mix` is half so (its FFN tensors are stored int4 and take
-the same CPU-only branch; only its attention tensors are int8 and reach `QuantBackend`). Native
-f32 and int8/int8int8 genuinely reach the backend (`MatmulBT`/`MatmulW8A8` respectively). This is
-a **static fact of the quant mode**, determinable from `m.Quant()` alone with no live device
-instrumentation needed — which is also why the fix needed no new runtime tracking.
+**First pass root-caused the int4 half and wrongly generalized the rest — caught on review, before
+it shipped.** `decoder/weightmat.go`'s `matmul()` dispatches int4-stored tensors to
+`w.MatmulBTW4A8Into` — a CPU/host integer kernel — unconditionally, with no backend parameter at
+all; `decoder.QuantBackend` declares only `MatmulW8A8`, no int4 counterpart anywhere in this
+tree. That part was right. The first pass then wrote "native f32 and int8/int8int8 genuinely
+reach the backend" as if that were true on every backend, which is what a review pass (comparing
+against `docs/benchmarks.md` §B10's "GPU staged (int8)" row, 485 MiB VRAM, 20-22 tok/s — real
+device use) asked to be reconciled. It reconciles because that row is **WebGPU**, not CUDA
+(`gpu/matrix_bench_test.go:142`, `Backend: "webgpu"`), and re-reading `cuda/backend.go` and
+`metal/backend.go` finds the real shape: **neither implements `decoder.QuantBackend` at all**,
+and each one's own `Backend.MatmulBT` is a bare CPU call (`linalg.MatmulBT`, no device dispatch)
+— so `matmul()`'s `be.(QuantBackend)` assertion fails for int8 on cuda/metal too, falling to the
+same CPU kernel int4 uses. **CUDA's and Metal's staged path has no device dispatch at ANY
+quant** — it was never a real path, only WebGPU's is (for f32/int8/int8int8; WebGPU's own real
+int4 GPU kernel, `gpu/gemv_w4a8.go`, is wired only into the separate fully-resident runner and is
+unreachable from this staged dispatch either). This is a **static fact of backend ×
+implementation**, not a live-device measurement — which is also why the fix needed no new
+runtime tracking.
 
-**Fixed.** `decoder/residency.go`'s `DecodePath()` now appends a `stagedDeviceNote(quant)` to the
-staged-path string: `int4` → *"[no GPU dispatch exists for this quant in the staged path —
-CPU-equivalent regardless of --backend]"*; `int4mix` → names the FFN/attention split. Also
-confirmed (not changed — already correct): `--require-backend` already refuses **every** staged
-case unconditionally (`internal/serveapp/main.go`'s `requireFastPaths` checks
-`!ResidentActive()`, independent of quant), which is exactly what the run's own scenario D
-observed firing before any GPU/swap touch — "covers staged declines too" was already true.
+**Fixed by retiring the label rather than annotating it.** `decoder/residency.go`'s
+`DecodePath()` no longer emits `"<backend>-staged"` for cuda/metal at all: when a cuda/metal
+model is not resident-eligible, it now reports through the same shape `BackendSummary()` (R2)
+already uses for a backend that failed to build in the first place — `requested <backend> →
+running on cpu: <reason>, and <backend> has no staged decode path` — because it is the same kind
+of claim (what the user asked for vs. what is actually executing), and
+`docs/hardware-matrix.md`'s generated table already only ever says `✅ resident` or `CPU` per
+cell; this makes the banner agree with that page instead of inventing a third state ("staged")
+that page never claimed. WebGPU keeps a real `"webgpu-staged"` path, still annotated per-quant
+(`stagedDeviceNote`, now WebGPU-only and simplified back to a pure function of quant alone) for
+its own int4/int4mix gap. Also touched, to state the same rule where a user reads it before
+ever loading a model: `--backend`'s help text on both binaries, `docs/benchmarks.md` §B10's row
+labels (all three GPU-prefixed rows are WebGPU-only measurements — relabeled from a bare "GPU"),
+and `docs/task-fit-to-hardware.md` §8, which now says plainly that its planner plans slots and
+context, not layer placement, and that real hybrid CPU/GPU layer placement (the gap the peer
+matrix's llama.cpp `--fit` comparison exposed at this same size class) is a separate, larger,
+not-yet-started item.
 
-**Verified end to end on real hardware**, not only unit-tested. Built `cuda/cmd/serve` (found the
-already-present, gitignored local `go.work` stitching `cuda` to this working tree — no manual
-`go mod replace` needed) and ran it against the real `granite-4.0-h-tiny-Q8_0.gguf` on the actual
-RTX 2070 SUPER. The banner now reads, verbatim: `decode path: cuda-staged (int4) [no GPU
-dispatch exists for this quant in the staged path — CPU-equivalent regardless of --backend] —
-arch is not eligible for the resident decode runner`.
+**Confirmed unchanged and already correct:** `--require-backend` already refuses every staged/
+declined case unconditionally (`internal/serveapp/main.go`'s `requireFastPaths` checks
+`!ResidentActive()`, independent of quant or backend), which is exactly what the run's own
+scenario D observed firing before any GPU/swap touch.
 
-**Gate.** `decoder/staged_device_note_test.go`: `stagedDeviceNote` is a pure function of the
-quant string, so the test needs no device or model fixture — every quant mode's dispatch is a
-static fact, not a runtime measurement. Covers int4, int4mix, int8, int8int8 and native f32.
+**Verified end to end on real hardware, twice** — the original int4 finding and the corrected
+backend-wide one. Built `cuda/cmd/serve` from the already-present local `go.work` (no manual `go
+mod replace` needed) against the real `granite-4.0-h-tiny-Q8_0.gguf` on the actual RTX 2070
+SUPER, before and after the fix. After: `decode path: cpu (int4) — requested cuda → running on
+cpu: arch is not eligible for the resident decode runner, and cuda has no staged decode path`.
+Also confirmed no regression on a resident-eligible checkpoint (`qwen2.5-coder-0.5b`, same box):
+`decode path: cuda-resident (int4)`, unchanged.
+
+**Gates.** `decoder/staged_device_note_test.go`: `TestDeclinedToCPUReason` (the cuda/metal
+reason-string builder, pure function, no live device needed) and `TestStagedDeviceNote`
+(WebGPU's per-quant note, also pure). Both are static-fact tests by design — which (backend,
+quant) pairs reach a device is determined by which interfaces `cuda/backend.go`, `metal/
+backend.go` and `gpu/backend.go` implement, not by anything measured at runtime.
 
 ### R10 — the embed example compiled first try; testing it against a real model found a real bug
 

@@ -1484,7 +1484,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   `keys`/`vals` directly via aikit's strided `MatmulBTAcc64` instead of gathering+transposing into
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
-- **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:781`) does
+- **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:806`) does
   `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1160/1013`)
   can't reroute without breaking the batch caller `decoder/model.go:1019`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an

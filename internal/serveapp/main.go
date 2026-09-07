@@ -407,7 +407,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		"(Paths may not contain commas.)")
 	flag.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise")
 	showVersion := flag.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
-	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide; cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
+	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide; cuda/metal: dense-only, cgo-free native, -tags cuda|metal). "+
+		"On cuda/metal, GPU means fully resident, full stop — a model/arch that does not build the resident runner declines straight to CPU; neither backend has a partial \"staged\" GPU path (R9, docs/measurements/cold-user-2026-09-06-nobara-pc.md). "+
+		"The only bigger-than-the-card story on cuda is MoE expert streaming (-moe-cache-experts); webgpu is the one backend with a real staged path, for f32/int8/int8int8 (not int4).")
 	flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/speed/RAM tradeoff (per-model override: --model name=path,quant=…):\n"+
 		"  int4      W4A8 (int4 weights, int8 activations): smallest, and fastest on every backend including\n"+
 		"            Apple Silicon CPU (measured M1 Pro, goinfer a11c56b 2026-08-24, docs/benchmarks.md: at or\n"+
