@@ -29,9 +29,14 @@
 > those families for however long they have existed, and would have left the new guard just as
 > inert on arrival had the gap gone unnoticed. The guard's own bug (KV priced at zero for any
 > unpinned context) is real and fixed too, but it is downstream of, and a much smaller finding
-> than, the MaxPositions gap. **v0.17.2 is not yet tagged: R13's fix has not been re-verified
-> against the live scenario that found it, and that re-run gates the tag rather than following
-> it** — see R13's own closing note.
+> than, the MaxPositions gap. **The live re-run of R13 happened, and confirmed the release-gate
+> discipline was necessary**: Scenario D and the load-time guard both passed cleanly, but
+> `serve check`'s own requests still drove 9.7 GB of swap — the request-time guard was pricing
+> against a fraction of TOTAL RAM, which a real machine with other work open can exceed regardless
+> of how correctly goinfer prices its own allocations. Fixed as **R13-follow-on**, immediately
+> after R13 below. **v0.17.2 is still not tagged: this second fix has not itself been re-verified
+> against the same live scenario, and that re-run gates the tag** — see R13-follow-on's own
+> closing note.
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
@@ -987,16 +992,80 @@ two families (`phi3` and now-also-fixed families) whose `MaxPositions` was ever 
   `TestAdmitPrefillMemory_admitsARequestThatFits`, `TestAdmitPrefillMemory_envOverrideAdmits`,
   `TestPrefillScratchBytes_scalesWithPromptLength`.
 
-**⛔ Not yet re-verified live — this is a release blocker for v0.17.2, not a footnote.** The Mac
-scenario that found this (7B/int4, opencode, 16 GB RAM) has not been re-run against this fix. The
-failure mode being fixed — "79% of budget" at load, 14 GB RSS and a hard swap on a 16 GB Mac on
-the very first real request — is user-visible and severe, and this fix has never once met the
-scenario that produced it. Green CI does not cover this: every gate above is a unit or
-integration proof of the arithmetic and the refusal path, run against synthetic fixtures, not a
-live re-run of the actual swap event. **The Mac re-run gates the v0.17.2 tag; it does not follow
-it.** See "Protocol amendments, after run 2b" and
-[`docs/integrations/opencode.md`](integrations/opencode.md), which states this plainly rather
-than implying the fix is confirmed.
+**Re-verified live — partially confirmed, and the gap that survived is the next section.** The Mac
+re-run (7B/int4, opencode, 16 GB RAM) happened: Scenario D passed cleanly (an immediate refusal
+before any swap growth, loading something bigger than RAM), and the load-time guard itself worked
+exactly as designed on the 7B model (context auto-pinned, a real margin reported). But the batch
+did not close — `serve check`, the documented pre-flight step, drove another 9.7 GB of swap on
+its own requests, with the request-time guard reporting every one of them as fitting. **This
+confirms the release-gate discipline was the right call**: green CI and every unit gate above
+would have shipped a fix that still swapped the exact machine it was built for. See
+R13-follow-on, immediately below, for the actual gap and its fix — which is itself now the thing
+that gates v0.17.2, not this one.
+
+### R13-follow-on — the request-time guard priced against a fraction of TOTAL RAM; the live re-run found it still swapped
+
+**Found** (the live re-run of R13 dispatched to close its own "not yet re-verified" gap). Scenario
+B's opencode leg never reached opencode: `serve check` alone — the integration doc's own
+documented pre-flight step — drove **+575,752 pages (~9 GB) of Swapouts**, with `serve` confirmed
+as the only plausible cause (6.15 GB RSS against everything else on the box under 350 MB). No HTTP
+413 was ever issued; every check reported "ok." The load-time guard was not at fault: it had
+already auto-pinned the 7B model's context correctly and reported a real, if thin, margin.
+
+**Root cause.** `AdmitPrefillMemory` priced KV+scratch against `fitMemFraction × TOTAL RAM −
+resident weights` — the same shape as the load-time guard, reused without re-examining whether it
+still fit a per-request check. That formula assumes nothing else on the machine ever needs more
+than the remaining 30% of *total* RAM. `HostRAMBytes()` reads `hw.memsize` (Darwin) /
+`MemTotal` (Linux) — physical RAM, a number that never changes and is cached once per process —
+never what is actually free right now. This project's own cold-user reports say, repeatedly, "this
+is a shared machine with other work open"; the arithmetic had no way to notice when that was true,
+because it never looked.
+
+**Fixed.** New `HostRAMAvailableBytes()` on both platforms, deliberately never cached (unlike
+`HostRAMBytes`, whose value cannot change): Linux reads `MemAvailable` from `/proc/meminfo` — the
+kernel's own no-swap-needed estimate; Darwin parses `vm_stat` (free + inactive + speculative +
+purgeable pages, at the page size `vm_stat`'s own header reports — Apple Silicon uses **16 KB**
+pages, confirmed on the exact Mac that found this bug, not the 4 KB a hardcoded assumption would
+have used). `AdmitPrefillMemory` now prices KV+scratch directly against `prefillAvailFraction ×
+currently-available-memory`, with **no weight subtraction**: at request time the model is already
+resident, so the OS's own "available" figure already excludes it — subtracting it again would
+double-count a footprint that is not there to subtract.
+
+**Scope, deliberately asymmetric.** Only the request-time check moved to available-RAM pricing;
+the load-time guard (`fitguard.go`) still budgets against total RAM. The load-time guard runs once,
+at a moment the operator controls; the request-time guard runs on every request, at a moment they
+do not, which is exactly why it needs the live number and the load-time guard does not (yet — see
+below). Moving the load-time guard too is a real follow-on, deliberately not done here: "available
+at load time" predicting "available ten minutes into a long-running server" is a different,
+unmeasured claim.
+
+**Gates.**
+
+- `decoder/hostram_linux_test.go`: `TestMeminfoField_realShape`,
+  `TestMeminfoField_missingKeyIsUnknown`, `TestMeminfoField_unexpectedUnitIsUnknown`, and
+  `TestHostRAMAvailableBytes_readsRealMeminfo` — run against this box's real, live
+  `/proc/meminfo`, not a fixture.
+- `decoder/hostram_darwin_test.go` (darwin-only; exercised by the `root-darwin`/`metal-darwin` CI
+  job, not locally — this fix was written on Linux with no Mac to run it on):
+  `TestParseVMStatAvailable_realShape` against real `vm_stat` output shaped at the *confirmed* 16
+  KB page size, `_missingHeaderIsUnknown`, `_zeroPageSizeIsUnknown`, and
+  `_missingFieldIsUnknown` (a partial sum would under-report usage in exactly the wrong
+  direction — accepting a request that should be refused — so a missing field must return
+  "unknown," never a sum of whatever it found).
+- `decoder/prefill_budget_test.go`'s `TestAdmitPrefillMemory_refusesAnOversizedRequest` now
+  injects AMPLE total RAM (so `Load` succeeds and the load-time guard has nothing to say) alongside
+  TIGHT available RAM — the exact shape of the live failure: the load-time guard satisfied, the
+  machine not. **Mutation-checked**: reverting to the old `fitMemFraction×totalRAM − weights`
+  formula turns exactly this test red; every other `AdmitPrefillMemory` test, none of which depend
+  on the total-vs-available distinction, stays green.
+  `TestAdmitPrefillMemory_unknownAvailabilityProceeds`, new.
+
+**⛔ Not yet re-verified live — again, and this is the note that actually gates v0.17.2 now.** The
+pattern so far is exact: R13's first fix passed every unit and integration gate and still failed
+live. This fix has the same shape of proof behind it — real arithmetic, a real mutation check, a
+darwin-only test CI will run on real hardware that this Linux box cannot — and none of that is the
+same claim as "the Mac that found this no longer swaps." It needs the same live re-run, on the
+same scenario, before it gets to be believed.
 
 ### R14 — the README named opencode as a real-agent target; no recipe for it existed anywhere
 

@@ -22,18 +22,40 @@ import (
 func HostRAMBytes() int64 { return hostRAMOnce() }
 
 var hostRAMOnce = sync.OnceValue(func() int64 {
+	return meminfoField(readMeminfo(), "MemTotal:")
+})
+
+// HostRAMAvailableBytes is this machine's CURRENTLY AVAILABLE memory — what the kernel estimates
+// can be allocated by a new process without swapping (free pages plus reclaimable cache) — or 0
+// when it cannot be determined. Unlike HostRAMBytes, this is NOT cached: it changes continuously
+// as other processes run, which is the entire reason it exists (R13-follow-on,
+// docs/measurements/... the Mac re-run that found this). HostRAMBytes reports total physical RAM,
+// which never changes and is safe to read once; MemAvailable is the opposite by nature.
+//
+// KNOWN LIMIT: same container caveat as HostRAMBytes — /proc/meminfo reports the HOST's memory
+// inside a container with a cgroup limit, over-reporting availability there. The safe direction.
+func HostRAMAvailableBytes() int64 {
+	return meminfoField(readMeminfo(), "MemAvailable:")
+}
+
+func readMeminfo() string {
 	b, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return 0
+		return ""
 	}
-	for line := range strings.SplitSeq(string(b), "\n") {
-		rest, ok := strings.CutPrefix(line, "MemTotal:")
+	return string(b)
+}
+
+// meminfoField extracts one "Key:   NNNNN kB" line's value in bytes, or 0 if the key is absent or
+// the line is not shaped as expected (a missing or unexpected unit means "we do not know", never
+// a guess off by a factor of 1024).
+func meminfoField(meminfo, key string) int64 {
+	for line := range strings.SplitSeq(meminfo, "\n") {
+		rest, ok := strings.CutPrefix(line, key)
 		if !ok {
 			continue
 		}
 		f := strings.Fields(rest)
-		// "MemTotal:  16311288 kB" — the unit is always kB in practice, but a missing or
-		// unexpected unit means we do not know, rather than off by 1024.
 		if len(f) != 2 || f[1] != "kB" {
 			return 0
 		}
@@ -44,4 +66,4 @@ var hostRAMOnce = sync.OnceValue(func() int64 {
 		return kb * 1024
 	}
 	return 0
-})
+}

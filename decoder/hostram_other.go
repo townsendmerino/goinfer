@@ -7,3 +7,6 @@ package decoder
 // guard existed rather than getting a wrong number. docs/task-fit-to-hardware.md §8 records the
 // same position for Windows: say "unknown", never guess.
 func HostRAMBytes() int64 { return 0 }
+
+// HostRAMAvailableBytes: same "no probe here" answer as HostRAMBytes, for the same reason.
+func HostRAMAvailableBytes() int64 { return 0 }

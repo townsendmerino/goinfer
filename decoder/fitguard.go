@@ -44,6 +44,10 @@ const fitWarnRatio = 0.75
 // hostRAM is indirected so a test can inject a machine's worth of RAM instead of needing one.
 var hostRAM = HostRAMBytes
 
+// hostRAMAvailable is the same indirection for CURRENTLY AVAILABLE memory (prefill_budget.go,
+// R13-follow-on) — a live figure, never cached, unlike hostRAM's total-RAM snapshot.
+var hostRAMAvailable = HostRAMAvailableBytes
+
 // ctxFloor is the smallest context this guard will auto-pin down to when the caller did not pin
 // one and the model's own maximum does not fit. Below this a context is not useful enough to hand
 // a user silently — refuse instead, the way R3 already does for the rest of the model. Named,

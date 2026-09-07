@@ -5,36 +5,53 @@ import (
 	"testing"
 )
 
+// injectHostRAMAvailable replaces the machine's CURRENTLY AVAILABLE memory figure for one test —
+// the prefill_budget.go counterpart to fitguard_test.go's injectHostRAM (total RAM).
+func injectHostRAMAvailable(t *testing.T, bytes int64) func() {
+	t.Helper()
+	prev := hostRAMAvailable
+	hostRAMAvailable = func() int64 { return bytes }
+	restore := func() { hostRAMAvailable = prev }
+	t.Cleanup(restore)
+	return restore
+}
+
 // R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the load-time guard prices the
 // worst case a request COULD reach; it cannot see the request that actually arrives. This is the
 // request-time counterpart — driven with numbers shaped like the actual failure (a 7B-class
 // model whose weights alone fit, but whose KV+scratch for a real agent-sized prompt does not).
+//
+// R13-follow-on: total RAM here is AMPLE (so Load succeeds and the load-time guard has nothing to
+// say) but currently-AVAILABLE RAM is tight — the shape of the live re-run's actual failure: the
+// load-time guard correctly auto-pinned a smaller context against total RAM, and the request
+// still swapped, because other processes on the real machine had already claimed most of what
+// the guard assumed was free.
 func TestAdmitPrefillMemory_refusesAnOversizedRequest(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
-	// Ample enough for the tiny fixture's own weights (a few hundred KB) but tight enough that a
-	// large simulated prompt cannot fit alongside them.
-	restore := injectHostRAM(t, 4<<20) // 4 MiB
+	restore := injectHostRAM(t, 64<<30) // 64 GB total: ample, so Load succeeds regardless
 	defer restore()
+	restoreAvail := injectHostRAMAvailable(t, 4<<20) // but only 4 MiB actually available right now
+	defer restoreAvail()
 
 	m, err := Load(gguf, Options{Quant: "int4"})
 	if err != nil {
-		t.Fatalf("Load refused at 4 MiB RAM (weights alone should fit): %v", err)
+		t.Fatalf("Load refused at 64 GB total RAM (weights alone should fit): %v", err)
 	}
 	defer m.Close()
 
 	before := prefillEnters.Load()
 	// A prompt+max_tokens shaped like the run's own opencode request: tens of thousands of
 	// positions, which this fixture's KV rate (measured elsewhere: 512 B/position) alone already
-	// exceeds a few-MiB budget.
+	// exceeds a few-MiB available-memory margin.
 	err = m.AdmitPrefillMemory(20000, 4096)
 	if err == nil {
-		t.Fatal("AdmitPrefillMemory admitted a request that cannot fit the remaining budget")
+		t.Fatal("AdmitPrefillMemory admitted a request that cannot fit the currently-available memory")
 	}
 	if got := prefillEnters.Load() - before; got != 0 {
 		t.Errorf("AdmitPrefillMemory allocated a KV cache (prefillEnters +%d) while REFUSING the request — "+
 			"admission must be a pure check with no allocation side effect", got)
 	}
-	for _, want := range []string{"GB", "budget", "-ctx", "-stream-weights", "GOINFER_NO_FIT_GUARD"} {
+	for _, want := range []string{"GB", "available", "-ctx", "-stream-weights", "GOINFER_NO_FIT_GUARD"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not mention %q:\n%s", want, err.Error())
 		}
@@ -47,6 +64,8 @@ func TestAdmitPrefillMemory_admitsARequestThatFits(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
 	restore := injectHostRAM(t, 64<<30) // 64 GB: ample for a small prompt against a tiny model
 	defer restore()
+	restoreAvail := injectHostRAMAvailable(t, 64<<30)
+	defer restoreAvail()
 
 	m, err := Load(gguf, Options{Quant: "int4"})
 	if err != nil {
@@ -63,8 +82,10 @@ func TestAdmitPrefillMemory_admitsARequestThatFits(t *testing.T) {
 // two names to remember.
 func TestAdmitPrefillMemory_envOverrideAdmits(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
-	restore := injectHostRAM(t, 4<<20)
+	restore := injectHostRAM(t, 64<<30)
 	defer restore()
+	restoreAvail := injectHostRAMAvailable(t, 4<<20)
+	defer restoreAvail()
 	t.Setenv("GOINFER_NO_FIT_GUARD", "1")
 
 	m, err := Load(gguf, Options{Quant: "int4"})
@@ -75,6 +96,26 @@ func TestAdmitPrefillMemory_envOverrideAdmits(t *testing.T) {
 
 	if err := m.AdmitPrefillMemory(20000, 4096); err != nil {
 		t.Errorf("GOINFER_NO_FIT_GUARD=1 did not bypass AdmitPrefillMemory: %v", err)
+	}
+}
+
+// AdmitPrefillMemory must proceed (not refuse) when availability is unknown — the same "unknown
+// ⇒ proceed" rule the load-time guard uses, and the platform-unsupported case (Windows/BSD).
+func TestAdmitPrefillMemory_unknownAvailabilityProceeds(t *testing.T) {
+	const gguf = "testdata/gptoss_tiny.gguf"
+	restore := injectHostRAM(t, 64<<30)
+	defer restore()
+	restoreAvail := injectHostRAMAvailable(t, 0)
+	defer restoreAvail()
+
+	m, err := Load(gguf, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load refused: %v", err)
+	}
+	defer m.Close()
+
+	if err := m.AdmitPrefillMemory(20000, 4096); err != nil {
+		t.Errorf("AdmitPrefillMemory refused with unknown (0) availability: %v — unknown must proceed", err)
 	}
 }
 

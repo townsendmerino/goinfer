@@ -12,6 +12,12 @@ import (
 // the absence of a crash.
 var prefillEnters atomic.Int64
 
+// prefillAvailFraction is the share of CURRENTLY AVAILABLE memory a request's own KV+scratch may
+// consume. Same numeric value as fitguard.go's fitMemFraction, and inherited from it rather than
+// independently measured for this specific context (available-RAM headroom, not a fraction of
+// total RAM) — stated rather than hidden, pending a real measurement of its own.
+const prefillAvailFraction = fitMemFraction
+
 // AdmitPrefillMemory is the request-time counterpart to fitguard.go's load-time guard (R13,
 // docs/measurements/cold-user-2026-09-07-macbook-arm64.md). The load-time guard prices the WORST
 // CASE a request could reach — the model's own maximum context — once, at load, and either caps
@@ -22,11 +28,24 @@ var prefillEnters atomic.Int64
 // budget" (KV priced at 0, since nothing was pinned) reached 14 GB RSS and swapped a 16 GB Mac
 // hard on its first opencode request, not on load.
 //
+// PRICED AGAINST CURRENTLY-AVAILABLE MEMORY, NOT A FRACTION OF TOTAL RAM (R13-follow-on, the same
+// report's live re-run of this fix). The first version of this function repeated fitguard.go's
+// load-time shape — a fixed fraction of TOTAL RAM, minus resident weights — which implicitly
+// assumes nothing else running on the machine ever needs more than the remaining fraction. On the
+// live re-run, the load-time guard correctly auto-pinned a smaller context and this function
+// correctly reported every check as fitting — and `serve check`'s own requests still drove 9.7 GB
+// of swap, because "70% of 16 GB total" was never actually free: other processes on a real,
+// shared machine were already using more than the remaining 30% assumed available. Weights are
+// NOT subtracted here (unlike the load-time guard): at request time the model is already
+// resident, so `HostRAMAvailableBytes` already excludes its footprint by construction — subtracting
+// it again would double-count. Reads live available memory on every call, never cached (unlike
+// hostRAM/HostRAMBytes, which caches total RAM once because total RAM cannot change).
+//
 // This runs BEFORE prefill begins (internal/serveapp calls it right after `prepare` resolves the
 // prompt length and clamped max_tokens, for every endpoint that reaches prefill), and prices
-// KV(promptTokens+maxTokens) plus prefill scratch against what remains of the budget after the
-// resident weights — never starting a prefill that would page. It runs for CPU and Metal-resident
-// alike: Metal's own residency guard (metal/backend.go's residentFitsMemory) prices weights only,
+// KV(promptTokens+maxTokens) plus prefill scratch against what remains of currently-available
+// memory — never starting a prefill that would page. It runs for CPU and Metal-resident alike:
+// Metal's own residency guard (metal/backend.go's residentFitsMemory) prices weights only,
 // against host RAM (Metal's unified memory IS host RAM), and has no per-request check at all — this
 // is additive to it, not a replacement.
 func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int) error {
@@ -36,18 +55,11 @@ func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int) error {
 	if m == nil || m.w == nil {
 		return nil
 	}
-	ram := hostRAM()
-	weights := m.ResidentWeightBytes()
-	if ram <= 0 || weights <= 0 {
+	avail := hostRAMAvailable()
+	if avail <= 0 {
 		return nil // unknown ⇒ proceed, the same principle the load-time guard uses
 	}
-	budget := int64(float64(ram) * fitMemFraction)
-	remaining := budget - weights
-	if remaining <= 0 {
-		// The load-time guard should already have refused or capped this load; do not
-		// double-report a decision that was already made and explained at load time.
-		return nil
-	}
+	remaining := int64(float64(avail) * prefillAvailFraction)
 
 	cfg := m.Config()
 	positions := promptTokens + maxTokens
@@ -59,13 +71,13 @@ func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int) error {
 	}
 	return fmt.Errorf(
 		"decoder: this request needs ~%.2f GB (KV %.2f GB + prefill scratch %.2f GB for %d prompt + %d max_tokens positions) "+
-			"but only %.2f GB of the %.2f GB budget remains once %.2f GB of resident weights are accounted — "+
+			"but only %.2f GB of this machine's %.2f GB currently-available memory would be left as a safety margin — "+
 			"rejected before prefill rather than paging.\n"+
-			"  Send a smaller prompt, lower max_tokens, pass -ctx to cap the context, "+
-			"or -stream-weights to free more of the budget for KV.\n"+
+			"  Send a smaller prompt, lower max_tokens, pass -ctx to cap the context, close other "+
+			"applications to free memory, or -stream-weights to free more of the budget for KV.\n"+
 			"  Set GOINFER_NO_FIT_GUARD=1 to allow it anyway if this machine really has the room",
 		float64(need)/fitGB, float64(kv)/fitGB, float64(scratch)/fitGB, promptTokens, maxTokens,
-		float64(remaining)/fitGB, float64(budget)/fitGB, float64(weights)/fitGB)
+		float64(remaining)/fitGB, float64(avail)/fitGB)
 }
 
 // FitBudgetSummary reports the numbers R13's banner line states at every load: the context KV is
