@@ -301,14 +301,17 @@ GOINFER_GATE_MODELS=/path/to/models go run ./cmd/gate gpu
 gpt-oss Metal residency (G10) and the Mellum2 real-weight resident-parity gate (G11) both landed
 after the last ritual was written.
 
-**Known-red at the time of writing, with a safety condition — do not "fix" it by re-baking blind.**
-`TestMetalSnapshotGolden` is EXPECTED to fail on the Mac until its goldens are re-baked
-(`GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/`). The cause is audit
-G-02, fixed on Linux where the suite cannot run: the checkpoint call now drives `ForwardEmb` with
-the production-scaled embedding row and `Forward`/`ForwardArgmax` apply the arch embed scale. The
-re-bake is only legitimate if **`gemma4-dense-scaled` entries move** (it has `EmbedScale = √hidden`)
-**and `mixtral-tiny` entries do NOT** (it has no embed scale). If mixtral-tiny moves, something
-other than G-02 changed and the re-bake must be refused pending investigation.
+**RESOLVED 2026-08-06 (`160dc3f`) — was known-red, is not any more, and the safety condition
+below is the record of how that was checked, not a live warning.** `TestMetalSnapshotGolden` was
+EXPECTED to fail on the Mac until its goldens were re-baked
+(`GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/`) after audit G-02, fixed
+on Linux where the suite cannot run: the checkpoint call now drives `ForwardEmb` with the
+production-scaled embedding row and `Forward`/`ForwardArgmax` apply the arch embed scale. The
+re-bake was only legitimate if **`gemma4-dense-scaled` entries moved** (it has
+`EmbedScale = √hidden`) **and `mixtral-tiny` entries did NOT** (it has no embed scale) — confirmed
+exactly that shape (`160dc3f`'s own commit message has the diff), and `TestMetalSnapshotGolden`
+has been green on the Mac since. Re-confirmed green again 2026-09-06
+(`docs/measurements/parity-sweep-metal-2026-09-06.md`'s companion `cmd/gate gpu` run).
 
 ## Test hooks build tag (`goinfer_testhooks`)
 

@@ -97,8 +97,15 @@ in this pass.
 
 ## Items 2–4 from the brief
 
-- **Item 2 (C3, the Metal consumer manual device gate)** — not run in this pass; queued to run
-  after this sweep, sequentially rather than concurrently, given this Mac's RAM headroom.
+- **Item 2 (C3, the Metal consumer manual device gate)** — **done, green**:
+  `go run ./cmd/gate gpu` (run sequentially after Item 1's sweep finished, not concurrently, given
+  this Mac's RAM headroom). `PASS — metal on Darwin @ eb113cd (2026-09-07T02:55:49Z)`: 9/9 declared
+  check groups reported, 10 pass / 2 skip / 0 fail, both skips legitimate (no `nvidia-smi` on a
+  Mac; 17 linux-only CI hygiene steps). Log archived at `~/gate-logs/gpu-metal-2026-09-06/`,
+  outside the worktree and outside `/tmp`. Found `RELEASING.md` §C1-M's own "known-red" warning
+  for `TestMetalSnapshotGolden` was stale — it passed here, and the re-bake it said was owed
+  (`160dc3f`, 2026-08-06) had already happened and already matched the doc's own stated validation
+  shape; fixed the doc rather than re-investigating a non-issue.
 - **Item 3 (agent CLI)** — done: `opencode` 1.18.29 installed into a contained prefix
   (`~/.local/opt/opencode`), matching `nobara-pc`'s own install, recorded in
   `docs/task-first-hour.md` §1.
