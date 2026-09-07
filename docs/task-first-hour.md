@@ -19,14 +19,19 @@
 > real alongside `gpt-oss-20b`, not instead of it — see R7's "Follow-up, same day, on review" for
 > the full correction.
 >
-> **Batch 3 — R13–R16 IMPLEMENTED 2026-09-07, uncommitted this pass**, against the run recorded in
+> **Batch 3 — R13–R16 IMPLEMENTED AND PUSHED 2026-09-07**, against the run recorded in
 > [`measurements/cold-user-2026-09-07-macbook-arm64.md`](measurements/cold-user-2026-09-07-macbook-arm64.md)
 > (MacBook, M1 Pro, 16 GB RAM, v0.17.1, run 2b — a targeted continuation of run 2's protocol after
 > a safety-motivated skip; see "Protocol amendments, after run 2b" below). Every fix below carries
-> a gate that goes red on v0.17.1, mutation-checked. R13 is most of this batch: a load-time memory
-> guard that priced KV cache at zero for any context that had not been explicitly pinned, so the
-> one number that actually varies per request — the prompt itself — was invisible to it until the
-> machine was already swapping.
+> a gate that goes red on v0.17.1, mutation-checked. **R13 is the headline, and the headline is not
+> the memory guard** — it is that `Config.MaxPositions` was silently unset for 16 of 18 GGUF
+> architectures, which had left the *pre-existing* context-length safety checks silently inert for
+> those families for however long they have existed, and would have left the new guard just as
+> inert on arrival had the gap gone unnoticed. The guard's own bug (KV priced at zero for any
+> unpinned context) is real and fixed too, but it is downstream of, and a much smaller finding
+> than, the MaxPositions gap. **v0.17.2 is not yet tagged: R13's fix has not been re-verified
+> against the live scenario that found it, and that re-run gates the tag rather than following
+> it** — see R13's own closing note.
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
@@ -879,39 +884,50 @@ client-side-tok/s-from-first-token by hand the way this run did.
 cites must resolve to a file that exists in the checkout. **Mutation-checked**: appended a dead
 citation to the real README, confirmed it is the only one flagged among 20; reverted.
 
-### R13 — the fit guard priced KV at zero for any context nobody pinned, and it fit fine right up until a real prompt arrived
+### R13 — `Config.MaxPositions` was silently unset for 16 of 18 GGUF architectures, which is why the fit guard could ship broken and no gate would have caught it
 
-**Found** (run 2b, scenario B). A 7B/int4 model's load-time check printed `"79% of budget"` — a
-comfortable-sounding number, on a 16 GB Mac with an 11.2 GB budget. The first real request —
-opencode's own multi-tool system prompt — pushed RSS to **14 GB** and drove the OS into **heavy,
-sustained swapping**: `vm_stat` measured Swapouts +621,588 pages (~9.7 GB) in under two minutes,
-`top` showed the process at 577% CPU producing no output, and the run had to `kill -9` both
-processes rather than wait further (rule 4, machine safety). The load-time number and the number
-a real request actually reached differed by ~5 GB, and nothing re-warned once the gap opened.
-
-**Root cause.** `estimateKVBytes` returned 0 whenever the caller had not explicitly pinned
-`-ctx` — reasoned, at the time, as "the CPU/Metal-staged cache grows with the conversation rather
-than being allocated up front, so counting a context nobody asked for would refuse models that
-run fine for short turns." That reasoning is true about short turns and wrong about what a real
-agent sends: nothing else bounds how far an unpinned KV cache can grow except the model's own
-maximum context, and an opencode-shaped prompt (tool schemas plus a system prompt, tens of
-thousands of tokens) is well inside that window on a 7B model. "No context pinned" does not mean
-"no KV ever allocated" — the load-time check just never asked itself the question a real request
-would ask.
-
-**A second, larger bug turned up while fixing the first.** Correctly pricing KV meant reading
-`Config.MaxPositions` (the model's own context ceiling) — which came back **0** for a real,
-freshly-downloaded `qwen2.5-coder-0.5b` GGUF. Tracing it found **16 of the 18 GGUF architecture
+**The headline is upstream of the scenario that found it.** Fixing the swap event below meant
+correctly pricing the KV cache at load time, which meant reading `Config.MaxPositions` — the
+model's own context ceiling. It came back **0** for a real, freshly-downloaded
+`qwen2.5-coder-0.5b` GGUF. Tracing that found the actual defect: **16 of the 18 GGUF architecture
 config builders never populated `Config.MaxPositions` at all** — only `ggufPhi3Config` did,
-apparently by accident (nothing about that family is special). This silently disabled not only
-the new pricing but the *pre-existing* `contextLengthError`/`clampMaxTokens` request-size checks,
-for nearly every model family this project supports. Nobody had noticed because every fixture
-that exercises those checks pins its own `MaxPositions` by hand. **Not something the original
-report found** — it is recorded here because R13 could not be fixed correctly without fixing it
-first, and a fix this size needed its own gate (below), not a silent ride-along.
+apparently by accident (nothing about that family is special). This is not a bug found while
+fixing R13; it is the reason R13 was reachable at all. `Config.MaxPositions` is what the
+*pre-existing* `contextLengthError`/`clampMaxTokens` request-size checks read too, so those
+checks had been **silently inert — "unknown, proceed" — for 16 of 18 model families for however
+long they have existed**, not merely for the duration of this fix. And the guard built below to
+fix the swap event reads the exact same field to price KV: fixing its own zero-pricing bug alone
+would have changed **nothing** for those 16 families, because the number it needs would still
+have been zero. Nobody had noticed because every fixture that exercises those checks pins
+`MaxPositions` by hand instead of reading it off a real GGUF — the gap was invisible to the whole
+existing test suite by construction.
 
-**Fixed, three parts.**
+**Found** (run 2b, scenario B — the visible symptom of the above). A 7B/int4 model's load-time
+check printed `"79% of budget"` — a comfortable-sounding number, on a 16 GB Mac with an 11.2 GB
+budget. The first real request — opencode's own multi-tool system prompt — pushed RSS to **14
+GB** and drove the OS into **heavy, sustained swapping**: `vm_stat` measured Swapouts +621,588
+pages (~9.7 GB) in under two minutes, `top` showed the process at 577% CPU producing no output,
+and the run had to `kill -9` both processes rather than wait further (rule 4, machine safety).
+The load-time number and the number a real request actually reached differed by ~5 GB, and
+nothing re-warned once the gap opened.
 
+**The guard's own bug, separate from the MaxPositions gap above.** `estimateKVBytes` returned 0
+whenever the caller had not explicitly pinned `-ctx` — reasoned, at the time, as "the
+CPU/Metal-staged cache grows with the conversation rather than being allocated up front, so
+counting a context nobody asked for would refuse models that run fine for short turns." That
+reasoning is true about short turns and wrong about what a real agent sends: nothing else bounds
+how far an unpinned KV cache can grow except the model's own maximum context, and an
+opencode-shaped prompt (tool schemas plus a system prompt, tens of thousands of tokens) is well
+inside that window on a 7B model. "No context pinned" does not mean "no KV ever allocated" — the
+load-time check just never asked itself the question a real request would ask. This bug and the
+MaxPositions gap compound: fixing only this one would have priced KV correctly for exactly the
+two families (`phi3` and now-also-fixed families) whose `MaxPositions` was ever real.
+
+**Fixed, four parts.**
+
+0. **`Config.MaxPositions` (`decoder/gguf.go`, `decoder/gguf_qwen35.go`):** added
+   `MaxPositions: u("context_length")` (or the architecture's own key-reading convention — see
+   the llama case below) to all 16 missing config builders.
 1. **Load-time (`decoder/fitguard.go`):** KV is now always priced, at `effCtx` — the pinned
    context (capped to the model's own maximum) when the caller pinned one, else the model's own
    maximum itself, the worst case an unpinned request could reach. Three outcomes, in order: an
@@ -939,6 +955,23 @@ first, and a fix this size needed its own gate (below), not a silent ride-along.
 
 **Gates.**
 
+- `decoder/gguf_maxpositions_test.go`, new: `TestGGUFConfig_everyArchitectureReadsMaxPositions`
+  drives all 18 architecture config builders through the real dispatch table (`ggufConfig`, not
+  the individual functions) with a synthetic GGUF carrying a known `context_length`, and asserts
+  every one comes back with that exact value. **Caught three separate defect classes while being
+  written, in one seam, none visible to any prior test**: (1) the MaxPositions gap itself, above;
+  (2) `ggufLlamaConfig`'s own `u` helper does not prefix keys with `"llama."` the way every other
+  family's does (every other field in that function spells the prefix out by hand), so the
+  scripted insertion that added `MaxPositions` there read the wrong, always-absent key — fixed to
+  `u("llama.context_length")`, matching the function's own convention; (3)
+  `granitehybrid`/`nemotron_h`'s Mamba head-dim arithmetic divides by `ssm.time_step_rank`, which
+  a minimal non-hybrid fixture does not set — not a source bug, but exactly the kind of
+  per-family requirement a hand-picked test subset would have quietly skipped instead of hitting.
+  A gate that finds three independent defects in the process of proving itself needed is the
+  strongest evidence this seam had no coverage at all. **Mutation-checked**: commenting out any
+  single architecture's `MaxPositions` line fails only that architecture's subtest; every other
+  family stays green, confirmed for the `llama` case by reverting its fix and observing exactly
+  one subtest fail.
 - `decoder/fitguard_test.go`: `TestFitCheck_unpinnedPricesKVAtTheModelsMaximum`,
   `TestFitCheck_pinnedContextThatDoesNotFitIsRefusedNotDowngraded`,
   `TestFitCheck_unpinnedRefusesWhenEvenTheFloorDoesNotFit`,
@@ -953,26 +986,17 @@ first, and a fix this size needed its own gate (below), not a silent ride-along.
   `weightAllocs`'s existing "refused before allocating" proof) — admission must be a pure check.
   `TestAdmitPrefillMemory_admitsARequestThatFits`, `TestAdmitPrefillMemory_envOverrideAdmits`,
   `TestPrefillScratchBytes_scalesWithPromptLength`.
-- `decoder/gguf_maxpositions_test.go`, new: `TestGGUFConfig_everyArchitectureReadsMaxPositions`
-  drives all 18 architecture config builders through the real dispatch table (`ggufConfig`, not
-  the individual functions) with a synthetic GGUF carrying a known `context_length`, and asserts
-  every one comes back with that exact value. **Caught two real bugs while writing it, not by
-  inspection**: `ggufLlamaConfig`'s own `u` helper does not prefix keys with `"llama."` the way
-  every other family's does (every other field in that function spells the prefix out by hand),
-  so the scripted insertion that added `MaxPositions` there read the wrong, always-absent key —
-  fixed to `u("llama.context_length")`, matching the function's own convention. Separately,
-  `granitehybrid`/`nemotron_h`'s Mamba head-dim arithmetic divides by `ssm.time_step_rank`, which
-  a minimal non-hybrid fixture does not set — not a source bug, but exactly the kind of
-  per-family requirement a hand-picked test subset would have quietly skipped instead of hitting.
-  **Mutation-checked**: commenting out any single architecture's `MaxPositions` line fails only
-  that architecture's subtest; every other family stays green, confirmed for the `llama` case by
-  reverting its fix and observing exactly one subtest fail.
-- **Not yet re-verified live.** The Mac scenario that found this (7B/int4, opencode, 16 GB RAM)
-  has not been re-run against this fix — that re-run is still outstanding (see "Protocol
-  amendments, after run 2b" and [`docs/integrations/opencode.md`](integrations/opencode.md),
-  which states this plainly rather than implying the fix is confirmed). The unit/integration
-  gates above prove the arithmetic and the refusal path; they do not prove the live swap event
-  is gone.
+
+**⛔ Not yet re-verified live — this is a release blocker for v0.17.2, not a footnote.** The Mac
+scenario that found this (7B/int4, opencode, 16 GB RAM) has not been re-run against this fix. The
+failure mode being fixed — "79% of budget" at load, 14 GB RSS and a hard swap on a 16 GB Mac on
+the very first real request — is user-visible and severe, and this fix has never once met the
+scenario that produced it. Green CI does not cover this: every gate above is a unit or
+integration proof of the arithmetic and the refusal path, run against synthetic fixtures, not a
+live re-run of the actual swap event. **The Mac re-run gates the v0.17.2 tag; it does not follow
+it.** See "Protocol amendments, after run 2b" and
+[`docs/integrations/opencode.md`](integrations/opencode.md), which states this plainly rather
+than implying the fix is confirmed.
 
 ### R14 — the README named opencode as a real-agent target; no recipe for it existed anywhere
 
@@ -1136,12 +1160,13 @@ every miss is again a claim nothing gated — a version string, a registry entry
 tokenizer, a banner's device-use claim, a stopgap example's own template choice, a doctor's
 schema size, a README citation — and the one hit (R10) landed exactly where the design doc had
 already named the right step and a later stopgap skipped it anyway, which is its own small
-lesson: a correct design does not enforce itself. **Run 2b keeps the pattern and adds one**: R13
-is again a claim nothing gated (a load-time number that was never checked against a real
-request), but its own fix ALMOST repeated the pattern one layer down — the first attempt at
-pricing KV correctly was itself blocked by a second, larger, previously-unknown gap
-(`Config.MaxPositions` unset for 16 of 18 architectures) that nothing had gated either, found only
-because the fix could not proceed without it working.
+lesson: a correct design does not enforce itself. **Run 2b keeps the pattern and finds it one
+layer deeper**: the visible claim nothing gated was a load-time number never checked against a
+real request, but fixing it required reading `Config.MaxPositions` — unset for 16 of 18
+architectures, silently, for however long they have existed, with the pre-existing request-size
+checks that also read it defaulting to "unknown, proceed" the entire time. The swap event is the
+scenario that surfaced it; the gap itself predates this run by however long those 16 families
+have shipped.
 
 ---
 
