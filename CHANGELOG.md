@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.17.0] — 2026-09-07
+
 ### Added
 
 - **`goinfer-serve` is a release asset again, and it carries a GPU backend.** v0.16.0 shipped 21
@@ -86,6 +88,27 @@ any surface may still change.
   arbitrary allocation. Bounds-checked first, with a 16 GiB ceiling.
 
 ### Changed
+
+- **Two more kernels moved to aikit**, on the same terms as MXFP4 below — land there with a
+  raw-bit gate, tag, then swap the call site and delete the local copy, never the other order.
+  `dequantHeads` now calls `linalg.DequantizeRowsInt8Into` (M5) and `attendTileFused` calls
+  `linalg.AttendTileFused` (M1, aikit v1.35.0); both gated over int8's full range including −128,
+  denormals, and the tail shapes the cache actually uses.
+
+- **aikit v1.37.0**, pinned identically across all five modules. It adds a numeric contract for the
+  f32 transcendentals with NEON/AVX2 kernels that obey it; goinfer calls none of them yet, so this
+  is the pin rather than the adoption. Its own release records a perfgate FAIL alongside the two
+  passing re-runs rather than replacing it, which is the discipline worth copying.
+
+- **`--quant int4` uses MORE resident RAM than `int8int8` on Apple Silicon** — 1.2500 against
+  1.0156 bytes/element, because the NEON row4 repack keeps a second buffer beside the canonical
+  nibbles. int4 remains the *faster* option there, so the trade is "faster and larger", not
+  "worse". Two claims in `serve --help` were wrong about this and are corrected; the fit guard's
+  own remedy line no longer offers int4 as "the smallest" on a machine where it is not. Found by a
+  gate of mine that asserted the opposite and went red on arm64 CI — the assertion was the bug.
+
+- **Gemma's final-logit softcap is parallelized on Metal**, and the WebGPU `DecodeRunner` reuses
+  its logits host buffer instead of allocating one per token.
 
 - **MXFP4 moved to aikit** (`embed.DequantMXFP4Split`/`Blocks`, v1.36.0); `decoder/mxfp4.go` is
   gone. The two block layouts stay separate functions on purpose — GGML packs elements j and j+16,

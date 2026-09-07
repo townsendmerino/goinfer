@@ -306,3 +306,37 @@ jobs:
           gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
           echo "attached to $TAG:"; gh release view "$TAG" --json assets \
             --jq '.assets[] | "  \(.name)  \(.size)"' --repo "${{ github.repository }}"
+
+      # THE README'S OWN URL, FETCHED AFTER PUBLISH. This is the one check readme-smoke cannot do:
+      # /releases/latest/download/... resolves only once a release exists, so a pre-tag job can
+      # never test it. v0.16.0 is exactly what that gap costs — the README told people to curl a
+      # `goinfer-serve` asset that the release did not contain, and every internal gate was green.
+      #
+      # The URLs are DERIVED from README.md rather than restated here. A hardcoded list would pass
+      # while the README pointed somewhere else, which is the same defect one level up.
+      - name: the README's download URLs resolve (post-publish)
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          urls=$(grep -ohE 'https://github\.com/[^ ")]*/releases/latest/download/[A-Za-z0-9._-]+' README.md | sort -u)
+          if [ -z "$urls" ]; then
+            echo "README names no release-download URL — this check would pass having tested nothing"
+            exit 1
+          fi
+          fail=0
+          for u in $urls; do
+            # -L: /latest/download/ is a redirect. HEAD is enough and avoids pulling a 600 MB asset.
+            # NO -f: with it, curl both writes the code AND exits non-zero, so `|| echo 000` appends
+            # and the variable reads "404000". The status is being inspected here, not enforced by
+            # curl. (Caught by running this against the live v0.16.0 release, whose missing asset
+            # makes the README's URL 404 today — which is the defect this step exists to prevent.)
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' --retry 3 --retry-delay 5 -I "$u" || echo 000)
+            if [ "$code" = "200" ]; then echo "  200  $u"; else echo "  $code  $u  <-- FAILED"; fail=1; fi
+          done
+          [ "$fail" = 0 ] || {
+            echo
+            echo "A URL the README tells people to curl does not resolve. Either the asset is not"
+            echo "attached to this release, or the README names a file that is not built."
+            exit 1
+          }
