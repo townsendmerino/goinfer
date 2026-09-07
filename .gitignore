@@ -69,6 +69,12 @@ demo/chat/dist/
 # red. Same rationale as mixtral-tiny/cohere-tiny above; see docs/parity-coverage-policy.md,
 # "A gate must be able to run, and able to fail".
 !testdata/glm-tiny.gguf
+# R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): a metadata-only GGUF (no weight
+# tensors — the source truncated at the tensor-data boundary, same shape as a .giw's tokenizer
+# half) carrying granite-4.0-h-tiny's real tokenizer.ggml.pre="dbrx" metadata, so
+# pull/registry_tokenizer_test.go's registry decline gate has a real fixture to run against
+# instead of skipping. 3.6 MB; same rationale as glm-tiny.gguf above.
+!tokenizer/testdata/granite-dbrx-meta.gguf
 testdata/model
 testdata/models
 testdata/*-gguf

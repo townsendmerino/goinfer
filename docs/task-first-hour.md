@@ -505,7 +505,8 @@ chatapp/prequant.go`'s `loadEmbedded` never reads `opts.Quant` at all — while 
    launch).
 
 **Verified end to end, not only unit-tested.** Built the real `-tags prequant` binary against the
-local `internal/chatapp/model.giw` (a real prequant bundle already on this box) with the actual
+local prequant bundle staged in `internal/chatapp` (build-embed.sh's own build input, gitignored
+and not committed — a real one already sat on this box) with the actual
 `-X` flags `build-embed.sh` now emits: `--version` printed exactly `goinfer-chat-1.5b-smoketest
 v0.17.0-test (…)` / `embedded: tier=1.5b quant=int8int8 (baked at build time; --quant has no
 effect on this binary)`. Then ran the unmodified, edited `build-embed.sh` script itself
