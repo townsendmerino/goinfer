@@ -15,6 +15,79 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.17.1] — 2026-09-07
+
+The second cold-user run (nobara-pc, Ryzen 3700X + RTX 2070 SUPER 8 GB, against v0.17.0) and the
+fixes it found. Same ritual as v0.17.0's: a stranger, a published tag, no access to the tree —
+[`docs/task-first-hour.md`](docs/task-first-hour.md) "Batch 2".
+
+Two of the seven findings turned out to need a second look after the first fix shipped internally:
+R9's first pass found CUDA's int4 staged path was CPU-only and wrongly generalized that int8/f32
+"reach the backend" on every backend — they do not on CUDA or Metal, which have no staged GPU path
+at any quant. R7's first pass, unable to verify a download for the checkpoint the run named,
+substituted a different real one rather than fabricate a digest — which was the right instinct,
+but the original checkpoint turned out to have a real download after all, findable on Hugging Face
+directly rather than by grepping this tree's own test fixtures. Both are corrected here, before
+release rather than after.
+
+### Fixed
+
+- **`goinfer-chat --version` was unanswerable; the released `goinfer-serve`'s `--version` reported
+  a VCS pseudo-version instead of its tag.** `goinfer-chat` gained the same `--version`/`version`
+  dispatch and unknown-positional error `goinfer-serve` already had; both binaries' release assets
+  now have their version injected via `-ldflags -X` at build time (the release workflow's ephemeral
+  submodule checkout, with R2-follow-on's `go mod edit -replace` applied, was enough on its own to
+  make the VCS stamp read "modified" even on an exact tagged tree). Embedded-tier binaries
+  (`goinfer-chat-0.5b`/`-1.5b`) now report the quant they were actually baked at, instead of
+  `--help`'s unrelated `-quant` flag default. Verified end to end against real binary builds,
+  including the actual edited `build-embed.sh` run against a real checkpoint.
+- **CUDA and Metal have no staged (non-resident) GPU decode path at any quant — the "cuda-staged"/
+  "metal-staged" banner labels named a path that was never real.** Neither backend implements
+  `decoder.QuantBackend`, and each one's own `Backend.MatmulBT` is a bare CPU call with no device
+  dispatch, so a model that is not resident-eligible on cuda/metal was always running fully on CPU
+  regardless of quant — confirmed on real hardware, VRAM sampled at 1 Hz through a full request,
+  unchanged from idle. The banner now reports this the same way `BackendReport()` already reports a
+  backend that failed to build in the first place (`requested cuda → running on cpu: <reason>, and
+  cuda has no staged decode path`), matching what `docs/hardware-matrix.md`'s generated table
+  already only ever claims (`resident` or `CPU`, never a third state). WebGPU keeps a real staged
+  path (the only backend that has one) for f32/int8/int8int8, with its own int4 gap noted
+  separately. `--backend`'s help text on both binaries states the rule plainly.
+- **A registry-recommended checkpoint (`granite-4.0-h-tiny`) loaded with a tokenizer pre-tokenizer
+  decline on every pull.** Measured the real HF `tokenizer.json`'s Split regex (byte-identical to
+  an already-implemented shape, different digit cap and merge-handling than its nearest sibling)
+  and added the missing case. A new registry gate reads each entry's committed GGUF-header fixture
+  and fails on any pre-tokenizer decline.
+- **`serve check`'s minimal one-tool schema passed against a server that a real agent then broke
+  under its own larger tool schema.** Added a second, harness-scale tools row (a dozen tools with
+  nested parameters, shaped like a real agent's) that reports a checkpoint too small to hold up as
+  a SKIP naming the reason, not a false green. The registry gained a measured `tools:` column,
+  shown in `goinfer-chat models`, populated from real runs where time allowed and marked honestly
+  `not yet measured` otherwise — never guessed.
+- **README numbers lacked provenance/network context, and a citation could silently rot.** The
+  cold-start figure now states its download size and measured network speed; the steady-state
+  hedge names the specific packaging defect (R2's Metal-less Mac asset) that produced the old
+  comparison instead of reading as an engine result. A new `readme-smoke` step asserts every
+  `docs/`-relative link the README cites resolves to a real file.
+
+### Added
+
+- **The recommendation registry gains two real 20-35B-class MoE checkpoints** — `gpt-oss-20b`
+  (OpenAI, real-oracle parity, validated resident on an 8 GB card via `-moe-cache-experts`) and
+  `gemma-4-26b-a4b` (Google's own QAT q4_0 GGUF — the checkpoint `docs/benchmarks.md` §B4/§B4.1
+  already has the most measurements on at this size). Neither the README's prior size-class example
+  nor the curated `models` list had anything a cold user could actually download at this scale.
+  Both sha256/bytes are Hugging Face's own git-LFS digest, cross-verified against real local copies
+  of each file already on this box. A new `readme-smoke` marker resolves every README-named model
+  reference (registry short name, `demo:` tier, or `owner/repo`) against the registry or Hugging
+  Face directly, metadata only — currently red for both new entries against the published module,
+  by design, until this tag lands.
+- **`docs/task-fit-to-hardware.md`** now states explicitly that its planner covers slot/context
+  placement, not per-layer CPU/GPU placement, and that real hybrid layer placement — the gap a peer
+  comparison exposed at this same size class — is a separate, larger, unscheduled item.
+
+Full findings, gates and the run report: [`docs/task-first-hour.md`](docs/task-first-hour.md),
+[`docs/measurements/cold-user-2026-09-06-nobara-pc.md`](docs/measurements/cold-user-2026-09-06-nobara-pc.md).
+
 ## [v0.17.0] — 2026-09-07
 
 Seven new model families, and the fixes from the first time somebody who had never seen goinfer
