@@ -604,6 +604,15 @@
       "note": "allenai/Olmo-Hybrid-7B (OlmoHybridForCausalLM), 14 GB — the only released size. 3:1 DeltaNet/full-attention (32 layers), MHA (30 heads = 30 kv heads), rope_theta null (no RoPE anywhere)."
     },
     {
+      "env": "GOINFER_INTERNLM2_1_8B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/internlm2-1_8b"],
+      "used_by": ["TestInternLM2_1_8bReal_gate"],
+      "note": "internlm/internlm2_5-1_8b-chat (InternLM2ForCausalLM), bf16 safetensors / ~3.6 GB \u2014 not a built-in transformers architecture, needs trust_remote_code=True to load. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
+    },
+    {
       "env": "GOINFER_GRANITE_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
