@@ -17,105 +17,76 @@ any surface may still change.
 
 ## [v0.17.0] — 2026-09-07
 
+Seven new model families, and the fixes from the first time somebody who had never seen goinfer
+was handed the release and asked to use it.
+
+The families first, because that is most of the diff: **Qwen3-MoE** (Qwen3-30B-A3B and the Coder
+variant — the most-run local MoE of the year, and a hole this project should not have had), dense
+**Granite 4.2**, **Ministral 3**, **SmolLM3**, **Olmo 3**, **Olmo Hybrid**, and **Bailing Hybrid**
+(Ling 3.0 — the first checkpoint here with Kimi Delta Attention). Each is parity-gated against a
+tiny oracle built from the real modeling code, with the departures from its nearest sibling
+written down rather than assumed; the real-checkpoint runs for the two 30B-class ones are queued
+on the Linux box and the tiers say so.
+
+Then the part we would rather state here than have found: **v0.16.0's downloadable Mac and Linux
+binaries had no GPU backend in them, and the Mac one had no way to tell you so.** A cold user on a
+16 GB M1 Pro measured goinfer at 37.9 tok/s against Ollama's 82.3 and had every reason to believe
+that was the engine. It was the packaging — the assets were built from an entrypoint that imports
+no backend — and the gate written to catch it then found that every release's Mac and Linux
+binaries had also been built against the *previous* release's engine. Both are fixed in the
+workflow and asserted on every asset from now on; if you downloaded a v0.16.0 binary, please
+download this one. `goinfer-serve --version` now tells you which backends a binary carries, the
+load banner names the backend that is actually executing, and a model that will not fit in RAM is
+refused before it is loaded, with the flag that would have made it fit. The protocol that found
+all of this is in the repo and is now part of the release pre-flight.
+
 ### Added
 
-- **`goinfer-serve` is a release asset again, and it carries a GPU backend.** v0.16.0 shipped 21
-  assets and none contained the string "serve", while the README used `goinfer-serve` as a
-  runnable command three times. The workflow now cross-compiles it per platform from the backend's
-  own entrypoint — darwin from `metal/cmd/serve`, linux from `cuda/cmd/serve` — and asserts each
-  asset's main module from `go version -m`. **A `-tags=metal` grep would not have caught this**:
-  nothing in `metal/` is gated on that tag, so the check has to look at the module.
+- **Qwen3-MoE as a new family** (`qwen3_moe`; Qwen3-30B-A3B / Qwen3-Coder-30B-A3B-Instruct): qwen3's
+  QK-norm dense attention with the FFN replaced on every layer by a sparse MoE, and — unlike its
+  `qwen2_moe` sibling — no always-on shared expert, confirmed against the real released config.json
+  and a real GGUF's tensor list. Pure composition of two already-shipped adapters: no new forward
+  path, so the family rides the generic uniform-layer dispatch (`canBatchN`/`specRollbackSafe` answer
+  correctly for free) and is resident-admitted on cuda/metal/webgpu from day one, same backends as
+  `qwen2_moe` and `qwen3`. GGUF support included (`general.architecture == "qwen3moe"`, verified
+  against a real file's header via HTTP Range, not assumed). Parity-gated against a tiny oracle
+  (100.0% / 1.00000); real-checkpoint T3 is a follow-up (`docs/task-families-2026-09.md`).
 
-- **`serve --version`** prints the version, the Go toolchain, and — the load-bearing part — **the
-  backends compiled into that binary**, read from the registry rather than a hand-written list. It
-  is the question a downloaded asset could not be asked before.
+- **Dense Granite 4.2 (3B/8B/30B) as a new family** (`granite`; distinct from the existing
+  `granitemoehybrid` Granite-4.0-H). A plain llama skeleton — confirmed byte-identical tensor names
+  to llama by instantiating `GraniteForCausalLM` directly — plus three of Granite's four scalar
+  multipliers, all already generic on the shared `Architecture` descriptor (embedding/attention/
+  logits scale); `residual_multiplier` is rejected unless 1.0, the only value any released 4.2 size
+  ships. Reuses `llamaTensorSchema` verbatim — no new tensor schema. GGUF support included
+  (`general.architecture == "granite"`, verified against a real file). Resident-admitted on
+  cuda/metal/webgpu from day one (empty feature profile — every scalar that varies from identity on
+  a real checkpoint is either baked into the generic attention scale or checked to be 1.0).
+  Parity-gated against a tiny oracle with non-trivial multipliers (100.0% / 0.9999999999999).
 
-- **A load-time fit guard.** Before allocating, the loader prices the checkpoint at the requested
-  quant and refuses if it needs more than 70% of physical RAM, naming `-stream-weights` and the
-  arithmetic. A cold user drove a 16 GB Mac +7.8 GB into swap in five seconds with no message; the
-  flag that fixes it was 13,583 bytes into `--help`. Escape hatch: `GOINFER_NO_FIT_GUARD=1`.
+- **Ministral 3 as a new family** (`mistral3`/`ministral3`; 3B/8B/14B): Mistral's GQA skeleton
+  (tensor names byte-identical, reused verbatim) plus two real deltas found by checking the
+  release rather than assuming a config alias: no sliding window at all on any released size, and
+  YaRN RoPE with an extra field, `llama_4_scaling_beta`, that scales the query by
+  `1 + beta·ln(1 + floor(pos/original_max_position_embeddings))` after RoPE, on every layer —
+  Llama 4's own attention-temperature-tuning formula, generalized here into two new generic
+  `Architecture` fields (`AttnTempBeta`/`AttnTempOrigMaxPos`, 0 = off) and wired into both generic
+  forward paths (sequential decode and batched prefill/verify), proven to agree bit-for-bit. A new
+  `FeatAttnTemp` resident-admission flag keeps this CPU-only until a GPU backend implements it —
+  no backend declares it, so cuda/metal/webgpu all correctly decline rather than silently dropping
+  the scale. Parity-gated against a tiny oracle whose prompt is deliberately longer than its
+  `original_max_position_embeddings`, so the new mechanism is actually exercised, not identity
+  (100.0% / 0.9999999999999605).
 
-- **Load time, instrumented and printed.** Both banners now report the phase split —
-  `load 4.9s (map 8ms build 4.9s) — 100% build`. The split is the product: "load 4.9s" is a number
-  to be annoyed by, "100% build" says a faster disk will not help and a different quant might.
-  Measured cold-vs-warm on NVMe in `docs/benchmarks.md` Table 4.
-
-- **`goinfer-chat models` and short names for `pull`.** A registry of checkpoints this project has
-  actually run — size, quant, what each is good for, what it costs — **derived from
-  `docs/capability-matrix.json`**, so nothing is listed that the parity gates do not back. Each
-  entry carries a sha256 the download verifies. goinfer hosts no weights.
-
-- **`docs/quantization.md`** — which quants this project stands behind, which it measured and
-  refused (3-bit KV at 22–30× worse than int8; resident int8 for Mamba-2 hybrids at 66% agreement,
-  precision-invariant), and where there is no evidence at all. Reading a format and recommending it
-  are different claims.
-
-- **`serve check` gains a two-turn tool round-trip**, checking both halves: a server can emit a
-  well-formed `tool_call` and then choke on the `role:"tool"` message coming back, which a harness
-  experiences as a conversation that dies on turn two.
-
-- **`docs/task-first-hour.md`** — a cold-user protocol, now part of `RELEASING.md`'s pre-flight.
-  It is the only gate that reads the product from outside, and v0.16.0 shipped a README naming a
-  binary that was not in the release with every internal gate green.
-
-### Fixed
-
-- **The load banner named a backend that was not executing.** `[backend=metal quant=int4]` printed
-  one line after "metal backend not built in … using cpu". On the reporter's Mac that was the
-  difference between 37.9 and 82.3 tok/s. It now reads `requested metal → running on cpu: <reason>`,
-  and all four `Model` construction sites record the split so a new load path cannot skip it.
-
-- **Every release's Mac and Linux binaries were the PREVIOUS release's engine.** The workflow fires
-  on the root tag, when the submodules still require the previous root release, and `go.work` is
-  gitignored — so CI resolved goinfer from the proxy at the stale version. Only the Windows asset
-  was ever current. Fixed with a `replace` onto the checked-out tree, gated on the `h1:` hash a
-  proxy-resolved module carries.
-
-- **`aikit_version` in the parity manifest was hand-typed and seventeen versions stale** (v1.19.0
-  against a go.mod of v1.36.0), so the staleness gate could not fire on any aikit change. Re-armed
-  and re-validated by a full 2h51m sweep on amd64 plus the arm64/Metal half on the MacBook: the
-  drift cost nothing measurable — argmax 100% on every family except one known, bisected trade.
-  All five modules now pin the same aikit, gated by `TestAikitPinsAgree`.
-
-- **`--help` was 13,583 bytes across 39 flags with no map.** Both binaries now print a skimmable
-  header first. The long text stays — every paragraph is a disclosure some measurement earned, and
-  shortening a page by deleting disclosures is how a trade-off stops being disclosed.
-
-- **`goinfer-chat serve` silently ignored the subcommand** and `-web` reported an undefined flag,
-  with nothing to say they belong to a different binary. Both now name the replacement.
-
-- **`decoder.LoadSession` allocated before validating**, so a corrupt snapshot could ask for an
-  arbitrary allocation. Bounds-checked first, with a 16 GiB ceiling.
-
-### Changed
-
-- **Two more kernels moved to aikit**, on the same terms as MXFP4 below — land there with a
-  raw-bit gate, tag, then swap the call site and delete the local copy, never the other order.
-  `dequantHeads` now calls `linalg.DequantizeRowsInt8Into` (M5) and `attendTileFused` calls
-  `linalg.AttendTileFused` (M1, aikit v1.35.0); both gated over int8's full range including −128,
-  denormals, and the tail shapes the cache actually uses.
-
-- **aikit v1.37.0**, pinned identically across all five modules. It adds a numeric contract for the
-  f32 transcendentals with NEON/AVX2 kernels that obey it; goinfer calls none of them yet, so this
-  is the pin rather than the adoption. Its own release records a perfgate FAIL alongside the two
-  passing re-runs rather than replacing it, which is the discipline worth copying.
-
-- **`--quant int4` uses MORE resident RAM than `int8int8` on Apple Silicon** — 1.2500 against
-  1.0156 bytes/element, because the NEON row4 repack keeps a second buffer beside the canonical
-  nibbles. int4 remains the *faster* option there, so the trade is "faster and larger", not
-  "worse". Two claims in `serve --help` were wrong about this and are corrected; the fit guard's
-  own remedy line no longer offers int4 as "the smallest" on a machine where it is not. Found by a
-  gate of mine that asserted the opposite and went red on arm64 CI — the assertion was the bug.
-
-- **Gemma's final-logit softcap is parallelized on Metal**, and the WebGPU `DecodeRunner` reuses
-  its logits host buffer instead of allocating one per token.
-
-- **MXFP4 moved to aikit** (`embed.DequantMXFP4Split`/`Blocks`, v1.36.0); `decoder/mxfp4.go` is
-  gone. The two block layouts stay separate functions on purpose — GGML packs elements j and j+16,
-  safetensors 2j and 2j+1, and feeding one to the other produces finite, plausibly-scaled,
-  completely wrong weights. Proven by a paired real-checkpoint cell: argmax 244/244 and logit
-  cosine 0.999058 on both sides of the swap.
-
+- **SmolLM3-3B as a new family** (`smollm3`): a plain llama-shaped dense GQA model with per-layer
+  NoPE on every 4th layer via `no_rope_layers` — a field whose VALUES are the opposite of what its
+  name suggests (1 = has RoPE, 0 = NoPE), verified against the real `modeling_smollm3.py` rather
+  than assumed from the name; getting this backwards would silently flip which 9 of 36 layers are
+  NoPE with correct shapes and plausible-but-wrong logits, no crash. Reuses the `Config` field and
+  boolean convention `llama4_text` already established for the same JSON key, and the same
+  `layerNoPE` `Architecture` hook `cohere2` already populates — no new mechanism, just composed
+  onto a third family. Tensor names byte-identical to llama (`llamaTensorSchema` reused verbatim).
+  CPU-only (`FeatNoPE` is undeclared on every resident backend, same as `cohere2`). Parity-gated
+  against a tiny oracle at the release's own every-4th-layer pattern (100.0% / 0.9999999999999544).
 
 - **Olmo 3 as a new family** (`olmo3`; Ai2, 7B/32B): two real departures from every other family
   here, both verified against the real `modeling_olmo3.py`/`configuration_olmo3.py` rather than
@@ -168,53 +139,102 @@ any surface may still change.
   0.9999999999999437; a deliberate negative control (reverting the decay to a per-head scalar)
   dropped cosine to 0.93984, confirming the gate actually discriminates the new primitive.
 
-- **SmolLM3-3B as a new family** (`smollm3`): a plain llama-shaped dense GQA model with per-layer
-  NoPE on every 4th layer via `no_rope_layers` — a field whose VALUES are the opposite of what its
-  name suggests (1 = has RoPE, 0 = NoPE), verified against the real `modeling_smollm3.py` rather
-  than assumed from the name; getting this backwards would silently flip which 9 of 36 layers are
-  NoPE with correct shapes and plausible-but-wrong logits, no crash. Reuses the `Config` field and
-  boolean convention `llama4_text` already established for the same JSON key, and the same
-  `layerNoPE` `Architecture` hook `cohere2` already populates — no new mechanism, just composed
-  onto a third family. Tensor names byte-identical to llama (`llamaTensorSchema` reused verbatim).
-  CPU-only (`FeatNoPE` is undeclared on every resident backend, same as `cohere2`). Parity-gated
-  against a tiny oracle at the release's own every-4th-layer pattern (100.0% / 0.9999999999999544).
+- **`goinfer-serve` is a release asset again, and it carries a GPU backend.** v0.16.0 shipped 21
+  assets and none contained the string "serve", while the README used `goinfer-serve` as a
+  runnable command three times. The workflow now cross-compiles it per platform from the backend's
+  own entrypoint — darwin from `metal/cmd/serve`, linux from `cuda/cmd/serve` — and asserts each
+  asset's main module from `go version -m`. **A `-tags=metal` grep would not have caught this**:
+  nothing in `metal/` is gated on that tag, so the check has to look at the module.
 
-- **Ministral 3 as a new family** (`mistral3`/`ministral3`; 3B/8B/14B): Mistral's GQA skeleton
-  (tensor names byte-identical, reused verbatim) plus two real deltas found by checking the
-  release rather than assuming a config alias: no sliding window at all on any released size, and
-  YaRN RoPE with an extra field, `llama_4_scaling_beta`, that scales the query by
-  `1 + beta·ln(1 + floor(pos/original_max_position_embeddings))` after RoPE, on every layer —
-  Llama 4's own attention-temperature-tuning formula, generalized here into two new generic
-  `Architecture` fields (`AttnTempBeta`/`AttnTempOrigMaxPos`, 0 = off) and wired into both generic
-  forward paths (sequential decode and batched prefill/verify), proven to agree bit-for-bit. A new
-  `FeatAttnTemp` resident-admission flag keeps this CPU-only until a GPU backend implements it —
-  no backend declares it, so cuda/metal/webgpu all correctly decline rather than silently dropping
-  the scale. Parity-gated against a tiny oracle whose prompt is deliberately longer than its
-  `original_max_position_embeddings`, so the new mechanism is actually exercised, not identity
-  (100.0% / 0.9999999999999605).
+- **`serve --version`** prints the version, the Go toolchain, and — the load-bearing part — **the
+  backends compiled into that binary**, read from the registry rather than a hand-written list. It
+  is the question a downloaded asset could not be asked before.
 
-- **Qwen3-MoE as a new family** (`qwen3_moe`; Qwen3-30B-A3B / Qwen3-Coder-30B-A3B-Instruct): qwen3's
-  QK-norm dense attention with the FFN replaced on every layer by a sparse MoE, and — unlike its
-  `qwen2_moe` sibling — no always-on shared expert, confirmed against the real released config.json
-  and a real GGUF's tensor list. Pure composition of two already-shipped adapters: no new forward
-  path, so the family rides the generic uniform-layer dispatch (`canBatchN`/`specRollbackSafe` answer
-  correctly for free) and is resident-admitted on cuda/metal/webgpu from day one, same backends as
-  `qwen2_moe` and `qwen3`. GGUF support included (`general.architecture == "qwen3moe"`, verified
-  against a real file's header via HTTP Range, not assumed). Parity-gated against a tiny oracle
-  (100.0% / 1.00000); real-checkpoint T3 is a follow-up (`docs/task-families-2026-09.md`).
+- **A load-time fit guard.** Before allocating, the loader prices the checkpoint at the requested
+  quant and refuses if it needs more than 70% of physical RAM, naming `-stream-weights` and the
+  arithmetic. A cold user drove a 16 GB Mac +7.8 GB into swap in five seconds with no message; the
+  flag that fixes it was 13,583 bytes into `--help`. Escape hatch: `GOINFER_NO_FIT_GUARD=1`.
 
-- **Dense Granite 4.2 (3B/8B/30B) as a new family** (`granite`; distinct from the existing
-  `granitemoehybrid` Granite-4.0-H). A plain llama skeleton — confirmed byte-identical tensor names
-  to llama by instantiating `GraniteForCausalLM` directly — plus three of Granite's four scalar
-  multipliers, all already generic on the shared `Architecture` descriptor (embedding/attention/
-  logits scale); `residual_multiplier` is rejected unless 1.0, the only value any released 4.2 size
-  ships. Reuses `llamaTensorSchema` verbatim — no new tensor schema. GGUF support included
-  (`general.architecture == "granite"`, verified against a real file). Resident-admitted on
-  cuda/metal/webgpu from day one (empty feature profile — every scalar that varies from identity on
-  a real checkpoint is either baked into the generic attention scale or checked to be 1.0).
-  Parity-gated against a tiny oracle with non-trivial multipliers (100.0% / 0.9999999999999).
+- **Load time, instrumented and printed.** Both banners now report the phase split —
+  `load 4.9s (map 8ms build 4.9s) — 100% build`. The split is the product: "load 4.9s" is a number
+  to be annoyed by, "100% build" says a faster disk will not help and a different quant might.
+  Measured cold-vs-warm on NVMe in `docs/benchmarks.md` Table 4.
+
+- **`goinfer-chat models` and short names for `pull`.** A registry of checkpoints this project has
+  actually run — size, quant, what each is good for, what it costs — **derived from
+  `docs/capability-matrix.json`**, so nothing is listed that the parity gates do not back. Each
+  entry carries a sha256 the download verifies. goinfer hosts no weights.
+
+- **`docs/quantization.md`** — which quants this project stands behind, which it measured and
+  refused (3-bit KV at 22–30× worse than int8; resident int8 for Mamba-2 hybrids at 66% agreement,
+  precision-invariant), and where there is no evidence at all. Reading a format and recommending it
+  are different claims.
+
+- **`serve check` gains a two-turn tool round-trip**, checking both halves: a server can emit a
+  well-formed `tool_call` and then choke on the `role:"tool"` message coming back, which a harness
+  experiences as a conversation that dies on turn two.
+
+- **`docs/task-first-hour.md`** — a cold-user protocol, now part of `RELEASING.md`'s pre-flight.
+  It is the only gate that reads the product from outside, and v0.16.0 shipped a README naming a
+  binary that was not in the release with every internal gate green.
+
+### Changed
+
+- **Two more kernels moved to aikit**, on the same terms as MXFP4 below — land there with a
+  raw-bit gate, tag, then swap the call site and delete the local copy, never the other order.
+  `dequantHeads` now calls `linalg.DequantizeRowsInt8Into` (M5) and `attendTileFused` calls
+  `linalg.AttendTileFused` (M1, aikit v1.35.0); both gated over int8's full range including −128,
+  denormals, and the tail shapes the cache actually uses.
+
+- **aikit v1.37.0**, pinned identically across all five modules. It adds a numeric contract for the
+  f32 transcendentals with NEON/AVX2 kernels that obey it; goinfer calls none of them yet, so this
+  is the pin rather than the adoption. Its own release records a perfgate FAIL alongside the two
+  passing re-runs rather than replacing it, which is the discipline worth copying.
+
+- **`--quant int4` uses MORE resident RAM than `int8int8` on Apple Silicon** — 1.2500 against
+  1.0156 bytes/element, because the NEON row4 repack keeps a second buffer beside the canonical
+  nibbles. int4 remains the *faster* option there, so the trade is "faster and larger", not
+  "worse". Two claims in `serve --help` were wrong about this and are corrected; the fit guard's
+  own remedy line no longer offers int4 as "the smallest" on a machine where it is not. Found by a
+  gate of mine that asserted the opposite and went red on arm64 CI — the assertion was the bug.
+
+- **Gemma's final-logit softcap is parallelized on Metal**, and the WebGPU `DecodeRunner` reuses
+  its logits host buffer instead of allocating one per token.
+
+- **MXFP4 moved to aikit** (`embed.DequantMXFP4Split`/`Blocks`, v1.36.0); `decoder/mxfp4.go` is
+  gone. The two block layouts stay separate functions on purpose — GGML packs elements j and j+16,
+  safetensors 2j and 2j+1, and feeding one to the other produces finite, plausibly-scaled,
+  completely wrong weights. Proven by a paired real-checkpoint cell: argmax 244/244 and logit
+  cosine 0.999058 on both sides of the swap.
 
 ### Fixed
+
+- **The load banner named a backend that was not executing.** `[backend=metal quant=int4]` printed
+  one line after "metal backend not built in … using cpu". On the reporter's Mac that was the
+  difference between 37.9 and 82.3 tok/s. It now reads `requested metal → running on cpu: <reason>`,
+  and all four `Model` construction sites record the split so a new load path cannot skip it.
+
+- **Every release's Mac and Linux binaries were the PREVIOUS release's engine.** The workflow fires
+  on the root tag, when the submodules still require the previous root release, and `go.work` is
+  gitignored — so CI resolved goinfer from the proxy at the stale version. Only the Windows asset
+  was ever current. Fixed with a `replace` onto the checked-out tree, gated on the `h1:` hash a
+  proxy-resolved module carries.
+
+- **`aikit_version` in the parity manifest was hand-typed and seventeen versions stale** (v1.19.0
+  against a go.mod of v1.36.0), so the staleness gate could not fire on any aikit change. Re-armed
+  and re-validated by a full 2h51m sweep on amd64 plus the arm64/Metal half on the MacBook: the
+  drift cost nothing measurable — argmax 100% on every family except one known, bisected trade.
+  All five modules now pin the same aikit, gated by `TestAikitPinsAgree`.
+
+- **`--help` was 13,583 bytes across 39 flags with no map.** Both binaries now print a skimmable
+  header first. The long text stays — every paragraph is a disclosure some measurement earned, and
+  shortening a page by deleting disclosures is how a trade-off stops being disclosed.
+
+- **`goinfer-chat serve` silently ignored the subcommand** and `-web` reported an undefined flag,
+  with nothing to say they belong to a different binary. Both now name the replacement.
+
+- **`decoder.LoadSession` allocated before validating**, so a corrupt snapshot could ask for an
+  arbitrary allocation. Bounds-checked first, with a 16 GiB ceiling.
 
 - **`docs/capability-matrix.md`'s "GPU-resident" column read the wrong gate for six families**
   (`cohere`, `cohere2`, `mistral3`, `smollm3`, `olmo3`, `olmo_hybrid`): it derived from
