@@ -14,6 +14,7 @@ better starting point if you are picking something up.
 | | |
 |---|---|
 | [**book/**](book/) · [read online](https://townsendmerino.github.io/goinfer/) | eleven-chapter inference primer for Go engineers — concepts from zero, each chapter ending in a measured number |
+| [task-download-and-load.md](task-download-and-load.md) | which checkpoints to download and what a load actually costs — plus why the load is compute-bound, not storage-bound |
 | [quantization.md](quantization.md) | which quants goinfer stands behind, which it measured and refused, and where there is no evidence — reading a format is not endorsing it |
 | [how-inference-works.md](how-inference-works.md) | the same ground in ~2,300 words, anchored to specific source lines. The code map |
 | [webgpu-primer.md](webgpu-primer.md) | orientation for anyone touching `gpu/` |

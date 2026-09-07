@@ -71,9 +71,15 @@ sweep. Do not re-baseline anything to make it green.
 
 **Deliverable:** merged rows with `arch=arm64` in the proof block, plus
 `docs/measurements/parity-sweep-metal-2026-09-06.md` in the same shape as the amd64 one —
-**including a section on what it did not validate.** Specifically: **if a family emits no
-`PARITY_ROW`, do not let its `deps_hash` refresh stand as validation.** The amd64 run caught
-`kimi_k2` doing exactly that, and naming it is the point.
+**including a section on what it did not validate.**
+
+On that section, learn from a mistake the amd64 run made: it flagged a family emitting no
+`PARITY_ROW` as validated with "zero evidence", and that was **wrong** for `kimi_k2`, whose
+`deps_hash` is byte-identical to `deepseek_v3`'s and whose `method` is `shared-path (via
+deepseek_v3)` — a family re-validated in the same run. **Before calling an unemitted family
+uncovered, check whether its `deps_hash` equals one that WAS re-validated, and read its `method`
+and `reference` fields.** gemma4 and gpt-oss are the real instances of that gap: their gates
+passed and simply never call `emitParityRow`.
 
 **Two known-red gates, so you can tell them from your own findings:**
 

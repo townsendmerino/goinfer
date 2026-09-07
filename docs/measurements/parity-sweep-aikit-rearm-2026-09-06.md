@@ -81,13 +81,35 @@ real evidence from today that simply was not stamped; one has none.
 |---|---|---|
 | **gemma4** | `TestGemma4_26B_gate` (int4 + int8int8) **passed** | evidence exists; the gate does not call `emitParityRow`, so `validated_at` still reads `d64afe4` / 2026-06-16 |
 | **gpt-oss** | `TestGptOssReal_gate` + `_logitParity` **passed**, plus M2's paired cell (argmax 244/244, cosine 0.999058 both sides) | same — `validated_at` still reads `25a4711` / 2026-07-27 |
-| **kimi_k2** | **no gate ran at all** | **its staleness was cleared with zero evidence.** The real 1T gate is download-infeasible on this box; the family rides the deepseek MLA path as a config alias |
+| **kimi_k2** | no gate of its own | **covered, and this row originally said otherwise — see the correction below** |
 
 **The gap this exposes is in the emitter, not the runner.** A gate that passes but never calls
 `emitParityRow` leaves the manifest unable to distinguish "re-validated today" from "never
-re-run" — both look identical after a merge refreshes the hash. gemma4 and gpt-oss are the honest
-cases of that; **kimi_k2 is the dishonest one**, and its green should be read as "the hash matches",
-not "the numerics were checked".
+re-run" — both look identical after a merge refreshes the hash. gemma4 and gpt-oss are exactly
+that case: real evidence from today, unstamped.
+
+### Correction — kimi_k2 is covered, and this document first claimed it was not
+
+This row originally read *"its staleness was cleared with zero evidence"* and named kimi_k2 as the
+one family whose green meant only "the hash matches". **That was wrong**, and checking it rather
+than repeating it is the reason it is corrected here rather than quietly edited away.
+
+kimi_k2's `own` and `uses` sets are byte-identical to deepseek_v3's, so its `deps_hash` is
+**literally the same string** — `sha256:ec563d89…` for both. Its `method` is the recognised
+vocabulary entry **`shared-path (via deepseek_v3)`**, and its `reference` field records the
+argument: same `forward_deepseek.go`, with Kimi's config-delta (64 heads, 384 experts top-8,
+sigmoid `noaux_tc` routing) covered by `TestKimi_descriptor` / `TestKimi_routingDefault` /
+`TestKimi_textParity` at tiny-golden cosine 1.000000.
+
+And **deepseek_v3 was re-validated in this very sweep** — real-model-oracle, argmax 100%, cosine
+0.99951. Refreshing a hash that is the same hash as a family re-validated the same day is a
+tautology, not a gap. There is no direct gate because the checkpoint is 1T and the download is
+infeasible on any box here; that is a recorded constraint, not an omission.
+
+**What the mistake was.** "No `PARITY_ROW` emitted" was read as "no evidence", when the manifest
+already models exactly this case with a shared-path method and a stated reference. The emitter
+follow-up below is still worth doing — but its purpose is gemma4 and gpt-oss, whose evidence
+genuinely is unstamped, **not** kimi_k2, which is modelled correctly.
 
 Also not covered: **4 of 39 assets are unresolved on this box** (`GOINFER_QWEN3_FP8`,
 `GOINFER_QWEN3_BF16`, and two others). Their gates skipped and are counted as blockers by the
@@ -95,9 +117,11 @@ runner's own convention — that count is about the assets, not the tree.
 
 ## Follow-ups this run earned
 
-1. Make `emitParityRow` mandatory for any gate a family's `validated` status depends on, or make
-   the merge refuse to refresh a hash for a family that emitted nothing. The second is the real
-   fix: it converts kimi_k2's silent pass into a loud one.
+1. Make `emitParityRow` mandatory for any gate a family's `validated` status depends on. The
+   tempting stronger version — have the merge REFUSE to refresh a hash for a family that emitted
+   nothing — is wrong as stated: it would red kimi_k2, which is modelled correctly as a
+   shared-path family and has no gate of its own by design. The rule has to exempt a family whose
+   `deps_hash` equals that of a family re-validated in the same run, which is checkable.
 2. `TestQwen38GGUF_weightDiff` needs a disposition — it is a first-run red on an experimental
    family, and its 0.999 bar has never been calibrated against what that loader actually achieves.
 3. The Metal half of the sweep has never run here; `C3` remains owed on `macbook-arm64`.
