@@ -17,6 +17,83 @@ any surface may still change.
 
 ### Added
 
+- **`goinfer-serve` is a release asset again, and it carries a GPU backend.** v0.16.0 shipped 21
+  assets and none contained the string "serve", while the README used `goinfer-serve` as a
+  runnable command three times. The workflow now cross-compiles it per platform from the backend's
+  own entrypoint — darwin from `metal/cmd/serve`, linux from `cuda/cmd/serve` — and asserts each
+  asset's main module from `go version -m`. **A `-tags=metal` grep would not have caught this**:
+  nothing in `metal/` is gated on that tag, so the check has to look at the module.
+
+- **`serve --version`** prints the version, the Go toolchain, and — the load-bearing part — **the
+  backends compiled into that binary**, read from the registry rather than a hand-written list. It
+  is the question a downloaded asset could not be asked before.
+
+- **A load-time fit guard.** Before allocating, the loader prices the checkpoint at the requested
+  quant and refuses if it needs more than 70% of physical RAM, naming `-stream-weights` and the
+  arithmetic. A cold user drove a 16 GB Mac +7.8 GB into swap in five seconds with no message; the
+  flag that fixes it was 13,583 bytes into `--help`. Escape hatch: `GOINFER_NO_FIT_GUARD=1`.
+
+- **Load time, instrumented and printed.** Both banners now report the phase split —
+  `load 4.9s (map 8ms build 4.9s) — 100% build`. The split is the product: "load 4.9s" is a number
+  to be annoyed by, "100% build" says a faster disk will not help and a different quant might.
+  Measured cold-vs-warm on NVMe in `docs/benchmarks.md` Table 4.
+
+- **`goinfer-chat models` and short names for `pull`.** A registry of checkpoints this project has
+  actually run — size, quant, what each is good for, what it costs — **derived from
+  `docs/capability-matrix.json`**, so nothing is listed that the parity gates do not back. Each
+  entry carries a sha256 the download verifies. goinfer hosts no weights.
+
+- **`docs/quantization.md`** — which quants this project stands behind, which it measured and
+  refused (3-bit KV at 22–30× worse than int8; resident int8 for Mamba-2 hybrids at 66% agreement,
+  precision-invariant), and where there is no evidence at all. Reading a format and recommending it
+  are different claims.
+
+- **`serve check` gains a two-turn tool round-trip**, checking both halves: a server can emit a
+  well-formed `tool_call` and then choke on the `role:"tool"` message coming back, which a harness
+  experiences as a conversation that dies on turn two.
+
+- **`docs/task-first-hour.md`** — a cold-user protocol, now part of `RELEASING.md`'s pre-flight.
+  It is the only gate that reads the product from outside, and v0.16.0 shipped a README naming a
+  binary that was not in the release with every internal gate green.
+
+### Fixed
+
+- **The load banner named a backend that was not executing.** `[backend=metal quant=int4]` printed
+  one line after "metal backend not built in … using cpu". On the reporter's Mac that was the
+  difference between 37.9 and 82.3 tok/s. It now reads `requested metal → running on cpu: <reason>`,
+  and all four `Model` construction sites record the split so a new load path cannot skip it.
+
+- **Every release's Mac and Linux binaries were the PREVIOUS release's engine.** The workflow fires
+  on the root tag, when the submodules still require the previous root release, and `go.work` is
+  gitignored — so CI resolved goinfer from the proxy at the stale version. Only the Windows asset
+  was ever current. Fixed with a `replace` onto the checked-out tree, gated on the `h1:` hash a
+  proxy-resolved module carries.
+
+- **`aikit_version` in the parity manifest was hand-typed and seventeen versions stale** (v1.19.0
+  against a go.mod of v1.36.0), so the staleness gate could not fire on any aikit change. Re-armed
+  and re-validated by a full 2h51m sweep on amd64 plus the arm64/Metal half on the MacBook: the
+  drift cost nothing measurable — argmax 100% on every family except one known, bisected trade.
+  All five modules now pin the same aikit, gated by `TestAikitPinsAgree`.
+
+- **`--help` was 13,583 bytes across 39 flags with no map.** Both binaries now print a skimmable
+  header first. The long text stays — every paragraph is a disclosure some measurement earned, and
+  shortening a page by deleting disclosures is how a trade-off stops being disclosed.
+
+- **`goinfer-chat serve` silently ignored the subcommand** and `-web` reported an undefined flag,
+  with nothing to say they belong to a different binary. Both now name the replacement.
+
+- **`decoder.LoadSession` allocated before validating**, so a corrupt snapshot could ask for an
+  arbitrary allocation. Bounds-checked first, with a 16 GiB ceiling.
+
+### Changed
+
+- **MXFP4 moved to aikit** (`embed.DequantMXFP4Split`/`Blocks`, v1.36.0); `decoder/mxfp4.go` is
+  gone. The two block layouts stay separate functions on purpose — GGML packs elements j and j+16,
+  safetensors 2j and 2j+1, and feeding one to the other produces finite, plausibly-scaled,
+  completely wrong weights. Proven by a paired real-checkpoint cell: argmax 244/244 and logit
+  cosine 0.999058 on both sides of the swap.
+
+
 - **Olmo 3 as a new family** (`olmo3`; Ai2, 7B/32B): two real departures from every other family
   here, both verified against the real `modeling_olmo3.py`/`configuration_olmo3.py` rather than
   assumed. `NormPlacement` gains a fourth value, `NormPostOnly` — no pre-norm at all; only the
