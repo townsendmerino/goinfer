@@ -60,6 +60,9 @@ type Model struct {
 	// "[backend=metal quant=int4]" on consecutive lines, and the second is the one that gets
 	// screenshotted (docs/measurements/cold-user-2026-09-06.md, finding #3). On that machine it
 	// was the difference between 37.9 and 82.3 tok/s.
+	// prof is this load's phase timing, when the loader instrumented it. nil otherwise.
+	prof *LoadProfile
+
 	reqBackend string
 	effBackend string
 	// beDecline is NewBackend's fallback note, if any — the reason effBackend != reqBackend.
@@ -311,7 +314,19 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	return (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}).withBackendNames(opts.Backend, beErr).withResidency(), nil
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}).withBackendNames(opts.Backend, beErr)
+	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
+	// inside withResidency because a backend that DECLINES still costs its probe, and a user
+	// wondering where nine seconds went is owed that time too.
+	tRes := time.Now()
+	m = m.withResidency()
+	if w.prof != nil {
+		if d := time.Since(tRes); d > time.Millisecond {
+			w.prof.record("resident", d)
+		}
+		m.prof = w.prof
+	}
+	return m, nil
 }
 
 // Validate checks the stringly-typed knobs against their allowed values, so an

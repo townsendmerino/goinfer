@@ -169,6 +169,12 @@ type expertWeights struct {
 // Embed doubles as the LM head (logits = h · Embedᵀ), so there is no
 // separate output projection tensor.
 type Weights struct {
+	// prof records how long each phase of this load took, when the loader instrumented it (the
+	// GGUF path does). It rides on Weights because that is the value the loader already returns;
+	// threading a parameter through loadWeights and its callers would have been a wider change
+	// for the same information. nil when the path did not instrument.
+	prof *LoadProfile
+
 	Cfg  Config
 	arch *Architecture // resolved descriptor the forward pass reads
 	// bakedQuant is the resolved quant label recorded in the .giw header (v5+): "int4" |

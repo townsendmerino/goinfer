@@ -1273,12 +1273,25 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4 bool) (*Weights, er
 	// mmap, not heap-read: the raw quantized bytes stay in reclaimable page
 	// cache while we dequantize tensor-by-tensor. The weights end up as fresh
 	// (f32 or int8) copies, so the mapping is unneeded once the build returns.
-	g, err := embed.OpenGGUFMmap(path)
-	if err != nil {
+	prof := &LoadProfile{}
+	if fi, serr := os.Stat(path); serr == nil {
+		prof.setBytes(fi.Size())
+	}
+	var g *embed.GGUFFile
+	// `map` is the storage-bound phase: open + mmap + header/metadata parse. Separated from
+	// `build` because a slow disk and a slow repack want different remedies.
+	if err := prof.timed("map", func() (e error) { g, e = embed.OpenGGUFMmap(path); return e }); err != nil {
 		return nil, err
 	}
 	defer g.Close()
-	return buildGGUFWeights(g, quant, embedInt4)
+	var w *Weights
+	// `build` is the CPU-bound phase: dequantize every tensor and re-quantize/repack it into the
+	// resident precision. On a large model this dominates, which is the fact the banner surfaces.
+	if err := prof.timed("build", func() (e error) { w, e = buildGGUFWeights(g, quant, embedInt4); return e }); err != nil {
+		return nil, err
+	}
+	w.prof = prof
+	return w, nil
 }
 
 // buildGGUFWeights builds the weight bundle from an already-open GGUF — whether

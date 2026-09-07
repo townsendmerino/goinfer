@@ -130,6 +130,16 @@ func serverBanner(s *server, cfg config) []string {
 		routes = append(routes, "/admin/models/{load,unload}")
 	}
 	out := []string{"routes: " + strings.Join(routes, " ")}
+	// Load cost, split by phase. task-embed-and-harness-ux.md 3.3 already names the banner as the
+	// UI for a harness user; this is one line of it. The SPLIT is what makes it actionable — "load
+	// 9.2s" is a number to be annoyed by, "9.2s, 82% build" says the disk is not the problem and a
+	// different quant might be. Printed only for a model whose loader instrumented it.
+	for _, lm := range s.models {
+		if sum := lm.model.LoadProfile().Summary(); sum != "" {
+			out = append(out, sum)
+			break // one line; a zoo would otherwise print one per model
+		}
+	}
 	if !cfg.web {
 		out = append(out, "web UI: off (-web enables a browser UI at / for chat and model pulls)")
 	}

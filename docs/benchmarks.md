@@ -1317,6 +1317,43 @@ second look on the CUDA side before treating this as settled either way.
 - **W3 at 2k/32k** — only 8k has been run.
 - **M35/M26 W3 post-fix re-run** — in progress, see the note above.
 
+## Table 4 — Load time, by phase (2026-09-06)
+
+Time from `decoder.Load` entry to a ready model, split by phase, as the banner now reports it.
+Instrumentation: `decoder/loadprofile.go`.
+
+**Rig:** `nobara-pc`, Ryzen 3700X, 62.7 GB RAM, **checkpoints on local NVMe** (`/dev/nvme0n1p3`;
+`~/models/qwen2.5-coder-…` is a symlink but resolves within `~/models` — checked, because a
+symlink into `/srv/models` would void the row). goinfer `e810924f`, aikit v1.37.0. CPU backend,
+`--quant int4`. Idle box, three repeats per cell, all three shown rather than a median.
+
+**Cold** = the file's pages evicted with `posix_fadvise(DONTNEED)` and the eviction **verified with
+`mincore`** (`119971/119971 → 0`, `584285/584285 → 0`) — an fadvise that silently did nothing would
+produce a warm number wearing a cold label. **Warm** = immediately after, cache hot.
+
+| model | source | phase split | cold (3 runs) | warm (3 runs) | cold − warm |
+|---|---|---|---|---|---|
+| Qwen2.5-Coder-0.5B-Instruct Q4_K_M → int4 | 0.46 GB | map 46–57 ms · build 2.71–2.75 s | 2.80 / 2.75 / 2.81 s | 2.72 / 2.66 / 2.72 s | **+0.09 s (+3.3%)** |
+| Phi-3-mini-4k-instruct q4 → int4 | 2.23 GB | map 6–10 ms · build 4.95–5.19 s | 5.19 / 5.19 / 5.20 s | 4.96 / 4.96 / 4.99 s | **+0.22 s (+4.4%)** |
+
+**The load is compute-bound, not storage-bound, and that is the result.** `build` — dequantize
+every tensor and re-quantize/repack it into the resident precision — is **98–100%** of both loads.
+Cold-versus-warm moves the total by 3–4%, because the repack is slow enough that the kernel's
+readahead hides most of the NVMe read behind it.
+
+Three cautions, since this is a storage-regime number and those rot in specific ways:
+
+- **`map` is not the file read.** The loader mmaps, so pages fault in during `build`. `map` is
+  header/metadata parse alone — which is why the 0.46 GB model spends *more* time there (46–57 ms)
+  than the 2.23 GB one (6–10 ms): that phase tracks metadata count, not bytes. Storage cost appears
+  as the cold−warm delta, not as its own phase.
+- **This says nothing about spinning disks or network mounts.** The 3–4% delta is an NVMe result.
+  On the SMR archive or an SMB mount the same load would be storage-dominated, which is the whole
+  reason the regime is labelled rather than assumed.
+- **No peer comparison is claimed here.** Load time is directly comparable against runtimes that
+  read the same GGUF, and it is a plausible place for a single static binary with no daemon to do
+  well — but nobody has measured that, and a plausible advantage is not a measured one.
+
 ## Measurement notes worth keeping
 
 - **Interleaving is not optional, and skipping it is invisible in the output.** Absolute sampled
