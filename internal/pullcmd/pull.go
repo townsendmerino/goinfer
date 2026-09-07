@@ -48,6 +48,34 @@ Anonymous only. A gated repo is detected up front and named, rather than failing
 multi-gigabyte transfer — a community GGUF re-upload of the same model is usually ungated.
 `
 
+// resolveRunRef turns the CLI's positional ref argument into a pull.Ref, exactly as far as
+// pull.Resolve (the --model path) goes before it needs a cache directory — pulled out as its
+// own function so both paths take every ref form through one parser, and so this table is
+// unit-testable without the network calls the rest of Run makes.
+//
+// A SHORT NAME RESOLVES FIRST. `pull qwen2.5-coder-0.5b` works without the user knowing that a
+// GGUF conversion exists, who published it, or which quantization to ask for — the three things
+// `owner/repo:quant` requires you to already know, and exactly what a first-time user does not.
+// The registry derives from docs/capability-matrix.json, so a name here is backed by a family
+// with a parity row (pull/registry.go). Lookup, not a second download route: it rewrites the
+// name into the same repo:file reference ParseRef already takes, so verification and resume
+// are unchanged.
+//
+// --model also accepts "hf:owner/repo[:quant|:file.gguf]" (pull.Resolve strips the prefix
+// before ParseRef); pull didn't, so a ref copied from --model failed here with a validRepo
+// error naming "hf" as the owner. TrimPrefix is a no-op on a ref that never had the prefix, so
+// this is safe for every other form (a bare owner/repo, or a demo: tier, which ParseRef parses
+// itself).
+func resolveRunRef(refArg string) (ref pull.Ref, resolvedArg string, note string, err error) {
+	if c, ok := pull.Recommended(refArg); ok {
+		note = fmt.Sprintf("%s → %s (%s, %.2f GB) — %s\n", refArg, c.Ref(), c.Quant, float64(c.Bytes)/1e9, c.GoodFor)
+		refArg = c.Ref()
+	}
+	refArg = strings.TrimPrefix(refArg, "hf:")
+	ref, err = pull.ParseRef(refArg)
+	return ref, refArg, note, err
+}
+
 // runPull implements `goinfer-chat pull`. Returns a process exit code.
 // Run executes `pull`. args excludes the program name and the "pull" word. Returns an exit code.
 func Run(args []string) int {
@@ -83,20 +111,10 @@ func Run(args []string) int {
 		return 2
 	}
 
-	// A SHORT NAME RESOLVES FIRST. `pull qwen2.5-coder-0.5b` works without the user knowing that a
-	// GGUF conversion exists, who published it, or which quantization to ask for — the three things
-	// `owner/repo:quant` requires you to already know, and exactly what a first-time user does not.
-	// The registry derives from docs/capability-matrix.json, so a name here is backed by a family
-	// with a parity row (pull/registry.go).
-	//
-	// Lookup, not a second download route: it rewrites the name into the same repo:file reference
-	// ParseRef already takes, so verification and resume are unchanged.
-	if c, ok := pull.Recommended(refArg); ok {
-		fmt.Fprintf(os.Stderr, "%s → %s (%s, %.2f GB) — %s\n", refArg, c.Ref(), c.Quant, float64(c.Bytes)/1e9, c.GoodFor)
-		refArg = c.Ref()
+	ref, refArg, note, err := resolveRunRef(refArg)
+	if note != "" {
+		fmt.Fprint(os.Stderr, note)
 	}
-
-	ref, err := pull.ParseRef(refArg)
 	if err != nil {
 		// A name that is nearly a registry entry is far likelier to be a typo than a repo path, so
 		// say what is on offer rather than only what was wrong.

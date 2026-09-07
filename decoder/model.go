@@ -293,9 +293,18 @@ func Load(dir string, opts Options) (*Model, error) {
 	// The fit guard runs HERE — after the quant is resolved (it moves the weight term more than
 	// anything else) and before loadWeights allocates a byte. Refusing after the allocation would
 	// be refusing after the swap storm, which is the failure it exists to prevent.
-	if err := guardFit(fitCheckFor(dir, opts.Quant, quant, opts)); err != nil {
+	//
+	// R13: the guard may return a SMALLER context to pin than what was requested (0 = unrequested,
+	// the common case) — applied to opts here, before opts.ResidentContext is read again below
+	// (resCtxReq) and by the banner, so a cold user gets a working server with a visible, honest
+	// limit instead of the limit only showing up as swap on the first big request.
+	pinnedCtx, err := guardFit(fitCheckFor(dir, opts.Quant, quant, opts))
+	if err != nil {
 		closeBackend(be)
 		return nil, err
+	}
+	if pinnedCtx > 0 {
+		opts.ResidentContext = pinnedCtx
 	}
 
 	w, err := loadWeights(dir, quant, opts.EmbedInt4, lora)
@@ -437,7 +446,13 @@ func (m *Model) Close() error {
 
 // NewCache allocates a KV cache sized for this model. capHint pre-sizes for
 // a known max length (0 = grow on demand).
+//
+// R13: prefillEnters counts every call, so a test can OBSERVE that a request AdmitPrefillMemory
+// refused never reached here — the same discipline weightAllocs (fitguard.go) applies to
+// loadWeights, for the same reason: a check placed one line too late produces the identical
+// error text and the identical swap storm.
 func (m *Model) NewCache(capHint int) *KVCache {
+	prefillEnters.Add(1)
 	a := m.w.arch
 	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint)
 	c.scr = newDecodeScratch(a)

@@ -49,6 +49,7 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:                    "qwen3_5_moe", // reuse the safetensors adapter + forward
+		MaxPositions:                 u("context_length"),
 		HiddenDim:                    u("embedding_length"),
 		NumLayers:                    numLayers,
 		NumHeads:                     u("attention.head_count"),
@@ -127,6 +128,7 @@ func ggufQwen35DenseConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:           "qwen3_5", // the DENSE adapter (qwen35DenseArchitecture)
+		MaxPositions:        u("context_length"),
 		HiddenDim:           u("embedding_length"),
 		NumLayers:           numLayers,
 		NumHeads:            u("attention.head_count"),

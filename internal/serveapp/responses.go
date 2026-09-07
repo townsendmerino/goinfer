@@ -143,7 +143,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	gr, err := lm.prepare(sm, ids, lm.adapter == "")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
 	if !lm.enter(w) {
@@ -207,7 +207,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	gr, err := lm.prepare(sm, ids, lm.adapter == "")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
 	forced := forcedTool(req.ToolChoice, tools)

@@ -492,7 +492,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 	if gr, err = lm.prepare(req.toSampling(), ids, lm.adapter == ""); err != nil {
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
+		writeAnthropicErr(w, prepareErrStatus(err), "invalid_request_error", err.Error())
 		return
 	}
 	if toolsActive {

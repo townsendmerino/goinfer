@@ -29,6 +29,16 @@ type bannerFacts struct {
 	toolCallForm bool // the template exposes a constrainable tool-call form
 	spec         bool
 	blockDrafter bool
+
+	// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the context cap, KV at that
+	// cap, and what remains of the RAM budget — printed at every load, not only when something is
+	// tight, because "79% of budget" at load time and "14 GB RSS, swapping" on the first real
+	// request were the same load with no line connecting them.
+	fitKnown       bool
+	fitCtx         int
+	fitKVBytes     int64
+	fitWeightBytes int64
+	fitBudgetBytes int64
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -44,6 +54,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	if lm.tmpl != nil {
 		_, _, _, _, f.toolCallForm = lm.tmpl.ToolCallWrapper()
 	}
+	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
 	return f
 }
 
@@ -77,6 +88,16 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		ctxLine += " · KV f32"
 	}
 	out = append(out, ctxLine)
+
+	// R13: the memory this context cap actually costs, and what is left — the line a harness
+	// user needs to judge whether their own turn size fits, before finding out from swap.
+	if f.fitKnown {
+		remaining := f.fitBudgetBytes - f.fitWeightBytes - f.fitKVBytes
+		out = append(out, fmt.Sprintf(
+			"fit: %d-token cap needs %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
+			f.fitCtx, float64(f.fitKVBytes)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
+			float64(f.fitBudgetBytes)/(1<<30), float64(remaining)/(1<<30)))
+	}
 
 	// Session reuse, and WHY when it is off. This is the line that makes an agent loop's
 	// per-turn re-prefill visible before it is paid for: decoder.Generate engages the resident

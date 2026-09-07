@@ -119,6 +119,7 @@ func ggufLlamaConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:       "llama",
+		MaxPositions:    u("llama.context_length"),
 		HiddenDim:       u("llama.embedding_length"),
 		NumLayers:       u("llama.block_count"),
 		NumHeads:        u("llama.attention.head_count"),
@@ -159,6 +160,7 @@ func ggufGraniteDenseConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:           "granite",
+		MaxPositions:        u("context_length"),
 		HiddenDim:           u("embedding_length"),
 		NumLayers:           u("block_count"),
 		NumHeads:            u("attention.head_count"),
@@ -189,6 +191,7 @@ func ggufQwen2Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:       "qwen2",
+		MaxPositions:    u("context_length"),
 		HiddenDim:       u("embedding_length"),
 		NumLayers:       u("block_count"),
 		NumHeads:        u("attention.head_count"),
@@ -222,6 +225,7 @@ func ggufQwen3Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:       "qwen3",
+		MaxPositions:    u("context_length"),
 		HiddenDim:       u("embedding_length"),
 		NumLayers:       u("block_count"),
 		NumHeads:        u("attention.head_count"),
@@ -258,6 +262,7 @@ func ggufGemmaConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:        "gemma3",
+		MaxPositions:     u("context_length"),
 		HiddenDim:        u("embedding_length"),
 		NumLayers:        u("block_count"),
 		NumHeads:         u("attention.head_count"),
@@ -346,6 +351,7 @@ func ggufGemma4Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:               "gemma4",
+		MaxPositions:            u("context_length"),
 		HiddenDim:               u("embedding_length"),
 		NumLayers:               u("block_count"),
 		NumHeads:                u("attention.head_count"),
@@ -441,6 +447,7 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 	normTopK := true
 	cfg := &Config{
 		ModelType:           "mellum",
+		MaxPositions:        u("context_length"),
 		HiddenDim:           u("embedding_length"),
 		NumLayers:           u("block_count"),
 		NumHeads:            u("attention.head_count"),
@@ -516,6 +523,7 @@ func ggufQwen3MoeConfig(g *embed.GGUFFile) (*Config, error) {
 	normTopK := true
 	cfg := &Config{
 		ModelType:           "qwen3_moe",
+		MaxPositions:        u("context_length"),
 		HiddenDim:           u("embedding_length"),
 		NumLayers:           u("block_count"),
 		NumHeads:            u("attention.head_count"),
@@ -608,6 +616,7 @@ func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:                    "laguna",
+		MaxPositions:                 u("context_length"),
 		HiddenDim:                    u("embedding_length"),
 		NumLayers:                    numLayers,
 		NumHeads:                     u("attention.head_count"), // scalar fallback; the array overrides below
@@ -738,6 +747,7 @@ func ggufGlm4MoeConfig(g *embed.GGUFFile) (*Config, error) {
 	_, qkNorm := g.Dims("blk.0.attn_q_norm.weight")
 	cfg := &Config{
 		ModelType:           "glm4_moe",
+		MaxPositions:        u("context_length"),
 		HiddenDim:           u("embedding_length"),
 		NumLayers:           numLayers,
 		AttentionBias:       attnBias,
@@ -787,6 +797,7 @@ func ggufGptOssConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:           "gpt_oss",
+		MaxPositions:        u("context_length"),
 		HiddenDim:           u("embedding_length"),
 		NumLayers:           u("block_count"),
 		NumHeads:            u("attention.head_count"),
@@ -869,6 +880,7 @@ func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
 	innerSize := u("ssm.inner_size")
 	cfg := &Config{
 		ModelType:              "granitemoehybrid",
+		MaxPositions:           u("context_length"),
 		HiddenDim:              u("embedding_length"),
 		NumLayers:              nLayers,
 		NumHeads:               u("attention.head_count"),
@@ -979,6 +991,7 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:        "nemotron_h",
+		MaxPositions:     u("context_length"),
 		HiddenDim:        u("embedding_length"),
 		NumLayers:        nLayers,
 		NumHeads:         u("attention.head_count"),
@@ -1063,6 +1076,7 @@ func ggufDeepseekConfig(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:           modelType,
+		MaxPositions:        u("context_length"),
 		ScoringFunc:         scoring,
 		HiddenDim:           u("embedding_length"),
 		NumLayers:           u("block_count"),
@@ -1127,6 +1141,7 @@ func ggufPhi3Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:       "phi3",
+		MaxPositions:    u("context_length"),
 		HiddenDim:       hidden,
 		NumLayers:       u("block_count"),
 		NumHeads:        heads,
@@ -1135,7 +1150,6 @@ func ggufPhi3Config(g *embed.GGUFFile) (*Config, error) {
 		VocabSize:       ggufVocabSize(g),
 		RMSNormEps:      gf("attention.layer_norm_rms_epsilon"),
 		RoPEGlobalBase:  base,
-		MaxPositions:    u("context_length"),
 		HiddenAct:       "silu",
 	}
 	if rd := u("rope.dimension_count"); rd > 0 && rd < headDim {
@@ -1171,6 +1185,7 @@ func ggufLlama4Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	cfg := &Config{
 		ModelType:              "llama4_text",
+		MaxPositions:           u("context_length"),
 		HiddenDim:              u("embedding_length"),
 		NumLayers:              nLayers,
 		NumHeads:               u("attention.head_count"),

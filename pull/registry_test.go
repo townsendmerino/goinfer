@@ -116,8 +116,33 @@ func TestRegistry_everyEntryIsVerifiable(t *testing.T) {
 		if _, ok := Recommended(c.Name); !ok {
 			t.Errorf("%s is listed but does not resolve", c.Name)
 		}
-		if _, err := ParseRef(c.Ref()); err != nil {
+		ref, err := ParseRef(c.Ref())
+		if err != nil {
 			t.Errorf("%s: Ref() = %q, which ParseRef rejects: %v", c.Name, c.Ref(), err)
+			continue
+		}
+
+		// R15 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): ParseRef only checks
+		// syntax — it never asks whether the file Select() would actually hand back is the one
+		// this entry pins. Build the smallest listing that could ever come back from HF for this
+		// repo (this file, plus a decoy so a match against "the only candidate" can't hide a bug)
+		// and run it through the real Select(), the same call `pull` and --model both make.
+		listing := []File{
+			{Path: c.File, Size: c.Bytes, SHA256: c.SHA256},
+			{Path: "decoy-" + c.File, Size: 1},
+		}
+		got, err := Select(listing, ref)
+		if err != nil {
+			t.Errorf("%s: Select(%s:%s) failed: %v", c.Name, c.Repo, c.File, err)
+		} else if got.Path != c.File {
+			t.Errorf("%s: Select resolved to %q, want the pinned %q", c.Name, got.Path, c.File)
+		}
+
+		// A registry entry pointing at one shard of a split GGUF would "resolve" via the exact-
+		// file branch (which has no multiPart guard) and then fail, expensively, only once the
+		// download itself is attempted — this catches it at registry-authoring time instead.
+		if multiPart.MatchString(strings.ToLower(c.File)) {
+			t.Errorf("%s: File %q is one shard of a split GGUF, not a fetchable file", c.Name, c.File)
 		}
 	}
 }

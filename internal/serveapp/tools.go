@@ -44,7 +44,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
 

@@ -42,14 +42,20 @@ go install github.com/townsendmerino/goinfer/cmd/serve@latest
 > The downloaded `goinfer-serve` assets already have this built in — Metal on macOS, CUDA on
 > Linux. `goinfer-serve --version` prints which backends a given binary carries.
 
-**Using it as a library?** `go get github.com/townsendmerino/goinfer` fetches the module but is
-**not enough to build against** — the packages live in their own import paths, and you will get
-`missing go.sum entry for module providing package …`. Get the packages you import:
+**Using it as a library?** `go get github.com/townsendmerino/goinfer` — **the bare module, no
+package path** — fetches only enough to record the requirement, not enough to build against: a
+program that then imports `decoder` (or any other package here) fails with `missing go.sum entry
+for module providing package …`. Naming the packages you actually import is what fixes it:
 
 ```bash
 # <!-- smoke --> from inside your own module (`go mod init …` first)
 go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest
 ```
+
+That command resolves enough of the module's own dependency graph that further same-module
+imports (`chat`, `constrain`, …) build with it too — you do not need a separate `go get` per
+package, only per module boundary crossed (verified: a program importing `decoder` + `tokenizer` +
+`chat` off exactly this command built clean, with `chat` never named).
 
 See [`examples/embed/main.go`](examples/embed/main.go) for a complete 40-line program.
 `decoder.Model.Generate` is a raw completion primitive — it has no notion of chat turns —
@@ -63,9 +69,13 @@ Apple M1 Pro / 16 GB against Ollama 0.32.5 doing the same thing on the same box:
 from an 8 MB binary with no daemon to install and nothing left running afterwards
 ([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
 scenario E). That leg is a cold start only; steady-state decode on that machine is a separate
-measurement, on **v0.16.0's Mac asset, which R2 later found had no Metal backend linked in** —
-so that particular "Ollama led it" reading is a packaging defect's shadow, not an engine result;
-`docs/measurements/cold-user-2026-09-06.md`'s own text says so.
+measurement. On **v0.17.1** — a Mac asset confirmed carrying Metal (`backends: cpu metal`,
+`decode path: metal-resident`, both engines confirmed offloaded to GPU) — Qwen2.5-Coder-1.5B,
+q4_K_M, interleaved: **goinfer ~13–18% behind Ollama**
+([`docs/measurements/cold-user-2026-09-07-macbook-arm64.md`](docs/measurements/cold-user-2026-09-07-macbook-arm64.md),
+scenario E; `docs/benchmarks.md` §B3 has the numbers and this run's caveats — 2 interleaved runs,
+not the section's own best-of-3 protocol). This replaces an earlier v0.16.0-asset reading here,
+which R2 found was measuring a Mac binary with no Metal backend linked in, not the engine.
 
 On a Linux box with a GPU, cold start is network-bound (**56.5 s**, dominated by a **1.71 GiB**
 binary download at **~31.5 MB/s** — not a fixed number, a function of your connection) and

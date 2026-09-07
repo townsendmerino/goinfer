@@ -119,14 +119,62 @@ func TestSelect_errors(t *testing.T) {
 		t.Errorf("bare repo should suggest a concrete ref, got: %v", err)
 	}
 
-	// A split GGUF shard is refused explicitly instead of pulling one useless piece.
+	// A split GGUF shard is refused explicitly instead of pulling one useless piece. The
+	// selector here is the plain quant a real user would type ("q4_k_m") — not the shard
+	// suffix itself — because that IS the bug this used to hide: see
+	// TestSelect_splitCheckpoint_namesTheShardsAndOffersAnAlternative below.
 	split := []File{{Path: "big-q4_k_m-00001-of-00003.gguf", Size: 1}}
-	if _, err := Select(split, Ref{Repo: "a/b", Quant: "q4_k_m-00001-of-00003"}); err == nil || !strings.Contains(err.Error(), "split GGUF") {
+	if _, err := Select(split, Ref{Repo: "a/b", Quant: "q4_k_m"}); err == nil || !strings.Contains(err.Error(), "split GGUF") {
 		t.Errorf("split shard should be refused, got: %v", err)
 	}
 
 	if _, err := Select(nil, Ref{Repo: "a/b", Quant: "q4_k_m"}); err == nil {
 		t.Error("empty repo listing should error")
+	}
+}
+
+// R15 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the suffix match that decides
+// whether a quant selector hits a candidate compared the RAW filename against "-<quant>.gguf" —
+// a split shard's filename ends in "-00001-of-00003.gguf", not "-<quant>.gguf", so a real user
+// typing the plain quant a split-only repo advertises (":q4_k_m") matched ZERO candidates and
+// got "no file matching quant", never reaching the multiPart guard that exists specifically to
+// name a split file instead of that generic miss. This is the fixture from the tester's own
+// run: a repo whose only q4_k_m is split into 3 parts, plus one single-file alternative quant.
+//
+// Mutation: revert quantMatchKey to `strings.ToLower(path)` (no shard-suffix stripping, the
+// pre-fix behavior) — this test goes red with "no file matching quant" instead of the shard
+// error, because the split files never enter cands at all.
+func TestSelect_splitCheckpoint_namesTheShardsAndOffersAnAlternative(t *testing.T) {
+	files := []File{
+		{Path: "big-Q4_K_M-00001-of-00003.gguf", Size: 4 << 30},
+		{Path: "big-Q4_K_M-00002-of-00003.gguf", Size: 4 << 30},
+		{Path: "big-Q4_K_M-00003-of-00003.gguf", Size: 2 << 30},
+		{Path: "big-Q4_K_S.gguf", Size: 8 << 30},
+	}
+	_, err := Select(files, Ref{Repo: "a/b", Quant: "q4_k_m"})
+	if err == nil {
+		t.Fatal("split-only quant should be refused, not silently selected")
+	}
+	if !strings.Contains(err.Error(), "split GGUF") {
+		t.Errorf("refusal does not name the split-GGUF case:\n%s", err.Error())
+	}
+	for _, shard := range []string{"00001-of-00003", "00002-of-00003", "00003-of-00003"} {
+		if !strings.Contains(err.Error(), shard) {
+			t.Errorf("refusal does not list shard %q:\n%s", shard, err.Error())
+		}
+	}
+	if !strings.Contains(err.Error(), "big-Q4_K_S.gguf") {
+		t.Errorf("refusal does not offer the single-file alternative:\n%s", err.Error())
+	}
+
+	// No alternative exists: still names the shards, just no "nearest quant" line.
+	noAlt := files[:3]
+	_, err = Select(noAlt, Ref{Repo: "a/b", Quant: "q4_k_m"})
+	if err == nil || !strings.Contains(err.Error(), "split GGUF") {
+		t.Fatalf("split-only repo with no alternative should still name the shards, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "nearest single-file quant") {
+		t.Errorf("no single-file quant exists in this fixture, but one was offered:\n%s", err.Error())
 	}
 }
 

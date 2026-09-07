@@ -92,7 +92,7 @@ func TestFitGuard_unknownRAMProceeds(t *testing.T) {
 	if !f.fits() {
 		t.Error("an unknown RAM figure produced a refusal — unknown must always proceed")
 	}
-	if err := guardFit(f); err != nil {
+	if _, err := guardFit(f); err != nil {
 		t.Errorf("guardFit refused on unknown RAM: %v", err)
 	}
 }
@@ -128,6 +128,136 @@ func TestFitCheck_arithmeticMatchesTheMeasuredFailure(t *testing.T) {
 	}
 	if !strings.Contains(tight.warning(), "-stream-weights") {
 		t.Errorf("the tight-fit warning does not name the remedy:\n%s", tight.warning())
+	}
+}
+
+// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the guard priced weights and,
+// only if -ctx was pinned, KV — so an UNPINNED load that fits at idle can still swap the machine
+// on its first real request, because KV was priced at 0 regardless of how large the model's own
+// context window is. Driven with numbers shaped like the actual failure: a 7B-class model whose
+// weights alone fit comfortably, but whose KV at its full context window does not.
+func TestFitCheck_unpinnedPricesKVAtTheModelsMaximum(t *testing.T) {
+	cfg := &Config{NumLayers: 32, NumKVHeads: 8, HeadDim: 128, MaxPositions: 131072}
+	ram := int64(16) << 30               // 16 GB, the machine that actually swapped
+	budget := int64(float64(ram) * 0.70) // 11.2 GB
+	gbf := float64(fitGB)
+	weights := int64(8.9 * gbf) // ~8.9 GB — the guard's own "79% of budget" reading
+	rate := kvBytesPerPosition(cfg, false, false)
+	fullKV := rate * int64(cfg.MaxPositions) // KV at the model's full 128k window
+
+	f := fitCheck{
+		name: "qwen2.5-7b-instruct-q3_k_m.gguf", quant: "int4",
+		weightBytes: weights, ramBytes: ram,
+		cfg: cfg, effCtx: cfg.MaxPositions, pinned: false,
+	}
+	f.kvBytes = fullKV
+
+	if weights >= budget {
+		t.Fatal("test setup: weights alone already exceed budget — the case under test needs weights to fit and weights+KV not to")
+	}
+	if f.fits() {
+		t.Fatalf("weights (%.1f GB) + full-context KV (%.1f GB) fit an %.1f GB budget — test setup does not reproduce the failure shape",
+			float64(weights)/fitGB, float64(fullKV)/fitGB, float64(budget)/fitGB)
+	}
+
+	// The guard must find a SMALLER context that fits — R13's whole point is that this load
+	// should not simply refuse the model the README told a user to pull.
+	ctx, ok := f.smallerFittingContext()
+	if !ok {
+		t.Fatalf("no smaller context found to fit weights=%.1fGB budget=%.1fGB — expected one well above ctxFloor (%d)",
+			float64(weights)/fitGB, float64(budget)/fitGB, ctxFloor)
+	}
+	if ctx < ctxFloor {
+		t.Errorf("chosen context %d is below ctxFloor %d", ctx, ctxFloor)
+	}
+	if ctx >= cfg.MaxPositions {
+		t.Errorf("chosen context %d did not shrink below the model's own maximum %d", ctx, cfg.MaxPositions)
+	}
+	// The chosen context must ACTUALLY fit — re-price it exactly, not approximately.
+	if got := weights + estimateKVBytes(cfg, ctx, false, false); got > budget {
+		t.Errorf("chosen context %d still needs %.2f GB against a %.2f GB budget", ctx, float64(got)/fitGB, float64(budget)/fitGB)
+	}
+
+	note := f.capNote(ctx)
+	for _, want := range []string{"capped at", "-ctx", "-stream-weights"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("cap note omits %q:\n%s", want, note)
+		}
+	}
+}
+
+// The other side of R13: an EXPLICIT -ctx pin that does not fit is refused, never silently
+// downgraded to something smaller than what was asked for (the G-07 principle — an explicit
+// request that cannot be honoured is a refusal, not a surprise).
+func TestFitCheck_pinnedContextThatDoesNotFitIsRefusedNotDowngraded(t *testing.T) {
+	cfg := &Config{NumLayers: 32, NumKVHeads: 8, HeadDim: 128, MaxPositions: 131072}
+	ram := int64(16) << 30
+	gbf := float64(fitGB)
+	weights := int64(8.9 * gbf)
+	pinnedCtx := 65536
+	f := fitCheck{
+		name: "x.gguf", quant: "int4", weightBytes: weights, ramBytes: ram,
+		cfg: cfg, effCtx: pinnedCtx, pinned: true,
+	}
+	f.kvBytes = estimateKVBytes(cfg, pinnedCtx, false, false)
+	if f.fits() {
+		t.Fatal("test setup: this pinned context needs to NOT fit for the refusal path to be under test")
+	}
+	if _, ok := f.smallerFittingContext(); ok {
+		t.Fatal("smallerFittingContext offered a downgrade for a PINNED request — an explicit -ctx must refuse, not silently shrink")
+	}
+	msg := f.declineErr().Error()
+	if !strings.Contains(msg, "GB RAM") {
+		t.Errorf("pinned refusal missing the arithmetic:\n%s", msg)
+	}
+}
+
+// And the floor: when even ctxFloor does not fit, the guard refuses exactly as R3 already does —
+// it must not hand back a context so small it is not a useful server.
+func TestFitCheck_unpinnedRefusesWhenEvenTheFloorDoesNotFit(t *testing.T) {
+	cfg := &Config{NumLayers: 32, NumKVHeads: 8, HeadDim: 128, MaxPositions: 131072}
+	ram := int64(16) << 30
+	budget := int64(float64(ram) * 0.70)
+	// Weights alone eat nearly the whole budget, leaving no room for ctxFloor's own KV.
+	weights := budget - kvBytesPerPosition(cfg, false, false)*int64(ctxFloor)/2
+	f := fitCheck{
+		name: "x.gguf", quant: "int4", weightBytes: weights, ramBytes: ram,
+		cfg: cfg, effCtx: cfg.MaxPositions, pinned: false,
+	}
+	f.kvBytes = estimateKVBytes(cfg, cfg.MaxPositions, false, false)
+	if f.fits() {
+		t.Fatal("test setup: full-context load must not fit, for the floor-refusal path to be under test")
+	}
+	if ctx, ok := f.smallerFittingContext(); ok {
+		t.Fatalf("smallerFittingContext returned %d, want no fit — weights alone leave less than ctxFloor (%d) worth of KV room", ctx, ctxFloor)
+	}
+}
+
+// End to end, through the real Load() path with a real (tiny) GGUF fixture — proves the wiring
+// from guardFit's return value into opts.ResidentContext (decoder/model.go), not only the pure
+// arithmetic above.
+func TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing(t *testing.T) {
+	const gguf = "testdata/gptoss_tiny.gguf"
+	// MEASURED, not assumed: this fixture's own metadata gives ggufConfig a MaxPositions of 0
+	// (context_length is not set the way this synthetic build's config parses it), so
+	// fitCheckFor's "unknown ⇒ proceed" branch fires and this specific fixture cannot exercise
+	// the auto-pin path at all — confirmed by direct inspection (kvBytesPerPosition=512,
+	// MaxPositions=0), not by running this test and rationalizing a SKIP after the fact. The pure
+	// arithmetic is fully covered by TestFitCheck_unpinnedPricesKVAtTheModelsMaximum above, which
+	// does not depend on any fixture's real dimensions; this test exists to prove the OTHER half —
+	// that a fixture with a real MaxPositions and comfortable weights does not regress into
+	// spuriously capping or refusing — and to auto-upgrade to a real auto-pin assertion the day a
+	// fixture with MaxPositions>0 is available at this path.
+	restore := injectHostRAM(t, 64<<30) // ample: this fixture must load normally, uncapped
+	defer restore()
+
+	m, err := Load(gguf, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("guard refused an ample-RAM load: %v", err)
+	}
+	defer m.Close()
+	if got := m.ResidentContextRequest(); got != 0 {
+		t.Errorf("guard capped context to %d on a 64 GB machine — should not have needed to", got)
 	}
 }
 

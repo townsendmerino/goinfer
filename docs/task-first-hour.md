@@ -12,10 +12,21 @@
 > of the protocol §1 called for). Every fix below carries a gate that goes red on v0.17.0 and was
 > mutation-checked against the actual pre-fix behavior (not merely reasoned about); several were
 > additionally verified end to end against real hardware and real checkpoints, not only unit
-> fixtures — noted per finding. R7's registry addition substitutes a real, resolvable checkpoint
-> (gpt-oss-20b) for the one the run's own author specified (Gemma-4-26B-A4B), because no
-> verifiable download exists anywhere in this tree for that model — see R7 for why fabricating
-> one was refused rather than worked around.
+> fixtures — noted per finding. R7's registry addition first substituted `gpt-oss-20b` for the
+> checkpoint the run's own author specified (Gemma-4-26B-A4B) on the belief that no verifiable
+> download existed for it; on review that belief was itself too narrow (drawn from this tree's
+> own test fixtures, not from actually searching Hugging Face) and Gemma-4-26B-A4B was added for
+> real alongside `gpt-oss-20b`, not instead of it — see R7's "Follow-up, same day, on review" for
+> the full correction.
+>
+> **Batch 3 — R13–R16 IMPLEMENTED 2026-09-07, uncommitted this pass**, against the run recorded in
+> [`measurements/cold-user-2026-09-07-macbook-arm64.md`](measurements/cold-user-2026-09-07-macbook-arm64.md)
+> (MacBook, M1 Pro, 16 GB RAM, v0.17.1, run 2b — a targeted continuation of run 2's protocol after
+> a safety-motivated skip; see "Protocol amendments, after run 2b" below). Every fix below carries
+> a gate that goes red on v0.17.1, mutation-checked. R13 is most of this batch: a load-time memory
+> guard that priced KV cache at zero for any context that had not been explicitly pinned, so the
+> one number that actually varies per request — the prompt itself — was invisible to it until the
+> machine was already swapping.
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
@@ -165,6 +176,36 @@ shipped — a protocol that changes without a record of why is not reproducible 
   which is what the rule exists to prevent, and forbidding it only pushes a tester toward keeping
   notes in-memory (worse for a long run) or writing them into the one directory the rule is
   actually protecting.
+
+### Protocol amendments, after run 2b
+
+- **A run that skips a scenario for machine safety gets a targeted two-scenario re-run after the
+  fix, not a full repeat.** Run 2b correctly stopped short of Scenario D (rule 4) after Scenario
+  B's opencode leg alone drove the machine into heavy swap — deliberately loading something 2–5×
+  larger next was judged an unacceptable risk to a shared machine, and the run said so rather than
+  manufacturing a second, bigger instance of the same failure. Once R13 ships, the next run on
+  that machine repeats exactly Scenario D (the skipped one — first line: told-me-first, yes/no)
+  and Scenario B's opencode leg (the one that triggered the skip), not Scenarios A/C/E again,
+  which nothing about R13 changes.
+- **Scenario B records the prompt token count of the agent's first request** (the server's own
+  `usage` field on the response, or `count_tokens` if the request never completes) so a memory
+  event can be priced afterwards without re-running the request. Run 2b's swap event had no
+  recorded prompt size — R13's fix had to reconstruct an equivalent size from `serve check`'s
+  harness-scale row shape instead of the run's own numbers, which is strictly worse evidence than
+  the run recording it directly would have been.
+- **The tester writes its report in its own directory; the goinfer window, never the tester,
+  copies it into `docs/measurements/`.** Run 2b's assigned working directory was itself inside the
+  excluded tree (`~/tmcode/eval2`, under `~/tmcode`) — a sharper version of run 2's scratchpad
+  finding, and independent confirmation that a tester should not be the one placing its own report
+  inside the repository at all. The window running this document is the one with a legitimate
+  reason to write into `docs/measurements/`; the tester's job ends at producing the report
+  somewhere outside the excluded tree.
+- **Provisioning gaps do not self-heal between runs — verify, don't just amend the doc.** Run 2's
+  amendment ("provision the `openai` Python package alongside opencode on both boxes") was written
+  after run 2's box was missing it; run 2b's box was missing it too (`ModuleNotFoundError`,
+  installed ad hoc mid-run). Writing the amendment did not provision the second machine. Before
+  the next run, confirm the package is actually present on the box in question — do not rely on a
+  prior run's amendment having been carried out.
 
 ---
 
@@ -838,6 +879,198 @@ client-side-tok/s-from-first-token by hand the way this run did.
 cites must resolve to a file that exists in the checkout. **Mutation-checked**: appended a dead
 citation to the real README, confirmed it is the only one flagged among 20; reverted.
 
+### R13 — the fit guard priced KV at zero for any context nobody pinned, and it fit fine right up until a real prompt arrived
+
+**Found** (run 2b, scenario B). A 7B/int4 model's load-time check printed `"79% of budget"` — a
+comfortable-sounding number, on a 16 GB Mac with an 11.2 GB budget. The first real request —
+opencode's own multi-tool system prompt — pushed RSS to **14 GB** and drove the OS into **heavy,
+sustained swapping**: `vm_stat` measured Swapouts +621,588 pages (~9.7 GB) in under two minutes,
+`top` showed the process at 577% CPU producing no output, and the run had to `kill -9` both
+processes rather than wait further (rule 4, machine safety). The load-time number and the number
+a real request actually reached differed by ~5 GB, and nothing re-warned once the gap opened.
+
+**Root cause.** `estimateKVBytes` returned 0 whenever the caller had not explicitly pinned
+`-ctx` — reasoned, at the time, as "the CPU/Metal-staged cache grows with the conversation rather
+than being allocated up front, so counting a context nobody asked for would refuse models that
+run fine for short turns." That reasoning is true about short turns and wrong about what a real
+agent sends: nothing else bounds how far an unpinned KV cache can grow except the model's own
+maximum context, and an opencode-shaped prompt (tool schemas plus a system prompt, tens of
+thousands of tokens) is well inside that window on a 7B model. "No context pinned" does not mean
+"no KV ever allocated" — the load-time check just never asked itself the question a real request
+would ask.
+
+**A second, larger bug turned up while fixing the first.** Correctly pricing KV meant reading
+`Config.MaxPositions` (the model's own context ceiling) — which came back **0** for a real,
+freshly-downloaded `qwen2.5-coder-0.5b` GGUF. Tracing it found **16 of the 18 GGUF architecture
+config builders never populated `Config.MaxPositions` at all** — only `ggufPhi3Config` did,
+apparently by accident (nothing about that family is special). This silently disabled not only
+the new pricing but the *pre-existing* `contextLengthError`/`clampMaxTokens` request-size checks,
+for nearly every model family this project supports. Nobody had noticed because every fixture
+that exercises those checks pins its own `MaxPositions` by hand. **Not something the original
+report found** — it is recorded here because R13 could not be fixed correctly without fixing it
+first, and a fix this size needed its own gate (below), not a silent ride-along.
+
+**Fixed, three parts.**
+
+1. **Load-time (`decoder/fitguard.go`):** KV is now always priced, at `effCtx` — the pinned
+   context (capped to the model's own maximum) when the caller pinned one, else the model's own
+   maximum itself, the worst case an unpinned request could reach. Three outcomes, in order: an
+   *explicit* pin that does not fit is **refused**, never silently downgraded (the same G-07
+   principle R3 already applies to the whole model); an unpinned load that does not fit at the
+   model's maximum but fits at some smaller context ≥ a 2048-token floor is **auto-pinned** to
+   that context and reported; an unpinned load that does not fit even at the floor is refused,
+   same as a pin. `guardFit` changed signature (`(int, error)`, the int being the context to
+   apply) to carry the auto-pin decision back to the caller.
+2. **Request-time (`decoder/prefill_budget.go`, new):** `AdmitPrefillMemory(promptTokens,
+   maxTokens)` is the load-time guard's counterpart for the number the load-time guard cannot
+   see — the request that actually arrives. It prices KV(`promptTokens+maxTokens`) plus prefill
+   scratch (a real, derived upper bound: the batched-prefill attention pool's own enforced cap,
+   plus gate/up MLP activations sized from the model's own `IntermediateDim`) against what
+   remains of the budget after resident weights, and refuses **before prefill starts** rather
+   than letting the process page. Wired into `internal/serveapp`'s shared `prepare()` at the one
+   point every chat/completions/messages/tools/responses/vision endpoint already funnels through,
+   surfaced as **HTTP 413**, not a generic 400 (`prepareErrStatus`, new — the 7 endpoint call
+   sites all route through it now). `GOINFER_NO_FIT_GUARD=1` is the same escape hatch the
+   load-time guard already used, not a second name to remember.
+3. **Banner (`internal/serveapp/banner.go`):** a new `fit:` line prints the context cap's KV
+   cost, the resident weight bytes, the budget, and what remains — at **every** load, not only
+   when something is already tight, because "79% of budget" at load time and "14 GB RSS,
+   swapping" on the first real request were the same load with no line connecting them.
+
+**Gates.**
+
+- `decoder/fitguard_test.go`: `TestFitCheck_unpinnedPricesKVAtTheModelsMaximum`,
+  `TestFitCheck_pinnedContextThatDoesNotFitIsRefusedNotDowngraded`,
+  `TestFitCheck_unpinnedRefusesWhenEvenTheFloorDoesNotFit`,
+  `TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing`. **Mutation-checked**:
+  reverting `estimateKVBytes` to its old "return 0 unless pinned" behavior turns
+  `TestFitCheck_unpinnedPricesKVAtTheModelsMaximum` red with the exact old symptom (KV priced at
+  0 on an unpinned load).
+- `decoder/prefill_budget_test.go`: `TestAdmitPrefillMemory_refusesAnOversizedRequest` (driven
+  with numbers shaped like the actual failure: a model whose weights alone fit, but whose
+  KV+scratch for a ~20,000-token prompt does not, against a tight injected RAM figure) also
+  asserts the refusal allocates **no** KV cache (`prefillEnters`, a counter mirroring
+  `weightAllocs`'s existing "refused before allocating" proof) — admission must be a pure check.
+  `TestAdmitPrefillMemory_admitsARequestThatFits`, `TestAdmitPrefillMemory_envOverrideAdmits`,
+  `TestPrefillScratchBytes_scalesWithPromptLength`.
+- `decoder/gguf_maxpositions_test.go`, new: `TestGGUFConfig_everyArchitectureReadsMaxPositions`
+  drives all 18 architecture config builders through the real dispatch table (`ggufConfig`, not
+  the individual functions) with a synthetic GGUF carrying a known `context_length`, and asserts
+  every one comes back with that exact value. **Caught two real bugs while writing it, not by
+  inspection**: `ggufLlamaConfig`'s own `u` helper does not prefix keys with `"llama."` the way
+  every other family's does (every other field in that function spells the prefix out by hand),
+  so the scripted insertion that added `MaxPositions` there read the wrong, always-absent key —
+  fixed to `u("llama.context_length")`, matching the function's own convention. Separately,
+  `granitehybrid`/`nemotron_h`'s Mamba head-dim arithmetic divides by `ssm.time_step_rank`, which
+  a minimal non-hybrid fixture does not set — not a source bug, but exactly the kind of
+  per-family requirement a hand-picked test subset would have quietly skipped instead of hitting.
+  **Mutation-checked**: commenting out any single architecture's `MaxPositions` line fails only
+  that architecture's subtest; every other family stays green, confirmed for the `llama` case by
+  reverting its fix and observing exactly one subtest fail.
+- **Not yet re-verified live.** The Mac scenario that found this (7B/int4, opencode, 16 GB RAM)
+  has not been re-run against this fix — that re-run is still outstanding (see "Protocol
+  amendments, after run 2b" and [`docs/integrations/opencode.md`](integrations/opencode.md),
+  which states this plainly rather than implying the fix is confirmed). The unit/integration
+  gates above prove the arithmetic and the refusal path; they do not prove the live swap event
+  is gone.
+
+### R14 — the README named opencode as a real-agent target; no recipe for it existed anywhere
+
+**Found** (run 2b, scenario B). The README's "Serving" bullet has said "Pointing a real agent
+(Claude Code, opencode) at it: `docs/integrations/`" since Batch 2 (R11) — but the directory held
+exactly one file, `claude-code.md`. The tester had to reconstruct opencode's AI-SDK
+custom-provider JSON from outside knowledge of opencode itself, not from anything goinfer
+publishes, and that reconstruction produced the run's only safety incident (R13's swap event).
+
+**Fixed.** New [`docs/integrations/opencode.md`](integrations/opencode.md): the `opencode.json`
+provider config that actually works, `serve check`'s harness-scale tools row promoted to "run
+this before opencode, not after" (its prediction matched both real attempts on record), and an
+honest accounting of what has and has not been verified — no run in this project has yet
+completed a full opencode tool-call turn end to end, for two *different* reasons (a model too
+small to tool-call under a harness-scale schema on nobara-pc; a model that never got the chance
+to try, killed for memory safety, on the Mac) — stated plainly rather than letting the page imply
+success it has not measured. Folds in R11's registry `tools:` column, honestly mostly "not yet
+measured."
+
+**Gate.** New `pull/integrations_doc_test.go`:
+`TestIntegrationsDoc_everyHarnessTheReadmeNamesHasAPage` reads the README's own "Pointing a real
+agent (...)" sentence and asserts each named harness has a `docs/integrations/<slug>.md` page.
+**Mutation-checked the honest way, not a synthetic one**: run before `opencode.md` existed, it
+failed naming exactly the missing file; writing the page turned it green with no test change.
+
+### R15 — `pull` silently rejected the `hf:` prefix `--model` accepts, and a split-quant match was unreachable
+
+**Found** (run 2b, scenario B, two dead ends on the two-attempts rule). `pull
+hf:owner/repo:quant` — the exact syntax the README documents for `--model` — is rejected by
+`pull` itself with a `validRepo` error naming `"hf"` as the owner; `pull` wants the bare
+`owner/repo:quant` form. Retrying without the prefix, `pull Qwen/Qwen2.5-7B-Instruct-GGUF:q4_k_m`
+failed with `"no file matching quant \"q4_k_m\""` even though that quant genuinely exists in the
+repo — split into two shard files, and the resolver's suffix match never saw them.
+
+**Fixed, two bugs.**
+
+1. **The `hf:` prefix** (`internal/pullcmd/pull.go`): `pull.Resolve` (the `--model` path) strips
+   it before `pull.ParseRef`; `pullcmd.Run` called `ParseRef` directly and never did. Extracted
+   the shared logic into `resolveRunRef` (registry-name lookup, then the same
+   `strings.TrimPrefix(ref, "hf:")`, then `ParseRef`) so both paths take every ref form through
+   one function, and so it is unit-testable without the network calls the rest of `Run` makes.
+2. **The split-quant match** (`pull/pull.go`, `Select`): the suffix check compared a filename
+   against `"-<quant>.gguf"` literally — a shard's name ends in `"-00001-of-00003.gguf"`, not
+   `"-<quant>.gguf"`, so it never entered the candidate list at all, and the `multiPart` guard
+   that exists specifically to name a split file (rather than try to fetch one shard) was
+   unreachable for the one case it exists for. `quantMatchKey` now strips a shard suffix before
+   comparing, so a split file's plain quant name matches; the refusal (`shardedError`) now names
+   every shard in the split (not just the one candidate) and, when one exists, the nearest
+   single-file quant that would work today (longest shared prefix — `q4_k_m` vs `q4_k_s` share
+   `q4_k_`, meaningful because goinfer's own quant names are structured coarse-to-fine).
+
+**Gates.**
+
+- `internal/pullcmd/pull_test.go`, new: `TestResolveRunRef_everyFormModelAcceptsPullAcceptsToo` —
+  a table of every ref form (bare `owner/repo`, `owner/repo:quant`, `hf:`-prefixed of each,
+  `demo:` tiers) run through `resolveRunRef`. **Mutation-checked**: removing the `TrimPrefix` line
+  fails every `hf:`-prefixed case with the exact old symptom (a `validRepo` error naming `"hf"`).
+- `pull/pull_test.go`: `TestSelect_splitCheckpoint_namesTheShardsAndOffersAnAlternative`, driven
+  with a fixture shaped like the run's own dead end (three shards of one split quant plus a
+  single-file alternative). Also updated the pre-existing `TestSelect_errors`' split-shard case,
+  which had asked for the FULL shard suffix as the "quant" (`"q4_k_m-00001-of-00003"`, not
+  something a real user would type) — an artifact of the old, now-fixed matching behavior; it now
+  asks for the plain `"q4_k_m"` a real user actually would. **Mutation-checked**: reverting
+  `quantMatchKey` to a plain lowercase (no shard-suffix stripping) fails this test AND the
+  pre-existing `TestSelect_realWorldNaming`, confirming the fix is load-bearing, not just new
+  coverage.
+- `pull/registry_test.go`'s `TestRegistry_everyEntryIsVerifiable`, extended: every registry
+  entry's `File` is now run through the real `Select()` against a synthetic listing (itself plus
+  a decoy), not just checked for `ParseRef`-level syntax, and is asserted not to be a shard
+  itself. **Mutation-checked against a real fixture**: temporarily renaming `phi3-mini-4k`'s file
+  to a shard-shaped name in `pull/capability-matrix.json` failed with exactly that message;
+  reverted.
+
+### R16 — Metal's own peer comparison and a go-get error's wording were stale by one release
+
+**Found** (run 2b, scenarios A/C). The README's Mac cold-start hedge still cited R2's v0.16.0
+finding (a Mac asset with no Metal backend linked in) even though v0.17.1 shipped a Metal-carrying
+asset with real numbers already measured (`docs/benchmarks.md` §B3). Separately, the README's
+`go get` guidance for the bare-module case predicted a `missing go.sum entry` error that the
+tester's own Go 1.27 run did not reproduce — module resolution pulled in enough of the module's
+own `go.sum` to satisfy a further same-module import (`chat`) that the documented command does
+not name, which the README did not say was possible.
+
+**Fixed.** README's Mac hedge now cites the real v0.17.1 comparison (`backends: cpu metal`,
+`decode path: metal-resident`, both engines GPU-offloaded confirmed; **~13–18% behind Ollama**)
+with `docs/benchmarks.md` §B3's new callout box carrying the numbers and this run's own caveats
+(2 interleaved runs, not the section's best-of-3 protocol). The "Using it as a library?"
+paragraph now attributes the `missing go.sum entry` error to the **bare** `go get
+github.com/townsendmerino/goinfer` command specifically (not the documented per-package one), and
+states — verified by direct reproduction, not assumed — that the recommended command resolves
+enough for a further same-module import to build without being separately fetched.
+
+**Gate.** `scripts/readme_smoke.sh`'s existing citation-link check covers both new citations
+(R12's gate); no new script needed. The go-get claim itself was verified by direct reproduction
+(`go mod init`, the documented command, then `go build` on a program importing `chat`) rather
+than by a script — a claim about Go's own module resolution behavior on a specific toolchain
+version is a fact to reproduce once, not one worth encoding as a standing gate.
+
 ---
 
 ## 3. What the cold run confirmed was good
@@ -885,6 +1118,10 @@ to a prediction of the first hour that existed, so it is worth scoring honestly.
 | 2 | **the (already-fixed, batch-1) embed example still degenerates on a real model, from a hardcoded template** | **yes, specifically** — §1 step 3 names `chat.Detect` as one of the six steps a caller must not skip; the batch-1 stopgap example skipped it anyway | §1 step 3 |
 | 2 | **the doctor's minimal one-tool schema does not predict a real agent's larger-schema failure** | **no** — §3.4 sketched more tool-call PROTOCOL variants (Anthropic, Responses) to check, never schema SIZE as its own dimension | §3.4 |
 | 2 | **README numbers carry no provenance context; a citation can silently rot** | **no** | — |
+| 2b | **an unpinned load's KV cache was priced at zero, so the load-time check fit right up until a real request's prompt arrived** | **no** — `task-fit-to-hardware.md` Phase 0 (the guard R13 extends) scoped itself to the WEIGHT term explicitly and named the per-request gap as later phasing, never as a risk the Phase-0 number could misrepresent in the meantime | fit §7.0 |
+| 2b | **the README named opencode as a real-agent target; the harness-recipe design doc never did** | **partly** — §3.5 designed the recipe SHAPE (one per harness, ≤40 lines, an expectation line, retired when `serve check` covers it) correctly and generally; its own harness list names Claude Code, Open-WebUI and Continue/Cline, not opencode, so the shape transferred but the specific gap did not | §3.5 |
+| 2b | **`pull` rejects the exact `hf:` ref syntax `--model` accepts, and a split-quant match was unreachable** | **no** — §1 item 1 marks "find a checkpoint" CLOSED by `pull`/`hf:`/`demo:` refs existing at all, never checked that the two entry points (`pull` the command, `--model hf:...`) actually agree on syntax | §1 item 1 |
+| 2b | **Metal's own README comparison and a go-get error's wording were stale by one release** | **no** — provenance staleness across a release boundary is the same shape R12 already found and gated (a link, not a number, that time); no design doc anywhere predicts a NUMBER or an ERROR MESSAGE going stale the same way | — |
 
 **The pattern.** The doc was right about **everything that needed designing** and blind to
 **everything that needed checking**. Every miss is a place where a claim the project makes about
@@ -893,13 +1130,18 @@ itself — the README's commands, the release's assets, the banner's `[backend=�
 nobody was looking at, because the people looking already knew the answers.
 
 That is the argument for the ritual in §1, and it is why every fix in §2 ships with a gate that
-would have gone red on v0.16.0 (run 1) or v0.17.0 (run 2) rather than with a doc that says what
-should be true. **Run 2's pattern is the same shape at a different layer**: every miss is again a
-claim nothing gated — a version string, a registry entry's own download, a tokenizer, a banner's
-device-use claim, a stopgap example's own template choice, a doctor's schema size, a README
-citation — and the one hit (R10) landed exactly where the design doc had already named the right
-step and a later stopgap skipped it anyway, which is its own small lesson: a correct design does
-not enforce itself.
+would have gone red on v0.16.0 (run 1), v0.17.0 (run 2), or v0.17.1 (run 2b) rather than with a
+doc that says what should be true. **Run 2's pattern is the same shape at a different layer**:
+every miss is again a claim nothing gated — a version string, a registry entry's own download, a
+tokenizer, a banner's device-use claim, a stopgap example's own template choice, a doctor's
+schema size, a README citation — and the one hit (R10) landed exactly where the design doc had
+already named the right step and a later stopgap skipped it anyway, which is its own small
+lesson: a correct design does not enforce itself. **Run 2b keeps the pattern and adds one**: R13
+is again a claim nothing gated (a load-time number that was never checked against a real
+request), but its own fix ALMOST repeated the pattern one layer down — the first attempt at
+pricing KV correctly was itself blocked by a second, larger, previously-unknown gap
+(`Config.MaxPositions` unset for 16 of 18 architectures) that nothing had gated either, found only
+because the fix could not proceed without it working.
 
 ---
 

@@ -557,6 +557,29 @@ as a bound.*
 
 ### B3. cgo-free Metal (darwin, `--backend metal`) vs Ollama-Metal — 4-bit both sides
 
+> **A newer, less rigorous datapoint exists — recorded here rather than folded into the table
+> below, because its method is not the same.** Run 2b's cold-user report
+> ([`docs/measurements/cold-user-2026-09-07-macbook-arm64.md`](measurements/cold-user-2026-09-07-macbook-arm64.md),
+> Scenario E) measured Qwen2.5-Coder-1.5B, q4_K_M GGUF (goinfer computing int8int8, Ollama its own
+> default), M1 Pro, both engines confirmed on Metal (`decode path: metal-resident (int8int8)` /
+> `offloaded 29/29 layers to GPU`), **interleaved 2 runs each** (not best-of-3, no thermal
+> soak, no depth control), client-side tok/s first-to-last chunk, 256-token cap:
+>
+> | run | goinfer (tok/s) | Ollama (tok/s) | note |
+> |---|---|---|---|
+> | 1 | 72.9 | 85.1 | goinfer hit real EOS at 99 tok both runs — shorter sample than the cap intended |
+> | 2 | 75.5 | 85.8 | |
+>
+> **goinfer ~13–18% behind Ollama** at this size class, on `v0.17.1` (vs. this section's `38e5cd7`
+> — many decode-path commits apart). Consistent in *direction* with the table below (goinfer
+> trails Ollama on 1.5B here too) but not a replacement for it — 2 interleaved runs at one prompt
+> depth is a spot-check, not a re-anchor. Superseding this section properly needs the same
+> best-of-3 / depth-swept protocol run on `v0.17.1`; that has not happened. Also: this pass tests
+> the **README's Mac hedge**, which until now cited a **v0.16.0** number that R2 later found was a
+> packaging defect (the Mac asset had no Metal backend linked in), not an engine result — this
+> `v0.17.1` figure is a real engine-vs-engine number on a Metal-carrying asset, and is what the
+> README's hedge now cites instead.
+>
 > **✅ RE-ANCHORED 2026-08-04 against current peer (Ollama v0.32.5, FA-on) and current
 > goinfer (`38e5cd7`, post-Aug decode work: f16 scales, encode-ahead, half4 coalescing).**
 > The old 0.32.0 rows (`~128`/`~61`, 2026-07-16) are superseded by the table below; the

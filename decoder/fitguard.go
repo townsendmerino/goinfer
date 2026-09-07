@@ -44,14 +44,32 @@ const fitWarnRatio = 0.75
 // hostRAM is indirected so a test can inject a machine's worth of RAM instead of needing one.
 var hostRAM = HostRAMBytes
 
+// ctxFloor is the smallest context this guard will auto-pin down to when the caller did not pin
+// one and the model's own maximum does not fit. Below this a context is not useful enough to hand
+// a user silently — refuse instead, the way R3 already does for the rest of the model. Named,
+// not measured: R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md) did not measure a
+// real floor, and 2048 is stated as a product choice pending a real one.
+const ctxFloor = 2048
+
 // fitCheck is the arithmetic, separated from every source of it so it can be driven with the
 // numbers from a measurement rather than a 21 GB checkpoint.
 type fitCheck struct {
 	name        string // what to call the model in the message
 	quant       string // the requested quant, named because it moves the weight term the most
 	weightBytes int64  // estimated resident weight bytes AT THAT QUANT
-	kvBytes     int64  // KV at the requested context, or 0 when no context was pinned
+	kvBytes     int64  // KV at effCtx (see below) — always priced now, not only when pinned
 	ramBytes    int64  // physical RAM, 0 when unknown
+
+	// cfg, effCtx, pinned, kvF16, kvI8 carry what R13's re-pricing needs to recompute KV at a
+	// SMALLER context when the load does not fit and the caller never pinned one — see
+	// smallerFittingContext. cfg is nil when the GGUF's config could not be read (proceeds as
+	// before: kvBytes stays 0, "unknown" wins as it always has).
+	cfg    *Config
+	effCtx int  // the context KV was priced at: opts.ResidentContext if pinned, else cfg.MaxPositions
+	pinned bool // true when the caller explicitly requested effCtx (an explicit request that
+	// cannot be honoured is refused, never silently downgraded — the G-07 principle)
+	kvF16 bool
+	kvI8  bool
 }
 
 func (f fitCheck) need() int64   { return f.weightBytes + f.kvBytes }
@@ -129,22 +147,37 @@ func (f fitCheck) declineErr() error {
 		f.arithmetic(), f.remedy(), alt)
 }
 
-// guardFit runs the check and returns the refusal, or nil to proceed. It prints the arithmetic to
-// stderr when the load is within fitWarnRatio of refusing.
-func guardFit(f fitCheck) error {
+// guardFit runs the check. It returns the context to PIN — 0 meaning "leave the caller's request
+// alone", nonzero meaning "the guard chose this smaller one, apply it" — and the refusal, or
+// (0, nil) to proceed unchanged. It prints the arithmetic to stderr when the load is within
+// fitWarnRatio of refusing, or when it auto-pins.
+//
+// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): before this, an unpinned load
+// that did not fit at its own maximum context simply loaded anyway (kvBytes was 0, so `fits()`
+// only ever saw the weight term) — the guard existed and said nothing, because nothing asked it
+// the question a real request would ask. Three outcomes now, in order: an explicit pin that does
+// not fit is REFUSED (G-07: an explicit request that cannot be honoured is refused, not silently
+// downgraded); an unpinned load that does not fit at the model's maximum but DOES fit at some
+// smaller context ≥ ctxFloor is auto-pinned to that context, reported, and proceeds; an unpinned
+// load that does not fit even at ctxFloor is refused, same as a pinned one.
+func guardFit(f fitCheck) (int, error) {
 	if os.Getenv("GOINFER_NO_FIT_GUARD") != "" {
-		return nil
+		return 0, nil
 	}
 	if !f.known() {
-		return nil
+		return 0, nil
 	}
 	if !f.fits() {
-		return f.declineErr()
+		if ctx, ok := f.smallerFittingContext(); ok {
+			fmt.Fprintln(os.Stderr, f.capNote(ctx))
+			return ctx, nil
+		}
+		return 0, f.declineErr()
 	}
 	if f.ratio() >= fitWarnRatio {
 		fmt.Fprintln(os.Stderr, f.warning())
 	}
-	return nil
+	return 0, nil
 }
 
 // quantBytesPerElem is the resident cost of one weight ELEMENT of a 2-D matmul matrix under each
@@ -251,12 +284,11 @@ func estimateGGUFWeightBytes(path string, q quantMode) int64 {
 	return int64(total)
 }
 
-// estimateKVBytes is the KV cache at a PINNED context. It returns 0 when no context was pinned,
-// which is the common case and is honest: the CPU cache grows with the conversation rather than
-// being allocated up front, so counting a context nobody asked for would refuse models that run
-// fine for short turns. When -resident-context IS set, the allocation is real and up-front.
-func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
-	if cfg == nil || ctx <= 0 || cfg.NumLayers <= 0 || cfg.NumKVHeads <= 0 {
+// kvBytesPerPosition is the KV cost of ONE position, so both estimateKVBytes and
+// smallerFittingContext (R13) share the identical per-position rate — the cost is exactly linear
+// in context, so solving "the largest context that fits" is arithmetic, not a search.
+func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {
+	if cfg == nil || cfg.NumLayers <= 0 || cfg.NumKVHeads <= 0 {
 		return 0
 	}
 	perElem := 4.0
@@ -268,7 +300,28 @@ func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 	}
 	kvDim := cfg.NumKVHeads * cfg.headDim()
 	// ×2 for K and V.
-	return int64(2 * perElem * float64(ctx) * float64(kvDim) * float64(cfg.NumLayers))
+	return int64(2 * perElem * float64(kvDim) * float64(cfg.NumLayers))
+}
+
+// estimateKVBytes is the KV cache at ctx positions.
+//
+// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): this used to return 0 whenever
+// no context was explicitly pinned, reasoning that "the CPU cache grows with the conversation
+// rather than being allocated up front, so counting a context nobody asked for would refuse
+// models that run fine for short turns." That reasoning is true about short turns and wrong about
+// what a user actually sends: a 7B int4 model priced at "79% of budget" (KV priced at 0) reached
+// 14 GB RSS and swapped the machine hard on its first real agent request — an opencode system
+// prompt plus tool schema, tens of thousands of tokens, well inside the model's own context
+// window. "No context pinned" does not mean "no KV ever allocated"; it means the ceiling is
+// whatever the model's own maximum context is, because nothing else bounds the CPU/Metal-staged
+// KV cache's growth. ctx is now the caller's job to choose correctly (fitCheckFor picks
+// opts.ResidentContext when pinned, else cfg.MaxPositions) — this function just prices whatever
+// it is given.
+func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
+	if ctx <= 0 {
+		return 0
+	}
+	return kvBytesPerPosition(cfg, kvF16, kvI8) * int64(ctx)
 }
 
 // fitCheckFor assembles the check for a load that has not happened yet. It knows how to price a
@@ -290,17 +343,72 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 		return f
 	}
 	f.weightBytes = estimateGGUFWeightBytes(path, quant)
-	// The KV term needs the config, which the same open already parsed on the way past; it is
-	// only non-zero when a context was actually pinned, so skip the second open otherwise.
-	if opts.ResidentContext > 0 {
-		if g, err := embed.OpenGGUFMmap(path); err == nil {
-			if cfg, cerr := ggufConfig(g); cerr == nil {
-				f.kvBytes = estimateKVBytes(cfg, opts.ResidentContext, opts.KVPrecision == "f16", opts.KVQuant == "i8")
-			}
-			g.Close()
-		}
+	f.kvF16 = opts.KVPrecision == "f16"
+	f.kvI8 = opts.KVQuant == "i8"
+	g, err := embed.OpenGGUFMmap(path)
+	if err != nil {
+		return f // unknown ⇒ proceed, same as always
 	}
+	defer g.Close()
+	cfg, cerr := ggufConfig(g)
+	if cerr != nil {
+		return f
+	}
+	f.cfg = cfg
+	f.pinned = opts.ResidentContext > 0
+	switch {
+	case f.pinned:
+		f.effCtx = opts.ResidentContext
+		if cfg.MaxPositions > 0 && f.effCtx > cfg.MaxPositions {
+			f.effCtx = cfg.MaxPositions // a pin past the model's own window prices no higher than the window
+		}
+	case cfg.MaxPositions > 0:
+		f.effCtx = cfg.MaxPositions // R13: the worst case a real request can reach, unpinned
+	default:
+		return f // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
+	}
+	f.kvBytes = estimateKVBytes(cfg, f.effCtx, f.kvF16, f.kvI8)
 	return f
+}
+
+// smallerFittingContext solves for the largest context ≤ f.effCtx whose weights+KV fit the
+// budget, floored at ctxFloor. Only meaningful when the caller did not pin a context — a pin is
+// an explicit request and is refused outright rather than silently downgraded (see guardFit).
+func (f fitCheck) smallerFittingContext() (int, bool) {
+	if f.pinned || f.cfg == nil {
+		return 0, false
+	}
+	rate := kvBytesPerPosition(f.cfg, f.kvF16, f.kvI8)
+	if rate <= 0 {
+		return 0, false
+	}
+	available := f.budget() - f.weightBytes
+	if available <= 0 {
+		return 0, false
+	}
+	ctx := int(available / rate)
+	if ctx > f.effCtx {
+		ctx = f.effCtx // never suggest MORE than what was already being priced
+	}
+	if ctx < ctxFloor {
+		return 0, false
+	}
+	return ctx, true
+}
+
+// capNote is the banner line printed when the guard auto-pins a smaller context — the default
+// outcome for an unpinned load that would not fit at the model's own maximum, because it leaves
+// the user with a working server and a visible limit rather than a refusal on the model the
+// README told them to pull.
+func (f fitCheck) capNote(ctx int) string {
+	kv := estimateKVBytes(f.cfg, ctx, f.kvF16, f.kvI8)
+	maxCtx := 0
+	if f.cfg != nil {
+		maxCtx = f.cfg.MaxPositions
+	}
+	return fmt.Sprintf(
+		"decoder: context capped at %d (model allows %d) so that KV fits: weights %.1f GB + KV %.1f GB of budget %.1f GB — pass -ctx to choose, or -stream-weights to lift",
+		ctx, maxCtx, float64(f.weightBytes)/fitGB, float64(kv)/fitGB, float64(f.budget())/fitGB)
 }
 
 // weightAllocs counts entries into loadWeights — the call that turns a checkpoint into resident

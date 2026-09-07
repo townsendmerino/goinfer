@@ -311,9 +311,9 @@ func Select(files []File, ref Ref) (File, error) {
 		}
 		return File{}, fmt.Errorf("file %q not found in %s.\n%s", ref.File, ref.Repo, render(files))
 	case ref.Quant != "":
-		suffix := "-" + strings.ToLower(ref.Quant) + ".gguf"
+		suffix := "-" + strings.ToLower(ref.Quant)
 		for _, f := range files {
-			if strings.HasSuffix(strings.ToLower(f.Path), suffix) {
+			if strings.HasSuffix(quantMatchKey(f.Path), suffix) {
 				cands = append(cands, f)
 			}
 		}
@@ -326,12 +326,132 @@ func Select(files []File, ref Ref) (File, error) {
 	case 1:
 		f := cands[0]
 		if multiPart.MatchString(f.Path) {
-			return File{}, fmt.Errorf("%s is one shard of a split GGUF; pulling split checkpoints is not supported yet", f.Path)
+			return File{}, shardedError(f, files, ref)
 		}
 		return f, nil
 	default:
+		if group, ok := oneSplit(cands); ok {
+			return File{}, shardedError(group[0], files, ref)
+		}
 		return File{}, fmt.Errorf("quant %q is ambiguous in %s — name the file exactly.\n%s", ref.Quant, ref.Repo, render(cands))
 	}
+}
+
+// quantMatchKey is the part of a filename a quant selector is matched against: the extension
+// gone, and — for a split file — the "-NNNNN-of-NNNNN" shard suffix gone too, so
+// "model-Q4_K_M-00001-of-00003.gguf" matches ":q4_k_m" the same as a single-file
+// "model-Q4_K_M.gguf" would. Without this, the suffix check never saw a shard's quant at all
+// (it ends in a shard number, not a quant name), so a split checkpoint's OWN quant selector
+// matched zero candidates and the multiPart guard below — which exists specifically to name a
+// split file instead of trying to fetch one shard — was unreachable.
+func quantMatchKey(path string) string {
+	key := strings.ToLower(path)
+	if multiPart.MatchString(key) {
+		return multiPart.ReplaceAllString(key, "")
+	}
+	return strings.TrimSuffix(key, ".gguf")
+}
+
+// shardSuffix captures a split GGUF's shard index and total, and everything before it.
+var shardSuffix = regexp.MustCompile(`^(.*)-(\d{5})-of-(\d{5})\.gguf$`)
+
+// oneSplit reports whether cands are exactly the shards of a single split checkpoint (same
+// name and shard count for every one), the case worth a dedicated error over "ambiguous".
+func oneSplit(cands []File) ([]File, bool) {
+	prefix, total := "", ""
+	for i, f := range cands {
+		m := shardSuffix.FindStringSubmatch(strings.ToLower(f.Path))
+		if m == nil {
+			return nil, false
+		}
+		if i == 0 {
+			prefix, total = m[1], m[3]
+		} else if m[1] != prefix || m[3] != total {
+			return nil, false
+		}
+	}
+	return cands, true
+}
+
+// shardGroup returns every shard of f's split (same name and shard count), sorted by path —
+// f itself may be the only candidate Select saw if the caller asked by exact quant, but the
+// error should still name every file the user needs to fetch.
+func shardGroup(f File, files []File) []File {
+	m := shardSuffix.FindStringSubmatch(strings.ToLower(f.Path))
+	if m == nil {
+		return []File{f}
+	}
+	prefix, total := m[1], m[3]
+	var group []File
+	for _, g := range files {
+		gm := shardSuffix.FindStringSubmatch(strings.ToLower(g.Path))
+		if gm != nil && gm[1] == prefix && gm[3] == total {
+			group = append(group, g)
+		}
+	}
+	sort.Slice(group, func(i, j int) bool { return group[i].Path < group[j].Path })
+	return group
+}
+
+// singleFileQuant extracts the quant token from a non-split filename ("model-Q4_K_M.gguf" →
+// "q4_k_m"), the same convention Select's own suffix match relies on.
+func singleFileQuant(path string) (string, bool) {
+	if multiPart.MatchString(path) {
+		return "", false
+	}
+	base := strings.TrimSuffix(strings.ToLower(path), ".gguf")
+	i := strings.LastIndex(base, "-")
+	if i < 0 {
+		return "", false
+	}
+	return base[i+1:], true
+}
+
+// nearestSingleFileQuant finds a non-split alternative to a quant that only exists split, so
+// the refusal offers a file that can actually be pulled today rather than only naming what
+// cannot. "Nearest" is the single-file quant sharing the longest prefix with the one asked
+// for (q4_k_m vs q4_k_s share "q4_k_"), which is meaningful because goinfer's own quant names
+// are structured coarse-to-fine (bits, then scheme, then block size) — a shared prefix is a
+// shared family, not a coincidence of spelling. Ties broken alphabetically for determinism.
+func nearestSingleFileQuant(files []File, want string) (File, bool) {
+	want = strings.ToLower(want)
+	var best File
+	bestScore := -1
+	for _, f := range files {
+		q, ok := singleFileQuant(f.Path)
+		if !ok {
+			continue
+		}
+		score := commonPrefixLen(q, want)
+		if score > bestScore || (score == bestScore && f.Path < best.Path) {
+			best, bestScore = f, score
+		}
+	}
+	return best, bestScore >= 0
+}
+
+func commonPrefixLen(a, b string) int {
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return n
+}
+
+// shardedError is Select's refusal for a quant that exists only as a split checkpoint: it
+// names every shard (so the user knows the true size and file count before scripting a
+// workaround) and, when one exists, a single-file quant that would work today.
+func shardedError(f File, files []File, ref Ref) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s is one shard of a split GGUF; pulling split checkpoints is not supported yet.\n", f.Path)
+	b.WriteString("shards:\n")
+	for _, g := range shardGroup(f, files) {
+		fmt.Fprintf(&b, "  %-52s %s\n", g.Path, humanBytes(g.Size))
+	}
+	if alt, ok := nearestSingleFileQuant(files, ref.Quant); ok {
+		fmt.Fprintf(&b, "nearest single-file quant: %s (%s)\n", alt.Path, humanBytes(alt.Size))
+	}
+	return fmt.Errorf("%s", b.String())
 }
 
 // checkPin refuses a file whose upstream digest no longer matches what this build pinned.

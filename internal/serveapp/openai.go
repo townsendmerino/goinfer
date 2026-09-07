@@ -516,7 +516,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
@@ -603,7 +603,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	}
 	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
 	if !lm.enter(w) {
@@ -769,7 +769,37 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		gr.sp.LogitProcessor = m.Process
 		gr.masker = m // enables grammar-fused speculative decode (drive)
 	}
+	// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the load-time fit guard
+	// prices the worst case a request COULD reach, once, at load — it cannot see the request
+	// that actually arrives. Runs LAST, after gr.promptIDs/gr.maxTokens are fully resolved
+	// (including the C-18 clamp above), so the numbers in a refusal are the real ones, and every
+	// prepare() caller gets this for free rather than needing its own copy of the check.
+	if lm.model != nil {
+		if aerr := lm.model.AdmitPrefillMemory(len(gr.promptIDs), gr.maxTokens); aerr != nil {
+			return genRequest{}, &prefillMemoryError{aerr}
+		}
+	}
 	return gr, nil
+}
+
+// prefillMemoryError distinguishes an R13 admission refusal from prepare's other, ordinary
+// validation errors (bad field, out-of-range value) so every call site can answer with 413
+// instead of prepare's usual 400 — a request that would page is not a malformed request, and a
+// client's retry logic should treat the two differently. See writePrepareErr.
+type prefillMemoryError struct{ err error }
+
+func (e *prefillMemoryError) Error() string { return e.err.Error() }
+func (e *prefillMemoryError) Unwrap() error { return e.err }
+
+// prepareErrStatus is the one place every prepare() call site decides its status code, in
+// EITHER response format (writeErr's OpenAI shape or writeAnthropicErr's), so the 413 split
+// above cannot silently regress back to a flat 400 at a site someone forgets to update.
+func prepareErrStatus(err error) int {
+	var pmErr *prefillMemoryError
+	if errors.As(err, &pmErr) {
+		return http.StatusRequestEntityTooLarge
+	}
+	return http.StatusBadRequest
 }
 
 // contextLengthError rejects a prompt that alone fills or exceeds the model's context window (C-20).
