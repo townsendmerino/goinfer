@@ -1393,3 +1393,73 @@ argmax and greedy continuation both exact on the first run. This is the floor, n
 typical case: the other eight reachable families each carry at least one axis this one
 was chosen to avoid (MoE routing, GGUF conversion, sliding window, multimodal), so budget
 above this number, not at it.
+
+## Timing: batch attempt (2026-09-07, macbook-arm64) — internlm2 STOPPED RED, lfm2/ministral3 not started
+
+Scoped to internlm2 only (cheapest of three planned: internlm2, lfm2, ministral3) — the
+other two were never started because the machine was needed for a prerelease run. Do not
+read this as "internlm2 harder than the others"; it is the only one attempted.
+
+**Outcome: gate FAILS on the real checkpoint and was NOT forced green, per policy.**
+`TestInternLM2_1_8bReal_gate` against `internlm/internlm2_5-1_8b-chat` (bf16, cast f32):
+argmax 58321 vs want 2085, **logit cosine 0.873148** — not a borderline miss, a real
+divergence. The manifest/capability-matrix regen steps were skipped entirely (`emitParityRow`
+is a no-op on any failing gate, so nothing downstream needed touching).
+
+**The existing tiny-golden gate (`TestInternLM2_textParity`) still passes at cosine
+1.000000** — re-run for comparison, unchanged. The two gates differ on exactly one axis
+that looks structurally relevant: the tiny fixture is built with `num_key_value_heads=2,
+num_attention_heads=8` (**groups=4**), while the real checkpoint is `num_key_value_heads=8,
+num_attention_heads=16` (**groups=2**). Every other config field (`bias`, `rope_scaling:
+{"type":"dynamic","factor":2.0}`, `rope_theta=1000000`, `rms_norm_eps=1e-5`) matches the
+tiny fixture's shape, and both prompt lengths sit far below `max_position_embeddings`, so
+dynamic-NTK scaling should be a no-op in both cases. **groups=2 vs groups=4 is the one
+concrete lead** — a grouped-wqkv de-interleave bug that only manifests at a specific groups
+value is exactly the shape of failure the tiny fixture's own doc comment warns can't be
+ruled out by a single geometry (`groups<2` degenerates to plain-concat; nothing pins
+groups=2 specifically). **Not investigated further — this is a report-and-stop per policy,
+not a fix.**
+
+Time split: ~25 min reading the smollm3/cohere2/internlm2-tiny templates and the family's
+own tiny test+pin script to confirm model_type/config shape; ~18 min downloading
+`internlm/internlm2_5-1_8b-chat` (3.5 GB, real-world rate, well over smollm3's anomalous
+1 GB/s); ~15 min on HF-reference friction — two missing venv packages (`sentencepiece`,
+`protobuf`, ordinary environment setup) plus one real version-skew bug in the checkpoint's
+own remote code (`modeling_internlm2.py` calls `DynamicCache.from_legacy_cache`, removed in
+installed transformers 5.15, triggered because the checkpoint's `config.json` defaults
+`use_cache=true`; fixed by passing `use_cache=False` explicitly in the pin script, which
+changes no numerics — every forward here already recomputes the full sequence rather than
+reusing a cache) — then a **system-wide OOM that forced a hard reboot** on the first
+unguarded attempt (see below); ~15 min writing the `realckpt` gate + registering the asset;
+~5 min running the gate (RED) and confirming the tiny-golden comparison. Call it ~80 min
+total for a family that did not reach a validated state — budget accordingly for a family
+whose HF reference needs a version-incompatible remote-code path.
+
+**RAM, and this is the headline finding for a 16 GB Mac specifically:** the FIRST unguarded
+run of the HF reference (`AutoModelForCausalLM.from_pretrained(..., dtype=torch.float32)`
+on a **1.8B**-parameter bf16 checkpoint — small, not the 3B smollm3 was already tight on)
+drove the whole system into an **OOM severe enough to require a hard reboot**, not just a
+killed process. This is a materially worse outcome than smollm3's own run on the 62 GB Linux
+box, on a smaller model, and it happened with ordinary other work (VS Code, browser) already
+open — exactly the kind of realistic "other work open" scenario the cold-user protocol
+flagged as a hazard for 7B-class models one door down (see
+`docs/measurements/cold-user-2026-09-07-macbook-arm64.md` Scenario B/D). The likely
+mechanism: the checkpoint is native bf16 (3.6 GB), and casting to f32 during
+`from_pretrained` transiently needs both representations resident (bf16 source + f32
+destination) on top of Python/torch/transformers overhead and whatever else was already
+resident — on a 16 GB box with only ~6.5 GB free at the time, that transient peak was
+enough to crash the system rather than just fail cleanly. The retry (after a disk cleanup:
+`go clean -cache` freed ~7 GB, 19 GB → 26 GB) was wrapped in a shell watchdog that killed
+the process pre-emptively above 9.5 GB RSS or below 1.5 GB system-free; it completed at a
+peak of ~6.6 GB RSS with system-free never dropping below ~2.8 GB, so the crash was not
+reproduced on the second attempt — but nothing about the setup changed except which other
+processes happened to be resident at the time, so **treat this as "got lucky the second
+time," not "diagnosed and fixed."** For any future run of this pin script (or any 2-8B-class
+`dtype=torch.float32` HF reference) on a 16 GB Mac with other applications open: run it
+under a memory watchdog, not bare, until this is understood better.
+
+The `internlm/internlm2_5-1_8b-chat` checkpoint (3.5 GB) was left resident at
+`~/models/internlm2-1_8b` rather than deleted, in case its exact bytes are wanted for
+follow-up debugging without a re-download — flag this to whoever picks the investigation
+back up, since disk was already tight before this batch started (11 GB free) and is why the
+Go build cache was cleared rather than the checkpoint.

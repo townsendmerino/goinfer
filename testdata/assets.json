@@ -559,6 +559,15 @@
       "note": "HuggingFaceTB/SmolLM3-3B (SmolLM3ForCausalLM), 2 f32-cast bf16 shards / ~5.8 GB \u2014 the smallest AND only released size in the family. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
     },
     {
+      "env": "GOINFER_INTERNLM2_1_8B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/internlm2-1_8b"],
+      "used_by": ["TestInternLM2_1_8bReal_gate"],
+      "note": "internlm/internlm2_5-1_8b-chat (InternLM2ForCausalLM), bf16 safetensors / ~3.6 GB \u2014 not a built-in transformers architecture, needs trust_remote_code=True to load. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
+    },
+    {
       "env": "GOINFER_GRANITE_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
