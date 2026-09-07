@@ -14,10 +14,10 @@ github.com/segmentio/encoding v0.5.4 h1:OW1VRern8Nw6ITAtwSZ7Idrl3MXCFwXHPgqESYfv
 github.com/segmentio/encoding v0.5.4/go.mod h1:HS1ZKa3kSN32ZHVZ7ZLPLXWvOVIiZtyJnO1gPH1sKt0=
 github.com/townsendmerino/aikit v1.37.0 h1:a3Qv60HekJNGLNpZ3YrcmdVroNQrd3YdMEBN0kG5Byk=
 github.com/townsendmerino/aikit v1.37.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
-github.com/townsendmerino/goinfer v0.17.0 h1:gEF7RHEnQx+T8EBPGVxQA8bdou1Cj2y6Uylbd2M0md4=
-github.com/townsendmerino/goinfer v0.17.0/go.mod h1:3AyCJl5nc9ow6qVfPsQeewgdkR7rlGCFOukS+EF3IOg=
-github.com/townsendmerino/goinfer/gpu v0.17.0 h1:DA8SvB8+QDYgsM/m91fOJVf9bBuccgDgD1nuvgE6IfQ=
-github.com/townsendmerino/goinfer/gpu v0.17.0/go.mod h1:U4cb9Gh8vHsKW+Hx8acKikzqeqNKmSLXfBDN3MBNamQ=
+github.com/townsendmerino/goinfer v0.17.1 h1:3bsXUMVfY4oUBA8nYFfaOjJqJwyzvTh7lmLtIAyebbw=
+github.com/townsendmerino/goinfer v0.17.1/go.mod h1:3AyCJl5nc9ow6qVfPsQeewgdkR7rlGCFOukS+EF3IOg=
+github.com/townsendmerino/goinfer/gpu v0.17.1 h1:apqU1FnJ0E09a62xrANUJRbyd7V22SLNGSklgyX60PQ=
+github.com/townsendmerino/goinfer/gpu v0.17.1/go.mod h1:lmjcYEZSYxKqmefIP70WclkYkGRLCjeovwZUpqsH+ro=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 golang.org/x/oauth2 v0.35.0 h1:Mv2mzuHuZuY2+bkyWXIHMfhNdJAdwW3FuWeCPYN5GVQ=
