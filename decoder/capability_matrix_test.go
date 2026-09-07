@@ -539,6 +539,60 @@ type capabilityRow struct {
 	Modality      string   `json:"modality"`
 	GPUResident   bool     `json:"gpu_residency_eligible"`
 	Parity        string   `json:"parity"` // joined from testdata/parity_manifest.json by Name
+
+	// Checkpoint is the recommended checkpoint for this family, if there is one — the row
+	// pull/registry.go reads to turn a short name into a repo + file + digest.
+	//
+	// IT LIVES HERE, IN THE GENERATOR, because docs/capability-matrix.json is GENERATED and
+	// freshness-gated by this very test. Hand-editing the JSON is silently undone by the next
+	// `-update`, which is how the first version of this shipped and went red in CI. Data that is
+	// meant to survive belongs beside the family definition, not in the rendered artifact.
+	//
+	// Omitted entirely for a family with no recommendation, so the JSON stays free of null keys.
+	Checkpoint *recommendedCheckpoint `json:"checkpoint,omitempty"`
+}
+
+// recommendedCheckpoint is one checkpoint this project has actually run. See pull/registry.go for
+// what consumes it and why nothing is listed that the parity gates do not back.
+type recommendedCheckpoint struct {
+	Name    string `json:"name"`     // the short name `pull` accepts
+	Repo    string `json:"repo"`     // Hugging Face repo
+	File    string `json:"file"`     // exact filename in that repo
+	Quant   string `json:"quant"`    // on-disk quantization
+	Bytes   int64  `json:"bytes"`    // download size
+	SHA256  string `json:"sha256"`   // verified on fetch; goinfer hosts no weights
+	GoodFor string `json:"good_for"` // what it is worth using for
+	Needs   string `json:"needs"`    // what it costs to run
+}
+
+// recommendedCheckpoints maps a family name to its recommended checkpoint. Deliberately short: an
+// entry exists because someone RAN that checkpoint and recorded its digest, not because the family
+// is supported. Growing it is a download and a sha256, not a decision.
+//
+// Only families whose parity is a T3 method may appear — pull's TestRegistry_noEntryOutrunsItsParity
+// enforces that, so a family still at tiny-golden cannot be recommended to a first-time user.
+var recommendedCheckpoints = map[string]recommendedCheckpoint{
+	"qwen2": {
+		Name: "qwen2.5-coder-0.5b", Repo: "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+		File: "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", Quant: "q4_k_m",
+		Bytes: 491400064, SHA256: "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+		GoodFor: "code completion and small edits; the smallest checkpoint here that writes usable Go",
+		Needs:   "~1 GB resident at --quant int4; runs on any laptop",
+	},
+	"phi3": {
+		Name: "phi3-mini-4k", Repo: "microsoft/Phi-3-mini-4k-instruct-gguf",
+		File: "Phi-3-mini-4k-instruct-q4.gguf", Quant: "q4",
+		Bytes: 2393231072, SHA256: "8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef",
+		GoodFor: "general instruction following at a size that still loads in seconds",
+		Needs:   "~3 GB resident at --quant int4",
+	},
+	"granitemoehybrid": {
+		Name: "granite-4.0-h-tiny", Repo: "ibm-granite/granite-4.0-h-tiny-GGUF",
+		File: "granite-4.0-h-tiny-Q8_0.gguf", Quant: "q8_0",
+		Bytes: 7390331328, SHA256: "3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
+		GoodFor: "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
+		Needs:   "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit",
+	},
 }
 
 // parityColumn renders a family's parity cell from its manifest entry: a short
@@ -778,6 +832,7 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 				Modality:      doc.Modality,
 				GPUResident:   gpuResidentEligible(arch),
 				Parity:        parity,
+				Checkpoint:    checkpointFor(arch.Name),
 			}
 			rows[arch.Name] = r
 		} else {
@@ -942,4 +997,13 @@ func TestCapabilityMatrix_CoverageComplete(t *testing.T) {
 			t.Errorf("model_type %q has no familyDoc", mt)
 		}
 	}
+}
+
+// checkpointFor returns the recommended checkpoint for a family, or nil. Split out so the row
+// builder reads as data and the map stays the single place an entry is added.
+func checkpointFor(family string) *recommendedCheckpoint {
+	if c, ok := recommendedCheckpoints[family]; ok {
+		return &c
+	}
+	return nil
 }

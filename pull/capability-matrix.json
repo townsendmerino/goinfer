@@ -530,10 +530,10 @@
       "repo": "microsoft/Phi-3-mini-4k-instruct-gguf",
       "file": "Phi-3-mini-4k-instruct-q4.gguf",
       "quant": "q4",
-      "good_for": "general instruction following at a size that still loads in seconds",
-      "needs": "~3 GB resident at --quant int4",
+      "bytes": 2393231072,
       "sha256": "8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef",
-      "bytes": 2393231072
+      "good_for": "general instruction following at a size that still loads in seconds",
+      "needs": "~3 GB resident at --quant int4"
     }
   },
   {
@@ -560,10 +560,10 @@
       "repo": "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
       "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
       "quant": "q4_k_m",
-      "good_for": "code completion and small edits; the smallest checkpoint here that writes usable Go",
-      "needs": "~1 GB resident at --quant int4; runs on any laptop",
+      "bytes": 491400064,
       "sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
-      "bytes": 491400064
+      "good_for": "code completion and small edits; the smallest checkpoint here that writes usable Go",
+      "needs": "~1 GB resident at --quant int4; runs on any laptop"
     }
   },
   {
@@ -710,10 +710,10 @@
       "repo": "ibm-granite/granite-4.0-h-tiny-GGUF",
       "file": "granite-4.0-h-tiny-Q8_0.gguf",
       "quant": "q8_0",
-      "good_for": "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
-      "needs": "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit",
+      "bytes": 7390331328,
       "sha256": "3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
-      "bytes": 7390331328
+      "good_for": "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
+      "needs": "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit"
     }
   },
   {

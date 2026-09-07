@@ -1,8 +1,13 @@
 package pull
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -121,4 +126,64 @@ func TestRegistry_doesNotCollideWithDemoTiers(t *testing.T) {
 			t.Errorf("%q is both a recommended checkpoint and a demo tier", n)
 		}
 	}
+}
+
+// TestRegistry_digestsMatchLocalFiles verifies each entry's sha256 and size against a real file,
+// when one is present. It is the only gate that can catch the failure that actually happened.
+//
+// MEASURED 2026-09-06: two of the three entries shipped with a FABRICATED digest and a wrong byte
+// count. Both were hand-typed from a truncated display — the first 16 hex characters were right,
+// because that is what had been printed, and the remaining 48 were invented. Every format check in
+// this file passed on them, because a fabricated digest is still well-formed lowercase hex of the
+// correct length. A digest can only be checked against the bytes it claims to describe.
+//
+// Skipped when the file is absent, which is most machines — set GOINFER_MODELS_DIR (or keep
+// checkpoints under ~/models) to run it. A skip here is not a pass and the log says so.
+func TestRegistry_digestsMatchLocalFiles(t *testing.T) {
+	root := os.Getenv("GOINFER_MODELS_DIR")
+	if root == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			root = filepath.Join(home, "models")
+		}
+	}
+	checked := 0
+	for _, c := range RecommendedAll() {
+		// The file may sit anywhere under the models root; find it by name rather than guessing
+		// the layout, which differs per checkpoint.
+		var path string
+		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || d.Name() != c.File {
+				return nil
+			}
+			path = p
+			return fs.SkipAll
+		})
+		if path == "" {
+			t.Logf("SKIP %s: no local copy of %s under %s (this is a skip, not a pass)", c.Name, c.File, root)
+			continue
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			t.Errorf("%s: %v", c.Name, err)
+			continue
+		}
+		fi, _ := f.Stat()
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err != nil {
+			t.Errorf("%s: %v", c.Name, err)
+			f.Close()
+			continue
+		}
+		f.Close()
+		got := hex.EncodeToString(h.Sum(nil))
+		if got != c.SHA256 {
+			t.Errorf("%s: registry sha256 %s does not match %s (%s) — a digest that verifies "+
+				"nothing is worse than none", c.Name, c.SHA256, got, path)
+		}
+		if fi.Size() != c.Bytes {
+			t.Errorf("%s: registry size %d, file is %d", c.Name, c.Bytes, fi.Size())
+		}
+		checked++
+	}
+	t.Logf("verified %d of %d entries against local files", checked, len(RecommendedAll()))
 }
