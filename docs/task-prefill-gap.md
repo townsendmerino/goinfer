@@ -16,7 +16,7 @@
 > forecloses tensor cores on the weight term (`cuda/gemv_w4a8_batched.cu:19`) and a fused schedule
 > on the attention term (`cuda/prefill_batched.cu:156`). The CPU backend already split this contract
 > — `--cpu-fast-attention` is default ON and `--cpu-exact-prefill` buys identity back
-> (`internal/serveapp/main.go:382`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
+> (`internal/serveapp/main.go:428`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
 > rather than to bytes (`benchmarks.md` §B2). This doc extends that contract to the GPU backends and
 > sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on —
 > **measured twice on 2026-09-05; against a real f32-activation reference the fast path is equal
@@ -326,7 +326,7 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 - **What exists:** `PrefillLast` on Metal is a working f16-MMA batched prefill, measured 3.93–4.56×
   over sequential at P=128…2048 and 3.74× end to end on a real 1450-token prompt through the
   server (`ollama-chase.md:1578`–`:1611`). It is declined unless `GOINFER_METAL_BATCHED_PREFILL=1`
-  (`metal/backend.go:248`), which `--metal-fast-prefill` sets (`internal/serveapp/main.go:381`).
+  (`metal/backend.go:248`), which `--metal-fast-prefill` sets (`internal/serveapp/main.go:427`).
 - **First form, WITHDRAWN (2026-09-05, `measurements/prefill-gate-l1-2026-09-05.md`):** scored
   fast against Metal's own exact path as the oracle. §3.1 found that comparison cannot tell a
   defect in the fast path from the exact path's own int8-activation loss — both are quantisations
