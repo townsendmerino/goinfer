@@ -46,9 +46,20 @@ func FuzzJSONSchema(f *testing.F) {
 			return // a typed compile error is the correct outcome, not a bug
 		}
 		// Re-parse for the independent conformance oracle (schema compiled, so it
-		// is within the supported subset `conforms` understands).
+		// is within the supported subset `conforms` understands). UseNumber, matching
+		// JSONSchema's own parse and the generated-output decode in driveAndValidate
+		// below: a plain json.Unmarshal here decoded an enum/const like 0.0 as
+		// float64(0), which re-marshals as "0" — while the SAME literal surviving
+		// through the grammar (encodeLiteral keeps the source json.Number text
+		// verbatim, M-29) and back through driveAndValidate's UseNumber decode stays
+		// "0.0". eqJSON then compared "0" against "0.0" and flagged a correct,
+		// conforming document as non-conformant — found by fuzzing past what CI's
+		// time-boxed run reached (schema {"enum":[0.0]}, corpus
+		// testdata/fuzz/FuzzJSONSchema/enum_float_literal_precision).
+		dec := json.NewDecoder(bytes.NewReader(schema))
+		dec.UseNumber()
 		var doc map[string]any
-		if err := json.Unmarshal(schema, &doc); err != nil {
+		if err := dec.Decode(&doc); err != nil {
 			t.Fatalf("schema compiled but no longer parses as object: %q (%v)", schema, err)
 		}
 		driveAndValidate(t, g, doc, schema, choices)

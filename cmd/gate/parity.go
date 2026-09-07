@@ -125,6 +125,12 @@ var parityRealckptGates = []gateCheck{
 	{"qwen3.8-dense", "TestQwen38Real_gate"},
 	{"qwen3.8-gguf", "TestQwen38GGUF_gate"},
 	{"qwen3.8-gguf-weightdiff", "TestQwen38GGUF_weightDiff"},
+	// smollm3's asset (testdata/assets.json GOINFER_SMOLLM3_3B) and gate
+	// (decoder/smollm3_real_test.go) landed together; this line did not, leaving the family
+	// with a real gate the sweep could not even report on (TestRealckptGateIsListedOrExplicitly
+	// NotRequired). Caught by CI, not found by inspection — the two files can look complete on
+	// their own and still not be reachable.
+	{"smollm3-3b", "TestSmolLM3_3bReal_gate"},
 }
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -628,6 +634,10 @@ var awaitingFirstConfirmation = map[string]string{
 	"TestBailingHybrid_forwardParity":         "2026-09-06 — newly required (batch 2 G5, docs/task-families-2026-09.md); new family bailing_hybrid, not yet run; promote from the first sweep that runs it",
 	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/task-families-2026-09.md); " +
 		"needs the ~60GB bf16 checkpoint on the Linux box, not yet run; promote from the first sweep that runs it",
+	"TestSmolLM3_3bReal_gate": "2026-09-07 — newly required (T3 promotion of smollm3 from tiny-golden to a " +
+		"released checkpoint, alongside TestSmolLM3_forwardParity above); the parityRealckptGates entry " +
+		"itself was missing until now (TestRealckptGateIsListedOrExplicitlyNotRequired caught it), so it " +
+		"has never run in any sweep; promote from the first sweep that runs it",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS

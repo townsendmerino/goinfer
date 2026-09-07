@@ -75,6 +75,12 @@ demo/chat/dist/
 # pull/registry_tokenizer_test.go's registry decline gate has a real fixture to run against
 # instead of skipping. 3.6 MB; same rationale as glm-tiny.gguf above.
 !tokenizer/testdata/granite-dbrx-meta.gguf
+# Same rationale, for the qwen2.5-coder-0.5b registry entry: registry_tokenizer_test.go's map
+# pointed at testdata/qwen2-gguf/qwen2.5-0.5b-instruct-q8_0.gguf (the full 675 MB download,
+# gitignored by testdata/*-gguf below and never committed) since the fixture's own entry was
+# added — CI has been failing on this since, unnoticed because it only reproduces where the full
+# checkpoint happens to be on disk already. Extracted the same way: metadata only, no tensors.
+!tokenizer/testdata/qwen2-0.5b-coder-meta.gguf
 testdata/model
 testdata/models
 testdata/*-gguf

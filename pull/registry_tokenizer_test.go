@@ -21,7 +21,7 @@ import (
 // fetched or extracted the real metadata, not because a fixture would be convenient to have.
 var registryTokenizerFixtures = map[string]string{
 	"granite-4.0-h-tiny": "../tokenizer/testdata/granite-dbrx-meta.gguf",
-	"qwen2.5-coder-0.5b": "../testdata/qwen2-gguf/qwen2.5-0.5b-instruct-q8_0.gguf",
+	"qwen2.5-coder-0.5b": "../tokenizer/testdata/qwen2-0.5b-coder-meta.gguf",
 }
 
 func TestRegistry_noEntryHasATokenizerDecline(t *testing.T) {

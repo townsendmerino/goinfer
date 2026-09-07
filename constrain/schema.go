@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 )
@@ -72,6 +73,17 @@ func JSONSchema(schema []byte) (Grammar, error) {
 	var doc map[string]any
 	if err := dec.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("constrain: parse schema: %w", err)
+	}
+	// Decoder.Decode stops after the first top-level value and leaves the rest of the
+	// reader unread — unlike json.Unmarshal, it does NOT reject trailing garbage, so
+	// `{"type":"number"}0` compiled as if the schema were just the object (found by
+	// FuzzJSONSchema, which uses json.Unmarshal as its own independent oracle and
+	// disagreed). The same principle this package already applies to an unsupported
+	// keyword — a silently-ignored piece of input is worse than a loud compile error —
+	// applies here too: a caller who accidentally concatenates or truncates a schema
+	// string should not get back a Grammar that quietly compiled a PREFIX of it.
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
 	n, err := compile(doc)
 	if err != nil {
