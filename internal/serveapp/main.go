@@ -456,6 +456,14 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
 	}
+	// R6's other half (docs/measurements/cold-user-2026-09-06-nobara-pc.md): an unrecognized
+	// subcommand/positional falls through silently otherwise. Every argument here is a --flag;
+	// anything flag.Parse left in flag.Args() is a typo, not a feature.
+	if args := flag.Args(); len(args) > 0 {
+		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <ref>, check, --version. Or pass --model <file.gguf|dir|hf:owner/repo:quant>.\n",
+			filepath.Base(os.Args[0]), args[0])
+		os.Exit(2)
+	}
 	// --metal-fast-prefill sets the internal gate metal/backend.go's PrefillLast already checks
 	// (GOINFER_METAL_BATCHED_PREFILL) — reusing the existing, already-tested decline/opt-in
 	// machinery rather than threading a new decoder.Options field through frozen core for what is

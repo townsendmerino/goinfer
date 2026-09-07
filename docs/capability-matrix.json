@@ -533,7 +533,8 @@
       "bytes": 2393231072,
       "sha256": "8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef",
       "good_for": "general instruction following at a size that still loads in seconds",
-      "needs": "~3 GB resident at --quant int4"
+      "needs": "~3 GB resident at --quant int4",
+      "tools": "not yet measured"
     }
   },
   {
@@ -563,7 +564,8 @@
       "bytes": 491400064,
       "sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
       "good_for": "code completion and small edits; the smallest checkpoint here that writes usable Go",
-      "needs": "~1 GB resident at --quant int4; runs on any laptop"
+      "needs": "~1 GB resident at --quant int4; runs on any laptop",
+      "tools": "minimal schema: ok; harness-scale (12 tools): skip — too small (measured 2026-09-07, nobara-pc)"
     }
   },
   {
@@ -684,7 +686,18 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "real-oracle 100.0%/0.99843"
+    "parity": "real-oracle 100.0%/0.99843",
+    "checkpoint": {
+      "name": "gpt-oss-20b",
+      "repo": "ggml-org/gpt-oss-20b-GGUF",
+      "file": "gpt-oss-20b-MXFP4.gguf",
+      "quant": "mxfp4",
+      "bytes": 12109566624,
+      "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
+      "good_for": "the 20-35B-class MoE this project actually validates and measures: too big to hold fully resident on an 8 GB GPU, which is the point — bring -moe-cache-experts or -stream-weights",
+      "needs": "~12 GB if loaded fully resident (native MXFP4); on an 8 GB card use -moe-cache-experts (CUDA resident-core + cached-experts, measured working, not just eligible — see this family's description above)",
+      "tools": "not yet measured"
+    }
   },
   {
     "name": "granitemoehybrid",
@@ -713,7 +726,8 @@
       "bytes": 7390331328,
       "sha256": "3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
       "good_for": "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
-      "needs": "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit"
+      "needs": "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit. Tokenizer: pre=\"dbrx\", measured cl100k-shaped (tokenizer/gguf.go) — no PreTokenizerDecline",
+      "tools": "not yet measured"
     }
   },
   {

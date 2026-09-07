@@ -297,3 +297,35 @@ func TestTools_noCallIsSkipNotFail(t *testing.T) {
 		t.Fatalf("a model declining to call the tool must SKIP, not fail: %+v", res)
 	}
 }
+
+// R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): Tools' minimal one-function schema
+// cannot expose "does this model still call the right tool once the schema looks like a real
+// agent's" — a real harness (opencode) broke on exactly that with a server Tools itself passes.
+// ToolsHarness's fake server is schema-agnostic (toolServer only inspects turn number), so these
+// two mirror TestTools_roundTripOK / TestTools_noCallIsSkipNotFail exactly: same server
+// behaviors, the row under test is the only thing that differs.
+func TestToolsHarness_roundTripOK(t *testing.T) {
+	res := toolServer(t, goodCall()).ToolsHarness(context.Background(), "m")
+	if !res.OK {
+		t.Fatalf("a correct two-turn tool round-trip under the harness-scale schema must pass: %+v", res)
+	}
+	if !strings.Contains(res.Detail, "among") {
+		t.Errorf("detail should say how many tools it competed with, got %q", res.Detail)
+	}
+}
+
+// The gate's central claim: a model that cannot find the tool under a dozen-tool schema is
+// reported as a SKIP naming that fact, not a failure that would train an operator to ignore the
+// row — same rule Tools already applies to its minimal schema, extended to this one.
+func TestToolsHarness_noCallIsSkipWithReason(t *testing.T) {
+	res := toolServer(t, nil).ToolsHarness(context.Background(), "m")
+	if res.OK {
+		t.Fatal("a turn with no tool call must not report OK")
+	}
+	if !res.Skip {
+		t.Fatalf("a model declining to call the tool under a harness-scale schema must SKIP, not fail: %+v", res)
+	}
+	if !strings.Contains(res.Detail, "harness-scale") || !strings.Contains(res.Detail, "-tool) schema") {
+		t.Errorf("the skip reason must name the harness-scale schema explicitly, got %q", res.Detail)
+	}
+}

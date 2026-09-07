@@ -13,6 +13,10 @@ import (
 // loadEmbedded.
 const hasEmbeddedModel = false
 
+// quantIsFixedAtBuildTime is irrelevant here (hasEmbeddedModel is false, so version.go never
+// reads it), defined only so all three hasEmbeddedModel build variants declare the same symbols.
+const quantIsFixedAtBuildTime = false
+
 func loadEmbedded(_ bool, _ decoder.Options) (*session, error) {
 	return nil, errors.New("no embedded model in this build (build with -tags embed or -tags prequant)")
 }

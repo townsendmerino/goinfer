@@ -6,6 +6,17 @@
 > the mutation used to prove each one is named. R5 is the protocol, which is this document's §1
 > and does not "ship" — it is run.
 >
+> **Batch 2 — R6–R12 IMPLEMENTED 2026-09-07, uncommitted this pass**, against the run recorded
+> in [`measurements/cold-user-2026-09-06-nobara-pc.md`](measurements/cold-user-2026-09-06-nobara-pc.md)
+> (nobara-pc, Ryzen 3700X + RTX 2070 SUPER 8 GB, v0.17.0, five scenarios, ~32 min — this is run 2
+> of the protocol §1 called for). Every fix below carries a gate that goes red on v0.17.0 and was
+> mutation-checked against the actual pre-fix behavior (not merely reasoned about); several were
+> additionally verified end to end against real hardware and real checkpoints, not only unit
+> fixtures — noted per finding. R7's registry addition substitutes a real, resolvable checkpoint
+> (gpt-oss-20b) for the one the run's own author specified (Gemma-4-26B-A4B), because no
+> verifiable download exists anywhere in this tree for that model — see R7 for why fabricating
+> one was refused rather than worked around.
+>
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
 > [`task-fit-to-hardware.md`](task-fit-to-hardware.md) owns "will it fit" — R3 implements that
@@ -106,6 +117,54 @@ applies: nothing on `PATH`, use the full path or add it in the run's own report.
 **Next run:** the **Linux box**, after the R1–R3 tags land. The CUDA path makes "bigger than my
 hardware" a different story (expert streaming vs `-stream-weights`), so it is not a repeat. Its
 results go in as run 2 and §4's table gains a column.
+
+### Protocol amendments, after run 2
+
+Run 2 found gaps in the protocol itself, not only in the product. Recorded here as amendments
+rather than silently fixed, per this document's own rule that R5 (the protocol) is run, not
+shipped — a protocol that changes without a record of why is not reproducible either.
+
+- **The tester window is created with NO working directories granted.** Run 2's session had
+  `goinfer/{chat,decoder,multimodal,cmd/serve,cuda,metal,internal/chatapp,internal/gemmaapp,
+  scripts,docs/measurements}` pre-granted as "additional working directories" — package-level
+  structural knowledge (backends, internal app layout, a docs/measurements directory even
+  existing) that a genuinely first-contact window would not carry. The tester declared this
+  before starting and the run proceeded anyway, on explicit instruction, with none of those
+  directories opened — but a window that finds repo paths pre-granted at all is evidence of
+  prior contact by construction, and the correct response is to declare it and count the run
+  contaminated, not to proceed carefully around it. Whoever provisions the next tester window
+  must confirm zero working-directory grants into this tree before the run starts.
+- **"Install the latest release" — the tag is recorded from the release page, never given in the
+  prompt.** Run 2 was told to install v0.16.1; `GET
+  /repos/townsendmerino/goinfer/releases/tags/v0.16.1` returned 404 — that release never existed.
+  A prompt-supplied tag can be stale, mistyped, or (as here) simply wrong, and the tester has no
+  way to distinguish "this tag doesn't exist" from "something about my install is broken" without
+  checking the release page directly — which is what the README's own install instructions tell a
+  real user to do anyway. The tag a run installs should always be discovered from the release
+  page at run time, never dictated in advance.
+- **Scenario A records download and run as two legs**, because they have different bottlenecks
+  and a single combined number hides which one dominates. Run 2's clean-path total (56.5 s) was
+  ~98% download time (55.3 s for 1.71 GiB at this run's ~31.5 MB/s) and ~2% launch-to-first-token
+  (1.22 s) — a number that would read as "goinfer is slow to start" is actually "this network was
+  slow," and only splitting the legs makes that visible. **Scenario E starts Ollama with an empty
+  `OLLAMA_MODELS`** for the same reason from the peer side: run 2's Ollama already had 8 models
+  cached from unrelated prior work on the same machine, including the exact model class needed,
+  so its "cold start" leg measured a warm cache and had to be flagged as non-comparable rather
+  than fixed — recording its download leg the same way scenario A does is what makes the two
+  sides actually comparable next time, rather than caveated after the fact.
+- **Provision the `openai` Python package alongside opencode on both boxes.** Scenario B's
+  protocol asks for three clients in order — `curl`, the `openai` Python package, then an agent
+  CLI — and run 2's box had the CLI provisioned (per the existing note below) but not the Python
+  package, so that leg was skipped rather than run. Symmetric with opencode's own contained-prefix
+  provisioning note: install it ahead of the run, not discovered as missing during it.
+- **Rule 5 (write only in this directory and `~/models`) permits the tool's own scratchpad.** Run
+  2's tester kept working notes in the harness-provided session scratchpad (outside both the run
+  directory and `~/models`) before assembling the final report, and flagged it as a rule breach
+  because the rule as written does not carve out that space. It should: a scratchpad the tooling
+  itself provides and manages is not writing into the project tree or leaving artifacts behind,
+  which is what the rule exists to prevent, and forbidding it only pushes a tester toward keeping
+  notes in-memory (worse for a long run) or writing them into the one directory the rule is
+  actually protecting.
 
 ---
 
@@ -401,6 +460,331 @@ that is a property of the checkpoint and a red row there trains an operator to i
   verification, and re-running it belongs with the next cold run on the fixed assets. The
   `benchmarks.md` figures are untouched.
 
+### R6 — version was unanswerable on `goinfer-chat`, and wrong on the release `goinfer-serve`
+
+**Found** (run 2, scenario A + E). `goinfer-chat --version` → `flag provided but not defined:
+-version`; a bare `version` positional was silently swallowed and started an interactive chat
+session with the embedded model instead of erroring. Separately, `goinfer-serve --version` on
+the actual v0.17.0 **release asset** printed `v0.0.0-20260907045005-f36b095ac9a1+dirty` — not
+`v0.17.0`. Root-caused, not guessed: `internal/serveapp/version.go`'s `buildIdent()` reads
+`runtime/debug.ReadBuildInfo()`, and the release workflow's GPU assets are built from an
+ephemeral submodule checkout with a `go mod edit -replace` applied (R2-follow-on's own fix for a
+worse bug) — that uncommitted go.mod edit alone is enough for the VCS stamp to read "modified"
+even though the tree is exactly the tagged release. A `go install .../cmd/serve@v0.17.0` build
+(no replace, no ephemeral checkout) was never affected. Also found: the embedded-tier binaries
+(`goinfer-chat-0.5b`/`-1.5b`) are baked at a FIXED quant chosen at build time — `internal/
+chatapp/prequant.go`'s `loadEmbedded` never reads `opts.Quant` at all — while `--help`'s shared
+`-quant` text says "Default int4" regardless of build; the release assets actually ship at
+`int8int8` (`cmd/prequant`'s own default), a real gap between documented and actual default.
+
+**Fixed, four parts.**
+
+1. *`goinfer-chat --version`.* New `internal/chatapp/version.go` (`isVersionArg`,
+   `versionReport`), dispatched in `Main()` before `flag.Parse` and registered as a `-version`
+   flag, mirroring `internal/serveapp`'s existing pattern deliberately kept as a separate,
+   unshared implementation (`internal/chatapp/version.go:87-93`) rather than shared, so a change
+   to one binary's dispatch cannot silently reach the other.
+2. *Unrecognized positionals now error.* Both `internal/chatapp/main.go` and `internal/serveapp/
+   main.go` check `flag.Args()` after `flag.Parse()` and exit 2 naming the real subcommands —
+   the exact `version` typo that fell through silently on v0.17.0 now errors immediately.
+3. *`-ldflags -X` version injection*, so a release asset's `--version` states the TAG rather than
+   a VCS pseudo-version: `injectedVersion` vars in both `internal/chatapp/version.go` and
+   `internal/serveapp/version.go`, preferred over `debug.ReadBuildInfo()` when set. Wired into
+   every release build site — `.github/workflows/release-assets.yml`'s plain runtime loop, the
+   `goinfer-serve` `build()` function (all six targets, including the two GPU submodule builds),
+   and `demo/chat/build-embed.sh` (via new `GOINFER_RELEASE_TAG`/`GOINFER_TIER` env vars the
+   embedded-tier job now sets).
+4. *The embed-quant discrepancy.* `build-embed.sh` gained an explicit `QUANT` variable
+   (`int8int8`, matching `cmd/prequant`'s own default but now a single named value instead of an
+   implicit one) threaded through to BOTH the actual bake (`go run ./cmd/prequant -quant
+   "$QUANT" ...`) and a new `-X .../chatapp.embeddedQuant=$QUANT` ldflag — so the two cannot
+   drift apart the way the flag help text and the shipped binary just had. `versionReport` prints
+   `embedded: tier=<T> quant=<Q> (baked at build time; --quant has no effect on this binary)` for
+   a `-tags prequant` build, gated on a new `quantIsFixedAtBuildTime` const (`true` in
+   `prequant.go`, `false` in `embed.go`'s `--gguf` mode, which genuinely does read `--quant` at
+   launch).
+
+**Verified end to end, not only unit-tested.** Built the real `-tags prequant` binary against the
+local `internal/chatapp/model.giw` (a real prequant bundle already on this box) with the actual
+`-X` flags `build-embed.sh` now emits: `--version` printed exactly `goinfer-chat-1.5b-smoketest
+v0.17.0-test (…)` / `embedded: tier=1.5b quant=int8int8 (baked at build time; --quant has no
+effect on this binary)`. Then ran the unmodified, edited `build-embed.sh` script itself
+end-to-end against a real cached GGUF (not a hand-typed equivalent command) and got the same
+result from the real output binary.
+
+**Gates.**
+
+- `internal/chatapp/version_test.go`: `TestIsVersionArg_recognizesAllForms` (unit);
+  `TestChatVersionFlag_answersWithoutAModel` and `TestChatUnknownPositional_namesTheSubcommands`
+  build and run the real `demo/chat` binary and assert on its actual stdout/exit code.
+- `internal/serveapp/version_test.go` gained `TestServeUnknownPositional_namesTheSubcommands`,
+  same shape.
+- `internal/chatapp/version_prequant_test.go` (`//go:build prequant`): asserts unset
+  `embeddedTier`/`embeddedQuant` name themselves as unset rather than silently reading as the
+  unrelated `--quant` flag default, and that injected values are reported verbatim. Requires the
+  build tag and a staged `.giw` — deliberately not part of the default `go test ./...`, so a
+  600+ MB local asset is never required to pass.
+- Release workflow: three new `assert --version prints the exact tag` steps (plain runtime,
+  `goinfer-serve`, embedded tier) — linux-amd64 assets run `--version` for real; darwin/windows
+  assets are grepped for the tag string's byte-presence in the binary (the `-X` value is a
+  rodata literal), the same shape R2's `go version -m` check already used for what it cannot
+  execute. The embedded-tier assertion also greps for `tier=<matrix.tier> quant=\S+ (baked at
+  build time`.
+- **Mutation-checked.** Before this fix, `goinfer-chat --version` on v0.17.0 produced exactly
+  `flag provided but not defined: -version` (reproduced directly during the run, not inferred) —
+  the new tests assert this string is absent from a passing run's output.
+
+### R7 — the README's own "bigger than my hardware" examples named a checkpoint nobody can get
+
+**Found** (run 2, scenario D). The README's `-stream-weights` section named
+`~/models/qwen3.5-35b-a3b-q4_k_m.gguf` as its example — a local path, never claimed as
+`pull`-able, but the only size-class example the README gave for the exact scenario it was
+illustrating. `goinfer-chat models`'s curated list topped out at `granite-4.0-h-tiny` (7.4 GB) —
+nowhere near 20–35B. A cold user following the README's own "run bigger than your hardware"
+story had no way to obtain a checkpoint actually large enough to need the flag.
+
+**The specified fix could not be built as specified, and that refusal is itself part of the
+finding.** The instruction for this item named **Gemma-4-26B-A4B** as the checkpoint to add.
+No verifiable download exists for it anywhere in this tree: every reference in `decoder/`'s own
+tests (`gemma4_26b_real_test.go`, `gemma4_coherence_probe_test.go`, seven others) points at a
+LOCAL, unpinned safetensors directory (`GOINFER_GEMMA4_26B=~/models/gemma-4-26b-a4b-it`), never
+a GGUF with a repo, file and digest. `pull/registry_test.go`'s own
+`TestRegistry_digestsMatchLocalFiles` comment records that this project shipped exactly this
+mistake before: *"two of the three entries shipped with a FABRICATED digest and a wrong byte
+count... a fabricated digest is still well-formed lowercase hex of the correct length."*
+Inventing a sha256 here would reproduce that defect deliberately, and would make
+`pull gpt-oss-20b`-shaped commands fail sha256 verification on every attempt — a worse outcome
+than the dead end this item exists to close.
+
+**Substituted `gpt-oss-20b`** (OpenAI, real, already in `docs/capability-matrix.json` at
+`real-oracle` parity — a T3 method, `pull/registry_test.go`'s
+`TestRegistry_noEntryOutrunsItsParity` bar) instead. Its own family description already claimed
+*"resident on an 8 GB card via `-moe-cache-experts`, validated on the real 20B"* — this is that
+real 20B, and it is the checkpoint this project can actually recommend for the exact scenario
+(bigger than an 8 GB GPU) the README's example was trying to illustrate. sha256 (`27cd6c43…`)
+and byte count (12,109,566,624) came from Hugging Face's own git-LFS-recorded digest
+(`ggml-org/gpt-oss-20b-GGUF`, `?blobs=true`, 2026-09-07) — then independently cross-verified
+against a REAL local copy of the file at `~/models/gpt-oss-20b-MXFP4.gguf` via the existing
+`TestRegistry_digestsMatchLocalFiles` gate, which reported "verified 4 of 4 entries" including
+this one.
+
+**Learned mid-fix: `docs/capability-matrix.json` is a GENERATED artifact.** The first attempt
+hand-edited the JSON directly; `decoder/capability_matrix_test.go`'s own comment on the
+`Checkpoint` field says exactly why not to — *"Hand-editing the JSON is silently undone by the
+next `-update`, which is how the first version of this shipped and went red in CI."* Reverted,
+added the entry to the real source (`recommendedCheckpoints["gpt-oss"]` in
+`decoder/capability_matrix_test.go`), and regenerated with `go test ./decoder -run
+CapabilityMatrix -update` + `cp docs/capability-matrix.json pull/` — the documented,
+already-established workflow.
+
+**README fixed** to use the real checkpoint: the "Running a model bigger than your RAM — or your
+GPU" section now names `goinfer-chat pull gpt-oss-20b` before both the `-stream-weights` and a
+new `-moe-cache-experts` example (the GPU-specific remedy scenario D's own dead end needed and
+never had a runnable example for).
+
+**Gates.**
+
+- `pull/registry_test.go`'s existing `TestRegistry_noEntryOutrunsItsParity`,
+  `TestRegistry_everyEntryIsVerifiable` and `TestRegistry_digestsMatchLocalFiles` all cover the
+  new entry with no changes needed — the registry's existing gates were already the right shape.
+- New `scripts/readme_smoke.sh` marker, `<!-- smoke-model -->`: resolves every README-named
+  `pull`/`--model` reference against the registry (`goinfer-chat models`'s own output, no
+  download), `demo:` tiers (`pull/curated.json`), or an HF `owner/repo` (the models API,
+  metadata only) — marked on 5 README lines. **Verified against the actual published v0.17.0
+  module**, not a local build: 4 of 5 resolve; `gpt-oss-20b` correctly FAILS, because this
+  registry addition is not in the published release yet — exactly the red-on-v0.17.0,
+  green-once-tagged shape this pass's gates are supposed to have. Caught and fixed a self-
+  introduced bug while building this: wrapping a `<!-- smoke-help -->` marker's comment across
+  two lines broke the existing one-marker-next-line extraction convention, found only by
+  actually running the script.
+- New `scripts/readme_smoke.sh` step: every `[...](docs/...)` link the README cites must exist
+  in the checkout (R12's gate; described there, exercised here too since this item added two new
+  citations). Mutation-checked: an appended dead link is caught by name; reverted, clean.
+
+### R8 — a registry-recommended checkpoint loaded with a tokenizer decline
+
+**Found** (run 2, scenario D). `granite-4.0-h-tiny` — already in the registry, recommended to
+first-time users — printed `GGUF tokenizer.ggml.pre="dbrx" is not a known pre-tokenizer; falling
+back to cl100k with a 1-digit cap, so this model's token ids may differ from HF and llama.cpp` on
+every load.
+
+**Measured, same discipline as C-10** — walked the real shape rather than guessing a name→shape
+mapping (the mistake C-10 was). Fetched `ibm-granite/granite-4.0-h-tiny`'s real HF
+`tokenizer.json` (2026-09-07, repo sha `791e0d3d…`): its Split regex is byte-identical to the
+cl100k pattern `tokenizer/bytelevel.go:258` already documents, `\p{N}{1,3}` digit runs
+(Llama-3's cap), `normalizer: null`, `model.ignore_merges: false` — the one knob that makes it
+its own case rather than an alias for `llama-bpe` (which has `ignoreMerges: true`).
+
+**Fixed.** `tokenizer/gguf.go`'s `byteLevelKnobs` gained a measured `"dbrx"` case
+(`return 3, norm.NFC, false, false, false, shapeCl100k, true`), with the regex and its source
+quoted in the comment.
+
+**Gates.**
+
+- New `pull/registry_tokenizer_test.go`: `TestRegistry_noEntryHasATokenizerDecline` reads a
+  COMMITTED, real GGUF-header fixture per registry entry and asserts
+  `PreTokenizerDecline() == ""`. The `granite-4.0-h-tiny` fixture
+  (`tokenizer/testdata/granite-dbrx-meta.gguf`, 3.6 MB) is a REAL extraction — via
+  `cmd/prequant` against the actual local 6.9 GB checkpoint, then `giw.Read`'s tokenizer half —
+  not synthesized. A `qwen2.5-coder-0.5b` fixture (already committed at
+  `testdata/qwen2-gguf/...`) runs as a sanity control; `phi3-mini-4k`/`gpt-oss-20b` skip cleanly
+  (no fixture yet), logged as a skip, not a pass.
+- **Mutation-checked**: `git stash`-reverted `gguf.go`'s fix and reran — the test failed with the
+  EXACT original decline message; unstashed, green again.
+- The capability-matrix line for the family states the tokenizer tier: `granitemoehybrid`'s
+  registry `Needs` field now reads *"Tokenizer: pre=\"dbrx\", measured cl100k-shaped
+  (tokenizer/gguf.go) — no PreTokenizerDecline"* — scoped to the checkpoint entry rather than a
+  new capability-matrix schema column, which would have needed generator changes beyond this
+  item's reasonable size; noted as a scope cut, not silently dropped.
+
+### R9 — `cuda-staged (int4)` never touched the GPU, for any architecture, always
+
+**Found** (run 2, scenario D). `granite-4.0-h-tiny --backend cuda` (no `--require-backend`)
+loaded, banner said `decode path: cuda-staged (int4)`, and `nvidia-smi` sampled at 1 Hz through a
+full completion request stayed at the idle baseline (464 MiB) for all 15 samples — the label
+said `cuda`, nothing on the device moved.
+
+**Root-caused precisely, and it is bigger than this one checkpoint.** `decoder/weightmat.go`'s
+`matmul()` dispatches int4-stored tensors to `w.MatmulBTW4A8Into` — a pure CPU/host integer
+kernel — **unconditionally, with no backend parameter at all**. `decoder.QuantBackend` (the
+interface the staged path dispatches through) declares only `MatmulW8A8`; there is no int4
+counterpart anywhere in this tree. So `cuda-staged (int4)` is CPU-equivalent for **every**
+architecture that only reaches the staged (non-resident) path, always, by construction — not a
+one-off decline for this family. `int4mix` is half so (its FFN tensors are stored int4 and take
+the same CPU-only branch; only its attention tensors are int8 and reach `QuantBackend`). Native
+f32 and int8/int8int8 genuinely reach the backend (`MatmulBT`/`MatmulW8A8` respectively). This is
+a **static fact of the quant mode**, determinable from `m.Quant()` alone with no live device
+instrumentation needed — which is also why the fix needed no new runtime tracking.
+
+**Fixed.** `decoder/residency.go`'s `DecodePath()` now appends a `stagedDeviceNote(quant)` to the
+staged-path string: `int4` → *"[no GPU dispatch exists for this quant in the staged path —
+CPU-equivalent regardless of --backend]"*; `int4mix` → names the FFN/attention split. Also
+confirmed (not changed — already correct): `--require-backend` already refuses **every** staged
+case unconditionally (`internal/serveapp/main.go`'s `requireFastPaths` checks
+`!ResidentActive()`, independent of quant), which is exactly what the run's own scenario D
+observed firing before any GPU/swap touch — "covers staged declines too" was already true.
+
+**Verified end to end on real hardware**, not only unit-tested. Built `cuda/cmd/serve` (found the
+already-present, gitignored local `go.work` stitching `cuda` to this working tree — no manual
+`go mod replace` needed) and ran it against the real `granite-4.0-h-tiny-Q8_0.gguf` on the actual
+RTX 2070 SUPER. The banner now reads, verbatim: `decode path: cuda-staged (int4) [no GPU
+dispatch exists for this quant in the staged path — CPU-equivalent regardless of --backend] —
+arch is not eligible for the resident decode runner`.
+
+**Gate.** `decoder/staged_device_note_test.go`: `stagedDeviceNote` is a pure function of the
+quant string, so the test needs no device or model fixture — every quant mode's dispatch is a
+static fact, not a runtime measurement. Covers int4, int4mix, int8, int8int8 and native f32.
+
+### R10 — the embed example compiled first try; testing it against a real model found a real bug
+
+**Found** (run 2, scenario C). A README-and-pkg.go.dev-only reader's own ≤40-line program
+compiled and ran on the first try — genuinely clean — but printed "Hello. Hello. Hello. ..."
+instead of a coherent reply, because it encoded the raw prompt with no chat template.
+`examples/embed/main.go` (R4's own stopgap from batch 1) already existed and already applied a
+template — but ACTUALLY RUNNING it against a real fixture (not just `go vet`, which is all CI
+did) surfaced a second, real bug: it hardcoded `chat.ChatML()` regardless of the checkpoint's
+own template, producing garbage on a model trained on a different one.
+
+**Fixed.** Switched to `chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken:
+tok.Has})` with a raw-completion fallback on `ErrUnknownTemplate` — the same detection
+`internal/chatapp` and `internal/serveapp` already use. Stayed at exactly 40 non-comment lines.
+One sentence each added to `decoder.Generate`'s doc comment and the README's library section:
+`Generate` is a raw completion primitive, chat formatting is the caller's job, here is the
+example.
+
+**Verified against two real fixtures**, which is how the second bug was found: `gemma-3-270m`
+(degenerate either way — likely a base/non-chat checkpoint, not this item's bug) and
+`tinyllama-1.1b-chat` (real chat-tuned model): the OLD example produced a real, if
+harder-to-spot, degeneracy — a `User:.../Assistant:...` loop appearing only in the LATTER half of
+a 256-token generation — and the NEW example produced varied, if oddly-spaced (a separate,
+accepted limitation of no UTF-8/space holdback in a ≤40-line program), numbered-list output.
+
+**Gates.**
+
+- `examples/embed/main_test.go`: builds and runs the REAL binary against the real, already-
+  committed `testdata/tinyllama-gguf/` fixture, asserting no substring repeats 3+ times
+  immediately back-to-back — searched over every period 8–64 characters (character n-grams, not
+  word-split, because this example's naive per-token decode does not reliably preserve
+  whitespace). A first version of this test checked only 4 guessed period widths and MISSED the
+  old example's real loop (period 34) — caught only by mutation-testing it, not by inspection.
+  **Mutation-checked properly after the fix**: old example fails with its real degeneracy
+  pattern, new example passes.
+- `decoder/doc_fields_test.go`: `go doc . Options`/`SamplingParams` already list every field
+  completely — confirmed locally; the truncation the run hit was the tester's own web-fetch
+  tool's rendering of the live pkg.go.dev page, not a defect in the source doc comments or in
+  `go doc` itself, so no comment restructuring was needed. The gate reflects the REAL struct
+  fields (self-updating, no hardcoded list to drift) and asserts `go doc`'s text names every one
+  — a regression gate for a defect that, on inspection, was not actually in this tree.
+
+### R11 — the doctor's minimal tool schema passed; a real agent's schema did not
+
+**Found** (run 2, scenario B). `goinfer-serve check`'s `tools, OpenAI` row — a one-function
+schema — passed. opencode (a real agent CLI), driving the SAME server, printed a fake JSON tool
+call as assistant prose, twice, instead of a real `tool_calls` response, burning ~350 s. Isolated
+before assuming a goinfer bug: a raw curl with a minimal one-tool schema against the same server
+DID get a proper `tool_calls` response — the gap is schema SIZE, invisible to a doctor that only
+ever sends one tool.
+
+**Fixed.** `internal/servecheck/check.go` gained `ToolsHarness` — a second tools row using a
+dozen tools with nested object parameters (file read/write/edit, shell, search, plus
+`get_weather` among them), shaped like opencode's own "build" agent. Reuses the existing
+`toolCall` helper unchanged (schema-agnostic), so "a model did not call the tool" is reported as
+a SKIP naming the schema size, not a failure — the same rule `Tools` already applies to its
+minimal case, so a red row here does not train an operator to ignore it.
+
+**Verified end to end on real hardware, against two real checkpoints** — the exact real
+qwen2.5-coder-1.5b GGUF from scenario A, and separately the actual registry entry
+`qwen2.5-coder-0.5b`: both show `tools, OpenAI ... ok` and `tools, harness-scale ... skip`, a
+direct, automated reproduction of the opencode finding — the doctor now predicts this before an
+operator hits it, rather than vouching past it with a green minimal-schema row.
+
+**Registry gains a measured `tools` column** (`pull.Checkpoint.Tools` /
+`recommendedCheckpoint.Tools`), shown in `goinfer-chat models`. Populated from real runs where
+run 2 had time to make them, honestly marked `"not yet measured"` where it did not — a
+`granite-4.0-h-tiny` attempt was started and killed after it did not finish in a reasonable time
+(R9 explains why: CPU-only staged int4 plus this arch's sequential prefill), and was recorded as
+unmeasured rather than extrapolated from a different checkpoint's result.
+
+**README's harness recipe** (`docs/integrations/claude-code.md`, previously unlinked from the
+README — fixed in passing) gained a section citing the measured evidence for "which model
+tool-calls under a real agent": that page's own 2026-09-02 run already answered this for a
+different checkpoint — **Qwen2.5-7B-Instruct** held a real 25-tool-schema agent loop, and that
+page's own text already says a 1.5B "re-calls the same tool forever." Cited rather than
+re-measured, plus this pass's fresh registry-entry results.
+
+**Gates.**
+
+- `internal/servecheck/check_test.go`: `TestToolsHarness_roundTripOK` and
+  `TestToolsHarness_noCallIsSkipWithReason` (fake-HTTP-server pattern, matching the five existing
+  `TestTools_*` tests exactly).
+- `pull/registry_test.go`'s new `TestRegistry_toolsColumnIsNonEmpty`: every entry must have SOME
+  value in `Tools`, even an honest `"not yet measured"` — it cannot distinguish a real
+  measurement from a placeholder (that is a human's job when filling one in), only catch the
+  entry that forgot the field.
+
+### R12 — README numbers lacked provenance context, and a citation can silently rot
+
+**Found** (run 2). The "25 seconds" cold-start claim carried no download size or network
+context, so a different tester's very different number (56.5 s, dominated by a 1.71 GiB download
+at this run's ~31.5 MB/s) reads as a regression rather than a network fact. The scenario-E hedge
+("Ollama led it on the release build that run tested") did not say WHICH defect made that true
+(R2's Metal-less Mac asset), so a reader cannot tell a packaging artifact from an engine result.
+Run 2's own new CUDA decode measurement (192.8 vs 183.6 tok/s) initially read as contradicting
+`docs/benchmarks.md` §B8's formally-provenanced anchor table — it does not: §B8's shallow-KV-
+depth cells already show goinfer ahead of Ollama on the same quant class, and run 2's short
+completion sits in exactly that regime.
+
+**Fixed.** README's cold-start section now states the download size/network speed beside the
+56.5 s number, names R2's Metal gap explicitly next to the old hedge, adds the run-2 CUDA result
+with its §B8-consistency note, and points to `scripts/bench_peer.py` — the already-committed,
+real harness both the official anchor table and (informally) this run's own method used
+underneath — as the "measure it yourself" recipe, so the next tester does not reconstruct
+client-side-tok/s-from-first-token by hand the way this run did.
+
+**Gate.** New `scripts/readme_smoke.sh` step: every `[...](docs/...)` markdown link the README
+cites must resolve to a file that exists in the checkout. **Mutation-checked**: appended a dead
+citation to the real README, confirmed it is the only one flagged among 20; reverted.
+
 ---
 
 ## 3. What the cold run confirmed was good
@@ -426,21 +810,28 @@ Worth recording, because a protocol that only produces defects gets read as nois
 That doc was written 2026-09-02 from the inside, four days before the run. It is the closest thing
 to a prediction of the first hour that existed, so it is worth scoring honestly.
 
-| what the cold run found | did the doc predict it? | where |
-|---|---|---|
-| the banner is what a harness user reads, and must carry the facts | **yes, exactly** — "the banner is the UI", with a per-line design | §3.3 |
-| `serve check` needs to drive the routes a harness uses | **yes** — the doctor, with the tools rows sketched | §3.4 |
-| per-harness recipes with an expectation line | **yes** — one per harness, ≤40 lines | §3.5 |
-| the embedder has no "start here"; `decoder` is 346 entries | **yes** — the whole premise of the facade | §1, §2 |
-| finding a checkpoint is a first-hour problem | **yes, and already closed** by `pull` + `hf:`/`demo:` refs | §1.1 |
-| **the release does not ship the binary the README names** | **no** | — |
-| **the darwin asset links no GPU backend** | **no** | — |
-| **the banner prints the requested backend, not the effective one** | **no** — the doc says what the banner should *add*, never that what it prints could be false | §3.3 |
-| **a model bigger than RAM swaps silently** | **partly** — `task-fit-to-hardware.md` owns it and had the guard scoped as Phase 0; nothing said the *flag was undiscoverable* | fit §7.0 |
-| the install command in the README does not build | **no** | — |
-| **the GPU assets are a release behind the tag** | **no** — and no doc anywhere named it; it was found by R2's gate, not by the run | — |
-| `--help` is unusable as a quick reference | **no** | — |
-| no one-shot prompt flag | **no** | — |
+| run | what the cold run found | did the doc predict it? | where |
+|---|---|---|---|
+| 1 | the banner is what a harness user reads, and must carry the facts | **yes, exactly** — "the banner is the UI", with a per-line design | §3.3 |
+| 1 | `serve check` needs to drive the routes a harness uses | **yes** — the doctor, with the tools rows sketched | §3.4 |
+| 1 | per-harness recipes with an expectation line | **yes** — one per harness, ≤40 lines | §3.5 |
+| 1 | the embedder has no "start here"; `decoder` is 346 entries | **yes** — the whole premise of the facade | §1, §2 |
+| 1 | finding a checkpoint is a first-hour problem | **yes, and already closed** by `pull` + `hf:`/`demo:` refs | §1.1 |
+| 1 | **the release does not ship the binary the README names** | **no** | — |
+| 1 | **the darwin asset links no GPU backend** | **no** | — |
+| 1 | **the banner prints the requested backend, not the effective one** | **no** — the doc says what the banner should *add*, never that what it prints could be false | §3.3 |
+| 1 | **a model bigger than RAM swaps silently** | **partly** — `task-fit-to-hardware.md` owns it and had the guard scoped as Phase 0; nothing said the *flag was undiscoverable* | fit §7.0 |
+| 1 | the install command in the README does not build | **no** | — |
+| 1 | **the GPU assets are a release behind the tag** | **no** — and no doc anywhere named it; it was found by R2's gate, not by the run | — |
+| 1 | `--help` is unusable as a quick reference | **no** | — |
+| 1 | no one-shot prompt flag | **no** | — |
+| 2 | **`--version` unanswerable on `goinfer-chat`; wrong on the released `goinfer-serve`** | **no** — a build/release-hygiene defect the facade/harness doc has no occasion to name | — |
+| 2 | **the README's own "bigger than your GPU/RAM" examples name a checkpoint nobody can get** | **partly** — §1.1's "finding a checkpoint is closed" was scored true for the SMALL end (`pull`/`hf:`/`demo:` work); run 2 found the LARGE end is not: the registry has nothing near 20–35B, so the doc's own claim does not extend to the scenario it is illustrating | §1.1 |
+| 2 | **a registry-recommended checkpoint (`granite-4.0-h-tiny`) loads with a tokenizer decline** | **no** | — |
+| 2 | **`cuda-staged (int4)` never reaches the GPU, for any architecture, always** | **partly** — R2 (run 1) already made the banner name the EFFECTIVE backend by NAME; nothing said a nominally-selected backend could still dispatch zero device bytes for a whole quant mode | §3.3 |
+| 2 | **the (already-fixed, batch-1) embed example still degenerates on a real model, from a hardcoded template** | **yes, specifically** — §1 step 3 names `chat.Detect` as one of the six steps a caller must not skip; the batch-1 stopgap example skipped it anyway | §1 step 3 |
+| 2 | **the doctor's minimal one-tool schema does not predict a real agent's larger-schema failure** | **no** — §3.4 sketched more tool-call PROTOCOL variants (Anthropic, Responses) to check, never schema SIZE as its own dimension | §3.4 |
+| 2 | **README numbers carry no provenance context; a citation can silently rot** | **no** | — |
 
 **The pattern.** The doc was right about **everything that needed designing** and blind to
 **everything that needed checking**. Every miss is a place where a claim the project makes about
@@ -449,17 +840,30 @@ itself — the README's commands, the release's assets, the banner's `[backend=�
 nobody was looking at, because the people looking already knew the answers.
 
 That is the argument for the ritual in §1, and it is why every fix in §2 ships with a gate that
-would have gone red on v0.16.0 rather than with a doc that says what should be true.
+would have gone red on v0.16.0 (run 1) or v0.17.0 (run 2) rather than with a doc that says what
+should be true. **Run 2's pattern is the same shape at a different layer**: every miss is again a
+claim nothing gated — a version string, a registry entry's own download, a tokenizer, a banner's
+device-use claim, a stopgap example's own template choice, a doctor's schema size, a README
+citation — and the one hit (R10) landed exactly where the design doc had already named the right
+step and a later stopgap skipped it anyway, which is its own small lesson: a correct design does
+not enforce itself.
 
 ---
 
 ## Sources
 
-[`measurements/cold-user-2026-09-06.md`](measurements/cold-user-2026-09-06.md) (the run) ·
+[`measurements/cold-user-2026-09-06.md`](measurements/cold-user-2026-09-06.md) (run 1) ·
+[`measurements/cold-user-2026-09-06-nobara-pc.md`](measurements/cold-user-2026-09-06-nobara-pc.md)
+(run 2) ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) (§4 scores it) ·
 [`task-fit-to-hardware.md`](task-fit-to-hardware.md) (R3 is its Phase 0) ·
 [`api-tiers.md`](api-tiers.md) (what R1's install line may promise) ·
 `RELEASING.md` (the ritual this doc is now part of) ·
 `metal/backend.go` (the 70% fraction R3 reuses, and its single-measurement provenance) ·
 `docs/audit-2026-09-02.md` M-01/M-02 (the accounting R3's guard reads), M-19 (why the root
-`cmd/serve` links no backend, which is what R2 found shipped)
+`cmd/serve` links no backend, which is what R2 found shipped) ·
+`docs/benchmarks.md` §B8 (R12's peer-decode consistency check) ·
+[`docs/integrations/claude-code.md`](integrations/claude-code.md) (R11's "which model tool-calls
+under a real agent" evidence) ·
+`pull/registry_test.go` (R7's `TestRegistry_digestsMatchLocalFiles`, whose own comment records
+the fabricated-digest mistake R7 refused to repeat)

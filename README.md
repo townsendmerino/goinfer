@@ -52,6 +52,9 @@ go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerin
 ```
 
 See [`examples/embed/main.go`](examples/embed/main.go) for a complete 40-line program.
+`decoder.Model.Generate` is a raw completion primitive — it has no notion of chat turns —
+so the example resolves the checkpoint's own template with `chat.Detect` before encoding;
+skip that step and an instruct model degenerates into repeating itself.
 
 ## Download and run
 
@@ -60,7 +63,22 @@ Apple M1 Pro / 16 GB against Ollama 0.32.5 doing the same thing on the same box:
 from an 8 MB binary with no daemon to install and nothing left running afterwards
 ([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
 scenario E). That leg is a cold start only; steady-state decode on that machine is a separate
-measurement and Ollama led it on the release build that run tested.
+measurement, on **v0.16.0's Mac asset, which R2 later found had no Metal backend linked in** —
+so that particular "Ollama led it" reading is a packaging defect's shadow, not an engine result;
+`docs/measurements/cold-user-2026-09-06.md`'s own text says so.
+
+On a Linux box with a GPU, cold start is network-bound (**56.5 s**, dominated by a **1.71 GiB**
+binary download at **~31.5 MB/s** — not a fixed number, a function of your connection) and
+steady-state CUDA decode, matched quant, interleaved, client-side tok/s from first token to
+last: goinfer **192.8 tok/s** vs Ollama **183.6 tok/s**, ~5% ahead
+([`docs/measurements/cold-user-2026-09-06-nobara-pc.md`](docs/measurements/cold-user-2026-09-06-nobara-pc.md),
+scenario E) — consistent with `docs/benchmarks.md` §B8's own formally-provenanced anchor table,
+whose shallow-KV-depth cells (this was a short completion, effectively depth ≈128) show goinfer
+ahead of Ollama on the same quant class; §B8's deeper cells show Ollama pulling ahead as context
+grows, which this short run does not contradict. Measure it yourself rather than trust either
+number: `scripts/bench_peer.py` is the committed harness both of the above used underneath —
+same weights both sides, decode-only, interleaved, server-restarted per cell, provenance
+stamped into the output file.
 
 Binaries on the [latest release](https://github.com/townsendmerino/goinfer/releases/latest)
 (macOS / Linux / Windows, Intel + ARM). Sizes are the darwin-arm64 assets of v0.16.0:
@@ -84,13 +102,13 @@ Don't have one yet? The runtime can fetch a GGUF straight from HuggingFace — n
 to install, and no `huggingface-cli`:
 
 ```bash
-# see what a repo publishes
+# <!-- smoke-model --> see what a repo publishes
 ./goinfer-chat-darwin-arm64 pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
 
-# fetch one quant (case-insensitive; verified against the sha256 HuggingFace declares)
+# <!-- smoke-model --> fetch one quant (case-insensitive; verified against the sha256 HuggingFace declares)
 ./goinfer-chat-darwin-arm64 pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
 
-# or the models goinfer itself vets and pins
+# <!-- smoke-model --> or the models goinfer itself vets and pins
 ./goinfer-chat-darwin-arm64 pull demo:1.5b
 ```
 
@@ -150,6 +168,7 @@ what each is good for, and what it costs to run:
 ```bash
 # <!-- smoke-help --> lists known-good checkpoints; every row traces to a parity-gated family
 goinfer-chat models
+# <!-- smoke-model -->
 goinfer-chat pull qwen2.5-coder-0.5b        # short name, no repo path to look up
 ```
 
@@ -170,30 +189,46 @@ not int8 quality. [`docs/quantization.md`](docs/quantization.md) states which qu
 stands behind, which it has measured and refused, and — importantly — which read paths have no
 quality evidence at all.
 
-## Running a model bigger than your RAM
+## Running a model bigger than your RAM — or your GPU
 
-A 30B-class MoE does not fit in 16 GB, and loading it anyway will drive your machine into swap
-before anything says so. `-stream-weights` is the answer, and it is not a fallback mode — it is
-how these models are meant to run here:
+A 20-35B-class MoE does not fit in 16 GB of RAM, or on an 8 GB GPU, and loading it anyway will
+drive your machine into swap (or your CUDA allocator into an OOM) before anything says so.
+The RAM-overflow and GPU-overflow examples below both use the checkpoint this project actually
+validates at that size, rather than a size class with nothing behind it to download:
 
 ```bash
-# <!-- smoke-help --> pages weights on demand out of an mmap'd .giw
-goinfer-serve -stream-weights -weight-cache 6GiB -model ~/models/qwen3.5-35b-a3b-q4_k_m.gguf
+# <!-- smoke-model --> a 20-35B-class MoE, real and resolvable — goinfer-chat models for the full entry
+goinfer-chat pull gpt-oss-20b
 ```
 
-**Rule of thumb:** if the checkpoint file is larger than about half your physical RAM, use
-`-stream-weights`. Resident memory is then capped near `-weight-cache` rather than the model
-size — a 35B-A3B runs in ~16–20 GB of machine instead of the ~21 GB the weights alone would
-need, because only the experts a token actually routes to are resident.
+```bash
+# <!-- smoke-help --> the flag to reach for whenever the checkpoint file is larger than about half your physical RAM
+goinfer-serve -stream-weights -weight-cache 6GiB -model ~/models/gpt-oss-20b-MXFP4.gguf
+```
 
-Measured on an M1 Pro / 16 GB with a 21 GB 35B-A3B: without the flag, **+7.8 GB of swap in five
-seconds**; with it, RSS peaked at **8.95 GB** and fell back to 2.7 GB, with zero swapouts
+Resident memory is then capped near `-weight-cache` rather than the model size, because only the
+experts a token actually routes to are resident. Measured on an M1 Pro / 16 GB with a 21 GB
+35B-A3B (a different checkpoint at the same size class — the mechanism is the same either way):
+without the flag, **+7.8 GB of swap in five seconds**; with it, RSS peaked at **8.95 GB** and fell
+back to 2.7 GB, with zero swapouts
 ([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
 scenario D).
 
 **This is `goinfer-serve`'s job, not `goinfer-chat`'s.** The single-shot chat runtime holds all
 weights resident by design; it has no `-stream-weights`. If your model is bigger than your RAM,
 reach for the server.
+
+**On an 8 GB GPU it is `-moe-cache-experts`, not `-stream-weights`.** The whole model does not
+need to fit VRAM — only the non-expert core plus a slot cache of the experts a token actually
+routes to, streamed host→VRAM per token on demand:
+
+```bash
+# <!-- smoke-help --> off by default; a model that does not fit then declines to the CPU path and says why
+goinfer-serve -backend cuda -moe-cache-experts -model ~/models/gpt-oss-20b-MXFP4.gguf
+```
+
+gpt-oss-20b (12 GB at native MXFP4, resident) is the checkpoint this family's own CUDA resident
+gate is measured against on an 8 GB card — see `docs/capability-matrix.md`'s gpt-oss row.
 
 ## A Go struct the model cannot violate
 
@@ -267,7 +302,10 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
   the previous behaviour in full. Details:
   [docs/measurements/prefill-l2l3-phase3-2026-09-05.md](docs/measurements/prefill-l2l3-phase3-2026-09-05.md).
 - **Serving** — OpenAI-compatible and Anthropic Messages endpoints, multi-model, vision,
-  embeddings: [docs/server.md](docs/server.md).
+  embeddings: [docs/server.md](docs/server.md). Pointing a real agent (Claude Code, opencode) at
+  it: [docs/integrations/](docs/integrations/) — `serve check`'s harness-scale tools row and
+  `goinfer-chat models`' `tools:` line say which checkpoints actually hold up under a real
+  agent's tool schema, measured, before you find out the way a cold-user run did.
 
 ## Docs
 

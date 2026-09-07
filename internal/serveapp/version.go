@@ -20,6 +20,16 @@ import (
 // only signal was one warning line that scrolled past before the banner. Nothing on the binary
 // could be asked. Now it can be, without loading a model, which is also what the release
 // workflow greps to prove each asset carries the backend for its platform.
+// injectedVersion is set via `-ldflags -X` on a release-built binary. R6 (docs/measurements/
+// cold-user-2026-09-06-nobara-pc.md): the v0.17.0 linux-amd64 release asset's `--version`
+// printed "v0.0.0-20260907045005-f36b095ac9a1+dirty", not "v0.17.0" — R2-follow-on's
+// `go mod edit -replace` on the ephemeral submodule checkout is an uncommitted go.mod edit, and
+// that alone is enough for the VCS stamp to read "modified". A binary built the ordinary way
+// (`go install .../cmd/serve@v0.17.0`, no replace, no ephemeral checkout) is unaffected and
+// keeps reporting its real tag from buildIdent with no injection at all — this only overrides
+// the release workflow's own path.
+var injectedVersion string
+
 func versionReport(prog string) string {
 	var b strings.Builder
 	version, revision := buildIdent()
@@ -42,26 +52,27 @@ func versionReport(prog string) string {
 func buildIdent() (version, revision string) {
 	version = "(unknown)"
 	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version, ""
-	}
-	if info.Main.Version != "" {
-		version = info.Main.Version
-	}
 	// Collected independently of Settings ORDER: vcs.modified is emitted after vcs.revision
 	// today, but appending "-dirty" as we go would silently lose it if that ever flipped.
 	dirty := false
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			if len(s.Value) > 12 {
-				revision = s.Value[:12]
-			} else {
-				revision = s.Value
+	if ok {
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				if len(s.Value) > 12 {
+					revision = s.Value[:12]
+				} else {
+					revision = s.Value
+				}
+			case "vcs.modified":
+				dirty = s.Value == "true"
 			}
-		case "vcs.modified":
-			dirty = s.Value == "true"
 		}
+	}
+	if injectedVersion != "" {
+		version = injectedVersion
+	} else if ok && info.Main.Version != "" {
+		version = info.Main.Version
 	}
 	if dirty && revision != "" {
 		revision += "-dirty"

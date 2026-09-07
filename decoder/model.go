@@ -863,6 +863,13 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 // ids (the demo runs the tokenizer). The channel closes when generation
 // ends; check Err after the range loop for a terminal error.
 //
+// This is a RAW COMPLETION primitive: it continues prompt verbatim and knows nothing about
+// chat turns, roles, or a checkpoint's own template — encoding a user message directly, with no
+// formatting, is why an instruct-tuned model degenerates into repetition (R10, docs/measurements/
+// cold-user-2026-09-06-nobara-pc.md). Rendering a template is the caller's job: see
+// github.com/townsendmerino/goinfer/chat (chat.Detect resolves a checkpoint's own template from
+// its tokenizer metadata) and examples/embed/main.go for the whole sequence.
+//
 // Sampling is greedy at Temperature 0, else temperature/top-k/top-p (see
 // Sampler). A SamplingParams.LogitProcessor, if set, masks each step's logits
 // before sampling — the seam for constrained/structured decoding.

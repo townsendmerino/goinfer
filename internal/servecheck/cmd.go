@@ -58,6 +58,7 @@ func Run(args []string, self string) int {
 		rows = append(rows,
 			c.Chat(ctx, target, "Say hello in one short sentence.", 48, "chat, streamed"),
 			c.Tools(ctx, target),
+			c.ToolsHarness(ctx, target),
 			c.Structured(ctx, target),
 			c.Stop(ctx, target),
 			c.CountTokens(ctx, target),

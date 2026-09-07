@@ -38,14 +38,40 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          # R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): --version answered with a
+          # VCS pseudo-version, not the tag, on assets built the way the GPU serve binaries are
+          # (an ephemeral checkout with a local go.mod replace — see R2-follow-on below). This
+          # loop's binaries are a plain `go build` with no replace, so they would already report
+          # correctly from buildIdent alone; injecting explicitly anyway means every asset in
+          # this release uses the SAME mechanism rather than two that happen to agree today.
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           for t in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
             os="${t%/*}"; arch="${t#*/}"
             out="dist/goinfer-chat-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
             echo "building $t"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-              go build -ldflags="-s -w" -trimpath -o "$out" ./demo/chat
+              go build -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$TAG" \
+              -trimpath -o "$out" ./demo/chat
           done
           ls -lh dist
+      - name: assert chat runtime --version prints the exact tag
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          fail=0
+          native="dist/goinfer-chat-linux-amd64"
+          chmod +x "$native"
+          ver="$("$native" --version)"
+          echo "$ver"
+          echo "$ver" | grep -qF "$TAG" \
+            || { echo "$native --version does not print $TAG"; fail=1; }
+          # darwin/windows assets cannot run on this runner; the -X string is a rodata literal,
+          # so its presence in the binary bytes is the check available here (same shape as the
+          # main-module `go version -m` grep the serve job already uses for what it cannot execute).
+          for f in dist/goinfer-chat-darwin-arm64 dist/goinfer-chat-darwin-amd64 dist/goinfer-chat-windows-amd64.exe dist/goinfer-chat-windows-arm64.exe; do
+            grep -qa "$TAG" "$f" || { echo "$f does not contain the tag string $TAG"; fail=1; }
+          done
+          [ "$fail" = 0 ] || { echo "chat runtime version assertions FAILED"; exit 1; }
 
       # goinfer-serve, per platform, WITH the backend that platform can actually use.
       #
@@ -88,6 +114,14 @@ jobs:
           # The replace is applied to the ephemeral checkout only; nothing is committed, and
           # standalone-build.yml still proves a real consumer can resolve the submodule from the
           # proxy, which is a different question from what WE ship.
+          # R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the v0.17.0 linux-amd64
+          # asset's --version printed a "+dirty" VCS pseudo-version, not v0.17.0 — this build()'s
+          # OWN `go mod edit -replace` two lines below is an uncommitted go.mod edit on the
+          # ephemeral checkout, which alone is enough for the VCS stamp to read "modified" even
+          # though the tree is exactly the tagged release. Injected explicitly rather than fixed
+          # by avoiding the replace, because the replace is R2-follow-on's own fix for a WORSE
+          # bug (shipping the previous release's engine) and has to stay.
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           build() { # build <module-dir> <tags> <goos> <goarch>
             local dir="$1" tags="$2" os="$3" arch="$4"
             local out="$root/dist/goinfer-serve-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
@@ -95,7 +129,9 @@ jobs:
             ( cd "$root/$dir" \
                 && { [ "$dir" = "." ] || go mod edit -replace github.com/townsendmerino/goinfer="$root"; } \
                 && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS=-mod=mod \
-                go build ${tags:+-tags "$tags"} -ldflags="-s -w" -trimpath -o "$out" ./cmd/serve )
+                go build ${tags:+-tags "$tags"} \
+                -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/serveapp.injectedVersion=$TAG" \
+                -trimpath -o "$out" ./cmd/serve )
           }
           build metal metal darwin arm64
           build metal metal darwin amd64
@@ -157,6 +193,13 @@ jobs:
           echo "$ver"
           echo "$ver" | grep -qE '^backends: .*\bcuda\b' \
             || { echo "$native --version does not list the cuda backend"; fail=1; }
+          # R6: --version must print the RELEASE TAG, not a VCS pseudo-version — this is the
+          # assertion that would have caught the "+dirty" defect before it shipped.
+          echo "$ver" | grep -qF "$TAG" \
+            || { echo "$native --version does not print $TAG"; fail=1; }
+          for f in dist/goinfer-serve-darwin-arm64 dist/goinfer-serve-darwin-amd64 dist/goinfer-serve-windows-amd64.exe dist/goinfer-serve-windows-arm64.exe; do
+            grep -qa "$TAG" "$f" || { echo "$f does not contain the tag string $TAG"; fail=1; }
+          done
           # EVERY BINARY THE README NAMES MUST EXIST — derived from the README, not hardcoded.
           # The hardcoded list above catches a build that broke; this catches the defect that
           # actually happened (cold run finding #2): the README grew a command name that the
@@ -244,15 +287,38 @@ jobs:
           echo "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e  licenses/QWEN2.5-CODER-LICENSE.txt" | sha256sum -c -
       - name: build embedded binaries
         if: steps.gate.outputs.skip == 'false'
+        env:
+          GOINFER_TIER: ${{ matrix.tier }}
+          GOINFER_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           # The committed script, not a reimplementation of it: it stages the prequant .giw next to
           # the //go:embed directive in internal/chatapp and picks the right build tag. Prequant
           # (its default) is what makes the README's "instant boot, <100 MB heap" true — the raw
-          # --gguf mode quantizes at launch instead.
+          # --gguf mode quantizes at launch instead. GOINFER_TIER/GOINFER_RELEASE_TAG (R6,
+          # docs/measurements/cold-user-2026-09-06-nobara-pc.md) make the version and the baked
+          # quant answerable from --version without a model — see the assertion step below.
           ./demo/chat/build-embed.sh --name "goinfer-chat-${{ matrix.tier }}" model.gguf \
             darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
           ls -lh demo/chat/dist
+      - name: assert embedded --version prints the tag, tier and baked quant
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          fail=0
+          native="demo/chat/dist/goinfer-chat-${{ matrix.tier }}-linux-amd64"
+          chmod +x "$native"
+          ver="$("$native" --version)"
+          echo "$ver"
+          echo "$ver" | grep -qF "$TAG" \
+            || { echo "$native --version does not print $TAG"; fail=1; }
+          echo "$ver" | grep -qE "^embedded: tier=${{ matrix.tier }} quant=\S+ \(baked at build time" \
+            || { echo "$native --version does not report tier=${{ matrix.tier }} with a baked quant"; fail=1; }
+          for f in demo/chat/dist/goinfer-chat-${{ matrix.tier }}-darwin-arm64 demo/chat/dist/goinfer-chat-${{ matrix.tier }}-darwin-amd64 demo/chat/dist/goinfer-chat-${{ matrix.tier }}-windows-amd64.exe demo/chat/dist/goinfer-chat-${{ matrix.tier }}-windows-arm64.exe; do
+            grep -qa "$TAG" "$f" || { echo "$f does not contain the tag string $TAG"; fail=1; }
+          done
+          [ "$fail" = 0 ] || { echo "embedded-${{ matrix.tier }} version assertions FAILED"; exit 1; }
       - uses: actions/upload-artifact@v4
         if: steps.gate.outputs.skip == 'false'
         with: { name: 'embedded-${{ matrix.tier }}', path: demo/chat/dist/ }

@@ -36,7 +36,13 @@ func main() {
 	tok, err := tokenizer.LoadGGUF(path)
 	check(err, "tokenizer")
 
-	text := chat.ChatML().Render("", []chat.Turn{{Role: "user", Content: prompt}})
+	// Generate is a raw completion primitive — it has no idea what a "chat turn" is.
+	// Detect resolves THIS checkpoint's own template from its tokenizer metadata;
+	// ErrUnknownTemplate means fall back to feeding the prompt as raw text.
+	text := prompt
+	if tmpl, terr := chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken: tok.Has}); terr == nil {
+		text = tmpl.Render("", []chat.Turn{{Role: "user", Content: prompt}})
+	}
 	ids, err := tok.Encode(text, true)
 	check(err, "encode")
 

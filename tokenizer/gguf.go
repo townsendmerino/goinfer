@@ -303,6 +303,22 @@ func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMe
 		return 1, norm.NFC, true, false, false, shapeCl100k, true
 	case "mellum2":
 		return 1, norm.NFC, false, false, true, shapeCl100k, true
+	case "dbrx":
+		// R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): granite-4.0-h-tiny — a
+		// registry-recommended checkpoint (pull/registry.go) — declared pre="dbrx" and fell
+		// through to this switch's unknown-pre default, so every `pull granite-4.0-h-tiny` user
+		// got a PreTokenizerDecline warning on a checkpoint this project was actively
+		// recommending. Measured, not guessed, same discipline as C-10: ibm-granite/
+		// granite-4.0-h-tiny's HF tokenizer.json (the safetensors source for this project's own
+		// GGUF pin) declares a Split regex byte-identical to the cl100k pattern splitGPT2/
+		// shapeCl100k implements, "\p{N}{1,3}" digit runs (Llama-3's cap, not Qwen's single
+		// digit): "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}|
+		// ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+" (fetched 2026-09-07, HF repo sha
+		// 791e0d3d28c86e106c9b6e0b4cecdee0375b6124). Its `normalizer` is null (normOn=false,
+		// matching llama-bpe) and `model.ignore_merges` is `false` — UNLIKE llama-bpe
+		// (ignoreMerges=true), which is otherwise the same shape+digit-cap; that is the one knob
+		// that makes this its own case rather than an alias for "llama-bpe".
+		return 3, norm.NFC, false, false, false, shapeCl100k, true
 	case "gpt-2", "default", "":
 		// GPT-2's OWN alternation is not the cl100k one either (no contraction clause, ` ?\p{N}+`
 		// rather than a capped run), so these knobs are the historical behaviour and not a claim of

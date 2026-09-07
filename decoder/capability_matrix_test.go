@@ -563,6 +563,10 @@ type recommendedCheckpoint struct {
 	SHA256  string `json:"sha256"`   // verified on fetch; goinfer hosts no weights
 	GoodFor string `json:"good_for"` // what it is worth using for
 	Needs   string `json:"needs"`    // what it costs to run
+	// Tools records what internal/servecheck's two tools rows measured for this checkpoint (R11,
+	// docs/measurements/cold-user-2026-09-06-nobara-pc.md) — from a RECORDED `serve check` run
+	// against the real checkpoint, never guessed. See pull.Checkpoint.Tools for the consumer.
+	Tools string `json:"tools"`
 }
 
 // recommendedCheckpoints maps a family name to its recommended checkpoint. Deliberately short: an
@@ -578,6 +582,11 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		Bytes: 491400064, SHA256: "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
 		GoodFor: "code completion and small edits; the smallest checkpoint here that writes usable Go",
 		Needs:   "~1 GB resident at --quant int4; runs on any laptop",
+		// R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): measured via `serve check`
+		// against this exact checkpoint, nobara-pc, 2026-09-07 — "tools, OpenAI" passed
+		// (call get_weather({"city":"Paris"}) → result → answer in 2 turns), "tools,
+		// harness-scale" (12-tool schema) SKIPPED ("model answered without calling the tool").
+		Tools: "minimal schema: ok; harness-scale (12 tools): skip — too small (measured 2026-09-07, nobara-pc)",
 	},
 	"phi3": {
 		Name: "phi3-mini-4k", Repo: "microsoft/Phi-3-mini-4k-instruct-gguf",
@@ -585,13 +594,55 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		Bytes: 2393231072, SHA256: "8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef",
 		GoodFor: "general instruction following at a size that still loads in seconds",
 		Needs:   "~3 GB resident at --quant int4",
+		// Not yet measured (R11 gate: never guessed). Run `serve check` against this checkpoint
+		// and fill this in from that output, the way qwen2.5-coder-0.5b's line was.
+		Tools: "not yet measured",
 	},
 	"granitemoehybrid": {
 		Name: "granite-4.0-h-tiny", Repo: "ibm-granite/granite-4.0-h-tiny-GGUF",
 		File: "granite-4.0-h-tiny-Q8_0.gguf", Quant: "q8_0",
 		Bytes: 7390331328, SHA256: "3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
 		GoodFor: "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
-		Needs:   "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit",
+		// R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): this checkpoint used to load
+		// with "tokenizer.ggml.pre=\"dbrx\" is not a known pre-tokenizer; falling back to
+		// cl100k" on every pull — a registry-recommended entry cannot ship with a tokenizer
+		// decline. Fixed (tokenizer/gguf.go's byteLevelKnobs gained a measured "dbrx" case); the
+		// tokenizer tier is stated here rather than only in the runtime banner, since this is the
+		// line a `pull`-before-you-load reader actually sees.
+		Needs: "~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit. " +
+			"Tokenizer: pre=\"dbrx\", measured cl100k-shaped (tokenizer/gguf.go) — no PreTokenizerDecline",
+		// Attempted 2026-09-07: this checkpoint's decode path is CPU-only staged (R9 — no GPU
+		// dispatch exists for int4 in the staged path) and its prefill is sequential (no batched
+		// CPU prefill for this arch), so a full `serve check` run did not finish in a reasonable
+		// time on this box and was not force-completed. Not yet measured (R11 gate: never
+		// guessed) rather than extrapolated from a faster model's result.
+		Tools: "not yet measured",
+	},
+	// R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the README's own "bigger than
+	// your GPU"/"bigger than your RAM" examples named a size class ("qwen3.5-35b-a3b",
+	// "20-35B MoE") with no resolvable owner/repo anywhere — a cold user could not find any
+	// checkpoint actually large enough to need -moe-cache-experts or -stream-weights. This
+	// family's own description above already claims "resident on an 8 GB card via
+	// -moe-cache-experts, validated on the real 20B" — gpt-oss-20b is that real 20B, so it is
+	// the one this project can actually recommend rather than a size class it cannot deliver.
+	// sha256/bytes are the repo's own git-lfs-recorded digest (HF API blobs=true on
+	// ggml-org/gpt-oss-20b-GGUF, 2026-09-07), the same kind of source release-assets.yml's
+	// pinned model URLs use — not re-hashed from a local download (12 GB; impractical for this
+	// entry the way the release workflow's embedded-tier fetch step already does for its own,
+	// much smaller, pins).
+	"gpt-oss": {
+		Name: "gpt-oss-20b", Repo: "ggml-org/gpt-oss-20b-GGUF",
+		File: "gpt-oss-20b-MXFP4.gguf", Quant: "mxfp4",
+		Bytes: 12109566624, SHA256: "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
+		GoodFor: "the 20-35B-class MoE this project actually validates and measures: too big to hold fully resident on an 8 GB GPU, which is the point — bring -moe-cache-experts or -stream-weights",
+		Needs:   "~12 GB if loaded fully resident (native MXFP4); on an 8 GB card use -moe-cache-experts (CUDA resident-core + cached-experts, measured working, not just eligible — see this family's description above)",
+		// Not yet measured against `serve check`'s tools rows specifically (R11 gate: never
+		// guessed). docs/integrations/claude-code.md's own 2026-09-02 measurement is the closest
+		// existing evidence for this size class: Qwen2.5-7B-Instruct (a different checkpoint, not
+		// this registry) held a 25-tool-schema agent loop where a 1.5B "re-calls the same tool
+		// forever" — worth running this row against once gpt-oss-20b's own harness-scale result
+		// is recorded, rather than assuming a same-class result transfers across families.
+		Tools: "not yet measured",
 	},
 }
 

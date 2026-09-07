@@ -73,6 +73,85 @@ if [ "${#HELPCMDS[@]}" -gt 0 ]; then
 	fi
 fi
 
+# RESOLVE EVERY MODEL REFERENCE THE README NAMES, against the registry or HF — metadata only, no
+# download. R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the README named
+# "qwen3.5-35b-a3b" as its size-class example with no owner/repo behind it anywhere, and
+# `goinfer-chat models`'s curated list did not go anywhere near that size — a cold user could not
+# find ANY checkpoint actually big enough to need `-stream-weights`/`-moe-cache-experts`. A gate
+# that only ran `<!-- smoke -->` commands would not have caught this: `pull demo:35b` failing is
+# not something any smoke-marked line does, because the README never told anyone to run it — the
+# defect was the ABSENCE of a working example, which only a check that tries to RESOLVE what the
+# prose names would catch.
+mapfile -t MODELCMDS < <(grep -A 1 -- '<!-- smoke-model -->' "$README" | grep -vE '^(--|.*<!-- smoke)' | sed '/^$/d')
+if [ "${#MODELCMDS[@]}" -gt 0 ]; then
+	echo "==> installing goinfer-chat, for registry short-name resolution"
+	( cd "$WORK" && GOFLAGS= go install github.com/townsendmerino/goinfer/demo/chat@latest ) \
+		|| { echo "    could not install demo/chat — registry short-name checks below will fail closed"; }
+	registry=""
+	[ -x "$GOBIN/chat" ] && registry="$("$GOBIN/chat" models 2>&1)"
+
+	for c in "${MODELCMDS[@]}"; do
+		echo "==> (resolve only) $c"
+		# Pull the reference argument off a `pull <ref>` or `--model <ref>` invocation — the token
+		# after either, stripped of any trailing shell comment.
+		ref=$(echo "$c" | sed -E 's/^.*\b(pull|--model)[[:space:]]+//' | sed -E 's/[[:space:]]+#.*$//' | awk '{print $1}')
+		if [ -z "$ref" ]; then
+			echo "    could not extract a model reference from this line"; fail=1
+			ran=$((ran + 1)); continue
+		fi
+		case "$ref" in
+		demo:*)
+			tier="${ref#demo:}"
+			if ! python3 -c "import json,sys; d=json.load(open('pull/curated.json')); sys.exit(0 if '$tier' in d['tiers'] else 1)" 2>/dev/null; then
+				echo "    demo tier \"$tier\" not in pull/curated.json"; fail=1
+			fi
+			;;
+		*/*)
+			# owner/repo[:quant] or owner/repo:file.gguf — an explicit HF reference. Metadata only:
+			# the models API, not resolve/ (which would start a download).
+			repo="${ref%%:*}"
+			code=$(curl -s -o /dev/null -w '%{http_code}' "https://huggingface.co/api/models/$repo")
+			if [ "$code" != "200" ]; then
+				echo "    https://huggingface.co/api/models/$repo -> HTTP $code (not found)"; fail=1
+			fi
+			;;
+		*)
+			# A bare registry short name — must appear in `goinfer-chat models`'s own output, so
+			# this check reads the exact list `pull <name>` resolves against, not a second one
+			# that could drift from it.
+			if [ -z "$registry" ]; then
+				echo "    no goinfer-chat binary to check the registry against"; fail=1
+			elif ! echo "$registry" | grep -qE "^  $ref([[:space:]]|\$)"; then
+				echo "    \"$ref\" is not in \`goinfer-chat models\`'s registry"; fail=1
+			fi
+			;;
+		esac
+		ran=$((ran + 1))
+	done
+fi
+
+# EVERY FILE THE README CITES MUST EXIST. R12 (docs/measurements/cold-user-2026-09-06-nobara-pc.md):
+# the front page makes numeric claims ("25 s vs 33 s", "192.8 tok/s") each pinned to a
+# measurement file by a markdown link — the citation IS the claim's evidence, and a renamed or
+# deleted file turns a measured number back into an assertion with nothing behind it. Extracts
+# every `[...](path)` link whose path starts with `docs/` (repo-relative; http(s) links are a
+# different, external claim and out of scope here) and asserts the target exists in the checkout
+# this script itself was invoked from — not the empty $WORK dir, since these are repo docs, not
+# something a `go get` installs.
+echo "==> every docs/ link the README cites exists"
+mapfile -t CITED < <(grep -oE '\]\(docs/[^)]+\)' "$README" | sed -E 's/^\]\(//; s/\)$//; s/#.*$//' | sort -u)
+if [ "${#CITED[@]}" -eq 0 ]; then
+	echo "    no docs/ citations found — this check would pass having verified nothing"; fail=1
+else
+	for f in "${CITED[@]}"; do
+		if [ ! -e "$ROOT/$f" ]; then
+			echo "    README cites $f, which does not exist"; fail=1
+		fi
+	done
+	echo "    checked ${#CITED[@]} citation(s)"
+fi
+ran=$((ran + 1))
+
 # BUILD AGAINST WHAT THE INSTALL LINES INSTALLED. This is the check that actually catches the
 # v0.16.0 defect, and the first version of this script did NOT have it — it ran each command and
 # checked the exit code, which passes, because `go get github.com/townsendmerino/goinfer`

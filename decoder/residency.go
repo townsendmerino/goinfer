@@ -713,10 +713,35 @@ func (m *Model) DecodePath() string {
 	case be == "cpu":
 		return fmt.Sprintf("cpu (%s)", m.Quant())
 	case m.resDecline != "":
-		return fmt.Sprintf("%s-staged (%s) — %s", be, m.Quant(), m.resDecline)
+		return fmt.Sprintf("%s-staged (%s)%s — %s", be, m.Quant(), stagedDeviceNote(m.Quant()), m.resDecline)
 	default:
-		return fmt.Sprintf("%s-staged (%s)", be, m.Quant())
+		return fmt.Sprintf("%s-staged (%s)%s", be, m.Quant(), stagedDeviceNote(m.Quant()))
 	}
+}
+
+// stagedDeviceNote names when the staged path's own quant reaches no backend at all, so the
+// path name alone does not overclaim device use.
+//
+// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): "cuda-staged (int4)" on an 8 GB card
+// sat at the idle VRAM baseline (464 MiB, unchanged) for a full request sampled at 1 Hz — the
+// label said "cuda", nothing on the device moved. matmul() (weightmat.go) is why: its int4
+// branch calls w.MatmulBTW4A8Into unconditionally — the CPU integer W4A8 kernel — with no
+// backend parameter passed in at all, for EVERY architecture, not only the one that surfaced
+// this. decoder.QuantBackend (the interface the staged path dispatches through) declares only
+// MatmulW8A8; there is no int4 counterpart anywhere in this tree. So for any architecture that
+// only reaches the staged path (not the fully-resident one), "int4" — the flag's own stated
+// DEFAULT — is CPU-equivalent regardless of --backend, and "int4mix" is half so (its FFN
+// tensors are stored int4 and take the same CPU-only branch; only its attention tensors are
+// int8 and reach QuantBackend). Native f32 and int8/int8int8 DO reach the backend (MatmulBT and
+// MatmulW8A8 respectively) and get no note.
+func stagedDeviceNote(quant string) string {
+	switch quant {
+	case "int4":
+		return " [no GPU dispatch exists for this quant in the staged path — CPU-equivalent regardless of --backend]"
+	case "int4mix":
+		return " [FFN tensors (int4) have no GPU dispatch in the staged path and run on the host; only attention (int8) reaches the backend]"
+	}
+	return ""
 }
 
 // ResidentDecline returns why the resident decode path is absent, or "" when it is active (or was

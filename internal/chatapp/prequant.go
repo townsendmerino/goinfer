@@ -22,6 +22,11 @@ var modelGIW []byte
 // hasEmbeddedModel reports that this build has a baked-in model.
 const hasEmbeddedModel = true
 
+// quantIsFixedAtBuildTime is true here: loadEmbedded below never reads opts.Quant — the bundle's
+// weights are already quantized at whatever cmd/prequant used when build-embed.sh baked
+// internal/chatapp/model.giw (R6, docs/measurements/cold-user-2026-09-06-nobara-pc.md).
+const quantIsFixedAtBuildTime = true
+
 // loadEmbedded maps the prequant bundle: the int8 weight arrays are ALIASED
 // straight out of modelGIW (the binary's image — no dequant, no requant, no
 // heap copy), and the tokenizer loads from the bundle's metadata GGUF. This is

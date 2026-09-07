@@ -74,6 +74,23 @@ func TestRegistry_noEntryOutrunsItsParity(t *testing.T) {
 	}
 }
 
+// R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): `serve check`'s minimal-schema
+// tools row passed against a server that a real agent (opencode) then broke under its own,
+// larger tool schema — the registry recommended a checkpoint with no signal that this could
+// happen. The bar here is deliberately low (non-empty, not "measured"): recommendedCheckpoints'
+// own comments require an honest "not yet measured" placeholder rather than a guess for an
+// entry nobody has run `serve check` against yet, and this only catches the entry that forgot
+// the field entirely (an empty string) — it cannot tell a real measurement from a placeholder,
+// which is the one thing a human filling this in has to get right.
+func TestRegistry_toolsColumnIsNonEmpty(t *testing.T) {
+	for _, c := range RecommendedAll() {
+		if c.Tools == "" {
+			t.Errorf("%s: Tools is empty — every registry entry needs a tools line, "+
+				"even if it is just \"not yet measured\"", c.Name)
+		}
+	}
+}
+
 // A digest and a size are the whole substitute for hosting the file ourselves.
 func TestRegistry_everyEntryIsVerifiable(t *testing.T) {
 	sha := regexp.MustCompile(`^[0-9a-f]{64}$`)

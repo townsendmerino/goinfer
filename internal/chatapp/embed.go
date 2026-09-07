@@ -44,6 +44,10 @@ var modelGGUF []byte
 // hasEmbeddedModel reports that this build has a baked-in model.
 const hasEmbeddedModel = true
 
+// quantIsFixedAtBuildTime is false here: this mode bakes the raw GGUF and quantizes at LAUNCH
+// per the ordinary --quant flag (see loadFromBytes below), unlike -tags prequant.
+const quantIsFixedAtBuildTime = false
+
 // embeddedModelBytes returns the baked-in model. This is the default path: the
 // returned slice is the binary's own image-mapped data (zero-copy), loaded with
 // no filesystem access — so the binary runs on a read-only / FROM-scratch

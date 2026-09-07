@@ -436,6 +436,76 @@ func (c *Client) Tools(ctx context.Context, model string) Result {
 	return res
 }
 
+// ToolsHarness is Tools' harness-scale twin. R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md):
+// `Tools` above passes with a ONE-function schema — "tools, OpenAI ... ok" — and a real agent
+// harness (opencode) driving the SAME server with the same model still printed a tool call as
+// plain-text JSON instead of a real OpenAI tool_calls response, twice, burning ~350 s finding
+// out. Confirmed by direct isolation that goinfer's own tool-calling was not the fault (a raw
+// curl with a one-tool schema got a proper tool_calls response) — the gap is specifically
+// "does the model still call the right tool once the schema looks like a real agent's", which
+// `Tools`'s minimal schema cannot expose. This row reproduces that shape: a dozen tools with
+// nested object parameters, the same target (get_weather) and prompt as `Tools`, so the schema
+// SIZE is the only variable that differs between the two rows.
+//
+// A model that cannot manage this is reported as a SKIP, not a failure — same rule as `Tools`:
+// this is a property of the checkpoint (small models under a large tool schema), and a red row
+// here would train an operator to ignore it exactly the way `Tools` already guards against for
+// the minimal case.
+func (c *Client) ToolsHarness(ctx context.Context, model string) Result {
+	res := Result{Name: "tools, harness-scale"}
+	tools := harnessScaleTools()
+	msgs := []map[string]any{
+		{"role": "user", "content": "What is the weather in Paris? Use the get_weather tool."},
+	}
+	body := map[string]any{
+		"model": model, "temperature": 0, "max_tokens": 96,
+		"messages": msgs, "tools": tools,
+	}
+	call, res := c.toolCall(ctx, body, res)
+	if call.id == "" {
+		if res.Skip {
+			res.Detail = "model did not call the tool under a harness-scale (" +
+				fmt.Sprint(len(tools)) + "-tool) schema — " + res.Detail
+		}
+		return res
+	}
+	res.OK = true
+	res.Detail = fmt.Sprintf("call %s(%s) among %d tools", call.name, trunc(call.args, 32), len(tools))
+	return res
+}
+
+// harnessScaleTools is a dozen tools shaped like a real coding-agent's — file read/write/edit,
+// shell, search, plus get_weather among them — several with nested object parameters, matching
+// what opencode's own "build" agent actually sends (the shape that broke under R11).
+func harnessScaleTools() []map[string]any {
+	str := map[string]any{"type": "string"}
+	fn := func(name, desc string, params map[string]any, required []string) map[string]any {
+		return map[string]any{"type": "function", "function": map[string]any{
+			"name": name, "description": desc,
+			"parameters": map[string]any{"type": "object", "properties": params, "required": required},
+		}}
+	}
+	return []map[string]any{
+		fn("read_file", "Read a file's contents.", map[string]any{"path": str, "offset": map[string]any{"type": "integer"}, "limit": map[string]any{"type": "integer"}}, []string{"path"}),
+		fn("write_file", "Write content to a file, creating it if absent.", map[string]any{"path": str, "content": str}, []string{"path", "content"}),
+		fn("edit_file", "Replace one exact string match in a file.", map[string]any{"path": str, "old_string": str, "new_string": str}, []string{"path", "old_string", "new_string"}),
+		fn("list_dir", "List files in a directory.", map[string]any{"path": str}, []string{"path"}),
+		fn("grep", "Search file contents by regex.", map[string]any{"pattern": str, "path": str, "case_insensitive": map[string]any{"type": "boolean"}}, []string{"pattern"}),
+		fn("glob", "Find files by glob pattern.", map[string]any{"pattern": str}, []string{"pattern"}),
+		fn("run_shell", "Run a shell command and return its output.", map[string]any{"command": str, "timeout_seconds": map[string]any{"type": "integer"}}, []string{"command"}),
+		fn("git_status", "Show working tree status.", map[string]any{"path": str}, nil),
+		fn("web_search", "Search the web for a query.", map[string]any{"query": str, "max_results": map[string]any{"type": "integer"}}, []string{"query"}),
+		fn("fetch_url", "Fetch a URL's content.", map[string]any{"url": str}, []string{"url"}),
+		fn("get_weather", "Get the current weather in a given city.", map[string]any{"city": str}, []string{"city"}),
+		fn("create_task", "Track a task with nested subtasks.", map[string]any{
+			"title": str,
+			"subtasks": map[string]any{"type": "array", "items": map[string]any{
+				"type": "object", "properties": map[string]any{"title": str, "done": map[string]any{"type": "boolean"}},
+			}},
+		}, []string{"title"}),
+	}
+}
+
 // toolCallInfo is the one tool call Tools cares about.
 type toolCallInfo struct{ id, name, args string }
 

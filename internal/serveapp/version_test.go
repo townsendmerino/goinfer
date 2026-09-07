@@ -85,6 +85,42 @@ func TestServeVersionFlag_reportsOnlyCPUForTheRootBinary(t *testing.T) {
 	}
 }
 
+// R6's other half (docs/measurements/cold-user-2026-09-06-nobara-pc.md): an unrecognized
+// subcommand/positional fell through silently on v0.17.0 (flag.Args() went unchecked). The
+// mutation this guards against: removing the flag.Args() check makes this go red — the process
+// exits 0 with no error, instead of naming the argument as unrecognized.
+func TestServeUnknownPositional_namesTheSubcommands(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a binary")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go toolchain")
+	}
+	bin := filepath.Join(t.TempDir(), "goinfer-serve")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", bin, "github.com/townsendmerino/goinfer/cmd/serve")
+	build.Dir = ".."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Skipf("cannot build cmd/serve here: %v\n%s", err, out)
+	}
+
+	out, err := exec.Command(bin, "bogus-subcommand").CombinedOutput()
+	if err == nil {
+		t.Fatalf("bogus-subcommand exited 0, want a non-zero exit naming it as unrecognized:\n%s", out)
+	}
+	s := string(out)
+	if !strings.Contains(s, `unrecognized argument "bogus-subcommand"`) {
+		t.Errorf("stderr does not name the bad argument:\n%s", s)
+	}
+	for _, want := range []string{"pull", "check", "--version"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("stderr does not name the known subcommand %q:\n%s", want, s)
+		}
+	}
+}
+
 // backendsLine extracts the value of the single `backends:` line, failing loudly if the report
 // no longer has one — a renamed field would otherwise make every check above vacuous.
 func backendsLine(t *testing.T, report string) string {

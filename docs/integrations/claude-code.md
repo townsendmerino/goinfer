@@ -72,3 +72,29 @@ Per `docs/task-embed-and-harness-ux.md` §3.5, a recipe is retired when `serve c
 what it says. `goinfer-serve check <url>` already covers the model list, streamed chat with
 usage, structured output, stop sequences and `count_tokens`; the tool-loop and agent-turn-TTFT
 rows above are what it does not cover yet.
+
+## Which listed model actually tool-calls under a real agent
+
+R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): `serve check`'s "tools, OpenAI" row
+passed against a server running a 1.5B model — and a real agent (opencode) driving that exact
+server then printed a fake JSON tool call as prose, twice, instead of a real one. The gap is
+schema SIZE: a minimal one-tool schema is not what a real agent sends. `check` now has a second
+row, "tools, harness-scale" (a dozen tools with nested parameters, the shape opencode's own
+"build" agent sends), specifically to predict this before an operator hits it.
+
+**Measured, not guessed** — `goinfer-chat models`' `tools:` line records each registry
+checkpoint's result from that row (2026-09-07, nobara-pc):
+
+- `qwen2.5-coder-0.5b` — minimal schema: ok; harness-scale: **skip**, too small.
+- `phi3-mini-4k`, `granite-4.0-h-tiny`, `gpt-oss-20b` — not yet run against the harness-scale
+  row; `goinfer-chat models` says so plainly rather than guessing.
+
+The closest existing evidence for a model class that DOES hold up is this page's own table
+above, from a different measurement pass (2026-09-02, a 25-tool-schema agent loop, not this
+registry's checkpoints): **Qwen2.5-7B-Instruct** completed a real `glob → read → answer` tool
+loop; the same run's own note is blunt about the size that does not: "A 1.5B re-calls the same
+tool forever, which looks like a server bug and is not one." Until a registry entry at that
+class is run through `serve check`'s harness-scale row specifically, treat 7B-and-up as the
+size to reach for behind a real agent, and the registry's small checkpoints (0.5B currently
+measured, ~3-4B untested) as demo-scale: they answer directly, and skip rather than hallucinate
+a tool call, under a schema shaped like a real one.

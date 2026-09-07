@@ -93,7 +93,8 @@ func Main() {
 		for _, c := range all {
 			fmt.Printf("  %s\n", c.Describe())
 			fmt.Printf("  %-22s %s\n", "", c.Needs)
-			fmt.Printf("  %-22s %s · %s · parity %s\n\n", "", c.Repo, c.Family, c.Parity)
+			fmt.Printf("  %-22s %s · %s · parity %s\n", "", c.Repo, c.Family, c.Parity)
+			fmt.Printf("  %-22s tools: %s\n\n", "", c.DescribeTools())
 		}
 		fmt.Printf("Downloads come from Hugging Face and are sha256-verified against a digest this\n" +
 			"build pins; goinfer hosts no weights. Any other GGUF works too — pass owner/repo:quant.\n")
@@ -111,6 +112,15 @@ func Main() {
 	// The README is fixed, but a stale README, a cached blog post or a year-old shell history will
 	// keep producing this invocation forever. An error that names the replacement costs one
 	// branch; the failure it prevents cost that run its worst dead end.
+	// --version answers "what is in this binary" without loading a model — R6
+	// (docs/measurements/cold-user-2026-09-06-nobara-pc.md): this binary had no way to report its
+	// own version at all. Checked here, before flag.Parse, so it works as the first argument the
+	// way `pull`/`models` above do; also registered as a flag below so `--model x --version`
+	// (version after another flag) is caught too.
+	if len(os.Args) > 1 && isVersionArg(os.Args[1]) {
+		fmt.Print(versionReport(filepath.Base(os.Args[0])))
+		return
+	}
 	if serveOnly := serveOnlyInvocation(os.Args[1:]); serveOnly != "" {
 		fmt.Fprintf(os.Stderr, `%s: %q belongs to goinfer-serve, not this binary.
 
@@ -137,6 +147,7 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
   %[1]s pull <name>                     fetch one, sha256-verified
   %[1]s --model <file.gguf|dir>         chat with it
   %[1]s --model <f> --temp 0            greedy, for reproducible output
+  %[1]s --version                       version + the backends compiled in
 
 Reads a .gguf or an HF checkpoint dir. The server (OpenAI/Anthropic routes, --web,
 model zoo) is a separate binary — see goinfer-serve.
@@ -148,27 +159,43 @@ All flags:
 	}
 
 	var (
-		model    = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
-		system   = flag.String("system", defaultSystem, "system prompt that steers the model")
-		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
-		quant    = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest; lossier) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM; required for --backend metal) | int8 | \"\" (native f32). All quantized modes get batched CUDA prefill; native f32 falls back to sequential. Default int4")
-		lora     = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
-		maxTok   = flag.Int("max", 512, "max tokens per reply")
-		temp     = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
-		topK     = flag.Int("top-k", 20, "top-k filter (0 = off)")
-		topP     = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
-		minP     = flag.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
-		repPen   = flag.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
-		presPen  = flag.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
-		freqPen  = flag.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
-		repLastN = flag.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
-		schema   = flag.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
-		seed     = flag.Int64("seed", 0, "sampling RNG seed")
-		modelTmp = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
-		draft    = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
-		specK    = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
+		model       = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
+		system      = flag.String("system", defaultSystem, "system prompt that steers the model")
+		backend     = flag.String("backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (cuda/metal: dense-only, cgo-free native, -tags cuda|metal)")
+		quant       = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest; lossier) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM; required for --backend metal) | int8 | \"\" (native f32). All quantized modes get batched CUDA prefill; native f32 falls back to sequential. Default int4")
+		lora        = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
+		maxTok      = flag.Int("max", 512, "max tokens per reply")
+		temp        = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
+		topK        = flag.Int("top-k", 20, "top-k filter (0 = off)")
+		topP        = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
+		minP        = flag.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
+		repPen      = flag.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
+		presPen     = flag.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
+		freqPen     = flag.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
+		repLastN    = flag.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
+		schema      = flag.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
+		seed        = flag.Int64("seed", 0, "sampling RNG seed")
+		modelTmp    = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
+		draft       = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
+		specK       = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
+		showVersion = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	)
 	flag.Parse()
+	if *showVersion {
+		fmt.Print(versionReport(filepath.Base(os.Args[0])))
+		return
+	}
+	// An unrecognized subcommand/positional falls through silently otherwise — R6's other half.
+	// `./goinfer-chat-1.5b version` (a typo reaching for --version) was swallowed here: flag.Parse
+	// stops at the first non-flag argument and leaves it in flag.Args(), which nothing checked, so
+	// it fell straight into the `case hasEmbeddedModel:` branch below and started an interactive
+	// chat session — no error, no hint that "version" meant anything. Nothing in normal usage
+	// leaves a bare positional (every argument here is a --flag), so anything left is a mistake.
+	if args := flag.Args(); len(args) > 0 {
+		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, models, --version. Or pass --model <file.gguf|dir>.\n",
+			filepath.Base(os.Args[0]), args[0])
+		os.Exit(2)
+	}
 
 	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora}
 	// The quant the user EXPLICITLY chose (vs the "int4" default) — for the .giw mismatch check

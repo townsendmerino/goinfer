@@ -45,6 +45,12 @@ type Checkpoint struct {
 	SHA256  string `json:"sha256"`   // verified on fetch
 	GoodFor string `json:"good_for"` // what it is worth using for
 	Needs   string `json:"needs"`    // what it costs to run
+	// Tools records what `internal/servecheck`'s two tools rows measured for this checkpoint
+	// (R11, docs/measurements/cold-user-2026-09-06-nobara-pc.md): "tools, OpenAI" is a
+	// one-function schema, "tools, harness-scale" a dozen-tool schema shaped like a real agent's
+	// — the shape that broke under opencode with a server whose minimal-schema row was green.
+	// From a RECORDED `serve check` run, never guessed (TestRegistry_toolsColumnIsNonEmpty).
+	Tools string `json:"tools"`
 
 	// Family and Parity are copied off the matrix row at load, so a caller listing checkpoints can
 	// show what backs each one without re-reading the matrix.
@@ -119,4 +125,15 @@ func (c Checkpoint) Ref() string { return c.Repo + ":" + c.File }
 // Describe is one listing line.
 func (c Checkpoint) Describe() string {
 	return fmt.Sprintf("%-22s %6.2f GB  %-8s %s", c.Name, float64(c.Bytes)/1e9, c.Quant, c.GoodFor)
+}
+
+// DescribeTools reports what `serve check`'s two tools rows measured for this checkpoint (R11):
+// whether it calls a tool at all, and separately, whether it still does under a real agent's
+// full tool schema — the two are not the same fact, and a model can pass the first and skip the
+// second.
+func (c Checkpoint) DescribeTools() string {
+	if c.Tools == "" {
+		return "not yet measured"
+	}
+	return c.Tools
 }
