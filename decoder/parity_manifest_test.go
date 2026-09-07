@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -120,7 +121,7 @@ func shortHEAD(t *testing.T) string {
 // TestParityManifest_merge folds collected PARITY_ROW lines into the manifest (Item
 // 1d): for each row it sets that family's status=validated, fills method/reference/
 // metrics from the gate's measurement, and stamps validated_at (short HEAD SHA), date
-// (today), and machine (GOINFER_MANIFEST_MACHINE, default linux-62gb) — the same stamp
+// (today), and machine (GOINFER_MANIFEST_MACHINE, default GOOS-GOARCH) — the same stamp
 // across one run. Other families and all uses/own are preserved; every deps_hash is
 // then recomputed (the freshness hashing) and the manifest rewritten deterministically
 // (same path as -update). An unknown family in a row is a hard error (no silent drop).
@@ -146,7 +147,16 @@ func TestParityManifest_merge(t *testing.T) {
 	date := time.Now().Format("2006-01-02")
 	machine := os.Getenv("GOINFER_MANIFEST_MACHINE")
 	if machine == "" {
-		machine = "linux-62gb"
+		// A hardcoded specific box's name here is a mislabel waiting to happen, not a
+		// convenience: it WAS "linux-62gb" unconditionally, so a merge run from any OTHER
+		// machine silently stamped every row as having been validated on nobara's 62 GB
+		// box. Caught 2026-09-06 running the arm64/Metal sweep from a 16 GB Mac — five
+		// rows it re-validated (granite-dense, ministral3, olmo3, qwen3_moe, smollm3) got
+		// overwritten from the correct "mac" to the wrong "linux-62gb", because nobody
+		// had ever needed to run this from a second machine before. GOOS-GOARCH can never
+		// be wrong the way a remembered hostname can; it is less pretty than "mac" or
+		// "linux-62gb", but pass GOINFER_MANIFEST_MACHINE explicitly for that.
+		machine = runtime.GOOS + "-" + runtime.GOARCH
 	}
 
 	applied, err := applyParityRows(&m, string(rowsRaw), sha, date, machine)

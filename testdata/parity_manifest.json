@@ -44,10 +44,10 @@
       "own": [],
       "deps_hash": "sha256:626a6f34d72191771629a7c8b8ac786667074446a90f80992417727388a1b1bb",
       "status": "experimental",
-      "validated_at": "3328abe",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "hand-assembled f32 reference (bailing_hybrid-tiny fixture, MLA+KDA composition, KDA's per-channel-decay recurrence via fla-org's own naive reference)",
-      "machine": "linux-62gb",
+      "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
@@ -193,10 +193,10 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "experimental",
-      "validated_at": "eaa8bb23",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF f32 (glm-tiny seeded fixture)",
-      "machine": "linux-62gb",
+      "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
@@ -238,10 +238,10 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "validated",
-      "validated_at": "eaa8bb23",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF f32 (GPT-2 small, 124M)",
-      "machine": "linux-62gb",
+      "machine": "mac",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
@@ -259,15 +259,15 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "experimental",
-      "validated_at": "0223f47",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF f32 (granite-dense-tiny seeded fixture, non-trivial scalar multipliers)",
       "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "granitemoehybrid": {
@@ -376,10 +376,10 @@
       ],
       "deps_hash": "sha256:4af3006613ef3ce61c6243c31df79ff750f74c8d5a9fe6e010c37581e5c7635d",
       "status": "experimental",
-      "validated_at": "eaa8bb23",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF f32 (lfm2-tiny seeded fixture)",
-      "machine": "linux-62gb",
+      "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
@@ -483,15 +483,15 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "experimental",
-      "validated_at": "b157476",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
-      "reference": "HF f32 (ministral3-tiny seeded fixture, prompt > original_max_position_embeddings to exercise attn-temp)",
+      "reference": "HF f32 (ministral3-tiny seeded fixture, prompt \u003e original_max_position_embeddings to exercise attn-temp)",
       "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "mixtral": {
@@ -547,7 +547,7 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "experimental",
-      "validated_at": "bf56210",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF f32 (olmo3-tiny seeded fixture, NormPostOnly + QKNormWhole + YaRN-on-full-only)",
       "machine": "mac",
@@ -563,10 +563,10 @@
       "own": [],
       "deps_hash": "sha256:626a6f34d72191771629a7c8b8ac786667074446a90f80992417727388a1b1bb",
       "status": "experimental",
-      "validated_at": "edcf04d",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF f32 (olmo_hybrid-tiny seeded fixture, mixed NormPlacement + NegEigval + separate DeltaNet tensors + NoPE)",
-      "machine": "linux-62gb",
+      "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
@@ -623,10 +623,10 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "experimental",
-      "validated_at": "eaa8bb23",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
-      "machine": "linux-62gb",
+      "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
@@ -735,15 +735,15 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "experimental",
-      "validated_at": "dd8ae05",
-      "date": "2026-09-05",
+      "validated_at": "d72400e",
+      "date": "2026-09-06",
       "reference": "HF f32 (qwen3moe-tiny seeded fixture, 8x top-2, no shared expert)",
       "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "qwen3_next": {
@@ -785,15 +785,15 @@
       "own": [],
       "deps_hash": "sha256:9024e6d3858aa3af3fc9562cffdef9a584c83719183776378ec0d48fc606469e",
       "status": "experimental",
-      "validated_at": "ea69c9f",
+      "validated_at": "d72400e",
       "date": "2026-09-06",
       "reference": "HF f32 (smollm3-tiny seeded fixture, per-layer NoPE on layer 3)",
       "machine": "mac",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     }
   }

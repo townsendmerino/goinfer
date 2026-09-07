@@ -97,6 +97,12 @@ run wants aider specifically it needs an older interpreter.
 **The MacBook is still unprovisioned** — it cannot be reached from `nobara-pc`, so whoever runs
 scenario B there installs one first and names it.
 
+**`macbook-arm64`: `opencode` 1.18.29 too**, installed 2026-09-06 the same way
+(`npm install --prefix ~/.local/opt/opencode opencode-ai`; binary at
+`~/.local/opt/opencode/node_modules/.bin/opencode`), so both machines now have scenario B
+provisioned identically — same tool, same version, same contained-prefix path. Same caveat
+applies: nothing on `PATH`, use the full path or add it in the run's own report.
+
 **Next run:** the **Linux box**, after the R1–R3 tags land. The CUDA path makes "bigger than my
 hardware" a different story (expert streaming vs `-stream-weights`), so it is not a repeat. Its
 results go in as run 2 and §4's table gains a column.

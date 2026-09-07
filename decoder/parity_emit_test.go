@@ -16,6 +16,7 @@ package decoder
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -45,6 +46,20 @@ func emitParityRow(t *testing.T, family, method, reference string, argmaxPct, co
 		t.Fatalf("emitParityRow(%q): method %q is not in the manifest vocabulary %v — "+
 			"a row with an unrecognised method corrupts the manifest and no tier rule can "+
 			"classify it", family, method, sortedKeys(parityMethods))
+	}
+	// A NaN metric is not a numerics failure — cosineToFull (forward_test.go) documents
+	// returning NaN when its full-logit-dump reference is simply absent on this box (a
+	// gitignored, locally-regenerated fixture), and %.5f prints that as a literal NaN
+	// token, which is not valid JSON and breaks TestParityManifest_merge for every OTHER
+	// row in the same run, not just this family's. Found on an arm64 sweep 2026-09-06:
+	// TestMixtral_forwardParity's tiny-golden checks (argmax/sample/top-k) all passed
+	// against testdata/mixtral_forward_golden.json, but testdata/mixtral_forward_full.json
+	// was missing, so cos came back NaN and this call still tried to record it as if it
+	// were a measured value. Same shape as a "SKIP (no row expected)" real-model gate —
+	// this gate has weaker evidence than usual, so it emits nothing rather than garbage.
+	if math.IsNaN(cosineMin) || math.IsNaN(cosineMean) {
+		t.Logf("emitParityRow(%q): cosine is NaN (missing full-dump reference?) — not emitting a row", family)
+		return
 	}
 	// Fixed-precision metrics keep the JSON readable + the merge deterministic (Go's
 	// float marshaling would print 1.0 as "1"). Strings go through json.Marshal for
