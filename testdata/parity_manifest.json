@@ -305,9 +305,9 @@
         "decoder/internlm2_test.go",
         "scripts/pin_internlm2_tiny.py"
       ],
-      "deps_hash": "sha256:e5e4153b74c87d39e40ab127c8fa69cb1994b3690206519c8eeb3980815cd752",
+      "deps_hash": "sha256:7b5ed95af50737952b91c802268209e5f915e0b4d34b69dc56907f9344d0309a",
       "status": "validated",
-      "validated_at": "d1449f44",
+      "validated_at": "5251f4f0",
       "date": "2026-09-07",
       "reference": "HF f32 (internlm2_5-1_8b-chat, InternLM2ForCausalLM)",
       "machine": "linux-amd64",
