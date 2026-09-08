@@ -36,6 +36,32 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         CKPT, torch_dtype=torch.float32, trust_remote_code=True
     ).eval()
+
+    # WORKAROUND (confirmed 2026-09-07): this transformers version's from_pretrained never
+    # re-runs InternLM2RotaryEmbedding.__init__'s inv_freq formula for buffers absent from
+    # the checkpoint's state dict. inv_freq is registered `persistent=False` (correctly
+    # excluded from the checkpoint, since it's derived, not learned) but its fast-init path
+    # leaves it as UNINITIALIZED MEMORY (denormals/zeros, sometimes literal NaN) instead of
+    # 1/base^(2d/dim) — a class of bug HF's newer ROPE_INIT_FUNCTIONS registry exists to
+    # prevent; InternLM2's older-style remote code predates that registry, so it's exposed.
+    # Without this patch the "reference" this script produces is itself garbage: bisecting
+    # the loaded model's real forward down to the exact buffer showed the corruption, and
+    # the patched model's output matches goinfer's Go forward (and two independent
+    # from-scratch reimplementations) to 7 significant figures, while the unpatched one does
+    # not. Harmless no-op if a future transformers fixes the underlying bug (reassigning an
+    # already-correct value) — printed rather than asserted, since that's not worth halting
+    # golden generation over.
+    already_correct = 0
+    for layer in model.model.layers:
+        r = layer.attention.rotary_emb
+        correct = 1.0 / (float(r.base) ** (torch.arange(0, r.dim, 2, dtype=torch.int64).float() / r.dim))
+        if torch.allclose(r.inv_freq, correct, atol=1e-12):
+            already_correct += 1
+        r.inv_freq.data.copy_(correct)
+    if already_correct:
+        print(f"NOTE: inv_freq was already correct on {already_correct} layer(s) — "
+              f"the from_pretrained bug this patches may be fixed upstream")
+
     cfg = model.config
     arch = cfg.architectures[0] if cfg.architectures else "?"
     nh = cfg.num_attention_heads

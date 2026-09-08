@@ -1394,131 +1394,7 @@ typical case: the other eight reachable families each carry at least one axis th
 was chosen to avoid (MoE routing, GGUF conversion, sliding window, multimodal), so budget
 above this number, not at it.
 
-## Timing: two more promotions, batch 2 (2026-09-07, lfm2 + mistral3)
-
-Same machine, same session, playbook now established (no more "read a template pair"
-phase). **lfm2** (LFM2.5-2.6B, 5.1 GB): ≈2.5 min total — HF reference 22 s, gate first-try
-green at cosine 1.00000, argmax + continuation exact, layer split (22 conv/8 attention)
-matched the release. Item 5 (surprises) was zero. **mistral3** (Ministral-3-3b-Instruct-
-2512-BF16, 15 GB — the released repo is a vision-language wrapper even though only the
-text path is used): ≈3.5-4 min — the one non-zero item-5 cost was discovering
-`AutoModelForCausalLM` can't load a `*ForConditionalGeneration` wrapper config
-(`Unrecognized configuration class`) and switching to `AutoModelForImageTextToText` with
-`pixel_values=None` for the text-only path; once found, HF reference ran in 28 s and the
-gate passed first try (cosine 1.00000, attn-temp beta and YaRN mscale both resolved to the
-real release's values). Both promotions: no config surprise beyond the loader-class swap,
-no debugging past that.
-
-Net: with the playbook in hand, a plain dense family (lfm2) runs at roughly a third of the
-smollm3 floor; a family needing one new but well-scoped wrinkle (mistral3's wrapper class)
-still lands under smollm3's floor. Concurrently, the macbook's own attempt at **internlm2**
-(first of this same three-family batch, on branch
-`parity/dense-batch-internlm2-lfm2-ministral3`, not independently re-verified here) came
-back a real FAIL — cosine 0.87 against the HF f32 reference, not promoted. That is the
-first non-zero result in this series and the one worth weighing most: the previous two
-notes established a cost floor; this is the first data point on the failure rate, and it
-says the floor does not universally apply even to a family this doc's own method flagged
-as low-risk (dense, safetensors, proven mechanism at T1).
-
-## Timing: batch 3 — granite, olmo3, olmo_hybrid (2026-09-07, Linux box)
-
-Also fixed first: `lfm2`/`mistral3` had landed (batch 2) without their one-line
-`cmd/gate/parity.go` registration, the exact gap the smollm3 CI break already named —
-`TestRealckptGateIsListedOrExplicitlyNotRequired` caught both, red on `main` until this
-session's first commit. The check that would have caught it already exists; the gap was
-discipline (landing the test without the registration in the same change), not tooling.
-All three families below register asset + gate + `cmd/gate/parity.go` entry together, and
-the registration self-test was run and confirmed green before each gate ran, not after.
-
-**granite (dense, ibm-granite/granite-4.2-3b)** — ≈3 min, PASS, cosine 1.00000. Split:
-adapt ~40 s (reused the smollm3 shape directly), download 58 s (6.9 GB), HF reference
-23 s, goinfer gate + registration + merge + regen ~90 s. Item 5 (surprises): zero. Env var
-`GOINFER_GRANITE_DENSE_3B` / test `TestGraniteDenseReal_gate`, deliberately distinct from
-the unrelated `granitemoehybrid` family's `GOINFER_GRANITE_HF` / `TestGraniteReal_oracle`
-— see both files' own collision-warning comments.
-
-**olmo3 (allenai/Olmo-3-7B-Think)** — ≈8.5 min, **FAILED, not promoted**. Split: adapt
-~20 s, download 118 s (14 GB), HF reference 44 s, gate write/run to first failure ~1 min,
-then ~5 min investigating. Argmax and the full 8-token greedy continuation matched
-exactly; last-logit cosine was 0.992789 against the 0.9999 bar. Named term: real
-`Olmo3Model.forward()` builds exactly one `Olmo3RotaryEmbedding` and passes its
-YaRN-scaled `position_embeddings` to every layer uniformly (confirmed by reading
-`modeling_olmo3.py` directly — `self.rotary_emb(...)` called once, the same tensor handed
-to every decoder layer regardless of `layer_types[i]`); `olmo3Architecture`'s flat-form
-branch (`decoder/registry.go`, taken because the real release ships top-level
-`rope_scaling` rather than nested `rope_parameters`) sets `ropeScalingLocal = nil`,
-leaving the 24 sliding-attention layers on plain unscaled RoPE instead of the same
-YaRN table the other 8 layers get. The tiny fixture exercises the identical flat-form
-branch and still passes at cosine ~1.0 — this is a real-scale-only gap (factor 8,
-rotaryDim 128, origMaxPos 8192 vs the tiny fixture's factor 4 at hidden 64), and this is
-also the first family in the tree to test YaRN at the tight f32-vs-f32 bar at all; every
-other shipped YaRN family (mellum, gpt-oss) is validated only via int8-quantized
-real-model-oracle at the looser 0.99 floor, which would not have distinguished this gap
-from ordinary quantization noise. Not fixed here — the gate, asset, and registration are
-left in place and **required**, so this reads as a red, attributable gate rather than a
-silent gap; see `awaitingFirstConfirmation`'s entry for the reasoning against demoting it
-to `realckptNotRequired`.
-
-**olmo_hybrid (allenai/Olmo-Hybrid-7B)** — ≈8 min, PASS, cosine 1.00000. Split: adapt
-~1 min (confirmed the real release's `rope_theta: null` first, specifically to check
-whether olmo3's bug could apply here), download 119 s (14 GB), HF reference 54 s (torch
-fallback warning for missing `fla` fast kernels — harmless, only slower), gate write +
-registration + run + merge + regen ~4 min. Item 5 (surprises): zero — the family has no
-RoPE on any layer, so it cannot hit olmo3's specific defect, and the PASS at exactly
-1.00000 is consistent with that reasoning rather than a coincidence.
-
-**Batch total ≈ 20 min for three attempts: two promoted, one real defect found and
-named.** Read against the earlier internlm2 result, this is now two non-zero item-5
-outcomes out of six attempted families (internlm2 on the Mac, olmo3 here) — the ~7.5 min
-smollm3 floor keeps holding for plain composition families (granite, lfm2, olmo_hybrid
-all landed at or under it once the playbook existed), but roughly a third of the families
-tried past smollm3 itself have failed their tight bar outright. That is a materially
-different picture than "some scheduling risk on the harder families" — it says every
-promotion in this program is a real test of the family's wiring, including the ones
-picked for looking safe, and probably needs to be budgeted and reported as such rather
-than assumed to pass.
-
-**DISPOSITION — olmo3 FIXED, same day.** `decoder/registry.go`'s `olmo3Architecture` was
-changed to apply one uniform RoPE base/scaling to every layer regardless of config form,
-matching what the real model actually does — confirmed by reading `modeling_olmo3.py`
-directly: `Olmo3Model.__init__` builds exactly one `Olmo3RotaryEmbedding`, and
-`Olmo3Model.forward` computes `position_embeddings` from it ONCE per call, handing the
-identical tensor to every decoder layer regardless of `layer_types[i]` (only the attention
-mask varies by layer type). `Olmo3RotaryEmbedding.__init__` itself reads
-`self.config.rope_parameters["rope_type"]` directly, which would `KeyError` on a genuinely
-per-layer-type nested dict — so no real Olmo3 checkpoint can load with different RoPE
-scaling per layer type regardless of how its `config.json` happens to be shaped; the
-original code's "confirmed independently by re-saving a config" note was checking
-serialization output, not that the file loads back through the real model class. It does
-not. Re-run of `TestOlmo3Real_gate` after the fix: cosine 1.000000. A downstream chokepoint
-test (`TestResidentFeatures_derivationMatchesProfile`) caught a stale hand-written table
-entry as a direct consequence — `archFeatureProfile["olmo3"]` still claimed
-`FeatPerLayerRoPE` after the fix made the auto-derivation correctly stop asserting it;
-fixed in the same change. `olmo3` is now `full-oracle 100.0%/1.00000` in the manifest.
-
-One verification note from this fix, worth recording precisely: regenerating the tiny
-fixture on this box (to sanity-check the fix against it) produced a byte-different golden
-than the committed one, from the SAME unmodified pin script — a transformers version
-difference between this box and whichever box originally authored it changed HF's own
-computed YaRN output for the same synthetic config. That regenerated golden and its
-checkpoint were reverted/discarded rather than committed (per the standing rule not to
-modify a tiny golden to make anything pass), so the tiny gate for olmo3 could not be
-re-validated on this box for this fix — the real-checkpoint gate (which is what found and
-then confirmed the fix for the actual defect) is the validation of record here.
-
-**The exposure worth flagging beyond this one family, per the reviewing session's own
-note:** olmo3 is the first family in this tree ever tested against YaRN at the tight
-f32-vs-f32 bar. `mellum` and `gpt-oss` both ship YaRN in production and are both validated
-only via int8-quantized real-model-oracle at the looser 0.99 floor — a floor wide enough
-that this exact defect class (a real but moderate cosine drift, ~0.99 here, with argmax and
-greedy continuation both staying exact) would read as ordinary quantization noise, not as
-a wiring defect. Neither family has been checked at a bar that could tell the two apart.
-This is a suspicion, not a finding — nobody has looked at either family's RoPE-locality
-handling with olmo3's bug in mind — and it is exactly the kind of thing that gets
-rediscovered independently later if it only lives in a paragraph here. Filed to
-`docs/QUEUE.md` alongside this note so it travels with the rest of the open work.
-
-## Timing: batch attempt (2026-09-07, macbook-arm64) — internlm2 STOPPED RED, lfm2/ministral3 not started
+## Timing: batch attempt (2026-09-07, macbook-arm64) — internlm2 STOPPED RED, lfm2/ministral3 not started — RESOLVED same day, see below
 
 Scoped to internlm2 only (cheapest of three planned: internlm2, lfm2, ministral3) — the
 other two were never started because the machine was needed for a prerelease run. Do not
@@ -1587,3 +1463,58 @@ The `internlm/internlm2_5-1_8b-chat` checkpoint (3.5 GB) was left resident at
 follow-up debugging without a re-download — flag this to whoever picks the investigation
 back up, since disk was already tight before this batch started (11 GB free) and is why the
 Go build cache was cleared rather than the checkpoint.
+
+### RESOLVED 2026-09-07 — the golden was corrupt, not goinfer. Root cause: a `transformers` bug, not the "groups=2" lead above
+
+The "groups=2 vs groups=4" lead above was investigated and **refuted**: goinfer's grouped
+wqkv de-interleave was diffed directly against the real checkpoint's own `wqkv.weight`
+tensor (numpy, no model load) at the checkpoint's actual dimensions (nKV=8, groups=2,
+hd=128) — bit-exact, max abs diff 0.0. That was never the bug.
+
+**The actual defect is in the reference oracle, not in goinfer.** `InternLM2RotaryEmbedding.__init__`
+computes `inv_freq` (the RoPE frequency table) and registers it as a `persistent=False`
+buffer — correctly excluded from the checkpoint's state dict, since it's derived, not
+learned. This installed `transformers` version's `from_pretrained` fast-init path never
+re-runs that `__init__` formula for buffers absent from the state dict, so `inv_freq` is
+left as **uninitialized memory** (denormals/zeros, sometimes literal NaN) instead of
+`1/base^(2d/dim)`. This is exactly the class of bug HF's newer `ROPE_INIT_FUNCTIONS`
+registry exists to prevent; InternLM2's older-style remote code (`trust_remote_code=True`,
+its own `modeling_internlm2.py`) predates that registry and isn't covered by it.
+
+**How this was found (per this doc's own "differencing per layer" rule, not final-logit
+guessing):** bisected the REAL loaded `nn.Module`'s attention forward line by line
+(`attn.wqkv` → rearrange → RoPE → `repeat_kv` → softmax) — every step finite and correct
+until `attn.rotary_emb(value_states, position_ids)`, whose output was NaN. Direct
+inspection of `attn.rotary_emb.inv_freq` showed garbage (e.g.
+`[-1.09e-16, 3.09e-41, 0.0, 0.0, ...]`), not the expected frequency table. Reproduced with
+and without `low_cpu_mem_usage` (irrelevant — this transformers version's fast-init is
+unconditional) and on both amd64 (nobara, where the corruption manifests as literal NaN)
+and would-be arm64 (matching the macbook where the original golden was captured).
+
+**Decisive test:** patched all 24 layers' `inv_freq` buffers to the correct formula
+immediately after `from_pretrained`, on the real model with the real weights, and re-ran
+the reference forward. Result: `argmax=58321, cosine=0.8731477` against the *old* (broken)
+golden's logits — an exact match, to 7 significant figures, with **goinfer's own Go output**
+(argmax 58321, cosine 0.873148) and with two independent from-scratch reimplementations
+built along the way (a pure-numpy forward and a low-memory streaming torch forward using
+the checkpoint's own `modeling_internlm2.py` helper functions). The patched model's
+continuation also decodes to `"Paris . The capital of France is Paris"` — coherent and
+correct, versus whatever the corrupted-RoPE run produced.
+
+**Fix:** `scripts/pin_internlm2_real.py` now patches every layer's `rotary_emb.inv_freq` to
+the correct formula right after `from_pretrained`, before capturing the reference (a
+no-op, harmlessly re-assigning the same value, if a future transformers fixes the
+underlying bug — logged rather than asserted, since that's not worth failing golden
+generation over). `testdata/internlm2_real_golden.json` was regenerated with the fix.
+`TestInternLM2_1_8bReal_gate` now passes: argmax exact, logit cosine 1.000000, greedy
+continuation exact. Promoted in `testdata/parity_manifest.json`
+(`full-forward-oracle`, cosine 1.00000) and `docs/capability-matrix.{json,md}`.
+
+**Lesson for the next real-checkpoint pin script, generalized beyond InternLM2:** a custom
+`trust_remote_code=True` model with any `persistent=False` buffer computed in `__init__`
+(RoPE tables are the common case, but not the only one) is exposed to this class of
+`from_pretrained` fast-init bug. A pin script pulling in old-style remote code should sanity
+check such buffers after loading — e.g. assert non-NaN and roughly the expected magnitude —
+rather than trusting `from_pretrained` to have materialized them correctly. lfm2 and
+ministral3 (next in this batch) should each be checked for this pattern before being
+trusted as "the reference disagrees with goinfer, so goinfer is wrong."

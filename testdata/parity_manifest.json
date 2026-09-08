@@ -305,17 +305,17 @@
         "decoder/internlm2_test.go",
         "scripts/pin_internlm2_tiny.py"
       ],
-      "deps_hash": "sha256:7b5ed95af50737952b91c802268209e5f915e0b4d34b69dc56907f9344d0309a",
-      "status": "experimental",
-      "validated_at": "",
-      "date": "2026-08-18",
-      "reference": "HF f32 tiny golden: a reference llama's q/k/v re-packed into InternLM2's GROUPED fused wqkv, with the llama's own forward as the golden \u2014 argmax exact, logit cosine 1.000000, greedy continuation exact.",
-      "machine": "linux-62gb",
-      "method": "tiny-golden",
+      "deps_hash": "sha256:e5e4153b74c87d39e40ab127c8fa69cb1994b3690206519c8eeb3980815cd752",
+      "status": "validated",
+      "validated_at": "d1449f44",
+      "date": "2026-09-07",
+      "reference": "HF f32 (internlm2_5-1_8b-chat, InternLM2ForCausalLM)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.0,
-        "cosine_mean": 1.0
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "kimi_k2": {
