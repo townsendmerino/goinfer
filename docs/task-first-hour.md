@@ -78,7 +78,7 @@ discovered by failing, not by knowing). The next run uses a tester who has not.
 pkg.go.dev. Nothing else. Note that pkg.go.dev renders doc comments lifted from source, so it *is*
 the source's comments — the 2026-09-06 run flagged this itself rather than letting it pass.
 
-**The five scenarios**, each time-boxed at **25 minutes**:
+**The six scenarios**, each time-boxed at **25 minutes**:
 
 | | scenario | the question |
 |---|---|---|
@@ -87,6 +87,7 @@ the source's comments — the 2026-09-06 run flagged this itself rather than let
 | C | Embed it | a ≤40-line Go program that prints a completion |
 | D | Run bigger than my hardware | a model that does not fit |
 | E | Control | the same question through a peer tool, recorded to the same standard |
+| F | Show it a screenshot | attach an image, ask about it, then resend the SAME image next turn |
 
 **Rules.**
 
@@ -114,6 +115,19 @@ re-discovering the findings:
 - **Every scenario — record `--version` for each binary used** (R2). The 2026-09-06 run could not,
   which is how a Mac asset with no Metal in it reached a release.
 - **Scenario A — the cold-start total**, which is the number goinfer wins and worth tracking.
+- **Scenario F — "the second look is fast."** Attach an image, ask a question about it, and time
+  to first token (TTFT) for that turn. Then, in the SAME conversation, resend the byte-identical
+  image (not a re-encode or re-crop — the literal file again) with a different question, and time
+  TTFT for that turn too. The leg passes only if the second (resent-image) TTFT is visibly faster
+  than the first — the resident image-block reuse this exists to check (`docs/multimodal.md`'s
+  P9(a)) skips the vision tower and the CPU prefill entirely on a verified-identical image, so the
+  second turn should start generating close to as fast as a plain text turn does. As a negative
+  control, follow with a THIRD turn attaching a *different* image at the same point in the
+  conversation: its TTFT must look like the FIRST (cold) turn, not the fast second one — if it is
+  also fast, the reuse is being applied when it should not be, which would mean the server is
+  silently answering about the wrong image (see this document's own contamination-declaration
+  rule: a false negative here is a finding, not something to explain away). Record all three TTFTs
+  in the scenario's numbers table.
 
 **Scenario D stays one class above the brief.** The 2026-09-06 run substituted a 35B-A3B on 16 GB
 for the brief's "20–30B", because the README named no MoE and the tester would not download 15–20
@@ -123,6 +137,12 @@ thing. Keep it there.
 **Scenario B needs an agent CLI installed.** The 2026-09-06 run could not test one: aider,
 opencode, cline, `llm` and codex were all absent, and `continue` matched a shell builtin — a false
 positive worth knowing about.
+
+**Scenario F needs a vision-capable checkpoint loaded** (the server started with `--vision <dir>`,
+per `serve check`'s own `vision` row). If none is available on the box under test, the tester
+records the gap the same way Scenario B records an absent agent CLI — as a dead end for that leg,
+not a silently skipped one — rather than substituting a text-only model and reporting a leg that
+was never actually exercised.
 
 **`nobara-pc`: `opencode` 1.18.29**, installed into a contained prefix
 (`npm install --prefix ~/.local/opt/opencode opencode-ai`; the binary is at

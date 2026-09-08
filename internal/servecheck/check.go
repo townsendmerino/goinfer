@@ -20,8 +20,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"strings"
@@ -359,6 +363,76 @@ func trunc(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// visionTestPNG returns a tiny solid-red PNG for the Vision row's fixed test image — generated
+// here rather than embedded as an opaque base64 blob, so the color the question asks about is
+// defined right next to the question itself.
+func visionTestPNG() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	red := color.RGBA{R: 220, G: 20, B: 20, A: 255}
+	for y := range 8 {
+		for x := range 8 {
+			img.Set(x, y, red)
+		}
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img) // encoding an in-memory RGBA image never fails
+	return buf.Bytes()
+}
+
+// Vision drives the multimodal round-trip an image-capable harness needs: a fixed, solid-color
+// test image plus a question with exactly one right answer. A server with no vision tower loaded
+// 400s every image request the same way regardless of which model is targeted
+// (vision_serve.go's serveVisionChatWith), so that case is reported as a SKIP, not a failure —
+// same "property of how the operator started serve, not a broken route" rule Tools already
+// applies to a checkpoint that cannot use tools.
+func (c *Client) Vision(ctx context.Context, model string) Result {
+	res := Result{Name: "vision"}
+	dataURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(visionTestPNG())
+	body := map[string]any{
+		"model": model, "temperature": 0, "max_tokens": 16,
+		"messages": []map[string]any{{
+			"role": "user",
+			"content": []map[string]any{
+				{"type": "text", "text": "What color is this image? Reply with exactly one word."},
+				{"type": "image_url", "image_url": map[string]any{"url": dataURI}},
+			},
+		}},
+	}
+	resp, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", body)
+	if err != nil {
+		res.Detail = err.Error()
+		return res
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		detail := errBody(resp)
+		if strings.Contains(detail, "no vision tower") {
+			res.Skip = true
+			res.Detail = "no vision tower loaded (start the server with --vision <dir> to check this row)"
+			return res
+		}
+		res.Detail = detail
+		return res
+	}
+	var out struct {
+		Choices []struct {
+			Message struct{ Content string } `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) == 0 {
+		res.Detail = "unparseable response"
+		return res
+	}
+	txt := strings.ToLower(strings.TrimSpace(out.Choices[0].Message.Content))
+	if !strings.Contains(txt, "red") {
+		res.Detail = fmt.Sprintf("answered %q, want a color naming red", trunc(out.Choices[0].Message.Content, 60))
+		return res
+	}
+	res.OK = true
+	res.Detail = fmt.Sprintf("correctly named the test image's color: %q", trunc(out.Choices[0].Message.Content, 40))
+	return res
 }
 
 // Tools drives the round-trip a harness actually needs: the model asks for a tool, the caller

@@ -36,18 +36,22 @@ type Model struct {
 	// resIDs is the token sequence currently committed to the resident positional KV, or nil
 	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
 	// to that cache; see resident_reuse.go for why nil is the safe default.
-	resIDs     []int
-	kvF16      bool         // residency KV cache precision request (Options.KVPrecision == "f16")
-	kvPrecI8   bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8       bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	resCtxReq  int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	moeCache   bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
-	moeSlots   int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
-	mmap       []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
-	srcPath    string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
-	pager      *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
-	layerPager *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
-	quant      string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+	resIDs []int
+	// resImgBlocks records every image block committed within resIDs (P9a, docs/multimodal.md)
+	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
+	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
+	resImgBlocks []residentImageBlock
+	kvF16        bool         // residency KV cache precision request (Options.KVPrecision == "f16")
+	kvPrecI8     bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8         bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	resCtxReq    int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	moeCache     bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	moeSlots     int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
+	mmap         []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	srcPath      string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	pager        *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	layerPager   *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
+	quant        string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
 	// resDecline records WHY resident is nil on a non-CPU backend — the reason withResidency
 	// would otherwise discard. Empty when residency was built, or when it was never attempted
 	// (CPU backend). DecodePath / -require-backend read it; see withResidency.
@@ -1013,6 +1017,31 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int)
 	return logits, nil
 }
 
+// residentPrefillSeedMRoPE is residentPrefillSeed's m-RoPE-aware sibling — used by
+// GenerateQwenVL's image-reuse fast path (P9a, docs/multimodal.md), where decode past the
+// (already-resident) image block needs pos+mropeDelta for the rotation, not plain pos.
+// Deliberately simple (no batched/KV-only-prefill path, unlike residentPrefillSeed): the
+// reused-suffix case is, by construction, an agent turn's short trailing extension (the 45-51
+// token deltas resident_reuse.go's own doc comment measures), not a long cold prompt worth the
+// batched machinery's complexity.
+func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoPE, prompt []int, from, mropeDelta int) ([]float32, error) {
+	if from < 0 || from >= len(prompt) {
+		from = 0
+	}
+	var logits []float32
+	var err error
+	for i := from; i < len(prompt); i++ {
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
+		emb := m.embedResident(prompt[i])
+		if logits, err = mrope.ForwardMRoPE(emb, i, i+mropeDelta); err != nil {
+			return nil, err
+		}
+	}
+	return logits, nil
+}
+
 // generateInto is the shared prefill+decode loop behind Model.Generate and
 // Session.Generate. It assumes cache already holds prompt[:prefillFrom] (0 for a
 // fresh generation), prefills prompt[prefillFrom:] (always ≥1 token — the seed,
@@ -1077,7 +1106,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
 		// generation completes the cache is mid-write, and any early return must leave the
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
-		reuseFrom := m.residentReuseLen(prompt)
+		reuseFrom := m.residentReuseLen(prompt, nil)
 		m.residentForgetIDs()
 		if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom); err != nil {
 			g.err = err
@@ -1170,7 +1199,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// ORIGINAL R-02 fix's blind spot: it only committed at the send-select exit, which
 			// is the rarer of the two cancel-observation points, not the common one.
 			if useGPU {
-				m.residentCommitIDs(prompt, generated)
+				m.residentCommitIDs(prompt, generated, nil)
 			}
 			return
 		default:
@@ -1246,7 +1275,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// that left nothing inconsistent behind. Agent harnesses cancel constantly
 			// (interrupts, timeouts, disconnects), so today every one of them pays this cost.
 			if useGPU {
-				m.residentCommitIDs(prompt, generated)
+				m.residentCommitIDs(prompt, generated, nil)
 			}
 			return
 		case out <- next:
@@ -1293,7 +1322,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// The ONLY place the resident cache's contents are recorded: a generation that ran to
 	// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.
 	if useGPU {
-		m.residentCommitIDs(prompt, generated)
+		m.residentCommitIDs(prompt, generated, nil)
 	}
 	if decodeTiming && nFwd > 0 {
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }
@@ -1319,7 +1348,10 @@ type Generation struct {
 	// PrefillReused is how many leading prompt tokens this generation skipped because they
 	// were already committed to the resident positional KV (resident_reuse.go). 0 on a cold
 	// prefill and on every non-resident path. Diagnostic: it is what makes an agent loop's
-	// per-turn prefill cost visible without timing it.
+	// per-turn prefill cost visible without timing it. GenerateVL/GenerateQwenVL set it only
+	// on P9(a)'s full-image-reuse fast path (docs/multimodal.md) — 0 there means that turn's
+	// image (or everything before it) was NOT fully reused, whether because nothing matched
+	// or because a partial match stopped short of the image block's own start.
 	PrefillReused int
 	Spec          *SpecStats
 	OptFwd        *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go

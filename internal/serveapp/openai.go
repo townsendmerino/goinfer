@@ -1048,20 +1048,23 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 }
 
 // driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the
-// projected vision `feats` spliced in at the [imgPos, imgPos+imgLen) placeholder
-// run (GenerateVL), then streams the continuation through the same stop/UTF-8
-// machinery as drive. Stateless — no warm-KV session (multimodal opts out of
-// prefix reuse). Returns finish reason, completion token count, stop string, and
-// any terminal generation error (nil on a clean end — see genErr).
+// projected vision features (from vi.features, invoked lazily) spliced in at the
+// [imgPos, imgPos+imgLen) placeholder run (GenerateVL), then streams the
+// continuation through the same stop/UTF-8 machinery as drive. No warm-KV
+// decoder.Session (multimodal opts out of that CPU-side prefix reuse) — but on a
+// resident backend, GenerateVL/GenerateQwenVL do their own resident-GPU-KV image
+// reuse when the SAME image is resent (P9a); vi.features is then never invoked at
+// all. Returns finish reason, completion token count, stop string, and any
+// terminal generation error (nil on a clean end — see genErr).
 func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, onText func(string)) (string, int, string, error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var stream <-chan int
 	var gen *decoder.Generation
 	if vi.qwen {
-		stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else {
-		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.feats, vi.imgPos, vi.imgLen, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 	return finish, n, stopHit, genErr(gen.Err())

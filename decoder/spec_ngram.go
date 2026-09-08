@@ -345,7 +345,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// add, unlike R-01/R-03's general shape.
 		commitResident := func() {
 			if resident {
-				target.residentCommitIDs(prompt, hist[len(prompt):])
+				target.residentCommitIDs(prompt, hist[len(prompt):], nil)
 			}
 		}
 

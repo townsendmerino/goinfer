@@ -36,7 +36,8 @@ func lastUserTurn(turns []chat.Turn) int {
 // Qwen2.5-VL) the image grid driving m-RoPE. qwen selects the decode path.
 type visionInput struct {
 	ids            []int
-	feats          []float32
+	features       func() ([]float32, error) // runs the tower+projector; invoked at most once, lazily
+	imgHash        uint64                    // content hash of the raw image bytes, for P9(a) resident reuse
 	imgPos, imgLen int
 	grid           [3]int // Qwen m-RoPE grid (t,h,w in patch units); zero ⇒ Gemma 3
 	qwen           bool
@@ -128,15 +129,23 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 	if err != nil {
 		return visionInput{}, err
 	}
-	hidden, err := lm.venc.Forward(pv.Data)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("vision encoder: %w", err)
-	}
-	feats, err := lm.vproj.Forward(hidden)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("vision projector: %w", err)
-	}
+	imgHash := multimodal.HashImageBytes(img.data)
 	n := lm.vproj.MMTokens()
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		hidden, err := lm.venc.Forward(pv.Data)
+		if err != nil {
+			return nil, fmt.Errorf("vision encoder: %w", err)
+		}
+		feats, err := lm.vproj.Forward(hidden)
+		if err != nil {
+			return nil, fmt.Errorf("vision projector: %w", err)
+		}
+		if len(feats) != n*hiddenDim {
+			return nil, fmt.Errorf("projector emitted %d features, want %d", len(feats), n*hiddenDim)
+		}
+		return feats, nil
+	}
 	block := multimodal.Gemma3ImageBlock(n) + "\n"
 	turns[idx].Content = block + turns[idx].Content
 	ids, err := encodeVisionSegments(lm, system, turns, block)
@@ -147,10 +156,7 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
 	}
-	if len(feats) != n*lm.model.Config().HiddenDim {
-		return visionInput{}, fmt.Errorf("projector emitted %d features, want %d", len(feats), n*lm.model.Config().HiddenDim)
-	}
-	return visionInput{ids: ids, feats: feats, imgPos: imgPos, imgLen: imgLen}, nil
+	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen}, nil
 }
 
 // qwenVisionPrompt is the Qwen2.5-VL image path: smart-resize preprocess → ViT +
@@ -161,11 +167,19 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 	if err != nil {
 		return visionInput{}, err
 	}
-	feats, err := lm.qwenEnc.Forward(pv, [][3]int{grid})
-	if err != nil {
-		return visionInput{}, fmt.Errorf("qwen vision encoder: %w", err)
-	}
+	imgHash := multimodal.HashImageBytes(img.data)
 	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		feats, err := lm.qwenEnc.Forward(pv, [][3]int{grid})
+		if err != nil {
+			return nil, fmt.Errorf("qwen vision encoder: %w", err)
+		}
+		if len(feats) != n*hiddenDim {
+			return nil, fmt.Errorf("qwen encoder emitted %d features, want %d", len(feats), n*hiddenDim)
+		}
+		return feats, nil
+	}
 	block := multimodal.QwenImageBlock(n) + "\n"
 	turns[idx].Content = block + turns[idx].Content
 	ids, err := encodeVisionSegments(lm, system, turns, block)
@@ -176,10 +190,7 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
 	}
-	if len(feats) != n*lm.model.Config().HiddenDim {
-		return visionInput{}, fmt.Errorf("qwen encoder emitted %d features, want %d", len(feats), n*lm.model.Config().HiddenDim)
-	}
-	return visionInput{ids: ids, feats: feats, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
+	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
 }
 
 // serveVisionChat handles an OpenAI /v1/chat/completions request that carries an

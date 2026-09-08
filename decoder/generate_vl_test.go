@@ -45,13 +45,15 @@ func TestGenerateVL_streams(t *testing.T) {
 	}
 	defer m.Close()
 
-	// V-11 (docs/review-2026-09-04.md): GenerateVL is stateless/CPU-only (its own doc comment)
-	// and never touches m.resident, so a pre-existing resIDs describing an UNRELATED resident
-	// generation must survive this call untouched — it used to get unconditionally forgotten.
+	// V-11 (docs/review-2026-09-04.md): this model has no resident backend (Options{}, plain
+	// CPU), so GenerateVL's resident-touching branches (gap 0, P9a) never engage at all — a
+	// pre-existing resIDs describing an UNRELATED resident generation must survive this call
+	// untouched, exactly as it did before either of those existed.
 	m.resIDs = []int{9, 9, 9}
 
 	const maxNew = 5
-	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageFeatures, g.ImageTokenStart, g.MMTokens, maxNew, SamplingParams{Temperature: 0})
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
 	var got []int
 	for id := range stream {
 		got = append(got, id)

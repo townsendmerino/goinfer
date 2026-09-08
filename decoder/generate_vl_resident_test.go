@@ -47,21 +47,23 @@ func loadGemma3VLTiny(t *testing.T) (*Model, gemma3VLGolden) {
 	return m, g
 }
 
-// TestGenerateVL_residentDecodeEngagesAndUploadsKV is gap 0's wiring gate for GenerateVL: given
-// a resident backend, the turn must (a) call UploadKV once per layer with the CPU prefill's K/V,
-// (b) dispatch decode through the resident Forward (not the CPU m.forward), and (c) forget resIDs
-// afterward — the resident cache now holds THIS turn's content, so a stale prefix-reuse record
-// must not survive (V-11's discipline, now required in the opposite direction: GenerateVL used
-// to be forbidden from touching resIDs at all because it never touched resident; now that it
-// does, forgetting is mandatory, not forbidden).
+// TestGenerateVL_residentDecodeEngagesAndUploadsKV is gap 0's wiring gate for GenerateVL, extended
+// for P9(a): given a resident backend, the turn must (a) call UploadKV once per layer with the CPU
+// prefill's K/V, (b) dispatch decode through the resident Forward (not the CPU m.forward), and (c)
+// COMMIT resIDs + the image block afterward — a stale resIDs from an unrelated prior generation
+// must not survive as a false reuse candidate (m.resIDs starts at a value that cannot satisfy the
+// image-block check below), and this turn's own prefix becomes the reuse candidate for the NEXT
+// turn if the same image comes back (the entire point of P9(a); GenerateVL used to be forbidden
+// from touching resIDs at all, then gap 0 made it unconditionally forget — now it commits).
 func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
-	m.resIDs = []int{9, 9, 9} // must NOT survive — see doc comment
+	m.resIDs = []int{9, 9, 9} // stale — must not be mistaken for a reusable image block
 
 	const maxNew = 5
-	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageFeatures, g.ImageTokenStart, g.MMTokens, maxNew, SamplingParams{Temperature: 0})
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
 	var got []int
 	for id := range stream {
 		got = append(got, id)
@@ -89,9 +91,13 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	if rf.forwards == 0 {
 		t.Error("resident Forward was never called — decode silently ran on CPU despite a resident being present")
 	}
-	if m.resIDs != nil {
-		t.Errorf("resIDs = %v after a resident-touching GenerateVL, want nil (forgotten) — the resident "+
-			"cache now holds this turn's image content, not whatever resIDs described before", m.resIDs)
+	want := append(append([]int{}, g.InputIDs...), got...)
+	if !equalIntSlices(m.resIDs, want) {
+		t.Errorf("resIDs = %v after a resident-touching GenerateVL, want prompt+generated %v — P9(a) commits "+
+			"the prefix so a future resend of the same image can reuse it", m.resIDs, want)
+	}
+	if len(m.resImgBlocks) != 1 || m.resImgBlocks[0].start != g.ImageTokenStart || m.resImgBlocks[0].end != g.ImageTokenStart+g.MMTokens {
+		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.resImgBlocks, g.ImageTokenStart, g.ImageTokenStart+g.MMTokens)
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
 		t.Errorf("resBusy = %d after GenerateVL returned, want 0 (released)", busy)
@@ -110,7 +116,8 @@ func TestGenerateVL_residentBusyDeclinesToCPU(t *testing.T) {
 	atomic.StoreInt32(&m.resBusy, 1) // simulate another in-flight generation holding the claim
 
 	const maxNew = 5
-	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageFeatures, g.ImageTokenStart, g.MMTokens, maxNew, SamplingParams{Temperature: 0})
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
 	var got []int
 	for id := range stream {
 		got = append(got, id)
@@ -155,7 +162,8 @@ func TestGenerateVL_residentConcurrencyRace(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageFeatures, g.ImageTokenStart, g.MMTokens, 4, SamplingParams{Temperature: 0})
+		features := func() ([]float32, error) { return g.ImageFeatures, nil }
+		stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, 4, SamplingParams{Temperature: 0})
 		for range stream { //nolint:revive
 		}
 		if err := gen.Err(); err != nil {
@@ -206,18 +214,21 @@ func loadQwen25VLTiny(t *testing.T) (*Model, qwen25vlGolden) {
 	return m, g
 }
 
-// TestGenerateQwenVL_residentDecodeUsesForwardMRoPE is gap 0's wiring gate for GenerateQwenVL:
-// with a ResidentMRoPE-capable resident attached, decode past the image block must dispatch
-// through ForwardMRoPE (not the base Forward), with ropePos = pos + cache.mropeDelta — the exact
-// distinction Forward alone cannot express (decoder/residency.go's ResidentMRoPE doc comment).
+// TestGenerateQwenVL_residentDecodeUsesForwardMRoPE is gap 0's wiring gate for GenerateQwenVL,
+// extended for P9(a): with a ResidentMRoPE-capable resident attached, decode past the image block
+// must dispatch through ForwardMRoPE (not the base Forward), with ropePos = pos + mropeDelta — the
+// exact distinction Forward alone cannot express (decoder/residency.go's ResidentMRoPE doc
+// comment) — and the turn must COMMIT resIDs + the image block afterward (see the Gemma 3 sibling
+// test's doc comment for why commit, not forget).
 func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
 	m.resIDs = []int{9, 9, 9}
 
-	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageFeatures,
-		g.ImageStart, g.NImageTokens, g.GridTHW, 2, g.ImageToken, len(g.Continuation), SamplingParams{Temperature: 0})
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
+		g.GridTHW, 2, g.ImageToken, len(g.Continuation), SamplingParams{Temperature: 0})
 	var got []int
 	for id := range stream {
 		got = append(got, id)
@@ -234,8 +245,12 @@ func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 	if rf.forwards == 0 {
 		t.Error("resident ForwardMRoPE (which calls into Forward's bookkeeping) was never counted — decode silently ran on CPU")
 	}
-	if m.resIDs != nil {
-		t.Errorf("resIDs = %v after a resident-touching GenerateQwenVL, want nil (forgotten)", m.resIDs)
+	want := append(append([]int{}, g.InputIDs...), got...)
+	if !equalIntSlices(m.resIDs, want) {
+		t.Errorf("resIDs = %v after a resident-touching GenerateQwenVL, want prompt+generated %v (P9(a) commit)", m.resIDs, want)
+	}
+	if len(m.resImgBlocks) != 1 || m.resImgBlocks[0].start != g.ImageStart || m.resImgBlocks[0].end != g.ImageStart+g.NImageTokens {
+		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.resImgBlocks, g.ImageStart, g.ImageStart+g.NImageTokens)
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
 		t.Errorf("resBusy = %d after GenerateQwenVL returned, want 0 (released)", busy)
@@ -253,8 +268,9 @@ func TestGenerateQwenVL_declinesResidentWithoutMRoPE(t *testing.T) {
 	m.resident = rf
 	m.resIDs = []int{4, 5, 6}
 
-	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageFeatures,
-		g.ImageStart, g.NImageTokens, g.GridTHW, 2, g.ImageToken, len(g.Continuation), SamplingParams{Temperature: 0})
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
+		g.GridTHW, 2, g.ImageToken, len(g.Continuation), SamplingParams{Temperature: 0})
 	var got []int
 	for id := range stream {
 		got = append(got, id)
@@ -270,6 +286,179 @@ func TestGenerateQwenVL_declinesResidentWithoutMRoPE(t *testing.T) {
 	}
 	if !equalIntSlices(m.resIDs, []int{4, 5, 6}) {
 		t.Errorf("resIDs = %v, want unchanged [4 5 6] — the claim must never be attempted for a resident this call cannot use", m.resIDs)
+	}
+}
+
+// TestGenerateVL_imageReuseFastPath_sameImageSkipsTower is P9(a)'s own wiring gate, one level up
+// from the atomic-block-aware LCP scan's unit tests (resident_reuse_test.go): driven through the
+// REAL GenerateVL entrypoint, a turn that resends the SAME image (same imgHash) as an
+// already-committed resident block must reuse it — the tower closure must never run, UploadKV
+// must not be called again, and Generation.PrefillReused must report the fast path actually
+// fired (not just "no error," which a silently-declined fast path would also produce).
+func TestGenerateVL_imageReuseFastPath_sameImageSkipsTower(t *testing.T) {
+	m, g := loadGemma3VLTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = rf
+
+	towerCalls := 0
+	features := func() ([]float32, error) {
+		towerCalls++
+		return g.ImageFeatures, nil
+	}
+	const imgHash = 42
+	const maxNew = 3
+
+	// Turn 1: cold — commits the image block to the resident KV.
+	stream1, gen1 := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, imgHash, features, maxNew, SamplingParams{Temperature: 0})
+	var gen1IDs []int
+	for id := range stream1 {
+		gen1IDs = append(gen1IDs, id)
+	}
+	if err := gen1.Err(); err != nil {
+		t.Fatalf("turn 1 GenerateVL: %v", err)
+	}
+	if towerCalls != 1 {
+		t.Fatalf("turn 1: tower called %d times, want 1 (a cold turn must run it)", towerCalls)
+	}
+	if gen1.PrefillReused != 0 {
+		t.Errorf("turn 1: PrefillReused = %d, want 0 (nothing committed yet)", gen1.PrefillReused)
+	}
+	uploadsAfterTurn1 := len(rf.uploadKVs)
+	if uploadsAfterTurn1 == 0 {
+		t.Fatal("turn 1 never uploaded KV — test setup broke, turn 2 couldn't reuse anything real")
+	}
+
+	// Turn 2: the SAME image resent, as a strict extension of turn 1's committed prefix — the
+	// agent-loop shape P9(a) exists for (previous prompt + reply + new user text).
+	prompt2 := append(append([]int{}, g.InputIDs...), gen1IDs...)
+	prompt2 = append(prompt2, g.InputIDs[len(g.InputIDs)-1]) // one more token, extending past the commit
+	stream2, gen2 := m.GenerateVL(context.Background(), prompt2, g.ImageTokenStart, g.MMTokens, imgHash, features, maxNew, SamplingParams{Temperature: 0})
+	var got2 []int
+	for id := range stream2 {
+		got2 = append(got2, id)
+	}
+	if err := gen2.Err(); err != nil {
+		t.Fatalf("turn 2 GenerateVL: %v", err)
+	}
+	if len(got2) == 0 {
+		t.Fatal("turn 2 streamed no tokens")
+	}
+	if towerCalls != 1 {
+		t.Errorf("turn 2: tower called again (now %d total) — the same resent image must skip it entirely", towerCalls)
+	}
+	if len(rf.uploadKVs) != uploadsAfterTurn1 {
+		t.Errorf("turn 2: UploadKV called again (%d total, was %d) — the fast path must reseed via Forward, not re-upload", len(rf.uploadKVs), uploadsAfterTurn1)
+	}
+	if want := g.ImageTokenStart + g.MMTokens; gen2.PrefillReused < want {
+		t.Errorf("turn 2: PrefillReused = %d, want >= %d (the image block plus everything before it)", gen2.PrefillReused, want)
+	}
+	wantIDs := append(append([]int{}, prompt2...), got2...)
+	if !equalIntSlices(m.resIDs, wantIDs) {
+		t.Errorf("resIDs after turn 2 = %v, want prompt2+generated2 %v", m.resIDs, wantIDs)
+	}
+	if len(m.resImgBlocks) != 1 {
+		t.Errorf("resImgBlocks after turn 2 = %v, want exactly 1 (re-verified, not duplicated)", m.resImgBlocks)
+	}
+}
+
+// TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower is the atomicity kill
+// condition's decoder-level half (the real-hardware half lives in
+// gpu/resident_reuse_parity_test.go): a turn that claims a DIFFERENT image (a different imgHash)
+// at the SAME placeholder position an earlier turn committed must NOT take the fast path — the
+// tower must run, and the turn must fall through to the ordinary full-prefill path exactly as if
+// nothing were resident at all.
+func TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower(t *testing.T) {
+	m, g := loadGemma3VLTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = rf
+
+	towerCalls := 0
+	features := func() ([]float32, error) {
+		towerCalls++
+		return g.ImageFeatures, nil
+	}
+	const maxNew = 3
+
+	stream1, gen1 := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 42, features, maxNew, SamplingParams{Temperature: 0})
+	for range stream1 { //nolint:revive // draining is the point
+	}
+	if err := gen1.Err(); err != nil {
+		t.Fatalf("turn 1 GenerateVL: %v", err)
+	}
+	if towerCalls != 1 {
+		t.Fatalf("turn 1: tower called %d times, want 1", towerCalls)
+	}
+
+	// Turn 2: SAME placeholder position, a DIFFERENT claimed image (hash 99, not 42) — the
+	// adversarial case. The placeholder token ids themselves are identical either way (that is
+	// exactly why the hash exists at all), so g.InputIDs is reused verbatim as the prompt.
+	stream2, gen2 := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 99, features, maxNew, SamplingParams{Temperature: 0})
+	for range stream2 { //nolint:revive
+	}
+	if err := gen2.Err(); err != nil {
+		t.Fatalf("turn 2 GenerateVL: %v", err)
+	}
+	if towerCalls != 2 {
+		t.Errorf("turn 2: tower called %d times total, want 2 — a different image must never skip it", towerCalls)
+	}
+	if gen2.PrefillReused != 0 {
+		t.Errorf("turn 2: PrefillReused = %d, want 0 — a hash mismatch at the block's own start must not report any reuse", gen2.PrefillReused)
+	}
+}
+
+// TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE confirms P9(a)'s fast path
+// exercises Qwen's m-RoPE-aware reseed (residentPrefillSeedMRoPE), not just the Gemma-shaped
+// plain-Forward path TestGenerateVL_imageReuseFastPath_sameImageSkipsTower already covers — the
+// ropePos = pos + mropeDelta distinction only ForwardMRoPE can express (decoder/residency.go).
+func TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE(t *testing.T) {
+	m, g := loadQwen25VLTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = rf
+
+	towerCalls := 0
+	features := func() ([]float32, error) {
+		towerCalls++
+		return g.ImageFeatures, nil
+	}
+	const imgHash = 7
+	maxNew := len(g.Continuation)
+
+	stream1, gen1 := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, imgHash, features,
+		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
+	var gen1IDs []int
+	for id := range stream1 {
+		gen1IDs = append(gen1IDs, id)
+	}
+	if err := gen1.Err(); err != nil {
+		t.Fatalf("turn 1 GenerateQwenVL: %v", err)
+	}
+	if towerCalls != 1 {
+		t.Fatalf("turn 1: tower called %d times, want 1", towerCalls)
+	}
+	forwardsAfterTurn1 := rf.forwards
+
+	prompt2 := append(append([]int{}, g.InputIDs...), gen1IDs...)
+	prompt2 = append(prompt2, g.InputIDs[len(g.InputIDs)-1])
+	stream2, gen2 := m.GenerateQwenVL(context.Background(), prompt2, g.ImageStart, g.NImageTokens, imgHash, features,
+		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
+	var got2 []int
+	for id := range stream2 {
+		got2 = append(got2, id)
+	}
+	if err := gen2.Err(); err != nil {
+		t.Fatalf("turn 2 GenerateQwenVL: %v", err)
+	}
+	if len(got2) == 0 {
+		t.Fatal("turn 2 streamed no tokens")
+	}
+	if towerCalls != 1 {
+		t.Errorf("turn 2: tower called again (now %d total) — the same resent image must skip it", towerCalls)
+	}
+	if want := g.ImageStart + g.NImageTokens; gen2.PrefillReused < want {
+		t.Errorf("turn 2: PrefillReused = %d, want >= %d", gen2.PrefillReused, want)
+	}
+	if rf.forwards <= forwardsAfterTurn1 {
+		t.Error("turn 2 never called resident Forward (via ForwardMRoPE) — decode did not run at all")
 	}
 }
 

@@ -280,8 +280,9 @@ func TestQwen25VL_generate(t *testing.T) {
 	}
 	defer m.Close()
 
-	ch, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageFeatures,
-		g.ImageStart, g.NImageTokens, g.GridTHW, 2, g.ImageToken, len(g.Continuation), SamplingParams{})
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	ch, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
+		g.GridTHW, 2, g.ImageToken, len(g.Continuation), SamplingParams{})
 	var got []int
 	for id := range ch {
 		got = append(got, id)

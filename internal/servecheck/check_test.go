@@ -298,6 +298,63 @@ func TestTools_noCallIsSkipNotFail(t *testing.T) {
 	}
 }
 
+// A server with no vision tower loaded 400s every image request the same way regardless of
+// model (vision_serve.go's serveVisionChatWith) — that is a fact about how `serve` was started,
+// not a broken route, so it must SKIP rather than FAIL (same rule as TestTools_noCallIsSkipNotFail).
+func TestVision_noVisionTowerIsSkipNotFail(t *testing.T) {
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("this model has no vision tower (start with --vision <dir> to enable image input)"))
+	})
+	res := c.Vision(context.Background(), "m")
+	if res.OK {
+		t.Fatal("a 400 for 'no vision tower' must not report OK")
+	}
+	if !res.Skip {
+		t.Fatalf("no vision tower loaded must SKIP, not fail: %+v", res)
+	}
+}
+
+// A loaded vision tower that correctly names the fixed test image's color must pass.
+func TestVision_correctAnswerPasses(t *testing.T) {
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Content []struct {
+					Type     string                `json:"type"`
+					ImageURL *struct{ URL string } `json:"image_url"`
+				} `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Messages) != 1 || len(req.Messages[0].Content) != 2 ||
+			req.Messages[0].Content[1].ImageURL == nil ||
+			!strings.HasPrefix(req.Messages[0].Content[1].ImageURL.URL, "data:image/png;base64,") {
+			t.Errorf("request did not carry a data: PNG image_url part: %+v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{
+			{"message": map[string]any{"content": "Red."}}}})
+	})
+	res := c.Vision(context.Background(), "m")
+	if !res.OK {
+		t.Fatalf("a correct color answer must pass: %+v", res)
+	}
+}
+
+// A wrong answer from a model that DOES have a vision tower (the request succeeded) must FAIL,
+// not SKIP — SKIP is reserved for "no tower loaded," not for a checkpoint that sees the image
+// and gets the question wrong.
+func TestVision_wrongAnswerFails(t *testing.T) {
+	c := newFake(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{
+			{"message": map[string]any{"content": "Blue."}}}})
+	})
+	res := c.Vision(context.Background(), "m")
+	if res.OK || res.Skip {
+		t.Fatalf("a wrong color answer must FAIL (not SKIP), got %+v", res)
+	}
+}
+
 // R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): Tools' minimal one-function schema
 // cannot expose "does this model still call the right tool once the schema looks like a real
 // agent's" — a real harness (opencode) broke on exactly that with a server Tools itself passes.
