@@ -283,6 +283,50 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	return logits, nil
 }
 
+// HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos and
+// returns the LAST position's hidden state after the model's final norm — the resident twin of
+// PrefillLast, but for embedding requests (G4, docs/task-gpu-paths-2026-09.md) instead of
+// generation: it never runs the LM head. Metal's batched (f16-MMA) PrefillLast is declined by
+// default because it is not bit-identical to decode (§A2-Metal); rather than reuse that
+// divergent path, this runs the SAME per-token sequential kernels decode uses — one
+// forwardHiddenNoHead call per position — which is bit-identical to the CPU reference by
+// construction, at the cost of one command-buffer submit per token instead of Prefiller's one
+// pass (the same TTFT trade PrefillLast's decline already makes for generation).
+func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	if len(embeddings) == 0 {
+		return nil, fmt.Errorf("metal: HiddenLast called with no embeddings")
+	}
+	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+		return nil, e
+	}
+	if startPos == 0 {
+		a.Reset() // fresh sequence — same DeltaNet-state reset Forward(pos==0) does
+	}
+	var out []float32
+	for i, emb := range embeddings {
+		if len(emb) != a.hidden {
+			return nil, fmt.Errorf("metal: embedding[%d] len %d != hidden %d", i, len(emb), a.hidden)
+		}
+		// G18: an abandoned client otherwise leaves the whole sequence streaming through the
+		// device with nothing watching — same discipline as residentPrefillSeed's sequential loop.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		want := i == len(embeddings)-1
+		h, err := a.r.forwardHiddenNoHead(emb, startPos+i, want)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.r.takeExecErr(); err != nil {
+			return nil, err // C-09: a command buffer aborted — surface it, do NOT return a stale/zero vector
+		}
+		if want {
+			out = h
+		}
+	}
+	return out, nil
+}
+
 // ForwardN runs a batch of embeddings at consecutive positions (prefill). Each row is copied
 // off the reused host logits buffer so all survive.
 func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {

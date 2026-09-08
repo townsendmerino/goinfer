@@ -90,6 +90,25 @@ type Prefiller interface {
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
+// ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at
+// positions startPos..startPos+len-1 and return the LAST position's hidden state AFTER the
+// model's final norm — the resident twin of Prefiller, but stopping before the LM head instead
+// of after it (decoder/embed.go's HiddenLast never needs logits, and the head is the single
+// most expensive matmul in a forward). Used by HiddenLast/G4 (docs/task-gpu-paths-2026-09.md):
+// an embedding request on a GPU box otherwise runs the whole text decoder on the CPU even when
+// the same arch decodes resident, the exact defect G2 documents for image turns.
+//
+// startPos is always 0 for HiddenLast's callers today (a fresh KV per sequence, no prefix
+// reuse), but the parameter mirrors Prefiller's so a backend can share its prefill-chunking
+// scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a backend
+// whose batched forward is NOT bit-identical to its own sequential one (Metal's, by default —
+// see backend.go's GOINFER_METAL_BATCHED_PREFILL gate) must implement this some other way (a
+// per-token sequential forward that stops before the head) rather than reuse a declining
+// Prefiller, or must not implement this interface at all.
+type ResidentHiddenLast interface {
+	HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) (hidden []float32, err error)
+}
+
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
 // prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
 // Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent

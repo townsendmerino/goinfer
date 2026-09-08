@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 // Decoder-as-embedder seam (docs/completed/task-decoder-as-embedder.md).
@@ -64,6 +65,23 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 			return nil, fmt.Errorf("decoder.HiddenLast: token %d at index %d out of vocab [0,%d)", id, i, a.VocabSize)
 		}
 	}
+	// G4 (docs/task-gpu-paths-2026-09.md): on a GPU box this arch may decode resident while
+	// embedding requests still ran the whole text decoder on the CPU — the same class of gap G2
+	// documents for image turns. Same resBusy claim Generate uses (M9): a loser (a generation
+	// already in flight on this Model) falls through to the CPU path below exactly like it
+	// always has, and resIDs is left unknown either way (residentForgetIDs), since a HiddenLast
+	// prefill has nothing durable worth remembering for the next Generate call.
+	if m.resident != nil {
+		if rh, ok := m.resident.(ResidentHiddenLast); ok && atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
+			out, err := m.hiddenLastResident(rh, ids)
+			atomic.StoreInt32(&m.resBusy, 0)
+			if err == nil {
+				return out, nil
+			}
+			// A resident decline (OOM, cap, backend-specific refusal) is not a request failure —
+			// fall through to the CPU path exactly as if this arch had no resident backend at all.
+		}
+	}
 	// P-17: canBatchN excludes K==1 (nothing to batch), the own-runLayers families (already
 	// rejected above), and the NonGatedMLP/LearnedPosEmbed families runLayersFromEmbedN doesn't
 	// implement — those keep the per-token loop (hiddenLastSequential). Everything else runs the
@@ -74,6 +92,19 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 		return m.hiddenLastBatched(ids)
 	}
 	return m.hiddenLastSequential(ids)
+}
+
+// hiddenLastResident runs the resident twin of hiddenLastBatched: embed ids on the host (the
+// same embedResident the plain resident forward uses) and hand the whole sequence to the
+// backend's ResidentHiddenLast in one call, starting at position 0 — HiddenLast never reuses a
+// previous resident KV (each call is a fresh sequence), unlike Generate's prefix reuse.
+func (m *Model) hiddenLastResident(rh ResidentHiddenLast, ids []int) ([]float32, error) {
+	m.residentForgetIDs()
+	embs := make([][]float32, len(ids))
+	for i, id := range ids {
+		embs[i] = m.embedResident(id)
+	}
+	return rh.HiddenLast(context.Background(), embs, 0)
 }
 
 // hiddenLastBatched is HiddenLast's fast path: one batched forward over the whole

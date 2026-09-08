@@ -12,6 +12,7 @@ import (
 	"time"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // errPrefillDeclined marks an ARCH/GEOMETRY decline from the batched path (MoE, K=V, non-int4,
@@ -134,11 +135,34 @@ func prefillChunkRows() int {
 }
 
 // prefillChunked runs the prompt through the batched path in passes of at most prefillChunkRows()
-// rows, returning the LAST row's logits. Every pass writes its own K/V at absolute positions
-// startPos+i…, and attention reads the cache — so pass k attends the keys passes 0…k-1 wrote exactly
-// as one M=len pass would have, and the result is bit-identical to the unchunked path
-// (TestPrefillChunked_bitIdentical). What changes is only the peak scratch, which is what the
-// unchunked path ran out of.
+// rows, returning the LAST row's logits. It is prefillChunkedTail with finalTail fixed to
+// tailLastLogits — see that function for the chunking/OOM-retry/capBTaps rationale, unchanged
+// here; this wrapper exists so PrefillLast's call site and its behavior are untouched by G4.
+func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	return r.prefillChunkedTail(ctx, embeddings, startPos, tailLastLogits)
+}
+
+// HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for G4
+// (docs/task-gpu-paths-2026-09.md, embedding requests): the resident batched pass ingests the
+// whole sequence exactly as PrefillLast does — same chunking, same K/V it writes, bit-identical
+// per-row math — but the final chunk's tail computes the last row's post-final-norm hidden state
+// instead of logits, and never dispatches the LM head at all: an embedder never needs it
+// (decoder/embed.go's HiddenLast doc comment), and the head is the single most expensive matmul
+// in a forward. startPos is always 0 for every caller today (HiddenLast has no prefix reuse), but
+// this takes it anyway so it can share prefillChunkedTail's chunk-boundary bookkeeping unchanged.
+func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	return r.prefillChunkedTail(ctx, embeddings, startPos, tailHiddenLast)
+}
+
+// prefillChunkedTail runs the prompt through the batched path in passes of at most
+// prefillChunkRows() rows, returning the LAST row's tail output — logits (tailLastLogits,
+// PrefillLast) or the post-final-norm hidden state (tailHiddenLast, HiddenLast/G4). Every pass
+// writes its own K/V at absolute positions startPos+i…, and attention reads the cache — so pass k
+// attends the keys passes 0…k-1 wrote exactly as one M=len pass would have, and the result is
+// bit-identical to the unchunked path (TestPrefillChunked_bitIdentical covers the tailLastLogits
+// case this refactor must not have changed). What changes is only the peak scratch, which is what
+// the unchunked path ran out of. Every chunk but the last always runs tailKVOnly regardless of
+// finalTail — a non-final chunk's logits/hidden-state output is never read by either caller.
 //
 // A chunk that OOMs is retried at half the width from the SAME position: the passes already done are
 // committed to the positional KV and stay valid, so a retry re-enters at the boundary rather than
@@ -148,9 +172,10 @@ func prefillChunkRows() int {
 // NOT CHUNKED when a batched hidden-state capture is armed (r.capBTaps): those taps record the
 // residual for ALL M rows of one pass, and a chunked run would leave a block drafter holding the last
 // chunk's rows only. That combination is not reachable today — the capture is armed by the verify
-// entry points, not by PrefillLast — but a partial capture would be a silent wrong answer rather than
-// a slow one, so it declines to one pass instead of being merely documented as unreachable.
-func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+// entry points, not by PrefillLast or HiddenLast — but a partial capture would be a silent wrong
+// answer rather than a slow one, so it declines to one pass instead of being merely documented as
+// unreachable.
+func (r *cudaResident) prefillChunkedTail(ctx context.Context, embeddings [][]float32, startPos int, finalTail int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -170,7 +195,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		return nil, e
 	}
 	if M <= chunk || len(r.capBTaps) > 0 {
-		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits)
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, finalTail)
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +214,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		last := i+n == M
 		tail := tailKVOnly
 		if last {
-			tail = tailLastLogits
+			tail = finalTail
 		}
 		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail)
 		if err != nil {
@@ -549,6 +574,12 @@ const (
 	// non-final chunks). It is the batched twin of the sequential path's
 	// ForwardNoLogits — the final norm, the ~389 M-parameter head GEMV and the
 	// [M, hidden] readback are all dead work for a chunk whose logits nobody reads.
+	tailHiddenLast // head the LAST row only, but with the norm instead of the head (HiddenLast,
+	// G4, docs/task-gpu-paths-2026-09.md): runs the SAME per-row final-norm+quant
+	// the head reads from, then dequantizes r.aq/r.aSc into a float32 hidden
+	// vector instead of running the LM head GEMV at all — an embedder never
+	// needs logits, and the head is the single most expensive matmul in a
+	// forward. Never batched across rows, like tailLastLogits.
 )
 
 func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int) ([][]float32, []int, error) {
@@ -897,6 +928,26 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
 				return e
 			}
+			if tail == tailHiddenLast {
+				// No head dispatch at all — r.aq/r.aSc (just written by rms above) already hold
+				// exactly what the head would have read: the quantized, post-final-norm hidden
+				// state. Download and dequantize instead of projecting to vocab.
+				if e := r.stream.Sync(); e != nil {
+					return e
+				}
+				q := make([]int8, hidden)
+				if e := gpu.Download(r.aq, q); e != nil {
+					return e
+				}
+				sc := make([]float32, 1)
+				if e := gpu.Download(r.aSc, sc); e != nil {
+					return e
+				}
+				row := make([]float32, hidden)
+				linalg.DequantizeRowInt8(q, sc[0], row)
+				outs[m] = row
+				continue
+			}
 			if e := r.doG(r.lmW, r.aq, r.aSc, ArgNull(), r.logits, 0); e != nil {
 				return e
 			}
@@ -925,6 +976,12 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	}
 	// Final-logit softcap (Gemma) — host-side, exactly as step(). No-op (0) for the dense families
 	// this path serves, but kept so the contract matches Forward if a softcapped dense arch appears.
+	// SKIPPED for tailHiddenLast: outs holds a HIDDEN STATE there, not logits, and Gemma's softcap
+	// is a logit-only transform — applying it here would silently corrupt every G4 embedding on a
+	// softcapped family.
+	if tail == tailHiddenLast {
+		return outs, ids, nil
+	}
 	for _, out := range outs {
 		applySoftcap(out, r.finalSoftcap)
 	}

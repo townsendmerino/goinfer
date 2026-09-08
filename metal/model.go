@@ -1032,6 +1032,41 @@ func (r *resident) ForwardEmb(emb []float32, pos int) []float32 {
 	return r.forwardLogits(pos)
 }
 
+// forwardHiddenNoHead encodes the trunk (all layers + final norm) for one token at absolute
+// position pos, writing this position's K/V into the resident cache exactly like ForwardEmb
+// does, but never dispatches the LM head — G4's embedding seam (decoder.ResidentHiddenLast)
+// never needs logits, and the head is the single most expensive matmul in a forward (vocab×
+// hidden). want is false for every position but the last of a HiddenLast sequence: those still
+// need their K/V written (attention over the whole sequence, matching hiddenLastBatched's
+// causal chain) but their hidden state is never read, so this returns nil for them rather than
+// paying the int8→float32 dequant loop on rows nobody wants.
+//
+// Numerically: encodeNorm's rmsnorm_quant/layernorm_quant dispatch is the SAME kernel the LM
+// head reads from in Forward/ForwardEmb (r.aq/r.aSc) — this only omits the head dispatch that
+// follows it, so the returned hidden state is exactly what feeds the head on the decode path,
+// dequantized (matches forwardHeadForTest's act, which this generalizes into production use).
+func (r *resident) forwardHiddenNoHead(emb []float32, pos int, want bool) ([]float32, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	copy(r.x.Floats(), emb)
+	r.addLearnedPos(pos)
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	e := r.q.Begin()
+	r.encodeTrunkInto(e) // layers → final norm → r.aq/r.aSc; no head dispatch
+	e.End()
+	r.recordExecErr(e.Err()) // C-09
+	if !want {
+		return nil, nil
+	}
+	q, sc := r.aq.Int8s(), r.aSc.Floats()[0]
+	out := make([]float32, r.H)
+	for i := range out {
+		out[i] = float32(q[i]) * sc
+	}
+	return out, nil
+}
+
 // forwardLogits encodes the trunk + full lm head and reads back logits[V]. Caller must hold
 // the OS thread and have filled r.x with the input embedding.
 func (r *resident) forwardLogits(pos int) []float32 {
