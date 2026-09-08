@@ -41,9 +41,13 @@
 > closing note explains why a refusal is the correct outcome here, not a new failure. **v0.17.2
 > tagged and released 2026-09-08 on this basis.** A fourth data point after the tag confirmed the
 > fix also correctly ADMITS a comfortably-fitting model (Qwen2.5-Coder-3B, 2.4 GB margin, zero
-> Swapouts) — and narrowed, rather than closed, what remains open: a real agent turn completing
-> end-to-end on this hardware, which every size tried so far (0.5B/1.5B/3B too small to
-> tool-call, 7B too big to fit) has failed to reach, for two entirely different reasons.
+> Swapouts) — and narrowed what remained open: every Mac attempt (0.5B/1.5B/3B too small to
+> tool-call, 7B too big to fit) had failed for one of two independent reasons, memory or
+> capability, with nothing yet true on both. **R14's own gap closed the same day, on different
+> hardware**: Qwen2.5-7B-Instruct, CUDA-resident on nobara-pc's RTX 2070 SUPER, passed `serve
+> check`'s harness-scale row and then completed a real opencode two-turn tool-calling task — the
+> first successful end-to-end opencode completion in this project's history. See R14's own entry
+> below and `docs/integrations/opencode.md` for the full account.
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
@@ -1147,13 +1151,22 @@ publishes, and that reconstruction produced the run's only safety incident (R13'
 
 **Fixed.** New [`docs/integrations/opencode.md`](integrations/opencode.md): the `opencode.json`
 provider config that actually works, `serve check`'s harness-scale tools row promoted to "run
-this before opencode, not after" (its prediction matched both real attempts on record), and an
-honest accounting of what has and has not been verified — no run in this project has yet
-completed a full opencode tool-call turn end to end, for two *different* reasons (a model too
-small to tool-call under a harness-scale schema on nobara-pc; a model that never got the chance
-to try, killed for memory safety, on the Mac) — stated plainly rather than letting the page imply
-success it has not measured. Folds in R11's registry `tools:` column, honestly mostly "not yet
-measured."
+this before opencode, not after."
+
+**Closed, not merely documented — 2026-09-08, nobara-pc.** At the time this section first
+shipped, no run in this project had completed a full opencode tool-call turn end to end, for two
+different reasons (a model too small to tool-call under a harness-scale schema on nobara-pc; a
+model that never got the chance to try, killed for memory safety, on the Mac). Two more attempts
+after that (the Mac's third live re-run correctly refusing rather than swapping; a 3B model
+loading comfortably but still too small to tool-call) narrowed the gap to two independent axes —
+memory fit and tool-calling capability — with no data point yet true on both. **Qwen2.5-7B-Instruct
+q4_k_m, int4, CUDA-resident, `-ctx 16384`, on nobara-pc's RTX 2070 SUPER (8 GB VRAM) is that data
+point**: `serve check` passed all 8 rows including `tools, harness-scale` — the first checkpoint
+in this project's history to do so — and opencode's real "build" agent then completed the
+standard two-turn task with real tool calls (`Read notes.txt`, `Glob "*.txt"`) and a correct
+answer, 7,165 and 7,399 input tokens across the two turns, VRAM steady at 6,824/8,192 MiB
+throughout. Full accounting, including the config and the reasoning for why THIS combination was
+the one to try, is in `docs/integrations/opencode.md`'s "The working configuration, measured."
 
 **Gate.** New `pull/integrations_doc_test.go`:
 `TestIntegrationsDoc_everyHarnessTheReadmeNamesHasAPage` reads the README's own "Pointing a real
