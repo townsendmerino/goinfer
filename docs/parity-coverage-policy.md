@@ -1642,3 +1642,74 @@ check such buffers after loading — e.g. assert non-NaN and roughly the expecte
 rather than trusting `from_pretrained` to have materialized them correctly. lfm2 and
 ministral3 (next in this batch) should each be checked for this pattern before being
 trusted as "the reference disagrees with goinfer, so goinfer is wrong."
+
+## Timing: finishing pass, Group 1 — qwen2_moe + qwen3_moe (2026-09-08, Linux box)
+
+**qwen2_moe (Qwen/Qwen1.5-MoE-A2.7B, ~28.6 GB bf16)** — ≈15 min, PASS, promoted to
+real-oracle (int8 weights/f32 activations, cosine 0.999544). Split: adapt ~2 min (new
+gate + pin script, following qwen3_moe's own int8 shape — an f32 load would need ~57 GB,
+too tight here), download 11 min, HF reference ~92 s, gate + registration + merge + regen
+~2 min. Item 5: zero — the base-model completion ("\_\_\_.\\nParis\\nLondon\\nBerlin")
+looked odd on first read but is ordinary base-model quiz-format behavior, not a defect.
+
+**qwen3_moe (Qwen/Qwen3-30B-A3B, ~60 GB bf16)** — ≈26 min, PASS, promoted to real-oracle
+(cosine 0.998344). The "zero new code" claim was verified before starting and held exactly:
+gate, pin script, `emitParityRow` call, and required-list wiring all pre-existed; only the
+download (11.6 min) and the run (HF reference ~14 min including an 8-min weight load, gate
+2 min) were needed. Item 5: zero.
+
+Both downloads ran in parallel; group wall time ≈ 34 min. `TestRealckptGateIsListedOrExplicitlyNotRequired`
+verified green before each run — no discipline gap this time.
+
+## Timing: finishing pass, Group 2 — laguna + qwen3_5, the sequential oracle (2026-09-08, Linux box)
+
+**Both families already had a real checkpoint local and a required gate that was
+coherence-only by design** — `TestLagunaReal_gate` never called `emitParityRow`; `qwen3_5`'s
+own manifest text said plainly no bf16 reference forward had ever run. The technique:
+`scripts/pin_sequential_oracle.py`, one script with a `--family` parameter, adapting
+`pin_qwen3next_real.py`'s accelerate disk-offload approach (the reference and goinfer never
+need to be resident at the same instant) to two smaller models. One script serves both
+because the offload machinery is identical; the two real divergences (laguna needs
+`trust_remote_code=True` + `AutoModelForCausalLM`; qwen3_5's release is a vision-language
+wrapper needing `AutoModelForImageTextToText` + `pixel_values=None`, the same shape
+mistral3's own real gate needed) are isolated in a small per-family branch, not duplicated
+boilerplate.
+
+**laguna (poolside Laguna-XS.2, 33B-A3B)** — ≈20 min, **FAILED, not promoted**. Adapt/script
+work ≈10 min (shared with qwen3_5, largely done reading the qwen3next precedent). HF
+reference: 583 s weight load (disk-offload placement 26 CPU-resident / 18 disk-offloaded
+layers) + 229 s prompt forward + 106 s over 8 continuation steps ≈ 15.3 min total, coherent
+output (`"Paris.\nThe capital of Germany is"`). Gate: 108 s. Argmax on the prompt matched
+(22345); last-logit cosine was 0.984776, clearing the pre-registered 0.98 int4 floor
+(int4 because 33B bf16 doesn't fit at int8 either) — but the greedy continuation diverged at
+step 3 (got 110, wanted 785), which `realLogitOracleQuant` treats as an unconditional
+failure independent of the cosine floor. Named, not chased further: consistent with — not
+confirmed as — the MoE router-flip noise this repo has already characterized at int8
+(`docs/QUEUE.md`'s "MoE router-flip noise floor": a bit-identical router still flips top-k
+in 779/3200 decisions under ~0.5% input noise), now possibly showing at int4 on a
+256-expert top-8 router. Gate left required and red.
+
+**qwen3_5 (Qwen/Qwen3.8-27B)** — ≈6 min, **FAILED, not promoted**. HF reference: 5 s
+weight load (placement 50 CPU / 19 disk — much lighter than laguna's, this checkpoint is
+smaller) + 40 s prompt forward + 8 continuation steps (~100 s) ≈ 2.4 min total, coherent
+output (`"Paris.\nThe capital of Germany is"` — the same opening laguna's own reference
+produced, on an unrelated checkpoint and prompt, worth noting as a coincidence not a
+signal). Gate: 115 s. Argmax on the prompt matched (11751); cosine 0.993235 cleared the
+0.98 int4 floor comfortably — tighter than laguna's own margin — but continuation[2]
+diverged (got 11751, repeating "Paris"; wanted 198, a newline). **This family is DENSE, no
+MoE at all**, so laguna's router-flip explanation cannot apply here. The two failures share
+an exact SHAPE (prompt argmax exact, cosine clears the registered floor, continuation drifts
+a few tokens in) while sharing no mixer in common (laguna: MoE; qwen3_5: DeltaNet+softmax
+hybrid) — worth flagging as a possible lead pointing at int4 quantization behavior on this
+box generally, rather than either family's own wiring specifically. Not investigated
+further, per policy; a lead for whoever authorizes the fix, not a claim. Gate left required
+and red.
+
+**Group total ≈ 26 min for two attempts, both real defects (or defect-shaped findings) and
+neither promoted.** This is the first group in the finishing pass where the "asset already
+local, gate already exists" shortcut did not translate into a fast, clean promotion — both
+families needed the SAME new sequential-oracle engineering investment as planned, and both
+then failed at the same integration point (greedy continuation under int4) despite very
+different architectures. Read against the earlier internlm2/olmo3 findings, this raises the
+running count of real-checkpoint promotions that surfaced a genuine defect (or a
+defect-shaped, unresolved lead) to four out of eight families attempted past smollm3 — half.

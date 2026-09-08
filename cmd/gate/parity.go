@@ -118,11 +118,13 @@ var parityRealckptGates = []gateCheck{
 	{"granite-gguf", "TestGraniteReal_gate"},
 	{"granite-oracle", "TestGraniteReal_oracle"},
 	{"laguna", "TestLagunaReal_gate"},
+	{"laguna-oracle", "TestLagunaReal_oracle"},
 	{"laguna-gguf", "TestLagunaGGUF_gate"},
 	{"glm4moe-air", "TestGlm4MoeAir_gate"},
 	{"cohere", "TestCohereAyaReal_gate"},
 	{"cohere2", "TestCohere2R7bReal_gate"},
 	{"qwen3.8-dense", "TestQwen38Real_gate"},
+	{"qwen3.8-dense-oracle", "TestQwen38Real_oracle"},
 	{"qwen3.8-gguf", "TestQwen38GGUF_gate"},
 	{"qwen3.8-gguf-weightdiff", "TestQwen38GGUF_weightDiff"},
 	// smollm3's asset (testdata/assets.json GOINFER_SMOLLM3_3B) and gate
@@ -173,6 +175,8 @@ var emitGates = []gateCheck{
 	{"olmo_hybrid", "TestOlmoHybridReal_gate"},
 	{"internlm2", "TestInternLM2_1_8bReal_gate"},
 	{"qwen2_moe", "TestQwen2MoeReal_oracle"},
+	{"laguna", "TestLagunaReal_oracle"},
+	{"qwen3_5", "TestQwen38Real_oracle"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -705,6 +709,31 @@ var awaitingFirstConfirmation = map[string]string{
 		"released checkpoint); registered alongside the gate and asset in the same change, per the " +
 		"discipline established after smollm3/lfm2/mistral3/internlm2's registration gaps; promote from " +
 		"the first sweep that runs it",
+	"TestLagunaReal_oracle": "2026-09-08 — newly required (T3 numeric promotion of laguna; " +
+		"TestLagunaReal_gate above was coherence-only by design, never comparing a logit against an " +
+		"independent reference); pinned via scripts/pin_sequential_oracle.py's accelerate disk-offload " +
+		"technique (adapted from pin_qwen3next_real.py) on a checkpoint already resident on this box, " +
+		"no download. First run FAILED on the greedy continuation (argmax on the prompt matched, " +
+		"cosine 0.984776 cleared the pre-registered 0.98 int4 floor, but continuation[3] diverged: " +
+		"got 110, want 785) — not investigated further; consistent with, but not confirmed as, the " +
+		"MoE router-flip noise this repo has already characterized at int8 (docs/queue's " +
+		"'MoE router-flip noise floor'), now seen at int4 on a 256-expert top-8 router. Left required " +
+		"and red rather than moved to realckptNotRequired. Still promote from the first sweep that " +
+		"runs it once resolved.",
+	"TestQwen38Real_oracle": "2026-09-08 — newly required (T3 numeric promotion of qwen3_5; " +
+		"TestQwen38Real_gate above was coherence-only — this family's own manifest text said plainly " +
+		"no bf16 reference forward had ever been run); pinned via scripts/pin_sequential_oracle.py " +
+		"(the SAME script as laguna's, --family qwen3_5) on a checkpoint already resident on this " +
+		"box, no download. First run FAILED on the greedy continuation, the same shape as laguna's " +
+		"above: argmax on the prompt matched (11751), cosine 0.993235 cleared the 0.98 int4 floor " +
+		"comfortably, but continuation[2] diverged (got 11751 — repeats \"Paris\" — want 198, a " +
+		"newline). Unlike laguna this family is DENSE (no MoE), so the router-flip explanation " +
+		"offered there does not apply here; the two families sharing the same failure SHAPE (prompt " +
+		"argmax + floor-clearing cosine, continuation drift a few tokens in) despite sharing no " +
+		"mixer in common (DeltaNet+softmax hybrid vs MoE) may point at int4 itself on this box's " +
+		"quantizer rather than either family's own wiring — not investigated further; a real lead " +
+		"for whoever picks this up next, not a claim. Left required and red rather than moved to " +
+		"realckptNotRequired. Still promote from the first sweep that runs it once resolved.",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS

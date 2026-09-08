@@ -196,3 +196,21 @@ func TestLagunaReal_gate(t *testing.T) {
 			"a trigram ratio cannot see", hits, strings.TrimSpace(text))
 	}
 }
+
+// TestLagunaReal_oracle is the T3 numeric row: the released bf16 weights matched against an
+// HF bf16 forward of the SAME weights, pinned offline via scripts/pin_sequential_oracle.py
+// (accelerate disk offload — the reference and goinfer are never resident at the same instant,
+// the same technique scripts/pin_qwen3next_real.py already proved on an 80B model). Until this
+// gate, TestLagunaReal_gate above was coherence-only BY DESIGN: it proves the loader reads the
+// real checkpoint correctly (three real surprises found that way, see the file doc comment) but
+// never compared a single logit against an independent reference. int4, not int8: 33B bf16 is
+// ~63GB on disk and does not fit alongside f32 activations in 62GB of RAM at int8 either — the
+// same capacity-forced choice qwen3next's own real gate makes, hence the 0.98 (not 0.99) floor.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestLagunaReal_oracle -v -timeout 60m
+func TestLagunaReal_oracle(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := assetPath(t, "GOINFER_LAGUNA_XS2")
+	realLogitOracleQuant(t, ckpt, "../testdata/laguna_real_golden.json", "laguna", "laguna",
+		"HF bf16 (poolside Laguna-XS.2, 33B-A3B; full model via accelerate disk offload; int4 weights, f32 activations)", "int4")
+}

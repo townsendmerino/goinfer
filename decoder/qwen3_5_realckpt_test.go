@@ -222,3 +222,22 @@ func TestQwen38Real_gate(t *testing.T) {
 			"a trigram ratio cannot see", hits, strings.TrimSpace(text))
 	}
 }
+
+// TestQwen38Real_oracle is the T3 numeric row: the released bf16 weights matched against an
+// HF bf16 forward of the SAME weights, pinned offline via scripts/pin_sequential_oracle.py
+// (accelerate disk offload, the same technique pin_qwen3next_real.py proved on an 80B model).
+// Until this gate, TestQwen38Real_gate above was coherence-only — this doc's own manifest text
+// said plainly that no bf16 reference forward had ever been run. The released checkpoint is a
+// vision-language wrapper (Qwen3_5ForConditionalGeneration) even though only the text path is
+// used; the pin script loads it via AutoModelForImageTextToText with pixel_values=None, the
+// same shape mistral3's own real-checkpoint gate needed. int4, not int8: 27.8B bf16 is 55.6 GB
+// on disk and does not fit alongside f32 activations in 62 GB of RAM at int8 either — the same
+// capacity-forced choice TestQwen38Real_gate above and laguna's real gate both make.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen38Real_oracle -v -timeout 60m
+func TestQwen38Real_oracle(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := assetPath(t, "GOINFER_QWEN38")
+	realLogitOracleQuant(t, ckpt, "../testdata/qwen3_5_real_golden.json", "qwen3_5", "qwen3_5",
+		"HF bf16 (Qwen/Qwen3.8-27B, Qwen3_5ForConditionalGeneration text path; full model via accelerate disk offload; int4 weights, f32 activations)", "int4")
+}
