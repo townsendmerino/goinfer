@@ -131,6 +131,20 @@ var parityRealckptGates = []gateCheck{
 	// NotRequired). Caught by CI, not found by inspection — the two files can look complete on
 	// their own and still not be reachable.
 	{"smollm3-3b", "TestSmolLM3_3bReal_gate"},
+	// lfm2 and mistral3 repeated the exact smollm3 gap the comment above describes — their
+	// gates/assets landed (commit 493897af) without this line, so TestRealckptGateIsListed
+	// OrExplicitlyNotRequired was red on main until this fix. Landing three MORE real-checkpoint
+	// families in the same session as this fix is the reason to trust it's not a one-off: the
+	// check is doing its job, the discipline of registering in the SAME change is what was
+	// missing, not the check itself.
+	{"lfm2-2.6b", "TestLFM2Real_gate"},
+	{"mistral3-real", "TestMinistral3Real_gate"},
+	// granite-dense-real is deliberately NOT named "granite-*" alone — granite-gguf/granite-oracle
+	// above already claim that shape for the granitemoehybrid family; the label makes the two
+	// unmistakable in the sweep's own report, not just in code.
+	{"granite-dense-real", "TestGraniteDenseReal_gate"},
+	{"olmo3-oracle", "TestOlmo3Real_gate"},
+	{"olmo-hybrid-oracle", "TestOlmoHybridReal_gate"},
 }
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -145,6 +159,11 @@ var emitGates = []gateCheck{
 	{"cohere2", "TestCohere2R7bReal_gate"},
 	{"qwen3_next", "TestQwen3NextReal_oracle"},
 	{"qwen3_moe", "TestQwen3MoeReal_oracle"},
+	{"lfm2", "TestLFM2Real_gate"},
+	{"mistral3", "TestMinistral3Real_gate"},
+	{"granite", "TestGraniteDenseReal_gate"},
+	{"olmo3", "TestOlmo3Real_gate"},
+	{"olmo_hybrid", "TestOlmoHybridReal_gate"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -638,6 +657,28 @@ var awaitingFirstConfirmation = map[string]string{
 		"released checkpoint, alongside TestSmolLM3_forwardParity above); the parityRealckptGates entry " +
 		"itself was missing until now (TestRealckptGateIsListedOrExplicitlyNotRequired caught it), so it " +
 		"has never run in any sweep; promote from the first sweep that runs it",
+	"TestLFM2Real_gate": "2026-09-07 — newly required (T3 promotion of lfm2 from tiny-golden to a released " +
+		"checkpoint); the parityRealckptGates entry itself was missing until this fix (same gap as " +
+		"smollm3's, caught the same way), so it has never run in any sweep; promote from the first " +
+		"sweep that runs it",
+	"TestMinistral3Real_gate": "2026-09-07 — newly required (T3 promotion of mistral3 from tiny-golden to a " +
+		"released checkpoint); same missing-registration gap as lfm2's above; promote from the first " +
+		"sweep that runs it",
+	"TestGraniteDenseReal_gate": "2026-09-07 — newly required (T3 promotion of DENSE granite from tiny-golden " +
+		"to a released checkpoint; NOT the same family as TestGraniteReal_oracle's granitemoehybrid, " +
+		"already confirmed above); registered in the same change as the gate and asset, unlike smollm3/" +
+		"lfm2/mistral3's first landing; promote from the first sweep that runs it",
+	"TestOlmo3Real_gate": "2026-09-07 — newly required (T3 promotion of olmo3 from tiny-golden to a released " +
+		"checkpoint); registered alongside the gate and asset. NOT awaiting a first PASS confirmation in " +
+		"the ordinary sense: the gate ran and FAILED (cosine 0.9928 vs the 0.9999 bar, argmax and the " +
+		"greedy continuation both exact) — YaRN is applied to every layer in the real Olmo3Model.forward " +
+		"(one shared self.rotary_emb), but olmo3Architecture's flat-rope_scaling branch zeroes " +
+		"ropeScalingLocal, leaving sliding-attention layers unscaled. Left required and red on purpose " +
+		"(see docs/parity-coverage-policy.md's timing note) rather than moved to realckptNotRequired, " +
+		"which would read as a decision to stop caring about this family's real gate; it is not one.",
+	"TestOlmoHybridReal_gate": "2026-09-07 — newly required (T3 promotion of olmo_hybrid from tiny-golden to " +
+		"a released checkpoint); registered alongside the gate and asset; promote from the first sweep " +
+		"that runs it",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS

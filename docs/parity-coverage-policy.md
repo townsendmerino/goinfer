@@ -1419,3 +1419,61 @@ first non-zero result in this series and the one worth weighing most: the previo
 notes established a cost floor; this is the first data point on the failure rate, and it
 says the floor does not universally apply even to a family this doc's own method flagged
 as low-risk (dense, safetensors, proven mechanism at T1).
+
+## Timing: batch 3 — granite, olmo3, olmo_hybrid (2026-09-07, Linux box)
+
+Also fixed first: `lfm2`/`mistral3` had landed (batch 2) without their one-line
+`cmd/gate/parity.go` registration, the exact gap the smollm3 CI break already named —
+`TestRealckptGateIsListedOrExplicitlyNotRequired` caught both, red on `main` until this
+session's first commit. The check that would have caught it already exists; the gap was
+discipline (landing the test without the registration in the same change), not tooling.
+All three families below register asset + gate + `cmd/gate/parity.go` entry together, and
+the registration self-test was run and confirmed green before each gate ran, not after.
+
+**granite (dense, ibm-granite/granite-4.2-3b)** — ≈3 min, PASS, cosine 1.00000. Split:
+adapt ~40 s (reused the smollm3 shape directly), download 58 s (6.9 GB), HF reference
+23 s, goinfer gate + registration + merge + regen ~90 s. Item 5 (surprises): zero. Env var
+`GOINFER_GRANITE_DENSE_3B` / test `TestGraniteDenseReal_gate`, deliberately distinct from
+the unrelated `granitemoehybrid` family's `GOINFER_GRANITE_HF` / `TestGraniteReal_oracle`
+— see both files' own collision-warning comments.
+
+**olmo3 (allenai/Olmo-3-7B-Think)** — ≈8.5 min, **FAILED, not promoted**. Split: adapt
+~20 s, download 118 s (14 GB), HF reference 44 s, gate write/run to first failure ~1 min,
+then ~5 min investigating. Argmax and the full 8-token greedy continuation matched
+exactly; last-logit cosine was 0.992789 against the 0.9999 bar. Named term: real
+`Olmo3Model.forward()` builds exactly one `Olmo3RotaryEmbedding` and passes its
+YaRN-scaled `position_embeddings` to every layer uniformly (confirmed by reading
+`modeling_olmo3.py` directly — `self.rotary_emb(...)` called once, the same tensor handed
+to every decoder layer regardless of `layer_types[i]`); `olmo3Architecture`'s flat-form
+branch (`decoder/registry.go`, taken because the real release ships top-level
+`rope_scaling` rather than nested `rope_parameters`) sets `ropeScalingLocal = nil`,
+leaving the 24 sliding-attention layers on plain unscaled RoPE instead of the same
+YaRN table the other 8 layers get. The tiny fixture exercises the identical flat-form
+branch and still passes at cosine ~1.0 — this is a real-scale-only gap (factor 8,
+rotaryDim 128, origMaxPos 8192 vs the tiny fixture's factor 4 at hidden 64), and this is
+also the first family in the tree to test YaRN at the tight f32-vs-f32 bar at all; every
+other shipped YaRN family (mellum, gpt-oss) is validated only via int8-quantized
+real-model-oracle at the looser 0.99 floor, which would not have distinguished this gap
+from ordinary quantization noise. Not fixed here — the gate, asset, and registration are
+left in place and **required**, so this reads as a red, attributable gate rather than a
+silent gap; see `awaitingFirstConfirmation`'s entry for the reasoning against demoting it
+to `realckptNotRequired`.
+
+**olmo_hybrid (allenai/Olmo-Hybrid-7B)** — ≈8 min, PASS, cosine 1.00000. Split: adapt
+~1 min (confirmed the real release's `rope_theta: null` first, specifically to check
+whether olmo3's bug could apply here), download 119 s (14 GB), HF reference 54 s (torch
+fallback warning for missing `fla` fast kernels — harmless, only slower), gate write +
+registration + run + merge + regen ~4 min. Item 5 (surprises): zero — the family has no
+RoPE on any layer, so it cannot hit olmo3's specific defect, and the PASS at exactly
+1.00000 is consistent with that reasoning rather than a coincidence.
+
+**Batch total ≈ 20 min for three attempts: two promoted, one real defect found and
+named.** Read against the earlier internlm2 result, this is now two non-zero item-5
+outcomes out of six attempted families (internlm2 on the Mac, olmo3 here) — the ~7.5 min
+smollm3 floor keeps holding for plain composition families (granite, lfm2, olmo_hybrid
+all landed at or under it once the playbook existed), but roughly a third of the families
+tried past smollm3 itself have failed their tight bar outright. That is a materially
+different picture than "some scheduling risk on the harder families" — it says every
+promotion in this program is a real test of the family's wiring, including the ones
+picked for looking safe, and probably needs to be budgeted and reported as such rather
+than assumed to pass.

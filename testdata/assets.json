@@ -577,6 +577,33 @@
       "note": "mistralai/Ministral-3-3b-Instruct-2512-BF16 (Mistral3ForConditionalGeneration, text_config.model_type ministral3), 15 GB — the -BF16 SIBLING repo, not the default (mistralai/Ministral-3-3b-Instruct-2512, which ships FP8-native and is not f32-castable). Includes the vision tower goinfer's text-only loader ignores; the pin script loads the full wrapper via AutoModelForImageTextToText with pixel_values=None, HF's own text-only path."
     },
     {
+      "env": "GOINFER_GRANITE_DENSE_3B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/granite-4.2-3b"],
+      "used_by": ["TestGraniteDenseReal_gate"],
+      "note": "ibm-granite/granite-4.2-3b (GraniteForCausalLM, model_type \"granite\"), ~6.9 GB — the smallest released DENSE Granite 4.2 size. NOT interchangeable with GOINFER_GRANITE_HF, which is the granitemoehybrid family's own asset (a different model_type, GraniteMoeHybridForCausalLM) — the two look similar by name only."
+    },
+    {
+      "env": "GOINFER_OLMO3_7B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/olmo3-7b-think"],
+      "used_by": ["TestOlmo3Real_gate"],
+      "note": "allenai/Olmo-3-7B-Think (Olmo3ForCausalLM), 14 GB — the smallest released Olmo 3 size (32B also exists, out of scope). Sliding/full 3:1 (window 4096), MHA (32 heads = 32 kv heads), YaRN on full_attention layers only."
+    },
+    {
+      "env": "GOINFER_OLMO_HYBRID_7B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/olmo-hybrid-7b"],
+      "used_by": ["TestOlmoHybridReal_gate"],
+      "note": "allenai/Olmo-Hybrid-7B (OlmoHybridForCausalLM), 14 GB — the only released size. 3:1 DeltaNet/full-attention (32 layers), MHA (30 heads = 30 kv heads), rope_theta null (no RoPE anywhere)."
+    },
+    {
       "env": "GOINFER_GRANITE_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
