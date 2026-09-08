@@ -63,3 +63,18 @@ func applySoftcap(logits []float32, sc float32) {
 	}
 	wg.Wait()
 }
+
+// applyLogitScale multiplies a logit vector by scale in place — Cohere/Command-R's
+// logits_scaling (FeatLogitScale), via decoder.Model.LogitScaleResident. Unlike applySoftcap's
+// tanh, a multiply is memory- not compute-bound at any vocab size this repo has seen, so this
+// stays a single serial pass — no parallel-fan-out threshold to measure or maintain. scale==0 or
+// ==1 is every non-FeatLogitScale family's no-op case (LogitScaleResident's own ok=false
+// condition), kept here too so a caller need not branch before calling.
+func applyLogitScale(logits []float32, scale float32) {
+	if scale == 0 || scale == 1 {
+		return
+	}
+	for j, v := range logits {
+		logits[j] = v * scale
+	}
+}

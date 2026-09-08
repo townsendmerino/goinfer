@@ -57,6 +57,60 @@ __global__ void rmsnorm_quant(const float* __restrict__ x, const float* __restri
     }
 }
 
+// layernorm_quant: y = (x - mean(x)) * w * rsqrt(var(x)+eps); then the same per-vector
+// symmetric int8 quant epilogue as rmsnorm_quant. Cohere/Command-R's mean-centered LayerNorm
+// (Architecture.Norm == NormLayer) — this backend had no mean-centered norm before, only
+// RMSNorm variants. BIAS-FREE ONLY: Cohere's LayerNorm carries no learned bias term (unlike
+// GPT-2's, which Metal's own layernorm_quant handles via a hasBias flag) — a future bias-
+// bearing LayerNorm family reaching this backend would need its own kernel, not a flag on
+// this one. One block, structurally rmsnorm_quant plus a mean pass ahead of the variance pass.
+__global__ void layernorm_quant(const float* __restrict__ x, const float* __restrict__ w,
+                                int H, float eps, int* __restrict__ aq, float* __restrict__ aScale) {
+    extern __shared__ float sh[];        // [H] normed values + reduction scratch
+    float* normed = sh;
+    float* red = sh + H;
+    int t = threadIdx.x, nt = blockDim.x;
+    // pass 0: mean
+    float s = 0.f;
+    for (int k = t; k < H; k += nt) s += x[k];
+    red[t] = s; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
+    float mean = red[0] / H; __syncthreads();
+    // pass 1: sum of squared deviations from the mean
+    float ss = 0.f;
+    for (int k = t; k < H; k += nt) { float d = x[k] - mean; ss = __fmaf_rn(d, d, ss); }
+    red[t] = ss; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
+    float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
+    // pass 2: normed + maxabs (same warp-shuffle rewrite as rmsnorm_quant — max is exact and
+    // order-independent, so this reduction may restructure freely; the two SUM passes above keep
+    // their __syncthreads() ladder, so mean/rnorm/normed[] stay bit-identical to a naive reduction)
+    float ma = 0.f;
+    for (int k = t; k < H; k += nt) { float v = (x[k] - mean) * w[k] * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); }
+    for (int o = 16; o > 0; o >>= 1) ma = fmaxf(ma, __shfl_down_sync(0xffffffff, ma, o));
+    int lane = t & 31, warp = t >> 5, nWarps = (nt + 31) >> 5;
+    if (lane == 0) red[warp] = ma;
+    __syncthreads();
+    if (warp == 0) {
+        float mv = (lane < nWarps) ? red[lane] : 0.f;
+        for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffff, mv, o));
+        if (lane == 0) red[0] = mv;
+    }
+    __syncthreads();
+    float sc = red[0] / 127.f; float inv = sc > 0.f ? 1.f / sc : 0.f;
+    if (t == 0) *aScale = sc;
+    // pass 3: quant + pack 4 int8 per int
+    for (int j = t; j < H / 4; j += nt) {
+        int packed = 0;
+        for (int b = 0; b < 4; b++) {
+            int q = __float2int_rn(normed[4 * j + b] * inv);
+            q = max(-127, min(127, q));
+            packed |= (q & 0xff) << (8 * b);
+        }
+        aq[j] = packed;
+    }
+}
+
 // rmsnorm_f32: plain in-place RMSNorm of a [H] vector — no quantization fused in.
 //
 // This is Gemma's SANDWICH norm (Architecture.NormPlacement == NormSandwich4). Unlike every

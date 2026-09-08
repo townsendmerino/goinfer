@@ -326,11 +326,15 @@ type cudaResident struct {
 	act                              int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
 	sandwich                         bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 	postOnly                         bool   // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
-	cacheExperts                     bool   // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
-	cacheProf                        bool   // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
-	profStall                        time.Duration
-	profHost                         time.Duration
-	profDMA                          time.Duration
+	// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
+	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
+	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
+	cacheExperts  bool    // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	cacheProf     bool    // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
+	profStall     time.Duration
+	profHost      time.Duration
+	profDMA       time.Duration
 	// Phase 0 (G31 follow-up): split the expert DMA into the BIG weight copy and the TINY scale
 	// copy, with bytes and call counts for each. If a ~4 KB scale upload costs nearly as much as a
 	// ~600 KB weight upload, the path is PER-CALL-OVERHEAD bound rather than bandwidth bound, and
@@ -417,9 +421,9 @@ type cudaResident struct {
 	sharedInter int // width of the always-on shared expert (0 ⇒ none)
 
 	// device state — touched ONLY on the executor thread.
-	dev                                                                                *Device
-	stream                                                                             Queue
-	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN Pipeline
+	dev                                                                                     *Device
+	stream                                                                                  Queue
+	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
 	// Batched (M=len) prefill pipelines (prefill_batched.ptx) — the weight-stationary path that fixes
 	// the ~128-token Ollama crossover. bGemv is the batched W4A8 GEMV; the rest are the M=1 glue
 	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
@@ -1706,6 +1710,23 @@ func (r *cudaResident) rms(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 		gpu.ArgValue(r.addOneArg()), Arg(qOut), Arg(sOut))
 }
 
+// layerNormQuant is rms's mean-centered twin (Cohere/Command-R, FeatLayerNorm): no addOne
+// selector (bias-free, no Gemma-style (1+w) family uses this norm kind on this backend).
+func (r *cudaResident) layerNormQuant(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
+	return r.launch(r.fLN, onecfg(256, (r.hidden+256)*4),
+		Arg(src), Arg(nrm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps), Arg(qOut), Arg(sOut))
+}
+
+// norm dispatches the family's pre-GEMV norm+quant into qOut/sOut — layerNormQuant (Cohere's
+// bias-free mean-centered LayerNorm) when r.layerNorm, else the default rms — mirroring Metal's
+// encodeNorm/decoder/model.go's normalize() dispatch on arch.Norm.
+func (r *cudaResident) norm(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
+	if r.layerNorm {
+		return r.layerNormQuant(src, nrm, qOut, sOut)
+	}
+	return r.rms(src, nrm, qOut, sOut)
+}
+
 // splitKVAttnDecode runs the high-occupancy, bit-identical decode attention (Campaign A) for layer
 // l at position pos (M=1): three launches replacing the single attn_batched(M=1). scores tile over
 // keys (nH·⌈nWin/128⌉ blocks), softmax keeps the exact 128-wide partition+tree (byte-identical max +
@@ -2181,7 +2202,7 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.x), gpu.ArgValue(int32(r.hidden)), Arg(r.aq), Arg(r.aSc)); e != nil {
 				return e
 			}
-		} else if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+		} else if e := r.norm(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
 			return e
 		}
 		if Ly.qGate {
@@ -2262,10 +2283,12 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 	if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
 		return err
 	}
-	if r.sandwich || r.postOnly {
+	if r.sandwich || r.postOnly || r.parallelBlock {
 		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
 			return err
 		}
+		// normF32 no-ops on an empty weight (w.Len()==0) — parallelBlock (Cohere) has no post-attn
+		// norm at all, so Ly.postAttnNorm stays unbuilt and this is a pure quantize-then-add for it.
 		if err := r.normF32(r.oO, Ly.postAttnNorm); err != nil {
 			return err
 		}
@@ -2316,19 +2339,28 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			return e
 		}
 	} else {
-		if postOnlyHere {
+		gq, gSc := r.mq, r.mSc
+		switch {
+		case r.parallelBlock:
+			// Cohere/Command-R: reuse segA's shared input norm (r.aq/r.aSc) — the MLP consumes
+			// the SAME normed+quantized activation the attention branch already computed, not a
+			// fresh norm of the post-attention residual (Model.ParallelBlockResident's comment).
+			gq, gSc = r.aq, r.aSc
+		case postOnlyHere:
 			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual x directly,
 			// same reasoning as segA's attention-side branch.
 			if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); err != nil {
 				return err
 			}
-		} else if err := r.rms(x, Ly.postNorm, r.mq, r.mSc); err != nil {
+		default:
+			if err := r.norm(x, Ly.postNorm, r.mq, r.mSc); err != nil {
+				return err
+			}
+		}
+		if err := r.doG(Ly.g, gq, gSc, nullBias, r.gO, 0); err != nil {
 			return err
 		}
-		if err := r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0); err != nil {
-			return err
-		}
-		if err := r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0); err != nil {
+		if err := r.doG(Ly.u, gq, gSc, nullBias, r.uO, 0); err != nil {
 			return err
 		}
 	}
@@ -2336,13 +2368,15 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
 		return err
 	}
-	if r.sandwich || postOnlyHere {
+	if r.sandwich || postOnlyHere || r.parallelBlock {
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
 			return e
 		}
 		if r.subCap {
 			r.capVec(r.dO, r.subMLPpreC, l, r.hidden)
 		}
+		// normF32 no-ops on an empty weight — parallelBlock (Cohere) has no post-MLP norm at all,
+		// so Ly.postMLPNorm stays unbuilt and this is a pure down-proj-then-add for it.
 		if err := r.normF32(r.dO, Ly.postMLPNorm); err != nil {
 			return err
 		}
@@ -2609,6 +2643,9 @@ func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
 	// this backend; 0 for every non-softcapped family (no-op). Covers Forward and ForwardN (both
 	// route through step).
 	applySoftcap(r.logitsHost, r.finalSoftcap)
+	// Cohere/Command-R's logits_scaling (FeatLogitScale): a plain host-side multiply, the same
+	// shape and site as the softcap just above. 0 for every non-FeatLogitScale family (no-op).
+	applyLogitScale(r.logitsHost, r.logitScale)
 	return r.logitsHost, nil
 }
 

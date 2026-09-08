@@ -942,6 +942,31 @@ func (m *Model) PostOnlyNormResident() bool { return m.w.arch.NormPlacement == N
 // decline rather than silently mis-normalize if a future QKNormWhole family is GQA.
 func (m *Model) QKNormWholeResident() bool { return m.w.arch.QKNormWhole }
 
+// ParallelBlockResident reports whether the arch computes attention and MLP from ONE shared
+// input norm and sums both into a single residual add (NormPlacement == NormParallel; see that
+// value's own comment for the exact formula) — Cohere/Command-R, Cohere2/Command-R7B. Model-level
+// like SandwichNormResident/PostOnlyNormResident: neither cohere family sets NormPlacementLinear
+// (that per-layer override is Olmo Hybrid's alone), so this is a flat model-wide value. A backend
+// that admits such a model must feed the MLP from the SAME normed+quantized activation the
+// attention branch already computed — not a fresh norm of the post-attention residual — and defer
+// both the attention and MLP outputs' residual adds; per-layer PreMLPNorm is absent for this
+// family (the tensor schema has no separate pre-MLP norm — see registry.go's cohere note), so a
+// backend must not require or upload one.
+func (m *Model) ParallelBlockResident() bool { return m.w.arch.NormPlacement == NormParallel }
+
+// LogitScaleResident returns the host-side final-logit multiplier for FeatLogitScale families
+// OUTSIDE Granite's own SSM bundle — GraniteResidentParams carries an independent copy of this
+// same arch.LogitScale field alongside its embMul/residMul/attnScale siblings, since that path
+// predates this one; Cohere/Command-R's logits_scaling is the first consumer here. ok=false when
+// the arch declares no logit scale (LogitScale==0 or ==1 — the exact condition features.go:205
+// gates FeatLogitScale on), in which case a backend must not multiply the logits at all.
+func (m *Model) LogitScaleResident() (inv float32, ok bool) {
+	if m.w.arch.LogitScale == 0 || m.w.arch.LogitScale == 1 {
+		return 1, false
+	}
+	return float32(1 / m.w.arch.LogitScale), true
+}
+
 // GatedActResident returns the gated-MLP activation as its ActKind ordinal, for backends that
 // pass it straight to a kernel (0 = GELU-tanh, 1 = SiLU). Meaningless for non-gated archs.
 func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }

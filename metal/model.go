@@ -132,6 +132,10 @@ type resident struct {
 	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
 
+	// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — encodeLayer reuses encodeAttention's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
+	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
+
 	// gpt-oss (FeatAttnSink, DECLARED for metal — kernels wired end-to-end; TestGptOssResidentParity).
 	attnSink                 bool    // arch.gptoss != nil
 	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
@@ -485,6 +489,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
 	r.layerNorm = m.LayerNormResident()
+	r.parallelBlock = m.ParallelBlockResident() // G5: Cohere/Command-R + Cohere2/Command-R7B
+	r.logitScale, _ = m.LogitScaleResident()    // ok=false ⇒ 1, already finalizeLogits's no-op value
 	r.nonGatedMLP = m.NonGatedMLPResident()
 	r.outBias = m.OutBiasResident()
 	r.learnedPos = m.LearnedPosResident()
@@ -691,12 +697,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// not a no-op), so this is skipped entirely; segA/encodeLayer quantize the raw
 			// residual instead (see encodeAttention/encodeLayer's own postOnly branch).
 			L.preNorm = NewBufferFloats(d, lw.PreAttnNorm)
-			if L.g4moe == nil { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
+			// parallelBlock (Cohere/Command-R, G5) has no pre-MLP norm tensor at all — the MLP
+			// reuses the SAME shared input norm the attention branch already computed
+			// (encodeLayer's r.aq/r.aSc reuse) — so lw.PreMLPNorm is empty for it too (see
+			// Model.ParallelBlockResident's comment), and NewBufferFloats on an empty slice is the
+			// same build-time-error hazard postOnly's own comment above already names.
+			if L.g4moe == nil && !r.parallelBlock { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
 				L.postNorm = NewBufferFloats(d, lw.PreMLPNorm)
 			}
 			if r.layerNorm && r.layerNormBias {
 				L.preNormBias = NewBufferFloats(d, lw.PreAttnNormBias)
-				if L.g4moe == nil {
+				if L.g4moe == nil && !r.parallelBlock {
 					L.postNormBias = NewBufferFloats(d, lw.PreMLPNormBias)
 				}
 			}
@@ -1163,6 +1174,15 @@ func (r *resident) finalizeLogits() {
 	copy(r.logitsHost, r.logits.Floats())
 	if r.finalSoftcap > 0 {
 		softcapParallel(r.logitsHost, r.finalSoftcap)
+	}
+	// Cohere/Command-R's logits_scaling (FeatLogitScale): a plain host-side multiply, the same
+	// site and shape as the softcap just above. 0 or 1 for every non-FeatLogitScale family
+	// (Model.LogitScaleResident's own no-op value) — a single serial pass, since a multiply is
+	// memory- not compute-bound at any vocab size this repo has seen (unlike softcap's tanh).
+	if r.logitScale != 0 && r.logitScale != 1 {
+		for i, v := range r.logitsHost {
+			r.logitsHost[i] = v * r.logitScale
+		}
 	}
 }
 
@@ -1711,17 +1731,29 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 		// via NormPlacementLinear instead and carry a REAL pre-MLP norm (L.postNorm), so gate on
 		// the per-layer truth, matching cuda/resident.go segBFFN's postOnlyHere.
 		postOnlyHere := r.postOnly && L.delta == nil
-		if postOnlyHere {
+		gq, gSc := r.mq, r.mSc
+		switch {
+		case r.parallelBlock:
+			// Cohere/Command-R: reuse encodeAttention's shared input norm (r.aq/r.aSc) — the MLP
+			// consumes the SAME normed+quantized activation the attention branch already computed,
+			// not a fresh norm of the post-attention residual (Model.ParallelBlockResident's
+			// comment). No dispatch needed here at all.
+			gq, gSc = r.aq, r.aSc
+		case postOnlyHere:
 			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual directly.
 			e.Dispatch(r.pQv, 256, 256, r.x, r.mq, r.mSc, r.uH)
-		} else {
+		default:
 			r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		}
-		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
-		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
-		if r.sandwich || postOnlyHere {
+		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
+		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)   // gate @0, up @I
+		if r.sandwich || postOnlyHere || r.parallelBlock {
 			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
-			e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+			// parallelBlock has no post-MLP norm at all (L.postMLPNorm is never built for it — see
+			// the build loop), so it skips straight to the deferred residual add.
+			if r.sandwich || postOnlyHere {
+				e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+			}
 			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
 		} else {
 			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
@@ -1803,12 +1835,16 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
 	}
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
-	if r.sandwich || r.postOnly {
+	if r.sandwich || r.postOnly || r.parallelBlock {
 		// Gemma sandwich / Olmo 3 postOnly: the sublayer OUTPUT is normed BEFORE the residual
 		// add, which the fused _resid epilogue can't express — project into the (otherwise
-		// dead) oO scratch, norm it, then add. Three dispatches instead of one.
+		// dead) oO scratch, norm it, then add. Cohere parallelBlock shares the "project into oO,
+		// defer the add" shape but has NO post-attn norm at all (L.postAttnNorm is never built for
+		// it — see the build loop), so it skips the norm dispatch entirely.
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
-		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+		if r.sandwich || r.postOnly {
+			e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
+		}
 		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
 	} else if r.outBias { // GPT-2/gpt-oss: o-proj carries an additive bias, fused with the residual add
 		e.DispatchTG(r.pSABiasResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, L.oBias, g.uNHhd)

@@ -522,6 +522,20 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// change. Valid only for MHA (nH==nKV); BuildResident declines otherwise rather than
 		// silently mis-normalizing a hypothetical future GQA+QKNormWhole family.
 		FeatQKNormWhole: true,
+		// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-
+		// R7B. FeatLayerNorm is a genuinely NEW kernel (layernorm_quant, cuda/glue.cu) — this
+		// backend had NO mean-centered norm before, only RMSNorm variants — but bias-free only
+		// (Cohere's LayerNorm carries no learned bias term; a future bias-bearing LayerNorm family
+		// would need its own kernel, not a flag on this one). FeatParallelBlock reuses segA's
+		// existing pre-attn norm+quant (r.aq/r.aSc) as the MLP's input too, instead of segBFFN
+		// re-normalizing the post-attention residual — no new kernel, a sequencing change (see
+		// Model.ParallelBlockResident's comment). FeatLogitScale is a host-side multiply after
+		// readback, the same shape as FeatFinalLogitSoftcap, via Model.LogitScaleResident (NOT
+		// GraniteResidentParams' own copy of the same arch field — Granite's SSM path isn't CUDA-
+		// resident, so this is the first consumer here).
+		FeatLayerNorm:     true,
+		FeatParallelBlock: true,
+		FeatLogitScale:    true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
@@ -589,5 +603,15 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatAttnTemp:          true, // Ministral 3 post-RoPE query scale (rope2's qTempScale param, Q-only, after rotation) — Model.AttnTempScale
 		FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid no-pre-norm — quant_vec on the raw residual instead of rmsnorm_quant; sandwich's post-norm dispatch widened to sandwich||postOnly
 		FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (nH=1,nKV=1,hd=nH_orig*hd_orig) — no new kernel; MHA only
+		// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+		// FeatLayerNorm was already true (GPT-2's layernorm_quant, bias-capable via r.uLNHasBias —
+		// Cohere just needs hasBias=0, no kernel change). FeatParallelBlock reuses encodeAttention's
+		// pre-attn r.aq/r.aSc as the MLP's gate|up input in encodeLayer instead of re-normalizing
+		// r.x post-attention-add — no new kernel, a sequencing change (see
+		// Model.ParallelBlockResident's comment). FeatLogitScale is a host-side multiply in
+		// finalizeLogits, the same shape as FeatFinalLogitSoftcap's softcapParallel, via
+		// Model.LogitScaleResident.
+		FeatParallelBlock: true,
+		FeatLogitScale:    true,
 	},
 }

@@ -11,8 +11,8 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 
 | Family | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
-| Command-R | ✅ | CPU | CPU | CPU |
-| Command-R7B | ✅ | CPU | CPU | CPU |
+| Command-R | ✅ | CPU | ✅ resident | ✅ resident |
+| Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
 | DeepSeek-V2 | ✅ | ✅ resident | CPU | CPU |
 | DeepSeek-V3 | ✅ | ✅ resident | CPU | CPU |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -29,12 +29,12 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Llama 4 | ✅ | CPU | CPU | CPU |
 | Mellum2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Ministral 3 | ✅ | CPU | CPU | CPU |
+| Ministral 3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Nemotron-H | ✅ | ✅ resident | CPU | CPU |
-| Olmo 3 | ✅ | CPU | CPU | CPU |
-| Olmo Hybrid | ✅ | CPU | CPU | CPU |
+| Olmo 3 | ✅ | CPU | ✅ resident | ✅ resident |
+| Olmo Hybrid | ✅ | CPU | ✅ resident | ✅ resident |
 | Phi-3 / Phi-4 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen2 / Qwen2.5 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen2-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -44,7 +44,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Qwen3-Next | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3.5-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3.8 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| SmolLM3 | ✅ | CPU | CPU | CPU |
+| SmolLM3 | ✅ | CPU | ✅ resident | ✅ resident |
 | gpt-oss | ✅ | CPU | ✅ resident | ✅ resident |
 
 Resident acceleration above is CAPABILITY (does the backend implement the family's

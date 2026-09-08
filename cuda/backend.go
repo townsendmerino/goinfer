@@ -204,6 +204,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// G5 (docs/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid.
 	postOnly := m.PostOnlyNormResident()
 	qkNormWhole := m.QKNormWholeResident()
+	// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	layerNorm := m.LayerNormResident()
+	parallelBlock := m.ParallelBlockResident()
+	logitScale, _ := m.LogitScaleResident() // ok=false ⇒ 1, already the applyLogitScale no-op value
 	hls := make([]hlayer, nLayers)
 	for l := range nLayers {
 		lw := &w.Layers[l]
@@ -485,8 +489,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					l, wantQ, wantK, len(hl.qNorm), len(hl.kNorm)))
 			}
 		}
-		if !postOnly && (len(hl.preNorm) == 0 || len(hl.postNorm) == 0) {
-			return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
+		if !postOnly && len(hl.preNorm) == 0 {
+			return declined(fmt.Errorf("layer %d missing pre-norm", l))
+		}
+		// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all — the MLP reuses the
+		// SAME shared input norm the attention branch already computed (segBFFN's r.aq/r.aSc
+		// reuse), so hl.postNorm is legitimately empty for it and must not be required.
+		if !postOnly && !parallelBlock && len(hl.postNorm) == 0 {
+			return declined(fmt.Errorf("layer %d missing pre-MLP norm", l))
 		}
 		if lw.QBias != nil {
 			hl.qb, hl.kb, hl.vb, hl.hasBias = lw.QBias, lw.KBias, lw.VBias, true
@@ -522,6 +532,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: m.HasQKNorm(), qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(), postOnly: postOnly,
+		layerNorm: layerNorm, parallelBlock: parallelBlock, logitScale: logitScale,
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
 		sharedInter: sharedInter,
@@ -733,6 +744,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}{
 			{&r.fRms, "rmsnorm_quant"}, {&r.fRmsF32, "rmsnorm_f32"}, {&r.fQ, "quant_vec"},
 			{&r.fAttn, "attention"}, {&r.fSw, "glu_quant"}, {&r.fRes, "residual"},
+			{&r.fLN, "layernorm_quant"},
 		}
 		for _, f := range fns {
 			if *f.dst, e = r.dev.NewComputePipeline(glmod, f.name); e != nil {
@@ -1005,10 +1017,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			L := cudaLayer{idx: l}
 			if !r.postOnly || h.isDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight at all for its non-DeltaNet
-				// layers — h.preNorm/h.postNorm are 0-length there (Alloc(0) is a hard error, not
-				// a no-op) — but Olmo Hybrid's DeltaNet layers reach NormPre2 through
-				// NormPlacementLinear and DO carry real ones, already required non-empty above.
-				L.preNorm, L.postNorm = r.up32(h.preNorm), r.up32(h.postNorm)
+				// layers — h.preNorm is 0-length there (Alloc(0) is a hard error, not a no-op) —
+				// but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and
+				// DO carry a real one, already required non-empty above.
+				L.preNorm = r.up32(h.preNorm)
+			}
+			if (!r.postOnly && !r.parallelBlock) || h.isDeltaNet {
+				// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all — h.postNorm
+				// is 0-length there too (same Alloc(0) hazard) — segBFFN reuses segA's r.aq/r.aSc
+				// as the MLP's input instead (see Model.ParallelBlockResident's comment).
+				L.postNorm = r.up32(h.postNorm)
 			}
 			if h.isDeltaNet {
 				// Gated-DeltaNet mixer layer: no q/k/v/o, no rope table, no KV cache. Two
@@ -1336,6 +1354,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// fQKV (fused_qkv.cu) bakes a REAL pre-norm weight into its rmsnorm+quant dispatch — a
 		// postOnly arch has no pre-norm weight at all (Ly.preNorm is never uploaded, see below),
 		// so it must take the unfused segA chain, which quantizes the raw residual instead.
+		r.fuseQKV = false
+	}
+	if parallelBlock {
+		// fQKV never materializes an intermediate normed+quantized activation (it goes straight
+		// from x to Q/K/V), but segBFFN's MLP branch needs exactly that (segA's r.aq/r.aSc) to
+		// reuse as its own input — the whole point of FeatParallelBlock. Unlike postOnly this
+		// isn't about a missing pre-norm weight (parallelBlock DOES have one); it's that the fused
+		// path has nowhere to hand the normed activation back to the caller.
 		r.fuseQKV = false
 	}
 	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV

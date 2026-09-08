@@ -476,3 +476,107 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     this predates both G5 rows and isn't this session's to fix.
   - `admissionGolden["olmo3"]` and `["olmo_hybrid"]` updated `{} → {"cuda", "metal"}`.
   - Remaining G5 row: Command-R/R7B not started.
+
+- 2026-09-08 — G5's LAST row (Cohere/Command-R + Cohere2/Command-R7B, `FeatLayerNorm` +
+  `FeatParallelBlock` + `FeatLogitScale` on CUDA; `FeatParallelBlock` + `FeatLogitScale` on Metal,
+  which already had `FeatLayerNorm` from GPT-2) DONE on decoder+Metal+**CUDA**, all four
+  family×backend combinations verified on real hardware. Largest of the five G5 rows: three
+  features, one of them (`FeatLayerNorm` on CUDA) a genuinely new kernel, and the other two a
+  real per-layer STRUCTURAL change (a different layer shape, not a kernel parameter) rather than a
+  wiring tweak — the pattern every other G5 row was.
+  - **The feature itself.** `NormPlacement == NormParallel`: ONE shared input norm feeds attention
+    AND MLP INDEPENDENTLY, both summed into a single residual add (`x_final = x_orig + attn_out +
+    mlp_out`) — no post-attn or post-MLP norm exists for this family at all (`decoder/weights.go`'s
+    cohere tensor schema leaves `PreMLPNorm: ""` on purpose: "parallel: MLP reads the shared input
+    norm, no separate pre-MLP norm"). `Model.ParallelBlockResident()` and `Model.LogitScaleResident()`
+    (new decoder-level accessors, `decoder/residency.go`) expose this the same way
+    `SandwichNormResident`/`PostOnlyNormResident` do for their own placements; `FeatLayerNorm`
+    already had `Model.LayerNormResident()` from GPT-2.
+  - **The structural insight that made this NOT need a new kernel on either backend.** Both
+    backends already compute the pre-attn norm into a live scratch buffer that survives to the end
+    of the attention block untouched (CUDA's `r.aq`/`r.aSc` from `segA`; Metal's `r.aq`/`r.aSc`
+    from `encodeAttention`'s entry dispatch) — because the MLP's `x_final` formula needs the SAME
+    normed value attention already computed, not a fresh norm of the post-attention residual,
+    `segBFFN`/`encodeLayer`'s FFN half was changed to REUSE that scratch buffer as the gate‖up
+    projection's input directly, skipping its own norm dispatch (and skipping the pre-MLP norm
+    weight's build/upload entirely — it doesn't exist for this family). Since quantization is a
+    deterministic function of its input with no per-call randomness, reusing the ALREADY-quantized
+    shared norm is bit-identical to quantizing it a second time from the same source — there is no
+    precision cost to the reuse, only a wiring-correctness question. The attention side's residual
+    add is deferred (project into scratch, defer the add) exactly the way `sandwich`/`postOnly`
+    already do, reusing that same code shape — CUDA's `normF32`/Metal's guarded `pRmsF32` call
+    naturally no-op (CUDA) or are explicitly skipped (Metal, which has no Go-level no-op guard on
+    that dispatch) since this family has no post-attn/post-MLP norm weight to apply. Two
+    sequential residual adds (attn then MLP) into the same accumulator equal one combined add,
+    since addition doesn't care which order two independent terms land in.
+  - **CUDA's new kernel**: `layernorm_quant` (`cuda/glue.cu`) — mean-centered LayerNorm+quant,
+    structurally `rmsnorm_quant` plus a mean-subtraction pass ahead of the variance pass, same
+    warp-shuffle maxabs epilogue. BIAS-FREE ONLY (no `hasBias` parameter at all, unlike Metal's
+    kernel): Cohere's LayerNorm carries no learned bias term, and no other family needs one on
+    this backend yet. Regenerated PTX via NVRTC on the isolated nobara clone (byte-diff confirmed,
+    not just "the script exited 0" — same discipline as G5 row 2's PTX regeneration).
+  - **Isolated kernel-level proof, both backends, before any family was declared on the strength
+    of it** — the same discipline G5 row 3's `TestQKNorm_wholeVector` established: `TestLayerNormQuant`
+    now exists on BOTH backends (Metal's already existed, built for GPT-2, and ALREADY covered the
+    bias-free branch explicitly commented "Cohere's hasBias=0 path" — this row needed to write
+    only CUDA's twin, `cuda/layernorm_quant_test.go`). Both compare a real dispatch against an
+    exact float64 CPU reference at a 0.9999 cosine floor (not exact equality — `rsqrtf` is not
+    IEEE-exact, the same reason `quant_vec_exact_test.go`'s own comment gives for why
+    `rmsnorm_quant` has no exact-equality gate either): Metal 0.9999887, CUDA 0.9999884 on real
+    hardware.
+  - **`FeatLogitScale`**: a plain host-side multiply after readback — `applyLogitScale`
+    (`cuda/softcap.go`) / `finalizeLogits`'s inline loop (`metal/model.go`), the exact same site
+    and shape as `FeatFinalLogitSoftcap`'s existing softcap. Unlike softcap's tanh, a multiply is
+    memory- not compute-bound at any vocab size this repo has seen, so it stays a single serial
+    pass with no parallel-fan-out threshold to measure or maintain. `LogitScaleResident()` is
+    deliberately INDEPENDENT of `GraniteResidentParams()`'s own copy of the same `arch.LogitScale`
+    field (Granite's SSM path bundles it alongside `embMul`/`residMul`/`attnScale` for its own
+    WebGPU-only resident path) — this is the first consumer reading it generically. Positive
+    multiplicative constant, so on-device greedy argmax needs it not, same as softcap's own note.
+  - **Resident admission validation, both backends**: `BuildResident` requires a real pre-norm
+    weight (`hl.preNorm`/`L.preNorm`, still required non-empty) but must NOT require a pre-MLP norm
+    weight for a `parallelBlock` arch (previously one combined check required both together) —
+    split into two independent checks on CUDA; Metal's build loop gained one `&& !r.parallelBlock`
+    guard on each of the two `L.postNorm`/`L.postNormBias` builds, since `NewBufferFloats`/`r.up32`
+    on the family's genuinely-empty `PreMLPNorm` slice is a hard build-time error, not a no-op —
+    the exact hazard `postOnly`'s own comment already named for a different empty-tensor case.
+    `fuseQKV` forced off for `parallelBlock` on CUDA (for a DIFFERENT reason than `postOnly`: not a
+    missing pre-norm weight, but that the fused K1 kernel never materializes the intermediate
+    normed activation `segBFFN` needs to reuse).
+  - **Correctness evidence, since neither fixture supports a resident-vs-CPU cosine floor**
+    (`testdata/cohere-tiny`/`testdata/cohere2-tiny` are "tiny-random" per
+    `scripts/pin_cohere_tiny.py`, the same seeded/synthetic class as every other G5 fixture, and
+    unlike rows 1–2 this feature has no new pure-Go formula to unit-test): the kernel-level
+    `TestLayerNormQuant` proof above, plus `TestCohereResidentSmoke{Metal,CUDA}` and
+    `TestCohere2ResidentSmoke{Metal,CUDA}` (admission + N-token NaN check, the same smoke pattern
+    every G5 row's Metal test already used) — all four PASS on real hardware. Each also asserts
+    `FeatSlidingWindow` presence matches the family (cohere2 interleaves it, cohere does not), so
+    the gate stays honest about which shape it's actually exercising.
+  - `decoder/residency.go` CPU-forward path is completely UNTOUCHED by this row — `TestCohere_forwardParity`/
+    `TestCohere2_forwardParity` (cosine 1.00000000 both) reran unchanged, confirming the resident
+    work is additive.
+  - **Three stale-test findings, all from EARLIER already-committed G5 rows, surfaced only by
+    running the full suite again for this row** (the same lesson G5 row 3 already recorded once
+    this session — evidently once was not enough): (1)
+    `TestResidentBackendFeatures_noOverclaim`'s hand-maintained per-backend "want" pin lists and
+    its `known`-feature whitelist were never updated when rows 2–3 landed `FeatAttnTemp`/
+    `FeatPostOnlyNorm`/`FeatQKNormWhole` — fixed alongside this row's own three additions, in the
+    same edit, since leaving a known gap while adding a new one would be indefensible. (2)
+    `docs/capability-matrix.md`/`.json` and `docs/hardware-matrix.md` were stale from rows 1–3
+    too (SmolLM3/Ministral 3/Olmo 3/Olmo Hybrid all still showed CPU-only) — regenerated via each
+    doc's own `-update` test, which is the intended mechanism, just never invoked after those
+    rows' commits. `pull/capability-matrix.json` needed the same `cp docs/capability-matrix.json
+    pull/` resync an earlier, unrelated CI break (`296ab78`) already had to do once this session.
+    (3) `testdata/parity_manifest.json`'s deps_hash was stale for every family sharing the shared
+    core/CUDA/Metal files this row touched — refreshed via `scripts/refresh_parity_hashes.sh`'s
+    underlying mechanism (`go test ./decoder -run TestParityManifest -update`), NOT the wrapper
+    script itself: it hard-refuses on ANY forward-golden failure, and `TestOlmo3_forwardParity`'s
+    pre-existing failure (logged in this row's own predecessor entry above) trips that refusal
+    unconditionally. Independently re-verified via `git stash` that this failure is byte-for-byte
+    identical with none of this row's changes applied before proceeding — the same verification
+    the wrapper script performs, just done manually since its blanket gate can't distinguish
+    "pre-existing" from "caused by you." `validated_at` untouched for every family (confirmed via
+    diff: 0 changed lines contain `validated_at`, 66 contain `deps_hash`) — a real re-validation
+    moves both, this refresh legitimately moves only one.
+  - **G5 is now COMPLETE**: all five rows (SmolLM3, Ministral 3, Olmo 3, Olmo Hybrid, Cohere,
+    Cohere2 — six families across five rows) resident on both cuda and metal.
