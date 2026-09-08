@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"testing"
 
@@ -41,11 +40,7 @@ func TestGemma3ResidentReal_gate(t *testing.T) {
 	if _, err := os.Stat(ckpt); err != nil {
 		t.Skipf("no gemma-3-4b-it at %s: %v", ckpt, err)
 	}
-	const golden = "../testdata/gemma3_real_golden.json"
-	raw, err := os.ReadFile(golden)
-	if err != nil {
-		t.Skipf("no golden (%v) — run scripts/pin_gemma3_real.py", err)
-	}
+	const golden = "../testdata/gemma3_real_golden.json.gz"
 	var g struct {
 		InputIDs        []int     `json:"input_ids"`
 		ImageTokenStart int       `json:"image_token_start"`
@@ -54,8 +49,8 @@ func TestGemma3ResidentReal_gate(t *testing.T) {
 		Argmax          int       `json:"argmax"`
 		LastLogits      []float32 `json:"last_logits"`
 	}
-	if err := json.Unmarshal(raw, &g); err != nil {
-		t.Fatalf("parse golden: %v", err)
+	if err := decoder.ReadGoldenJSONForTest(golden, &g); err != nil {
+		t.Skipf("no golden (%v) — run scripts/pin_gemma3_real.py", err)
 	}
 
 	if err := gc.Init(); err != nil {

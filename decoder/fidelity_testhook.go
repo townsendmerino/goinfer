@@ -10,14 +10,47 @@ package decoder
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
 	"math"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
+
+// ReadGoldenJSONForTest reads a real-checkpoint golden fixture, transparently gunzipping if path
+// ends in ".gz". Convention (2026-09-08): a real-checkpoint pin script for a FIXED-resolution
+// vision family (SigLIP: 896×896 for every image, no choice of a small test photo the way
+// Qwen2.5-VL's dynamic resolution allows) writes its golden gzip-compressed — gzip on JSON text
+// this repetitive (a `pixel_values` float array dominates the file) routinely gets 5-10×, the
+// difference between "fits comfortably in git" and "GitHub warns about it": measured,
+// testdata/gemma3_real_golden.json was 52.72 MB uncompressed, over GitHub's 50 MB recommendation.
+// Existing small (`.json`, no `.gz`) goldens are NOT force-migrated — this is for new goldens
+// where the size actually matters, not a blanket rewrite. Callers keep their own existing
+// skip-if-missing handling (os.Open's error, not this function, carries that signal).
+func ReadGoldenJSONForTest(path string, v any) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	var r io.Reader = f
+	if strings.HasSuffix(path, ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return fmt.Errorf("decoder: gunzip %s: %w", path, err)
+		}
+		defer gz.Close()
+		r = gz
+	}
+	return json.NewDecoder(r).Decode(v)
+}
 
 // PrefillLogitsForTest exposes the CPU backend's batched prompt prefill (prefillLogits) — weights
 // streamed once and reused across all K positions rather than K separate M=1 passes, ~1.7-2x

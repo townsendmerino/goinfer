@@ -13,10 +13,16 @@ uses. Generated once via:
       .convert('RGB').resize((896,896), Image.BICUBIC).save('testdata/gemma3_preprocess_image.png')"
 
     ~/.venv-vl/bin/python scripts/pin_gemma3_real.py
-    -> testdata/gemma3_real_golden.json   (committed; the weights are NOT)
+    -> testdata/gemma3_real_golden.json.gz   (committed, gzip; the weights are NOT)
 
 Put the checkpoint at ~/models/gemma-3-4b-it (google/gemma-3-4b-it), or set GEMMA3_4B.
+
+WRITTEN GZIP-COMPRESSED (decoder.ReadGoldenJSONForTest reads it transparently): a fixed 896x896
+SigLIP input has no small-test-image option the way Qwen2.5-VL's dynamic resolution does, and the
+uncompressed golden was 52.72 MB, over GitHub's 50 MB recommendation. Convention for any new
+fixed-resolution real-checkpoint golden going forward — see that function's own doc comment.
 """
+import gzip
 import io
 import json
 import os
@@ -27,7 +33,7 @@ from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 CKPT = os.environ.get("GEMMA3_4B", os.path.expanduser("~/models/gemma-3-4b-it"))
 HERE = os.path.dirname(__file__)
 IMG = os.path.join(HERE, "..", "testdata", "gemma3_preprocess_image.png")
-OUT = os.path.join(HERE, "..", "testdata", "gemma3_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "gemma3_real_golden.json.gz")
 N_NEW = 8
 
 
@@ -79,7 +85,7 @@ def main():
         last_logits=last,
         continuation_ids=cont,
     )
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(golden, f)
     print(f"wrote {OUT}  argmax={golden['argmax']}  continuation={cont}")
 
