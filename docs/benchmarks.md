@@ -507,21 +507,39 @@ prefill:**
 | Hybrid resident (CUDA, int4) | 0.870 s | 20 | **22.98** |
 
 **3.86× — clears the pre-registered ≥1.5× ship bar by a wide margin.** RTX 2070 SUPER, driver
-`595.91.07`, Nobara 44, goinfer session at `c098b1c5`+ (this measurement's own commit; gap-0 work
-uncommitted at measurement time — see the session's own writeup for the exact diff), harness:
-a throwaway timing driver following the P6a precedent (interleaved-paired, warm-up discarded,
-median), not committed.
+`595.91.07`, Nobara 44, goinfer `a630a2cc`, harness: a throwaway timing driver following the P6a
+precedent (interleaved-paired, warm-up discarded, median), not committed.
 
 Prefill-only calibration (single sample each, not interleaved — TTFT is CPU either way, unaffected
 by this change, included for completeness not as a paired measurement): CPU prefill 840 ms, GPU
 (resident-eligible load) prefill 711 ms — both stay CPU-bound at this stage by design, the ~130 ms
 gap is model-load/warm-cache noise, not a claim.
 
-**Not yet measured**: Gemma 3's `GenerateVL` resident path (no m-RoPE, structurally simpler,
-covered by fake-resident + real-hardware `UploadKV` tests but no real-image end-to-end timing —
-see `docs/multimodal.md` gap 0's own note on this gap). WebGPU decode timing (the CUDA number
-above is the only one measured; WebGPU's `ForwardMRoPE`/`UploadKV` correctness is validated on
-real hardware but not timed).
+**Gemma 3 (`GenerateVL`) — measured 2026-09-08, closing the gap noted above at the time of the
+Qwen measurement.** Same discipline, one difference: the vision tower's own ~31 s/image cost
+(§A "Vision tower CPU prefill" above, unaffected by gap 0 either way) was precomputed ONCE outside
+the timed region rather than paid per visit, so this number isolates the text-decoder
+prefill+decode path specifically — arguably a cleaner isolation of what gap 0 actually changed
+than the Qwen number above, which folds a much smaller vision cost into every visit. Real
+checkpoint (`gemma-3-4b-it`), real pre-sized 896×896 image, int4 both arms, interleaved-paired,
+5 visits + 1 discarded warm-up pair, `maxTokens=32`, decode-only isolated via a `maxTokens=1`
+calibration subtracted from each arm's own turn time (valid because both arms run the identical
+CPU text-prefill code path — only decode differs):
+
+| | median decode time (32-tok turn minus 1-tok calibration) | decode tok/s |
+|---|---|---|
+| CPU-only (staged, int4) | 4.454 s | **6.96** |
+| Hybrid resident (CUDA, int4) | 0.336 s | **92.27** |
+
+**13.26× — larger than Qwen's 3.86×, consistent with Gemma 3 having no m-RoPE overhead on the
+resident decode path.** Same box/driver/harness as the Qwen measurement, goinfer `a630a2cc`+
+(includes the follow-up `cuda/gemma3_resident_real_test.go` gate this measurement's own harness
+reused the golden from). Real-checkpoint parity gate: cosine 0.998167, exact argmax, on a
+forced-trajectory decode step past the real image block — tighter than Qwen's 0.99, as expected
+with no m-RoPE noise in the comparison.
+
+**Not yet measured**: WebGPU decode timing (the CUDA numbers above are the only ones measured;
+WebGPU's `ForwardMRoPE`/`UploadKV` correctness is validated on real hardware but not timed).
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 

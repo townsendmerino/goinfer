@@ -32,6 +32,12 @@ func (m *Model) PrefillLogitsForTest(ctx context.Context, prompt []int, cache *K
 	return m.prefillLogits(ctx, prompt, cache)
 }
 
+// PrefillLogitsVLForTest exposes prefillLogitsVL — Gemma 3's bidirectional-image-block CPU
+// prefill GenerateVL drives — the Gemma-3 twin of PrefillLogitsQwenVLForTest, same reason.
+func (m *Model) PrefillLogitsVLForTest(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsVL(ctx, ids, imageFeats, imgPos, imgLen, cache)
+}
+
 // PrefillLogitsQwenVLForTest exposes prefillLogitsQwenVL — the bidirectional-image-block CPU
 // prefill GenerateQwenVL drives — so a cross-package real-checkpoint gate (gap 0, docs/
 // multimodal.md) can build a real image's CPU-computed KVCache directly, without going through

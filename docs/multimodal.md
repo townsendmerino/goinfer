@@ -82,13 +82,16 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    decode 5.95 → 22.98 tok/s, 3.86× — clears the pre-registered ≥1.5× bar by a wide margin** (full
    real-checkpoint parity gate: `cuda/qwen25vl_resident_real_test.go`, cosine 0.99+/exact argmax on
    a forced-trajectory decode step past a real image block, mropeDelta confirmed nonzero so the
-   m-RoPE split is genuinely exercised). Gemma 3 (`GenerateVL`) needed no m-RoPE work — plain
-   `Forward` suffices — and is covered structurally (fake-resident wiring/busy/concurrency tests,
-   all green under `-race`) plus `UploadKV`'s own real-hardware validation, but has **no real-image
-   end-to-end gate yet** (would need a from-scratch HF pin script this pass didn't build — a real,
-   named gap, not silently assumed covered). **Metal is out of scope**: `UploadKV` is unimplemented
-   there (`metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up
-   Metal residency next, not attempted here.
+   m-RoPE split is genuinely exercised). **Gemma 3 (`GenerateVL`) closed 2026-09-08**: needed no
+   m-RoPE work — plain `Forward` suffices — real-checkpoint gate built (`scripts/pin_gemma3_real.py`
+   + `cuda/gemma3_resident_real_test.go`, a pre-sized 896×896 test image so goinfer's bilinear
+   resize vs HF's bicubic is a non-issue), decode-step cosine **0.998167**, exact argmax, tighter
+   than Qwen's (no m-RoPE noise to contend with). **Measured decode-only speedup (text-decoder
+   prefill+decode isolated from the vision tower, which is unaffected by this change either way):
+   6.96 → 92.27 tok/s, 13.26×** — larger than Qwen's, consistent with Gemma 3 having no m-RoPE
+   overhead on the resident path. **Metal is out of scope**: `UploadKV` is unimplemented there
+   (`metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up Metal
+   residency next, not attempted here.
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
 2. **Vision is one family.** Gemma 4 — the family most of the resident work went into — is
