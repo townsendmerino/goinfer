@@ -60,20 +60,36 @@ would hide which one you are actually protecting against:
    before tool-calling itself could even be observed. **This model was never actually
    disqualified as a tool-caller — it was never given the chance to try.**
 
-The gap in case 2 was a real bug, since fixed: the load-time check priced KV cache at 0 for a
-context that had not been explicitly pinned, so a request's *own* prompt size — the one thing
-that actually varies per turn — was invisible to it. `AdmitPrefillMemory` (decoder,
-`prefill_budget.go`) now prices KV + prefill scratch for the request's actual prompt and
-`max_tokens` against the remaining budget, and refuses with a 413 **before prefill starts**
-rather than letting the process page. The startup banner also now prints a `fit:` line stating
-the context cap's own KV cost and what remains of the budget, at every load — not only when
-something is already tight.
+The gap in case 2 was two real bugs, both since fixed, both re-verified live on the same Mac:
+(1) the request-time check priced KV cache at 0 for a context that had not been explicitly
+pinned, so a request's *own* prompt size was invisible to it, and (2) both the load-time guard
+and the banner priced against a fixed fraction of TOTAL RAM rather than what was actually free —
+which is what let the load-time check report a comfortable-sounding number on a machine that,
+under its ordinary desktop load (an IDE, a browser, a messaging app, ~9 GB total — nothing
+unusual), did not actually have that much room. `AdmitPrefillMemory` and the load-time guard both
+now price against currently-available memory (`decoder/prefill_budget.go`,
+`decoder/hostram_linux.go`/`hostram_darwin.go`), and refuse — the load outright, or a request with
+a 413 — **before allocating anything**, rather than letting the process page.
 
-**This fix has not yet been re-verified live against the exact scenario that found it.** The
-targeted re-run (this same MacBook, same 7B/q3_k_m model, same opencode two-turn task) is still
-outstanding — track it against this page before treating case 2 as closed. Until that re-run
-lands, treat a 7B-class model on a 16 GB machine as "the load-time number is no longer wrong, but
-the actual behavior under a real agent prompt is not yet re-measured here."
+**Re-verified live, three times, and the third one is the actual answer for this exact
+model/machine pair.** Passes one and two each fixed a real bug the previous pass's own live
+re-run had found (see `docs/task-first-hour.md`'s "R13-follow-on" for the full sequence). The
+third re-run found the fix working as intended, in a shape worth stating plainly: **`Load` now
+refuses this exact model, on this exact machine, under its ordinary desktop load — cleanly,
+reproducibly, with zero Swapouts and zero RSS growth.** Qwen2.5-7B-Instruct q3_k_m's weights alone
+(8.9 GB) exceed what 70% of this machine's *currently available* memory (~5.0 GB, out of ~7.1–7.2
+GB free under normal use) can hold; no context size changes that. That is the guard doing its
+job — the two "successful" loads that preceded this one only appeared to succeed because the old,
+total-RAM-based math was wrong, and both of them are exactly what then swapped.
+
+**What this does NOT mean: that this page's own goal (opencode completing a real turn) has been
+reached.** The refusal means the opencode leg was never attempted — its precondition, a running
+server, was never met. Whether this model/quant can complete a real agent turn on a 16 GB Mac
+remains genuinely untested; that is a capacity question (does it fit, right now, under real
+load), not a correctness question (does the tool tell the truth about it) — and only the second
+one is what these two fixes were ever answering. Reaching the first still needs either more free
+memory on the machine, a smaller model/quant, or `-stream-weights` — a follow-up choice for
+whoever runs it next, not something this page can resolve on its own.
 
 ## Picking a model, honestly
 

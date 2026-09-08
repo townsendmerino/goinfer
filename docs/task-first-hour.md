@@ -29,16 +29,19 @@
 > those families for however long they have existed, and would have left the new guard just as
 > inert on arrival had the gap gone unnoticed. The guard's own bug (KV priced at zero for any
 > unpinned context) is real and fixed too, but it is downstream of, and a much smaller finding
-> than, the MaxPositions gap. **The live re-run of R13 happened, twice, and confirmed the
-> release-gate discipline was necessary both times**: pass one found the request-time guard
-> pricing against a fraction of TOTAL RAM (fixed; re-run found the swap SHRANK but did not
-> disappear, and began 15 seconds before any request, while the server sat idle); pass two found
-> the load-time guard and the banner's own budget line had the identical bug, deliberately left
-> unfixed by pass one's own stated scope. Both are fixed as **R13-follow-on**, immediately after
-> R13 below. **v0.17.2 is still not tagged: this is two-for-two on "passes every gate, fails
-> live," and a third live re-run is required before either fix — let alone the tag — gets to be
-> believed** — see R13-follow-on's own closing note, which also names what changes if the third
-> re-run fails too.
+> than, the MaxPositions gap. **The live re-run of R13 happened three times, and the release-gate
+> discipline earned its keep on every one**: pass one found the request-time guard pricing
+> against a fraction of TOTAL RAM (fixed; re-run found the swap SHRANK but did not disappear, and
+> began 15 seconds before any request, while the server sat idle); pass two found the load-time
+> guard and the banner's own budget line had the identical bug (fixed); the THIRD re-run then
+> found the fix working *exactly as intended*, in the least expected shape — the load was
+> **cleanly refused, zero Swapouts, zero RSS growth**, because this model genuinely does not fit
+> this machine under its ordinary desktop load once the guard measures reality instead of total
+> RAM. Both fixes ship as **R13-follow-on**, immediately after R13 below, and R13-follow-on's own
+> closing note explains why a refusal is the correct outcome here, not a new failure. **v0.17.2 is
+> ready to tag on this basis** — what remains open (a real agent turn completing end-to-end on
+> capacity-constrained hardware, never yet reached because the precondition for testing it was
+> never met) is real but is a capacity question for a future run, not a defect in what shipped.
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
@@ -1083,17 +1086,42 @@ gated anything) and was previously untested; it is now.
 - Pass one's gates (`TestAdmitPrefillMemory_refusesAnOversizedRequest` and siblings) are unchanged
   and still pass.
 
-**⛔ Not yet re-verified live — a third time, and this is the note that actually gates v0.17.2
-now.** The pattern is now two-for-two: a fix passes every unit and integration gate and still
-fails live, on the same machine, on the same scenario, for a reason the previous pass's own scope
-note had already named as out of bounds. This fix has the same shape of proof behind it — real
-arithmetic, real mutation checks, a darwin-only test CI runs on real hardware this Linux box
-cannot — and none of that is the same claim as "the Mac that found this no longer swaps," twice
-over now. It needs the same live re-run, on the same scenario, before it gets to be believed. If
-this THIRD live re-run also finds a nonzero Swapouts delta, the right response is not a fourth
-patch to the same formula — it is treating "a fixed-fraction budget of any single memory figure,
-read at any single instant" as the wrong shape of fix, and going back to docs/task-fit-to-hardware.md
-for a design that re-checks live, continuously, rather than pricing once against a snapshot.
+**✅ Re-verified live, third time — and this one closes it, though not the way expected.** The
+third re-run's result: `Load` refused, cleanly, reproducibly (twice), in under 5 seconds, with
+**zero Swapouts and zero RSS growth**. Weights alone (8.9 GB) exceeded the available-memory
+budget (5.0 GB = 70% of ~7.1–7.2 GB then available on a machine running ordinary desktop load —
+confirmed via a `ps aux` audit, not assumed: an IDE, a browser, a messaging app, this very
+session, ~9 GB total, nothing abnormal to clean up). Since KV can only add to that cost, no
+context size could have made the load fit — refusal was the mathematically correct outcome, not a
+new bug to chase.
+
+**This is the fix working, not the fix falling short again.** The scenario that produced the
+original swap — this exact model, this exact machine, under real, ordinary concurrent load — no
+longer swaps. It refuses instead, honestly, before allocating a byte, with the arithmetic that
+made it decide printed in the refusal. That is R3's founding principle from the very first run of
+this whole document ("the tool never told me it would not fit, the machine told me") applied to
+the specific gap R13 and its two follow-on passes exist to close. The first two "successful"
+loads of this exact model on this exact machine were never really successes — they were the
+OLD, wrong math reporting a fit that was not real, which is exactly what then swapped.
+
+**What this does NOT confirm, stated plainly rather than folded into the win above.** `serve
+check` and the opencode leg were never reached — their shared precondition, a running server,
+was never met. Whether a real agent turn actually completes cleanly on THIS class of hardware
+under real desktop load remains untested; that is a capacity question (does this model/quant fit
+this machine right now), not a correctness question (does the guard tell the truth about it) —
+and the guard's job was only ever the second one. The tester was explicitly right not to bypass
+the guard (`GOINFER_NO_FIT_GUARD=1`) or close other applications to force a fit: either would
+have tested a different, easier scenario than the one asked for. Testing the harness-completes
+question for real needs either a machine with more headroom, other applications closed (a
+decision for whoever runs it, not this document), or a smaller model/quant/`-stream-weights` on
+this one — a follow-up choice, not a defect in what shipped here.
+
+**v0.17.2 is ready to tag on this basis**: the specific, severe, user-visible failure mode Batch
+3 exists to close (an agent-shaped request silently swapping a real machine) is confirmed gone,
+live, reproducibly, at the exact scenario that found it. What remains open (a real agent turn
+completing end-to-end on capacity-constrained hardware) is real and worth pursuing, but it is
+R14's territory and docs/task-fit-to-hardware.md's later phases, not a reason to withhold this
+fix.
 
 ### R14 — the README named opencode as a real-agent target; no recipe for it existed anywhere
 
