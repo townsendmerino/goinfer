@@ -55,6 +55,17 @@ Three things that make the June plan's assumptions stale, in the direction of *m
 
 ### The gaps, ranked by who hits them
 
+0. **`GenerateVL`/`GenerateQwenVL` are stateless and CPU-only by design** (`decoder/generate_vl.go`
+   doc comments; the premise was inherited, not re-derived, when V-11 fixed the race around it —
+   `docs/review-2026-09-04.md`) — **they never touch `m.resident` at all.** So on a GPU box (this
+   CUDA box, or a Metal Mac) an image turn runs the WHOLE turn on CPU, decode included, not only
+   the tower: `-tags gpu` moves the tower's own math but nothing routes an image request onto the
+   resident decode path, even for a family (gemma3, qwen2_5_vl's text side) already GPU-resident
+   for text-only turns. Flagged 2026-09-08, not yet scoped as its own phase — candidate framing:
+   *"the tower on the cgo-free backends, plus resident embed-by-vector injection, so decode stays
+   on the GPU for an image turn"* — which would fold into or precede P6's remaining CUDA/Metal
+   half below. This is likely the single biggest lever in this program and probably belongs ahead
+   of P7-P11; not resolved here, needs its own scoping pass before being built.
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
 2. **Vision is one family.** Gemma 4 — the family most of the resident work went into — is
@@ -72,18 +83,28 @@ The rule for every phase, unchanged from June: text-only behaviour is bit-identi
 after (the parity harness is the gate), every new stage is pinned against HF in isolation, and no
 number is published without provenance.
 
-- **P6 · The tower runs on the kernels the engine already has.** Route `multimodal/`'s encoder
-  through the same batched prefill path the decoder uses: on CPU, `attendTileFused`/head fan-out
-  and aikit's tile for the tower's GEMMs; on CUDA, `attn_fused` + `gemm_w4a8_mma` with the
-  tower's weights at int8/W4A8 (the June int8-tower verdict was "a wash on AVX2 without VNNI" —
-  it was never a verdict on the GPU); on Metal, the resident path's kernels. The vision tower is a
-  plain pre-LN ViT, so the cgo-free backends need no new primitive, only a second `Prefiller`-shaped
-  entry that takes `pixel_values` instead of token ids. Gate: encoder `last_hidden_state` parity
-  unchanged (cosine, the existing golden) on each backend, and the end-to-end image→logits gate
-  green; measure per-image time on both boxes, cold and warm, paired against the June path, into
-  `docs/benchmarks.md` as the first *current* vision row. Pre-registered expectation: an order of
-  magnitude on CUDA, several× on CPU; if CPU moves under 2×, say so and stop tuning there.
-  **This is the phase that fixes gap 1, and it is the cheapest.**
+- **P6 · The tower runs on the kernels the engine already has.**
+  **P6a (CPU) — DONE, 2026-09-08 (aikit v1.38.0).** Both towers (SigLIP/`encoder.go`,
+  Qwen2.5-VL/`qwen_encoder.go`, both live in `aikit/vision`, not goinfer) route attention through
+  `linalg.AttendTileFused`, head-parallel via a per-worker serial Workspace — the same schedule
+  and fan-out `decoder/forwardn.go`'s `attendBatchedHeads` already uses for text prefill. Gate
+  held: `TestSiglipEncoder_parity`/`TestQwenVisionEncoder_parity` cosine 1.0 both, `-race` clean.
+  **Measured against the pre-registered rule above, and the rule's own escape clause fired: CPU
+  moved under 2× — it moved ~0% (31.38s→31.26s SigLIP, 156.9ms→157.0ms Qwen2.5-VL, interleaved
+  A/B, both within noise) — so stated here and tuning stopped, per the rule.** `docs/benchmarks.md`
+  §A "Vision tower CPU prefill" has the full writeup and a plausible (unconfirmed) reason: the old
+  per-head loop's `MatmulBT` already parallelized internally across the whole core count, one head
+  at a time; the new schedule parallelizes across heads instead, each single-threaded — at head
+  count ≈ core count on this box, total work is close to unchanged, just redistributed. Kept
+  anyway: parity holds, it's the proven decoder mechanism, and the removed memory materialization
+  may still matter at an untested config (more heads than cores, memory pressure).
+  **CUDA/Metal — NOT STARTED.** `attn_fused` (CUDA) and `attention_prefill` (Metal) are
+  causal-only by hardcoded row-index math, and both fast GEMMs need int4-quantized weights with
+  no batched-M fallback — a non-causal kernel variant and a new tower weight-quantization pipeline,
+  each with its own parity gate, not a rewire of what exists. Scoped out of P6a deliberately;
+  **gap 0 above (decode itself running CPU-only on an image turn) is arguably a bigger and
+  differently-shaped problem than tower kernel speed and may want scoping before this half of P6
+  is picked up as written.**
 - **P7 · Gemma 4 vision (all sizes) and audio (E2B/E4B/26B-A4B).** Phase 0 from the real
   `Gemma4VisionConfig`/`Gemma4AudioConfig` and modeling file, not the summary above: the encoder
   block, the 3×3 pooling to soft tokens, the position table, the variable token budget and its

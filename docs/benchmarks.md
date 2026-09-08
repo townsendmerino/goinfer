@@ -19,14 +19,15 @@
      ABOVE the "What this page is" blockquote? The Apple Silicon rows below already exist either
      way (§A) — this is a pure ordering/presentation call, maintainer's judgment. -->
 
-**Re-anchored, with three stated exceptions.** Every row the 2026-08-25 re-anchor scoped — the
+**Re-anchored, with two stated exceptions.** Every row the 2026-08-25 re-anchor scoped — the
 peer comparisons in §B2/§B4/§B5/§B6/§B7 — has been re-measured on the current stack (RTX 2070
 SUPER, driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2) against **Ollama v0.32.5**, or
-deliberately withdrawn. Mac rows (§A) were never affected; last measured 2026-08-24. **Not covered,
-and each says so in place:** peer *prefill* (no harness exists — see the table), the Mellum2 MoE
-prefill row, and the SigLIP vision-prefill row. The last two are Linux rows from June that the
-re-anchor never scoped; they are marked stale and now sit in `legacy-benchmarks.md` §A rather
-than being quietly carried here.
+deliberately withdrawn. Mac rows (§A) were never affected; last measured 2026-08-24. **Not
+covered, and it says so in place:** peer *prefill* (no harness exists — see the table). The
+Mellum2 MoE prefill row is a Linux row from June the re-anchor never scoped; it is marked stale
+and sits in `legacy-benchmarks.md` §A. The SigLIP vision-prefill row was the same kind of stale
+row but **is current again as of 2026-09-08** (§A, "Vision tower CPU prefill") — re-measured,
+not re-anchored against a peer (no vision peer harness exists either).
 
 | | verdict | source |
 |---|---|---|
@@ -266,7 +267,7 @@ absent — this pass read the engine and packaging, not the library surface.
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ | — |
 | GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only | ✗ no GPU backend ᵏ |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ | — |
-| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`** — 2026-06-11 row, pre-re-anchor, legacy §A; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
+| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL + Qwen2.5-VL, pure-Go SigLIP/ViT → serve + agent; **31.3 s/image CPU** (SigLIP) — 2026-09-08 row, §A; `-tags gpu` webgpu resident figure (18.8 s) not re-measured at this row's date; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
 | Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
 | Multi-threaded CPU decode | ✓ | — | — | — | — | — | — | ✗ single-threaded ᵏ |
 
@@ -453,10 +454,38 @@ that superseded them.
 request here carries a unique prefix; reusing one would have compared our prefill against its
 cache lookup. Record: `measurements/cpu-peer-prefill-2026-09-01.md`.
 
-**Not re-anchored, and moved off this page:** the Mellum2 sparse-MoE CPU prefill row (2.4×,
-Ryzen 7 3700X, `08acc11`, 2026-06-10) and the SigLIP vision-prefill row (~171 s/image CPU, 18.8 s
-on `-tags gpu`, 2026-06-11) are pre-2026-08-25 Linux rows the re-anchor never scoped. Both are
-kept in legacy §A, marked stale; neither is a current rate.
+**Not re-anchored:** the Mellum2 sparse-MoE CPU prefill row (2.4×, Ryzen 7 3700X, `08acc11`,
+2026-06-10) is a pre-2026-08-25 Linux row the re-anchor never scoped, still kept in legacy §A,
+marked stale. The SigLIP vision-prefill row below it **is** current as of 2026-09-08 (see next).
+
+#### Vision tower CPU prefill — re-measured 2026-09-08
+
+**SigLIP/Gemma 3 tower** (`gemma-3-4b-it`, 896², 4096 patches) and **Qwen2.5-VL tower**
+(`qwen25vl-3b-instruct`, real pre-sized image, `testdata/qwen25vl_preprocess_image.png`): **31.3 s
+/image median (SigLIP)**, **157 ms/image median (Qwen2.5-VL)** — the two towers are very
+different scales (so400m depth/patch-count vs a 3B model's smaller ViT), not a same-model
+comparison. f32, AMD Ryzen 7 3700X (16 threads), aikit v1.38.0, goinfer `ff8993cf`, n=5 timed
+visits + 1 discarded warm-up each, median of the 5. This supersedes the 2026-06-11 ~171 s/image
+CPU row in legacy §A as the current number — not a like-for-like delta against it (different
+method: that row is not documented as a warm-up-discarded median).
+
+**Fused/head-parallel attention (aikit v1.38.0, replacing v1.37.0's per-head materialized
+QKᵀ→softmax→scores·V loop) measured FLAT on CPU wall-clock, not a speedup: 31.38 s → 31.26 s
+(SigLIP), 156.9 ms → 157.0 ms (Qwen2.5-VL), both within run-to-run noise.** Interleaved A/B, same
+box, same session — `go.mod`'s aikit pin swapped v1.38.0 ↔ v1.37.0 in place, 5 visits + discarded
+warm-up each arm. **This is a genuine negative result, recorded rather than dropped**: the
+include-the-do-nothing-arm discipline applies to a component's own history, not only to a peer
+comparison. Plausible (not yet isolated) reason: the OLD per-head serial loop's own
+`linalg.MatmulBT` calls already parallelize internally over output columns, so each head already
+used the whole machine, one head at a time; the NEW schedule instead runs every head at once,
+each on a private *serial* Workspace — at head count ≈ core count on this box (SigLIP so400m's
+heads ≈ this box's 16 threads), the two arrangements do close to the same total work, distributed
+across time in one case and across workers in the other. Kept regardless of the flat result:
+parity holds (`TestSiglipEncoder_parity`/`TestQwenVisionEncoder_parity`, cosine 1.0 both, `-race`
+clean), it is the identical mechanism the text decoder already ships (`attendBatchedHeads`), and
+it removes a real np×np score-matrix materialization whose benefit just didn't show at this
+box's config — untested: a memory-constrained box, or a shape where per-head parallelism can't
+already saturate the core count. `aikit` CHANGELOG `[1.38.0]`, `docs/multimodal.md` P6a.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
