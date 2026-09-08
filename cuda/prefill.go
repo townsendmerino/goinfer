@@ -361,6 +361,19 @@ func (r *cudaResident) prefillStaticDecline() error {
 		return fmt.Errorf("cuda prefill: Gated-DeltaNet recurrent state advances one token at a "+
 			"time and cannot be batched: %w", errPrefillDeclined)
 	}
+	// G5 (docs/task-gpu-paths-2026-09.md): Olmo 3's no-pre-norm (postOnly) and whole-vector
+	// QK-norm (qkNormWhole) are wired into the SEQUENTIAL decode path (segA/segB/segBFFN) only —
+	// prefillCore's batched glue (rmsnorm_quant_batched, qk_norm_batched) still assumes a real
+	// pre-norm weight and per-head QK-norm geometry unconditionally. Since CUDA's batched prefill
+	// is DEFAULT ON (unlike Metal's), silently running it on a postOnly/qkNormWhole model would
+	// produce plausible-but-wrong logits, not a missing feature — decline explicitly and let the
+	// caller fall back to the sequential path (correct, just without the batched TTFT win). Olmo
+	// Hybrid never reaches this line at all: it always has r.dnet != nil (declined above), so this
+	// guard is Olmo-3-only in practice today.
+	if r.postOnly || r.qkNormWhole {
+		return fmt.Errorf("cuda prefill: postOnly/QKNormWhole norm placement is not implemented "+
+			"in the batched glue yet (sequential decode only): %w", errPrefillDeclined)
+	}
 	// PER-LAYER geometry, not layer 0's hoisted and asserted uniform. The batched launches bind
 	// each layer's own hd/nKV/qDim/kvDim/rhalf exactly as the decode launches already do, and the
 	// M-sized scratch is sized by the MAX across layers — so a family whose layers differ (Gemma-4:

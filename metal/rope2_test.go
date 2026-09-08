@@ -73,7 +73,8 @@ func TestRope2_matchesTwoRope(t *testing.T) {
 		q_.Run1D(pRope2, nH*half+nKV*half, 64,
 			xb, NewBufferFloats(d, invf), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
 			NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half)),
-			NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(qDim)))
+			NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(qDim)),
+			NewBufferFloats(d, []float32{1})) // qTempScale: 1.0 no-op, not under test here (G5 FeatAttnTemp)
 		return xb.Floats()
 	}
 
@@ -110,7 +111,8 @@ func TestRope2_matchesTwoRope(t *testing.T) {
 	q_.Run1D(pRope2, nH*half+nKV*half, 64,
 		unscaledXb, NewBufferFloats(d, invf), NewBufferU32(d, uint32(hd)), NewBufferU32(d, uint32(pos)),
 		NewBufferU32(d, uint32(nH*half)), NewBufferU32(d, uint32(nKV*half)),
-		NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{1.0}), NewBufferU32(d, uint32(qDim)))
+		NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{1.0}), NewBufferU32(d, uint32(qDim)),
+		NewBufferFloats(d, []float32{1})) // qTempScale: 1.0 no-op, not under test here (G5 FeatAttnTemp)
 	unscaled := unscaledXb.Floats()
 	same := true
 	for i := 0; i < qDim+kvDim; i++ {

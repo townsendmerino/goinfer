@@ -335,6 +335,17 @@ type qwen35Params struct {
 	NumKeyHeads   int // linear_num_key_heads
 	NumValueHeads int // linear_num_value_heads (GVA: a multiple of NumKeyHeads)
 
+	// AttnGate: this family's full-attention (non-DeltaNet) layers use qwen3.5's own
+	// double-width q_proj scheme — [query ‖ gate] per head, interleaved, with the attention
+	// context multiplied by sigmoid(gate) before o_proj. True for qwen3_5/qwen3_5_moe/
+	// qwen3_next (verified against their real modeling_qwen3_5*.py: Qwen3_5Attention Projects
+	// q_proj to 2*num_heads*head_dim). FALSE for Olmo Hybrid: its full-attention layer is
+	// olmo3's own PLAIN scheme (ordinary q_proj, no gate) — verified against the real
+	// modeling_olmo_hybrid.py, which reuses Olmo3Attention verbatim for these layers, not
+	// qwen3.5's gated one. G5 (docs/task-gpu-paths-2026-09.md): this field did not exist before
+	// Olmo Hybrid — the resident backends assumed EVERY qwen35Params-carrying family's softmax
+	// layer was qGate, which was true of every family that had reached residency until now.
+	AttnGate bool
 	// FusedDeltaNetProj: qwen3_5_moe's checkpoint stores in_proj_qkv/in_proj_z/
 	// in_proj_b/in_proj_a as four separate tensors; qwen3_next's checkpoint fuses
 	// them into in_proj_qkvz/in_proj_ba instead (same math, different packing —

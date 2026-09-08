@@ -115,7 +115,9 @@ type resident struct {
 	pRmsF32                                                            Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
 	pGemvW8, pGemvW8Amax                                               Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
 	qkNorm                                                             bool     // arch has QK-norm
+	qkNormWhole                                                        bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
 	sandwich                                                           bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	postOnly                                                           bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	kvF32                                                              bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
 	uAct                                                               Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
 	uAddOne, uWindow                                                   Buffer   // qk_norm + sliding-window uniforms
@@ -172,6 +174,7 @@ type resident struct {
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uH, uI, uNH, uScale, uEps                            Buffer // invf = model-level rope (prefill only); geometry uniforms live on residLayer.geom
 	uPos, uNKeys, uQTempScale                                  Buffer
+	uQKWholeOne, uQKWholeHD                                    Buffer // G5 QKNormWhole: constant-1 nH/nKV replacement + the full nH*hd width
 	part, tok, uP                                              Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                 []float32
 	gpuStart, gpuEnd, kernStart, kernEnd                       float64      // last-Forward GPU timing (Step 0)
@@ -476,7 +479,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
+	r.qkNormWhole = m.QKNormWholeResident() // G5 (docs/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
 	r.sandwich = m.SandwichNormResident()
+	r.postOnly = m.PostOnlyNormResident() // G5: Olmo 3/Olmo Hybrid
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
 	r.layerNorm = m.LayerNormResident()
@@ -570,7 +575,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
 	var maxNHhd, maxKvDim, maxHd int
-	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
 	for l := range nL {
 		lw := &w.Layers[l]
 		var L residLayer
@@ -586,9 +591,14 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				return nil, e
 			}
 			L.delta = DL
-		} else if dnetOK {
-			// The same family's SOFTMAX layer (attnGate is true whenever dnetOK — see
-			// Qwen35ResidentParams). Its q/k/v/o live off qattn, not lw.QProj/KProj/VProj/OProj,
+		} else if dnetOK && attnGate {
+			// The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
+			// dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
+			// AttnGate=false, and falls through to the ordinary branch below — G5,
+			// docs/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` check, silently
+			// wrong the moment a non-gated hybrid family reached residency, since
+			// Qwen35ResidentParams hardcoded attnGate=true). Its q/k/v/o live off qattn, not
+			// lw.QProj/KProj/VProj/OProj,
 			// and q_proj is DOUBLE WIDTH ([query ‖ gate] per head, interleaved — NOT two
 			// concatenated blocks; treating it as an ordinary q_proj yields the first nH/2
 			// heads' query+gate as "queries", plausible logits from the wrong tensor, measured
@@ -608,11 +618,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.oW, L.oS = mk(oP)
 			L.qNorm, L.kNorm = NewBufferFloats(d, qN), NewBufferFloats(d, kN)
 		} else {
+			// The ORDINARY plain-attention layer: every non-DeltaNet, non-qGate layer, which
+			// includes both every family with no qwen35Params at all AND (G5) a dnetOK family's
+			// full-attention layer when AttnGate is false (Olmo Hybrid). lw.QProj/KProj/VProj/
+			// OProj/QNorm/KNorm are read normally, exactly as any other GQA/MHA layer.
+			//
 			// K=V (attention_k_eq_v, Gemma 4 global layers): NO v_proj — V = v_norm(the RAW k_proj
 			// output). Fuse the V slot with k_proj (so the fused proj yields qkv=[Q|K_raw|K_raw]); the
 			// V slot is then scale-less-v_norm'd and left un-roped at encode time (encodeTrunkInto),
 			// while the K slot gets k_norm+RoPE. This is a BUILD-TIME weight-layout difference, so the
-			// value-independent ForwardEmbPipe pre-encode stays correct — see geom.kEqV.
+			// value-independent ForwardEmbPipe pre-encode stays correct — see geom.kEqV. False (and a
+			// no-op) for every family without K=V layers, Olmo Hybrid included.
 			kEqV = m.VFromKResident(l)
 			if kEqV {
 				L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.KProj) // V slot = raw k_proj
@@ -624,6 +640,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				L.oBias = NewBufferFloats(d, lw.OBias)
 			}
 			if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd] — qGate layers set these above instead
+				// QKNormWhole (Olmo 3/Olmo Hybrid, G5): the resident kernel launch that reproduces
+				// this collapses the grid to one Q block + one K block sized from a SINGLE hd
+				// argument (encodeAttention), which is only correct when nH==nKV (MHA). Decline
+				// rather than silently mis-normalize a hypothetical future GQA family.
+				if r.qkNormWhole {
+					if nKVL := m.KVHeadsAtResident(l); r.nH != nKVL {
+						return nil, fmt.Errorf("metal: layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, r.nH, nKVL)
+					}
+				}
 				L.qNorm, L.kNorm = NewBufferFloats(d, lw.QNorm), NewBufferFloats(d, lw.KNorm)
 			}
 		}
@@ -655,34 +680,47 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
 		}
-		L.preNorm = NewBufferFloats(d, lw.PreAttnNorm)
-		if L.g4moe == nil { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
-			L.postNorm = NewBufferFloats(d, lw.PreMLPNorm)
-		}
-		if r.layerNorm && r.layerNormBias {
-			L.preNormBias = NewBufferFloats(d, lw.PreAttnNormBias)
-			if L.g4moe == nil {
-				L.postNormBias = NewBufferFloats(d, lw.PreMLPNormBias)
+		// postOnly (Olmo 3/Olmo Hybrid, G5 docs/task-gpu-paths-2026-09.md) is a MODEL-level flag,
+		// but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear instead and
+		// carry REAL pre-norm weights regardless — isDelta is already resolved above, so gate on
+		// the per-layer truth, not the bare model-level flag.
+		postOnlyHere := r.postOnly && !isDelta
+		if !postOnlyHere {
+			// A postOnly (non-delta) layer has NO pre-norm weight at all (lw.PreAttnNorm/
+			// PreMLPNorm are 0-length — NewBufferFloats on an empty slice is a build-time error,
+			// not a no-op), so this is skipped entirely; segA/encodeLayer quantize the raw
+			// residual instead (see encodeAttention/encodeLayer's own postOnly branch).
+			L.preNorm = NewBufferFloats(d, lw.PreAttnNorm)
+			if L.g4moe == nil { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
+				L.postNorm = NewBufferFloats(d, lw.PreMLPNorm)
+			}
+			if r.layerNorm && r.layerNormBias {
+				L.preNormBias = NewBufferFloats(d, lw.PreAttnNormBias)
+				if L.g4moe == nil {
+					L.postNormBias = NewBufferFloats(d, lw.PreMLPNormBias)
+				}
 			}
 		}
 		// (qk-norm weights are set above: inside the isDelta/qGate/default branch, whichever
 		// applies — moved there so a qGate layer's qattn-sourced qNorm/kNorm isn't overwritten
 		// here by the generic lw.QNorm/lw.KNorm, which this family doesn't populate.)
-		// Gemma sandwich norms on each sublayer OUTPUT. Required to be present when the arch
-		// declares them — a silently-missing one would DROP the norm rather than error. A g4moe
-		// layer still runs the ATTENTION sandwich (postAttnNorm) but its FFN block is the parallel
-		// dense‖MoE, which carries its own post-norms (postFFN1/postFFN2/postFFN) in the bundle and
-		// never touches postMLPNorm — exactly as decoder/forward_gemma4.go skips PostMLPNorm for
+		// Gemma sandwich / Olmo 3 postOnly norms on each sublayer OUTPUT — postOnly is the
+		// post-norm half of sandwich, minus the pre half (see PostOnlyNormResident's own
+		// comment). Required to be present when the arch declares either — a silently-missing
+		// one would DROP the norm rather than error. A g4moe layer still runs the ATTENTION
+		// sandwich (postAttnNorm) but its FFN block is the parallel dense‖MoE, which carries its
+		// own post-norms (postFFN1/postFFN2/postFFN) in the bundle and never touches
+		// postMLPNorm — exactly as decoder/forward_gemma4.go skips PostMLPNorm for
 		// enable_moe_block layers. So require/build postMLPNorm only for the non-g4moe FFN path.
-		if r.sandwich {
+		if r.sandwich || postOnlyHere {
 			if len(lw.PostAttnNorm) != H {
-				return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostAttnNorm is not len==hidden(%d) (got %d)",
+				return nil, fmt.Errorf("metal: layer %d declares sandwich/postOnly norms but PostAttnNorm is not len==hidden(%d) (got %d)",
 					l, H, len(lw.PostAttnNorm))
 			}
 			L.postAttnNorm = NewBufferFloats(d, lw.PostAttnNorm)
 			if L.g4moe == nil {
 				if len(lw.PostMLPNorm) != H {
-					return nil, fmt.Errorf("metal: layer %d declares sandwich norms but PostMLPNorm is not len==hidden(%d) (got %d)",
+					return nil, fmt.Errorf("metal: layer %d declares sandwich/postOnly norms but PostMLPNorm is not len==hidden(%d) (got %d)",
 						l, H, len(lw.PostMLPNorm))
 				}
 				L.postMLPNorm = NewBufferFloats(d, lw.PostMLPNorm)
@@ -869,6 +907,14 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.uPos, r.uNKeys = NewBufferU32(d, 0), NewBufferU32(d, 1)
 	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
 	r.uQTempScale = NewBufferFloats(d, []float32{1}) // identity; overwritten per call alongside uPos
+	if r.qkNormWhole {
+		// Olmo 3/Olmo Hybrid (G5): encodeAttention's whole-vector qk_norm dispatch needs a
+		// "one reduction group" nH/nKV and the FULL width nH*hd instead of the per-head hd —
+		// both MHA-uniform-geometry-only (BuildResident already declines otherwise above), so
+		// one pair of model-level buffers suffices; no per-layer variant needed.
+		r.uQKWholeOne = NewBufferU32(d, 1)
+		r.uQKWholeHD = NewBufferU32(d, uint32(nH*m.HeadDimAtResident(0)))
+	}
 	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and a shared
 	// zero (nH=0 / nHhd=0 / addOne=0) so qk_norm reduces to x·rms·1 on the V slot. Sized to the
 	// widest head; harmless (a few KB) for models with no K=V layer.
@@ -1660,10 +1706,20 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 		e.Dispatch(r.pActQuant, 256, 256, r.gu, r.dq, r.dSc, r.uI, r.uAct)
 		e.Dispatch(r.pCoalBiasResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, L.downBias, r.uI)
 	} else {
-		r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
+		// postOnly is model-level, but this FFN half is SHARED with DeltaNet layers (the mixer
+		// above only replaces the attention half) — Olmo Hybrid's DeltaNet layers reach NormPre2
+		// via NormPlacementLinear instead and carry a REAL pre-MLP norm (L.postNorm), so gate on
+		// the per-layer truth, matching cuda/resident.go segBFFN's postOnlyHere.
+		postOnlyHere := r.postOnly && L.delta == nil
+		if postOnlyHere {
+			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual directly.
+			e.Dispatch(r.pQv, 256, 256, r.x, r.mq, r.mSc, r.uH)
+		} else {
+			r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
+		}
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH) // fused gate|up
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)       // gate @0, up @I
-		if r.sandwich {
+		if r.sandwich || postOnlyHere {
 			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
 			e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
 			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
@@ -1684,7 +1740,16 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	// --- attention block (11 dispatches vs 19: QKV fused +bias, residual fused, Q+K RoPE merged) ---
-	r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+	// postOnly (Olmo 3/Olmo Hybrid, G5): no pre-norm at all — quantize the RAW residual
+	// (quant_vec, the same symmetric int8 quantizer ctx-before-o-proj already uses below)
+	// instead. encodeAttention is never called for a DeltaNet layer (encodeLayer routes those to
+	// encodeDeltaNetMixer instead), so the bare model-level flag is safe here unlike encodeLayer's
+	// shared FFN half below.
+	if r.postOnly {
+		e.Dispatch(r.pQv, 256, 256, r.x, r.aq, r.aSc, r.uH)
+	} else {
+		r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+	}
 	if L.qGate {
 		// This family's softmax layer: q_proj is DOUBLE WIDTH ([query ‖ gate] per head,
 		// interleaved) and bias-free, so it dispatches separately via the no-bias SA kernel
@@ -1699,7 +1764,23 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 	}
 	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
+		// QKNormWhole (Olmo 3/Olmo Hybrid, G5): the SAME kernel, grid collapsed to one Q block +
+		// one K block via the constant-1/whole-width buffers built in buildResident — qk_norm's
+		// block h<nH reduces [base, +hd) where base is head*hd, so nH=1,hd=nH_orig*hd spans the
+		// WHOLE contiguous Q vector for h=0 and the whole K vector for h=nH=1, matching
+		// decoder/attention.go's rmsNorm(q,QNorm,1,nH*hd,...) exactly. g.uNHhd (the K buffer
+		// OFFSET within the fused qkv buffer) is unchanged — it is independent of the
+		// reinterpreted reduction width. Only correct for MHA (nH==nKV); BuildResident already
+		// declines otherwise.
+		qkNH, qkNKV, qkHD := r.uNH, g.uNKV, g.uHd
+		if r.qkNormWhole {
+			qkNH, qkNKV, qkHD = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD
+		}
+		grid := (r.nH + g.nKV) * tgReduceAttn
+		if r.qkNormWhole {
+			grid = 2 * tgReduceAttn
+		}
+		e.Dispatch(r.pQKNorm, grid, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, g.uNHhd, r.uEps, r.uAddOne)
 	}
 	if g.kEqV {
 		// K=V (Gemma 4 globals): the V slot holds the RAW k_proj output ([Q|K|K] fusion). Apply
@@ -1722,10 +1803,10 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
 	}
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
-	if r.sandwich {
-		// Gemma: the sublayer OUTPUT is normed BEFORE the residual add, which the fused
-		// _resid epilogue can't express — project into the (otherwise dead) oO scratch,
-		// norm it, then add. Three dispatches instead of one.
+	if r.sandwich || r.postOnly {
+		// Gemma sandwich / Olmo 3 postOnly: the sublayer OUTPUT is normed BEFORE the residual
+		// add, which the fused _resid epilogue can't express — project into the (otherwise
+		// dead) oO scratch, norm it, then add. Three dispatches instead of one.
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)

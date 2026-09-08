@@ -400,3 +400,79 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     directly" pattern G5 row 1 established.
   - Remaining G5 rows (Olmo 3/`FeatPostOnlyNorm`+`FeatQKNormWhole`, Olmo Hybrid, Command-R/R7B) not
     started.
+
+- 2026-09-08 — G5 row 3 (Olmo 3/`FeatPostOnlyNorm`+`FeatQKNormWhole`, plus Olmo Hybrid getting the
+  same two "for free" on top of its already-declared `FeatDeltaNet`+`FeatNoPE`) DONE on
+  decoder+Metal+**CUDA**, all four family×backend combinations verified on real hardware (Metal
+  locally, CUDA again via the isolated `ssh nobara` clone — now at `/tmp/olmo3-cuda-check`, the
+  other session's live `~/mycode/goinfer` checked first and left untouched throughout). Chosen
+  over shipping Olmo 3 alone and filing Olmo Hybrid separately, per explicit instruction to fix
+  the qGate bug found along the way rather than defer it.
+  - **The feature itself.** `FeatPostOnlyNorm`: skip the pre-sublayer norm entirely, normalize only
+    after (both backends already had a `sandwich` — pre AND post — code path from another family;
+    this widens that same gate to also cover post-only, and forces `fuseQKV` off since the fused
+    path assumes a pre-norm exists to fuse into). `FeatQKNormWhole`: QK RMSNorm over the WHOLE
+    projection width in one reduction instead of per-head — reused the existing `qk_norm`
+    kernel/launch UNCHANGED on both backends, just with different geometry arguments (`1, 1,
+    nH*headDim` instead of per-head), so no new kernel and (unlike row 2) no PTX regeneration.
+  - **Real bug #1: `Qwen35ResidentParams()` hardcoded `attnGate=true`.** Both backends assumed
+    every family sharing the `qwen35Params` struct (Gated-DeltaNet hybrids) used qwen3.5's own
+    double-width query-gate scheme on its full-attention layer. Olmo Hybrid's full-attention layer
+    is plain (Olmo 3's own scheme, no gate) — the struct had no field to say so. Root-caused from
+    Metal's decline message ("qwen35 softmax layer has empty q_norm/k_norm... the loader did not
+    populate them") back to the hardcoded `true`. Fixed with a new `qwen35Params.AttnGate bool`
+    field (true for qwen3_5/qwen3_5_moe/qwen3_next, false for Olmo Hybrid), consumed by both
+    backends' dispatch (`case dnetOK && dnAttnGate:` on CUDA, `else if dnetOK && attnGate` on
+    Metal — previously both bare `dnetOK`, silently discarding the gate flag CUDA's tuple already
+    returned). The pre-existing plain-attention branch needed zero changes; it already handled the
+    Olmo-Hybrid shape correctly once actually reached.
+  - **Real bug #2, in this session's OWN earlier G5 row 1 fix: `RopeInvFreqLayer` degrades to
+    zero-LENGTH, not zero-VALUE, when a whole model has no RoPE table at all.** Row 1's fix
+    (`make([]float32, len(inv))` then zero-fill for a per-layer NoPE flag) assumed `inv` was always
+    the real, correctly-sized table for layers that DO use RoPE. Olmo Hybrid sets `rope_theta:
+    null`, so `Architecture.finalizeRoPE()` early-returns and NEVER populates any rope table for
+    ANY layer — `ropeInvFreq(i)` comes back empty even for layers that are not per-layer-NoPE.
+    CUDA has no length guard on the upload and crashed; Metal happened to have an UNRELATED,
+    incidental `len(invf) > 0` guard (originally added for GPT-2) that avoided the crash by
+    skipping the buffer build entirely, leaving an uninitialized zero-value buffer rather than a
+    deliberate all-zero one — working by accident, not by design. Root-caused on nobara with a
+    temporary `fmt.Printf` in `cuda/backend.go` (added, used, reverted before any commit) that
+    isolated the failure to layer 3 (full-attention), not layers 0–2 (DeltaNet, unaffected). Fixed
+    by falling back to `a.rotaryDim()/2` as the table width whenever the real table is empty, so
+    the zero-fill is always the correct length; also makes Metal's behavior deliberate instead of
+    incidental. No regression: `TestSmolLM3_forwardParity`, `TestGPT2ResidentParityMetal`,
+    `TestRopeInvFreqLayer_NoPEIsZero` all rerun byte-identical.
+  - **Real bug #3, a REGRESSION in the ALREADY-COMMITTED G5 row 2, found only by running the full
+    Metal suite instead of a targeted `-run`.** `metal/rope2_test.go` and `metal/rope2_kv_test.go`
+    construct their own `rope2` pipeline and dispatch it with a hardcoded argument list,
+    independent of `model.go`'s dispatch helpers — row 2's grep for production call sites never
+    found them, so both tests were passing the OLD (pre-`qTempScale`) argument count against the
+    NEW kernel and failing (`TestRope2Kv_matchesRope2ThenKv`: `max|diff| 1.157e+00`, not a rounding
+    artifact). Fixed by adding the same trailing no-op `qTempScale=1.0` argument at all three call
+    sites (two in `rope2_test.go`, one in `rope2_kv_test.go`'s `twoDispatch`). Full `metal/...`
+    suite reran clean afterward: 105 real passes, 0 failures, 50 skips (device/fixture-gated).
+    **Lesson applied**: after any kernel-signature change, run the FULL test suite, not a targeted
+    subset — this is now the second time in this session a targeted check missed a real call site.
+  - **Correctness evidence, since neither fixture supports a resident-vs-CPU cosine floor** (both
+    `testdata/olmo3-tiny` and `testdata/olmo_hybrid-tiny` are seeded/synthetic, same class as rows
+    1–2's Metal findings, and this feature has no new pure-Go formula to unit-test the way
+    `FeatNoPE`/`FeatAttnTemp` did): `metal/qknorm_whole_test.go`'s `TestQKNorm_wholeVector` is an
+    isolated kernel-geometry proof — compiles `allKernels`, dispatches the real `qk_norm` kernel
+    directly with the whole-vector geometry, compares against a precise CPU reference (maxAbs
+    ~1.19e-07/2.38e-07, plus a non-vacuousness sanity check) — and both backends' postOnly/
+    qkNormWhole changes reuse already-shipped, unmodified kernels with different launch geometry
+    rather than new kernel code. `TestOlmo3ResidentSmoke{Metal,CUDA}` and
+    `TestOlmoHybridResidentSmoke{Metal,CUDA}` (admission + N-token NaN check, the same smoke
+    pattern as rows 1–2's Metal tests) all PASS on real hardware after both bug fixes; each asserts
+    the fixture actually requires both features, so the gate can't silently stop meaning anything
+    if the fixture changes.
+  - **Pre-existing, unrelated, confirmed out of scope**: `TestOlmo3_forwardParity` fails at cosine
+    0.98997287 (want ≥0.9999) on the CPU path, on already-committed `main` code with none of this
+    session's changes applied (checked via `git stash`) — not introduced here, not fixed here.
+  - Full CUDA suite on the isolated nobara clone reran clean after all three fixes: the only
+    failures (`TestGraphsSafeGate`, `TestPrefillLast_e2e`, `TestSlidingWindowLongContext`) are the
+    same `testdata/mistral-tiny-window` fixture gap row 2 already logged above — confirmed still
+    missing on the MAC'S OWN real checkout too (not gitignored-but-present, genuinely absent), so
+    this predates both G5 rows and isn't this session's to fix.
+  - `admissionGolden["olmo3"]` and `["olmo_hybrid"]` updated `{} → {"cuda", "metal"}`.
+  - Remaining G5 row: Command-R/R7B not started.

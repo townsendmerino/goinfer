@@ -24,9 +24,9 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// see the admission golden below. cohere2 also needs FeatNoPE but stays CPU-only: it needs
 	// FeatLayerNorm/FeatLogitScale/FeatParallelBlock too, none of which is declared anywhere.
 	"smollm3": {FeatNoPE},
-	// Olmo 3: NormPostOnly + QKNormWhole, both brand new this pass, plus the standard
-	// sliding-window/YaRN features every backend already has. Neither new feature is declared
-	// anywhere, so this is CPU-only regardless of the rest.
+	// Olmo 3: NormPostOnly + QKNormWhole, plus the standard sliding-window/YaRN features every
+	// backend already has. G5 (docs/task-gpu-paths-2026-09.md) declares both on cuda+metal, so
+	// this now reaches both.
 	// NOT FeatPerLayerRoPE: the original claim here (YaRN applies to full_attention layers
 	// only, so local/global inv-freq tables genuinely differ) was WRONG — found by the
 	// real-checkpoint T3 gate (2026-09-07, cosine 0.9928 not 1.0), then confirmed by reading
@@ -37,9 +37,11 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// Olmo Hybrid: qwen3_5's own FeatDeltaNet (shared math), plus olmo3's FeatPostOnlyNorm/
 	// FeatQKNormWhole (its full-attention layers only, but the arch-level check reads
 	// NormPlacement/QKNormWhole model-wide, not per-layer) and FeatNoPE (layerNoPE set
-	// unconditionally — the release has no RoPE at all). FeatDeltaNet and (since G5) FeatNoPE
-	// are both declared on cuda+metal, but FeatPostOnlyNorm/FeatQKNormWhole are not, so this
-	// stays CPU-only regardless.
+	// unconditionally — the release has no RoPE at all). All four are now declared on cuda+metal
+	// (FeatDeltaNet/FeatNoPE already were; G5 added the other two), so this now reaches both too —
+	// though getting there also surfaced a separate bug (both backends assumed every
+	// qwen35Params-carrying family's full-attention layer used qwen3.5's double-width q-gate
+	// scheme; Olmo Hybrid's is plain), fixed via a new Architecture.qwen35.AttnGate field.
 	"olmo_hybrid": {FeatDeltaNet, FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole},
 	// InternLM3 is a llama alias: same descriptor, so the same (empty) feature profile.
 	// Its dynamic-NTK rope resolves to no scaling at all in-window, so it does not even
@@ -208,9 +210,18 @@ var admissionGolden = map[string][]string{
 	// zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
 	// so it now reaches both. cohere2 needs FeatNoPE too but stays {} (FeatLayerNorm/
 	// FeatLogitScale/FeatParallelBlock are still undeclared on both).
-	"smollm3":     {"cuda", "metal"},
-	"olmo3":       {}, // FeatPostOnlyNorm/FeatQKNormWhole undeclared everywhere -- both new this pass
-	"olmo_hybrid": {}, // FeatDeltaNet IS declared (qwen3_5's backends), but FeatPostOnlyNorm/FeatQKNormWhole are not — CPU-only overall
+	"smollm3": {"cuda", "metal"},
+	// Olmo 3 / Olmo Hybrid: G5 declares FeatPostOnlyNorm+FeatQKNormWhole on cuda+metal (the
+	// pre-norm skip reuses the already-shipped quant_vec kernel unchanged; the whole-vector
+	// qk-norm reuses the already-shipped per-head qk_norm kernel with a collapsed grid — no new
+	// kernel or PTX either way). olmo3 needed only those two (FeatRopeMscale/FeatSlidingWindow
+	// were already declared); olmo_hybrid's FeatDeltaNet+FeatNoPE were already declared too, so
+	// this is its ONLY remaining requirement — but reaching residency at all surfaced a real,
+	// separate bug (both backends assumed every qwen35Params-carrying family's full-attention
+	// layer used qwen3.5's own double-width q-gate scheme; Olmo Hybrid's is plain), fixed
+	// alongside this via a new Architecture.qwen35.AttnGate field.
+	"olmo3":       {"cuda", "metal"},
+	"olmo_hybrid": {"cuda", "metal"},
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is

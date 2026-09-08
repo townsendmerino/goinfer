@@ -109,14 +109,19 @@ const (
 	FeatAttnTemp ResidentFeature = "attn-temp"
 	// FeatPostOnlyNorm (Olmo 3/Olmo Hybrid, batch 2 G2): NormPostOnly — no pre-norm at all, the
 	// sublayer's OUTPUT is normalized before the residual add. Genuinely different from
-	// FeatSandwichNorm (which normalizes BOTH the input and the output); no resident backend
-	// implements it, so this stays CPU-only until one does, the same shape as FeatAttnTemp.
+	// FeatSandwichNorm (which normalizes BOTH the input and the output). G5
+	// (docs/task-gpu-paths-2026-09.md): cuda and metal now implement it (quant_vec on the raw
+	// residual in place of the pre-norm dispatch; the sandwich post-norm dispatch already both
+	// backends ship widens to cover this placement too) and declare it.
 	FeatPostOnlyNorm ResidentFeature = "post-only-norm"
 	// FeatQKNormWhole (Olmo 3/Olmo Hybrid): QK-norm computed over the FULL projected q/k vector
 	// (one RMSNorm over num_heads*head_dim) rather than per-head — verified against the real
 	// modeling_olmo3.py (`Olmo3RMSNorm(config.num_attention_heads * self.head_dim, ...)`), not
 	// the standard per-head FeatQKNorm (Qwen3/Gemma3/Mellum). Different statistic AND a
-	// differently-shaped weight tensor, so it is its own feature, not a variant of FeatQKNorm.
+	// differently-shaped weight tensor, so it is its own feature, not a variant of FeatQKNorm. G5:
+	// cuda and metal now implement it by reusing the existing per-head qk-norm kernel with its
+	// grid collapsed to one whole-vector Q block and one whole-vector K block — valid only for
+	// MHA (nH==nKV, true of both families that need this today); declared with that guard.
 	FeatQKNormWhole ResidentFeature = "qk-norm-whole"
 	// FeatKDA (Bailing Hybrid / Ling 3.0, batch 2 G5): Kimi Delta Attention's linear-attention
 	// mixer — a delta-rule recurrence structurally identical to Gated DeltaNet (FeatDeltaNet) but
@@ -506,6 +511,17 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// (exact no-op) for every other family. PTX regenerated (cuda/build_ptx.sh, NVRTC) and
 		// verified end-to-end on real CUDA hardware — TestMinistral3ResidentParityCUDA.
 		FeatAttnTemp: true,
+		// G5 (docs/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid's no-pre-norm placement
+		// (Model.PostOnlyNormResident) — segA quantizes the RAW residual (quant_vec) instead of
+		// running rmsnorm_quant, and the pre-existing sandwich post-norm dispatch widens from
+		// `sandwich` to `sandwich || postOnly`. Requires the fused QKV path off (it bakes a real
+		// pre-norm weight in) — postOnly forces the unfused segA chain.
+		FeatPostOnlyNorm: true,
+		// FeatQKNormWhole: the existing per-head qk_norm kernel reused with its grid collapsed to
+		// one Q block + one K block (nH=1, nKV=1, hd=nH_orig*hd_orig) — no new kernel, no PTX
+		// change. Valid only for MHA (nH==nKV); BuildResident declines otherwise rather than
+		// silently mis-normalizing a hypothetical future GQA+QKNormWhole family.
+		FeatQKNormWhole: true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
@@ -571,5 +587,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatDeltaNet:          true, // Gated-DeltaNet mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) — TestQwen35ResidentParityMetal
 		FeatNoPE:              true, // SmolLM3 NoPE layers — all-zero invFreq (RopeInvFreqLayer), no new kernel; see that function's comment
 		FeatAttnTemp:          true, // Ministral 3 post-RoPE query scale (rope2's qTempScale param, Q-only, after rotation) — Model.AttnTempScale
+		FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid no-pre-norm — quant_vec on the raw residual instead of rmsnorm_quant; sandwich's post-norm dispatch widened to sandwich||postOnly
+		FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (nH=1,nKV=1,hd=nH_orig*hd_orig) — no new kernel; MHA only
 	},
 }

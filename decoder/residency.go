@@ -532,10 +532,33 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 // discrete failure like a MoE routing bug, but a real forward divergence at every position).
 // This is a RESIDENT-ONLY accessor, so the CPU forward path (attention.go/forwardn.go, which
 // skip the ropeAt call entirely for a NoPE layer) is untouched by this.
+//
+// G5, Olmo Hybrid (found bringing up FeatPostOnlyNorm/FeatQKNormWhole): a WHOLE-MODEL no-RoPE
+// arch (rope_theta absent — arch.NoPositionEncoding, layerNoPE unconditionally true on every
+// layer) never populates ropeInvFreqGlobal/Local at all — finalizeRoPE's own early return, since
+// there is no base to compute a table from — so ropeInvFreq(i) is empty for EVERY layer, not
+// just the ones isNoPELayer would call NoPE anyway. The len(inv)-sized zero table above degrades
+// to a ZERO-LENGTH one in that case, not a same-width all-zero one, and a resident backend that
+// uploads it unconditionally (cuda/backend.go's L.invF = r.up32(h.invFreq), no length guard)
+// hits a 0-byte device allocation, which this driver treats as a hard error — measured directly:
+// "cuda: device allocation failed (typed-len, 0 bytes): cuda: invalid length" bringing up Olmo
+// Hybrid's full-attention layer, the first family combining whole-model NoPE with reaching this
+// resident code path at all. Metal happened not to crash on this (its build code already has an
+// unrelated len(invf)>0 guard, originally for GPT-2's LearnedPosEmbed case, that incidentally
+// also skips building L.invf here) — but that leaves Metal's rope dispatch reading a zero-VALUE,
+// never-written Buffer rather than a deliberately-zero one, which is the kind of "works by
+// accident" this fix removes for both backends: rotaryDim()/2 is the width every resident rope
+// kernel launch actually expects (rhalf), independent of whether this model has any real RoPE
+// table to inherit a width from.
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
-	inv := m.w.arch.ropeInvFreq(i)
-	out := make([]float32, len(inv))
-	if m.w.arch.isNoPELayer(i) {
+	a := m.w.arch
+	inv := a.ropeInvFreq(i)
+	width := len(inv)
+	if width == 0 {
+		width = a.rotaryDim() / 2
+	}
+	out := make([]float32, width)
+	if a.isNoPELayer(i) {
 		return out // all-zero: identity rotation, given mscale==1 on every NoPE layer today
 	}
 	for j, v := range inv {
@@ -900,6 +923,25 @@ func (m *Model) embedResident(id int) []float32 {
 // has to happen between the projection and the add.
 func (m *Model) SandwichNormResident() bool { return m.w.arch.NormPlacement == NormSandwich4 }
 
+// PostOnlyNormResident reports whether the arch has NO pre-norm at all — Olmo 3 / Olmo Hybrid's
+// full-attention layers (NormPlacement == NormPostOnly; see that value's own comment). Unlike
+// SandwichNormResident this is model-level, not per-layer, but it stays correct for Olmo Hybrid:
+// its DeltaNet layers reach NormPre2 only through NormPlacementLinear, and both backends' DeltaNet
+// mixer is a wholly separate dispatch path that never consults this flag (or Ly.preNorm) at all.
+// A backend that admits such a model must skip the pre-sublayer norm entirely (the sublayer reads
+// the RAW residual) and dispatch PostAttnNorm/PostMLPNorm on the sublayer OUTPUT before the
+// residual add — the post-norm half of what SandwichNormResident's family does, minus the pre half.
+func (m *Model) PostOnlyNormResident() bool { return m.w.arch.NormPlacement == NormPostOnly }
+
+// QKNormWholeResident reports whether QK-norm (HasQKNorm) reduces over the WHOLE projected q/k
+// vector (one RMSNorm over num_heads*head_dim) rather than per head — Olmo 3 / Olmo Hybrid,
+// verified against modeling_olmo3.py's Olmo3RMSNorm(num_attention_heads*head_dim, ...). A
+// resident backend can express this by reusing its existing per-head qk-norm kernel with the
+// grid collapsed to one Q block and one K block (nH=1, nKV=1, hd=nH_orig*hd_orig) — valid ONLY
+// when nH==nKV (MHA) at that layer, since the same hd argument sizes both blocks; a backend must
+// decline rather than silently mis-normalize if a future QKNormWhole family is GQA.
+func (m *Model) QKNormWholeResident() bool { return m.w.arch.QKNormWhole }
+
 // GatedActResident returns the gated-MLP activation as its ActKind ordinal, for backends that
 // pass it straight to a kernel (0 = GELU-tanh, 1 = SiLU). Meaningless for non-gated archs.
 func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }
@@ -991,7 +1033,12 @@ func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, nu
 	if g == nil {
 		return 0, 0, 0, 0, 0, false, false
 	}
-	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, true, true
+	// G5 (docs/task-gpu-paths-2026-09.md): attnGate used to be hardcoded true here — correct for
+	// every family that had reached residency (qwen3_5/qwen3_5_moe/qwen3_next), silently wrong
+	// for Olmo Hybrid (AttnGate=false), whose full-attention layer is olmo3's plain scheme, not
+	// qwen3.5's gated one. A caller that assumed attnGate==ok would build Olmo Hybrid's
+	// full-attention layer as if it had a double-width [query‖gate] q_proj it does not have.
+	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, g.AttnGate, true
 }
 
 // Qwen35LinearLayer reports whether layer i is a Gated-DeltaNet mixer (vs gated softmax attention).

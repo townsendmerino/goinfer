@@ -201,6 +201,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 
 	sandwich := m.SandwichNormResident()
+	// G5 (docs/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid.
+	postOnly := m.PostOnlyNormResident()
+	qkNormWhole := m.QKNormWholeResident()
 	hls := make([]hlayer, nLayers)
 	for l := range nLayers {
 		lw := &w.Layers[l]
@@ -242,9 +245,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			aWM := linalg.WrapF32(inA, len(dtB), H)
 			proj = []projEnt{{&hl.dnQKV, qkv}, {&hl.dnZ, z}, {&hl.dnOut, outP},
 				{&hl.dnB, &bWM}, {&hl.dnA, &aWM}}
-		case dnetOK:
-			// The same family's SOFTMAX layer. Its weights live off lw.QProj (the family keeps
-			// them in its own struct), and q_proj is DOUBLE WIDTH — [query ‖ gate] per head.
+		case dnetOK && dnAttnGate:
+			// The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
+			// dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
+			// dnAttnGate=false, and falls through to default below — G5,
+			// docs/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` case, silently
+			// wrong the moment a non-gated hybrid family reached residency, since
+			// Qwen35ResidentParams hardcoded attnGate=true). Its weights live off lw.QProj (the
+			// family keeps them in its own struct), and q_proj is DOUBLE WIDTH — [query ‖ gate]
+			// per head.
 			hl.qGate = dnAttnGate
 			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(l)
 			hl.qNorm, hl.kNorm = qN, kN
@@ -411,17 +420,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
-		if !dnetOK { // this family keeps its QK-norm weights off lw, packed with its projections above
+		if !dnetOK || !dnAttnGate {
+			// A GATED dnetOK family's softmax layer keeps its QK-norm weights off lw (packed with
+			// its projections above, in the dnetOK&&dnAttnGate case). Everyone else — including
+			// (G5) a dnetOK family whose softmax layer is NOT gated, Olmo Hybrid — reads them
+			// normally, exactly like an ordinary GQA/MHA layer's lw.QNorm/KNorm.
 			hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
-		}
-		// Gemma sandwich: the extra post-attn / post-MLP norms. Required to be present when
-		// the arch declares them — a silently-missing one would drop the norm, not error.
-		if sandwich {
-			hl.postAttnNorm, hl.postMLPNorm = lw.PostAttnNorm, lw.PostMLPNorm
-			if len(hl.postAttnNorm) != H || len(hl.postMLPNorm) != H {
-				return declined(fmt.Errorf("layer %d: arch declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
-					l, H, len(hl.postAttnNorm), len(hl.postMLPNorm)))
-			}
 		}
 		// Per-layer RoPE table (Gemma's local 10k vs global 1M base; Mellum's YaRN-on-global).
 		// Uniform-rope families hand back the same slice for every layer.
@@ -436,18 +440,52 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// A DeltaNet layer has no attention geometry, no QK-norm and no rope table; the
 			// checks below all read those. Its own shapes are validated at upload, where the
 			// state buffers are sized from dnetParams.
+			//
+			// postOnly is a MODEL-level flag (Olmo Hybrid's own model-level NormPlacement is
+			// NormPostOnly), but a DeltaNet layer reaches NormPre2 through NormPlacementLinear
+			// instead — it needs REAL preNorm/postNorm (checked below, unconditionally) and has
+			// no PostAttnNorm/PostMLPNorm tensors at all, so that pair is populated/validated
+			// AFTER this continue, never for a DeltaNet layer, regardless of the model-level flag.
 			if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
 				return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
 			}
 			hls[l] = hl
 			continue
 		}
-		if hdL := m.HeadDimAtResident(l); m.HasQKNorm() && (len(hl.qNorm) != hdL || len(hl.kNorm) != hdL) {
+		// Gemma sandwich (both norms) / Olmo 3 postOnly (post-norm only, no pre-norm — see
+		// below): both dispatch PostAttnNorm/PostMLPNorm on the sublayer OUTPUT. Required to be
+		// present when the arch declares either — a silently-missing one would drop the norm,
+		// not error. Scoped to non-DeltaNet layers ONLY (see the comment on the continue above).
+		if sandwich || postOnly {
+			hl.postAttnNorm, hl.postMLPNorm = lw.PostAttnNorm, lw.PostMLPNorm
+			if len(hl.postAttnNorm) != H || len(hl.postMLPNorm) != H {
+				return declined(fmt.Errorf("layer %d: arch declares sandwich/postOnly norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+					l, H, len(hl.postAttnNorm), len(hl.postMLPNorm)))
+			}
+		}
+		if hdL := m.HeadDimAtResident(l); m.HasQKNorm() {
 			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim (512),
 			// not the model HeadDim (16 local) — validate against the layer's own width.
-			return declined(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not len==headDim(%d)", l, hdL))
+			//
+			// QKNormWhole (Olmo 3/Olmo Hybrid): the norm reduces over the WHOLE q/k vector, so the
+			// weight is nH*hdL/nKV*hdL wide instead of hdL — and the resident kernel launch that
+			// reproduces this (collapsing the grid to one Q block + one K block, see segA) sizes
+			// BOTH blocks from a single hd argument, which is only correct when nH==nKV (MHA).
+			// Decline rather than silently mis-normalize a hypothetical future GQA family.
+			wantQ, wantK := hdL, hdL
+			nKVL := m.KVHeadsAtResident(l)
+			if qkNormWhole {
+				if nH != nKVL {
+					return declined(fmt.Errorf("layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, nH, nKVL))
+				}
+				wantQ, wantK = nH*hdL, nKVL*hdL
+			}
+			if len(hl.qNorm) != wantQ || len(hl.kNorm) != wantK {
+				return declined(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not the expected width (want %d/%d, got %d/%d)",
+					l, wantQ, wantK, len(hl.qNorm), len(hl.kNorm)))
+			}
 		}
-		if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
+		if !postOnly && (len(hl.preNorm) == 0 || len(hl.postNorm) == 0) {
 			return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
 		}
 		if lw.QBias != nil {
@@ -482,8 +520,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(),
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
-		qkNorm: m.HasQKNorm(), rmsAddOne: m.RMSAddOne(),
-		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(),
+		qkNorm: m.HasQKNorm(), qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
+		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(), postOnly: postOnly,
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
 		sharedInter: sharedInter,
@@ -964,9 +1002,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.layers = make([]cudaLayer, nLayers)
 		for l := range nLayers {
 			h := &hls[l]
-			L := cudaLayer{
-				idx:     l,
-				preNorm: r.up32(h.preNorm), postNorm: r.up32(h.postNorm),
+			L := cudaLayer{idx: l}
+			if !r.postOnly || h.isDeltaNet {
+				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight at all for its non-DeltaNet
+				// layers — h.preNorm/h.postNorm are 0-length there (Alloc(0) is a hard error, not
+				// a no-op) — but Olmo Hybrid's DeltaNet layers reach NormPre2 through
+				// NormPlacementLinear and DO carry real ones, already required non-empty above.
+				L.preNorm, L.postNorm = r.up32(h.preNorm), r.up32(h.postNorm)
 			}
 			if h.isDeltaNet {
 				// Gated-DeltaNet mixer layer: no q/k/v/o, no rope table, no KV cache. Two
@@ -992,7 +1034,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// Alloc(0) is an error rather than a harmless no-op.
 				L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
 			}
-			if r.sandwich {
+			if (r.sandwich || r.postOnly) && !h.isDeltaNet {
+				// !h.isDeltaNet: postOnly is model-level (Olmo Hybrid's DeltaNet layers use
+				// NormPre2 instead and were never given postAttnNorm/postMLPNorm above — see the
+				// scoping comment on the validation loop's DeltaNet continue.
 				L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
 			}
 			// Both of these are ATTENTION side tables: a DeltaNet mixer layer has neither, and
@@ -1285,6 +1330,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 	}
 	if os.Getenv("GOINFER_CUDA_NO_FUSE") != "" {
+		r.fuseQKV = false
+	}
+	if postOnly {
+		// fQKV (fused_qkv.cu) bakes a REAL pre-norm weight into its rmsnorm+quant dispatch — a
+		// postOnly arch has no pre-norm weight at all (Ly.preNorm is never uploaded, see below),
+		// so it must take the unfused segA chain, which quantizes the raw residual instead.
 		r.fuseQKV = false
 	}
 	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV

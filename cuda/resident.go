@@ -321,9 +321,11 @@ type cudaResident struct {
 	attnTempBeta, attnTempOrigMaxPos float64
 	vNormUnit                        Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
 	qkNorm                           bool   // arch needs per-head Q/K RMSNorm before RoPE
+	qkNormWhole                      bool   // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
 	rmsAddOne                        bool   // (1+w) offset — false for Qwen3/Llama
 	act                              int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
 	sandwich                         bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	postOnly                         bool   // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	cacheExperts                     bool   // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
 	cacheProf                        bool   // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
 	profStall                        time.Duration
@@ -2171,7 +2173,15 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			return e
 		}
 	} else {
-		if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+		if r.postOnly {
+			// Olmo 3/Olmo Hybrid: no pre-norm at all — quantize the RAW residual (quant_vec,
+			// the same symmetric int8 quantizer ctx-before-o-proj already uses) instead of
+			// rmsnorm_quant. fuseQKV is forced off for postOnly (see BuildResident), so this is
+			// the only path a postOnly layer's QKV projection takes.
+			if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.x), gpu.ArgValue(int32(r.hidden)), Arg(r.aq), Arg(r.aSc)); e != nil {
+				return e
+			}
+		} else if e := r.rms(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
 			return e
 		}
 		if Ly.qGate {
@@ -2204,15 +2214,25 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			}
 		}
 	}
-	if r.qkNorm { // per-head Q/K RMSNorm before RoPE (Qwen3/GLM/Mellum)
+	if r.qkNorm { // per-head (or, for QKNormWhole, whole-vector) Q/K RMSNorm before RoPE
 		addOne := int32(0)
 		if r.rmsAddOne {
 			addOne = 1
 		}
-		if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(r.nH + Ly.nKV), GridY: 1, GridZ: 1,
+		// QKNormWhole (Olmo 3/Olmo Hybrid): the SAME per-head kernel, grid collapsed to one Q
+		// block + one K block by passing nH=1,nKV=1,hd=nH_orig*hd — qk_norm's block h<nH reduces
+		// [q+h*hd, +hd), so h=0 with hd=nH_orig*hd_orig spans the WHOLE contiguous Q vector, and
+		// h=nH=1 spans the whole K vector, matching decoder/attention.go's rmsNorm(q,QNorm,1,
+		// nH*hd,...) exactly. Only correct when nH==Ly.nKV (MHA) — BuildResident already declines
+		// otherwise (backend.go), so that invariant holds here unconditionally.
+		qkNH, qkNKV, qkHD := r.nH, Ly.nKV, Ly.hd
+		if r.qkNormWhole {
+			qkNH, qkNKV, qkHD = 1, 1, r.nH*Ly.hd
+		}
+		if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(qkNH + qkNKV), GridY: 1, GridZ: 1,
 			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 			Arg(r.qB), Arg(r.kB), Arg(Ly.qNorm), Arg(Ly.kNorm),
-			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(qkNH)), gpu.ArgValue(int32(qkNKV)), gpu.ArgValue(int32(qkHD)),
 			gpu.ArgValue(r.eps), gpu.ArgValue(addOne)); e != nil {
 			return e
 		}
@@ -2242,7 +2262,7 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 	if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
 		return err
 	}
-	if r.sandwich {
+	if r.sandwich || r.postOnly {
 		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
 			return err
 		}
@@ -2275,6 +2295,12 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	if Ly.isMoE {
 		return r.moeMLPPre(Ly, x)
 	}
+	// postOnly is a MODEL-level flag, but segBFFN is shared with the DeltaNet mixer's own call
+	// site (Olmo Hybrid: the mixer replaces segA+attention, not the FFN half) — a DeltaNet layer
+	// reaches NormPre2 via NormPlacementLinear regardless of the model-level placement, and DOES
+	// have a real Ly.postNorm/postMLPNorm (required non-empty / never populated respectively in
+	// BuildResident — see its DeltaNet-continue comment), so it must take the normal branches.
+	postOnlyHere := r.postOnly && !Ly.isDeltaNet
 	// Dense MLP (whole): no readback gap, so segC is nil for this layer.
 	if r.fuseQKV {
 		cfg := LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1,
@@ -2290,7 +2316,13 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			return e
 		}
 	} else {
-		if err := r.rms(x, Ly.postNorm, r.mq, r.mSc); err != nil {
+		if postOnlyHere {
+			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual x directly,
+			// same reasoning as segA's attention-side branch.
+			if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); err != nil {
+				return err
+			}
+		} else if err := r.rms(x, Ly.postNorm, r.mq, r.mSc); err != nil {
 			return err
 		}
 		if err := r.doG(Ly.g, r.mq, r.mSc, nullBias, r.gO, 0); err != nil {
@@ -2304,7 +2336,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
 		return err
 	}
-	if r.sandwich {
+	if r.sandwich || postOnlyHere {
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
 			return e
 		}

@@ -843,6 +843,7 @@ func olmoHybridArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			ValueHeadDim:          cfg.LinearValueHeadDim,
 			NumKeyHeads:           cfg.LinearNumKeyHeads,
 			NumValueHeads:         cfg.LinearNumValueHeads,
+			AttnGate:              false, // Olmo Hybrid's full-attention layer is olmo3's plain scheme — see AttnGate's own comment
 			SeparateQKVProj:       true,
 			SeparateConv:          true,
 			NegEigval:             cfg.LinearAllowNegEigval,
@@ -1357,6 +1358,7 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			ValueHeadDim:  cfg.LinearValueHeadDim,
 			NumKeyHeads:   cfg.LinearNumKeyHeads,
 			NumValueHeads: cfg.LinearNumValueHeads,
+			AttnGate:      true, // qwen3_5_moe's own double-width [query‖gate] q_proj
 		},
 	}, &qwen35TensorSchema, nil
 }
@@ -1450,6 +1452,7 @@ func qwen3NextArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			ValueHeadDim:      cfg.LinearValueHeadDim,
 			NumKeyHeads:       cfg.LinearNumKeyHeads,
 			NumValueHeads:     cfg.LinearNumValueHeads,
+			AttnGate:          true, // qwen3_next's own double-width [query‖gate] q_proj, inherited from qwen3.5
 			FusedDeltaNetProj: true, // in_proj_qkvz/in_proj_ba, not four separate tensors — see qwen35Params doc
 		},
 	}, &qwen35TensorSchema, nil
@@ -2793,6 +2796,7 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 			ValueHeadDim:  cfg.LinearValueHeadDim,
 			NumKeyHeads:   cfg.LinearNumKeyHeads,
 			NumValueHeads: cfg.LinearNumValueHeads,
+			AttnGate:      true, // qwen3.5's own double-width [query‖gate] q_proj — the dense sibling shares qwen3_5_moe's attention layer
 		},
 	}, &qwen35DenseTensorSchema, nil
 }
