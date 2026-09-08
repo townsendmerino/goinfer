@@ -15,6 +15,68 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.17.2] — 2026-09-08
+
+The third cold-user run (macbook-arm64, M1 Pro / 16 GB, run 2b against v0.17.1 — a targeted
+continuation after run 2's own opencode leg tripped the swap-safety stop rule) and the fixes it
+found. [`docs/task-first-hour.md`](docs/task-first-hour.md) "Batch 3".
+
+The headline is not the memory guard everyone was watching — it is that `Config.MaxPositions` was
+silently unset for 16 of the 18 GGUF architectures this project supports, which had left the
+*pre-existing* context-length safety checks silently inert for those families for however long
+they have shipped, and would have left this release's new guard just as inert on arrival had it
+gone unnoticed. Both memory-guard fixes below shipped, went to a live Mac re-run, and were found
+to still swap — twice — for a reason narrower each time; the third re-run confirmed the exact
+scenario that produced the original swap no longer does, because the guard now refuses honestly
+instead. All three live re-runs are recorded, not smoothed over, in the doc above.
+
+### Fixed
+
+- **`Config.MaxPositions` (the model's own context ceiling) was never populated for 16 of 18 GGUF
+  architecture families — only Phi-3's builder set it, apparently by accident.** This silently
+  disabled the pre-existing per-request context-length checks for nearly every family this
+  project supports, invisibly, for as long as they have shipped: every existing test fixture
+  pinned `MaxPositions` by hand, so the gap was invisible to the whole prior test suite by
+  construction. Fixed for all 16, with a new regression gate driven through the real
+  architecture-dispatch table that itself caught two further, independent bugs while being
+  written (a wrong metadata key in the Llama config builder; a missing required field for the two
+  Mamba-hybrid families).
+- **A resident model's memory guard priced against a fixed fraction of TOTAL machine RAM, not
+  what was actually free — so a real, shared machine (a browser and an IDE open, ordinary desktop
+  load) could swap hard on a load or a request the guard had rated comfortably within budget.**
+  Found on a live Mac, twice: the request-time admission check (new this release) and,
+  separately, the pre-existing load-time guard and its banner line both had the identical bug.
+  Both now price against currently-available memory instead, read live rather than cached. A
+  third live re-run confirmed the fix: the exact model/machine pair that swapped now refuses to
+  load at all under real desktop memory pressure — cleanly, in under five seconds, with zero
+  swapping — because the guard finally measures what is actually true. `GOINFER_NO_FIT_GUARD=1`
+  remains the escape hatch for a machine the guard is wrong about.
+- **`pull` rejected the `hf:owner/repo:quant` reference syntax that `--model` itself accepts**,
+  and a quant that exists only as a split (multi-shard) GGUF file matched no candidate at all,
+  so the dedicated "this is a split file" refusal was unreachable. Both fixed; the split-file
+  refusal now names every shard and, when one exists, the nearest single-file quant that would
+  work today.
+- **`constrain.JSONSchema` — the compiler for the one schema surface an API caller controls
+  directly (`response_format`) — silently accepted trailing garbage after a valid schema**, so
+  `{"type":"number"}0` compiled as though the schema were just the object. Found by continuing to
+  fuzz past where a scheduled CI run had stopped; a second, unrelated bug in the fuzz test's own
+  oracle (an inconsistent JSON-number decode that flagged a correct compile as wrong) was found
+  and fixed in the same pass.
+- **The README's Mac cold-start comparison and a `go get` error message were both a release
+  behind.** Both now cite the real v0.17.1 numbers/behavior instead of the v0.16.0-era ones they
+  still carried.
+
+### Added
+
+- **`docs/integrations/opencode.md`** — the README has named opencode as a real-agent target
+  since the previous batch; no recipe existed anywhere. States plainly that no run in this
+  project has yet completed a full opencode tool-call turn end to end, for two different reasons
+  on two different machines, rather than implying success nothing has measured.
+
+Full findings, gates, and all three live Mac re-runs:
+[`docs/task-first-hour.md`](docs/task-first-hour.md),
+[`docs/measurements/cold-user-2026-09-07-macbook-arm64.md`](docs/measurements/cold-user-2026-09-07-macbook-arm64.md).
+
 ## [v0.17.1] — 2026-09-07
 
 The second cold-user run (nobara-pc, Ryzen 3700X + RTX 2070 SUPER 8 GB, against v0.17.0) and the
