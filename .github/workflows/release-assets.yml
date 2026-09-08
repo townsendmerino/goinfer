@@ -34,35 +34,73 @@ jobs:
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - uses: actions/setup-go@v5
         with: { go-version-file: 'go.mod' }
-      - name: cross-compile six targets
+      - name: cross-compile six targets, with the backend each platform can use
         run: |
           set -euo pipefail
+          root="$PWD"
           mkdir -p dist
-          # R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): --version answered with a
-          # VCS pseudo-version, not the tag, on assets built the way the GPU serve binaries are
-          # (an ephemeral checkout with a local go.mod replace — see R2-follow-on below). This
-          # loop's binaries are a plain `go build` with no replace, so they would already report
-          # correctly from buildIdent alone; injecting explicitly anyway means every asset in
-          # this release uses the SAME mechanism rather than two that happen to agree today.
+          # G1 (docs/task-gpu-paths-2026-09.md): before this, every goinfer-chat-* asset was a
+          # plain `go build ./demo/chat` with no -tags, so the darwin asset had no Metal and the
+          # linux asset no CUDA — the same packaging gap the goinfer-serve assets were fixed for
+          # below at v0.17.0 (a Gemma 3 chat request on a GPU box ran at CPU speed, measured as
+          # "Ollama is 2.2x faster" when it was a missing -tags). darwin now builds
+          # ./metal/cmd/chat, linux ./cuda/cmd/chat, windows (no GPU backend) the root — same
+          # replace mechanism as the "cross-compile goinfer-serve per platform" step below; see
+          # that step's comment for the R6/R2-follow-on rationale, unchanged here.
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          for t in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
-            os="${t%/*}"; arch="${t#*/}"
-            out="dist/goinfer-chat-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
-            echo "building $t"
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-              go build -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$TAG" \
-              -trimpath -o "$out" ./demo/chat
-          done
+          build() { # build <module-dir> <tags> <goos> <goarch> <subpath>
+            local dir="$1" tags="$2" os="$3" arch="$4" subpath="$5"
+            local out="$root/dist/goinfer-chat-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
+            echo "building chat $os/$arch from $dir (tags='$tags')"
+            ( cd "$root/$dir" \
+                && { [ "$dir" = "." ] || go mod edit -replace github.com/townsendmerino/goinfer="$root"; } \
+                && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS=-mod=mod \
+                go build ${tags:+-tags "$tags"} \
+                -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$TAG" \
+                -trimpath -o "$out" "$subpath" )
+          }
+          build metal metal darwin arm64  ./cmd/chat
+          build metal metal darwin amd64  ./cmd/chat
+          build cuda  cuda  linux  amd64  ./cmd/chat
+          build cuda  cuda  linux  arm64  ./cmd/chat
+          build .     ""    windows amd64 ./demo/chat
+          build .     ""    windows arm64 ./demo/chat
           ls -lh dist
-      - name: assert chat runtime --version prints the exact tag
+      - name: assert chat assets carry their backend and print the exact tag
         run: |
           set -euo pipefail
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           fail=0
+          # go version -m proves how each cross-compiled asset was COMPILED — same check the serve
+          # assets get below. This is what would have caught G1: every one of these greps fails on
+          # a plain ./demo/chat build with no -tags.
+          for t in darwin-arm64 darwin-amd64; do
+            go version -m "dist/goinfer-chat-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/metal\b' \
+              || { echo "dist/goinfer-chat-$t was NOT built from the metal entrypoint"; fail=1; }
+          done
+          for t in linux-amd64 linux-arm64; do
+            go version -m "dist/goinfer-chat-$t" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/cuda\b' \
+              || { echo "dist/goinfer-chat-$t was NOT built from the cuda entrypoint"; fail=1; }
+            go version -m "dist/goinfer-chat-$t" | grep -q -- '-tags=cuda' \
+              || { echo "dist/goinfer-chat-$t was NOT built with -tags cuda"; fail=1; }
+          done
+          # Same stale-root-from-proxy check as the serve assets: an `h1:` dep hash means the
+          # replace above did not take and this asset links a PREVIOUS release's root.
+          for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
+            if go version -m "dist/goinfer-chat-$t" \
+                 | grep -qE 'dep[[:space:]]+github.com/townsendmerino/goinfer[[:space:]]+\S+[[:space:]]+h1:'; then
+              echo "dist/goinfer-chat-$t links the ROOT FROM THE PROXY (a previous release), not this tree"
+              fail=1
+            fi
+          done
+          # --version proves what the linked binary can actually RUN; only the native asset can be
+          # executed on this runner.
           native="dist/goinfer-chat-linux-amd64"
           chmod +x "$native"
           ver="$("$native" --version)"
           echo "$ver"
+          echo "$ver" | grep -qE '^backends: .*\bcuda\b' \
+            || { echo "$native --version does not list the cuda backend"; fail=1; }
           echo "$ver" | grep -qF "$TAG" \
             || { echo "$native --version does not print $TAG"; fail=1; }
           # darwin/windows assets cannot run on this runner; the -X string is a rodata literal,
@@ -72,6 +110,7 @@ jobs:
             grep -qa "$TAG" "$f" || { echo "$f does not contain the tag string $TAG"; fail=1; }
           done
           [ "$fail" = 0 ] || { echo "chat runtime version assertions FAILED"; exit 1; }
+          echo "chat assets: darwin=metal linux=cuda confirmed from build settings; linux-amd64 --version lists cuda"
 
       # goinfer-serve, per platform, WITH the backend that platform can actually use.
       #
@@ -306,16 +345,41 @@ jobs:
           ./demo/chat/build-embed.sh --name "goinfer-chat-${{ matrix.tier }}" model.gguf \
             darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
           ls -lh demo/chat/dist
-      - name: assert embedded --version prints the tag, tier and baked quant
+      - name: assert embedded --version prints the tag, tier and baked quant, and carries its backend
         if: steps.gate.outputs.skip == 'false'
         run: |
           set -euo pipefail
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           fail=0
+          # G1 (docs/task-gpu-paths-2026-09.md): build-embed.sh now builds darwin from
+          # ./metal/cmd/chat and linux from ./cuda/cmd/chat (previously the pure-Go root for
+          # every target) — same go version -m check as the plain chat/serve assets confirms it
+          # actually took, and the stale-root-from-proxy check confirms the module resolved from
+          # THIS tree rather than a previous release.
+          for t in darwin-arm64 darwin-amd64; do
+            f="demo/chat/dist/goinfer-chat-${{ matrix.tier }}-$t"
+            go version -m "$f" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/metal\b' \
+              || { echo "$f was NOT built from the metal entrypoint"; fail=1; }
+          done
+          for t in linux-amd64 linux-arm64; do
+            f="demo/chat/dist/goinfer-chat-${{ matrix.tier }}-$t"
+            go version -m "$f" | grep -qE '^\s*mod\s+github.com/townsendmerino/goinfer/cuda\b' \
+              || { echo "$f was NOT built from the cuda entrypoint"; fail=1; }
+          done
+          for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
+            f="demo/chat/dist/goinfer-chat-${{ matrix.tier }}-$t"
+            if go version -m "$f" \
+                 | grep -qE 'dep[[:space:]]+github.com/townsendmerino/goinfer[[:space:]]+\S+[[:space:]]+h1:'; then
+              echo "$f links the ROOT FROM THE PROXY (a previous release), not this tree"
+              fail=1
+            fi
+          done
           native="demo/chat/dist/goinfer-chat-${{ matrix.tier }}-linux-amd64"
           chmod +x "$native"
           ver="$("$native" --version)"
           echo "$ver"
+          echo "$ver" | grep -qE '^backends: .*\bcuda\b' \
+            || { echo "$native --version does not list the cuda backend"; fail=1; }
           echo "$ver" | grep -qF "$TAG" \
             || { echo "$native --version does not print $TAG"; fail=1; }
           echo "$ver" | grep -qE "^embedded: tier=${{ matrix.tier }} quant=\S+ \(baked at build time" \

@@ -84,14 +84,47 @@ LDFLAGS="-s -w $EMBED_QUANT_LDFLAG"
 TARGETS=("$@")
 if [ ${#TARGETS[@]} -eq 0 ]; then TARGETS=("$(go env GOOS)/$(go env GOARCH)"); fi
 
+# Workspace mode (go.work, mandatory for local cross-module work per CLAUDE.md) already resolves
+# github.com/townsendmerino/goinfer for the metal/cuda submodules with no replace, and REJECTS
+# GOFLAGS=-mod=mod outright ("may only be set to readonly or vendor when in workspace mode").
+# CI's checkout has no go.work (gitignored) and needs the replace, same as the release workflow's
+# other cross-compile loops. `go env GOWORK` is the authoritative check — it reports the workspace
+# file whether found by auto-discovery (walking up from cwd) or set explicitly, "off" if disabled.
+gw="$(cd "$ROOT" && go env GOWORK)"
+goworkspace_active=false
+if [ -n "$gw" ] && [ "$gw" != "off" ]; then goworkspace_active=true; fi
+
 mkdir -p "$DIR/dist"
 for t in "${TARGETS[@]}"; do
   os="${t%/*}"; arch="${t#*/}"
   out="$DIR/dist/$NAME-$os-$arch"
   [ "$os" = "windows" ] && out="$out.exe"
-  echo "building $os/$arch ($TAGS) -> dist/$(basename "$out")"
-  CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-    go build -tags "$TAGS" -ldflags="$LDFLAGS" -trimpath -o "$out" "$DIR"
+  # G1 (docs/task-gpu-paths-2026-09.md): building every target from $DIR (the pure-Go root
+  # demo/chat) meant the darwin/linux embedded assets carried no GPU backend even though
+  # metal/cuda exist — the same gap the goinfer-chat/goinfer-serve release loops were fixed for.
+  # darwin builds ./metal/cmd/chat, linux ./cuda/cmd/chat; both are separate modules, so outside
+  # workspace mode the local tree is wired in with a replace and dropped again right after the
+  # build, so this script leaves a clean tree behind for its OTHER documented use — running it by
+  # hand (README.md, RELEASE_TEMPLATE.md), not just from the release workflow's throwaway checkout.
+  moduledir="$ROOT"; entry="$DIR"; buildtags="$TAGS"
+  case "$os" in
+    darwin) moduledir="$ROOT/metal"; entry="./cmd/chat"; buildtags="$TAGS,metal" ;;
+    linux)  moduledir="$ROOT/cuda";  entry="./cmd/chat"; buildtags="$TAGS,cuda" ;;
+  esac
+  need_replace=false
+  if [ "$moduledir" != "$ROOT" ] && ! $goworkspace_active; then need_replace=true; fi
+  echo "building $os/$arch ($buildtags) -> dist/$(basename "$out")"
+  (
+    cd "$moduledir"
+    extra_goflags=""
+    if $need_replace; then
+      go mod edit -replace github.com/townsendmerino/goinfer="$ROOT"
+      extra_goflags="-mod=mod"
+    fi
+    CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS="$extra_goflags" \
+      go build -tags "$buildtags" -ldflags="$LDFLAGS" -trimpath -o "$out" "$entry"
+    if $need_replace; then go mod edit -dropreplace github.com/townsendmerino/goinfer; fi
+  )
 done
 echo "done:"
 ls -lah "$DIR/dist"

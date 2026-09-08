@@ -88,7 +88,18 @@ if [ "${#MODELCMDS[@]}" -gt 0 ]; then
 	( cd "$WORK" && GOFLAGS= go install github.com/townsendmerino/goinfer/demo/chat@latest ) \
 		|| { echo "    could not install demo/chat — registry short-name checks below will fail closed"; }
 	registry=""
-	[ -x "$GOBIN/chat" ] && registry="$("$GOBIN/chat" models 2>&1)"
+	if [ -x "$GOBIN/chat" ]; then
+		registry="$("$GOBIN/chat" models 2>&1)"
+		# G1 (docs/task-gpu-paths-2026-09.md): the pure-Go `go install .../demo/chat@latest` path
+		# from the README must at least answer --version — the release-workflow assertions cover
+		# the shipped binaries, this covers the path a reader actually runs.
+		echo "==> goinfer-chat --version (go install .../demo/chat@latest)"
+		if ! ver="$("$GOBIN/chat" --version 2>&1)"; then
+			echo "    FAILED: $ver"; fail=1
+		else
+			echo "$ver" | sed 's/^/    /'
+		fi
+	fi
 
 	for c in "${MODELCMDS[@]}"; do
 		echo "==> (resolve only) $c"
