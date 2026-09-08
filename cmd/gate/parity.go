@@ -145,6 +145,12 @@ var parityRealckptGates = []gateCheck{
 	{"granite-dense-real", "TestGraniteDenseReal_gate"},
 	{"olmo3-oracle", "TestOlmo3Real_gate"},
 	{"olmo-hybrid-oracle", "TestOlmoHybridReal_gate"},
+	// internlm2 repeated the exact smollm3/lfm2/mistral3 registration gap: its gate and asset
+	// (commit d1449f4) landed without this line, leaving TestRealckptGateIsListedOrExplicitly
+	// NotRequired red on main. First run had FAILED anyway (cosine 0.87 — since found to be a
+	// corrupt reference, not a goinfer defect; see docs/parity-coverage-policy.md's RESOLVED
+	// note) so the missing registration was doubly invisible until the fix made the gate green.
+	{"internlm2-real", "TestInternLM2_1_8bReal_gate"},
 }
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -164,6 +170,7 @@ var emitGates = []gateCheck{
 	{"granite", "TestGraniteDenseReal_gate"},
 	{"olmo3", "TestOlmo3Real_gate"},
 	{"olmo_hybrid", "TestOlmoHybridReal_gate"},
+	{"internlm2", "TestInternLM2_1_8bReal_gate"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -682,6 +689,16 @@ var awaitingFirstConfirmation = map[string]string{
 	"TestOlmoHybridReal_gate": "2026-09-07 — newly required (T3 promotion of olmo_hybrid from tiny-golden to " +
 		"a released checkpoint); registered alongside the gate and asset; promote from the first sweep " +
 		"that runs it",
+	"TestInternLM2_1_8bReal_gate": "2026-09-07 — newly required (T3 promotion of internlm2 from tiny-golden " +
+		"to a released checkpoint); the parityRealckptGates entry itself was missing until now (same gap " +
+		"as smollm3/lfm2/mistral3, caught the same way), so it has never run in any sweep. First run FAILED " +
+		"(cosine 0.873148, argmax wrong) — root-caused to a corrupt HF reference, not a goinfer defect: " +
+		"InternLM2's RoPE inv_freq is a persistent=False buffer that this transformers version's " +
+		"from_pretrained fast-init never re-computes for buffers absent from the checkpoint's state dict, " +
+		"leaving it as uninitialized memory. scripts/pin_internlm2_real.py now patches it after loading; " +
+		"the regenerated golden and a re-run both confirm cosine 1.000000. See " +
+		"docs/parity-coverage-policy.md's RESOLVED note for the full account. Still promote from the first " +
+		"sweep that runs it — this note records the fix, not a ledger confirmation.",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS

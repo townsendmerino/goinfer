@@ -17,7 +17,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "qwen3_next",
@@ -313,7 +313,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "internlm2",
@@ -333,7 +333,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "lfm2",
@@ -353,7 +353,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "laguna",
@@ -455,7 +455,7 @@
     "loaders": "safetensors",
     "modality": "text (+ vision tower, ignored)",
     "gpu_residency_eligible": false,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "mistral",
@@ -515,7 +515,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": false,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "phi3",
