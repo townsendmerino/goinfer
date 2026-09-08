@@ -541,6 +541,55 @@ with no m-RoPE noise in the comparison.
 **Not yet measured**: WebGPU decode timing (the CUDA numbers above are the only ones measured;
 WebGPU's `ForwardMRoPE`/`UploadKV` correctness is validated on real hardware but not timed).
 
+#### Image-aware resident prefix reuse (P9a) — 2026-09-08
+
+**Skipping the tower and the CPU prefill entirely, not just decode.** Gap 0 above put an image
+turn's DECODE on the resident GPU, but every turn — even one resending the identical image — still
+paid the vision tower's own cost plus a full CPU prefill before decode could start. `docs/multimodal.md`'s
+P9(a): when the resident KV already holds a verified-identical image (same content hash, same
+placeholder span), decode reseeds directly from it and both the tower and the CPU prefill are
+skipped.
+
+**Measured: real checkpoint (`gemma-3-4b-it`), real image (`testdata/gemma3_preprocess_image.png`),
+int4, `maxTokens=4` (this changes prefill, not decode, so a short generation isolates it).
+Phase-based rather than call-by-call interleaved** — two resident int4 instances of this checkpoint
+(weights + a 4096-position KV cache each) do not fit together on this 8GB card: measured directly,
+the second `Load()` in a concurrent-instance design declined residency at "0.77 GB free" against
+1.14 GB needed. So each arm gets its own model load, is measured, and is closed before the next
+arm's model loads — same session, close together in wall-clock time, but not alternated turn by
+turn. A real deviation from this page's usual interleaved-pairing discipline, justified here by the
+effect size below (1-2 orders of magnitude, not a few percent) swamping any plausible drift between
+adjacent phases of one run. RTX 2070 SUPER, driver `595.91.07`, Nobara 44, goinfer `3a1af8b7`.
+Machine state at run start: single user (`who`), load average 7.9/7.4/3.9 — traced directly to
+bursty background btrfs/kworker I/O and this session's own concurrent `go build`s (checked via `ps
+aux --sort=-%cpu`), not a competing GPU/CPU job; GPU otherwise idle. Harness: a throwaway timing
+driver (`cuda/cmd/tmp_p9a_timing/`), matching gap 0's own precedent above — not committed.
+
+Isolated lever (tower excluded from every visit — its own cost is unaffected by P9(a) either way,
+the same isolation gap 0's own Gemma 3 row above uses), 1 discarded warm-up + 5 measured:
+
+| | median turn time | speedup |
+|---|---|---|
+| cold (forced full CPU prefill, no reuse) | 8.215 s | — |
+| warm (P9a resident reuse) | 0.051 s | **159.98×** |
+
+Full end-to-end, including a real vision-tower forward pass on every cold visit — the actual "does
+resending a screenshot get fast" claim (`docs/task-first-hour.md` scenario F), 4 visits each (no
+warm-up discard — the tower cost alone dominates any startup noise):
+
+| | median turn time | speedup |
+|---|---|---|
+| cold (real tower + CPU prefill) | 39.822 s | — |
+| warm (P9a resident reuse) | 0.054 s | **737.24×** |
+
+The vision tower's own single-run cost measured here (31.324 s) is consistent with §A's `gemma-3-4b-it`
+median above (31.3 s).
+
+**Not yet measured**: CUDA is the only backend measured (Metal has no `UploadKV`/resident image-turn
+decode at all — out of scope, see `docs/multimodal.md`; WebGPU declines `gemma-3-4b-it` residency
+on this box for an unrelated reason, missing arch features — see `cuda/resident_reuse_vl_parity_test.go`'s
+own doc comment).
+
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
 > **Decode is §B8** (the current anchor). This section keeps what §B8 does not carry: the
