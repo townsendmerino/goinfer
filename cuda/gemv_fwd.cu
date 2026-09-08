@@ -39,13 +39,19 @@ extern "C" __global__ void kv_store(const float* __restrict__ src, float* __rest
 extern "C" __global__ void rope_kv(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
-    int nH, int nKV, int hd, int pos, int rhalf, float mscale)
+    int nH, int nKV, int hd, int pos, int rhalf, float mscale, float qTempScale)
 {
     // mscale is YaRN's attention_factor, folded into cos/sin exactly as decoder/rope.go's
     // applyRoPE does it (c = cos(theta)*scale; s = sin(theta)*scale) — NOT applied to the
     // rotated output afterward, which is a different and wrong place to put it. 1.0 for every
     // family without YaRN, so this is a no-op multiply on every existing dispatch rather than
     // a new branch. Metal's rope carries the same parameter for the same reason.
+    //
+    // qTempScale (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md): a SEPARATE
+    // post-rotation multiplier on Q ONLY — decoder/attention.go's sequential path does rope
+    // first (with mscale, above) then applies this on top, never touching K. Host-computed per
+    // decode call from cudaResident.attnTempBeta/attnTempOrigMaxPos + the current pos (see the
+    // Go call site); 1.0 (exact no-op) for every family without this feature.
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int tail = hd - 2 * rhalf; // un-rotated elements per head; 0 when rotary is full
     int qn = nH * rhalf, kn = nKV * rhalf, tn = nKV * tail;
@@ -56,8 +62,8 @@ extern "C" __global__ void rope_kv(
         float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
         float* base = q + h * hd;
         float a = base[d], b = base[d + rhalf];
-        base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s));
-        base[d + rhalf] = __fmaf_rn(a, s, __fmul_rn(b, c));
+        base[d] = __fmul_rn(__fmaf_rn(a, c, -__fmul_rn(b, s)), qTempScale);
+        base[d + rhalf] = __fmul_rn(__fmaf_rn(a, s, __fmul_rn(b, c)), qTempScale);
     } else if (idx < qn + kn) {
         int j = idx - qn;
         int h = j / rhalf, d = j % rhalf;

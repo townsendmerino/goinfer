@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"runtime/debug"
@@ -312,16 +313,22 @@ type cudaResident struct {
 	nH             int
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
-	vNormUnit      Buffer  // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
-	qkNorm         bool    // arch needs per-head Q/K RMSNorm before RoPE
-	rmsAddOne      bool    // (1+w) offset — false for Qwen3/Llama
-	act            int32   // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich       bool    // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
-	cacheExperts   bool    // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
-	cacheProf      bool    // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
-	profStall      time.Duration
-	profHost       time.Duration
-	profDMA        time.Duration
+	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md):
+	// the raw params behind the post-RoPE query scale (decoder.Model.AttnTempParams) — 0 for every
+	// family without it. Recomputed into qTempScale per decode call (rope_kv's new parameter) or
+	// passed raw into rope_kv_batched, which must recompute it per row (position varies within
+	// one batched launch, unlike decode's single scalar per call).
+	attnTempBeta, attnTempOrigMaxPos float64
+	vNormUnit                        Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
+	qkNorm                           bool   // arch needs per-head Q/K RMSNorm before RoPE
+	rmsAddOne                        bool   // (1+w) offset — false for Qwen3/Llama
+	act                              int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich                         bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	cacheExperts                     bool   // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
+	cacheProf                        bool   // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
+	profStall                        time.Duration
+	profHost                         time.Duration
+	profDMA                          time.Duration
 	// Phase 0 (G31 follow-up): split the expert DMA into the BIG weight copy and the TINY scale
 	// copy, with bytes and call counts for each. If a ~4 KB scale upload costs nearly as much as a
 	// ~600 KB weight upload, the path is PER-CALL-OVERHEAD bound rather than bandwidth bound, and
@@ -2391,6 +2398,15 @@ func (r *cudaResident) captureGraphs() error {
 func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
 	nullBias := ArgNull()
+	// qTempScale (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md): computed ONCE
+	// per token (same value at every layer, unlike mscale which is per-layer) — mirrors
+	// decoder.Model.AttnTempScale exactly. attnTempBeta==0 (every family without this feature)
+	// skips the division entirely: attnTempOrigMaxPos is 0 for those families, and pos/0 would
+	// poison Q with NaN otherwise.
+	qTempScale := float32(1)
+	if r.attnTempBeta != 0 {
+		qTempScale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
+	}
 	if e := gpu.Upload(r.x, emb); e != nil {
 		return e
 	}
@@ -2453,7 +2469,8 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
 			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)), gpu.ArgValue(Ly.mscale)); err != nil {
+			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)), gpu.ArgValue(Ly.mscale),
+			gpu.ArgValue(qTempScale)); err != nil {
 			return err
 		}
 		nKeys := pos + 1

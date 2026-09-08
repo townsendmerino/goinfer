@@ -548,6 +548,31 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 // non-YaRN layers) — folded into the resident rope kernel per layer.
 func (m *Model) RopeMscaleLayer(i int) float64 { return m.w.arch.ropeMscale(i) }
 
+// AttnTempScale returns the query-side attention-temperature scale (Ministral 3's
+// AttnTempBeta/AttnTempOrigMaxPos — see that field's own comment for the formula and its
+// own-family caveats) for the resident forward at absolute position pos. G5
+// (docs/task-gpu-paths-2026-09.md), FeatAttnTemp. 1 (no-op) for every family without it — the
+// SAME beta==0 guard decoder/attention.go's sequential path uses, load-bearing here too:
+// evaluating the formula unconditionally would divide by AttnTempOrigMaxPos==0 (every family
+// that doesn't set this leaves it at its zero value) and poison Q with NaN.
+func (m *Model) AttnTempScale(pos int) float32 {
+	a := m.w.arch
+	if a.AttnTempBeta == 0 {
+		return 1
+	}
+	return float32(1 + a.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/a.AttnTempOrigMaxPos)))
+}
+
+// AttnTempParams returns Ministral 3's raw attention-temperature parameters (beta, origMaxPos)
+// for a backend that must compute AttnTempScale PER ROW inside a single batched kernel launch
+// (position varies within the launch, unlike the sequential decode path's one AttnTempScale(pos)
+// call per token) — CUDA's batched prefill (prefillCore/rope_kv_batched). beta==0 for every
+// family without this feature; the caller must apply the SAME guard AttnTempScale does before
+// dividing by origMaxPos.
+func (m *Model) AttnTempParams() (beta, origMaxPos float64) {
+	return m.w.arch.AttnTempBeta, m.w.arch.AttnTempOrigMaxPos
+}
+
 // RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an
 // eligible model's dense layers) as float32 — the GPU bridge's RoPE table.
 func (m *Model) RopeInvFreq() []float32 {

@@ -721,11 +721,17 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			}
 			// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
 			t = r.profTic()
+			// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp): passed RAW, not
+			// precomputed — this launch covers M rows at DIFFERENT positions (startPos+m), so
+			// the kernel recomputes qTempScale per row device-side (mirrors decoder.Model.
+			// AttnTempParams, which exists for exactly this caller; decode's single-position
+			// rope_kv gets a host-precomputed scalar instead, see launchToken).
 			if e := r.launch(r.bRopeKV, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 				Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
-				gpu.ArgValue(Ly.mscale)); e != nil {
+				gpu.ArgValue(Ly.mscale),
+				gpu.ArgValue(float32(r.attnTempBeta)), gpu.ArgValue(float32(r.attnTempOrigMaxPos))); e != nil {
 				return e
 			}
 			r.profToc(glueCat, t)

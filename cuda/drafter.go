@@ -351,7 +351,12 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 				// Drafters build from a geometry (no decoder.Model), which carries no YaRN
 				// attention_factor — so 1.0, not a value fetched from nowhere. A YaRN drafter
 				// would have to thread RopeMscaleLayer through geo first; this is where it lands.
-				gpu.ArgValue(float32(1))); e != nil {
+				gpu.ArgValue(float32(1)),
+				// Same reasoning for FeatAttnTemp (G5 docs/task-gpu-paths-2026-09.md): no drafter
+				// geometry carries AttnTempBeta/OrigMaxPos, and beta=0 makes rope_kv_batched skip
+				// the scale entirely (see its own comment) — a Ministral-3-shaped drafter would
+				// need AttnTempParams threaded through geo first, same as YaRN above.
+				gpu.ArgValue(float32(0)), gpu.ArgValue(float32(0))); e != nil {
 				return e
 			}
 		}
@@ -487,7 +492,8 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 				Arg(s.q), Arg(s.k), Arg(s.v), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(M)),
-				gpu.ArgValue(float32(1))); e != nil { // no YaRN on a drafter geometry — see the note above
+				gpu.ArgValue(float32(1)),                                       // no YaRN on a drafter geometry — see the note above
+				gpu.ArgValue(float32(0)), gpu.ArgValue(float32(0))); e != nil { // no FeatAttnTemp on a drafter geometry either — see the note above
 				return e
 			}
 			// THE one kernel that is not the target's: uniform nKeys, so every block row

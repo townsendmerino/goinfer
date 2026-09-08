@@ -333,5 +333,70 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - Metal smoke test run on real hardware: PASS. Full `metal/...` suite (`-tags
     goinfer_testhooks`) and `staticcheck` both reran clean after. CUDA smoke test written,
     `gofmt`-clean, not run anywhere — same CUDA-box dependency as G4.
-  - Remaining G5 rows (Ministral 3/`FeatAttnTemp`, Olmo 3/`FeatPostOnlyNorm`+`FeatQKNormWhole`,
-    Olmo Hybrid, Command-R/R7B) not started.
+- 2026-09-08 — G5 row 2 (Ministral 3/`FeatAttnTemp`) DONE on decoder+Metal+**CUDA**, the first G5
+  row with a real CUDA-hardware run. Session had no CUDA box of its own, so this used `ssh nobara`
+  into an ISOLATED `git clone` at `/tmp/ministral3-cuda-check` (bundle-transferred, never touching
+  the OTHER session's live checkout at `~/mycode/goinfer`, which had its own uncommitted edits to
+  `cuda/gemv_fwd.cu`/`cuda/resident.go` mid-test-run at the time — checked first, deliberately not
+  gone near). Cleaned up after.
+  - **The fix.** `RopeInvFreqLayer`'s twin for a genuinely position-dependent (not per-layer-
+    constant) feature: `decoder.Model.AttnTempScale(pos)` (decode, one scalar per call) and
+    `AttnTempParams()` (raw beta/origMaxPos, for a batched kernel that must recompute the scale
+    PER ROW device-side since position varies within one launch). Folded into the EXISTING rope
+    launch's Q output on both backends rather than a new kernel — `rope2`/`rope_kv` gained one
+    trailing `qTempScale` parameter (Q-only, post-rotation, guarded so `beta==0` never evaluates
+    the `pos/origMaxPos` division that would otherwise poison every non-Ministral3 family's Q
+    with NaN), `rope_kv_batched` gained the two raw params and computes it per row.
+  - **A real safety finding along the way.** CUDA's kernel is NOT the `.cu` source — it's a
+    checked-in, `go:embed`'d PTX binary (`cuda/testdata/*.ptx`) only NVRTC can regenerate, and
+    Apple Silicon cannot run any part of the CUDA toolchain at all. Editing the Go call site to
+    pass a new argument BEFORE regenerating the PTX would have shipped an argument-count mismatch
+    against every family's decode/prefill on real hardware — not "feature missing," a crash or
+    memory corruption in `rope_kv`, which every family uses. Surfaced to the user before writing
+    any Go wiring; resolved by actually reaching CUDA hardware via nobara rather than shipping
+    that risk. `build_ptx.sh` regenerated both `.ptx` artifacts clean via NVRTC
+    (`~/cuda-toolkit`), confirmed via a byte-diff (not just "the script exited 0").
+  - **A second real finding: two more direct `rope_kv`/`rope_kv_batched` launch call sites this
+    session's own search almost missed.** Beyond `resident.go`/`prefill.go`, three TEST files
+    construct raw kernel launches with hardcoded argument lists (`rope_partial_test.go`,
+    `moe_route_demand_test.go`) and — the one that actually matters for correctness, not just test
+    hygiene — `cuda/drafter.go`'s speculative-decode block-drafter path calls `bRopeKV` from TWO
+    production call sites with no `decoder.Model` reference available (drafters build from a raw
+    geometry). All fixed the same way the file's own existing YaRN-mscale precedent already
+    established for exactly this "no model reference" situation: hardcoded `0`/`0` (off), with a
+    comment pointing at what a future Ministral-3-shaped drafter would need. `reale2e_test.go`
+    carries its own scar tissue for this exact class of bug ("this file's last real drift (rope_kv
+    missing its `rhalf` argument)") — also fixed. Found by grepping for every `"rope_kv"` /
+    `"rope_kv_batched"` string in the package AFTER the signature change, not by trusting the two
+    call sites the initial research turned up.
+  - **Real numbers, on real hardware, PASS**: `TestMinistral3ResidentParityCUDA` — 32/32 exact
+    argmax, worst cosine 0.999923 across all four `floor(pos/8)` values the fixture's
+    `AttnTempOrigMaxPos=8` exercises. Unlike G5 row 1's Metal finding (pure noise-dominance on
+    synthetic weights), the control experiment here (fix vs. fix force-disabled) showed the SAME
+    ~0.9999 either way — but a direct probe of CUDA's own resident logits (bypassing the CPU
+    reference) showed positions with `floor=0` bit-identical between configs (correct — scale is
+    exactly 1 there either way) and positions with `floor>0` genuinely, reproducibly DIFFERING
+    between configs. Real, small effect; too small for a whole-model cosine floor on this tiny
+    fixture to isolate, not absent. Documented inline in the test rather than left as a silent
+    footnote. Broader regression: `TestRopePartial`, `TestKernelLocalMemoryCensus`,
+    `TestGLMResidentParity`, `TestRopeMscale` all reran clean after the signature change; three
+    unrelated failures (`TestPrefillLast_e2e`, `TestSlidingWindowLongContext`,
+    `TestGraphsSafeGate`) are a missing `testdata/mistral-tiny-window` fixture in the scratch
+    clone, not a code defect — confirmed by the exact error text, not assumed.
+  - **Metal**: `resident.setPos(pos)` centralizes `uPos`/`uNKeys`/`uQTempScale` mutation (new
+    helper, replacing three separate call sites that each set the first two by hand) — the SAME
+    guarded formula as CUDA's host-side computation, since Metal has no per-row batched path for
+    this (its batched prefill declines by default regardless, per G4's Metal finding). `rope2`
+    gained the same trailing `qTempScale` buffer arg at its one production dispatch site
+    (`encodeAttention`) plus two test-helper dispatch sites that share the pipeline. Same Metal-
+    specific finding as SmolLM3 (G5 row 1): `testdata/ministral3-tiny` is ALSO seeded/synthetic,
+    and the SAME fix-vs-disabled control experiment landed within ~0.0008 cosine either way — so
+    the Metal resident test is a smoke check (admission + no NaN), not a numeric floor, exactly
+    like row 1. Full `metal/...` suite reran clean after the kernel signature change (which touches
+    every family's rope dispatch, not just Ministral 3).
+  - `admissionGolden["mistral3"/"ministral3"]` updated `{} → {"cuda", "metal"}`;
+    `decoder.TestAttnTempScale_matchesSequentialFormula` is the pure, backend-agnostic gate for the
+    formula itself (no GPU, no quantization noise) — the same "prove the actual changed function
+    directly" pattern G5 row 1 established.
+  - Remaining G5 rows (Olmo 3/`FeatPostOnlyNorm`+`FeatQKNormWhole`, Olmo Hybrid, Command-R/R7B) not
+    started.

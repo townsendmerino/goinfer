@@ -182,3 +182,52 @@ func TestMinistral3_batchedMatchesSequential(t *testing.T) {
 	}
 	t.Logf("mistral3 batched==sequential: %d logits bit-identical", len(seqLogits))
 }
+
+// TestAttnTempScale_matchesSequentialFormula is G5's real gate for FeatAttnTemp
+// (docs/task-gpu-paths-2026-09.md): a resident backend calls Model.AttnTempScale(pos) (decode) or
+// Model.AttnTempParams() (CUDA's batched prefill, which must recompute the same formula PER ROW
+// device-side since position varies within one launch) instead of a new per-model constant, so
+// this is a PURE, backend-agnostic check that both give exactly the formula
+// decoder/attention.go's sequential path applies: scale = 1 + beta·ln(1 + floor(pos/origMaxPos)).
+// No GPU, no quantization noise — see decoder.TestRopeInvFreqLayer_NoPEIsZero (G5 row 1) for why
+// this codebase prefers proving the actual changed function directly over a resident-vs-CPU
+// cosine floor on a seeded/synthetic tiny fixture, which may or may not be discriminating enough
+// on its own (checked separately, in the resident smoke tests).
+func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
+	if _, err := os.Stat(ministral3ModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no Ministral3 checkpoint at %s — regenerate with scripts/pin_ministral3_tiny.py", ministral3ModelDir)
+	}
+	m, err := Load(ministral3ModelDir, Options{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if m.w.arch.AttnTempBeta == 0 {
+		t.Fatalf("fixture has AttnTempBeta==0 — this gate is only meaningful if the fixture " +
+			"exercises FeatAttnTemp; if the fixture changed, this test no longer gates what it claims")
+	}
+
+	beta, origMaxPos := m.AttnTempParams()
+	if beta != m.w.arch.AttnTempBeta || origMaxPos != m.w.arch.AttnTempOrigMaxPos {
+		t.Fatalf("AttnTempParams() = (%v, %v), want (%v, %v)", beta, origMaxPos, m.w.arch.AttnTempBeta, m.w.arch.AttnTempOrigMaxPos)
+	}
+
+	// origMaxPos=8 on the fixture: positions 0-7 give floor=0 (scale==1, the identity a SHORT
+	// test would only ever see — the exact "minimal repro hides the bug" trap AttnTempBeta's own
+	// comment warns about), 8-15 give floor=1, 16-23 give floor=2. Covers both.
+	for pos := 0; pos < 24; pos++ {
+		want := float32(1 + m.w.arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/m.w.arch.AttnTempOrigMaxPos)))
+		got := m.AttnTempScale(pos)
+		if got != want {
+			t.Errorf("AttnTempScale(%d) = %v, want %v (sequential formula)", pos, got, want)
+		}
+		// Cross-check against the RAW params formula too, the one a batched kernel must
+		// reproduce per row (it cannot call AttnTempScale, which is host-side per-call).
+		gotFromParams := float32(1 + beta*math.Log1p(math.Floor(float64(pos)/origMaxPos)))
+		if gotFromParams != want {
+			t.Errorf("formula from AttnTempParams() at pos %d = %v, want %v", pos, gotFromParams, want)
+		}
+	}
+	if s := m.AttnTempScale(3); s != 1 {
+		t.Errorf("AttnTempScale(3) = %v, want exactly 1 (pos < origMaxPos=8 ⇒ floor==0 ⇒ identity)", s)
+	}
+}

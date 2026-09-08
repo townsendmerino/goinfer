@@ -97,13 +97,15 @@ const (
 	FeatShortConv      ResidentFeature = "short-conv"       // LFM2/LFM2.5: the gated short-convolution mixer that replaces attention on 22 of 30 layers (B,C,x = in_proj(h); conv = depthwise_causal_conv(B*x), no activation; out_proj(C*conv)), carrying a per-layer rolling window of the last K-1 inputs. CPU-only — no resident backend implements the conv OR its recurrent state. Declared for the SAME reason as FeatAttnOutputGate above: LFM2 is otherwise a plain GQA+QK-norm+SwiGLU model that needs nothing CUDA lacks, so without this it would be ADMITTED and then mis-run, with the resident path treating every conv layer as attention. The window also makes it stateful, so a resident runner would need the state plumbing FeatSSM/FeatDeltaNet have and this has not.
 	FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer; the resident bridges (built for the PLE-free dense 12B/26B) implement NONE of it, so a resident runner would SKIP the PLE branch and silently mis-run. No resident backend declares it ⇒ all decline (CPU-only) until an E-model bridge lands.
 	// FeatAttnTemp (Ministral 3, batch 2 G3): the Llama4-style attn-temp query scale
-	// (AttnTempBeta/AttnTempOrigMaxPos) is new to the GENERIC forward path (decoder/attention.go,
-	// decoder/forwardn.go) — no resident (GPU) backend's own kernels apply it, so admitting
-	// mistral3 to any resident path today would silently drop the scale for every position past
+	// (AttnTempBeta/AttnTempOrigMaxPos) was new to the GENERIC forward path (decoder/attention.go,
+	// decoder/forwardn.go) when this feature was added — admitting mistral3 to a resident path
+	// that didn't apply it would silently drop the scale for every position past
 	// original_max_position_embeddings, producing plausible-but-wrong logits at exactly the
-	// context lengths the mechanism exists for. Same shape as FeatAttnOutputGate/FeatShortConv
-	// above: otherwise a plain GQA+YaRN model needing nothing else CUDA/Metal/WebGPU lack, so
-	// without this declaration it would be ADMITTED and mis-run rather than correctly declined.
+	// context lengths the mechanism exists for. G5 (docs/task-gpu-paths-2026-09.md): cuda and
+	// metal now apply it (Model.AttnTempScale/AttnTempParams, folded into the existing rope
+	// launch's Q output rather than a new kernel) and declare this. WebGPU still declines —
+	// otherwise a plain GQA+YaRN model needing nothing else any backend lacks, so without this
+	// declaration it would be ADMITTED there too and mis-run rather than correctly declined.
 	FeatAttnTemp ResidentFeature = "attn-temp"
 	// FeatPostOnlyNorm (Olmo 3/Olmo Hybrid, batch 2 G2): NormPostOnly — no pre-norm at all, the
 	// sublayer's OUTPUT is normalized before the residual add. Genuinely different from
@@ -496,6 +498,14 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// whole change. Identity rotation at invFreq==0 holds only when mscale==1 on those
 		// layers, true of every layerNoPE family admitted so far — see that function's comment.
 		FeatNoPE: true,
+		// G5 (docs/task-gpu-paths-2026-09.md): Ministral 3's post-RoPE query scale, folded into
+		// rope_kv's existing launch (a new qTempScale parameter, applied to Q only, after the
+		// rotation) rather than a new kernel — Model.AttnTempScale/AttnTempParams
+		// (decoder/residency.go) supply the value; rope_kv_batched's twin recomputes it per row
+		// device-side (position varies within one batched launch). beta==0 makes qTempScale==1
+		// (exact no-op) for every other family. PTX regenerated (cuda/build_ptx.sh, NVRTC) and
+		// verified end-to-end on real CUDA hardware — TestMinistral3ResidentParityCUDA.
+		FeatAttnTemp: true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
@@ -560,5 +570,6 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatAttnSink:          true, // attention sink term + clamped-SwiGLU MoE + custom router (gpt-oss) — TestGptOssResidentParity
 		FeatDeltaNet:          true, // Gated-DeltaNet mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) — TestQwen35ResidentParityMetal
 		FeatNoPE:              true, // SmolLM3 NoPE layers — all-zero invFreq (RopeInvFreqLayer), no new kernel; see that function's comment
+		FeatAttnTemp:          true, // Ministral 3 post-RoPE query scale (rope2's qTempScale param, Q-only, after rotation) — Model.AttnTempScale
 	},
 }

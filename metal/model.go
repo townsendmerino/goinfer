@@ -149,6 +149,12 @@ type resident struct {
 	embedScale float32
 	embed      *linalg.WeightMat
 
+	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md):
+	// the raw params behind the post-RoPE query scale (Model.AttnTempParams) — 0 for every family
+	// without it. uQTempScale (below) is the per-forward-call scale computed from these plus the
+	// CURRENT position, mutated in place at every uPos.SetU32 call site the same way uPos itself is.
+	attnTempBeta, attnTempOrigMaxPos float64
+
 	layers                   []residLayer
 	finalNorm, finalNormBias Buffer // finalNormBias: GPT-2 ln_f's LayerNorm bias (unused for RMS families)
 	lmW, lmS                 Buffer
@@ -165,7 +171,7 @@ type resident struct {
 
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uH, uI, uNH, uScale, uEps                            Buffer // invf = model-level rope (prefill only); geometry uniforms live on residLayer.geom
-	uPos, uNKeys                                               Buffer
+	uPos, uNKeys, uQTempScale                                  Buffer
 	part, tok, uP                                              Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                 []float32
 	gpuStart, gpuEnd, kernStart, kernEnd                       float64      // last-Forward GPU timing (Step 0)
@@ -861,6 +867,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.uNH = NewBufferU32(d, uint32(nH)) // query heads: constant across a family, so model-level
 	r.uScale, r.uEps = NewBufferFloats(d, []float32{m.AttnScale()}), NewBufferFloats(d, []float32{m.NormEps()})
 	r.uPos, r.uNKeys = NewBufferU32(d, 0), NewBufferU32(d, 1)
+	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
+	r.uQTempScale = NewBufferFloats(d, []float32{1}) // identity; overwritten per call alongside uPos
 	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and a shared
 	// zero (nH=0 / nHhd=0 / addOne=0) so qk_norm reduces to x·rms·1 on the V slot. Sized to the
 	// widest head; harmless (a few KB) for models with no K=V layer.
@@ -995,6 +1003,25 @@ func (r *resident) addLearnedPos(pos int) {
 	}
 }
 
+// setPos writes pos/nKeys/qTempScale into their uniform buffers in place — called at every
+// forward entry point right before encoding or committing, mirroring uPos/uNKeys's existing
+// per-call-mutation pattern. qTempScale (Ministral 3, FeatAttnTemp) is the SAME formula
+// decoder.Model.AttnTempScale computes host-side; recomputed here rather than round-tripping
+// through the decoder package because resident has no *decoder.Model reference, only the raw
+// params fetched once at build time (attnTempBeta/attnTempOrigMaxPos). attnTempBeta==0 (every
+// family without this feature) always gives exactly 1 without evaluating the division at all —
+// same guard as decoder/attention.go's sequential path, load-bearing: attnTempOrigMaxPos is 0
+// for those families, and pos/0 would poison every Q with NaN otherwise.
+func (r *resident) setPos(pos int) {
+	r.uPos.SetU32(uint32(pos))
+	r.uNKeys.SetU32(uint32(pos + 1))
+	scale := float32(1)
+	if r.attnTempBeta != 0 {
+		scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
+	}
+	r.uQTempScale.Floats()[0] = scale
+}
+
 // Forward runs token `id` at absolute position `pos` and returns logits[V]. The whole
 // layer stack + LM head is encoded into ONE command buffer, one commit/wait.
 func (r *resident) Forward(id, pos int) []float32 {
@@ -1050,8 +1077,7 @@ func (r *resident) forwardHiddenNoHead(emb []float32, pos int, want bool) ([]flo
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
 	r.addLearnedPos(pos)
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e) // layers → final norm → r.aq/r.aSc; no head dispatch
 	e.End()
@@ -1070,8 +1096,7 @@ func (r *resident) forwardHiddenNoHead(emb []float32, pos int, want bool) ([]flo
 // forwardLogits encodes the trunk + full lm head and reads back logits[V]. Caller must hold
 // the OS thread and have filled r.x with the input embedding.
 func (r *resident) forwardLogits(pos int) []float32 {
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)                                                           // 28 layers → final norm → r.aq/r.aSc
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
@@ -1179,8 +1204,7 @@ func (r *resident) execLoop() {
 		}
 		copy(r.x.Floats(), job.emb) // this token's embedding + pos (set at commit time, not encode)
 		r.addLearnedPos(job.pos)    // GPT-2: += wpe[pos], same commit-time placement as the copy above
-		r.uPos.SetU32(uint32(job.pos))
-		r.uNKeys.SetU32(uint32(job.pos + 1))
+		r.setPos(job.pos)
 		cur.Commit()
 
 		count++
@@ -1418,7 +1442,7 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		if r.qkNorm {
 			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 		}
-		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd)
+		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
 		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
@@ -1479,7 +1503,7 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	if r.qkNorm {
 		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
-	e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd)
+	e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], g.uKvDim, r.uPos)
 	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
@@ -1690,7 +1714,7 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		// One merged dispatch for both Q and K (rope2, kernels.go) instead of two: gid<qTotal
 		// addresses Q at offset 0, gid>=qTotal addresses K at offset g.uNHhd (the fused qkv
 		// buffer's kOff, in elements) — V (at vOff) is untouched either way.
-		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd)
+		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
 	}
 	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
 	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)

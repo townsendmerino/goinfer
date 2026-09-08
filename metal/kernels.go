@@ -525,17 +525,25 @@ kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(
 // unchanged rather than adding a new one, since it is already exactly that value. Same math as
 // rope otherwise (verified bit-identical to running rope twice — TestRope2_matchesTwoRope,
 // metal/rope2_test.go); rope itself is untouched and kept for its own standalone kernel tests.
+// qTempScale (buffer 9, Ministral 3 FeatAttnTemp): a post-rotation multiplier on Q ONLY, applied
+// after the pair rotation below — decoder/attention.go's sequential path does the SAME thing in
+// the SAME order (rope first, attn-temp on top), never touching K. 1.0 (exact no-op) for every
+// family without this feature — Model.AttnTempScale's own comment has the formula.
 kernel void rope2(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& qTotal[[buffer(4)]],
     constant uint& kTotal[[buffer(5)]], constant uint& rhalf[[buffer(6)]], constant float& scale[[buffer(7)]],
-    constant uint& kOff[[buffer(8)]], uint gid[[thread_position_in_grid]]) {
+    constant uint& kOff[[buffer(8)]], constant float& qTempScale[[buffer(9)]], uint gid[[thread_position_in_grid]]) {
     uint total = qTotal + kTotal;
     if (gid >= total) return;
+    bool isQ = gid < qTotal;
     uint g = gid; uint off = 0u;
-    if (gid >= qTotal) { g = gid - qTotal; off = kOff; }
+    if (!isQ) { g = gid - qTotal; off = kOff; }
     uint head = g/rhalf; uint dd = g%rhalf; uint base = off + head*hd;
     float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
-    float x0=x[base+dd],x1=x[base+rhalf+dd]; x[base+dd]=x0*c-x1*s; x[base+rhalf+dd]=x0*s+x1*c;
+    float x0=x[base+dd],x1=x[base+rhalf+dd];
+    float r0=x0*c-x1*s, r1=x0*s+x1*c;
+    if (isQ) { r0 *= qTempScale; r1 *= qTempScale; }
+    x[base+dd]=r0; x[base+rhalf+dd]=r1;
 }
 kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
     device half* kc[[buffer(2)]], device half* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],

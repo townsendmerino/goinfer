@@ -70,9 +70,9 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"cohere2": {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
 	"mistral": {FeatSlidingWindow},
 	// Ministral 3: no sliding window on the real releases (confirmed null), so the only feature
-	// this family needs at all is the new attn-temp query scale — CPU-only until a resident
-	// backend implements it (see FeatAttnTemp's own comment). Otherwise a plain GQA+YaRN model
-	// needing nothing else any backend lacks.
+	// this family needs at all is the attn-temp query scale — G5 (docs/task-gpu-paths-2026-09.md)
+	// declares it on cuda+metal (see FeatAttnTemp's own comment), so this now reaches both.
+	// Otherwise a plain GQA+YaRN model needing nothing else any backend lacks.
 	"mistral3":   {FeatAttnTemp},
 	"ministral3": {FeatAttnTemp},
 	"qwen3":      {FeatQKNorm},
@@ -231,10 +231,12 @@ var admissionGolden = map[string][]string{
 	//     is trusted.
 	"mellum":  {"cuda", "metal", "webgpu"},
 	"mistral": {"cuda", "metal", "webgpu"},
-	// Ministral 3: CPU-only. FeatAttnTemp is brand new to this pass and no backend declares it,
-	// so every one correctly declines rather than silently dropping the attn-temp scale.
-	"mistral3":   {},
-	"ministral3": {},
+	// Ministral 3: G5 (docs/task-gpu-paths-2026-09.md) declares FeatAttnTemp on cuda+metal —
+	// rope_kv/rope2's new qTempScale param (Q-only, post-rotation) — its ONLY required feature,
+	// so it now reaches both, same shape as smollm3/FeatNoPE above. Not webgpu: unimplemented
+	// there.
+	"mistral3":   {"cuda", "metal"},
+	"ministral3": {"cuda", "metal"},
 	"mixtral":    {"cuda", "metal", "webgpu"},
 	"nemotron_h": {"webgpu"},
 	"phi3":       {"cuda", "metal", "webgpu"},

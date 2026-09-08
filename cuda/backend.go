@@ -477,9 +477,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 
 	// ---- resident + pinned executor ----
+	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
 	r := &cudaResident{
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(),
+		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: m.HasQKNorm(), rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(),
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
