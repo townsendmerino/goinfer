@@ -18,9 +18,11 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"qwen2":      {},
 	"qwen2_5_vl": {},
 	"llama":      {},
-	// SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). No resident backend declares
-	// FeatNoPE at all yet (cohere2, the only other family needing it, is also CPU-only), so
-	// this is CPU-only too — not a new gap, the SAME undeclared feature cohere2 already has.
+	// SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/task-gpu-paths-2026-09.md):
+	// cuda+metal now declare FeatNoPE (RopeInvFreqLayer zeroes the NoPE layers' invFreq table,
+	// no new kernel), so this is SmolLM3's ONLY required feature and it now reaches both —
+	// see the admission golden below. cohere2 also needs FeatNoPE but stays CPU-only: it needs
+	// FeatLayerNorm/FeatLogitScale/FeatParallelBlock too, none of which is declared anywhere.
 	"smollm3": {FeatNoPE},
 	// Olmo 3: NormPostOnly + QKNormWhole, both brand new this pass, plus the standard
 	// sliding-window/YaRN features every backend already has. Neither new feature is declared
@@ -35,8 +37,9 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// Olmo Hybrid: qwen3_5's own FeatDeltaNet (shared math), plus olmo3's FeatPostOnlyNorm/
 	// FeatQKNormWhole (its full-attention layers only, but the arch-level check reads
 	// NormPlacement/QKNormWhole model-wide, not per-layer) and FeatNoPE (layerNoPE set
-	// unconditionally — the release has no RoPE at all). None of these four is declared by
-	// any backend, so this is CPU-only regardless of the DeltaNet math being shared.
+	// unconditionally — the release has no RoPE at all). FeatDeltaNet and (since G5) FeatNoPE
+	// are both declared on cuda+metal, but FeatPostOnlyNorm/FeatQKNormWhole are not, so this
+	// stays CPU-only regardless.
 	"olmo_hybrid": {FeatDeltaNet, FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole},
 	// InternLM3 is a llama alias: same descriptor, so the same (empty) feature profile.
 	// Its dynamic-NTK rope resolves to no scaling at all in-window, so it does not even
@@ -201,11 +204,15 @@ var admissionGolden = map[string][]string{
 	"kimi_k2":          {"webgpu"},
 	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
 	"llama":            {"cuda", "metal", "webgpu"},
-	"smollm3":          {}, // FeatNoPE undeclared everywhere, same as cohere2
-	"olmo3":            {}, // FeatPostOnlyNorm/FeatQKNormWhole undeclared everywhere -- both new this pass
-	"olmo_hybrid":      {}, // FeatDeltaNet IS declared (qwen3_5's backends), but FeatNoPE/FeatPostOnlyNorm/FeatQKNormWhole are not — CPU-only overall
-	"internlm2":        {"cuda", "metal", "webgpu"},
-	"internlm3":        {"cuda", "metal", "webgpu"},
+	// G5 (docs/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
+	// zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
+	// so it now reaches both. cohere2 needs FeatNoPE too but stays {} (FeatLayerNorm/
+	// FeatLogitScale/FeatParallelBlock are still undeclared on both).
+	"smollm3":     {"cuda", "metal"},
+	"olmo3":       {}, // FeatPostOnlyNorm/FeatQKNormWhole undeclared everywhere -- both new this pass
+	"olmo_hybrid": {}, // FeatDeltaNet IS declared (qwen3_5's backends), but FeatPostOnlyNorm/FeatQKNormWhole are not — CPU-only overall
+	"internlm2":   {"cuda", "metal", "webgpu"},
+	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
 	// admitted everywhere llama is — same backends, same reason.
 	"granite":     {"cuda", "metal", "webgpu"},

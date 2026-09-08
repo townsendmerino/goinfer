@@ -520,9 +520,24 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 
 // RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32 — the global
 // or local table per the layer's attention type (Mellum YaRN-on-global vs default-local).
+//
+// G5 (docs/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's no_rope_layers,
+// Cohere2's every-Nth global layer — arch.isNoPELayer) gets an all-ZERO table instead of the
+// real one, same length. The resident rope kernels compute cos=cos(pos·invFreq)·mscale,
+// sin=sin(pos·invFreq)·mscale (cuda/gemv_fwd.cu, metal/kernels.go); at invFreq==0 that is
+// cos=mscale, sin=0 — the identity rotation ONLY when mscale==1 (RopeMscaleLayer). Every family
+// that sets layerNoPE today (SmolLM3) also has no YaRN scaling on those layers, so this holds;
+// it is NOT a general "any NoPE layer is safe" claim, and a future family combining YaRN with
+// NoPE would need this revisited (a parity test would catch it — a wrong scale is not a
+// discrete failure like a MoE routing bug, but a real forward divergence at every position).
+// This is a RESIDENT-ONLY accessor, so the CPU forward path (attention.go/forwardn.go, which
+// skip the ropeAt call entirely for a NoPE layer) is untouched by this.
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
 	inv := m.w.arch.ropeInvFreq(i)
 	out := make([]float32, len(inv))
+	if m.w.arch.isNoPELayer(i) {
+		return out // all-zero: identity rotation, given mscale==1 on every NoPE layer today
+	}
 	for j, v := range inv {
 		out[j] = float32(v)
 	}

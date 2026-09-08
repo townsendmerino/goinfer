@@ -490,6 +490,12 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		//            selected, different weights (0.895 -> 0.9964 on the real 20B).
 		FeatAttnSink: true,
 		FeatOutBias:  true,
+		// G5 (docs/task-gpu-paths-2026-09.md): SmolLM3's NoPE layers get an all-zero per-layer
+		// invFreq table instead of a new kernel path — RopeInvFreqLayer folds this in for every
+		// backend that reads it (decoder/residency.go), so this line and Metal's twin are the
+		// whole change. Identity rotation at invFreq==0 holds only when mscale==1 on those
+		// layers, true of every layerNoPE family admitted so far — see that function's comment.
+		FeatNoPE: true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
@@ -553,5 +559,6 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatRopeMscale:        true, // rope kernel's scale param (kernels.go), proven in isolation (TestRope_mscale) and end-to-end via gpt-oss's YaRN (TestGptOssResidentParity) — ALSO admits Mellum, see note above
 		FeatAttnSink:          true, // attention sink term + clamped-SwiGLU MoE + custom router (gpt-oss) — TestGptOssResidentParity
 		FeatDeltaNet:          true, // Gated-DeltaNet mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) — TestQwen35ResidentParityMetal
+		FeatNoPE:              true, // SmolLM3 NoPE layers — all-zero invFreq (RopeInvFreqLayer), no new kernel; see that function's comment
 	},
 }

@@ -102,3 +102,53 @@ func TestSmolLM3_forwardParity(t *testing.T) {
 		argmax(logits), g.Argmax, maxSampleΔ, cos)
 	emitParityRow(t, "smollm3", "tiny-golden", "HF f32 (smollm3-tiny seeded fixture, per-layer NoPE on layer 3)", 100.0, cos, cos)
 }
+
+// TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/task-gpu-paths-2026-09.md, FeatNoPE):
+// a resident backend's rope kernel gets an all-zero invFreq table for a NoPE layer instead of a
+// new kernel path (RopeInvFreqLayer, decoder/residency.go), which is exact identity rotation by
+// construction (cos(pos·0)=1, sin(pos·0)=0 for every position — verified against the shipped
+// kernel math directly, cuda/gemv_fwd.cu and metal/kernels.go's rope2, both
+// `c=cos(th)*scale,s=sin(th)*scale` with th=pos·invf[dd]).
+//
+// This is deliberately a PURE, backend-agnostic unit test of RopeInvFreqLayer itself, not a
+// resident-vs-CPU cosine comparison on testdata/smollm3-tiny. Measured directly (not assumed):
+// on that fixture (hidden=64, seeded/synthetic weights, `TestSmolLM3ResidentParityMetal`),
+// zeroing ONLY the NoPE layer, zeroing NO layer, and zeroing EVERY layer's rope all land within
+// ~0.0006 cosine of each other against the CPU reference (worst cosine 0.9617/0.9619/0.9624) —
+// the SAME "cannot discriminate a real bug from int8-on-random-weights noise" finding this
+// backend's own Mellum-on-Metal note (features.go) already recorded for a different family. A
+// resident-vs-CPU cosine floor on this fixture would therefore pass or fail independent of
+// whether NoPE is implemented correctly, which is worse than no gate — this test is the real one.
+func TestRopeInvFreqLayer_NoPEIsZero(t *testing.T) {
+	if _, err := os.Stat(smollm3ModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no SmolLM3 checkpoint at %s — regenerate with scripts/pin_smollm3_tiny.py", smollm3ModelDir)
+	}
+	m, err := Load(smollm3ModelDir, Options{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// Same pin as TestSmolLM3_forwardParity: no_rope_layers=[1,1,1,0] (1=has-rope, 0=NoPE).
+	wantNoPE := []bool{false, false, false, true}
+	for i, isNoPE := range wantNoPE {
+		inv := m.RopeInvFreqLayer(i)
+		if len(inv) == 0 {
+			t.Fatalf("layer %d: RopeInvFreqLayer returned an EMPTY table — no rope table at all, "+
+				"not even a real one for a layer that should rope", i)
+		}
+		allZero := true
+		for _, v := range inv {
+			if v != 0 {
+				allZero = false
+				break
+			}
+		}
+		switch {
+		case isNoPE && !allZero:
+			t.Errorf("layer %d is NoPE but RopeInvFreqLayer returned a NON-ZERO table: %v — a resident "+
+				"backend would apply a real rotation where the CPU path applies none", i, inv)
+		case !isNoPE && allZero:
+			t.Errorf("layer %d ropes but RopeInvFreqLayer returned an ALL-ZERO table — a resident "+
+				"backend would silently skip this layer's rotation", i)
+		}
+	}
+}

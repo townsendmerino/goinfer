@@ -300,3 +300,38 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     bitidentity.md` — so it may legitimately clear 0.9999 where Metal cannot; do not assume either
     way). Verified only: `gofmt -l` (valid Go syntax, correctly formatted) and a manual re-read of
     every touched line against `resident.go`'s existing `r.aq`/`r.aSc` M=1 decode-path usage.
+- 2026-09-08 — G5 row 1 (SmolLM3/`FeatNoPE`) DONE on decoder+Metal, WRITTEN-UNVERIFIED on CUDA
+  (same "no CUDA box this session" limitation as G4). `RopeInvFreqLayer` (`decoder/residency.go`)
+  returns an all-zero per-layer invFreq table for a NoPE layer (`arch.isNoPELayer`) instead of a
+  new kernel path — identity rotation by construction at `invFreq==0` (verified directly against
+  the shipped kernel math, `cuda/gemv_fwd.cu` and `metal/kernels.go`'s `rope2`:
+  `c=cos(pos·invf)·scale, s=sin(pos·invf)·scale`), holding only where `mscale==1` on the NoPE
+  layers — true of every family that sets `layerNoPE` today, documented as a real caveat rather
+  than a general claim. `FeatNoPE: true` declared on both `residentBackendFeatures["cuda"]` and
+  `["metal"]` (`decoder/features.go`); `admissionGolden["smollm3"]` (`decoder/features_test.go`)
+  updated `{} → {"cuda", "metal"}` (SmolLM3's ONLY required feature) and two stale comments
+  elsewhere in that file fixed (they still said FeatNoPE was undeclared everywhere).
+  - **Real finding, not assumed — the gate this row needed was NOT the resident-vs-CPU cosine
+    floor the other rows use.** `testdata/smollm3-tiny` is seeded/synthetic (hidden=64, per
+    `scripts/pin_smollm3_tiny.py`), and measured directly: with the real fix (zero only the NoPE
+    layer), with the fix reverted (every layer wrongly ropes, including the one that shouldn't),
+    and with EVERY layer's invFreq forced to zero (layers 0-2 wrongly skip rope too), the worst
+    cosine against the CPU reference over 32 tokens on Metal was 0.9619 / 0.9617 / 0.9624 — a
+    ~0.0006 spread across "correct", "wrong one way", and "wrong the other way", meaning a cosine
+    floor on this fixture would pass or fail independent of whether the fix is right. Same
+    "cannot discriminate a real bug from quantization noise on unstructured weights" finding this
+    file's own Mellum-on-Metal note (`features.go`) already recorded for a different family —
+    confirmed here first-hand rather than taken on faith from that precedent.
+  - **The real gate**: `decoder.TestRopeInvFreqLayer_NoPEIsZero` (`decoder/smollm3_test.go`) — a
+    pure, backend-agnostic unit test of the actual changed function (exact zero/non-zero per
+    layer against the fixture's `no_rope_layers=[1,1,1,0]` pin), no GPU, no quantization noise.
+    PASSES. The resident tests (`metal/smollm3_resident_parity_test.go`'s
+    `TestSmolLM3ResidentSmokeMetal`, `cuda/smollm3_resident_smoke_test.go`'s
+    `TestSmolLM3ResidentSmokeCUDA`) were downgraded from a numeric floor to a smoke check
+    (resident admission + no NaN over 32 tokens) with the finding documented inline, rather than
+    shipping a test whose name claims coverage its assertions don't have.
+  - Metal smoke test run on real hardware: PASS. Full `metal/...` suite (`-tags
+    goinfer_testhooks`) and `staticcheck` both reran clean after. CUDA smoke test written,
+    `gofmt`-clean, not run anywhere — same CUDA-box dependency as G4.
+  - Remaining G5 rows (Ministral 3/`FeatAttnTemp`, Olmo 3/`FeatPostOnlyNorm`+`FeatQKNormWhole`,
+    Olmo Hybrid, Command-R/R7B) not started.
