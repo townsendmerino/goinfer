@@ -148,6 +148,27 @@ because the point is to cover the families nobody has written yet. Note the fami
 fire first for any given family, so test the chokepoint guard DIRECTLY or its branch is never
 exercised.
 
+**A TIGHT REAL-CHECKPOINT BAR CAN CATCH A BUG IN THE REFERENCE, NOT JUST IN GOINFER — DO
+NOT ASSUME THE DIVERGENCE IS YOURS.** internlm2's real-checkpoint promotion
+(`internlm/internlm2_5-1_8b-chat`) first failed at cosine 0.87 against HF. The bug was in
+`transformers`, not goinfer: `InternLM2RotaryEmbedding.__init__` computes `inv_freq` as a
+`persistent=False` buffer, and the installed version's `from_pretrained` fast-init path
+never re-runs that formula for buffers absent from the checkpoint's state dict — so
+`inv_freq` came back as uninitialized memory (denormals, sometimes literal NaN) instead of
+the real frequency table. Found by bisecting the REAL loaded `nn.Module`'s forward line by
+line (same discipline as "prefer differencing per layer," above) until the NaN's first
+appearance pinpointed `rotary_emb`; confirmed by patching the buffer post-load and matching
+goinfer's own output to 7 significant figures. goinfer was correct the entire time this
+gate reported red. **The lesson generalises beyond this one bug**: any
+`trust_remote_code=True` model with a `persistent=False` buffer computed in `__init__`
+(RoPE tables are the common case, not the only one) is exposed to this class of
+`from_pretrained` fast-init defect — sanity-check such buffers (non-NaN, roughly the
+expected magnitude) before trusting a reference disagreement as goinfer's bug. This is also
+why the T3 real-checkpoint tier exists at all: no amount of code review or a tiny golden
+would have found this, because the defect isn't in goinfer's code — the tight bar has to
+actually run against real, independently-produced numbers before it can catch something it
+doesn't control.
+
 Heavy tests need `GOINFER_HEAVY_TESTS=1` and their assets; `testdata/assets.json` is the
 registry and `go run ./cmd/gate` is the runner (`census`, `heavy`, `parity`, `composition`,
 `selector`, `gpu`, `mutation`).

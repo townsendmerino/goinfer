@@ -1121,7 +1121,12 @@ commit.
   attempted: the real HF class still can't run END-TO-END on this Mac (the Triton blocker above
   applies to VALIDATION the same way it did to fixture-building), so a real-checkpoint T3 needs
   either the Linux box (if Triton installs there) or a from-scratch reference forward at real
-  scale — a bigger undertaking than this pass's own ceiling.
+  scale — a bigger undertaking than this pass's own ceiling. **Checked 2026-09-07 on the Linux
+  box: `pip install triton` succeeds cleanly (3.8.0, a real CUDA wheel — the Mac's blocker, no
+  wheel for macOS/ARM, does not apply here). Not proven reachable, though: `~/.venv-vl`'s torch
+  has no CUDA support, so no Triton kernel was ever actually launched, and `fla` itself was not
+  installed. A plausible path, not a validated one — the next attempt should install `fla` in a
+  CUDA-enabled torch env and try `trust_remote_code=True` end-to-end before assuming this works.**
 - **GGUF loader / peer row** — gated on T3, per this doc's own rule.
 - **The LoRA'd KDA gate variant (`no_kda_lora: false`) and the plain unbounded decay gate
   (`kda_safe_gate: false`)** — `validateBailingHybrid` refuses both rather than silently

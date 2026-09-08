@@ -51,6 +51,49 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
+**Two sessions editing `parity-coverage-policy.md` concurrently has now cost real content
+twice in two days — worth a decided convention, not a catch-it-each-time habit**
+*(observed 2026-09-07, both incidents same day)*. First: during the smollm3 promotion, a
+concurrent session was live-editing this working tree (dirty files observed mid-run,
+resolved by checking before every write). Second, worse: the MacBook's internlm2 commit
+`5251f4f0` silently deleted ~250 lines from `docs/parity-coverage-policy.md` — the batch-2
+(lfm2/mistral3), batch-3 (granite/olmo3/olmo_hybrid), and olmo3-fix-disposition sections,
+all real and correct, present at `0b0f5c9b`. `docs/QUEUE.md`'s own cross-reference to
+"batch-3's timing note" survived (different file) and pointed at nothing until this was
+caught and restored. The likely mechanism: that commit was authored against a local copy
+of the doc predating the Linux box's push, and a full-file commit silently overwrote the
+intervening append rather than conflicting on it — a lost update, not a decision anyone
+made. **Restored** (content recovered from `0b0f5c9b`, reconciled against the MacBook's
+internlm2 section rather than reverted over it).
+
+`parity-coverage-policy.md` is a structural collision point: every promotion appends to
+it, sessions on both machines run for hours with a local copy in context, and pushes land
+at different times with no coordination signal between them. Two incidents in two days on
+the same file is a pattern, not bad luck. Not decided here — options worth weighing:
+pull immediately before any commit that touches this specific file (cheap, still racy over
+a long session); a per-session/per-date scratch file merged at a natural boundary instead
+of one shared append target; or a small script that diffs the file being committed against
+its remote HEAD and refuses to commit if the local copy doesn't contain the remote's own
+latest section headers (catches exactly this shape of loss mechanically, at the point it
+would occur, rather than after a push).
+
+**A 1.8B f32 HF reference took down the 16 GB MacBook hard enough to need a reboot, and the
+cause is still undiagnosed** *(observed 2026-09-07, internlm2 real-checkpoint promotion;
+full account in `docs/parity-coverage-policy.md`'s internlm2 timing note)*. The FIRST
+unguarded run of `AutoModelForCausalLM.from_pretrained(..., dtype=torch.float32)` on
+`internlm/internlm2_5-1_8b-chat` (smaller than smollm3's already-tight 3B) drove the whole
+system into an OOM severe enough to require a hard reboot, not just a killed process, with
+ordinary other work (VS Code, browser) already open. The retry, wrapped in a memory
+watchdog and after freeing disk (`go clean -cache`), completed cleanly at a lower observed
+peak (~6.6 GB RSS) — but nothing about the setup changed except which other processes
+happened to be resident, so the second run is "got lucky," not "diagnosed." **Not
+investigated further; flagged here so it isn't forgotten.** Practical consequence until
+this is understood: treat the MacBook as lower-trust for any 2-8B-class
+`dtype=torch.float32` HF reference run bare — always under a watchdog — and note this
+specifically narrows the machines that can validate the remaining tiny-oracle families,
+since the MacBook is also the box that can't reach most of the larger ones (RAM-bound)
+already.
+
 **mellum and gpt-oss's YaRN has never been checked at a bar that could tell a wiring defect
 from quantization noise** *(observed 2026-09-07, olmo3 real-checkpoint promotion; see
 `docs/parity-coverage-policy.md`'s batch-3 timing note for the full account)*. olmo3's
@@ -884,6 +927,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 |---|---|
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0221d32` | docs: the developer-role task is NOT a blocker -- it is silent-wrong, which is worse |
+| `0b0f5c9b` | fix(decoder): olmo3 RoPE applies YaRN to every layer, not full-attention only |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `25a4711` | refactor(cuda): re-point the device layer onto aikit/gpu v0.3.1 (native-GPU Phase 1) |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
@@ -894,6 +938,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `4c26a58` | perf(cuda): parallelise the Gemma final-logit softcap, bit-identical (P3) |
 | `4ca19e9` | fix(serve): accept `role: "developer"` as an alias for `system` (G12) |
 | `4da116d` | perf(decoder): P10 — reuse Sampler's full-vocab scratch buffer across draws |
+| `5251f4f0` | parity: internlm2 real-checkpoint gate PASSES — the golden was corrupt, not goinfer |
 | `588052b` | serve: drain in-flight requests before freeing an unloaded model (fixes the leak safely) |
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |
