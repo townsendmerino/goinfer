@@ -151,6 +151,7 @@ var parityRealckptGates = []gateCheck{
 	// corrupt reference, not a goinfer defect; see docs/parity-coverage-policy.md's RESOLVED
 	// note) so the missing registration was doubly invisible until the fix made the gate green.
 	{"internlm2-real", "TestInternLM2_1_8bReal_gate"},
+	{"qwen2moe-oracle", "TestQwen2MoeReal_oracle"},
 }
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
@@ -171,6 +172,7 @@ var emitGates = []gateCheck{
 	{"olmo3", "TestOlmo3Real_gate"},
 	{"olmo_hybrid", "TestOlmoHybridReal_gate"},
 	{"internlm2", "TestInternLM2_1_8bReal_gate"},
+	{"qwen2_moe", "TestQwen2MoeReal_oracle"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -699,6 +701,10 @@ var awaitingFirstConfirmation = map[string]string{
 		"the regenerated golden and a re-run both confirm cosine 1.000000. See " +
 		"docs/parity-coverage-policy.md's RESOLVED note for the full account. Still promote from the first " +
 		"sweep that runs it — this note records the fix, not a ledger confirmation.",
+	"TestQwen2MoeReal_oracle": "2026-09-08 — newly required (T3 promotion of qwen2_moe from tiny-golden to a " +
+		"released checkpoint); registered alongside the gate and asset in the same change, per the " +
+		"discipline established after smollm3/lfm2/mistral3/internlm2's registration gaps; promote from " +
+		"the first sweep that runs it",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS

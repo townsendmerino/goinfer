@@ -597,7 +597,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "real-oracle 100.0%/0.99954"
   },
   {
     "name": "qwen2_5_vl",
@@ -657,7 +657,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "real-oracle 100.0%/0.99834"
   },
   {
     "name": "smollm3",

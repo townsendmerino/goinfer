@@ -643,16 +643,16 @@
       ],
       "own": [],
       "deps_hash": "sha256:b7872a041763e1a41e2bd4e99db826e561b35904f963d4608e392c42eefe9e74",
-      "status": "experimental",
-      "validated_at": "eaa8bb23",
-      "date": "2026-09-06",
-      "reference": "HF f32 (qwen2_moe seeded fixture)",
+      "status": "validated",
+      "validated_at": "c9db2ec4",
+      "date": "2026-09-08",
+      "reference": "HF bf16 (Qwen/Qwen1.5-MoE-A2.7B; int8 weights, f32 activations)",
       "machine": "linux-62gb",
-      "method": "tiny-golden",
+      "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.00000,
-        "cosine_mean": 1.00000
+        "cosine_min": 0.99954,
+        "cosine_mean": 0.99954
       }
     },
     "qwen3": {
@@ -734,16 +734,16 @@
       ],
       "own": [],
       "deps_hash": "sha256:b7872a041763e1a41e2bd4e99db826e561b35904f963d4608e392c42eefe9e74",
-      "status": "experimental",
-      "validated_at": "d72400e",
-      "date": "2026-09-06",
-      "reference": "HF f32 (qwen3moe-tiny seeded fixture, 8x top-2, no shared expert)",
-      "machine": "mac",
-      "method": "tiny-golden",
+      "status": "validated",
+      "validated_at": "c9db2ec4",
+      "date": "2026-09-08",
+      "reference": "HF bf16 (Qwen/Qwen3-30B-A3B; int8 weights, f32 activations)",
+      "machine": "linux-62gb",
+      "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 1.00000,
-        "cosine_mean": 1.00000
+        "cosine_min": 0.99834,
+        "cosine_mean": 0.99834
       }
     },
     "qwen3_next": {

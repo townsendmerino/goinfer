@@ -347,6 +347,15 @@
       "note": "Qwen/Qwen3-30B-A3B (bf16 safetensors) — the family's T3 oracle (docs/task-families-2026-09.md F1)."
     },
     {
+      "env": "GOINFER_QWEN2MOE_HF",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen15-moe-a27b"],
+      "used_by": ["TestQwen2MoeReal_oracle"],
+      "note": "Qwen/Qwen1.5-MoE-A2.7B (Qwen2MoeForCausalLM), 14.3B total / 2.7B active, ~28.6 GB bf16 — the family's T3 oracle. Loaded bf16 (not f32) on the HF side, same convention as GOINFER_QWEN3MOE_HF, to leave room alongside goinfer's own int8 load."
+    },
+    {
       "env": "GOINFER_NEMOTRON3NANO_HF",
       "kind": "dir",
       "members": [
