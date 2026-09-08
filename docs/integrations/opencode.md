@@ -114,6 +114,25 @@ None of the registry's own checkpoints have a recorded harness-scale `ok` yet. U
 the honest recommendation is: run `serve check` against whichever checkpoint you are about to
 point opencode at, and stop at the first `skip` rather than assume size alone predicts success.
 
+**Memory is not the reason the middle sizes haven't been tried — measured directly.**
+Qwen2.5-Coder-3B-Instruct q4_k_m (not a registry entry; pulled directly via
+`serve pull hf:Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:q4_k_m`, itself confirming R15's `hf:` fix
+works on a fresh pull) loaded on the same 16 GB Mac with **2.4 GB left for a request's own
+prefill** — an order of magnitude more headroom than the 7B/q3_k_m case's 0.3 GB — and
+`serve check` ran clean, **zero Swapouts**, 7 of 8 checks passing. `tools, harness-scale` still
+**skipped**: same failure mode as the measured 1.5B case, the model answering in prose instead of
+calling the tool under a 12-tool schema. Per the stop rule, opencode was not attempted, correctly.
+
+**So the actual gap is narrower than "does this fit," and it is a capability question, not a
+memory one.** 0.5B, 1.5B, and 3B have now all failed the harness-scale row for the same reason
+(too small); the only model class with *any* evidence of holding up under a harness-scale schema
+is 7B (Qwen2.5-7B-Instruct, and only via Claude Code's Anthropic protocol on different, ampler
+hardware — never via opencode, never on hardware that could actually hold it resident). Closing
+this needs one of: a model between 3B and 7B that both tool-calls correctly *and* fits real
+available memory on a 16 GB Mac (untested — the gap this page cannot close by itself), more free
+memory on this specific machine so the already-7B-capable class can load, or accepting that
+opencode on 16 GB-class Macs needs a different capacity profile than has been available to test.
+
 ## Retiring this page
 
 Per `docs/task-embed-and-harness-ux.md` §3.5, a recipe is retired when `serve check` covers what

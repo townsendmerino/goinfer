@@ -38,10 +38,12 @@
 > **cleanly refused, zero Swapouts, zero RSS growth**, because this model genuinely does not fit
 > this machine under its ordinary desktop load once the guard measures reality instead of total
 > RAM. Both fixes ship as **R13-follow-on**, immediately after R13 below, and R13-follow-on's own
-> closing note explains why a refusal is the correct outcome here, not a new failure. **v0.17.2 is
-> ready to tag on this basis** — what remains open (a real agent turn completing end-to-end on
-> capacity-constrained hardware, never yet reached because the precondition for testing it was
-> never met) is real but is a capacity question for a future run, not a defect in what shipped.
+> closing note explains why a refusal is the correct outcome here, not a new failure. **v0.17.2
+> tagged and released 2026-09-08 on this basis.** A fourth data point after the tag confirmed the
+> fix also correctly ADMITS a comfortably-fitting model (Qwen2.5-Coder-3B, 2.4 GB margin, zero
+> Swapouts) — and narrowed, rather than closed, what remains open: a real agent turn completing
+> end-to-end on this hardware, which every size tried so far (0.5B/1.5B/3B too small to
+> tool-call, 7B too big to fit) has failed to reach, for two entirely different reasons.
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
@@ -1116,12 +1118,24 @@ question for real needs either a machine with more headroom, other applications 
 decision for whoever runs it, not this document), or a smaller model/quant/`-stream-weights` on
 this one — a follow-up choice, not a defect in what shipped here.
 
-**v0.17.2 is ready to tag on this basis**: the specific, severe, user-visible failure mode Batch
-3 exists to close (an agent-shaped request silently swapping a real machine) is confirmed gone,
-live, reproducibly, at the exact scenario that found it. What remains open (a real agent turn
-completing end-to-end on capacity-constrained hardware) is real and worth pursuing, but it is
-R14's territory and docs/task-fit-to-hardware.md's later phases, not a reason to withhold this
-fix.
+**v0.17.2 was tagged and released on this basis** (2026-09-08): the specific, severe, user-visible
+failure mode Batch 3 exists to close (an agent-shaped request silently swapping a real machine) is
+confirmed gone, live, reproducibly, at the exact scenario that found it. What remains open (a real
+agent turn completing end-to-end on capacity-constrained hardware) is real and worth pursuing, but
+it is R14's territory and docs/task-fit-to-hardware.md's later phases, not a reason to withhold
+this fix.
+
+**A fourth live data point, after the tag: the fix also correctly ADMITS, not only correctly
+refuses.** Every verification up to this point tested a refusal path. Loading
+Qwen2.5-Coder-3B-Instruct q4_k_m (a fresh `hf:` pull, not a registry entry) on the same Mac
+reported **2.4 GB left for a request's own prefill** — an order of magnitude more margin than the
+7B case's 0.3 GB — and `serve check` ran clean with **zero Swapouts**. `tools, harness-scale`
+still skipped, the same failure mode as the already-measured 1.5B case: too small to tool-call
+under a real schema, not a memory problem. This narrows R14's open question rather than closing
+it — 0.5B/1.5B/3B have now all failed the harness-scale row for the same capability reason, and
+the only model class with any evidence of holding up (7B, via Claude Code, on different hardware)
+still cannot load resident here. See R14's own update in
+[`docs/integrations/opencode.md`](integrations/opencode.md) for the full accounting.
 
 ### R14 — the README named opencode as a real-agent target; no recipe for it existed anywhere
 
