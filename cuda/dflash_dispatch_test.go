@@ -98,7 +98,7 @@ func TestDFlashDispatchAmortization(t *testing.T) {
 		r.nLayers = n
 		d1 := best(func() error {
 			return r.do(func() error {
-				if e := r.launchToken(emb, depth, false); e != nil { // no head: the drafter has none
+				if e := r.launchToken(emb, depth, depth, false); e != nil { // no head: the drafter has none
 					return e
 				}
 				return r.stream.Sync()
@@ -185,7 +185,7 @@ func TestDFlashCaptureSeamCost(t *testing.T) {
 		for range 7 {
 			t0 := time.Now()
 			err := r.do(func() error {
-				if e := r.launchToken(emb, depth, true); e != nil {
+				if e := r.launchToken(emb, depth, depth, true); e != nil {
 					return e
 				}
 				return r.stream.Sync()

@@ -21,7 +21,7 @@ type blockspecStubHost struct {
 
 func (h *blockspecStubHost) Forward([]float32, int) ([]float32, error)      { return nil, nil }
 func (h *blockspecStubHost) ForwardN([][]float32, int) ([][]float32, error) { return nil, nil }
-func (h *blockspecStubHost) UploadKV(int, []float32, []float32) error       { return nil }
+func (h *blockspecStubHost) UploadKV(int, int, []float32, []float32) error  { return nil }
 func (h *blockspecStubHost) TruncateTo(int)                                 {}
 func (h *blockspecStubHost) Reset()                                         {}
 func (h *blockspecStubHost) Close() error                                   { return nil }

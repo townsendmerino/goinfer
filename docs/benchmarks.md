@@ -487,6 +487,42 @@ it removes a real np×np score-matrix materialization whose benefit just didn't 
 box's config — untested: a memory-constrained box, or a shape where per-head parallelism can't
 already saturate the core count. `aikit` CHANGELOG `[1.38.0]`, `docs/multimodal.md` P6a.
 
+#### Vision-language resident decode (gap 0) — 2026-09-08
+
+**The actual lever, not the tower's own kernel speed.** `docs/multimodal.md`'s gap 0:
+`GenerateVL`/`GenerateQwenVL` used to be CPU-only end to end — an image turn's DECODE, not only
+the vision tower, ran on CPU even on this GPU box. Fixed via a hybrid design: CPU prefill
+(unchanged — the bidirectional image-block attention mask has no resident equivalent) followed by
+pushing that prefill's KV into the resident GPU cache (`UploadKV`) and decoding on GPU from there.
+
+**Measured: real checkpoint (Qwen2.5-VL-3B), real image
+(`testdata/qwen25vl_preprocess_image.png`), int4 both arms (holds precision constant — a
+CPU-vs-GPU-only comparison, not CPU-vs-GPU-and-quantization), interleaved-paired (CPU, GPU, CPU,
+GPU, …), 5 visits + 1 discarded warm-up pair, `maxTokens=32` so decode dominates over the one-time
+prefill:**
+
+| | median turn time | tokens | decode tok/s |
+|---|---|---|---|
+| CPU-only (staged, int4) | 3.191 s | 19 | **5.95** |
+| Hybrid resident (CUDA, int4) | 0.870 s | 20 | **22.98** |
+
+**3.86× — clears the pre-registered ≥1.5× ship bar by a wide margin.** RTX 2070 SUPER, driver
+`595.91.07`, Nobara 44, goinfer session at `c098b1c5`+ (this measurement's own commit; gap-0 work
+uncommitted at measurement time — see the session's own writeup for the exact diff), harness:
+a throwaway timing driver following the P6a precedent (interleaved-paired, warm-up discarded,
+median), not committed.
+
+Prefill-only calibration (single sample each, not interleaved — TTFT is CPU either way, unaffected
+by this change, included for completeness not as a paired measurement): CPU prefill 840 ms, GPU
+(resident-eligible load) prefill 711 ms — both stay CPU-bound at this stage by design, the ~130 ms
+gap is model-load/warm-cache noise, not a claim.
+
+**Not yet measured**: Gemma 3's `GenerateVL` resident path (no m-RoPE, structurally simpler,
+covered by fake-resident + real-hardware `UploadKV` tests but no real-image end-to-end timing —
+see `docs/multimodal.md` gap 0's own note on this gap). WebGPU decode timing (the CUDA number
+above is the only one measured; WebGPU's `ForwardMRoPE`/`UploadKV` correctness is validated on
+real hardware but not timed).
+
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
 > **Decode is §B8** (the current anchor). This section keeps what §B8 does not carry: the

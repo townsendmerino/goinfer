@@ -157,6 +157,16 @@ var parityRealckptGates = []gateCheck{
 	{"qwen2moe-oracle", "TestQwen2MoeReal_oracle"},
 }
 
+// Not in parityRealckptGates/realckptNotRequired (and not found by realckptDirs' decoder-only
+// scan): cuda/qwen25vl_resident_real_test.go's TestQwen25VLResidentReal_gate — gap 0's real-
+// checkpoint continuation of qwen25vl-real above (that gate is prefill-only; this one exercises
+// GenerateQwenVL's actual resident-decode path, one CPU-vs-hybrid step on the real image, via
+// UploadKV + ForwardMRoPE). It lives in package cuda (needs the cuda backend's init() to
+// register "cuda" with decoder — decoder itself cannot import cuda, an import cycle) and is
+// tagged `cuda && goinfer_testhooks`, the same convention as its siblings
+// (uploadkv_parity_test.go, forwardmrope_parity_test.go) — not `realckpt`, so it is outside this
+// list's discipline by construction, the same way those two already are.
+
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
 // Family here is the manifest family the gate writes, which is why the pair is the other way round
 // from the lists above — a detail that once produced six rows with the columns swapped.

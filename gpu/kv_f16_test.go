@@ -128,11 +128,11 @@ func TestKVCacheF16_parity(t *testing.T) {
 	for s := range steps {
 		x := randMat(hidden, uint64(7000+s))
 		pos := prior + s
-		l32, err := runner32.Run(x, pos)
+		l32, err := runner32.Run(x, pos, pos)
 		if err != nil {
 			t.Fatalf("f32 Run step %d: %v", s, err)
 		}
-		l16, err := runner16.Run(x, pos)
+		l16, err := runner16.Run(x, pos, pos)
 		if err != nil {
 			t.Fatalf("f16 Run step %d: %v", s, err)
 		}

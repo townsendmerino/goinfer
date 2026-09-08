@@ -32,6 +32,30 @@ func (m *Model) PrefillLogitsForTest(ctx context.Context, prompt []int, cache *K
 	return m.prefillLogits(ctx, prompt, cache)
 }
 
+// PrefillLogitsQwenVLForTest exposes prefillLogitsQwenVL — the bidirectional-image-block CPU
+// prefill GenerateQwenVL drives — so a cross-package real-checkpoint gate (gap 0, docs/
+// multimodal.md) can build a real image's CPU-computed KVCache directly, without going through
+// GenerateQwenVL's channel-only public API (which exposes sampled tokens, not per-step logits —
+// unusable for a per-step cosine comparison once a resident hybrid decode's own quantization
+// noise, an orthogonal and pre-existing property, would otherwise compound through greedy
+// sampling and swamp the signal this gate actually needs).
+func (m *Model) PrefillLogitsQwenVLForTest(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsQwenVL(ctx, ids, imageFeats, imgPos, imgLen, mropePos, cache)
+}
+
+// MRopePositionsForTest exposes mropePositions — Qwen2.5-VL's per-token (t,h,w) rotary position
+// triples from the image grid — so a cross-package test can build the same cache.mropeDelta the
+// production GenerateQwenVL path computes, for the same reason as PrefillLogitsQwenVLForTest.
+func MRopePositionsForTest(ids []int, imageToken int, gridTHW [][3]int, merge int) ([][3]int, error) {
+	return mropePositions(ids, imageToken, gridTHW, merge)
+}
+
+// MRopeDeltaForTest exposes a KVCache's m-RoPE decode-position delta (rope.go's mropeDelta —
+// scalar decode past the prefill rotates at seqPos+delta), set by prefillLogitsQwenVL. A
+// cross-package resident-decode test needs this to compute the same ropePos GenerateQwenVL's
+// production decode loop does (gap 0, docs/multimodal.md).
+func (c *KVCache) MRopeDeltaForTest() int { return c.mropeDelta }
+
 // NearTieHardFailPct is the bar NearTieArgmaxForTest hard-fails at -- the same 3% every existing
 // near-tie gate in this tree already uses inline (cuda/realforward_test.go's argmaxF comparison,
 // gpu/kv_i8_parity_test.go), named here so a new gate cites the rule instead of retyping the

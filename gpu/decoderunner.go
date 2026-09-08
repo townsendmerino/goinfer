@@ -66,9 +66,14 @@ const (
 	nemoKMLP
 )
 
+// posUni is one per-token uniform buffer, regenerated every decode step by gen. ropePos is the
+// rope-angle position — equal to pos for every ordinary (non-m-RoPE) family; only Qwen2.5-VL
+// decode past an image block needs the two to differ (mropeDelta != 0). Most gen closures ignore
+// ropePos entirely (KV-storage-offset and attention-range uniforms stay keyed on pos); only the
+// rope-angle-encoding ones (ropeQUniFor/ropeKUniFor/qkvFinUniFor below) use it.
 type posUni struct {
 	buf *wgpu.Buffer
-	gen func(pos int) []uint32 // uniform contents for this pos
+	gen func(pos, ropePos int) []uint32
 }
 
 // attnGeom is one distinct per-layer attention shape: head_dim (hd), KV-head count
@@ -684,19 +689,19 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			qkvFinUnis: map[float32]*wgpu.Buffer{},
 		}
 		g.vStoreUni = uni([]uint32{uint32(g.kvDim), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: g.vStoreUni, gen: func(pos int) []uint32 {
+		r.posUnis = append(r.posUnis, posUni{buf: g.vStoreUni, gen: func(pos, ropePos int) []uint32 {
 			return []uint32{uint32(g.kvDim), uint32(pos * g.kvDim), 0, 0}
 		}})
 		// int8 V store needs its own (differently-laid-out) per-token uniform:
 		// {heads=nKV, headDim=hd, base=pos*kvDim, pos, nKV}. Only allocated for kvI8.
 		if m.kvI8 {
 			g.vStoreI8Uni = uni([]uint32{uint32(g.nKV), uint32(g.hd), 0, 0, uint32(g.nKV), 0, 0, 0})
-			r.posUnis = append(r.posUnis, posUni{buf: g.vStoreI8Uni, gen: func(pos int) []uint32 {
+			r.posUnis = append(r.posUnis, posUni{buf: g.vStoreI8Uni, gen: func(pos, ropePos int) []uint32 {
 				return []uint32{uint32(g.nKV), uint32(g.hd), uint32(pos * g.kvDim), uint32(pos), uint32(g.nKV), 0, 0, 0}
 			}})
 		}
 		g.attnUni = uni([]uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), 0, uint32(start), uint32(nH / g.nKV), f32bits(scale), 0})
-		r.posUnis = append(r.posUnis, posUni{buf: g.attnUni, gen: func(pos int) []uint32 {
+		r.posUnis = append(r.posUnis, posUni{buf: g.attnUni, gen: func(pos, ropePos int) []uint32 {
 			return []uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(pos + 1), uint32(start), uint32(nH / g.nKV), f32bits(scale), 0}
 		}})
 		// Sliding-window (local) layers attend only the last `slidingWindow` positions: the
@@ -707,7 +712,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if m.slidingWindow > 0 {
 			w := m.slidingWindow
 			g.attnUniLocal = uni([]uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), 0, uint32(start), uint32(nH / g.nKV), f32bits(scale), 0})
-			r.posUnis = append(r.posUnis, posUni{buf: g.attnUniLocal, gen: func(pos int) []uint32 {
+			r.posUnis = append(r.posUnis, posUni{buf: g.attnUniLocal, gen: func(pos, ropePos int) []uint32 {
 				ws := start
 				if lo := pos + 1 - w; lo > ws {
 					ws = lo
@@ -720,37 +725,46 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	// Per-(geom, rope-scale) rope uniforms. slot 6 of the K uniform carries nKV for the
 	// int8 ropeStore (it indexes scales[pos*nKV+head]); the f32/f16 ropeStore ignore it.
+	// ropeQUniFor's slot 3 ("pos" in the WGSL P struct, ropeShaderWGSL) is purely the rotation
+	// angle input — Q is rotated in place, never stored to a KV cache — so it takes ropePos
+	// wholesale.
 	ropeQUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
 		if b, ok := g.ropeQUnis[rs]; ok {
 			return b
 		}
 		b := uni([]uint32{uint32(nH), uint32(g.hd), uint32(g.half), 0, f32bits(rs), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
-			return []uint32{uint32(nH), uint32(g.hd), uint32(g.half), uint32(pos), f32bits(rs), 0, 0, 0}
+		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos, ropePos int) []uint32 {
+			return []uint32{uint32(nH), uint32(g.hd), uint32(g.half), uint32(ropePos), f32bits(rs), 0, 0, 0}
 		}})
 		g.ropeQUnis[rs] = b
 		return b
 	}
+	// ropeKUniFor feeds ropeStoreShaderWGSL, whose P struct has TWO distinct roles: slot 3
+	// ("pos") is the rotation angle, slot 5 ("base") is the KV-cache write offset pos*kvDim —
+	// confirmed directly against the shader source (attention.go). Only slot 3 switches to
+	// ropePos; slot 5 stays keyed on the true sequential pos.
 	ropeKUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
 		if b, ok := g.ropeKUnis[rs]; ok {
 			return b
 		}
 		b := uni([]uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), 0, f32bits(rs), 0, uint32(g.nKV), 0})
-		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
-			return []uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(pos), f32bits(rs), uint32(pos * g.kvDim), uint32(g.nKV), 0}
+		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos, ropePos int) []uint32 {
+			return []uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(ropePos), f32bits(rs), uint32(pos * g.kvDim), uint32(g.nKV), 0}
 		}})
 		g.ropeKUnis[rs] = b
 		return b
 	}
 	// Fused q-rope + k-rope-store + v-store uniform (decode fusion, f32 KV), per (geom,
-	// scale): {nH, nKV, hd, half, pos, base=pos*kvDim, scale, kvDim}.
+	// scale): {nH, nKV, hd, half, pos, base=pos*kvDim, scale, kvDim}. Same split as
+	// ropeKUniFor above (confirmed against qkvFinalizeShaderWGSL): slot 4 ("pos") is the
+	// rotation angle for both q and k, slot 5 ("base") is the KV-cache write offset.
 	qkvFinUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
 		if b, ok := g.qkvFinUnis[rs]; ok {
 			return b
 		}
 		b := uni([]uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(g.half), 0, 0, f32bits(rs), uint32(g.kvDim)})
-		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos int) []uint32 {
-			return []uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(pos), uint32(pos * g.kvDim), f32bits(rs), uint32(g.kvDim)}
+		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos, ropePos int) []uint32 {
+			return []uint32{uint32(nH), uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(ropePos), uint32(pos * g.kvDim), f32bits(rs), uint32(g.kvDim)}
 		}})
 		g.qkvFinUnis[rs] = b
 		return b
@@ -874,7 +888,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		// Latent store: kvA-norm the rank latent + decoupled-RoPE the key into latCache
 		// at base = pos·latDim. One single-workgroup dispatch (the norm reduces in-WG).
 		mlaStoreUni := uni([]uint32{uint32(rank), uint32(mp.qkRope), 0, f32bits(eps), 0, f32bits(mp.ropeScale), boolU32(mp.interleave), 0})
-		r.posUnis = append(r.posUnis, posUni{buf: mlaStoreUni, gen: func(pos int) []uint32 {
+		r.posUnis = append(r.posUnis, posUni{buf: mlaStoreUni, gen: func(pos, ropePos int) []uint32 {
 			return []uint32{uint32(rank), uint32(mp.qkRope), uint32(pos), f32bits(eps), uint32(pos * latDim), f32bits(mp.ropeScale), boolU32(mp.interleave), 0}
 		}})
 		mlaStore = func(kvDown, normW, invFreq, latCache *wgpu.Buffer) {
@@ -888,7 +902,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 		// Query RoPE: gather + rope q's rope dims into qAbs[h·latDim+rank..]. pos-dependent.
 		mlaQRopeUni := uni([]uint32{uint32(nH), uint32(qkHead), uint32(mp.qkNope), uint32(mp.qkRope), uint32(rank), uint32(latDim), 0, boolU32(mp.interleave), f32bits(mp.ropeScale), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: mlaQRopeUni, gen: func(pos int) []uint32 {
+		r.posUnis = append(r.posUnis, posUni{buf: mlaQRopeUni, gen: func(pos, ropePos int) []uint32 {
 			return []uint32{uint32(nH), uint32(qkHead), uint32(mp.qkNope), uint32(mp.qkRope), uint32(rank), uint32(latDim), uint32(pos), boolU32(mp.interleave), f32bits(mp.ropeScale), 0, 0, 0}
 		}})
 		mlaQRopeOp = func(q, invFreq, qAbs *wgpu.Buffer) {
@@ -896,7 +910,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 		// Attention: rank-space online-softmax over nKeys = pos+1 latents. pos-dependent.
 		mlaAttnUni := uni([]uint32{uint32(nH), uint32(latDim), uint32(rank), 0, f32bits(scale), 0, 0, 0})
-		r.posUnis = append(r.posUnis, posUni{buf: mlaAttnUni, gen: func(pos int) []uint32 {
+		r.posUnis = append(r.posUnis, posUni{buf: mlaAttnUni, gen: func(pos, ropePos int) []uint32 {
 			return []uint32{uint32(nH), uint32(latDim), uint32(rank), uint32(pos + 1), f32bits(scale), 0, 0, 0}
 		}})
 		mlaAttnOp = func(qAbs, latCache, wsum *wgpu.Buffer) {
@@ -1185,13 +1199,14 @@ func (r *DecodeRunner) GeomVariantCount() int { return r.geomVariants }
 
 // writeInputs uploads the per-token input embedding + pos-dependent uniforms (the
 // only buffers that vary per call; the fixed dispatch plan reads them). Split out so
-// the batched RunN can prime K runners before recording one command buffer.
-func (r *DecodeRunner) writeInputs(x []float32, pos int) error {
+// the batched RunN can prime K runners before recording one command buffer. ropePos:
+// see posUni's doc comment — equal to pos except for Qwen2.5-VL m-RoPE decode.
+func (r *DecodeRunner) writeInputs(x []float32, pos, ropePos int) error {
 	if err := r.c.queue.WriteBuffer(r.xd, 0, wgpu.ToBytes(x)); err != nil {
 		return err
 	}
 	for _, pu := range r.posUnis {
-		if err := r.c.queue.WriteBuffer(pu.buf, 0, wgpu.ToBytes(pu.gen(pos))); err != nil {
+		if err := r.c.queue.WriteBuffer(pu.buf, 0, wgpu.ToBytes(pu.gen(pos, ropePos))); err != nil {
 			return err
 		}
 	}
@@ -1257,10 +1272,11 @@ func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {
 
 // Run executes the plan for one token at absolute position pos. x is the token's
 // input embedding [hidden]; returns the logits [vocab]. One Submit + one Poll.
-func (r *DecodeRunner) Run(x []float32, pos int) ([]float32, error) {
+// ropePos: see posUni's doc comment — equal to pos except for Qwen2.5-VL m-RoPE decode.
+func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	c := r.c
 	tw := time.Now()
-	if err := r.writeInputs(x, pos); err != nil {
+	if err := r.writeInputs(x, pos, ropePos); err != nil {
 		return nil, err
 	}
 	r.TWrite = time.Since(tw)
@@ -1314,7 +1330,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 		return nil, nil
 	}
 	for i := range n {
-		if err := runners[i].writeInputs(xs[i], startPos+i); err != nil {
+		if err := runners[i].writeInputs(xs[i], startPos+i, startPos+i); err != nil {
 			return nil, err
 		}
 	}

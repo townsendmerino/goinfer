@@ -33,10 +33,27 @@ import (
 // It returns a deterministic non-nil logit row so callers proceed normally; the point is the
 // call count, not the values.
 type fakeResident struct {
-	vocab    int
-	capPos   int // resident KV cap in positions (0 = unbounded); ContextCap exposes it
-	forwards int
-	closed   bool
+	vocab       int
+	capPos      int // resident KV cap in positions (0 = unbounded); ContextCap exposes it
+	forwards    int
+	closed      bool
+	uploadKVs   []fakeUploadKVCall // records every UploadKV call, in order — gap-0 resident tests
+	resetCalls  int
+	lastRopePos int // last ForwardMRoPE ropePos argument (ResidentMRoPE gap-0 tests)
+}
+
+// fakeUploadKVCall is one recorded UploadKV(layer, base, keys, vals) invocation.
+type fakeUploadKVCall struct {
+	layer, base int
+	keys, vals  []float32
+}
+
+// ForwardMRoPE makes fakeResident satisfy decoder.ResidentMRoPE too — ropePos is recorded but
+// otherwise ignored (the fake's output only needs to be deterministic and distinct per pos, the
+// numeric RoPE correctness itself is gated for real against the CUDA/WebGPU kernels, not here).
+func (f *fakeResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
+	f.lastRopePos = ropePos
+	return f.Forward(embedding, pos)
 }
 
 func (f *fakeResident) Forward(embedding []float32, pos int) ([]float32, error) {
@@ -68,10 +85,16 @@ func (f *fakeResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	return rows, nil
 }
 
-func (f *fakeResident) UploadKV(layer int, keys, vals []float32) error { return nil }
-func (f *fakeResident) TruncateTo(pos int)                             {}
-func (f *fakeResident) Reset()                                         {}
-func (f *fakeResident) Close() error                                   { f.closed = true; return nil }
+func (f *fakeResident) UploadKV(layer, base int, keys, vals []float32) error {
+	f.uploadKVs = append(f.uploadKVs, fakeUploadKVCall{
+		layer: layer, base: base,
+		keys: append([]float32(nil), keys...), vals: append([]float32(nil), vals...),
+	})
+	return nil
+}
+func (f *fakeResident) TruncateTo(pos int) {}
+func (f *fakeResident) Reset()             { f.resetCalls++ }
+func (f *fakeResident) Close() error       { f.closed = true; return nil }
 
 // fakeResidencyBackend is a CPU backend that ALSO advertises residency, so the seam can be
 // exercised with no device present. It wraps the real CPU backend so every non-resident code

@@ -28,6 +28,7 @@ import (
 var (
 	_ decoder.ResidentForward = (*cudaResident)(nil)
 	_ decoder.ResidentGreedy  = (*cudaResident)(nil)
+	_ decoder.ResidentMRoPE   = (*cudaResident)(nil)
 )
 
 // cudaCtxCapDefault is the resident KV capacity in positions when nothing asks for more; the staged
@@ -1320,7 +1321,32 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 	}
 	var out []float32
 	err := r.do(func() error {
-		o, e := r.step(embedding, pos)
+		o, e := r.step(embedding, pos, pos)
+		out = o
+		return e
+	})
+	return out, err
+}
+
+// ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rotation angle (ropePos) and the
+// KV-cache/attention position (pos) are supplied separately — Qwen2.5-VL decode past an image
+// block needs them to differ (see gemv_fwd.cu's rope_kv doc comment; decoder/rope.go's CPU
+// reference is the ground truth this mirrors). Forward itself is Forward(pos) == ForwardMRoPE
+// (pos, pos), so this does not duplicate Forward's body — it is what Forward calls with the
+// common case folded in.
+func (r *cudaResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
+	if e := r.checkCap(pos, 1); e != nil {
+		return nil, e
+	}
+	if pos == 0 {
+		r.Reset() // fresh sequence — same reason as Forward
+		if r.resetErr != nil {
+			return nil, r.resetErr // N-08
+		}
+	}
+	var out []float32
+	err := r.do(func() error {
+		o, e := r.step(embedding, pos, ropePos)
 		out = o
 		return e
 	})
@@ -1342,7 +1368,7 @@ func (r *cudaResident) ForwardNoLogits(embedding []float32, pos int) error {
 		}
 	}
 	return r.do(func() error {
-		if e := r.launchToken(embedding, pos, false); e != nil {
+		if e := r.launchToken(embedding, pos, pos, false); e != nil {
 			return e
 		}
 		return r.stream.Sync() // step()'s trailing sync is skipped here; drain so the KV write completes
@@ -1389,7 +1415,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	out := make([][]float32, len(embeddings))
 	err := r.do(func() error {
 		for i, emb := range embeddings {
-			l, e := r.step(emb, startPos+i)
+			l, e := r.step(emb, startPos+i, startPos+i)
 			if e != nil {
 				return e
 			}
@@ -1400,19 +1426,25 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	return out, err
 }
 
-// UploadKV writes a layer's post-RoPE K and raw V into the resident caches from position 0
-// (prefill bridge, same packed layout the kernels read: [pos*kvDim + head*hd + d]).
-func (r *cudaResident) UploadKV(layer int, keys, vals []float32) error {
-	if kvDim := r.layers[layer].kvDim; kvDim > 0 {
-		if e := r.checkCap(0, len(keys)/kvDim); e != nil {
+// UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute
+// positions base..base+n-1 (prefill bridge, same packed layout the kernels read:
+// [pos*kvDim + head*hd + d]). base is normally 0; a wrapped CPU-side sliding-window ring's
+// live K/V can start later (KVCache.LayerKV's own base return) — Buffer.At gives a zero-copy
+// view at the matching byte offset, the same mechanism Forward's own checkCap(pos, ...) already
+// treats as a normal position, just never called with a nonzero base until now.
+func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
+	kvDim := r.layers[layer].kvDim
+	if kvDim > 0 {
+		if e := r.checkCap(base, len(keys)/kvDim); e != nil {
 			return e
 		}
 	}
+	byteOff := base * kvDim * 4 // f32 elements, matches gpu.Upload[float32]'s element width
 	return r.do(func() error {
-		if e := gpu.Upload(r.kc[layer], keys); e != nil {
+		if e := gpu.Upload(r.kc[layer].At(byteOff), keys); e != nil {
 			return e
 		}
-		return gpu.Upload(r.vc[layer], vals)
+		return gpu.Upload(r.vc[layer].At(byteOff), vals)
 	})
 }
 
@@ -2388,7 +2420,10 @@ func (r *cudaResident) captureGraphs() error {
 }
 
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
-func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
+// ropePos is the rope_kv kernel's rotation-angle position — equal to pos for every ordinary
+// (non-m-RoPE) call; only Qwen2.5-VL decode past an image block needs them to differ (see
+// gemv_fwd.cu's rope_kv doc comment). pos alone still drives KV storage/attention range.
+func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
 	nullBias := ArgNull()
 	if e := gpu.Upload(r.x, emb); e != nil {
@@ -2453,7 +2488,7 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
 			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)), gpu.ArgValue(Ly.mscale)); err != nil {
+			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)), gpu.ArgValue(Ly.mscale)); err != nil {
 			return err
 		}
 		nKeys := pos + 1
@@ -2543,9 +2578,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 }
 
 // step returns full logits — the general contract (sampler / constrained decode / logprobs).
-// Costs a vocab*4 B D2H every token (594 KB at a 151936 vocab).
-func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
-	if e := r.launchToken(emb, pos, true); e != nil {
+// Costs a vocab*4 B D2H every token (594 KB at a 151936 vocab). ropePos: see launchToken.
+func (r *cudaResident) step(emb []float32, pos, ropePos int) ([]float32, error) {
+	if e := r.launchToken(emb, pos, ropePos, true); e != nil {
 		return nil, e
 	}
 	if e := r.stream.Sync(); e != nil {
@@ -2572,7 +2607,7 @@ func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) 
 	}
 	var id int
 	err := r.do(func() error {
-		if e := r.launchToken(embedding, pos, true); e != nil {
+		if e := r.launchToken(embedding, pos, pos, true); e != nil {
 			return e
 		}
 		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits),

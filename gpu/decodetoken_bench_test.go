@@ -86,10 +86,10 @@ func TestDecodeToken_throughput(t *testing.T) {
 		t.Fatalf("NewDecodeRunner: %v", err)
 	}
 	defer runner.Release()
-	runner.Run(x0, pos)
+	runner.Run(x0, pos, pos)
 	t2 := time.Now()
 	for range iters {
-		runner.Run(x0, pos)
+		runner.Run(x0, pos, pos)
 	}
 	perRun := time.Since(t2) / iters
 

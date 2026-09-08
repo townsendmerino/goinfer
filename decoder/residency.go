@@ -37,9 +37,12 @@ type ResidentForward interface {
 	// (TestResidentForwardN_parity), so it amortizes the cgo-encode glue over K
 	// without changing numerics. nil/empty embeddings ⇒ no-op.
 	ForwardN(embeddings [][]float32, startPos int) (logits [][]float32, err error)
-	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim], positions
-	// 0..n-1) into the resident GPU caches — the prefill bridge.
-	UploadKV(layer int, keys, vals []float32) error
+	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim]) into the resident GPU
+	// caches at absolute positions base..base+n-1 — the prefill bridge. base is normally 0
+	// (a fresh prefill), but a CPU-side sliding-window (ring) layer's live K/V can start at a
+	// nonzero absolute position once its ring has wrapped (KVCache.LayerKV's own base return);
+	// UploadKV must land those rows at their real position, not row 0.
+	UploadKV(layer, base int, keys, vals []float32) error
 	// TruncateTo drops resident KV positions ≥ pos — the rollback after a partial
 	// speculative accept. The resident cache is positional and Forward sets
 	// nKeys=pos+1, so stale entries past pos are simply never read and get overwritten
@@ -50,6 +53,22 @@ type ResidentForward interface {
 	Reset()
 	// Close releases the resident GPU buffers.
 	Close() error
+}
+
+// ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation
+// kernel can take a rope-angle position (ropePos) separate from the KV-cache/attention position
+// (pos). Forward(embedding, pos) alone cannot serve Qwen2.5-VL decode past an image block,
+// because decoder/rope.go's CPU reference computes the KV-cache position and the rotation angle
+// as two DIFFERENT quantities once decode moves past an image block — the merge-compressed image
+// grid makes mropeDelta = maxGridPos+1-seqLen nonzero, and the rotation needs pos+mropeDelta
+// while storage/attention still need plain pos. Deliberately a NEW capability rather than a
+// Forward signature change: Forward is the core method every family and every existing caller
+// uses, and only Qwen-VL decode needs the split. ForwardMRoPE(emb, pos, pos) must equal
+// Forward(emb, pos) exactly — the common (non-m-RoPE) case is the same computation, just spelled
+// with two equal arguments. Backends may skip implementing it (GenerateQwenVL's resident path
+// then declines to the CPU/staged decode, same as any other resident capability gap).
+type ResidentMRoPE interface {
+	ForwardMRoPE(embedding []float32, pos, ropePos int) (logits []float32, err error)
 }
 
 // ResidentGreedy is an optional capability on a ResidentForward: compute the token's greedy

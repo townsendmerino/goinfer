@@ -72,7 +72,7 @@ func TestDFlashDraftCostProbe(t *testing.T) {
 		for range 7 {
 			t0 := time.Now()
 			err := r.do(func() error {
-				if e := r.launchToken(emb, depth, head); e != nil {
+				if e := r.launchToken(emb, depth, depth, head); e != nil {
 					return e
 				}
 				return r.stream.Sync()

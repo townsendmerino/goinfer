@@ -1023,6 +1023,20 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int)
 // with each id once its forward has committed that position to the cache — the
 // seam Session uses to track exactly what the cache holds. Terminal status lands
 // on g.err.
+// tryClaimResident attempts the single shared resident KV's exclusive claim (M9's resBusy CAS) —
+// the ONE CAS site every resident-touching caller shares, so a second hand-written claim can
+// never drift from this one. Returns false when there is no resident backend or another
+// generation already holds the claim; either way the caller must fall back to the CPU/staged
+// path (distinct sequences still complete correctly — only resident speed is lost, M9). On a
+// true return, the caller owns the claim and MUST release it via
+// atomic.StoreInt32(&m.resBusy, 0) (typically deferred) once its resident-touching work is done.
+func (m *Model) tryClaimResident() bool {
+	if m.resident == nil {
+		return false
+	}
+	return atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)
+}
+
 func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
 	if len(prompt) == 0 {
 		g.err = fmt.Errorf("decoder.Generate: empty prompt")
@@ -1049,7 +1063,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses
 		// this call's own cache, so both still complete correctly (M9). The doc's
 		// "distinct sequences can run concurrently" holds; only resident speed is lost.
-		if atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
+		if m.tryClaimResident() {
 			defer atomic.StoreInt32(&m.resBusy, 0)
 		} else {
 			useGPU = false

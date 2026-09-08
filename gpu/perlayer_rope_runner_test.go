@@ -147,7 +147,7 @@ func TestDecodeRunnerPerLayerRoPE_parity(t *testing.T) {
 		t.Fatalf("newDecodeRunner(per-layer rope): %v", err)
 	}
 	defer runner.Release()
-	got, err := runner.Run(x0, pos)
+	got, err := runner.Run(x0, pos, pos)
 	if err != nil {
 		t.Fatalf("per-layer rope Run: %v", err)
 	}

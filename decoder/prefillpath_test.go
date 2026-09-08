@@ -105,10 +105,10 @@ func (w *prefillerOnly) ForwardN(e [][]float32, s int) ([][]float32, error) {
 func (w *prefillerOnly) PrefillLast(_ context.Context, e [][]float32, s int) ([]float32, error) {
 	return w.p.PrefillLast(context.Background(), e, s)
 }
-func (w *prefillerOnly) UploadKV(layer int, keys, vals []float32) error { return nil }
-func (w *prefillerOnly) TruncateTo(pos int)                             {}
-func (w *prefillerOnly) Reset()                                         {}
-func (w *prefillerOnly) Close() error                                   { return nil }
+func (w *prefillerOnly) UploadKV(layer, base int, keys, vals []float32) error { return nil }
+func (w *prefillerOnly) TruncateTo(pos int)                                   {}
+func (w *prefillerOnly) Reset()                                               {}
+func (w *prefillerOnly) Close() error                                         { return nil }
 
 // TestPrefillPath_envForceSequential: GOINFER_BATCHED_PREFILL=0 is an A/B escape hatch that turns
 // every resident model sequential. Left set in an environment, it is exactly the invisible 9× this

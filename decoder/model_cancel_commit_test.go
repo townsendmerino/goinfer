@@ -87,10 +87,10 @@ func (r *erroringResident) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	return rows, nil
 }
 
-func (r *erroringResident) UploadKV(int, []float32, []float32) error { return nil }
-func (r *erroringResident) TruncateTo(int)                           {}
-func (r *erroringResident) Reset()                                   {}
-func (r *erroringResident) Close() error                             { return nil }
+func (r *erroringResident) UploadKV(int, int, []float32, []float32) error { return nil }
+func (r *erroringResident) TruncateTo(int)                                {}
+func (r *erroringResident) Reset()                                        {}
+func (r *erroringResident) Close() error                                  { return nil }
 
 type erroringResidencyBackend struct {
 	Backend

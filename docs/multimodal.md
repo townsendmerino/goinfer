@@ -55,17 +55,40 @@ Three things that make the June plan's assumptions stale, in the direction of *m
 
 ### The gaps, ranked by who hits them
 
-0. **`GenerateVL`/`GenerateQwenVL` are stateless and CPU-only by design** (`decoder/generate_vl.go`
-   doc comments; the premise was inherited, not re-derived, when V-11 fixed the race around it —
-   `docs/review-2026-09-04.md`) — **they never touch `m.resident` at all.** So on a GPU box (this
-   CUDA box, or a Metal Mac) an image turn runs the WHOLE turn on CPU, decode included, not only
-   the tower: `-tags gpu` moves the tower's own math but nothing routes an image request onto the
-   resident decode path, even for a family (gemma3, qwen2_5_vl's text side) already GPU-resident
-   for text-only turns. Flagged 2026-09-08, not yet scoped as its own phase — candidate framing:
-   *"the tower on the cgo-free backends, plus resident embed-by-vector injection, so decode stays
-   on the GPU for an image turn"* — which would fold into or precede P6's remaining CUDA/Metal
-   half below. This is likely the single biggest lever in this program and probably belongs ahead
-   of P7-P11; not resolved here, needs its own scoping pass before being built.
+0. **RESOLVED 2026-09-08 (CUDA + WebGPU; Metal deferred).** `GenerateVL`/`GenerateQwenVL` used to
+   be stateless and CPU-only by design (`decoder/generate_vl.go`'s old doc comments; the premise
+   was inherited, not re-derived, when V-11 fixed the race around it — `docs/review-2026-09-04.md`)
+   — they never touched `m.resident` at all, so on a GPU box an image turn ran the WHOLE turn on
+   CPU, decode included, not only the tower. Fixed via a hybrid design: the CPU prefill (the
+   bidirectional image-block attention mask has no resident equivalent) stays on CPU exactly as
+   before, but its resulting KV is pushed into the resident GPU cache (`UploadKV`, extended with a
+   `base` position — a sliding-window ring's live K/V can start at a nonzero absolute position
+   once wrapped) and decode continues on GPU from there
+   (`decoder/generate_vl_resident.go:residentUploadPrefill`, wired into both functions behind the
+   existing `resBusy` claim). Qwen2.5-VL specifically needed one real kernel change on both
+   backends — `Forward(embedding, pos)`'s single position can't serve m-RoPE decode, which needs a
+   DIFFERENT rotation angle (`pos+mropeDelta`) than the KV-storage/attention position (`pos`) once
+   decode moves past an image block (the merge-compressed image grid makes `mropeDelta` nonzero for
+   any real image turn, not an edge case) — added as a new optional interface,
+   `decoder.ResidentMRoPE.ForwardMRoPE(embedding, pos, ropePos)`, alongside the existing `Forward`
+   rather than widening it (CUDA: a `ropePos` kernel argument threaded through `rope_kv`,
+   `cuda/gemv_fwd.cu`, PTX regenerated and diff-verified isolated to that one kernel; WebGPU: no
+   shader changes — its RoPE kernel is pure rotation with no KV-write side effect — just the
+   `DecodeRunner` uniform-generation plumbing widened to carry a second position). Both new
+   primitives (`UploadKV`'s offset, `ForwardMRoPE`'s angle split) pass their first real
+   correctness tests on real hardware at cosine 1.0 (`cuda/uploadkv_parity_test.go`,
+   `cuda/forwardmrope_parity_test.go`, and their WebGPU twins). **Measured real payoff, real
+   checkpoint (Qwen2.5-VL-3B, real image, int4 both arms, interleaved-paired, median of 5):
+   decode 5.95 → 22.98 tok/s, 3.86× — clears the pre-registered ≥1.5× bar by a wide margin** (full
+   real-checkpoint parity gate: `cuda/qwen25vl_resident_real_test.go`, cosine 0.99+/exact argmax on
+   a forced-trajectory decode step past a real image block, mropeDelta confirmed nonzero so the
+   m-RoPE split is genuinely exercised). Gemma 3 (`GenerateVL`) needed no m-RoPE work — plain
+   `Forward` suffices — and is covered structurally (fake-resident wiring/busy/concurrency tests,
+   all green under `-race`) plus `UploadKV`'s own real-hardware validation, but has **no real-image
+   end-to-end gate yet** (would need a from-scratch HF pin script this pass didn't build — a real,
+   named gap, not silently assumed covered). **Metal is out of scope**: `UploadKV` is unimplemented
+   there (`metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up
+   Metal residency next, not attempted here.
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
 2. **Vision is one family.** Gemma 4 — the family most of the resident work went into — is
@@ -98,13 +121,17 @@ number is published without provenance.
   count ≈ core count on this box, total work is close to unchanged, just redistributed. Kept
   anyway: parity holds, it's the proven decoder mechanism, and the removed memory materialization
   may still matter at an untested config (more heads than cores, memory pressure).
-  **CUDA/Metal — NOT STARTED.** `attn_fused` (CUDA) and `attention_prefill` (Metal) are
-  causal-only by hardcoded row-index math, and both fast GEMMs need int4-quantized weights with
-  no batched-M fallback — a non-causal kernel variant and a new tower weight-quantization pipeline,
-  each with its own parity gate, not a rewire of what exists. Scoped out of P6a deliberately;
-  **gap 0 above (decode itself running CPU-only on an image turn) is arguably a bigger and
-  differently-shaped problem than tower kernel speed and may want scoping before this half of P6
-  is picked up as written.**
+  **CUDA/Metal (the vision TOWER itself) — still NOT STARTED, and now lower priority.**
+  `attn_fused` (CUDA) and `attention_prefill` (Metal) are causal-only by hardcoded row-index math,
+  and both fast GEMMs need int4-quantized weights with no batched-M fallback — a non-causal kernel
+  variant and a new tower weight-quantization pipeline, each with its own parity gate, not a rewire
+  of what exists. Gap 0 (below) turned out to be the bigger, cheaper, differently-shaped lever it
+  looked like when flagged — measured 3.86× on real decode with only a Go-side prefill/decode
+  bridge plus one narrow kernel change (Qwen's rope-angle split), not a new GPU attention kernel
+  or quant pipeline for the tower's own weights. This CUDA/Metal tower work is still real and still
+  wanted eventually (the tower's own ~31s CPU cost per SigLIP image is untouched by gap 0's fix,
+  which only moved decode), but it's a smaller, lower-priority remainder now that decode is fixed,
+  not a prerequisite for anything.
 - **P7 · Gemma 4 vision (all sizes) and audio (E2B/E4B/26B-A4B).** Phase 0 from the real
   `Gemma4VisionConfig`/`Gemma4AudioConfig` and modeling file, not the summary above: the encoder
   block, the 3×3 pooling to soft tokens, the position table, the variable token budget and its
