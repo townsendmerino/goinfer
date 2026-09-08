@@ -39,7 +39,7 @@ func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 	// The message has to carry the remedy and the arithmetic, because the user who reads it is
 	// the one who has no idea -stream-weights exists — that was the whole finding.
 	msg := err.Error()
-	for _, want := range []string{"-stream-weights", "GB RAM", "budget", "GOINFER_NO_FIT_GUARD"} {
+	for _, want := range []string{"-stream-weights", "memory available", "budget", "GOINFER_NO_FIT_GUARD"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("refusal does not mention %q:\n%s", want, msg)
 		}
@@ -79,6 +79,31 @@ func TestFitGuard_amplyProvisionedMachineIsSilent(t *testing.T) {
 	m.Close()
 }
 
+// R13-follow-on (docs/measurements/cold-user-2026-09-07-macbook-arm64.md's SECOND live re-run):
+// the load-time guard must price against CURRENTLY AVAILABLE memory, not total RAM. Ample total
+// RAM with tight availability is exactly the live failure's shape — the load-time guard on the
+// real Mac reported a healthy-looking margin against total RAM while the machine was, in fact,
+// already out of room, and swap began within 15 seconds of load completing, before any request.
+func TestFitGuard_pricesAgainstAvailableNotTotalRAM(t *testing.T) {
+	restore := injectHostRAM(t, 64<<30) // 64 GB total: this alone must NOT be enough to pass
+	defer restore()
+	restoreAvail := injectHostRAMAvailable(t, 128<<10) // but only 128 KiB actually available
+	defer restoreAvail()
+
+	before := weightAllocs.Load()
+	m, err := Load("testdata/gptoss_tiny.gguf", Options{Quant: "int4"})
+	if err == nil {
+		if m != nil {
+			m.Close()
+		}
+		t.Fatal("Load succeeded against 64 GB TOTAL RAM despite 128 KiB AVAILABLE — " +
+			"the guard is pricing against total RAM again, not what is actually free")
+	}
+	if got := weightAllocs.Load() - before; got != 0 {
+		t.Errorf("loadWeights was entered %d time(s) despite the refusal", got)
+	}
+}
+
 // Unknown RAM must proceed. This is the branch that keeps Windows and the BSDs behaving exactly
 // as they did before the guard existed (HostRAMBytes returns 0 there).
 func TestFitGuard_unknownRAMProceeds(t *testing.T) {
@@ -102,7 +127,7 @@ func TestFitGuard_unknownRAMProceeds(t *testing.T) {
 func TestFitCheck_arithmeticMatchesTheMeasuredFailure(t *testing.T) {
 	f := fitCheck{
 		name: "Qwen3.5-35B-A3B-Q4_K_M.gguf", quant: "int4",
-		weightBytes: 21 << 30, ramBytes: 16 << 30,
+		weightBytes: 21 << 30, availBytes: 16 << 30,
 	}
 	if f.fits() {
 		t.Fatal("21 GB of weights on a 16 GB machine reported as fitting — this is the case the guard exists for")
@@ -119,7 +144,7 @@ func TestFitCheck_arithmeticMatchesTheMeasuredFailure(t *testing.T) {
 	}
 
 	// And the warning band: a load at 80% of budget fits, but says so.
-	tight := fitCheck{name: "x.gguf", quant: "int4", weightBytes: int64(0.80 * 0.70 * float64(ram)), ramBytes: ram}
+	tight := fitCheck{name: "x.gguf", quant: "int4", weightBytes: int64(0.80 * 0.70 * float64(ram)), availBytes: ram}
 	if !tight.fits() {
 		t.Fatal("a load at 80% of budget was refused")
 	}
@@ -147,7 +172,7 @@ func TestFitCheck_unpinnedPricesKVAtTheModelsMaximum(t *testing.T) {
 
 	f := fitCheck{
 		name: "qwen2.5-7b-instruct-q3_k_m.gguf", quant: "int4",
-		weightBytes: weights, ramBytes: ram,
+		weightBytes: weights, availBytes: ram,
 		cfg: cfg, effCtx: cfg.MaxPositions, pinned: false,
 	}
 	f.kvBytes = fullKV
@@ -196,7 +221,7 @@ func TestFitCheck_pinnedContextThatDoesNotFitIsRefusedNotDowngraded(t *testing.T
 	weights := int64(8.9 * gbf)
 	pinnedCtx := 65536
 	f := fitCheck{
-		name: "x.gguf", quant: "int4", weightBytes: weights, ramBytes: ram,
+		name: "x.gguf", quant: "int4", weightBytes: weights, availBytes: ram,
 		cfg: cfg, effCtx: pinnedCtx, pinned: true,
 	}
 	f.kvBytes = estimateKVBytes(cfg, pinnedCtx, false, false)
@@ -207,7 +232,7 @@ func TestFitCheck_pinnedContextThatDoesNotFitIsRefusedNotDowngraded(t *testing.T
 		t.Fatal("smallerFittingContext offered a downgrade for a PINNED request — an explicit -ctx must refuse, not silently shrink")
 	}
 	msg := f.declineErr().Error()
-	if !strings.Contains(msg, "GB RAM") {
+	if !strings.Contains(msg, "memory available") {
 		t.Errorf("pinned refusal missing the arithmetic:\n%s", msg)
 	}
 }
@@ -221,7 +246,7 @@ func TestFitCheck_unpinnedRefusesWhenEvenTheFloorDoesNotFit(t *testing.T) {
 	// Weights alone eat nearly the whole budget, leaving no room for ctxFloor's own KV.
 	weights := budget - kvBytesPerPosition(cfg, false, false)*int64(ctxFloor)/2
 	f := fitCheck{
-		name: "x.gguf", quant: "int4", weightBytes: weights, ramBytes: ram,
+		name: "x.gguf", quant: "int4", weightBytes: weights, availBytes: ram,
 		cfg: cfg, effCtx: cfg.MaxPositions, pinned: false,
 	}
 	f.kvBytes = estimateKVBytes(cfg, cfg.MaxPositions, false, false)
@@ -301,13 +326,19 @@ func TestFitEstimate_agreesWithResidentWeightBytes(t *testing.T) {
 	}
 }
 
-// injectHostRAM replaces the machine's RAM figure for one test. Returned as a restore func rather
-// than only t.Cleanup so the intent reads at the call site.
+// injectHostRAM replaces BOTH the machine's total-RAM figure AND its currently-available figure
+// with the same value, for one test. Most callers do not care about the total-vs-available
+// distinction (they are testing the arithmetic given "a machine with N bytes to work with"); a
+// test that DOES care calls injectHostRAMAvailable (prefill_budget_test.go) afterwards to override
+// just the available figure, matching the live failure's own shape (ample total RAM, tight
+// availability). Returned as a restore func rather than only t.Cleanup so the intent reads at the
+// call site.
 func injectHostRAM(t *testing.T, bytes int64) func() {
 	t.Helper()
-	prev := hostRAM
+	prevTotal, prevAvail := hostRAM, hostRAMAvailable
 	hostRAM = func() int64 { return bytes }
-	restore := func() { hostRAM = prev }
+	hostRAMAvailable = func() int64 { return bytes }
+	restore := func() { hostRAM, hostRAMAvailable = prevTotal, prevAvail }
 	t.Cleanup(restore)
 	return restore
 }

@@ -119,6 +119,38 @@ func TestAdmitPrefillMemory_unknownAvailabilityProceeds(t *testing.T) {
 	}
 }
 
+// FitBudgetSummary must price against CURRENTLY AVAILABLE memory (R13-follow-on), not total RAM —
+// its consumer, internal/serveapp/banner.go's "fit:" line, must not subtract weightBytes from
+// budgetBytes again, because by the time this runs the model is already resident and
+// budgetBytes already excludes it.
+func TestFitBudgetSummary_pricesAgainstAvailableNotTotalRAM(t *testing.T) {
+	const gguf = "testdata/gptoss_tiny.gguf"
+	restore := injectHostRAM(t, 64<<30) // ample total RAM — must NOT be what budgetBytes tracks
+	defer restore()
+	restoreAvail := injectHostRAMAvailable(t, 1<<30) // 1 GiB currently available
+	defer restoreAvail()
+
+	m, err := Load(gguf, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load refused: %v", err)
+	}
+	defer m.Close()
+
+	_, _, weightBytes, budgetBytes, known := m.FitBudgetSummary()
+	if !known {
+		t.Fatal("FitBudgetSummary reported unknown despite ample injected figures")
+	}
+	if weightBytes <= 0 {
+		t.Fatal("weightBytes should be positive for a loaded model")
+	}
+	oneGB := int64(1 << 30)
+	wantBudget := int64(float64(oneGB) * fitMemFraction)
+	if budgetBytes != wantBudget {
+		t.Errorf("budgetBytes = %d, want %d — fraction of the injected 1 GiB AVAILABLE figure, "+
+			"not the injected 64 GB total", budgetBytes, wantBudget)
+	}
+}
+
 // prefillScratchBytes must scale with prompt length (the MLP term) and never fall below the
 // real, already-enforced attention scratch cap.
 func TestPrefillScratchBytes_scalesWithPromptLength(t *testing.T) {

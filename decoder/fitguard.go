@@ -30,10 +30,13 @@ import (
 // estimate — each returns "don't know" and the load continues. The guard's failure mode must be
 // letting a doomed load through (the status quo), never refusing one that would have run.
 
-// fitMemFraction is the share of physical RAM the WEIGHTS alone may occupy. Same figure and same
-// provenance as metal/backend.go's residentMemFraction: ONE measured failure (11.28 GB of 16 GB
-// = 70.5% thrashed to swap exhaustion), so a threshold rather than a swept curve. The rest is not
-// slack — KV, scratch, the tokenizer, and the operating system live there too.
+// fitMemFraction is the share of the fit check's base memory figure the WEIGHTS alone may occupy.
+// Same figure and same provenance as metal/backend.go's residentMemFraction: ONE measured failure
+// (11.28 GB of 16 GB = 70.5% thrashed to swap exhaustion), so a threshold rather than a swept
+// curve. The rest is not slack — KV, scratch, the tokenizer, and the operating system live there
+// too. Originally fractioned against TOTAL physical RAM; fitCheckFor now fractions it against
+// CURRENTLY AVAILABLE memory instead (R13-follow-on) — the threshold itself is unchanged, only
+// what it is a fraction OF.
 const fitMemFraction = 0.70
 
 // fitWarnRatio is how close to the budget the load has to come before the banner prints the
@@ -62,7 +65,7 @@ type fitCheck struct {
 	quant       string // the requested quant, named because it moves the weight term the most
 	weightBytes int64  // estimated resident weight bytes AT THAT QUANT
 	kvBytes     int64  // KV at effCtx (see below) — always priced now, not only when pinned
-	ramBytes    int64  // physical RAM, 0 when unknown
+	availBytes  int64  // CURRENTLY AVAILABLE memory at check time (R13-follow-on), 0 when unknown
 
 	// cfg, effCtx, pinned, kvF16, kvI8 carry what R13's re-pricing needs to recompute KV at a
 	// SMALLER context when the load does not fit and the caller never pinned one — see
@@ -77,10 +80,10 @@ type fitCheck struct {
 }
 
 func (f fitCheck) need() int64   { return f.weightBytes + f.kvBytes }
-func (f fitCheck) budget() int64 { return int64(float64(f.ramBytes) * fitMemFraction) }
+func (f fitCheck) budget() int64 { return int64(float64(f.availBytes) * fitMemFraction) }
 
 // known reports whether both sides of the comparison are real numbers. Anything else proceeds.
-func (f fitCheck) known() bool { return f.ramBytes > 0 && f.weightBytes > 0 }
+func (f fitCheck) known() bool { return f.availBytes > 0 && f.weightBytes > 0 }
 
 func (f fitCheck) fits() bool { return !f.known() || f.need() <= f.budget() }
 
@@ -102,8 +105,8 @@ func (f fitCheck) arithmetic() string {
 	if f.kvBytes > 0 {
 		fmt.Fprintf(&b, " + %.1f GB KV = %.1f GB", float64(f.kvBytes)/fitGB, float64(f.need())/fitGB)
 	}
-	fmt.Fprintf(&b, "; this machine has %.1f GB RAM (budget %.1f GB = %.0f%%)",
-		float64(f.ramBytes)/fitGB, float64(f.budget())/fitGB, fitMemFraction*100)
+	fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
+		float64(f.availBytes)/fitGB, float64(f.budget())/fitGB, fitMemFraction*100)
 	return b.String()
 }
 
@@ -334,14 +337,27 @@ func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 // A safetensors directory is deliberately NOT estimated from its file size: those are usually f32
 // or bf16 on disk and shrink 6.4x loading at int4, so the file bytes would refuse models that fit
 // comfortably. An estimate that is wrong in the refusing direction is worse than none.
+//
+// PRICED AGAINST CURRENTLY-AVAILABLE MEMORY, NOT TOTAL RAM (R13-follow-on,
+// docs/measurements/cold-user-2026-09-07-macbook-arm64.md's SECOND live re-run). The first
+// version of this function read hostRAM() — total physical RAM, a fixed number that assumes
+// nothing else on the machine ever needs more than the 30% fitMemFraction reserves. The live
+// re-run of R13's own fix (which changed prefill_budget.go's request-time check the same way)
+// found the load-time guard's version of this bug too: on a real, shared Mac, swap began within
+// 15 SECONDS OF LOAD COMPLETING, with the server sitting idle and no request in flight yet — proof
+// the "30% of total RAM is always enough for everything else" assumption is what was actually
+// wrong, not merely a per-request pricing gap. Weights ARE still subtracted here (unlike
+// prefill_budget.go's request-time check): at LOAD time the weights this call is about to allocate
+// are NOT YET resident (guardFit runs before loadWeights, decoder/model.go), so the current
+// availability figure does not yet reflect their cost the way it does for an already-loaded model.
 func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck {
 	if quantName == "" {
 		quantName = "f32"
 	}
 	f := fitCheck{
-		name:     filepath.Base(path),
-		quant:    quantName,
-		ramBytes: hostRAM(),
+		name:       filepath.Base(path),
+		quant:      quantName,
+		availBytes: hostRAMAvailable(),
 	}
 	if !strings.HasSuffix(path, ".gguf") {
 		return f

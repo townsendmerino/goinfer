@@ -82,17 +82,24 @@ func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int) error {
 
 // FitBudgetSummary reports the numbers R13's banner line states at every load: the context KV is
 // priced at (whatever the load-time guard actually used — the pin, the auto-pinned cap, or the
-// model's own maximum), KV at that context, the resident weight bytes, and the RAM budget.
-// known=false when RAM or the model's config was not readable, matching the guard's own
+// model's own maximum), KV at that context, the resident weight bytes, and the memory budget.
+// known=false when availability or the model's config was not readable, matching the guard's own
 // "unknown ⇒ say nothing" rule — a banner line with half its numbers missing is worse than no
 // line.
+//
+// budgetBytes is priced against CURRENTLY AVAILABLE memory (R13-follow-on), read at call time —
+// by the time this runs the model is already loaded, so weightBytes is ALREADY excluded from
+// availability by the OS's own accounting. The caller (internal/serveapp/banner.go) must NOT
+// subtract weightBytes from budgetBytes again when computing what remains — weightBytes is
+// returned for DISPLAY only, the same "no double-count" rule prefill_budget.go's
+// AdmitPrefillMemory applies at request time.
 func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes int64, known bool) {
 	if m == nil || m.w == nil {
 		return 0, 0, 0, 0, false
 	}
-	ram := hostRAM()
+	avail := hostRAMAvailable()
 	weightBytes = m.ResidentWeightBytes()
-	if ram <= 0 || weightBytes <= 0 {
+	if avail <= 0 || weightBytes <= 0 {
 		return 0, 0, 0, 0, false
 	}
 	cfg := m.Config()
@@ -103,7 +110,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 		}
 		ctx = cfg.MaxPositions
 	}
-	budgetBytes = int64(float64(ram) * fitMemFraction)
+	budgetBytes = int64(float64(avail) * fitMemFraction)
 	kvBytes = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(ctx)
 	return ctx, kvBytes, weightBytes, budgetBytes, true
 }

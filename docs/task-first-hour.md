@@ -29,14 +29,16 @@
 > those families for however long they have existed, and would have left the new guard just as
 > inert on arrival had the gap gone unnoticed. The guard's own bug (KV priced at zero for any
 > unpinned context) is real and fixed too, but it is downstream of, and a much smaller finding
-> than, the MaxPositions gap. **The live re-run of R13 happened, and confirmed the release-gate
-> discipline was necessary**: Scenario D and the load-time guard both passed cleanly, but
-> `serve check`'s own requests still drove 9.7 GB of swap — the request-time guard was pricing
-> against a fraction of TOTAL RAM, which a real machine with other work open can exceed regardless
-> of how correctly goinfer prices its own allocations. Fixed as **R13-follow-on**, immediately
-> after R13 below. **v0.17.2 is still not tagged: this second fix has not itself been re-verified
-> against the same live scenario, and that re-run gates the tag** — see R13-follow-on's own
-> closing note.
+> than, the MaxPositions gap. **The live re-run of R13 happened, twice, and confirmed the
+> release-gate discipline was necessary both times**: pass one found the request-time guard
+> pricing against a fraction of TOTAL RAM (fixed; re-run found the swap SHRANK but did not
+> disappear, and began 15 seconds before any request, while the server sat idle); pass two found
+> the load-time guard and the banner's own budget line had the identical bug, deliberately left
+> unfixed by pass one's own stated scope. Both are fixed as **R13-follow-on**, immediately after
+> R13 below. **v0.17.2 is still not tagged: this is two-for-two on "passes every gate, fails
+> live," and a third live re-run is required before either fix — let alone the tag — gets to be
+> believed** — see R13-follow-on's own closing note, which also names what changes if the third
+> re-run fails too.
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
@@ -1003,69 +1005,95 @@ would have shipped a fix that still swapped the exact machine it was built for. 
 R13-follow-on, immediately below, for the actual gap and its fix — which is itself now the thing
 that gates v0.17.2, not this one.
 
-### R13-follow-on — the request-time guard priced against a fraction of TOTAL RAM; the live re-run found it still swapped
+### R13-follow-on — the guard priced against a fraction of TOTAL RAM; two live re-runs, two live findings
 
-**Found** (the live re-run of R13 dispatched to close its own "not yet re-verified" gap). Scenario
-B's opencode leg never reached opencode: `serve check` alone — the integration doc's own
-documented pre-flight step — drove **+575,752 pages (~9 GB) of Swapouts**, with `serve` confirmed
-as the only plausible cause (6.15 GB RSS against everything else on the box under 350 MB). No HTTP
-413 was ever issued; every check reported "ok." The load-time guard was not at fault: it had
-already auto-pinned the 7B model's context correctly and reported a real, if thin, margin.
+**First live re-run** (dispatched to close R13's own "not yet re-verified" gap). Scenario B's
+opencode leg never reached opencode: `serve check` alone — the integration doc's own documented
+pre-flight step — drove **+575,752 pages (~9 GB) of Swapouts**, with `serve` confirmed as the only
+plausible cause (6.15 GB RSS against everything else on the box under 350 MB). No HTTP 413 was
+ever issued; every check reported "ok." The load-time guard was not at fault *for this leg*: it
+had already auto-pinned the 7B model's context and reported a real, if thin, margin.
 
-**Root cause.** `AdmitPrefillMemory` priced KV+scratch against `fitMemFraction × TOTAL RAM −
-resident weights` — the same shape as the load-time guard, reused without re-examining whether it
-still fit a per-request check. That formula assumes nothing else on the machine ever needs more
-than the remaining 30% of *total* RAM. `HostRAMBytes()` reads `hw.memsize` (Darwin) /
+**Root cause, pass one.** `AdmitPrefillMemory` priced KV+scratch against `fitMemFraction × TOTAL
+RAM − resident weights` — the same shape as the load-time guard, reused without re-examining
+whether it still fit a per-request check. That formula assumes nothing else on the machine ever
+needs more than the remaining 30% of *total* RAM. `HostRAMBytes()` reads `hw.memsize` (Darwin) /
 `MemTotal` (Linux) — physical RAM, a number that never changes and is cached once per process —
 never what is actually free right now. This project's own cold-user reports say, repeatedly, "this
 is a shared machine with other work open"; the arithmetic had no way to notice when that was true,
 because it never looked.
 
-**Fixed.** New `HostRAMAvailableBytes()` on both platforms, deliberately never cached (unlike
-`HostRAMBytes`, whose value cannot change): Linux reads `MemAvailable` from `/proc/meminfo` — the
-kernel's own no-swap-needed estimate; Darwin parses `vm_stat` (free + inactive + speculative +
-purgeable pages, at the page size `vm_stat`'s own header reports — Apple Silicon uses **16 KB**
-pages, confirmed on the exact Mac that found this bug, not the 4 KB a hardcoded assumption would
-have used). `AdmitPrefillMemory` now prices KV+scratch directly against `prefillAvailFraction ×
-currently-available-memory`, with **no weight subtraction**: at request time the model is already
-resident, so the OS's own "available" figure already excludes it — subtracting it again would
-double-count a footprint that is not there to subtract.
+**Fixed, pass one.** New `HostRAMAvailableBytes()` on both platforms, deliberately never cached
+(unlike `HostRAMBytes`, whose value cannot change): Linux reads `MemAvailable` from
+`/proc/meminfo` — the kernel's own no-swap-needed estimate; Darwin parses `vm_stat` (free +
+inactive + speculative + purgeable pages, at the page size `vm_stat`'s own header reports — Apple
+Silicon uses **16 KB** pages, confirmed on the exact Mac that found this bug, not the 4 KB a
+hardcoded assumption would have used). `AdmitPrefillMemory` now prices KV+scratch directly against
+`prefillAvailFraction × currently-available-memory`, with **no weight subtraction**: at request
+time the model is already resident, so the OS's own "available" figure already excludes it —
+subtracting it again would double-count a footprint that is not there to subtract. Scoped,
+explicitly, to the request-time check only — the load-time guard (`fitguard.go`) was left
+budgeting against total RAM, reasoned as "it runs once, at a moment the operator controls."
 
-**Scope, deliberately asymmetric.** Only the request-time check moved to available-RAM pricing;
-the load-time guard (`fitguard.go`) still budgets against total RAM. The load-time guard runs once,
-at a moment the operator controls; the request-time guard runs on every request, at a moment they
-do not, which is exactly why it needs the live number and the load-time guard does not (yet — see
-below). Moving the load-time guard too is a real follow-on, deliberately not done here: "available
-at load time" predicting "available ten minutes into a long-running server" is a different,
-unmeasured claim.
+**Second live re-run** (re-verifying pass one, on the same machine, same model). Load-time banner
+unchanged, as expected — same 21,845-token auto-pin, "0.3 GB left for a request's own prefill."
+`serve check` **still failed**, though smaller: Swapouts grew continuously to **~5.7 GB by the time
+the check finished, ~6.7 GB a minute after** — nonzero, the pre-registered fail condition, but well
+under pass one's ~9 GB. The critical new observation: **swap onset began ~15 seconds before `serve
+check` even connected, while the server was sitting idle post-load, no request in flight.** That is
+outside anything `AdmitPrefillMemory` can touch — it only runs when a request arrives.
+
+**Root cause, pass two.** The idle-time onset means the load-time guard's own "0.3 GB margin" was
+already consumed before any request — which is exactly the deliberately-scoped-out half of pass
+one. `smallerFittingContext()` solves for the *exact* largest context that fits the total-RAM
+budget with no cushion beyond `fitMemFraction` itself; on a real, shared machine, ambient memory
+pressure that a total-RAM-fraction budget cannot see is enough to consume a margin that thin before
+the server has served a single token. "Moving the load-time guard too is a real follow-on,
+deliberately not done here" (pass one's own words) turned out not to be optional.
+
+**Fixed, pass two.** `fitCheckFor` (`fitguard.go`) now sources its base memory figure from
+`hostRAMAvailable()` instead of `hostRAM()` — the same substitution as pass one, applied to the
+load-time guard. Weights **are** still subtracted here (unlike the request-time check): at load
+time the weights this call is about to allocate are not yet resident, so the current availability
+figure does not yet reflect their cost. `fitCheck`'s `ramBytes` field is renamed `availBytes` and
+every message updated accordingly ("this machine currently has X GB of memory available," not "has
+X GB RAM," which would now be a lie about what is actually being measured). `FitBudgetSummary`
+(the banner's own `fit:` line) gets the same fix for the same reason — it also priced against
+`hostRAM()` — and its consumer (`internal/serveapp/banner.go`) stops double-subtracting
+`weightBytes` from the reported budget: by the time the banner prints, the model is already
+resident, so the available-memory figure already excludes it, exactly as `AdmitPrefillMemory`'s
+own fix already established. This banner arithmetic bug was real but informational-only (it never
+gated anything) and was previously untested; it is now.
 
 **Gates.**
 
-- `decoder/hostram_linux_test.go`: `TestMeminfoField_realShape`,
-  `TestMeminfoField_missingKeyIsUnknown`, `TestMeminfoField_unexpectedUnitIsUnknown`, and
-  `TestHostRAMAvailableBytes_readsRealMeminfo` — run against this box's real, live
-  `/proc/meminfo`, not a fixture.
-- `decoder/hostram_darwin_test.go` (darwin-only; exercised by the `root-darwin`/`metal-darwin` CI
-  job, not locally — this fix was written on Linux with no Mac to run it on):
-  `TestParseVMStatAvailable_realShape` against real `vm_stat` output shaped at the *confirmed* 16
-  KB page size, `_missingHeaderIsUnknown`, `_zeroPageSizeIsUnknown`, and
-  `_missingFieldIsUnknown` (a partial sum would under-report usage in exactly the wrong
-  direction — accepting a request that should be refused — so a missing field must return
-  "unknown," never a sum of whatever it found).
-- `decoder/prefill_budget_test.go`'s `TestAdmitPrefillMemory_refusesAnOversizedRequest` now
-  injects AMPLE total RAM (so `Load` succeeds and the load-time guard has nothing to say) alongside
-  TIGHT available RAM — the exact shape of the live failure: the load-time guard satisfied, the
-  machine not. **Mutation-checked**: reverting to the old `fitMemFraction×totalRAM − weights`
-  formula turns exactly this test red; every other `AdmitPrefillMemory` test, none of which depend
-  on the total-vs-available distinction, stays green.
-  `TestAdmitPrefillMemory_unknownAvailabilityProceeds`, new.
+- `decoder/hostram_linux_test.go` / `decoder/hostram_darwin_test.go`: unchanged from pass one —
+  `HostRAMAvailableBytes` is shared by both the load-time and request-time fixes, so one set of
+  gates covers both.
+- `decoder/fitguard_test.go`'s new `TestFitGuard_pricesAgainstAvailableNotTotalRAM` injects AMPLE
+  total RAM (64 GB) alongside TIGHT available RAM (128 KiB) through the real `Load()` path — the
+  exact shape of the second failure. **Mutation-checked**: reverting `fitCheckFor` to
+  `hostRAM()` turns exactly this test red; every other fit-guard test (including the ample- and
+  unknown-RAM cases, which do not depend on the total-vs-available distinction) stays green.
+  `injectHostRAM` now sets both `hostRAM` and `hostRAMAvailable` to the same value by default, so
+  every pre-existing fitguard test keeps its original meaning without change.
+- `decoder/prefill_budget_test.go`'s new `TestFitBudgetSummary_pricesAgainstAvailableNotTotalRAM`
+  pins `budgetBytes` to a fraction of the injected AVAILABLE figure, not the injected 64 GB total.
+  **Mutation-checked**: reverting `FitBudgetSummary` to `hostRAM()` turns exactly this test red.
+- Pass one's gates (`TestAdmitPrefillMemory_refusesAnOversizedRequest` and siblings) are unchanged
+  and still pass.
 
-**⛔ Not yet re-verified live — again, and this is the note that actually gates v0.17.2 now.** The
-pattern so far is exact: R13's first fix passed every unit and integration gate and still failed
-live. This fix has the same shape of proof behind it — real arithmetic, a real mutation check, a
-darwin-only test CI will run on real hardware that this Linux box cannot — and none of that is the
-same claim as "the Mac that found this no longer swaps." It needs the same live re-run, on the
-same scenario, before it gets to be believed.
+**⛔ Not yet re-verified live — a third time, and this is the note that actually gates v0.17.2
+now.** The pattern is now two-for-two: a fix passes every unit and integration gate and still
+fails live, on the same machine, on the same scenario, for a reason the previous pass's own scope
+note had already named as out of bounds. This fix has the same shape of proof behind it — real
+arithmetic, real mutation checks, a darwin-only test CI runs on real hardware this Linux box
+cannot — and none of that is the same claim as "the Mac that found this no longer swaps," twice
+over now. It needs the same live re-run, on the same scenario, before it gets to be believed. If
+this THIRD live re-run also finds a nonzero Swapouts delta, the right response is not a fourth
+patch to the same formula — it is treating "a fixed-fraction budget of any single memory figure,
+read at any single instant" as the wrong shape of fix, and going back to docs/task-fit-to-hardware.md
+for a design that re-checks live, continuously, rather than pricing once against a snapshot.
 
 ### R14 — the README named opencode as a real-agent target; no recipe for it existed anywhere
 

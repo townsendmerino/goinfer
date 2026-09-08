@@ -91,8 +91,15 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 
 	// R13: the memory this context cap actually costs, and what is left — the line a harness
 	// user needs to judge whether their own turn size fits, before finding out from swap.
+	//
+	// R13-follow-on: fitBudgetBytes is now priced against CURRENTLY AVAILABLE memory
+	// (decoder.FitBudgetSummary), read after the model is already resident — so weightBytes is
+	// ALREADY excluded from it by the OS's own accounting. Subtracting it again here would
+	// double-count a footprint that is not there to subtract (the same bug AdmitPrefillMemory
+	// had at request time). weights are still shown, for the reader's own arithmetic, not this
+	// function's.
 	if f.fitKnown {
-		remaining := f.fitBudgetBytes - f.fitWeightBytes - f.fitKVBytes
+		remaining := f.fitBudgetBytes - f.fitKVBytes
 		out = append(out, fmt.Sprintf(
 			"fit: %d-token cap needs %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
 			f.fitCtx, float64(f.fitKVBytes)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
