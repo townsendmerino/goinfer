@@ -230,6 +230,61 @@ not overturn a considered decision. And note the reach limit
 either way: figures propagate into published artifacts outside the repo, where no repo-side
 tooling can ever follow them.
 
+### The reference can be wrong too
+
+Every failure mode above is OUR instrument reporting a plausible wrong number. This one
+inverts that, and the inversion is worth having on the record: the strict bar exists to catch
+goinfer's mistakes, and one afternoon it caught a mistake in the thing goinfer was being
+checked against instead.
+
+Promoting `internlm2` from a tiny synthetic golden to a real checkpoint
+(`internlm2_5-1_8b-chat`), the gate failed hard: `argmax 58321` against a reference `argmax
+2085`, logit cosine 0.873148. Not a borderline miss. The obvious suspect was sitting right
+there — the tiny fixture that isolates InternLM2's one unusual feature, a fused and *grouped*
+`wqkv` tensor, uses GQA groups=4; the real checkpoint uses groups=2. Different geometry, same
+family, first failure on the real weights: exactly the shape of a de-interleave bug that only
+shows at a specific groups value.
+
+It wasn't that. Diffing goinfer's gather directly against the checkpoint's own `wqkv.weight` —
+no model load, just the tensor and the formula, at the real dimensions — gave a max absolute
+difference of `0.0`. Bisecting the *reference* model's own forward next, submodule by
+submodule (the same `wqkv` split, the same rotary module, the same softmax), found where the
+two computations actually parted ways: `attn.rotary_emb(...)`'s output was NaN, and its
+`inv_freq` buffer — the RoPE frequency table — was not a frequency table:
+
+```
+  inv_freq[:8] = [-1.09e-16, 3.09e-41, 0.0, 0.0, 7.01e-45, 0.0, 7.01e-45, 0.0]
+                 not 1/base^(2d/dim) — denormals and zeros, textbook uninitialized memory
+```
+
+`InternLM2RotaryEmbedding.__init__` computes that buffer and marks it `persistent=False`,
+correctly — it's derived, not learned, so it has no business in the checkpoint. The installed
+`transformers` version's fast-init path never re-runs `__init__`'s formula for a buffer absent
+from the checkpoint's state dict, so the buffer is simply never filled in — a bug class
+HuggingFace's own newer `ROPE_INIT_FUNCTIONS` registry exists to close, on remote code old
+enough to predate it. Patching all 24 layers' `inv_freq` back to the correct formula, on the
+real model, with the real weights, reproduced goinfer's own argmax and cosine, matching to six
+decimal places — and the patched model's greedy continuation now reads "Paris . The capital of
+France is Paris." Coherent, and correct. goinfer had been right the entire session; the oracle
+was reading a buffer nobody had ever written to.
+
+Pair that with `olmo3`, promoted in the same batch, where the failure ran the other way.
+Cosine came back at 0.992789 against the 0.9999 bar — and argmax, and the full 8-token greedy
+continuation, both matched *exactly*. The real `Olmo3Model.forward` builds exactly one
+YaRN-scaled rotary table and hands the identical tensor to every decoder layer regardless of
+type; `olmo3Architecture`'s flat-`rope_scaling` branch built a separate table instead and left
+it unscaled for the sliding-attention layers. That one is goinfer's bug — confirmed by reading
+`modeling_olmo3.py` directly, not by any test — and it is invisible to anything looser than the
+logit-level bar. Same greedy output, same eight tokens, on this prompt, from a model that was
+quietly wrong underneath.
+
+Two gates went red in the same afternoon, on the same 0.9999 bar, for opposite reasons — and
+nothing about the red itself said which. What told them apart was the same discipline every
+other section of this chapter argues for: don't force it green, don't assume which side the
+bug is on, and go find the exact layer, the exact buffer, the exact line, before deciding who's
+wrong. A strict bar does not know whether it's catching your mistake or somebody else's.
+Bisecting is how you find out, and it's the only method that works for either answer.
+
 ---
 
 ## The habits, condensed
