@@ -617,7 +617,7 @@
     "loaders": "safetensors",
     "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/0.99998"
+    "parity": "full-oracle 100.0%/0.99946"
   },
   {
     "name": "qwen3",

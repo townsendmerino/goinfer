@@ -622,16 +622,16 @@
       ],
       "own": [],
       "deps_hash": "sha256:b7872a041763e1a41e2bd4e99db826e561b35904f963d4608e392c42eefe9e74",
-      "status": "experimental",
-      "validated_at": "d72400e",
-      "date": "2026-09-06",
-      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
-      "machine": "mac",
-      "method": "tiny-golden",
+      "status": "validated",
+      "validated_at": "c5fbbbc2",
+      "date": "2026-09-08",
+      "reference": "HF f32 (Qwen/Qwen2.5-VL-3B-Instruct, real image, prefill forward only)",
+      "machine": "linux-62gb",
+      "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.99998,
-        "cosine_mean": 0.99998
+        "cosine_min": 0.99946,
+        "cosine_mean": 0.99946
       }
     },
     "qwen2_moe": {

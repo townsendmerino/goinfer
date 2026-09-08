@@ -119,6 +119,7 @@ var parityRealckptGates = []gateCheck{
 	{"granite-oracle", "TestGraniteReal_oracle"},
 	{"laguna", "TestLagunaReal_gate"},
 	{"laguna-oracle", "TestLagunaReal_oracle"},
+	{"qwen25vl-real", "TestQwen25VLReal_gate"},
 	{"laguna-gguf", "TestLagunaGGUF_gate"},
 	{"glm4moe-air", "TestGlm4MoeAir_gate"},
 	{"cohere", "TestCohereAyaReal_gate"},
@@ -177,6 +178,7 @@ var emitGates = []gateCheck{
 	{"qwen2_moe", "TestQwen2MoeReal_oracle"},
 	{"laguna", "TestLagunaReal_oracle"},
 	{"qwen3_5", "TestQwen38Real_oracle"},
+	{"qwen2_5_vl", "TestQwen25VLReal_gate"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -734,6 +736,14 @@ var awaitingFirstConfirmation = map[string]string{
 		"quantizer rather than either family's own wiring — not investigated further; a real lead " +
 		"for whoever picks this up next, not a claim. Left required and red rather than moved to " +
 		"realckptNotRequired. Still promote from the first sweep that runs it once resolved.",
+	"TestQwen25VLReal_gate": "2026-09-08 — newly required (T3 promotion of qwen2_5_vl from tiny-golden " +
+		"to a released checkpoint). The first family in this batch with a DIFFERENT oracle shape: " +
+		"a real AutoImageProcessor run on a real (pre-sized) image, through the real vision encoder " +
+		"and real decoder — not a text-only forward. Scoped to the prefill forward only, not greedy " +
+		"continuation past the image block (a genuinely different, unbuilt m-RoPE-continuation code " +
+		"path — see the gate's own doc comment). PASSED first run: argmax exact, cosine 0.999459. " +
+		"Registered alongside the gate and asset in the same change; promote from the first sweep " +
+		"that runs it.",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS

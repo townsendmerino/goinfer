@@ -1713,3 +1713,65 @@ then failed at the same integration point (greedy continuation under int4) despi
 different architectures. Read against the earlier internlm2/olmo3 findings, this raises the
 running count of real-checkpoint promotions that surfaced a genuine defect (or a
 defect-shaped, unresolved lead) to four out of eight families attempted past smollm3 — half.
+
+## Timing: finishing pass, Group 3 — bailing_hybrid (blocked) + qwen2_5_vl (2026-09-08, Linux box)
+
+**bailing_hybrid — reachability checked, not attempted, per policy ("do not fight the
+dependency stack").** Full account in `docs/task-families-2026-09.md`'s bailing_hybrid
+section. A fresh CUDA-enabled venv proved the KDA primitive itself fully reachable on this
+box — `fla.ops.kda` imports, and `fused_recurrent_kda` launches on the real RTX 2070 SUPER
+with finite output — upgrading the earlier "plausible, not proven" preflight to a genuine
+result. But `modeling_bailing_moe_v3.py` still does not import on any current transformers
+(5.16.1 or this repo's own pinned 5.15.0): `is_torch_fx_available` was removed from
+`transformers.utils.import_utils` in a later refactor, and the checkpoint's remote code was
+written against a version that still had it. A stale reference in code this repo does not
+own, unrelated to Triton/CUDA/fla, not chased further. ~15 min spent (venv setup, triton/fla
+install, the kernel-launch check, the module-import check at two transformers versions) —
+no 16 GB download attempted, per the gate the task set: check reachability first.
+
+**qwen2_5_vl (Qwen/Qwen2.5-VL-3B-Instruct)** — ≈6 min, PASS, promoted to full-oracle
+(cosine 0.999459). **The first family in this finishing pass whose oracle SHAPE differs**:
+the existing tiny golden already ran e2e encoder→decoder, but on synthetic `pixel_values`
+with no real processor in the loop, so a real oracle needed a real image through the real
+`AutoImageProcessor`, not just real decoder weights. Reused the already-pinned, pre-sized
+test PNG (`testdata/qwen25vl_preprocess_image.png`, 84×56, grid-aligned so `smart_resize` is
+a no-op) rather than a new photo — isolating decoder-on-real-weights from resize/bicubic
+parity, which is already pinned separately, the same one-gate-one-concern discipline
+mistral3's own gate uses. Split: adapt ~15 min (reading the existing Go vision API —
+`vision.LoadQwenVisionEncoder`/`enc.Forward`/`mropePositions`/`m.prefillLogitsQwenVL` — all
+already existed and needed no new goinfer code, just a new pin script and gate calling
+them), download 7.1 GB in under a second (already warm from an earlier config check), HF
+reference ~7 s, gate 4.6 s, merge + regen ~1 min. **Item 5, the real cost of this family**:
+scoping the gate to the prefill forward only, not greedy continuation past the image block.
+Decoding text tokens after an image (m-RoPE position continuation from the image grid's max
+position) is a genuinely different code path with no existing Go test — building it inside
+this promotion would have conflated a brand-new test harness's own correctness with the
+checkpoint's, exactly the trap this whole program exists to avoid one level up. Scoped out
+explicitly, in both the gate's doc comment and the manifest reference text, rather than
+silently assumed to work.
+
+**Group total ≈ 21 min: one family correctly not attempted (a named, external blocker), one
+promoted with an explicitly bounded claim.** Neither outcome needed the caution the earlier
+"budget for the whole cost" framing implied — the existing Go vision API absorbed nearly all
+of the shape-difference risk; what was actually novel and worth the budget was recognizing
+where to STOP the gate's scope, not building more of it.
+
+## Finishing pass total: three groups, six families, six real findings
+
+Group 1 (qwen2_moe, qwen3_moe): 2 promoted, item 5 zero both times. Group 2 (laguna,
+qwen3_5): 0 promoted, 2 real-shaped findings (int4 continuation drift, cause unresolved).
+Group 3 (bailing_hybrid, qwen2_5_vl): 1 blocked (external, named), 1 promoted with a
+narrower-than-usual claim (prefill only). Six families attempted, four promotions, two
+failures that are themselves findings rather than errors — consistent with the running
+count this document has kept honestly since olmo3: real-checkpoint validation in this
+program finds something roughly half the time it is tried, whether or not the family looked
+safe going in.
+
+**10 of 16 tiny-oracle families now validated against released weights** (7 before this
+pass — smollm3, lfm2, mistral3, granite, olmo3, olmo_hybrid, internlm2 — plus qwen2_moe,
+qwen3_moe, qwen2_5_vl from this pass). Of the 6 that remain `experimental: tiny-oracle`:
+laguna and qwen3_5 carry a named, unresolved lead (int4 continuation drift); bailing_hybrid
+is blocked on a dependency this repo does not control (a stale symbol in the checkpoint's
+own remote code); mixtral, llama4_text, and glm4_moe are the three whose tier reflects
+hardware (RAM) or format (no bf16 safetensors asset), not validation effort — confirmed
+blocked in the earlier scoping pass, not reattempted here.

@@ -624,6 +624,15 @@
       "note": "internlm/internlm2_5-1_8b-chat (InternLM2ForCausalLM), bf16 safetensors / ~3.6 GB \u2014 not a built-in transformers architecture, needs trust_remote_code=True to load. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
     },
     {
+      "env": "GOINFER_QWEN25VL_3B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen25vl-3b-instruct"],
+      "used_by": ["TestQwen25VLReal_gate"],
+      "note": "Qwen/Qwen2.5-VL-3B-Instruct (Qwen2_5_VLForConditionalGeneration), ~7.1 GB. The T3 gate for this family runs a REAL image (testdata/qwen25vl_preprocess_image.png, pre-sized so resize is a no-op) through the real vision encoder + real decoder; scoped to the prefill forward only, not greedy continuation (see decoder/qwen25vl_real_test.go's own doc comment for why)."
+    },
+    {
       "env": "GOINFER_GRANITE_GGUF",
       "kind": "file",
       "min_bytes": 1048576,
