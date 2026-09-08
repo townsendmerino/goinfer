@@ -1477,3 +1477,43 @@ different picture than "some scheduling risk on the harder families" — it says
 promotion in this program is a real test of the family's wiring, including the ones
 picked for looking safe, and probably needs to be budgeted and reported as such rather
 than assumed to pass.
+
+**DISPOSITION — olmo3 FIXED, same day.** `decoder/registry.go`'s `olmo3Architecture` was
+changed to apply one uniform RoPE base/scaling to every layer regardless of config form,
+matching what the real model actually does — confirmed by reading `modeling_olmo3.py`
+directly: `Olmo3Model.__init__` builds exactly one `Olmo3RotaryEmbedding`, and
+`Olmo3Model.forward` computes `position_embeddings` from it ONCE per call, handing the
+identical tensor to every decoder layer regardless of `layer_types[i]` (only the attention
+mask varies by layer type). `Olmo3RotaryEmbedding.__init__` itself reads
+`self.config.rope_parameters["rope_type"]` directly, which would `KeyError` on a genuinely
+per-layer-type nested dict — so no real Olmo3 checkpoint can load with different RoPE
+scaling per layer type regardless of how its `config.json` happens to be shaped; the
+original code's "confirmed independently by re-saving a config" note was checking
+serialization output, not that the file loads back through the real model class. It does
+not. Re-run of `TestOlmo3Real_gate` after the fix: cosine 1.000000. A downstream chokepoint
+test (`TestResidentFeatures_derivationMatchesProfile`) caught a stale hand-written table
+entry as a direct consequence — `archFeatureProfile["olmo3"]` still claimed
+`FeatPerLayerRoPE` after the fix made the auto-derivation correctly stop asserting it;
+fixed in the same change. `olmo3` is now `full-oracle 100.0%/1.00000` in the manifest.
+
+One verification note from this fix, worth recording precisely: regenerating the tiny
+fixture on this box (to sanity-check the fix against it) produced a byte-different golden
+than the committed one, from the SAME unmodified pin script — a transformers version
+difference between this box and whichever box originally authored it changed HF's own
+computed YaRN output for the same synthetic config. That regenerated golden and its
+checkpoint were reverted/discarded rather than committed (per the standing rule not to
+modify a tiny golden to make anything pass), so the tiny gate for olmo3 could not be
+re-validated on this box for this fix — the real-checkpoint gate (which is what found and
+then confirmed the fix for the actual defect) is the validation of record here.
+
+**The exposure worth flagging beyond this one family, per the reviewing session's own
+note:** olmo3 is the first family in this tree ever tested against YaRN at the tight
+f32-vs-f32 bar. `mellum` and `gpt-oss` both ship YaRN in production and are both validated
+only via int8-quantized real-model-oracle at the looser 0.99 floor — a floor wide enough
+that this exact defect class (a real but moderate cosine drift, ~0.99 here, with argmax and
+greedy continuation both staying exact) would read as ordinary quantization noise, not as
+a wiring defect. Neither family has been checked at a bar that could tell the two apart.
+This is a suspicion, not a finding — nobody has looked at either family's RoPE-locality
+handling with olmo3's bug in mind — and it is exactly the kind of thing that gets
+rediscovered independently later if it only lives in a paragraph here. Filed to
+`docs/QUEUE.md` alongside this note so it travels with the rest of the open work.

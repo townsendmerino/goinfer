@@ -114,7 +114,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Ministral 3 | `ministral3`, `mistral3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower, ignored) | no | full-oracle 100.0%/1.00000 |
 | Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
-| Olmo 3 | `olmo3` | dense | interleave | yes | full | RMSNorm, post-only | SwiGLU | no | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
+| Olmo 3 | `olmo3` | dense | interleave | yes | full | RMSNorm, post-only | SwiGLU | no | safetensors | text | no | full-oracle 100.0%/1.00000 |
 | Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |

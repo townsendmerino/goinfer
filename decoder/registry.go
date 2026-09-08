@@ -649,25 +649,41 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // uses), `tie_word_embeddings: false`. Tensor names are llama-shaped except the post-only norms
 // and whole-vector QK-norm weight width — `olmo3TensorSchema`.
 //
-// A THIRD real finding, on RoPE specifically: **YaRN scaling applies ONLY to full_attention
-// layers.** The real released config.json carries a single FLAT top-level `rope_scaling` (a
-// plain YaRN object, EXPLICIT `attention_factor` — no DeepSeek/Ministral-style
-// mscale/mscale_all_dim override needed), which reads as "one scaling for the whole model" — but
-// verified against the real `configuration_olmo3.py`'s `convert_rope_params_to_dict`, that flat
-// field is a backward-compat shim: `self.rope_parameters["full_attention"].update(rope_scaling)`,
-// leaving `rope_parameters["sliding_attention"]` at its plain `{"rope_type": "default"}` default —
-// confirmed independently by re-saving a config through current transformers, which expands the
-// same flat input into exactly that per-layer-type split. This is the SAME local/global RoPE
-// split Mellum already implements (`ropeScaling` for global/full, `ropeScalingLocal` for
-// local/sliding) — no new mechanism, just applied via `parseRopeParameters` when the checkpoint
-// ships the nested form directly (a re-saved config; `gemma3Architecture`'s own precedent) and
-// via the flat-applies-to-full-only rule when it ships the flat form (the real release).
+// A THIRD real finding, on RoPE: A SINGLE rotary table applies to EVERY layer, sliding and
+// full alike — NOT split by layer type. This corrects the family's own original claim (found
+// wrong by the real-checkpoint T3 gate, 2026-09-07: argmax and the greedy continuation both
+// matched exactly, but last-logit cosine was 0.992789, not >= 0.9999 — a magnitude-only drift
+// consistent with 24 of 32 layers running at the wrong RoPE frequency, not a dropped feature).
+//
+// The original reasoning was that the real released config.json's flat top-level `rope_scaling`
+// is a backward-compat shim that `configuration_olmo3.py`'s `convert_rope_params_to_dict`
+// expands into a per-layer-type split — `rope_parameters["full_attention"]` gets the YaRN
+// object, `rope_parameters["sliding_attention"]` stays plain `{"rope_type": "default"}` — and
+// that a re-saved config demonstrates the same expansion. That serialization claim is correct
+// but does not describe what the model actually RUNS: `Olmo3Model.__init__` builds exactly ONE
+// `self.rotary_emb = Olmo3RotaryEmbedding(config=config)`, and `Olmo3Model.forward` computes
+// `position_embeddings = self.rotary_emb(hidden_states, position_ids)` ONCE per forward call,
+// passing the SAME tensor to every decoder layer regardless of `layer_types[i]` — only the
+// attention MASK varies by layer type (`causal_mask_mapping`), never the rotary table.
+// `Olmo3RotaryEmbedding.__init__` itself reads `self.config.rope_parameters["rope_type"]`
+// directly, which would KeyError on a genuinely per-layer-type nested dict — so no real Olmo3
+// checkpoint can even LOAD with different scaling per layer type regardless of how its
+// config.json is shaped; `PretrainedConfig.standardize_rope_params`'s per-layer-type branch
+// (Case 2) only fires when the source keys already equal the `layer_types` strings, and a
+// config in that shape would crash the very rotary module the doc claimed it fed. The earlier
+// "confirmed independently by re-saving a config" check was verifying serialization output, not
+// that the saved file loads back through the real model class — it does not. So, unlike Mellum
+// (whose real modeling code genuinely does build two separate rotary tables from
+// `rope_parameters["full_attention"]`/`["sliding_attention"]`), olmo3 gets ONE table under
+// either config form: the flat form is the real release's own shape and needs no expansion, and
+// the nested form — reachable only via `parseRopeParameters` below, never via a real checkpoint
+// — is folded into the same single table rather than split, because a split is not a state the
+// real model can reach.
 func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	base := cfg.RoPEGlobalBase
-	localBase := base
-	var scaling, localScaling *ropeScaling
+	var scaling *ropeScaling
 	if len(cfg.RopeParameters) > 0 {
-		full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+		full, _, err := parseRopeParameters(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}
@@ -675,18 +691,13 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			base = full.base
 			scaling = full.scaling
 		}
-		localBase = base
-		if sliding != nil {
-			localBase = sliding.base
-			localScaling = sliding.scaling
-		}
 		cfg.RoPEGlobalBase = base // so validateLlama's rope_theta>0 check sees a populated base
 	} else {
 		sc, err := parseRopeScaling(cfg.RopeScaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}
-		scaling = sc // the flat form: applies to full_attention (global) only, per the comment above
+		scaling = sc
 	}
 	if err := cfg.validateLlama(); err != nil {
 		return nil, nil, err
@@ -722,11 +733,11 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
 		layerIsGlobal:    isGlobal,
-		RoPELocalBase:    localBase,
+		RoPELocalBase:    base, // uniform: the real model has exactly one shared rotary table
 		RoPEGlobalBase:   base,
 		RotaryDim:        cfg.rotaryDim(),
 		ropeScaling:      scaling,
-		ropeScalingLocal: localScaling,
+		ropeScalingLocal: scaling, // uniform, same reason
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
 	}, &olmo3TensorSchema, nil

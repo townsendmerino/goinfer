@@ -669,13 +669,16 @@ var awaitingFirstConfirmation = map[string]string{
 		"already confirmed above); registered in the same change as the gate and asset, unlike smollm3/" +
 		"lfm2/mistral3's first landing; promote from the first sweep that runs it",
 	"TestOlmo3Real_gate": "2026-09-07 — newly required (T3 promotion of olmo3 from tiny-golden to a released " +
-		"checkpoint); registered alongside the gate and asset. NOT awaiting a first PASS confirmation in " +
-		"the ordinary sense: the gate ran and FAILED (cosine 0.9928 vs the 0.9999 bar, argmax and the " +
-		"greedy continuation both exact) — YaRN is applied to every layer in the real Olmo3Model.forward " +
-		"(one shared self.rotary_emb), but olmo3Architecture's flat-rope_scaling branch zeroes " +
-		"ropeScalingLocal, leaving sliding-attention layers unscaled. Left required and red on purpose " +
-		"(see docs/parity-coverage-policy.md's timing note) rather than moved to realckptNotRequired, " +
-		"which would read as a decision to stop caring about this family's real gate; it is not one.",
+		"checkpoint); registered alongside the gate and asset. First run FAILED (cosine 0.9928 vs the " +
+		"0.9999 bar, argmax and the greedy continuation both exact) — the real Olmo3Model.forward applies " +
+		"one shared, YaRN-scaled rotary table to every layer, but olmo3Architecture's flat-rope_scaling " +
+		"branch zeroed ropeScalingLocal, leaving the 24 sliding-attention layers unscaled. Left required " +
+		"and red rather than moved to realckptNotRequired while the fix was pending (see " +
+		"docs/parity-coverage-policy.md's timing note for the full account). FIXED same day " +
+		"(decoder/registry.go's olmo3Architecture now applies one uniform base/scaling regardless of " +
+		"config form, matching what Olmo3Model.forward and Olmo3RotaryEmbedding.__init__ actually do); " +
+		"re-run confirmed cosine 1.000000. Still promote from the first sweep that runs it — this note " +
+		"records the fix, not a ledger confirmation.",
 	"TestOlmoHybridReal_gate": "2026-09-07 — newly required (T3 promotion of olmo_hybrid from tiny-golden to " +
 		"a released checkpoint); registered alongside the gate and asset; promote from the first sweep " +
 		"that runs it",
