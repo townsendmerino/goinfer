@@ -106,12 +106,12 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/0.99128 |
 | Granite 4.2 | `granite` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | InternLM2 | `internlm2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
-| LFM2.5 | `lfm2` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | yes | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
+| LFM2.5 | `lfm2` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | yes | safetensors | text | no | full-oracle 100.0%/1.00000 |
 | Laguna | `laguna` | sparse +shared | interleave | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | Llama | `internlm3`, `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | full-oracle 100.0%/1.00000 |
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 +coherent |
 | Mellum2 | `mellum` | sparse, no-shared | interleave | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99969 |
-| Ministral 3 | `ministral3`, `mistral3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower, ignored) | no | experimental: tiny-oracle 100.0%/1.00000 |
+| Ministral 3 | `ministral3`, `mistral3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower, ignored) | no | full-oracle 100.0%/1.00000 |
 | Mistral | `mistral` | dense | all-layer | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Mixtral | `mixtral` | sparse, no-shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | Olmo 3 | `olmo3` | dense | interleave | yes | full | RMSNorm, post-only | SwiGLU | no | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |

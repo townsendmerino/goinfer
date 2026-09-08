@@ -559,6 +559,24 @@
       "note": "HuggingFaceTB/SmolLM3-3B (SmolLM3ForCausalLM), 2 f32-cast bf16 shards / ~5.8 GB \u2014 the smallest AND only released size in the family. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
     },
     {
+      "env": "GOINFER_LFM2_2_6B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/lfm25-2.6b"],
+      "used_by": ["TestLFM2Real_gate"],
+      "note": "LiquidAI/LFM2.5-2.6B (Lfm2ForCausalLM), 2 f32-cast bf16 shards / ~5.1 GB — the smallest released LFM2.5 checkpoint, 30 layers (22 conv / 8 full_attention). Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
+    },
+    {
+      "env": "GOINFER_MINISTRAL3_3B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/ministral3-3b-bf16"],
+      "used_by": ["TestMinistral3Real_gate"],
+      "note": "mistralai/Ministral-3-3b-Instruct-2512-BF16 (Mistral3ForConditionalGeneration, text_config.model_type ministral3), 15 GB — the -BF16 SIBLING repo, not the default (mistralai/Ministral-3-3b-Instruct-2512, which ships FP8-native and is not f32-castable). Includes the vision tower goinfer's text-only loader ignores; the pin script loads the full wrapper via AutoModelForImageTextToText with pixel_values=None, HF's own text-only path."
+    },
+    {
       "env": "GOINFER_GRANITE_GGUF",
       "kind": "file",
       "min_bytes": 1048576,

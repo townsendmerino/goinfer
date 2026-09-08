@@ -1393,3 +1393,29 @@ argmax and greedy continuation both exact on the first run. This is the floor, n
 typical case: the other eight reachable families each carry at least one axis this one
 was chosen to avoid (MoE routing, GGUF conversion, sliding window, multimodal), so budget
 above this number, not at it.
+
+## Timing: two more promotions, batch 2 (2026-09-07, lfm2 + mistral3)
+
+Same machine, same session, playbook now established (no more "read a template pair"
+phase). **lfm2** (LFM2.5-2.6B, 5.1 GB): ≈2.5 min total — HF reference 22 s, gate first-try
+green at cosine 1.00000, argmax + continuation exact, layer split (22 conv/8 attention)
+matched the release. Item 5 (surprises) was zero. **mistral3** (Ministral-3-3b-Instruct-
+2512-BF16, 15 GB — the released repo is a vision-language wrapper even though only the
+text path is used): ≈3.5-4 min — the one non-zero item-5 cost was discovering
+`AutoModelForCausalLM` can't load a `*ForConditionalGeneration` wrapper config
+(`Unrecognized configuration class`) and switching to `AutoModelForImageTextToText` with
+`pixel_values=None` for the text-only path; once found, HF reference ran in 28 s and the
+gate passed first try (cosine 1.00000, attn-temp beta and YaRN mscale both resolved to the
+real release's values). Both promotions: no config surprise beyond the loader-class swap,
+no debugging past that.
+
+Net: with the playbook in hand, a plain dense family (lfm2) runs at roughly a third of the
+smollm3 floor; a family needing one new but well-scoped wrinkle (mistral3's wrapper class)
+still lands under smollm3's floor. Concurrently, the macbook's own attempt at **internlm2**
+(first of this same three-family batch, on branch
+`parity/dense-batch-internlm2-lfm2-ministral3`, not independently re-verified here) came
+back a real FAIL — cosine 0.87 against the HF f32 reference, not promoted. That is the
+first non-zero result in this series and the one worth weighing most: the previous two
+notes established a cost floor; this is the first data point on the failure rate, and it
+says the floor does not universally apply even to a family this doc's own method flagged
+as low-risk (dense, safetensors, proven mechanism at T1).
