@@ -122,6 +122,7 @@ Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 | `GOINFER_HEAVY_TESTS=1` | Opt into the ~120 heavy (real-checkpoint) tests that `go test ./...` otherwise skips. |
 | `GOINFER_MANIFEST_EMIT` / `GOINFER_MANIFEST_MACHINE` | Emit parity-manifest rows / stamp the generating machine. |
 | `GOINFER_PAR_THRESHOLD` / `GOINFER_PAR_WIDTH` | Sweep the CPU matmul parallel threshold (MACs) / fan-out width. |
+| `GOINFER_PREFILL_GATE_PROMPTS` | `docs/task-prefill-gap.md`'s §3 fidelity gate: `a` (default) or `b` selects which snapshotted 10-prompt set (`testdata/prefill-gate-prose-<label>/`) `TestPrefillGateReference`/`TestPrefillGateVsReference` build their reference and score against. |
 
 ## Test-model overrides (a large class — point tests at your local checkpoints)
 

@@ -81,10 +81,21 @@ ONE IS AMBIGUOUS.
 import argparse, json, os, platform, signal, socket, statistics, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GPORT, OPORT = 8098, 11498
+GPORT, OPORT, MPORT = 8098, 11498, 8099
 SERVE_CUDA = os.environ.get("GOINFER_SERVE_CUDA", os.path.expanduser("~/bench-cur/serve-cuda"))
 SERVE_CPU = os.environ.get("GOINFER_SERVE_CPU", os.path.expanduser("~/bench-cur/serve-cpu"))
+# SERVE_METAL: pre-built CGO_ENABLED=0 metal/cmd/serve binary.
+#   cd <repo> && CGO_ENABLED=0 go build -o ~/bench-cur/serve-metal ./metal/cmd/serve
+SERVE_METAL = os.environ.get("GOINFER_SERVE_METAL", os.path.expanduser("~/bench-cur/serve-metal"))
 OLLAMA = os.environ.get("OLLAMA_BIN", os.path.expanduser("~/ollama-0325/bin/ollama"))
+# MLX_MODELS: HuggingFace model id (or local path) for each MODELS key, used when --backend metal
+# includes an MLX peer arm.  Leave a key unset (or the whole dict empty) to skip MLX for that
+# model.  Example: export MLX_MODELS='{"1.5B":"mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"}'
+_mlx_models_raw = os.environ.get("MLX_MODELS", "{}")
+try:
+    MLX_MODELS = json.loads(_mlx_models_raw)
+except Exception:
+    MLX_MODELS = {}
 # V-26 (docs/review-2026-09-04.md): this used to carry a SEPARATE OLLAMA_MODELS_DEFAULT
 # ("" when the operator's shell had no OLLAMA_MODELS exported), passed to the launched
 # ollama serve's own env only when truthy -- so an operator who never exported OLLAMA_MODELS
@@ -166,13 +177,16 @@ def ttft(url, payload, parse):
 
 
 class Engine:
-    def __init__(self, name, model_key, backend="cuda"):
+    def __init__(self, name, model_key, backend="cuda", extra_flags=None):
         self.name, self.model_key, self.backend = name, model_key, backend
+        # extra_flags: appended to the goinfer argv, e.g. ["--exact-prefill"] for the
+        # exact-arm cells in a Metal backend run (docs/task-prefill-gap.md §4 L1 Phase 2).
+        self.extra_flags = extra_flags or []
         self.path, self.tag = MODELS[model_key]
         self.proc = None
 
     def __enter__(self):
-        if self.name == "goinfer":
+        if self.name in ("goinfer", "goinfer_exact"):
             if self.backend == "cpu":
                 # int4 by default so the WEIGHTS MATCH the peer's q4_K_M. A first
                 # CPU sweep ran int8int8 (to mirror benchmarks.md §A's own table)
@@ -182,13 +196,31 @@ class Engine:
                 argv = [SERVE_CPU, "-model", f"bench={self.path}",
                         "-addr", f"127.0.0.1:{GPORT}",
                         "-quant", os.environ.get("GOINFER_CPU_QUANT", "int4")]
+            elif self.backend == "metal":
+                argv = [SERVE_METAL, "-model", f"bench={self.path}", "-backend", "metal",
+                        "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
             else:
                 argv = [SERVE_CUDA, "-model", f"bench={self.path}", "-backend", "cuda",
                         "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
+            argv += self.extra_flags
             self.proc = subprocess.Popen(
                 argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
             self.port = GPORT
             self.url = f"http://127.0.0.1:{GPORT}/v1/chat/completions"
+            self.parse = parse_openai
+        elif self.name == "mlx":
+            # mlx_lm.server exposes an OpenAI-compatible endpoint.  The model must be a
+            # HuggingFace id or local path set via MLX_MODELS[model_key] — if it is absent
+            # Engine.__enter__ raises immediately and the cell is skipped by the caller.
+            mlx_model = MLX_MODELS.get(self.model_key)
+            if not mlx_model:
+                raise RuntimeError(f"mlx: no MLX_MODELS entry for {self.model_key!r} — set MLX_MODELS env to enable")
+            argv = [sys.executable, "-m", "mlx_lm.server",
+                    "--model", mlx_model, "--port", str(MPORT)]
+            self.proc = subprocess.Popen(
+                argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+            self.port = MPORT
+            self.url = f"http://127.0.0.1:{MPORT}/v1/chat/completions"
             self.parse = parse_openai
         else:
             env = dict(os.environ, OLLAMA_HOST=f"127.0.0.1:{OPORT}", OLLAMA_MODELS=OLLAMA_MODELS)
@@ -217,8 +249,14 @@ class Engine:
         # max_tokens/num_predict = 1: only the FIRST token is needed, and generating
         # more would add decode time to a wall clock that is never read past t_first
         # anyway. Keeping it at 1 shortens the run without touching what is measured.
-        if self.name == "goinfer":
+        if self.name in ("goinfer", "goinfer_exact"):
             return {"model": "bench", "stream": True, "max_tokens": 1, "temperature": 0,
+                    "stream_options": {"include_usage": True},
+                    "messages": [{"role": "user", "content": text}]}
+        if self.name == "mlx":
+            # mlx_lm.server uses OpenAI-compatible format; model name is the HF id.
+            mlx_model = MLX_MODELS.get(self.model_key, "")
+            return {"model": mlx_model, "stream": True, "max_tokens": 1, "temperature": 0,
                     "stream_options": {"include_usage": True},
                     "messages": [{"role": "user", "content": text}]}
         # num_gpu=0 on the CPU row is NOT optional. Without it Ollama silently uses
@@ -286,8 +324,10 @@ def main():
     ap.add_argument("--models", default="0.5B,1.5B")
     ap.add_argument("--depths", default="512,1024,2048")
     ap.add_argument("--n", type=int, default=6, help="distinct prompts per cell")
-    ap.add_argument("--backend", default="cuda", choices=["cuda", "cpu"],
-                    help="cpu forces goinfer to the CPU serve binary AND ollama to num_gpu=0")
+    ap.add_argument("--backend", default="cuda", choices=["cuda", "cpu", "metal"],
+                    help="cpu forces goinfer to the CPU serve binary AND ollama to num_gpu=0; "
+                         "metal runs SERVE_METAL (goinfer_exact+--exact-prefill, goinfer default, ollama, "
+                         "and mlx if MLX_MODELS is set) — see SERVE_METAL/MLX_MODELS env vars")
     ap.add_argument("--verify-nocache", action="store_true", default=True)
     ap.add_argument("--cache-bar", type=float, default=0.80,
                     help="repeat/fresh below this = engine caches and fresh prompts miss it (healthy)")
@@ -299,6 +339,24 @@ def main():
     print(json.dumps(hdr, indent=2))
     results, cachechk = [], []
 
+    # Engine roster — interleaved within each cell per CLAUDE.md's peer-comparison rule.
+    # metal: two goinfer arms (exact then default) + ollama + optional mlx.
+    #   goinfer_exact uses --exact-prefill so its numbers are the "no-batched-prefill"
+    #   baseline; "goinfer" (no flag) is the post-Phase-1 default path being validated.
+    #   Both must exist before Phase 2 is run; --exact-prefill ships only after Phase 1's
+    #   gate passes (docs/task-prefill-gap.md §4 L1, 2026-09-09).
+    if a.backend == "metal":
+        _mlx_available = bool(MLX_MODELS)
+        engine_specs = [
+            ("goinfer_exact", {"extra_flags": ["--exact-prefill"]}),
+            ("goinfer",       {}),
+            ("ollama",        {}),
+        ]
+        if _mlx_available:
+            engine_specs.append(("mlx", {}))
+    else:
+        engine_specs = [("goinfer", {}), ("ollama", {})]
+
     for mk in a.models.split(","):
         for depth in [int(d) for d in a.depths.split(",")]:
             key = f"{mk}:{depth}"
@@ -307,45 +365,53 @@ def main():
                 continue
             base = PROMPTS[key]["text"]
             cell = {"model": mk, "depth": depth, "calibrated_tokens": PROMPTS[key]["tokens"]}
-            # INTERLEAVED: both engines measured for this cell before moving on, each
+            # INTERLEAVED: every engine measured for this cell before moving on, each
             # with its own server start/stop, so drift between cells cannot land on one
             # engine (CLAUDE.md: peer comparisons must be same-session interleaved).
-            for name in ("goinfer", "ollama"):
-                with Engine(name, mk, a.backend) as e:
-                    if a.verify_nocache:
-                        r = e.cache_check(base)
-                        cachechk.append({"model": mk, "depth": depth, "engine": name, "repeat_over_new": r})
-                        # Recorded, NOT refused on. A low ratio is the healthy signal
-                        # (engine caches; our fresh prompts miss it). See the header.
-                        if r is not None:
-                            note = "caches; fresh prompts miss it (healthy)" if r < a.cache_bar \
-                                   else "no caching detected on identical prompts"
-                            print(f"  [cache-check] {name:8s} {key} repeat/fresh={r:.2f}  {note}")
-                    ts, ptok = e.measure(base, a.n)
-                    if not ts:
-                        cell[name] = {"error": "no timings"}
-                        continue
-                    med = statistics.median(ts)
-                    tok = ptok or PROMPTS[key]["tokens"]
-                    cell[name] = {"ttft_ms_median": round(med * 1000, 1),
-                                  "ttft_ms_all": [round(t * 1000, 1) for t in ts],
-                                  "prompt_tokens": tok,
-                                  "ttft_tok_s": round(tok / med, 1),
-                                  "spread_pct": round(100 * (max(ts) - min(ts)) / med, 1)}
-            if "goinfer" in cell and "ollama" in cell and "error" not in cell["goinfer"] and "error" not in cell["ollama"]:
+            for name, ekw in engine_specs:
+                try:
+                    with Engine(name, mk, a.backend, **ekw) as e:
+                        if a.verify_nocache:
+                            r = e.cache_check(base)
+                            cachechk.append({"model": mk, "depth": depth, "engine": name, "repeat_over_new": r})
+                            # Recorded, NOT refused on. A low ratio is the healthy signal
+                            # (engine caches; our fresh prompts miss it). See the header.
+                            if r is not None:
+                                note = "caches; fresh prompts miss it (healthy)" if r < a.cache_bar \
+                                       else "no caching detected on identical prompts"
+                                print(f"  [cache-check] {name:12s} {key} repeat/fresh={r:.2f}  {note}")
+                        ts, ptok = e.measure(base, a.n)
+                        if not ts:
+                            cell[name] = {"error": "no timings"}
+                            continue
+                        med = statistics.median(ts)
+                        tok = ptok or PROMPTS[key]["tokens"]
+                        cell[name] = {"ttft_ms_median": round(med * 1000, 1),
+                                      "ttft_ms_all": [round(t * 1000, 1) for t in ts],
+                                      "prompt_tokens": tok,
+                                      "ttft_tok_s": round(tok / med, 1),
+                                      "spread_pct": round(100 * (max(ts) - min(ts)) / med, 1)}
+                except RuntimeError as exc:
+                    print(f"  [skip] {name} {key}: {exc}")
+            # Print one summary line per cell using whatever engines actually ran.
+            if "goinfer" in cell and "ollama" in cell and \
+                    "error" not in cell["goinfer"] and "error" not in cell["ollama"]:
                 cell["ttft_peer_over_goinfer"] = round(
                     cell["ollama"]["ttft_tok_s"] / cell["goinfer"]["ttft_tok_s"], 2)
             results.append(cell)
-            g = cell.get("goinfer", {}).get("ttft_tok_s")
-            o = cell.get("ollama", {}).get("ttft_tok_s")
-            print(f"{mk:6s} K={depth:<6d} goinfer {g!s:>9} tok/s   ollama {o!s:>9} tok/s   "
-                  f"ratio {cell.get('ttft_peer_over_goinfer')}")
+            parts = []
+            for n, _ in engine_specs:
+                tok_s = cell.get(n, {}).get("ttft_tok_s")
+                parts.append(f"{n} {tok_s!s:>9} tok/s")
+            print(f"{mk:6s} K={depth:<6d}  " + "   ".join(parts) +
+                  f"   ratio(ollama/goinfer) {cell.get('ttft_peer_over_goinfer')}")
 
     # CHECK 2 -- absolute, and the one that catches what the ratio cannot. Real
     # prefill work grows with prompt length; a cache lookup is flat. If an engine's
     # median TTFT does not rise across the swept depths, its numbers are lookups.
+    all_engine_names = list(dict.fromkeys(n for n, _ in engine_specs))  # ordered, de-duped
     scaling = {}
-    for name in ("goinfer", "ollama"):
+    for name in all_engine_names:
         for mk in a.models.split(","):
             pts = [(c["depth"], c[name]["ttft_ms_median"]) for c in results
                    if c["model"] == mk and name in c and "error" not in c[name]]
@@ -370,7 +436,7 @@ def main():
     # tokens, which cancels each engine's fixed per-request overhead. This is the
     # number to quote for "how fast is prefill"; ttft_tok_s is what a caller feels.
     marg = {}
-    for name in ("goinfer", "ollama"):
+    for name in all_engine_names:
         for mk in a.models.split(","):
             pts = [(c[name]["prompt_tokens"], c[name]["ttft_ms_median"] / 1000.0)
                    for c in results if c["model"] == mk and name in c and "error" not in c[name]]

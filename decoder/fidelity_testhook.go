@@ -18,6 +18,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -215,6 +216,66 @@ var PrefillGateProseFiles = []string{
 	"../docs/legacy-benchmarks.md",
 	"../docs/task-zeno-compare.md",
 	"../docs/queue-release.md",
+}
+
+// PrefillGateProseFilesB is prompt set B (docs/task-prefill-gap.md §4 L1's fresh-prompt decision
+// run, 2026-09-09): ten more real repo documents, disjoint from set A above, each verified >3900
+// tokens against S's own tokenizer (queue-correctness.md, the brief's own tenth candidate, was
+// dropped at 1571 tokens — task-gpu-paths-2026-09.md substitutes, at 48027). LIVE paths, same
+// "resolves from decoder/ or metal/" convention as set A — but the gate itself reads the SNAPSHOT
+// under testdata/prefill-gate-prose-b/ (see PrefillGatePromptSet), not these live paths, so a run
+// stays reproducible as these documents keep changing. Kept here only as the record of what the
+// snapshot was populated FROM and when.
+var PrefillGateProseFilesB = []string{
+	"../docs/task-attention-decode-cost.md",
+	"../docs/task-moe-streaming.md",
+	"../docs/completed/queue-performance.md",
+	"../docs/ARCHITECTURE.md",
+	"../docs/how-inference-works.md",
+	"../docs/task-peer-benchmarks.md",
+	"../docs/task-recompute-audit.md",
+	"../docs/task-gpu-paths-2026-09.md",
+	"../docs/cuda-backend.md",
+	"../docs/completed/audit-2026-08-05.md",
+}
+
+// PrefillGatePromptSet selects the SNAPSHOT prompt files for the L1 gate, per
+// GOINFER_PREFILL_GATE_PROMPTS ("" or "a" = set A, "b" = set B). Returns the set's label (for
+// output-path/log labelling, so set A and set B runs never collide or get confused) and the
+// snapshot paths themselves — testdata/prefill-gate-prose-<label>/<basename>, resolved with the
+// same "../testdata/..." convention PrefillGateProseFiles already documents, so decoder/'s and
+// metal/'s own test packages both resolve it identically.
+//
+// SNAPSHOTS, NOT THE LIVE PATHS ABOVE. docs/QUEUE.md and docs/benchmarks.md (both in set A) change
+// most days; task-gpu-paths-2026-09.md (set B) changed within this very session. A gate whose
+// prompt content silently drifts between Phase A (the reference) and a later Phase B re-run, or
+// between two Phase B re-runs, is not reproducible — the snapshot is taken once, per set, and the
+// gate always reads it, so re-running the gate later scores the SAME prompts even if the source
+// docs have since moved on.
+func PrefillGatePromptSet() (label string, files []string) {
+	label = strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_PREFILL_GATE_PROMPTS")))
+	if label != "b" {
+		label = "a"
+	}
+	return label, PrefillGatePromptSetFor(label)
+}
+
+// PrefillGatePromptSetFor returns one NAMED set's snapshot files regardless of
+// GOINFER_PREFILL_GATE_PROMPTS — for a caller that needs a specific set explicitly (e.g.
+// re-scoring set A's stored results alongside a set-B decision run, task-prefill-gap.md §4 L1)
+// rather than "whichever set the environment currently selects". label other than "b" means "a".
+func PrefillGatePromptSetFor(label string) (files []string) {
+	live := PrefillGateProseFiles
+	if label == "b" {
+		live = PrefillGateProseFilesB
+	} else {
+		label = "a"
+	}
+	files = make([]string, len(live))
+	for i, f := range live {
+		files[i] = "../testdata/prefill-gate-prose-" + label + "/" + filepath.Base(f)
+	}
+	return files
 }
 
 // PrefillGateProseIDsForTest reads f, encodes it with tk, and returns at least minTokens ids

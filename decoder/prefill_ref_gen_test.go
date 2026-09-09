@@ -66,17 +66,31 @@ func TestPrefillGateReference(t *testing.T) {
 	}
 	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") // exact f64-accumulating attention, not the fast f32 default
 
+	setLabel, promptFiles := PrefillGatePromptSet()
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	outDir := filepath.Join(home, "goinfer-logs", "prefill-ref")
+	// Set A keeps its historical directory name (prefill-ref) so existing reference files (and
+	// anything that already reads from there) are untouched; set B gets its own directory so the
+	// two never collide or get scored against the wrong prompts. See PrefillGatePromptSet.
+	refDirName := "prefill-ref"
+	if setLabel != "a" {
+		refDirName = "prefill-ref-" + setLabel
+	}
+	outDir := filepath.Join(home, "goinfer-logs", refDirName)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", outDir, err)
 	}
+	t.Logf("prompt set %q (%d files) -> %s", setLabel, len(promptFiles), outDir)
 
 	const continuationN = 64
 	workers := min(8, runtime.NumCPU())
+	// K=512 joins the decision set here (task-prefill-gap.md §4 L1, 2026-09-09): CUDA's floor was
+	// set from a MEASURED K=512 cell, never interpolated between 256 and 1024 (§3, "a floor placed
+	// between two measured cells would be interpolating a fidelity result nobody took") — Metal's
+	// floor needs the same discipline if this run ships.
 	models := []struct {
 		name        string
 		pathEnv     string
@@ -84,8 +98,8 @@ func TestPrefillGateReference(t *testing.T) {
 		quant       string // "" = f32 weights+activations (S); "int8" = weight-only, f32 activations (D7)
 		ks          []int  // decision-set + confirmation K's for THIS model, in run order
 	}{
-		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", refKs([]int{256, 1024, 3900})},
-		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), refKs([]int{256, 1024})},
+		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", refKs([]int{256, 512, 1024, 3900})},
+		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), refKs([]int{256, 512, 1024})},
 	}
 
 	for _, mc := range models {
@@ -97,7 +111,21 @@ func TestPrefillGateReference(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Skipf("no fixture at %s (set %s)", path, mc.pathEnv)
 			}
-			m, err := Load(path, Options{Backend: "cpu", Quant: mc.quant})
+
+			maxK := mc.ks[0]
+			for _, k := range mc.ks {
+				if k > maxK {
+					maxK = k
+				}
+			}
+			// ResidentContext is a GPU-resident-KV concept (decoder/model.go's Options doc: "Ignored
+			// off the residency path") — it does not change what the CPU backend actually allocates,
+			// only what fitCheckFor prices the load's KV term at (decoder/fitguard.go's effCtx: pinned
+			// ResidentContext when set, else the model's own MaxPositions — 32768 here, priced whether
+			// or not this run ever reaches it). Pinning it to what this run actually touches
+			// (maxK+continuationN) turns an 8.4 GB / 12.0 GB-available guard threshold, priced against
+			// a context length nothing below ever requests, into an honest ~6.8 GB / 9.8 GB one.
+			m, err := Load(path, Options{Backend: "cpu", Quant: mc.quant, ResidentContext: maxK + continuationN})
 			if err != nil {
 				if mc.name == "D7" {
 					t.Skipf("D7 CPU quant=%q load failed (%v) — D7 is the confirmation model, "+
@@ -110,15 +138,8 @@ func TestPrefillGateReference(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load tokenizer: %v", err)
 			}
-
-			maxK := mc.ks[0]
-			for _, k := range mc.ks {
-				if k > maxK {
-					maxK = k
-				}
-			}
-			prompts := make([][]int, 0, len(PrefillGateProseFiles))
-			for _, f := range PrefillGateProseFiles {
+			prompts := make([][]int, 0, len(promptFiles))
+			for _, f := range promptFiles {
 				prompts = append(prompts, PrefillGateProseIDsForTest(t, tk, f, maxK))
 			}
 
