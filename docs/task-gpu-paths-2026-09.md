@@ -1242,3 +1242,27 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - Full regression: `metal` 111 pass/0 fail/51 skip (110 prior + 1 new test; `TestMoE_declinesPrefill`
     is a rename-in-place, not a net-new test). `gofmt -l`, `go vet`, and CI's pinned staticcheck
     (v0.8.0) all clean.
+
+- 2026-09-09 — G9 SCOPED, NOT IMPLEMENTED: still a legitimate wash, gate unchanged since
+  2026-06-09. `task-gpu-batched-prefill.md` (which this item's own Fix line points to) carries an
+  explicit "GATED — do not build yet" banner: batched prefill only wins if the WGSL tiled GEMM
+  clears the bandwidth-bound M=1 GEMV, which needs `dot4I8Packed`/DP4A in `cogentcore/webgpu`;
+  without it the 2026-06-09 measurement found it a wash on both backends (RTX ≈0.91×, Metal
+  ≈1.2×). Re-checked before writing any code: `gpu/go.mod` still pins `cogentcore/webgpu v0.23.0`
+  — still the only version the proxy has ever published — and that module's source has no
+  `dot4`/`dp4a` symbol anywhere. Nothing has changed since June; building the `Prefiller` now
+  would cost real engineering effort for ~0 net TTFT gain per the doc's own component-level
+  measurement on real hardware.
+  - **Also found and corrected a stale internal record while checking for a contradicting
+    signal**: a session memory claimed a June 2026 branch (`gpu-wgpu-dot4`, deleted after harvest)
+    had actually gotten `dot4I8Packed` working and measured it at "~0 gain, bandwidth-bound" —
+    which would have meant the gate had already been tested and failed, not just left unbuilt.
+    `git log --all` does not support this: commit `d2ba970` (2026-06-19, on `main`) directly
+    refutes the OTHER half of that same memory (a claimed "−23% v29 decode penalty") with a real
+    re-measurement (per-dispatch cgo record cost identical, 1.1µs both; gemv compute within 4%) —
+    and no commit anywhere ever describes `dot4I8Packed` as measured rather than blocked; every
+    mention in `roadmap.md`/`gpu-assessment.md`, before and after that date, says "blocked" /
+    "upstream-blocked". The memory had conflated a reasoned prediction ("decode's M=1 GEMV is
+    already bandwidth-saturated, so packed int8 dot arithmetic wouldn't help even if it existed")
+    with an actual test. Corrected in this session's memory store, not just noted here.
+  - No code changed. Moving to the next open item.
