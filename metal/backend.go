@@ -383,7 +383,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if floor > 0 {
 		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
 	}
-	return true, "batched f16-MMA (§3 fidelity gate passed 2026-09-09)"
+	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3 gate pending)"
 }
 
 // PrefillLast (decoder.Prefiller) ingests the whole prompt in one batched f16-MMA pass and
