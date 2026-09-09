@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -158,6 +159,39 @@ func TestFitsWeightsBudget(t *testing.T) {
 		if got := fitsWeightsBudget(c.need, c.free); got != c.want {
 			t.Errorf("%s: fitsWeightsBudget(%.2f GB, %.2f GB) = %v, want %v",
 				c.name, float64(c.need)/float64(gb), float64(c.free)/float64(gb), got, c.want)
+		}
+	}
+}
+
+// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/task-gpu-paths-2026-09.md
+// §6): "nothing pinned is overridden... honoured or refused with numbers". The sibling test below
+// pins the SENTINEL/wiring without a device; this one calls checkKVFits itself, against a REAL
+// device's REAL free VRAM, and asserts the refusal actually NAMES the requested context and the
+// GB figures — not just that an error occurred. An absurd ctx (1<<30 positions) is used so the
+// assertion holds on any card, not just the specific one this happened to be measured on.
+func TestCheckKVFits_realDevice_explicitRefusesWithNumbers(t *testing.T) {
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no cuda device: %v", err)
+	}
+	defer dev.ReleaseObjects()
+	const absurdCtx = 1 << 30
+	r := &cudaResident{
+		dev:         dev,
+		ctxCap:      absurdCtx,
+		ctxExplicit: true,
+		layers:      []cudaLayer{{kvDim: 128}}, // one layer is enough; the point is the ctx, not the geometry
+	}
+	err = r.checkKVFits()
+	if err == nil {
+		t.Fatalf("checkKVFits() = nil for an explicit ctx of %d positions — should refuse on any real card", absurdCtx)
+	}
+	if !errors.Is(err, errKVWontFit) {
+		t.Errorf("error %v does not match errKVWontFit — BuildResident's hard-error path would not fire", err)
+	}
+	for _, want := range []string{fmt.Sprintf("%d positions", absurdCtx), "GB", "free"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q — a refusal must name the numbers", err, want)
 		}
 	}
 }

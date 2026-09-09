@@ -1638,3 +1638,46 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **Not done, left open**: Metal's context sizing (blocked on the fixed-size kernel threadgroup
     buffer, above); the real `--fit=off` flag; G6's table test; the drafter-aware
     companion-allocation ctx sizing (CUDA's own still-open item) all remain untouched.
+
+- 2026-09-09 — G6 ("nothing pinned is overridden... honoured or refused with numbers") scoped and
+  partially closed, at the user's direction after CPU's own placement piece was explicitly
+  deferred (skip CPU placement — its context is already fit-by-default via Phase 0's guard, and
+  auto-switching PLACEMENT to weight-paging is a bigger, separate product decision needing its own
+  measured verification, left for later rather than folded in here).
+  - **A real, pre-existing gap found while scoping this, not caused by this session's work**:
+    Metal's resident path never reads `m.ResidentContextRequest()` AT ALL — `grep` across
+    `metal/*.go` for it returns nothing. An explicit `-ctx` is silently ignored on Metal today;
+    `metalCtxCap` is always the bare 4096 constant regardless of what a caller asked for. This is
+    exactly the class of bug G6 exists to catch, and it is real, but fixing it means converting
+    `metalCtxCap` from a package constant into a per-resident field across a dozen-plus call sites
+    in `metal/backend.go`/`metal/model.go` (mirroring the `r.ctxCap` field CUDA already has) — a
+    bigger, more delicate change than writing G6's test was scoped to cost. At the user's explicit
+    choice, this is documented here as a known, separately-scoped gap rather than attempted this
+    pass: **the real fix is "give Metal a resolveCtxCap of its own," which cannot happen until
+    metalCtxCap stops being a compile-time constant.**
+  - **`-kv` (KV precision) is WebGPU-only today** (`internal/serveapp/main.go`'s own flag help
+    text: "webgpu backend only") — CUDA and Metal have no `-kv` handling to test at all, so G6's
+    `-kv` row does not apply to either backend this phase; it becomes live once Phase 3 (WebGPU)
+    lands.
+  - **`--quant` is untouched by construction, not by a test asserting an absence**: neither
+    `decoder.PlanRequest` nor `resolveCtxCapFit` has a quant field or reads `Options.Quant` at
+    all — there is no code path through which fit-by-default COULD override it, matching
+    `task-fit-to-hardware.md` §0's own rule ("never selects a lossy... quant... without saying so
+    and requiring the flag").
+  - **What WAS tested, on real hardware**: `TestCheckKVFits_realDevice_explicitRefusesWithNumbers`
+    (new, `cuda/resident_cap_test.go`) — the sibling test already pinned the sentinel/wiring
+    without a device; this one calls `checkKVFits()` against a REAL device's REAL free VRAM with
+    an absurd explicit ctx and asserts the refusal actually NAMES the position count and GB
+    figures, not just that an error occurred. Verified on nobara's RTX 2070 SUPER, passed first
+    try. `TestMoESlotsViaOptions_belowTopKRefusesWithNumbers` (new,
+    `metal/moe_slots_option_test.go`, `testdata/mixtral-tiny`, tracked/CI-safe): an explicit
+    `Options.MoECacheSlots` below top-k refuses with both the requested count and `topK=N` in the
+    message. `TestResolveCtxCapFit_shortcuts`'s existing "explicit request bypasses fit entirely"
+    case already covered the honoured-unchanged half for CUDA's ctx; no new test needed there.
+  - Full regression: `metal` 114 pass/0 fail/51 skip (113→114); targeted `cuda` subset
+    (ctx/kv/resident-related, no GOINFER_HEAVY_TESTS) green on nobara, no regressions. `gofmt -l`,
+    `go vet` clean on both; staticcheck's only findings remain the three pre-existing, untouched
+    U1000s already confirmed unrelated.
+  - **Not done, left open**: Metal's `-ctx` gap (above, its own separately-scoped fix); `-kv` for
+    CUDA/Metal (not applicable — WebGPU-only feature); the real `--fit=off` flag; CPU's placement
+    piece; the drafter-aware companion-allocation ctx sizing.

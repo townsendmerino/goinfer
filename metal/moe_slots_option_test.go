@@ -3,7 +3,9 @@
 package metal
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -117,5 +119,47 @@ func TestMoESlotsViaOptions_engagesPaging_genericMoE(t *testing.T) {
 	}
 	if r.moe.slots != N {
 		t.Errorf("r.moe.slots = %d, want %d (the Options request, not the env var default)", r.moe.slots, N)
+	}
+}
+
+// TestMoESlotsViaOptions_belowTopKRefusesWithNumbers is G6 (docs/task-gpu-paths-2026-09.md §6):
+// an explicit --moe-cache-slots below top-k cannot be honoured (one token's own routed set must
+// be simultaneously resident) — it must be REFUSED, with the numbers, never silently rounded up
+// or ignored. Uses testdata/mixtral-tiny (tracked, runs in CI unconditionally); the request comes
+// through decoder.Options, not the deprecated env var, so this is specifically testing the NEW
+// Phase 2 surface's error path, not the pre-existing env-var one metal/moe.go already had.
+func TestMoESlotsViaOptions_belowTopKRefusesWithNumbers(t *testing.T) {
+	const ckpt = "../testdata/mixtral-tiny"
+	os.Unsetenv("GOINFER_METAL_MOE_SLOTS")
+
+	mProbe, err := decoder.Load(ckpt, decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load probe: %v", err)
+	}
+	_, topK, _, _, _, _, _, _, _, _, ok := mProbe.MoEResidentParams()
+	mProbe.Close()
+	if !ok || topK < 1 {
+		t.Fatalf("fixture has no usable topK (topK=%d, ok=%v)", topK, ok)
+	}
+	below := topK - 1
+	if below < 0 {
+		t.Skipf("topK=%d — no integer below it to request", topK)
+	}
+
+	m, err := decoder.Load(ckpt, decoder.Options{Quant: "int4", MoECacheSlots: below})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+
+	_, err = buildResident(m)
+	if err == nil {
+		t.Fatalf("BuildResident succeeded with MoECacheSlots=%d < topK=%d — should have refused", below, topK)
+	}
+	wantSub := []string{fmt.Sprintf("%d", below), fmt.Sprintf("topK=%d", topK)}
+	for _, sub := range wantSub {
+		if !strings.Contains(err.Error(), sub) {
+			t.Errorf("error %q does not mention %q — a refusal must name the numbers, not just fail silently", err, sub)
+		}
 	}
 }
