@@ -135,8 +135,8 @@ type Prefiller interface {
 // startPos is always 0 for HiddenLast's callers today (a fresh KV per sequence, no prefix
 // reuse), but the parameter mirrors Prefiller's so a backend can share its prefill-chunking
 // scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a backend
-// whose batched forward is NOT bit-identical to its own sequential one (Metal's, by default —
-// see backend.go's GOINFER_METAL_BATCHED_PREFILL gate) must implement this some other way (a
+// whose batched forward is NOT bit-identical to its own sequential one (Metal was, pre-gate —
+// see metal/backend.go's metalFastPrefillEnabled; default-on above 512 tokens since 2026-09-09) must implement this some other way (a
 // per-token sequential forward that stops before the head) rather than reuse a declining
 // Prefiller, or must not implement this interface at all.
 type ResidentHiddenLast interface {

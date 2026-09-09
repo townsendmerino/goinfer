@@ -278,9 +278,10 @@ type config struct {
 	moeCacheExperts  bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
 	moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
 	fit              bool   // task-fit-to-hardware.md's "fit by default" (--fit, default true); false ⇒ decoder.Options.DisableFit
-	metalFastPrefill bool   // opt into Metal's batched (non-bit-identical) prompt prefill (--metal-fast-prefill)
+	metalFastPrefill bool   // DEPRECATED no-op (Metal fast prefill is default-on since §3 gate passed 2026-09-09; use --exact-prefill to disable) (--metal-fast-prefill)
+	exactPrefill     bool   // force sequential (exact) prefill on all backends — CPU + Metal (--exact-prefill)
 	cpuFastAttention bool   // CPU f32 prefill attention, DEFAULT ON (non-bit-identical) (--cpu-fast-attention)
-	cpuExactPrefill  bool   // opt OUT of the above: bit-exact prefill (--cpu-exact-prefill)
+	cpuExactPrefill  bool   // opt OUT of cpu fast attention: bit-exact CPU prefill (--cpu-exact-prefill)
 	ctxSize          int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
 	kvQuant          string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
 	lora             string
@@ -314,10 +315,15 @@ type config struct {
 // (--metal-fast-prefill) exists precisely so a divergence is "disclosed in
 // --help, not something a user has to already know to type" — and a help string
 // nothing checks is one edit away from quietly losing the disclosure.
-// cpuExactPrefillHelp is the opt-OUT half. Held as a const for the same reason as
+// exactPrefillHelp is --exact-prefill's usage text, held as a const so the disclosure can be
+// asserted by test. It is the universal opt-out: one flag that disables fast prefill on EVERY
+// backend that has one (currently CPU f32 attention + Metal f16-MMA batched prefill).
+const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables BOTH the CPU f32-attention fast path (--cpu-fast-attention) AND Metal's f16-MMA batched prefill (default-on since 2026-09-09 above 512 tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. Wins over --cpu-fast-attention and --metal-fast-prefill if any are combined. Both fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
+
+// cpuExactPrefillHelp is the opt-OUT half (CPU only). Held as a const for the same reason as
 // cpuFastAttentionHelp: the test asserts on the text, so the disclosure cannot silently drift
 // away from the behaviour.
-const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion: use the f64-accumulating attention kernel for prefill instead of the f32 one that is now the default. Costs the speed --cpu-fast-attention buys (measured 2.28x slower prefill on an 8k prompt, dense 1.5B) and buys back decode==prefill bit-identity, so a long-prompt response is reproducible against a build from before f32 prefill became the default. Use it when you are diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. Wins over --cpu-fast-attention if both are given. CPU backend only; MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05, so this is the only way to get bit-exact prefill for them too"
+const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is now the default. Costs the speed --cpu-fast-attention buys (measured 2.28x slower prefill on an 8k prompt, dense 1.5B) and buys back decode==prefill bit-identity, so a long-prompt response is reproducible against a build from before f32 prefill became the default. Use it when you are diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. Wins over --cpu-fast-attention if both are given. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05, so this is the only way to get bit-exact prefill for them too"
 
 const cpuFastAttentionHelp = "DEFAULT ON since 2026-08-31 (pass --cpu-exact-prefill to turn it off). Compute PROMPT attention in f32 instead of the f64-accumulating kernel — measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s) because attention is ~70% of a long prefill and the f64 path is ~8x slower than f32 at those shapes. NOT bit-identical: measured cosine 0.9976 against the default (stable across 256/1024/2048-token prompts), so a long-prompt response CAN differ from what you would get with this off, even at temperature 0. Decode is unaffected — this changes only how the prompt is ingested. Speculative decoding is never affected (its verify pass always uses the exact kernel, or verify would stop matching greedy). Applies to MoE models too: the old REFUSAL was dropped in 66d0a05 after being measured (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case, depth-matched, with a 48/48 identical greedy continuation), and this help text went on claiming it for two days afterwards. FLOORED AT 512 PROMPT TOKENS: below that the exact kernel runs regardless, because the win scales with prompt length and the divergence does not — an 8-token prompt diverged at the third generated token while buying nothing (1.15x at 512, 1.43x at 2048, 2.28x at 8192). CPU backend only"
 
@@ -428,7 +434,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
 	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. int8int8 on cuda, ~9× slower TTFT). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose experts EXCEED VRAM: routed experts stream host→VRAM per token instead of being held resident, so every expert still executes on the GPU (no CPU offload). Costs a per-token PCIe transfer; bit-identical to fully-resident. Off by default — with it off, a model that doesn't fit declines to the CPU path and says why. CUDA only")
-	flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "batch the WHOLE prompt through Metal's f16-MMA prefill kernel instead of ingesting it one token at a time — measured 3.9-4.6x faster time-to-first-token on long prompts (a 2048-token prompt: ~51s to ~13s). NOT bit-identical to sequential/CPU decode: the f16-MMA activation path diverges from decode's int8 path on ~54% of runs, so the FIRST FEW TOKENS of a response can differ from what you would get with this off, even at temperature 0. Off by default — decode itself is unaffected either way; this only changes how the prompt is ingested. Metal backend only")
+	flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "DEPRECATED — no-op since §3's fidelity gate passed (2026-09-09): Metal's f16-MMA batched prefill is now ON by default above 512 tokens (measured 3.9-4.6× faster TTFT, fidelity-gated). Use --exact-prefill to disable fast prefill on all backends instead. Metal backend only")
+	flag.BoolVar(&cfg.exactPrefill, "exact-prefill", false, exactPrefillHelp)
 	flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)
 	flag.BoolVar(&cfg.cpuExactPrefill, "cpu-exact-prefill", false, cpuExactPrefillHelp)
 	flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep resident for a paged MoE model (CUDA: --moe-cache-experts; Metal: the GOINFER_METAL_MOE_SLOTS env var's replacement, docs/task-gpu-paths-2026-09.md Phase 2). On CUDA this is an UPPER BOUND: the runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"). On Metal it is NOT auto-lowered — the request is used as given, and a model that does not fit at that count declines to the CPU path instead (the load-time memory guard, metal/backend.go). 0 keeps the built-in default (CUDA: ask for all, auto-cap; Metal: every expert resident, unpaged). More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at more memory cost")
@@ -469,16 +476,14 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}
-	// --metal-fast-prefill sets the internal gate metal/backend.go's PrefillLast already checks
-	// (GOINFER_METAL_BATCHED_PREFILL) — reusing the existing, already-tested decline/opt-in
-	// machinery rather than threading a new decoder.Options field through frozen core for what is
-	// fundamentally a startup-time choice. Setting it when --backend isn't metal is harmless (the
-	// var is read nowhere else); scoped to a flag rather than left as an internal-only env var so
-	// the tradeoff is disclosed in --help, not something a user has to already know to type.
-	if cfg.metalFastPrefill {
-		os.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
+	// Metal fast prefill is DEFAULT ON since §3's gate passed (2026-09-09). --exact-prefill is
+	// the universal opt-out; --metal-fast-prefill is now a no-op (kept for backward compat only).
+	// Setting GOINFER_METAL_FAST_PREFILL=0 also works directly for callers bypassing the CLI.
+	// --exact-prefill wins over --metal-fast-prefill (a no-op) if both are given.
+	if cfg.exactPrefill {
+		os.Setenv("GOINFER_METAL_FAST_PREFILL", "0")
 	}
-	// Same disclosure argument as above: the decoder reads GOINFER_CPU_FAST_ATTENTION,
+	// Same disclosure argument: the decoder reads GOINFER_CPU_FAST_ATTENTION,
 	// and a divergence a user opts into should be spelled out in --help rather than
 	// discoverable only by reading the source. The MoE refusal and the
 	// speculative-verify exclusion are enforced in the decoder, not here, so they
@@ -488,10 +493,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// environment would otherwise outrank the flags — the server's own flags must win over
 	// whatever the shell happened to export.
 	//
-	// --cpu-exact-prefill wins over --cpu-fast-attention when both are given: between a speed
-	// request and a correctness request, the correctness one is the safe way to resolve a
-	// contradiction the user did not realise they had expressed.
-	if cfg.cpuExactPrefill || !cfg.cpuFastAttention {
+	// --exact-prefill and --cpu-exact-prefill both disable the CPU fast attention; between a
+	// speed request and a correctness request, the correctness one is the safe resolution.
+	if cfg.exactPrefill || cfg.cpuExactPrefill || !cfg.cpuFastAttention {
 		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
 	} else {
 		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "1")
