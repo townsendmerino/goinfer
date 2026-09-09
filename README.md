@@ -1,7 +1,7 @@
 # goinfer
 
 **Run open-weight LLMs in pure Go — one cgo-free static binary, portable by default and
-native-GPU-fast when you want it.** 27 model families, HuggingFace-parity-gated, with
+native-GPU-fast when you want it.** 35 model families, HuggingFace-parity-gated, with
 schema-constrained structured output. No Python, no llama.cpp, no CUDA toolkit.
 
 ![goinfer chat — an entire LLM in one file](docs/assets/demo.gif)
@@ -298,7 +298,7 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 
 ## What it runs
 
-- **27 model families** (counted from the generated `docs/capability-matrix.md`, which the
+- **35 model families** (counted from the generated `docs/capability-matrix.md`, which the
   `decoder` registry produces) — Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
   GLM, Kimi, Granite, Nemotron, Mellum and more. Full generated map:
   [docs/capability-matrix.md](docs/capability-matrix.md).
@@ -306,8 +306,9 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
   (Mamba-2), latent-KV (MLA) — plus dense and sparse-MoE.
 - **Loaders** — GGUF, safetensors, GPTQ, AWQ, and prequantized
   [`.giw` bundles](docs/giw-bundles.md).
-- **Quantization** — f32, int8, int8int8, int4 (W4A8), with a HuggingFace logit-parity gate per
-  family. **What a given parity run proves is scoped to the fixtures that machine has**, and a
+- **Quantization** — f32, int8, int8int8, int4 (W4A8), with a
+  [HuggingFace logit-parity gate per family](docs/what-parity-gated-means.md). **What a given
+  parity run proves is scoped to the fixtures that machine has**, and a
   missing fixture skips silently rather than failing — a run reading `28 ran / 20 skipped / 0
   failed` is a pass. Measured on a MacBook 2026-08-31, all eleven GGUF-quant gates skipped for want
   of a local checkpoint while int4 and one of three int8×int8 goldens ran. Quote a run's counts, not

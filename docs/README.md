@@ -77,6 +77,9 @@ moves here, a pointer stub is left behind, because other pages link to the old p
 - `prompts/` (24) — briefs written for another session or the other machine to execute.
 - `releases/` (8) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
+- [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
+  what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
+  below are the internal detail on how it is established and chased.
 - `parity-coverage-policy.md`, `parity-hunt-playbook.md` — how parity is established and chased.
 - `audit-<date>.md` — a whole-repo audit at a named commit; findings are dispositioned in place
   and the file moves to `completed/` when every one is closed. Current:
