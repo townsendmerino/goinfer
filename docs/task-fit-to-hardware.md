@@ -9,7 +9,10 @@
 > `docs/task-gpu-paths-2026-09.md`'s G11 entries for both). Phase 0's shape differs from what this
 > doc originally specified (no single `WeightBudget()`; the CPU path uses `fitCheck`/
 > `estimateGGUFWeightBytes` instead, and CUDA/Metal each kept their own separate guard rather than
-> unifying on one). **Phases 1–5 (the `plan()` function, `goinfer-chat fit`, fit-by-default on
+> unifying on one). **Phase 1's core (`plan()` + its table test, G4) is DONE** (`decoder/
+> fitplan.go`, 2026-09-09) but Load()-based rather than header-only — see
+> `docs/task-gpu-paths-2026-09.md`'s entry for the scope decision and why; `goinfer-chat fit` and
+> the banner wiring (Phase 1's other two surfaces) are NOT started. **Phases 2–5 (fit-by-default on
 > CUDA/Metal/WebGPU, the rate band) remain entirely unstarted** — three residency guards (CPU,
 > Metal, CUDA) are still fragmented rather than reconciled into one planner, which is the actual
 > live gap. Design record for the "run something bigger than my hardware" mode of use; reads

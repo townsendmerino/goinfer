@@ -1365,3 +1365,72 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     implement, genuinely bigger and riskier than the accounting-only fix made here. The full
     `task-fit-to-hardware.md` planner (Phases 1–5: `plan()`, `goinfer-chat fit`, fit-by-default,
     WebGPU, rate bands) also remains entirely unstarted.
+
+- 2026-09-09 — `task-fit-to-hardware.md` Phase 1 (the pure `plan()` function + its table test, G4)
+  DONE for the "Load()-based" scope chosen at the user's direction — not the doc's original
+  header-only ambition (see below). `goinfer-chat fit` and the banner wiring (the rest of Phase
+  1's surfaces) NOT started; those are next.
+  - **Scope decision, made explicit before writing code**: §2 wants `plan()` reading tensor bytes
+    per-class straight from a checkpoint HEADER ("two seconds, no model in memory") so `pull` and
+    the web UI can check fit before a multi-GB download. Nothing in the repo separates dense from
+    routed-expert bytes at the header level today (`estimateGGUFWeightBytes`, `decoder/
+    fitguard.go`, sums every tensor flat) — building that is real new work, and only for GGUF.
+    Chose instead to build `Plan` against an already-`Load`ed `*decoder.Model`, reusing every
+    accessor this session's own M-02 work just built
+    (`ResidentDenseWeightBytes`/`ResidentWeightBytesPaged`/`MoEResidentParams`/
+    `KVHeadsAtResident`/`HeadDimAtResident`) — far less new code, correct output, but `goinfer-chat
+    fit`/`pull`'s verdict/the web UI listing would need to load the model first when they're
+    eventually wired up, losing the header-only speed promise for those three surfaces
+    specifically. The startup banner and fit-by-default paths (Phase 2) load anyway, so this
+    doesn't cost them anything.
+  - **`decoder/fitplan.go`** (new): `Placement` enum (resident/expert-cached/host-computed-experts
+    [reserved for L-01, never chosen]/weight-paged/decline); `PlanRequest` (ctx + pinned flag,
+    explicit slots, KV precision flags, `ExtraBytes` for a companion allocation) with EVERY
+    default resolved by the caller — `Plan` invents none, so a test can see exactly what it asked
+    for; `Plan` result struct carrying every byte term plus a human-readable `Reason`, and
+    `NeedBytes()`. `Model.Plan(backend, freeBytes, req) Plan` checks per-backend feature
+    eligibility FIRST (`MissingResidentFeatures`/`ResidentBackendFeatures` — the SAME taxonomy
+    every real backend's `BuildResident` already gates on, so the plan can never disagree with
+    what a backend would actually do) before any byte arithmetic runs, then follows §2's priority
+    order: try the requested ctx; if it doesn't fit and isn't pinned, shrink toward `ctxPlanFloor`
+    (4096) — computed by division since KV bytes are exactly linear in ctx, not a search; a dense
+    model goes resident or declines there; an MoE model tries fully-resident first, then cache the
+    largest expert-slot count that fits beside dense+KV+`ExtraBytes` (again arithmetic — a layer's
+    experts are uniform in shape, same assumption `ResidentWeightBytesPaged` already makes), and
+    declines only below top-k (one token's routed set must be simultaneously resident). CPU never
+    declines outright — it always has weight-paging as a backstop, matching how `--weight-cache`
+    already behaves today. A new `kvBytesPerPositionAllLayers` sums KV bytes PER LAYER (not one
+    model-level figure) so a per-layer-geometry family (Gemma 4) isn't mis-priced, mirroring
+    `metal/backend.go`'s own `residentKVBytes` from the M-02 work but backend-agnostic (no
+    `metalCtxCap` dependency). WebGPU is explicitly out of scope this phase (needs M-32 first,
+    Phase 3's own item) — an unrecognised backend name declines on features, same as an
+    unimplemented arch would, never panics or silently answers wrong.
+  - **`decoder/fitplan_test.go`** (new), G4's table test: dense (`testdata/llama-tiny`, TRACKED in
+    git — this row runs in CI unconditionally, unlike the MoE/hybrid rows below), MoE
+    (`testdata/gemma4-moe-tiny`, gitignored, skip-guarded like every other test using it), and
+    hybrid (`testdata/bailing_hybrid-tiny`, MLA+KDA, same skip convention) — not literally
+    zero-asset as §6's G4 aspires to (two of three rows need a real, if tiny, checkpoint), flagged
+    honestly rather than claimed as satisfied. Budgets scaled to each fixture's OWN measured byte
+    counts rather than the doc's literal "6 to 64 GB" — these are toy parity fixtures, a literal
+    GB range would never exercise the decline path. 11 cases: generous budget → resident (dense
+    and MoE); a tight-but-sufficient budget auto-shrinks ctx (not floored, not unchanged); an
+    EXPLICITLY pinned ctx that doesn't fit declines rather than silently shrinking; CPU never
+    declines (falls to weight-paged) even at a near-zero budget; a GPU backend WITH a near-zero
+    budget does decline; MoE caches a slot count strictly between top-k and every expert at a
+    budget sized for exactly that; MoE below top-k's own floor declines; an unknown backend name
+    declines on FEATURES with zero byte accounting even computed (proving eligibility is checked
+    before arithmetic, not after); the hybrid fixture either admits cleanly or declines on
+    features, never on bytes it shouldn't have reached. A twelfth, separate test
+    (`TestPlan_extraBytesReservedAheadOfExperts`) pins the exact regression this session's own
+    CUDA M-02 work traces back to (`task-fit-to-hardware.md`'s own motivating example: a
+    `--drafter` attach grabbing VRAM an MoE expert cache had already claimed) — asserts
+    `ExtraBytes` is priced AHEAD of the elastic expert-slot count, not ignored.
+  - **Mutation-checked**, not just run: a deliberate one-line break to the ctx-shrink branch
+    (always return the unshrunk ctx) was caught by exactly one subtest
+    (`dense/cuda/tight_shrinks_ctx`) and nothing else — the other ten stayed green, confirming they
+    each pin something the mutation didn't touch rather than all silently depending on the same
+    assertion.
+  - Full regression: `decoder` 419 pass/1 fail (`TestOlmo3_forwardParity`, pre-existing,
+    unrelated)/134 skip (417→419: two new test functions, `TestPlan_tableDriven` and
+    `TestPlan_extraBytesReservedAheadOfExperts`, both counted once each despite 11+1 subtests).
+    `gofmt -l`, `go vet`, staticcheck all clean.
