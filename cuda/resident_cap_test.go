@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestCudaResidentCheckCap gates C3: writes at/past the resident KV cap are refused (a real
@@ -69,27 +71,29 @@ func TestResolveCtxCap(t *testing.T) {
 	}
 }
 
-// TestResolveCtxCapFit_shortcuts pins the branches that need no real model or device: an explicit
-// request is untouched either way (fit-by-default only ever applies to an UNPINNED load), the
-// GOINFER_NO_FIT_DEFAULT escape hatch restores resolveCtxCap exactly, and a model whose own window
-// is already at or below cudaCtxCapDefault has nothing to gain from asking Plan at all. The
-// live-probe-driven branch (a real model, a real free-VRAM reading) is exercised on real hardware
-// separately (docs/task-gpu-paths-2026-09.md's G11 entry has the nobara numbers) — nil is passed
-// for *decoder.Model here specifically because none of these three branches ever reaches the code
-// that would dereference it, which is itself part of what's being pinned: an explicit or
-// small-window caller must never pay for (or risk) a Plan/probe call at all.
+// TestResolveCtxCapFit_shortcuts pins the branches that need no real device: an explicit request
+// is untouched either way (fit-by-default only ever applies to an UNPINNED load), --fit=off
+// (Options.DisableFit) and its GOINFER_NO_FIT_DEFAULT env-var precursor both restore resolveCtxCap
+// exactly, and a model whose own window is already at or below cudaCtxCapDefault has nothing to
+// gain from asking Plan at all. The live-probe-driven branch (a real free-VRAM reading) is
+// exercised on real hardware separately (docs/task-gpu-paths-2026-09.md's G11 entry has the
+// nobara numbers). A real (if minimal, tracked-in-git) model is loaded per case rather than
+// passing nil — m.FitDisabled() reads a real field now, unlike the plain env-var check this
+// replaced, so a nil *decoder.Model would panic in the request==0 cases where it's evaluated.
 func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 	for _, c := range []struct {
 		name              string
 		request, modelCtx int
 		noFitEnv          bool
+		disableFitOpt     bool
 		want              int
 	}{
-		{"explicit request bypasses fit entirely", 8192, 32768, false, 8192},
-		{"explicit request bypasses fit even with the env var set", 8192, 32768, true, 8192},
-		{"GOINFER_NO_FIT_DEFAULT restores the historical default", 0, 32768, true, cudaCtxCapDefault},
-		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, cudaCtxCapDefault},
-		{"model window below the historical default has nothing to gain", 0, 2048, false, cudaCtxCapDefault},
+		{"explicit request bypasses fit entirely", 8192, 32768, false, false, 8192},
+		{"explicit request bypasses fit even with the env var set", 8192, 32768, true, false, 8192},
+		{"GOINFER_NO_FIT_DEFAULT restores the historical default", 0, 32768, true, false, cudaCtxCapDefault},
+		{"Options.DisableFit (--fit=off) restores the historical default", 0, 32768, false, true, cudaCtxCapDefault},
+		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, false, cudaCtxCapDefault},
+		{"model window below the historical default has nothing to gain", 0, 2048, false, false, cudaCtxCapDefault},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.noFitEnv {
@@ -97,8 +101,13 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 			} else {
 				os.Unsetenv("GOINFER_NO_FIT_DEFAULT")
 			}
-			if got := resolveCtxCapFit(nil, c.request, c.modelCtx); got != c.want {
-				t.Errorf("resolveCtxCapFit(nil, %d, %d) = %d, want %d", c.request, c.modelCtx, got, c.want)
+			m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Quant: "int4", DisableFit: c.disableFitOpt})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			defer m.Close()
+			if got := resolveCtxCapFit(m, c.request, c.modelCtx); got != c.want {
+				t.Errorf("resolveCtxCapFit(m, %d, %d) = %d, want %d", c.request, c.modelCtx, got, c.want)
 			}
 		})
 	}

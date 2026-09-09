@@ -41,6 +41,7 @@ type Model struct {
 	kvPrecI8   bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8       bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	resCtxReq  int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	disableFit bool         // task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache   bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots   int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	mmap       []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
@@ -129,6 +130,16 @@ func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
 // path it has no effect. See cuda.resolveCtxCap.
 func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
 
+// FitDisabled is task-fit-to-hardware.md's --fit=off (Options.DisableFit), true when either the
+// Options field or the pre-existing GOINFER_NO_FIT_DEFAULT env var (cuda/resident.go's original,
+// narrower escape hatch — kept working rather than orphaned) says to restore every "fit by
+// default" behavior to its pre-Phase-2 exact default. Checked by backend packages that implement
+// a fit-by-default policy (cuda.resolveCtxCapFit today; a future Metal/CPU equivalent would read
+// the same accessor) — decoder itself has no fit-by-default logic of its own to gate.
+func (m *Model) FitDisabled() bool {
+	return m.disableFit || os.Getenv("GOINFER_NO_FIT_DEFAULT") != ""
+}
+
 // MoECacheExperts reports whether routed MoE experts should stream host→VRAM per token instead of
 // being held resident (Options.MoECacheExperts, `--moe-cache-experts`). This is what lets a model
 // whose experts exceed VRAM run with every expert still executing ON the GPU. Off by default:
@@ -205,6 +216,15 @@ type Options struct {
 	// min(model context window, this) — and fails at LOAD if the KV that implies does not fit
 	// beside the weights, rather than OOM-ing mid-decode. Ignored off the residency path.
 	ResidentContext int
+	// DisableFit is task-fit-to-hardware.md's --fit=off: restores every "fit by default" behavior
+	// to its pre-Phase-2 default exactly (currently: CUDA's unpinned resident context stays the
+	// flat historical constant instead of asking Plan for more when there's room —
+	// cuda/resident.go's resolveCtxCapFit). Does NOT affect a genuine bug fix shipped alongside
+	// Phase 2 work (Metal now honoring an explicit -ctx at all, docs/task-gpu-paths-2026-09.md's
+	// G6 entry) — that is correctness, not an opinionated default, and stays on either way. An
+	// explicitly PINNED request (ResidentContext, MoECacheSlots, etc.) is never affected by this
+	// flag in either direction: fit-by-default only ever acts on the UNPINNED case.
+	DisableFit bool
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -248,7 +268,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}
+		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
@@ -323,7 +343,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}).withBackendNames(opts.Backend, beErr)
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.

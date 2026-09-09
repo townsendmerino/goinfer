@@ -82,17 +82,12 @@ const fitDefaultCtx = 8192
 // was 5-6x the default, unused by anyone who did not know to pass -ctx. This asks Plan for a bigger
 // candidate (fitDefaultCtx, clamped to the model's own window) and uses whatever Plan lands on —
 // which can only ever be cudaCtxCapDefault or MORE, never less, because of the explicit floor
-// checks below. A caller with GOINFER_NO_FIT_DEFAULT=1 set, or whose free-VRAM probe is unknown,
-// gets EXACTLY today's resolveCtxCap — this function can only improve on the historical default,
-// never regress it, so there is no failure mode where turning fit-by-default off would have helped.
-//
-// GOINFER_NO_FIT_DEFAULT is a temporary escape hatch, not task-fit-to-hardware.md's own --fit=off:
-// this is CUDA-only (docs/task-gpu-paths-2026-09.md's G11 entry — the user chose "CUDA first,
-// measured" over wiring all three backends at once), and promoting this to a real CLI flag makes
-// more sense once Metal and CPU share it too, rather than adding a flag today that only ever
-// affects one of the three backends the doc's own Phase 2 names.
+// checks below. A caller with m.FitDisabled() true (--fit=off, or its GOINFER_NO_FIT_DEFAULT env
+// var precursor), or whose free-VRAM probe is unknown, gets EXACTLY today's resolveCtxCap — this
+// function can only improve on the historical default, never regress it, so there is no failure
+// mode where turning fit-by-default off would have helped.
 func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
-	if request > 0 || os.Getenv("GOINFER_NO_FIT_DEFAULT") != "" {
+	if request > 0 || m.FitDisabled() {
 		return resolveCtxCap(request, modelCtx) // an explicit -ctx is untouched either way
 	}
 	candidate := fitDefaultCtx
