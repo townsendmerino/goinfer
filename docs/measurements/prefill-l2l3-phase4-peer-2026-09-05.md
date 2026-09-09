@@ -1,9 +1,13 @@
 # CUDA prefill vs Ollama — the deficit at depth goes 12.1× → 3.16× (1.5B), 14.5× → 1.89× (0.5B)
 
-**The peer row for L2+L3. Measured with the fast path ON, which is NOT the shipped default —
-§3's gate returned DOES NOT SHIP, so every "fast" figure here describes what the kernels do when
-explicitly enabled, not what a user gets today.** The exact arm in the same run *is* the shipped
-default and reproduces the 2026-09-01 re-anchor, which is what makes the pair readable.
+**The peer row for L2+L3. Measured with the fast path explicitly enabled via
+`GOINFER_CUDA_FAST_PREFILL=1`. At the time of this run §3's gate had not yet returned a verdict for
+CUDA, so the note here originally read "NOT the shipped default" — that is now stale and reversed:
+later the same session the gate passed at K∈{512,1024,3900} and `f966fa0c` made this the DEFAULT
+above the 512-token floor (`docs/task-prefill-gap.md` §3, §4 L2/L3). No CUDA prefill kernel has
+changed since, so the "fast" column below is exactly what ships today, not a hypothetical.** The
+exact arm in the same run reproduces the 2026-09-01 re-anchor and remains what
+`GOINFER_CUDA_FAST_PREFILL=0` reproduces, which is what makes the pair readable.
 
 ## Provenance
 
@@ -93,10 +97,11 @@ separable claims.
 
 ## 5. What this row does NOT say
 
-- **It is not the shipped default.** `GOINFER_CUDA_FAST_PREFILL` is off unless set. §3's gate
-  returned DOES NOT SHIP (`prefill-l2l3-phase3-2026-09-05.md`). Any table quoting the fast column
-  must carry that, or it becomes a figure that outlives its caveat — which this repo has on record
-  as happening to a `tok/s` number for months.
+- **UPDATE, same day:** at the time this run was made, the fast path was not yet the shipped
+  default and §3's gate had not yet returned a verdict (see the corrected header above) — this
+  bullet originally warned against quoting the fast column as shipped behavior. That warning no
+  longer applies: `f966fa0c` (same session) made the fast path the default above the 512-token
+  floor, so the fast column below now **is** what a user gets today, not a hypothetical.
 - **Two models, one card, one quant, greedy, dense.** No MoE (batched prefill declines statically,
   P20), no 7B peer cell (`prompts.json` has 7B entries but the peer sweep here is 0.5B/1.5B, as the
   re-anchor was).

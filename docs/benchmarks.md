@@ -1666,7 +1666,12 @@ second look on the CUDA side before treating this as settled either way.
 
 ### Not done yet
 
-- **W2** (prefill at 512/3900 tokens, TTFT) — no cells run.
+- **W2** (prefill at 512/3900 tokens, TTFT) — not built as its own row in *this* matrix, but both
+  boxes now have the underlying measurement, written up where the prefill-gap work already lived:
+  CUDA in §B2 (`prefill-l2l3-phase4-peer-2026-09-05.md`, K∈{128,512,1024,2048,3900}, both L2+L3
+  landed and this is now the shipped default), Mac Metal in §A (2026-09-09, same K ladder). Folding
+  either into this matrix's own W1/W3-style table is still open, tidiness only — the numbers exist
+  and are not stale.
 - **W4** (the agent-turn transcript replay) — the harness for it doesn't exist; this is the
   workload the task doc calls the one that "matters most" and hasn't been started.
 - **Fidelity column** (teacher-forced top-1 agreement) and **pass@1** (HumanEval+/MBPP+) — neither

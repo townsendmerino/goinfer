@@ -25,16 +25,31 @@
 > scales; **L4** the remaining CPU items, which now live in aikit's SIMD audit and are the
 > smallest prize.
 >
-> **Status: L1 CLOSED 2026-09-09 — §3.2 gate passed on set B (S model, K=256/512/1024), Metal
-> default flipped to ON above 512 tokens (goinfer `97b6e3b`).** Full scores in
+> **Status, corrected 2026-09-09 — L1, L2, and L3 are all CLOSED and shipped; the "L2/L3 remain
+> SCOPED" line below was stale from before 2026-09-05 and had never been updated when they landed.**
+> **L1 (Metal) CLOSED 2026-09-09** — §3.2 gate passed on set B (S model, K=256/512/1024), default
+> flipped to ON above 512 tokens (goinfer `97b6e3b`). Full scores in
 > `measurements/prefill-gate-l1-ref-b-2026-09-09.md`. Fast arm tied or beat exact on agreement,
 > hard flips, and meanKL at every S cell; S K=3900 (confirm, not gating) also passed. D7 was
 > skipped — fit-guard on 16 GB Mac (7B int4 needs 12.4 GB resident; Mac had 7.2 GB available after
 > S finished); S cells are sufficient for the §3.2 pooled decision. `--exact-prefill` is the
-> opt-out on all backends; `--metal-fast-prefill` is now a deprecated no-op. W2's Mac peer row
-> (Phase 2) still not run; L2/L3/L4 remain SCOPED, nothing built. goinfer `3b20f74` (scoped) /
-> `6022b29` (first gate) / `3ab5230` (first reading, withdrawn by §3.1) / `556523a` (re-run code) /
-> `42084db` (re-run result) / prior revision (§3.2) / `97b6e3b` (gate pass, default flip).
+> opt-out on all backends; `--metal-fast-prefill` is now a deprecated no-op.
+> **L2+L3 (CUDA) CLOSED 2026-09-05** — §3 gate (the §3.2 form, applied to CUDA from the start)
+> passed at K∈{512,1024,3900} (failed K=256, below the floor), default flipped to ON above 512
+> tokens (goinfer `f966fa0c`). 3.91× end-to-end at K=3900; marginal-vs-Ollama deficit 12.1×→3.16×
+> (1.5B) / 14.5×→1.89× (0.5B). `GOINFER_CUDA_FAST_PREFILL=0` opts out. **W2 peer rows are now
+> measured and written up on both backends** — CUDA in `benchmarks.md` §B2 (`prefill-l2l3-phase4-peer-2026-09-05.md`,
+> measured the same day L2/L3 shipped, so the "fast" column already reflects today's default — no
+> prefill kernel has changed since), Mac Metal in `benchmarks.md` §A (`beb79c90`, 2026-09-09).
+> Neither is yet folded into the "Peer matrix 2026-09" section's own W1/W3-style table (§7 below).
+> **L4 (Mac CPU)** — step 0 (re-measure) and step 1 (parallelise elementwise activation loops)
+> shipped 2026-09-06, ~1.17× prefill / flat decode; steps 2–3 (softmax reduction order) not started.
+> **Remaining open work: the W4 agent-turn replay harness does not exist yet** (§5 item 6's second
+> half); the CUDA fused-attention kernel still runs at 1.72% of tensor peak / 12.6% occupancy, so
+> the residual O(K²) marginal-cost growth is headroom rather than a floor (§6.3).
+> goinfer `3b20f74` (scoped) / `6022b29` (first gate) / `3ab5230` (first reading, withdrawn by
+> §3.1) / `556523a` (re-run code) / `42084db` (re-run result) / prior revision (§3.2) / `97b6e3b`
+> (Metal gate pass, default flip) / `f966fa0c` (CUDA gate pass, default flip).
 > Path:line citations were taken at `3b20f74`; `scripts/queue_citation_lint.py --update`
 > re-indexes them.
 
@@ -92,6 +107,13 @@ Three things the table says that the benchmarks page currently does not:
    CPU work is funded** (L4 step 0).
 3. **Mac Metal has no peer prefill number at all**, and the default it would be measured at is
    the sequential path. W2's Mac cells (`benchmarks.md:1570`) are the missing instrument.
+
+**This table is the doc's original motivating snapshot and is kept as written, including the two
+`unmeasured` Mac Metal cells above — both are now measured** (`benchmarks.md` §A, 2026-09-09): the
+fast path is 2.0–3.75× over sequential within goinfer at K≥512 and 3.3–8.8× behind Ollama on TTFT,
+~9× behind on overhead-free marginal cost. CUDA's row is likewise superseded by the L2+L3 numbers
+in §6.3 below and `benchmarks.md` §B2. Point 3 above is answered; point 1's two-term split is now
+`benchmarks.md` §B2's live table, not a gap.
 
 **Out of scope, owned elsewhere:** M26/M35 prefill on the 8 GB card is DMA-bound (59.5% of M26's
 prefill is host→VRAM expert traffic, `queue-performance.md` P20) — no lever in this doc touches it,
@@ -360,9 +382,9 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 - **Disposition: CLOSED.** Metal's batched prefill is now **DEFAULT ON above 512 tokens** (`goinfer
   97b6e3b`, `metal/backend.go`). `GOINFER_METAL_FAST_PREFILL=0` or `--exact-prefill` to opt out.
   `--metal-fast-prefill` is a deprecated no-op. `--exact-prefill` covers both CPU and Metal. **W2's
-  Mac peer row is still not run** — `scripts/bench_peer_prefill.py --backend metal` is wired and
-  the serve binary is built, but the measurements haven't run yet; `benchmarks.md` still has no
-  Metal prefill peer row.
+  Mac peer row is now measured and written up** (`benchmarks.md` §A, 2026-09-09): 2.0–3.75× over
+  sequential within goinfer at K≥512, 3.3–8.8× behind Ollama on TTFT, ~9× behind on the
+  overhead-free marginal — the O(K²) attention term this doc's next item targets.
 - **Then, and now sized:** a `simdgroup_matrix` flash attention for `attention_prefill` — the Metal
   twin of L2. The 2026-09-05 TTFT curve prices it: at K=3900 the batched arm spends ~6 of its 9.4
   ms/token above the flat ~3.4 ms the GEMM costs, so a fused attention that held per-token cost
@@ -498,14 +520,14 @@ the brief explicitly allowed for.
 
 ## 5. Sequencing
 
-| order | item | why here |
-|---|---|---|
-| 1 | §3 gate harness, CUDA + Metal, exact path as oracle | every default flip below needs it; it is also the fidelity column W2/W4 need |
-| 2 | L1 Metal flip + W2 Mac cells | cheapest, largest, on the machine most used; produces the first Metal prefill peer row |
-| 3 | L4 step 0 (re-measure Mac CPU) | one afternoon; decides whether L4 exists |
-| 4 | L2 CUDA fused attention | the growing term; independent of L3; can run in parallel with 2–3 |
-| 5 | L3 CUDA tensor-core GEMM | the constant term; the larger kernel project |
-| 6 | W2 CUDA re-run with both landed, then the W4 replay | the row this doc is for |
+| order | item | why here | status |
+|---|---|---|---|
+| 1 | §3 gate harness, CUDA + Metal, exact path as oracle | every default flip below needs it; it is also the fidelity column W2/W4 need | **DONE**, both backends |
+| 2 | L1 Metal flip + W2 Mac cells | cheapest, largest, on the machine most used; produces the first Metal prefill peer row | **DONE** 2026-09-09 |
+| 3 | L4 step 0 (re-measure Mac CPU) | one afternoon; decides whether L4 exists | **DONE** 2026-09-06 (step 1 shipped alongside it) |
+| 4 | L2 CUDA fused attention | the growing term; independent of L3; can run in parallel with 2–3 | **DONE** 2026-09-05 |
+| 5 | L3 CUDA tensor-core GEMM | the constant term; the larger kernel project | **DONE** 2026-09-05 |
+| 6 | W2 CUDA re-run with both landed, then the W4 replay | the row this doc is for | **W2 half DONE** 2026-09-05 (§B2, measured the same day L2/L3 shipped); **W4 replay harness NOT STARTED** — this is what remains open in this doc |
 
 L2 and L3 are independent kernels on independent categories; measure each against the exact
 path alone, then together, so the end-to-end number has an attribution.
@@ -560,9 +582,11 @@ is not a floor.
 | TTFT crossover vs Ollama, 1.5B | ~K=600 | **past K=2048** |
 | TTFT crossover vs Ollama, 0.5B | ~K=1024 | **off the measured ladder — ahead everywhere** |
 
-On Metal, L1's re-run against a real reference is CLOSED and does not ship (narrow, mixed —
-`measurements/prefill-gate-l1-ref-2026-09-05.md`); the Metal fused attention is what would move it,
-and the Metal peer row is still unmeasured.
+On Metal, L1 is CLOSED and DOES ship — the set-B re-run (§4 L1, 2026-09-09) reversed the narrow,
+mixed 2026-09-05 result cited above (`measurements/prefill-gate-l1-ref-2026-09-05.md` remains the
+record of that earlier, superseded reading). The Metal fused attention (Metal's L2 twin) is what
+would move the residual O(K²) gap next; the Metal peer row is now measured (`benchmarks.md` §A,
+2026-09-09) and shows exactly that gap: ~9× behind Ollama on overhead-free marginal cost.
 
 ## 7. What this doc does not claim
 
