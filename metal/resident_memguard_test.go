@@ -5,6 +5,7 @@ package metal
 import (
 	"errors"
 	"io/fs"
+	"math/rand"
 	"os"
 	"testing"
 
@@ -49,22 +50,47 @@ func TestResidentMemGuard(t *testing.T) {
 	}
 }
 
+// tinyDenseModelWithMoESlots loads a minimal dense fixture (genTinyWeights/writeDense,
+// metal/moe_model_test.go) with the given Options.MoECacheSlots — real MoE structure is
+// irrelevant to what's under test here (the slot REQUEST's resolution, not expert dispatch), so
+// the simplest already-available fixture stands in for "any *decoder.Model".
+func tinyDenseModelWithMoESlots(t *testing.T, slots int) *decoder.Model {
+	t.Helper()
+	dir := t.TempDir()
+	writeDense(t, dir, genTinyWeights(rand.New(rand.NewSource(1))))
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8", MoECacheSlots: slots})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	t.Cleanup(func() { m.Close() })
+	return m
+}
+
 // TestMetalMoESlotsFromEnv is M-02's gate for the guard's half of the ordering fix:
 // residentFitsMemory must ask ResidentWeightBytesPaged for the SAME N that metal/moe.go and
 // metal/gemma4_moe.go are about to honor, not silently fall back to the unpaged number on
-// anything it cannot parse cleanly. Mirrors those two files' os.Getenv/strconv.Atoi read exactly,
+// anything it cannot parse cleanly. Mirrors those two files' resolution exactly (metalMoESlotsRequest),
 // except an invalid/unset value means "assume unpaged" here (safe: buildResident still validates
 // and declines on a bad value) rather than a hard error.
+//
+// Phase 2 (docs/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag"): the
+// env-var cases below now go through a model whose Options.MoECacheSlots is 0 (unset), so
+// metalMoESlotsRequest's fallback to GOINFER_METAL_MOE_SLOTS is what's actually exercised — an
+// additional case pins the NEW priority order directly (Options wins over the env var when both
+// are set).
 func TestMetalMoESlotsFromEnv(t *testing.T) {
 	for _, tc := range []struct {
 		name, val string
+		optSlots  int
 		want      int
 	}{
-		{"unset", "", 0},
-		{"valid", "64", 64},
-		{"zero", "0", 0},
-		{"negative", "-1", 0},
-		{"not a number", "sixty-four", 0},
+		{"unset", "", 0, 0},
+		{"valid", "64", 0, 64},
+		{"zero", "0", 0, 0},
+		{"negative", "-1", 0, 0},
+		{"not a number", "sixty-four", 0, 0},
+		{"Options wins over a conflicting env var", "16", 64, 64},
+		{"Options alone, no env var", "", 64, 64},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.val == "" {
@@ -78,8 +104,9 @@ func TestMetalMoESlotsFromEnv(t *testing.T) {
 			} else {
 				t.Setenv("GOINFER_METAL_MOE_SLOTS", tc.val)
 			}
-			if got := metalMoESlotsFromEnv(); got != tc.want {
-				t.Errorf("metalMoESlotsFromEnv() with %q = %d, want %d", tc.val, got, tc.want)
+			m := tinyDenseModelWithMoESlots(t, tc.optSlots)
+			if got := metalMoESlotsFromEnv(m); got != tc.want {
+				t.Errorf("metalMoESlotsFromEnv() with env=%q Options.MoECacheSlots=%d = %d, want %d", tc.val, tc.optSlots, got, tc.want)
 			}
 		})
 	}

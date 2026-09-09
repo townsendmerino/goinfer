@@ -418,14 +418,14 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	mo.rIdx = NewBufferUint32s(d, make([]uint32, k))
 	mo.rWgt = d.NewBufferLen(k)
 	mo.shGl, mo.shDown = d.NewBufferLen(1), d.NewBufferLen(H)
-	// Synchronous paging: GOINFER_METAL_MOE_SLOTS=N keeps only N experts/layer resident and stages
-	// the routed top-k in per token — same knob and semantics as gemma4_moe.go's (shared env var
-	// deliberately: it is the same underlying mechanism, generalized). N==0/unset ⇒ all experts
-	// resident (today's behavior).
-	if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {
+	// Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
+	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
+	// per token — same knob and semantics as gemma4_moe.go's (shared mechanism, generalized).
+	// N==0/unset ⇒ all experts resident (today's behavior).
+	if s := metalMoESlotsRequest(m); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < k {
-			return nil, fmt.Errorf("GOINFER_METAL_MOE_SLOTS=%q invalid (need integer >= topK=%d)", s, k)
+			return nil, fmt.Errorf("expert-slot request %q invalid (need integer >= topK=%d)", s, k)
 		}
 		if n < nE { // n>=nE would hold every expert — no paging, just build the stacked path
 			mo.paged, mo.slots = true, n

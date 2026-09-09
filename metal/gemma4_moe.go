@@ -199,15 +199,16 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	g.rWgt = d.NewBufferLen(b.TopK)
 	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLen(H), d.NewBufferLen(H), d.NewBufferLen(H)
 
-	// Synchronous paging: GOINFER_METAL_MOE_SLOTS=N keeps only N experts/layer resident and stages the
-	// routed top-k in per token (the only way the 26B's 11.96 GB expert set runs on a 16 GB Mac). N
-	// must be >= topK (a token's own top-k must fit). N==0 / unset ⇒ all experts resident (the fitting
+	// Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
+	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
+	// per token (the only way the 26B's 11.96 GB expert set runs on a 16 GB Mac). N must be >=
+	// topK (a token's own top-k must fit). N==0 / unset ⇒ all experts resident (the fitting
 	// path + the paged≡non-paged parity reference). idxZeros lets the paged expert GEMVs read row 0 of
 	// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-identical).
-	if s := os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != "" {
+	if s := metalMoESlotsRequest(m); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < b.TopK {
-			return nil, fmt.Errorf("GOINFER_METAL_MOE_SLOTS=%q invalid (need integer >= topK=%d)", s, b.TopK)
+			return nil, fmt.Errorf("expert-slot request %q invalid (need integer >= topK=%d)", s, b.TopK)
 		}
 		if n < b.NE { // n>=nE would hold every expert — no paging, just build the stacked path
 			g.paged, g.slots = true, n

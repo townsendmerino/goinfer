@@ -1581,3 +1581,60 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `--fit=off` CLI flag (currently the CUDA-only env-var stand-in); G6's table test (every
     explicit flag honoured or refused with numbers); the companion-aware (drafter) ctx sizing
     named just above.
+
+- 2026-09-09 — `task-fit-to-hardware.md` Phase 2, Metal's own piece: "Metal slots become an Option
+  and a flag" (§3), done exactly as scoped — NOT Metal's context, which turned out to have a real
+  structural blocker this phase correctly stays away from (below).
+  - **Why Metal's ctx wasn't touched too, checked before writing anything**: CUDA's
+    `resolveCtxCap` at least took a real request value; Metal's `metalCtxCap` is a bare package
+    CONSTANT (`const metalCtxCap = 4096 // resident KV positions (spike)`, `metal/model.go`) with
+    NO `-ctx` plumbing into it at all today, AND its own doc comment says raising it past 4096
+    without also resizing a fixed-size kernel-side threadgroup buffer (`sc[4096]` in the attention
+    kernel) is a silent out-of-bounds write. This is a real, deliberate kernel-level ceiling, not
+    an arbitrary conservative default the way CUDA's was — fit-by-default cannot safely touch it
+    without an MSL kernel change first, so it stays out of scope here rather than being rushed.
+  - **The slots piece, by contrast, was already 90% there**: `decoder.Options.MoECacheSlots` /
+    `Model.MoECacheSlotsRequest()` — the SAME field and accessor CUDA's `--moe-cache-slots` already
+    reads — were already backend-agnostic and already wired from the CLI flag
+    (`internal/serveapp/main.go:178`, unchanged, predates this entry); Metal's own code simply
+    never READ them, checking only `os.Getenv("GOINFER_METAL_MOE_SLOTS")` directly at its three
+    real call sites (the guard's estimate, `metal/moe.go`'s and `metal/gemma4_moe.go`'s actual
+    paging-engagement checks).
+  - **`metal/backend.go`**: new `metalMoESlotsRequest(m) string` resolves Options first
+    (`m.MoECacheSlotsRequest() > 0`), falling back to the env var — "kept one release as a
+    deprecated alias" per the doc's own §3 wording. `metalMoESlotsFromEnv` (the guard's int-typed
+    reader, kept its name — same `decoder/gptoss_decline_test.go`-style precedent of not renaming
+    something mid-transition) now calls it instead of reading `os.Getenv` directly.
+  - **`metal/moe.go` and `metal/gemma4_moe.go`**: their real paging-engagement checks (`if s :=
+    os.Getenv("GOINFER_METAL_MOE_SLOTS"); s != ""`) now call `metalMoESlotsRequest(m)` instead —
+    the exact same validation (`n >= topK`) and error path, just resolving from the shared
+    priority order first. `m` was already in scope at both sites (used a few lines below for
+    `.GiwPath()`/similar), so this is a same-function, no-signature-change edit.
+  - **`internal/serveapp/main.go`**: `--moe-cache-slots`'s help text corrected, not just extended —
+    it previously said "the runtime measures free VRAM and lowers it if the request does not fit",
+    which is true for CUDA's `capSlots` but was NEVER true for Metal (a request Metal cannot honor
+    declines the WHOLE LOAD to CPU via the memory guard; it does not auto-lower the slot count the
+    way CUDA does). Rewritten to state that per-backend difference explicitly rather than let a
+    CUDA-only claim quietly become wrong for a second backend as soon as this landed.
+  - **Verified**: `TestMetalMoESlotsFromEnv` (existing, `metal/resident_memguard_test.go`) rewritten
+    to load a real (synthetic, in-memory) model per case instead of testing the bare env-var parser
+    in isolation — the env-var sub-cases now go through a model whose `Options.MoECacheSlots` is
+    genuinely 0, so the fallback path is what's actually exercised, plus two new cases pinning the
+    priority order directly (Options wins over a conflicting env var; Options alone with no env var
+    set). New `TestMoESlotsViaOptions_engagesPaging`
+    (`metal/moe_slots_option_test.go`) proves the REAL dispatch path, not just the guard: on the
+    real `testdata/gemma4-moe-tiny` fixture, with `GOINFER_METAL_MOE_SLOTS` explicitly unset,
+    `decoder.Options{MoECacheSlots: N}` alone engages paging (`r.g4moe.paged=true`,
+    `r.g4moe.slots=N`) — passed on the first real run.
+  - **`TestMoESlotsViaOptions_engagesPaging_genericMoE`** (new, same file): the generic (non-
+    gemma4) twin, on `testdata/mixtral-tiny` — TRACKED in git (nE=8, topK=2), so unlike the gemma4
+    case this one runs in CI unconditionally, no skip guard needed. Confirms `metal/moe.go`'s own
+    separate `moeResident`/`paged`/`slots` fields engage identically from Options alone. Passed on
+    the first real run.
+  - Full regression: `metal` 113 pass/0 fail/51 skip (111→113: two new tests; the rewritten
+    `TestMetalMoESlotsFromEnv` replaces rather than adds subtests net). `gofmt -l`, `go vet`,
+    staticcheck all clean; `metal/cmd/serve` and `internal/serveapp` both still build clean with
+    the help-text change.
+  - **Not done, left open**: Metal's context sizing (blocked on the fixed-size kernel threadgroup
+    buffer, above); the real `--fit=off` flag; G6's table test; the drafter-aware
+    companion-allocation ctx sizing (CUDA's own still-open item) all remain untouched.

@@ -129,12 +129,28 @@ func fitsResidentBudget(need int64, ram uint64) bool {
 	return uint64(need) <= uint64(float64(ram)*residentMemFraction)
 }
 
-// metalMoESlotsFromEnv parses GOINFER_METAL_MOE_SLOTS the same way metal/moe.go and
-// metal/gemma4_moe.go do (the shared paging knob), for the guard's own use. Unlike those two, an
-// invalid or unset value is not an error here — it just means "assume unpaged" (the guard's
-// existing, safe behavior); buildResident itself still validates and declines on a bad value.
-func metalMoESlotsFromEnv() int {
-	n, err := strconv.Atoi(os.Getenv("GOINFER_METAL_MOE_SLOTS"))
+// metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the SAME
+// strconv.Atoi + validation metal/moe.go and metal/gemma4_moe.go already do at their real
+// dispatch-building call sites: `--moe-cache-slots` / decoder.Options.MoECacheSlots
+// (m.MoECacheSlotsRequest(), the SAME flag CUDA's own auto-cap-to-VRAM already reads) wins when
+// set (Phase 2, docs/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag");
+// GOINFER_METAL_MOE_SLOTS is kept as a deprecated fallback for anyone still setting it directly.
+// "" means unset either way — n==0/unset ⇒ every expert resident, today's behavior, unchanged.
+func metalMoESlotsRequest(m *decoder.Model) string {
+	if n := m.MoECacheSlotsRequest(); n > 0 {
+		return strconv.Itoa(n)
+	}
+	return os.Getenv("GOINFER_METAL_MOE_SLOTS")
+}
+
+// metalMoESlotsFromEnv is the guard's own reader (residentNeedBytes, below) — it needs an int,
+// not a validated dispatch-ready string, and unlike the two real call sites an invalid or unset
+// value is not an error here: it just means "assume unpaged" (the guard's existing, safe
+// behavior); buildResident itself still validates and declines on a bad value. Despite the name
+// (kept for now — see metalMoESlotsRequest's own doc comment on why the underlying knob is no
+// longer env-only), this reads the SAME resolved request metalMoESlotsRequest does.
+func metalMoESlotsFromEnv(m *decoder.Model) int {
+	n, err := strconv.Atoi(metalMoESlotsRequest(m))
 	if err != nil || n <= 0 {
 		return 0
 	}
@@ -180,7 +196,7 @@ func residentKVBytes(m *decoder.Model) int64 {
 // asks for the host-copy addend at the SAME slot count rather than assuming it doubles the whole
 // weight term. KV was entirely absent; residentKVBytes above closes that.
 func residentNeedBytes(m *decoder.Model) int64 {
-	slots := metalMoESlotsFromEnv()
+	slots := metalMoESlotsFromEnv(m)
 	return m.ResidentWeightBytesPaged(slots) + m.ResidentHostCopyBytes(slots) + residentKVBytes(m)
 }
 
