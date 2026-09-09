@@ -255,12 +255,14 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 		return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (54%% stream divergence, §A2-Metal); using sequential. Pass --metal-fast-prefill (or set GOINFER_METAL_BATCHED_PREFILL=1) to force")
 	}
 	// The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU, G8) out of
-	// L.guW/L.dW with per-layer rope/window, per-head QK-norm, and Gemma's sandwich norms —
-	// but NOT per-layer-varying attention geometry (dense Gemma 4's local/global head_dim split;
-	// prefillOK's own per-layer-geometry guard, metal/model.go) or MoE (a routed model never
-	// packs the dense FFN buffers this path reads at all — prefilling it would bind zero
-	// buffers). Either declines here, and the caller re-runs the prompt through the (correct)
-	// sequential Forward loop.
+	// L.guW/L.dW with per-layer rope/window, per-head QK-norm, and Gemma's sandwich norms, and
+	// (G8 MoE half) a generically-shaped gated-SwiGLU MoE FFN — run row by row off the batched
+	// residual, reusing the unchanged per-token decode MoE dispatch chain (metal/moe.go) — but
+	// NOT per-layer-varying attention geometry (dense Gemma 4's local/global head_dim split;
+	// prefillOK's own per-layer-geometry guard, metal/model.go) or Gemma 4's enable_moe_block
+	// variant (residLayer.g4moe, a third FFN shape this path never reads; explicitly excluded
+	// via HasGemma4MoEResident regardless of per-layer geometry). Any of these declines here,
+	// and the caller re-runs the prompt through the (correct) sequential Forward loop.
 	if !a.r.prefillOK {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}

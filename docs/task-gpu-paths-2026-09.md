@@ -1174,3 +1174,71 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - Full regression: `gpu` 95 pass/0 fail (94 prior + 1 new test); `decoder` 416 pass/1 fail
     (`TestOlmo3_forwardParity`, pre-existing)/134 skip. `gofmt -l`, `go vet`, and CI's pinned
     staticcheck all clean on both packages.
+
+- 2026-09-08 — G8's MoE half DONE (item (a)'s other half; item (a) is now fully closed for
+  Metal — Gemma set + MoE, both extending the batched f16-MMA prefill kernels). Gemma 4's
+  `enable_moe_block` (g4moe) variant still declines (see below) — a third FFN shape, not this
+  row's target.
+  - **Mirrors CUDA's own established shape exactly, no new routing math**: `cuda/prefill.go`
+    already batches a MoE layer's attention half normally and runs the FFN ROW BY ROW off the
+    batched residual, reusing the per-token decode MoE dispatch chain unchanged — not a batched-
+    routing-and-indexed-GEMM kernel, which is what G8's own write-up originally guessed this would
+    need before actually looking at how CUDA does it. Metal's row loop does the same: for each of
+    the M prompt positions, norm+quantize that row, route, run the k experts + shared expert, fold
+    the result back into the batched residual — `metal/prefill.go`'s `PrefillLast`, a new
+    `if L.moe != nil { ... continue }` branch ahead of the existing dense-FFN dispatch sequence.
+  - **The type-mismatch bridge**: decode's MoE dispatch chain is F32-only (`r.x`); prefill's
+    residual (`xF`) is F16. Three pieces close the gap: (1) `rmsnorm_quant_f16` — already existed,
+    built for the final-logits step — norms+quantizes an F16 row DIRECTLY into `r.mq`/`r.mSc`, no
+    F32 conversion needed; (2) a new `zero_f32` kernel zeroes a per-row F32 scratch buffer
+    (`moeDst`, size H, allocated once per `PrefillLast` call) before each row's expert loop —
+    unlike decode's `r.x`, which always already holds the residual to accumulate onto, this
+    scratch starts uninitialized every row and must be zeroed explicitly; (3) a new
+    `residual_f16_from_f32` kernel (`x[i] = half(float(x[i]) + y[i])`) folds `moeDst` into `xF`'s
+    row once, after the expert+shared-expert accumulation completes.
+  - **`encodeMoEExperts`/`encodeMoESharedExpert` parameterized with a `dst Buffer` accumulate
+    target** (`metal/moe.go`), previously hardcoded to `r.x`. Decode's two callers
+    (`encodeMoEFFN`, `encodeMoEExpertsPaged`'s tail call) both now pass `r.x` explicitly; the new
+    prefill row loop passes `moeDst`. Also split `encodeMoERouter` into a norm dispatch plus a new
+    `encodeMoERoute` (route-selection only, no `r.x` involvement) so prefill's row loop — which
+    norms via `rmsnorm_quant_f16` instead of `encodeMoERouter`'s own F32-only `r.pRms` — can reuse
+    just the routing half. Verified this refactor alone is a byte-for-byte no-op for decode: full
+    Metal suite green before writing a single line of the new prefill branch.
+  - **The g4moe guard, caught by design review before any test found it**: adding
+    `FeatMoE`/`FeatMoEGatedShared` to `prefillFeatures` would, on its own, admit Gemma 4's
+    `enable_moe_block` variant too if it happened to have uniform per-layer geometry — a THIRD
+    FFN shape (`residLayer.g4moe`, dispatched via `encodeGemma4MoEFFN`), not the `L.moe != nil`
+    shape this row implements, and not caught by the existing `PerLayerGeomOK` guard (which only
+    checks head_dim variance, nothing about FFN shape) — the exact class of blind spot G8's own
+    Gemma-half incident earlier this session already burned once (dense Gemma 4 vs Gemma 3 having
+    an otherwise-identical feature set). Added `&& !m.HasGemma4MoEResident()` to `r.prefillOK`'s
+    computation; confirmed via a throwaway test against `testdata/gemma4-moe-tiny`
+    (`prefillOK=false`) before deleting the scaffolding.
+  - **`TestPrefillParityMoE`** (new, `metal/prefill_moe_parity_test.go`): real checkpoint
+    `testdata/mixtral-tiny` (no shared expert, softmax routing, MHA — the simplest MoE shape
+    available, deliberately isolating the row-loop mechanics). Same structure as
+    `TestPrefillParity`/`TestPrefillParityGemma`: sequential Forward vs `PrefillLast`, argmax
+    match + cosine ≥ 0.95 floor. Passed on the first real run: argmax match, cosine 0.99993.
+    `TestPrefillParityMoEGatedShared` (meant to exercise `encodeMoESharedExpert`'s OTHER branch —
+    a sigmoid-gated always-on shared expert, Qwen2-MoE) correctly SKIPS: `testdata/tiny-qwen2-moe`
+    is an incomplete fixture (`model.safetensors` only, no `config.json`); no substitute
+    gated-shared fixture exists in `testdata/` today. Left as a documented placeholder, not
+    force-fit onto the wrong fixture.
+  - **`TestMoE_declinesPrefill` flipped to admit**, following the `decoder/gptoss_decline_test.go`
+    precedent of keeping a decline test's historical name/file identity when the underlying
+    capability moves from decline to admit (`git log -p` on it still tells the right story). Its
+    existing identical-experts-vs-dense trick (`TestMoE_assemblyVsDense`'s own fixture: 8 identical
+    experts + zeroed shared expert ⇒ MoE FFN mathematically equals the dense FFN regardless of
+    routing) carries over for free: MoE prefill logits now checked directly against the dense
+    twin's prefill logits, not just "both succeed" — cosine 0.999875, confirming the `dst`
+    redirection through `moeDst` neither drops nor double-counts anything. (Caught one own bug
+    while writing this: an edit that dropped each embedding row's `make([]float32, tmHidden)`
+    allocation, leaving 8 nil rows, surfaced as `index out of range [0] with length 0` deep inside
+    the dispatch chain — a reminder that an empty-input panic from GPU code can look exactly like
+    a real kernel bug until you check the input.)
+  - `metal/backend.go`'s `PrefillLast` doc comment (stale since G8's Gemma half, worse now)
+    updated to describe both what admits (Gemma set, generic gated-SwiGLU MoE) and what still
+    declines (per-layer-geometry, g4moe) accurately.
+  - Full regression: `metal` 111 pass/0 fail/51 skip (110 prior + 1 new test; `TestMoE_declinesPrefill`
+    is a rename-in-place, not a net-new test). `gofmt -l`, `go vet`, and CI's pinned staticcheck
+    (v0.8.0) all clean.

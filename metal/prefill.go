@@ -166,6 +166,21 @@ kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w
 kernel void residual_f16(device half* x[[buffer(0)]], device const half* y[[buffer(1)]],
     uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+float(y[i])); }
 
+// residual_f16_from_f32: x += y, x is f16, y is f32 (G8, docs/task-gpu-paths-2026-09.md). The
+// batched-prefill MoE row loop's expert-combine dispatches (encodeMoEExperts/
+// encodeMoESharedExpert, metal/moe.go) are F32-only — reused UNCHANGED for the per-row loop by
+// pointing their accumulate target at an isolated F32 scratch buffer instead of prefill's own F16
+// residual, then folding that scratch into the real F16 residual row with this kernel, once.
+kernel void residual_f16_from_f32(device half* x[[buffer(0)]], device const float* y[[buffer(1)]],
+    uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+y[i]); }
+
+// zero_f32: x[i] = 0 (grid = N). The MoE row loop's F32 scratch (see residual_f16_from_f32 above)
+// must start at zero before encodeMoEExperts' k-expert accumulate loop — unlike decode's own use
+// of a scratch buffer (always fully OVERWRITTEN before being read), this one is accumulated into
+// by potentially several dispatches (k routed experts plus a shared expert) that all assume
+// their target already holds whatever the previous accumulation left, same as r.x does for decode.
+kernel void zero_f32(device float* x[[buffer(0)]], uint i[[thread_position_in_grid]]) { x[i] = 0.0; }
+
 // glu_act_f16: SiLU (act=1, decoder.ActKind's ActSiLU) or GELU-tanh (act=0, ActGeluTanh — Gemma).
 // The tanh argument is CLAMPED to ±15 — same fix as kernels.go's glu_act (a massive-activation
 // gate, e.g. Gemma's <bos>, overflows MSL's tanh to NaN otherwise; duplicated here rather than
@@ -285,6 +300,9 @@ type prefillState struct {
 	// pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
 	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
+	// G8 (docs/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
+	// residual_f16_from_f32/zero_f32's own comments).
+	pResF32, pZeroF32 Pipeline
 }
 
 func (r *resident) ensurePrefill() {
@@ -313,7 +331,8 @@ func (r *resident) ensurePrefill() {
 		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
-		pRmsQ: p("rmsnorm_quant_f16"),
+		pRmsQ:   p("rmsnorm_quant_f16"),
+		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"),
 	}
 }
 
@@ -375,6 +394,10 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	uBaseK := NewBufferU32(d, uint32(nHhd))
 	m0, m1, m2 := NewBufferU32(d, 0), NewBufferU32(d, 1), NewBufferU32(d, 2)
 	dummyBias := NewBufferFloats(d, make([]float32, 1))
+	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
+	// Allocated unconditionally (cheap — H floats) rather than gated on whether any layer is
+	// MoE, avoiding a nil-buffer special case in the loop below.
+	moeDst := NewBufferFloats(d, make([]float32, H))
 
 	// C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
 	// ReleaseAll frees only at Close — so before this fix each PrefillLast leaked ~24 buffers
@@ -384,7 +407,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	// at end of call. (r.uH / r.uKvDim / r.uHd are resident-owned and reused — deliberately NOT in
 	// this list; releasing them would corrupt the decode path.)
 	scratch := []Buffer{
-		xF, normF, qkvF, ctxF, guF, dqF, posB,
+		xF, normF, qkvF, ctxF, guF, dqF, posB, moeDst,
 		uM, uI, u2I, uQkv, uQDim, uStride, uKOff, uVOff, uStartPos,
 		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias,
 	}
@@ -440,6 +463,30 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 		} else {
 			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
+		}
+		if L.moe != nil {
+			// G8 (docs/task-gpu-paths-2026-09.md): MoE FFN — batch the attention half above as
+			// usual, but run the FFN ROW BY ROW off the batched residual (xF), reusing the EXACT
+			// per-token decode MoE dispatch chain (encodeMoERoute/encodeMoEExperts/
+			// encodeMoESharedExpert, metal/moe.go) unchanged — the same approach CUDA's own
+			// batched prefill already uses for MoE (cuda/prefill.go: "row by row off the batched
+			// residual"). No new routing math, no batched-GEMM-over-experts kernel.
+			//
+			// Those dispatches are F32-only (decode's own r.x is F32); prefill's residual (xF) is
+			// F16. Bridged per row: rmsnorm_quant_f16 norms+quantizes the row DIRECTLY (no F32
+			// conversion needed — it already takes an F16 input, unlike r.pRms) into r.mq/r.mSc,
+			// the expert loop accumulates into moeDst (an isolated F32 scratch, zeroed first —
+			// unlike decode's r.x, which starts each token already holding the residual to
+			// accumulate onto), and residual_f16_from_f32 folds that scratch into xF's row once.
+			for m := 0; m < M; m++ {
+				row := xF.At(m * H * 2)
+				e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
+				r.encodeMoERoute(e, L)
+				e.Dispatch(pf.pZeroF32, r.H, 256, moeDst)
+				r.encodeMoEExperts(e, L, moeDst)
+				e.Dispatch(pf.pResF32, r.H, 256, row, moeDst)
+			}
+			continue
 		}
 		// pre-MLP norm
 		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)

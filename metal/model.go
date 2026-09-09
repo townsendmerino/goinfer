@@ -57,13 +57,14 @@ var preciseMathCompile bool
 
 // prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
 // gated FFN (SiLU or GeGLU), per-head QK-norm, a PER-LAYER rope table and window, Gemma's
-// sandwich norms and (1+w) RMS offset, and the embed-scale/final-logit-softcap pair (both
-// applied OUTSIDE this file — embedResident scales the input embeddings before PrefillLast ever
-// runs, and PrefillLast's own final step applies softcap — so declaring them here is a pure
-// capability statement, no kernel change). G8 (docs/task-gpu-paths-2026-09.md): added
-// FeatSandwichNorm/FeatGatedGELU/FeatRMSAddOne/FeatEmbedScale/FeatFinalLogitSoftcap to admit the
-// Gemma set (previously declined entirely — MoE still declines, see resident.prefillOK's
-// separate per-layer-geometry guard for why dense Gemma 4 specifically still does too).
+// sandwich norms and (1+w) RMS offset, the embed-scale/final-logit-softcap pair (both applied
+// OUTSIDE this file — embedResident scales the input embeddings before PrefillLast ever runs,
+// and PrefillLast's own final step applies softcap — so declaring them here is a pure capability
+// statement, no kernel change), and MoE (G8's second half: the FFN half runs ROW BY ROW off the
+// batched residual through the UNCHANGED per-token decode MoE dispatch chain — see
+// PrefillLast's own L.moe != nil branch — while the attention half still batches normally).
+// FeatMoEGatedShared (Qwen2-MoE's sigmoid-gated shared expert) comes along for free: it's the
+// SAME encodeMoESharedExpert dispatch decode already uses, gated/ungated branch and all.
 var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatQKNorm:            true,
 	decoder.FeatSlidingWindow:     true,
@@ -73,6 +74,8 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatRMSAddOne:         true,
 	decoder.FeatEmbedScale:        true,
 	decoder.FeatFinalLogitSoftcap: true,
+	decoder.FeatMoE:               true,
+	decoder.FeatMoEGatedShared:    true,
 }
 
 type residLayer struct {
@@ -583,7 +586,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// the arch genuinely varies AND no backend without the seam could serve it — which is exactly
 	// "does this arch vary per layer at all", the thing this uniform-g0 fast path can't handle
 	// regardless of what Metal's decode path separately supports.
-	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && m.PerLayerGeomOK("webgpu")
+	// G8 MoE (docs/task-gpu-paths-2026-09.md): Gemma-4's enable_moe_block variant (parallel
+	// dense‖MoE FFN, residLayer.g4moe, encodeGemma4MoEFFN) is a THIRD FFN shape this row's
+	// L.moe != nil branch in PrefillLast does not cover at all — declaring FeatMoE above would
+	// otherwise admit it if it happens to have uniform per-layer geometry (PerLayerGeomOK alone
+	// only catches the local/global head_dim variance dense Gemma 4 has; nothing about g4moe's
+	// FFN shape is geometry). Explicit, checked directly rather than assumed caught by the other
+	// guard — the exact class of blind spot this doc's own G6 WebGPU incident already burned once.
+	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && m.PerLayerGeomOK("webgpu") &&
+		!m.HasGemma4MoEResident()
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()

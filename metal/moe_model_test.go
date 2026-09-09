@@ -278,11 +278,18 @@ func writeSTF32(t *testing.T, path string, tensors map[string]stf32) {
 	}
 }
 
-// TestMoE_declinesPrefill is a regression guard: the f16 MMA prefill kernels run a DENSE FFN
-// out of L.guW/L.dW, which a MoE layer never packs (buildMoELayer replaces them). The decoder
-// calls Prefiller for ANY prompt >= 8 tokens (decoder/model.go), so without this decline a real
-// MoE prompt would bind zero-value buffers. Declining makes the caller fall back to the
-// sequential Forward loop — correct, just a slower TTFT. The dense twin must still accept.
+// TestMoE_declinesPrefill: MoE moved from the decline side to the admit side on 2026-09-08 (G8
+// MoE half, docs/task-gpu-paths-2026-09.md) — the f16 MMA prefill path now runs a MoE layer's FFN
+// row by row off the batched residual, reusing the unchanged per-token decode MoE dispatch chain
+// (encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, metal/moe.go); the name is historical
+// (kept so `git log -p` on it still tells the right story — decoder/gptoss_decline_test.go
+// precedent). Both MoE and its dense twin must now accept.
+//
+// Reuses the same identical-experts trick as TestMoE_assemblyVsDense above (8 identical experts +
+// zeroed shared expert ⇒ MoE FFN is mathematically equal to the dense FFN regardless of routing),
+// so this also gets a free numeric check that the dst-redirection (moeDst, docs/task-gpu-paths-
+// 2026-09.md) didn't drop or double-count anything: MoE prefill logits must match dense prefill
+// logits closely, not just both "succeed".
 func TestMoE_declinesPrefill(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -295,6 +302,9 @@ func TestMoE_declinesPrefill(t *testing.T) {
 	embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path
 	for i := range embs {
 		embs[i] = make([]float32, tmHidden)
+		for j := range embs[i] {
+			embs[i][j] = float32(i*7+j) * 0.01 // non-zero: a zeroed row can't distinguish assembly bugs
+		}
 	}
 	load := func(dir string) *metalResident {
 		m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8"})
@@ -307,14 +317,24 @@ func TestMoE_declinesPrefill(t *testing.T) {
 		}
 		return &metalResident{r: r, hidden: r.H}
 	}
-	// This test exercises the ARCH decline (MoE lacks dense-FFN buffers) vs dense-accepts — not the
-	// bit-identity decline that now gates the Metal backend by default (54% divergence, §A2-Metal).
+	// This test exercises the ARCH admission (MoE now has a row-by-row FFN path) — not the
+	// bit-identity decline that gates the Metal backend by default (54% divergence, §A2-Metal).
 	// Opt past that outer gate so the arch logic is what's under test.
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
-	if _, err := load(moeDir).PrefillLast(context.Background(), embs, 0); err == nil {
-		t.Fatal("MoE resident ACCEPTED prefill — it would bind unset dense-FFN buffers")
+	moeLogits, err := load(moeDir).PrefillLast(context.Background(), embs, 0)
+	if err != nil {
+		t.Fatalf("MoE resident wrongly declined prefill: %v", err)
 	}
-	if _, err := load(denseDir).PrefillLast(context.Background(), embs, 0); err != nil {
+	denseLogits, err := load(denseDir).PrefillLast(context.Background(), embs, 0)
+	if err != nil {
 		t.Fatalf("dense resident wrongly declined prefill: %v", err)
+	}
+	c := cosF(moeLogits, denseLogits)
+	t.Logf("MoE-vs-dense prefill (identical experts): cosine=%.6f", c)
+	if math.IsNaN(float64(c)) || math.IsInf(float64(c), 0) {
+		t.Fatalf("MoE prefill assembly FAIL: cosine is %v — degenerate (NaN/Inf) logits", c)
+	}
+	if c < 0.999 {
+		t.Fatalf("MoE prefill assembly FAIL: cosine %.6f vs dense twin too low (dst-redirection bug?)", c)
 	}
 }

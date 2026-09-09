@@ -597,17 +597,27 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 // kernel-execution time), so the encode-ahead executor still pre-encodes it.
 func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 	r.encodeMoERouter(e, L)
-	r.encodeMoEExperts(e, L)
+	r.encodeMoEExperts(e, L, r.x)
 }
 
 // encodeMoERouter is the value-INDEPENDENT head of the FFN: post-attn norm → router logits →
 // on-GPU top-k, ending with rIdx[k]/rWgt[k] written on-device. In the paged forward this is the
 // first command buffer; the host then reads rIdx and stages the routed experts before the second.
 func (r *resident) encodeMoERouter(e *Encoder, L *residLayer) {
-	mo := r.moe
-	ml := L.moe
 	// post-attn RMSNorm → quantized activation mq/mSc (same as the dense FFN entry).
 	e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	r.encodeMoERoute(e, L)
+}
+
+// encodeMoERoute is encodeMoERouter's route-SELECTION half, split out so G8's batched-prefill MoE
+// row loop (metal/prefill.go) can reuse it after its OWN norm step (rmsnorm_quant_f16 reading a
+// row of the F16 residual directly into r.mq/r.mSc — r.pRms above is F32-only, a type mismatch
+// for prefill's F16 residual, so prefill cannot call encodeMoERouter itself). Reads r.mq/r.mSc
+// (already normed+quantized by either caller); writes mo.rIdx/mo.rWgt. No r.x involvement at all,
+// so nothing here needed parameterizing the way encodeMoEExperts/encodeMoESharedExpert did.
+func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
+	mo := r.moe
+	ml := L.moe
 	// router logits: routerW[nE,H] × mq → rLogits[nE]
 	e.Dispatch(mo.pRouter, mo.nE*32, 32, ml.routerW, r.mq, r.mSc, mo.rLogits, r.uH)
 	// on-GPU top-k → rIdx[k], rWgt[k]. gpt-oss's router bias reaches the logits BEFORE top-k and
@@ -623,11 +633,18 @@ func (r *resident) encodeMoERouter(e *Encoder, L *residLayer) {
 
 // encodeMoEExperts runs the k selected experts out of the STACKED all-E buffer (ml.expGuW/expDW,
 // indexed by rIdx at kernel-execution time) plus the optional shared expert. The non-paged path.
-func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer) {
+//
+// dst is the down-projection's accumulate target — decode's own caller (encodeMoEFFN) always
+// passes r.x (the shared F32 residual stream), but G8's batched-prefill MoE row loop
+// (metal/prefill.go, docs/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
+// accumulate into an isolated F32 scratch buffer instead, since prefill's own residual (xF) is
+// F16 and these kernels are F32-only — added into xF's row by a SEPARATE small kernel afterward,
+// not by pointing these dispatches at xF directly (a type mismatch: `device float*` vs `half*`).
+func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {
 	mo := r.moe
 	ml := L.moe
 	// k selected experts: fused gate|up (overwrite) → clamped-swiglu/swiglu → down (weighted-
-	// accumulate into x). gpt-oss fuses its per-expert gate‖up bias into the activation step and
+	// accumulate into dst). gpt-oss fuses its per-expert gate‖up bias into the activation step and
 	// its per-expert down bias into the combine step (both INSIDE the router-weight scale — see
 	// swiglu_quant_gptoss / gemv_w4a8_moe_wacc_bias's docs), so it swaps both dispatches, not just
 	// the router.
@@ -636,13 +653,13 @@ func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer) {
 		if mo.isGptOss {
 			e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,
 				ml.expGuBias, mo.biasIdx(), mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
-			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias, mo.biasIdx())
+			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, dst, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias, mo.biasIdx())
 		} else {
 			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
-			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, r.x, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
+			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, dst, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
 		}
 	}
-	r.encodeMoESharedExpert(e, L)
+	r.encodeMoESharedExpert(e, L, dst)
 }
 
 // encodeMoEExpertsPaged is encodeMoEExperts' paged twin: the k selected experts run out of their
@@ -681,24 +698,27 @@ func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, slots []expe
 			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, s.dW, s.dS, r.dq, r.dSc, r.x, mo.uInter, mo.idxZeros, mo.rWgt, mo.uSlot[j], r.uH)
 		}
 	}
-	r.encodeMoESharedExpert(e, L)
+	// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardcoded to
+	// r.x — unlike encodeMoEExperts' non-paged twin, there is no second caller to parameterize for.
+	r.encodeMoESharedExpert(e, L, r.x)
 }
 
 // encodeMoESharedExpert is the always-on shared expert (Qwen2-MoE gated / GLM ungated) — never
 // paged (it is one dense expert, always resident), so identical in both the paged and non-paged
-// tail.
-func (r *resident) encodeMoESharedExpert(e *Encoder, L *residLayer) {
+// tail. dst is the same redirectable accumulate target encodeMoEExperts takes (see its own
+// comment) — decode's two callers both pass r.x; prefill's row loop passes an isolated F32 scratch.
+func (r *resident) encodeMoESharedExpert(e *Encoder, L *residLayer, dst Buffer) {
 	mo := r.moe
 	ml := L.moe
 	if mo.sharedInter > 0 {
 		e.DispatchTG(r.pSA, (2*mo.sharedInter)*32, 256, r.H*2, ml.shGuW, ml.shGuS, r.mq, r.mSc, r.gu, r.uH)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.sharedInter*4), r.dq, r.dSc, mo.uSharedInter, r.uAct)
 		if mo.sharedUngated {
-			e.Dispatch(r.pGemvResid, r.H*32, 32, ml.shDW, ml.shDS, r.dq, r.dSc, r.x, mo.uSharedInter) // x += down
+			e.Dispatch(r.pGemvResid, r.H*32, 32, ml.shDW, ml.shDS, r.dq, r.dSc, dst, mo.uSharedInter) // dst += down
 		} else {
 			e.Dispatch(r.pGemv, r.H*32, 32, ml.shDW, ml.shDS, r.dq, r.dSc, mo.shDown, mo.uSharedInter) // down → scratch
 			e.Dispatch(mo.pRouter, 32, 32, ml.shGateW, r.mq, r.mSc, mo.shGl, r.uH)                     // gate logit (1 row)
-			e.Dispatch(mo.pSharedGate, r.H, 256, r.x, mo.shDown, mo.shGl)                              // x += sigmoid(gl)*down
+			e.Dispatch(mo.pSharedGate, r.H, 256, dst, mo.shDown, mo.shGl)                              // dst += sigmoid(gl)*down
 		}
 	}
 }
