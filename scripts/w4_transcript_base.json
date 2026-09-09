@@ -1,0 +1,257 @@
+{
+  "_comment": "W4 agent-turn transcript fixture (docs/task-peer-benchmarks.md §3/§7). tools[] is",
+  "_comment2": "hand-ported from internal/servecheck/check.go:554-581 (harnessScaleTools) - the same",
+  "_comment3": "12-tool, nested-parameter schema real agents (opencode's 'build' agent) send. turns[] is a",
+  "_comment4": "synthetic-but-plausible 10-turn coding-agent session; tool_result text is canned fixture",
+  "_comment5": "content, not the output of an actually-executed tool - the harness never runs real tools.",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a file's contents.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "offset": { "type": "integer" },
+            "limit": { "type": "integer" }
+          },
+          "required": ["path"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Write content to a file, creating it if absent.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "content": { "type": "string" }
+          },
+          "required": ["path", "content"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "edit_file",
+        "description": "Replace one exact string match in a file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "old_string": { "type": "string" },
+            "new_string": { "type": "string" }
+          },
+          "required": ["path", "old_string", "new_string"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "list_dir",
+        "description": "List files in a directory.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" }
+          },
+          "required": ["path"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "grep",
+        "description": "Search file contents by regex.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "pattern": { "type": "string" },
+            "path": { "type": "string" },
+            "case_insensitive": { "type": "boolean" }
+          },
+          "required": ["pattern"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "glob",
+        "description": "Find files by glob pattern.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "pattern": { "type": "string" }
+          },
+          "required": ["pattern"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "run_shell",
+        "description": "Run a shell command and return its output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": { "type": "string" },
+            "timeout_seconds": { "type": "integer" }
+          },
+          "required": ["command"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "git_status",
+        "description": "Show working tree status.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "web_search",
+        "description": "Search the web for a query.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" },
+            "max_results": { "type": "integer" }
+          },
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "fetch_url",
+        "description": "Fetch a URL's content.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" }
+          },
+          "required": ["url"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the current weather in a given city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": { "type": "string" }
+          },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "create_task",
+        "description": "Track a task with nested subtasks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "subtasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "done": { "type": "boolean" }
+                }
+              }
+            }
+          },
+          "required": ["title"]
+        }
+      }
+    }
+  ],
+  "turns": [
+    {
+      "n": 1,
+      "user": "There's a bug in the rate limiter — requests aren't being throttled correctly under burst load. Can you look at internal/ratelimit/limiter.go and figure out what's wrong?",
+      "tool_choice": "read_file",
+      "tool_result": "package ratelimit\n\nimport (\n\t\"sync\"\n\t\"time\"\n)\n\ntype Limiter struct {\n\ttokens     float64\n\tmaxTokens  float64\n\trefillRate float64 // tokens per second\n\tlastRefill time.Time\n\tmu         sync.Mutex\n}\n\nfunc (l *Limiter) Allow() bool {\n\tl.mu.Lock()\n\tdefer l.mu.Unlock()\n\tnow := time.Now()\n\televated := now.Sub(l.lastRefill).Seconds() * l.refillRate\n\tl.tokens += elevated\n\tif l.tokens > l.maxTokens {\n\t\tl.tokens = l.maxTokens\n\t}\n\tl.lastRefill = now\n\tif l.tokens < 1 {\n\t\treturn false\n\t}\n\tl.tokens--\n\treturn true\n}\n"
+    },
+    {
+      "n": 2,
+      "user": null,
+      "tool_choice": "grep",
+      "tool_result": "internal/ratelimit/limiter_test.go:14:func TestLimiter_Burst(t *testing.T) {\ninternal/ratelimit/limiter_test.go:22:\tif limiter.Allow() {\ninternal/ratelimit/limiter.go:18:\televated := now.Sub(l.lastRefill).Seconds() * l.refillRate\n"
+    },
+    {
+      "n": 3,
+      "user": null,
+      "tool_choice": "read_file",
+      "tool_result": "package ratelimit\n\nimport \"testing\"\n\nfunc TestLimiter_Burst(t *testing.T) {\n\tlimiter := &Limiter{tokens: 5, maxTokens: 5, refillRate: 1}\n\tfor i := 0; i < 5; i++ {\n\t\tif !limiter.Allow() {\n\t\t\tt.Fatalf(\"request %d should be allowed\", i)\n\t\t}\n\t}\n\tif limiter.Allow() {\n\t\tt.Fatal(\"6th request should be throttled\")\n\t}\n}\n"
+    },
+    {
+      "n": 4,
+      "user": null,
+      "tool_choice": "edit_file",
+      "tool_result": "edit applied: internal/ratelimit/limiter.go (1 replacement) — lastRefill is now set even on the throttled branch, so a burst of rejected requests no longer freezes the refill clock"
+    },
+    {
+      "n": 5,
+      "user": null,
+      "tool_choice": "run_shell",
+      "tool_result": "=== RUN   TestLimiter_Burst\n--- PASS: TestLimiter_Burst (0.00s)\nPASS\nok  \tgoinfer/internal/ratelimit\t0.004s\n"
+    },
+    {
+      "n": 6,
+      "user": null,
+      "tool_choice": "git_status",
+      "tool_result": "On branch fix/ratelimit-burst\nChanges not staged for commit:\n\tmodified:   internal/ratelimit/limiter.go\n"
+    },
+    {
+      "n": 7,
+      "user": null,
+      "tool_choice": "run_shell",
+      "tool_result": "diff --git a/internal/ratelimit/limiter.go b/internal/ratelimit/limiter.go\n--- a/internal/ratelimit/limiter.go\n+++ b/internal/ratelimit/limiter.go\n@@ -18,8 +18,8 @@\n \tl.lastRefill = now\n \tif l.tokens < 1 {\n+\t\tl.lastRefill = now\n \t\treturn false\n \t}\n \tl.tokens--\n 1 file changed, 2 insertions(+), 2 deletions(-)\n"
+    },
+    {
+      "n": 8,
+      "user": null,
+      "tool_choice": "write_file",
+      "tool_result": "wrote CHANGELOG.md (312 bytes)"
+    },
+    {
+      "n": 9,
+      "user": null,
+      "tool_choice": "create_task",
+      "tool_result": "created task #42: \"Add regression test for elapsed-time burst edge case\""
+    },
+    {
+      "n": 10,
+      "user": null,
+      "tool_choice": "list_dir",
+      "tool_result": "limiter.go\nlimiter_test.go\n"
+    }
+  ]
+}

@@ -115,7 +115,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		// cover the whole generation as before.
 		stopBeat = sseHeartbeat(ss)
 	}
-	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+	finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) {
 		sb.WriteString(t)
 		if prose == nil {
 			return
@@ -151,7 +151,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		msg["content"] = sb.String()
 	}
 	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
-	usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}
+	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
 
 	if req.Stream {
 		// Whatever prose already left as deltas (G21) must not be sent twice, and

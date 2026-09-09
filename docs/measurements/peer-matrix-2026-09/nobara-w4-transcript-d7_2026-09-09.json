@@ -1,0 +1,464 @@
+{
+  "header": {
+    "utc": "2026-09-09T23:15:22Z",
+    "host": "nobara-pc",
+    "driver": "595.91.07",
+    "gpu": "NVIDIA GeForce RTX 2070 SUPER",
+    "kernel": "7.2.0-202.nobara.fc44.x86_64",
+    "distro": "Nobara Linux 44 (KDE Plasma Desktop Edition)",
+    "goinfer_commit": "b22e080e",
+    "goinfer_dirty": true,
+    "serve_mtime": "2026-09-09 16:10:46.677709788 -0700",
+    "loadavg": "1.19 0.83 0.37 2/838 2837813"
+  },
+  "model": "7B",
+  "backend": "cuda",
+  "max_tokens": 256,
+  "temperature": 0.0,
+  "variants": {
+    "base": [
+      {
+        "n": 1,
+        "tool_choice": "read_file",
+        "probe": {
+          "ttft_ms": 651.2,
+          "prompt_tokens": 727,
+          "prefill_reused_tokens": 0,
+          "reused_fraction": 0.0
+        },
+        "real": {
+          "latency_ms": 1094.5,
+          "prompt_tokens": 727,
+          "completion_tokens": 41,
+          "prefill_reused_tokens": 726,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "cold",
+        "assistant_tool_call": {
+          "name": "read_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter.go\", \"offset\": 0, \"limit\": 1000}"
+        }
+      },
+      {
+        "n": 2,
+        "tool_choice": "grep",
+        "probe": {
+          "ttft_ms": 251.3,
+          "prompt_tokens": 937,
+          "prefill_reused_tokens": 726,
+          "reused_fraction": 0.7748
+        },
+        "real": {
+          "latency_ms": 1037.5,
+          "prompt_tokens": 937,
+          "completion_tokens": 38,
+          "prefill_reused_tokens": 936,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "grep",
+          "arguments": "{\"pattern\": \"Allow\", \"path\": \"internal/ratelimit/limiter.go\", \"case_insensitive\": false}"
+        }
+      },
+      {
+        "n": 3,
+        "tool_choice": "read_file",
+        "probe": {
+          "ttft_ms": 223.1,
+          "prompt_tokens": 1068,
+          "prefill_reused_tokens": 936,
+          "reused_fraction": 0.8764
+        },
+        "real": {
+          "latency_ms": 1163.2,
+          "prompt_tokens": 1068,
+          "completion_tokens": 42,
+          "prefill_reused_tokens": 1067,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "read_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter_test.go\", \"offset\": 0, \"limit\": 1000}"
+        }
+      },
+      {
+        "n": 4,
+        "tool_choice": "edit_file",
+        "probe": {
+          "ttft_ms": 236.1,
+          "prompt_tokens": 1235,
+          "prefill_reused_tokens": 1067,
+          "reused_fraction": 0.864
+        },
+        "real": {
+          "latency_ms": 1752.4,
+          "prompt_tokens": 1235,
+          "completion_tokens": 58,
+          "prefill_reused_tokens": 1234,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "edit_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter_test.go\", \"old_string\": \"if limiter.Allow() {\", \"new_string\": \"if limiter.Allow() && limiter.tokens > 0 {\"}"
+        }
+      },
+      {
+        "n": 5,
+        "tool_choice": "run_shell",
+        "probe": {
+          "ttft_ms": 191.2,
+          "prompt_tokens": 1353,
+          "prefill_reused_tokens": 1234,
+          "reused_fraction": 0.912
+        },
+        "real": {
+          "latency_ms": 757.3,
+          "prompt_tokens": 1353,
+          "completion_tokens": 28,
+          "prefill_reused_tokens": 1352,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "run_shell",
+          "arguments": "{\"command\": \"git status\", \"timeout_seconds\": 10}"
+        }
+      },
+      {
+        "n": 6,
+        "tool_choice": "git_status",
+        "probe": {
+          "ttft_ms": 197.0,
+          "prompt_tokens": 1442,
+          "prefill_reused_tokens": 1352,
+          "reused_fraction": 0.9376
+        },
+        "real": {
+          "latency_ms": 474.9,
+          "prompt_tokens": 1442,
+          "completion_tokens": 18,
+          "prefill_reused_tokens": 1441,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "git_status",
+          "arguments": "{\"path\": \".\"}"
+        }
+      },
+      {
+        "n": 7,
+        "tool_choice": "run_shell",
+        "probe": {
+          "ttft_ms": 191.4,
+          "prompt_tokens": 1506,
+          "prefill_reused_tokens": 1441,
+          "reused_fraction": 0.9568
+        },
+        "real": {
+          "latency_ms": 1041.7,
+          "prompt_tokens": 1506,
+          "completion_tokens": 36,
+          "prefill_reused_tokens": 1505,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "run_shell",
+          "arguments": "{\"command\": \"git add internal/ratelimit/limiter.go\", \"timeout_seconds\": 10}"
+        }
+      },
+      {
+        "n": 8,
+        "tool_choice": "write_file",
+        "probe": {
+          "ttft_ms": 257.0,
+          "prompt_tokens": 1669,
+          "prefill_reused_tokens": 1505,
+          "reused_fraction": 0.9017
+        },
+        "real": {
+          "latency_ms": 7521.9,
+          "prompt_tokens": 1669,
+          "completion_tokens": 222,
+          "prefill_reused_tokens": 1668,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "write_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter.go\", \"content\": \"package ratelimit\\n\\nimport (\\n\\t\\\"sync\\\"\\n\\t\\\"time\\\"\\n)\\n\\ntype Limiter struct {\\n\\ttokens     float64\\n\\tmaxTokens  float64\\n\\trefillRate float64 // tokens per second\\n\\tlastRefill time.Time\\n\\tmu         sync.Mutex\\n}\\n\\nfunc (l *Limiter) Allow() bool {\\n\\tl.mu.Lock()\\n\\tdefer l.mu.Unlock()\\n\\tnow := time.Now()\\n\\televated := now.Sub(l.lastRefill).Seconds() * l.refillRate\\n\\tl.tokens += elevated\\n\\tif l.tokens > l.maxTokens {\\n\\t\\tl.tokens = l.maxTokens\\n\\t}\\n\\tl.lastRefill = now\\n\\tif l.tokens < 1 {\\n\\t\\treturn false\\n\\t}\\n\\tl.tokens--\\n\\treturn l.tokens > 0\\n}\"}"
+        }
+      },
+      {
+        "n": 9,
+        "tool_choice": "create_task",
+        "probe": {
+          "ttft_ms": 319.5,
+          "prompt_tokens": 1922,
+          "prefill_reused_tokens": 1668,
+          "reused_fraction": 0.8678
+        },
+        "real": {
+          "latency_ms": 2174.3,
+          "prompt_tokens": 1922,
+          "completion_tokens": 73,
+          "prefill_reused_tokens": 1921,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "create_task",
+          "arguments": "{\"title\": \"Fix Rate Limiter for Burst Load\", \"subtasks\": [{\"title\": \"Update Limiter.Allow() logic\", \"done\": true}, {\"title\": \"Add Tests for New Logic\", \"done\": false}, {\"title\": \"Document Changes\", \"done\": false}]}"
+        }
+      },
+      {
+        "n": 10,
+        "tool_choice": "list_dir",
+        "probe": {
+          "ttft_ms": 219.8,
+          "prompt_tokens": 2030,
+          "prefill_reused_tokens": 1921,
+          "reused_fraction": 0.9463
+        },
+        "real": {
+          "latency_ms": 475.1,
+          "prompt_tokens": 2030,
+          "completion_tokens": 18,
+          "prefill_reused_tokens": 2029,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "list_dir",
+          "arguments": "{\"path\": \".\"}"
+        }
+      }
+    ],
+    "edited_turn6": [
+      {
+        "n": 1,
+        "tool_choice": "read_file",
+        "probe": {
+          "ttft_ms": 646.1,
+          "prompt_tokens": 727,
+          "prefill_reused_tokens": 0,
+          "reused_fraction": 0.0
+        },
+        "real": {
+          "latency_ms": 1109.6,
+          "prompt_tokens": 727,
+          "completion_tokens": 41,
+          "prefill_reused_tokens": 726,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "cold",
+        "assistant_tool_call": {
+          "name": "read_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter.go\", \"offset\": 0, \"limit\": 1000}"
+        }
+      },
+      {
+        "n": 2,
+        "tool_choice": "grep",
+        "probe": {
+          "ttft_ms": 246.0,
+          "prompt_tokens": 937,
+          "prefill_reused_tokens": 726,
+          "reused_fraction": 0.7748
+        },
+        "real": {
+          "latency_ms": 1066.0,
+          "prompt_tokens": 937,
+          "completion_tokens": 38,
+          "prefill_reused_tokens": 936,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "grep",
+          "arguments": "{\"pattern\": \"Allow\", \"path\": \"internal/ratelimit/limiter.go\", \"case_insensitive\": false}"
+        }
+      },
+      {
+        "n": 3,
+        "tool_choice": "read_file",
+        "probe": {
+          "ttft_ms": 227.0,
+          "prompt_tokens": 1068,
+          "prefill_reused_tokens": 936,
+          "reused_fraction": 0.8764
+        },
+        "real": {
+          "latency_ms": 1164.5,
+          "prompt_tokens": 1068,
+          "completion_tokens": 42,
+          "prefill_reused_tokens": 1067,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "read_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter_test.go\", \"offset\": 0, \"limit\": 1000}"
+        }
+      },
+      {
+        "n": 4,
+        "tool_choice": "edit_file",
+        "probe": {
+          "ttft_ms": 243.5,
+          "prompt_tokens": 1235,
+          "prefill_reused_tokens": 1067,
+          "reused_fraction": 0.864
+        },
+        "real": {
+          "latency_ms": 1775.6,
+          "prompt_tokens": 1235,
+          "completion_tokens": 58,
+          "prefill_reused_tokens": 1234,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "edit_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter_test.go\", \"old_string\": \"if limiter.Allow() {\", \"new_string\": \"if limiter.Allow() && limiter.tokens > 0 {\"}"
+        }
+      },
+      {
+        "n": 5,
+        "tool_choice": "run_shell",
+        "probe": {
+          "ttft_ms": 204.6,
+          "prompt_tokens": 1353,
+          "prefill_reused_tokens": 1234,
+          "reused_fraction": 0.912
+        },
+        "real": {
+          "latency_ms": 754.7,
+          "prompt_tokens": 1353,
+          "completion_tokens": 28,
+          "prefill_reused_tokens": 1352,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "run_shell",
+          "arguments": "{\"command\": \"git status\", \"timeout_seconds\": 10}"
+        }
+      },
+      {
+        "n": 6,
+        "tool_choice": "git_status",
+        "probe": {
+          "ttft_ms": 208.9,
+          "prompt_tokens": 1467,
+          "prefill_reused_tokens": 1352,
+          "reused_fraction": 0.9216
+        },
+        "real": {
+          "latency_ms": 484.3,
+          "prompt_tokens": 1467,
+          "completion_tokens": 18,
+          "prefill_reused_tokens": 1466,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "git_status",
+          "arguments": "{\"path\": \".\"}"
+        }
+      },
+      {
+        "n": 7,
+        "tool_choice": "run_shell",
+        "probe": {
+          "ttft_ms": 206.1,
+          "prompt_tokens": 1531,
+          "prefill_reused_tokens": 1466,
+          "reused_fraction": 0.9575
+        },
+        "real": {
+          "latency_ms": 1041.5,
+          "prompt_tokens": 1531,
+          "completion_tokens": 36,
+          "prefill_reused_tokens": 1530,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "run_shell",
+          "arguments": "{\"command\": \"git add internal/ratelimit/limiter.go\", \"timeout_seconds\": 10}"
+        }
+      },
+      {
+        "n": 8,
+        "tool_choice": "write_file",
+        "probe": {
+          "ttft_ms": 273.8,
+          "prompt_tokens": 1694,
+          "prefill_reused_tokens": 1530,
+          "reused_fraction": 0.9032
+        },
+        "real": {
+          "latency_ms": 7508.3,
+          "prompt_tokens": 1694,
+          "completion_tokens": 220,
+          "prefill_reused_tokens": 1693,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "write_file",
+          "arguments": "{\"path\": \"internal/ratelimit/limiter.go\", \"content\": \"package ratelimit\\n\\nimport (\\n\\t\\\"sync\\\"\\n\\t\\\"time\\\"\\n)\\n\\ntype Limiter struct {\\n\\ntokens     float64\\n\\tmaxTokens  float64\\n\\trefillRate float64 // tokens per second\\n\\tlastRefill time.Time\\n\\tmu         sync.Mutex\\n}\\n\\nfunc (l *Limiter) Allow() bool {\\n\\tl.mu.Lock()\\n\\tnow := time.Now()\\n\\televated := now.Sub(l.lastRefill).Seconds() * l.refillRate\\n\\tl.tokens += elevated\\n\\tif l.tokens > l.maxTokens {\\n\\t\\tl.tokens = l.maxTokens\\n\\t}\\n\\tl.lastRefill = now\\n\\tif l.tokens < 1 {\\n\\t\\treturn false\\n\\t}\\n\\tl.tokens--\\n\\treturn l.tokens > 0\\n}\\n\\n\"}"
+        }
+      },
+      {
+        "n": 9,
+        "tool_choice": "create_task",
+        "probe": {
+          "ttft_ms": 328.5,
+          "prompt_tokens": 1943,
+          "prefill_reused_tokens": 1693,
+          "reused_fraction": 0.8713
+        },
+        "real": {
+          "latency_ms": 2081.3,
+          "prompt_tokens": 1943,
+          "completion_tokens": 67,
+          "prefill_reused_tokens": 1942,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "create_task",
+          "arguments": "{\"title\": \"Fix Rate Limiter Bug\", \"subtasks\": [{\"title\": \"Update Allow method to ensure tokens are checked before updating lastRefill\", \"done\": true}, {\"title\": \"Add test for burst load scenario\", \"done\": false}]}"
+        }
+      },
+      {
+        "n": 10,
+        "tool_choice": "list_dir",
+        "probe": {
+          "ttft_ms": 236.4,
+          "prompt_tokens": 2045,
+          "prefill_reused_tokens": 1942,
+          "reused_fraction": 0.9496
+        },
+        "real": {
+          "latency_ms": 667.9,
+          "prompt_tokens": 2045,
+          "completion_tokens": 22,
+          "prefill_reused_tokens": 2044,
+          "note": "post-probe: this request's own prompt was just fully prefilled by the probe above, so its prefill_reused_tokens reads artificially fully-warm \u2014 it is NOT this turn's cold/warm signal. Read probe.* for that; see the module docstring."
+        },
+        "cache_state": "warm",
+        "assistant_tool_call": {
+          "name": "list_dir",
+          "arguments": "{\"path\": \"internal/ratelimit\"}"
+        }
+      }
+    ]
+  }
+}

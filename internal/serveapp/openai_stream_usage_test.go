@@ -155,7 +155,7 @@ func TestSendUsage_onlyWhenRequested(t *testing.T) {
 			if !ok {
 				t.Fatal("sseStart")
 			}
-			sendUsage(ss, tc.so, "id", 1, "m", usage{1, 2, 3})
+			sendUsage(ss, tc.so, "id", 1, "m", usage{PromptTokens: 1, CompletionTokens: 2, TotalTokens: 3})
 			got := strings.Contains(rec.Body.String(), `"usage"`)
 			if got != tc.want {
 				t.Errorf("emitted=%v want=%v; body=%q", got, tc.want, rec.Body.String())

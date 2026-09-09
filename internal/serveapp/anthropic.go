@@ -517,7 +517,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	}
 
 	var sb strings.Builder
-	finish, nComp, _, stopSeq, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
 		return

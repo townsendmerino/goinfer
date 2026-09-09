@@ -1664,6 +1664,76 @@ The task doc's own note that "the ordering flipped with the tile" for int8int8 v
 replicate on this Mac for either S or D7 — both land within noise of the int4 baseline. Worth a
 second look on the CUDA side before treating this as settled either way.
 
+### W4 (Qwen2.5-7B-Instruct, GGUF Q4_K_M) — agent-turn transcript replay, nobara CUDA only
+
+First measurement of `docs/task-peer-benchmarks.md`'s W4 workload — the doc's own words, "the row
+that did not exist before and matters most": a scripted 10-turn tool-calling conversation replayed
+as strict prefix extensions, timing per-turn TTFT and how much of each turn's prompt the resident
+cache actually reused. Harness and fixtures newly built this session; goinfer also gained a real
+HTTP-visible reuse signal alongside them (`usage.prefill_reused_tokens`, a vendor extension on
+`/v1/chat/completions` — previously `decoder.Generation.PrefillReused` never left the process).
+
+**Provenance.** `nobara-pc`, RTX 2070 SUPER, driver `595.91.07`, Nobara 44, goinfer `b22e080e`
+(dirty — this session's own uncommitted-at-measurement-time tree; the binary was built from it and
+is what's reported), `qwen2.5-7b-instruct-q4_k_m.gguf` → int4, CUDA resident, greedy (temperature
+0), idle box (loadavg ≤1.2). Harness: `scripts/bench_peer_transcript.py --model 7B --backend cuda`,
+fixtures `scripts/w4_transcript_{base,edited_turn6}.json` (12 real tool schemas ported from
+`internal/servecheck/check.go`'s `harnessScaleTools`, a synthetic-but-plausible coding-agent
+session — bug report → read → grep → read test → edit → run tests → git status → diff → changelog
+→ file a task → list dir). Every turn forces a named `tool_choice` so the transcript never leaves
+the tool-rendering prompt path (see the harness's own docstring for why that matters for prefix
+continuity). Record: `docs/measurements/peer-matrix-2026-09/nobara-w4-transcript-d7_2026-09-09.json`.
+
+**Why TTFT here is from two non-streaming requests per turn, not the streaming method W1-W3 use**:
+a grammar-forced tool call streams nothing until the whole generation completes (confirmed by
+reading `internal/serveapp/tools.go`'s `serveChatToolsWith` — buffered by construction once a call
+is constrained from token 1), so "TTFT from first streamed token" is unmeasurable for a forced-tool
+turn as such. Each turn instead sends a `max_tokens:1` probe (its wall-clock IS the TTFT, its
+`usage.prefill_reused_tokens` IS this turn's reuse reading) followed by the real, longer generation
+that supplies the next turn's actual reply.
+
+**base variant** (D7, CUDA):
+
+| turn | tool called | prompt tokens | reused tokens | reused % | probe TTFT (ms) | cache |
+|---|---|---|---|---|---|---|
+| 1 | read_file | 727 | 0 | 0.0% | 651.2 | cold |
+| 2 | grep | 937 | 726 | 77.5% | 251.3 | warm |
+| 3 | read_file | 1068 | 936 | 87.6% | 223.1 | warm |
+| 4 | edit_file | 1235 | 1067 | 86.4% | 236.1 | warm |
+| 5 | run_shell | 1353 | 1234 | 91.2% | 191.2 | warm |
+| 6 | git_status | 1442 | 1352 | 93.8% | 197.0 | warm |
+| 7 | run_shell | 1506 | 1441 | 95.7% | 191.4 | warm |
+| 8 | write_file | 1669 | 1505 | 90.2% | 257.0 | warm |
+| 9 | create_task | 1922 | 1668 | 86.8% | 319.5 | warm |
+| 10 | list_dir | 2030 | 1921 | 94.6% | 219.8 | warm |
+
+**Turn 1 is cold (0% reused, 651 ms TTFT); every later turn is warm (77–96% reused, 191–320 ms
+TTFT) — a real, consistent ~2.5–3.4× TTFT drop the instant reuse engages**, the same qualitative
+shape `docs/integrations/claude-code.md`'s one-off manual measurement found on a larger 25-schema
+transcript, now backed by a reusable, re-runnable instrument with a real wire-level reuse count
+instead of an inferred one. Turn-to-turn reused% isn't monotonic (dips at turns 4, 7, 9) because
+each turn's *tool_result* is a different length — reused% is `reused / prompt_tokens`, and a longer
+freshly-appended result dilutes the ratio even though the reused *token count* only ever grows.
+
+**edited_turn6 variant**: turns 1–4 and 6–10 are byte-identical to `base`; turn 5's canned
+`tool_result` differs (a failing-test output instead of a passing one), so turn 6's *own request* —
+built from turn 5's reply plus that diverged result — is genuinely new content in both variants
+(prompt tokens 1442 vs 1467). **What this actually tests, found by running it rather than assumed
+going in: reuse degrades gracefully under a changed tail, not a full cache miss.** Turn 6 still
+reads 92.2% reused (1352/1467) — essentially identical to `base`'s 93.8% — because the resident
+cache correctly serves everything through turn 5's real commit and only freshly prefills the
+changed/new tail, exactly as it would for any new content. That's a genuine and useful confirmation
+(the reuse mechanism doesn't throw away the whole cache on a changed turn), but it is **not** the
+"turn 6 reads noticeably colder" signature originally expected when this fixture was designed — a
+first attempt at the fixture edited turn *6's own* `tool_result` (which only ever reaches turn 7's
+request, since a turn's tool result is appended *after* that turn generates) and produced literally
+identical reuse at turn 6 across variants; moving the edit to turn 5 fixed that but still can't
+produce a genuine "server already had X resident, this request contradicts it" miss, because each
+variant is an independently fresh conversation with nothing resident to contradict — that needs a
+same-session, shared-state design (send the natural continuation, then a diverging alternate,
+against the *same* live resident state) which this pass did not build. Flagged as a specific
+follow-up, not glossed over.
+
 ### Not done yet
 
 - **W2** (prefill at 512/3900 tokens, TTFT) — not built as its own row in *this* matrix, but both
@@ -1672,8 +1742,12 @@ second look on the CUDA side before treating this as settled either way.
   landed and this is now the shipped default), Mac Metal in §A (2026-09-09, same K ladder). Folding
   either into this matrix's own W1/W3-style table is still open, tidiness only — the numbers exist
   and are not stale.
-- **W4** (the agent-turn transcript replay) — the harness for it doesn't exist; this is the
-  workload the task doc calls the one that "matters most" and hasn't been started.
+- **W4** (the agent-turn transcript replay) — harness + fixture built, one real cell measured
+  2026-09-09 (D7, nobara CUDA only — see the "W4 ... agent-turn transcript replay" subsection just
+  above this list). Still open: other engines (Ollama/llama.cpp/MLX), other model cells, the
+  Mac/Metal box, W7 concurrency (which reuses this same transcript at 4 interleaved conversations),
+  and a same-session "genuine cache miss" variant of the edited-turn-6 test (see that subsection's
+  own closing note).
 - **Fidelity column** (teacher-forced top-1 agreement) and **pass@1** (HumanEval+/MBPP+) — neither
   scorer is built. Every row above is speed-only; no quality claim should be read into any of them.
 - **FreeToken** (nobara's platform-specialist peer) — investigated and declined: needs CUDA 13

@@ -444,6 +444,14 @@ type usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+	// PrefillReusedTokens is a goinfer VENDOR EXTENSION (not part of the OpenAI schema, same
+	// convention as pathFields's decode_path/prefill_path on /v1/models, :312-326 below): how
+	// many leading prompt tokens this generation's prefill skipped because they were already
+	// resident from a prior turn (decoder.Generation.PrefillReused, decoder/model.go:1430-1437).
+	// 0 on a cold prefill, on a path that doesn't track reuse, or when nothing was reused —
+	// those are indistinguishable from the number alone. Ignorable by any standard OpenAI
+	// client (an unrecognised JSON key).
+	PrefillReusedTokens int `json:"prefill_reused_tokens"`
 }
 
 // handleModels reports the served model(s) — the decoder and/or the embedding
@@ -537,7 +545,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(ss, role)
-		finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
@@ -547,13 +555,13 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
-			usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp})
+			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
 		return
 	}
 
 	var sb strings.Builder
-	finish, nComp, lps, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -569,7 +577,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice},
-		"usage":   usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp},
+		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
 	})
 }
 
@@ -618,7 +626,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
-		finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
 		if gerr != nil {
@@ -628,12 +636,12 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		}
 		sseSend(ss, completionChunk(id, created, lm.name, "", &finish))
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
-			usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp})
+			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -641,7 +649,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
-		"usage":   usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp},
+		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
 	})
 }
 
@@ -951,9 +959,12 @@ func genErr(err error) error {
 // onText with each newly-completed text fragment. Returns the finish reason
 // ("stop" | "length"), the completion token count, (non-stream) per-token
 // logprobs, the stop string that was hit (empty unless a stop sequence ended the
-// turn), and any terminal generation error (nil on a clean end — see genErr). The
-// context is cancelled on a stop-string hit to end generation.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo, string, error) {
+// turn), how many leading prompt tokens this generation's prefill skipped via
+// resident/session reuse (decoder.Generation.PrefillReused — 0 when nothing was
+// reused or the path doesn't track it), and any terminal generation error (nil on
+// a clean end — see genErr). The context is cancelled on a stop-string hit to end
+// generation.
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo, string, int, error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var stream <-chan int
@@ -1004,7 +1015,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 			stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
 		finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-		return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
+		return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, genErr(gen.Err())
 	}
 
 	// Reuse the KV of whichever cached session already holds this prompt as a
@@ -1044,7 +1055,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-	return finish, n, gen.Logprobs, stopHit, genErr(gen.Err())
+	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, genErr(gen.Err())
 }
 
 // driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the
@@ -1054,9 +1065,10 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 // decoder.Session (multimodal opts out of that CPU-side prefix reuse) — but on a
 // resident backend, GenerateVL/GenerateQwenVL do their own resident-GPU-KV image
 // reuse when the SAME image is resent (P9a); vi.features is then never invoked at
-// all. Returns finish reason, completion token count, stop string, and any
-// terminal generation error (nil on a clean end — see genErr).
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, onText func(string)) (string, int, string, error) {
+// all. Returns finish reason, completion token count, stop string, how many
+// leading prompt tokens were reused (see drive's doc comment), and any terminal
+// generation error (nil on a clean end — see genErr).
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, onText func(string)) (string, int, string, int, error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var stream <-chan int
@@ -1067,7 +1079,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-	return finish, n, stopHit, genErr(gen.Err())
+	return finish, n, stopHit, gen.PrefillReused, genErr(gen.Err())
 }
 
 // streamTokens consumes a token-id channel, applying stop strings (including

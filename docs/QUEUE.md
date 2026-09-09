@@ -1403,21 +1403,20 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:679` | goinfer | `close(stopDemote) // stop demoting before we checkpoint` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:847` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:965` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1102` | goinfer | `ids = append(ids, id)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1106` | goinfer | `piece, _ := lm.tk.DecodePiece(id)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1187` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1114` | goinfer | `ids = append(ids, id)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1118` | goinfer | `piece, _ := lm.tk.DecodePiece(id)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:1199` | goinfer | `func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:424` | goinfer | `type completionReq struct {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:508` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:526` | goinfer | `if !lm.enter(w) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:549` | goinfer | `sendUsage(ss, req.StreamOptions, id, created, lm.name,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:668` | goinfer | `StopIDs:     lm.stopIDs,` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:670` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:760` | goinfer | `gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:762` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:768` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:929` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:943` | goinfer | `func genErr(err error) error {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:962` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:516` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:534` | goinfer | `if !lm.enter(w) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:557` | goinfer | `sendUsage(ss, req.StreamOptions, id, created, lm.name,` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:676` | goinfer | `StopIDs:     lm.stopIDs,` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:678` | goinfer | `TopLogprobs: deref(sm.TopLogprobs, 0),` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:770` | goinfer | `g, err := grammarFor(sm.ResponseFormat)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:776` | goinfer | `m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:937` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:951` | goinfer | `func genErr(err error) error {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/openai.go:973` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:139` | goinfer | `ids, err := lm.chatPrompt(messages)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:236` | goinfer | `var stopBeat func()` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:287` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
@@ -1433,7 +1432,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:116` | goinfer | `stopBeat = sseHeartbeat(ss)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:125` | goinfer | `sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:129` | goinfer | `stopBeat() // joins the ticker goroutine before anything else writes to w` |
-| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:154` | goinfer | `usagev := usage{len(gr.promptIDs), nComp, len(gr.promptIDs) + nComp}` |
+| `docs/audit-2026-09-02.md|internal/serveapp/tools.go:154` | goinfer | `usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: l` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:23` | goinfer | `func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req chatReq,` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:240` | goinfer | `g, gerr := constrain.ToolCallGrammar(prefix, suffix, argsKey, forced.Name, array, forced` |
 | `docs/audit-2026-09-02.md|internal/serveapp/tools.go:248` | goinfer | `// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k ent` |
@@ -1747,12 +1746,12 @@ supports.
 | `docs/task-gpu-paths-2026-09.md|gpu/residency.go:509` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
 | `docs/task-gpu-paths-2026-09.md|internal/serveapp/main.go:831` | goinfer | `spec:     cfg.spec == "ngram",` |
-| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1056` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
+| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1067` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
 | `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:62` | goinfer | `mu        sync.Mutex  // serialize this model's generations (the single decode worker)` |
-| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:660` | goinfer | `// residentPath tells prepare whether THIS request will actually run the stateless GPU-r` |
-| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:960` | goinfer | `var gen *decoder.Generation` |
-| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:977` | goinfer | `// (resBusy) like Generate. Constrained/tool requests (grammar masker) keep plain reside` |
-| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:986` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
+| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:668` | goinfer | `// residentPath tells prepare whether THIS request will actually run the stateless GPU-r` |
+| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:971` | goinfer | `var gen *decoder.Generation` |
+| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:988` | goinfer | `// (resBusy) like Generate. Constrained/tool requests (grammar masker) keep plain reside` |
+| `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:997` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
 | `docs/task-gpu-paths-2026-09.md|metal/backend.go:251` | goinfer | `"exhaustion rather than run; continuing on the CPU/staged path. Override with "+` |
 | `docs/task-gpu-paths-2026-09.md|metal/backend.go:258` | goinfer | `if b.resident != nil {` |
 | `docs/task-gpu-paths-2026-09.md|metal/backend.go:55` | goinfer | `func (b *metalBackend) Name() string { return "metal" }` |
