@@ -69,7 +69,8 @@ func TestPrefillGateVsReference(t *testing.T) {
 	if testing.Short() {
 		t.Skip("long-running gate: skipped in -short")
 	}
-	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
+	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")    // backward compat; default-on since §3.2 pass
+	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0") // disable floor so K=256 cell is measured too
 
 	home, err := os.UserHomeDir()
 	if err != nil {
