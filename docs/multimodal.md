@@ -92,6 +92,24 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    overhead on the resident path. **Metal is out of scope**: `UploadKV` is unimplemented there
    (`metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up Metal
    residency next, not attempted here.
+   **UPDATE 2026-09-08: a cold (first-time) image turn's own PREFILL, not just decode, is now
+   also resident (CUDA/Gemma-3 only).** Gap 0 as shipped deliberately kept CPU prefill (no
+   resident equivalent of the bidirectional image-block mask existed) and only moved decode; this
+   left the CPU prefill itself — measured **8.215 s** in isolation — as the largest remaining
+   cost on a cold turn (dwarfing gap-0's own decode fix). Closed via a new resident CUDA kernel
+   (`cuda/attn_img_prefill.cu`, `attn_img_batched`) that runs the SAME bidirectional attention
+   `decoder/kvcache.go`'s CPU reference computes — `decoder.ResidentImagePrefill`, v1 requires the
+   whole prompt to fit in one weight-stationary pass (declines to the unchanged CPU-prefill+
+   `UploadKV` bridge otherwise). **Measured: 8.165 s → 0.367 s, 22.27×** (prefill only, tower
+   excluded — `docs/benchmarks.md` "Resident image-block PREFILL, finishing gap 0"). Real-checkpoint
+   gate: cosine 0.997042, exact argmax, matched int4 precision — `cuda/gemma3_img_prefill_resident_real_test.go`.
+   Combined with the decode fix above, a cold Gemma-3 image turn's non-tower cost drops from ~8.2 s
+   to ~0.37 s; the vision tower (~31.3 s, unaffected) is now essentially the whole cost of a cold
+   turn. Out of scope for this pass, same reasoning as gap 0 itself: Qwen2.5-VL (its prefill
+   already attends causally — no new mask kernel needed, but resident m-RoPE prefill positions are
+   unverified), the `attn_fused` L2 tensor-core path (its tile-level aggregates assume monotonic
+   per-row key counts, which an image block breaks), a prompt whose image block spans more than
+   one prefill chunk, and Metal/WebGPU (same reasons as gap 0's own decode fix).
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
 2. **Vision is one family.** Gemma 4 — the family most of the resident work went into — is

@@ -590,6 +590,60 @@ decode at all — out of scope, see `docs/multimodal.md`; WebGPU declines `gemma
 on this box for an unrelated reason, missing arch features — see `cuda/resident_reuse_vl_parity_test.go`'s
 own doc comment).
 
+#### Resident image-block PREFILL, finishing gap 0 — 2026-09-08
+
+**The remaining bottleneck on a COLD (first-time) image turn.** Gap 0 moved image-turn DECODE onto
+the resident GPU; P9(a) above made a *resent* image skip the tower and the CPU prefill entirely by
+reusing the resident KV. Neither touches a first-time image's own PREFILL — the P9(a) row above
+measured that cost in isolation at **8.215 s** (tower excluded) for this same 266-token Gemma-3 VL
+prompt, dwarfing everything gap-0/P9a already fixed on a cold turn. This closes that: a new resident
+CUDA kernel (`cuda/attn_img_prefill.cu`, `attn_img_batched`) runs the SAME bidirectional image-block
+attention `decoder/kvcache.go`'s CPU reference (`attendHi`/`SetImageBlocks`) computes, so a cold
+turn's prefill runs on the resident GPU too — `decoder.ResidentImagePrefill`, CUDA only, v1 requires
+the whole prompt (image block included) to fit in one weight-stationary pass (confirmed against
+this fixture: 266 ≤ the 512-row default chunk, ~246 tokens of margin).
+
+**Measured: real checkpoint (`gemma-3-4b-it`), real image (`testdata/gemma3_preprocess_image.png`),
+int4, PREFILL ONLY (tower excluded — computed once, unaffected by this change either way, same
+isolation the P9(a) row above uses), 1 discarded warm-up + 5 measured. Both arms write into the
+same resident KV positions on ONE model instance (each call fully overwrites `[0,len(ids))`
+regardless of prior content), so — unlike P9(a)'s two-arm design — this needed no second resident
+instance and stayed within the true interleaved-pairing discipline. RTX 2070 SUPER, driver
+`595.91.07`, Nobara 44, goinfer `a27a9014`+. Harness: a throwaway timing driver
+(`cuda/cmd/tmp_imgprefill_timing/`), matching this session's own precedent — not committed.**
+
+| | median turn time | speedup |
+|---|---|---|
+| old (CPU prefill + `UploadKV` bridge, gap 0's path) | 8.165 s | — |
+| new (resident image-prefill kernel) | 0.367 s | **22.27×** |
+
+**Real-checkpoint correctness gate** (`cuda/gemma3_img_prefill_resident_real_test.go`,
+`TestGemma3ImgPrefillResidentReal_gate`): matched int4 precision both arms, forced-trajectory
+cosine on raw logits (same discipline as gap-0's own gate, avoiding the f32-vs-int4 quantization-noise
+trap) — resident image-prefill logits vs the CPU reference, cosine **0.997042**, exact argmax match
+(496 == 496); the same turn driven through the real `GenerateVL` entrypoint confirms the fast path
+actually engaged (`Generation.ImgPrefillResident == true`) and streams the identical first token.
+Kernel-level parity (`cuda/attn_img_batched_test.go`, synthetic Q/K/V, no real checkpoint needed):
+bidirectional-block and outside-block masking pinned from both sides (mirrors
+`TestAttnBlockFull_nonCausal`'s boundary-equality proof), plus a dedicated poison-key test proving
+the kernel's sliding-window start stays DECOUPLED from the image-widened key count — a naive port of
+`attn_batched`'s own coupled formula would have silently under-sized the shared-memory allocation for
+any windowed layer whose image block starts more than one window-length into the sequence (a
+shared-memory out-of-bounds write, not a clean wrong answer — invisible on this fixture's own
+`imgStart=6`, which is why the synthetic test exists at all).
+
+**Combined with gap-0/P9(a): a cold turn's non-tower cost drops from ~8.2 s to ~0.37 s** — the
+vision tower (~31.3 s, §A, untouched by any of gap 0/P9a/this) is now essentially the ENTIRE cost of
+a cold image turn on this checkpoint; CPU prefill is no longer a meaningful contributor.
+
+**Not yet measured / explicitly out of scope for v1**: Qwen2.5-VL (its image tokens already attend
+causally in prefill — no new kernel needed there, but resident m-RoPE prefill positions are
+unverified, a separate follow-on); `attn_fused`'s L2 tensor-core path (v1 uses only the exact
+`attn_batched`-family kernel; `attn_fused`'s tile-level aggregates assume monotonic per-row key
+counts, which an image block breaks); a prompt whose image block spans more than one
+`prefillChunkRows()` chunk (declines to the CPU-prefill+`UploadKV` bridge, unchanged); Metal/WebGPU
+(same reasons as the P9(a) row above).
+
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 
 > **Decode is §B8** (the current anchor). This section keeps what §B8 does not carry: the

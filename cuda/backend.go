@@ -747,6 +747,26 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.prefillReady = ok
 			}
 		}
+		// Gemma 3 image-block prefill attention (decoder.ResidentImagePrefill). Own module,
+		// same isolation reason as attn_block.cu — prefill_batched.ptx is untouched. A load
+		// failure is not fatal: it leaves bAttnImg zero and PrefillImageLast declines, falling
+		// back to the CPU-prefill-then-UploadKV bridge, exactly the pattern bAttnFused64/128
+		// already establishes for L2 below. Depends on r.prefillReady the same way L2 does —
+		// meaningless without the rest of the batched stack it plugs into.
+		if r.prefillReady {
+			if imod, e8 := r.dev.CompileLibrary(attnImgPrefillPTX); e8 == nil {
+				// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
+				// static scan recognizes `&r.<field>` or a direct NewComputePipeline RHS as a bind
+				// site, matching the loadF/loadG idiom L2/L3 already use below.
+				loadImg := func(dst *Pipeline, name string) {
+					if pl, pe := r.dev.NewComputePipeline(imod, name); pe == nil {
+						*dst = pl
+						r.imgPrefillReady = true
+					}
+				}
+				loadImg(&r.bAttnImg, "attn_img_batched")
+			}
+		}
 		// L2 fused prefill attention (docs/task-prefill-gap.md §4 L2). OPT-IN: the fast path becomes
 		// a default only when §3's reference gate passes on CUDA (Phase 3), so until then this loads
 		// only when asked. Own module — prefill_batched.ptx is untouched, the isolation pattern

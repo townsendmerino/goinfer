@@ -1,6 +1,9 @@
 package decoder
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // residentUploadPrefill pushes a CPU-computed prefill's KV (every layer) into the resident GPU
 // cache — the bridge that lets GenerateVL/GenerateQwenVL's bidirectional-image-block CPU
@@ -25,4 +28,30 @@ func (m *Model) residentUploadPrefill(cache *KVCache) error {
 		}
 	}
 	return nil
+}
+
+// residentImagePrefill builds the same spliced embedding rows prefillLogitsVL's CPU path would
+// have built (embedN + the raw-feature splice at [imgPos,imgPos+imgLen), no embed scale — matching
+// HF's masked_scatter) and hands them to the resident backend's ResidentImagePrefill, skipping the
+// CPU prefill and the UploadKV bridge entirely. Any error is a DECLINE, not fatal — the caller
+// falls through to the CPU-prefill+UploadKV bridge (gap 0, docs/multimodal.md).
+func (m *Model) residentImagePrefill(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, imgPos, imgLen int) (logits []float32, gpuPos int, err error) {
+	hidden := m.w.arch.HiddenDim
+	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
+		return nil, 0, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
+	}
+	if len(imageEmbeds) != imgLen*hidden {
+		return nil, 0, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens × %d)", len(imageEmbeds), imgLen*hidden, imgLen, hidden)
+	}
+	h := m.embedN(ids)
+	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale
+	rows := make([][]float32, len(ids))
+	for i := range rows {
+		rows[i] = h[i*hidden : (i+1)*hidden]
+	}
+	logits, err = rip.PrefillImageLast(ctx, rows, 0, imgPos, imgPos+imgLen)
+	if err != nil {
+		return nil, 0, err
+	}
+	return logits, len(ids), nil
 }

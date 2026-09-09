@@ -122,6 +122,47 @@ func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, 
 	return r.prefillChunked(ctx, embeddings, startPos)
 }
 
+// PrefillImageLast satisfies decoder.ResidentImagePrefill: PrefillLast's Gemma-3 twin for a turn
+// whose prompt carries a bidirectional image block [imgStart,imgEnd) (docs/multimodal.md's image
+// path — decoder/kvcache.go's SetImageBlocks/attendHi is the CPU reference this must match
+// bit-for-bit). embeddings already carry the spliced vision features at that range — the same
+// "embed by vector" convention PrefillLast already uses; there is no GPU-side embedding table to
+// bypass. startPos is always 0 today (GenerateVL's image-prefill branch only ever runs on a fresh
+// turn) but is not hardcoded, for symmetry with PrefillLast and to not foreclose a future
+// prefix-reuse combination.
+//
+// v1 REQUIRES the whole prompt (the image block included) to fit in ONE weight-stationary pass —
+// prefillChunked's positional-KV chunking is unverified (likely unsafe) for a bidirectional block
+// split across a chunk boundary — so this never chunks, unlike PrefillLast. Any decline (kernel
+// unavailable, invalid range, or M past the chunk width) wraps errPrefillDeclined; the caller
+// (decoder.GenerateVL) treats that as "fall through to the CPU-prefill+UploadKV bridge, unchanged".
+func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) ([]float32, error) {
+	M := len(embeddings)
+	if M == 0 {
+		return nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	if imgStart < 0 || imgEnd <= imgStart || imgEnd > startPos+M {
+		return nil, fmt.Errorf("cuda prefill: image block [%d,%d) invalid for %d rows at startPos %d: %w",
+			imgStart, imgEnd, M, startPos, errPrefillDeclined)
+	}
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
+	chunk := prefillChunkRows()
+	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
+		chunk = learned
+	}
+	if M > chunk {
+		return nil, fmt.Errorf("cuda prefill: image prefill needs the whole %d-row prompt in one "+
+			"%d-row chunk (no chunked path for a bidirectional block): %w", M, chunk, errPrefillDeclined)
+	}
+	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, imgStart, imgEnd)
+	if err != nil {
+		return nil, err
+	}
+	return outs[len(outs)-1], nil
+}
+
 // prefillChunkRows is the row budget for one batched pass — prefillDefaultChunk unless
 // GOINFER_PREFILL_CHUNK says otherwise. An unparseable or non-positive value is ignored rather than
 // failing the request: this is a tuning knob on a path that has a correct fallback, so a typo in it
@@ -170,7 +211,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		return nil, e
 	}
 	if M <= chunk || len(r.capBTaps) > 0 {
-		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits)
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, 0, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +232,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		if last {
 			tail = tailLastLogits
 		}
-		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail)
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, 0, 0)
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 				chunk = max(chunk/2, prefillMinChunk)
@@ -216,7 +257,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 // final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
 // row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
 func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0)
 	return outs, err
 }
 
@@ -234,7 +275,7 @@ func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]f
 // weaker requirement than PrefillLastN's, and it is what makes batching the head admissible at
 // all. TestPrefillLastNArgmax_matchesPerRow gates it.
 func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
-	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax)
+	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, 0, 0)
 	return ids, err
 }
 
@@ -258,7 +299,7 @@ func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (
 	// cancelled block-spec seed runs to completion. It is not fixed here because the fix is another
 	// interface change on a different seam, and doing it silently as a side effect of this one is
 	// how a surface changes without anyone deciding to. Filed with the P20 cancellation item.
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, 0, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -394,6 +435,57 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int) error {
 			return fmt.Errorf("cuda prefill: layer %d attention at %d attended keys needs %d B of "+
 				"shared memory, past this device's %d B limit — batched prefill has no split-KV "+
 				"path, so this prompt length needs the sequential path: %w",
+				l, maxNWin, attnShmemBytes(maxNWin), singleBlockAttnShmemLimit, errPrefillDeclined)
+		}
+	}
+	return nil
+}
+
+// imgBlockMaxNWin widens a layer's plain-causal shared-memory row count (causalMaxNWin, computed
+// exactly as checkPrefillShmem/prefillCore's launch site already do) for a bidirectional image
+// block [imgStart,imgEnd) — the SAME formula both checkPrefillShmemImg (the decline check) and
+// prefillCore's attn_img_batched launch site (the actual allocation) call, so the two can never
+// drift apart. imgEnd<=imgStart (no block) returns causalMaxNWin unchanged.
+//
+// Worked out from decoder/kvcache.go's attendHi/WindowStart split (see cuda/attn_img_prefill.cu's
+// header for the full derivation): a query row INSIDE the block sees keys
+// [max(pos-window+1,0), imgEnd) when windowed, or [0, imgEnd) when not — so its own window width
+// is imgEnd-max(pos-window+1,0), maximized over pos in [imgStart,imgEnd). If the block starts at
+// or before window-1, some in-block row still has winStart=0 and the max is simply imgEnd; past
+// that, the width is DECREASING in pos, so the max is at pos=imgStart: imgEnd-(imgStart-window+1)
+// = imgLen+window-1. Unwindowed (window<=0): the block never exceeds causalMaxNWin=startPos+M,
+// since imgEnd<=startPos+M is a v1 invariant (the whole prompt, block included, fits one chunk).
+func imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd int) int {
+	if imgEnd <= imgStart {
+		return causalMaxNWin
+	}
+	blockMax := imgEnd
+	if window > 0 {
+		if imgStart > window-1 {
+			blockMax = (imgEnd - imgStart) + window - 1
+		}
+	}
+	return max(causalMaxNWin, blockMax)
+}
+
+// checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentImagePrefill):
+// widens the per-layer shared-memory sizing check for a bidirectional [imgStart,imgEnd) image
+// block using imgBlockMaxNWin — the SAME formula the attn_img_batched launch site in prefillCore
+// uses for the actual allocation, so this can never decline a shape the launch would run, or miss
+// one it would fail. A SEPARATE call from checkPrefillShmem, not a replacement — see prefillCore's
+// call site comment for why.
+func (r *cudaResident) checkPrefillShmemImg(startPos, M, imgStart, imgEnd int) error {
+	for l := range r.layers {
+		Ly := &r.layers[l]
+		causalMaxNWin := startPos + M
+		window := int(Ly.window)
+		if window > 0 && window < causalMaxNWin {
+			causalMaxNWin = window
+		}
+		maxNWin := imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
+		if splitKVRequired(maxNWin) {
+			return fmt.Errorf("cuda prefill: layer %d image-block attention at %d attended keys "+
+				"needs %d B of shared memory, past this device's %d B limit: %w",
 				l, maxNWin, attnShmemBytes(maxNWin), singleBlockAttnShmemLimit, errPrefillDeclined)
 		}
 	}
@@ -551,7 +643,7 @@ const (
 	// [M, hidden] readback are all dead work for a chunk whose logits nobody reads.
 )
 
-func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int) ([][]float32, []int, error) {
+func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, imgStart, imgEnd int) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -564,6 +656,19 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	}
 	if e := r.checkPrefillShmem(startPos, M); e != nil {
 		return nil, nil, e
+	}
+	// Gemma 3 image-block prefill (decoder.ResidentImagePrefill). imgEnd<=imgStart is the "no
+	// block" sentinel every other caller passes (0,0) — see cuda/attn_img_prefill.cu's header
+	// for why checkPrefillShmemImg's widened check is a SEPARATE call from checkPrefillShmem
+	// above rather than a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards statically
+	// pins prefillCore's call to checkPrefillShmem by name, and this must not remove it.
+	if imgEnd > imgStart {
+		if !r.imgPrefillReady {
+			return nil, nil, fmt.Errorf("cuda prefill: image-block batched kernel unavailable: %w", errPrefillDeclined)
+		}
+		if e := r.checkPrefillShmemImg(startPos, M, imgStart, imgEnd); e != nil {
+			return nil, nil, e
+		}
 	}
 	// The fast-prefill floor is judged on the WHOLE prompt, so record it once here rather than
 	// letting each selector see only this chunk's M (prefillChunked passes <=512 rows at a time).
@@ -703,6 +808,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if Ly.window > 0 && int(Ly.window) < maxNWin {
 				maxNWin = int(Ly.window)
 			}
+			if imgEnd > imgStart {
+				// Widened per checkPrefillShmemImg's SAME formula (imgBlockMaxNWin) — the two must
+				// never drift apart, or this allocation under-sizes the launch it is meant to cover.
+				maxNWin = imgBlockMaxNWin(maxNWin, int(Ly.window), imgStart, imgEnd)
+			}
 			t = r.profTic()
 			// L2: the fused kernel when it serves this (hd, M), else attn_batched. Identical
 			// argument list by construction, so the two launches differ only in pipeline, grid and
@@ -721,7 +831,17 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
 			}
 			var attnErr error
-			if fsh, use := r.useAttnFused(hd, M); use {
+			// IMAGE BLOCK FIRST, unconditionally, before useAttnFused is even consulted — attn_fused's
+			// tile-level aggregates assume monotonic per-row nKeys across a 64-row tile, which an image
+			// block breaks (not supported; attn_batched's exact-path twin, attn_img_batched, is used
+			// instead). Checking imgEnd>imgStart after useAttnFused would risk silently routing a >=512
+			// -token image prompt through the incompatible fused kernel instead of declining to it.
+			if imgEnd > imgStart {
+				imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
+					gpu.ArgValue(int32(imgStart)), gpu.ArgValue(int32(imgEnd)))
+				attnErr = r.launch(r.bAttnImg, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, imgArgs...)
+			} else if fsh, use := r.useAttnFused(hd, M); use {
 				fcfg := LaunchConfig{GridX: uint32(r.nH),
 					GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
 					BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}

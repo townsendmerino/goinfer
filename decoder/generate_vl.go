@@ -133,6 +133,44 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 			g.err = err
 			return
 		}
+
+		// Resident image-prefill fast path (finishing gap 0): tried BEFORE the CPU
+		// prefillLogitsVL call below — a first-time (cold) image turn's PREFILL, not only its
+		// decode, runs on the resident GPU when the backend implements ResidentImagePrefill.
+		// Any decline (no capability, prompt too large for one chunk, resident busy) falls
+		// through UNCHANGED to the CPU-prefill+UploadKV bridge; the claim is released before
+		// falling through so the tower/CPU-prefill work below never runs while holding it.
+		if rip, ok := m.resident.(ResidentImagePrefill); ok && m.tryClaimResident() {
+			if logits, gpuPos, ferr := m.residentImagePrefill(ctx, rip, ids, feats, imgPos, imgLen); ferr == nil {
+				g.ImgPrefillResident = true
+				if capper, ok := m.resident.(ResidentCapped); ok {
+					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+						maxTokens = ctxCap - gpuPos
+					}
+				}
+				sampler := NewSampler(sp)
+				sampler.Observe(ids...)
+				committed := false
+				defer func() {
+					if !committed {
+						m.residentForgetIDs()
+					}
+					atomic.StoreInt32(&m.resBusy, 0)
+				}()
+				generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+					l, err := m.resident.Forward(m.embedResident(next), gpuPos)
+					gpuPos++
+					return l, err
+				})
+				if g.err == nil {
+					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+					committed = true
+				}
+				return
+			}
+			atomic.StoreInt32(&m.resBusy, 0) // declined: release before falling through
+		}
+
 		cache := m.NewCache(len(ids) + maxTokens)
 		logits, err := m.prefillLogitsVL(ctx, ids, feats, imgPos, imgLen, cache)
 		if err != nil {

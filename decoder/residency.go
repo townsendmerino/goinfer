@@ -109,6 +109,29 @@ type Prefiller interface {
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 }
 
+// ResidentImagePrefill is an OPTIONAL Prefiller extension: bidirectional attention over a
+// contiguous [imgStart,imgEnd) sub-range (Gemma 3's image-block mask — decoder/kvcache.go's
+// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward
+// (decoder/forwardn.go). GenerateVL's cold (first-time-seeing-this-image) path tries this BEFORE
+// paying for the CPU prefill; without it — or on any decline from it — that turn falls through
+// unchanged to the CPU-prefill-then-UploadKV bridge (gap 0, docs/multimodal.md).
+//
+// embeddings are the ALREADY-SPLICED per-position vectors: the ordinary text embedding lookup
+// with the projected vision features overwritten at [imgStart,imgEnd) — exactly what
+// prefillLogitsVL already builds (embedN + a raw-feature copy, no embed scale, matching HF's
+// masked_scatter). This mirrors Prefiller's existing embed-by-vector convention, so no GPU-side
+// embedding table or embedding kernel is needed.
+//
+// v1 (CUDA only) REQUIRES the whole prompt — the image block included — to fit in ONE
+// weight-stationary pass; a longer prompt, or any other decline (kernel unavailable, invalid
+// range), returns an error rather than chunking, because a bidirectional block split across a
+// chunk boundary is unverified. Backends may skip implementing it (Metal has no UploadKV either;
+// WebGPU declines Gemma 3 residency on some boxes for an unrelated reason) — GenerateVL's
+// image-prefill fast path then never engages, same as any other optional resident capability gap.
+type ResidentImagePrefill interface {
+	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
+}
+
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
 // prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
 // Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent

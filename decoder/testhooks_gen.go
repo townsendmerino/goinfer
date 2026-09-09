@@ -7,6 +7,7 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -38,6 +39,14 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // GPU ForwardN-vs-Forward parity gate. Test-only seam; production code routes through
 // Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
+
+// ResidentImagePrefillForTest wraps residentImagePrefill (decoder/generate_vl_resident.go) — the
+// exact primitive GenerateVL's resident image-prefill fast path calls internally — so a
+// real-checkpoint gate (cuda/) can compare its logits directly against PrefillLogitsVLForTest's
+// CPU reference, matched precision, on the SAME model instance and the SAME real image.
+func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
+	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, imgPos, imgLen)
+}
 
 // Gemma4MoEExpertForTest computes ONE gemma4 MoE expert's output on a caller-supplied input xe
 // ([hidden]) — the gelu-tanh GeGLU expert function edown = Down · (geluTanh(gate)·up), gate‖up =

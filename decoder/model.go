@@ -1353,8 +1353,16 @@ type Generation struct {
 	// image (or everything before it) was NOT fully reused, whether because nothing matched
 	// or because a partial match stopped short of the image block's own start.
 	PrefillReused int
-	Spec          *SpecStats
-	OptFwd        *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
+	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (the
+	// bidirectional image-block CUDA kernel, decoder.ResidentImagePrefill) actually ran this
+	// turn's PREFILL on the GPU — false means the turn fell through to the CPU-prefill+UploadKV
+	// bridge (gap 0), whether because no resident implements the capability, the prompt was too
+	// long for one chunk, or any other decline. Diagnostic, same reasoning as PrefillReused: a
+	// real-checkpoint gate asserting end-to-end correctness needs this to confirm the fast path
+	// actually fired rather than passing vacuously via the (already-correct) fallback.
+	ImgPrefillResident bool
+	Spec               *SpecStats
+	OptFwd             *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
 	// Logprobs holds one entry per emitted token (in order) when
 	// SamplingParams.Logprobs was set — the chosen token's log-probability and
 	// any requested top alternatives. Complete once the stream has closed.

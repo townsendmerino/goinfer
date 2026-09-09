@@ -128,6 +128,29 @@ var argmaxPTX []byte
 //go:embed testdata/attn_block.ptx
 var attnBlockPTX []byte
 
+// attnImgPrefillPTX: attn_img_batched — Gemma 3's image-block bidirectional prefill attention
+// (decoder.ResidentImagePrefill / cuda.PrefillImageLast). A verbatim copy of
+// prefill_batched.cu's attn_batched, except a query row whose OWN position lies inside a
+// caller-supplied [imgStart,imgEnd) range sees the whole block instead of only its causal
+// prefix — text before and after the block stays exactly causal (NOT attn_block_full's uniform
+// widening, which is unconditional for every row). Its own module for the same isolation reason
+// argmaxPTX/routerF32PTX/attnBlockPTX state: adding a kernel to prefill_batched.cu would
+// regenerate that PTX and risk shifting codegen for kernels every batched-prefill parity gate
+// rests on. Verified at build time: prefill_batched.ptx and glue.ptx are byte-unchanged.
+//
+// IMPORTANT (see cuda/attn_img_prefill.cu's own header for the full reasoning): the kernel's
+// sliding-window start is derived from the row's plain CAUSAL key count, never from the
+// image-widened one — decoupled on purpose, matching decoder/kvcache.go's WindowStart/attendHi
+// split, which the CPU reference this kernel must match bit-for-bit also keeps decoupled. A
+// future edit that "simplifies" this back to attn_batched's coupled formula would silently
+// under-size the shared-memory window for a windowed layer whenever an image block starts more
+// than one window-length into the sequence — a shared-memory out-of-bounds write, not a clean
+// wrong answer, and invisible on a real fixture whose image sits near the start of the prompt.
+// See cuda/attn_img_prefill.cu.
+//
+//go:embed testdata/attn_img_prefill.ptx
+var attnImgPrefillPTX []byte
+
 // attnFusedPTX: attn_fused_hd64 / attn_fused_hd128 — the L2 FlashAttention-style fused prefill
 // attention (docs/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
 // attn_block.cu records: adding a kernel to prefill_batched.cu regenerates that PTX and risks

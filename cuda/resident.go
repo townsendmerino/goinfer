@@ -450,6 +450,8 @@ type cudaResident struct {
 	splitkvAttn              bool     // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
 	skMinKeys                int      // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
 	prefillReady             bool     // batched kernels loaded; PrefillLast usable
+	bAttnImg                 Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
+	imgPrefillReady          bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
 	// prefillChunkCap is prefillChunked's LEARNED row budget: 0 until a pass OOMs, then the width
 	// that worked. It exists so a card that cannot hold the default chunk is discovered ONCE rather
 	// than on every prompt. Repeatedly driving the context to CUDA_ERROR_OUT_OF_MEMORY is not merely
@@ -1400,7 +1402,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	if r.prefillReady && r.dnet == nil {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
-		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits); err == nil {
+		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0); err == nil {
 			return outs, nil
 		} else if !errors.Is(err, errPrefillDeclined) {
 			return nil, err
