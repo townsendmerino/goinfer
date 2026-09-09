@@ -1681,3 +1681,59 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **Not done, left open**: Metal's `-ctx` gap (above, its own separately-scoped fix); `-kv` for
     CUDA/Metal (not applicable — WebGPU-only feature); the real `--fit=off` flag; CPU's placement
     piece; the drafter-aware companion-allocation ctx sizing.
+
+- 2026-09-09 — Metal's `-ctx` gap (named above as a separately-scoped fix) DONE, at the user's
+  direction after "continue." An explicit `-ctx` now actually reaches the Metal resident path —
+  previously silently ignored entirely, always using the bare 4096 constant regardless of what
+  was requested.
+  - **`metalCtxCap` (const) renamed `metalCtxCapMax`** (`metal/model.go`) — the value did not
+    change, but its MEANING did: it is now documented as the hard kernel ceiling a resolved value
+    can never exceed (the attention kernel's fixed-size `threadgroup float sc[4096]` score
+    buffer), not "the resident context" itself. `resident` (the per-build struct) gained a new
+    `ctxCap int` field holding the actually-resolved value for THIS build — every call site that
+    used to read the bare constant (`residentKVBytes`'s pre-build estimate, the two KV-buffer-
+    sizing lines in `buildResident`, `checkCap`, `ContextCap()`, `PrefillLast`'s bounds check, plus
+    a benchmark test and two comment-only references) now reads the resolved field or a
+    `resolveMetalCtxCap(m)` call instead. `TestMetalCtxCapWithinKernelBound`'s invariant (the
+    constant must never exceed the kernel's real score-buffer size) is UNCHANGED in substance,
+    just renamed along with the constant.
+  - **New `resolveMetalCtxCap(m) (int, error)`** (`metal/model.go`), deliberately shaped like
+    CUDA's `resolveCtxCap`/`resolveCtxCapFit` but NOT the same policy: CUDA raises an unpinned
+    default toward available VRAM because `cudaCtxCapDefault` is an arbitrary, conservative
+    choice; `metalCtxCapMax` is NOT arbitrary — it is the kernel ceiling — so there is no "raise it
+    when there's room" story for Metal at all. An unpinned load still always gets exactly
+    `metalCtxCapMax`, byte-for-byte the historical behavior. What changes: an EXPLICIT request in
+    `(0, metalCtxCapMax]` is now honored (clamped further to the model's own window, same as
+    CUDA), and a request ABOVE `metalCtxCapMax` is REFUSED with the numbers — G6's own principle
+    ("honoured or refused", never silently substituted) — rather than the previous silent ignore.
+  - **The refusal is a NAMED error, not folded into the generic decline**, mirroring CUDA's
+    `errKVWontFit` precedent: `metalBackend.BuildResident` checks `resolveMetalCtxCap` explicitly,
+    before the memory guard, and propagates its error directly rather than letting it fall into
+    the same `ok=false, err=nil` swallow every unsupported-shape decline uses. An operator's
+    explicit request that cannot be honoured gets a specific, propagated reason (and would trip
+    `--require-backend`'s strict-mode exit), not an opaque "declined" indistinguishable from "this
+    arch just doesn't fit here."
+  - **A nil-safety subtlety, caught before it broke an existing test**: two pre-existing tests
+    (`TestMetalResidentCheckCap`, `TestMetalCtxCapWithinKernelBound`) deliberately construct a
+    zero-value `&metalResident{}` (`r.r == nil`) specifically so `checkCap`/`ContextCap` can be
+    tested as pure logic with no Metal device. Making those methods read `a.r.ctxCap` directly
+    would have paniced on that nil receiver. Added a `ctxCap()` accessor with an explicit nil/zero
+    fallback to `metalCtxCapMax` instead of inlining the field read at each of the three call
+    sites, so this precedent-preserving fallback lives in exactly one place.
+  - **Verified, including the POSITIVE case, not just the refusal**: `TestResolveMetalCtxCap`
+    (new, `metal/resident_cap_test.go`, `testdata/llama-tiny` — tracked, runs in CI
+    unconditionally) covers all four branches (unset, honored-as-requested, clamped-to-model-
+    window, refused-above-ceiling) as pure logic, no device needed.
+    `TestMetalBuildResident_explicitCtxTooLargeRefusesNotDecline` confirms the wiring one level up
+    (a named error, not a swallowed decline) on real Metal hardware.
+    `TestMetalBuildResident_explicitCtxHonoured` is the one that actually PROVES the fix works, not
+    just that it doesn't crash: builds a real resident with an explicit smaller `-ctx` (32,
+    against llama-tiny's 128-position window and the 4096 ceiling), confirms `ContextCap()`
+    reflects 32 (not 4096), and runs a REAL `Forward` pass at that smaller capacity, asserting
+    finite, non-degenerate logits — "the number changed" and "decode still works at that number"
+    are two different claims, and both are checked.
+  - Full regression: `metal` 117 pass/0 fail/51 skip (114→117: three new tests). `gofmt -l`,
+    `go vet`, staticcheck all clean.
+  - **Not done, left open**: the real `--fit=off` flag; CPU's placement piece; the drafter-aware
+    companion-allocation ctx sizing. With this fix, G6 and Metal's own Phase 2 pieces are now both
+    complete for CUDA and Metal alike (WebGPU stays out of scope, per Phase 3).

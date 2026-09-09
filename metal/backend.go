@@ -97,6 +97,18 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	// pressure, so "available" reports what survived rather than what can be asked for; an
 	// RSS-keyed ceiling once reported LESS memory at a known failure point than at baseline,
 	// which is a guard that inverts exactly when it is needed.
+	// G6 (docs/task-gpu-paths-2026-09.md — "honoured or refused with numbers"): an explicit -ctx
+	// above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable
+	// budget) and must be a NAMED refusal, not folded into the generic "BuildResident declined"
+	// swallow below (buildResident itself also calls resolveMetalCtxCap and would hit the exact
+	// same error, but by then it's just another opaque build failure) — mirrors CUDA's own
+	// errKVWontFit precedent (cuda/backend.go): an operator's explicit request that cannot be
+	// honoured gets a specific, propagated error naming the numbers, not a silent CPU fallback
+	// indistinguishable from "this arch doesn't fit here at all".
+	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
+		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
+		return nil, false, cerr
+	}
 	if !residentFitsMemory(m) {
 		return nil, false, nil
 	}
@@ -157,7 +169,7 @@ func metalMoESlotsFromEnv(m *decoder.Model) int {
 	return n
 }
 
-// residentKVBytes is the resident KV cache's footprint: metalCtxCap positions × kvDim × 2 bytes
+// residentKVBytes is the resident KV cache's footprint: the resolved ctx cap × kvDim × 2 bytes
 // (f16 KV — the only path this backend ships; the f32 KV kernels exist but are compiled out,
 // metal/model.go's kvF32 hardcoded false since the Gemma "crater" traced to BOS K/V, not
 // precision) × 2 buffers (K and V), summed per layer since a per-layer geometry family (Gemma 4)
@@ -166,13 +178,24 @@ func metalMoESlotsFromEnv(m *decoder.Model) int {
 // the many small per-model buffers (r.mq/r.gu/r.logits/etc, metal/model.go) are each at most a
 // few hundred KB — elementwise or vocab/hidden-sized — and round to nothing beside it, the same
 // exemption ResidentWeightBytes' own doc comment already gives norms/biases.
+//
+// Runs BEFORE buildResident (this is the pre-build guard), so there is no real *resident yet to
+// read ctxCap off of — resolveMetalCtxCap(m) is called independently here. An error (an explicit
+// ctx above metalCtxCapMax) is NOT this function's problem to report: residentFitsMemory's caller
+// (metalBackend.BuildResident) checks that specific case on its own, earlier and more clearly, so
+// this just falls back to metalCtxCapMax on error — a safe over-estimate for a guard whose whole
+// job is "don't under-count", never the thing that actually explains the refusal to the user.
 func residentKVBytes(m *decoder.Model) int64 {
+	ctxCap, err := resolveMetalCtxCap(m)
+	if err != nil {
+		ctxCap = metalCtxCapMax
+	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	const bytesPerElem = 2 // f16; see comment above
 	var total int64
 	for l := 0; l < nLayers; l++ {
 		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
-		total += 2 * metalCtxCap * kvDim * bytesPerElem // ×2 for K and V
+		total += 2 * int64(ctxCap) * kvDim * bytesPerElem // ×2 for K and V
 	}
 	return total
 }
@@ -242,16 +265,30 @@ type metalResident struct {
 	hidden int
 }
 
+// ctxCap is this resident's resolved KV capacity — a.r.ctxCap when a real *resident exists, else
+// metalCtxCapMax. The fallback matters for TestMetalResidentCheckCap/TestMetalCtxCapWithinKernelBound
+// (metal/resident_cap_test.go), which deliberately construct a zero-value &metalResident{} (r ==
+// nil) to test checkCap/ContextCap as pure logic with no Metal device — those tests predate G6's
+// per-build ctxCap and are meant to keep working unmodified against "the historical constant"
+// semantics, so a nil/zero r reads as "no explicit request was ever resolved here", not as 0.
+func (a *metalResident) ctxCap() int {
+	if a.r == nil || a.r.ctxCap == 0 {
+		return metalCtxCapMax
+	}
+	return a.r.ctxCap
+}
+
 // checkCap guards the resident KV allocation (C3). Every layer's cache is r.kc[l]/r.vc[l], sized
-// metalCtxCap*kvDim, so kv_store writes absolute position p at kc[p*kvDim ...]; valid positions
-// are [0, metalCtxCap). Writing past it is an out-of-bounds device write — on Metal's UNIFIED
+// ctxCap()*kvDim, so kv_store writes absolute position p at kc[p*kvDim ...]; valid positions
+// are [0, ctxCap()). Writing past it is an out-of-bounds device write — on Metal's UNIFIED
 // memory that silently corrupts adjacent MTLBuffers (other models' resident weights), and once
 // nKeys > 4096 the attention kernel's `threadgroup float sc[4096]` overflows too. The decode loop
 // increments pos unbounded (a ≤cap prompt + a large max_tokens is enough), so refuse here; the
 // decode loop surfaces the error (model.go) and the caller can fall back to the staged path.
 func (a *metalResident) checkCap(pos, n int) error {
-	if pos < 0 || pos+n > metalCtxCap {
-		return fmt.Errorf("metal: KV position %d(+%d) exceeds resident context cap %d — use the staged path for longer contexts", pos, n, metalCtxCap)
+	c := a.ctxCap()
+	if pos < 0 || pos+n > c {
+		return fmt.Errorf("metal: KV position %d(+%d) exceeds resident context cap %d — use the staged path for longer contexts", pos, n, c)
 	}
 	return nil
 }
@@ -259,7 +296,7 @@ func (a *metalResident) checkCap(pos, n int) error {
 // ContextCap is the resident KV capacity in positions. Implementing it makes metalResident satisfy
 // decoder.ResidentCapped, so generateInto clamps maxTokens to the cap UP FRONT (stops cleanly at
 // the cap instead of erroring mid-decode). Queryable so callers clamp rather than discover mid-run.
-func (a *metalResident) ContextCap() int { return metalCtxCap }
+func (a *metalResident) ContextCap() int { return a.ctxCap() }
 
 // Forward runs one token given its embedding[H] at absolute position pos, returning logits[V].
 // The returned slice is reused across calls (the decode loop consumes it before the next call).
@@ -326,8 +363,8 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds — on
 	// UMA that silently corrupts adjacent buffers (audit R-27). Unreachable today (the decoder always
 	// passes 0) but cheap to guard.
-	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > metalCtxCap {
-		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, metalCtxCap)
+	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap() {
+		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, a.ctxCap())
 	}
 	// ensurePrefill's compile panic and the ~24 per-call MustBuf OOM panics fire HERE, at request
 	// time, with no recover of their own (buildResident's is build-scoped). A transient OOM would kill

@@ -602,7 +602,7 @@ kernel void kv_store_f32(device const float* k[[buffer(0)]], device const float*
 }
 // One THREADGROUP (128 threads) per query head — vs the old 1-thread-per-head (12 threads
 // total = 68% of decode time from underutilization). Scores parallel over keys, softmax via
-// threadgroup reduction, output parallel over head dims. nKeys ≤ metalCtxCap (4096).
+// threadgroup reduction, output parallel over head dims. nKeys ≤ metalCtxCapMax (4096).
 // window>0 (Mistral) restricts the query to the last window keys: keys[winStart..nKeys),
 // winStart = max(0, nKeys-window). window==0 is full causal. Derived from nKeys in-kernel, so
 // no per-token uniform. (Mistral is all-local; a hypothetical global layer binds window=0.)

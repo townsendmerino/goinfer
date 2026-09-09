@@ -15,7 +15,7 @@ import (
 // was CUDA-only (§B6/§B7) and pre-P6a on Metal (§B3 was short-prompt). Anchored on qwen2.5-coder-1.5b
 // with the CURRENT binary: builds one resident, warms the KV incrementally, and measures steady
 // greedy decode (ForwardArgmax — the on-device-argmax path) at each depth. Depth axis matches the
-// CUDA curve {128,512,2048,4000}; 4000 is near metalCtxCap=4096, so the top cell's measurement is
+// CUDA curve {128,512,2048,4000}; 4000 is near metalCtxCapMax=4096, so the top cell's measurement is
 // clamped to stay inside the resident KV.
 //
 // NOTE ON SPLIT-KV: split-KV attention was never enabled on Metal (built, measured a regression,
@@ -57,17 +57,17 @@ func TestZZ_metalDepthBench(t *testing.T) {
 	for _, d := range []int{128, 512, 2048, 4000} {
 		warmTo(d)
 		// Measure steady decode: best (min) of several fixed-size batches. Clamp the batch so pos
-		// never reaches metalCtxCap (the 4000 cell has only ~96 positions of headroom).
+		// never reaches r.ctxCap (the 4000 cell has only ~96 positions of headroom).
 		iters, batches := 50, 5
-		if room := (metalCtxCap - 8 - d) / batches; room < iters {
+		if room := (r.ctxCap - 8 - d) / batches; room < iters {
 			iters = room
 		}
 		if iters < 5 {
 			iters = 5
-			batches = (metalCtxCap - 8 - d) / iters
+			batches = (r.ctxCap - 8 - d) / iters
 		}
 		best := time.Hour
-		for b := 0; b < batches && pos+iters < metalCtxCap; b++ {
+		for b := 0; b < batches && pos+iters < r.ctxCap; b++ {
 			t0 := time.Now()
 			for i := 0; i < iters; i++ {
 				r.ForwardArgmax(tok, pos)

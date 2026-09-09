@@ -17,16 +17,59 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-const metalCtxCap = 4096 // resident KV positions (spike)
+// metalCtxCapMax is the HARD ceiling on resident KV positions — not a conservative default the
+// way CUDA's cudaCtxCapDefault is (cuda/resident.go), a real kernel-level limit: the attention
+// kernel's static score buffer (`threadgroup float sc[4096]` in kernels.go, attnScoreKeyBound
+// below) holds one score per key, so the kernel is only correct for nKeys ≤ this.
+// TestMetalCtxCapWithinKernelBound asserts metalCtxCapMax ≤ attnScoreKeyBound, and
+// TestAttention_ShippedKernelShapes measures correctness at the exact boundary (nKeys=4096).
+// Raising this past attnScoreKeyBound without resizing sc[] is a silent OOB threadgroup write; on
+// Metal's unified memory that corrupts adjacent buffers. Named …Max (not …Cap, formerly
+// metalCtxCap) since Phase 2 (docs/task-gpu-paths-2026-09.md, G6) gave resident.ctxCap its own
+// per-build, request-aware VALUE — this constant is now the ceiling that value can never exceed,
+// not the value itself.
+const metalCtxCapMax = 4096
 
 // attnScoreKeyBound is the attention kernel's static score-buffer capacity: the
 // `threadgroup float sc[4096]` in kernels.go holds one score per key, so the kernel
-// is only correct for nKeys ≤ this. metalCtxCap MUST NOT exceed it (checkCap refuses
-// nKeys > metalCtxCap, so the cap is what keeps the kernel in-bounds) — TestMetalCtxCapWithinKernelBound
-// asserts the invariant, and TestAttention_ShippedKernelShapes measures correctness at the exact
-// boundary (nKeys=4096). Bumping metalCtxCap past this without resizing sc[] is a silent OOB
-// threadgroup write; on Metal's unified memory that corrupts adjacent buffers.
+// is only correct for nKeys ≤ this. metalCtxCapMax MUST NOT exceed it (checkCap refuses
+// nKeys > resident.ctxCap ≤ metalCtxCapMax, so the cap is what keeps the kernel in-bounds) —
+// TestMetalCtxCapWithinKernelBound asserts the invariant, and TestAttention_ShippedKernelShapes
+// measures correctness at the exact boundary (nKeys=4096). Bumping metalCtxCapMax past this
+// without resizing sc[] is a silent OOB threadgroup write; on Metal's unified memory that
+// corrupts adjacent buffers.
 const attnScoreKeyBound = 4096
+
+// resolveMetalCtxCap turns a request into the effective resident KV capacity, mirroring
+// cuda/resident.go's resolveCtxCap[Fit] in SHAPE but not in policy: CUDA raises an unpinned
+// default toward available VRAM because cudaCtxCapDefault is a conservative, arbitrary choice.
+// metalCtxCapMax is NOT arbitrary — it is the kernel ceiling — so there is no "raise it when
+// there's room" story here; an unpinned load always gets exactly metalCtxCapMax, unchanged from
+// this backend's historical behavior.
+//
+// What WAS broken (found scoping G6, docs/task-gpu-paths-2026-09.md): this backend never read
+// decoder.Model.ResidentContextRequest() at all — an explicit -ctx was silently ignored on every
+// load, always using metalCtxCapMax regardless of what was asked for. This closes that: a request
+// in (0, metalCtxCapMax] is honored (optionally clamped further to the model's own window, same
+// as CUDA does); a request ABOVE metalCtxCapMax is REFUSED with the numbers (G6: "honoured or
+// refused", never silently substituted) rather than silently clamped down, since Metal genuinely
+// cannot run it — the caller (metal/backend.go's BuildResident) turns this into a clean decline.
+func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
+	req := m.ResidentContextRequest()
+	if req <= 0 {
+		return metalCtxCapMax, nil
+	}
+	if req > metalCtxCapMax {
+		return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "+
+			"ceiling of %d (a fixed-size kernel score buffer, not a tunable default) — use the "+
+			"staged/CPU path for a longer context, or request %d or fewer",
+			req, metalCtxCapMax, metalCtxCapMax)
+	}
+	if modelCtx := m.Config().MaxPositions; modelCtx > 0 && req > modelCtx {
+		return modelCtx, nil // clamp to the model's own window, same as CUDA's resolveCtxCap
+	}
+	return req, nil
+}
 
 // Threadgroup widths for the kernels that contain a CROSS-THREAD FLOAT SUM reduction (a
 // `red[tid]+=red[tid+st]` tree): rmsnorm sum-of-squares, softmax denominator, qk-norm.
@@ -167,7 +210,12 @@ type resident struct {
 	// hd/nKV/kvDim/half and their uniform buffers — lives on residLayer.geom (see geom.go);
 	// it was REMOVED from here so a launch site cannot bind the uniform shape by mistake.
 	H, nL, nH, I, V int
-	finalSoftcap    float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in finalizeLogits (FeatFinalLogitSoftcap).
+	// ctxCap is the resolved resident KV capacity in positions — resolveMetalCtxCap(m), set once
+	// in buildResident. Every r.kc[l]/r.vc[l] is sized ctxCap*kvDim; checkCap (metal/backend.go)
+	// guards writes against it. Always <= metalCtxCapMax (the kernel's hard ceiling); may be
+	// SMALLER when an explicit -ctx requested less (G6, docs/task-gpu-paths-2026-09.md).
+	ctxCap       int
+	finalSoftcap float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in finalizeLogits (FeatFinalLogitSoftcap).
 	// embedScale is Gemma's √hidden token-embedding multiplier (FeatEmbedScale); 0/1 ⇒ none.
 	// Applied by the id-taking entry points (Forward / ForwardArgmax) right after the embedding
 	// lookup — the ONE place they differ from ForwardEmb, whose caller has already scaled
@@ -491,6 +539,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{d: d, H: H, nL: nL, nH: nH, I: I, V: V}
+	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
+		return nil, err
+	}
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
 	r.pGemvResid = pipe("gemv_w4a8_resid")
 	r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("gemv_w4a8_sa_resid")
@@ -826,9 +877,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				}
 				L.qkvBias = NewBufferFloats(d, append(append(append([]float32{}, qb...), kb...), vb...))
 			}
-			kvBytes := metalCtxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
+			kvBytes := r.ctxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
 			if r.kvF32 {
-				kvBytes = metalCtxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
+				kvBytes = r.ctxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
 			}
 			r.kc[l] = byteBuf(d, kvBytes)
 			r.vc[l] = byteBuf(d, kvBytes)
