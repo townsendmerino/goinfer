@@ -737,6 +737,18 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
 		return m
 	}
+	if a := m.w.arch; a.nemotron != nil && a.MoE != nil {
+		// G7 (docs/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
+		// kind (MoE FFN) has no GPU resident implementation on any backend yet —
+		// decodeRunnerEligible's own nemotron branch already declines this (`a.MoE == nil`), but
+		// that predicate returns a bare bool, so the generic "arch is not eligible" message below
+		// would otherwise hide WHY. Checked here, ahead of the generic call, so DecodePath/
+		// `serve check` name the actual gap instead of a family-agnostic decline — the hardware
+		// matrix's own row is generated from a DENSE representative config and never exercises
+		// this case, so this string is often the only place a user sees it stated.
+		m.resDecline = "Nemotron-H MoE FFN block has no GPU resident implementation on any backend (dense Nemotron-H/Nano-9B-v2 is unaffected)"
+		return m
+	}
 	if !m.DecodeRunnerEligible() {
 		m.resDecline = "arch is not eligible for the resident decode runner"
 		return m

@@ -6,6 +6,15 @@ RTX 2070 SUPER (8 GB). Status: **COMPLETE (P0–P7).** Headline: **DEFAULT-on at
 perplexity 1.677 ≈ f32 1.695; the ~7.5% disagreements are 100% benign (near-tied #2 picks, zero
 confident errors). NOT granite's wall — the dense/no-MoE hybrid quantizes cleanly.**
 
+> **Scope: this page is about the DENSE Nemotron-H variant only** (`Nemotron-Nano-9B-v2` and
+> similar). Nemotron 3 Nano (30B-A3B) and Nemotron 3.5 Lightning (30B-A3B) share the
+> `nemotron_h` family name but add a FOURTH per-layer block kind (MoE FFN) that nothing on this
+> page's port touches — no GPU backend implements a resident builder for it, so those two
+> real, downloadable checkpoints are CPU-only on every backend (G7,
+> [`task-gpu-paths-2026-09.md`](task-gpu-paths-2026-09.md)). `decoder.Model.DecodePath()` names
+> this specific gap for a loaded MoE checkpoint rather than the generic decline this page's own
+> dense port would otherwise imply applies broadly to "Nemotron".
+
 ## P1 — architecture: DENSE squared-ReLU hybrid ✓ (no MoE)
 
 Confirmed from `decoder/forward_nemotron.go` + `decoder/arch.go`. Nemotron-H is **single-op-per-block**:

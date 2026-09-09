@@ -292,6 +292,14 @@ own "30B-A3B class on the Linux box" rule, matching where Nano's own T3 ran. **N
 for F2**: nothing loadable changed (no registry key, no adapter code, no tensor schema) — only
 test/asset infrastructure, which is not a capability change.
 
+**GPU residency: CPU-only on every backend, same as Nano.** The MoE block pattern this section's
+whole finding rests on (23 mamba / 23 moe / 6 attention, byte-identical to Nano's) is exactly the
+per-layer kind no GPU backend's resident builder implements — `decoder/residency.go`'s
+`DecodeRunnerEligible` declines any Nemotron-H arch with `MoE != nil` before a backend is ever
+asked to build a resident runner. This section verifies CPU-path correctness only; the
+`docs/hardware-matrix.md` "✅ resident" row for Nemotron-H reflects a DENSE representative config
+and does not apply to this checkpoint (G7, [`task-gpu-paths-2026-09.md`](task-gpu-paths-2026-09.md)).
+
 ## F3 · Granite 4.2 (dense, 3B/8B/30B) — DONE at T1 (mac, 2026-09-06)
 
 ### Phase 0 (all three released sizes fetched and diffed)

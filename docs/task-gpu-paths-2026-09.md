@@ -1026,3 +1026,31 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     (`~/mycode/goinfer-g3-cuda`) rather than cleaned up immediately, in case the user wants to
     inspect it before it's torn down; the regenerated `glue.ptx` and the CUDA-side new files were
     copied back to this Mac's checkout so everything lands in one place to commit from here.
+  - **All six commits above landed** (65781ec decoder plumbing, 7468e82 G10, e13cc00 Metal,
+    2048ca2 WebGPU, 23c46b1 glue.ptx fix, 0547f60 CUDA), split by `git add -p` where a single
+    file (`decoder/residency.go`, `metal/backend.go`) mixed G3 and G10 hunks — each commit
+    independently build+test-verified in isolation via `git stash --keep-index -u` before
+    committing, not just at the end.
+
+- 2026-09-08 — G7 part 1 DONE (the trivial doc-honesty half; part 2 — actually implementing the
+  MoE FFN block case on WebGPU — not started, needs a real Nano/Lightning checkpoint to validate
+  against).
+  - `decoder/residency.go`'s `withResidency()` now sets a SPECIFIC decline reason
+    (`"Nemotron-H MoE FFN block has no GPU resident implementation on any backend..."`) for
+    `a.nemotron != nil && a.MoE != nil`, ahead of the generic `DecodeRunnerEligible` call whose
+    bare-bool return was swallowing WHY. This reaches `DecodePath()`/`serve check` directly (the
+    webgpu-staged branch reads `m.resDecline` verbatim; cuda/metal fold it into
+    `declinedToCPUReason`), so a user loading either real checkpoint now sees the actual gap
+    instead of the family-agnostic "arch is not eligible for the resident decode runner".
+  - `docs/hardware-matrix.md`'s generator (`decoder/hardware_matrix_test.go`) gets a new curated
+    footnote (the existing "load-time fit facts the taxonomy can't know" section already had two;
+    this is the third) explaining the Nemotron-H row is generated from a DENSE representative
+    config and does not apply to the two real MoE checkpoints — regenerated via `-update`,
+    `TestHardwareMatrix_fresh` passes.
+  - `docs/nemotron-resident.md` (scoped entirely to the dense port, but titled generically enough
+    a reader could miss that) gets an explicit scope callout up top. `docs/task-families-2026-09.md`'s
+    F2 (Lightning) section — which verified CPU-path config-identity against Nano in detail but
+    never once mentioned GPU residency — gets a closing note stating CPU-only-on-every-backend
+    directly, same as Nano's own already-archived note in `docs/completed/nemotron3nano-t3.md`.
+  - Full regression: `decoder` 416 pass/1 fail (`TestOlmo3_forwardParity`, pre-existing)/134 skip.
+    `gofmt -l` and `go vet` clean.

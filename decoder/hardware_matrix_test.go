@@ -109,6 +109,12 @@ func renderHardwareMD(rows []hwRow) []byte {
 	b.WriteString("  residency is unified-memory-bound.\n")
 	b.WriteString("- **Precision policy:** Nemotron-H resident is int4-only by default (int8 is opt-in via\n")
 	b.WriteString("  `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability.\n")
+	b.WriteString("- **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable\n")
+	b.WriteString("  Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE\n")
+	b.WriteString("  FFN) no GPU backend's resident builder implements yet — both are CPU-only on every\n")
+	b.WriteString("  backend despite this row's ✅ (G7, docs/task-gpu-paths-2026-09.md). `DecodePath()`\n")
+	b.WriteString("  names this specific gap for a loaded model; this table cannot, since its rows are one\n")
+	b.WriteString("  per architecture, not per checkpoint.\n")
 	return []byte(b.String())
 }
 
