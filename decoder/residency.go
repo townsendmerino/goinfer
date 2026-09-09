@@ -109,6 +109,63 @@ type ResidentHiddenLast interface {
 	HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) (hidden []float32, err error)
 }
 
+// ResidentAdapterProj is one projection's low-rank compute-time LoRA delta (G3,
+// docs/task-gpu-paths-2026-09.md) — the exported twin of the package-private loraDelta, since a
+// resident backend lives in another module and cannot see unexported fields. Same layout and
+// semantics as applyLoRA's CPU reference (decoder/lora.go): y[o] += Scale · Σ_k B[o,k]·(A·x)[k].
+type ResidentAdapterProj struct {
+	A, B       []float32 // lora_A [R,In] row-major, lora_B [Out,R] row-major
+	R, In, Out int
+	Scale      float32
+}
+
+// ResidentAdapterLayer is one transformer layer's per-projection deltas; a nil field is a
+// projection this adapter does not target — matching loraLayerDelta's own "nil ⇒ no-op"
+// convention exactly, so a backend's dispatch loop is a direct nil-check per projection.
+type ResidentAdapterLayer struct {
+	Q, K, V, O, Gate, Up, Down *ResidentAdapterProj
+}
+
+// ResidentAdapter is an OPTIONAL ResidentForward extension: a backend that can apply a
+// compute-time LoRA delta on the resident decode path. SetAdapter(nil) clears a previously-bound
+// adapter. generateInto holds the SAME resBusy exclusive-access window a Forward/ForwardN call
+// itself requires for the WHOLE bind→forward→clear sequence (resident access is already
+// serialized — see resBusy's own comment), so an implementation needs no locking of its own, and
+// two adapters sharing one base model's resident runner (the "N adapters, one shared resident"
+// architecture internal/serveapp/main.go documents) never race: only one generation's bind is
+// ever live at a time.
+//
+// A backend that does NOT implement this interface simply isn't type-asserted to it —
+// generateInto declines to the CPU/staged path exactly like any other missing resident
+// capability (compare ResidentHiddenLast's own fallback in decoder/embed.go), never silently
+// running an adapter session's tokens through the base model's resident weights.
+type ResidentAdapter interface {
+	SetAdapter(layers []ResidentAdapterLayer) error
+}
+
+// residentAdapterProj converts one internal loraDelta to its exported ResidentAdapterProj twin
+// (nil ⇒ nil, matching loraLayerDelta's own untargeted-projection convention).
+func residentAdapterProj(d *loraDelta) *ResidentAdapterProj {
+	if d == nil {
+		return nil
+	}
+	return &ResidentAdapterProj{A: d.a, B: d.b, R: d.r, In: d.in, Out: d.out, Scale: float32(d.scale)}
+}
+
+// residentAdapterLayers converts a loaded loraRuntime into the exported per-layer shape a
+// resident backend's SetAdapter consumes.
+func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
+	out := make([]ResidentAdapterLayer, len(rt.layers))
+	for i, l := range rt.layers {
+		out[i] = ResidentAdapterLayer{
+			Q: residentAdapterProj(l.q), K: residentAdapterProj(l.k), V: residentAdapterProj(l.v),
+			O: residentAdapterProj(l.o), Gate: residentAdapterProj(l.gate), Up: residentAdapterProj(l.up),
+			Down: residentAdapterProj(l.down),
+		}
+	}
+	return out
+}
+
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
 // prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
 // Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent

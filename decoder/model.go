@@ -1035,22 +1035,62 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// weight streamed once — ~1.7–2× faster TTFT than sequential), LM head on the
 	// last position only. Reuse means len here is the suffix, not the whole prompt.
 	// GPU full-residency decode (webgpu + eligible arch + plain stateless
-	// Generate). Sessions (commit != nil) and prefix-reuse (prefillFrom > 0) keep
-	// the CPU/staged path. Prefill = option (a): run the prompt through the
-	// resident DecodeRunner sequentially to build its GPU KV (also warms the
-	// pipelines); the last token's logits seed decode. O(prompt-len) GPU Runs —
-	// fast for typical prompts since a GPU Run ≫ a CPU int4 forward (the K/V-upload
-	// bridge stays for future prefix-reuse; batched on-device prefill, the
-	// long-prompt fix, is deferred).
-	useGPU := m.resident != nil && prefillFrom == 0 && commit == nil
+	// Generate). Prefix-reuse (prefillFrom > 0) keeps the CPU/staged path — the
+	// session's prefix-reuse cache is CPU-side, the resident's positional KV is
+	// GPU-side, and the two cannot both be the source of truth for a reused prefix.
+	// Prefill = option (a): run the prompt through the resident DecodeRunner
+	// sequentially to build its GPU KV (also warms the pipelines); the last
+	// token's logits seed decode. O(prompt-len) GPU Runs — fast for typical
+	// prompts since a GPU Run ≫ a CPU int4 forward (the K/V-upload bridge stays
+	// for future prefix-reuse; batched on-device prefill, the long-prompt fix,
+	// is deferred).
+	//
+	// G3 (docs/task-gpu-paths-2026-09.md): a plain session (commit != nil, no adapter) still
+	// keeps the CPU/staged path — sessions exist for prefix reuse, which the prior paragraph
+	// already rules out combining with resident. But an ADAPTER session (cache.lora != nil) is
+	// the one case where going through Session.Generate is NOT about prefix reuse at all — it is
+	// the ONLY way compute-time LoRA gets applied at all (Session.UseAdapter → cache.lora →
+	// applyLoRA in the CPU forward) — and with prefillFrom==0 it never touches the reused-prefix
+	// conflict either. So it is safe to admit here too, PROVIDED the resident backend actually
+	// implements ResidentAdapter; a backend that doesn't declines to CPU exactly like any other
+	// missing resident capability, never silently running an adapter session's tokens through
+	// the base model's resident weights (which would return correct-looking but WRONG,
+	// base-model output — audit R-01's whole reason for existing).
+	lora := cache.lora
+	var resAdapter ResidentAdapter
+	if lora != nil {
+		resAdapter, _ = m.resident.(ResidentAdapter)
+	}
+	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
 	if useGPU {
 		// The resident path drives the model's ONE shared positional KV; two concurrent
 		// generations would interleave writes at overlapping positions and corrupt it.
 		// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses
 		// this call's own cache, so both still complete correctly (M9). The doc's
 		// "distinct sequences can run concurrently" holds; only resident speed is lost.
+		//
+		// This is ALSO what makes binding an adapter here race-free even though N adapters of
+		// one base share this single resident runner (internal/serveapp/main.go): only the
+		// resBusy winner's SetAdapter/Forward/SetAdapter(nil) sequence ever runs at a time, so
+		// two adapter sessions (or an adapter session and a base-model session) can never
+		// observe each other's bound delta.
 		if atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
-			defer atomic.StoreInt32(&m.resBusy, 0)
+			if resAdapter != nil {
+				if err := resAdapter.SetAdapter(residentAdapterLayers(lora)); err != nil {
+					// Bind failed after claiming resBusy — release immediately (not via defer)
+					// and fall back to CPU, which applies the adapter correctly on its own
+					// (applyLoRA); do NOT proceed resident with no delta bound.
+					atomic.StoreInt32(&m.resBusy, 0)
+					useGPU = false
+				} else {
+					defer func() {
+						resAdapter.SetAdapter(nil)
+						atomic.StoreInt32(&m.resBusy, 0)
+					}()
+				}
+			} else {
+				defer atomic.StoreInt32(&m.resBusy, 0)
+			}
 		} else {
 			useGPU = false
 		}
