@@ -104,6 +104,11 @@ const (
 	nemoKMamba
 	nemoKAttn
 	nemoKMLP
+	// nemoKMoE (G7 part 2, docs/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's
+	// fourth block kind — routed non-gated relu² experts (NOT moeMLP's gated SwiGLU; this
+	// family's experts have only up_proj/down_proj) plus an always-on ungated shared expert of
+	// the same shape. Single-op-per-block like the other three: no mixer, no separate FFN pass.
+	nemoKMoE
 )
 
 type posUni struct {
@@ -1071,6 +1076,37 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			up := gemv(mq, ms, lw.up)
 			rq, rs := relu2Quant(up, lw.up.nRows())
 			gemvAdd(rq, rs, lw.down, r.xd)
+			continue
+		}
+		if lw.nemoKind == nemoKMoE {
+			// Nemotron-H MoE block (G7 part 2, single-op-per-block, no mixer): norm → route (the
+			// SAME moeRoute kernel DeepSeek/GLM use — Nemotron's router is sigmoid + selection
+			// bias + group-limited top-k with nGroup=1, degenerating to plain top-k, which
+			// moeRouteWGSL already handles as its nGroup==1 path) → k routed experts, each a
+			// NON-GATED relu² FFN (moeExpert is already generic per single projection — called
+			// here for up/down only, no expGate at all, unlike Mixtral/DeepSeek's gated SwiGLU
+			// experts) weighted-summed into xd → the always-on UNGATED shared expert (same
+			// non-gated relu² shape, added once, not per top-k slot).
+			mq, ms := rmsQuant(r.xd, lw.mlpNorm, hidden)
+			mp := m.moe
+			logits := gemv(mq, ms, lw.router)
+			idx, wgt := storF(mp.k), storF(mp.k)
+			bias, hasBias := moeZeroBias, false
+			if lw.routerBias != nil {
+				bias, hasBias = lw.routerBias, true
+			}
+			moeRoute(logits, bias, idx, wgt, hasBias)
+			for j := 0; j < mp.k; j++ {
+				upOut := storF(mp.inter)
+				moeExpert(mq, ms, lw.expUp, idx, wgt, upOut, j, 0)
+				rq, rs := relu2Quant(upOut, mp.inter)
+				moeExpert(rq, rs, lw.expDown, idx, wgt, r.xd, j, 1)
+			}
+			if lw.shUp != nil { // always present: SharedIntermediateDim > 0 gates rl.shUp's build
+				su := gemv(mq, ms, lw.shUp)
+				sq, ss := relu2Quant(su, mp.sharedInter)
+				gemvAdd(sq, ss, lw.shDown, r.xd)
+			}
 			continue
 		}
 		if lw.isMamba {

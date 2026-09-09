@@ -5,9 +5,24 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
+
+// isWebGPUBackend reports whether a Backend.Name() string names the webgpu backend. NOT a plain
+// equality check: gpu.webgpuBackend's real Name() is "webgpu:" + the underlying GPU surface
+// (e.g. "webgpu:metal" on macOS, "webgpu:vulkan" on Linux) — every OTHER backend's Name() is a
+// bare string ("cpu", "cuda", "metal"), so this asymmetry is specific to webgpu.
+//
+// Found while wiring G7 part 2 (docs/task-gpu-paths-2026-09.md): a NEW `== "webgpu"` check
+// written for that row silently never matched on this exact Mac, which led straight to a
+// PRE-EXISTING bug this asymmetry already caused — DecodePath()'s own `case be != "webgpu":`
+// (below) has never matched a real webgpu backend on any platform, so a declined webgpu load has
+// always been reported through the cuda/metal branch's wording ("has no staged decode path" —
+// false; webgpu does have one) instead of the webgpu-staged branch meant for it. Fixed here, not
+// papered over with another exact-match string.
+func isWebGPUBackend(name string) bool { return strings.HasPrefix(name, "webgpu") }
 
 // GPU full-residency decode support. When the backend is webgpu AND the arch is
 // DecodeRunner-eligible (dense Qwen2/Llama shape), the per-token forward can run
@@ -203,7 +218,19 @@ type ResidencyBackend interface {
 // sliding-window / logit-softcap / output-bias. q/k/v bias (Qwen2) and the (1+w)
 // RMS offset are handled, so they're allowed. Anything else → staged fallback.
 func (m *Model) DecodeRunnerEligible() bool {
-	if !m.w.arch.decodeRunnerEligible() {
+	a := m.w.arch
+	eligible := a.decodeRunnerEligible()
+	if !eligible && a.nemotron != nil && a.MoE != nil && m.be != nil && isWebGPUBackend(m.be.Name()) {
+		// G7 part 2 (docs/task-gpu-paths-2026-09.md): decodeRunnerEligible's own Nemotron branch
+		// hard-declines ANY MoE-block variant for every backend — a real crash-risk guard, since
+		// cuda/metal's own per-layer block-kind switches have no MoE case at all and would
+		// otherwise nil-dereference on the first token. webgpu now implements it for real
+		// (gpu/residency.go's switch has a case 3, gpu/decoderunner.go a real nemoKMoE dispatch),
+		// so this is a narrow, backend-specific override — NOT a general "trust the backend"
+		// escape hatch. cuda/metal still decline exactly as before.
+		eligible = true
+	}
+	if !eligible {
 		return false
 	}
 	// Nemotron-H resident is DEFAULT-on at int4 — characterized benign vs f32 (92.5% greedy /
@@ -737,16 +764,18 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
 		return m
 	}
-	if a := m.w.arch; a.nemotron != nil && a.MoE != nil {
+	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
 		// G7 (docs/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
-		// kind (MoE FFN) has no GPU resident implementation on any backend yet —
-		// decodeRunnerEligible's own nemotron branch already declines this (`a.MoE == nil`), but
-		// that predicate returns a bare bool, so the generic "arch is not eligible" message below
-		// would otherwise hide WHY. Checked here, ahead of the generic call, so DecodePath/
-		// `serve check` name the actual gap instead of a family-agnostic decline — the hardware
-		// matrix's own row is generated from a DENSE representative config and never exercises
-		// this case, so this string is often the only place a user sees it stated.
-		m.resDecline = "Nemotron-H MoE FFN block has no GPU resident implementation on any backend (dense Nemotron-H/Nano-9B-v2 is unaffected)"
+		// kind (MoE FFN) has no GPU resident implementation on cuda/metal — decodeRunnerEligible's
+		// own nemotron branch already declines this for them (`a.MoE == nil`), but that predicate
+		// returns a bare bool, so the generic "arch is not eligible" message below would otherwise
+		// hide WHY. Checked here, ahead of the generic call, so DecodePath/`serve check` name the
+		// actual gap instead of a family-agnostic decline. webgpu is EXCLUDED from this decline
+		// (part 2, same doc): it implements the MoE block for real now
+		// (gpu/residency.go/gpu/decoderunner.go's nemoKMoE case) — DecodeRunnerEligible's own
+		// backend-aware override admits it, so falling into this specific-reason branch would be
+		// wrong for webgpu (it isn't declining here at all).
+		m.resDecline = "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
 		return m
 	}
 	if !m.DecodeRunnerEligible() {
@@ -863,7 +892,7 @@ func (m *Model) DecodePath() string {
 		return fmt.Sprintf("%s-resident (%s)", be, residentQuantLabel(be, m.Quant()))
 	case be == "cpu":
 		return fmt.Sprintf("cpu (%s)", m.Quant())
-	case be != "webgpu":
+	case !isWebGPUBackend(be):
 		// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md, corrected on review):
 		// "cuda-staged (int4)" on an 8 GB card sat at the idle VRAM baseline (464 MiB,
 		// unchanged) for a full request sampled at 1 Hz. The first pass here found the int4

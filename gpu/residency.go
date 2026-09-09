@@ -616,6 +616,39 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				if rl.down, e = proj(&lw.DownProj); e != nil {
 					return fail(e)
 				}
+			case 3: // MoE FFN (G7 part 2, docs/task-gpu-paths-2026-09.md)
+				// rd.rm.moe is already populated MODEL-level by MoEResidentParams above (it reads
+				// arch.MoE generically, which Nemotron also sets) — what was actually missing is
+				// this PER-LAYER weight build: every case above always append+continues before
+				// reaching the generic isMoE-building code below (line ~894), which a Mixtral/
+				// DeepSeek/GLM layer would otherwise hit. Same accessors (lw.Router/.RouterBias/
+				// .Experts/.SharedExpert), just no expGate/shGate/shGateW at all — this family's
+				// experts (and its shared expert) have only up_proj/down_proj, confirmed against
+				// the real safetensors index (decoder/forward_nemotron.go's own comment).
+				rl.nemoKind = nemoKMoE
+				rl.isMoE = true
+				if rl.router, e = proj(&lw.Router); e != nil {
+					return fail(e)
+				}
+				if len(lw.RouterBias) > 0 {
+					if rl.routerBias, e = up32(lw.RouterBias); e != nil {
+						return fail(e)
+					}
+				}
+				if rl.expUp, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
+					return fail(e)
+				}
+				keepF(rl.expUp.Release)
+				if rl.expDown, e = buildStacked(lw, func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, 1); e != nil {
+					return fail(e)
+				}
+				keepF(rl.expDown.Release)
+				if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {
+					return fail(e)
+				}
+				if rl.shDown, e = proj(&lw.SharedExpert.Down); e != nil {
+					return fail(e)
+				}
 			default:
 				// N-12: no default meant an unhandled block kind (nemoMoE) appended a layer
 				// with NIL weights, and decoderunner's gemv nil-dereferenced on the first

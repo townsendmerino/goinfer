@@ -292,13 +292,16 @@ own "30B-A3B class on the Linux box" rule, matching where Nano's own T3 ran. **N
 for F2**: nothing loadable changed (no registry key, no adapter code, no tensor schema) — only
 test/asset infrastructure, which is not a capability change.
 
-**GPU residency: CPU-only on every backend, same as Nano.** The MoE block pattern this section's
-whole finding rests on (23 mamba / 23 moe / 6 attention, byte-identical to Nano's) is exactly the
-per-layer kind no GPU backend's resident builder implements — `decoder/residency.go`'s
-`DecodeRunnerEligible` declines any Nemotron-H arch with `MoE != nil` before a backend is ever
-asked to build a resident runner. This section verifies CPU-path correctness only; the
-`docs/hardware-matrix.md` "✅ resident" row for Nemotron-H reflects a DENSE representative config
-and does not apply to this checkpoint (G7, [`task-gpu-paths-2026-09.md`](task-gpu-paths-2026-09.md)).
+**GPU residency: CPU-only on CUDA and Metal; resident on WebGPU (same as Nano).** The MoE block
+pattern this section's whole finding rests on (23 mamba / 23 moe / 6 attention, byte-identical to
+Nano's) is exactly the per-layer kind CUDA/Metal's resident builders decline — `decoder/residency.go`'s
+`DecodeRunnerEligible` still refuses that arch shape for them before a backend is ever asked to
+build a resident runner. WebGPU implements it (G7 part 2,
+[`task-gpu-paths-2026-09.md`](task-gpu-paths-2026-09.md)) — a backend-specific override in that
+same predicate, gated on `decoder.Model.DecodePath()`'s own real backend name, not a blanket
+admission. This section verifies CPU-path correctness only; the `docs/hardware-matrix.md`
+"✅ resident" row for Nemotron-H reflects a DENSE representative config and doesn't speak to this
+checkpoint's MoE case at all, on any backend.
 
 ## F3 · Granite 4.2 (dense, 3B/8B/30B) — DONE at T1 (mac, 2026-09-06)
 

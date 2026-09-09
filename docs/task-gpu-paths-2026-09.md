@@ -1113,3 +1113,64 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     permanent test, not just reasoning that it should be.
   - Full regression: `metal` 110 pass/0 fail/50 skip (108 prior + 2 new tests). `gofmt -l`,
     `go vet`, and CI's pinned staticcheck all clean.
+
+- 2026-09-08 — G7 part 2 DONE for WebGPU (Nemotron 3 Nano / 3.5 Lightning's MoE FFN block, real
+  GPU resident implementation, not just the honest-decline docs from part 1). CUDA and Metal
+  still decline it — no dispatch for it exists on either.
+  - **No new kernel primitives needed at all** — the gap was purely wiring. `moeRouteWGSL`
+    already implements Nemotron's exact router shape (sigmoid + selection bias + group-limited
+    top-k; `n_group=1` degenerates it to plain top-k, the kernel's own existing path for that
+    case) since it's the SAME primitive DeepSeek/GLM already use. `moeExpert` was already generic
+    per single projection (called separately for gate and up elsewhere, never assumed fused) —
+    Nemotron's experts have ONLY up_proj/down_proj (non-gated relu², confirmed against the real
+    safetensors index in `decoder/forward_nemotron.go`'s own comment — NOT `moeMLP`'s gated
+    SwiGLU), so calling it for up/down only, skipping expGate entirely, was already correct.
+    `relu2Quant` already existed (built for the DENSE Nemotron-H port's own relu²-MLP block).
+    The actual gap: `gpu/residency.go`'s per-layer Nemotron block-kind switch (cases 0/1/2 —
+    mamba/attn/mlp) always `append`s the layer and `continue`s before reaching the generic
+    isMoE-building code a Mixtral/DeepSeek/GLM layer would hit, so a MoE block's per-layer
+    weights (`rl.router`/`rl.expUp`/`rl.expDown`/`rl.shUp`/`rl.shDown`) were simply never
+    populated. Added `case 3:` doing exactly that (no `expGate`/`shGate`/`shGateW` at all, unlike
+    the generic branch it mirrors); added a matching `nemoKMoE` dispatch-side case in
+    `gpu/decoderunner.go` (route → k routed non-gated-relu² experts weighted-summed → the
+    always-on ungated shared expert of the same shape), inserted next to the existing `nemoKMLP`
+    early-return (no mixer to run first, same as that case).
+  - **A real, separate, pre-existing bug found and fixed while wiring the admission check**:
+    `decoder.webgpuBackend`'s actual `Name()` is `"webgpu:" + the underlying GPU surface`
+    (`"webgpu:metal"` on this Mac, presumably `"webgpu:vulkan"` on Linux) — NEVER the bare
+    string `"webgpu"` every other backend uses (`"cpu"`, `"cuda"`, `"metal"`). A NEW
+    `== "webgpu"` check written for this row's own admission override silently never matched,
+    which traced straight to `decoder.Model.DecodePath()`'s PRE-EXISTING `case be != "webgpu":`
+    — that branch has never matched a real webgpu backend on ANY platform, so every declined
+    webgpu load has been reported through the cuda/metal branch's wording ("has no staged decode
+    path" — false, webgpu does have one) instead of the webgpu-staged branch actually meant for
+    it, since webgpu was first wired. Fixed with a new `isWebGPUBackend(name string) bool`
+    helper (`strings.HasPrefix`, not equality) used at all three `m.be.Name()`/`be` comparison
+    sites in `decoder/residency.go` — not papered over with another exact-match string.
+  - **The admission change itself**: `decoder.Architecture.decodeRunnerEligible()` (the ARCH-only
+    predicate `ResidentEligible`/doc-gen also use) still hard-declines EVERY Nemotron+MoE arch
+    for every backend UNCHANGED — cuda/metal's own per-layer block-kind switches genuinely have
+    no MoE case and would nil-dereference on an unhandled kind, so widening the arch-only
+    predicate universally would have reintroduced exactly the crash risk it exists to prevent,
+    just aimed at cuda/metal instead. Fixed one level up instead: `decoder.Model.DecodeRunnerEligible()`
+    (which — unlike the arch-only function — knows `m.be`) overrides the decline SPECIFICALLY
+    for `(nemotron+MoE, webgpu)`, leaving cuda/metal's decline (and the arch-only predicate
+    itself) completely untouched. `withResidency()`'s own G7-part-1 specific-decline-reason
+    branch got the same `isWebGPUBackend` exclusion, so it stops firing for the one backend that
+    isn't actually declining. `docs/hardware-matrix.md`'s generator footnote, `docs/nemotron-resident.md`,
+    and `docs/task-families-2026-09.md`'s F2 section (all written in part 1, when "no backend
+    implements it" was still true) updated to say webgpu now does.
+  - **`TestNemotronMoEResidentParityWebGPU`** (new, `gpu/nemotron_moe_resident_test.go`): real
+    committed fixture `testdata/nemotron3nano-tiny` (6 layers: linear_attention/moe/
+    linear_attention/full_attention/moe/linear_attention — exercises mamba, attention, AND moe
+    block kinds in one fixture, not a moe-only synthetic). Resident vs CPU, int4 both sides,
+    minCosine 0.999771 across 8 positions — comfortably inside the established 0.95 floor.
+  - **Not attempted**: end-to-end validation against a real 30B-A3B checkpoint. nobara has
+    `~/models/nemotron3nano-30b-bf16` (59 GB) already downloaded, but its RTX 2070 SUPER (8 GB
+    VRAM) almost certainly cannot hold 128 experts resident without expert paging — a separate,
+    much larger undertaking (CUDA/Metal's own MoE paging took a whole prior work stream) not
+    attempted here. The tiny-fixture parity gate is real numeric evidence of kernel correctness;
+    it is not evidence this scales to the real checkpoint's memory footprint.
+  - Full regression: `gpu` 95 pass/0 fail (94 prior + 1 new test); `decoder` 416 pass/1 fail
+    (`TestOlmo3_forwardParity`, pre-existing)/134 skip. `gofmt -l`, `go vet`, and CI's pinned
+    staticcheck all clean on both packages.
