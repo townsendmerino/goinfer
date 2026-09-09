@@ -39,7 +39,9 @@ is grep-derivable and enumerated at the bottom.
 | `GOINFER_BATCHED_PREFILL` | Toggle the batched prefill path (`=0` disables). |
 | `GOINFER_PREFILL_CHUNK` | Rows per batched CUDA prefill pass (default 512). A long prompt is ingested in several weight-stationary passes over the positional KV — bit-identical to one pass, bounded scratch. Raise it only if the card has room; the path halves the width itself on an OOM. |
 | `GOINFER_PREFILL_IMAGE_CHUNK` | Rows for the resident image-block prefill call specifically (default 2048, separate from `GOINFER_PREFILL_CHUNK` above). A bidirectional image block cannot span more than one pass, so this prices the WHOLE turn (image + surrounding chat text) in one weight-stationary pass rather than the general prompt-chunking width. |
-| `GOINFER_METAL_BATCHED_PREFILL` | Opt into Metal batched prefill — NOT bit-identical to decode (54% divergence); measurement only. |
+| `GOINFER_METAL_BATCHED_PREFILL` | **Deprecated** — superseded by `GOINFER_METAL_FAST_PREFILL`. Still honoured for backward compat: `=1` opt-in (now the default), `=0` opt-out. |
+| `GOINFER_METAL_FAST_PREFILL` | Toggle Metal's f16-MMA batched prefill. Default ON above 512 tokens since §3.2 gate passed (2026-09-09). `=0`/`false`/`off` forces the sequential path everywhere; `=1`/`true`/`on` forces it on (including below the floor). Server flag: `--exact-prefill` sets this to `0`. |
+| `GOINFER_METAL_FAST_PREFILL_FLOOR` | Prompt-length floor (tokens) below which the fast Metal prefill declines even when enabled (default 512). `=0` disables the floor entirely. |
 | `GOINFER_INT4_SLOWPATH` / `GOINFER_INT4_F16_SCALES` | int4 unpack path selectors. |
 | `GOINFER_CUDA_NO_FUSE` | Disable CUDA kernel fusion (debug/A-B). |
 | `GOINFER_MLA_NAIVE` | Use the naive (un-optimized) MLA attention path. |
