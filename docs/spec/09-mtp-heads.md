@@ -27,7 +27,7 @@ written. Our own loader now contradicts it — we detect these heads, name them,
 | `decoder/gguf_qwen35.go:33` | `numLayers := blocks - u("nextn_predict_layers")` — drops the NextN block |
 | `decoder/gguf.go:743` | same subtraction, with the comment "block_count includes the trailing NextN/MTP block(s) goinfer drops" |
 | `decoder/weights.go:557` | "MTP heads (`mtp.*`) are simply never requested" |
-| `decoder/registry.go:1686` | `num_nextn_predict_layers` MTP head is dropped |
+| `decoder/registry.go:1689` | `num_nextn_predict_layers` MTP head is dropped |
 
 ## Gate 0 — inventory (RUN 2026-08-27, PASSED on availability)
 
@@ -95,7 +95,7 @@ different lists:
 
 | gate | refuses |
 |---|---|
-| `ForwardCapture` (`decoder/model.go:789`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
+| `ForwardCapture` (`decoder/model.go:831`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
 | `specRollbackSafe` (`decoder/forwardn.go:146`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
 
 **qwen35 passes the capture seam and is refused by rollback safety.** The cause is in the arch
@@ -535,7 +535,7 @@ forward.** What is measured is that it does not pay *through the copy primitive 
 available*. Those read identically today and diverge completely once a passthrough exists.
 
 `aikit/gpu` exposes `Upload` and `Download` and no device-to-device copy, so a snapshot of state
-that is *already on the device* (`cuda/resident.go:286` — `dnWin`, `dnState`) has to cross PCIe to
+that is *already on the device* (`cuda/resident.go:329` — `dnWin`, `dnState`) has to cross PCIe to
 the host and come back: measured **5.0 GB/s**, about a third of the host memcpy rate. The primitive
 exists one layer down — `gocudrv`'s `memcpyDtoD` / `memcpyDtoDAsync`. The gap is plumbing, and the
 plumbing is worth ~18×.
@@ -635,7 +635,7 @@ synthetic-buffer projection above with an in-situ measurement, and the projectio
 
 Same call, same byte counts, same number of copies. The difference is **buffer layout**: the probe
 allocated its 36 buffers consecutively, so aikit's coalescing had adjacent pairs to merge. The real
-`dnWin`/`dnState` live at bind offsets inside the resident arena (`cuda/resident.go:279` calls them
+`dnWin`/`dnState` live at bind offsets inside the resident arena (`cuda/resident.go:322` calls them
 COMPOUND) interleaved with everything else the model allocated, so there is far less to coalesce.
 A figure measured through a primitive on synthetic buffers is not an integration cost — here the
 gap was 2.6×, not a rounding difference.

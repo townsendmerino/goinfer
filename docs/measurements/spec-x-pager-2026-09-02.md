@@ -14,10 +14,10 @@ Four independent gates produce that, and no two are the same mechanism:
 
 | gate | where | refuses |
 |---|---|---|
-| batched verify declines for MoE | `cuda/prefill.go:270` (`r.moe \|\| r.gemma4Moe`) | **every** MoE, block-drafted spec |
+| batched verify declines for MoE | `cuda/prefill.go:290` (`r.moe \|\| r.gemma4Moe`) | **every** MoE, block-drafted spec |
 | rollback unsafe: recurrent | `decoder/forwardn.go:146` (`Recurrent`) | Gated-DeltaNet / Mamba-2, n-gram spec |
 | rollback unsafe: windowed | same (`SlidingWindow > 0`) | Gemma-3/4, Mistral, Phi-3, n-gram spec |
-| MLA not resident on CUDA | `cuda/backend.go:96` | DeepSeek-V2/V3, Moonlight, Kimi — never reach the pager at all |
+| MLA not resident on CUDA | `cuda/backend.go:116` | DeepSeek-V2/V3, Moonlight, Kimi — never reach the pager at all |
 
 Measured, per venue:
 
@@ -154,7 +154,7 @@ which is what the existing 26B/35B cache tests are.
 checks only that the resident implements `ResidentDrafterHost`; it does not check that a batched
 verify exists for the arch. So `NewBlockSpec` succeeds, the banner prints `block drafter attached`,
 and every request then declines and falls back to plain `Generate` in `internal/serveapp/openai.go`.
-`internal/serveapp/blockdrafter.go:13` states the opposite intent in as many words — "IT FAILS
+`internal/serveapp/blockdrafter.go:20` states the opposite intent in as many words — "IT FAILS
 STARTUP RATHER THAN DEGRADING SILENTLY … not a fleet quietly serving at 1x" — with a sampler
 mismatch as the ONLY intended per-request exception. An arch-level property is not that exception.
 The operator pays the drafter's VRAM and gets no drafting, with nothing said.

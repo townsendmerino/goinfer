@@ -56,7 +56,7 @@ to the readme-smoke job for the chat binary too.
 **Where.** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
 CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1056–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
-(`openai.go:660–663`).
+(`internal/serveapp/openai.go:660–663`).
 
 **Effect.** On the Mac or a CUDA box, a Gemma 3 image request runs the *text* decode at CPU speed
 even though `gemma3` text is resident on both backends. `-tags gpu` moves only the SigLIP tower
@@ -82,7 +82,7 @@ record it there as P6a and do it with the tower move rather than after.
 **Where.** `internal/serveapp/openai.go:986`: `if lm.model.ResidentActive() && lm.adapter == ""` —
 adapter models take the session path below it, and `decoder/model.go:1045` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
-commit == nil`). The comment at `openai.go:960–967` records the cost: 13 tok/s vs ~460 resident on
+commit == nil`). The comment at `internal/serveapp/openai.go:960–967` records the cost: 13 tok/s vs ~460 resident on
 a 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
 **Fix.** Apply the compute-time LoRA on the resident path: the adapter is a per-projection
@@ -91,7 +91,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`main.go:829`).
+assumes (`internal/serveapp/main.go:829`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -128,10 +128,10 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Olmo Hybrid | the two above + `FeatNoPE` | same | its Gated-DeltaNet half is already declared on both backends |
 | Command-R / R7B | `FeatLayerNorm`, `FeatParallelBlock`, `FeatLogitScale` | `FeatParallelBlock`, `FeatLogitScale` | parallel attn‖MLP from one normed input, summed; logits scale is a host-side multiply; Metal already has the LayerNorm (generalized for Cohere, `features.go` note) |
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
-| DeepSeek-V2/V3, Kimi K2 | `FeatMLA` | `FeatMLA` | exists on WebGPU; **gate the nGroup/topkGroup mapping first** (the CUDA TRAP comment, `features.go:396–405`) |
+| DeepSeek-V2/V3, Kimi K2 | `FeatMLA` | `FeatMLA` | exists on WebGPU; **gate the nGroup/topkGroup mapping first** (the CUDA TRAP comment, `decoder/features.go:396–405`) |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
-| LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `residency.go:207` declines it before features are consulted |
-| Llama 4 | own forward, not bridged | same | `residency.go:205` |
+| LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:207` declines it before features are consulted |
+| Llama 4 | own forward, not bridged | same | `decoder/residency.go:205` |
 | Ling 3.0 | `FeatKDA` | same | not on any backend |
 | Gemma 4 E2B/E4B | `FeatGemma4EModel` | same | PLE + shared-KV + per-layer FFN — not on any backend; the 26B/31B are resident |
 
@@ -227,7 +227,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   serializes each model's generations (`internal/serveapp/openai.go:62` `mu`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
-- Constrained/tool requests keep the plain resident `Generate` (`openai.go:977`).
+- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:977`).
 - The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
   the CPU block drafter is measured-negative and deliberately not wired (`blockspec_cpu.go`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.
@@ -1014,10 +1014,11 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - Full regression (`cuda`, real RTX 2070 SUPER, idle/uncontended at test time — confirmed via
     `nvidia-smi` before running to avoid colliding with the other active session's own GPU use):
     117 pass / 0 fail / 105 skip. The only failures before the `glue.ptx`/FMA-lint fixes were the
-    two above (both fixed) plus 3 failures from an UNRELATED, pre-existing gap — this Mac's own
-    `testdata/mistral-tiny-window/model.safetensors` is genuinely absent from disk despite being
-    git-tracked (confirmed via `git ls-files` vs `ls`), reproduced identically in the synced
-    isolated checkout, not something this row caused or is in scope to fix. `gofmt -l`, `go vet`
+    two above (both fixed) plus 3 failures from an UNRELATED, pre-existing gap — the mistral
+    sliding-window tiny fixture's weight file is gitignored and genuinely absent from disk on this
+    Mac despite its config JSON being tracked (the "dir-only guard" trap — the directory looks
+    present, the weights are not), reproduced identically in the synced isolated checkout, not
+    something this row caused or is in scope to fix. `gofmt -l`, `go vet`
     (`-tags "cuda goinfer_testhooks"`), and CI's pinned staticcheck (same tags, same 0.8.0
     version confirmed on nobara) all clean.
   - **G3 is now COMPLETE on decoder + all three GPU backends (Metal, WebGPU, CUDA)**, each with
@@ -2028,8 +2029,8 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
       `ExtraResidentBytes=7 GiB`** — same model, same device, same free-VRAM reading, only the
       reservation differed.
     - Full `cuda` suite (`-tags 'cuda goinfer_testhooks'`, 15 min timeout): 101 pass / 3 fail / 126
-      skip. All 3 failures share ONE root cause — `testdata/mistral-tiny-window/model.safetensors`
-      absent on this checkout (the config JSON is git-tracked, the gitignored weight file was
+      skip. All 3 failures share ONE root cause — the mistral sliding-window tiny fixture's weight
+      file absent on this checkout (the config JSON is git-tracked, the gitignored weight file was
       never copied there; the exact "dir-only guard" trap `CLAUDE.md` names) — confirmed by
       `ls`ing the fixture directory, not assumed from the error text. None of the three
       (`TestGraphsSafeGate`, `TestPrefillLast_e2e`, `TestSlidingWindowLongContext`) touch anything
