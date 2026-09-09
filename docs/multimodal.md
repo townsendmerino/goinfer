@@ -233,9 +233,42 @@ number is published without provenance.
   plus the agent-turn TTFT cell with a screenshot attached. (b) The fit guard prices the tower
   (resident weights) and image-token KV at the family's per-image token count × images per turn;
   request-time admission (task-fit-to-hardware Phase 1, from first-hour R13) counts image tokens
-  in the prompt. (c) `serve check` gains a vision row (a fixed small data-URI image, a question
+  in the prompt.
+
+  **(b) DONE, 2026-09-08 — turned out to be one fix, not two.** Investigated as two separate asks
+  and found both collapsed into the SAME pre-existing, non-vision-specific gap:
+  `decoder/fitguard.go`'s `fitCheckFor` priced weight/KV bytes for `.gguf` paths only — any
+  safetensors directory (which is EVERY currently-working vision-language load in this project;
+  Qwen2.5-VL's own GGUF path is text-only, no mmproj) returned an unconditional zero-weight,
+  always-fits check, vision or not. Closed generally: `estimateSafetensorsWeightBytes` prices a
+  safetensors checkpoint the same way `estimateGGUFWeightBytes` always priced a GGUF one — shape-
+  only, quant-independent tensor element counts, NEVER on-disk file size (a bf16 checkpoint shrinks
+  several-fold once quantized on load, so file-size pricing would refuse loads that fit
+  comfortably — the exact "wrong in the refusing direction" failure this guard's own design
+  principle rules out). Because the estimator sums every tensor in the checkpoint uniformly, a
+  bundled vision tower (Gemma 3: confirmed 50 `vision.*`/`multi_modal_projector.*` tensors present
+  and counted) gets priced automatically — no vision-specific code needed in the guard at all.
+  Image-token KV needed nothing new either: unpinned loads already price KV at the model's full
+  `MaxPositions` (R13), the request-time worst case regardless of whether those positions hold text
+  or image placeholders; and request-time admission (`contextLengthError`/`clampMaxTokens`,
+  `internal/serveapp/openai.go`) already ran on the fully placeholder-expanded prompt (`vi.ids`,
+  `vision_serve.go`) before this pass touched anything — confirmed by reading the code, not
+  assumed. See `docs/task-first-hour.md`'s R2/guard section for the full writeup and
+  `decoder/fitguard_test.go`'s `TestFitEstimate_safetensorsAgreesWithResidentWeightBytes` /
+  `TestFitCheckFor_pricesSafetensorsNotJustGGUF` for the gates.
+  (c) `serve check` gains a vision row (a fixed small data-URI image, a question
   with one right answer) that reports SKIP-with-reason when no tower is loaded. (d) The
   recommendation registry gains one VL checkpoint per box class, with the tower's cost in the line.
+
+  **(d) BLOCKED, not attempted — a real, structural gap, not a small addition.** The `pull`
+  recommendation registry (`pull/registry.go`) only ever recommends a SINGLE-FILE GGUF download
+  (every existing entry names one `.gguf` file), and this project's GGUF loader has zero
+  vision/mmproj support (confirmed during P8's research — llama.cpp already supports Qwen3-VL's
+  mmproj format, this project reads neither half of that pair). Adding a GGUF checkpoint entry for
+  a "VL" family would recommend something this project cannot actually use for images — worse than
+  no recommendation, not better. A real fix needs either a new safetensors-directory download mode
+  in `pull`, or GGUF `mmproj` support landing first (P8b) so a GGUF-based recommendation would mean
+  something. Left as a named, tracked gap rather than a hollow entry.
 - **P10 · Breadth on the small end.** LFM2.5-VL-3B (SigLIP2 on `lfm2`), Ministral 3's Pixtral tower
   (the `ministral3` decoder exists; the tower is in the same checkpoint), North Micro Vision 2.4B.
   Each is a tower descriptor + projector on a decoder already at parity; do them in that order,

@@ -415,20 +415,40 @@ zero swapouts for 115 s. The engine already did the right thing; the product hid
    measured before/after with its provenance. It also says plainly that this is `goinfer-serve`'s
    job and that `goinfer-chat` has no such flag by design.
 2. *The load-time guard* (`decoder/fitguard.go`) — **`task-fit-to-hardware.md` Phase 0 only**.
-   Before `loadWeights` allocates a byte, it prices the checkpoint from GGUF metadata at the
-   requested quant, adds KV at a pinned context if one was pinned, and compares against **70% of
-   physical RAM** — the same fraction and the same single-measurement provenance as
-   `metal/backend.go`'s `residentMemFraction`. Over budget refuses, with the arithmetic and the
-   remedy. It does **not** plan a configuration and does **not** flip `-stream-weights` on; those
-   are that doc's later phases.
+   Before `loadWeights` allocates a byte, it prices the checkpoint at the requested quant, adds KV
+   at a pinned context if one was pinned, and compares against **70% of physical RAM** — the same
+   fraction and the same single-measurement provenance as `metal/backend.go`'s
+   `residentMemFraction`. Over budget refuses, with the arithmetic and the remedy. It does **not**
+   plan a configuration and does **not** flip `-stream-weights` on; those are that doc's later
+   phases.
+
+   **UPDATE 2026-09-08 (P9b, docs/multimodal.md): a safetensors directory is now priced too, the
+   same way GGUF always was** — shape-only, quant-independent tensor element counts
+   (`estimateSafetensorsWeightBytes`, mirroring `estimateGGUFWeightBytes`), never from on-disk file
+   size (see the paragraph below for why file size stays deliberately excluded). Because the
+   estimator sums every tensor in the checkpoint uniformly, a multimodal checkpoint whose vision
+   tower ships bundled in the same safetensors file (Gemma 3: confirmed, 50 `vision.*`/
+   `multi_modal_projector.*` tensors alongside the text decoder's) gets the tower's weight cost
+   priced automatically, with no vision-specific code in the guard at all — this closes P9(b)'s
+   "price the tower" ask as a side effect of pricing safetensors generally, not as a separate
+   feature. Image-token KV needed no new code either: the guard already prices KV at the model's
+   full `MaxPositions` window when unpinned (R13), which is the request-time worst case regardless
+   of whether those positions end up holding text or image-placeholder tokens — and the SEPARATE
+   request-time admission path (`contextLengthError`/`clampMaxTokens`,
+   `internal/serveapp/openai.go`) already runs on the fully placeholder-expanded prompt (`vi.ids`,
+   `internal/serveapp/vision_serve.go`), so it already counted image tokens correctly before this
+   pass touched anything.
 3. *The banner* — at ≥75% of budget the same arithmetic prints unasked, so a user sees the cliff on
    the run **before** the one that steps off it.
 
 Everything unknown proceeds: an unreadable RAM figure (Windows and the BSDs have no probe, and a
-container's `MemTotal` is the host's), a non-GGUF source, a zero estimate. **A safetensors
-directory is deliberately not estimated from its file size** — those are f32/bf16 on disk and
-shrink loading at int4, so file bytes would refuse models that fit comfortably. An estimate wrong
-in the refusing direction is worse than none.
+container's `MemTotal` is the host's), an unresolvable source (bad path, no config.json, a bare
+`.giw`), a zero estimate. **Neither format is ever estimated from on-disk file size** — a
+safetensors checkpoint is usually f32/bf16 on disk and shrinks several-fold once quantized on
+load (and a GGUF file is quantized on disk too, just not necessarily at the requested target
+quant), so file bytes would refuse models that fit comfortably. An estimate wrong in the refusing
+direction is worse than none — which is exactly why both estimators read tensor SHAPES (quant-
+independent element counts) and price them at the REQUESTED load quant, never the file's own size.
 
 ```
 decoder: Qwen3.5-35B-A3B-Q4_K_M.gguf needs ~21.0 GB resident at quant int4; this machine has

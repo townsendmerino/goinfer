@@ -291,6 +291,51 @@ func estimateGGUFWeightBytes(path string, q quantMode) int64 {
 	return int64(total)
 }
 
+// estimateSafetensorsWeightBytes is estimateGGUFWeightBytes's safetensors twin: same
+// shape-only, quant-independent accounting (sum every tensor's element count, price 2-D+
+// tensors at the target quant, 1-D norms/biases at f32), reusing openCheckpointMmap so single-file
+// and sharded (model.safetensors.index.json) checkpoints are handled identically to a real load.
+//
+// WHY SHAPE-ONLY, NOT ON-DISK FILE SIZE (see fitCheckFor's own header comment on why safetensors
+// was excluded before this function existed): a safetensors checkpoint is usually f32 or bf16 on
+// disk and shrinks several-fold once quantized on load, so pricing the ON-DISK bytes would refuse
+// loads that fit comfortably — wrong in the refusing direction, which this guard's own design
+// principle treats as worse than not pricing at all. Reading SHAPES (element counts, which do not
+// depend on the on-disk dtype) and pricing them at the REQUESTED load quant is the same technique
+// estimateGGUFWeightBytes already uses — a GGUF file is quantized on disk too, and that function
+// never reads its byte size either.
+func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
+	st, err := openCheckpointMmap(dir)
+	if err != nil {
+		return 0 // unknown ⇒ proceed
+	}
+	defer st.Close()
+	var total float64
+	for _, name := range st.Names() {
+		t, err := st.Tensor(name)
+		if err != nil {
+			continue
+		}
+		n := 1
+		for _, d := range t.Shape {
+			if d <= 0 {
+				n = 0
+				break
+			}
+			n *= d
+		}
+		if n == 0 {
+			continue
+		}
+		if len(t.Shape) < 2 {
+			total += 4 * float64(n)
+			continue
+		}
+		total += quantBytesPerElem(q) * float64(n)
+	}
+	return int64(total)
+}
+
 // kvBytesPerPosition is the KV cost of ONE position, so both estimateKVBytes and
 // smallerFittingContext (R13) share the identical per-position rate — the cost is exactly linear
 // in context, so solving "the largest context that fits" is arithmetic, not a search.
@@ -331,12 +376,15 @@ func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 	return kvBytesPerPosition(cfg, kvF16, kvI8) * int64(ctx)
 }
 
-// fitCheckFor assembles the check for a load that has not happened yet. It knows how to price a
-// .gguf; every other source returns a zero weight estimate, which means "unknown" and proceeds.
-//
-// A safetensors directory is deliberately NOT estimated from its file size: those are usually f32
-// or bf16 on disk and shrink 6.4x loading at int4, so the file bytes would refuse models that fit
-// comfortably. An estimate that is wrong in the refusing direction is worse than none.
+// fitCheckFor assembles the check for a load that has not happened yet. It prices both a .gguf
+// and a safetensors directory (P9b, docs/multimodal.md) the SAME way — shape-only, quant-priced
+// element counts (estimateGGUFWeightBytes / estimateSafetensorsWeightBytes) — never from on-disk
+// file size: a safetensors checkpoint is usually f32 or bf16 on disk and shrinks several-fold once
+// quantized on load, so pricing the on-disk bytes would refuse models that fit comfortably. An
+// estimate that is wrong in the refusing direction is worse than none, which is why this waited
+// for the shape-based technique rather than shipping the naive (and wrong) file-size one earlier.
+// Anything neither format resolves (a bare .giw path, an unreadable config, in-flux directory) is
+// "unknown ⇒ proceed", same as always.
 //
 // PRICED AGAINST CURRENTLY-AVAILABLE MEMORY, NOT TOTAL RAM (R13-follow-on,
 // docs/measurements/cold-user-2026-09-07-macbook-arm64.md's SECOND live re-run). The first
@@ -359,21 +407,36 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 		quant:      quantName,
 		availBytes: hostRAMAvailable(),
 	}
-	if !strings.HasSuffix(path, ".gguf") {
-		return f
-	}
-	f.weightBytes = estimateGGUFWeightBytes(path, quant)
 	f.kvF16 = opts.KVPrecision == "f16"
 	f.kvI8 = opts.KVQuant == "i8"
-	g, err := embed.OpenGGUFMmap(path)
-	if err != nil {
-		return f // unknown ⇒ proceed, same as always
+	if strings.HasSuffix(path, ".gguf") {
+		f.weightBytes = estimateGGUFWeightBytes(path, quant)
+		g, err := embed.OpenGGUFMmap(path)
+		if err != nil {
+			return f // unknown ⇒ proceed, same as always
+		}
+		defer g.Close()
+		cfg, cerr := ggufConfig(g)
+		if cerr != nil {
+			return f
+		}
+		return f.priceCtxAndKV(cfg, opts)
 	}
-	defer g.Close()
-	cfg, cerr := ggufConfig(g)
+	// A safetensors directory (or any other non-.gguf path — .giw streamed-weights included):
+	// openCheckpointMmap/loadConfig fail cleanly on anything that is not a plain safetensors
+	// checkpoint, which is "unknown ⇒ proceed", same as every other unreadable source here.
+	f.weightBytes = estimateSafetensorsWeightBytes(path, quant)
+	cfg, cerr := loadConfig(os.DirFS(path), "config.json")
 	if cerr != nil {
 		return f
 	}
+	return f.priceCtxAndKV(cfg, opts)
+}
+
+// priceCtxAndKV fills in effCtx/pinned/kvBytes from a resolved Config — the ctx-pricing logic
+// fitCheckFor's .gguf and safetensors branches share verbatim (R13: price at opts.ResidentContext
+// when pinned, else the model's own MaxPositions, the worst case a real request can reach).
+func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	f.cfg = cfg
 	f.pinned = opts.ResidentContext > 0
 	switch {
