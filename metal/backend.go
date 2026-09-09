@@ -254,10 +254,13 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if os.Getenv("GOINFER_METAL_BATCHED_PREFILL") != "1" {
 		return nil, fmt.Errorf("metal: batched prefill declined — not bit-identical to decode (54%% stream divergence, §A2-Metal); using sequential. Pass --metal-fast-prefill (or set GOINFER_METAL_BATCHED_PREFILL=1) to force")
 	}
-	// The f16 MMA prefill kernels implement only the plain dense shape (a dense FFN out of
-	// L.guW/L.dW, model-level rope/window, SiLU-only swiglu). A MoE model never packs those
-	// dense FFN buffers at all, so prefilling it would bind zero buffers — decline instead,
-	// and the caller re-runs the prompt through the (correct) sequential Forward loop.
+	// The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU, G8) out of
+	// L.guW/L.dW with per-layer rope/window, per-head QK-norm, and Gemma's sandwich norms —
+	// but NOT per-layer-varying attention geometry (dense Gemma 4's local/global head_dim split;
+	// prefillOK's own per-layer-geometry guard, metal/model.go) or MoE (a routed model never
+	// packs the dense FFN buffers this path reads at all — prefilling it would bind zero
+	// buffers). Either declines here, and the caller re-runs the prompt through the (correct)
+	// sequential Forward loop.
 	if !a.r.prefillOK {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}

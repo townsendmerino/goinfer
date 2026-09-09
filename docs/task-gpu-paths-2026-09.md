@@ -1054,3 +1054,62 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     directly, same as Nano's own already-archived note in `docs/completed/nemotron3nano-t3.md`.
   - Full regression: `decoder` 416 pass/1 fail (`TestOlmo3_forwardParity`, pre-existing)/134 skip.
     `gofmt -l` and `go vet` clean.
+
+- 2026-09-08 — G8 DONE for the Gemma set (item (a)'s "Gemma" half). MoE (item (a)'s other half)
+  not started — a batched routing+indexed-GEMM kernel that doesn't exist yet even for decode-
+  shape batching, a genuinely separate and larger undertaking than extending the existing dense
+  kernels. Item (b) (the bit-identity work that would let batched prefill default on) untouched,
+  tracked elsewhere as the doc already noted.
+  - **Two kernel signature changes, both in `metal/prefill.go`'s own separately-compiled
+    library** (`prefillKernels`, isolated from decode's `allKernels` on purpose, so this row
+    can't touch decode's audited numerics): `rmsnorm_f16` gains an `addOne` parameter (Gemma's
+    `(1+w)` RMS offset — this kernel had NO addOne support at all before, meaning it was
+    silently wrong for RMSAddOne families the moment they were ever admitted, not just
+    aesthetically incomplete); `swiglu_f16` gains an `act` parameter selecting SiLU or GELU-tanh
+    (a new `glu_act_f16` inline helper, DUPLICATED from `kernels.go`'s `glu_act` rather than
+    shared — the two files compile as separate Metal libraries — including its ±15 tanh-argument
+    clamp, the same Gemma-massive-activation overflow fix this session already had to apply
+    twice elsewhere this week, applied preemptively here instead of found the hard way a third
+    time).
+  - **The sandwich-norm dispatch restructuring** (`PrefillLast`): Gemma's pattern (norm the
+    sublayer OUTPUT before the residual add, not just the GEMV input) doesn't fit the existing
+    fused mode-2 residual epilogue (`gemm_w4f16_store`'s `if (mode==2) v += C[...]`), so a
+    sandwich family's o-proj/down-proj now write into mode-0 (plain overwrite) instead of
+    straight into `xF`, get normed in place, then a separate `residual_f16` add — three
+    dispatches instead of one, only for `r.sandwich` families, byte-identical for everyone else.
+    Reuses `normF` as the scratch target for BOTH the o-proj and down-proj sandwich writes
+    (its prior contents are always already-consumed by that point in the per-layer sequence, so
+    no new buffer allocation was needed) — checked by tracing the exact producer/consumer order,
+    not assumed safe.
+  - **A real gap found while checking `FeatFinalLogitSoftcap`'s admission**: `PrefillLast` never
+    called anything applying Gemma's final-logit softcap at all — `finalizeLogits` (the decode
+    path's own entry point) does it, but `PrefillLast` copies straight out of `r.logits` into a
+    fresh slice and returns before `finalizeLogits` ever runs. Fixed with a direct
+    `softcapParallel(out, r.finalSoftcap)` call at the end of `PrefillLast`, mirroring
+    `finalizeLogits`'s own logic exactly (`finalSoftcap` is 0 — no-op — for every family without
+    it, so this is invisible to every non-softcapped family already admitted).
+  - **A design trap avoided, not hit**: Gemma 3 and dense Gemma 4 derive an IDENTICAL required-
+    feature set otherwise (the exact fact `decoder/features.go`'s `residentPerLayerGeomBackends`
+    comment already documents from the G6 WebGPU incident it was written to prevent) — so simply
+    adding `FeatSandwichNorm`/`FeatGatedGELU`/etc to `prefillFeatures` would have silently
+    admitted Gemma 4 too, which this uniform-`g0`-read fast path cannot represent (its local/
+    global attention layers genuinely differ in head_dim). Added a SEPARATE guard,
+    `r.prefillOK = ... && m.PerLayerGeomOK("webgpu")` — calling the existing per-layer-geometry
+    predicate with a backend that never declares support (webgpu) as a deliberate reuse to ask
+    the arch-only half of that question ("does this arch vary per layer at all") independent of
+    what Metal's OWN decode path separately supports (Metal decode DOES implement per-layer
+    geometry, so calling it with "metal" would have wrongly cleared Gemma 4 here too).
+  - **`TestPrefillParityGemma`** (new): real checkpoint (`testdata/gemma3-vl-tiny`, text tower
+    only), same structure as the existing `TestPrefillParity` (sequential Forward vs PrefillLast,
+    argmax match + cosine ≥ 0.95 floor — f16 activations vs decode's int8 mean high-but-not-exact
+    is expected, not a bug). Passed on the FIRST real run: argmax match, cosine 0.99979. Building
+    it surfaced one more thing to get right: the manually-built prefill embeddings needed the
+    SAME embed-scale multiply `loadEmbedRow` applies internally for the sequential reference —
+    missing it would have compared scaled-vs-unscaled embeddings and failed for a test-harness
+    reason having nothing to do with the kernel work being gated.
+  - **`TestPrefillDeclinesGemma4PerLayerGeom`** (new, kept as a permanent regression test rather
+    than a throwaway check): pins the per-layer-geometry guard directly against
+    `testdata/gemma4-dense-twogeom-tiny` — confirmed `prefillOK=false` before writing this as a
+    permanent test, not just reasoning that it should be.
+  - Full regression: `metal` 110 pass/0 fail/50 skip (108 prior + 2 new tests). `gofmt -l`,
+    `go vet`, and CI's pinned staticcheck all clean.

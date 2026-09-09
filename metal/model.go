@@ -56,14 +56,23 @@ const (
 var preciseMathCompile bool
 
 // prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
-// SiLU FFN, per-head QK-norm, a MODEL-LEVEL rope table and a MODEL-LEVEL window. Anything else
-// — MoE (which never packs the dense FFN buffers at all), or Gemma's sandwich norms / (1+w) RMS
-// / GeGLU / per-layer rope — must decline prefill (see resident.prefillOK). Deriving the
-// predicate from the shared taxonomy keeps it honest as features land.
+// gated FFN (SiLU or GeGLU), per-head QK-norm, a PER-LAYER rope table and window, Gemma's
+// sandwich norms and (1+w) RMS offset, and the embed-scale/final-logit-softcap pair (both
+// applied OUTSIDE this file — embedResident scales the input embeddings before PrefillLast ever
+// runs, and PrefillLast's own final step applies softcap — so declaring them here is a pure
+// capability statement, no kernel change). G8 (docs/task-gpu-paths-2026-09.md): added
+// FeatSandwichNorm/FeatGatedGELU/FeatRMSAddOne/FeatEmbedScale/FeatFinalLogitSoftcap to admit the
+// Gemma set (previously declined entirely — MoE still declines, see resident.prefillOK's
+// separate per-layer-geometry guard for why dense Gemma 4 specifically still does too).
 var prefillFeatures = map[decoder.ResidentFeature]bool{
-	decoder.FeatQKNorm:        true,
-	decoder.FeatSlidingWindow: true,
-	decoder.FeatPartialRotary: true,
+	decoder.FeatQKNorm:            true,
+	decoder.FeatSlidingWindow:     true,
+	decoder.FeatPartialRotary:     true,
+	decoder.FeatSandwichNorm:      true,
+	decoder.FeatGatedGELU:         true,
+	decoder.FeatRMSAddOne:         true,
+	decoder.FeatEmbedScale:        true,
+	decoder.FeatFinalLogitSoftcap: true,
 }
 
 type residLayer struct {
@@ -558,9 +567,23 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.uDnValueDim = NewBufferU32(d, uint32(dp.valueDim))
 	}
 	// prefillOK, derived rather than hand-listed: the f16 prefill kernels implement exactly the
-	// features below, so ANY model needing more (MoE, Gemma's sandwich/(1+w)/GeGLU/per-layer
-	// rope) declines prefill and falls back to the sequential Forward loop.
-	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0
+	// features below, so ANY model needing more (MoE — never packs the dense FFN buffers at all)
+	// declines prefill and falls back to the sequential Forward loop.
+	//
+	// G8's Gemma-set admission (prefillFeatures above) is NOT enough on its own for dense Gemma 4:
+	// PrefillLast reads g0 := r.layers[0].geom ONCE and reuses it for every layer's rope/attention
+	// dims — correct for every uniform-geometry family (including Gemma 3's dual-base RoPE, which
+	// keeps head_dim uniform), but Gemma 4's local/global split genuinely varies head_dim per
+	// layer (256 vs 512). decoder.Model.PerLayerGeomOK(backend) answers "does this arch need
+	// per-layer geometry, and does BACKEND declare support" — Metal's DECODE path does (it has
+	// its own per-layer geom seam, encodeAttention's geomFor), so calling it with "metal" would
+	// wrongly clear Gemma 4 here too. Calling it with "webgpu" instead (webgpu never declares
+	// per-layer-geom support) is a deliberate reuse: it answers the ARCH-ONLY half of that
+	// question — true for every uniform-geometry family regardless of backend, false only when
+	// the arch genuinely varies AND no backend without the seam could serve it — which is exactly
+	// "does this arch vary per layer at all", the thing this uniform-g0 fast path can't handle
+	// regardless of what Metal's decode path separately supports.
+	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && m.PerLayerGeomOK("webgpu")
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()

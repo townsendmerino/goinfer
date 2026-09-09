@@ -144,8 +144,13 @@ kernel void rmsnorm_quant_f16(device const half* x[[buffer(0)]], device const fl
 }
 
 // rmsnorm_f16: one threadgroup per row. out[m] = x[m]*rsqrt(mean(x[m]²)+eps)*w (w f32).
+// addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder/rmsnorm.go / the decode
+// path's rmsnorm_quant (kernels.go). G8 (docs/task-gpu-paths-2026-09.md): added so this kernel
+// can serve BOTH a GEMV-input norm (Llama/Qwen, addOne=0) and Gemma's sandwich norm on a sublayer
+// OUTPUT (addOne=1) — same math either way, only the weight convention differs.
 kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
     device half* out[[buffer(2)]], constant uint& H[[buffer(3)]], constant float& eps[[buffer(4)]],
+    constant uint& addOne[[buffer(5)]],
     uint row[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
     uint tgs[[threads_per_threadgroup]]) {
     threadgroup float red[256];
@@ -154,19 +159,28 @@ kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w
     red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
     for(uint s=tgs/2u;s>0u;s>>=1u){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup); }
     float rms=rsqrt(red[0]/float(H)+eps);
-    for(uint i=tid;i<H;i+=tgs) orow[i]=half(float(xr[i])*rms*w[i]);
+    for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; orow[i]=half(float(xr[i])*rms*g); }
 }
 
 // residual_f16: x += y (element-wise, grid = M*H).
 kernel void residual_f16(device half* x[[buffer(0)]], device const half* y[[buffer(1)]],
     uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+float(y[i])); }
 
-// swiglu_f16: out[m][i] = silu(gu[m][i]) * gu[m][I+i], gu is [M×2I]. grid = M*I.
+// glu_act_f16: SiLU (act=1, decoder.ActKind's ActSiLU) or GELU-tanh (act=0, ActGeluTanh — Gemma).
+// The tanh argument is CLAMPED to ±15 — same fix as kernels.go's glu_act (a massive-activation
+// gate, e.g. Gemma's <bos>, overflows MSL's tanh to NaN otherwise; duplicated here rather than
+// shared since this file compiles as its own separate library (prefillKernels), not allKernels.
+inline float glu_act_f16(float x, uint act) {
+    if (act == 1u) return x/(1.0f+exp(-x));
+    float a = 0.7978845608028654f*(x+0.044715f*x*x*x);
+    return 0.5f*x*(1.0f+tanh(clamp(a, -15.0f, 15.0f)));
+}
+// swiglu_f16: out[m][i] = glu_act_f16(gu[m][i]) * gu[m][I+i], gu is [M×2I]. grid = M*I.
 kernel void swiglu_f16(device const half* gu[[buffer(0)]], device half* out[[buffer(1)]],
-    constant uint& I[[buffer(2)]], uint gid[[thread_position_in_grid]]) {
+    constant uint& I[[buffer(2)]], constant uint& act[[buffer(3)]], uint gid[[thread_position_in_grid]]) {
     uint m = gid / I, i = gid % I;
     float g=float(gu[m*2u*I + i]), u=float(gu[m*2u*I + I + i]);
-    out[gid]=half((g/(1.0f+exp(-g)))*u);
+    out[gid]=half(glu_act_f16(g, act)*u);
 }
 
 // rope_f16: NeoX half-split, per-row position. Rotates a [M × total] region with row stride
@@ -391,8 +405,9 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
-		// pre-attn norm
-		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps)
+		// pre-attn norm — addOne (Gemma's 1+w) matters even for a plain non-sandwich family's
+		// GEMV-input norm, so it is always passed (0 for every family without RMSAddOne).
+		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
 		// fused QKV (+bias)
 		t, tg := gg(qkvDim)
 		e.Dispatch(pf.pGemmStore, t, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
@@ -411,19 +426,37 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 		// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
 		e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow)
-		// o-proj + residual into x
+		// o-proj, then either the plain residual epilogue or Gemma's sandwich norm (G8):
+		// mode-0 write into normF (free scratch at this point — its last use, the fused-QKV
+		// input, already ran; its next use, the pre-MLP norm's output, is below), norm the
+		// sublayer OUTPUT in place (safe — rmsnorm_f16's read pass fully completes before its
+		// write pass touches the same buffer), then a separate residual add. Non-sandwich
+		// families skip straight to the fused mode-2 residual epilogue, byte-identical to before
+		// this row.
 		t, tg = gg(H)
-		e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
-		// post-attn norm
-		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps)
+		if r.sandwich {
+			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, normF, uM, uH, uQDim, dummyBias, m0)
+			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
+			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
+		} else {
+			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
+		}
+		// pre-MLP norm
+		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
 		// gate/up
 		t, tg = gg(2 * I)
 		e.Dispatch(pf.pGemmStore, t, tg, normF, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
-		// swiglu
-		e.Dispatch(pf.pSw, M*I, 256, guF, dqF, uI)
-		// down + residual into x
+		// swiglu/geglu (G8: r.uAct selects — 0 for every family without FeatGatedGELU)
+		e.Dispatch(pf.pSw, M*I, 256, guF, dqF, uI, r.uAct)
+		// down-proj, same plain-vs-sandwich split as o-proj above.
 		t, tg = gg(H)
-		e.Dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
+		if r.sandwich {
+			e.Dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, normF, uM, uH, uI, dummyBias, m0)
+			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
+			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
+		} else {
+			e.Dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
+		}
 	}
 	// final norm + LM head for the LAST token only, through the SAME int8-pinned head the decode
 	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
@@ -436,5 +469,12 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 
 	out := make([]float32, V)
 	copy(out, r.logits.Floats()[:V])
+	// G8: Gemma's final-logit softcap — finalizeLogits (the decode path's own entry point) applies
+	// this to r.logitsHost, but PrefillLast copies straight out of r.logits into a fresh slice and
+	// returns before finalizeLogits ever runs, so it must be applied here too. 0 for every
+	// non-softcapped family (softcapParallel no-ops).
+	if r.finalSoftcap > 0 {
+		softcapParallel(out, r.finalSoftcap)
+	}
 	return out
 }
