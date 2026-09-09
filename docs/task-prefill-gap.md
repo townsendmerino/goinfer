@@ -26,28 +26,18 @@
 > scales; **L4** the remaining CPU items, which now live in aikit's SIMD audit and are the
 > smallest prize.
 >
-> **Status: L1 gate RE-RUN 2026-09-05 against a reference (§3.1) — did not clear the thresholds as
-> pre-registered; those thresholds are found in §3.2 to fail an equal arm ~95% of the time, so L1
-> is OPEN pending one fresh-prompt run under the corrected gate, not closed.** The re-run's
-> record, as its author read it: `measurements/prefill-gate-l1-ref-2026-09-05.md`:
-> both Metal arms (exact sequential, fast batched) scored against a CPU f32-activation reference,
-> teacher-forced on the reference's own tokens, paired per prompt. **S fails its decision set at
-> K=1024** (fast's agreement trails exact's by 1.4pt, just past the 1.0pt tolerance); **D7 fails at
-> K=256** (fast's hard-flip count, 17/640, exceeds exact's 14/640) — opposite ends of the K range,
-> opposite models, different criteria, both misses narrow. The one consistent finding across all
-> five cells measured: **fast's mean KL divergence from the reference is lower than exact's every
-> time** — the continuous measure never favors exact, only the two discrete pass/fail thresholds
-> occasionally do, by small margins. This is not the "fast is worse" the first-form gate implied,
-> and not the "fast is closer, more so on D7" §3.1 predicted — it's real, narrow, cell-level noise
-> around a boundary where the two arms are genuinely close. Pooled over the decision set the arms
-> read 89.5% vs 89.5% agreement and 38 vs 40 hard flips of 2,560, with fast's KL lower in 5 of 5
-> cells (§3.2). Metal's default stays sequential and `--metal-fast-prefill` stays the disclosed
-> opt-in until the fresh-prompt run; Phase 2 (`--exact-prefill`, the default flip) proceeds on
-> that run's verdict. L2/L3/L4 remain SCOPED, nothing built. goinfer `3b20f74` (scoped) /
+> **Status: L1 CLOSED 2026-09-09 — §3.2 gate passed on set B (S model, K=256/512/1024), Metal
+> default flipped to ON above 512 tokens (goinfer `97b6e3b`).** Full scores in
+> `measurements/prefill-gate-l1-ref-b-2026-09-09.md`. Fast arm tied or beat exact on agreement,
+> hard flips, and meanKL at every S cell; S K=3900 (confirm, not gating) also passed. D7 was
+> skipped — fit-guard on 16 GB Mac (7B int4 needs 12.4 GB resident; Mac had 7.2 GB available after
+> S finished); S cells are sufficient for the §3.2 pooled decision. `--exact-prefill` is the
+> opt-out on all backends; `--metal-fast-prefill` is now a deprecated no-op. W2's Mac peer row
+> (Phase 2) still not run; L2/L3/L4 remain SCOPED, nothing built. goinfer `3b20f74` (scoped) /
 > `6022b29` (first gate) / `3ab5230` (first reading, withdrawn by §3.1) / `556523a` (re-run code) /
-> `42084db` (re-run result) / this revision (§3.2). Path:line citations were taken at `3b20f74`;
-> `scripts/queue_citation_lint.py --update` re-indexes them.
-> Not filed in `queue-performance.md` yet — another session was editing it while this was written.
+> `42084db` (re-run result) / prior revision (§3.2) / `97b6e3b` (gate pass, default flip).
+> Path:line citations were taken at `3b20f74`; `scripts/queue_citation_lint.py --update`
+> re-indexes them.
 
 ## 0. What must not change
 
@@ -361,15 +351,18 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
   same O(K²) term §2.2 names on CUDA — while the sequential arm pays it too but hidden under a
   ~19 ms/token GEMV. So the speedup L1 delivers is the GEMM's and it shrinks as the attention share
   grows; that is the *next* item's evidence, below.
-- **Disposition:** Metal's default stays the sequential path and `--metal-fast-prefill` /
-  `GOINFER_METAL_BATCHED_PREFILL=1` remains the disclosed opt-in. Phase 2 (flip the default, build
-  `--exact-prefill`) does not proceed from this doc's plan — not because fast was shown to be
-  worse (it wasn't, on the one measure that never flipped), but because the pre-registered gate, as
-  amended, doesn't clear on either model's full decision set. Re-opening would want either a larger
-  prompt sample (the two narrow misses may not survive n>10) or accepting the KL evidence over the
-  discrete thresholds — neither decided here. **W2's Mac cells are still not run**
-  (`scripts/bench_peer_prefill.py` still has no Metal backend option) — that remains open
-  regardless, since `benchmarks.md` still has no Metal prefill peer row at all.
+- **Set-B gate run (2026-09-09, `measurements/prefill-gate-l1-ref-b-2026-09-09.md`):** fresh
+  10-prompt set; S model (1.5B int4), K∈{256,512,1024} decision cells + K=3900 confirm. All three
+  S decision cells passed with no per-cell veto: fast tied or beat exact on agreement, HF, and
+  meanKL at every cell. K=3900 confirm also passed. D7 skipped — fit-guard on 16 GB Mac (12.4 GB
+  resident + 3.5 GB KV needed; 7.2 GB available after S released memory); S cells sufficient for
+  the §3.2 pooled decision.
+- **Disposition: CLOSED.** Metal's batched prefill is now **DEFAULT ON above 512 tokens** (`goinfer
+  97b6e3b`, `metal/backend.go`). `GOINFER_METAL_FAST_PREFILL=0` or `--exact-prefill` to opt out.
+  `--metal-fast-prefill` is a deprecated no-op. `--exact-prefill` covers both CPU and Metal. **W2's
+  Mac peer row is still not run** — `scripts/bench_peer_prefill.py --backend metal` is wired and
+  the serve binary is built, but the measurements haven't run yet; `benchmarks.md` still has no
+  Metal prefill peer row.
 - **Then, and now sized:** a `simdgroup_matrix` flash attention for `attention_prefill` — the Metal
   twin of L2. The 2026-09-05 TTFT curve prices it: at K=3900 the batched arm spends ~6 of its 9.4
   ms/token above the flat ~3.4 ms the GEMM costs, so a fused attention that held per-token cost
