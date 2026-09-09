@@ -15,6 +15,25 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cuda/testdata/glue.ptx` (the embedded, driver-JIT'd kernel blob every CUDA resident load
+  compiles) was stale by three commits — every CUDA resident build, on any machine, from any
+  commit since `7357856` (Cohere/Command-R's G5 row) has been silently declining to CPU.**
+  `7357856` added `layernorm_quant` to `cuda/glue.cu` and wired it into `cuda/backend.go`'s
+  pipeline table, but never committed the regenerated `.ptx` alongside it — so `BuildResident`
+  failed at `cuModuleGetFunction` with `CUDA_ERROR_NOT_FOUND` for `layernorm_quant` and declined
+  the whole model to the CPU/staged path, unconditionally, for every family, not just Cohere
+  (`layernorm_quant` loads eagerly for every resident model). Two further already-committed
+  optimizations to `glue.cu` (`glu_quant`/`rmsnorm_quant`'s warp-shuffle maxabs, RoPE's YaRN
+  mscale) were caught in the same gap and never actually shipped either. Found while bringing up
+  an unrelated feature on a fresh CUDA build — the first one attempted against a full checkout
+  since the staleness landed. Fixed by regenerating via `cuda/build_ptx.sh glue` (no
+  toolchain-pinning concern per `cuda/testdata/REGEN.md` — unlike `moe.ptx`, `glue.ptx` is not one
+  of the version-pinned audited artifacts). Verified: `layernorm_quant` now present in the shipped
+  PTX, and the full `cuda` test suite passes (117/0/105, real GPU) with the resident path actually
+  reached rather than silently declined.
+
 ## [v0.17.2] — 2026-09-08
 
 The third cold-user run (macbook-arm64, M1 Pro / 16 GB, run 2b against v0.17.1 — a targeted
