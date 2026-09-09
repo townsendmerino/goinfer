@@ -795,6 +795,10 @@ var realckptNotRequired = map[string]string{
 		"full-model gate TestQwen35Real_gate2FullModel is required",
 	"TestQwen3Real_gate": "unregistered asset (GOINFER_QWEN3_REAL); qwen3 is required through " +
 		"TestQwen3_forwardParity + TestGGUF_qwen3_parity",
+	"TestQwen3VLReal_gate": "qwen3_vl is required through TestQwen3VL_textParity (tiny-golden, " +
+		"cosine 1.0); this adds the real Qwen3-VL-2B-Instruct checkpoint (GOINFER_QWEN3VL_2B), " +
+		"not yet pulled to any box (P8 Phase 0, docs/multimodal.md) — a real, tracked gap, not an " +
+		"unregistered asset",
 }
 
 // realckptDirs are the packages the realckpt cell runs, and so the packages scanned for its gates.
