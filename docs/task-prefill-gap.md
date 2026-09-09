@@ -3,9 +3,8 @@
 > **BLUF.** Decode is a ~30% problem everywhere (0.71–1.24× of Ollama, `benchmarks.md` §B8).
 > Prefill is not: on CUDA the overhead-free marginal cost per prompt token is **5.8× behind at
 > K≈512 and 12.7–14.8× at K≈3900**, and it *grows* with K while Ollama's is flat
-> (`measurements/cuda-prefill-reanchor-2026-09-01.md`); on Mac Metal the **shipped default is
-> sequential prefill through the decode path** (~40–60 tok/s on 1.5B) because the batched kernel is
-> declined for not being bit-identical (`metal/backend.go:336`); on Mac CPU the gap has shrunk to
+> (`measurements/cuda-prefill-reanchor-2026-09-01.md`); on Mac Metal the **batched f16-MMA prefill is now DEFAULT ON above 512 tokens** (§3.2 gate
+> passed 2026-09-09, `metal/backend.go:347`; was sequential-only at this doc's first writing); on Mac CPU the gap has shrunk to
 > ~1.8× at K=512 and about parity at depth since the S-01 tile (`897fb18`), which §A of
 > `benchmarks.md` does not yet say. The workload that matters most — W4, the agent turn
 > (`task-peer-benchmarks.md:71`) — is prefill of each turn's new 500–3000 tokens, which sits exactly
@@ -16,7 +15,7 @@
 > forecloses tensor cores on the weight term (`cuda/gemv_w4a8_batched.cu:19`) and a fused schedule
 > on the attention term (`cuda/prefill_batched.cu:156`). The CPU backend already split this contract
 > — `--cpu-fast-attention` is default ON and `--cpu-exact-prefill` buys identity back
-> (`internal/serveapp/main.go:432`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
+> (`internal/serveapp/main.go:439`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
 > rather than to bytes (`benchmarks.md` §B2). This doc extends that contract to the GPU backends and
 > sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on —
 > **measured twice on 2026-09-05; against a real f32-activation reference the fast path is equal
@@ -144,10 +143,10 @@ reusing the decode math, with the note "an MMA/flash version is a later throughp
 
 The CPU backend already faced this and split the contract: f32 prefill attention became the default
 above 512 tokens, P19's fused schedule ships under the same flag, and `--cpu-exact-prefill` is the
-documented way back to `decode == prefill` byte-identity (`internal/serveapp/main.go:322`). Metal
+documented way back to `decode == prefill` byte-identity (`internal/serveapp/main.go:328`). Metal
 built the fast path and then declined it by default on a *stream-divergence* number (54%,
-`metal/backend.go:336`–`:241`) — a measure of whether any token ever differs, which is the wrong
-gate for quality: CUDA decode is not held to it either (`benchmarks.md` §B2, "3% near-tie parity
+measured against its own exact path as oracle, withdrawn 2026-09-05) — a measure of whether any
+token ever differs, which is the wrong gate for quality: CUDA decode is not held to it either (`benchmarks.md` §B2, "3% near-tie parity
 rule"). The GPU prefill paths are the only place in the tree where bit-identity still governs the
 *default*, and it costs 5–15× on the workload W4 measures.
 
@@ -183,7 +182,7 @@ when, on ≥10 realistic prose prompts per model (not `prompts.json`) spanning K
 | greedy stream divergence rate | **reported, not gating** | it is what gated Metal; it measures reproducibility, not quality |
 
 **Floor.** As `--cpu-fast-attention` already does (exact below 512 prompt tokens, because the win
-scales with length and the divergence does not — `internal/serveapp/main.go:322`), each backend's
+scales with length and the divergence does not — `internal/serveapp/main.go:328`), each backend's
 fast path engages only above a prompt-length floor set where its measured win starts; short prompts
 stay exact at no cost.
 
@@ -315,8 +314,9 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 
 - **What exists:** `PrefillLast` on Metal is a working f16-MMA batched prefill, measured 3.93–4.56×
   over sequential at P=128…2048 and 3.74× end to end on a real 1450-token prompt through the
-  server (`ollama-chase.md:1578`–`:1611`). It is declined unless `GOINFER_METAL_BATCHED_PREFILL=1`
-  (`metal/backend.go:348`), which `--metal-fast-prefill` sets (`internal/serveapp/main.go:431`).
+  server (`ollama-chase.md:1578`–`:1611`). **Default ON above 512 tokens since §3.2 gate passed
+  2026-09-09** (`metal/backend.go:347`); `--exact-prefill` or `GOINFER_METAL_FAST_PREFILL=0` to
+  opt out. `--metal-fast-prefill` is now a deprecated no-op.
 - **First form, WITHDRAWN (2026-09-05, `measurements/prefill-gate-l1-2026-09-05.md`):** scored
   fast against Metal's own exact path as the oracle. §3.1 found that comparison cannot tell a
   defect in the fast path from the exact path's own int8-activation loss — both are quantisations

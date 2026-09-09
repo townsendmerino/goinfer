@@ -119,7 +119,7 @@ batched-prefill-then-decode vs sequential-prefill-then-decode:
 
 **This is the expected consequence of the kernel being non-bit-identical, and §3 makes it
 explicitly non-gating** — "it measures reproducibility, not quality". It is the same measure that
-wrongly gated Metal's batched prefill at 54% (`metal/backend.go:336`), which §2.3 and §3.1 record as
+wrongly gated Metal's batched prefill at 54% (`metal/backend.go:347`), which §2.3 and §3.1 record as
 the wrong gate for exactly this reason: CUDA decode is not held to it either, only to the 3%
 near-tie parity rule.
 
