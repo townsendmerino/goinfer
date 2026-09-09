@@ -32,6 +32,26 @@ func (m *Model) PrefillLogitsForTest(ctx context.Context, prompt []int, cache *K
 	return m.prefillLogits(ctx, prompt, cache)
 }
 
+// PrefillLogitsWithAdapterForTest is PrefillLogitsForTest with a compute-time LoRA adapter
+// (already loaded via Model.LoadAdapter) bound to a fresh cache before prefilling — the CPU-side
+// half of a resident-vs-CPU LoRA numeric parity gate (G3, docs/task-gpu-paths-2026-09.md) driven
+// from a package (e.g. metal) that cannot reach KVCache.lora or Model.adapter directly, both
+// unexported.
+func (m *Model) PrefillLogitsWithAdapterForTest(ctx context.Context, prompt []int, adapterName string) ([]float32, error) {
+	cache := m.NewCache(len(prompt))
+	cache.lora = m.adapter(adapterName)
+	return m.prefillLogits(ctx, prompt, cache)
+}
+
+// ResidentAdapterLayersForTest exposes residentAdapterLayers' conversion of a loaded compute-time
+// adapter to the exported per-layer shape a resident backend's SetAdapter consumes — the same
+// conversion generateInto calls in production, so a backend's own parity test can drive
+// ResidentAdapter.SetAdapter directly (bypassing Session/generateInto's session-cache plumbing to
+// isolate the backend's numerics) with exactly the deltas a real request would bind.
+func (m *Model) ResidentAdapterLayersForTest(adapterName string) []ResidentAdapterLayer {
+	return residentAdapterLayers(m.adapter(adapterName))
+}
+
 // NearTieHardFailPct is the bar NearTieArgmaxForTest hard-fails at -- the same 3% every existing
 // near-tie gate in this tree already uses inline (cuda/realforward_test.go's argmaxF comparison,
 // gpu/kv_i8_parity_test.go), named here so a new gate cites the rule instead of retyping the

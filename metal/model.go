@@ -140,6 +140,15 @@ type resident struct {
 	attnSink                 bool    // arch.gptoss != nil
 	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
 
+	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md — see lora.go). pLoraDown/pLoraUp and
+	// loraT are allocated once in BuildResident unconditionally (cheap; same "always create, gate
+	// on the per-model state" shape every other optional pipeline in this struct already uses).
+	// loraLayers is nil until SetAdapter binds one; the dispatch sites (encodeAttention/encodeLayer)
+	// no-op per projection when it is nil or the targeted projection's delta is nil.
+	pLoraDown, pLoraUp Pipeline
+	loraT              Buffer // [loraRMax]float32 scratch, reused across every projection/layer
+	loraLayers         []residLoRALayer
+
 	qkv, gu Buffer // fused QKV out, fused gate/up out
 
 	// Model-level (constant across a family's layers). Per-layer attention geometry —
@@ -487,6 +496,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.sandwich = m.SandwichNormResident()
 	r.postOnly = m.PostOnlyNormResident() // G5: Olmo 3/Olmo Hybrid
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
+	r.pLoraDown, r.pLoraUp = pipe("lora_delta_down"), pipe("lora_delta_up") // G3: compute-time LoRA
+	r.loraT = d.NewBufferLen(loraRMax)
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
 	r.layerNorm = m.LayerNormResident()
 	r.parallelBlock = m.ParallelBlockResident() // G5: Cohere/Command-R + Cohere2/Command-R7B
@@ -1746,9 +1757,23 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 			r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		}
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
-		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)   // gate @0, up @I
+		if r.loraLayers != nil {
+			// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
+			// order exactly ("delta into gate/up before the activation", decoder/mlp.go). gq/gSc
+			// is whichever input the base gate/up projection just used (r.aq/r.aSc for
+			// parallelBlock, r.mq/r.mSc otherwise) — the same input applyLoRA takes on CPU.
+			LA := &r.loraLayers[l]
+			r.applyResidentLoRA(e, LA.gate, gq, gSc, r.gu)
+			r.applyResidentLoRA(e, LA.up, gq, gSc, r.gu.At(r.I*4))
+		}
+		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct) // gate @0, up @I
 		if r.sandwich || postOnlyHere || r.parallelBlock {
 			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch
+			if r.loraLayers != nil {
+				// Added BEFORE the post-MLP norm (sandwich/postOnly) or the deferred residual add
+				// (parallelBlock, which has none) — same "delta before any subsequent norm" order.
+				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.dO)
+			}
 			// parallelBlock has no post-MLP norm at all (L.postMLPNorm is never built for it — see
 			// the build loop), so it skips straight to the deferred residual add.
 			if r.sandwich || postOnlyHere {
@@ -1757,6 +1782,9 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
 		} else {
 			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
+			if r.loraLayers != nil {
+				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.x)
+			}
 		}
 	}
 }
@@ -1794,6 +1822,15 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		e.DispatchTG(r.pSA, 2*g.kvDim*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv.At(kOff), r.uH)
 	} else {
 		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		if r.loraLayers != nil {
+			// G3: compute-time LoRA — added on top of the base q/k/v projection, into the SAME
+			// r.qkv slots it just wrote, before anything downstream (qk_norm/RoPE) reads them.
+			// Not reached for the qGate branch above (see lora.go's file comment).
+			LA := &r.loraLayers[l]
+			r.applyResidentLoRA(e, LA.q, r.aq, r.aSc, r.qkv)
+			r.applyResidentLoRA(e, LA.k, r.aq, r.aSc, r.qkv.At(kOff))
+			r.applyResidentLoRA(e, LA.v, r.aq, r.aSc, r.qkv.At(vOff))
+		}
 	}
 	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
 		// QKNormWhole (Olmo 3/Olmo Hybrid, G5): the SAME kernel, grid collapsed to one Q block +
@@ -1842,13 +1879,24 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		// defer the add" shape but has NO post-attn norm at all (L.postAttnNorm is never built for
 		// it — see the build loop), so it skips the norm dispatch entirely.
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
+		if r.loraLayers != nil {
+			// G3: added into the RAW o-proj output, BEFORE the sandwich/postOnly norm below —
+			// matching applyLoRA's CPU order (delta added to `out`, caller norms afterward).
+			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.oO)
+		}
 		if r.sandwich || r.postOnly {
 			e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		}
 		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
 	} else if r.outBias { // GPT-2/gpt-oss: o-proj carries an additive bias, fused with the residual add
 		e.DispatchTG(r.pSABiasResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, L.oBias, g.uNHhd)
+		if r.loraLayers != nil {
+			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.x)
+		}
 	} else {
 		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
+		if r.loraLayers != nil {
+			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.x)
+		}
 	}
 }

@@ -29,6 +29,7 @@ var (
 	_ decoder.Backend          = (*metalBackend)(nil)
 	_ decoder.ResidencyBackend = (*metalBackend)(nil)
 	_ decoder.ResidentForward  = (*metalResident)(nil)
+	_ decoder.ResidentAdapter  = (*metalResident)(nil)
 )
 
 // metalBackend implements decoder.Backend + decoder.ResidencyBackend.
@@ -353,6 +354,12 @@ func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]floa
 
 // UploadKV (prefix-reuse bridge) is not supported: the resident decoder owns its KV writes
 // per Forward, and the stateless Generate path re-runs the prompt through Forward instead.
+// SetAdapter implements decoder.ResidentAdapter (G3, docs/task-gpu-paths-2026-09.md) —
+// generateInto calls this to bind/clear a compute-time LoRA adapter for an admitted session.
+func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
+	return a.r.SetAdapter(layers)
+}
+
 func (a *metalResident) UploadKV(layer int, keys, vals []float32) error {
 	return fmt.Errorf("metal: UploadKV not supported (re-run the prefix through Forward)")
 }

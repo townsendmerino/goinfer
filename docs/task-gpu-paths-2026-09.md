@@ -710,3 +710,165 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `TestResidentBackendFeatures_noOverclaim`'s webgpu pin list updated to the new 19-feature set.
   - **G6 is now COMPLETE.** Remaining items in this doc: G3 (LoRA on resident path), G7-G11, and
     G2 (handed to the Linux box session).
+
+- 2026-09-08 — G10 DONE (Metal's `int8int8` silently runs as int4; the report lied about it).
+  `metal/model.go`'s `int4Buf` re-quantizes ANY int8-kind weight through the W4A8 packer
+  (dequant-then-repack) because Metal has no int8 GEMV kernel at all — int4 IS the resident
+  precision on Metal whether loaded directly (`--quant int4`, cheaper — no dequant-then-repack) or
+  arrived at via `int8int8`. `decoder.Model.DecodePath()` used to just echo the requested quant
+  string back, so `metal-resident (int8int8)` claimed a precision this backend never runs. Fixed
+  with a small pure helper, `decoder.residentQuantLabel(backend, quant string) string` — passes
+  every (backend, quant) pair through unchanged except `("metal", "int8int8")`, which becomes
+  `"int8int8→int4, no Metal int8 GEMV kernel"` — wired into `DecodePath()`'s resident-case
+  `Sprintf`. Also corrected two stale/wrong claims this same investigation turned up:
+  `metal/backend.go`'s `BuildResident` doc comment (previously implied int8 gets a real kernel and
+  int4 declines to CPU on Metal — both false) and `docs/quantization.md`'s `int8int8 (W8A8)`
+  section (same two false claims, now explains the silent re-quantization and points at the new
+  `DecodePath()` string). `TestResidentQuantLabel` (`decoder/staged_device_note_test.go`) pins the
+  full table (metal×{int8int8,int4,int8,f32}, plus int8int8 on cuda/webgpu/cpu as pure-passthrough
+  controls). Verified live on real Metal hardware via a throwaway probe:
+  `DecodePath: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)`. Full `decoder`+`metal`
+  suites clean (only `TestOlmo3_forwardParity`, pre-existing/unrelated). Committed alongside G3's
+  first commit below rather than standalone, since both were accepted together
+  ("G3 as the main pick, G10's reporting fix as a trivial quick win alongside it").
+
+- 2026-09-08 — G3 IN PROGRESS: decoder-level plumbing done and seam-tested; no backend
+  implementation yet.
+  - **Why "merge into resident weights at bind time" (this doc's own listed alternative) is
+    architecturally wrong**, found while scoping: `internal/serveapp/main.go`'s
+    `lm.sessions.adapter` design shares ONE base `*decoder.Model` — and its ONE `m.resident`
+    object — across every `--adapter` served name. Merging would need either N resident copies (one
+    per adapter, defeating the whole point of a shared resident base) or unsafe concurrent mutation
+    of one shared weight buffer. The "extra GEMV pair per adapted projection, applied additively at
+    call time" fix this doc already named is the one that actually fits: additive means each call
+    computes its own delta and touches no shared state permanently, and resident access is already
+    serialized end-to-end by `resBusy`'s CAS (one bind→forward→clear sequence in flight at a time,
+    across however many adapter sessions share the base).
+  - **Decoder plumbing** (`decoder/residency.go`): a new OPTIONAL `ResidentForward` extension,
+    `ResidentAdapter` (one method, `SetAdapter(layers []ResidentAdapterLayer) error`, `nil` clears),
+    matching the established optional-capability pattern (`ResidentHiddenLast`, `PrefillPathReporter`).
+    `ResidentAdapterProj`/`ResidentAdapterLayer` are exported twins of the package-private
+    `loraDelta`/per-layer struct `decoder/lora.go` already has — needed because a resident backend
+    lives in another module and can't see unexported fields — with `residentAdapterProj`/
+    `residentAdapterLayers` converting one to the other (nil ⇒ nil, matching `loraLayerDelta`'s own
+    untargeted-projection convention exactly, so a backend's dispatch loop is a plain nil-check per
+    projection).
+  - **Gate widening** (`decoder/model.go`, `generateInto`): `useGPU` was `resident != nil &&
+    prefillFrom == 0 && commit == nil` — which is exactly what made every session-driven request
+    (including adapter ones — `Session.Generate` always sets `commit`) drop to CPU, this item's
+    whole premise. Widened to also admit `commit != nil` when `cache.lora != nil` (an adapter
+    session) AND the resident backend implements `ResidentAdapter` — a plain (non-adapter) session
+    still declines exactly as before, since prefix-reuse's CPU-side cache and the resident's GPU-side
+    KV still can't both be the source of truth for a reused prefix (the pre-existing reason session
+    generations avoid resident at all). The bind/clear itself happens INSIDE the existing `resBusy`
+    CAS block, wrapping the whole generation: `SetAdapter(layers)` right after winning the CAS,
+    `SetAdapter(nil)` via the same `defer` that releases `resBusy` — so a bind failure falls back to
+    CPU cleanly (releases `resBusy`, does not proceed resident with no delta bound) and two adapter
+    sessions sharing one base's resident can never observe each other's bound delta, for the same
+    reason two plain generations can't race today.
+  - **Seam test** (`decoder/resident_adapter_seam_test.go`, new): the G4 fake-backend pattern
+    (`resident_embed_seam_test.go`) applied to this gate. `resident_seam_test.go`'s own GGUF-based
+    `tinyFixture` (glm-tiny.gguf) turned out unusable here — GLM is MoE-shaped and GGUF-based, and
+    `Model.LoadAdapter` rejects both — so the fixture is a small in-memory synthetic llama
+    (safetensors, 2 layers) plus a PEFT adapter targeting q/v/gate/down, following
+    `TestLoRACompute_forwardParity`'s own construction exactly (factored into a new
+    `buildLoRAFixture` helper since that test's version is inline and this needs the raw
+    directories, not a pre-built `*Model`). Two tests: `TestSeam_AdapterSessionBindsAndClearsResidentAdapter`
+    (a fake `ResidentAdapter`-capable backend must see exactly one bind before decode with the
+    right per-layer deltas — asserted per-projection, confirming untargeted k/o/up stayed nil — and
+    one matching clear after, `binds == clears`, decode actually ran on the resident `Forward`) and
+    `TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter` (a resident backend WITHOUT
+    `ResidentAdapter` — reusing the existing plain `fakeResidencyBackend` — must never call its
+    resident `Forward` for an adapter session, and the CPU-fallback output must match a direct
+    `prefillLogits` call with the same adapter bound). Both pass.
+  - **`testdata/parity_manifest.json` deps_hash refresh**: `decoder/model.go` is a `core` file, so
+    every family sharing it went stale. Ran the goldens-first check by hand
+    (`scripts/refresh_parity_hashes.sh` refuses unconditionally on ANY forward-golden failure, and
+    `TestOlmo3_forwardParity` still fails, pre-existing/unrelated per every prior row this session)
+    — re-confirmed via `git stash` that the failure is byte-identical with none of G3's changes
+    applied, then ran the script's own underlying mechanism directly
+    (`go test ./decoder -run TestParityManifest -update`), same as every prior row this session.
+    33 families' deps_hash refreshed, 0 `validated_at` lines touched (confirmed via diff).
+  - Full regression: `decoder` 416 pass/1 fail(`TestOlmo3_forwardParity`, pre-existing)/134 skip;
+    `metal` 107 pass/0 fail. `gofmt -l`, `go vet` (plain and `-tags realckpt`), and CI's pinned
+    staticcheck (`-tags goinfer_testhooks`, since the U1000s without it are pre-existing
+    testhook-only helpers) all clean.
+- 2026-09-08 — G3's Metal backend DONE (the decoder plumbing above now has a real implementation
+  and a numeric parity gate). No commit yet.
+  - **Two new kernels** (`metal/kernels.go`): `lora_delta_down` (ONE threadgroup, loops over rank
+    r serially, standard tree-reduction of `A[r,:]·dequant(aq,asc)` into a small `t[R]` scratch
+    buffer — same shape as `rmsnorm_quant`'s own reduction) and `lora_delta_up` (one thread per
+    output row, `out[row] += scale·Σ_r B[row,r]·t[r]`, dispatched with an exact non-uniform grid
+    so no bounds guard is needed). `t` (`r.loraT`) is shared across every projection/layer within
+    one command buffer — safe because dispatches within one `MTLComputeCommandEncoder` observe
+    each other's writes, the same guarantee every other multi-stage GEMV in this file already
+    relies on (rmsnorm→GEMV, GEMV→SwiGLU, etc).
+  - **New file `metal/lora.go`**: `residLoRAProj`/`residLoRALayer` (device-resident A/B buffers +
+    uniforms per projection per layer), `resident.SetAdapter` (releases whatever was previously
+    bound FIRST, then uploads the new deltas or leaves `r.loraLayers` nil — matching prefill.go's
+    C5 fix for the same class of per-call-buffer leak: a resident backend's `BuildResident`-time
+    buffers are tracked for `Close`, but a bind/rebind buffer created OUTSIDE that isn't, unless
+    released explicitly), `applyResidentLoRA` (the shared down-then-up dispatch helper, no-op when
+    the target projection's delta is nil). `metalResident.SetAdapter` (`metal/backend.go`) is a
+    thin forward to `resident.SetAdapter`, with the usual compile-time
+    `_ decoder.ResidentAdapter = (*metalResident)(nil)` seam.
+  - **Dispatch sites**: `encodeAttention` (q/k/v into their `r.qkv` slots, right after the base
+    fused QKV GEMV; o-proj into whichever buffer the base o-proj GEMV just wrote — `r.oO` for
+    sandwich/postOnly/parallelBlock BEFORE their post-attn norm, `r.x` directly otherwise) and
+    `encodeLayer` (gate/up into `r.gu` BEFORE the SwiGLU activation — matching
+    `decoder/mlp.go`'s own comment, "delta into gate/up before the activation", word for word;
+    down into `r.dO` or `r.x` by the same before-any-subsequent-norm rule). Every site takes the
+    SAME quantized activation buffer (`aq`/`aSc`, `cq`/`cSc`, or `mq`/`mSc`/`dq`/`dSc`) the base
+    projection it rides beside already consumed — matching `applyLoRA`'s CPU reference exactly,
+    which takes the identical input the base matmul does.
+  - **Known, documented gap, not a silent one**: the qGate branch (Qwen3.5-style fused
+    double-width q_proj+gate) in `encodeAttention` is NOT wired — `Model.LoadAdapter` doesn't
+    exclude qGate families by name, only by its three structural checks (own-forward/MoE/non-gated
+    MLP), so an adapter loaded against a qGate family would silently apply no q/k/v delta on Metal
+    today. No family with qGate=true is known to pass `LoadAdapter`'s checks currently; recorded in
+    `metal/lora.go`'s file comment as the gap to close first if one arrives.
+  - **A real bug, caught by the parity test's own vacuousness check failing, not by inspection**:
+    `lora_delta_down`'s first version declared its reduction scratch as a DYNAMIC
+    `threadgroup float* red[[threadgroup(0)]]` PARAMETER but was dispatched via `Dispatch` (not
+    `DispatchTG`, which is what actually calls `setThreadgroupMemoryLength:atIndex:`) — so the
+    buffer's length was never set. This didn't crash or NaN; it silently read/wrote a
+    zero-length/undefined threadgroup allocation, producing a small-but-wrong, self-consistent
+    delta (first measured cosine against CPU: 0.9647 — inside the 0.95 floor, so a NUMERIC-ONLY
+    gate would have shipped this). Fixed by switching to a STATIC `threadgroup float red[256]`
+    declared inside the kernel body, matching `rmsnorm_quant`'s own convention exactly (and
+    avoiding the whole `Dispatch`-vs-`DispatchTG` footgun rather than just fixing this one call
+    site). Cosine after the fix: 0.999960.
+  - **A second issue, this one in the TEST, not production**: the first parity-test draft compared
+    `got` (with-adapter logits) against `gotNoAdapter` (without-adapter) and found them
+    IDENTICAL — looked exactly like the adapter silently no-op'ing (the G6 zero-value bug class).
+    Root cause was the test, not the kernels: `metalResident.Forward`'s own doc says its returned
+    slice "is reused across calls" (aliases resident-owned storage), and the test's first loop
+    just captured the returned slice directly (`got = lr`) instead of copying it — so the SECOND
+    loop's calls silently overwrote `got`'s backing array in place, making the two comparisons
+    trivially identical regardless of what the kernels did. `gpt2_resident_parity_test.go` already
+    has the right pattern (`append([]float32(nil), lr...)`) for exactly this reason; missed it on
+    the first pass. Fixed by copying at the end of each run.
+  - **`TestLoRAResidentParityMetal`** (new, `metal/lora_resident_parity_test.go`): drives
+    `decoder.ResidentAdapter` directly via `ResidentForwardForTest`/`ResidentAdapterLayersForTest`
+    (two new CPU-exported test hooks in `decoder/fidelity_testhook.go` —
+    `PrefillLogitsWithAdapterForTest` and `ResidentAdapterLayersForTest`, since `KVCache.lora` and
+    `Model.adapter` are both unexported and this test lives outside package `decoder`), isolating
+    the KERNEL correctness question the way `hiddenlast_resident_parity_test.go` isolates G4's —
+    the WIRING question is `decoder/resident_adapter_seam_test.go`'s job, not this test's. Uses
+    `testdata/llama-tiny` (a real committed safetensors checkpoint, GQA 4-heads/2-kv-heads so
+    o-proj and the differently-widthed q/k/v sites are all genuinely exercised) plus a synthetic
+    PEFT adapter targeting all seven projections across all four layers, at `--quant int4` (not
+    int8int8 — G10 already established int8int8 silently becomes int4 numerics on Metal anyway).
+    Gates at cosine ≥ 0.95 against the CPU compute-time-LoRA reference — the SAME floor
+    `gpt2_resident_parity_test.go` established for whole-model resident-vs-CPU decode logits, not
+    a bar invented for this test — plus the vacuousness check above. Measured: cosine 0.999960,
+    argmax match, adapter genuinely non-vacuous (CPU with/without-adapter cosine was -0.0485 on
+    this fixture, confirming the adapter has a real, large, correctly-reproduced effect, not a
+    coincidentally-tiny one the parity bar couldn't have caught).
+  - Full regression: `decoder` 416 pass/1 fail (`TestOlmo3_forwardParity`, pre-existing)/134 skip;
+    `metal` 108 pass/0 fail (107 prior + this row's new test). `gofmt -l` and `go vet` (plain and
+    `-tags goinfer_testhooks`) clean; CI's pinned staticcheck (`-tags goinfer_testhooks`) clean.
+  - **Still open**: CUDA and WebGPU implementations (Metal-first precedent, same as G4's
+    HiddenLast — CUDA/WebGPU are the natural next continuation once Metal is verified, not done in
+    this pass). No commit yet.
+

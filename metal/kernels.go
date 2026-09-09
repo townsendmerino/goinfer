@@ -822,6 +822,55 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
 
+// lora_delta_down / lora_delta_up: compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md), the
+// two-GEMV low-rank delta y[o] += scale·Σ_r B[o,r]·(A·x)[r]. Split into two dispatches (rather
+// than fused) because they have different natural parallelism: the down-project reduces over K
+// (potentially thousands of elements) per rank, the up-project has no reduction at all (one MAC
+// chain of length R per output row). x is the SAME quantized activation (aq/asc) the base
+// projection this delta rides alongside already consumed — matching applyLoRA's CPU reference,
+// which takes the identical input the base matmul does (decoder/lora.go).
+//
+// lora_delta_down: ONE THREADGROUP ONLY (dispatched with n==tg, e.g. 256) — R is small (LoRA
+// ranks are typically 4-64), so looping over ranks serially and reusing one threadgroup's
+// reduction scratch is simpler and cheap; a single dispatch computing all R ranks in parallel
+// would need R× the threadgroup memory for one-time use. t[R] is a small scratch buffer, reused
+// across every projection/layer within one command buffer's dispatch order (dispatches in one
+// MTLComputeCommandEncoder observe each other's writes, same guarantee every other multi-stage
+// GEMV in this file already relies on).
+kernel void lora_delta_down(device const char* aq[[buffer(0)]], device const float* asc[[buffer(1)]],
+    device const float* A[[buffer(2)]], device float* t[[buffer(3)]],
+    constant uint& K[[buffer(4)]], constant uint& R[[buffer(5)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    // Fixed-size STATIC threadgroup array (matches rmsnorm_quant's own reduction, kernels.go
+    // top) — tgs is pinned to tgReduceNorm (256, model.go) by every dispatch site, same as every
+    // other norm-class reduction kernel in this file. Deliberately NOT a [[threadgroup(0)]]
+    // dynamic parameter: that form requires the caller to use DispatchTG (which sets the length
+    // explicitly) rather than plain Dispatch — using a static array here avoids that footgun
+    // entirely, the same way every other single-threadgroup reduction kernel in this file does.
+    threadgroup float red[256];
+    float sc = asc[0];
+    for (uint r = 0; r < R; r++) {
+        device const float* Ar = A + r*K;
+        float part = 0.0f;
+        for (uint k = tid; k < K; k += tgs) part += Ar[k] * (float(aq[k]) * sc);
+        red[tid] = part;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = tgs/2; s > 0; s >>= 1) { if (tid < s) red[tid] += red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+        if (tid == 0) t[r] = red[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+}
+// lora_delta_up: one thread per output row (dispatched with n==Out, exact non-uniform grid —
+// no bounds guard needed). R is small, so a serial dot product per row is cheap.
+kernel void lora_delta_up(device const float* B[[buffer(0)]], device const float* t[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& R[[buffer(3)]], constant float& scale[[buffer(4)]],
+    uint row[[thread_position_in_grid]]) {
+    device const float* Br = B + row*R;
+    float acc = 0.0f;
+    for (uint r = 0; r < R; r++) acc += Br[r] * t[r];
+    out[row] += scale*acc;
+}
+
 // qk_norm: per-head RMSNorm on Q and K in the fused qkv buffer, applied BEFORE RoPE (Qwen3,
 // Gemma3). ONE threadgroup per head: head < nH is a Q head (weight qn), else a K head (weight
 // kn, index head-nH). Norm over the head dim (hd, a power of 2). addOne selects Gemma's (1+w)
