@@ -848,7 +848,7 @@ func (m *Model) DecodePath() string {
 	}
 	switch {
 	case m.resident != nil:
-		return fmt.Sprintf("%s-resident (%s)", be, m.Quant())
+		return fmt.Sprintf("%s-resident (%s)", be, residentQuantLabel(be, m.Quant()))
 	case be == "cpu":
 		return fmt.Sprintf("cpu (%s)", m.Quant())
 	case be != "webgpu":
@@ -874,6 +874,21 @@ func (m *Model) DecodePath() string {
 	default:
 		return fmt.Sprintf("webgpu-staged (%s)%s", m.Quant(), stagedDeviceNote(m.Quant()))
 	}
+}
+
+// residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a
+// live Model (see decoder/staged_device_note_test.go) — same shape as declinedToCPUReason below.
+//
+// G10 (docs/task-gpu-paths-2026-09.md): Metal has no int8 GEMV kernel at all — an int8-loaded
+// weight is silently re-quantized to W4A8 (int4) at resident-build time (metal/model.go's
+// int4Buf), so "metal-resident (int8int8)" would claim a precision this backend never actually
+// runs. Say what executes, not what was requested; every other (backend, quant) pair is
+// unaffected and echoes the requested quant string exactly as before.
+func residentQuantLabel(backend, quant string) string {
+	if backend == "metal" && quant == "int8int8" {
+		return "int8int8→int4, no Metal int8 GEMV kernel"
+	}
+	return quant
 }
 
 // declinedToCPUReason builds the reason BackendSummary needs when cuda or metal has no staged

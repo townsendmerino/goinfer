@@ -58,8 +58,14 @@ accuracy-per-byte on the shapes this project targets, not because it is smallest
 
 ### `int8int8` (W8A8) — when accuracy matters more than RAM
 
-int8 weights and int8 activations on native SDOT/VNNI. Higher accuracy, and **required** for the
-dense Metal resident path (int4 declines to CPU there).
+int8 weights and int8 activations on native SDOT/VNNI — on CUDA and the CPU backend, which both
+ship a real W8A8 GEMV. **Metal does not**: it has no int8 weight kernel at all
+(docs/task-gpu-paths-2026-09.md G10), so a `--quant int8int8` load's resident weights are silently
+re-quantized to W4A8 (int4) at build time — you pay int8's RAM (the host copy stays int8) for
+int4's numerics. `decoder.Model.DecodePath()` reports this honestly as
+`metal-resident (int8int8→int4, no Metal int8 GEMV kernel)` rather than the requested string. int4
+IS the resident path on Metal either way, whether you load it directly (`--quant int4`, the
+cheaper route — no dequant-then-repack) or arrive at it via `int8int8`.
 
 > **On Apple Silicon it is also the SMALLER option, which contradicts the intuition and our own
 > older help text.** Measured 2026-09-06 in CI: int4 costs **1.2500 bytes/element** on arm64
