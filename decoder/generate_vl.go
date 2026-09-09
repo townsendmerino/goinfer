@@ -296,6 +296,51 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 			g.err = err
 			return
 		}
+
+		// Resident m-RoPE prefill fast path (Qwen2.5-VL's twin of GenerateVL's resident
+		// image-prefill branch): tried BEFORE the CPU prefillLogitsQwenVL call below — a
+		// first-time (cold) image turn's PREFILL, not only its decode, runs on the resident
+		// GPU when the backend implements ResidentMRoPEPrefill. Needs BOTH that (the prefill
+		// itself) and ResidentMRoPE (this fast path's own decode continuation via
+		// ForwardMRoPE) — a resident that can prefill but not decode m-RoPE would strand the
+		// turn right after prefill. Any decline (no capability, prompt too large for one
+		// chunk, resident busy) falls through UNCHANGED to the CPU-prefill+UploadKV bridge;
+		// the claim is released before falling through so the CPU prefill below never runs
+		// while holding it.
+		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok {
+			if r, ok2 := m.resident.(ResidentMRoPE); ok2 && m.tryClaimResident() {
+				if logits, gpuPos, ferr := m.residentMRoPEPrefill(ctx, rmp, ids, feats, imgPos, imgLen, mropePos); ferr == nil {
+					g.ImgPrefillResident = true
+					if capper, ok := m.resident.(ResidentCapped); ok {
+						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+							maxTokens = ctxCap - gpuPos
+						}
+					}
+					sampler := NewSampler(sp)
+					sampler.Observe(ids...)
+					committed := false
+					defer func() {
+						if !committed {
+							m.residentForgetIDs()
+						}
+						atomic.StoreInt32(&m.resBusy, 0)
+					}()
+					generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+						ropePos := gpuPos + mropeDelta
+						l, err := r.ForwardMRoPE(m.embedResident(next), gpuPos, ropePos)
+						gpuPos++
+						return l, err
+					})
+					if g.err == nil {
+						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+						committed = true
+					}
+					return
+				}
+				atomic.StoreInt32(&m.resBusy, 0) // declined: release before falling through
+			}
+		}
+
 		cache := m.NewCache(len(ids) + maxTokens)
 		logits, err := m.prefillLogitsQwenVL(ctx, ids, feats, imgPos, imgLen, mropePos, cache)
 		if err != nil {

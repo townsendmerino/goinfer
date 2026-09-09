@@ -48,6 +48,20 @@ func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip ResidentIma
 	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, imgPos, imgLen)
 }
 
+// ResidentMRoPEPrefillForTest wraps residentMRoPEPrefill — the exact primitive GenerateQwenVL's
+// resident m-RoPE prefill fast path calls internally — mirroring ResidentImagePrefillForTest
+// exactly, for a real-checkpoint gate comparing its logits against PrefillLogitsQwenVLForTest.
+func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
+	return m.residentMRoPEPrefill(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos)
+}
+
+// ApplyMRoPEForTest wraps applyMRoPE (decoder/rope.go) — the CPU m-RoPE reference a resident
+// kernel's own rotation must match bit-for-bit. Test-only: production always reaches applyMRoPE
+// through ropeAt, never directly.
+func ApplyMRoPEForTest(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64) {
+	applyMRoPE(vec, heads, headDim, pos, section, invFreq, scale)
+}
+
 // Gemma4MoEExpertForTest computes ONE gemma4 MoE expert's output on a caller-supplied input xe
 // ([hidden]) — the gelu-tanh GeGLU expert function edown = Down · (geluTanh(gate)·up), gate‖up =
 // GateUp·xe — and returns it alongside the expert's fused gate‖up and down weight matrices. The

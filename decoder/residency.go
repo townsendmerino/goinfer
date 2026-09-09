@@ -132,6 +132,28 @@ type ResidentImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 }
 
+// ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's
+// m-RoPE 3D rotary positions — the resident twin of prefillLogitsQwenVL's CPU forward
+// (decoder/forwardn.go). Distinct from ResidentMRoPE (decode's single-scalar ropePos split,
+// above): this needs every row's own 3-component rotary position up front, not one extra scalar.
+//
+// embeddings are the ALREADY-SPLICED per-position vectors (ResidentImagePrefill's convention — no
+// GPU-side embedding table). mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
+// triple per ABSOLUTE sequence position, covering the WHOLE prompt — GenerateQwenVL already
+// computes this for its other branches (the image-reuse fast path, the CPU-prefill fallback), so
+// there is no reason for a resident backend to re-derive it and risk a second implementation
+// drifting from the CPU reference.
+//
+// UNLIKE ResidentImagePrefill, implementations MAY chunk: Qwen's image tokens attend causally (no
+// bidirectional mask — GenerateQwenVL's own doc comment), so attention geometry is unaffected by
+// an image block, and each row's rotation is independent of every other row's — there is no
+// cross-row coupling for a chunk boundary to break. Backends may skip implementing it (same
+// resident-capability-gap discipline as every other optional extension here) — GenerateQwenVL's
+// m-RoPE prefill fast path then never engages, falling back to the CPU-prefill+UploadKV bridge.
+type ResidentMRoPEPrefill interface {
+	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
+}
+
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
 // prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
 // Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent
@@ -611,6 +633,13 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 	a := m.w.arch
 	return a.HiddenDim, a.NumLayers, a.NumHeads, a.NumKVHeads, a.HeadDim, a.IntermediateDim, a.VocabSize
 }
+
+// MRopeSectionResident exposes Qwen2.5-VL's m-RoPE head_dim/2 split across the
+// (temporal,height,width) position components — nil/empty for every non-m-RoPE family. A resident
+// backend's m-RoPE prefill kernel (decoder.ResidentMRoPEPrefill) needs this ONCE, at build time,
+// to compute its own cumulative section boundaries; every other resident capability is family-
+// agnostic and has no equivalent accessor.
+func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
 
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {

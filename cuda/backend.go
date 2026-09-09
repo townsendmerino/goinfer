@@ -767,6 +767,29 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				loadImg(&r.bAttnImg, "attn_img_batched")
 			}
 		}
+		// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentMRoPEPrefill). Own module, same
+		// isolation reason as attn_img_prefill.cu — prefill_batched.ptx is untouched. Gated on
+		// the model actually being m-RoPE (unlike bAttnImg above, which loads unconditionally):
+		// this kernel needs the model's own MRopeSection to compute sec0/sec1, so loading it for
+		// every non-VL model would waste NVRTC JIT time on parameters that mean nothing there. A
+		// load failure (or a non-m-RoPE model) is not fatal: PrefillMRoPELast declines, falling
+		// back to the CPU-prefill-then-UploadKV bridge.
+		if r.prefillReady {
+			if sec := m.MRopeSectionResident(); len(sec) == 3 {
+				if mmod, e9 := r.dev.CompileLibrary(ropeMRopePrefillPTX); e9 == nil {
+					loadMRope := func(dst *Pipeline, name string) {
+						if pl, pe := r.dev.NewComputePipeline(mmod, name); pe == nil {
+							*dst = pl
+							r.mropePrefillReady = true
+						}
+					}
+					loadMRope(&r.bRopeKVMRoPE, "rope_kv_mrope_batched")
+					if r.mropePrefillReady {
+						r.mropeSec0, r.mropeSec1 = int32(sec[0]), int32(sec[0]+sec[1])
+					}
+				}
+			}
+		}
 		// L2 fused prefill attention (docs/task-prefill-gap.md §4 L2). OPT-IN: the fast path becomes
 		// a default only when §3's reference gate passes on CUDA (Phase 3), so until then this loads
 		// only when asked. Own module — prefill_batched.ptx is untouched, the isolation pattern

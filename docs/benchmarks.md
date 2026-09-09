@@ -636,13 +636,55 @@ shared-memory out-of-bounds write, not a clean wrong answer — invisible on thi
 vision tower (~31.3 s, §A, untouched by any of gap 0/P9a/this) is now essentially the ENTIRE cost of
 a cold image turn on this checkpoint; CPU prefill is no longer a meaningful contributor.
 
-**Not yet measured / explicitly out of scope for v1**: Qwen2.5-VL (its image tokens already attend
-causally in prefill — no new kernel needed there, but resident m-RoPE prefill positions are
-unverified, a separate follow-on); `attn_fused`'s L2 tensor-core path (v1 uses only the exact
-`attn_batched`-family kernel; `attn_fused`'s tile-level aggregates assume monotonic per-row key
-counts, which an image block breaks); a prompt whose image block spans more than one
-`prefillChunkRows()` chunk (declines to the CPU-prefill+`UploadKV` bridge, unchanged); Metal/WebGPU
+**Not yet measured / explicitly out of scope for v1**: `attn_fused`'s L2 tensor-core path (v1 uses
+only the exact `attn_batched`-family kernel; `attn_fused`'s tile-level aggregates assume monotonic
+per-row key counts, which an image block breaks — never engages below the 512-token
+`fastPrefillFloor` anyway, so low priority until a real VL prompt crosses it); Metal/WebGPU
 (same reasons as the P9(a) row above).
+
+#### Resident m-RoPE PREFILL (Qwen2.5-VL), same gap for the second VL family — 2026-09-08
+
+**Qwen2.5-VL's own version of the gap closed above.** Its image tokens already attend causally in
+prefill (no bidirectional mask, so `attn_batched` serves it unmodified), but the batched-prefill
+rope kernel only knew a single row-sequential rotation angle — m-RoPE needs a per-row, 3-component
+one (`decoder/rope.go`'s `applyMRoPE`), and — a real subtlety, not just a formatting change — even
+ORDINARY text rows after an image block need it too, since `mropePositions` compresses their
+position by the merged image grid rather than counting sequentially. Closed via a new resident
+kernel (`cuda/rope_mrope_prefill.cu`, `rope_kv_mrope_batched`) — `decoder.ResidentMRoPEPrefill`,
+CUDA only, chunkable (no cross-row attention coupling, unlike Gemma-3's bidirectional block).
+
+**Measured: real checkpoint (`Qwen2.5-VL-3B-Instruct`), real image
+(`testdata/qwen25vl_real_golden.json`'s fixture, 14 tokens, image run `[5,11)`), int4, PREFILL ONLY
+(vision tower excluded, computed once), 1 discarded warm-up + 5 measured, both arms on the SAME
+resident instance (each fully overwrites `[0,len(ids))`). RTX 2070 SUPER, driver `595.91.07`,
+Nobara 44. Harness: a throwaway timing driver (`cuda/zztmp_qwen_mrope_timing_test.go`, matching
+this session's own precedent — not committed).**
+
+| | median turn time | speedup |
+|---|---|---|
+| old (CPU prefill + `UploadKV` bridge) | 711.2 ms | — |
+| new (resident m-RoPE prefill kernel) | 19.7 ms | **36.14×** |
+
+(This prompt is 14 tokens against Gemma-3's 266 above — the two speedups are not directly
+comparable in absolute terms, only each internally consistent against its own old/new pair.)
+
+**Real-checkpoint correctness gate** (`cuda/qwen25vl_mrope_prefill_resident_real_test.go`,
+`TestQwen25VLMRoPEPrefillResidentReal_gate`): matched int4 precision both arms, forced-trajectory
+cosine on raw logits — resident m-RoPE prefill logits vs the CPU reference, cosine **0.993995**,
+exact argmax match (264 == 264); the same turn through the real `GenerateQwenVL` entrypoint
+confirms the fast path actually engaged (`Generation.ImgPrefillResident == true`) and streams the
+identical first token. Kernel-level parity (`cuda/rope_kv_mrope_batched_test.go`, synthetic
+Q/K/V/positions, no real checkpoint needed): the degenerate case (every row's (t,h,w) collapsed to
+one scalar) proven bit-identical to the existing scalar `rope_kv_batched` kernel regardless of how
+the frequency sections are split, plus an adversarial case with per-row triples that diverge from
+each other AND from the naive `pos=startPos+m` formula, checked directly against
+`decoder.applyMRoPE` (via `ApplyMRoPEForTest`) rather than reimplemented in the test.
+
+**Not yet measured / explicitly out of scope**: a prompt whose image block spans more than one
+`prefillChunkRows()` chunk is unaffected by this (m-RoPE has no cross-row coupling — it chunks
+cleanly), but a multi-chunk IMAGE-BLOCK prompt (Gemma-3-style bidirectional attention) remains
+structurally blocked, see the section above; `attn_fused`'s L2 path (same reasoning as Gemma-3's);
+Metal/WebGPU.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 

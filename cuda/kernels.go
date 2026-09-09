@@ -151,6 +151,28 @@ var attnBlockPTX []byte
 //go:embed testdata/attn_img_prefill.ptx
 var attnImgPrefillPTX []byte
 
+// ropeMRopePrefillPTX: rope_kv_mrope_batched — Qwen2.5-VL's m-RoPE batched-prefill rotation
+// (decoder.ResidentMRoPEPrefill / cuda.PrefillMRoPELast). A verbatim copy of
+// prefill_batched.cu's rope_kv_batched, except the rotation angle is a PER-ROW,
+// PER-FREQUENCY-SECTION lookup instead of a single row-sequential scalar — each frequency index
+// d rotates by pos[comp(d)]·invFreq[d], where comp(d) picks temporal/height/width per the
+// model's MRopeSection cumulative boundaries. Its own module for the same isolation reason
+// argmaxPTX/routerF32PTX/attnBlockPTX/attnImgPrefillPTX state: adding a kernel to
+// prefill_batched.cu would regenerate that PTX and risk shifting codegen for kernels every
+// batched-prefill parity gate rests on. Verified at build time: prefill_batched.ptx and glue.ptx
+// are byte-unchanged.
+//
+// IMPORTANT (see cuda/rope_mrope_prefill.cu's own header): EVERY row needs the per-row lookup,
+// not just image-block rows — decoder/rope.go's mropePositions resumes scalar counting AFTER an
+// image block from a value COMPRESSED by the merged image grid, not the naive sequential count
+// rope_kv_batched's own formula assumes. The KV-cache STORE index (pos = startPos+m) stays
+// row-sequential and unchanged; only the rotation angle is widened — mirrors rope_kv's existing
+// pos/ropePos split (cuda/gemv_fwd.cu) for decode, generalized from one scalar to a per-row triple.
+// See cuda/rope_mrope_prefill.cu.
+//
+//go:embed testdata/rope_mrope_prefill.ptx
+var ropeMRopePrefillPTX []byte
+
 // attnFusedPTX: attn_fused_hd64 / attn_fused_hd128 — the L2 FlashAttention-style fused prefill
 // attention (docs/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
 // attn_block.cu records: adding a kernel to prefill_batched.cu regenerates that PTX and risks

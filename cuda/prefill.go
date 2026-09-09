@@ -62,6 +62,32 @@ const prefillDefaultChunk = 512
 // path's fixed per-pass cost stops paying for itself.
 const prefillMinChunk = 32
 
+// prefillImageDefaultChunk is PrefillImageLast's own row budget — separate from
+// prefillDefaultChunk because it prices a BOUNDED, KNOWN quantity (a real image's token budget —
+// Gemma 3: 256, Gemma 4: up to 1120, docs/multimodal.md — plus whatever chat text accompanies it)
+// rather than an open-ended prompt, and because PrefillImageLast never chunks at all (a
+// bidirectional image block split across a chunk boundary is unverified — its own doc comment),
+// so M > chunk is an outright decline, not a retry at a smaller width. 2048 is not a fresh guess:
+// prefillDefaultChunk's own measurement table above already measured M=2048 batched on THIS box
+// (RTX 2070 SUPER) at Qwen2.5-7B — inter=18944, the worst-case width in that table — at 3.543
+// ms/token with no OOM (the table's own OOM point is M=8012, four times higher). A card where
+// 2048 IS too wide still declines cleanly: prefillCore's own OOM handling wraps a real device OOM
+// as errPrefillDeclined/errPrefillOOM regardless of caller, and GenerateVL's fallback reuses the
+// already-computed vision features rather than re-running the tower — an overly optimistic
+// default costs one wasted allocation attempt, never a crash or a wrong answer.
+// GOINFER_PREFILL_IMAGE_CHUNK overrides it (0 or unset = this default).
+const prefillImageDefaultChunk = 2048
+
+// prefillImageChunkRows is PrefillImageLast's row budget — prefillImageDefaultChunk unless
+// GOINFER_PREFILL_IMAGE_CHUNK says otherwise. Same "an unparseable/non-positive override is
+// ignored, not fatal" reasoning as prefillChunkRows.
+func prefillImageChunkRows() int {
+	if n, err := strconv.Atoi(os.Getenv("GOINFER_PREFILL_IMAGE_CHUNK")); err == nil && n > 0 {
+		return n
+	}
+	return prefillImageDefaultChunk
+}
+
 // prefillProf accumulates PrefillLast's per-category GPU time (test-only). The boundaries are stream
 // syncs, so the category sum slightly exceeds the pipelined wall time (lost launch overlap) — it
 // attributes where the time goes, not the fully-overlapped total.
@@ -119,7 +145,7 @@ func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
 // layer 0; a non-uniform family trips the guard and declines rather than reading a wrong stride.
 // PrefillLast ingests a whole prompt in one batched pass, returning the last token's logits.
 func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	return r.prefillChunked(ctx, embeddings, startPos)
+	return r.prefillChunked(ctx, embeddings, startPos, nil)
 }
 
 // PrefillImageLast satisfies decoder.ResidentImagePrefill: PrefillLast's Gemma-3 twin for a turn
@@ -133,9 +159,13 @@ func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, 
 //
 // v1 REQUIRES the whole prompt (the image block included) to fit in ONE weight-stationary pass —
 // prefillChunked's positional-KV chunking is unverified (likely unsafe) for a bidirectional block
-// split across a chunk boundary — so this never chunks, unlike PrefillLast. Any decline (kernel
-// unavailable, invalid range, or M past the chunk width) wraps errPrefillDeclined; the caller
-// (decoder.GenerateVL) treats that as "fall through to the CPU-prefill+UploadKV bridge, unchanged".
+// split across a chunk boundary — so this never chunks, unlike PrefillLast. The row budget for
+// that one pass is prefillImageChunkRows (2048 by default), NOT prefillChunkRows's 512: real image
+// token budgets are bounded and known (see prefillImageDefaultChunk's own doc comment), so this
+// prices "one image plus its surrounding chat text" rather than an open-ended text prompt. Any
+// decline (kernel unavailable, invalid range, or M past the chunk width) wraps errPrefillDeclined;
+// the caller (decoder.GenerateVL) treats that as "fall through to the CPU-prefill+UploadKV bridge,
+// unchanged".
 func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
@@ -148,7 +178,7 @@ func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]floa
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	chunk := prefillChunkRows()
+	chunk := prefillImageChunkRows()
 	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
 		chunk = learned
 	}
@@ -156,11 +186,41 @@ func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]floa
 		return nil, fmt.Errorf("cuda prefill: image prefill needs the whole %d-row prompt in one "+
 			"%d-row chunk (no chunked path for a bidirectional block): %w", M, chunk, errPrefillDeclined)
 	}
-	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, imgStart, imgEnd)
+	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, imgStart, imgEnd, nil)
 	if err != nil {
 		return nil, err
 	}
 	return outs[len(outs)-1], nil
+}
+
+// PrefillMRoPELast satisfies decoder.ResidentMRoPEPrefill: PrefillLast's Qwen2.5-VL twin under
+// m-RoPE 3D rotary positions (docs/multimodal.md's image path — decoder/rope.go's
+// applyMRoPE/mropePositions is the CPU reference this must match bit-for-bit). embeddings already
+// carry the spliced merged-vision features — the same "embed by vector" convention PrefillLast
+// already uses. mropePos is decoder/rope.go's mropePositions output, one (t,h,w) triple per
+// ABSOLUTE sequence position, covering the WHOLE prompt (never pre-sliced by the caller — see
+// mropePosWindow's own doc comment for why the slicing lives inside prefillCore instead).
+//
+// UNLIKE PrefillImageLast, this DOES chunk: Qwen's image tokens attend causally (no bidirectional
+// mask, so attention geometry is completely unaffected by an image block), and each row's rotation
+// is independent of every other row's — there is no cross-row coupling for a chunk boundary to
+// break. Reuses prefillChunked's existing OOM-retry/cancellation loop rather than duplicating it.
+func (r *cudaResident) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
+	M := len(embeddings)
+	if M == 0 {
+		return nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	if len(mropePos) != startPos+M {
+		return nil, fmt.Errorf("cuda prefill: mropePos len %d, want %d (startPos+M): %w",
+			len(mropePos), startPos+M, errPrefillDeclined)
+	}
+	if !r.mropePrefillReady {
+		return nil, fmt.Errorf("cuda prefill: m-RoPE batched kernel unavailable: %w", errPrefillDeclined)
+	}
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
+	return r.prefillChunked(ctx, embeddings, startPos, mropePos)
 }
 
 // prefillChunkRows is the row budget for one batched pass — prefillDefaultChunk unless
@@ -191,7 +251,7 @@ func prefillChunkRows() int {
 // chunk's rows only. That combination is not reachable today — the capture is armed by the verify
 // entry points, not by PrefillLast — but a partial capture would be a silent wrong answer rather than
 // a slow one, so it declines to one pass instead of being merely documented as unreachable.
-func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -211,7 +271,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		return nil, e
 	}
 	if M <= chunk || len(r.capBTaps) > 0 {
-		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, 0, 0)
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, 0, 0, mropePos)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +292,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		if last {
 			tail = tailLastLogits
 		}
-		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, 0, 0)
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, 0, 0, mropePos)
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 				chunk = max(chunk/2, prefillMinChunk)
@@ -257,7 +317,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 // final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
 // row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
 func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0, nil)
 	return outs, err
 }
 
@@ -275,7 +335,7 @@ func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]f
 // weaker requirement than PrefillLastN's, and it is what makes batching the head admissible at
 // all. TestPrefillLastNArgmax_matchesPerRow gates it.
 func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
-	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, 0, 0)
+	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, 0, 0, nil)
 	return ids, err
 }
 
@@ -299,7 +359,7 @@ func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (
 	// cancelled block-spec seed runs to completion. It is not fixed here because the fix is another
 	// interface change on a different seam, and doing it silently as a side effect of this one is
 	// how a surface changes without anyone deciding to. Filed with the P20 cancellation item.
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, 0, 0)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, 0, 0, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -643,7 +703,20 @@ const (
 	// [M, hidden] readback are all dead work for a chunk whose logits nobody reads.
 )
 
-func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, imgStart, imgEnd int) ([][]float32, []int, error) {
+// mropePosWindow returns the [startPos, startPos+M) slice of the WHOLE-PROMPT, ABSOLUTE-indexed
+// mropePos array. Named and extracted specifically because this is the one place a chunk-relative
+// vs prompt-absolute mismatch could silently ship: prefillChunked passes embeddings CHUNK-RELATIVE
+// (embeddings[i:i+n]) but mropePos stays WHOLE on every call — sliced here by ABSOLUTE startPos,
+// never by the chunk loop's own relative index i. Getting this backwards (e.g. mropePos[i:i+n]
+// instead of mropePos[startPos+i:startPos+i+n]) silently reintroduces the exact wrong-rotation
+// bug this whole feature exists to fix, and — unlike an image-block mask bug — it is invisible to
+// a real-checkpoint gate whose prompt is too short to ever invoke prefillChunked's multi-pass
+// loop. See cuda/mropepos_window_test.go's dedicated coverage of exactly this.
+func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
+	return mropePos[startPos : startPos+M]
+}
+
+func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, imgStart, imgEnd int, mropePos [][3]int) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -669,6 +742,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		if e := r.checkPrefillShmemImg(startPos, M, imgStart, imgEnd); e != nil {
 			return nil, nil, e
 		}
+	}
+	// Qwen2.5-VL m-RoPE prefill (decoder.ResidentMRoPEPrefill). mropePos == nil is the "not
+	// m-RoPE" sentinel every other caller passes — matches decoder/rope.go's ropeAt's own
+	// mropePos==nil convention exactly. No shmem-widening check needed here, unlike the image
+	// block above: m-RoPE never widens attention geometry, only the rotation angle.
+	if mropePos != nil && !r.mropePrefillReady {
+		return nil, nil, fmt.Errorf("cuda prefill: m-RoPE batched kernel unavailable: %w", errPrefillDeclined)
 	}
 	// The fast-prefill floor is judged on the WHOLE prompt, so record it once here rather than
 	// letting each selector see only this chunk's M (prefillChunked passes <=512 rows at a time).
@@ -725,6 +805,29 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		}
 		if e := gpu.Upload(xB, xhost); e != nil {
 			return e
+		}
+
+		// Qwen2.5-VL m-RoPE: build and upload this pass's per-row (t,h,w) rotation triples ONCE,
+		// reused unchanged across every layer's rope_kv_mrope_batched launch below.
+		// mropePosWindow's own doc comment explains why the absolute-vs-chunk-relative slicing
+		// lives in a named, separately-tested function rather than an inline expression here.
+		var rposT, rposH, rposW Buffer
+		if mropePos != nil {
+			window := mropePosWindow(mropePos, startPos, M)
+			pt, ph, pw := make([]int32, M), make([]int32, M), make([]int32, M)
+			for i, p := range window {
+				pt[i], ph[i], pw[i] = int32(p[0]), int32(p[1]), int32(p[2])
+			}
+			rposT, rposH, rposW = ai(M), ai(M), ai(M)
+			if e := gpu.Upload(rposT, pt); e != nil {
+				return e
+			}
+			if e := gpu.Upload(rposH, ph); e != nil {
+				return e
+			}
+			if e := gpu.Upload(rposW, pw); e != nil {
+				return e
+			}
 		}
 
 		for l := 0; l < r.nLayers; l++ {
@@ -795,12 +898,23 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			}
 			// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
 			t = r.profTic()
-			if e := r.launch(r.bRopeKV, LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+			ropeArgs := []gpu.KernelArg{
 				Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
-				gpu.ArgValue(Ly.mscale)); e != nil {
-				return e
+				gpu.ArgValue(Ly.mscale),
+			}
+			var ropeErr error
+			if mropePos != nil {
+				mropeArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
+					Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
+				ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
+			} else {
+				ropeErr = r.launch(r.bRopeKV, ropeCfg, ropeArgs...)
+			}
+			if ropeErr != nil {
+				return ropeErr
 			}
 			r.profToc(glueCat, t)
 			// causal + per-row sliding-window attention; block 128 matches the M=1 attention reduce.

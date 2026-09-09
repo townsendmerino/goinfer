@@ -105,11 +105,30 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    gate: cosine 0.997042, exact argmax, matched int4 precision — `cuda/gemma3_img_prefill_resident_real_test.go`.
    Combined with the decode fix above, a cold Gemma-3 image turn's non-tower cost drops from ~8.2 s
    to ~0.37 s; the vision tower (~31.3 s, unaffected) is now essentially the whole cost of a cold
-   turn. Out of scope for this pass, same reasoning as gap 0 itself: Qwen2.5-VL (its prefill
-   already attends causally — no new mask kernel needed, but resident m-RoPE prefill positions are
-   unverified), the `attn_fused` L2 tensor-core path (its tile-level aggregates assume monotonic
-   per-row key counts, which an image block breaks), a prompt whose image block spans more than
-   one prefill chunk, and Metal/WebGPU (same reasons as gap 0's own decode fix).
+   turn. Out of scope for this pass: the `attn_fused` L2 tensor-core path (its tile-level
+   aggregates assume monotonic per-row key counts, which an image block breaks — low priority, it
+   never engages below the 512-token `fastPrefillFloor` on either shipped VL fixture), and
+   Metal/WebGPU (same reasons as gap 0's own decode fix).
+
+   **UPDATE 2026-09-08 (same day, follow-on pass): Qwen2.5-VL's own version of this gap is also
+   closed, and multi-chunk image-call declines are far rarer.** Qwen's image tokens already attend
+   causally in prefill (no new mask kernel needed — confirmed, `attn_batched` serves it unmodified),
+   but its m-RoPE 3-component rotation wasn't servable by the existing batched-prefill rope kernel —
+   and, a real subtlety, even ORDINARY text rows after an image block needed the fix too, since
+   `mropePositions` compresses their position by the merged image grid rather than counting
+   sequentially. New kernel `cuda/rope_mrope_prefill.cu` (`rope_kv_mrope_batched`) +
+   `decoder.ResidentMRoPEPrefill` close it — **measured 711.2 ms → 19.7 ms, 36.14×** (prefill only,
+   `docs/benchmarks.md` "Resident m-RoPE PREFILL (Qwen2.5-VL)"); real-checkpoint gate cosine
+   0.993995, exact argmax (`cuda/qwen25vl_mrope_prefill_resident_real_test.go`). Unlike Gemma-3's
+   bidirectional image block, m-RoPE has no cross-row attention coupling, so it chunks cleanly —
+   `PrefillMRoPELast` reuses the ordinary chunked-prefill loop rather than declining outright.
+   Separately, `PrefillImageLast`'s own chunk floor was raised from the shared 512-row text default
+   to a dedicated 2048-row budget (`prefillImageChunkRows`, justified by an existing real
+   measurement on this box at that width) — most real image+chat prompts no longer hit the decline
+   at all, though a bidirectional image block spanning more than one pass remains structurally
+   blocked regardless of the floor (chunk N's in-block rows need chunk N+1's not-yet-computed K/V
+   at every layer — no pass ordering can supply that). Remaining out of scope: `attn_fused` L2 for
+   image blocks (as above), Metal/WebGPU.
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
 2. **Vision is one family.** Gemma 4 — the family most of the resident work went into — is

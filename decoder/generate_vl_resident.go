@@ -55,3 +55,33 @@ func (m *Model) residentImagePrefill(ctx context.Context, rip ResidentImagePrefi
 	}
 	return logits, len(ids), nil
 }
+
+// residentMRoPEPrefill is residentImagePrefill's Qwen2.5-VL twin: builds the same spliced
+// embedding rows prefillLogitsQwenVL's CPU path would have built (embedN + the raw-feature
+// splice at [imgPos,imgPos+imgLen), no embed scale — matching HF's scatter into inputs_embeds)
+// and hands them, together with mropePos (GenerateQwenVL's own mropePositions output, already
+// computed for its other branches), to the resident backend's ResidentMRoPEPrefill. Any error is
+// a DECLINE, not fatal — the caller falls through to the CPU-prefill+UploadKV bridge.
+func (m *Model) residentMRoPEPrefill(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) (logits []float32, gpuPos int, err error) {
+	hidden := m.w.arch.HiddenDim
+	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
+		return nil, 0, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
+	}
+	if len(imageFeats) != imgLen*hidden {
+		return nil, 0, fmt.Errorf("decoder: imageFeats len %d, want %d (%d tokens × %d)", len(imageFeats), imgLen*hidden, imgLen, hidden)
+	}
+	if len(mropePos) != len(ids) {
+		return nil, 0, fmt.Errorf("decoder: mropePos len %d, want %d (one per token)", len(mropePos), len(ids))
+	}
+	h := m.embedN(ids)
+	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageFeats) // raw merged features, no embed scale
+	rows := make([][]float32, len(ids))
+	for i := range rows {
+		rows[i] = h[i*hidden : (i+1)*hidden]
+	}
+	logits, err = rmp.PrefillMRoPELast(ctx, rows, 0, mropePos)
+	if err != nil {
+		return nil, 0, err
+	}
+	return logits, len(ids), nil
+}
