@@ -22,6 +22,18 @@ func init() {
 	decoder.RegisterBackend("metal", func() (decoder.Backend, error) {
 		return &metalBackend{}, nil
 	})
+	// residentFitsMemory's own budget, exposed to decoder.Model.Plan (docs/task-fit-to-hardware.md
+	// Phase 1) via the SAME arithmetic — not a live "available" query, deliberately: darwin's UBC
+	// reclaim makes "available" report what survived rather than what can be asked for (the
+	// residentMemFraction comment above this file's own guard). Plan sees exactly the number the
+	// real guard would judge it against, so the two can never disagree.
+	decoder.RegisterMemoryProbe("metal", func() (int64, bool) {
+		ram, err := unix.SysctlUint64("hw.memsize")
+		if err != nil || ram == 0 {
+			return 0, false
+		}
+		return int64(float64(ram) * residentMemFraction), true
+	})
 }
 
 // Compile-time seams: catch signature drift against decoder/residency.go + decoder/backend.go.

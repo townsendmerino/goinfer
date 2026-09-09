@@ -20,6 +20,24 @@ func init() {
 	decoder.RegisterBackend("cuda", func() (decoder.Backend, error) {
 		return &cudaBackend{}, nil
 	})
+	// A live query, unlike Metal's registered probe (metal/backend.go) — CUDA VRAM is a separate
+	// pool from host RAM, so "free" is a real, reliable driver-reported number here (no UBC-style
+	// reclaim-under-pressure ambiguity to work around). Creates a throwaway device with no kernels
+	// loaded and releases it immediately after the query — the same bare create→query→release
+	// shape cuda/alloc_floor_test.go already uses directly, not the persistent LockOSThread'd
+	// executor cudaResident needs for actual decode.
+	decoder.RegisterMemoryProbe("cuda", func() (int64, bool) {
+		dev, err := CreateSystemDefaultDevice()
+		if err != nil {
+			return 0, false
+		}
+		defer dev.ReleaseObjects()
+		free, _, err := dev.Context().MemInfo()
+		if err != nil {
+			return 0, false
+		}
+		return int64(free), true
+	})
 }
 
 // Compile-time seam checks: cudaBackend must satisfy the decoder's backend +

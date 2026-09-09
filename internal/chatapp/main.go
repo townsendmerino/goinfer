@@ -40,6 +40,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/fitcmd"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/pull"
@@ -83,6 +84,12 @@ func Main() {
 	// the friction it exists to remove.
 	if len(os.Args) > 1 && os.Args[1] == "pull" {
 		os.Exit(pullcmd.Run(os.Args[2:]))
+	}
+	// `fit` — task-fit-to-hardware.md Phase 1's dry run: "does this fit, and how" without
+	// starting a chat session. Same dispatch shape as `pull` above, for the same reason (this
+	// binary IS the only tool the person running it has).
+	if len(os.Args) > 1 && os.Args[1] == "fit" {
+		os.Exit(fitcmd.Run(os.Args[2:]))
 	}
 	// `models` lists the checkpoints this project has actually run, so "what should I download"
 	// has an answer that is not "go read Hugging Face". Every row derives from a
@@ -145,6 +152,7 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
 
   %[1]s models                          what to download, and what each one costs
   %[1]s pull <name>                     fetch one, sha256-verified
+  %[1]s fit <file.gguf|dir>             will this fit, and how — per backend, before you load it
   %[1]s --model <file.gguf|dir>         chat with it
   %[1]s --model <f> --temp 0            greedy, for reproducible output
   %[1]s --version                       version + the backends compiled in
@@ -193,7 +201,7 @@ All flags:
 	// chat session — no error, no hint that "version" meant anything. Nothing in normal usage
 	// leaves a bare positional (every argument here is a --flag), so anything left is a mistake.
 	if args := flag.Args(); len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, models, --version. Or pass --model <file.gguf|dir>.\n",
+		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, fit <path>, models, --version. Or pass --model <file.gguf|dir>.\n",
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}

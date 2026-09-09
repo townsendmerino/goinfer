@@ -9,13 +9,14 @@
 > `docs/task-gpu-paths-2026-09.md`'s G11 entries for both). Phase 0's shape differs from what this
 > doc originally specified (no single `WeightBudget()`; the CPU path uses `fitCheck`/
 > `estimateGGUFWeightBytes` instead, and CUDA/Metal each kept their own separate guard rather than
-> unifying on one). **Phase 1's core (`plan()` + its table test, G4) is DONE** (`decoder/
-> fitplan.go`, 2026-09-09) but Load()-based rather than header-only — see
-> `docs/task-gpu-paths-2026-09.md`'s entry for the scope decision and why; `goinfer-chat fit` and
-> the banner wiring (Phase 1's other two surfaces) are NOT started. **Phases 2–5 (fit-by-default on
-> CUDA/Metal/WebGPU, the rate band) remain entirely unstarted** — three residency guards (CPU,
-> Metal, CUDA) are still fragmented rather than reconciled into one planner, which is the actual
-> live gap. Design record for the "run something bigger than my hardware" mode of use; reads
+> unifying on one). **Phase 1 is DONE for its `plan()` core and `goinfer-chat fit` dry run**
+> (`decoder/fitplan.go` + `internal/fitcmd`, 2026-09-09; verified end-to-end on real Mac/Metal and
+> nobara/CUDA hardware, including the exact gemma-4-26B expert-cache scenario §4 uses as its worked
+> example) — Load()-based rather than header-only, see `docs/task-gpu-paths-2026-09.md`'s entries
+> for the scope decision. **The startup banner (Phase 1's third surface) is NOT started**, nor are
+> `pull`'s verdict / the web UI listing (both need the still-deferred header-only work). **Phases
+> 2–5 (fit-by-default on CUDA/Metal/WebGPU, the rate band, host-computed experts) remain entirely
+> unstarted.** Design record for the "run something bigger than my hardware" mode of use; reads
 > `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
 > user's hour. Sibling: `task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes
 > numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's

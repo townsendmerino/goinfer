@@ -111,6 +111,41 @@ func CompiledBackends() []string {
 	return append([]string{"cpu"}, names...)
 }
 
+var (
+	memProbeMu sync.RWMutex
+	memProbes  = map[string]func() (freeBytes int64, ok bool){}
+)
+
+// RegisterMemoryProbe registers a live free-memory query for a named backend, for Model.Plan
+// (decoder/fitplan.go) and `goinfer-chat fit` to call without decoder importing the cgo/GPU
+// packages that know how to ask (the same "register from init(), decoder stays clean" shape
+// RegisterBackend already uses, for the same reason). metal/backend.go registers "metal" with
+// 70% of `hw.memsize` — NOT a live query, matching its OWN resident guard's existing budget
+// exactly (darwin's UBC makes "available" memory unreliable, so the guard never asks for it —
+// see metal/backend.go's residentMemFraction comment); cuda/backend.go registers "cuda" with
+// the CUDA driver's live MemInfo(). ok=false means "unknown" (no device, no driver, a query
+// error) — Plan's own contract treats an unknown freeBytes as "cannot judge, proceed", so a
+// probe should never fabricate a number to avoid returning ok=false.
+func RegisterMemoryProbe(name string, probe func() (freeBytes int64, ok bool)) {
+	memProbeMu.Lock()
+	defer memProbeMu.Unlock()
+	memProbes[name] = probe
+}
+
+// FreeBytesFor calls the named backend's registered memory probe. ok=false when no probe is
+// registered for this backend (an unlinked GPU module, or "cpu" — which has its own
+// HostRAMAvailableBytes rather than a probe, since it predates this registry and is used by
+// decoder/fitguard.go directly) or when the probe itself reports unknown.
+func FreeBytesFor(name string) (freeBytes int64, ok bool) {
+	memProbeMu.RLock()
+	p := memProbes[name]
+	memProbeMu.RUnlock()
+	if p == nil {
+		return 0, false
+	}
+	return p()
+}
+
 // NewBackend returns the named backend. "" and "cpu" always resolve to the
 // pure-Go CPU backend. Other names resolve through the registry; "webgpu"
 // falls back to CPU with an explanatory error (rather than hard-failing) when

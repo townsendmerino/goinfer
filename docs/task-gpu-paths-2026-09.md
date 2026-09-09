@@ -1434,3 +1434,72 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     unrelated)/134 skip (417→419: two new test functions, `TestPlan_tableDriven` and
     `TestPlan_extraBytesReservedAheadOfExperts`, both counted once each despite 11+1 subtests).
     `gofmt -l`, `go vet`, staticcheck all clean.
+
+- 2026-09-09 — `task-fit-to-hardware.md` Phase 1's remaining two surfaces DONE: `goinfer-chat fit
+  <path>` (the dry run) and, as a prerequisite it surfaced, a small cross-package memory-probe
+  registry so `Plan` can be told a REAL number for whichever GPU backend a given binary actually
+  links — Phase 1's own `plan()` work (previous entry) only ever took `freeBytes` as a plain
+  argument; nothing wired a live query to it until now.
+  - **The gap found while wiring it**: `decoder` cannot import `cuda`/`metal` (they import IT), so
+    a CLI command living in `internal/fitcmd` (linked into the plain, GPU-tag-free
+    `internal/chatapp`) has no way to ask "how much VRAM/unified-RAM headroom does this backend
+    have" for a backend it may not even be compiled with. `decoder.RegisterBackend` already solves
+    the exact same shape of problem for backend REGISTRATION; added `decoder.RegisterMemoryProbe`/
+    `FreeBytesFor` next to it in `decoder/backend.go`, same pattern (register from `init()`, decoder
+    stays clean, `ok=false` means "unknown, don't guess").
+  - **`metal/backend.go`'s registered probe is NOT a live query** — 70% of `hw.memsize`, the exact
+    figure `residentFitsMemory`'s own `residentMemFraction` already uses, so `fit`'s report can
+    never disagree with what the real guard would do. Darwin's UBC makes "available" memory
+    unreliable (documented at length on that same guard already), so a live query would be the
+    wrong number to report, not just an inconsistent one.
+  - **`cuda/backend.go`'s registered probe IS a live query** (`dev.Context().MemInfo()`) — VRAM is
+    a separate pool from host RAM, so "free" is real and reliable here, unlike Metal's case.
+    Creates a throwaway device with no kernels loaded and releases it (`dev.ReleaseObjects()`)
+    immediately after the query, the same bare create→query→release shape
+    `cuda/alloc_floor_test.go` already uses directly — not the persistent `LockOSThread`'d executor
+    `cudaResident` needs for actual decode.
+  - **`internal/fitcmd/fit.go`** (new): `Run(args) int`, same shape as `internal/pullcmd`'s `Run`
+    (a `flag.FlagSet` + a leading positional path, shared by both binaries' dispatch). Loads the
+    checkpoint (this phase's Load()-based scope, previous entry), then calls `Plan` once per
+    `decoder.CompiledBackends()` — so a CPU-only build reports only "cpu"; the metal/cuda release
+    binaries report their own GPU backend too, automatically, with no per-binary fit code. Wired
+    into `internal/chatapp/main.go` as a `pull`-style pre-`flag.Parse` subcommand
+    (`goinfer-chat fit <path>`), plus the usage/error-message updates naming it alongside
+    `pull`/`models`.
+  - **Verified end-to-end on real hardware, all three binary variants, first try**:
+    - Default (CPU-only) build against `~/models/Qwen3-0.6B-Q8_0.gguf` on this Mac: reports only
+      `cpu`, RESIDENT.
+    - `-tags metal` build, same checkpoint: reports `cpu` AND `metal`; `metal`'s free-bytes read
+      11.20 GB — exactly 70% of this Mac's 16 GB, confirming the registered probe matches
+      `residentFitsMemory`'s own arithmetic precisely.
+    - `-tags cuda` build on nobara (RTX 2070 SUPER): `qwen2.5-coder-0.5b` reports `cpu` RESIDENT
+      and `cuda` RESIDENT (7.03 GB free, matching `nvidia-smi` within noise); the REAL
+      `gemma-4-26B_q4_0-it.gguf` (a genuine 26B checkpoint, not a tiny fixture) reports `cuda`
+      EXPERT-CACHED at 18/128 experts, 7.03 GB free — the exact scenario `task-fit-to-hardware.md`
+      §4's own worked example describes, produced by this tool against a real checkpoint on the
+      real card the doc was written against, on the first run.
+    - An absurd pinned `-ctx` (999999999) on both cpu and metal correctly declines/falls to
+      weight-paged rather than silently shrinking, on real hardware.
+  - **A known, accepted overlap, not reconciled this phase**: `decoder.Load` itself already runs
+    `decoder/fitguard.go`'s own CPU-path guard (Phase 0), which can print its own "context capped
+    at N" line and auto-shrink the loaded model's OWN KV sizing — a SEPARATE mechanism from
+    `Plan`'s ctx-shrink logic, which computes independently against whatever ctx `fit` was asked
+    to plan for. The two can both fire in one `fit` invocation (observed live in testing above),
+    which is exactly the doc's own header note: "three residency guards... still fragmented rather
+    than reconciled into one planner" — visible now in `fit`'s own output, not just in code, but
+    not fixed here.
+  - **`internal/fitcmd/fit_test.go`** (new, zero prior coverage in that package): usage-error and
+    load-error exit codes; a real end-to-end run against `testdata/llama-tiny` (tracked, runs in
+    CI) asserting the report names `cpu` and a real placement word; the pinned-impossible-ctx case
+    on the same tracked fixture, asserting the header echoes the ctx UNCHANGED and no backend
+    reports RESIDENT.
+  - Full regression: `decoder` 419/1(pre-existing)/134skip unchanged, `metal` 111/0 unchanged,
+    `internal` all packages pass (new `internal/fitcmd` 4/4). `cuda`, real hardware on nobara:
+    `TestBackendResidentWired` (production load path) still green with the new probe registered;
+    `TestFitsWeightsBudget`/`TestKVBytesForCap` unaffected. `gofmt -l`, `go vet`, staticcheck all
+    clean on every touched package.
+  - **Not done, left open**: the startup banner (Phase 1's third surface, `task-fit-to-hardware.md`
+    §3 — "the closest thing the product has to a UI") does not yet print a `Plan`; `pull`'s
+    verdict and the web UI's Models-tab listing (§3's other two surfaces) still need the
+    header-only work this phase explicitly deferred. Phases 2–5 (fit-by-default, WebGPU, the rate
+    band, host-computed experts) remain entirely unstarted.
