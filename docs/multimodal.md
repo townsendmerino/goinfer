@@ -194,6 +194,37 @@ number is published without provenance.
   mismatched pair by tensor-shape check rather than by filename. Gate: end-to-end parity on the
   safetensors path AND bit-identity between the safetensors tower and the mmproj tower on the same
   checkpoint (they are the same weights in two containers).
+
+  **Phase 0 DONE, 2026-09-08 (text decoder only, no vision) — verified "don't assume" against real
+  HF `transformers` source, not a description.** DeepStack is REAL and changes the injection shape:
+  the vision tower taps hidden states at 3 intermediate layers (`deepstack_visual_indexes`, default
+  `(8,16,24)` of 27), each through its own merger, and the text decoder ADDS the result into the
+  residual stream at each of the FIRST 3 decoder layers (`hidden_states[visual_pos_masks] +=
+  visual_embeds`) — not the single splice-before-layer-0 every other VL family here uses. The vision
+  tower also gained a learned absolute position embedding on top of its axial rotary one (confirmed
+  absent in Qwen2.5-VL). m-RoPE's frequency→component layout changed from Qwen2.5-VL's contiguous
+  blocks (`[TTT…HHH…WWW]`) to a per-frequency-index INTERLEAVED strided layout
+  (`recomposition_frequencies`) — a different, incompatible formula, not a parameter tweak.
+
+  Given that scope, Phase 0 shipped ONLY the text decoder — `qwen3_vlArchitecture`
+  (`decoder/registry.go`, aliases Qwen3's dense attention shape: per-head q/k RMSNorm, GQA, no
+  q/k/v bias — confirmed from `Qwen3VLTextAttention` source, NOT Qwen2's shape, which
+  `qwen2_5_vlArchitecture` aliases) + the interleaved m-RoPE component formula
+  (`mropeComponentInterleaved`, `decoder/rope.go`, pinned directly against the real HF slicing
+  logic, not a re-derivation of it). Tiny-golden text-only parity: cosine 1.0, exact argmax +
+  continuation (`decoder/qwen3vl_test.go`, `scripts/pin_qwen3vl_tiny.py`). Real-checkpoint gate
+  written (`decoder/qwen3vl_real_test.go`, `scripts/pin_qwen3vl_real.py`,
+  `GOINFER_QWEN3VL_2B`/`testdata/assets.json`) but **not yet run — `Qwen/Qwen3-VL-2B-Instruct` is
+  not present on this box as of 2026-09-08**; the gate skips cleanly rather than being silently
+  absent, and this is a real, tracked gap, not a forgotten one.
+
+  **Explicitly out of scope for Phase 0, named so they don't get lost**: the vision tower + DeepStack
+  injection (needs a new decoder-forward hook for additive injection at N early layers — nothing
+  here does that yet — plus a new `aikit/vision` encoder: axial rotary + interpolated learned
+  pos-embed + multi-tap mergers, a cross-repo undertaking); GGUF `mmproj` (llama.cpp already
+  supports Qwen3-VL — `PROJECTOR_TYPE_QWEN3VL` in `clip.cpp` — but `aikit/vision`'s loading path is
+  safetensors-specific by construction, needing a new tensor-source abstraction); the MoE variants
+  (30B-A3B/235B-A22B) — Phase 0 only targets the dense sizes.
 - **P9 · Image turns in the agent loop.** (a) Prefix reuse over image blocks: an image's embedding
   block is a pure function of its bytes and the tower, so key the resident bookkeeping on a hash of
   the image bytes standing in for a token id at each placeholder position — a reused prefix with an

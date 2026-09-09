@@ -308,7 +308,7 @@ func TestRopeKVMRoPEBatched_matchesCPUReference(t *testing.T) {
 	// q: applyMRoPEForTest rotates each row in place, heads=nH.
 	for m, p := range mropeRows {
 		row := append([]float32(nil), q[m*qDim:(m+1)*qDim]...)
-		decoder.ApplyMRoPEForTest(row, nH, hd, p, section, invF64, mscale)
+		decoder.ApplyMRoPEForTest(row, nH, hd, p, section, invF64, mscale, false)
 		got := qOut[m*qDim : (m+1)*qDim]
 		for d := range row {
 			if math.Abs(float64(row[d]-got[d])) > 1e-4 {
@@ -319,7 +319,7 @@ func TestRopeKVMRoPEBatched_matchesCPUReference(t *testing.T) {
 	// k: rotated in place then stored into kc at absolute position startPos+m; v copied unrotated.
 	for m, p := range mropeRows {
 		row := append([]float32(nil), k[m*kvDim:(m+1)*kvDim]...)
-		decoder.ApplyMRoPEForTest(row, nKV, hd, p, section, invF64, mscale)
+		decoder.ApplyMRoPEForTest(row, nKV, hd, p, section, invF64, mscale, false)
 		pos := startPos + m
 		gotK := kcOut[pos*kvDim : (pos+1)*kvDim]
 		for d := range row {

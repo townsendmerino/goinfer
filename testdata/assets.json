@@ -633,6 +633,15 @@
       "note": "Qwen/Qwen2.5-VL-3B-Instruct (Qwen2_5_VLForConditionalGeneration), ~7.1 GB. The T3 gate for this family runs a REAL image (testdata/qwen25vl_preprocess_image.png, pre-sized so resize is a no-op) through the real vision encoder + real decoder; scoped to the prefill forward only, not greedy continuation (see decoder/qwen25vl_real_test.go's own doc comment for why)."
     },
     {
+      "env": "GOINFER_QWEN3VL_2B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen3vl-2b-instruct"],
+      "used_by": ["TestQwen3VLReal_gate"],
+      "note": "Qwen/Qwen3-VL-2B-Instruct (Qwen3VLForConditionalGeneration). P8 Phase 0 gate is TEXT-ONLY (no pixel_values, no vision tower, no DeepStack — docs/multimodal.md) — a real prompt through the real Qwen3-VL text decoder (qwen3_vlArchitecture: Qwen3's attention shape + interleaved m-RoPE degenerated to scalar RoPE on text). Not present on this box as of 2026-09-08; a real, named gap, not silently skipped-and-forgotten."
+    },
+    {
       "env": "GOINFER_GRANITE_GGUF",
       "kind": "file",
       "min_bytes": 1048576,

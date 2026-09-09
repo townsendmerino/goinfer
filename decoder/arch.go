@@ -98,6 +98,10 @@ type Architecture struct {
 	// the 3 components are equal so m-RoPE ≡ scalar RoPE; it only diverges over
 	// image tokens (the 3D grid positions). (P5)
 	MRopeSection []int
+	// MRopeInterleaved selects Qwen3-VL's per-frequency-index component layout
+	// (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent).
+	// False for every other m-RoPE family, including Qwen2.5-VL itself. (P8)
+	MRopeInterleaved bool
 	// ropeScaling transforms the GLOBAL (full-attention) inv-freq table (Llama-3
 	// llama3 / linear / yarn); nil = none. ropeScalingLocal does the same for the
 	// LOCAL (sliding) table — usually nil even when the global table is scaled

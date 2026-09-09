@@ -776,6 +776,26 @@
         "cosine_mean": 0.98988
       }
     },
+    "qwen3_vl": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:64f98eeacbddce5f8a25358b0ad30ba0c7f739ddeaa349c7b47968bb9dd48778",
+      "status": "experimental",
+      "validated_at": "59dd7097",
+      "date": "2026-09-08",
+      "reference": "tiny-random Qwen3VLForConditionalGeneration, TEXT-ONLY forward (scripts/pin_qwen3vl_tiny.py) — no vision tower, no DeepStack (P8 Phase 0, docs/multimodal.md)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
     "smollm3": {
       "uses": [
         "core",

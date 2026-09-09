@@ -57,9 +57,11 @@ func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp ResidentMRo
 
 // ApplyMRoPEForTest wraps applyMRoPE (decoder/rope.go) — the CPU m-RoPE reference a resident
 // kernel's own rotation must match bit-for-bit. Test-only: production always reaches applyMRoPE
-// through ropeAt, never directly.
-func ApplyMRoPEForTest(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64) {
-	applyMRoPE(vec, heads, headDim, pos, section, invFreq, scale)
+// through ropeAt, never directly. interleaved selects Qwen3-VL's per-index component layout
+// (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent) — pass false
+// for Qwen2.5-VL.
+func ApplyMRoPEForTest(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64, interleaved bool) {
+	applyMRoPE(vec, heads, headDim, pos, section, invFreq, scale, interleaved)
 }
 
 // Gemma4MoEExpertForTest computes ONE gemma4 MoE expert's output on a caller-supplied input xe

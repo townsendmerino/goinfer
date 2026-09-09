@@ -142,7 +142,7 @@ func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 		a := append([]float32(nil), base...)
 		b := append([]float32(nil), base...)
 		applyRoPE(a, heads, headDim, pos, invFreq, 1.0)
-		applyMRoPE(b, heads, headDim, [3]int{pos, pos, pos}, section, invFreq, 1.0)
+		applyMRoPE(b, heads, headDim, [3]int{pos, pos, pos}, section, invFreq, 1.0, false)
 		for i := range a {
 			if a[i] != b[i] {
 				t.Fatalf("pos %d: applyMRoPE[%d]=%v != applyRoPE %v", pos, i, b[i], a[i])
@@ -153,7 +153,7 @@ func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 	a := append([]float32(nil), base...)
 	b := append([]float32(nil), base...)
 	applyRoPE(a, heads, headDim, 4, invFreq, 1.0)
-	applyMRoPE(b, heads, headDim, [3]int{4, 5, 6}, section, invFreq, 1.0)
+	applyMRoPE(b, heads, headDim, [3]int{4, 5, 6}, section, invFreq, 1.0, false)
 	same := true
 	for i := range a {
 		if a[i] != b[i] {
