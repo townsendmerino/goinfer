@@ -346,6 +346,7 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 			doG(Ly.v, aq, aSc, vb, vB, 0)
 			L(ropeKV, g1(nH*half+nKV*half, 256), gc.Arg(qB), gc.Arg(kB), gc.Arg(vB), gc.Arg(invF), gc.Arg(kc[l]), gc.Arg(vc[l]),
 				gc.ArgValue(int32(nH)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(int32(pos)),
+				gc.ArgValue(int32(pos)),                           // ropePos == pos: not under test here (Qwen2.5-VL m-RoPE)
 				gc.ArgValue(int32(half)), gc.ArgValue(float32(1)), // mscale 1.0 = unscaled
 				gc.ArgValue(float32(1))) // qTempScale 1.0 = no-op (FeatAttnTemp, G5) — not under test here
 			nKeys := pos + 1
