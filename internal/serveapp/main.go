@@ -278,7 +278,7 @@ type config struct {
 	moeCacheExperts  bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
 	moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
 	fit              bool   // task-fit-to-hardware.md's "fit by default" (--fit, default true); false ⇒ decoder.Options.DisableFit
-	metalFastPrefill bool   // DEPRECATED no-op (Metal fast prefill is default-on since §3 gate passed 2026-09-09; use --exact-prefill to disable) (--metal-fast-prefill)
+	metalFastPrefill bool   // opt-in to Metal's batched prefill (--metal-fast-prefill); sets GOINFER_METAL_BATCHED_PREFILL=1 (will become deprecated no-op after Phase B gate pass)
 	exactPrefill     bool   // force sequential (exact) prefill on all backends — CPU + Metal (--exact-prefill)
 	cpuFastAttention bool   // CPU f32 prefill attention, DEFAULT ON (non-bit-identical) (--cpu-fast-attention)
 	cpuExactPrefill  bool   // opt OUT of cpu fast attention: bit-exact CPU prefill (--cpu-exact-prefill)
@@ -434,7 +434,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
 	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. int8int8 on cuda, ~9× slower TTFT). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose experts EXCEED VRAM: routed experts stream host→VRAM per token instead of being held resident, so every expert still executes on the GPU (no CPU offload). Costs a per-token PCIe transfer; bit-identical to fully-resident. Off by default — with it off, a model that doesn't fit declines to the CPU path and says why. CUDA only")
-	flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "DEPRECATED — no-op since §3's fidelity gate passed (2026-09-09): Metal's f16-MMA batched prefill is now ON by default above 512 tokens (measured 3.9-4.6× faster TTFT, fidelity-gated). Use --exact-prefill to disable fast prefill on all backends instead. Metal backend only")
+	flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "batch the WHOLE prompt through Metal's f16-MMA prefill kernel instead of ingesting it one token at a time — measured 3.9-4.6x faster time-to-first-token on long prompts (a 2048-token prompt: ~51s to ~13s). NOT bit-identical to sequential/CPU decode: the f16-MMA activation path diverges on some prompts relative to the CPU f32 reference (K=256 expected to fail §3.2's gate; K>=512 passed, see docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md). Off by default — will become default-on above 512 tokens if Phase B gate passes. Superseded by --exact-prefill if both given. Metal backend only")
 	flag.BoolVar(&cfg.exactPrefill, "exact-prefill", false, exactPrefillHelp)
 	flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)
 	flag.BoolVar(&cfg.cpuExactPrefill, "cpu-exact-prefill", false, cpuExactPrefillHelp)
@@ -476,10 +476,12 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}
-	// Metal fast prefill is DEFAULT ON since §3's gate passed (2026-09-09). --exact-prefill is
-	// the universal opt-out; --metal-fast-prefill is now a no-op (kept for backward compat only).
-	// Setting GOINFER_METAL_FAST_PREFILL=0 also works directly for callers bypassing the CLI.
-	// --exact-prefill wins over --metal-fast-prefill (a no-op) if both are given.
+	// --metal-fast-prefill opts in to Metal's batched prefill (currently opt-in, pending Phase B gate).
+	// --exact-prefill suppresses it (GOINFER_METAL_FAST_PREFILL=0). After Phase B passes, --metal-fast-prefill
+	// becomes a no-op and --exact-prefill becomes the opt-out. --exact-prefill wins if both are given.
+	if cfg.metalFastPrefill && !cfg.exactPrefill {
+		os.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
+	}
 	if cfg.exactPrefill {
 		os.Setenv("GOINFER_METAL_FAST_PREFILL", "0")
 	}

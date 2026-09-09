@@ -326,24 +326,24 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 }
 
 // metalFastPrefillFloor is the PROMPT-LENGTH floor (whole prompt = startPos+M) below which
-// the f16-MMA batched pass declines and the sequential per-token loop runs instead. The floor
-// exists because the fidelity gate (§3.2) did not pass at K=256: that cell stands on the record
-// (docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md §3; K=256 failed, §3.2 hard-flip did
-// not clear). Above the floor the gate passed on both bench models at every tested cell.
-// Override with GOINFER_METAL_FAST_PREFILL_FLOOR (0 = disable the floor entirely).
+// the f16-MMA batched pass declines and the sequential per-token loop runs instead. Set to 512
+// to match CUDA's measured floor (K=256 is expected to fail §3.2; the gate test disables this
+// floor via GOINFER_METAL_FAST_PREFILL_FLOOR=0 to confirm). On Phase B pass, if K=256 fails as
+// expected, this floor stands. Override with GOINFER_METAL_FAST_PREFILL_FLOOR (0 = no floor).
 const metalFastPrefillFloor = 512
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
 //
-// DEFAULT ON above metalFastPrefillFloor (512 tokens) since 2026-09-09, after §3's fidelity gate
-// passed at every cell ≥512 on both bench models (docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md).
+// CURRENTLY OPT-IN (default off) pending Phase B (TestPrefillGateVsReference, 2026-09-09). When
+// Phase B passes under §3.2's pooled form, the default flips to ON above metalFastPrefillFloor
+// and this comment is updated to name the measurement doc. The infrastructure is here now so the
+// flip is a one-line change in this function.
 //
-//	GOINFER_METAL_FAST_PREFILL  unset | 1 | true   on — the default above the floor
-//	                            0 | false | off    off (sequential exact path everywhere)
+//	GOINFER_METAL_FAST_PREFILL  1 | true | on   on (even below the floor — for tests)
+//	                            0 | false | off  off (the current default; will become explicit opt-out on gate pass)
 //
-// The old GOINFER_METAL_BATCHED_PREFILL=1 opt-in still works as an alias for backward compat;
-// =0 on the old var is also honoured as an opt-out. --exact-prefill (internal/serveapp) sets
-// GOINFER_METAL_FAST_PREFILL=0, so it suppresses the batched path the same way as on CUDA.
+// The old GOINFER_METAL_BATCHED_PREFILL=1 opt-in continues to work as an alias. --exact-prefill
+// (internal/serveapp) sets GOINFER_METAL_FAST_PREFILL=0 to suppress the batched path.
 func metalFastPrefillEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_FAST_PREFILL"))) {
 	case "0", "false", "off":
@@ -351,12 +351,11 @@ func metalFastPrefillEnabled() bool {
 	case "1", "true", "on":
 		return true
 	}
-	// Unset: honour the old var for backward compat (=0 opt-out, =1 explicit opt-in, both fine).
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))) {
-	case "0", "false", "off":
-		return false
+	// Unset: honour the old opt-in var for backward compat (=1 enables, =0 disables).
+	if strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))) == "1" {
+		return true
 	}
-	return true // default-on since §3 gate passed (2026-09-09)
+	return false // flip to `true` when Phase B passes (§3.2 gate, 2026-09-09)
 }
 
 // metalFastPrefillFloorFor returns the prompt-length floor, allowing experiment or escape.
@@ -371,8 +370,8 @@ func metalFastPrefillFloorFor() int {
 }
 
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
-// the batched f16-MMA path for a given prompt. The floor means short prompts (<512 tokens) always
-// take the sequential path; PrefillPath reports batched=true iff long prompts will batch.
+// the batched f16-MMA path. Currently opt-in (default off; flip on Phase B gate pass). The floor
+// applies per-call; PrefillPath reports true iff the enabled state AND arch both allow batching.
 func (a *metalResident) PrefillPath() (bool, string) {
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
@@ -398,9 +397,9 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// DEFAULT ON above metalFastPrefillFloor (512 tokens) since §3's fidelity gate passed 2026-09-09
-	// (docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md). GOINFER_METAL_FAST_PREFILL=0 or
-	// --exact-prefill disables it; GOINFER_METAL_BATCHED_PREFILL=0 also honoured for backward compat.
+	// OPT-IN until Phase B (TestPrefillGateVsReference, 2026-09-09) passes. On pass the default flips
+	// to ON above the 512-token floor. GOINFER_METAL_FAST_PREFILL=1 or GOINFER_METAL_BATCHED_PREFILL=1
+	// opt in now; GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill suppresses it once it is default-on.
 	if !metalFastPrefillEnabled() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
