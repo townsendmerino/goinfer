@@ -337,13 +337,13 @@ const metalFastPrefillFloor = 512
 // CURRENTLY OPT-IN (default off) pending Phase B (TestPrefillGateVsReference, 2026-09-09). When
 // Phase B passes under §3.2's pooled form, the default flips to ON above metalFastPrefillFloor
 // and this comment is updated to name the measurement doc. The infrastructure is here now so the
-// flip is a one-line change in this function.
+// Default ON above 512 tokens since §3.2 gate passed 2026-09-09 (S model, K=256/512/1024).
+// GOINFER_METAL_FAST_PREFILL=0/false/off or --exact-prefill to opt out.
 //
 //	GOINFER_METAL_FAST_PREFILL  1 | true | on   on (even below the floor — for tests)
-//	                            0 | false | off  off (the current default; will become explicit opt-out on gate pass)
+//	                            0 | false | off  off (explicit opt-out; use --exact-prefill on the server)
 //
-// The old GOINFER_METAL_BATCHED_PREFILL=1 opt-in continues to work as an alias. --exact-prefill
-// (internal/serveapp) sets GOINFER_METAL_FAST_PREFILL=0 to suppress the batched path.
+// The old GOINFER_METAL_BATCHED_PREFILL continues to work: =1 forces on, =0 forces off, unset defers to the default.
 func metalFastPrefillEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_FAST_PREFILL"))) {
 	case "0", "false", "off":
@@ -351,11 +351,11 @@ func metalFastPrefillEnabled() bool {
 	case "1", "true", "on":
 		return true
 	}
-	// Unset: honour the old opt-in var for backward compat (=1 enables, =0 disables).
-	if strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))) == "1" {
-		return true
+	// Unset: honour the old var for backward compat (=1 on, =0 off, unset → new default).
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))); v != "" {
+		return v == "1"
 	}
-	return false // flip to `true` when Phase B passes (§3.2 gate, 2026-09-09)
+	return true // §3.2 gate passed 2026-09-09 (S cells K=256/512/1024; D7 skipped — fit-guard on 16GB)
 }
 
 // metalFastPrefillFloorFor returns the prompt-length floor, allowing experiment or escape.
@@ -370,8 +370,8 @@ func metalFastPrefillFloorFor() int {
 }
 
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
-// the batched f16-MMA path. Currently opt-in (default off; flip on Phase B gate pass). The floor
-// applies per-call; PrefillPath reports true iff the enabled state AND arch both allow batching.
+// the batched f16-MMA path. Default ON above 512 tokens since §3.2 gate passed 2026-09-09. The
+// floor applies per-call; PrefillPath reports true iff the enabled state AND arch both allow batching.
 func (a *metalResident) PrefillPath() (bool, string) {
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
@@ -383,7 +383,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if floor > 0 {
 		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
 	}
-	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3 gate pending)"
+	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)"
 }
 
 // PrefillLast (decoder.Prefiller) ingests the whole prompt in one batched f16-MMA pass and
@@ -397,9 +397,8 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// OPT-IN until Phase B (TestPrefillGateVsReference, 2026-09-09) passes. On pass the default flips
-	// to ON above the 512-token floor. GOINFER_METAL_FAST_PREFILL=1 or GOINFER_METAL_BATCHED_PREFILL=1
-	// opt in now; GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill suppresses it once it is default-on.
+	// DEFAULT ON above 512 tokens since §3.2 gate passed 2026-09-09 (S cells K=256/512/1024).
+	// GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
 	if !metalFastPrefillEnabled() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
