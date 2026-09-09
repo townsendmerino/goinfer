@@ -872,3 +872,70 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     HiddenLast — CUDA/WebGPU are the natural next continuation once Metal is verified, not done in
     this pass). No commit yet.
 
+- 2026-09-08 — G3's WebGPU backend DONE. CUDA still not attempted: its package does not even
+  compile on this Mac today (`gpu.MappedHostBuffer`/`gpu.Graph`/etc undefined under `-tags cuda`)
+  — a pre-existing gap in the aikit/gpu module on this checkout, unrelated to this row, but it
+  means CUDA can only be written fully blind with zero local verification. Asked the user how to
+  proceed given that; chose WebGPU next (testable end-to-end on this Mac) over writing CUDA blind.
+  No commit yet.
+  - **The real design problem, exactly as scoped before starting**: `gpu/decoderunner.go`'s
+    `DecodeRunner` builds a FIXED, flat `[]runStep` dispatch plan ONCE at construction
+    (`newDecodeRunner`) and `record()` just walks it fresh into a new command buffer every single
+    `Run()` — nothing about the plan itself is baked GPU-side, but its STRUCTURE (which dispatches,
+    in what order) does not vary per token the way Metal's re-encoded-every-token trunk can with a
+    plain `if r.loraLayers != nil`. Solved by splitting `r.steps` into an immutable `r.baseSteps`
+    (the pristine no-adapter plan, saved once at the end of construction) plus `r.loraHooks`
+    (recorded during construction at each of the 7 projection sites: `{afterIdx, layer, kind, aq,
+    ascale, dst, k}` — afterIdx is the base step index the delta belongs right after, dst is the
+    SAME buffer the base projection just wrote, aq/ascale is the SAME quantized activation it
+    consumed). `SetAdapter` REBUILDS `r.steps` by walking `r.baseSteps` and splicing in each
+    hook's down+up dispatch pair (skipped if the bound adapter leaves that hook's projection nil);
+    clearing an adapter is a cheap restore (`r.steps = r.baseSteps`) since the base plan is never
+    mutated. This is genuinely more machinery than Metal needed, but it is a direct, mechanical
+    consequence of the architecture difference scoped out before writing any code — not a surprise
+    found partway through.
+  - **One thing WebGPU's architecture made EASIER than Metal's, found while wiring q/k/v**:
+    Metal's qGate branch (Qwen3.5-style fused double-width q_proj+gate) dispatches q/k/v through a
+    COMPLETELY SEPARATE kernel path (`pDnQSplit`) than the plain fused-qkv site, so wiring LoRA
+    there would have needed a second hook at a different site — left undone and documented as a
+    known gap instead. WebGPU's qGate handling is structurally simpler: `q, k, v :=
+    gemv(aq,as,lw.q/k/v)` (or the bias-fused variant) runs FIRST, identically whether or not
+    qGate is set, and `if lw.qGate { q, aGate = qSplit(q, ...) }` only runs AFTER — so inserting
+    the LoRA hook right after the base gemv, before the qGate check, applies correctly regardless
+    of qGate (the delta targets whatever width the base matmul actually produced, qGate or not).
+    No documented gap needed here on this backend.
+  - **Two new WGSL kernels** (`gpu/lora.go`): `loraDeltaDown` (ONE workgroup only,
+    `@workgroup_size(64)`, loops over rank serially — same reduction shape as
+    `rmsnormQuantWGSL`'s own sum-of-squares tree, reading the SAME packed
+    `array<vec4<u32>>` int8 activation format every GEMV kernel in this backend already uses, via
+    a small `get_aq_i8(k)` unpack helper) and `loraDeltaUp` (`@builtin(global_invocation_id)`,
+    one thread per output row, dispatched with an exact grid so no bounds guard is needed).
+    Compiled once via `ensureLora` (auto bind-group layout via `c.bgl`, matching every other
+    kernel in this package), added to `newDecodeRunner`'s base `ensures` list unconditionally —
+    same "always create, cheap" choice Metal made for its own LoRA pipelines.
+  - **`gpu/lora_resident.go`**: `loraRunProj`/`loraRunLayer` (bound per-projection buffers +
+    bind groups — built fresh per `SetAdapter` call since a hook's fixed buffers and an
+    adapter's rank/scale can only be combined once both are known), `SetAdapter` (releases the
+    previous bind's GPU resources first, same leak-avoidance discipline as `metal/lora.go`'s
+    `releaseLoRALayers`), `rebuildSteps` (the splice described above). `residentDecoder.SetAdapter`
+    (`gpu/residency.go`) forwards to `rd.runner` only — `ForwardN`'s batched verify runners
+    (`rd.batch`) are speculative-decode-only, and `generateInto`'s adapter-admission path (the
+    thing that can ever call `SetAdapter` in production) calls `Forward` exclusively, confirmed by
+    reading `decoder/model.go`'s two `m.resident.Forward` call sites directly rather than assuming
+    it — so this is a scoped decision, not an oversight, matching the same scope
+    `Model.LoadAdapter` itself already restricts to.
+  - **`TestLoRAResidentParityWebGPU`** (new, `gpu/lora_resident_parity_test.go`): the same
+    `testdata/llama-tiny` fixture and synthetic 7-projection/4-layer adapter as the Metal test
+    (duplicated locally — `buildLlamaTinyLoRAFixtureGPU`/`writeLoraGPUSafetensors` — since the
+    Metal test's versions are package-private there), same 0.95 floor, same vacuousness check.
+    Passed on the FIRST run with no debugging needed (unlike Metal's two real bugs) — reused the
+    already-fixed fixture-aliasing lesson (`append([]float32(nil), lr...)`) from the start instead
+    of rediscovering it. Measured: cosine 0.999963, maxAbs 0.005082, argmax match — matching
+    Metal's own 0.999960 on the identical fixture almost exactly, independent confirmation the
+    LoRA math itself (not just its wiring) is correct on both backends.
+  - Full regression: `gpu` 94 pass/0 fail/38 skip (93 prior + this row's new test). `gofmt -l`
+    (caught one real formatting miss in `decoderunner.go`, fixed), `go vet` (`-tags "gpu
+    goinfer_testhooks"`), and CI's pinned staticcheck (same tags) all clean.
+  - **G3 is now DONE on decoder+Metal+WebGPU.** CUDA remains unwritten (package doesn't compile
+    locally, see above) — left as explicitly future work rather than written blind. No commit yet.
+

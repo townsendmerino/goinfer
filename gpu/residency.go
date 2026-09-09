@@ -79,6 +79,11 @@ func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
 	}
 }
 
+var (
+	_ decoder.ResidentForward = (*residentDecoder)(nil)
+	_ decoder.ResidentAdapter = (*residentDecoder)(nil)
+)
+
 // residentDecoder is the gpu side of decoder.ResidentForward: a persistent
 // DecodeRunner + the runModel (for KV upload), built once per model.
 type residentDecoder struct {
@@ -1113,6 +1118,16 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 // nKeys=pos+1, so entries past pos are never read and get overwritten next round
 // (see the ResidentForward.TruncateTo contract).
 func (rd *residentDecoder) TruncateTo(pos int) {}
+
+// SetAdapter implements decoder.ResidentAdapter (G3, docs/task-gpu-paths-2026-09.md) —
+// generateInto calls this to bind/clear a compute-time LoRA adapter for an admitted session.
+// Forwards to rd.runner only: generateInto's adapter-admission path calls Forward exclusively
+// (never ForwardN), and ForwardN's batched verify runners (rd.batch) are speculative-decode-only
+// — a path this backend's G3 wiring, like Metal's, does not cover (see gpu/lora.go's file
+// comment for the scope this shares with the CPU compute-time LoRA restriction itself).
+func (rd *residentDecoder) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
+	return rd.runner.SetAdapter(layers)
+}
 
 // UploadKV writes a layer's post-RoPE K and raw V (positions 0..n-1) into the
 // resident caches — the prefill bridge. keys/vals are [n*kvDim] f32, packed to the

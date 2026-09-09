@@ -109,6 +109,14 @@ type Context struct {
 	gemmRowPipeline *wgpu.ComputePipeline
 	gemmRowLayout   *wgpu.BindGroupLayout
 
+	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md), lazy via ensureLora (lora.go).
+	loraDownShader   *wgpu.ShaderModule
+	loraDownPipeline *wgpu.ComputePipeline
+	loraDownLayout   *wgpu.BindGroupLayout
+	loraUpShader     *wgpu.ShaderModule
+	loraUpPipeline   *wgpu.ComputePipeline
+	loraUpLayout     *wgpu.BindGroupLayout
+
 	// Elementwise/norm pipelines for the fused MLP, lazy via ensureLayer (layer.go).
 	rmsnormShader   *wgpu.ShaderModule
 	rmsnormPipeline *wgpu.ComputePipeline

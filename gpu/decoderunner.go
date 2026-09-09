@@ -49,6 +49,46 @@ type DecodeRunner struct {
 	// copies the LAST run's values for the resident-vs-mamba2Step wiring diff
 	// (gpu/mamba_resident_capture_test.go). nil for non-hybrid; zero production cost.
 	mcapProj, mcapConv, mcapY, mcapGated *wgpu.Buffer
+
+	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md — see lora_resident.go).
+	// baseSteps is the pristine plan built above (no adapter) — SetAdapter never mutates it,
+	// only rebuilds r.steps from it plus loraHooks, so clearing an adapter is a cheap restore
+	// rather than a re-derivation. loraHooks are recorded in construction order (which is
+	// strictly increasing afterIdx order), one per (layer, projection) this arch's dense forward
+	// exposes; loraLayers is nil until SetAdapter binds one.
+	baseSteps  []runStep
+	loraHooks  []loraHook
+	loraLayers []loraRunLayer
+	loraT      *wgpu.Buffer // [loraRMax]f32 scratch, shared by every projection/layer's down→up pair
+	nLayers    int
+}
+
+// loraProjKind names which of the seven per-layer projections a hook targets — mirrors
+// decoder.ResidentAdapterLayer's Q/K/V/O/Gate/Up/Down fields one-to-one.
+type loraProjKind int
+
+const (
+	loraQ loraProjKind = iota
+	loraK
+	loraV
+	loraO
+	loraGate
+	loraUp
+	loraDown
+)
+
+// loraHook records where in baseSteps a projection's LoRA delta belongs: right after the base
+// step at index afterIdx (the base projection's own gemv/gemvAdd), targeting dst — the SAME
+// buffer the base projection just wrote (matching applyLoRA's CPU "matmul, then add" order) —
+// with input aq/ascale — the SAME quantized activation the base projection consumed. k is the
+// input width (In), needed to size/read the down-project reduction.
+type loraHook struct {
+	afterIdx   int
+	layer      int
+	kind       loraProjKind
+	aq, ascale *wgpu.Buffer
+	dst        *wgpu.Buffer
+	k          int
 }
 
 type runStep struct {
@@ -367,7 +407,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			}
 		}
 	}
-	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm}
+	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm, c.ensureLora}
 	if w8a16 {
 		ensures = append(ensures, c.ensureGEMVW8A16)
 	}
@@ -404,7 +444,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return nil, err
 		}
 	}
-	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows())}
+	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows()), nLayers: len(m.layers)}
 	// buildErr accumulates the FIRST device-allocation/bind failure (M21): the storF/uni/
 	// storFZ/bind helpers short-circuit once it's set and the constructor returns it, so VRAM
 	// exhaustion is an error the caller can fall back on — never a panic in library code.
@@ -502,6 +542,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// the one dispatch site, means a new hand-built test fixture can never miss this the way a
 	// scattered per-caller default could.
 	noAttnSinks := storF(1)
+	r.loraT = storF(loraRMax) // G3: compute-time LoRA scratch — always allocated, cheap
 	// swigluQuant fuses SwiGLU→quantize: the inter-wide product never materializes
 	// or crosses a barrier — one fewer link and the big buffer stays off the spine.
 	//
@@ -1137,6 +1178,18 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 					biasAdd(v, lw.vBias, g.kvDim)
 				}
 			}
+			// G3 (docs/task-gpu-paths-2026-09.md): compute-time LoRA hooks for q/k/v — right after
+			// the base projection, before qGate's split/qNorm/RoPE, so a delta applies to the FULL
+			// (possibly qGate double-width) buffer the base matmul actually produced, matching
+			// applyLoRA's CPU order exactly. All three share one afterIdx (the last of the three
+			// base dispatches just recorded, whichever branch produced them) since nothing else
+			// runs between them.
+			after := len(r.steps) - 1
+			r.loraHooks = append(r.loraHooks,
+				loraHook{afterIdx: after, layer: i, kind: loraQ, aq: aq, ascale: as, dst: q, k: hidden},
+				loraHook{afterIdx: after, layer: i, kind: loraK, aq: aq, ascale: as, dst: k, k: hidden},
+				loraHook{afterIdx: after, layer: i, kind: loraV, aq: aq, ascale: as, dst: v, k: hidden},
+			)
 			if lw.qGate { // attn_output_gate: q_proj emitted [query ‖ gate] per head
 				q, aGate = qSplit(q, nH*g.hd, g.hd)
 			}
@@ -1206,6 +1259,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			// separate residual add (biasAdd is really "xd += out"; see its own doc comment).
 			if lw.oBias != nil || lw.postAttnNorm != nil {
 				attnOut := gemv(cq, cs, lw.o)
+				r.loraHooks = append(r.loraHooks,
+					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraO, aq: cq, ascale: cs, dst: attnOut, k: nH * g.hd})
 				if lw.oBias != nil {
 					biasAdd(attnOut, lw.oBias, hidden)
 				}
@@ -1215,6 +1270,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				biasAdd(r.xd, attnOut, hidden)
 			} else {
 				gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
+				r.loraHooks = append(r.loraHooks,
+					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraO, aq: cq, ascale: cs, dst: r.xd, k: nH * g.hd})
 			}
 		}
 		if lw.nemoKind == nemoKMamba || lw.nemoKind == nemoKAttn {
@@ -1276,13 +1333,23 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			}
 		} else {
 			gate, up := gemv(mq, ms, lw.gate), gemv(mq, ms, lw.up)
+			// G3: gate/up deltas BEFORE the SwiGLU activation below — matching decoder/mlp.go's own
+			// comment ("delta into gate/up before the activation") word for word.
+			r.loraHooks = append(r.loraHooks,
+				loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraGate, aq: mq, ascale: ms, dst: gate, k: hidden},
+				loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraUp, aq: mq, ascale: ms, dst: up, k: hidden},
+			)
 			dq, ds := swigluQuant(gate, up, inter)
 			if lw.postMLPNorm != nil { // FeatSandwichNorm: same defeat-the-fusion shape as o-proj above
 				downOut := gemv(dq, ds, lw.down)
+				r.loraHooks = append(r.loraHooks,
+					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraDown, aq: dq, ascale: ds, dst: downOut, k: inter})
 				downOut = rmsnormF32(downOut, lw.postMLPNorm, hidden)
 				biasAdd(r.xd, downOut, hidden)
 			} else {
 				gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
+				r.loraHooks = append(r.loraHooks,
+					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraDown, aq: dq, ascale: ds, dst: r.xd, k: inter})
 			}
 		}
 	}
@@ -1307,6 +1374,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		r.release()
 		return nil, fmt.Errorf("gpu: newDecodeRunner: device allocation failed (VRAM exhausted?): %w", buildErr)
 	}
+	// G3: snapshot the pristine (no-adapter) plan — SetAdapter rebuilds r.steps from this plus
+	// r.loraHooks rather than mutating it, so clearing an adapter is a cheap restore.
+	r.baseSteps = r.steps
 	return r, nil
 }
 
