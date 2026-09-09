@@ -172,6 +172,29 @@ func TestFitsWeightsBudget(t *testing.T) {
 	}
 }
 
+// TestReservedBudget is task-fit-to-hardware.md §2's drafter-aware sizing: allocSlots' elastic
+// expert-cache search must see free VRAM MINUS whatever a companion attach (--drafter) will claim
+// afterward, never a negative number capSlots was never written to handle.
+func TestReservedBudget(t *testing.T) {
+	const gb = int64(1) << 30
+	for _, c := range []struct {
+		name             string
+		free, extraBytes int64
+		want             int64
+	}{
+		{"nothing_attaching", 8 * gb, 0, 8 * gb},
+		{"drafter_reserves_its_share", 8 * gb, 500 << 20, 8*gb - 500<<20},
+		{"drafter_exceeds_everything_free_clamps_to_zero", 1 * gb, 2 * gb, 0},
+		{"drafter_exactly_consumes_free", 1 * gb, 1 * gb, 0},
+	} {
+		if got := reservedBudget(c.free, c.extraBytes); got != c.want {
+			t.Errorf("%s: reservedBudget(%.2f GB, %.2f GB) = %.2f GB, want %.2f GB",
+				c.name, float64(c.free)/float64(gb), float64(c.extraBytes)/float64(gb),
+				float64(got)/float64(gb), float64(c.want)/float64(gb))
+		}
+	}
+}
+
 // TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/task-gpu-paths-2026-09.md
 // §6): "nothing pinned is overridden... honoured or refused with numbers". The sibling test below
 // pins the SENTINEL/wiring without a device; this one calls checkKVFits itself, against a REAL
@@ -201,6 +224,49 @@ func TestCheckKVFits_realDevice_explicitRefusesWithNumbers(t *testing.T) {
 	for _, want := range []string{fmt.Sprintf("%d positions", absurdCtx), "GB", "free"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q — a refusal must name the numbers", err, want)
+		}
+	}
+}
+
+// TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers is task-fit-to-hardware.md §2's
+// drafter-aware sizing, on a REAL device: the sibling test above proves an absurd CTX refuses;
+// this proves a MODEST ctx that would otherwise fit can be refused purely by
+// Model.ExtraResidentBytes reserving the room instead — the companion-allocation term, not the
+// KV term, is what pushes it over. Paired on the SAME cudaResident shape (only extraBytes
+// differs), the "difference matched observations" discipline this repo's measurements use
+// elsewhere: a modest ctx (128 positions, a few KB of KV) fits at extraBytes=0 and is refused at
+// extraBytes=100 GiB, which is bigger than any card this repo targets — so the refusal cannot be
+// this box's own free VRAM being tight, only the reservation.
+func TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers(t *testing.T) {
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no cuda device: %v", err)
+	}
+	defer dev.ReleaseObjects()
+	const modestCtx = 128
+	const absurdExtra = 100 << 30 // 100 GiB — bigger than any card this repo targets
+
+	fits := &cudaResident{dev: dev, ctxCap: modestCtx, layers: []cudaLayer{{kvDim: 128}}}
+	if err := fits.checkKVFits(); err != nil {
+		t.Fatalf("checkKVFits() with extraBytes=0 refused a %d-position ctx: %v — the paired "+
+			"comparison needs this arm to fit, or a refusal from the reserved arm proves nothing", modestCtx, err)
+	}
+
+	reserved := &cudaResident{dev: dev, ctxCap: modestCtx, extraBytes: absurdExtra, layers: []cudaLayer{{kvDim: 128}}}
+	err = reserved.checkKVFits()
+	if err == nil {
+		t.Fatalf("checkKVFits() with extraBytes=%d GiB accepted a %d-position ctx that fit at "+
+			"extraBytes=0 — the reservation was never read", absurdExtra>>30, modestCtx)
+	}
+	// UNPINNED (ctxExplicit=false, the default here): the historical decline, not errKVWontFit —
+	// same distinction TestCheckKVFits_explicitFailsHard_defaultDeclines pins below for the ctx
+	// term, now proven for the extraBytes term too.
+	if errors.Is(err, errKVWontFit) {
+		t.Errorf("error %v matches errKVWontFit for an UNPINNED ctx — should be the ordinary decline, not the hard-error sentinel", err)
+	}
+	for _, want := range []string{"companion attach", "--drafter", "GB"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q — a reservation-caused refusal must name what reserved the room", err, want)
 		}
 	}
 }

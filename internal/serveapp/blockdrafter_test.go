@@ -13,8 +13,8 @@ import (
 // (it is lossless by construction). An operator would see correct responses at plain speed and
 // have nothing to look at. So the decline is the feature.
 func TestAttachBlockDrafter_declinesWithoutResident(t *testing.T) {
-	lm := &loadedModel{name: "test"} // no model ⇒ not block-spec capable
-	err := attachBlockDrafter(lm, "/nonexistent")
+	lm := &loadedModel{name: "test"}   // no model ⇒ not block-spec capable
+	err := attachBlockDrafter(lm, nil) // never dereferenced: the resident check declines first
 	if err == nil {
 		t.Fatal("attachBlockDrafter succeeded with no resident model — it must decline")
 	}

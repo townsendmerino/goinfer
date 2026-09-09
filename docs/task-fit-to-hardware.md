@@ -20,11 +20,14 @@
 > resident RAM gets one automatic `-stream-weights` retry, gated by `--fit`, MoE deliberately
 > excluded after `docs/benchmarks.md`'s "M35/M26 on the Mac" measured that CPU path as
 > catastrophic — 2h10min/zero completions; the dense retry itself measured at streamed/resident =
-> 0.944, real hardware, 2026-09-09 — see `docs/task-gpu-paths-2026-09.md`'s entries). **What's left
-> of Phase 2: the drafter-aware companion-allocation ctx sizing** (§2's own motivating example — a
-> `--drafter` attach after `BuildResident` grabbing VRAM an MoE expert cache already claimed —
-> needs a `decoder.ResidencyBackend` interface change both CUDA and Metal implement). **Phases 3–5
-> (WebGPU, the rate band, host-computed experts) remain entirely unstarted.** Design record for the
+> 0.944, real hardware, 2026-09-09 — see `docs/task-gpu-paths-2026-09.md`'s entries) **and for the
+> drafter-aware companion-allocation ctx sizing** (§2's own motivating example — a `--drafter`
+> attach after `BuildResident` grabbing VRAM an MoE expert cache already claimed — fixed 2026-09-09
+> WITHOUT the `ResidencyBackend` interface change the doc originally expected: an out-of-band hint
+> on `decoder.Model` was enough, CUDA-only since Metal hosts no drafter today, verified on real
+> nobara hardware — see `docs/task-gpu-paths-2026-09.md`'s entries). **Phase 2 is now fully closed.
+> Phases 3–5 (WebGPU, the rate band, host-computed experts) remain entirely unstarted.** Design
+> record for the
 > "run something bigger than my hardware" mode of use; reads
 > `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
 > user's hour. Sibling: `task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes

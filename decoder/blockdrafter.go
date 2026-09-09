@@ -110,3 +110,45 @@ var (
 	_ BlockDrafterWeights = (*DFlashDrafter)(nil)
 	_ BlockDrafterWeights = (*DSparkDrafter)(nil)
 )
+
+// DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw
+// — task-fit-to-hardware.md §2's "the drafter's weights (~500 MB for the 4B pairing, uploaded to
+// the target's device at attach)" term, computed instead of quoted, so a caller (a fit guard
+// pricing a --drafter attach BEFORE the target's own residency is built) has a real number rather
+// than a fixed constant that drifts from whatever pairing is actually loaded.
+//
+// EVERY DRAFTER MATRIX IS f32 ON HOST (loaded straight from safetensors via WrapF32 — dflash.go's
+// loadMat, never QuantizeInt8/QuantizeInt4) and the only backend that hosts one today, CUDA's
+// AttachDrafter (cuda/drafter.go), packs every f32 matrix through packWeight's f32 branch, which
+// is ALWAYS int8 (linalg.QuantizeRowsInt8) regardless of the target model's own quant — a drafter
+// is never packed to int4. So this is not a generic multi-quant estimate the way
+// decoder/fitguard.go's quantBytesPerElem is for the main model: it prices int8 specifically,
+// because that is the one encoding an attach can actually produce today. Per-row scale (one f32
+// per row) is included; the norm vectors and RoPE table are f32 already and round to nothing
+// beside the matrices, the same exemption ResidentWeightBytes' own doc comment gives the main
+// model's norms/biases.
+//
+// NOT included: the verify/capture buffers NewBlockSpec allocates (SetBatchedCapture's batched
+// logits, FuseContext's per-call context scratch) — a few MB at the default verify width against
+// hundreds of MB of weights, and already the kind of small residual the existing 384 MiB
+// ctxCapMarginBytes/slotMarginBytes margins in cuda/resident.go are there to absorb. Naming this
+// rather than silently folding it into "close enough": the weights are the term this function
+// computes for real, not the whole attach.
+func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
+	int8Bytes := func(w *linalg.WeightMat) int64 {
+		if w == nil {
+			return 0
+		}
+		n, k := int64(w.Rows()), int64(w.Cols())
+		return n*k + n*4 // packed int8 rows + one f32 scale per row
+	}
+	total := int8Bytes(dw.DrafterFC())
+	geo := dw.DrafterGeometry()
+	for i := 0; i < geo.Layers; i++ {
+		l := dw.DrafterLayer(i)
+		for _, w := range [...]*linalg.WeightMat{l.Q, l.K, l.V, l.O, l.Gate, l.Up, l.Down} {
+			total += int8Bytes(w)
+		}
+	}
+	return total
+}

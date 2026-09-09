@@ -1930,3 +1930,139 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     auto-retry, measured and gated — not the MoE CPU-streaming failure mode itself, which stays a
     known, documented capability boundary (unchanged by this session, matching the existing
     "M35/M26 on the Mac" verdict).
+
+- 2026-09-09 — The drafter-aware companion-allocation ctx sizing DONE — `task-fit-to-hardware.md`
+  Phase 2's last open item, at the user's explicit direction after asking why it was deferred
+  (prioritization, not a technical blocker — offered both remaining items, the CPU piece above was
+  chosen first) and confirming it was fine to pick up now. CUDA-only (Metal/WebGPU implement no
+  `ResidentDrafterHost` at all — `grep -rl AttachBlockDrafter metal/ gpu/` returns nothing, checked
+  before scoping anything, not assumed from the earlier session's more cautious note).
+  - **No `ResidencyBackend` interface change was needed, contrary to the earlier assessment
+    (the G11 entry above: "needs `BuildResident`'s signature... or an out-of-band hint... a
+    `decoder.ResidencyBackend` interface change both CUDA and Metal implement").** The
+    out-of-band-hint alternative that entry floated turned out to be sufficient on its own:
+    `cuda/backend.go`'s `BuildResident(m *decoder.Model)` already receives `*Model`, and `Model`
+    already carries per-load knobs this way (`resCtxReq`, `moeSlots`, `disableFit` — the same
+    pattern `ResidentContext`/`MoECacheSlots`/`DisableFit` already established). Adding one more
+    field (`extraBytes` / `Options.ExtraResidentBytes` / `Model.ExtraResidentBytes()`) cost zero
+    interface churn. The earlier note's "both CUDA and Metal implement" turned out not to matter
+    either, once checked: Metal hosts no drafter today, so there was nothing for it to implement.
+  - **`decoder.DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64`** (new,
+    `decoder/blockdrafter.go`): prices a drafter's WEIGHTS (the dominant term) by summing every
+    matrix's `Rows()×Cols()` at an int8-packed estimate (+1 f32 scale/row) — not a generic
+    multi-quant estimate the way `fitguard.go`'s `quantBytesPerElem` is for the main model, because
+    every drafter matrix is f32 on host (`dflash.go`'s `loadMat`, never `QuantizeInt8`/`QuantizeInt4`)
+    and the only backend that hosts one, CUDA's `AttachDrafter`, packs every f32 matrix through
+    `packWeight`'s f32 branch, which is ALWAYS int8 regardless of the target model's own quant — a
+    drafter is never packed to int4 today. Deliberately excludes the verify/capture buffers
+    `NewBlockSpec` allocates (a few MB at the default verify width against hundreds of MB of
+    weights) — named as a residual the existing 384 MiB margins (`ctxCapMarginBytes`/
+    `slotMarginBytes`) already absorb, not silently folded in as if computed.
+  - **`decoder.Options.ExtraResidentBytes` / `Model.ExtraResidentBytes()`** (new,
+    `decoder/model.go`): threaded through both `&Model{...}` construction sites the same way
+    `ResidentContext`/`MoECacheSlots` already are. 0 (default) is a total no-op through every call
+    site below.
+  - **`internal/serveapp/main.go`'s `loadDecoder`**: `--drafter` is now loaded ONCE, at the TOP of
+    `loadDecoder` (before `decoder.Load`), not inside `attachBlockDrafter` after the fact —
+    `decoder.LoadDFlashDrafter(cfg.drafter)` runs early, `DrafterResidentBytesEstimate` prices it
+    into `opts.ExtraResidentBytes`, and the SAME loaded `*decoder.DFlashDrafter` is passed through
+    to a modified `attachBlockDrafter(lm, dw)` (was `attachBlockDrafter(lm, dir string)`) for the
+    real attach later — pricing and the actual attach see identical weights, not two independent
+    file reads that could in principle disagree. This does cost reading the drafter file even when
+    the eventual backend cannot host one (previously `attachBlockDrafter` checked
+    `BlockSpecCapable()` before touching the file at all); accepted as the necessary order once the
+    byte count has to exist before `BuildResident` runs.
+  - **`cuda/resident.go`, every free-VRAM check a companion allocation could be starved by**:
+    - `resolveCtxCapFit`: `m.ExtraResidentBytes()` now passed as `PlanRequest.ExtraBytes` into the
+      `m.Plan("cuda", free, ...)` call — `Plan`'s own arithmetic already handled `ExtraBytes`
+      correctly (pinned by `decoder/fitplan_test.go`'s existing `TestPlan_tableDriven` case, which
+      predates this session), so this is genuinely a one-line wiring change, not new arithmetic.
+    - `checkWeightsFit(m)`: `need` now includes `m.ExtraResidentBytes()`; the refusal message
+      names the reservation separately from the dense-weight figure when it is the reason
+      (`"...plus %.2f GB reserved for a companion attach (--drafter)..."`) rather than folding it
+      into one number a reader can't attribute.
+    - `allocSlots` (capSlots' real call site): new `reservedBudget(free, extraBytes int64) int64`
+      (split out for the same reason `fitsWeightsBudget` was — unit-testable without a device),
+      subtracted from live free VRAM before the elastic slot search runs. Both the FLOOR decline
+      (`topK` doesn't even fit) and the ordinary cap-down log line now name the reservation when
+      `extraBytes > 0`, unchanged otherwise.
+    - `checkKVFits()`: same `r.extraBytes` term added. **Caught by the real-device test below, not
+      by review**: the PINNED-explicit branch (`return e`) picked up the reservation-aware message
+      correctly on the first pass, but the UNPINNED/default branch — a completely separate
+      hardcoded `fmt.Errorf` a few lines below, pre-existing code this session did not otherwise
+      touch — did not, because it builds its own message from scratch rather than reusing `e`/`msg`.
+      `TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers` failed on the first run
+      (`"...staged path" does not mention "companion attach"`) and named exactly which branch was
+      missed; fixed by giving that branch the same extraBytes-aware message split. Left as a
+      pointer for the drafter-aware-sizing pattern generally: **the "explicit vs default" branch
+      split recurs at every guard in this file, and a change to one arm's message is not
+      automatically a change to the other's** — this is the second time in this session's own
+      history this exact class of miss has been caught by a real-device test rather than review
+      (the first was G6's Metal `-ctx` gap).
+  - **Verified real, on nobara's RTX 2070 SUPER** — isolated checkout, this session's uncommitted
+    diff transferred as a patch on top of a git-bundle-synced `HEAD` (the checkout's own working
+    tree held STALE, already-superseded pre-`e36ac75` changes from an earlier session that never
+    got committed there; diffed against the now-committed local history to confirm before
+    `git stash`-ing them out of the way, not discarded blind):
+    - `go build`/`go vet -tags cuda` clean; `gofmt -l` clean.
+    - `TestFitsWeightsBudget` (pre-existing) and new `TestReservedBudget` (pure, no device) both
+      pass — the arithmetic in isolation.
+    - New `TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers`
+      (`cuda/resident_cap_test.go`, sibling to the existing G6-era
+      `TestCheckKVFits_realDevice_explicitRefusesWithNumbers`): a PAIRED real-device comparison —
+      the SAME modest 128-position ctx, on the SAME card, fits at `extraBytes=0` and is refused at
+      `extraBytes=100 GiB` (deliberately bigger than any card this repo targets, so the refusal
+      cannot be this box's own free-VRAM state, only the reservation) — message asserted to name
+      "companion attach", "--drafter", and "GB". This is the test that caught the missed branch
+      above.
+    - **A throwaway probe (not committed, per this session's own established pattern for the
+      live-VRAM-probe branch — see `TestResolveCtxCapFit_shortcuts`'s own doc comment referencing
+      one from the `--fit` flag work)**, isolating `resolveCtxCapFit` from `checkWeightsFit`'s
+      confound (a large-enough reservation to shrink ctx is also large enough to fail the
+      independent weights-fit guard first, on an 8 GB card — the viable "shrinks but doesn't
+      decline" window is a few hundred MB wide and too fragile to commit as a device-state-
+      dependent test): on a real `qwen2.5-coder-1.5b-instruct` GGUF (CPU-loaded, so only the
+      live-VRAM-probe path runs, no full resident build), `resolveCtxCapFit(m, 0, 32768)` returned
+      **8192 at `ExtraResidentBytes=0`, 4096 (falling back to `cudaCtxCapDefault`, exactly as
+      documented — "Plan could not confidently improve on the historical floor") at
+      `ExtraResidentBytes=7 GiB`** — same model, same device, same free-VRAM reading, only the
+      reservation differed.
+    - Full `cuda` suite (`-tags 'cuda goinfer_testhooks'`, 15 min timeout): 101 pass / 3 fail / 126
+      skip. All 3 failures share ONE root cause — `testdata/mistral-tiny-window/model.safetensors`
+      absent on this checkout (the config JSON is git-tracked, the gitignored weight file was
+      never copied there; the exact "dir-only guard" trap `CLAUDE.md` names) — confirmed by
+      `ls`ing the fixture directory, not assumed from the error text. None of the three
+      (`TestGraphsSafeGate`, `TestPrefillLast_e2e`, `TestSlidingWindowLongContext`) touch anything
+      this session changed. `TestBackendResidentWired` (`GOINFER_HEAVY_TESTS=1`, a real qwen
+      checkpoint through `decoder.Load(cuda)→BuildResident→Forward`) still passes at
+      `ExtraResidentBytes=0`: 7/8 exact, worst near-tie 0.563% — confirms the ordinary,
+      nothing-attaching path is unchanged.
+  - **Decoder-side, on this Mac**: `TestDrafterResidentBytesEstimate_matchesHandComputedTotal` and
+    `_growsWithLayers` (new, `decoder/blockdrafter_test.go`, synthetic geometry — no checkpoint
+    needed, so these run in CI unconditionally) pin the estimator's arithmetic against an
+    independently-summed total, the same discipline `decoder/weightbytes_test.go`'s own
+    cross-checks use. `TestExtraResidentBytes_reachesTheModel` (new, `../testdata/llama-tiny`,
+    tracked) closes the loop the estimate feeds: a struct-literal typo at either of `Load`'s two
+    `&Model{...}` sites would otherwise silently zero the field with nothing to catch it, since a
+    backend-level test alone could never distinguish "wired wrong" from "nothing was attaching".
+  - **Full regression, this Mac**: `decoder` 418 pass/2 fail(`TestOlmo3_forwardParity` pre-existing;
+    `TestParityManifest_fresh` — `decoder/model.go`/`decoder/blockdrafter.go` are `core`-covered,
+    same re-staling this session's earlier CPU-placement entry already walked through)/125 skip,
+    then green after the identical by-hand refresh: golden regex set re-run with these changes
+    present — **36 pass/1 fail(olmo3, identical)/21 skip, byte-for-byte the same as baseline** —
+    then `-run TestParityManifest -update`, `git diff` confirmed deps_hash-only (66 lines/33
+    families), `TestParityManifest_fresh` green ("35/35 families enforced"). `internal/serveapp`
+    full suite green. `gofmt -l`/`go vet`/staticcheck (v0.8.0, `-version` confirmed) clean on every
+    touched package, both machines.
+  - **Not done, left open**: the verify/capture-buffer term `DrafterResidentBytesEstimate`
+    deliberately excludes (named above, judged negligible against the weight term and already
+    covered by the existing fixed margins); the "shrinks but doesn't decline" middle case for
+    `resolveCtxCapFit` under a companion reservation was demonstrated once via a throwaway probe
+    but has no committed device-dependent test (the narrow-window fragility above); a real
+    `--drafter` pairing was never attached end-to-end WITH this fix live (the real-device tests
+    above isolate the guards directly rather than running a full `serve --drafter` startup — no
+    drafter+target checkpoint pair was confirmed present on nobara to do that run). **With this,
+    `task-fit-to-hardware.md` Phase 2 is now fully closed** — CUDA (context + slots + `--fit=off`),
+    Metal (slots + the `-ctx` bug fix), CPU (dense auto-retry), and the drafter-aware sizing, all
+    measured on real hardware. Phases 3-5 (WebGPU, the rate band, host-computed experts) remain
+    entirely unstarted.

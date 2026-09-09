@@ -7,22 +7,25 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// attachBlockDrafter loads a pretrained block drafter (--drafter) and attaches it to an
-// already-loaded model, so requests can take the block-speculative path.
+// attachBlockDrafter attaches an already-loaded block drafter (--drafter) to an already-loaded
+// model, so requests can take the block-speculative path.
+//
+// dw is loaded by the caller, in loadDecoder, BEFORE the target model itself — task-fit-to-
+// hardware.md §2's drafter-aware sizing needs the drafter's byte footprint priced into
+// Options.ExtraResidentBytes ahead of BuildResident, which means the load has already happened
+// by the time this runs. Taking the loaded value here (rather than a directory to load itself,
+// as this used to) means that pricing and this attach see the EXACT SAME weights, not two
+// independent reads of the same file that could in principle disagree.
 //
 // IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wants block
 // drafting; a wrong pairing or a backend that cannot host one should be a startup error they see
 // once, not a fleet quietly serving at 1x. The one exception is a sampler the spec path does not
 // support, which is a per-REQUEST property and falls back per request by design.
-func attachBlockDrafter(lm *loadedModel, dir string) error {
+func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter) error {
 	if lm.model == nil || !lm.model.BlockSpecCapable() {
 		return fmt.Errorf("this model has no resident GPU decode path that can host a block " +
 			"drafter. Block drafting needs a resident GPU backend (--backend cuda) and a model " +
 			"that actually resolved to it — check the startup banner for a residency decline")
-	}
-	dw, err := decoder.LoadDFlashDrafter(dir)
-	if err != nil {
-		return fmt.Errorf("load drafter: %w", err)
 	}
 	spec, err := lm.model.NewBlockSpec(dw, dw.TargetLayerIDs())
 	if err != nil {

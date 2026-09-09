@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"testing"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // TestBlockDrafterWeights_matchesTrunk checks the interface reports what the drafter actually
@@ -94,4 +96,86 @@ func TestBlockDrafterWeights_matchesTrunk(t *testing.T) {
 		"interface agrees with the trunk on every field",
 		g.Layers, g.Hidden, g.NumHeads, g.NumKVHeads, g.HeadDim, g.Intermediate,
 		w.BlockSize(), w.DrafterFC().Rows(), w.DrafterFC().Cols())
+}
+
+// syntheticDrafter builds a small, entirely fabricated DFlashDrafter with nLayers layers — no
+// checkpoint needed, so this exercises DrafterResidentBytesEstimate's arithmetic unconditionally
+// in CI rather than only wherever GOINFER_DFLASH_F32 happens to be present. Values are zeroed;
+// only shapes matter for a byte count.
+func syntheticDrafter(t *testing.T, nLayers int) *DFlashDrafter {
+	t.Helper()
+	const hidden, nH, nKV, hd, inter, nTaps = 8, 2, 1, 4, 16, 2
+	mat := func(n, k int) linalg.WeightMat { return linalg.WrapF32(make([]float32, n*k), n, k) }
+	d := &DFlashDrafter{blockTrunk: blockTrunk{
+		hidden: hidden, nHeads: nH, nKV: nKV, headDim: hd, inter: inter,
+		fc:         mat(hidden, nTaps*hidden),
+		hiddenNorm: make([]float32, hidden),
+		finalNorm:  make([]float32, hidden),
+	}}
+	for i := 0; i < nLayers; i++ {
+		d.layers = append(d.layers, dflashLayer{
+			q: mat(nH*hd, hidden), k: mat(nKV*hd, hidden), v: mat(nKV*hd, hidden), o: mat(hidden, nH*hd),
+			gate: mat(inter, hidden), up: mat(inter, hidden), down: mat(hidden, inter),
+			inputNorm: make([]float32, hidden), postAttnNorm: make([]float32, hidden),
+		})
+	}
+	return d
+}
+
+// wmInt8Bytes is DrafterResidentBytesEstimate's own per-matrix formula, reimplemented
+// independently here so the test is not just calling the function and checking it agrees with
+// itself — same discipline decoder/weightbytes_test.go's cross-checks use.
+func wmInt8Bytes(n, k int) int64 { return int64(n)*int64(k) + int64(n)*4 }
+
+// TestDrafterResidentBytesEstimate_matchesHandComputedTotal pins the arithmetic against an
+// independently-summed total for a small synthetic geometry, so a future change to which
+// matrices are counted (or a copy-paste layer omission) shows up as a wrong number, not a
+// plausible-looking one.
+func TestDrafterResidentBytesEstimate_matchesHandComputedTotal(t *testing.T) {
+	const hidden, nH, nKV, hd, inter, nTaps, nLayers = 8, 2, 1, 4, 16, 2, 2
+	d := syntheticDrafter(t, nLayers)
+
+	perLayer := wmInt8Bytes(nH*hd, hidden) + wmInt8Bytes(nKV*hd, hidden)*2 + wmInt8Bytes(hidden, nH*hd) +
+		wmInt8Bytes(inter, hidden)*2 + wmInt8Bytes(hidden, inter)
+	want := wmInt8Bytes(hidden, nTaps*hidden) + int64(nLayers)*perLayer
+
+	if got := DrafterResidentBytesEstimate(d); got != want {
+		t.Errorf("DrafterResidentBytesEstimate = %d, want %d (hand-computed)", got, want)
+	}
+}
+
+// TestDrafterResidentBytesEstimate_growsWithLayers guards the shape of the estimate, not just one
+// pinned number: more layers must cost strictly more, and a drafter with zero layers (fc/norms
+// only) must still return a positive figure rather than 0 — a caller pricing "nothing else is
+// attaching" as 0 (Options.ExtraResidentBytes' own doc comment) must never be confused with a
+// genuinely-loaded drafter that this function under-counted to zero.
+func TestDrafterResidentBytesEstimate_growsWithLayers(t *testing.T) {
+	zero := DrafterResidentBytesEstimate(syntheticDrafter(t, 0))
+	if zero <= 0 {
+		t.Fatalf("a 0-layer drafter (fc + norms only) estimated %d bytes, want > 0", zero)
+	}
+	one := DrafterResidentBytesEstimate(syntheticDrafter(t, 1))
+	two := DrafterResidentBytesEstimate(syntheticDrafter(t, 2))
+	if !(zero < one && one < two) {
+		t.Errorf("estimate did not grow monotonically with layer count: 0L=%d 1L=%d 2L=%d", zero, one, two)
+	}
+}
+
+// TestExtraResidentBytes_reachesTheModel closes the loop the estimate feeds: internal/serveapp's
+// loadDecoder sets Options.ExtraResidentBytes before calling Load, and a backend
+// (cuda/resident.go's checkWeightsFit/checkKVFits/allocSlots) reads it back off *Model, not off
+// Options — so a struct-literal typo at either of Load's two &Model{...} sites would silently
+// zero it and no backend-level test could ever see why a --drafter attach still ran out of room.
+// Load()-based (a real tracked fixture) rather than constructing *Model directly, so this proves
+// the actual production path, matching TestFitDisabled/TestResolveCtxCapFit_shortcuts' own
+// "load a real model, don't pass nil" precedent (cuda/resident_cap_test.go).
+func TestExtraResidentBytes_reachesTheModel(t *testing.T) {
+	m, err := Load("../testdata/llama-tiny", Options{Quant: "f32", ExtraResidentBytes: 123456789})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+	if got := m.ExtraResidentBytes(); got != 123456789 {
+		t.Errorf("ExtraResidentBytes() = %d, want 123456789", got)
+	}
 }

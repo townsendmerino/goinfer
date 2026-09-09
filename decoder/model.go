@@ -44,6 +44,7 @@ type Model struct {
 	disableFit bool         // task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache   bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots   int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
+	extraBytes int64        // Options.ExtraResidentBytes — see that field's own doc comment
 	mmap       []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	srcPath    string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
 	pager      *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
@@ -129,6 +130,17 @@ func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
 // effective cap as min(model context window, this) and VRAM-checks it at load; off the residency
 // path it has no effect. See cuda.resolveCtxCap.
 func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
+
+// ExtraResidentBytes returns Options.ExtraResidentBytes — VRAM a companion allocation will claim
+// on the SAME device AFTER this model's own residency is built (a --drafter's weights today; a
+// vision tower is the same class of term, task-fit-to-hardware.md §2), priced ahead of time so the
+// elastic terms a backend sizes against live free VRAM (CUDA's capSlots expert cache, its
+// resolveCtxCapFit context-by-default) leave room for it instead of claiming everything free VRAM
+// offers and having the later attach fail with no room left — §2's own motivating example,
+// measured 2026-09-02: a 26B auto-sized to 31 slots/layer, the server came up, then --drafter
+// attached and NewBlockSpec failed on a 15.9 MB buffer because the cache had already taken the
+// room. 0 means "nothing else is attaching" (today's behavior, unchanged).
+func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 
 // FitDisabled is task-fit-to-hardware.md's --fit=off (Options.DisableFit), true when either the
 // Options field or the pre-existing GOINFER_NO_FIT_DEFAULT env var (cuda/resident.go's original,
@@ -228,6 +240,13 @@ type Options struct {
 	// (ResidentContext, MoECacheSlots, StreamWeights itself, etc.) is never affected by this flag
 	// in either direction: fit-by-default only ever acts on the UNPINNED case.
 	DisableFit bool
+	// ExtraResidentBytes prices a companion allocation that will claim VRAM on the SAME device
+	// AFTER this model's own residency is built — a --drafter's weights today
+	// (internal/serveapp's loadDecoder computes this via decoder.DrafterResidentBytesEstimate
+	// before calling Load, so it is known before BuildResident runs). See
+	// Model.ExtraResidentBytes's own doc comment for why this exists and what it fixes. 0 (the
+	// default) is today's behavior, unchanged.
+	ExtraResidentBytes int64
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -271,7 +290,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}
+		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
@@ -346,7 +365,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots}).withBackendNames(opts.Backend, beErr)
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.

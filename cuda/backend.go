@@ -569,6 +569,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// did not ask allocates exactly what they always did.
 		ctxCap:      resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions),
 		ctxExplicit: m.ResidentContextRequest() > 0,
+		extraBytes:  m.ExtraResidentBytes(),
 	}
 	if moeSig {
 		r.moeSigmoid = 1

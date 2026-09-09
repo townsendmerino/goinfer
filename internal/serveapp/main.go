@@ -963,6 +963,24 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
 
+	// task-fit-to-hardware.md §2's drafter-aware sizing: --drafter attaches AFTER this model's own
+	// residency is built (below, attachBlockDrafter), but the elastic terms BuildResident sizes
+	// against live free VRAM (CUDA's expert-cache slots, its unpinned ctx-by-default) have no way
+	// to know it is coming unless something prices it first. Load the drafter HERE, before
+	// decoder.Load, so Options.ExtraResidentBytes carries a real number into BuildResident — this
+	// is the §2 example itself: a 26B auto-sized its expert cache to every free byte, then
+	// --drafter attached and NewBlockSpec failed with nowhere left to go. Loaded once and reused
+	// at the attach call site below, so pricing and the actual attach see the same weights rather
+	// than two independent reads of the same file.
+	var drafter *decoder.DFlashDrafter
+	if cfg.drafter != "" {
+		var derr error
+		if drafter, derr = decoder.LoadDFlashDrafter(cfg.drafter); derr != nil {
+			return nil, fmt.Errorf("--drafter %q: load drafter: %w", cfg.drafter, derr)
+		}
+		opts.ExtraResidentBytes = decoder.DrafterResidentBytesEstimate(drafter)
+	}
+
 	// Weight streaming needs the read-only mmap that only .giw provides. For a plain
 	// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and
 	// load that — so --stream-weights "just works" without a manual prequant step.
@@ -1052,8 +1070,8 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// It fails startup rather than degrading silently: an operator who passed --drafter wants
 	// block drafting, and a wrong pairing or an incapable backend should be one startup error
 	// they see, not a fleet quietly serving at 1x.
-	if cfg.drafter != "" {
-		if err := attachBlockDrafter(lm, cfg.drafter); err != nil {
+	if drafter != nil {
+		if err := attachBlockDrafter(lm, drafter); err != nil {
 			return nil, fmt.Errorf("--drafter %q: %w", cfg.drafter, err)
 		}
 	}

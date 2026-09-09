@@ -101,7 +101,10 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
 	if !ok {
 		return cudaCtxCapDefault // unknown ⇒ the safe historical default, never guess
 	}
-	p := m.Plan("cuda", free, decoder.PlanRequest{Ctx: candidate})
+	// ExtraBytes: task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter attaching after
+	// BuildResident must not find the context Plan chose here left it no room (m.ExtraResidentBytes's
+	// own doc comment). Zero when nothing is attaching, so this is a no-op for every load without one.
+	p := m.Plan("cuda", free, decoder.PlanRequest{Ctx: candidate, ExtraBytes: m.ExtraResidentBytes()})
 	if p.Placement == decoder.PlacementDecline || p.Ctx < cudaCtxCapDefault {
 		return cudaCtxCapDefault // Plan could not confidently improve on the historical floor
 	}
@@ -534,8 +537,9 @@ type cudaResident struct {
 	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
 	launchErr   error // sticky first launch error within a launchToken call (reset per token) — M23
 	layers      []cudaLayer
-	ctxExplicit bool // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
-	ctxCap      int  // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	ctxExplicit bool  // the cap came from configuration (Options.ResidentContext), not the default — decides whether a VRAM miss is a hard error or a decline
+	ctxCap      int   // effective resident KV capacity in positions = resolveCtxCap(request, model ctx). Every kc/vc is sized cap*kvDim; checkCap guards against it.
+	extraBytes  int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
 	lmW         cudaWQ
 	finalNorm   Buffer
 
@@ -827,7 +831,14 @@ func (r *cudaResident) allocSlots() error {
 		// existing only for the gate — so the gate corroborated a parallel copy and a change to
 		// either was uncontradicted by the other (the sibling-drift instance in
 		// docs/parity-coverage-policy.md). The gate now points at the shipping path.
-		fit, decline := capSlots(int64(free), int64(len(moeLayers)), strides, r.topK, r.cacheSlots)
+		//
+		// budget, not free, goes into capSlots: r.extraBytes reserves room for a companion attach
+		// (--drafter) coming after this build (Model.ExtraResidentBytes's own doc comment) — the
+		// exact scenario task-fit-to-hardware.md §2 measured (a 26B auto-sized to 31 slots/layer,
+		// then --drafter attached and NewBlockSpec failed with no room left). 0 when nothing is
+		// attaching, so budget == free then and this is unchanged.
+		budget := reservedBudget(int64(free), r.extraBytes)
+		fit, decline := capSlots(budget, int64(len(moeLayers)), strides, r.topK, r.cacheSlots)
 		if decline {
 			// FLOOR. topK slots is the minimum that can work — one token's routed set must be
 			// simultaneously resident — so if even that does not fit, DECLINE naming the shortfall
@@ -839,16 +850,31 @@ func (r *cudaResident) allocSlots() error {
 			// CUDA_ERROR_OUT_OF_MEMORY from cuLaunchKernel or a generation loop returning nothing —
 			// neither of which points back here.
 			need := slotRequirement(r.topK, int64(len(moeLayers)), strides)
+			if r.extraBytes > 0 {
+				return fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
+					"layers need %.2f GB of slots, but only %.2f GB is free (%.2f GB reserved for a companion "+
+					"attach, --drafter) — %d slots/layer fit. Free VRAM, lower --ctx, or drop "+
+					"GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
+					r.topK, len(moeLayers), float64(need)/1e9, float64(free)/1e9, float64(r.extraBytes)/1e9, fit)
+			}
 			return fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
 				"layers need %.2f GB of slots, but only %.2f GB is free — %d slots/layer fit. Free VRAM, "+
 				"lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
 				r.topK, len(moeLayers), float64(need)/1e9, float64(free)/1e9, fit)
 		}
 		if fit < r.cacheSlots {
-			fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
-				"capping to %d (%.1f GB)\n", r.cacheSlots,
-				float64(slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides))/1e9, float64(free)/1e9,
-				fit, float64(slotRequirement(fit, int64(len(moeLayers)), strides))/1e9)
+			if r.extraBytes > 0 {
+				fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free "+
+					"(%.1f GB of %.1f GB total reserved for a companion attach, --drafter) — capping to %d (%.1f GB)\n",
+					r.cacheSlots, float64(slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides))/1e9,
+					float64(budget)/1e9, float64(r.extraBytes)/1e9, float64(free)/1e9,
+					fit, float64(slotRequirement(fit, int64(len(moeLayers)), strides))/1e9)
+			} else {
+				fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
+					"capping to %d (%.1f GB)\n", r.cacheSlots,
+					float64(slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides))/1e9, float64(free)/1e9,
+					fit, float64(slotRequirement(fit, int64(len(moeLayers)), strides))/1e9)
+			}
 			r.cacheSlots = fit
 		}
 	}
@@ -1321,6 +1347,21 @@ type kvWontFitError struct{ msg string }
 func (e *kvWontFitError) Error() string        { return e.msg }
 func (e *kvWontFitError) Is(target error) bool { return target == errKVWontFit }
 
+// reservedBudget is what allocSlots' elastic expert-cache sizing actually gets to work with once a
+// companion allocation (extraBytes — a --drafter attaching after this build,
+// Model.ExtraResidentBytes's own doc comment) has reserved its share of free VRAM. Split out, like
+// fitsWeightsBudget below, so the clamp-at-zero (extraBytes can exceed free on a card too small
+// for the pairing at all — capSlots must then see 0, not a negative budget it was never written to
+// handle) is unit-testable without a device. extraBytes <= 0 is the common case (nothing is
+// attaching) and returns free unchanged.
+func reservedBudget(free, extraBytes int64) int64 {
+	b := free - extraBytes
+	if b < 0 {
+		return 0
+	}
+	return b
+}
+
 // fitsWeightsBudget is checkWeightsFit's arithmetic alone, split out so it is unit-testable with
 // synthetic numbers rather than a checkpoint large enough to swing a real device's verdict — same
 // reasoning as metal/backend.go's fitsResidentBudget, which this mirrors. Unknown inputs (need or
@@ -1351,14 +1392,25 @@ func fitsWeightsBudget(need, free int64) bool {
 // class of over-eager guard M-02 already fixed once for Metal's paging case.
 func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 	need := m.ResidentDenseWeightBytes()
+	// A companion allocation (a --drafter's weights) attaches on this same device AFTER
+	// BuildResident returns — price it here too, or a dense model whose weights alone fit could
+	// still leave the drafter with nowhere to go (m.ExtraResidentBytes's own doc comment). 0 when
+	// nothing is attaching, so this term vanishes for every load without one.
+	extra := m.ExtraResidentBytes()
 	free, _, err := r.dev.Context().MemInfo()
 	if err != nil {
 		// No MemInfo ⇒ no fit check possible. Same non-failure as checkKVFits: the allocation
 		// itself still errors if it truly cannot fit.
 		return nil
 	}
-	if fitsWeightsBudget(need, int64(free)) {
+	if fitsWeightsBudget(need+extra, int64(free)) {
 		return nil
+	}
+	if extra > 0 {
+		return fmt.Errorf("cuda: dense weights need %.2f GB plus %.2f GB reserved for a companion "+
+			"attach (--drafter) but only %.2f GB is free on the device (plus %.0f MB reserved for "+
+			"driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path",
+			float64(need)/1e9, float64(extra)/1e9, float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
 	}
 	return fmt.Errorf("cuda: dense weights need %.2f GB but only %.2f GB is free on the device "+
 		"(plus %.0f MB reserved for driver and decode scratch) — use a smaller/more-quantized "+
@@ -1375,18 +1427,35 @@ func (r *cudaResident) checkKVFits() error {
 		// that does not report memory. The allocation itself still errors if it truly cannot fit.
 		return nil
 	}
-	if need+ctxCapMarginBytes <= int64(free) {
+	// r.extraBytes reserves room for a companion attach (--drafter) coming after this build —
+	// see the field's own doc comment. 0 for every load without one, so this is unchanged then.
+	if need+r.extraBytes+ctxCapMarginBytes <= int64(free) {
 		return nil
 	}
 	perPos := float64(need) / float64(max(r.ctxCap, 1)) / 1024
-	e := &kvWontFitError{msg: fmt.Sprintf("cuda: resident context %d positions needs %.2f GB of KV "+
+	msg := fmt.Sprintf("cuda: resident context %d positions needs %.2f GB of KV "+
 		"(%.1f KB/position across %d layers) but only %.2f GB is free on the device beside the weights "+
 		"(plus %.0f MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), "+
 		"or use a smaller/more-quantized model",
-		r.ctxCap, float64(need)/1e9, perPos, len(r.layers), float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))}
+		r.ctxCap, float64(need)/1e9, perPos, len(r.layers), float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
+	if r.extraBytes > 0 {
+		msg = fmt.Sprintf("cuda: resident context %d positions needs %.2f GB of KV "+
+			"(%.1f KB/position across %d layers) plus %.2f GB reserved for a companion attach "+
+			"(--drafter) but only %.2f GB is free on the device beside the weights (plus %.0f MB "+
+			"reserved for driver and decode scratch) — lower the serve context setting (-ctx), or "+
+			"use a smaller/more-quantized model",
+			r.ctxCap, float64(need)/1e9, perPos, len(r.layers), float64(r.extraBytes)/1e9,
+			float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
+	}
+	e := &kvWontFitError{msg: msg}
 	if !r.ctxExplicit {
 		// Default cap: keep the historical decline. Strip the sentinel so BuildResident treats it as
 		// an ordinary "cannot host this here" and the staged path takes over, as it always has.
+		if r.extraBytes > 0 {
+			return fmt.Errorf("cuda: default resident context %d positions does not fit (%.2f GB of KV "+
+				"plus %.2f GB reserved for a companion attach, --drafter, %.2f GB free) — staged path",
+				r.ctxCap, float64(need)/1e9, float64(r.extraBytes)/1e9, float64(free)/1e9)
+		}
 		return fmt.Errorf("cuda: default resident context %d positions does not fit (%.2f GB of KV, %.2f GB free) — staged path",
 			r.ctxCap, float64(need)/1e9, float64(free)/1e9)
 	}
