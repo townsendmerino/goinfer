@@ -146,3 +146,64 @@ func TestResidentWeightBytesPaged_capsAtSlots(t *testing.T) {
 		t.Errorf("ResidentWeightBytesPaged(%d) = %d, want %d (independent per-layer recomputation)", slots, paged, want)
 	}
 }
+
+// TestResidentHostCopyBytes_exemptsPagedExperts is M-02's gate for the host-copy addend (2026-09-
+// 09): a unified-memory backend (Metal) holds a quantized HOST WeightMat AND a separately-packed
+// device buffer for the SAME dense weights, but a genuinely PAGED expert streams from disk and
+// never gets a committed host copy — so the addend must shrink under paging exactly where
+// ResidentWeightBytesPaged's OWN estimate does, not stay flat.
+func TestResidentHostCopyBytes_exemptsPagedExperts(t *testing.T) {
+	m := loadGemma4MoETiny(t)
+
+	unpaged := m.ResidentWeightBytes()
+	hostUnpaged := m.ResidentHostCopyBytes(0)
+	if hostUnpaged != unpaged {
+		t.Errorf("ResidentHostCopyBytes(0) = %d, want exactly ResidentWeightBytes() %d — unpaged, "+
+			"every expert is a materialized host copy same as dense", hostUnpaged, unpaged)
+	}
+
+	maxNE := 0
+	for i := range m.w.Layers {
+		if mo := m.w.Layers[i].gemma4moe; mo != nil && len(mo.expertsGateUp) > maxNE {
+			maxNE = len(mo.expertsGateUp)
+		}
+	}
+	if maxNE < 2 {
+		t.Fatalf("fixture has %d experts/layer — need >=2 for a meaningful slots<nE case", maxNE)
+	}
+
+	slots := 1
+	hostPaged := m.ResidentHostCopyBytes(slots)
+	if hostPaged >= hostUnpaged {
+		t.Fatalf("ResidentHostCopyBytes(%d) = %d, want strictly < unpaged %d — paged experts must "+
+			"be exempt from the host-copy addend (they stream, no host materialization)", slots, hostPaged, hostUnpaged)
+	}
+
+	// The paged host-copy figure must equal the DENSE-only sum: the unpaged total with EVERY
+	// expert class's FULL bytes removed — both the generic l.Experts field (empty on this gemma4
+	// fixture, which uses the fused representation instead, but summed anyway so this assertion
+	// does not silently assume that) and gemma4moe's fused expertsGateUp/expertsDown.
+	var allExpertBytes int64
+	for i := range m.w.Layers {
+		for j := range m.w.Layers[i].Experts {
+			e := &m.w.Layers[i].Experts[j]
+			allExpertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
+		}
+		if mo := m.w.Layers[i].gemma4moe; mo != nil {
+			for e := range mo.expertsGateUp {
+				allExpertBytes += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
+			}
+		}
+	}
+	wantDense := unpaged - allExpertBytes
+	if hostPaged != wantDense {
+		t.Errorf("ResidentHostCopyBytes(%d) = %d, want %d (dense-only: unpaged minus every expert class)", slots, hostPaged, wantDense)
+	}
+
+	// ResidentDenseWeightBytes must equal the SAME dense-only figure computed above, independent
+	// of paging — it exists precisely so a caller checking "does the fixed part fit" gets the same
+	// answer ResidentHostCopyBytes derives internally when paging is active.
+	if got := m.ResidentDenseWeightBytes(); got != wantDense {
+		t.Errorf("ResidentDenseWeightBytes() = %d, want %d", got, wantDense)
+	}
+}

@@ -1282,6 +1282,51 @@ type kvWontFitError struct{ msg string }
 func (e *kvWontFitError) Error() string        { return e.msg }
 func (e *kvWontFitError) Is(target error) bool { return target == errKVWontFit }
 
+// fitsWeightsBudget is checkWeightsFit's arithmetic alone, split out so it is unit-testable with
+// synthetic numbers rather than a checkpoint large enough to swing a real device's verdict — same
+// reasoning as metal/backend.go's fitsResidentBudget, which this mirrors. Unknown inputs (need or
+// free <= 0) always fit: the guard's failure mode must be letting a doomed load through, never
+// refusing one that would have run.
+func fitsWeightsBudget(need, free int64) bool {
+	if need <= 0 || free <= 0 {
+		return true
+	}
+	return need+ctxCapMarginBytes <= free
+}
+
+// checkWeightsFit fails the load EARLY — right after the device exists, before any kernel compile
+// or weight upload — when the model's FIXED weight bytes alone exceed free VRAM.
+//
+// M-02 (docs/audit-2026-09-02.md): CUDA had NO memory-fit check at all for this. checkKVFits
+// (below) covers KV, but only after the weights are already uploaded; a dense model whose weights
+// alone do not fit ran the entire compile+upload sequence and then failed on whichever CUDA
+// allocation happened to be the first one that didn't fit — a raw driver error, not a clean
+// decline naming the numbers, the exact failure MODE (not arithmetic) checkKVFits' own doc
+// comment already called out as the point of a load-time guard.
+//
+// `need` is decoder.Model.ResidentDenseWeightBytes, deliberately NOT ResidentWeightBytesPaged(0):
+// routed MoE experts have their own elastic sizing (capSlots, above), a bisection search against
+// LIVE free VRAM that runs after dense weights are uploaded and correctly shrinks to whatever
+// still fits. Pricing experts at their full unpaged size here, before capSlots ever runs, would
+// decline a model whose experts are about to be capped down to something that fits — the same
+// class of over-eager guard M-02 already fixed once for Metal's paging case.
+func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
+	need := m.ResidentDenseWeightBytes()
+	free, _, err := r.dev.Context().MemInfo()
+	if err != nil {
+		// No MemInfo ⇒ no fit check possible. Same non-failure as checkKVFits: the allocation
+		// itself still errors if it truly cannot fit.
+		return nil
+	}
+	if fitsWeightsBudget(need, int64(free)) {
+		return nil
+	}
+	return fmt.Errorf("cuda: dense weights need %.2f GB but only %.2f GB is free on the device "+
+		"(plus %.0f MB reserved for driver and decode scratch) — use a smaller/more-quantized "+
+		"model, or the staged/CPU path",
+		float64(need)/1e9, float64(free)/1e9, float64(ctxCapMarginBytes)/(1<<20))
+}
+
 func (r *cudaResident) checkKVFits() error {
 	need := kvBytesForCap(r.ctxCap, r.layers)
 	free, _, err := r.dev.Context().MemInfo()

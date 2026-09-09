@@ -1,11 +1,22 @@
 # Task: fit to hardware — the machine picks the configuration, not the user
 
-> **Status: SCOPED 2026-09-02, nothing started.** Design record for the "run something bigger
-> than my hardware" mode of use. Depends on closing audit **M-01/M-02** (the byte accounting the
-> Metal guard keys on) before anything else here is worth building; reads `task-model-pull.md`
-> (phase 1 shipped 2026-09-02) as the step immediately before this one in the user's hour. Sibling:
-> `task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes numerics; every gate
-> is an admission/accounting gate, and the do-nothing arm is today's hand-tuned configuration.
+> **Status (corrected 2026-09-09 — the line below was stale since 2026-09-06 and nobody updated
+> it): Phase 0 (accounting) is DONE for the CPU staged path** (`decoder/fitguard.go`, `db61c83`,
+> 2026-09-06 — landed three days before this doc's own last edit and was never checked off here)
+> **and its M-01/M-02 dependency is DONE/mostly-done** (M-01 fixed 2026-09-03; M-02's Metal
+> ordering/paged-accounting half fixed 2026-09-03, its KV/scratch/host-copy gaps closed
+> 2026-09-09, and CUDA's previously-nonexistent fixed-term guard added 2026-09-09 — see
+> `docs/task-gpu-paths-2026-09.md`'s G11 entries for both). Phase 0's shape differs from what this
+> doc originally specified (no single `WeightBudget()`; the CPU path uses `fitCheck`/
+> `estimateGGUFWeightBytes` instead, and CUDA/Metal each kept their own separate guard rather than
+> unifying on one). **Phases 1–5 (the `plan()` function, `goinfer-chat fit`, fit-by-default on
+> CUDA/Metal/WebGPU, the rate band) remain entirely unstarted** — three residency guards (CPU,
+> Metal, CUDA) are still fragmented rather than reconciled into one planner, which is the actual
+> live gap. Design record for the "run something bigger than my hardware" mode of use; reads
+> `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
+> user's hour. Sibling: `task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes
+> numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's
+> hand-tuned configuration.
 
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple
 Silicon laptop, a 32 GB desktop with no GPU — who has just pulled a 26B-A4B or 35B-A3B checkpoint

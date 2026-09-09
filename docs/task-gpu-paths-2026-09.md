@@ -1266,3 +1266,102 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     already bandwidth-saturated, so packed int8 dot arithmetic wouldn't help even if it existed")
     with an actual test. Corrected in this session's memory store, not just noted here.
   - No code changed. Moving to the next open item.
+
+- 2026-09-09 — G11 SCOPED, REDIRECTED. G11's own text says "no layer placement on CUDA/Metal —
+  already scoped as `task-fit-to-hardware.md`, listed here for completeness." That doc, in turn,
+  explicitly disclaims covering this at all: its `placement` enum has no "N dense layers on GPU,
+  the rest on CPU" state, and its own §8 names the real fix as `task-freetoken-techniques.md`'s
+  Lead 5 (bandwidth-adaptive CPU/GPU co-execution) — which that doc itself marks **"the biggest
+  architectural lift of the five... worth a scoping pass of its own before any code"** and
+  **priority: low, don't start it yet** (flagged as possibly antagonistic with the speculation
+  program). So G11 as literally worded does not reduce to a buildable item today. Redirected to
+  `task-fit-to-hardware.md` instead, at the user's direction.
+  - **Found `task-fit-to-hardware.md`'s own status line is stale**: it says "SCOPED 2026-09-02,
+    nothing started," but `decoder/fitguard.go` (438 lines, `db61c83`, 2026-09-06 — three days
+    *before* the doc's own last edit) already implements Phase 0's accounting for the CPU staged
+    GGUF load path (weight+KV byte estimation, quant-aware sizing via `measureBytesPerElem`,
+    auto-context-pinning, `GOINFER_NO_FIT_GUARD`). Phases 1–5 (the `plan()` function,
+    `goinfer-chat fit`, fit-by-default on CUDA/Metal, WebGPU, rate bands) remain entirely
+    unstarted. The doc's header was never updated after Phase 0 landed — flagging here rather
+    than silently working around it, per this doc's own "findings go into the status line" rule.
+  - **This session's slice, per the user's choice**: close M-02's remaining accounting gaps on
+    Metal, and build the CUDA memory-fit guard that turned out not to exist at all for the fixed
+    (non-expert) term. Not the full planner (Phases 1–5) — that stays unstarted.
+  - **Metal (M-02 continued).** `decoder/weightbytes.go` refactored: `residentWeightBytes` split
+    into `residentWeightBytesSplit()` (returns the dense sum once, plus a closure capping the
+    routed-expert sum at N slots) so `ResidentWeightBytesPaged` and two new accessors —
+    `ResidentDenseWeightBytes()` (dense-only, for a caller that must price the FIXED part before
+    an elastic term like an MoE cache gets to size itself) and `ResidentHostCopyBytes(slots)` —
+    can share one enumeration pass rather than risk disagreeing about what "dense" means.
+    `ResidentHostCopyBytes` accounts for the specific M-02 gap: Metal's unified memory holds BOTH
+    a quantized host `WeightMat` AND a separately re-packed device buffer for the same dense
+    weights (`metal/model.go`'s `int4Buf`, nothing released in between) — but a genuinely PAGED
+    expert (`0 < slots < nExperts`) does NOT get this doubling, since it streams via pread
+    straight from the `.giw` file into its device slot buffer (confirmed by reading
+    `metal/moe.go`/`metal/gemma4_moe.go`'s staging code directly, not assumed) rather than being
+    materialized host-side first. `metal/backend.go`'s `residentNeedBytes` gained this addend plus
+    a new `residentKVBytes` term (`metalCtxCap × kvDim × 2 bytes(f16) × 2(K,V)`, summed per layer
+    for per-layer-geometry families) — the dominant "scratch" term M-02 named as entirely missing;
+    the many small per-model buffers (`r.mq`/`r.gu`/`r.logits`/etc.) stay excluded as rounding to
+    nothing beside it, the same exemption `ResidentWeightBytes`' own doc comment already gives
+    norms/biases. `metal/resident_memguard_test.go`'s existing M-02 gate updated to assert the new
+    three-term sum instead of the old weight-only one, plus a new assertion that the host-copy
+    addend itself shrinks under paging; `decoder/weightbytes_test.go` gained
+    `TestResidentHostCopyBytes_exemptsPagedExperts`, cross-checked against an independently-
+    written per-layer formula (not the production code's own arithmetic), same discipline as the
+    existing M-01/M-02 gates in that file. Full `metal` suite: 111 pass/0 fail/51 skip (unchanged
+    count — two tests updated in place, none added). Full `decoder` suite: 417 pass/1 fail
+    (`TestOlmo3_forwardParity`, pre-existing, unrelated)/134 skip. `gofmt -l`, `go vet`, staticcheck
+    all clean.
+  - **CUDA (M-02, new ground — no guard existed here at all).** An earlier grep-based pass had
+    concluded CUDA had zero memory-fit protection; closer reading found that's only true for the
+    FIXED weight term — `cuda/resident.go`'s `checkKVFits` already guards KV-vs-free-VRAM well
+    (hard error when an explicit `-ctx` doesn't fit, decline when the default doesn't), and
+    `capSlots` already elastically sizes the MoE expert cache against live free VRAM via a
+    bisection search. What was missing: a dense model whose weights ALONE exceed free VRAM ran
+    the full kernel-compile-and-upload sequence before failing on whichever raw CUDA allocation
+    happened to be the first one that didn't fit — no clean decline naming the numbers, the exact
+    failure MODE `checkKVFits`'s own doc comment already named as the point of a load-time guard.
+    Added `checkWeightsFit` (`cuda/resident.go`, next to `checkKVFits`) + `fitsWeightsBudget` (the
+    pure arithmetic, unit-tested standalone like Metal's `fitsResidentBudget`), wired into
+    `cuda/backend.go`'s `BuildResident` immediately after the device is created — before any
+    kernel compile or weight upload. Deliberately prices `m.ResidentDenseWeightBytes()`, NOT
+    `ResidentWeightBytesPaged(0)`: routed MoE experts have their own elastic sizing that runs
+    LATER against live free VRAM, so pricing them at full unpaged size here would decline a model
+    whose experts are about to be capped down to fit — the same over-eager-guard class M-02
+    already fixed once for Metal's paging case, avoided here by construction rather than
+    discovered by a failing gate.
+  - **Verified on nobara (RTX 2070 SUPER), via an isolated checkout + `go.work` overlay (this
+    session's own unpushed commits transferred as a git bundle, not through origin) — established
+    pattern from this session's earlier CUDA work.** `go build`/`go vet -tags cuda` clean. New unit
+    test `TestFitsWeightsBudget` passes (mirrors Metal's `TestResidentMemGuard` table). Real
+    end-to-end sanity check: `TestBackendResidentWired` (production `decoder.Load(cuda)` →
+    `BuildResident` → `Forward`, qwen2.5-coder-0.5b) still passes with the new guard wired in — 7/8
+    exact, worst near-tie 0.563%, confirming the guard does not wrongly block a real model that
+    fits.
+  - **Full `cuda` suite (started 04:59:50 PDT / 11:59:50 UTC, `-timeout 25m`) hit that timeout
+    mid-`TestGemma4_26B_cache_B` — a pre-existing property of the full heavy suite, not this
+    change (a 26B real-checkpoint test genuinely takes a while); 49 pass/7 fail/8 skip before the
+    cutoff.** Investigated all 7 failures rather than assuming: every one is `dflash_dispatch_test.go`/
+    `dflash_draftcost_test.go` declining resident with "resident did not engage" — 5 of 7 show
+    `checkKVFits`' PRE-EXISTING decline message (unchanged by this diff) at critically low free
+    VRAM (0.10-0.70 GB); the other 2 show THIS change's new message ("dense weights need 2.66 GB
+    but only 2.67 GB is free"). Re-ran all 7 together, in isolation from the rest of the suite:
+    **7/7 pass cleanly**, confirming the failures were cumulative VRAM pressure from whatever ran
+    earlier in that specific 25-minute sequence, not a standalone regression. The 2 tests hitting
+    the NEW message specifically would have failed anyway, one step later, via `checkKVFits`:
+    with only ~10 MB left after weights (2.67−2.66 GB) there is nowhere near the ~1.2 GB the
+    default 4096-position KV cache these tests use needs — this change just names the same
+    inevitable decline earlier and more clearly, it does not create a new failure mode. Did not
+    spend a second 25-minute run proving the unmodified code fails identically at that exact
+    point in the sequence — the direct evidence (5/7 failures already carrying `checkKVFits`'
+    unchanged message, plus the arithmetic above for the other 2) was judged sufficient without
+    re-burning nobara time already at a premium this session.
+  - **Not attempted, left open**: the drafter/verify-buffer timing bug that is
+    `task-fit-to-hardware.md`'s own concrete example (a `--drafter` attach AFTER `BuildResident`
+    grabs VRAM the MoE expert cache already claimed, `NewBlockSpec` then fails) — fixing it
+    requires `BuildResident`'s signature (or an out-of-band hint) to know a drafter is coming
+    BEFORE `capSlots` runs, a `decoder.ResidencyBackend` interface change both CUDA and Metal
+    implement, genuinely bigger and riskier than the accounting-only fix made here. The full
+    `task-fit-to-hardware.md` planner (Phases 1–5: `plan()`, `goinfer-chat fit`, fit-by-default,
+    WebGPU, rate bands) also remains entirely unstarted.

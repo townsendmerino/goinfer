@@ -667,6 +667,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
+		// M-02 (docs/audit-2026-09-02.md, docs/task-fit-to-hardware.md): CUDA had no memory-fit
+		// check at all for the FIXED (non-expert) part of a resident load — a dense model whose
+		// weights alone exceed free VRAM previously ran the full kernel-compile + upload sequence
+		// before failing on whatever CUDA allocation happened to be the first one that didn't fit,
+		// with a raw driver error rather than a clean decline. checkWeightsFit runs here, as early
+		// as possible (right after the device exists, before any of that), and is checked BEFORE
+		// this backend's other, more specific declines so an obviously-too-large model gets the
+		// clearest message rather than whichever unrelated shape check happens to run first.
+		if e := r.checkWeightsFit(m); e != nil {
+			return e
+		}
 		// THESE MODULE AND PIPELINE HANDLES DO NOT SURVIVE DEVICE EXHAUSTION. Read this before
 		// adding any path that recovers residency after memory pressure.
 		//

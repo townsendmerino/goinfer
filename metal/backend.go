@@ -129,6 +129,26 @@ func metalMoESlotsFromEnv() int {
 	return n
 }
 
+// residentKVBytes is the resident KV cache's footprint: metalCtxCap positions × kvDim × 2 bytes
+// (f16 KV — the only path this backend ships; the f32 KV kernels exist but are compiled out,
+// metal/model.go's kvF32 hardcoded false since the Gemma "crater" traced to BOS K/V, not
+// precision) × 2 buffers (K and V), summed per layer since a per-layer geometry family (Gemma 4)
+// varies kvDim between local and global layers — a single model-level figure would misprice
+// whichever shape isn't the majority. This is the dominant "scratch" term M-02 named as missing;
+// the many small per-model buffers (r.mq/r.gu/r.logits/etc, metal/model.go) are each at most a
+// few hundred KB — elementwise or vocab/hidden-sized — and round to nothing beside it, the same
+// exemption ResidentWeightBytes' own doc comment already gives norms/biases.
+func residentKVBytes(m *decoder.Model) int64 {
+	_, nLayers, _, _, _, _, _ := m.Dims()
+	const bytesPerElem = 2 // f16; see comment above
+	var total int64
+	for l := 0; l < nLayers; l++ {
+		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
+		total += 2 * metalCtxCap * kvDim * bytesPerElem // ×2 for K and V
+	}
+	return total
+}
+
 // residentNeedBytes is the byte count residentFitsMemory judges against — split out from
 // residentFitsMemory so it can be unit-tested directly, without real RAM or a checkpoint large
 // enough to swing the guard's verdict.
@@ -139,8 +159,17 @@ func metalMoESlotsFromEnv() int {
 // Reading the same knob buildResident is about to honor and asking for the PAGED estimate instead
 // fixes the audit's Qwen3.5-35B-A3B example without moving the guard itself — it still runs
 // before buildResident, on the byte count that will actually apply once paging is resolved.
+//
+// M-02 (continued, 2026-09-09): the weight term alone under-counted by ~2x on a real GGUF/
+// safetensors load (docs/audit-2026-09-02.md's "~9 GB Q4_K_M GGUF... lands at ~18 GB anonymous"
+// example) because Metal's unified memory holds the quantized HOST WeightMat AND a freshly
+// re-packed device buffer for the same weights (decoder.Model.ResidentHostCopyBytes' own doc
+// comment). Genuinely paged experts are exempt (they stream, no host copy), which is why this
+// asks for the host-copy addend at the SAME slot count rather than assuming it doubles the whole
+// weight term. KV was entirely absent; residentKVBytes above closes that.
 func residentNeedBytes(m *decoder.Model) int64 {
-	return m.ResidentWeightBytesPaged(metalMoESlotsFromEnv())
+	slots := metalMoESlotsFromEnv()
+	return m.ResidentWeightBytesPaged(slots) + m.ResidentHostCopyBytes(slots) + residentKVBytes(m)
 }
 
 // residentFitsMemory reports whether this model's weights fit the machine, declining loudly when

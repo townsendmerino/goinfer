@@ -53,7 +53,7 @@ func f32SliceBytes(s []float32) int64 { return 4 * int64(len(s)) }
 // This is a quantity we COMPUTE, deliberately — not the OS's account of free memory. Darwin's UBC
 // reclaims under pressure, so "available" reports what survived rather than what can be asked
 // for; an RSS-keyed ceiling once reported LESS memory at a known failure point than at baseline.
-func (m *Model) ResidentWeightBytes() int64 { return m.residentWeightBytes(0) }
+func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }
 
 // ResidentWeightBytesPaged is ResidentWeightBytes under Metal's synchronous MoE paging
 // (metal/moe.go, metal/gemma4_moe.go): GOINFER_METAL_MOE_SLOTS=N keeps only N of each layer's
@@ -66,27 +66,61 @@ func (m *Model) ResidentWeightBytes() int64 { return m.residentWeightBytes(0) }
 // Qwen3.5-35B-A3B's 22.1 GB unpaged vs. a few GB at N=64) was declined to CPU on a bound it never
 // actually needed. A layer's experts are uniform in shape, so "per-expert bytes" is the full
 // per-layer expert sum divided by the expert count — exact, not an approximation across layers.
-func (m *Model) ResidentWeightBytesPaged(slots int) int64 { return m.residentWeightBytes(slots) }
+func (m *Model) ResidentWeightBytesPaged(slots int) int64 {
+	dense, expertBytesAt := m.residentWeightBytesSplit()
+	return dense + expertBytesAt(slots)
+}
 
-func (m *Model) residentWeightBytes(slots int) int64 {
+// ResidentDenseWeightBytes is ResidentWeightBytesPaged's non-expert term alone: every matrix a
+// routed-MoE cap cannot shrink (attention/FFN projections, the mixer/MLA/Mamba/shortConv fields,
+// PLE, embeddings/head — everything except l.Experts and gemma4moe's fused experts). A guard that
+// must pre-check "does the FIXED part of this model fit" before anything ELASTIC (an MoE expert
+// cache) has had a chance to size itself against live free memory (e.g. CUDA's capSlots, which
+// runs a bisection search rather than a bound) wants exactly this number, not
+// ResidentWeightBytesPaged(0) — that includes every expert too, which would incorrectly decline a
+// model whose experts are ABOUT to be sized down to fit.
+func (m *Model) ResidentDenseWeightBytes() int64 {
+	dense, _ := m.residentWeightBytesSplit()
+	return dense
+}
+
+// ResidentHostCopyBytes is the portion of ResidentWeightBytesPaged's footprint that a UNIFIED-
+// MEMORY backend (Metal — "device" memory IS host RAM) keeps resident in TWO PLACES at once: the
+// quantized host WeightMat the loader materializes, and a second, freshly re-packed device buffer
+// built from it (metal/model.go's int4Buf), with nothing released in between. See M-02
+// (docs/audit-2026-09-02.md): a resident GGUF/safetensors model on Metal was measured landing at
+// ~2x the guard's own estimate for exactly this reason.
+//
+// Dense weights (every non-expert matrix, including the mixer/MLA/Mamba/shortConv projections and
+// an UNPAGED model's experts) always double this way — the loader never keeps them mmap-backed
+// once quantized. Genuinely PAGED routed experts (0 < slots < nExperts) do NOT: they stream via
+// pread straight from the .giw file into their device slot buffer, or via an mmap the OS can
+// reclaim under pressure (metal/moe.go, metal/gemma4_moe.go) — an UNSTAGED expert leaves no
+// committed host allocation behind to double. So the addend is the FULL weight sum when unpaged
+// (slots<=0), or just the dense (non-expert) sum when paged.
+func (m *Model) ResidentHostCopyBytes(slots int) int64 {
+	dense, expertBytesAt := m.residentWeightBytesSplit()
+	if slots > 0 {
+		return dense // paged experts stream; only dense doubles
+	}
+	return dense + expertBytesAt(0) // unpaged: every expert is a materialized host copy too
+}
+
+// residentWeightBytesSplit does the one enumeration pass ResidentWeightBytesPaged and
+// ResidentHostCopyBytes both need, returning the DENSE (non-expert) sum plus a closure that caps
+// the routed-expert sum at `slots` experts (see pagedExperts' own doc) — so the two accessors
+// cannot enumerate the model differently and disagree about what "dense" means.
+func (m *Model) residentWeightBytesSplit() (dense int64, expertBytesAt func(slots int) int64) {
 	if m == nil || m.w == nil {
-		return 0
+		return 0, func(int) int64 { return 0 }
 	}
 	w := m.w
 	n := wmBytes(&w.Embed) + wmBytes(&w.LMHead) + wmBytes(&w.PosEmbed)
 	// Gemma 4's model-level PLE tables (per_layer_token_embd / per_layer_model_proj) — empty
 	// WeightMats, so a no-op sum, on every other family.
 	n += wmBytes(&w.PerLayerTokenEmbed) + wmBytes(&w.PerLayerModelProj)
-	// pagedExperts takes the layer's FULL routed-expert byte sum and its expert COUNT (not the
-	// matrix count — each expert contributes multiple matrices, e.g. Gate+Up+Down, so the two
-	// must not be conflated) and caps it at `slots` experts when paging applies. A layer's
-	// experts are uniform in shape, so per-expert bytes = full/nExperts exactly.
-	pagedExperts := func(full int64, nExperts int) int64 {
-		if nExperts == 0 || slots <= 0 || slots >= nExperts {
-			return full
-		}
-		return full / int64(nExperts) * int64(slots)
-	}
+	var fullExpertBytes []int64 // one entry per (layer, expert-kind) — generic l.Experts and gemma4moe's fused set are both "kinds"
+	var expertCounts []int
 	for i := range w.Layers {
 		l := &w.Layers[i]
 		for _, mat := range []*linalg.WeightMat{
@@ -103,7 +137,8 @@ func (m *Model) residentWeightBytes(slots int) int64 {
 			e := &l.Experts[j]
 			expertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
 		}
-		n += pagedExperts(expertBytes, len(l.Experts))
+		fullExpertBytes = append(fullExpertBytes, expertBytes)
+		expertCounts = append(expertCounts, len(l.Experts))
 		n += wmBytes(&l.SharedExpert.Gate) + wmBytes(&l.SharedExpert.Up) + wmBytes(&l.SharedExpert.Down)
 
 		// M-01: qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention) — the three
@@ -138,8 +173,26 @@ func (m *Model) residentWeightBytes(slots int) int64 {
 			for e := range mo.expertsGateUp {
 				fusedBytes += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
 			}
-			n += pagedExperts(fusedBytes, len(mo.expertsGateUp))
+			fullExpertBytes = append(fullExpertBytes, fusedBytes)
+			expertCounts = append(expertCounts, len(mo.expertsGateUp))
 		}
 	}
-	return n
+	dense = n
+	expertBytesAt = func(slots int) int64 {
+		// pagedExperts takes one expert-kind's FULL routed-expert byte sum and its expert COUNT
+		// (not the matrix count — each expert contributes multiple matrices, e.g. Gate+Up+Down, so
+		// the two must not be conflated) and caps it at `slots` experts when paging applies. A
+		// layer's experts are uniform in shape, so per-expert bytes = full/nExperts exactly.
+		var total int64
+		for k, full := range fullExpertBytes {
+			nExperts := expertCounts[k]
+			if nExperts == 0 || slots <= 0 || slots >= nExperts {
+				total += full
+				continue
+			}
+			total += full / int64(nExperts) * int64(slots)
+		}
+		return total
+	}
+	return dense, expertBytesAt
 }

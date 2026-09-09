@@ -98,6 +98,34 @@ func TestKVBytesForCap(t *testing.T) {
 	}
 }
 
+// TestFitsWeightsBudget is M-02's gate for CUDA's previously-nonexistent memory-fit check on the
+// FIXED (non-expert) weight term — mirrors metal/backend.go's TestResidentMemGuard, same reasoning:
+// a guard that never fires leaves the raw-driver-error failure mode checkWeightsFit exists to
+// avoid; one that fires too eagerly silently moves every model to the staged/CPU path.
+func TestFitsWeightsBudget(t *testing.T) {
+	const gb = int64(1) << 30
+	for _, c := range []struct {
+		name       string
+		need, free int64
+		want       bool
+	}{
+		{"comfortably_fits", 4 * gb, 8 * gb, true},
+		{"exactly_at_margin", 8*gb - ctxCapMarginBytes, 8 * gb, true},
+		{"just_over_margin", 8*gb - ctxCapMarginBytes + 1, 8 * gb, false},
+		{"far_too_large", 22 * gb, 8 * gb, false}, // Qwen3.5-35B-A3B-shaped dense-only sum on an 8 GB card
+		// Unknown inputs must never refuse: an unreadable MemInfo or a model reporting zero bytes
+		// would otherwise disable residency for everyone, silently.
+		{"unknown_need", 0, 8 * gb, true},
+		{"unknown_free", 4 * gb, 0, true},
+		{"negative_need", -1, 8 * gb, true},
+	} {
+		if got := fitsWeightsBudget(c.need, c.free); got != c.want {
+			t.Errorf("%s: fitsWeightsBudget(%.2f GB, %.2f GB) = %v, want %v",
+				c.name, float64(c.need)/float64(gb), float64(c.free)/float64(gb), got, c.want)
+		}
+	}
+}
+
 // TestCheckKVFits_explicitFailsHard_defaultDeclines pins the FAILURE MODE, which is the whole point
 // of the load-time check. An operator who explicitly configured a resident context and cannot have
 // it must get a hard startup error naming the cost — degrading quietly to the staged path turns a

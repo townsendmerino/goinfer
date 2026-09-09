@@ -90,8 +90,15 @@ func TestMetalMoESlotsFromEnv(t *testing.T) {
 // and TestMetalMoESlotsFromEnv above still passes, because that test only exercises the parsing
 // function in isolation — it never proves the guard USES what it parses. This does, by loading a
 // real (tiny) MoE checkpoint and comparing residentNeedBytes' output against
-// ResidentWeightBytes/ResidentWeightBytesPaged directly, with no real RAM or a checkpoint large
-// enough to swing residentFitsMemory's verdict required.
+// ResidentWeightBytes/ResidentWeightBytesPaged/ResidentHostCopyBytes/residentKVBytes directly,
+// with no real RAM or a checkpoint large enough to swing residentFitsMemory's verdict required.
+//
+// 2026-09-09 (M-02 continued): residentNeedBytes gained two more additive terms (the host-copy
+// addend and KV bytes) beside the paged-weight term this test originally gated alone — so "==
+// unpaged weight bytes" is no longer residentNeedBytes' own contract; the assertions below add
+// the SAME two terms back in, computed independently via the public accessors, so this still
+// catches a regression in the paging wiring specifically without needing to be rewritten every
+// time another additive term is found.
 func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	// testdata/gemma4-moe-tiny is gitignored (a real, if small, checkpoint) — never present in CI,
 	// so skip rather than fail when it's absent, matching decoder's own convention for this fixture.
@@ -106,6 +113,7 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	defer m.Close()
 
 	unpaged := m.ResidentWeightBytes()
+	kv := residentKVBytes(m)
 
 	t.Run("unset env == unpaged", func(t *testing.T) {
 		orig, wasSet := os.LookupEnv("GOINFER_METAL_MOE_SLOTS")
@@ -115,20 +123,29 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 				os.Setenv("GOINFER_METAL_MOE_SLOTS", orig)
 			}
 		})
-		if got := residentNeedBytes(m); got != unpaged {
-			t.Errorf("residentNeedBytes() with no slots env = %d, want unpaged %d", got, unpaged)
+		want := unpaged + m.ResidentHostCopyBytes(0) + kv
+		if got := residentNeedBytes(m); got != want {
+			t.Errorf("residentNeedBytes() with no slots env = %d, want unpaged+hostcopy+kv %d", got, want)
 		}
 	})
 
 	t.Run("slots=1 matches ResidentWeightBytesPaged and is strictly smaller", func(t *testing.T) {
 		t.Setenv("GOINFER_METAL_MOE_SLOTS", "1")
-		want := m.ResidentWeightBytesPaged(1)
-		if want >= unpaged {
-			t.Fatalf("test fixture has too few experts to make this case meaningful (paged(1)=%d, unpaged=%d)", want, unpaged)
+		wantWeights := m.ResidentWeightBytesPaged(1)
+		if wantWeights >= unpaged {
+			t.Fatalf("test fixture has too few experts to make this case meaningful (paged(1)=%d, unpaged=%d)", wantWeights, unpaged)
 		}
+		want := wantWeights + m.ResidentHostCopyBytes(1) + kv
 		if got := residentNeedBytes(m); got != want {
-			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (ResidentWeightBytesPaged(1)) — "+
+			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (paged weights+hostcopy+kv) — "+
 				"the guard is not asking for the paged estimate", got, want)
+		}
+		// The host-copy addend must ITSELF shrink under paging (that's the whole point of M-02's
+		// distinction): paged experts stream, so ResidentHostCopyBytes(1) must be strictly smaller
+		// than ResidentHostCopyBytes(0) whenever paging actually caps anything on this fixture.
+		if hc0, hc1 := m.ResidentHostCopyBytes(0), m.ResidentHostCopyBytes(1); hc1 >= hc0 {
+			t.Errorf("ResidentHostCopyBytes(1)=%d not smaller than ResidentHostCopyBytes(0)=%d — "+
+				"paging should exempt streamed experts from the host-copy addend", hc1, hc0)
 		}
 	})
 }
