@@ -78,7 +78,7 @@ currently at 1.5% of the relevant tensor peak. The bar is not the binding risk; 
 is whether a fused schedule actually converts a latency bound into a throughput one on this card.
 
 **A capability win that is not a speed win, and is worth recording separately.** Today's launch
-sizes dynamic shared memory as `(maxNWin + 128) × 4` (`cuda/resident.go:155`), so
+sizes dynamic shared memory as `(maxNWin + 128) × 4` (`cuda/resident.go:156`), so
 `checkPrefillShmem` declines any layer attending more than **12,160 keys** — past that a prompt
 falls back to the sequential per-token path. A 64-query × 64-key tiled kernel's shared memory is
 **constant in K**, so it removes that ceiling entirely. That is independent of any ratio measured
@@ -118,7 +118,7 @@ the counted ceiling on the category". Two independent figures disagree with the 
 - **This arithmetic: 11.8–12.0% of dp4a peak**, at both depths.
 - **The kernel's own profiled header**, `cuda/gemv_w4a8_batched.cu:27`, records attribution (2)
   "needs IMMA" being refuted at **"7.9% of dp4a peak — compute ceiling unused"**. `gemv_w4a8_rn`
-  (what `bGemvB` launches today) is ~1.3× that kernel (4.41 → 3.38 ms, `cuda/prefill.go:969`),
+  (what `bGemvB` launches today) is ~1.3× that kernel (4.41 → 3.38 ms, `cuda/prefill.go:1203`),
   which lands at ~10.3% — consistent with 11.8%, not with 54%.
 
 54% is close to the complement of the `ncu` "Compute 46%" line in the same header, which is a

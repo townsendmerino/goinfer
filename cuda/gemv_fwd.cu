@@ -36,10 +36,20 @@ extern "C" __global__ void kv_store(const float* __restrict__ src, float* __rest
 //
 // Thread layout: [0,qn) rotate q | [qn,qn+kn) rotate k in place + store k,v for their pair |
 // [qn+kn, +tn) store the un-rotated k,v tail. tn == 0 when rotary is full.
+//
+// ropePos vs pos: for ordinary (non-m-RoPE) decode these are always equal and this is a no-op
+// widening, the same convention `mscale` already established (a parameter that carries through
+// unused for every family that doesn't need it). Qwen2.5-VL's m-RoPE decode is the one caller
+// that needs them to differ — decoder/rope.go's CPU reference computes the KV-cache position
+// and the rotation ANGLE as two different quantities once decode moves past an image block
+// (the image's merge-compressed grid makes `mropeDelta = maxGridPos+1-seqLen` nonzero): `pos`
+// still indexes storage/attention range exactly as before, ropePos carries pos+mropeDelta into
+// the rotation only. Getting this backwards is silent — wrong rotation looks like a plausible
+// but wrong token, wrong storage position corrupts an already-written KV row.
 extern "C" __global__ void rope_kv(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
-    int nH, int nKV, int hd, int pos, int rhalf, float mscale, float qTempScale)
+    int nH, int nKV, int hd, int pos, int ropePos, int rhalf, float mscale, float qTempScale)
 {
     // mscale is YaRN's attention_factor, folded into cos/sin exactly as decoder/rope.go's
     // applyRoPE does it (c = cos(theta)*scale; s = sin(theta)*scale) — NOT applied to the
@@ -58,7 +68,7 @@ extern "C" __global__ void rope_kv(
     int kvDim = nKV * hd;
     if (idx < qn) {
         int h = idx / rhalf, d = idx % rhalf;
-        float ang = pos * invFreq[d];
+        float ang = ropePos * invFreq[d];
         float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
         float* base = q + h * hd;
         float a = base[d], b = base[d + rhalf];
@@ -67,7 +77,7 @@ extern "C" __global__ void rope_kv(
     } else if (idx < qn + kn) {
         int j = idx - qn;
         int h = j / rhalf, d = j % rhalf;
-        float ang = pos * invFreq[d];
+        float ang = ropePos * invFreq[d];
         float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
         float* base = k + h * hd;
         float a = base[d], b = base[d + rhalf];

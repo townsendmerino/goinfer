@@ -597,7 +597,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "real-oracle 100.0%/0.99954"
   },
   {
     "name": "qwen2_5_vl",
@@ -617,7 +617,7 @@
     "loaders": "safetensors",
     "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/0.99998"
+    "parity": "full-oracle 100.0%/0.99946"
   },
   {
     "name": "qwen3",
@@ -655,6 +655,26 @@
     "activation": "SwiGLU",
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "real-oracle 100.0%/0.99834"
+  },
+  {
+    "name": "qwen3_vl",
+    "model_types": [
+      "qwen3_vl"
+    ],
+    "display_name": "Qwen3-VL",
+    "description": "Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": true,
     "parity": "experimental: tiny-oracle 100.0%/1.00000"

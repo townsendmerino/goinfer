@@ -78,8 +78,14 @@ func applyRoPEInterleaved(vec []float32, heads, headDim, pos int, invFreq []floa
 //
 // interleave selects GPT-J pairwise rotation (adjacent dims 2d,2d+1) over the
 // NeoX rotate_half layout (dims d, d+half) — Cohere/Falcon/GPT-J vs Llama/Qwen.
-// m-RoPE (Qwen2.5-VL) is NeoX-only, so interleave applies to the scalar path.
-func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int, mropeDelta int, interleave bool) {
+// m-RoPE (Qwen2.5-VL, Qwen3-VL) is NeoX-only, so interleave applies to the scalar path only.
+//
+// mropeInterleaved is a SEPARATE, unrelated flag — Qwen3-VL's per-frequency-index m-RoPE
+// component layout vs Qwen2.5-VL's contiguous-block one (mropeComponentInterleaved vs
+// mropeComponent, see either's doc comment). Never confuse the two "interleaved" concepts: one is
+// GPT-J's pairwise rotation ordering, the other is which of 3 position components a frequency
+// index maps to under m-RoPE. Only meaningful when mropePos != nil.
+func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale float64, section []int, mropePos [][3]int, mropeDelta int, interleave, mropeInterleaved bool) {
 	rope := applyRoPE
 	if interleave {
 		rope = applyRoPEInterleaved
@@ -88,7 +94,7 @@ func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale 
 	case mropePos == nil:
 		rope(vec, heads, headDim, seqPos, invFreq, scale)
 	case seqPos < len(mropePos):
-		applyMRoPE(vec, heads, headDim, mropePos[seqPos], section, invFreq, scale)
+		applyMRoPE(vec, heads, headDim, mropePos[seqPos], section, invFreq, scale, mropeInterleaved)
 	default:
 		rope(vec, heads, headDim, seqPos+mropeDelta, invFreq, scale)
 	}
@@ -109,20 +115,26 @@ func mropeDelta(pos [][3]int, seqLen int) int {
 	return maxP + 1 - seqLen
 }
 
-// applyMRoPE is Qwen2.5-VL's multimodal RoPE: same rotate_half rotation as
-// applyRoPE, but the len(invFreq) frequencies are partitioned into section[]
-// chunks assigned to the (temporal, height, width) position components, so each
-// frequency d rotates by pos[comp(d)]·invFreq[d]. section sums to len(invFreq).
-// For a TEXT token the three positions are equal, so this reduces EXACTLY to
-// applyRoPE(pos[0]) — the basis for keeping the text path bit-identical. (P5)
+// applyMRoPE is Qwen2.5-VL's (and, via interleaved, Qwen3-VL's) multimodal RoPE: same rotate_half
+// rotation as applyRoPE, but the len(invFreq) frequencies are partitioned across the (temporal,
+// height, width) position components, so each frequency d rotates by pos[comp(d)]·invFreq[d].
+// section sums to len(invFreq). For a TEXT token the three positions are equal, so this reduces
+// EXACTLY to applyRoPE(pos[0]) — the basis for keeping the text path bit-identical, for EITHER
+// layout. (P5, P8)
 //
-// Matches HF apply_multimodal_rotary_pos_emb: the cos/sin head_dim-wide tables are
-// split over mrope_section*2 = [t,h,w,t,h,w]; frequency d and its pair half+d fall
-// in the same component, so one component index per d suffices.
-func applyMRoPE(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64) {
+// interleaved selects which component-lookup formula d maps through: false = mropeComponent
+// (Qwen2.5-VL's contiguous-block layout, matching HF apply_multimodal_rotary_pos_emb's
+// mrope_section*2=[t,h,w,t,h,w] split); true = mropeComponentInterleaved (Qwen3-VL's per-index
+// strided layout — see that function's own doc comment). Frequency d and its pair half+d always
+// fall in the same component under both formulas, so one component index per d suffices either way.
+func applyMRoPE(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64, interleaved bool) {
 	half := len(invFreq) // == rotaryDim/2; section sums to this
+	comp := mropeComponent
+	if interleaved {
+		comp = mropeComponentInterleaved
+	}
 	for d := range half {
-		theta := float64(pos[mropeComponent(d, section)]) * invFreq[d]
+		theta := float64(pos[comp(d, section)]) * invFreq[d]
 		c := math.Cos(theta) * scale
 		s := math.Sin(theta) * scale
 		for h := range heads {
@@ -146,6 +158,32 @@ func mropeComponent(d int, section []int) int {
 		}
 	}
 	return len(section) - 1 // d == sum(section) shouldn't occur; clamp to width
+}
+
+// mropeComponentInterleaved is Qwen3-VL's replacement for mropeComponent: the SAME 3-way split
+// (temporal/height/width) but laid out per-frequency-index instead of as 3 contiguous blocks.
+// Qwen2.5-VL's mropeComponent partitions [0,half) into 3 CONTIGUOUS runs (chunked: [TTT…HHH…WWW]).
+// Qwen3-VL's transformers source (modeling_qwen3_vl.py, Qwen3VLTextRotaryEmbedding.
+// recomposition_frequencies) instead starts every index as temporal, then punches a STRIDED hole
+// into it for height (every 3rd index starting at 1, up to section[1]*3) and width (every 3rd
+// index starting at 2, up to section[2]*3) — transcribed exactly, not paraphrased:
+//
+//	freqs_thw = freq[0]  # T fills every index by default
+//	idx = slice(1, section[1]*3, 3); freqs_thw[idx] = freq[1]  # H overwrites a strided subset
+//	idx = slice(2, section[2]*3, 3); freqs_thw[idx] = freq[2]  # W overwrites a strided subset
+//
+// A DIFFERENT, incompatible formula from mropeComponent — not a parameter tweak on it. section
+// still sums to half (len(invFreq)); section[0] (temporal) is never referenced directly here
+// because temporal is the "everything else" default.
+func mropeComponentInterleaved(d int, section []int) int {
+	switch {
+	case d%3 == 1 && d < section[1]*3:
+		return 1 // height
+	case d%3 == 2 && d < section[2]*3:
+		return 2 // width
+	default:
+		return 0 // temporal — fills everywhere else, including the tail beyond section[1]/[2]*3
+	}
 }
 
 // mropePositions computes Qwen2.5-VL m-RoPE 3D positions [seq][3] = (temporal,

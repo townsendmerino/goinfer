@@ -78,7 +78,7 @@ discovered by failing, not by knowing). The next run uses a tester who has not.
 pkg.go.dev. Nothing else. Note that pkg.go.dev renders doc comments lifted from source, so it *is*
 the source's comments — the 2026-09-06 run flagged this itself rather than letting it pass.
 
-**The five scenarios**, each time-boxed at **25 minutes**:
+**The six scenarios**, each time-boxed at **25 minutes**:
 
 | | scenario | the question |
 |---|---|---|
@@ -87,6 +87,7 @@ the source's comments — the 2026-09-06 run flagged this itself rather than let
 | C | Embed it | a ≤40-line Go program that prints a completion |
 | D | Run bigger than my hardware | a model that does not fit |
 | E | Control | the same question through a peer tool, recorded to the same standard |
+| F | Show it a screenshot | attach an image, ask about it, then resend the SAME image next turn |
 
 **Rules.**
 
@@ -114,6 +115,19 @@ re-discovering the findings:
 - **Every scenario — record `--version` for each binary used** (R2). The 2026-09-06 run could not,
   which is how a Mac asset with no Metal in it reached a release.
 - **Scenario A — the cold-start total**, which is the number goinfer wins and worth tracking.
+- **Scenario F — "the second look is fast."** Attach an image, ask a question about it, and time
+  to first token (TTFT) for that turn. Then, in the SAME conversation, resend the byte-identical
+  image (not a re-encode or re-crop — the literal file again) with a different question, and time
+  TTFT for that turn too. The leg passes only if the second (resent-image) TTFT is visibly faster
+  than the first — the resident image-block reuse this exists to check (`docs/multimodal.md`'s
+  P9(a)) skips the vision tower and the CPU prefill entirely on a verified-identical image, so the
+  second turn should start generating close to as fast as a plain text turn does. As a negative
+  control, follow with a THIRD turn attaching a *different* image at the same point in the
+  conversation: its TTFT must look like the FIRST (cold) turn, not the fast second one — if it is
+  also fast, the reuse is being applied when it should not be, which would mean the server is
+  silently answering about the wrong image (see this document's own contamination-declaration
+  rule: a false negative here is a finding, not something to explain away). Record all three TTFTs
+  in the scenario's numbers table.
 
 **Scenario D stays one class above the brief.** The 2026-09-06 run substituted a 35B-A3B on 16 GB
 for the brief's "20–30B", because the README named no MoE and the tester would not download 15–20
@@ -123,6 +137,12 @@ thing. Keep it there.
 **Scenario B needs an agent CLI installed.** The 2026-09-06 run could not test one: aider,
 opencode, cline, `llm` and codex were all absent, and `continue` matched a shell builtin — a false
 positive worth knowing about.
+
+**Scenario F needs a vision-capable checkpoint loaded** (the server started with `--vision <dir>`,
+per `serve check`'s own `vision` row). If none is available on the box under test, the tester
+records the gap the same way Scenario B records an absent agent CLI — as a dead end for that leg,
+not a silently skipped one — rather than substituting a text-only model and reporting a leg that
+was never actually exercised.
 
 **`nobara-pc`: `opencode` 1.18.29**, installed into a contained prefix
 (`npm install --prefix ~/.local/opt/opencode opencode-ai`; the binary is at
@@ -395,20 +415,40 @@ zero swapouts for 115 s. The engine already did the right thing; the product hid
    measured before/after with its provenance. It also says plainly that this is `goinfer-serve`'s
    job and that `goinfer-chat` has no such flag by design.
 2. *The load-time guard* (`decoder/fitguard.go`) — **`task-fit-to-hardware.md` Phase 0 only**.
-   Before `loadWeights` allocates a byte, it prices the checkpoint from GGUF metadata at the
-   requested quant, adds KV at a pinned context if one was pinned, and compares against **70% of
-   physical RAM** — the same fraction and the same single-measurement provenance as
-   `metal/backend.go`'s `residentMemFraction`. Over budget refuses, with the arithmetic and the
-   remedy. It does **not** plan a configuration and does **not** flip `-stream-weights` on; those
-   are that doc's later phases.
+   Before `loadWeights` allocates a byte, it prices the checkpoint at the requested quant, adds KV
+   at a pinned context if one was pinned, and compares against **70% of physical RAM** — the same
+   fraction and the same single-measurement provenance as `metal/backend.go`'s
+   `residentMemFraction`. Over budget refuses, with the arithmetic and the remedy. It does **not**
+   plan a configuration and does **not** flip `-stream-weights` on; those are that doc's later
+   phases.
+
+   **UPDATE 2026-09-08 (P9b, docs/multimodal.md): a safetensors directory is now priced too, the
+   same way GGUF always was** — shape-only, quant-independent tensor element counts
+   (`estimateSafetensorsWeightBytes`, mirroring `estimateGGUFWeightBytes`), never from on-disk file
+   size (see the paragraph below for why file size stays deliberately excluded). Because the
+   estimator sums every tensor in the checkpoint uniformly, a multimodal checkpoint whose vision
+   tower ships bundled in the same safetensors file (Gemma 3: confirmed, 50 `vision.*`/
+   `multi_modal_projector.*` tensors alongside the text decoder's) gets the tower's weight cost
+   priced automatically, with no vision-specific code in the guard at all — this closes P9(b)'s
+   "price the tower" ask as a side effect of pricing safetensors generally, not as a separate
+   feature. Image-token KV needed no new code either: the guard already prices KV at the model's
+   full `MaxPositions` window when unpinned (R13), which is the request-time worst case regardless
+   of whether those positions end up holding text or image-placeholder tokens — and the SEPARATE
+   request-time admission path (`contextLengthError`/`clampMaxTokens`,
+   `internal/serveapp/openai.go`) already runs on the fully placeholder-expanded prompt (`vi.ids`,
+   `internal/serveapp/vision_serve.go`), so it already counted image tokens correctly before this
+   pass touched anything.
 3. *The banner* — at ≥75% of budget the same arithmetic prints unasked, so a user sees the cliff on
    the run **before** the one that steps off it.
 
 Everything unknown proceeds: an unreadable RAM figure (Windows and the BSDs have no probe, and a
-container's `MemTotal` is the host's), a non-GGUF source, a zero estimate. **A safetensors
-directory is deliberately not estimated from its file size** — those are f32/bf16 on disk and
-shrink loading at int4, so file bytes would refuse models that fit comfortably. An estimate wrong
-in the refusing direction is worse than none.
+container's `MemTotal` is the host's), an unresolvable source (bad path, no config.json, a bare
+`.giw`), a zero estimate. **Neither format is ever estimated from on-disk file size** — a
+safetensors checkpoint is usually f32/bf16 on disk and shrinks several-fold once quantized on
+load (and a GGUF file is quantized on disk too, just not necessarily at the requested target
+quant), so file bytes would refuse models that fit comfortably. An estimate wrong in the refusing
+direction is worse than none — which is exactly why both estimators read tensor SHAPES (quant-
+independent element counts) and price them at the REQUESTED load quant, never the file's own size.
 
 ```
 decoder: Qwen3.5-35B-A3B-Q4_K_M.gguf needs ~21.0 GB resident at quant int4; this machine has

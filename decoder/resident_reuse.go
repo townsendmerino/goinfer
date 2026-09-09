@@ -41,13 +41,34 @@ import "os"
 // GOINFER_NO_GREEDY_FASTPATH and GOINFER_NO_KVONLY_PREFILL.
 func residentReuseDisabled() bool { return os.Getenv("GOINFER_NO_RESIDENT_REUSE") != "" }
 
+// residentImageBlock records one image block committed to the resident KV: its absolute
+// position span within resIDs and a content hash of the raw image bytes that produced it (P9a,
+// docs/multimodal.md). Every position inside [start,end) attended every OTHER position in the
+// same block under a bidirectional mask during its CPU prefill (prefillLogitsVL/
+// prefillLogitsQwenVL) — there is no such thing as "half the block's KV, causally consistent
+// with a differently-completed other half," so a reuse match must treat the block as one atomic
+// unit: either the whole span verifies and gets skipped together, or none of it does.
+type residentImageBlock struct {
+	start, end int
+	hash       uint64
+}
+
+// residentImageClaim describes one image block in the PROMPT being checked for reuse.
+// GenerateVL/GenerateQwenVL each produce exactly one claim per call (today's one-image-per-turn
+// shape), but residentReuseLen itself doesn't assume a count of one.
+type residentImageClaim struct {
+	Start, Len int
+	Hash       uint64
+}
+
 // residentReuseLen returns how many leading tokens of prompt are already committed to the
-// resident KV and may be skipped.
+// resident KV and may be skipped. imgs describes any image blocks in prompt (nil for plain
+// text — the common case, byte-for-byte the original LCP scan with zero added cost).
 //
 // Capped at len(prompt)-1 on purpose: generateInto's contract is that prefill covers at least
 // one token, whose logits seed decode. Returning len(prompt) would leave the caller with no
 // seed logits and nothing to recompute them from.
-func (m *Model) residentReuseLen(prompt []int) int {
+func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim) int {
 	if residentReuseDisabled() || len(m.resIDs) == 0 || len(prompt) == 0 {
 		return 0
 	}
@@ -72,6 +93,12 @@ func (m *Model) residentReuseLen(prompt []int) int {
 	// TestPagerDeterminism is the gate (reuse-on red before this guard, green after; still green
 	// with this narrower rule since an identical resend has len(prompt) == n).
 	if m.hasRecurrentState() {
+		// No recurrent-family VL arch exists today; refuse rather than silently mis-serve a
+		// claim the rewind-free recurrent rule below can't honour (its state has no per-position
+		// history to selectively keep, so an image block's atomicity has no meaning here at all).
+		if len(imgs) > 0 {
+			return 0
+		}
 		n := len(m.resIDs)
 		if len(prompt) <= n {
 			return 0
@@ -84,27 +111,73 @@ func (m *Model) residentReuseLen(prompt []int) int {
 		return n
 	}
 	n := min(len(prompt)-1, len(m.resIDs))
-	i := 0
-	for i < n && m.resIDs[i] == prompt[i] {
+	i, bi := 0, 0 // bi: next candidate index into m.resImgBlocks (stored ascending by start)
+	for i < n {
+		for bi < len(m.resImgBlocks) && m.resImgBlocks[bi].end <= i {
+			bi++ // fully behind us
+		}
+		if bi < len(m.resImgBlocks) && m.resImgBlocks[bi].start == i {
+			blk := m.resImgBlocks[bi]
+			if claim, ok := findImageClaim(imgs, blk.start); ok &&
+				claim.Len == blk.end-blk.start && claim.Hash == blk.hash && blk.end <= n {
+				// Whole block verified byte-identical: jump straight past it, atomically —
+				// never a partial in-block stop (see residentImageBlock's doc comment).
+				i = blk.end
+				bi++
+				continue
+			}
+			// Different image, no claim at all, or the block doesn't fully fit under the
+			// seed cap n: stop EXACTLY at the block's start — not one position later (that
+			// would trust an unverified row) or earlier (that would discard a verified
+			// match for no reason).
+			return i
+		}
+		if m.resIDs[i] != prompt[i] {
+			return i
+		}
 		i++
 	}
 	return i
 }
 
+// findImageClaim returns the claim starting at pos, if any.
+func findImageClaim(imgs []residentImageClaim, pos int) (residentImageClaim, bool) {
+	for _, c := range imgs {
+		if c.Start == pos {
+			return c, true
+		}
+	}
+	return residentImageClaim{}, false
+}
+
 // residentCommitIDs records the exact token sequence now committed to the resident KV: the
 // prompt followed by everything decode emitted, since decode writes its own K/V at each
-// position as it goes.
+// position as it goes. newBlock records an image block this turn added or re-verified (nil for
+// plain text — the common case).
 //
-// Called ONLY on the fully-completed path. Everything else leaves resIDs nil.
-func (m *Model) residentCommitIDs(prompt, generated []int) {
+// Called ONLY on the fully-completed path. Everything else leaves resIDs (and resImgBlocks) nil.
+func (m *Model) residentCommitIDs(prompt, generated []int, newBlock *residentImageBlock) {
 	ids := make([]int, 0, len(prompt)+len(generated))
 	ids = append(ids, prompt...)
 	ids = append(ids, generated...)
 	m.resIDs = ids
+	if newBlock != nil {
+		kept := m.resImgBlocks[:0:0]
+		for _, b := range m.resImgBlocks {
+			if b.end <= newBlock.start { // still valid: append-only, earlier positions unchanged
+				kept = append(kept, b)
+			}
+		}
+		m.resImgBlocks = append(kept, *newBlock)
+	}
 }
 
 // residentForgetIDs marks the resident KV's contents unknown. Anything that writes the cache
 // outside a completed generateInto — a failed prefill, a cancelled decode, a batched verify —
 // must call this, because a stale id list is the one way this feature can be WRONG rather than
-// merely slow.
-func (m *Model) residentForgetIDs() { m.resIDs = nil }
+// merely slow. Clears resImgBlocks together with resIDs, always — an image block's identity is
+// meaningless once the token sequence backing its position is no longer trusted.
+func (m *Model) residentForgetIDs() {
+	m.resIDs = nil
+	m.resImgBlocks = nil
+}

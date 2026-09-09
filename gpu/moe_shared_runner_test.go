@@ -267,7 +267,7 @@ func TestDecodeRunnerMoEShared_parity(t *testing.T) {
 				t.Fatalf("newDecodeRunner(MoE+shared): %v", err)
 			}
 			defer runner.Release()
-			got, err := runner.Run(x0, pos)
+			got, err := runner.Run(x0, pos, pos)
 			if err != nil {
 				t.Fatalf("MoE+shared Run: %v", err)
 			}

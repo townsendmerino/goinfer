@@ -395,7 +395,7 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 	perTok := make([][][]float32, M) // [m][tap][hidden]
 	for m := 0; m < M; m++ {
 		if e := r.do(func() error {
-			if e := r.launchToken(rows[m], base+m, false); e != nil {
+			if e := r.launchToken(rows[m], base+m, base+m, false); e != nil {
 				return e
 			}
 			return r.stream.Sync()

@@ -23,7 +23,7 @@
 > | §B6 (split-KV) | superseded | §B6.3 |
 > | §B7 (deep context) + its control | superseded | §B7.1 |
 > | §B9 (relocated README tables) | **STALE** — peer v0.32.6 on the pre-2026-08-25 stack | §B8 (greedy) and §B5.1 (sampled) |
-> | *moved 2026-09-05:* §A — the 2026-08-22 Mac decode table and diagnosis; the 2026-08-02 load re-measure and the v0.5.0-era decode rows; the v0.5.0 relative prefill speedups; the pre-2026-09-01 CPU-prefill record; the Mellum2 MoE-prefill and SigLIP rows | superseded (the first four) / **STALE**, never re-anchored (the last two) | `benchmarks.md` §A — the 2026-08-24 peer row, the cold-start table, the 2026-09-01 prefill re-anchor |
+> | *moved 2026-09-05:* §A — the 2026-08-22 Mac decode table and diagnosis; the 2026-08-02 load re-measure and the v0.5.0-era decode rows; the v0.5.0 relative prefill speedups; the pre-2026-09-01 CPU-prefill record; the Mellum2 MoE-prefill and SigLIP rows | superseded (the first four and the SigLIP row, the last **re-measured 2026-09-08**) / **STALE**, never re-anchored (Mellum2 only) | `benchmarks.md` §A — the 2026-08-24 peer row, the cold-start table, the 2026-09-01 prefill re-anchor, the 2026-09-08 vision-tower re-measure |
 > | *moved 2026-09-05:* §B2 total-request-time crossover | computed from the retired pre-re-anchor prefill figure; not re-derived | nothing yet — `benchmarks.md` §B2 says so in place |
 > | *moved 2026-09-05:* §B4 — the driver `595.58.03` record (16.98 tok/s @ 38 slots, 2026-08-02) | measured-but-unsafe, not retracted; the configuration is no longer grantable | §B4.1 / §B4.2 |
 > | *moved 2026-09-05:* four paragraphs stranded under §B4 on the live page when §B was retired — the resident-serve caveat, the 2026-07-14 WebGPU re-measure, the 7B-int4 footprint bullets, the provenance gap | they were §B's; the serve caveat is also **no longer true** (resident prefix reuse shipped 2026-09-02, `benchmarks.md` §B10) | §B8's backend table; §B10 for warm TTFT |
@@ -276,7 +276,10 @@ because the W4A8 unpack costs more at M>1 than the halved weight bytes save. §A
 is int8int8 and this peer table is int4; they are not the same configuration and must not be read
 as one series.
 
-### SigLIP vision prefill — STALE, never re-anchored
+### SigLIP vision prefill — SUPERSEDED 2026-09-08
+
+**⚠ SUPERSEDED 2026-09-08 by a current re-measurement — see `benchmarks.md` §A, "Vision tower
+CPU prefill."** The row below is retained as the record of what was claimed and is not current.
 
 **Vision prefill (SigLIP, gemma-3-4b-it, 896², 4096 patches):** ~171 s/image on
 CPU (compute-bound matmul; int8 is a wash on AVX2 — no VNNI). On `-tags gpu` with
@@ -284,7 +287,11 @@ CPU (compute-bound matmul; int8 is a wash on AVX2 — no VNNI). On `-tags gpu` w
 **18.8 s/image** (~9×) on an **RTX 2070 SUPER**, parity cosine 1.000000 vs the CPU
 W8A8 encoder (`886c8fd`/`5d7c572`, 2026-06-11). **⚠ STALE (flagged 2026-08-31): also a
 pre-2026-08-25 Linux row the re-anchor did not scope — the ~9× is same-binary, the absolute
-18.8 s/image is not current.** The attention matmuls are still naive f32 — a tiled GEMM there is the next lever (`docs/completed/task-gpu-vision-tower.md`).
+18.8 s/image is not current.** The attention matmuls were naive f32 at the time this row was
+recorded; aikit v1.38.0's fused/head-parallel attention (`docs/multimodal.md` P6a) replaced that
+loop, measured flat on CPU wall-clock (see the superseding row) — a tiled GEMM (this row's
+original "next lever") was not what shipped, and the GPU-resident 18.8 s figure above is the
+still-open lever if CPU-vs-GPU vision throughput becomes the question again.
 
 ---
 

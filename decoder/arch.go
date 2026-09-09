@@ -98,6 +98,10 @@ type Architecture struct {
 	// the 3 components are equal so m-RoPE ≡ scalar RoPE; it only diverges over
 	// image tokens (the 3D grid positions). (P5)
 	MRopeSection []int
+	// MRopeInterleaved selects Qwen3-VL's per-frequency-index component layout
+	// (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent).
+	// False for every other m-RoPE family, including Qwen2.5-VL itself. (P8)
+	MRopeInterleaved bool
 	// ropeScaling transforms the GLOBAL (full-attention) inv-freq table (Llama-3
 	// llama3 / linear / yarn); nil = none. ropeScalingLocal does the same for the
 	// LOCAL (sliding) table — usually nil even when the global table is scaled
@@ -419,6 +423,12 @@ type gemma4Params struct {
 	FFNPerLayer             []int // variable per-layer FFN width (else Architecture.IntermediateDim is uniform)
 	HiddenSizePerLayerInput int   // PLE per-layer dim (256); 0 ⇒ no PLE
 	VocabSizePerLayerInput  int   // PLE embedding-table vocab (== main vocab)
+
+	// PadTokenID (P7): the id runLayersGemma4FromEmbed's PLE token-identity
+	// lookup uses at a multimodal (image/video/audio) position, in place of the
+	// caller's real token id — matches the real HF multimodal forward's PAD
+	// substitution (see docs/multimodal.md's P7 entry).
+	PadTokenID int
 }
 
 // headDimAt / kvHeadsAt / ffnAt give layer i's attention head_dim, KV-head count,

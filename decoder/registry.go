@@ -19,12 +19,13 @@ type archAdapter func(*Config) (*Architecture, *tensorSchema, error)
 var registry = map[string]archAdapter{
 	"gemma3":              gemma3Architecture,
 	"gemma3_text":         gemma3Architecture,     // the 270M/1B text checkpoints
-	"gemma4":              gemma4Architecture,     // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
-	"gemma4_text":         gemma4Architecture,     // Gemma 4 text checkpoints (the 26B-A4B MoE tiny golden: model_type gemma4_text)
-	"gemma4_unified_text": gemma4Architecture,     // real Gemma 4 unified checkpoints' text_config model_type (E2B/E4B/12B dense + 26B-A4B MoE; K=V globals, model.language_model.* prefix)
+	"gemma4":              gemma4Architecture,     // Gemma 4 top-level model_type for the "gemma4" family wrapper (E2B/E4B/26B-A4B/31B — real vision+audio towers, not built here)
+	"gemma4_text":         gemma4Architecture,     // that family's text_config.model_type (E2B/E4B/26B-A4B MoE/31B dense; parity-gated on E2B+12B)
+	"gemma4_unified_text": gemma4Architecture,     // the SEPARATE "gemma4_unified" family's text_config.model_type — real checkpoints show this is 12B-it ONLY (encoder-free multimodal wrapper, no PLE/MoE in its text decoder; K=V globals, model.language_model.* prefix)
 	"qwen3":               qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":               qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_5_vl":          qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
+	"qwen3_vl":            qwen3_vlArchitecture,   // Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; nested text_config/rope_parameters; no vision, no DeepStack — P8 Phase 0)
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
 	"qwen3_moe":           qwen3MoeArchitecture,   // Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3's attention (QK-norm, no bias) + a sparse MoE on every layer, NO shared expert
 	"llama":               llamaArchitecture,      // Llama-2/3 dense (single-base RoPE, no QK-norm)
@@ -372,6 +373,7 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			FFNPerLayer:             cfg.FFNPerLayer,
 			HiddenSizePerLayerInput: cfg.HiddenSizePerLayerInput,
 			VocabSizePerLayerInput:  cfg.VocabSizePerLayerInput,
+			PadTokenID:              cfg.PadTokenID,
 		},
 	}, &gemma3TensorSchema, nil // a dedicated gemma4 tensor schema lands with the loader work
 }
@@ -1555,6 +1557,68 @@ func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}
 	arch.Name = "qwen2_5_vl"
 	arch.MRopeSection = section
+	return arch, schema, nil
+}
+
+// qwen3_vlArchitecture expresses Qwen3-VL's TEXT decoder ONLY (P8 Phase 0 — see
+// docs/multimodal.md): a Qwen3 dense decoder (per-head q/k RMSNorm, GQA, no q/k/v
+// bias, derived head_dim — confirmed against transformers' Qwen3VLTextAttention,
+// NOT Qwen2's shape, which is what qwen2_5_vlArchitecture aliases) whose RoPE
+// config lives under the same nested rope_parameters {mrope_section, rope_theta}
+// convention qwen2_5_vlArchitecture already parses. For TEXT, m-RoPE degenerates
+// to standard scalar RoPE exactly as it does for Qwen2.5-VL, so the text path is
+// exactly Qwen3 — the only wrinkle is that Qwen3-VL's mrope_section maps frequency
+// index to component via a DIFFERENT, INTERLEAVED formula than Qwen2.5-VL's
+// contiguous-block one (mropeComponentInterleaved vs mropeComponent, decoder/rope.go)
+// — irrelevant for a degenerate (all-equal) TEXT position, but load-bearing the
+// moment an image path is added, so it is wired here even though nothing on the
+// text-only path can currently exercise it. vision_config/deepstack_visual_indexes
+// are ignored here — no vision tower, no DeepStack injection (P8 Phase 0 scope).
+func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	// Same extraction qwen2_5_vlArchitecture uses: mrope_section + rope_theta live under
+	// EITHER the nested rope_parameters (the common transformers-5.x shape) OR the older
+	// top-level rope_scaling {type:mrope, mrope_section} + rope_theta.
+	var section []int
+	if len(cfg.RopeParameters) > 0 {
+		var rp struct {
+			RopeTheta    float64 `json:"rope_theta"`
+			MRopeSection []int   `json:"mrope_section"`
+		}
+		if err := json.Unmarshal(cfg.RopeParameters, &rp); err != nil {
+			return nil, nil, fmt.Errorf("decoder(qwen3_vl): parse rope_parameters: %w", err)
+		}
+		section = rp.MRopeSection
+		if cfg.RoPEGlobalBase == 0 {
+			cfg.RoPEGlobalBase = rp.RopeTheta
+		}
+	}
+	if len(cfg.RopeScaling) > 0 {
+		var rs struct {
+			Type         string `json:"type"`
+			RopeType     string `json:"rope_type"`
+			MRopeSection []int  `json:"mrope_section"`
+		}
+		if err := json.Unmarshal(cfg.RopeScaling, &rs); err != nil {
+			return nil, nil, fmt.Errorf("decoder(qwen3_vl): parse rope_scaling: %w", err)
+		}
+		if rs.Type == "mrope" || rs.RopeType == "mrope" {
+			if section == nil {
+				section = rs.MRopeSection
+			}
+			// m-RoPE is not a parseRopeScaling kind — clear it defensively, mirroring
+			// qwen2_5_vlArchitecture, even though qwen3Architecture doesn't currently
+			// call parseRopeScaling at all.
+			cfg.RopeScaling = nil
+		}
+	}
+	cfg.MRopeSection = section
+	arch, schema, err := qwen3Architecture(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	arch.Name = "qwen3_vl"
+	arch.MRopeSection = section
+	arch.MRopeInterleaved = true
 	return arch, schema, nil
 }
 

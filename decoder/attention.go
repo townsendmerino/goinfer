@@ -124,8 +124,8 @@ func causalAttention(
 	if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {
 		invFreq := arch.ropeInvFreq(layer)
 		ms := arch.ropeMscale(layer)
-		ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
-		ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
+		ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave, arch.MRopeInterleaved)
+		ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave, arch.MRopeInterleaved)
 	}
 
 	// 3.5. Attention-temperature tuning (Ministral 3): a position-dependent scale on the query,

@@ -295,7 +295,7 @@ carries a content-keyed citation and CI fails on the commit that makes one stale
   once, at most.
 
 **Production-side status (checked, `f5ec7a2`).** The CUDA launch path hand-rolls its arguments
-too: `launch(f Pipeline, cfg LaunchConfig, args ...KernelArg)` (`cuda/resident.go:1265`), called
+too: `launch(f Pipeline, cfg LaunchConfig, args ...KernelArg)` (`cuda/resident.go:1271`), called
 variadically from 48 sites (`resident.go` 36, `prefill.go` 11, `testhooks_gen.go` 1). There are
 no typed per-kernel wrappers, so **the compiler enforces neither arity nor argument order** — a
 missing trailing argument is silent, and so is a transposition between same-typed parameters,
@@ -1642,3 +1642,136 @@ check such buffers after loading — e.g. assert non-NaN and roughly the expecte
 rather than trusting `from_pretrained` to have materialized them correctly. lfm2 and
 ministral3 (next in this batch) should each be checked for this pattern before being
 trusted as "the reference disagrees with goinfer, so goinfer is wrong."
+
+## Timing: finishing pass, Group 1 — qwen2_moe + qwen3_moe (2026-09-08, Linux box)
+
+**qwen2_moe (Qwen/Qwen1.5-MoE-A2.7B, ~28.6 GB bf16)** — ≈15 min, PASS, promoted to
+real-oracle (int8 weights/f32 activations, cosine 0.999544). Split: adapt ~2 min (new
+gate + pin script, following qwen3_moe's own int8 shape — an f32 load would need ~57 GB,
+too tight here), download 11 min, HF reference ~92 s, gate + registration + merge + regen
+~2 min. Item 5: zero — the base-model completion ("\_\_\_.\\nParis\\nLondon\\nBerlin")
+looked odd on first read but is ordinary base-model quiz-format behavior, not a defect.
+
+**qwen3_moe (Qwen/Qwen3-30B-A3B, ~60 GB bf16)** — ≈26 min, PASS, promoted to real-oracle
+(cosine 0.998344). The "zero new code" claim was verified before starting and held exactly:
+gate, pin script, `emitParityRow` call, and required-list wiring all pre-existed; only the
+download (11.6 min) and the run (HF reference ~14 min including an 8-min weight load, gate
+2 min) were needed. Item 5: zero.
+
+Both downloads ran in parallel; group wall time ≈ 34 min. `TestRealckptGateIsListedOrExplicitlyNotRequired`
+verified green before each run — no discipline gap this time.
+
+## Timing: finishing pass, Group 2 — laguna + qwen3_5, the sequential oracle (2026-09-08, Linux box)
+
+**Both families already had a real checkpoint local and a required gate that was
+coherence-only by design** — `TestLagunaReal_gate` never called `emitParityRow`; `qwen3_5`'s
+own manifest text said plainly no bf16 reference forward had ever run. The technique:
+`scripts/pin_sequential_oracle.py`, one script with a `--family` parameter, adapting
+`pin_qwen3next_real.py`'s accelerate disk-offload approach (the reference and goinfer never
+need to be resident at the same instant) to two smaller models. One script serves both
+because the offload machinery is identical; the two real divergences (laguna needs
+`trust_remote_code=True` + `AutoModelForCausalLM`; qwen3_5's release is a vision-language
+wrapper needing `AutoModelForImageTextToText` + `pixel_values=None`, the same shape
+mistral3's own real gate needed) are isolated in a small per-family branch, not duplicated
+boilerplate.
+
+**laguna (poolside Laguna-XS.2, 33B-A3B)** — ≈20 min, **FAILED, not promoted**. Adapt/script
+work ≈10 min (shared with qwen3_5, largely done reading the qwen3next precedent). HF
+reference: 583 s weight load (disk-offload placement 26 CPU-resident / 18 disk-offloaded
+layers) + 229 s prompt forward + 106 s over 8 continuation steps ≈ 15.3 min total, coherent
+output (`"Paris.\nThe capital of Germany is"`). Gate: 108 s. Argmax on the prompt matched
+(22345); last-logit cosine was 0.984776, clearing the pre-registered 0.98 int4 floor
+(int4 because 33B bf16 doesn't fit at int8 either) — but the greedy continuation diverged at
+step 3 (got 110, wanted 785), which `realLogitOracleQuant` treats as an unconditional
+failure independent of the cosine floor. Named, not chased further: consistent with — not
+confirmed as — the MoE router-flip noise this repo has already characterized at int8
+(`docs/QUEUE.md`'s "MoE router-flip noise floor": a bit-identical router still flips top-k
+in 779/3200 decisions under ~0.5% input noise), now possibly showing at int4 on a
+256-expert top-8 router. Gate left required and red.
+
+**qwen3_5 (Qwen/Qwen3.8-27B)** — ≈6 min, **FAILED, not promoted**. HF reference: 5 s
+weight load (placement 50 CPU / 19 disk — much lighter than laguna's, this checkpoint is
+smaller) + 40 s prompt forward + 8 continuation steps (~100 s) ≈ 2.4 min total, coherent
+output (`"Paris.\nThe capital of Germany is"` — the same opening laguna's own reference
+produced, on an unrelated checkpoint and prompt, worth noting as a coincidence not a
+signal). Gate: 115 s. Argmax on the prompt matched (11751); cosine 0.993235 cleared the
+0.98 int4 floor comfortably — tighter than laguna's own margin — but continuation[2]
+diverged (got 11751, repeating "Paris"; wanted 198, a newline). **This family is DENSE, no
+MoE at all**, so laguna's router-flip explanation cannot apply here. The two failures share
+an exact SHAPE (prompt argmax exact, cosine clears the registered floor, continuation drifts
+a few tokens in) while sharing no mixer in common (laguna: MoE; qwen3_5: DeltaNet+softmax
+hybrid) — worth flagging as a possible lead pointing at int4 quantization behavior on this
+box generally, rather than either family's own wiring specifically. Not investigated
+further, per policy; a lead for whoever authorizes the fix, not a claim. Gate left required
+and red.
+
+**Group total ≈ 26 min for two attempts, both real defects (or defect-shaped findings) and
+neither promoted.** This is the first group in the finishing pass where the "asset already
+local, gate already exists" shortcut did not translate into a fast, clean promotion — both
+families needed the SAME new sequential-oracle engineering investment as planned, and both
+then failed at the same integration point (greedy continuation under int4) despite very
+different architectures. Read against the earlier internlm2/olmo3 findings, this raises the
+running count of real-checkpoint promotions that surfaced a genuine defect (or a
+defect-shaped, unresolved lead) to four out of eight families attempted past smollm3 — half.
+
+## Timing: finishing pass, Group 3 — bailing_hybrid (blocked) + qwen2_5_vl (2026-09-08, Linux box)
+
+**bailing_hybrid — reachability checked, not attempted, per policy ("do not fight the
+dependency stack").** Full account in `docs/task-families-2026-09.md`'s bailing_hybrid
+section. A fresh CUDA-enabled venv proved the KDA primitive itself fully reachable on this
+box — `fla.ops.kda` imports, and `fused_recurrent_kda` launches on the real RTX 2070 SUPER
+with finite output — upgrading the earlier "plausible, not proven" preflight to a genuine
+result. But `modeling_bailing_moe_v3.py` still does not import on any current transformers
+(5.16.1 or this repo's own pinned 5.15.0): `is_torch_fx_available` was removed from
+`transformers.utils.import_utils` in a later refactor, and the checkpoint's remote code was
+written against a version that still had it. A stale reference in code this repo does not
+own, unrelated to Triton/CUDA/fla, not chased further. ~15 min spent (venv setup, triton/fla
+install, the kernel-launch check, the module-import check at two transformers versions) —
+no 16 GB download attempted, per the gate the task set: check reachability first.
+
+**qwen2_5_vl (Qwen/Qwen2.5-VL-3B-Instruct)** — ≈6 min, PASS, promoted to full-oracle
+(cosine 0.999459). **The first family in this finishing pass whose oracle SHAPE differs**:
+the existing tiny golden already ran e2e encoder→decoder, but on synthetic `pixel_values`
+with no real processor in the loop, so a real oracle needed a real image through the real
+`AutoImageProcessor`, not just real decoder weights. Reused the already-pinned, pre-sized
+test PNG (`testdata/qwen25vl_preprocess_image.png`, 84×56, grid-aligned so `smart_resize` is
+a no-op) rather than a new photo — isolating decoder-on-real-weights from resize/bicubic
+parity, which is already pinned separately, the same one-gate-one-concern discipline
+mistral3's own gate uses. Split: adapt ~15 min (reading the existing Go vision API —
+`vision.LoadQwenVisionEncoder`/`enc.Forward`/`mropePositions`/`m.prefillLogitsQwenVL` — all
+already existed and needed no new goinfer code, just a new pin script and gate calling
+them), download 7.1 GB in under a second (already warm from an earlier config check), HF
+reference ~7 s, gate 4.6 s, merge + regen ~1 min. **Item 5, the real cost of this family**:
+scoping the gate to the prefill forward only, not greedy continuation past the image block.
+Decoding text tokens after an image (m-RoPE position continuation from the image grid's max
+position) is a genuinely different code path with no existing Go test — building it inside
+this promotion would have conflated a brand-new test harness's own correctness with the
+checkpoint's, exactly the trap this whole program exists to avoid one level up. Scoped out
+explicitly, in both the gate's doc comment and the manifest reference text, rather than
+silently assumed to work.
+
+**Group total ≈ 21 min: one family correctly not attempted (a named, external blocker), one
+promoted with an explicitly bounded claim.** Neither outcome needed the caution the earlier
+"budget for the whole cost" framing implied — the existing Go vision API absorbed nearly all
+of the shape-difference risk; what was actually novel and worth the budget was recognizing
+where to STOP the gate's scope, not building more of it.
+
+## Finishing pass total: three groups, six families, six real findings
+
+Group 1 (qwen2_moe, qwen3_moe): 2 promoted, item 5 zero both times. Group 2 (laguna,
+qwen3_5): 0 promoted, 2 real-shaped findings (int4 continuation drift, cause unresolved).
+Group 3 (bailing_hybrid, qwen2_5_vl): 1 blocked (external, named), 1 promoted with a
+narrower-than-usual claim (prefill only). Six families attempted, four promotions, two
+failures that are themselves findings rather than errors — consistent with the running
+count this document has kept honestly since olmo3: real-checkpoint validation in this
+program finds something roughly half the time it is tried, whether or not the family looked
+safe going in.
+
+**10 of 16 tiny-oracle families now validated against released weights** (7 before this
+pass — smollm3, lfm2, mistral3, granite, olmo3, olmo_hybrid, internlm2 — plus qwen2_moe,
+qwen3_moe, qwen2_5_vl from this pass). Of the 6 that remain `experimental: tiny-oracle`:
+laguna and qwen3_5 carry a named, unresolved lead (int4 continuation drift); bailing_hybrid
+is blocked on a dependency this repo does not control (a stale symbol in the checkpoint's
+own remote code); mixtral, llama4_text, and glm4_moe are the three whose tier reflects
+hardware (RAM) or format (no bf16 safetensors asset), not validation effort — confirmed
+blocked in the earlier scoping pass, not reattempted here.

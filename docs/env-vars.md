@@ -38,6 +38,7 @@ is grep-derivable and enumerated at the bottom.
 | `GOINFER_NO_KVONLY_PREFILL` | Disable KV-only prefill (run the full-logits prefill on every prompt token). |
 | `GOINFER_BATCHED_PREFILL` | Toggle the batched prefill path (`=0` disables). |
 | `GOINFER_PREFILL_CHUNK` | Rows per batched CUDA prefill pass (default 512). A long prompt is ingested in several weight-stationary passes over the positional KV — bit-identical to one pass, bounded scratch. Raise it only if the card has room; the path halves the width itself on an OOM. |
+| `GOINFER_PREFILL_IMAGE_CHUNK` | Rows for the resident image-block prefill call specifically (default 2048, separate from `GOINFER_PREFILL_CHUNK` above). A bidirectional image block cannot span more than one pass, so this prices the WHOLE turn (image + surrounding chat text) in one weight-stationary pass rather than the general prompt-chunking width. |
 | `GOINFER_METAL_BATCHED_PREFILL` | Opt into Metal batched prefill — NOT bit-identical to decode (54% divergence); measurement only. |
 | `GOINFER_INT4_SLOWPATH` / `GOINFER_INT4_F16_SCALES` | int4 unpack path selectors. |
 | `GOINFER_CUDA_NO_FUSE` | Disable CUDA kernel fusion (debug/A-B). |

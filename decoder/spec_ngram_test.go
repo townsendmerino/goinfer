@@ -120,7 +120,7 @@ type stubResident struct{}
 
 func (stubResident) Forward([]float32, int) ([]float32, error)      { return nil, nil }
 func (stubResident) ForwardN([][]float32, int) ([][]float32, error) { return nil, nil }
-func (stubResident) UploadKV(int, []float32, []float32) error       { return nil }
+func (stubResident) UploadKV(int, int, []float32, []float32) error  { return nil }
 func (stubResident) TruncateTo(int)                                 {}
 func (stubResident) Reset()                                         {}
 func (stubResident) Close() error                                   { return nil }

@@ -92,6 +92,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3-MoE** — Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert
 
+> **Qwen3-VL** — Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)
+
 > **SmolLM3** — HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings
 
 > **gpt-oss** — OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)
@@ -117,10 +119,11 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Olmo 3 | `olmo3` | dense | interleave | yes | full | RMSNorm, post-only | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Phi-3 / Phi-4 | `phi3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen2 / Qwen2.5 | `qwen2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
-| Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
-| Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | experimental: tiny-oracle 100.0%/0.99998 |
+| Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99954 |
+| Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | full-oracle 100.0%/0.99946 |
 | Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
-| Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99834 |
+| Qwen3-VL | `qwen3_vl` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99843 |
 

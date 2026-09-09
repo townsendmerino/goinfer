@@ -142,7 +142,7 @@ func TestDecodeRunnerSlidingWindow_parity(t *testing.T) {
 		t.Fatalf("newDecodeRunner(sliding): %v", err)
 	}
 	defer runner.Release()
-	got, err := runner.Run(x0, pos)
+	got, err := runner.Run(x0, pos, pos)
 	if err != nil {
 		t.Fatalf("sliding Run: %v", err)
 	}

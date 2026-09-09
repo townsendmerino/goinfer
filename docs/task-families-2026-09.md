@@ -1138,6 +1138,22 @@ commit.
   has no CUDA support, so no Triton kernel was ever actually launched, and `fla` itself was not
   installed. A plausible path, not a validated one — the next attempt should install `fla` in a
   CUDA-enabled torch env and try `trust_remote_code=True` end-to-end before assuming this works.**
+  **Finished checking 2026-09-08, same box, a fresh CUDA-enabled venv (torch 2.14.0+cu126,
+  triton 3.8.0, fla 0.5.2): `import fla.ops.kda` succeeds, and `fused_recurrent_kda` LAUNCHES on
+  the real RTX 2070 SUPER and returns finite output — the KDA primitive itself, Triton included,
+  is proven reachable here, not just plausible. The Mac's blocker (no Triton wheel at all) does
+  not apply, full stop. But `modeling_bailing_moe_v3.py` still does not IMPORT, on any current
+  transformers (tried 5.16.1 and 5.15.0 — the version pinned everywhere else in this repo):
+  `from transformers.utils.import_utils import is_torch_fx_available` fails, because that name
+  was removed from `transformers.utils.import_utils` in a later refactor and `inclusionAI/
+  Ling-3.0-tiny`'s remote code was written against a version that still had it. This is a stale
+  reference in the CHECKPOINT's own remote code, unrelated to Triton, CUDA, or fla — no version
+  pin available fixes it, since it fails on both a bleeding-edge and this repo's own known-good
+  transformers. Per policy this is where it stops: not chased further, not patched (patching
+  someone else's remote code to route around a missing symbol is exactly the kind of dependency-
+  stack fight this pass was told not to have). T3 for bailing_hybrid remains unattempted — the
+  blocker changed shape (from "unproven GPU path" to "a specific, named, unfixed-by-us import
+  error"), not resolved.**
 - **GGUF loader / peer row** — gated on T3, per this doc's own rule.
 - **The LoRA'd KDA gate variant (`no_kda_lora: false`) and the plain unbounded decay gate
   (`kda_safe_gate: false`)** — `validateBailingHybrid` refuses both rather than silently

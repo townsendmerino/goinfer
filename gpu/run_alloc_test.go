@@ -64,14 +64,14 @@ func TestZZ_decodeRunAllocs(t *testing.T) {
 		t.Fatalf("NewDecodeRunner: %v", err)
 	}
 	defer runner.Release()
-	if _, err := runner.Run(x0, pos); err != nil { // warm
+	if _, err := runner.Run(x0, pos, pos); err != nil { // warm
 		t.Fatalf("Run warm: %v", err)
 	}
 
 	res := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			if _, err := runner.Run(x0, pos); err != nil {
+			if _, err := runner.Run(x0, pos, pos); err != nil {
 				b.Fatalf("Run: %v", err)
 			}
 		}

@@ -26,7 +26,7 @@ func TestResidentReuseLen(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model{resIDs: tc.cached}
-			if got := m.residentReuseLen(tc.prompt); got != tc.want {
+			if got := m.residentReuseLen(tc.prompt, nil); got != tc.want {
 				t.Errorf("residentReuseLen(%v | cached %v) = %d, want %d", tc.prompt, tc.cached, got, tc.want)
 			}
 		})
@@ -43,7 +43,7 @@ func TestResidentReuseLen_neverClaimsTheSeed(t *testing.T) {
 			ids[i] = i + 1
 		}
 		m := &Model{resIDs: ids}
-		if got := m.residentReuseLen(ids); got >= n {
+		if got := m.residentReuseLen(ids, nil); got >= n {
 			t.Errorf("prompt of %d identical tokens reused %d — must leave at least one to prefill", n, got)
 		}
 	}
@@ -85,7 +85,7 @@ func TestResidentReuseLen_recurrentExactExtensionOnly(t *testing.T) {
 			if !m.hasRecurrentState() {
 				t.Fatal("test setup broke: recurrentTestModel is not recognised as recurrent")
 			}
-			if got := m.residentReuseLen(tc.prompt); got != tc.want {
+			if got := m.residentReuseLen(tc.prompt, nil); got != tc.want {
 				t.Errorf("residentReuseLen(%v | cached %v) = %d, want %d", tc.prompt, tc.cached, got, tc.want)
 			}
 		})
@@ -96,7 +96,7 @@ func TestResidentReuseLen_recurrentExactExtensionOnly(t *testing.T) {
 // than none — it would match a prefix that the cache no longer holds.
 func TestResidentForgetIDs(t *testing.T) {
 	m := &Model{}
-	m.residentCommitIDs([]int{1, 2}, []int{3, 4})
+	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil)
 	if len(m.resIDs) != 4 {
 		t.Fatalf("commit recorded %v, want prompt+generated", m.resIDs)
 	}
@@ -104,7 +104,7 @@ func TestResidentForgetIDs(t *testing.T) {
 	if m.resIDs != nil {
 		t.Errorf("forget left %v, want nil", m.resIDs)
 	}
-	if got := m.residentReuseLen([]int{1, 2, 3, 4, 5}); got != 0 {
+	if got := m.residentReuseLen([]int{1, 2, 3, 4, 5}, nil); got != 0 {
 		t.Errorf("after forgetting, reuse must be 0, got %d", got)
 	}
 }
@@ -115,9 +115,112 @@ func TestResidentCommitIDs_copies(t *testing.T) {
 	prompt := []int{1, 2, 3}
 	generated := []int{4, 5}
 	m := &Model{}
-	m.residentCommitIDs(prompt, generated)
+	m.residentCommitIDs(prompt, generated, nil)
 	prompt[0], generated[0] = 99, 99
 	if m.resIDs[0] == 99 || m.resIDs[3] == 99 {
 		t.Errorf("resIDs aliases the caller's slice: %v", m.resIDs)
+	}
+}
+
+// TestResidentReuseLen_imageBlockAtomicity is P9(a)'s kill condition at the unit level (the
+// gpu-package real-hardware version is TestResidentPrefixReuse_tokenIdentical, extended
+// separately): an image block is either reused WHOLE or not at all, never a partial position
+// inside it — because every position inside the block attended every OTHER position under a
+// bidirectional mask, so there is no such thing as "half the block's KV, causally consistent
+// with the other half."
+func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
+	// cached: [text 0,1] [image 2,3,4 hash=7] [text 5,6]
+	cached := []int{100, 101, 900, 900, 900, 200, 201}
+	block := residentImageBlock{start: 2, end: 5, hash: 7}
+
+	for _, tc := range []struct {
+		name   string
+		prompt []int
+		imgs   []residentImageClaim
+		want   int
+	}{
+		{
+			"same image (hash+len match), extension past it — jumps the WHOLE block atomically",
+			[]int{100, 101, 900, 900, 900, 200, 201, 300},
+			[]residentImageClaim{{Start: 2, Len: 3, Hash: 7}},
+			7, // past the block AND the trailing matched text — one past cache's own [0,7)
+		},
+		{
+			"same image, prompt ends exactly at the block's end — capped at len(prompt)-1, which lands INSIDE the block: must stop at the block's start, not partway through it",
+			[]int{100, 101, 900, 900, 900},
+			[]residentImageClaim{{Start: 2, Len: 3, Hash: 7}},
+			2,
+		},
+		{
+			"different image at the same position (hash mismatch) — must stop exactly at the block's start, never one position into it",
+			[]int{100, 101, 900, 900, 900, 200, 201, 300},
+			[]residentImageClaim{{Start: 2, Len: 3, Hash: 999}},
+			2,
+		},
+		{
+			"different image, shorter — must still stop exactly at the block's start",
+			[]int{100, 101, 900, 900, 200, 201, 300},
+			[]residentImageClaim{{Start: 2, Len: 2, Hash: 7}},
+			2,
+		},
+		{
+			"no claim at all where a block was recorded (plain text resent over an old image slot) — stop at the block's start",
+			[]int{100, 101, 900, 900, 900, 200, 201, 300},
+			nil,
+			2,
+		},
+		{
+			"text-only prefix ending BEFORE the block starts — ordinary LCP, block irrelevant",
+			[]int{100, 101, 999},
+			nil,
+			2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{resIDs: cached, resImgBlocks: []residentImageBlock{block}}
+			if got := m.residentReuseLen(tc.prompt, tc.imgs); got != tc.want {
+				t.Errorf("residentReuseLen(%v, %v) = %d, want %d", tc.prompt, tc.imgs, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResidentReuseLen_recurrentRefusesImageClaims: no recurrent-family VL architecture exists
+// today, and the rewind-free recurrent rule has no notion of an image block's atomicity — a
+// claim there must refuse (fall to 0) rather than silently mis-serve it.
+func TestResidentReuseLen_recurrentRefusesImageClaims(t *testing.T) {
+	m := recurrentTestModel([]int{1, 2, 3})
+	claim := []residentImageClaim{{Start: 1, Len: 1, Hash: 7}}
+	if got := m.residentReuseLen([]int{1, 2, 3, 4}, claim); got != 0 {
+		t.Errorf("recurrent family with an image claim: residentReuseLen = %d, want 0 (refuse)", got)
+	}
+}
+
+// TestResidentCommitIDs_imageBlocksAppendOnlyValid: an older recorded block that ends before a
+// newly committed one's start stays valid (positions are append-only); this is a structural
+// sanity check on residentCommitIDs' bookkeeping, not a reuse-correctness test by itself.
+func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
+	m := &Model{resImgBlocks: []residentImageBlock{{start: 2, end: 5, hash: 7}}}
+	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, &residentImageBlock{start: 8, end: 11, hash: 42})
+	if len(m.resImgBlocks) != 2 {
+		t.Fatalf("resImgBlocks = %v, want 2 entries (old block kept, new block added)", m.resImgBlocks)
+	}
+	if m.resImgBlocks[0] != (residentImageBlock{start: 2, end: 5, hash: 7}) {
+		t.Errorf("old block not preserved: %v", m.resImgBlocks[0])
+	}
+	if m.resImgBlocks[1] != (residentImageBlock{start: 8, end: 11, hash: 42}) {
+		t.Errorf("new block not recorded: %v", m.resImgBlocks[1])
+	}
+}
+
+// TestResidentForgetIDs_clearsImageBlocksToo: forgetting must be total (see
+// TestResidentForgetIDs's own doc comment) — a stale image-block list is exactly as dangerous
+// as a stale resIDs, for the same reason.
+func TestResidentForgetIDs_clearsImageBlocksToo(t *testing.T) {
+	m := &Model{resImgBlocks: []residentImageBlock{{start: 2, end: 5, hash: 7}}}
+	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil)
+	m.residentForgetIDs()
+	if m.resImgBlocks != nil {
+		t.Errorf("resImgBlocks = %v after forget, want nil", m.resImgBlocks)
 	}
 }

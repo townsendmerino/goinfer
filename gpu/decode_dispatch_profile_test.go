@@ -120,7 +120,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	}
 	fillTo := func(pos int) {
 		for p := 0; p <= pos; p++ {
-			if _, err := r.Run(x, p); err != nil {
+			if _, err := r.Run(x, p, p); err != nil {
 				t.Fatalf("warm Run(pos=%d): %v", p, err)
 			}
 		}

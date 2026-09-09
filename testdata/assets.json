@@ -347,6 +347,15 @@
       "note": "Qwen/Qwen3-30B-A3B (bf16 safetensors) — the family's T3 oracle (docs/task-families-2026-09.md F1)."
     },
     {
+      "env": "GOINFER_QWEN2MOE_HF",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen15-moe-a27b"],
+      "used_by": ["TestQwen2MoeReal_oracle"],
+      "note": "Qwen/Qwen1.5-MoE-A2.7B (Qwen2MoeForCausalLM), 14.3B total / 2.7B active, ~28.6 GB bf16 — the family's T3 oracle. Loaded bf16 (not f32) on the HF side, same convention as GOINFER_QWEN3MOE_HF, to leave room alongside goinfer's own int8 load."
+    },
+    {
       "env": "GOINFER_NEMOTRON3NANO_HF",
       "kind": "dir",
       "members": [
@@ -406,9 +415,10 @@
         "$MODELS/laguna-xs2"
       ],
       "used_by": [
-        "TestLagunaReal_gate"
+        "TestLagunaReal_gate",
+        "TestLagunaReal_oracle"
       ],
-      "note": "Real poolside Laguna-XS.2 (33B-A3B, bf16 safetensors, 14 shards, ~63GB). members lists the three files the gate actually reads besides the shards: config.json (the adapter), the shard INDEX (the loader resolves tensors through it, so a dir with shards but no index is not this asset), and tokenizer.json. Loaded at int4 -- bf16 would not fit alongside f32 activations in 62GB. There is deliberately NO M.1 entry: it is ~220B / ~400GB and not runnable here."
+      "note": "Real poolside Laguna-XS.2 (33B-A3B, bf16 safetensors, 14 shards, ~63GB). members lists the three files the gate actually reads besides the shards: config.json (the adapter), the shard INDEX (the loader resolves tensors through it, so a dir with shards but no index is not this asset), and tokenizer.json. Loaded at int4 -- bf16 would not fit alongside f32 activations in 62GB. There is deliberately NO M.1 entry: it is ~220B / ~400GB and not runnable here. TestLagunaReal_oracle is the T3 numeric row (2026-09-08), pinned via scripts/pin_sequential_oracle.py against the SAME checkpoint."
     },
     {
       "env": "GOINFER_LAGUNA_GGUF",
@@ -478,9 +488,10 @@
         "$MODELS/qwen3.8-27b"
       ],
       "used_by": [
-        "TestQwen38Real_gate"
+        "TestQwen38Real_gate",
+        "TestQwen38Real_oracle"
       ],
-      "note": "Qwen/Qwen3.8-27B, 18 bf16 shards / 55.6 GB. The whole multimodal repo is downloaded because the text decoder's shards are interleaved with the vision tower's; the loader requests neither model.visual.* nor mtp.*. Loaded at int4 -- Options{} would ask for the f32 dequant of a 27.8B model."
+      "note": "Qwen/Qwen3.8-27B, 18 bf16 shards / 55.6 GB. The whole multimodal repo is downloaded because the text decoder's shards are interleaved with the vision tower's; the loader requests neither model.visual.* nor mtp.*. Loaded at int4 -- Options{} would ask for the f32 dequant of a 27.8B model. TestQwen38Real_oracle is the T3 numeric row (2026-09-08), pinned via scripts/pin_sequential_oracle.py against the SAME checkpoint."
     },
     {
       "env": "GOINFER_W4A8_INT4",
@@ -611,6 +622,24 @@
       "candidates": ["$MODELS/internlm2-1_8b"],
       "used_by": ["TestInternLM2_1_8bReal_gate"],
       "note": "internlm/internlm2_5-1_8b-chat (InternLM2ForCausalLM), bf16 safetensors / ~3.6 GB \u2014 not a built-in transformers architecture, needs trust_remote_code=True to load. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
+    },
+    {
+      "env": "GOINFER_QWEN25VL_3B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen25vl-3b-instruct"],
+      "used_by": ["TestQwen25VLReal_gate"],
+      "note": "Qwen/Qwen2.5-VL-3B-Instruct (Qwen2_5_VLForConditionalGeneration), ~7.1 GB. The T3 gate for this family runs a REAL image (testdata/qwen25vl_preprocess_image.png, pre-sized so resize is a no-op) through the real vision encoder + real decoder; scoped to the prefill forward only, not greedy continuation (see decoder/qwen25vl_real_test.go's own doc comment for why)."
+    },
+    {
+      "env": "GOINFER_QWEN3VL_2B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/qwen3vl-2b-instruct"],
+      "used_by": ["TestQwen3VLReal_gate"],
+      "note": "Qwen/Qwen3-VL-2B-Instruct (Qwen3VLForConditionalGeneration). P8 Phase 0 gate is TEXT-ONLY (no pixel_values, no vision tower, no DeepStack — docs/multimodal.md) — a real prompt through the real Qwen3-VL text decoder (qwen3_vlArchitecture: Qwen3's attention shape + interleaved m-RoPE degenerated to scalar RoPE on text). Not present on this box as of 2026-09-08; a real, named gap, not silently skipped-and-forgotten."
     },
     {
       "env": "GOINFER_GRANITE_GGUF",

@@ -55,6 +55,80 @@ Three things that make the June plan's assumptions stale, in the direction of *m
 
 ### The gaps, ranked by who hits them
 
+0. **RESOLVED 2026-09-08 (CUDA + WebGPU; Metal deferred).** `GenerateVL`/`GenerateQwenVL` used to
+   be stateless and CPU-only by design (`decoder/generate_vl.go`'s old doc comments; the premise
+   was inherited, not re-derived, when V-11 fixed the race around it — `docs/review-2026-09-04.md`)
+   — they never touched `m.resident` at all, so on a GPU box an image turn ran the WHOLE turn on
+   CPU, decode included, not only the tower. Fixed via a hybrid design: the CPU prefill (the
+   bidirectional image-block attention mask has no resident equivalent) stays on CPU exactly as
+   before, but its resulting KV is pushed into the resident GPU cache (`UploadKV`, extended with a
+   `base` position — a sliding-window ring's live K/V can start at a nonzero absolute position
+   once wrapped) and decode continues on GPU from there
+   (`decoder/generate_vl_resident.go:residentUploadPrefill`, wired into both functions behind the
+   existing `resBusy` claim). Qwen2.5-VL specifically needed one real kernel change on both
+   backends — `Forward(embedding, pos)`'s single position can't serve m-RoPE decode, which needs a
+   DIFFERENT rotation angle (`pos+mropeDelta`) than the KV-storage/attention position (`pos`) once
+   decode moves past an image block (the merge-compressed image grid makes `mropeDelta` nonzero for
+   any real image turn, not an edge case) — added as a new optional interface,
+   `decoder.ResidentMRoPE.ForwardMRoPE(embedding, pos, ropePos)`, alongside the existing `Forward`
+   rather than widening it (CUDA: a `ropePos` kernel argument threaded through `rope_kv`,
+   `cuda/gemv_fwd.cu`, PTX regenerated and diff-verified isolated to that one kernel; WebGPU: no
+   shader changes — its RoPE kernel is pure rotation with no KV-write side effect — just the
+   `DecodeRunner` uniform-generation plumbing widened to carry a second position). Both new
+   primitives (`UploadKV`'s offset, `ForwardMRoPE`'s angle split) pass their first real
+   correctness tests on real hardware at cosine 1.0 (`cuda/uploadkv_parity_test.go`,
+   `cuda/forwardmrope_parity_test.go`, and their WebGPU twins). **Measured real payoff, real
+   checkpoint (Qwen2.5-VL-3B, real image, int4 both arms, interleaved-paired, median of 5):
+   decode 5.95 → 22.98 tok/s, 3.86× — clears the pre-registered ≥1.5× bar by a wide margin** (full
+   real-checkpoint parity gate: `cuda/qwen25vl_resident_real_test.go`, cosine 0.99+/exact argmax on
+   a forced-trajectory decode step past a real image block, mropeDelta confirmed nonzero so the
+   m-RoPE split is genuinely exercised). **Gemma 3 (`GenerateVL`) closed 2026-09-08**: needed no
+   m-RoPE work — plain `Forward` suffices — real-checkpoint gate built (`scripts/pin_gemma3_real.py`
+   + `cuda/gemma3_resident_real_test.go`, a pre-sized 896×896 test image so goinfer's bilinear
+   resize vs HF's bicubic is a non-issue), decode-step cosine **0.998167**, exact argmax, tighter
+   than Qwen's (no m-RoPE noise to contend with). **Measured decode-only speedup (text-decoder
+   prefill+decode isolated from the vision tower, which is unaffected by this change either way):
+   6.96 → 92.27 tok/s, 13.26×** — larger than Qwen's, consistent with Gemma 3 having no m-RoPE
+   overhead on the resident path. **Metal is out of scope**: `UploadKV` is unimplemented there
+   (`metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up Metal
+   residency next, not attempted here.
+   **UPDATE 2026-09-08: a cold (first-time) image turn's own PREFILL, not just decode, is now
+   also resident (CUDA/Gemma-3 only).** Gap 0 as shipped deliberately kept CPU prefill (no
+   resident equivalent of the bidirectional image-block mask existed) and only moved decode; this
+   left the CPU prefill itself — measured **8.215 s** in isolation — as the largest remaining
+   cost on a cold turn (dwarfing gap-0's own decode fix). Closed via a new resident CUDA kernel
+   (`cuda/attn_img_prefill.cu`, `attn_img_batched`) that runs the SAME bidirectional attention
+   `decoder/kvcache.go`'s CPU reference computes — `decoder.ResidentImagePrefill`, v1 requires the
+   whole prompt to fit in one weight-stationary pass (declines to the unchanged CPU-prefill+
+   `UploadKV` bridge otherwise). **Measured: 8.165 s → 0.367 s, 22.27×** (prefill only, tower
+   excluded — `docs/benchmarks.md` "Resident image-block PREFILL, finishing gap 0"). Real-checkpoint
+   gate: cosine 0.997042, exact argmax, matched int4 precision — `cuda/gemma3_img_prefill_resident_real_test.go`.
+   Combined with the decode fix above, a cold Gemma-3 image turn's non-tower cost drops from ~8.2 s
+   to ~0.37 s; the vision tower (~31.3 s, unaffected) is now essentially the whole cost of a cold
+   turn. Out of scope for this pass: the `attn_fused` L2 tensor-core path (its tile-level
+   aggregates assume monotonic per-row key counts, which an image block breaks — low priority, it
+   never engages below the 512-token `fastPrefillFloor` on either shipped VL fixture), and
+   Metal/WebGPU (same reasons as gap 0's own decode fix).
+
+   **UPDATE 2026-09-08 (same day, follow-on pass): Qwen2.5-VL's own version of this gap is also
+   closed, and multi-chunk image-call declines are far rarer.** Qwen's image tokens already attend
+   causally in prefill (no new mask kernel needed — confirmed, `attn_batched` serves it unmodified),
+   but its m-RoPE 3-component rotation wasn't servable by the existing batched-prefill rope kernel —
+   and, a real subtlety, even ORDINARY text rows after an image block needed the fix too, since
+   `mropePositions` compresses their position by the merged image grid rather than counting
+   sequentially. New kernel `cuda/rope_mrope_prefill.cu` (`rope_kv_mrope_batched`) +
+   `decoder.ResidentMRoPEPrefill` close it — **measured 711.2 ms → 19.7 ms, 36.14×** (prefill only,
+   `docs/benchmarks.md` "Resident m-RoPE PREFILL (Qwen2.5-VL)"); real-checkpoint gate cosine
+   0.993995, exact argmax (`cuda/qwen25vl_mrope_prefill_resident_real_test.go`). Unlike Gemma-3's
+   bidirectional image block, m-RoPE has no cross-row attention coupling, so it chunks cleanly —
+   `PrefillMRoPELast` reuses the ordinary chunked-prefill loop rather than declining outright.
+   Separately, `PrefillImageLast`'s own chunk floor was raised from the shared 512-row text default
+   to a dedicated 2048-row budget (`prefillImageChunkRows`, justified by an existing real
+   measurement on this box at that width) — most real image+chat prompts no longer hit the decline
+   at all, though a bidirectional image block spanning more than one pass remains structurally
+   blocked regardless of the floor (chunk N's in-block rows need chunk N+1's not-yet-computed K/V
+   at every layer — no pass ordering can supply that). Remaining out of scope: `attn_fused` L2 for
+   image blocks (as above), Metal/WebGPU.
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
 2. **Vision is one family.** Gemma 4 — the family most of the resident work went into — is
@@ -72,18 +146,45 @@ The rule for every phase, unchanged from June: text-only behaviour is bit-identi
 after (the parity harness is the gate), every new stage is pinned against HF in isolation, and no
 number is published without provenance.
 
-- **P6 · The tower runs on the kernels the engine already has.** Route `multimodal/`'s encoder
-  through the same batched prefill path the decoder uses: on CPU, `attendTileFused`/head fan-out
-  and aikit's tile for the tower's GEMMs; on CUDA, `attn_fused` + `gemm_w4a8_mma` with the
-  tower's weights at int8/W4A8 (the June int8-tower verdict was "a wash on AVX2 without VNNI" —
-  it was never a verdict on the GPU); on Metal, the resident path's kernels. The vision tower is a
-  plain pre-LN ViT, so the cgo-free backends need no new primitive, only a second `Prefiller`-shaped
-  entry that takes `pixel_values` instead of token ids. Gate: encoder `last_hidden_state` parity
-  unchanged (cosine, the existing golden) on each backend, and the end-to-end image→logits gate
-  green; measure per-image time on both boxes, cold and warm, paired against the June path, into
-  `docs/benchmarks.md` as the first *current* vision row. Pre-registered expectation: an order of
-  magnitude on CUDA, several× on CPU; if CPU moves under 2×, say so and stop tuning there.
-  **This is the phase that fixes gap 1, and it is the cheapest.**
+- **P6 · The tower runs on the kernels the engine already has.**
+  **P6a (CPU) — DONE, 2026-09-08 (aikit v1.38.0).** Both towers (SigLIP/`encoder.go`,
+  Qwen2.5-VL/`qwen_encoder.go`, both live in `aikit/vision`, not goinfer) route attention through
+  `linalg.AttendTileFused`, head-parallel via a per-worker serial Workspace — the same schedule
+  and fan-out `decoder/forwardn.go`'s `attendBatchedHeads` already uses for text prefill. Gate
+  held: `TestSiglipEncoder_parity`/`TestQwenVisionEncoder_parity` cosine 1.0 both, `-race` clean.
+  **Measured against the pre-registered rule above, and the rule's own escape clause fired: CPU
+  moved under 2× — it moved ~0% (31.38s→31.26s SigLIP, 156.9ms→157.0ms Qwen2.5-VL, interleaved
+  A/B, both within noise) — so stated here and tuning stopped, per the rule.** `docs/benchmarks.md`
+  §A "Vision tower CPU prefill" has the full writeup and a plausible (unconfirmed) reason: the old
+  per-head loop's `MatmulBT` already parallelized internally across the whole core count, one head
+  at a time; the new schedule parallelizes across heads instead, each single-threaded — at head
+  count ≈ core count on this box, total work is close to unchanged, just redistributed. Kept
+  anyway: parity holds, it's the proven decoder mechanism, and the removed memory materialization
+  may still matter at an untested config (more heads than cores, memory pressure).
+  **CUDA (SigLIP/Gemma-3) — DONE, 2026-09-08. Metal — still not started.** The doc's own earlier
+  framing here overstated the gap, found by reading the actual kernels rather than assuming: a
+  FULLY non-causal attention kernel turned out to need ZERO new kernel source at all —
+  `attn_img_batched` (already shipped this session, for Gemma-3's TEXT-decoder image-block
+  attention) called with `imgStart=0, imgEnd=M` already IS full bidirectional attention over every
+  patch, reachable via parameters alone; and the "int4-only, no batched-M fallback" claim was true
+  only of the specialized tensor-core MMA tier, not the plain int8 batched GEMV
+  (`gemv_w8a8_batched`) already used for ordinary int8 text prefill at any M. What genuinely was
+  missing — SigLIP uses LayerNorm (not RMSNorm) and a plain non-gated GELU-tanh MLP, neither of
+  which exists anywhere else in this codebase — needed exactly two new, small kernels
+  (`layernorm_quant.cu`, `gelu_quant.cu`), not a new attention or GEMM primitive. Plugs into
+  `aikit/vision`'s ALREADY-BUILT `ResidentEncoder`/`RegisterResident` seam (the same one WebGPU's
+  own resident tower uses) — `cuda/vision_encoder.go` + `cuda/vision_register.go`, ~40 lines of
+  registration glue, mirroring `gpu/vision_register.go` almost verbatim.
+
+  **Measured: 1.58× (41.3s→26.1s median, real gemma-3-4b-it tower, matched int8 precision,
+  interleaved).** Real-checkpoint gate cosine 0.91-0.96 (int8-vs-int8, not int4-vs-f32) —
+  confirmed genuine via a matched-precision CPU probe reproducing one layer's raw GEMV output at
+  cosine 1.000000, not a wiring bug (a REAL bug — the position-embedding add broadcasting row 0 to
+  every patch — was found and fixed along the way; see `docs/benchmarks.md` "Resident CUDA vision
+  tower" for the full writeup, both numbers, and the specific host-round-trip residual-add
+  optimization named there as the natural next lever if the modest 1.58× ever needs to close
+  further toward WebGPU's own ~9×). Metal, and Qwen2.5-VL's own (differently-shaped) tower, remain
+  explicitly out of scope for this pass.
 - **P7 · Gemma 4 vision (all sizes) and audio (E2B/E4B/26B-A4B).** Phase 0 from the real
   `Gemma4VisionConfig`/`Gemma4AudioConfig` and modeling file, not the summary above: the encoder
   block, the 3×3 pooling to soft tokens, the position table, the variable token budget and its
@@ -97,6 +198,123 @@ number is published without provenance.
   Linux box under expert streaming. **One family buys images on every size goinfer already runs
   resident, and audio-in, without a new decoder.** Audio is scoped to *input* (transcribe/understand);
   speech output stays out.
+
+  **Phase 0 DONE, 2026-09-09 — read against the real `modular_gemma4.py`/`configuration_gemma4.py`
+  source, not assumed.** First pass mistakenly researched `gemma3n` (a different, older, unrelated
+  family) on an unverified naming assumption; caught via a checkpoint-size mismatch against
+  `testdata/parity_manifest.json`'s own "google/gemma-4 E2B + 12B" citation, then corrected by
+  confirming `gemma4`/`gemma4_unified` are real, separate transformers model directories. **This
+  doc's own scoping above was already right** — it names `Gemma4VisionConfig`/`Gemma4AudioConfig`
+  correctly; the mixup was this session's research, not a stale doc.
+
+  Confirmed facts: real checkpoints are E2B/E4B/26B-A4B(MoE, 128 experts top-8)/31B under
+  `model_type: gemma4` (`text_config.model_type: gemma4_text`) — this is a DIFFERENT, separate
+  family from the 12B checkpoint (`model_type: gemma4_unified`), which has **no vision or audio
+  tower at all** (`del self.vision_tower` in `Gemma4UnifiedModel.__init__`; raw patches/waveform
+  through a linear embedder instead) and is out of scope for this phase's "real encoder" framing —
+  goinfer's existing `gemma4Architecture` text decoder already covers both families' text side
+  (spot-checked: per-type KV-sharing, `layer_scalar`, scale-less `v_norm` all match real source
+  exactly), so P7 is *purely* the vision/audio build, no text-decoder work needed.
+
+  Vision tower (E2B/E4B/26B-A4B/31B): `Gemma4VisionEncoder`, 16 layers, hidden 768, 12 heads,
+  head_dim 64, intermediate 3072 — a real transformer, LayerNorm not RMSNorm (same primitive P6
+  just built CUDA kernels for), patch_size 16 × pooling_kernel_size 3 = 48px confirming the
+  "divisible by 48" rule exactly. Soft-token budget is one of a fixed small set `{70, 140, 280,
+  560, 1120}` chosen by an aspect-ratio tiling rule, not a single constant. Position embedding is
+  a learned absolute table (`position_embedding_size=10240`) — **one unresolved detail**: the
+  config declares `default_rope_type="axial"` but at least one real checkpoint's `rope_parameters`
+  shows `{"rope_theta":100.0,"rope_type":"default"}`; `apply_multidimensional_rope` and
+  `Gemma4VisionRotaryEmbedding(Sam3ViTRotaryEmbedding)` both exist in source and this wasn't fully
+  reconciled — read `modeling_gemma4.py`'s actual vision forward directly before building the
+  position path, don't assume from the config alone.
+
+  Audio (E2B/E4B/26B-A4B/31B): `Gemma4AudioModel`, 12-layer Conformer-style, hidden 1024, heavily
+  left-biased chunked local attention (`attention_chunk_size=12, context_left=13, context_right=0`
+  — near-causal), conv subsampling front-end (`subsampling_conv_channels=[128,32]`),
+  `output_proj_dims=1536` (matches E2B text hidden). Exact mel-spectrogram parameters (sample
+  rate/hop/n_mels) not yet read — `feature_extraction_gemma4.py` is the source, deferred to when
+  audio work actually starts.
+
+  Multimodal splice: `masked_scatter`, confirmed directly (3 call sites: image/video/audio) in
+  `Gemma4Model.forward`. PLE's multimodal-position treatment is exactly as scoped above — HF's
+  `project_per_layer_inputs` function (in the upstream `transformers` package's
+  `modular_gemma4.py`, not part of this repo) returns the context projection alone when
+  `per_layer_inputs is None`. `use_bidirectional_attention` is real and checkpoint-gated
+  (`null` for E2B/E4B, `"vision"` for 26B-A4B/31B) via `create_masks_for_vision_model`: **global
+  attention layers stay strictly causal**; only **sliding/local layers** get
+  `AND(sliding_window, OR(causal, blockwise))`, where "blockwise" groups each image/audio block —
+  this mask is built only in the multimodal `ForConditionalGeneration` forward, never in the
+  plain text-only path, so it is new decoder-side wiring, not something the existing text gate
+  already exercises.
+
+  Video: frame-sampling into the same `embed_vision(...)` image path per-frame, not a separate
+  temporal mechanism (confirmed for `gemma4_unified`; the plain `gemma4` family reuses the same
+  `convert_video_to_patches`/`pad_to_max_patches` helpers, strongly suggesting the same pattern,
+  not independently confirmed by reading `gemma4`'s own `get_video_features` body).
+
+  **Two corrections to the Phase 0 summary above, found during Phase A implementation — both
+  matter for anyone reading this doc rather than the source:** (1) the vision tower is **RMSNorm
+  sandwich-norm (four independent norms per layer) + a GATED SwiGLU-tanh MLP, NOT LayerNorm +
+  plain GELU** as first written — P6's SigLIP kernels do not transfer here; this tower instead
+  reuses the RMSNorm/gated-GLU primitives every text decoder in this repo already has. (2) the
+  axial-rope "unresolved detail" is resolved: **both** the learned absolute position table **and**
+  axial 2-D rope are real and both fire (θ=100, two independent 32-wide rotate-half chunks, one per
+  axis, sharing 16 log-spaced frequencies) — the `"rope_type":"default"` seen in a raw config.json
+  is a harmless BC shim (`standardize_rope_params`) rewritten to `"axial"` at config-load time, not
+  a real ambiguity. (3) PLE's multimodal treatment is NOT "context projection alone" as Phase 0
+  said — the real multimodal forward substitutes the **PAD token's** id/embedding at every
+  image/video/audio position BEFORE computing PLE's token-identity term (HF's
+  `Gemma4Model.forward`, upstream `modeling_gemma4.py`, not part of this repo), so the term is
+  neither skipped nor zeroed.
+
+  **Phase A (vision, image path, CPU) DONE, 2026-09-09 — the "gemma4" plain family
+  (E2B/E4B/26B-A4B/31B), NOT `gemma4_unified`.** New `vision.Gemma4Encoder` +
+  `vision.Gemma4Preprocess` in aikit (`~/mycode/aikit/aikit/vision/gemma4_encoder.go`,
+  `gemma4_preprocess.go` — aikit v1.38.0+, not yet released as a tagged version; goinfer's
+  `go.work` points at the local checkout for now). Every load-bearing detail was checked against
+  the REAL E2B-it safetensors header, not assumed from source reading alone — this caught two
+  things a source-only read would have missed: `use_clipped_linears=true` on the real checkpoint
+  (genuine finite per-tensor clamp bounds like `[-6.375,6.3125]` on every attention/MLP projection,
+  not the harmless ±inf default `Gemma4ClippableLinear` falls back to), and the position table's
+  real on-disk shape (`[2,10240,768]`, one tensor, not two).
+
+  Gated at cosine **1.000000000** against a tiny-random `Gemma4VisionModel`+`Gemma4MultimodalEmbedder`
+  checkpoint (exercises every component including the real clamp — `scripts/pin_gemma4_vision.py`),
+  and cosine **1.000000000** (max|diff| ≈6.9e-6, pure f32 rounding noise across 16 layers) against
+  the REAL `google/gemma-4-E2B-it` vision-tower weights on synthetic patches, matched f32 precision
+  both sides (`scripts/pin_gemma4_vision_real.py`). The aspect-ratio tiling rule
+  (`Gemma4AspectRatioSize`) is cross-checked numerically against the real
+  `get_aspect_ratio_preserving_size` formula on five width/height/budget combinations — exact
+  match. Pixel-level resize parity (PIL bicubic vs this repo's bilinear) is a known, explicitly
+  deferred gap, same as the existing SigLIP preprocessing's own documented gap — not attempted here.
+
+  Decoder-side wiring (goinfer's own tree, not aikit): `runLayersGemma4` split into a thin wrapper
+  plus `runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVCache)` (`decoder/
+  forward_gemma4.go`) — the "embed-by-vector" seam this family lacked (the June seams,
+  `runLayersFromEmbed`/`runLayersFromEmbedN`, only reach the GENERIC forward path; gemma4's own
+  path never went through them). `pleTokenID` lets a caller feed the checkpoint's `pad_token_id`
+  (new `Config.PadTokenID`/`gemma4Params.PadTokenID`, `json:"pad_token_id"`, picked up automatically
+  from `text_config` by `loadConfig`'s existing merge) at a multimodal position's PLE
+  token-identity lookup, matching HF's real substitution exactly. Verified two ways against the
+  real E2B GGUF: (1) `runLayersGemma4FromEmbed` reproduces `runLayersGemma4` BIT-FOR-BIT on the
+  ordinary text path (a real regression check, not just "no build error") — proven by every
+  existing gemma4 forward-parity gate staying green post-refactor, including the real E2B GGUF
+  gate at cosine 0.99924 (unchanged from before), plus a dedicated equivalence test; (2) PAD
+  substitution genuinely changes the output relative to the real-token-id path — proving the new
+  branch is actually wired, not a silent no-op (`TestGemma4RunLayersFromEmbed_matchesTokenPath`).
+  One simplification worth flagging: E2B/E4B ship `use_bidirectional_attention: null`, so the
+  layer-type-aware image-block bidirectional mask (`AND(sliding_window, OR(causal, blockwise))`,
+  global layers stay causal) is **not** built yet — E2B doesn't need it, and there's no real
+  checkpoint locally to gate it against (only 26B-A4B/31B set `"vision"`). Deferred to whenever
+  that checkpoint is available.
+
+  **What Phase A does NOT include, deliberately scoped out of this pass**: the full serving/
+  generation integration (placeholder-token constants, a `multimodal.Gemma4ImageBlock`-style
+  prompt splice, a `GenerateGemma4VL`-shaped driving loop, HTTP wiring in `internal/serveapp/
+  vision_serve.go`) — the vision-tower primitive and its decoder-side hook are proven correct in
+  isolation; wiring them into an end-to-end image-in-prompt request is real, separate work, sized
+  similarly to Qwen2.5-VL's own `vision_serve.go` integration, and is the natural next slice.
+  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched.
 - **P8 · Finish P5: Qwen3.x-VL image path + GGUF `mmproj`.** Phase 0 on the real Qwen3.6-VL config
   (the vision encoder, dynamic resolution and patch grids, m-RoPE's three position components
   which the text path already degenerates correctly, any DeepStack-style multi-level injection —
@@ -106,6 +324,37 @@ number is published without provenance.
   mismatched pair by tensor-shape check rather than by filename. Gate: end-to-end parity on the
   safetensors path AND bit-identity between the safetensors tower and the mmproj tower on the same
   checkpoint (they are the same weights in two containers).
+
+  **Phase 0 DONE, 2026-09-08 (text decoder only, no vision) — verified "don't assume" against real
+  HF `transformers` source, not a description.** DeepStack is REAL and changes the injection shape:
+  the vision tower taps hidden states at 3 intermediate layers (`deepstack_visual_indexes`, default
+  `(8,16,24)` of 27), each through its own merger, and the text decoder ADDS the result into the
+  residual stream at each of the FIRST 3 decoder layers (`hidden_states[visual_pos_masks] +=
+  visual_embeds`) — not the single splice-before-layer-0 every other VL family here uses. The vision
+  tower also gained a learned absolute position embedding on top of its axial rotary one (confirmed
+  absent in Qwen2.5-VL). m-RoPE's frequency→component layout changed from Qwen2.5-VL's contiguous
+  blocks (`[TTT…HHH…WWW]`) to a per-frequency-index INTERLEAVED strided layout
+  (`recomposition_frequencies`) — a different, incompatible formula, not a parameter tweak.
+
+  Given that scope, Phase 0 shipped ONLY the text decoder — `qwen3_vlArchitecture`
+  (`decoder/registry.go`, aliases Qwen3's dense attention shape: per-head q/k RMSNorm, GQA, no
+  q/k/v bias — confirmed from `Qwen3VLTextAttention` source, NOT Qwen2's shape, which
+  `qwen2_5_vlArchitecture` aliases) + the interleaved m-RoPE component formula
+  (`mropeComponentInterleaved`, `decoder/rope.go`, pinned directly against the real HF slicing
+  logic, not a re-derivation of it). Tiny-golden text-only parity: cosine 1.0, exact argmax +
+  continuation (`decoder/qwen3vl_test.go`, `scripts/pin_qwen3vl_tiny.py`). Real-checkpoint gate
+  written (`decoder/qwen3vl_real_test.go`, `scripts/pin_qwen3vl_real.py`,
+  `GOINFER_QWEN3VL_2B`/`testdata/assets.json`) but **not yet run — `Qwen/Qwen3-VL-2B-Instruct` is
+  not present on this box as of 2026-09-08**; the gate skips cleanly rather than being silently
+  absent, and this is a real, tracked gap, not a forgotten one.
+
+  **Explicitly out of scope for Phase 0, named so they don't get lost**: the vision tower + DeepStack
+  injection (needs a new decoder-forward hook for additive injection at N early layers — nothing
+  here does that yet — plus a new `aikit/vision` encoder: axial rotary + interpolated learned
+  pos-embed + multi-tap mergers, a cross-repo undertaking); GGUF `mmproj` (llama.cpp already
+  supports Qwen3-VL — `PROJECTOR_TYPE_QWEN3VL` in `clip.cpp` — but `aikit/vision`'s loading path is
+  safetensors-specific by construction, needing a new tensor-source abstraction); the MoE variants
+  (30B-A3B/235B-A22B) — Phase 0 only targets the dense sizes.
 - **P9 · Image turns in the agent loop.** (a) Prefix reuse over image blocks: an image's embedding
   block is a pure function of its bytes and the tower, so key the resident bookkeeping on a hash of
   the image bytes standing in for a token id at each placeholder position — a reused prefix with an
@@ -114,9 +363,42 @@ number is published without provenance.
   plus the agent-turn TTFT cell with a screenshot attached. (b) The fit guard prices the tower
   (resident weights) and image-token KV at the family's per-image token count × images per turn;
   request-time admission (task-fit-to-hardware Phase 1, from first-hour R13) counts image tokens
-  in the prompt. (c) `serve check` gains a vision row (a fixed small data-URI image, a question
+  in the prompt.
+
+  **(b) DONE, 2026-09-08 — turned out to be one fix, not two.** Investigated as two separate asks
+  and found both collapsed into the SAME pre-existing, non-vision-specific gap:
+  `decoder/fitguard.go`'s `fitCheckFor` priced weight/KV bytes for `.gguf` paths only — any
+  safetensors directory (which is EVERY currently-working vision-language load in this project;
+  Qwen2.5-VL's own GGUF path is text-only, no mmproj) returned an unconditional zero-weight,
+  always-fits check, vision or not. Closed generally: `estimateSafetensorsWeightBytes` prices a
+  safetensors checkpoint the same way `estimateGGUFWeightBytes` always priced a GGUF one — shape-
+  only, quant-independent tensor element counts, NEVER on-disk file size (a bf16 checkpoint shrinks
+  several-fold once quantized on load, so file-size pricing would refuse loads that fit
+  comfortably — the exact "wrong in the refusing direction" failure this guard's own design
+  principle rules out). Because the estimator sums every tensor in the checkpoint uniformly, a
+  bundled vision tower (Gemma 3: confirmed 50 `vision.*`/`multi_modal_projector.*` tensors present
+  and counted) gets priced automatically — no vision-specific code needed in the guard at all.
+  Image-token KV needed nothing new either: unpinned loads already price KV at the model's full
+  `MaxPositions` (R13), the request-time worst case regardless of whether those positions hold text
+  or image placeholders; and request-time admission (`contextLengthError`/`clampMaxTokens`,
+  `internal/serveapp/openai.go`) already ran on the fully placeholder-expanded prompt (`vi.ids`,
+  `vision_serve.go`) before this pass touched anything — confirmed by reading the code, not
+  assumed. See `docs/task-first-hour.md`'s R2/guard section for the full writeup and
+  `decoder/fitguard_test.go`'s `TestFitEstimate_safetensorsAgreesWithResidentWeightBytes` /
+  `TestFitCheckFor_pricesSafetensorsNotJustGGUF` for the gates.
+  (c) `serve check` gains a vision row (a fixed small data-URI image, a question
   with one right answer) that reports SKIP-with-reason when no tower is loaded. (d) The
   recommendation registry gains one VL checkpoint per box class, with the tower's cost in the line.
+
+  **(d) BLOCKED, not attempted — a real, structural gap, not a small addition.** The `pull`
+  recommendation registry (`pull/registry.go`) only ever recommends a SINGLE-FILE GGUF download
+  (every existing entry names one `.gguf` file), and this project's GGUF loader has zero
+  vision/mmproj support (confirmed during P8's research — llama.cpp already supports Qwen3-VL's
+  mmproj format, this project reads neither half of that pair). Adding a GGUF checkpoint entry for
+  a "VL" family would recommend something this project cannot actually use for images — worse than
+  no recommendation, not better. A real fix needs either a new safetensors-directory download mode
+  in `pull`, or GGUF `mmproj` support landing first (P8b) so a GGUF-based recommendation would mean
+  something. Left as a named, tracked gap rather than a hollow entry.
 - **P10 · Breadth on the small end.** LFM2.5-VL-3B (SigLIP2 on `lfm2`), Ministral 3's Pixtral tower
   (the `ministral3` decoder exists; the tower is in the same checkpoint), North Micro Vision 2.4B.
   Each is a tower descriptor + projector on a decoder already at parity; do them in that order,
@@ -156,7 +438,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
 
-- **VL config flattening** — `decoder/config.go:1306` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:1315` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,

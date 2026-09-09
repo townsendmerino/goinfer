@@ -459,7 +459,7 @@ func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error 
 	return a.r.SetAdapter(layers)
 }
 
-func (a *metalResident) UploadKV(layer int, keys, vals []float32) error {
+func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	return fmt.Errorf("metal: UploadKV not supported (re-run the prefix through Forward)")
 }
 

@@ -204,7 +204,7 @@ func TestDecodeRunnerW4A8_parity(t *testing.T) {
 		t.Fatalf("newDecodeRunner(W4A8): %v", err)
 	}
 	defer runner.Release()
-	got, err := runner.Run(x0, pos)
+	got, err := runner.Run(x0, pos, pos)
 	if err != nil {
 		t.Fatalf("W4A8 Run: %v", err)
 	}

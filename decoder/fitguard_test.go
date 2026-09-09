@@ -342,6 +342,82 @@ func TestFitEstimate_agreesWithResidentWeightBytes(t *testing.T) {
 	}
 }
 
+// TestFitEstimate_safetensorsAgreesWithResidentWeightBytes is
+// TestFitEstimate_agreesWithResidentWeightBytes's safetensors twin (P9b, docs/multimodal.md):
+// proves estimateSafetensorsWeightBytes's shape-based, quant-priced estimate actually tracks a
+// real load's resident weight bytes, on a real (tracked, non-gitignored) safetensors checkpoint —
+// not just that it compiles or returns something positive. This is what closes the gap
+// fitCheckFor's OLD behavior left: a safetensors path returned a zero weight estimate
+// unconditionally, so fits() always reported true regardless of the machine's actual RAM.
+func TestFitEstimate_safetensorsAgreesWithResidentWeightBytes(t *testing.T) {
+	const dir = "testdata/internlm2-tiny"
+	for _, q := range []struct {
+		name string
+		mode quantMode
+	}{{"int4", quantInt4}, {"int8int8", quantInt8I8}} {
+		t.Run(q.name, func(t *testing.T) {
+			est := estimateSafetensorsWeightBytes(dir, q.mode)
+			if est <= 0 {
+				t.Fatal("estimator returned 0 for a real safetensors checkpoint")
+			}
+			m, err := Load(dir, Options{Quant: q.name})
+			if err != nil {
+				t.Skipf("cannot load fixture at %s: %v", q.name, err)
+			}
+			defer m.Close()
+			actual := m.ResidentWeightBytes()
+			if actual <= 0 {
+				t.Skip("accountant reported 0 for this fixture")
+			}
+			ratio := float64(est) / float64(actual)
+			// Same band as the GGUF twin, same reasoning: quantBytesPerElem measures through the
+			// real quantizeWM path, so remaining slack is the estimator pricing every tensor
+			// uniformly while the accountant reads the real backing slices.
+			if ratio < 0.85 || ratio > 1.25 {
+				t.Errorf("estimate %d vs accounted %d (ratio %.2f) — the pre-load safetensors "+
+					"estimate has drifted from ResidentWeightBytes", est, actual, ratio)
+			}
+			t.Logf("%s: estimate %d, accounted %d, ratio %.2f", q.name, est, actual, ratio)
+		})
+	}
+}
+
+// TestFitCheckFor_pricesSafetensorsNotJustGGUF pins the actual regression this closes: before
+// P9b, fitCheckFor returned a zero-weight (therefore always-fits) check for ANY non-.gguf path —
+// a safetensors checkpoint's fit guard was silent by construction, never refusing regardless of
+// how little RAM was injected. Confirms both weightBytes and kvBytes are now non-zero for a real
+// safetensors directory with a resolvable context.
+func TestFitCheckFor_pricesSafetensorsNotJustGGUF(t *testing.T) {
+	const dir = "testdata/internlm2-tiny"
+	f := fitCheckFor(dir, "int4", quantInt4, Options{})
+	if f.weightBytes <= 0 {
+		t.Fatalf("fitCheckFor(%s).weightBytes = %d, want > 0 — safetensors path still unpriced", dir, f.weightBytes)
+	}
+	if f.cfg == nil {
+		t.Fatal("fitCheckFor(dir).cfg = nil — config.json was not read for the safetensors path")
+	}
+	if f.effCtx <= 0 {
+		t.Fatalf("fitCheckFor(%s).effCtx = %d, want > 0 (a real config with max_position_embeddings)", dir, f.effCtx)
+	}
+	if f.kvBytes <= 0 {
+		t.Fatalf("fitCheckFor(%s).kvBytes = %d, want > 0", dir, f.kvBytes)
+	}
+}
+
+// TestFitCheckFor_unresolvableSafetensorsProceedsUnknown pins the "every unknown proceeds"
+// discipline for the NEW branch specifically: a directory that is not a real safetensors
+// checkpoint (no config.json, no model.safetensors) must return a zero-weight, unknown check —
+// never an error, never a panic — exactly like an unreadable .gguf already does.
+func TestFitCheckFor_unresolvableSafetensorsProceedsUnknown(t *testing.T) {
+	f := fitCheckFor(t.TempDir(), "int4", quantInt4, Options{})
+	if f.weightBytes != 0 {
+		t.Errorf("weightBytes = %d, want 0 (unresolvable directory)", f.weightBytes)
+	}
+	if !f.fits() {
+		t.Error("an unresolvable directory must proceed (fits() == true, the unknown case), not refuse")
+	}
+}
+
 // injectHostRAM replaces BOTH the machine's total-RAM figure AND its currently-available figure
 // with the same value, for one test. Most callers do not care about the total-vs-available
 // distinction (they are testing the arithmetic given "a machine with N bytes to work with"); a

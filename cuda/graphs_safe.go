@@ -77,7 +77,7 @@ func (r *cudaResident) graphsSelfTest() error {
 			return nil, e
 		}
 		r.graphs = useGraphs
-		if e := r.launchToken(emb, 0, true); e != nil {
+		if e := r.launchToken(emb, 0, 0, true); e != nil {
 			return nil, e
 		}
 		if e := r.stream.Sync(); e != nil {

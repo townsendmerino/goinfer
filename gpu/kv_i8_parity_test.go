@@ -131,11 +131,11 @@ func TestKVCacheI8_parity(t *testing.T) {
 	for s := range steps {
 		x := randMat(hidden, uint64(7000+s))
 		pos := prior + s
-		l32, err := runner32.Run(x, pos)
+		l32, err := runner32.Run(x, pos, pos)
 		if err != nil {
 			t.Fatalf("f32 Run step %d: %v", s, err)
 		}
-		lI8, err := runnerI8.Run(x, pos)
+		lI8, err := runnerI8.Run(x, pos, pos)
 		if err != nil {
 			t.Fatalf("i8 Run step %d: %v", s, err)
 		}

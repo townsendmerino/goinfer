@@ -107,13 +107,13 @@ func TestDecodeRunnerW4A8_7B_fit(t *testing.T) {
 		gb(wBytes), gb(kvBytes), gb(wBytes+kvBytes))
 
 	// throughput: warm, then time decode Run().
-	if _, err := runner.Run(x0, pos); err != nil {
+	if _, err := runner.Run(x0, pos, pos); err != nil {
 		t.Fatalf("7B W4A8 Run: %v (allocated but failed to decode)", err)
 	}
 	const iters = 20
 	t0 := time.Now()
 	for range iters {
-		if _, err := runner.Run(x0, pos); err != nil {
+		if _, err := runner.Run(x0, pos, pos); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	}

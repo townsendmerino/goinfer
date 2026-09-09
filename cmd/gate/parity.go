@@ -118,11 +118,14 @@ var parityRealckptGates = []gateCheck{
 	{"granite-gguf", "TestGraniteReal_gate"},
 	{"granite-oracle", "TestGraniteReal_oracle"},
 	{"laguna", "TestLagunaReal_gate"},
+	{"laguna-oracle", "TestLagunaReal_oracle"},
+	{"qwen25vl-real", "TestQwen25VLReal_gate"},
 	{"laguna-gguf", "TestLagunaGGUF_gate"},
 	{"glm4moe-air", "TestGlm4MoeAir_gate"},
 	{"cohere", "TestCohereAyaReal_gate"},
 	{"cohere2", "TestCohere2R7bReal_gate"},
 	{"qwen3.8-dense", "TestQwen38Real_gate"},
+	{"qwen3.8-dense-oracle", "TestQwen38Real_oracle"},
 	{"qwen3.8-gguf", "TestQwen38GGUF_gate"},
 	{"qwen3.8-gguf-weightdiff", "TestQwen38GGUF_weightDiff"},
 	// smollm3's asset (testdata/assets.json GOINFER_SMOLLM3_3B) and gate
@@ -151,7 +154,18 @@ var parityRealckptGates = []gateCheck{
 	// corrupt reference, not a goinfer defect; see docs/parity-coverage-policy.md's RESOLVED
 	// note) so the missing registration was doubly invisible until the fix made the gate green.
 	{"internlm2-real", "TestInternLM2_1_8bReal_gate"},
+	{"qwen2moe-oracle", "TestQwen2MoeReal_oracle"},
 }
+
+// Not in parityRealckptGates/realckptNotRequired (and not found by realckptDirs' decoder-only
+// scan): cuda/qwen25vl_resident_real_test.go's TestQwen25VLResidentReal_gate — gap 0's real-
+// checkpoint continuation of qwen25vl-real above (that gate is prefill-only; this one exercises
+// GenerateQwenVL's actual resident-decode path, one CPU-vs-hybrid step on the real image, via
+// UploadKV + ForwardMRoPE). It lives in package cuda (needs the cuda backend's init() to
+// register "cuda" with decoder — decoder itself cannot import cuda, an import cycle) and is
+// tagged `cuda && goinfer_testhooks`, the same convention as its siblings
+// (uploadkv_parity_test.go, forwardmrope_parity_test.go) — not `realckpt`, so it is outside this
+// list's discipline by construction, the same way those two already are.
 
 // emitGates are the numeric-oracle gates expected to record a manifest row under EMIT_MANIFEST.
 // Family here is the manifest family the gate writes, which is why the pair is the other way round
@@ -171,6 +185,10 @@ var emitGates = []gateCheck{
 	{"olmo3", "TestOlmo3Real_gate"},
 	{"olmo_hybrid", "TestOlmoHybridReal_gate"},
 	{"internlm2", "TestInternLM2_1_8bReal_gate"},
+	{"qwen2_moe", "TestQwen2MoeReal_oracle"},
+	{"laguna", "TestLagunaReal_oracle"},
+	{"qwen3_5", "TestQwen38Real_oracle"},
+	{"qwen2_5_vl", "TestQwen25VLReal_gate"},
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -699,6 +717,43 @@ var awaitingFirstConfirmation = map[string]string{
 		"the regenerated golden and a re-run both confirm cosine 1.000000. See " +
 		"docs/parity-coverage-policy.md's RESOLVED note for the full account. Still promote from the first " +
 		"sweep that runs it — this note records the fix, not a ledger confirmation.",
+	"TestQwen2MoeReal_oracle": "2026-09-08 — newly required (T3 promotion of qwen2_moe from tiny-golden to a " +
+		"released checkpoint); registered alongside the gate and asset in the same change, per the " +
+		"discipline established after smollm3/lfm2/mistral3/internlm2's registration gaps; promote from " +
+		"the first sweep that runs it",
+	"TestLagunaReal_oracle": "2026-09-08 — newly required (T3 numeric promotion of laguna; " +
+		"TestLagunaReal_gate above was coherence-only by design, never comparing a logit against an " +
+		"independent reference); pinned via scripts/pin_sequential_oracle.py's accelerate disk-offload " +
+		"technique (adapted from pin_qwen3next_real.py) on a checkpoint already resident on this box, " +
+		"no download. First run FAILED on the greedy continuation (argmax on the prompt matched, " +
+		"cosine 0.984776 cleared the pre-registered 0.98 int4 floor, but continuation[3] diverged: " +
+		"got 110, want 785) — not investigated further; consistent with, but not confirmed as, the " +
+		"MoE router-flip noise this repo has already characterized at int8 (docs/queue's " +
+		"'MoE router-flip noise floor'), now seen at int4 on a 256-expert top-8 router. Left required " +
+		"and red rather than moved to realckptNotRequired. Still promote from the first sweep that " +
+		"runs it once resolved.",
+	"TestQwen38Real_oracle": "2026-09-08 — newly required (T3 numeric promotion of qwen3_5; " +
+		"TestQwen38Real_gate above was coherence-only — this family's own manifest text said plainly " +
+		"no bf16 reference forward had ever been run); pinned via scripts/pin_sequential_oracle.py " +
+		"(the SAME script as laguna's, --family qwen3_5) on a checkpoint already resident on this " +
+		"box, no download. First run FAILED on the greedy continuation, the same shape as laguna's " +
+		"above: argmax on the prompt matched (11751), cosine 0.993235 cleared the 0.98 int4 floor " +
+		"comfortably, but continuation[2] diverged (got 11751 — repeats \"Paris\" — want 198, a " +
+		"newline). Unlike laguna this family is DENSE (no MoE), so the router-flip explanation " +
+		"offered there does not apply here; the two families sharing the same failure SHAPE (prompt " +
+		"argmax + floor-clearing cosine, continuation drift a few tokens in) despite sharing no " +
+		"mixer in common (DeltaNet+softmax hybrid vs MoE) may point at int4 itself on this box's " +
+		"quantizer rather than either family's own wiring — not investigated further; a real lead " +
+		"for whoever picks this up next, not a claim. Left required and red rather than moved to " +
+		"realckptNotRequired. Still promote from the first sweep that runs it once resolved.",
+	"TestQwen25VLReal_gate": "2026-09-08 — newly required (T3 promotion of qwen2_5_vl from tiny-golden " +
+		"to a released checkpoint). The first family in this batch with a DIFFERENT oracle shape: " +
+		"a real AutoImageProcessor run on a real (pre-sized) image, through the real vision encoder " +
+		"and real decoder — not a text-only forward. Scoped to the prefill forward only, not greedy " +
+		"continuation past the image block (a genuinely different, unbuilt m-RoPE-continuation code " +
+		"path — see the gate's own doc comment). PASSED first run: argmax exact, cosine 0.999459. " +
+		"Registered alongside the gate and asset in the same change; promote from the first sweep " +
+		"that runs it.",
 }
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
@@ -740,6 +795,10 @@ var realckptNotRequired = map[string]string{
 		"full-model gate TestQwen35Real_gate2FullModel is required",
 	"TestQwen3Real_gate": "unregistered asset (GOINFER_QWEN3_REAL); qwen3 is required through " +
 		"TestQwen3_forwardParity + TestGGUF_qwen3_parity",
+	"TestQwen3VLReal_gate": "qwen3_vl is required through TestQwen3VL_textParity (tiny-golden, " +
+		"cosine 1.0); this adds the real Qwen3-VL-2B-Instruct checkpoint (GOINFER_QWEN3VL_2B), " +
+		"not yet pulled to any box (P8 Phase 0, docs/multimodal.md) — a real, tracked gap, not an " +
+		"unregistered asset",
 }
 
 // realckptDirs are the packages the realckpt cell runs, and so the packages scanned for its gates.

@@ -316,13 +316,17 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 	if err != nil {
 		return "", err
 	}
-	hidden, err := s.venc.Forward(pv.Data)
-	if err != nil {
-		return "", fmt.Errorf("vision encoder: %w", err)
-	}
-	feats, err := s.vproj.Forward(hidden)
-	if err != nil {
-		return "", fmt.Errorf("vision projector: %w", err)
+	imgHash := multimodal.HashImageBytes(image)
+	features := func() ([]float32, error) {
+		hidden, err := s.venc.Forward(pv.Data)
+		if err != nil {
+			return nil, fmt.Errorf("vision encoder: %w", err)
+		}
+		feats, err := s.vproj.Forward(hidden)
+		if err != nil {
+			return nil, fmt.Errorf("vision projector: %w", err)
+		}
+		return feats, nil
 	}
 	n := s.vproj.MMTokens()
 
@@ -350,7 +354,7 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 		PresencePenalty:  s.opts.PresencePenalty,
 		StopIDs:          s.stopIDs,
 	}
-	tokens, gen := s.model.GenerateVL(ctx, ids, feats, imgPos, imgLen, s.opts.MaxTokens, sp)
+	tokens, gen := s.model.GenerateVL(ctx, ids, imgPos, imgLen, imgHash, features, s.opts.MaxTokens, sp)
 	reply, err := s.streamGen(ctx, tokens, gen, ev.Token)
 
 	// History keeps the user text + reply (the image bytes are not retained).

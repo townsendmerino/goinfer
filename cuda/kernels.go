@@ -136,6 +136,68 @@ var loraPTX []byte
 //go:embed testdata/attn_block.ptx
 var attnBlockPTX []byte
 
+// attnImgPrefillPTX: attn_img_batched — Gemma 3's image-block bidirectional prefill attention
+// (decoder.ResidentImagePrefill / cuda.PrefillImageLast). A verbatim copy of
+// prefill_batched.cu's attn_batched, except a query row whose OWN position lies inside a
+// caller-supplied [imgStart,imgEnd) range sees the whole block instead of only its causal
+// prefix — text before and after the block stays exactly causal (NOT attn_block_full's uniform
+// widening, which is unconditional for every row). Its own module for the same isolation reason
+// argmaxPTX/routerF32PTX/attnBlockPTX state: adding a kernel to prefill_batched.cu would
+// regenerate that PTX and risk shifting codegen for kernels every batched-prefill parity gate
+// rests on. Verified at build time: prefill_batched.ptx and glue.ptx are byte-unchanged.
+//
+// IMPORTANT (see cuda/attn_img_prefill.cu's own header for the full reasoning): the kernel's
+// sliding-window start is derived from the row's plain CAUSAL key count, never from the
+// image-widened one — decoupled on purpose, matching decoder/kvcache.go's WindowStart/attendHi
+// split, which the CPU reference this kernel must match bit-for-bit also keeps decoupled. A
+// future edit that "simplifies" this back to attn_batched's coupled formula would silently
+// under-size the shared-memory window for a windowed layer whenever an image block starts more
+// than one window-length into the sequence — a shared-memory out-of-bounds write, not a clean
+// wrong answer, and invisible on a real fixture whose image sits near the start of the prompt.
+// See cuda/attn_img_prefill.cu.
+//
+//go:embed testdata/attn_img_prefill.ptx
+var attnImgPrefillPTX []byte
+
+// ropeMRopePrefillPTX: rope_kv_mrope_batched — Qwen2.5-VL's m-RoPE batched-prefill rotation
+// (decoder.ResidentMRoPEPrefill / cuda.PrefillMRoPELast). A verbatim copy of
+// prefill_batched.cu's rope_kv_batched, except the rotation angle is a PER-ROW,
+// PER-FREQUENCY-SECTION lookup instead of a single row-sequential scalar — each frequency index
+// d rotates by pos[comp(d)]·invFreq[d], where comp(d) picks temporal/height/width per the
+// model's MRopeSection cumulative boundaries. Its own module for the same isolation reason
+// argmaxPTX/routerF32PTX/attnBlockPTX/attnImgPrefillPTX state: adding a kernel to
+// prefill_batched.cu would regenerate that PTX and risk shifting codegen for kernels every
+// batched-prefill parity gate rests on. Verified at build time: prefill_batched.ptx and glue.ptx
+// are byte-unchanged.
+//
+// IMPORTANT (see cuda/rope_mrope_prefill.cu's own header): EVERY row needs the per-row lookup,
+// not just image-block rows — decoder/rope.go's mropePositions resumes scalar counting AFTER an
+// image block from a value COMPRESSED by the merged image grid, not the naive sequential count
+// rope_kv_batched's own formula assumes. The KV-cache STORE index (pos = startPos+m) stays
+// row-sequential and unchanged; only the rotation angle is widened — mirrors rope_kv's existing
+// pos/ropePos split (cuda/gemv_fwd.cu) for decode, generalized from one scalar to a per-row triple.
+// See cuda/rope_mrope_prefill.cu.
+//
+//go:embed testdata/rope_mrope_prefill.ptx
+var ropeMRopePrefillPTX []byte
+
+// layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched — the resident SigLIP vision
+// tower's LayerNorm (P6, docs/multimodal.md's "P6's other half"), a genuinely new primitive: no
+// text family in this codebase uses LayerNorm (mean+variance, weight+bias), only RMSNorm. Own
+// module for the same isolation reason as every kernel above — prefill_batched.ptx/glue.ptx stay
+// untouched. See cuda/layernorm_quant.cu / cuda/vision_encoder.go.
+//
+//go:embed testdata/layernorm_quant.ptx
+var layernormQuantPTX []byte
+
+// geluQuantPTX: gelu_quant_batched — the resident SigLIP vision tower's plain (non-gated) MLP
+// activation (h = FC2(GELU_tanh(FC1(x)))), distinct from glue.cu's glu_quant, which computes a
+// GATED act(gate)*up product for the SwiGLU/GeGLU MLP every text family here uses. Own module, same
+// isolation reason as above. See cuda/gelu_quant.cu / cuda/vision_encoder.go.
+//
+//go:embed testdata/gelu_quant.ptx
+var geluQuantPTX []byte
+
 // attnFusedPTX: attn_fused_hd64 / attn_fused_hd128 — the L2 FlashAttention-style fused prefill
 // attention (docs/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
 // attn_block.cu records: adding a kernel to prefill_batched.cu regenerates that PTX and risks

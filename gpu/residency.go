@@ -1069,6 +1069,8 @@ func (rd *residentDecoder) checkCap(pos, n int) error {
 	return nil
 }
 
+var _ decoder.ResidentMRoPE = (*residentDecoder)(nil)
+
 func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {
 	if err := rd.checkCap(pos, 1); err != nil {
 		return nil, err
@@ -1083,7 +1085,29 @@ func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, err
 			return nil, rd.resetErr
 		}
 	}
-	logits, err := rd.runner.Run(embedding, pos)
+	logits, err := rd.runner.Run(embedding, pos, pos)
+	if err != nil {
+		return nil, err
+	}
+	applySoftcap(logits, rd.finalSoftcap)
+	return logits, nil
+}
+
+// ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rope-angle position (ropePos)
+// is supplied separately from the KV-cache/attention position (pos) — Qwen2.5-VL decode past
+// an image block needs them to differ (posUni's doc comment, decoderunner.go). Forward(pos) ==
+// ForwardMRoPE(pos, pos) exactly, so this does not duplicate Forward's body.
+func (rd *residentDecoder) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
+	if err := rd.checkCap(pos, 1); err != nil {
+		return nil, err
+	}
+	if pos == 0 {
+		rd.Reset()
+		if rd.resetErr != nil {
+			return nil, rd.resetErr
+		}
+	}
+	logits, err := rd.runner.Run(embedding, pos, ropePos)
 	if err != nil {
 		return nil, err
 	}
@@ -1162,17 +1186,22 @@ func (rd *residentDecoder) SetAdapter(layers []decoder.ResidentAdapterLayer) err
 	return rd.runner.SetAdapter(layers)
 }
 
-// UploadKV writes a layer's post-RoPE K and raw V (positions 0..n-1) into the
-// resident caches — the prefill bridge. keys/vals are [n*kvDim] f32, packed to the
-// cache's precision (f32 raw, f16 via packF16Pairs, int8 per-head + scales) so the
-// upload matches what an on-device decode would have written. Currently unused (the
-// stateless prefill seeds the caches via sequential Forward); kept for prefix-reuse.
-func (rd *residentDecoder) UploadKV(layer int, keys, vals []float32) error {
+// UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute
+// positions base..base+n-1 — the prefill bridge. keys/vals are [n*kvDim] f32, packed to the
+// cache's precision (f32 raw, f16 via packF16Pairs, int8 per-head + scales) so the upload
+// matches what an on-device decode would have written. base is normally 0; a wrapped CPU-side
+// sliding-window ring's live K/V can start later (KVCache.LayerKV's own base return) — WriteBuffer
+// already takes a byte offset, so this is a byte-math change per packing, not a new primitive.
+// Element widths: f32 raw = 4 B/elem; f16 (packF16Pairs, 2 values/u32) = 2 B/elem; int8
+// (packKVInt8, 4 values/u32) = 1 B/elem for the KV buffers, and nKV f32 scales/position (4
+// B/elem) for the separate scale buffers.
+func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error {
 	if layer < 0 || layer >= len(rd.rm.layers) {
 		return fmt.Errorf("gpu: UploadKV layer %d out of range", layer)
 	}
-	if kvDim := rd.nKV * rd.hd; kvDim > 0 {
-		if err := rd.checkCap(0, len(keys)/kvDim); err != nil {
+	kvDim := rd.nKV * rd.hd
+	if kvDim > 0 {
+		if err := rd.checkCap(base, len(keys)/kvDim); err != nil {
 			return err
 		}
 	}
@@ -1181,26 +1210,30 @@ func (rd *residentDecoder) UploadKV(layer int, keys, vals []float32) error {
 	case rd.rm.kvI8:
 		kw, ks := packKVInt8(keys, rd.nKV, rd.hd)
 		vw, vs := packKVInt8(vals, rd.nKV, rd.hd)
-		if err := rd.c.queue.WriteBuffer(l.kCache, 0, wgpu.ToBytes(kw)); err != nil {
+		kvOff := uint64(base) * uint64(kvDim)
+		scOff := uint64(base) * uint64(rd.nKV) * 4
+		if err := rd.c.queue.WriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.WriteBuffer(l.kScale, 0, wgpu.ToBytes(ks)); err != nil {
+		if err := rd.c.queue.WriteBuffer(l.kScale, scOff, wgpu.ToBytes(ks)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.WriteBuffer(l.vCache, 0, wgpu.ToBytes(vw)); err != nil {
+		if err := rd.c.queue.WriteBuffer(l.vCache, kvOff, wgpu.ToBytes(vw)); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vScale, 0, wgpu.ToBytes(vs))
+		return rd.c.queue.WriteBuffer(l.vScale, scOff, wgpu.ToBytes(vs))
 	case rd.rm.kvF16:
-		if err := rd.c.queue.WriteBuffer(l.kCache, 0, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
+		off := uint64(base) * uint64(kvDim) * 2
+		if err := rd.c.queue.WriteBuffer(l.kCache, off, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vCache, 0, wgpu.ToBytes(packF16Pairs(vals)))
+		return rd.c.queue.WriteBuffer(l.vCache, off, wgpu.ToBytes(packF16Pairs(vals)))
 	default:
-		if err := rd.c.queue.WriteBuffer(l.kCache, 0, wgpu.ToBytes(keys)); err != nil {
+		off := uint64(base) * uint64(kvDim) * 4
+		if err := rd.c.queue.WriteBuffer(l.kCache, off, wgpu.ToBytes(keys)); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vCache, 0, wgpu.ToBytes(vals))
+		return rd.c.queue.WriteBuffer(l.vCache, off, wgpu.ToBytes(vals))
 	}
 }
 

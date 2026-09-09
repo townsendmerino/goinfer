@@ -17,7 +17,13 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// dense, plain — the subset every backend implements
 	"qwen2":      {},
 	"qwen2_5_vl": {},
-	"llama":      {},
+	// qwen3_vl (P8 Phase 0, TEXT ONLY): aliases plain qwen3's attention shape exactly
+	// (qwen3_vlArchitecture calls qwen3Architecture), so it needs the same FeatQKNorm and
+	// nothing else — MRopeSection/MRopeInterleaved only diverge from scalar RoPE on an image
+	// path this phase doesn't have (cache.mropePos is never set for ordinary Generate), same
+	// reasoning as qwen2_5_vl's empty profile above.
+	"qwen3_vl": {FeatQKNorm},
+	"llama":    {},
 	// SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/task-gpu-paths-2026-09.md):
 	// cuda+metal now declare FeatNoPE (RopeInvFreqLayer zeroes the NoPE layers' invFreq table,
 	// no new kernel), so this is SmolLM3's ONLY required feature and it now reaches both —
@@ -277,6 +283,7 @@ var admissionGolden = map[string][]string{
 	"phi3":       {"cuda", "metal", "webgpu"},
 	"qwen2":      {"cuda", "metal", "webgpu"},
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
+	"qwen3_vl":   {"cuda", "metal", "webgpu"}, // text-only (P8 Phase 0); same admission as plain qwen3
 	"qwen2_moe":  {"cuda", "metal", "webgpu"}, // cuda joined 2026-08-20 (the gate weight, not a kernel)
 	"qwen3":      {"cuda", "metal", "webgpu"},
 	// qwen3_moe needs {FeatMoE, FeatQKNorm} — strictly WEAKER than qwen2_moe's

@@ -74,7 +74,7 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 			t.Fatal(e)
 		}
 		rd.Reset()
-		lg, e := runner.Run(emb, 0)
+		lg, e := runner.Run(emb, 0, 0)
 		runner.Release()
 		if e != nil {
 			t.Fatal(e)

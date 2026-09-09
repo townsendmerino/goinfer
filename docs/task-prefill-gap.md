@@ -249,7 +249,7 @@ gate it produced cannot answer the question it was built for:
 
 **What replaces it.** The reference is the CPU backend on the same GGUF with f32 activations —
 `Options{Backend:"cpu", Quant:""}` (f32 weights) where the model fits, else `Quant:"int8"`
-(weight-only per-row int8, f32 activations; `decoder/model.go:168`). Both Metal arms share identical
+(weight-only per-row int8, f32 activations; `decoder/model.go:172`). Both Metal arms share identical
 int4 weights, so the weight-requantisation error is common-mode and the comparison isolates the
 activation path. The reference's own greedy 64-token continuation is the teacher-forced token
 stream for both arms. Reference logits are computed once per (model, K) in a separate process and
@@ -454,7 +454,7 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
 
 S-06 step 1 shipped: `parallelElementwise` (`decoder/mlp.go`) fans out the five named
 `silu(gate)*up` / `geluTanh(gate)*up` loops (`decoder/forwardn.go:645/651`, `decoder/mlp.go:344/460/611`,
-`decoder/forward_gemma4.go:191/208`) across the same `sync.WaitGroup`+`go func` idiom already used for
+`decoder/forward_gemma4.go:213/208`) across the same `sync.WaitGroup`+`go func` idiom already used for
 attention head-parallel fan-out (`maxAttnWorkers = 6`, this Mac's P-core count) — no second pool.
 Two more `ActGeluTanh` branches (`mlp.go`'s `gatedMLP`, `forwardn.go`'s dense-MLP switch) sit in
 the same switch statements as the named `ActSiLU` cases and were parallelized too, for

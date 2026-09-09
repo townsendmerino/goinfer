@@ -90,6 +90,16 @@ someone else's in-flight work — commit *your* hunks, leave theirs in the tree.
 green line in 0.02s usually means "no assets, nothing ran". Confirm with `-v` and read for
 `--- PASS`, not `ok`.
 
+**A NEW FIXED-RESOLUTION REAL-CHECKPOINT GOLDEN GETS WRITTEN GZIP-COMPRESSED.** A family whose
+vision input has no small-test-image option (SigLIP: 896×896 for every image, unlike Qwen2.5-VL's
+dynamic resolution) produces a golden dominated by one giant `pixel_values` float array — measured
+2026-09-08, `gemma3_real_golden.json` was 52.72 MB uncompressed, over GitHub's 50 MB
+recommendation; gzip took it to 2.58 MB (~20×, JSON float-array text compresses hard). Convention:
+write it `.json.gz` (Python: `gzip.open(OUT, "wt")` instead of `open(OUT, "w")`), read it via
+`decoder.ReadGoldenJSONForTest` (gunzips transparently on a `.gz` suffix, reads a bare `.json`
+unchanged) rather than a raw `os.ReadFile`+`json.Unmarshal`. Existing small `.json` goldens are
+NOT force-migrated — this is for new goldens where the size actually matters.
+
 **A UNIT TEST THAT SUPPLIES ITS OWN CALLING CONVENTION PROVES THE UNIT WORKS WHEN CALLED THAT WAY —
 NOT THAT ANYTHING CALLS IT THAT WAY.** It is the microbenchmark trap one level up: same failure, in
 composition rather than in cost. Measured here (G27): `optFwdGate` documents a two-way hysteresis

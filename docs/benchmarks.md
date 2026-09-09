@@ -19,14 +19,15 @@
      ABOVE the "What this page is" blockquote? The Apple Silicon rows below already exist either
      way (§A) — this is a pure ordering/presentation call, maintainer's judgment. -->
 
-**Re-anchored, with three stated exceptions.** Every row the 2026-08-25 re-anchor scoped — the
+**Re-anchored, with two stated exceptions.** Every row the 2026-08-25 re-anchor scoped — the
 peer comparisons in §B2/§B4/§B5/§B6/§B7 — has been re-measured on the current stack (RTX 2070
 SUPER, driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2) against **Ollama v0.32.5**, or
-deliberately withdrawn. Mac rows (§A) were never affected; last measured 2026-08-24. **Not covered,
-and each says so in place:** peer *prefill* (no harness exists — see the table), the Mellum2 MoE
-prefill row, and the SigLIP vision-prefill row. The last two are Linux rows from June that the
-re-anchor never scoped; they are marked stale and now sit in `legacy-benchmarks.md` §A rather
-than being quietly carried here.
+deliberately withdrawn. Mac rows (§A) were never affected; last measured 2026-08-24. **Not
+covered, and it says so in place:** peer *prefill* (no harness exists — see the table). The
+Mellum2 MoE prefill row is a Linux row from June the re-anchor never scoped; it is marked stale
+and sits in `legacy-benchmarks.md` §A. The SigLIP vision-prefill row was the same kind of stale
+row but **is current again as of 2026-09-08** (§A, "Vision tower CPU prefill") — re-measured,
+not re-anchored against a peer (no vision peer harness exists either).
 
 | | verdict | source |
 |---|---|---|
@@ -266,7 +267,7 @@ absent — this pass read the engine and packaging, not the library surface.
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ | — |
 | GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only | ✗ no GPU backend ᵏ |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ | — |
-| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL, pure-Go SigLIP → serve + agent; ~171 s/image CPU or **18.8 s on `-tags gpu`** — 2026-06-11 row, pre-re-anchor, legacy §A; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
+| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL + Qwen2.5-VL, pure-Go SigLIP/ViT → serve + agent; **31.3 s/image CPU** (SigLIP) — 2026-09-08 row, §A; `-tags gpu` webgpu resident figure (18.8 s) not re-measured at this row's date; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
 | Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
 | Multi-threaded CPU decode | ✓ | — | — | — | — | — | — | ✗ single-threaded ᵏ |
 
@@ -453,10 +454,291 @@ that superseded them.
 request here carries a unique prefix; reusing one would have compared our prefill against its
 cache lookup. Record: `measurements/cpu-peer-prefill-2026-09-01.md`.
 
-**Not re-anchored, and moved off this page:** the Mellum2 sparse-MoE CPU prefill row (2.4×,
-Ryzen 7 3700X, `08acc11`, 2026-06-10) and the SigLIP vision-prefill row (~171 s/image CPU, 18.8 s
-on `-tags gpu`, 2026-06-11) are pre-2026-08-25 Linux rows the re-anchor never scoped. Both are
-kept in legacy §A, marked stale; neither is a current rate.
+**Not re-anchored:** the Mellum2 sparse-MoE CPU prefill row (2.4×, Ryzen 7 3700X, `08acc11`,
+2026-06-10) is a pre-2026-08-25 Linux row the re-anchor never scoped, still kept in legacy §A,
+marked stale. The SigLIP vision-prefill row below it **is** current as of 2026-09-08 (see next).
+
+#### Vision tower CPU prefill — re-measured 2026-09-08
+
+**SigLIP/Gemma 3 tower** (`gemma-3-4b-it`, 896², 4096 patches) and **Qwen2.5-VL tower**
+(`qwen25vl-3b-instruct`, real pre-sized image, `testdata/qwen25vl_preprocess_image.png`): **31.3 s
+/image median (SigLIP)**, **157 ms/image median (Qwen2.5-VL)** — the two towers are very
+different scales (so400m depth/patch-count vs a 3B model's smaller ViT), not a same-model
+comparison. f32, AMD Ryzen 7 3700X (16 threads), aikit v1.38.0, goinfer `ff8993cf`, n=5 timed
+visits + 1 discarded warm-up each, median of the 5. This supersedes the 2026-06-11 ~171 s/image
+CPU row in legacy §A as the current number — not a like-for-like delta against it (different
+method: that row is not documented as a warm-up-discarded median).
+
+**Fused/head-parallel attention (aikit v1.38.0, replacing v1.37.0's per-head materialized
+QKᵀ→softmax→scores·V loop) measured FLAT on CPU wall-clock, not a speedup: 31.38 s → 31.26 s
+(SigLIP), 156.9 ms → 157.0 ms (Qwen2.5-VL), both within run-to-run noise.** Interleaved A/B, same
+box, same session — `go.mod`'s aikit pin swapped v1.38.0 ↔ v1.37.0 in place, 5 visits + discarded
+warm-up each arm. **This is a genuine negative result, recorded rather than dropped**: the
+include-the-do-nothing-arm discipline applies to a component's own history, not only to a peer
+comparison. Plausible (not yet isolated) reason: the OLD per-head serial loop's own
+`linalg.MatmulBT` calls already parallelize internally over output columns, so each head already
+used the whole machine, one head at a time; the NEW schedule instead runs every head at once,
+each on a private *serial* Workspace — at head count ≈ core count on this box (SigLIP so400m's
+heads ≈ this box's 16 threads), the two arrangements do close to the same total work, distributed
+across time in one case and across workers in the other. Kept regardless of the flat result:
+parity holds (`TestSiglipEncoder_parity`/`TestQwenVisionEncoder_parity`, cosine 1.0 both, `-race`
+clean), it is the identical mechanism the text decoder already ships (`attendBatchedHeads`), and
+it removes a real np×np score-matrix materialization whose benefit just didn't show at this
+box's config — untested: a memory-constrained box, or a shape where per-head parallelism can't
+already saturate the core count. `aikit` CHANGELOG `[1.38.0]`, `docs/multimodal.md` P6a.
+
+#### Resident CUDA vision tower (P6's other half) — 2026-09-08
+
+**The CUDA/Metal half of P6, previously "not started, lower priority"** (`docs/multimodal.md`)
+now has a real, measured CUDA implementation for the SigLIP/Gemma-3 tower — see that doc's P6
+entry for the full design writeup (three genuinely new kernels: `layernorm_quant_batched` /
+`layernorm_f32_batched` / `gelu_quant_batched`; everything else — attention, every linear
+projection, activation quantization — reuses kernels this same session's text-decoder work
+already shipped).
+
+**Measured: real checkpoint (`gemma-3-4b-it`), real tower shape (896², 4096 patches, 27 layers),
+int8 both arms (`vision.LoadEncoder(dir, quant=true)` puts BOTH the CPU and resident paths on
+identical W8A8 weights — a matched-precision, same-session-interleaved comparison, not int8-vs-f32),
+1 discarded warm-up + 5 measured. RTX 2070 SUPER, driver `595.91.07`, Nobara 44. Harness: a
+throwaway timing driver (`cuda/zztiming_vision_test.go`, matching this session's own precedent —
+not committed).**
+
+| | median forward time | speedup |
+|---|---|---|
+| CPU (int8) | 41.3 s | — |
+| resident CUDA (int8) | 26.1 s | **1.58×** |
+
+A real, positive, but modest win — **not** the ~9× WebGPU's own resident tower measures
+(`gpu/vision_encoder.go`'s own doc comment), because this v1 implementation deliberately keeps the
+residual adds and the position-embedding add as HOST ROUND-TRIPS (download → CPU add → upload,
+`addInPlaceHost`, `cuda/vision_encoder.go`) rather than a device-side elementwise-add kernel —
+"correctness first," explicitly logged as the natural next optimization if profiling ever shows it
+matters, not attempted in this pass. 27 layers × 2 residual adds per layer × a full [4096,1152]
+round-trip each is real, uncounted overhead this number does NOT hide. The CPU-side absolute number
+here (41.3 s) is higher than the 31.3 s figure the section above measured earlier the same day —
+expected, not a methodology error: this box's load grew across the session (many real-checkpoint
+loads and kernel compiles since), and the CPU-vs-resident RATIO here is the valid comparison
+(same-session interleaved, both arms under identical load), not the absolute CPU number against an
+earlier, differently-loaded baseline.
+
+**Real-checkpoint correctness gate** (`cuda/gemma3_vision_resident_real_test.go`,
+`TestGemma3VisionResidentReal_gate`): matched int8 precision both arms, cosine **0.910** on this
+run (measured range 0.91–0.96 depending on the input pixel pattern — logged, not cherry-picked).
+**Lower than this repo's usual ≥0.99 matched-precision bar, investigated rather than waved through**:
+patch-embed alone matches the CPU path at cosine 0.999999, and a matched-precision CPU probe
+reconstructed from the SAME int8 weight data (`linalg.WrapInt8`+`MatmulBTInto`) reproduces one
+layer's raw FC2 GEMV output at cosine **1.000000** — i.e. the kernels are exact; the divergence is
+genuine accumulated per-layer rounding-order difference (LayerNorm's mean/variance sums, the
+attention softmax denominator, the int8 GEMV's own accumulation — none bit-identical between CPU
+and CUDA, the same "not bit-identical, cosine-gated" property this repo's other batched kernels
+already carry) compounded over 27 layers, SigLIP so400m being unusually deep for a tower this
+project has resident-ported. Confirmed via a real, reproducible bug found and fixed along the way:
+the position-embedding add was broadcasting row 0's positional embedding to every patch instead of
+adding per-patch (`addRowsHost` misused where the per-patch `addInPlaceHost` was needed) — caught
+because row 0 matched the CPU reference exactly while every other row diverged, fixed, and the gate
+now goes from cosine ~0.1 (broken) to ~0.91-0.96 (accumulated int8 rounding, confirmed genuine).
+
+**Out of scope for this pass**: Metal (not attempted), Qwen2.5-VL's own tower (different attention
+pattern), and the host-round-trip residual-add optimization named above.
+
+#### Vision-language resident decode (gap 0) — 2026-09-08
+
+**The actual lever, not the tower's own kernel speed.** `docs/multimodal.md`'s gap 0:
+`GenerateVL`/`GenerateQwenVL` used to be CPU-only end to end — an image turn's DECODE, not only
+the vision tower, ran on CPU even on this GPU box. Fixed via a hybrid design: CPU prefill
+(unchanged — the bidirectional image-block attention mask has no resident equivalent) followed by
+pushing that prefill's KV into the resident GPU cache (`UploadKV`) and decoding on GPU from there.
+
+**Measured: real checkpoint (Qwen2.5-VL-3B), real image
+(`testdata/qwen25vl_preprocess_image.png`), int4 both arms (holds precision constant — a
+CPU-vs-GPU-only comparison, not CPU-vs-GPU-and-quantization), interleaved-paired (CPU, GPU, CPU,
+GPU, …), 5 visits + 1 discarded warm-up pair, `maxTokens=32` so decode dominates over the one-time
+prefill:**
+
+| | median turn time | tokens | decode tok/s |
+|---|---|---|---|
+| CPU-only (staged, int4) | 3.191 s | 19 | **5.95** |
+| Hybrid resident (CUDA, int4) | 0.870 s | 20 | **22.98** |
+
+**3.86× — clears the pre-registered ≥1.5× ship bar by a wide margin.** RTX 2070 SUPER, driver
+`595.91.07`, Nobara 44, goinfer `a630a2cc`, harness: a throwaway timing driver following the P6a
+precedent (interleaved-paired, warm-up discarded, median), not committed.
+
+Prefill-only calibration (single sample each, not interleaved — TTFT is CPU either way, unaffected
+by this change, included for completeness not as a paired measurement): CPU prefill 840 ms, GPU
+(resident-eligible load) prefill 711 ms — both stay CPU-bound at this stage by design, the ~130 ms
+gap is model-load/warm-cache noise, not a claim.
+
+**Gemma 3 (`GenerateVL`) — measured 2026-09-08, closing the gap noted above at the time of the
+Qwen measurement.** Same discipline, one difference: the vision tower's own ~31 s/image cost
+(§A "Vision tower CPU prefill" above, unaffected by gap 0 either way) was precomputed ONCE outside
+the timed region rather than paid per visit, so this number isolates the text-decoder
+prefill+decode path specifically — arguably a cleaner isolation of what gap 0 actually changed
+than the Qwen number above, which folds a much smaller vision cost into every visit. Real
+checkpoint (`gemma-3-4b-it`), real pre-sized 896×896 image, int4 both arms, interleaved-paired,
+5 visits + 1 discarded warm-up pair, `maxTokens=32`, decode-only isolated via a `maxTokens=1`
+calibration subtracted from each arm's own turn time (valid because both arms run the identical
+CPU text-prefill code path — only decode differs):
+
+| | median decode time (32-tok turn minus 1-tok calibration) | decode tok/s |
+|---|---|---|
+| CPU-only (staged, int4) | 4.454 s | **6.96** |
+| Hybrid resident (CUDA, int4) | 0.336 s | **92.27** |
+
+**13.26× — larger than Qwen's 3.86×, consistent with Gemma 3 having no m-RoPE overhead on the
+resident decode path.** Same box/driver/harness as the Qwen measurement, goinfer `a630a2cc`+
+(includes the follow-up `cuda/gemma3_resident_real_test.go` gate this measurement's own harness
+reused the golden from). Real-checkpoint parity gate: cosine 0.998167, exact argmax, on a
+forced-trajectory decode step past the real image block — tighter than Qwen's 0.99, as expected
+with no m-RoPE noise in the comparison.
+
+**Not yet measured**: WebGPU decode timing (the CUDA numbers above are the only ones measured;
+WebGPU's `ForwardMRoPE`/`UploadKV` correctness is validated on real hardware but not timed).
+
+#### Image-aware resident prefix reuse (P9a) — 2026-09-08
+
+**Skipping the tower and the CPU prefill entirely, not just decode.** Gap 0 above put an image
+turn's DECODE on the resident GPU, but every turn — even one resending the identical image — still
+paid the vision tower's own cost plus a full CPU prefill before decode could start. `docs/multimodal.md`'s
+P9(a): when the resident KV already holds a verified-identical image (same content hash, same
+placeholder span), decode reseeds directly from it and both the tower and the CPU prefill are
+skipped.
+
+**Measured: real checkpoint (`gemma-3-4b-it`), real image (`testdata/gemma3_preprocess_image.png`),
+int4, `maxTokens=4` (this changes prefill, not decode, so a short generation isolates it).
+Phase-based rather than call-by-call interleaved** — two resident int4 instances of this checkpoint
+(weights + a 4096-position KV cache each) do not fit together on this 8GB card: measured directly,
+the second `Load()` in a concurrent-instance design declined residency at "0.77 GB free" against
+1.14 GB needed. So each arm gets its own model load, is measured, and is closed before the next
+arm's model loads — same session, close together in wall-clock time, but not alternated turn by
+turn. A real deviation from this page's usual interleaved-pairing discipline, justified here by the
+effect size below (1-2 orders of magnitude, not a few percent) swamping any plausible drift between
+adjacent phases of one run. RTX 2070 SUPER, driver `595.91.07`, Nobara 44, goinfer `3a1af8b7`.
+Machine state at run start: single user (`who`), load average 7.9/7.4/3.9 — traced directly to
+bursty background btrfs/kworker I/O and this session's own concurrent `go build`s (checked via `ps
+aux --sort=-%cpu`), not a competing GPU/CPU job; GPU otherwise idle. Harness: a throwaway timing
+driver (`cuda/cmd/tmp_p9a_timing/`), matching gap 0's own precedent above — not committed.
+
+Isolated lever (tower excluded from every visit — its own cost is unaffected by P9(a) either way,
+the same isolation gap 0's own Gemma 3 row above uses), 1 discarded warm-up + 5 measured:
+
+| | median turn time | speedup |
+|---|---|---|
+| cold (forced full CPU prefill, no reuse) | 8.215 s | — |
+| warm (P9a resident reuse) | 0.051 s | **159.98×** |
+
+Full end-to-end, including a real vision-tower forward pass on every cold visit — the actual "does
+resending a screenshot get fast" claim (`docs/task-first-hour.md` scenario F), 4 visits each (no
+warm-up discard — the tower cost alone dominates any startup noise):
+
+| | median turn time | speedup |
+|---|---|---|
+| cold (real tower + CPU prefill) | 39.822 s | — |
+| warm (P9a resident reuse) | 0.054 s | **737.24×** |
+
+The vision tower's own single-run cost measured here (31.324 s) is consistent with §A's `gemma-3-4b-it`
+median above (31.3 s).
+
+**Not yet measured**: CUDA is the only backend measured (Metal has no `UploadKV`/resident image-turn
+decode at all — out of scope, see `docs/multimodal.md`; WebGPU declines `gemma-3-4b-it` residency
+on this box for an unrelated reason, missing arch features — see `cuda/resident_reuse_vl_parity_test.go`'s
+own doc comment).
+
+#### Resident image-block PREFILL, finishing gap 0 — 2026-09-08
+
+**The remaining bottleneck on a COLD (first-time) image turn.** Gap 0 moved image-turn DECODE onto
+the resident GPU; P9(a) above made a *resent* image skip the tower and the CPU prefill entirely by
+reusing the resident KV. Neither touches a first-time image's own PREFILL — the P9(a) row above
+measured that cost in isolation at **8.215 s** (tower excluded) for this same 266-token Gemma-3 VL
+prompt, dwarfing everything gap-0/P9a already fixed on a cold turn. This closes that: a new resident
+CUDA kernel (`cuda/attn_img_prefill.cu`, `attn_img_batched`) runs the SAME bidirectional image-block
+attention `decoder/kvcache.go`'s CPU reference (`attendHi`/`SetImageBlocks`) computes, so a cold
+turn's prefill runs on the resident GPU too — `decoder.ResidentImagePrefill`, CUDA only, v1 requires
+the whole prompt (image block included) to fit in one weight-stationary pass (confirmed against
+this fixture: 266 ≤ the 512-row default chunk, ~246 tokens of margin).
+
+**Measured: real checkpoint (`gemma-3-4b-it`), real image (`testdata/gemma3_preprocess_image.png`),
+int4, PREFILL ONLY (tower excluded — computed once, unaffected by this change either way, same
+isolation the P9(a) row above uses), 1 discarded warm-up + 5 measured. Both arms write into the
+same resident KV positions on ONE model instance (each call fully overwrites `[0,len(ids))`
+regardless of prior content), so — unlike P9(a)'s two-arm design — this needed no second resident
+instance and stayed within the true interleaved-pairing discipline. RTX 2070 SUPER, driver
+`595.91.07`, Nobara 44, goinfer `a27a9014`+. Harness: a throwaway timing driver
+(`cuda/cmd/tmp_imgprefill_timing/`), matching this session's own precedent — not committed.**
+
+| | median turn time | speedup |
+|---|---|---|
+| old (CPU prefill + `UploadKV` bridge, gap 0's path) | 8.165 s | — |
+| new (resident image-prefill kernel) | 0.367 s | **22.27×** |
+
+**Real-checkpoint correctness gate** (`cuda/gemma3_img_prefill_resident_real_test.go`,
+`TestGemma3ImgPrefillResidentReal_gate`): matched int4 precision both arms, forced-trajectory
+cosine on raw logits (same discipline as gap-0's own gate, avoiding the f32-vs-int4 quantization-noise
+trap) — resident image-prefill logits vs the CPU reference, cosine **0.997042**, exact argmax match
+(496 == 496); the same turn driven through the real `GenerateVL` entrypoint confirms the fast path
+actually engaged (`Generation.ImgPrefillResident == true`) and streams the identical first token.
+Kernel-level parity (`cuda/attn_img_batched_test.go`, synthetic Q/K/V, no real checkpoint needed):
+bidirectional-block and outside-block masking pinned from both sides (mirrors
+`TestAttnBlockFull_nonCausal`'s boundary-equality proof), plus a dedicated poison-key test proving
+the kernel's sliding-window start stays DECOUPLED from the image-widened key count — a naive port of
+`attn_batched`'s own coupled formula would have silently under-sized the shared-memory allocation for
+any windowed layer whose image block starts more than one window-length into the sequence (a
+shared-memory out-of-bounds write, not a clean wrong answer — invisible on this fixture's own
+`imgStart=6`, which is why the synthetic test exists at all).
+
+**Combined with gap-0/P9(a): a cold turn's non-tower cost drops from ~8.2 s to ~0.37 s** — the
+vision tower (~31.3 s, §A, untouched by any of gap 0/P9a/this) is now essentially the ENTIRE cost of
+a cold image turn on this checkpoint; CPU prefill is no longer a meaningful contributor.
+
+**Not yet measured / explicitly out of scope for v1**: `attn_fused`'s L2 tensor-core path (v1 uses
+only the exact `attn_batched`-family kernel; `attn_fused`'s tile-level aggregates assume monotonic
+per-row key counts, which an image block breaks — never engages below the 512-token
+`fastPrefillFloor` anyway, so low priority until a real VL prompt crosses it); Metal/WebGPU
+(same reasons as the P9(a) row above).
+
+#### Resident m-RoPE PREFILL (Qwen2.5-VL), same gap for the second VL family — 2026-09-08
+
+**Qwen2.5-VL's own version of the gap closed above.** Its image tokens already attend causally in
+prefill (no bidirectional mask, so `attn_batched` serves it unmodified), but the batched-prefill
+rope kernel only knew a single row-sequential rotation angle — m-RoPE needs a per-row, 3-component
+one (`decoder/rope.go`'s `applyMRoPE`), and — a real subtlety, not just a formatting change — even
+ORDINARY text rows after an image block need it too, since `mropePositions` compresses their
+position by the merged image grid rather than counting sequentially. Closed via a new resident
+kernel (`cuda/rope_mrope_prefill.cu`, `rope_kv_mrope_batched`) — `decoder.ResidentMRoPEPrefill`,
+CUDA only, chunkable (no cross-row attention coupling, unlike Gemma-3's bidirectional block).
+
+**Measured: real checkpoint (`Qwen2.5-VL-3B-Instruct`), real image
+(`testdata/qwen25vl_real_golden.json`'s fixture, 14 tokens, image run `[5,11)`), int4, PREFILL ONLY
+(vision tower excluded, computed once), 1 discarded warm-up + 5 measured, both arms on the SAME
+resident instance (each fully overwrites `[0,len(ids))`). RTX 2070 SUPER, driver `595.91.07`,
+Nobara 44. Harness: a throwaway timing driver (`cuda/zztmp_qwen_mrope_timing_test.go`, matching
+this session's own precedent — not committed).**
+
+| | median turn time | speedup |
+|---|---|---|
+| old (CPU prefill + `UploadKV` bridge) | 711.2 ms | — |
+| new (resident m-RoPE prefill kernel) | 19.7 ms | **36.14×** |
+
+(This prompt is 14 tokens against Gemma-3's 266 above — the two speedups are not directly
+comparable in absolute terms, only each internally consistent against its own old/new pair.)
+
+**Real-checkpoint correctness gate** (`cuda/qwen25vl_mrope_prefill_resident_real_test.go`,
+`TestQwen25VLMRoPEPrefillResidentReal_gate`): matched int4 precision both arms, forced-trajectory
+cosine on raw logits — resident m-RoPE prefill logits vs the CPU reference, cosine **0.993995**,
+exact argmax match (264 == 264); the same turn through the real `GenerateQwenVL` entrypoint
+confirms the fast path actually engaged (`Generation.ImgPrefillResident == true`) and streams the
+identical first token. Kernel-level parity (`cuda/rope_kv_mrope_batched_test.go`, synthetic
+Q/K/V/positions, no real checkpoint needed): the degenerate case (every row's (t,h,w) collapsed to
+one scalar) proven bit-identical to the existing scalar `rope_kv_batched` kernel regardless of how
+the frequency sections are split, plus an adversarial case with per-row triples that diverge from
+each other AND from the naive `pos=startPos+m` formula, checked directly against
+`decoder.applyMRoPE` (via `ApplyMRoPEForTest`) rather than reimplemented in the test.
+
+**Not yet measured / explicitly out of scope**: a prompt whose image block spans more than one
+`prefillChunkRows()` chunk is unaffected by this (m-RoPE has no cross-row coupling — it chunks
+cleanly), but a multi-chunk IMAGE-BLOCK prompt (Gemma-3-style bidirectional attention) remains
+structurally blocked, see the section above; `attn_fused`'s L2 path (same reasoning as Gemma-3's);
+Metal/WebGPU.
 
 ### B2. cgo-free CUDA (`-tags cuda`) vs Ollama-CUDA — 4-bit both sides
 

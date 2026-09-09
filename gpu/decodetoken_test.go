@@ -155,7 +155,7 @@ func TestDecodeToken_parity(t *testing.T) {
 	if gv := runner.GeomVariantCount(); gv != 1 {
 		t.Errorf("GeomVariantCount = %d, want 1 (uniform %d-layer model must dedup to one geometry)", gv, L)
 	}
-	gotR, err := runner.Run(x0, pos)
+	gotR, err := runner.Run(x0, pos, pos)
 	if err != nil {
 		t.Fatalf("DecodeRunner.Run: %v", err)
 	}

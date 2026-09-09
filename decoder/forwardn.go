@@ -454,8 +454,8 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				}
 			}
 			if !noPE {
-				ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
-				ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave)
+				ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave, arch.MRopeInterleaved)
+				ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, arch.ropeInterleave, arch.MRopeInterleaved)
 			}
 			// Batched twin of causalAttention's attn-temp step (see AttnTempBeta's own comment):
 			// per-position, since pos varies across this batch's K rows.

@@ -52,9 +52,12 @@ type ResidentForward interface {
 	// (TestResidentForwardN_parity), so it amortizes the cgo-encode glue over K
 	// without changing numerics. nil/empty embeddings ⇒ no-op.
 	ForwardN(embeddings [][]float32, startPos int) (logits [][]float32, err error)
-	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim], positions
-	// 0..n-1) into the resident GPU caches — the prefill bridge.
-	UploadKV(layer int, keys, vals []float32) error
+	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim]) into the resident GPU
+	// caches at absolute positions base..base+n-1 — the prefill bridge. base is normally 0
+	// (a fresh prefill), but a CPU-side sliding-window (ring) layer's live K/V can start at a
+	// nonzero absolute position once its ring has wrapped (KVCache.LayerKV's own base return);
+	// UploadKV must land those rows at their real position, not row 0.
+	UploadKV(layer, base int, keys, vals []float32) error
 	// TruncateTo drops resident KV positions ≥ pos — the rollback after a partial
 	// speculative accept. The resident cache is positional and Forward sets
 	// nKeys=pos+1, so stale entries past pos are simply never read and get overwritten
@@ -65,6 +68,22 @@ type ResidentForward interface {
 	Reset()
 	// Close releases the resident GPU buffers.
 	Close() error
+}
+
+// ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation
+// kernel can take a rope-angle position (ropePos) separate from the KV-cache/attention position
+// (pos). Forward(embedding, pos) alone cannot serve Qwen2.5-VL decode past an image block,
+// because decoder/rope.go's CPU reference computes the KV-cache position and the rotation angle
+// as two DIFFERENT quantities once decode moves past an image block — the merge-compressed image
+// grid makes mropeDelta = maxGridPos+1-seqLen nonzero, and the rotation needs pos+mropeDelta
+// while storage/attention still need plain pos. Deliberately a NEW capability rather than a
+// Forward signature change: Forward is the core method every family and every existing caller
+// uses, and only Qwen-VL decode needs the split. ForwardMRoPE(emb, pos, pos) must equal
+// Forward(emb, pos) exactly — the common (non-m-RoPE) case is the same computation, just spelled
+// with two equal arguments. Backends may skip implementing it (GenerateQwenVL's resident path
+// then declines to the CPU/staged decode, same as any other resident capability gap).
+type ResidentMRoPE interface {
+	ForwardMRoPE(embedding []float32, pos, ropePos int) (logits []float32, err error)
 }
 
 // ResidentGreedy is an optional capability on a ResidentForward: compute the token's greedy
@@ -179,6 +198,51 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 		}
 	}
 	return out
+}
+
+// ResidentImagePrefill is an OPTIONAL Prefiller extension: bidirectional attention over a
+// contiguous [imgStart,imgEnd) sub-range (Gemma 3's image-block mask — decoder/kvcache.go's
+// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward
+// (decoder/forwardn.go). GenerateVL's cold (first-time-seeing-this-image) path tries this BEFORE
+// paying for the CPU prefill; without it — or on any decline from it — that turn falls through
+// unchanged to the CPU-prefill-then-UploadKV bridge (gap 0, docs/multimodal.md).
+//
+// embeddings are the ALREADY-SPLICED per-position vectors: the ordinary text embedding lookup
+// with the projected vision features overwritten at [imgStart,imgEnd) — exactly what
+// prefillLogitsVL already builds (embedN + a raw-feature copy, no embed scale, matching HF's
+// masked_scatter). This mirrors Prefiller's existing embed-by-vector convention, so no GPU-side
+// embedding table or embedding kernel is needed.
+//
+// v1 (CUDA only) REQUIRES the whole prompt — the image block included — to fit in ONE
+// weight-stationary pass; a longer prompt, or any other decline (kernel unavailable, invalid
+// range), returns an error rather than chunking, because a bidirectional block split across a
+// chunk boundary is unverified. Backends may skip implementing it (Metal has no UploadKV either;
+// WebGPU declines Gemma 3 residency on some boxes for an unrelated reason) — GenerateVL's
+// image-prefill fast path then never engages, same as any other optional resident capability gap.
+type ResidentImagePrefill interface {
+	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
+}
+
+// ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's
+// m-RoPE 3D rotary positions — the resident twin of prefillLogitsQwenVL's CPU forward
+// (decoder/forwardn.go). Distinct from ResidentMRoPE (decode's single-scalar ropePos split,
+// above): this needs every row's own 3-component rotary position up front, not one extra scalar.
+//
+// embeddings are the ALREADY-SPLICED per-position vectors (ResidentImagePrefill's convention — no
+// GPU-side embedding table). mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
+// triple per ABSOLUTE sequence position, covering the WHOLE prompt — GenerateQwenVL already
+// computes this for its other branches (the image-reuse fast path, the CPU-prefill fallback), so
+// there is no reason for a resident backend to re-derive it and risk a second implementation
+// drifting from the CPU reference.
+//
+// UNLIKE ResidentImagePrefill, implementations MAY chunk: Qwen's image tokens attend causally (no
+// bidirectional mask — GenerateQwenVL's own doc comment), so attention geometry is unaffected by
+// an image block, and each row's rotation is independent of every other row's — there is no
+// cross-row coupling for a chunk boundary to break. Backends may skip implementing it (same
+// resident-capability-gap discipline as every other optional extension here) — GenerateQwenVL's
+// m-RoPE prefill fast path then never engages, falling back to the CPU-prefill+UploadKV bridge.
+type ResidentMRoPEPrefill interface {
+	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 }
 
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
@@ -735,6 +799,13 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 	a := m.w.arch
 	return a.HiddenDim, a.NumLayers, a.NumHeads, a.NumKVHeads, a.HeadDim, a.IntermediateDim, a.VocabSize
 }
+
+// MRopeSectionResident exposes Qwen2.5-VL's m-RoPE head_dim/2 split across the
+// (temporal,height,width) position components — nil/empty for every non-m-RoPE family. A resident
+// backend's m-RoPE prefill kernel (decoder.ResidentMRoPEPrefill) needs this ONCE, at build time,
+// to compute its own cumulative section boundaries; every other resident capability is family-
+// agnostic and has no equivalent accessor.
+func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
 
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {

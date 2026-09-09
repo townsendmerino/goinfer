@@ -10,14 +10,47 @@ package decoder
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
 	"math"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
+
+// ReadGoldenJSONForTest reads a real-checkpoint golden fixture, transparently gunzipping if path
+// ends in ".gz". Convention (2026-09-08): a real-checkpoint pin script for a FIXED-resolution
+// vision family (SigLIP: 896×896 for every image, no choice of a small test photo the way
+// Qwen2.5-VL's dynamic resolution allows) writes its golden gzip-compressed — gzip on JSON text
+// this repetitive (a `pixel_values` float array dominates the file) routinely gets 5-10×, the
+// difference between "fits comfortably in git" and "GitHub warns about it": measured,
+// testdata/gemma3_real_golden.json was 52.72 MB uncompressed, over GitHub's 50 MB recommendation.
+// Existing small (`.json`, no `.gz`) goldens are NOT force-migrated — this is for new goldens
+// where the size actually matters, not a blanket rewrite. Callers keep their own existing
+// skip-if-missing handling (os.Open's error, not this function, carries that signal).
+func ReadGoldenJSONForTest(path string, v any) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	var r io.Reader = f
+	if strings.HasSuffix(path, ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return fmt.Errorf("decoder: gunzip %s: %w", path, err)
+		}
+		defer gz.Close()
+		r = gz
+	}
+	return json.NewDecoder(r).Decode(v)
+}
 
 // PrefillLogitsForTest exposes the CPU backend's batched prompt prefill (prefillLogits) — weights
 // streamed once and reused across all K positions rather than K separate M=1 passes, ~1.7-2x
@@ -51,6 +84,36 @@ func (m *Model) PrefillLogitsWithAdapterForTest(ctx context.Context, prompt []in
 func (m *Model) ResidentAdapterLayersForTest(adapterName string) []ResidentAdapterLayer {
 	return residentAdapterLayers(m.adapter(adapterName))
 }
+
+// PrefillLogitsVLForTest exposes prefillLogitsVL — Gemma 3's bidirectional-image-block CPU
+// prefill GenerateVL drives — the Gemma-3 twin of PrefillLogitsQwenVLForTest, same reason.
+func (m *Model) PrefillLogitsVLForTest(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsVL(ctx, ids, imageFeats, imgPos, imgLen, cache)
+}
+
+// PrefillLogitsQwenVLForTest exposes prefillLogitsQwenVL — the bidirectional-image-block CPU
+// prefill GenerateQwenVL drives — so a cross-package real-checkpoint gate (gap 0, docs/
+// multimodal.md) can build a real image's CPU-computed KVCache directly, without going through
+// GenerateQwenVL's channel-only public API (which exposes sampled tokens, not per-step logits —
+// unusable for a per-step cosine comparison once a resident hybrid decode's own quantization
+// noise, an orthogonal and pre-existing property, would otherwise compound through greedy
+// sampling and swamp the signal this gate actually needs).
+func (m *Model) PrefillLogitsQwenVLForTest(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsQwenVL(ctx, ids, imageFeats, imgPos, imgLen, mropePos, cache)
+}
+
+// MRopePositionsForTest exposes mropePositions — Qwen2.5-VL's per-token (t,h,w) rotary position
+// triples from the image grid — so a cross-package test can build the same cache.mropeDelta the
+// production GenerateQwenVL path computes, for the same reason as PrefillLogitsQwenVLForTest.
+func MRopePositionsForTest(ids []int, imageToken int, gridTHW [][3]int, merge int) ([][3]int, error) {
+	return mropePositions(ids, imageToken, gridTHW, merge)
+}
+
+// MRopeDeltaForTest exposes a KVCache's m-RoPE decode-position delta (rope.go's mropeDelta —
+// scalar decode past the prefill rotates at seqPos+delta), set by prefillLogitsQwenVL. A
+// cross-package resident-decode test needs this to compute the same ropePos GenerateQwenVL's
+// production decode loop does (gap 0, docs/multimodal.md).
+func (c *KVCache) MRopeDeltaForTest() int { return c.mropeDelta }
 
 // NearTieHardFailPct is the bar NearTieArgmaxForTest hard-fails at -- the same 3% every existing
 // near-tie gate in this tree already uses inline (cuda/realforward_test.go's argmaxF comparison,

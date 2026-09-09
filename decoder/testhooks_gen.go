@@ -7,6 +7,7 @@
 package decoder
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -38,6 +39,30 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // GPU ForwardN-vs-Forward parity gate. Test-only seam; production code routes through
 // Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
+
+// ResidentImagePrefillForTest wraps residentImagePrefill (decoder/generate_vl_resident.go) — the
+// exact primitive GenerateVL's resident image-prefill fast path calls internally — so a
+// real-checkpoint gate (cuda/) can compare its logits directly against PrefillLogitsVLForTest's
+// CPU reference, matched precision, on the SAME model instance and the SAME real image.
+func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
+	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, imgPos, imgLen)
+}
+
+// ResidentMRoPEPrefillForTest wraps residentMRoPEPrefill — the exact primitive GenerateQwenVL's
+// resident m-RoPE prefill fast path calls internally — mirroring ResidentImagePrefillForTest
+// exactly, for a real-checkpoint gate comparing its logits against PrefillLogitsQwenVLForTest.
+func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
+	return m.residentMRoPEPrefill(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos)
+}
+
+// ApplyMRoPEForTest wraps applyMRoPE (decoder/rope.go) — the CPU m-RoPE reference a resident
+// kernel's own rotation must match bit-for-bit. Test-only: production always reaches applyMRoPE
+// through ropeAt, never directly. interleaved selects Qwen3-VL's per-index component layout
+// (mropeComponentInterleaved) over Qwen2.5-VL's contiguous-block one (mropeComponent) — pass false
+// for Qwen2.5-VL.
+func ApplyMRoPEForTest(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64, interleaved bool) {
+	applyMRoPE(vec, heads, headDim, pos, section, invFreq, scale, interleaved)
+}
 
 // Gemma4MoEExpertForTest computes ONE gemma4 MoE expert's output on a caller-supplied input xe
 // ([hidden]) — the gelu-tanh GeGLU expert function edown = Down · (geluTanh(gate)·up), gate‖up =
@@ -145,48 +170,11 @@ func SetRouterCaptureForTest(on bool) {
 	}
 }
 
-// LayerKVForTest returns a layer's stored K and V as f32 in absolute position order — the live
-// sliding-window for a ring (local) layer, the full history for an append-forever global —
-// dequantized when the cache is int8. base is the absolute position of row 0. Keys/Vals above
-// only see the global append-forever store, so they read empty for a windowed layer (Gemma's
-// local layers); this is the ring-aware read the cross-backend attention confirmer needs to
-// inject goinfer's exact K/V into another engine.
-func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) {
-	if r := c.rings[layer]; r != nil {
-		lo := max(0, r.count-r.w)
-		nLive, st := r.count-lo, r.stride
-		if st == 0 || nLive == 0 {
-			return nil, nil, lo
-		}
-		k, v = make([]float32, nLive*st), make([]float32, nLive*st)
-		nKV := st / r.headDim
-		for i, p := 0, lo; p < r.count; i, p = i+1, p+1 {
-			so, do := (p%r.w)*st, i*st
-			if r.quant == kvI8 {
-				sso := (p % r.w) * nKV
-				dequantHeads(r.kq[so:so+st], r.ksc[sso:sso+nKV], nKV, r.headDim, k[do:do+st])
-				dequantHeads(r.vq[so:so+st], r.vsc[sso:sso+nKV], nKV, r.headDim, v[do:do+st])
-			} else {
-				copy(k[do:do+st], r.k[so:so+st])
-				copy(v[do:do+st], r.v[so:so+st])
-			}
-		}
-		return k, v, lo
-	}
-	if c.quant == kvI8 {
-		st := c.kvDim
-		nKV := st / c.headDim
-		n := len(c.keysQ[layer]) / st
-		k, v = make([]float32, n*st), make([]float32, n*st)
-		for p := 0; p < n; p++ {
-			o, so := p*st, p*nKV
-			dequantHeads(c.keysQ[layer][o:o+st], c.keyScale[layer][so:so+nKV], nKV, c.headDim, k[o:o+st])
-			dequantHeads(c.valsQ[layer][o:o+st], c.valScale[layer][so:so+nKV], nKV, c.headDim, v[o:o+st])
-		}
-		return k, v, 0
-	}
-	return c.keys[layer], c.vals[layer], 0
-}
+// LayerKVForTest is a thin wrapper over the production KVCache.LayerKV (kvcache.go — promoted
+// there so decoder/generate_vl_resident.go's resident-KV upload bridge can call it untagged).
+// Kept under this name for the existing cross-package (cuda/metal) test call sites: the
+// cross-backend attention confirmer injects goinfer's exact K/V into another engine.
+func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) { return c.LayerKV(layer) }
 
 func SetSSMQ8CPU(v bool) { ssmQ8CPU = v }
 

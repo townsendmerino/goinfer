@@ -29,6 +29,7 @@ import (
 var (
 	_ decoder.ResidentForward = (*cudaResident)(nil)
 	_ decoder.ResidentGreedy  = (*cudaResident)(nil)
+	_ decoder.ResidentMRoPE   = (*cudaResident)(nil)
 )
 
 // cudaCtxCapDefault is the resident KV capacity in positions when nothing asks for more; the staged
@@ -516,6 +517,11 @@ type cudaResident struct {
 	splitkvAttn              bool     // GOINFER_SPLITKV_ATTN: use the split-KV decode attention (else the A1 attn_batched(M=1))
 	skMinKeys                int      // GOINFER_SPLITKV_MIN_KEYS: -1 ⇒ per-geometry table; ≥0 overrides it (0 ⇒ always split)
 	prefillReady             bool     // batched kernels loaded; PrefillLast usable
+	bAttnImg                 Pipeline // attn_img_batched (attn_img_prefill.ptx) — Gemma 3's bidirectional image-block prefill attention; own module, see cuda/attn_img_prefill.cu
+	imgPrefillReady          bool     // bAttnImg loaded; PrefillImageLast usable. A load failure is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	bRopeKVMRoPE             Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
+	mropePrefillReady        bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
+	mropeSec0, mropeSec1     int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
 	// prefillChunkCap is prefillChunked's LEARNED row budget: 0 until a pass OOMs, then the width
 	// that worked. It exists so a card that cannot hold the default chunk is discovered ONCE rather
 	// than on every prompt. Repeatedly driving the context to CUDA_ERROR_OUT_OF_MEMORY is not merely
@@ -1498,7 +1504,32 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 	}
 	var out []float32
 	err := r.do(func() error {
-		o, e := r.step(embedding, pos)
+		o, e := r.step(embedding, pos, pos)
+		out = o
+		return e
+	})
+	return out, err
+}
+
+// ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rotation angle (ropePos) and the
+// KV-cache/attention position (pos) are supplied separately — Qwen2.5-VL decode past an image
+// block needs them to differ (see gemv_fwd.cu's rope_kv doc comment; decoder/rope.go's CPU
+// reference is the ground truth this mirrors). Forward itself is Forward(pos) == ForwardMRoPE
+// (pos, pos), so this does not duplicate Forward's body — it is what Forward calls with the
+// common case folded in.
+func (r *cudaResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
+	if e := r.checkCap(pos, 1); e != nil {
+		return nil, e
+	}
+	if pos == 0 {
+		r.Reset() // fresh sequence — same reason as Forward
+		if r.resetErr != nil {
+			return nil, r.resetErr // N-08
+		}
+	}
+	var out []float32
+	err := r.do(func() error {
+		o, e := r.step(embedding, pos, ropePos)
 		out = o
 		return e
 	})
@@ -1520,7 +1551,7 @@ func (r *cudaResident) ForwardNoLogits(embedding []float32, pos int) error {
 		}
 	}
 	return r.do(func() error {
-		if e := r.launchToken(embedding, pos, false); e != nil {
+		if e := r.launchToken(embedding, pos, pos, false); e != nil {
 			return e
 		}
 		return r.stream.Sync() // step()'s trailing sync is skipped here; drain so the KV write completes
@@ -1552,7 +1583,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	if r.prefillReady && r.dnet == nil {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
-		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits); err == nil {
+		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0, nil); err == nil {
 			return outs, nil
 		} else if !errors.Is(err, errPrefillDeclined) {
 			return nil, err
@@ -1567,7 +1598,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	out := make([][]float32, len(embeddings))
 	err := r.do(func() error {
 		for i, emb := range embeddings {
-			l, e := r.step(emb, startPos+i)
+			l, e := r.step(emb, startPos+i, startPos+i)
 			if e != nil {
 				return e
 			}
@@ -1578,19 +1609,25 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	return out, err
 }
 
-// UploadKV writes a layer's post-RoPE K and raw V into the resident caches from position 0
-// (prefill bridge, same packed layout the kernels read: [pos*kvDim + head*hd + d]).
-func (r *cudaResident) UploadKV(layer int, keys, vals []float32) error {
-	if kvDim := r.layers[layer].kvDim; kvDim > 0 {
-		if e := r.checkCap(0, len(keys)/kvDim); e != nil {
+// UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute
+// positions base..base+n-1 (prefill bridge, same packed layout the kernels read:
+// [pos*kvDim + head*hd + d]). base is normally 0; a wrapped CPU-side sliding-window ring's
+// live K/V can start later (KVCache.LayerKV's own base return) — Buffer.At gives a zero-copy
+// view at the matching byte offset, the same mechanism Forward's own checkCap(pos, ...) already
+// treats as a normal position, just never called with a nonzero base until now.
+func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
+	kvDim := r.layers[layer].kvDim
+	if kvDim > 0 {
+		if e := r.checkCap(base, len(keys)/kvDim); e != nil {
 			return e
 		}
 	}
+	byteOff := base * kvDim * 4 // f32 elements, matches gpu.Upload[float32]'s element width
 	return r.do(func() error {
-		if e := gpu.Upload(r.kc[layer], keys); e != nil {
+		if e := gpu.Upload(r.kc[layer].At(byteOff), keys); e != nil {
 			return e
 		}
-		return gpu.Upload(r.vc[layer], vals)
+		return gpu.Upload(r.vc[layer].At(byteOff), vals)
 	})
 }
 
@@ -2696,7 +2733,10 @@ func (r *cudaResident) captureGraphs() error {
 }
 
 // launchToken issues one token's whole kernel chain, leaving logits[vocab] on the device.
-func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
+// ropePos is the rope_kv kernel's rotation-angle position — equal to pos for every ordinary
+// (non-m-RoPE) call; only Qwen2.5-VL decode past an image block needs them to differ (see
+// gemv_fwd.cu's rope_kv doc comment). pos alone still drives KV storage/attention range.
+func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
 	nullBias := ArgNull()
 	// qTempScale (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md): computed ONCE
@@ -2770,8 +2810,8 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 		if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
 			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
 			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(Ly.rhalf)), gpu.ArgValue(Ly.mscale),
-			gpu.ArgValue(qTempScale)); err != nil {
+			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)),
+			gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
 			return err
 		}
 		nKeys := pos + 1
@@ -2861,9 +2901,9 @@ func (r *cudaResident) launchToken(emb []float32, pos int, head bool) error {
 }
 
 // step returns full logits — the general contract (sampler / constrained decode / logprobs).
-// Costs a vocab*4 B D2H every token (594 KB at a 151936 vocab).
-func (r *cudaResident) step(emb []float32, pos int) ([]float32, error) {
-	if e := r.launchToken(emb, pos, true); e != nil {
+// Costs a vocab*4 B D2H every token (594 KB at a 151936 vocab). ropePos: see launchToken.
+func (r *cudaResident) step(emb []float32, pos, ropePos int) ([]float32, error) {
+	if e := r.launchToken(emb, pos, ropePos, true); e != nil {
 		return nil, e
 	}
 	if e := r.stream.Sync(); e != nil {
@@ -2893,7 +2933,7 @@ func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) 
 	}
 	var id int
 	err := r.do(func() error {
-		if e := r.launchToken(embedding, pos, true); e != nil {
+		if e := r.launchToken(embedding, pos, pos, true); e != nil {
 			return e
 		}
 		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits),
