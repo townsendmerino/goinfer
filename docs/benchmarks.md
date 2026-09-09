@@ -487,6 +487,60 @@ it removes a real np×np score-matrix materialization whose benefit just didn't 
 box's config — untested: a memory-constrained box, or a shape where per-head parallelism can't
 already saturate the core count. `aikit` CHANGELOG `[1.38.0]`, `docs/multimodal.md` P6a.
 
+#### Resident CUDA vision tower (P6's other half) — 2026-09-08
+
+**The CUDA/Metal half of P6, previously "not started, lower priority"** (`docs/multimodal.md`)
+now has a real, measured CUDA implementation for the SigLIP/Gemma-3 tower — see that doc's P6
+entry for the full design writeup (three genuinely new kernels: `layernorm_quant_batched` /
+`layernorm_f32_batched` / `gelu_quant_batched`; everything else — attention, every linear
+projection, activation quantization — reuses kernels this same session's text-decoder work
+already shipped).
+
+**Measured: real checkpoint (`gemma-3-4b-it`), real tower shape (896², 4096 patches, 27 layers),
+int8 both arms (`vision.LoadEncoder(dir, quant=true)` puts BOTH the CPU and resident paths on
+identical W8A8 weights — a matched-precision, same-session-interleaved comparison, not int8-vs-f32),
+1 discarded warm-up + 5 measured. RTX 2070 SUPER, driver `595.91.07`, Nobara 44. Harness: a
+throwaway timing driver (`cuda/zztiming_vision_test.go`, matching this session's own precedent —
+not committed).**
+
+| | median forward time | speedup |
+|---|---|---|
+| CPU (int8) | 41.3 s | — |
+| resident CUDA (int8) | 26.1 s | **1.58×** |
+
+A real, positive, but modest win — **not** the ~9× WebGPU's own resident tower measures
+(`gpu/vision_encoder.go`'s own doc comment), because this v1 implementation deliberately keeps the
+residual adds and the position-embedding add as HOST ROUND-TRIPS (download → CPU add → upload,
+`addInPlaceHost`, `cuda/vision_encoder.go`) rather than a device-side elementwise-add kernel —
+"correctness first," explicitly logged as the natural next optimization if profiling ever shows it
+matters, not attempted in this pass. 27 layers × 2 residual adds per layer × a full [4096,1152]
+round-trip each is real, uncounted overhead this number does NOT hide. The CPU-side absolute number
+here (41.3 s) is higher than the 31.3 s figure the section above measured earlier the same day —
+expected, not a methodology error: this box's load grew across the session (many real-checkpoint
+loads and kernel compiles since), and the CPU-vs-resident RATIO here is the valid comparison
+(same-session interleaved, both arms under identical load), not the absolute CPU number against an
+earlier, differently-loaded baseline.
+
+**Real-checkpoint correctness gate** (`cuda/gemma3_vision_resident_real_test.go`,
+`TestGemma3VisionResidentReal_gate`): matched int8 precision both arms, cosine **0.910** on this
+run (measured range 0.91–0.96 depending on the input pixel pattern — logged, not cherry-picked).
+**Lower than this repo's usual ≥0.99 matched-precision bar, investigated rather than waved through**:
+patch-embed alone matches the CPU path at cosine 0.999999, and a matched-precision CPU probe
+reconstructed from the SAME int8 weight data (`linalg.WrapInt8`+`MatmulBTInto`) reproduces one
+layer's raw FC2 GEMV output at cosine **1.000000** — i.e. the kernels are exact; the divergence is
+genuine accumulated per-layer rounding-order difference (LayerNorm's mean/variance sums, the
+attention softmax denominator, the int8 GEMV's own accumulation — none bit-identical between CPU
+and CUDA, the same "not bit-identical, cosine-gated" property this repo's other batched kernels
+already carry) compounded over 27 layers, SigLIP so400m being unusually deep for a tower this
+project has resident-ported. Confirmed via a real, reproducible bug found and fixed along the way:
+the position-embedding add was broadcasting row 0's positional embedding to every patch instead of
+adding per-patch (`addRowsHost` misused where the per-patch `addInPlaceHost` was needed) — caught
+because row 0 matched the CPU reference exactly while every other row diverged, fixed, and the gate
+now goes from cosine ~0.1 (broken) to ~0.91-0.96 (accumulated int8 rounding, confirmed genuine).
+
+**Out of scope for this pass**: Metal (not attempted), Qwen2.5-VL's own tower (different attention
+pattern), and the host-round-trip residual-add optimization named above.
+
 #### Vision-language resident decode (gap 0) — 2026-09-08
 
 **The actual lever, not the tower's own kernel speed.** `docs/multimodal.md`'s gap 0:

@@ -161,17 +161,30 @@ number is published without provenance.
   count ≈ core count on this box, total work is close to unchanged, just redistributed. Kept
   anyway: parity holds, it's the proven decoder mechanism, and the removed memory materialization
   may still matter at an untested config (more heads than cores, memory pressure).
-  **CUDA/Metal (the vision TOWER itself) — still NOT STARTED, and now lower priority.**
-  `attn_fused` (CUDA) and `attention_prefill` (Metal) are causal-only by hardcoded row-index math,
-  and both fast GEMMs need int4-quantized weights with no batched-M fallback — a non-causal kernel
-  variant and a new tower weight-quantization pipeline, each with its own parity gate, not a rewire
-  of what exists. Gap 0 (below) turned out to be the bigger, cheaper, differently-shaped lever it
-  looked like when flagged — measured 3.86× on real decode with only a Go-side prefill/decode
-  bridge plus one narrow kernel change (Qwen's rope-angle split), not a new GPU attention kernel
-  or quant pipeline for the tower's own weights. This CUDA/Metal tower work is still real and still
-  wanted eventually (the tower's own ~31s CPU cost per SigLIP image is untouched by gap 0's fix,
-  which only moved decode), but it's a smaller, lower-priority remainder now that decode is fixed,
-  not a prerequisite for anything.
+  **CUDA (SigLIP/Gemma-3) — DONE, 2026-09-08. Metal — still not started.** The doc's own earlier
+  framing here overstated the gap, found by reading the actual kernels rather than assuming: a
+  FULLY non-causal attention kernel turned out to need ZERO new kernel source at all —
+  `attn_img_batched` (already shipped this session, for Gemma-3's TEXT-decoder image-block
+  attention) called with `imgStart=0, imgEnd=M` already IS full bidirectional attention over every
+  patch, reachable via parameters alone; and the "int4-only, no batched-M fallback" claim was true
+  only of the specialized tensor-core MMA tier, not the plain int8 batched GEMV
+  (`gemv_w8a8_batched`) already used for ordinary int8 text prefill at any M. What genuinely was
+  missing — SigLIP uses LayerNorm (not RMSNorm) and a plain non-gated GELU-tanh MLP, neither of
+  which exists anywhere else in this codebase — needed exactly two new, small kernels
+  (`layernorm_quant.cu`, `gelu_quant.cu`), not a new attention or GEMM primitive. Plugs into
+  `aikit/vision`'s ALREADY-BUILT `ResidentEncoder`/`RegisterResident` seam (the same one WebGPU's
+  own resident tower uses) — `cuda/vision_encoder.go` + `cuda/vision_register.go`, ~40 lines of
+  registration glue, mirroring `gpu/vision_register.go` almost verbatim.
+
+  **Measured: 1.58× (41.3s→26.1s median, real gemma-3-4b-it tower, matched int8 precision,
+  interleaved).** Real-checkpoint gate cosine 0.91-0.96 (int8-vs-int8, not int4-vs-f32) —
+  confirmed genuine via a matched-precision CPU probe reproducing one layer's raw GEMV output at
+  cosine 1.000000, not a wiring bug (a REAL bug — the position-embedding add broadcasting row 0 to
+  every patch — was found and fixed along the way; see `docs/benchmarks.md` "Resident CUDA vision
+  tower" for the full writeup, both numbers, and the specific host-round-trip residual-add
+  optimization named there as the natural next lever if the modest 1.58× ever needs to close
+  further toward WebGPU's own ~9×). Metal, and Qwen2.5-VL's own (differently-shaped) tower, remain
+  explicitly out of scope for this pass.
 - **P7 · Gemma 4 vision (all sizes) and audio (E2B/E4B/26B-A4B).** Phase 0 from the real
   `Gemma4VisionConfig`/`Gemma4AudioConfig` and modeling file, not the summary above: the encoder
   block, the 3×3 pooling to soft tokens, the position table, the variable token budget and its

@@ -173,6 +173,23 @@ var attnImgPrefillPTX []byte
 //go:embed testdata/rope_mrope_prefill.ptx
 var ropeMRopePrefillPTX []byte
 
+// layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched — the resident SigLIP vision
+// tower's LayerNorm (P6, docs/multimodal.md's "P6's other half"), a genuinely new primitive: no
+// text family in this codebase uses LayerNorm (mean+variance, weight+bias), only RMSNorm. Own
+// module for the same isolation reason as every kernel above — prefill_batched.ptx/glue.ptx stay
+// untouched. See cuda/layernorm_quant.cu / cuda/vision_encoder.go.
+//
+//go:embed testdata/layernorm_quant.ptx
+var layernormQuantPTX []byte
+
+// geluQuantPTX: gelu_quant_batched — the resident SigLIP vision tower's plain (non-gated) MLP
+// activation (h = FC2(GELU_tanh(FC1(x)))), distinct from glue.cu's glu_quant, which computes a
+// GATED act(gate)*up product for the SwiGLU/GeGLU MLP every text family here uses. Own module, same
+// isolation reason as above. See cuda/gelu_quant.cu / cuda/vision_encoder.go.
+//
+//go:embed testdata/gelu_quant.ptx
+var geluQuantPTX []byte
+
 // attnFusedPTX: attn_fused_hd64 / attn_fused_hd128 — the L2 FlashAttention-style fused prefill
 // attention (docs/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
 // attn_block.cu records: adding a kernel to prefill_batched.cu regenerates that PTX and risks

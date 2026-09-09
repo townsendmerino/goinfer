@@ -1059,7 +1059,7 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/graphs_safe.go:109` | goinfer | `// admitGraphs applies the safe-gate: it is the ONLY place r.graphs is promoted from "re` |
 | `docs/audit-2026-09-02.md|cuda/kernel_fma_lint_test.go:15` | goinfer | `// moe.cu is exempt because the shipped moe.ptx was a FROZEN artifact, audited at NVRTC ` |
 | `docs/audit-2026-09-02.md|cuda/kernels.go:107` | goinfer | `// this box's NVRTC 12.9.86, not 12.6. moe.ptx was the audited 12.6.85 artifact (R-26) a` |
-| `docs/audit-2026-09-02.md|cuda/kernels.go:240` | goinfer | `func f32tof16(f float32) uint16 {` |
+| `docs/audit-2026-09-02.md|cuda/kernels.go:257` | goinfer | `func f32tof16(f float32) uint16 {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:1127` | goinfer | `for m := first; m < M; m++ {` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:1180` | goinfer | `func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error ` |
 | `docs/audit-2026-09-02.md|cuda/prefill.go:1195` | goinfer | `// ONE head GEMV for all M rows: the weights are read once instead of M times.` |
