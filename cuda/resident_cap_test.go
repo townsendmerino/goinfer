@@ -5,6 +5,7 @@ package cuda
 import (
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -64,6 +65,41 @@ func TestResolveCtxCap(t *testing.T) {
 		if got := resolveCtxCap(c.request, c.modelCtx); got != c.want {
 			t.Errorf("%s: resolveCtxCap(%d, %d) = %d, want %d", c.name, c.request, c.modelCtx, got, c.want)
 		}
+	}
+}
+
+// TestResolveCtxCapFit_shortcuts pins the branches that need no real model or device: an explicit
+// request is untouched either way (fit-by-default only ever applies to an UNPINNED load), the
+// GOINFER_NO_FIT_DEFAULT escape hatch restores resolveCtxCap exactly, and a model whose own window
+// is already at or below cudaCtxCapDefault has nothing to gain from asking Plan at all. The
+// live-probe-driven branch (a real model, a real free-VRAM reading) is exercised on real hardware
+// separately (docs/task-gpu-paths-2026-09.md's G11 entry has the nobara numbers) — nil is passed
+// for *decoder.Model here specifically because none of these three branches ever reaches the code
+// that would dereference it, which is itself part of what's being pinned: an explicit or
+// small-window caller must never pay for (or risk) a Plan/probe call at all.
+func TestResolveCtxCapFit_shortcuts(t *testing.T) {
+	for _, c := range []struct {
+		name              string
+		request, modelCtx int
+		noFitEnv          bool
+		want              int
+	}{
+		{"explicit request bypasses fit entirely", 8192, 32768, false, 8192},
+		{"explicit request bypasses fit even with the env var set", 8192, 32768, true, 8192},
+		{"GOINFER_NO_FIT_DEFAULT restores the historical default", 0, 32768, true, cudaCtxCapDefault},
+		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, cudaCtxCapDefault},
+		{"model window below the historical default has nothing to gain", 0, 2048, false, cudaCtxCapDefault},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if c.noFitEnv {
+				t.Setenv("GOINFER_NO_FIT_DEFAULT", "1")
+			} else {
+				os.Unsetenv("GOINFER_NO_FIT_DEFAULT")
+			}
+			if got := resolveCtxCapFit(nil, c.request, c.modelCtx); got != c.want {
+				t.Errorf("resolveCtxCapFit(nil, %d, %d) = %d, want %d", c.request, c.modelCtx, got, c.want)
+			}
+		})
 	}
 }
 

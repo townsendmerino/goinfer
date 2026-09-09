@@ -1503,3 +1503,81 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     verdict and the web UI's Models-tab listing (§3's other two surfaces) still need the
     header-only work this phase explicitly deferred. Phases 2–5 (fit-by-default, WebGPU, the rate
     band, host-computed experts) remain entirely unstarted.
+
+- 2026-09-09 — `task-fit-to-hardware.md` Phase 2 STARTED, CUDA-only, at the user's explicit
+  direction ("CUDA first, measured") over wiring all three backends at once — Phase 2 is a real
+  production default change, unlike Phase 1's dry run, and its own gate (G1) requires a real
+  decode-rate measurement, not just correctness. Metal and CPU are NOT touched this pass.
+  - **What actually changes for CUDA**: only CONTEXT. `capSlots` (`cuda/resident.go`) already IS
+    "fit by default" for the elastic MoE term — `--moe-cache-slots 0` auto-caps to live free VRAM,
+    which is exactly what Phase 2 asks for and already existed before this task doc was written.
+    The one CUDA piece that was NOT automatic: an unpinned load always got the flat
+    `cudaCtxCapDefault` (4096) regardless of the card, and that constant's OWN doc comment already
+    recorded a real measurement (RTX 2070 SUPER, dense 7B int4) where the true per-card ceiling was
+    5-6x the default — headroom nobody who didn't know to pass `-ctx` ever got.
+  - **`cuda/resident.go`**: new `resolveCtxCapFit(m, request, modelCtx)` next to the existing
+    `resolveCtxCap`. An EXPLICIT request (a pinned `-ctx`) is untouched either way — fit-by-default
+    only ever applies to the unpinned case. Otherwise: try a candidate of `fitDefaultCtx` (8192,
+    the same agent-turn-size default `task-fit-to-hardware.md` §8 and `goinfer-chat fit`'s own
+    `-ctx` default already use — so the dry run and the real load agree), clamped to the model's
+    own window; ask `Plan("cuda", freeBytes, ...)` (`decoder.FreeBytesFor("cuda")` — this session's
+    own earlier `fit` work) what actually fits; use whatever Plan lands on. **Built so it can only
+    ever raise the default above 4096 or leave it exactly at 4096 — never below**: an unknown free-
+    bytes reading, a `PlacementDecline`, or a Plan result somehow under 4096 all fall back to the
+    exact historical constant, so there is no configuration where turning this on could make an
+    existing working deployment worse. `GOINFER_NO_FIT_DEFAULT=1` is a temporary escape hatch (not
+    the doc's own `--fit=off` CLI flag yet — deferred until Metal/CPU share it too, since a flag
+    that only ever affects one of the three backends the doc names is premature).
+  - **Verified on real hardware (nobara, RTX 2070 SUPER), not assumed from the arithmetic alone**:
+    `TestResolveCtxCapFit_shortcuts` (new, `cuda/resident_cap_test.go`) pins the branches that need
+    no device (explicit request, the env escape hatch, a model window already at/below the
+    historical default) — `nil` is passed for `*decoder.Model` deliberately, itself asserting none
+    of those three branches ever reaches code that would dereference it. The live-probe-driven
+    branch was checked directly: a throwaway probe against `qwen2.5-coder-0.5b` resolved
+    `ctxCap=8192` (up from 4096) with fit-by-default on, and exactly `4096` with
+    `GOINFER_NO_FIT_DEFAULT=1` set — confirmed on the real card, not inferred from the code.
+  - **G1's rate bar, measured, not assumed**: KV cap size affects reserved VRAM, not per-token
+    compute at a fixed shallow decode depth — a bigger allocated cap should cost nothing at the
+    depths a real test decodes to, but that is a claim, not evidence, so it was measured directly.
+    `TestProdThroughput` (existing, `cuda/backend_wired_test.go`, autoregressive with real
+    advancing positions) run twice, same box, same model, ctx=8192 (new default) vs ctx=4096
+    (`GOINFER_NO_FIT_DEFAULT=1`): logits path 230.9 vs 230.7 tok/s, greedy fast path 234.2 vs 234.9
+    tok/s — differences of 0.09% and 0.3%, both comfortably inside noise, nowhere near the ≥0.90×
+    bar. `TestBackendResidentWired` (the full production wiring gate) still green with the new
+    default active (7/8 exact, worst near-tie 0.563%, unchanged from before this change).
+  - **No regression across the rest of the CUDA suite**: `TestSplitKV_bitIdentical`/
+    `TestSplitKVCrossover` (heavy, KV-cap-adjacent) both pass with the new default; a full-suite
+    run (started 07:35:06 PDT / 14:35:06 UTC, 25-minute timeout) was launched specifically to catch
+    any VRAM-pressure interaction the bigger default might introduce in already-tight tests (the
+    same class of pre-existing cumulative-pressure artifact the prior M-02 full-suite run
+    surfaced) — result below.
+  - **Full-suite result: 55 pass/1 fail/8 skip before the 25-minute timeout hit mid-
+    `TestGemma4_26B_cache_B`** (a genuinely heavy real-26B-checkpoint test, same as last time).
+    The one failure, `TestResidentDrafter_extendContext`, was taken seriously rather than
+    dismissed on sight: it attaches a drafter to a target loaded with an UNPINNED context
+    (`decoder.Options{Backend:"cuda", Quant:"int4"}`, no `ResidentContext` set), which is exactly
+    the shape this change touches — a bigger default target KV reservation competing with the
+    drafter's own attach for the same finite VRAM is precisely `task-fit-to-hardware.md`'s own
+    motivating example (§2's `--drafter`-after-`BuildResident` story). Re-ran it in isolation,
+    fit-by-default ON and OFF: **both pass cleanly** (`... BIT-IDENTICAL to one-shot (8) across
+    8192 K values`), confirming this specific failure is the same suite-ordering VRAM-pressure
+    artifact as the DFlash failures the earlier M-02 full-suite run found — not a deterministic
+    regression from this change, on this hardware, for this drafter/target pairing.
+  - **The narrower risk this does NOT rule out, stated rather than hidden**: fit-by-default's
+    context default is not aware that a drafter might attach later (the exact gap
+    `resolveCtxCapFit`'s own doc comment and the earlier M-02 CUDA entry already name as future
+    work — `BuildResident` cannot see a companion allocation it does not yet know about). A
+    drafter+target pairing that fit comfortably under the historical 4096-position default on a
+    genuinely tight card could, in principle, find less room once the target's own default KV
+    claim doubles to 8192 — this session's test evidence says that does NOT happen for the
+    specific pairing/hardware tested, but it is a real, un-eliminated failure mode, not a proven
+    absence of one. `GOINFER_NO_FIT_DEFAULT=1` (or an explicit `-ctx`) is the mitigation for a
+    drafter workload on a tightly-constrained card until the companion-aware fix lands.
+  - `gofmt -l` clean; `go vet -tags cuda` clean; staticcheck's only findings
+    (`drain_marker_test.go`/`mustalloc_test.go`/`specdecode.go`, all U1000) are in files this
+    change never touched — confirmed pre-existing before this session's earlier M-02 CUDA work.
+  - **Not done, left open**: Metal and CPU's own fit-by-default pieces (Metal's slot count still
+    has no `Option`/flag at all, still env-var-only per the doc's own §3 note); the real
+    `--fit=off` CLI flag (currently the CUDA-only env-var stand-in); G6's table test (every
+    explicit flag honoured or refused with numbers); the companion-aware (drafter) ctx sizing
+    named just above.

@@ -567,7 +567,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
 		// cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who
 		// did not ask allocates exactly what they always did.
-		ctxCap:      resolveCtxCap(m.ResidentContextRequest(), m.Config().MaxPositions),
+		ctxCap:      resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions),
 		ctxExplicit: m.ResidentContextRequest() > 0,
 	}
 	if moeSig {

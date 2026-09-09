@@ -69,6 +69,50 @@ func resolveCtxCap(request, modelCtx int) int {
 	return request
 }
 
+// fitDefaultCtx is the candidate context resolveCtxCapFit tries for an UNPINNED request, before
+// falling back to cudaCtxCapDefault — task-fit-to-hardware.md §8's own answer to "what should the
+// default even be": the agent-turn size docs/server.md's dsh section measured, not the model's
+// full window (which can be far larger than anyone asked for). goinfer-chat fit's own -ctx
+// default (internal/fitcmd/fit.go) uses the same figure, so the dry run and the real load agree.
+const fitDefaultCtx = 8192
+
+// resolveCtxCapFit is task-fit-to-hardware.md Phase 2's "fit by default" for CUDA's context: an
+// UNPINNED load no longer gets a flat cudaCtxCapDefault regardless of the card — cudaCtxCapDefault's
+// OWN doc comment records a real measurement (RTX 2070 SUPER, dense 7B int4) where the true ceiling
+// was 5-6x the default, unused by anyone who did not know to pass -ctx. This asks Plan for a bigger
+// candidate (fitDefaultCtx, clamped to the model's own window) and uses whatever Plan lands on —
+// which can only ever be cudaCtxCapDefault or MORE, never less, because of the explicit floor
+// checks below. A caller with GOINFER_NO_FIT_DEFAULT=1 set, or whose free-VRAM probe is unknown,
+// gets EXACTLY today's resolveCtxCap — this function can only improve on the historical default,
+// never regress it, so there is no failure mode where turning fit-by-default off would have helped.
+//
+// GOINFER_NO_FIT_DEFAULT is a temporary escape hatch, not task-fit-to-hardware.md's own --fit=off:
+// this is CUDA-only (docs/task-gpu-paths-2026-09.md's G11 entry — the user chose "CUDA first,
+// measured" over wiring all three backends at once), and promoting this to a real CLI flag makes
+// more sense once Metal and CPU share it too, rather than adding a flag today that only ever
+// affects one of the three backends the doc's own Phase 2 names.
+func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
+	if request > 0 || os.Getenv("GOINFER_NO_FIT_DEFAULT") != "" {
+		return resolveCtxCap(request, modelCtx) // an explicit -ctx is untouched either way
+	}
+	candidate := fitDefaultCtx
+	if modelCtx > 0 && candidate > modelCtx {
+		candidate = modelCtx
+	}
+	if candidate <= cudaCtxCapDefault {
+		return cudaCtxCapDefault // the model's own window is at or below the historical default anyway
+	}
+	free, ok := decoder.FreeBytesFor("cuda")
+	if !ok {
+		return cudaCtxCapDefault // unknown ⇒ the safe historical default, never guess
+	}
+	p := m.Plan("cuda", free, decoder.PlanRequest{Ctx: candidate})
+	if p.Placement == decoder.PlacementDecline || p.Ctx < cudaCtxCapDefault {
+		return cudaCtxCapDefault // Plan could not confidently improve on the historical floor
+	}
+	return p.Ctx
+}
+
 // kvBytesForCap is the device bytes the resident K+V caches occupy at a given capacity: every layer
 // holds K and V as f32[cap*kvDim]. Measured against this formula: 24.0 KB/position for
 // qwen2.5-coder-0.5b (24 layers × 128 kvDim × 2 × 4 B) and 56.0 KB/position for the 1.5B
