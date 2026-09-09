@@ -117,6 +117,14 @@ var gluePTX []byte
 //go:embed testdata/argmax.ptx
 var argmaxPTX []byte
 
+// loraPTX: lora_delta_down/lora_delta_up — compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md).
+// A brand-new kernel pair, so per cuda/testdata/REGEN.md's rule ("adding a NEW kernel → new .cu
+// file, new .ptx, built at whatever NVRTC is present") this is its own module, never touching
+// glue.ptx's audited kernels. See cuda/lora.cu.
+//
+//go:embed testdata/lora.ptx
+var loraPTX []byte
+
 // attnBlockPTX: attn_block_full — the DFlash block drafter's NON-CAUSAL attention over
 // [ctx‖block]. A verbatim copy of prefill_batched.cu's attn_batched with ONE line changed
 // (nKeys = startPos+M for every row, not startPos+m+1), because the drafter's block is

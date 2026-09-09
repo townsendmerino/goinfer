@@ -939,3 +939,90 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **G3 is now DONE on decoder+Metal+WebGPU.** CUDA remains unwritten (package doesn't compile
     locally, see above) — left as explicitly future work rather than written blind. No commit yet.
 
+- 2026-09-08 — G3's CUDA backend DONE, via SSH to nobara (the only box with the CUDA toolchain).
+  Worked in an ISOLATED checkout (`~/mycode/goinfer-g3-cuda`, fresh `rsync` of the local working
+  tree, not the box's default `~/mycode/goinfer`) because another active session was mid-work
+  there with uncommitted changes touching `decoder/residency.go` among others — never touched
+  that checkout or its git state. **G3 now has all three GPU backends (Metal, WebGPU, CUDA) plus
+  decoder plumbing, all independently verified against the same CPU reference.**
+  - **Architecture, third variant**: unlike WebGPU's fixed-plan-replay, CUDA is like Metal —
+    `launchToken` re-issues live kernel launches every token (`segA`/`segB`/`segBFFN`), so binding
+    is a plain `if r.loraLayers != nil` at each of the 7 sites, no dispatch-plan surgery needed.
+    The one thing CUDA has that neither other backend does: **CUDA graphs** (`r.graphs`, opt-in
+    via `GOINFER_CUDA_GRAPHS`, off by default) capture-and-replay each layer's static launch
+    segments — a graph captured before any bind would silently replay with zero LoRA dispatches
+    forever after, since replay doesn't re-run the live Go code my `if` lives in. Fixed by having
+    `SetAdapter` refuse outright when `r.graphs` is true, rather than attempt a live/graph hybrid
+    or a mid-life re-capture — graphs are opt-in and off by default, so this costs nothing for a
+    default deployment and is an honest, named limitation for the opt-in case.
+  - **A structural wrinkle neither Metal nor WebGPU has**: CUDA has TWO code paths for q/k/v (and
+    separately for gate/up) depending on `r.fuseQKV` — a fused int4-only super-kernel
+    (`fused_qkv.cu`'s `fused_rms_qkv`/`fused_rms_gu`) that computes rmsnorm+quant+matmul in ONE
+    launch and never materializes the normed+quantized activation (`r.aq`/`r.aSc` /
+    `r.mq`/`r.mSc`) as a separate buffer — versus the unfused chain, which does. LoRA needs that
+    activation as its own input. Fixed by having the hook, when `r.fuseQKV` is true, ALSO issue
+    the standalone `r.norm(...)` call the unfused path already makes elsewhere — a redundant
+    extra dispatch (only when an adapter is bound), correct because `rmsnorm_quant` is a
+    deterministic function of `r.x`/the norm weight, so materializing it a second time from a
+    second kernel invocation reproduces the same values the fused kernel computed internally
+    (up to ordinary cross-kernel float noise, the same class already tolerated everywhere else in
+    this codebase). Confirmed safe by checking `BuildResident`: `r.fuseQKV` is forced `false` for
+    both `postOnly` and `parallelBlock` (their own comments explain why), so this fused-path
+    materialization is never ambiguous about which norm weight applies.
+  - **`cuda/lora.cu`** (new, own module — `cuda/testdata/REGEN.md`'s rule for a NEW kernel):
+    `lora_delta_down` (one block, loops over rank, same reduction shape as `rmsnorm_quant`'s
+    sum-of-squares tree, reading the SAME packed-int8-per-int32-word activation format every
+    GEMV kernel in this backend already consumes) and `lora_delta_up` (one thread per output row,
+    `if (row >= Outn) return;` bounds check matching `gemv_w8a8`'s own convention for an
+    over-provisioned grid). `cuda/lora.go`: `SetAdapter` (runs via `r.do(...)`, the executor-
+    thread indirection EVERY device-touching call in this backend requires — CUDA contexts are
+    thread-affine — and releases the previous bind's buffers via `r.dev.ReleaseBuf`, since unlike
+    Metal/WebGPU this backend's device ledger normally frees everything only at `Close`, so
+    skipping this would leak VRAM on every rebind), `applyLora` (the shared down-then-up dispatch
+    helper). New Pipeline fields (`fLoraDown`/`fLoraUp`) loaded unconditionally in `BuildResident`,
+    same "always create, cheap" choice both other backends made.
+  - **Two real, independently-discovered pre-existing bugs, both fixed, NEITHER caused by this
+    row** — found only because this was the first CUDA build attempted against a fresh checkout
+    since they landed:
+    1. **`cuda/testdata/glue.ptx` was stale by three commits.** `git log` on `glue.ptx` vs
+       `glue.cu` showed the committed PTX predates `7357856` (G5's Cohere row, which added
+       `layernorm_quant`) AND two further optimization commits (`glu_quant`/`rmsnorm_quant`'s
+       warp-shuffle maxabs, RoPE's YaRN mscale) — none of their PTX regens were ever committed.
+       Concretely: **every CUDA resident build, on any machine, from any commit since `7357856`,
+       has been silently declining to CPU** (`layernorm_quant` genuinely absent from the shipped
+       PTX — confirmed identical stale artifact on both this Mac's checkout and nobara's own
+       tracked copy, so this is not a sync artifact). Fixed by regenerating via `./build_ptx.sh
+       glue` on nobara (no toolchain-pinning concern per REGEN.md — `glue.ptx` is not one of the
+       version-pinned-audited artifacts, only `moe.ptx` is) — 69095→82719 bytes, `layernorm_quant`
+       now present (14 occurrences). **This is a real, separate finding the user should know
+       about independent of G3** — it means Cohere/Command-R (and everything else) has been
+       CPU-only on CUDA this whole time, not the resident speed the G5 row's own commit claimed.
+    2. **`TestKernelFMALint_coversEmbeddedPTX` correctly caught the new kernel unlinted** — my
+       first `lora.cu` draft used bare `part += Ar[k] * dq` / `acc += Br[r] * tin[r]` /
+       `dst[row] += scale * acc`, all bare float MACs the lint (audit C-16) exists specifically to
+       catch before any numeric test runs. Fixed by rewriting as explicit `__fmaf_rn` calls (the
+       same idiom `rmsnorm_quant` already uses) and adding `lora.cu` to `lintedKernels` — the
+       CORRECT fix for a brand-new kernel, not an exemption (`moe.cu`'s exemption is a legacy
+       special case with its own expired justification already flagged in that file; a new kernel
+       with no such history should comply, not join it).
+  - **`TestLoRAResidentParityCUDA`** (new, `cuda/lora_resident_parity_test.go`): same
+    `testdata/llama-tiny` fixture, same synthetic 7-projection/4-layer adapter, same 0.95 floor,
+    same vacuousness check as the Metal/WebGPU twins. Measured: **cosine 0.999963** — matching
+    WebGPU's 0.999963 and Metal's 0.999960 on the identical fixture almost exactly; three
+    independent kernel implementations across three different GPU APIs converging on the same
+    number is strong evidence the LoRA math itself is right, not just each backend's own wiring.
+  - Full regression (`cuda`, real RTX 2070 SUPER, idle/uncontended at test time — confirmed via
+    `nvidia-smi` before running to avoid colliding with the other active session's own GPU use):
+    117 pass / 0 fail / 105 skip. The only failures before the `glue.ptx`/FMA-lint fixes were the
+    two above (both fixed) plus 3 failures from an UNRELATED, pre-existing gap — this Mac's own
+    `testdata/mistral-tiny-window/model.safetensors` is genuinely absent from disk despite being
+    git-tracked (confirmed via `git ls-files` vs `ls`), reproduced identically in the synced
+    isolated checkout, not something this row caused or is in scope to fix. `gofmt -l`, `go vet`
+    (`-tags "cuda goinfer_testhooks"`), and CI's pinned staticcheck (same tags, same 0.8.0
+    version confirmed on nobara) all clean.
+  - **G3 is now COMPLETE on decoder + all three GPU backends (Metal, WebGPU, CUDA)**, each with
+    its own numeric parity test converging on the same ~0.9999-0.99996 cosine against the shared
+    CPU reference. No commit yet — the isolated nobara checkout was left in place
+    (`~/mycode/goinfer-g3-cuda`) rather than cleaned up immediately, in case the user wants to
+    inspect it before it's torn down; the regenerated `glue.ptx` and the CUDA-side new files were
+    copied back to this Mac's checkout so everything lands in one place to commit from here.

@@ -357,11 +357,19 @@ type cudaResident struct {
 	profBatchTime time.Duration
 	profSyncCalls uint64
 	profCalls     uint64
-	graphs        bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
-	graphsSync    bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
-	graphMask     string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
-	layerCap      bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
-	layerCapBuf   [][]float32
+	// loraLayers is nil until SetAdapter binds a compute-time LoRA adapter; then non-nil for the
+	// life of that bind. segA/segB check it directly (cuda/lora.go's applyLora), so it must never
+	// be bound while r.graphs replays a captured segment — a graph was captured with this nil, so
+	// replaying it would silently skip every LoRA dispatch. SetAdapter refuses (returns an error)
+	// rather than bind under graphs; graphs are opt-in (GOINFER_CUDA_GRAPHS) and off by default,
+	// so this only matters for that explicit opt-in, never for a default deployment.
+	loraLayers  []cudaLoraLayer
+	loraT       Buffer // [loraRMax]f32 scratch, shared by every projection/layer's down→up pair
+	graphs      bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
+	graphsSync  bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
+	graphMask   string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
+	layerCap    bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
+	layerCapBuf [][]float32
 
 	// hidCap is the PRODUCTION hidden-state seam (P10 / docs/spec/08): the resident
 	// analogue of decoder.Model.ForwardCapture, which exists only on the CPU forward. A
@@ -424,6 +432,10 @@ type cudaResident struct {
 	dev                                                                                     *Device
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
+	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
+	// (lora.ptx), loaded unconditionally like every other glue pipeline — cheap, and whether a
+	// model will ever receive an adapter isn't known at BuildResident time.
+	fLoraDown, fLoraUp Pipeline
 	// Batched (M=len) prefill pipelines (prefill_batched.ptx) — the weight-stationary path that fixes
 	// the ~128-token Ollama crossover. bGemv is the batched W4A8 GEMV; the rest are the M=1 glue
 	// kernels with an M dimension, each bit-identical per row. Loaded once at build (small module).
@@ -2235,6 +2247,31 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			}
 		}
 	}
+	// G3 (docs/task-gpu-paths-2026-09.md): compute-time LoRA — q/k/v deltas, right after the base
+	// projection, before qk_norm/RoPE below, matching applyLoRA's CPU order exactly. Not reached
+	// for Ly.qGate (documented gap — see cuda/lora.go's file comment, same scope decision Metal
+	// made for the identical reason: qGate's q_proj takes a different path entirely, into
+	// r.dnQg, split afterward — no single hook point covers both).
+	if r.loraLayers != nil && !Ly.qGate {
+		if r.fuseQKV {
+			// The K1 fused kernel computes rmsnorm+quant INTERNALLY and never writes r.aq/r.aSc
+			// out — materialize them here (redundant work, correct result: rmsnorm_quant is a
+			// deterministic function of r.x/Ly.preNorm) so the LoRA kernels have a valid input.
+			if e := r.norm(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+				return e
+			}
+		}
+		LA := &r.loraLayers[l]
+		if e := r.applyLora(LA.q, r.aq, r.aSc, r.hidden, r.qB); e != nil {
+			return e
+		}
+		if e := r.applyLora(LA.k, r.aq, r.aSc, r.hidden, r.kB); e != nil {
+			return e
+		}
+		if e := r.applyLora(LA.v, r.aq, r.aSc, r.hidden, r.vB); e != nil {
+			return e
+		}
+	}
 	if r.qkNorm { // per-head (or, for QKNormWhole, whole-vector) Q/K RMSNorm before RoPE
 		addOne := int32(0)
 		if r.rmsAddOne {
@@ -2287,6 +2324,13 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.oO, 0); err != nil {
 			return err
 		}
+		// G3: added into the RAW o-proj output, BEFORE the post-attn norm below — matching
+		// applyLoRA's CPU order (delta added to `out`, caller norms afterward).
+		if r.loraLayers != nil {
+			if e := r.applyLora(r.loraLayers[l].o, r.cq, r.cSc, Ly.qDim, r.oO); e != nil {
+				return e
+			}
+		}
 		// normF32 no-ops on an empty weight (w.Len()==0) — parallelBlock (Cohere) has no post-attn
 		// norm at all, so Ly.postAttnNorm stays unbuilt and this is a pure quantize-then-add for it.
 		if err := r.normF32(r.oO, Ly.postAttnNorm); err != nil {
@@ -2301,6 +2345,11 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 	} else {
 		if err := r.doG(Ly.o, r.cq, r.cSc, r.oBiasArg(Ly), r.x, 1); err != nil {
 			return err
+		}
+		if r.loraLayers != nil {
+			if e := r.applyLora(r.loraLayers[l].o, r.cq, r.cSc, Ly.qDim, r.x); e != nil {
+				return e
+			}
 		}
 	}
 	return r.segBFFN(Ly, l, x)
@@ -2364,6 +2413,25 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			return err
 		}
 	}
+	// G3: gate/up deltas BEFORE the SwiGLU activation below — matching decoder/mlp.go's own
+	// comment ("delta into gate/up before the activation") word for word.
+	if r.loraLayers != nil {
+		if r.fuseQKV {
+			// fGU computes rmsnorm+quant INTERNALLY (same reasoning as segA's fQKV case) — this
+			// branch only runs when !postOnlyHere/!parallelBlock (both force fuseQKV off at
+			// BuildResident), so Ly.postNorm is unambiguously the right weight to materialize with.
+			if e := r.norm(x, Ly.postNorm, r.mq, r.mSc); e != nil {
+				return e
+			}
+		}
+		LA := &r.loraLayers[l]
+		if e := r.applyLora(LA.gate, r.mq, r.mSc, r.hidden, r.gO); e != nil {
+			return e
+		}
+		if e := r.applyLora(LA.up, r.mq, r.mSc, r.hidden, r.uO); e != nil {
+			return e
+		}
+	}
 	if err := r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
 		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
 		return err
@@ -2371,6 +2439,13 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	if r.sandwich || postOnlyHere || r.parallelBlock {
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
 			return e
+		}
+		if r.loraLayers != nil {
+			// Added BEFORE the post-MLP norm (sandwich/postOnly) or the deferred residual add
+			// (parallelBlock, which has none) — same "delta before any subsequent norm" order.
+			if e := r.applyLora(r.loraLayers[l].down, r.dq, r.dSc, r.inter, r.dO); e != nil {
+				return e
+			}
 		}
 		if r.subCap {
 			r.capVec(r.dO, r.subMLPpreC, l, r.hidden)
@@ -2386,8 +2461,15 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); err != nil {
 			return err
 		}
-	} else if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, x, 1); e != nil {
-		return e
+	} else {
+		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, x, 1); e != nil {
+			return e
+		}
+		if r.loraLayers != nil {
+			if e := r.applyLora(r.loraLayers[l].down, r.dq, r.dSc, r.inter, x); e != nil {
+				return e
+			}
+		}
 	}
 	return nil
 }

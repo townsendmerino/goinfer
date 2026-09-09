@@ -27,6 +27,8 @@ func init() {
 var (
 	_ decoder.Backend          = (*cudaBackend)(nil)
 	_ decoder.ResidencyBackend = (*cudaBackend)(nil)
+	_ decoder.ResidentForward  = (*cudaResident)(nil)
+	_ decoder.ResidentAdapter  = (*cudaResident)(nil)
 )
 
 // cudaBackend implements decoder.Backend + decoder.ResidencyBackend.
@@ -762,6 +764,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fArg, e = r.dev.NewComputePipeline(amod, "argmax_reduce"); e != nil {
 			return e
 		}
+		// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md) — own module, same isolation
+		// reasoning as argmax_reduce/router_f32 above. Loaded unconditionally: cheap, and whether
+		// this model will ever receive an adapter isn't known here.
+		lmod, e2 := r.dev.CompileLibrary(loraPTX)
+		if e2 != nil {
+			return e2
+		}
+		if r.fLoraDown, e = r.dev.NewComputePipeline(lmod, "lora_delta_down"); e != nil {
+			return e
+		}
+		if r.fLoraUp, e = r.dev.NewComputePipeline(lmod, "lora_delta_up"); e != nil {
+			return e
+		}
+		r.loraT = r.af(loraRMax)
 		// Batched prefill kernels (weight-stationary M=len path). Own module; the audited PTX is
 		// untouched. bGemv comes from gemv_w4a8_batched.ptx, the rest from prefill_batched.ptx.
 		// gemvBatchedPTX is NO LONGER COMPILED HERE: its only entry, gemv_w4a8_batched, was bound
