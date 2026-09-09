@@ -89,6 +89,13 @@ type residentDecoder struct {
 	ctxCap  int      // resident KV capacity in positions; writes past it corrupt (M20)
 	keep    []func() // release the resident buffers (norms, biases, KV, projections)
 
+	// G6 (docs/task-gpu-paths-2026-09.md): Gemma 2/3/4's final-logit softcap
+	// (FeatFinalLogitSoftcap), applied host-side after readback — the same site and shape as
+	// cuda/resident.go's step()/metal/model.go's finalizeLogits. 0 ⇒ none (every non-Gemma
+	// family). Skipped for greedy decode (ForwardArgmax-shaped fast paths don't exist on this
+	// backend today; Forward/ForwardN are the only readback sites, so both apply it).
+	finalSoftcap float32
+
 	// Batched verify (ForwardN): extra DecodeRunner instances sharing rm (the same
 	// resident weights + KV caches) with their own scratch/uniforms, built lazily up
 	// to the largest K seen. batch[0] aliases runner. newRunner builds one more.
@@ -124,6 +131,18 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// instead of mis-running.
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("webgpu")); len(missing) > 0 {
 		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs unimplemented feature(s) %v\n", missing)
+		return nil, false, nil
+	}
+	// Per-layer attention geometry (decoder.Model.PerLayerGeomOK): dense Gemma 4's local/global
+	// head_dim split (256 vs gemma4.GlobalHeadDim 512) needs a per-layer geometry seam this
+	// backend's runLayer.ghd/gnKV/ghalf fields exist for but gpu/residency.go's per-layer builder
+	// never actually populates for any family. Not expressible as a ResidentFeature — Gemma 3 and
+	// dense Gemma 4 derive the IDENTICAL required-feature set otherwise, so MissingResidentFeatures
+	// alone cannot catch this; see PerLayerGeomOK's own comment for the admission this predicate
+	// exists to prevent (found 2026-09-08 when G6's Gemma-set work satisfied every OTHER
+	// requirement dense Gemma 4 has).
+	if !m.PerLayerGeomOK("webgpu") {
+		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs per-layer attention geometry this backend does not implement\n")
 		return nil, false, nil
 	}
 	// Router-kernel capacity (gpu/moe.go): score/sel are array<f32,256> with nE clamped to
@@ -199,7 +218,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	kvDim := nKV * hd
 
-	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap}
+	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident()}
 	keepF := func(f func()) { rd.keep = append(rd.keep, f) }
 	up32 := func(v []float32) (*wgpu.Buffer, error) {
 		d, err := c.UploadF32(v)
@@ -372,6 +391,12 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			nE: nExp, k: topK, inter: moeInter, sigmoid: sig, norm: normTopK, scale: float32(rScale),
 			sharedInter: shInter, sharedUngated: shUngated, nGroup: nGroup, topkGroup: topkGroup,
 		}
+		// G6 (docs/task-gpu-paths-2026-09.md): gpt-oss's clamped-SwiGLU constants — uniform
+		// across every gpt-oss layer, same as CUDA's/Metal's own model-level alpha/limit fields.
+		if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
+			rd.rm.moe.gptoss = true
+			rd.rm.moe.gptossAlpha, rd.rm.moe.gptossLimit = alpha, limit
+		}
 	}
 	// MLA (Lever C4): DeepSeek/Kimi latent attention replaces the q/k/v/o block. mlaOK
 	// gates the per-layer MLA build below; the geometry is model-level. attnScale
@@ -400,6 +425,20 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		var ze error
 		if dnZeroConvB, ze = up32(make([]float32, rd.rm.dnet.convDim)); ze != nil {
 			return fail(ze)
+		}
+	}
+	// G6 (docs/task-gpu-paths-2026-09.md): Gemma's NormSandwich4 (FeatSandwichNorm) — extra
+	// norms on each sublayer OUTPUT, applied before the residual add. Required present on every
+	// layer when the arch declares it (a silently-missing one would DROP the norm, not error),
+	// matching cuda/backend.go's/metal/model.go's own validation for the same feature.
+	sandwichOK := m.SandwichNormResident()
+	if sandwichOK {
+		for i := range w.Layers {
+			lw := &w.Layers[i]
+			if len(lw.PostAttnNorm) != hidden || len(lw.PostMLPNorm) != hidden {
+				return fail(fmt.Errorf("gpu: layer %d: arch declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+					i, hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm)))
+			}
 		}
 	}
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a
@@ -869,6 +908,15 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 			keepF(rl.expDown.Release)
+			// gpt-oss (FeatAttnSink): expert-major gate‖up and down bias tables.
+			if rd.rm.moe != nil && rd.rm.moe.gptoss {
+				if rl.gateUpBias, e = up32(m.GptOssExpertBiasResident(i)); e != nil {
+					return fail(e)
+				}
+				if rl.downBias, e = up32(m.GptOssExpertDownBiasResident(i)); e != nil {
+					return fail(e)
+				}
+			}
 			if shInter > 0 { // always-on shared expert (qwen2_moe gated / GLM ungated)
 				if rl.shGate, e = proj(&lw.SharedExpert.Gate); e != nil {
 					return fail(e)
@@ -915,12 +963,43 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 		}
+		// G6 (docs/task-gpu-paths-2026-09.md): FeatOutBias (gpt-oss o_proj bias) and
+		// FeatSandwichNorm (Gemma's post-sublayer norms) — same "len>0, else leave nil" gate as
+		// QBias/QNorm above.
+		if len(lw.OBias) > 0 {
+			if rl.oBias, e = up32(lw.OBias); e != nil {
+				return fail(e)
+			}
+		}
+		if sandwichOK { // both present together (SandwichNormResident requires both non-empty)
+			if rl.postAttnNorm, e = up32(lw.PostAttnNorm); e != nil {
+				return fail(e)
+			}
+			if rl.postMLPNorm, e = up32(lw.PostMLPNorm); e != nil {
+				return fail(e)
+			}
+		}
+		// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a real one-element dummy when the
+		// layer has none — WGSL bind groups can't bind a null storage buffer), matching Metal's
+		// exact convention (metal/model.go's L.attnSinks/L.uHasSink) rather than CUDA's
+		// null-pointer sentinel.
+		if sinks := m.GptOssSinksResident(i); len(sinks) > 0 {
+			if rl.attnSinks, e = up32(sinks); e != nil {
+				return fail(e)
+			}
+			rl.hasSink = true
+		} else {
+			if rl.attnSinks, e = up32([]float32{0}); e != nil {
+				return fail(e)
+			}
+		}
 		rd.rm.layers = append(rd.rm.layers, rl)
 	}
 	_ = vocab // logits length is lmHead.nRows()
 
-	rd.rm.kvF16 = kvF16 // the runner picks the f16 attn/store kernels off this
-	rd.rm.kvI8 = kvI8   // …or the int8 kernels + scale binds
+	rd.rm.kvF16 = kvF16                         // the runner picks the f16 attn/store kernels off this
+	rd.rm.kvI8 = kvI8                           // …or the int8 kernels + scale binds
+	rd.rm.gatedGELU = m.GatedActResident() == 0 // G6: FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
 	scale, addOne := m.AttnScale(), m.RMSAddOne()
 	if mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(mlaAttnScale)
@@ -966,7 +1045,12 @@ func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, err
 			return nil, rd.resetErr
 		}
 	}
-	return rd.runner.Run(embedding, pos)
+	logits, err := rd.runner.Run(embedding, pos)
+	if err != nil {
+		return nil, err
+	}
+	applySoftcap(logits, rd.finalSoftcap)
+	return logits, nil
 }
 
 // ForwardN runs K tokens at startPos..startPos+K-1 in one command buffer. It lazily
@@ -1013,7 +1097,16 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 		}
 		rd.batch = append(rd.batch, r)
 	}
-	return runBatch(rd.c, rd.batch, embeddings, startPos)
+	out, err := runBatch(rd.c, rd.batch, embeddings, startPos)
+	if err != nil {
+		return nil, err
+	}
+	if rd.finalSoftcap > 0 {
+		for _, logits := range out {
+			applySoftcap(logits, rd.finalSoftcap)
+		}
+	}
+	return out, nil
 }
 
 // TruncateTo is a no-op on the resident cache: it is positional and Forward sets

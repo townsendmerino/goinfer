@@ -184,15 +184,29 @@ var admissionGolden = map[string][]string{
 	// this backend had no mean-centered norm before. cohere2 needs FeatNoPE/FeatSlidingWindow
 	// too, both already declared on both backends from earlier G5 rows, so it reaches the same
 	// two backends cohere does.
-	"cohere":              {"cuda", "metal"},
-	"cohere2":             {"cuda", "metal"},
-	"deepseek_v2":         {"webgpu"},
-	"deepseek_v3":         {"webgpu"},
-	"gemma3":              {"cuda", "metal"},
-	"gemma3_text":         {"cuda", "metal"},
-	"gemma4":              {"cuda", "metal"},
-	"gemma4_text":         {"cuda", "metal"},
-	"gemma4_unified_text": {"cuda", "metal"},
+	"cohere":      {"cuda", "metal"},
+	"cohere2":     {"cuda", "metal"},
+	"deepseek_v2": {"webgpu"},
+	"deepseek_v3": {"webgpu"},
+	// G6 (docs/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
+	// FeatSandwichNorm/FeatGatedGELU — gemma3 (uniform head_dim) now reaches it for real,
+	// verified against a genuine non-seeded checkpoint (testdata/gemma3-vl-tiny's text tower,
+	// gpu.TestGemma3ResidentParityWebGPU, minCosine 0.9998). gemma4/gemma4_text/
+	// gemma4_unified_text are FEATURE-compatible the same way gemma4_text's own MoE note below
+	// already says feature-compatible isn't sufficient — dense Gemma 4's local/global head_dim
+	// split needs a per-layer geometry seam this simplified feature-list model cannot express
+	// (decoder.Model.PerLayerGeomOK, a residentMoECapacityOK-shaped runtime check outside the
+	// ResidentFeature taxonomy), which webgpu's runLayer.ghd/gnKV fields exist for but
+	// gpu/residency.go's per-layer builder never populates for any family. The REAL runtime
+	// (decoder.ResidentEligible, TestGemma4Admission_unconditional) correctly declines gemma4 on
+	// webgpu despite this table showing it feature-admitted — this golden intentionally tracks
+	// the simplified feature-only model, not full runtime truth, matching this file's own MoE-cap
+	// precedent (deepseek_v2/kimi_k2 below, admitted by feature but capped elsewhere).
+	"gemma3":              {"cuda", "metal", "webgpu"},
+	"gemma3_text":         {"cuda", "metal", "webgpu"},
+	"gemma4":              {"cuda", "metal", "webgpu"},
+	"gemma4_text":         {"cuda", "metal", "webgpu"},
+	"gemma4_unified_text": {"cuda", "metal", "webgpu"},
 	"glm4_moe":            {"cuda", "metal", "webgpu"},
 	// Laguna: NO resident backend. Its softplus attention output gate and per-layer
 	// query-head count are unimplemented everywhere, and both are silent failures if
@@ -203,13 +217,16 @@ var admissionGolden = map[string][]string{
 	// rolling window, so every one declines. CPU-only until a bridge lands.
 	"lfm2": {},
 	"gpt2": {"metal"},
-	// gpt_oss reaches BOTH backends on real end-to-end evidence now, which is not how it looked
-	// for most of G7's life. metal declared on the tiny fixture (TestGptOssResidentParity, cosine
-	// 0.9989); cuda declared 2026-08-31 on the REAL 20B, resident on an 8 GB card through
-	// --moe-cache-experts (7/8 argmax-exact, min cosine 0.996392). The cuda half is the stronger
-	// evidence of the two — an odd inversion worth noting, since the tiny fixture stopped
-	// reproducing the last defect it had to catch.
-	"gpt_oss":          {"cuda", "metal"},
+	// gpt_oss reaches ALL THREE backends on real end-to-end evidence now, which is not how it
+	// looked for most of G7's life. metal declared on the tiny fixture (TestGptOssResidentParity,
+	// cosine 0.9989); cuda declared 2026-08-31 on the REAL 20B, resident on an 8 GB card through
+	// --moe-cache-experts (7/8 argmax-exact, min cosine 0.996392) — the stronger evidence of the
+	// two, an odd inversion worth noting since the tiny fixture stopped reproducing the last
+	// defect it had to catch. webgpu declared 2026-09-08 (G6): the sink threaded through every
+	// attention kernel plus three brand-new MoE kernels (gpu/moe.go), verified against the real
+	// tiny fixture (gpu.TestGptOssResidentParityWebGPU, minCosine 0.9943 — the same 0.95 floor
+	// Metal's own gate uses on this fixture).
+	"gpt_oss":          {"cuda", "metal", "webgpu"},
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"webgpu"},
 	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
@@ -351,10 +368,17 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatLayerNorm, FeatParallelBlock, FeatLogitScale},
+		// G6 (docs/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
+		// already applies it host-side), FeatFinalLogitSoftcap/FeatOutBias (existing-kernel
+		// wiring), FeatSandwichNorm (defeats the fused residual epilogue, no new kernel),
+		// FeatGatedGELU (a genuinely new kernel pair — this backend had no GELU-tanh-gated
+		// activation before), FeatAttnSink (gpt-oss — the sink threaded through every attention
+		// kernel plus three brand-new MoE kernels, the largest single item in G6).
 		"webgpu": {
 			FeatQKNorm, FeatPartialRotary, FeatSlidingWindow, FeatPerLayerRoPE, FeatRopeMscale,
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatLogitScale,
 			FeatRMSAddOne,
+			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
 		},
 		// GPT-2 (2026-08-18): LayerNorm/non-gated-MLP/learned-pos/out-bias all landed as real
 		// kernels + full BuildResident/encodeLayer/encodeAttention wiring, validated end-to-end

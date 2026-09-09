@@ -17,7 +17,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | DeepSeek-V3 | ✅ | ✅ resident | CPU | CPU |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
-| Gemma 3 | ✅ | CPU | ✅ resident | ✅ resident |
+| Gemma 3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 4 | ✅ | CPU | ✅ resident | ✅ resident |
 | Granite 4.2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite-4.0-H | ✅ | CPU | CPU | CPU |
@@ -45,7 +45,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Qwen3.5-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3.8 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | SmolLM3 | ✅ | CPU | ✅ resident | ✅ resident |
-| gpt-oss | ✅ | CPU | ✅ resident | ✅ resident |
+| gpt-oss | ✅ | ✅ resident | ✅ resident | ✅ resident |
 
 Resident acceleration above is CAPABILITY (does the backend implement the family's
 features). Two load-time notes the taxonomy does not encode:

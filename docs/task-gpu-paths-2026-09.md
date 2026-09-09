@@ -580,3 +580,133 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     moves both, this refresh legitimately moves only one.
   - **G5 is now COMPLETE**: all five rows (SmolLM3, Ministral 3, Olmo 3, Olmo Hybrid, Cohere,
     Cohere2 — six families across five rows) resident on both cuda and metal.
+
+- 2026-09-08 — G6 DONE (WebGPU: the Gemma set, gpt-oss, and staged int4), all in one pass at the
+  user's explicit request ("all six features + staged int4"). By far the largest single item in
+  this doc: CUDA and Metal already had every one of these; WebGPU had none. Full suites green on
+  both `gpu` (93 pass/0 fail/38 skip) and `decoder` (413 pass/0 fail/134 skip, the one exception
+  being `TestOlmo3_forwardParity`'s already-logged pre-existing CPU-reference issue, unrelated).
+  - **FeatEmbedScale**: zero new code. `decoder/residency.go`'s `embedResident` already applies
+    √hidden host-side, generically, before calling `resident.Forward` — this backend just
+    consumes the already-scaled embedding like CUDA/Metal do. Pure declare-and-gate.
+  - **FeatFinalLogitSoftcap**: a byte-identical port of `cuda/softcap.go`'s `applySoftcap` to
+    `gpu/softcap.go`, applied in `residentDecoder.Forward`/`ForwardN` after readback — same site
+    and shape as CUDA's `step()`/Metal's `finalizeLogits`. Ported CUDA's own bit-identity +
+    mutation-check test suite (`TestApplySoftcap_bitIdentical/_disabled/_mutation`) verbatim
+    rather than writing a new one, since the code itself is a verbatim port.
+  - **FeatSandwichNorm**: reuses `rmsnormF32` (previously only the f16-Mamba path's own norm) —
+    defeats the fused `gemvAdd` residual epilogue at the o-proj and MLP down-proj sites (bare
+    `gemv` → norm → separate residual add via `biasAdd`, which is really "`xd += out`"), the same
+    shape CUDA/Metal already use for this feature. No new kernel.
+  - **FeatGatedGELU**: a genuinely new kernel pair (`gegluShaderWGSL` in `gpu/layer.go`,
+    `gegluQuantWGSL` in `gpu/decodefuse.go`) — this backend had no GELU-tanh-gated activation
+    before, only SiLU. Clamps the tanh argument to ±15 before calling `tanh`, matching Metal's own
+    fix for the exact f32-overflow-before-saturation defect that cost it a real cosine regression
+    (0.818→0.994) the first time this math shipped there — applied preemptively here, not found
+    the hard way a third time.
+  - **FeatOutBias**: composed from two already-existing kernels (a bare `gemv`, then `biasAdd` —
+    itself the general "`vec[i] += other[i]`" residual kernel already used for Qwen2's q/k/v
+    bias) — no new kernel at all.
+  - **FeatAttnSink (gpt-oss), by far the hardest of the six** — comparable in scope to Metal's
+    whole gpt-oss port, as scoping research predicted:
+    - The sink itself: seeding the online-softmax state (`m`/`l`) with `(sink, 1.0)` instead of
+      `(-1e30, 0.0)` before the key loop — an imaginary zero-value key whose score is the sink,
+      exactly CUDA's/Metal's own algebra — threaded through ALL FIVE attention WGSL sources
+      (`attnShaderWGSL`, `attnKeysShaderWGSL`, `attnF16ShaderWGSL`, `attnI8ShaderWGSL`, and the
+      shared `attnWideTemplateWGSL` instantiated 3×) — 7 compiled pipelines total, since gpt-oss's
+      tiny fixture's dims default to the `attn-keys` kernel and a real deployment's could hit any
+      of the others depending on `--kv-precision`/head_dim.
+    - **A real design problem, caught before it shipped wrong**: `hasSink` is a genuinely
+      PER-LAYER property (Metal's own `L.attnSinks`/`L.uHasSink` are per-layer for exactly this
+      reason), but WebGPU's attention uniform (`P`) is CACHED PER GEOMETRY TUPLE across layers
+      (`geomFor`'s dedup, an optimization CUDA/Metal don't have) — baking `hasSink` into `P` would
+      have let one layer's flag leak onto another sharing its `{hd,nKV,half,kEqV}` tuple. Fixed by
+      adding a genuinely separate per-layer uniform (`struct HS`) rather than widening `P`.
+    - Three brand-new MoE kernels (`gpu/moe.go`): `routeGptOssWGSL` (gpt-oss's router disagrees
+      with the generic `moeRouteWGSL` about what the bias means — biased logits select AND weight,
+      vs "bias steers selection only, weight is the unbiased score" — mirroring
+      `cuda/gptoss_act.cu`'s `route_gptoss`/`metal/moe.go`'s twin exactly), `gptossGluQuantWGSL`
+      (the clamped interleaved-SwiGLU expert, with a per-expert gate‖up bias table), and
+      `moeExpertGptOssDownGEMVWGSL` (the down-combine, with a per-expert down bias — `wgt[slot]*(r
+      + bias[idx[slot]*N+row])`, NOT a plain `+= bias[row]`, matching Metal's own documented
+      slot-vs-expert-id warning even though this backend's lack of expert paging makes that
+      specific confusion structurally moot here).
+    - **A build-time wiring bug found by the crash it caused, not by review**: the three new
+      kernels' pipelines were never added to `newDecodeRunner`'s `ensures` list (the mechanism
+      that lazily compiles each precision's WGSL once, gated on which features a plan actually
+      needs) — this crashed `wgpu-native` itself ("invalid bind group layout for bind group
+      descriptor", a Rust panic, not a Go error) rather than returning a catchable error, because
+      the layout object being bound was never created. Fixed by adding
+      `ensureRouteGptOss`/`ensureGptOssGluQuant`/`ensureMoEExpertGptOssDown` to the `m.moe.gptoss`
+      branch alongside the existing MoE ensures.
+    - **Verified against the REAL, non-seeded `decoder/testdata/gptoss_tiny.gguf`** (not a
+      synthetic fixture): resident vs CPU, int4 both sides, minCosine 0.9943 across 8 positions —
+      the same 0.95 floor Metal's own gate uses on this exact fixture, not a looser bar invented
+      for this backend (`TestGptOssResidentParityWebGPU`).
+  - **Gemma set verified against a REAL checkpoint too**: `testdata/gemma3-vl-tiny`'s text tower
+    (a real small Gemma3 VL model, not tiny-random) — resident vs CPU, int4 both sides, minCosine
+    0.9998 across 8 positions (`TestGemma3ResidentParityWebGPU`). Stronger evidence than every G5
+    smoke test this session wrote, which were all seeded/synthetic fixtures by necessity.
+  - **A second real bug, same shape as the first**: `runModel.gatedGELU`'s first attempt mirrored
+    `decoder.ActKind`'s own ordinal (0=GELU-tanh, 1=SiLU) directly — but every `gpu/*_test.go` file
+    that builds a `runModel{}`/`runLayer{}` literal by hand (not through `BuildResident`) leaves
+    new fields at their Go zero value, and 0 under that convention silently meant "apply an
+    untested new GELU kernel to every existing SiLU family." Caught immediately by the full suite
+    (`TestDecodeRunnerW4A8_parity` et al., 6 failures, cosine ~0.9995 not ~1.0) — fixed by
+    inverting the field to a bool with SiLU as the zero value, matching the codebase's own
+    established convention that a new field's default must be the SAFE, COMMON case. The identical
+    root cause recurred for `runLayer.attnSinks` (a `nil` per-layer buffer another 6 hand-built
+    tests never set) — fixed the same way in spirit, but since a `*wgpu.Buffer` has no safe
+    non-nil zero value, the fix is a fallback AT THE DISPATCH SITE (one shared `noAttnSinks` dummy
+    substituted for any `nil` `lw.attnSinks`) rather than a field-default flip.
+  - **A THIRD real bug, this one an admission-taxonomy gap, not a wiring bug — caught by an
+    EXISTING regression test, not a new one**: satisfying every `ResidentFeature` dense Gemma 4
+    nominally requires (identical to Gemma 3's set plus `FeatFinalLogitSoftcap`, both now declared)
+    silently ADMITTED it too — `TestGemma4Admission_unconditional`/`TestResidentAdmission_matrix`
+    caught it immediately. Dense Gemma 4's local/global attention layers genuinely have DIFFERENT
+    head_dim (256 vs `gemma4.GlobalHeadDim` 512), which needs a per-layer geometry seam
+    (`runLayer.ghd`/`gnKV`/`ghalf` — the fields exist, CUDA/Metal populate their own twins,
+    `gpu/residency.go`'s per-layer builder never has for ANY family). This is NOT expressible as a
+    `ResidentFeature` — Gemma 3 (uniform head_dim) and dense Gemma 4 derive the IDENTICAL required
+    set otherwise — so `MissingResidentFeatures` structurally cannot catch it, the same class of
+    blind spot `residentMoECapacityOK` already exists to patch for MoE expert/group counts. Fixed
+    by adding a parallel, backend-scoped predicate (`decoder.residentPerLayerGeomOK` /
+    `Model.PerLayerGeomOK`, `cuda`+`metal` declared capable, `webgpu` not) wired into BOTH
+    `decoder.ResidentEligible` (the doc-generation/admission-golden predicate) and
+    `gpu/residency.go`'s own hand-rolled `BuildResident` admission check (which does NOT call
+    `ResidentEligible` and would otherwise still have shipped the crash). Confirmed the fix by
+    re-running the exact `gemma4-dense-twogeom-tiny` load that previously crashed
+    `wgpu-native` ("unsupported projection precision \"\"") — now a clean, named decline instead.
+  - `decoder/features_test.go`'s `admissionGolden` for `gemma3`/`gemma3_text` now correctly says
+    `{cuda,metal,webgpu}`; `gemma4`/`gemma4_text`/`gemma4_unified_text` ALSO say `{cuda,metal,webgpu}`
+    in that table specifically because it's the simplified FEATURE-LIST-ONLY model (documented
+    inline, same shape as the pre-existing deepseek_v2/kimi_k2 MoE-cap precedent) — the REAL
+    runtime (`ResidentEligible`, `TestGemma4Admission_unconditional`) correctly still declines
+    Gemma 4 on webgpu. `gpt_oss` golden updated to `{cuda,metal,webgpu}` for real, no caveat.
+    `decoder/gptoss_decline_test.go` (kept its historical name and file, per its own established
+    precedent for CUDA's 2026-08-31 promotion) moved webgpu from the decline assertions to the
+    admit ones alongside metal/cuda.
+  - **Staged int4** (the separate, independently-scoped item): `decoder/weightmat.go`'s
+    `matmulInto` AND its sibling `matmul` (the non-Workspace variant used by e.g. Gemma 4's own
+    forward — fixed for consistency, not just the doc's literally-named function) never consulted
+    a backend for int4 weights on the staged (non-resident) path, unlike int8, which already did
+    via `QuantBackend`. Added `decoder.QuantBackend4` (int4's `QuantBackend` twin) and
+    `webgpuBackend.MatmulW4A8` — M=1 (decode) only, mirroring `MatmulW8A8`'s residency-cache
+    pattern exactly (keyed by the packed-nibble slice's pointer), M>1 (prefill) declines cleanly
+    since this backend has no int4 tiled/GEMM kernel yet. Required generalizing `GEMVRunner` from
+    a `*ResidentW8A8`-specific type to the existing `decodeWeight` interface (W8A8 or W4A8) — every
+    piece needed (the WGSL kernel, the upload paths, the interface) already existed from the
+    RESIDENT path; only the STAGED path's `GEMVRunner`/`webgpuBackend` never used them. Verified
+    against the CPU reference (`linalg.MatmulBTW4A8Into`) at K=517 (deliberately not a multiple of
+    32, to exercise both the fallback unpack-and-repack upload path and `GEMVRunner`'s zero-tail-
+    padding invariant): cosine 1.000000 (`TestWebGPUBackend_MatmulW4A8_matchesCPU`). Also newly
+    establishes a direct-call test pattern `MatmulW8A8` itself never had.
+  - Also fixed along the way (found by re-running the doc-generation tests, not by design):
+    `docs/hardware-matrix.md` regenerated (Gemma 3 and gpt-oss now show `✅ resident` under
+    WebGPU; Gemma 4 correctly still shows `CPU`); `testdata/parity_manifest.json`'s deps_hash
+    refreshed for every family sharing the shared core/decoder files this row touched (same
+    goldens-verified-first discipline as every G5 row, `TestOlmo3_forwardParity`'s pre-existing
+    failure independently re-confirmed unrelated via `git stash` before proceeding);
+    `TestResidentBackendFeatures_noOverclaim`'s webgpu pin list updated to the new 19-feature set.
+  - **G6 is now COMPLETE.** Remaining items in this doc: G3 (LoRA on resident path), G7-G11, and
+    G2 (handed to the Linux box session).

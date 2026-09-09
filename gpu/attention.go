@@ -79,11 +79,18 @@ const (
 // lanes (every lane sees the same score x), so no extra reduction is needed.
 const attnShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
-@group(0) @binding(0) var<storage, read>       q:    array<f32>;  // [nH*hd]  (RoPE'd)
-@group(0) @binding(1) var<storage, read>       keys: array<f32>;  // [nKeys*nKV*hd]
-@group(0) @binding(2) var<storage, read>       vals: array<f32>;  // [nKeys*nKV*hd]
-@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;  // [nH*hd]
-@group(0) @binding(4) var<uniform>             p:    P;
+// HS is a genuinely PER-LAYER uniform, separate from P: P's uniform buffer is shared across every
+// layer with the same {hd,nKV,half,kEqV} geometry tuple (geomFor's dedup cache), but hasSink is a
+// per-LAYER property that can legitimately differ between two layers sharing a geometry — so it
+// cannot be baked into P without risking one layer's flag leaking onto another's cached buffer.
+struct HS { v: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       q:     array<f32>;  // [nH*hd]  (RoPE'd)
+@group(0) @binding(1) var<storage, read>       keys:  array<f32>;  // [nKeys*nKV*hd]
+@group(0) @binding(2) var<storage, read>       vals:  array<f32>;  // [nKeys*nKV*hd]
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;  // [nH*hd]
+@group(0) @binding(4) var<storage, read>       sinks: array<f32>;  // [nH]; real but unused when hasSink==0
+@group(0) @binding(5) var<uniform>             p:     P;
+@group(0) @binding(6) var<uniform>             hs:    HS;
 var<workgroup> red: array<f32, 128>;  // per-key dot-product reduction
 @compute @workgroup_size(128)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -99,8 +106,14 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     var qd: f32 = 0.0;
     if (lane) { qd = q[qbase + d]; }
     var acc: f32 = 0.0;
-    var m: f32 = -1e30;
-    var l: f32 = 0.0;
+    // gpt-oss's learned per-head attention sink (FeatAttnSink, G6 docs/task-gpu-paths-2026-09.md):
+    // an extra logit with NO key and NO value, joining the softmax MAX and DENOMINATOR only —
+    // seeding the online-softmax state with an imaginary zero-value key whose score is the sink
+    // is exactly equivalent (m=sink, l=1 ⇒ the first real key's mnew=max(sink,x) folds it into
+    // the max, and its corr/pe terms fold it into the denominator; acc gets no contribution since
+    // the imaginary key's value is zero). hasSink==0 (every other family) is m=-1e30, l=0 — no-op.
+    var m: f32 = select(-1e30, sinks[qh], hs.v == 1u);
+    var l: f32 = select(0.0, 1.0, hs.v == 1u);
     for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
         let kbase = s * kvDim + kvbase;
         var prod: f32 = 0.0;
@@ -160,11 +173,14 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // cosine/maxAbs against that f64 reference, plus argmax through TestWebGPU_forwardParity.
 const attnKeysShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
-@group(0) @binding(0) var<storage, read>       q4:   array<vec4<f32>>;  // [nH*hd/4]  (RoPE'd)
-@group(0) @binding(1) var<storage, read>       k4:   array<vec4<f32>>;  // [nKeys*kvDim/4]
-@group(0) @binding(2) var<storage, read>       vals: array<f32>;        // [nKeys*kvDim]
-@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;        // [nH*hd]
-@group(0) @binding(4) var<uniform>             p:    P;
+struct HS { v: u32, _a: u32, _b: u32, _c: u32 };  // per-layer (see attnShaderWGSL's own comment)
+@group(0) @binding(0) var<storage, read>       q4:    array<vec4<f32>>;  // [nH*hd/4]  (RoPE'd)
+@group(0) @binding(1) var<storage, read>       k4:    array<vec4<f32>>;  // [nKeys*kvDim/4]
+@group(0) @binding(2) var<storage, read>       vals:  array<f32>;        // [nKeys*kvDim]
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;        // [nH*hd]
+@group(0) @binding(4) var<storage, read>       sinks: array<f32>;        // [nH]; real but unused when hasSink==0
+@group(0) @binding(5) var<uniform>             p:     P;
+@group(0) @binding(6) var<uniform>             hs:    HS;
 
 var<workgroup> sc:  array<f32, 2048>;  // one tile of scores; TILE below must match
 var<workgroup> red: array<f32, 128>;   // the two per-tile reductions
@@ -184,8 +200,13 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     let kvbase = kvh * hd;
     let TILE: u32 = 2048u;
 
-    var m: f32 = -1e30;   // running softmax max
-    var l: f32 = 0.0;     // running denominator
+    // gpt-oss's attention sink (FeatAttnSink): seeding m/l with the sink/1 before the tile loop
+    // starts is equivalent to an imaginary zero-value key at the sink's score — see
+    // attnShaderWGSL's own comment for the full argument. Correct here specifically because m/l
+    // persist ACROSS tiles exactly like the per-key kernels do; the first tile's
+    // mnew=max(m,red[0]) folds the sink into the max before any real key's exp is computed.
+    var m: f32 = select(-1e30, sinks[qh], hs.v == 1u);   // running softmax max
+    var l: f32 = select(0.0, 1.0, hs.v == 1u);           // running denominator
     var acc: f32 = 0.0;   // lane t's running weighted V-sum for dim t (t < hd)
 
     var tileStart: u32 = p.start;
@@ -406,11 +427,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // math; the only change is unpacking each cached K/V element to f32 before use.
 const attnF16ShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
-@group(0) @binding(0) var<storage, read>       q:    array<f32>;  // [nH*hd]  (RoPE'd, f32)
-@group(0) @binding(1) var<storage, read>       keys: array<u32>;  // [nKeys*nKV*hd] f16-packed
-@group(0) @binding(2) var<storage, read>       vals: array<u32>;  // [nKeys*nKV*hd] f16-packed
-@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;  // [nH*hd]
-@group(0) @binding(4) var<uniform>             p:    P;
+struct HS { v: u32, _a: u32, _b: u32, _c: u32 };  // per-layer (see attnShaderWGSL's own comment)
+@group(0) @binding(0) var<storage, read>       q:     array<f32>;  // [nH*hd]  (RoPE'd, f32)
+@group(0) @binding(1) var<storage, read>       keys:  array<u32>;  // [nKeys*nKV*hd] f16-packed
+@group(0) @binding(2) var<storage, read>       vals:  array<u32>;  // [nKeys*nKV*hd] f16-packed
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;  // [nH*hd]
+@group(0) @binding(4) var<storage, read>       sinks: array<f32>;  // [nH]; real but unused when hasSink==0
+@group(0) @binding(5) var<uniform>             p:     P;
+@group(0) @binding(6) var<uniform>             hs:    HS;
 var<workgroup> red: array<f32, 128>;
 @compute @workgroup_size(128)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -426,8 +450,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     var qd: f32 = 0.0;
     if (lane) { qd = q[qbase + d]; }
     var acc: f32 = 0.0;
-    var m: f32 = -1e30;
-    var l: f32 = 0.0;
+    var m: f32 = select(-1e30, sinks[qh], hs.v == 1u); // gpt-oss attention sink; see attnShaderWGSL
+    var l: f32 = select(0.0, 1.0, hs.v == 1u);
     for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
         let ki = s * kvDim + kvbase + d;  // logical element index of this lane's K/V
         var prod: f32 = 0.0;
@@ -527,13 +551,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // f32 (no integer dot / DP4A — a free future upgrade).
 const attnI8ShaderWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
+struct HS { v: u32, _a: u32, _b: u32, _c: u32 };  // per-layer (see attnShaderWGSL's own comment)
 @group(0) @binding(0) var<storage, read>       q:      array<f32>;  // [nH*hd] (RoPE'd, f32)
 @group(0) @binding(1) var<storage, read>       keys:   array<u32>;  // [nKeys*nKV*hd] int8-packed (4/word)
 @group(0) @binding(2) var<storage, read>       vals:   array<u32>;  // [nKeys*nKV*hd] int8-packed
 @group(0) @binding(3) var<storage, read>       kScale: array<f32>;  // [nKeys*nKV]
 @group(0) @binding(4) var<storage, read>       vScale: array<f32>;  // [nKeys*nKV]
 @group(0) @binding(5) var<storage, read_write> ctx:    array<f32>;  // [nH*hd]
-@group(0) @binding(6) var<uniform>             p:      P;
+@group(0) @binding(6) var<storage, read>       sinks:  array<f32>;  // [nH]; real but unused when hasSink==0
+@group(0) @binding(7) var<uniform>             p:      P;
+@group(0) @binding(8) var<uniform>             hs:     HS;
 var<workgroup> red: array<f32, 128>;
 fn unpacki8(w: u32, e: u32) -> f32 {
     let b = (e & 3u) * 8u;
@@ -553,8 +580,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     var qd: f32 = 0.0;
     if (lane) { qd = q[qbase + d]; }
     var acc: f32 = 0.0;
-    var m: f32 = -1e30;
-    var l: f32 = 0.0;
+    var m: f32 = select(-1e30, sinks[qh], hs.v == 1u); // gpt-oss attention sink; see attnShaderWGSL
+    var l: f32 = select(0.0, 1.0, hs.v == 1u);
     for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
         let ki = s * kvDim + kvbase + d;
         let sci = s * p.nKV + kvh;
@@ -767,12 +794,21 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 	defer cBuf.Release()
 	pBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
 	defer pBuf.Release()
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// bind a null storage buffer); this test helper never carries a real sink, so a harmless
+	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
+	sinksBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	defer sinksBuf.Release()
+	hsBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	defer hsBuf.Release()
 	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
 		{Binding: 1, Buffer: kBuf, Size: kBuf.GetSize()},
 		{Binding: 2, Buffer: vBuf, Size: vBuf.GetSize()},
 		{Binding: 3, Buffer: cBuf, Size: cBuf.GetSize()},
-		{Binding: 4, Buffer: pBuf, Size: pBuf.GetSize()},
+		{Binding: 4, Buffer: sinksBuf, Size: sinksBuf.GetSize()},
+		{Binding: 5, Buffer: pBuf, Size: pBuf.GetSize()},
+		{Binding: 6, Buffer: hsBuf, Size: hsBuf.GetSize()},
 	}})
 	if err != nil {
 		return nil, err
@@ -816,6 +852,7 @@ func f32bits(f float32) uint32 { return math.Float32bits(f) }
 // how a K/V element is fetched, which is the part that is obvious on sight.
 const attnWideTemplateWGSL = `
 struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
+struct HS { v: u32, _a: u32, _b: u32, _c: u32 };  // per-layer (see attnShaderWGSL's own comment)
 @group(0) @binding(0) var<storage, read> q: array<f32>;  // [nH*hd] (RoPE'd, f32)
 __BINDINGS__
 __HELPERS__
@@ -841,8 +878,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
         let d = d0 + j * __WG__u;
         if (d < hd) { qd[j] = q[qbase + d]; }
     }
-    var m: f32 = -1e30;
-    var l: f32 = 0.0;
+    var m: f32 = select(-1e30, sinks[qh], hs.v == 1u); // gpt-oss attention sink; see attnShaderWGSL
+    var l: f32 = select(0.0, 1.0, hs.v == 1u);
     for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
         let kbase = s * kvDim + kvbase;
         let sci = s * p.nKV + kvh;
@@ -898,19 +935,23 @@ type attnWideVariant struct {
 var attnWideVariants = []attnWideVariant{
 	{
 		name: "attn-wide",
-		bindings: `@group(0) @binding(1) var<storage, read>       keys: array<f32>;
-@group(0) @binding(2) var<storage, read>       vals: array<f32>;
-@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;
-@group(0) @binding(4) var<uniform>             p:    P;`,
+		bindings: `@group(0) @binding(1) var<storage, read>       keys:  array<f32>;
+@group(0) @binding(2) var<storage, read>       vals:  array<f32>;
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;
+@group(0) @binding(4) var<storage, read>       sinks: array<f32>;
+@group(0) @binding(5) var<uniform>             p:     P;
+@group(0) @binding(6) var<uniform>             hs:    HS;`,
 		kRead: "keys[ki]",
 		vRead: "vals[ki]",
 	},
 	{
 		name: "attn-f16-wide",
-		bindings: `@group(0) @binding(1) var<storage, read>       keys: array<u32>;
-@group(0) @binding(2) var<storage, read>       vals: array<u32>;
-@group(0) @binding(3) var<storage, read_write> ctx:  array<f32>;
-@group(0) @binding(4) var<uniform>             p:    P;`,
+		bindings: `@group(0) @binding(1) var<storage, read>       keys:  array<u32>;
+@group(0) @binding(2) var<storage, read>       vals:  array<u32>;
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;
+@group(0) @binding(4) var<storage, read>       sinks: array<f32>;
+@group(0) @binding(5) var<uniform>             p:     P;
+@group(0) @binding(6) var<uniform>             hs:    HS;`,
 		helpers: `fn f16at(w: u32, e: u32) -> f32 {
     let pair = unpack2x16float(w);
     return select(pair.x, pair.y, (e & 1u) == 1u);
@@ -925,7 +966,9 @@ var attnWideVariants = []attnWideVariant{
 @group(0) @binding(3) var<storage, read>       kScale: array<f32>;
 @group(0) @binding(4) var<storage, read>       vScale: array<f32>;
 @group(0) @binding(5) var<storage, read_write> ctx:    array<f32>;
-@group(0) @binding(6) var<uniform>             p:      P;`,
+@group(0) @binding(6) var<storage, read>       sinks:  array<f32>;
+@group(0) @binding(7) var<uniform>             p:      P;
+@group(0) @binding(8) var<uniform>             hs:     HS;`,
 		helpers: `fn unpacki8(w: u32, e: u32) -> f32 {
     let b = (e & 3u) * 8u;
     return f32(i32(w << (24u - b)) >> 24u);

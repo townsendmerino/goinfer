@@ -62,6 +62,31 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
+// gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
+// docs/task-gpu-paths-2026-09.md). The tanh argument is CLAMPED to ±15 before calling tanh:
+// unclamped, tanh's argument overflows f32 before saturating at Gemma's activation magnitudes,
+// producing NaN — the exact defect Metal's own port hit (metal/kernels.go's glu_act, logit
+// cosine 0.818→0.994 after the clamp fix, decoder/features.go's FeatGatedGELU-adjacent note).
+// tanh itself saturates to ±1 by |arg|~9, so the clamp is a correctness fix at f32 overflow, not
+// an approximation — every other family (SwiGLU) never reaches this branch at all.
+const gegluShaderWGSL = `
+struct P { n: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       gate: array<f32>;
+@group(0) @binding(1) var<storage, read>       up:   array<f32>;
+@group(0) @binding(2) var<storage, read_write> dst:  array<f32>;
+@group(0) @binding(3) var<uniform>             p:    P;
+fn gelu_tanh(x: f32) -> f32 {
+    let a = 0.7978845608028654 * (x + 0.044715 * x * x * x);
+    return 0.5 * x * (1.0 + tanh(clamp(a, -15.0, 15.0)));
+}
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= p.n) { return; }
+    dst[i] = gelu_tanh(gate[i]) * up[i];
+}
+`
+
 const residualShaderWGSL = `
 struct P { n: u32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read_write> x: array<f32>;  // x += y
@@ -89,6 +114,11 @@ func (c *Context) ensureLayer() error {
 	}
 	if c.swigluPipeline == nil {
 		if c.swigluShader, c.swigluPipeline, c.swigluLayout, err = mk("swiglu", swigluShaderWGSL); err != nil {
+			return err
+		}
+	}
+	if c.gegluPipeline == nil {
+		if c.gegluShader, c.gegluPipeline, c.gegluLayout, err = mk("geglu", gegluShaderWGSL); err != nil {
 			return err
 		}
 	}

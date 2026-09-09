@@ -111,8 +111,24 @@ type runLayer struct {
 	q, k, v, o, gate, up, down                 decodeWeight
 	qBias, kBias, vBias                        *wgpu.Buffer // optional (Qwen2); nil ⇒ no bias
 	qNorm, kNorm                               *wgpu.Buffer // optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ none
-	isLocal                                    bool         // sliding-window (local) attention layer (Lever C6); false ⇒ full
-	ropeScale                                  float32      // per-layer RoPE cos/sin scale = mscale (Lever C7); 0 ⇒ 1.0
+
+	// G6 (docs/task-gpu-paths-2026-09.md): gpt-oss's o-proj bias (FeatOutBias) and Gemma's
+	// sandwich-norm post-sublayer norms (FeatSandwichNorm) — both nil ⇒ off, same "optional,
+	// nil-checked" convention as qBias/qNorm above. Both defeat the fused gemvAdd residual
+	// epilogue: the o-proj/down-proj GEMV runs bare, then bias/norm applies, THEN a separate
+	// residual add via biasAdd(xd, out, hidden) (biasAdd is really "xd += out", see its own doc).
+	oBias                     *wgpu.Buffer // gpt-oss o_proj bias [hidden]; nil ⇒ none
+	postAttnNorm, postMLPNorm *wgpu.Buffer // Gemma sandwich post-sublayer norms [hidden]; nil ⇒ none
+
+	// attnSinks/hasSink: gpt-oss's per-head learned attention sink [nH] (FeatAttnSink). UNLIKE
+	// every other "nil ⇒ off" field on this struct, attnSinks is ALWAYS bound (a real one-
+	// element dummy for every non-gpt-oss family) and hasSink is the actual on/off flag — WGSL
+	// bind groups can't bind a null storage buffer, so this mirrors Metal's exact convention
+	// (metal/model.go's L.attnSinks/L.uHasSink) rather than CUDA's null-pointer sentinel.
+	attnSinks *wgpu.Buffer
+	hasSink   bool
+	isLocal   bool    // sliding-window (local) attention layer (Lever C6); false ⇒ full
+	ropeScale float32 // per-layer RoPE cos/sin scale = mscale (Lever C7); 0 ⇒ 1.0
 
 	// Per-layer attention geometry (P1, own-forward residency bridge): this layer's
 	// head_dim / KV-heads / rotaryDim-half + attention_k_eq_v. Zero ghd ⇒ use the
@@ -132,6 +148,9 @@ type runLayer struct {
 	router                  decodeWeight         // [nE, hidden] router logits
 	routerBias              *wgpu.Buffer         // [nE] selection bias (DeepSeek/GLM); nil ⇒ none
 	expGate, expUp, expDown *ResidentStackedW8A8 // nE experts stacked per projection
+	// gpt-oss (FeatAttnSink): expert-major bias tables, only populated when moeRunParams.gptoss.
+	// gateUpBias is [nE*2*inter] (gate then up per expert); downBias is [nE*hidden].
+	gateUpBias, downBias *wgpu.Buffer
 
 	// Always-on shared expert (Lever C3d, qwen2_moe / GLM). nil shGate ⇒ no shared
 	// expert (Mixtral). shGateW is the [1,hidden] sigmoid gate for the qwen2_moe gated
@@ -194,6 +213,18 @@ type runModel struct {
 	dnet          *dnetRunParams  // non-nil ⇒ hybrid: some layers (runLayer.isDeltaNet) are DeltaNet mixers
 	ropeHalf      int             // rotated pairs per head = rotaryDim/2 (Lever C5 partial RoPE); 0 ⇒ HeadDim/2
 	slidingWindow int             // >0 ⇒ local layers attend only the last N positions (Lever C6)
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatGatedGELU, model-level like ropeHalf/
+	// slidingWindow above (every gated-MLP family shares one activation). Deliberately a bool
+	// with SiLU as the zero value, NOT decoder.ActKind's own ordinal (where 0=GELU-tanh,
+	// 1=SiLU) — a runModel built by hand (every gpu/*_test.go that constructs one directly,
+	// rather than through BuildResident) leaves this at its Go zero value, and that zero value
+	// must be the behavior every one of those tests already assumed (SiLU), not silently
+	// switch them to an activation this row just added. Measured: mirroring decoder's own
+	// ordinal directly broke TestDecodeRunnerW4A8_parity et al. (cosine 0.9995, not ~1.0) the
+	// first time this was wired, because their hand-built runModel left the field at 0 = GELU
+	// under that convention. residency.go sets this to `m.GatedActResident() == 0` — true only
+	// for the family that actually needs it.
+	gatedGELU bool
 }
 
 // mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
@@ -229,6 +260,13 @@ type moeRunParams struct {
 	sharedInter       int  // shared-expert FFN width (qwen2_moe / GLM); 0 ⇒ no shared expert
 	sharedUngated     bool // GLM/DeepSeek add the shared expert with no sigmoid gate
 	nGroup, topkGroup int  // DeepSeek group-limited routing; nGroup ≤ 1 ⇒ plain global top-k
+	// gpt-oss (FeatAttnSink, G6 docs/task-gpu-paths-2026-09.md): a THIRD MoE dispatch shape,
+	// alongside the plain top-k above and the group-limited DeepSeek variant — its own router
+	// contract (biased logits select AND weight), its own clamped-gated activation, its own
+	// biased down-combine. gptossAlpha/gptossLimit are the clamped-SwiGLU constants, uniform
+	// across every gpt-oss layer (decoder.Model.GptOssActResident).
+	gptoss                   bool
+	gptossAlpha, gptossLimit float32
 }
 
 // w8Model adapts the W8A8 ModelW into the precision-agnostic runModel.
@@ -337,6 +375,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert, c.ensureMoEExpertW4)
 		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
 			ensures = append(ensures, c.ensureSharedGate)
+		}
+		if m.moe.gptoss { // G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink's three MoE kernels
+			ensures = append(ensures, c.ensureRouteGptOss, c.ensureGptOssGluQuant, c.ensureMoEExpertGptOssDown)
 		}
 	}
 	if m.mla != nil {
@@ -453,13 +494,30 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		add(c.rmsQuantPipeline, bind(c.rmsQuantLayout, in, w, q, s, p), 1, 1)
 		return q, s
 	}
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink's shared fallback for any runLayer that
+	// leaves attnSinks nil — every gpu/*_test.go file that builds a runLayer{} literal by hand
+	// (rather than through residency.go's BuildResident, which always populates a real dummy or
+	// real sinks) does exactly this, and the bind() closure below hard-errors on a nil buffer
+	// ("nil buffer for binding N") rather than silently binding garbage. Falling back HERE, at
+	// the one dispatch site, means a new hand-built test fixture can never miss this the way a
+	// scattered per-caller default could.
+	noAttnSinks := storF(1)
 	// swigluQuant fuses SwiGLU→quantize: the inter-wide product never materializes
 	// or crosses a barrier — one fewer link and the big buffer stays off the spine.
+	//
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) branches to the geglu(Quant)
+	// pipelines instead — same fused shape, gelu_tanh(gate)·up instead of silu(gate)·up. Every
+	// other family (m.gatedAct==1, SiLU) is byte-identical to before this branch existed.
+	gelu := m.gatedGELU
 	swigluQuant := func(gate, up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		if w8a16 { // W8A16: f32 swiglu (kp-padded), nil scale
+		if w8a16 { // W8A16: f32 swiglu/geglu (kp-padded), nil scale
 			out := storFZ(padK(K))
 			p := uni([]uint32{uint32(K), 0, 0, 0})
-			add(c.swigluPipeline, bind(c.swigluLayout, gate, up, out, p), uint32(K+63)/64, 1)
+			pl, ly := c.swigluPipeline, c.swigluLayout
+			if gelu {
+				pl, ly = c.gegluPipeline, c.gegluLayout
+			}
+			add(pl, bind(ly, gate, up, out, p), uint32(K+63)/64, 1)
 			return out, nil
 		}
 		kp := padK32(K) // int8 activation for a W4A8/W8A8 down-proj gemv, which reads to the weight's
@@ -467,7 +525,11 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		// since real dims are mult-32). padK32 also zeroes the tail, matching the zero-padded weight.
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
-		add(c.swigluQuantPipeline, bind(c.swigluQuantLayout, gate, up, q, s, p), 1, 1)
+		pl, ly := c.swigluQuantPipeline, c.swigluQuantLayout
+		if gelu {
+			pl, ly = c.gegluQuantPipeline, c.gegluQuantLayout
+		}
+		add(pl, bind(ly, gate, up, q, s, p), 1, 1)
 		return q, s
 	}
 	// relu2Quant fuses Nemotron-H's non-gated relu²(up)→int8 (the squared-ReLU MLP), the
@@ -850,6 +912,32 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			add(c.moeExpertPipeline, bind(c.moeExpertLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
 		}
 	}
+	// gpt-oss's three MoE dispatch builders (FeatAttnSink, G6 docs/task-gpu-paths-2026-09.md) —
+	// separate closures from moeRoute/moeExpert above because the contract genuinely differs
+	// (see routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments), not a
+	// parameterization of them.
+	var routeGptOss func(logits, bias, idx, wgt *wgpu.Buffer, hasBias bool)
+	var gptossActQuant func(gate, up, biasGU, idx *wgpu.Buffer, slot, K int) (*wgpu.Buffer, *wgpu.Buffer)
+	var moeExpertGptOssDown func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dbias, dst *wgpu.Buffer, slot int)
+	if m.moe != nil && m.moe.gptoss {
+		mp := m.moe
+		routeGptOss = func(logits, bias, idx, wgt *wgpu.Buffer, hasBias bool) {
+			p := uni([]uint32{uint32(mp.nE), uint32(mp.k), boolU32(hasBias), 0})
+			add(c.routeGptOssPipeline, bind(c.routeGptOssLayout, logits, bias, idx, wgt, p), 1, 1)
+		}
+		gptossActQuant = func(gate, up, biasGU, idx *wgpu.Buffer, slot, K int) (*wgpu.Buffer, *wgpu.Buffer) {
+			kp := padK32(K)
+			q, s := storF(kp/4), storF(1)
+			p := uni([]uint32{uint32(K), uint32(kp), uint32(slot), 1, f32bits(mp.gptossAlpha), f32bits(mp.gptossLimit), 0, 0})
+			add(c.gptossGluQuantPipeline, bind(c.gptossGluQuantLayout, gate, up, biasGU, idx, q, s, p), 1, 1)
+			return q, s
+		}
+		moeExpertGptOssDown = func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dbias, dst *wgpu.Buffer, slot int) {
+			d := uni([]uint32{uint32(s.kp), uint32(s.rows), uint32(slot), 0})
+			gx, gy := gemvGrid(s.rows)
+			add(c.moeExpertGptOssDownPipeline, bind(c.moeExpertGptOssDownLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, dbias, d), gx, gy)
+		}
+	}
 	// sharedGatedCombine records the qwen2_moe gated shared-expert add: dst[n] +=
 	// sigmoid(gl[0])·src[n]. The GLM/DeepSeek ungated case uses gemvAdd instead.
 	sharedGatedCombine := func(dst, src, gl *wgpu.Buffer, n int) {
@@ -1074,13 +1162,22 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			// off this layer's resolved geometry, not the model's, because Gemma 4 already
 			// proves per-layer head_dim is a real thing here.
 			wide := g.hd > attnWG
+			// G6 (docs/task-gpu-paths-2026-09.md): gpt-oss's per-head attention sink
+			// (FeatAttnSink) — always bound (WGSL bind groups can't bind a null storage
+			// buffer), gated by the per-layer hasSinkUni flag. Built once per layer here (the
+			// fixed dispatch plan), not per token.
+			hasSinkUni := uni([]uint32{boolU32(lw.hasSink), 0, 0, 0})
+			attnSinks := lw.attnSinks
+			if attnSinks == nil {
+				attnSinks = noAttnSinks
+			}
 			if m.kvI8 {
 				// attnI8 reads packed int8 K/V + the per-(pos,head) scale side buffers.
 				pl, ly := c.attnI8Pipeline, c.attnI8Layout
 				if wide {
 					pl, ly = c.attnI8WidePipeline, c.attnI8WideLayout
 				}
-				add(pl, bind(ly, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, aUni), uint32(nH), 1)
+				add(pl, bind(ly, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, attnSinks, aUni, hasSinkUni), uint32(nH), 1)
 			} else {
 				attnPl, attnLy := c.attnPipeline, c.attnLayout
 				switch {
@@ -1097,13 +1194,28 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 					// plain f32 narrow geometry the old kernel used to serve.
 					attnPl, attnLy = c.attnKeysPipeline, c.attnKeysLayout
 				}
-				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, aUni), uint32(nH), 1)
+				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnSinks, aUni, hasSinkUni), uint32(nH), 1)
 			}
 			if aGate != nil { // ctx *= sigmoid(gate), before o_proj (matches CPU)
 				attnGate(ctxv, aGate, nH*g.hd)
 			}
 			cq, cs := quant(ctxv, nH*g.hd)
-			gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
+			// G6 (docs/task-gpu-paths-2026-09.md): FeatOutBias (gpt-oss o_proj bias) / FeatSandwichNorm
+			// (Gemma's post-attn norm) both need the sublayer output BEFORE the residual add — the
+			// fused gemvAdd epilogue can't express that, so defeat it: bare gemv, bias/norm, then a
+			// separate residual add (biasAdd is really "xd += out"; see its own doc comment).
+			if lw.oBias != nil || lw.postAttnNorm != nil {
+				attnOut := gemv(cq, cs, lw.o)
+				if lw.oBias != nil {
+					biasAdd(attnOut, lw.oBias, hidden)
+				}
+				if lw.postAttnNorm != nil {
+					attnOut = rmsnormF32(attnOut, lw.postAttnNorm, hidden)
+				}
+				biasAdd(r.xd, attnOut, hidden)
+			} else {
+				gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
+			}
 		}
 		if lw.nemoKind == nemoKMamba || lw.nemoKind == nemoKAttn {
 			continue // Nemotron single-op-per-block: the mixer IS the layer — no FFN sub-block
@@ -1126,13 +1238,28 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			if lw.routerBias != nil {
 				bias, hasBias = lw.routerBias, true
 			}
-			moeRoute(logits, bias, idx, wgt, hasBias)
-			gateOut, upOut := storF(mp.inter), storF(mp.inter)
-			for j := 0; j < mp.k; j++ {
-				moeExpert(mq, ms, lw.expGate, idx, wgt, gateOut, j, 0)
-				moeExpert(mq, ms, lw.expUp, idx, wgt, upOut, j, 0)
-				dq, ds := swigluQuant(gateOut, upOut, mp.inter)
-				moeExpert(dq, ds, lw.expDown, idx, wgt, r.xd, j, 1)
+			if mp.gptoss {
+				// gpt-oss: own router (biased logits select AND weight), own clamped-gated
+				// activation (per-expert gate‖up bias), own biased down-combine — see
+				// routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments
+				// for the exact contract each departs from the generic path above on.
+				routeGptOss(logits, bias, idx, wgt, hasBias)
+				gateOut, upOut := storF(mp.inter), storF(mp.inter)
+				for j := 0; j < mp.k; j++ {
+					moeExpert(mq, ms, lw.expGate, idx, wgt, gateOut, j, 0)
+					moeExpert(mq, ms, lw.expUp, idx, wgt, upOut, j, 0)
+					dq, ds := gptossActQuant(gateOut, upOut, lw.gateUpBias, idx, j, mp.inter)
+					moeExpertGptOssDown(dq, ds, lw.expDown, idx, wgt, lw.downBias, r.xd, j)
+				}
+			} else {
+				moeRoute(logits, bias, idx, wgt, hasBias)
+				gateOut, upOut := storF(mp.inter), storF(mp.inter)
+				for j := 0; j < mp.k; j++ {
+					moeExpert(mq, ms, lw.expGate, idx, wgt, gateOut, j, 0)
+					moeExpert(mq, ms, lw.expUp, idx, wgt, upOut, j, 0)
+					dq, ds := swigluQuant(gateOut, upOut, mp.inter)
+					moeExpert(dq, ds, lw.expDown, idx, wgt, r.xd, j, 1)
+				}
 			}
 			// Always-on shared expert (qwen2_moe / GLM): a single gated SwiGLU MLP added
 			// to the residual — sigmoid-gated (qwen2_moe) or ungated (GLM/DeepSeek).
@@ -1150,7 +1277,13 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		} else {
 			gate, up := gemv(mq, ms, lw.gate), gemv(mq, ms, lw.up)
 			dq, ds := swigluQuant(gate, up, inter)
-			gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
+			if lw.postMLPNorm != nil { // FeatSandwichNorm: same defeat-the-fusion shape as o-proj above
+				downOut := gemv(dq, ds, lw.down)
+				downOut = rmsnormF32(downOut, lw.postMLPNorm, hidden)
+				biasAdd(r.xd, downOut, hidden)
+			} else {
+				gemvAdd(dq, ds, lw.down, r.xd) // down-proj + residual into xd
+			}
 		}
 	}
 	// Distinct attention geometries the plan actually built (1 for uniform families, 2 for

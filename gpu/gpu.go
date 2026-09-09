@@ -110,12 +110,17 @@ type Context struct {
 	gemmRowLayout   *wgpu.BindGroupLayout
 
 	// Elementwise/norm pipelines for the fused MLP, lazy via ensureLayer (layer.go).
-	rmsnormShader    *wgpu.ShaderModule
-	rmsnormPipeline  *wgpu.ComputePipeline
-	rmsnormLayout    *wgpu.BindGroupLayout
-	swigluShader     *wgpu.ShaderModule
-	swigluPipeline   *wgpu.ComputePipeline
-	swigluLayout     *wgpu.BindGroupLayout
+	rmsnormShader   *wgpu.ShaderModule
+	rmsnormPipeline *wgpu.ComputePipeline
+	rmsnormLayout   *wgpu.BindGroupLayout
+	swigluShader    *wgpu.ShaderModule
+	swigluPipeline  *wgpu.ComputePipeline
+	swigluLayout    *wgpu.BindGroupLayout
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
+	// twin, plain (W8A16) variant.
+	gegluShader      *wgpu.ShaderModule
+	gegluPipeline    *wgpu.ComputePipeline
+	gegluLayout      *wgpu.BindGroupLayout
 	residualShader   *wgpu.ShaderModule
 	residualPipeline *wgpu.ComputePipeline
 	residualLayout   *wgpu.BindGroupLayout
@@ -213,6 +218,10 @@ type Context struct {
 	swigluQuantShader   *wgpu.ShaderModule
 	swigluQuantPipeline *wgpu.ComputePipeline
 	swigluQuantLayout   *wgpu.BindGroupLayout
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) fused quantized variant.
+	gegluQuantShader   *wgpu.ShaderModule
+	gegluQuantPipeline *wgpu.ComputePipeline
+	gegluQuantLayout   *wgpu.BindGroupLayout
 
 	// Per-head QK-norm (Lever C, qknorm.go): in-place RMSNorm of each q/k head over
 	// headDim before RoPE (Qwen3 / GLM / Mellum). One workgroup per head.
@@ -283,6 +292,19 @@ type Context struct {
 	moeExpertW4Shader   *wgpu.ShaderModule
 	moeExpertW4Pipeline *wgpu.ComputePipeline
 	moeExpertW4Layout   *wgpu.BindGroupLayout
+	// gpt-oss's three MoE kernels (FeatAttnSink, G6 docs/task-gpu-paths-2026-09.md): own router
+	// (biased logits both select AND weight), own clamped-gated activation, own biased
+	// down-projection combine — each a separate kernel from the generic MoE set above because
+	// gpt-oss disagrees with it on what the router bias means and what the activation clamps.
+	routeGptOssShader           *wgpu.ShaderModule
+	routeGptOssPipeline         *wgpu.ComputePipeline
+	routeGptOssLayout           *wgpu.BindGroupLayout
+	gptossGluQuantShader        *wgpu.ShaderModule
+	gptossGluQuantPipeline      *wgpu.ComputePipeline
+	gptossGluQuantLayout        *wgpu.BindGroupLayout
+	moeExpertGptOssDownShader   *wgpu.ShaderModule
+	moeExpertGptOssDownPipeline *wgpu.ComputePipeline
+	moeExpertGptOssDownLayout   *wgpu.BindGroupLayout
 	// Gated shared-expert combine (Lever C3d, qwen2_moe): xd[n] += sigmoid(gl[0])·src[n].
 	sharedGateShader   *wgpu.ShaderModule
 	sharedGatePipeline *wgpu.ComputePipeline

@@ -57,16 +57,23 @@ type webgpuBackend struct {
 	ctx  *Context
 	name string
 
-	mu        sync.Mutex // Context is not goroutine-safe
-	resident  map[*float32]*ResidentMatrix
-	qresident map[*int8]*qResident // W8A8 weights kept resident (+ a decode runner)
-	fallbacks int
+	mu         sync.Mutex // Context is not goroutine-safe
+	resident   map[*float32]*ResidentMatrix
+	qresident  map[*int8]*qResident  // W8A8 weights kept resident (+ a decode runner)
+	q4resident map[*byte]*q4Resident // G6 (docs/task-gpu-paths-2026-09.md): W4A8 twin — the "staged int4" item
+	fallbacks  int
 }
 
 // qResident is a resident int8 weight plus its cached decode (GEMV) runner.
 type qResident struct {
 	rm     *ResidentW8A8
 	runner *GEMVRunner // lazily built on the first M=1 call
+}
+
+// q4Resident is qResident's int4 (W4A8) twin.
+type q4Resident struct {
+	rm     *ResidentW4A8
+	runner *GEMVRunner
 }
 
 // newWebGPUBackend initializes a WebGPU context for the named consumer
@@ -81,10 +88,11 @@ func newWebGPUBackend(who string) (*webgpuBackend, error) {
 		return nil, fmt.Errorf("gpu: no WebGPU adapter for %s (%v)", who, err)
 	}
 	return &webgpuBackend{
-		ctx:       ctx,
-		name:      "webgpu:" + ctx.Backend(),
-		resident:  make(map[*float32]*ResidentMatrix),
-		qresident: make(map[*int8]*qResident),
+		ctx:        ctx,
+		name:       "webgpu:" + ctx.Backend(),
+		resident:   make(map[*float32]*ResidentMatrix),
+		qresident:  make(map[*int8]*qResident),
+		q4resident: make(map[*byte]*q4Resident),
 	}, nil
 }
 
@@ -130,6 +138,77 @@ func (b *webgpuBackend) MatmulW8A8(a []float32, bQ []int8, bScales []float32, ds
 		return true
 	}
 	out, err := b.ctx.MatmulW8A8Tiled(aq, aScales, qr.rm, M)
+	if err != nil {
+		b.fallbacks++
+		return false
+	}
+	copy(dst, out)
+	return true
+}
+
+// MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/task-gpu-paths-2026-09.md), the "staged
+// int4" item: decoder/weightmat.go's matmulInto never consulted a backend for int4 before this
+// (its int8 branch already did, via MatmulW8A8/QuantBackend), so an int4-quantized model on the
+// STAGED (non-resident) path ran every projection on the CPU regardless of which backend was
+// active — gpu/gemv_w4a8.go's kernel, upload paths and decodeWeight interface already existed,
+// but only gpu/residency.go's RESIDENT uploadProj used them.
+//
+// M=1 only (decode): the M>1 (prefill/tiled) case has no int4 GEMM kernel on this backend yet —
+// declines, so matmulInto's caller falls back to the CPU W4A8 kernel exactly as it did before
+// this method existed. bQ4 is decoder's native on-disk packed layout (2 nibbles/byte); group is
+// always w4a8GroupSize (32) for goinfer's models (matches uploadProj's own assumption).
+func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales []float32, group int, dst []float32, M, K, N int) bool {
+	if len(bQ4) == 0 || M != 1 || group != w4a8GroupSize {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := &bQ4[0]
+	qr := b.q4resident[key]
+	if qr == nil {
+		var rm *ResidentW4A8
+		var err error
+		if K%w4a8GroupSize == 0 && !int4SlowPath {
+			// Fast path: decoder's 2-nibble/byte int4 is byte-identical to the GPU packed
+			// layout when K%32==0 (TestInt4LayoutMatch) — upload the bytes straight, mirroring
+			// uploadProj's own fast path.
+			rm, err = b.ctx.UploadW4A8Packed(bQ4, bScales, N, K)
+		} else {
+			// Fallback (K not a multiple of 32 → row padding differs): unpack 2-nibble/byte to
+			// one nibble (0..15) per element and let UploadW4A8 re-pack. Values preserved —
+			// identical unpack loop to uploadProj's own fallback.
+			nib := make([]uint8, N*K)
+			for r := range N {
+				row := bQ4[r*((K+1)/2):]
+				dstRow := nib[r*K : r*K+K]
+				for k := range K {
+					v := row[k>>1]
+					if k&1 == 0 {
+						dstRow[k] = v & 0x0F
+					} else {
+						dstRow[k] = v >> 4
+					}
+				}
+			}
+			rm, err = b.ctx.UploadW4A8(nib, bScales, N, K)
+		}
+		if err != nil {
+			b.fallbacks++
+			return false
+		}
+		qr = &q4Resident{rm: rm}
+		b.q4resident[key] = qr
+	}
+	aq, aScales := linalg.QuantizeRowsInt8(a, M, K)
+	if qr.runner == nil {
+		r, err := b.ctx.NewGEMVRunner(qr.rm)
+		if err != nil {
+			b.fallbacks++
+			return false
+		}
+		qr.runner = r
+	}
+	out, err := qr.runner.Run(aq, aScales[0])
 	if err != nil {
 		b.fallbacks++
 		return false
@@ -230,6 +309,13 @@ func (b *webgpuBackend) Close() error {
 		qr.rm.Close()
 	}
 	b.qresident = nil
+	for _, qr := range b.q4resident {
+		if qr.runner != nil {
+			qr.runner.Close()
+		}
+		qr.rm.Close()
+	}
+	b.q4resident = nil
 	b.mu.Unlock()
 	b.ctx.Close()
 	return nil

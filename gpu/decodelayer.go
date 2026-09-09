@@ -108,14 +108,22 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 		return nil, nil, err
 	}
 	pbuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// bind a null storage buffer); this test-only path never carries a real sink, so a harmless
+	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
+	sinksBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	hsBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.attnLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: q.buf, Size: q.buf.GetSize()}, {Binding: 1, Buffer: kCache.buf, Size: kCache.buf.GetSize()},
 		{Binding: 2, Buffer: vCache.buf, Size: vCache.buf.GetSize()}, {Binding: 3, Buffer: ctxBuf, Size: ctxBuf.GetSize()},
-		{Binding: 4, Buffer: pbuf, Size: pbuf.GetSize()},
+		{Binding: 4, Buffer: sinksBuf, Size: sinksBuf.GetSize()}, {Binding: 5, Buffer: pbuf, Size: pbuf.GetSize()},
+		{Binding: 6, Buffer: hsBuf, Size: hsBuf.GetSize()},
 	}})
 	if err != nil {
 		ctxBuf.Release()
 		pbuf.Release()
+		sinksBuf.Release()
+		hsBuf.Release()
 		return nil, nil, err
 	}
 	enc, _ := c.device.CreateCommandEncoder(nil)
@@ -128,6 +136,8 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 		pass.Release()
 		ctxBuf.Release()
 		pbuf.Release()
+		sinksBuf.Release()
+		hsBuf.Release()
 		bg.Release()
 		return nil, nil, err
 	}
@@ -135,7 +145,7 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 	cmd, _ := enc.Finish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	free := []func(){func() { ctxBuf.Release() }, pbuf.Release, bg.Release}
+	free := []func(){func() { ctxBuf.Release() }, pbuf.Release, sinksBuf.Release, hsBuf.Release, bg.Release}
 	return newDeviceBuffer(ctxBuf, nH*hd), free, nil
 }
 

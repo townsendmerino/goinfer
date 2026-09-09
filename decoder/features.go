@@ -296,7 +296,8 @@ func ResidentEligible(a *Architecture, backend string) bool {
 	}
 	return a.decodeRunnerEligible() &&
 		len(missingFeatures(a.residentFeatures(), impl)) == 0 &&
-		residentMoECapacityOK(a, backend)
+		residentMoECapacityOK(a, backend) &&
+		residentPerLayerGeomOK(a, backend)
 }
 
 // residentBackendMoECap is the router-kernel capacity of each backend whose MoE scoreboard is a
@@ -366,6 +367,45 @@ func residentMoECapacityOK(a *Architecture, backend string) bool {
 	}
 	return true
 }
+
+// residentPerLayerGeomBackends declares which resident backends implement PER-LAYER attention
+// geometry — a layer's own head_dim/KV-head count genuinely differing from another's (Gemma 4's
+// local/global split: HeadDim 256 vs gemma4.GlobalHeadDim 512), not just a per-layer differing
+// RoPE table (FeatPerLayerRoPE, which every resident backend already has and which is NOT this).
+//
+// This is NOT expressed as a ResidentFeature: no other family needs it (Gemma 3's dual-base RoPE
+// keeps head_dim uniform), so the taxonomy has no flag for it and residentFeatures() cannot name
+// it as a requirement — Gemma 3 and dense Gemma 4 derive the IDENTICAL feature set otherwise (see
+// TestZZGemmaFeatureDiff-shaped comparisons). CUDA and Metal implement it via their own per-layer
+// geometry seam (cuda/resident.go's cudaLayer.hd/nKV, metal/model.go's residLayer.geom); WebGPU's
+// twin fields (runLayer.ghd/gnKV/ghalf, gpu/decoderunner.go) exist but are never populated by
+// gpu/residency.go's per-layer builder for any family — confirmed 2026-09-08 when G6's Gemma-set
+// feature work (docs/task-gpu-paths-2026-09.md) satisfied every ResidentFeature dense Gemma 4
+// nominally requires without also covering this, which would have silently admitted it to a path
+// that crashes on upload ("gpu: residency unsupported projection precision \"\"") rather than
+// mis-running quietly — still a decline this predicate exists to make deliberate instead of
+// accidental.
+var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true}
+
+// residentPerLayerGeomOK reports whether backend implements the per-layer geometry a's layers
+// actually need. true for every arch that doesn't vary (the overwhelming majority); false only
+// when the arch's layers genuinely differ AND the backend lacks the seam.
+func residentPerLayerGeomOK(a *Architecture, backend string) bool {
+	if a.gemma4 == nil || a.gemma4.GlobalHeadDim <= 0 || a.gemma4.GlobalHeadDim == a.HeadDim {
+		return true // uniform head_dim across every layer — no backend needs a special seam
+	}
+	return residentPerLayerGeomBackends[backend]
+}
+
+// PerLayerGeomOK is residentPerLayerGeomOK's Model-level twin, exported so a resident backend's
+// own BuildResident can check it directly — the same pattern ResidentBackendMoECap already
+// established (a runtime check a backend calls individually, rather than through the combined
+// ResidentEligible, which is the doc-generation/admission-golden predicate). gpu/residency.go's
+// BuildResident calls this because its own admission check is hand-rolled from
+// MissingResidentFeatures, not ResidentEligible, and MissingResidentFeatures alone would have
+// silently admitted dense Gemma 4 once G6's Gemma-set features landed — see
+// residentPerLayerGeomBackends' own comment for the incident this predicate exists to prevent.
+func (m *Model) PerLayerGeomOK(backend string) bool { return residentPerLayerGeomOK(m.w.arch, backend) }
 
 // ResidentBackendFeatures returns a COPY of the feature set a resident backend implements
 // (nil if the backend is unknown). Returning a copy keeps the source map read-only from
@@ -551,8 +591,43 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)
 		FeatDeltaNet:       true, // Gated-DeltaNet engine + fused attn output gate (gpu/deltanet.go)
 		FeatNonGatedMLP:    true, // relu2Quant (Nemotron-H squared-ReLU)
-		FeatLogitScale:     true, // Granite logits_scaling
+		FeatLogitScale:     true, // Granite logits_scaling — folded into the lm_head weight scale at BuildResident, not a host-side postcap
 		FeatRMSAddOne:      true, // (1+w) RMS offset
+		// G6 (docs/task-gpu-paths-2026-09.md): the Gemma3/Gemma4/gpt-oss set. FeatEmbedScale
+		// needs ZERO gpu/ code — decoder/residency.go's embedResident already applies √hidden
+		// host-side, generically for every backend, before calling resident.Forward; this
+		// runner just consumes the already-scaled embedding like every other backend does.
+		FeatEmbedScale: true,
+		// FeatFinalLogitSoftcap: gpu/softcap.go's applySoftcap, host-side after readback — the
+		// same site and shape as cuda/resident.go's step()/metal/model.go's finalizeLogits.
+		FeatFinalLogitSoftcap: true,
+		// FeatSandwichNorm: reuses the already-shipped rmsnormF32 closure (previously only the
+		// f16-Mamba path's own norm) — defeats the fused gemvAdd residual epilogue at the o-proj
+		// and MLP down-proj sites, same shape CUDA/Metal already use for this feature.
+		FeatSandwichNorm: true,
+		// FeatGatedGELU: a genuinely new kernel pair (gegluShaderWGSL/gegluQuantWGSL,
+		// gpu/layer.go + gpu/decodefuse.go) — this backend had no GELU-tanh-gated activation
+		// before, only SiLU. Clamps the tanh argument to ±15 before calling tanh, matching
+		// Metal's own fix for the exact overflow that cost it a real cosine regression
+		// (0.818→0.994) the first time this math shipped there.
+		FeatGatedGELU: true,
+		// FeatOutBias: gpt-oss's o_proj bias — composed from two already-existing kernels
+		// (a bare gemv, then biasAdd — itself the general "vec[i] += other[i]" residual
+		// kernel already used for Qwen2's q/k/v bias), no new kernel.
+		FeatOutBias: true,
+		// FeatAttnSink: gpt-oss's three departures — the learned per-head softmax sink
+		// (threaded through every attention kernel: attn, attn-keys, attn-f16, attn-i8, and
+		// all three wide variants — 7 pipelines total), the clamped interleaved-SwiGLU expert
+		// (new gptossGluQuantWGSL kernel), and a router whose bias reaches the mixing WEIGHT,
+		// not just selection (new routeGptOssWGSL kernel, mirroring cuda/gptoss_act.cu's
+		// route_gptoss and metal/moe.go's twin exactly — moeRouteWGSL's own contract is wrong
+		// for this family). The sink itself needed a genuinely separate per-layer uniform
+		// (gpu/attention.go's HS struct) rather than folding into the existing geometry-cached
+		// P uniform, since hasSink is a per-LAYER property that P's geomFor dedup cache cannot
+		// safely carry. Declared only after a real gpt-oss forward ran resident end-to-end
+		// (TestGptOssResidentParityWebGPU) — see CUDA's/Metal's own FeatAttnSink comments for
+		// why kernel-level parity alone is not enough evidence for this family.
+		FeatAttnSink: true,
 	},
 
 	// cgo-free Metal (metal/): dense Qwen2/Llama plus qk-norm, sliding-window, partial-rotary,

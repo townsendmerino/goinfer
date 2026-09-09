@@ -5,16 +5,15 @@ import (
 	"testing"
 )
 
-// TestGptOss_webgpuDecline asserts the load-bearing guarantee (docs/task-mxfp4-gptoss.md §3/§6.4)
-// for the backend that does NOT implement gpt-oss's novel ops: WebGPU must DECLINE gpt-oss and
-// fall back to CPU, never mis-run it. Metal and CUDA both implement it now and are asserted
-// ADMITTED below — the positive half of the same guarantee.
+// TestGptOss_webgpuDecline asserts the load-bearing guarantee (docs/task-mxfp4-gptoss.md §3/§6.4):
+// a backend that does NOT implement gpt-oss's novel ops must DECLINE it and fall back to CPU,
+// never mis-run it — and a backend that DOES ship and dispatch them must actually ADMIT, not stay
+// declined by a stale check. All three resident backends are now on the admit side; the name is
+// historical (kept so `git log -p` on it still tells the right story).
 //
-// CUDA MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE on 2026-08-31 (G7), and the condition this
-// test used to encode is exactly what changed: it said CUDA "has the same kernels loaded but not
-// yet dispatched — dead code until wired". They are wired now, and wiring them found three silent
-// defects no kernel test could see, because each was a term the WIRING dropped rather than a
-// kernel computing it wrongly:
+// CUDA MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE on 2026-08-31 (G7): wiring the already-loaded
+// kernels found three silent defects no kernel test could see, because each was a term the WIRING
+// dropped rather than a kernel computing it wrongly:
 //
 //	d9829ce  the gate‖up bias table indexed by SLOT id under expert caching
 //	610ce7f  the per-expert down bias never applied (needed gemv_w4a8_moe_wacc_bias)
@@ -24,7 +23,16 @@ import (
 // The declaration rests on a real 20B forward, resident on an 8 GB card via --moe-cache-experts:
 // 7/8 argmax-exact, min cosine 0.996392 (cuda.TestGptOssResidentParityCUDA). 2224441 declared
 // FeatAttnSink once on kernel-level evidence and was correctly reverted; this time the whole model
-// ran. WebGPU still has none of it and still refuses via the shared feature-taxonomy check.
+// ran.
+//
+// WEBGPU MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE on 2026-09-08 (G6,
+// docs/task-gpu-paths-2026-09.md): the sink threaded through every attention kernel (attn,
+// attn-keys, attn-f16, attn-i8, and all three wide variants — 7 pipelines), plus three brand-new
+// MoE kernels (gpt-oss disagrees with the generic MoE path on what the router bias means and what
+// the activation clamps — routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL,
+// gpu/moe.go). Verified against the real (non-seeded) decoder/testdata/gptoss_tiny.gguf, resident
+// vs CPU: min cosine 0.9943 across 8 positions (gpu.TestGptOssResidentParityWebGPU) — the same
+// 0.95 floor Metal's own gate uses on this fixture.
 func TestGptOss_webgpuDecline(t *testing.T) {
 	cfg := representativeConfig("gpt_oss")
 	if cfg == nil {
@@ -41,36 +49,16 @@ func TestGptOss_webgpuDecline(t *testing.T) {
 		t.Errorf("gpt-oss required features %v missing FeatAttnSink", req)
 	}
 
-	for _, be := range []string{"webgpu"} {
-		if impl, ok := residentBackendFeatures[be]; ok && impl[FeatAttnSink] {
-			t.Errorf("backend %q claims FeatAttnSink but has no dispatched sink/MoE kernels — must not implement it", be)
-		}
-		if ResidentEligible(arch, be) {
-			t.Errorf("backend %q must DECLINE gpt-oss (ResidentEligible=true; want false → CPU fallback)", be)
-		}
-	}
-
-	// Metal is the one backend that DOES implement FeatAttnSink now — the positive half of the
-	// same guarantee: a backend that ships the kernels must actually admit, not stay declined by
-	// a stale check. TestGptOssResidentParity is the end-to-end proof (8/8 argmax-exact, min
-	// cosine 0.9989 on the tiny fixture); this only re-asserts the admission wiring, cheaply,
-	// without a GPU on the box.
-	// CUDA, the 2026-08-31 addition. Asserted the same way as metal and for the same reason: a
-	// backend that ships AND DISPATCHES the kernels must actually admit, not stay declined by a
-	// stale check — which is the failure this test was written to catch in the other direction.
-	for _, be := range []string{"metal", "cuda"} {
+	// A backend that ships AND DISPATCHES the kernels must actually admit, not stay declined by a
+	// stale check — which is the failure this test was written to catch in the other direction
+	// (and did, twice: CUDA in 2026-08-31, WebGPU in 2026-09-08).
+	for _, be := range []string{"metal", "cuda", "webgpu"} {
 		if !residentBackendFeatures[be][FeatAttnSink] {
 			t.Errorf("backend %q no longer declares FeatAttnSink — its gpt-oss parity gate should have started skipping; update this test if the kernels were intentionally reverted", be)
 		}
 		if !ResidentEligible(arch, be) {
 			t.Errorf("backend %q declares FeatAttnSink but does not admit gpt-oss (ResidentEligible=false) — check decodeRunnerEligible's gptoss case and residentMoECapacityOK", be)
 		}
-	}
-	if !residentBackendFeatures["metal"][FeatAttnSink] {
-		t.Error(`backend "metal" no longer declares FeatAttnSink — TestGptOssResidentParity should have started skipping; update this test if the kernels were intentionally reverted`)
-	}
-	if !ResidentEligible(arch, "metal") {
-		t.Error(`backend "metal" declares FeatAttnSink but does not admit gpt-oss (ResidentEligible=false) — check decodeRunnerEligible's gptoss case and residentMoECapacityOK`)
 	}
 
 	// The arch-shape gate falls through for gpt-oss (2026-08-18, mirroring gemma4 and the

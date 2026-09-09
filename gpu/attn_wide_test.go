@@ -68,17 +68,22 @@ func TestAttnWide_refParity(t *testing.T) {
 				Contents: wgpu.ToBytes([]uint32{uint32(tc.nH), uint32(tc.nKV), uint32(tc.hd), uint32(tc.nKeys),
 					0, uint32(tc.nH / tc.nKV), math.Float32bits(scale), 0}),
 				Usage: wgpu.BufferUsageUniform})
+			// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
+			sinksB := mk([]float32{0}, wgpu.BufferUsageStorage)
+			hsB, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+				Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 			bg, e := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.attnWideLayout, Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, Buffer: qB, Size: qB.GetSize()}, {Binding: 1, Buffer: kB, Size: kB.GetSize()},
 				{Binding: 2, Buffer: vB, Size: vB.GetSize()}, {Binding: 3, Buffer: ctxB, Size: ctxB.GetSize()},
-				{Binding: 4, Buffer: uni, Size: uni.GetSize()},
+				{Binding: 4, Buffer: sinksB, Size: sinksB.GetSize()}, {Binding: 5, Buffer: uni, Size: uni.GetSize()},
+				{Binding: 6, Buffer: hsB, Size: hsB.GetSize()},
 			}})
 			if e != nil {
 				t.Fatal(e)
 			}
 			defer func() {
 				bg.Release()
-				for _, b := range []*wgpu.Buffer{qB, kB, vB, ctxB, stag, uni} {
+				for _, b := range []*wgpu.Buffer{qB, kB, vB, ctxB, stag, uni, sinksB, hsB} {
 					b.Release()
 				}
 			}()

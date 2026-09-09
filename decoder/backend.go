@@ -41,6 +41,17 @@ type QuantBackend interface {
 	MatmulW8A8(a []float32, bQ []int8, bScales []float32, dst []float32, M, K, N int) bool
 }
 
+// QuantBackend4 is QuantBackend's int4 (W4A8) counterpart — G6 (docs/task-gpu-paths-2026-09.md),
+// the "staged int4" item: matmulInto's int8 branch already checked QuantBackend before falling
+// back to the CPU kernel, but its int4 branch never consulted a backend at all, so an int4 model
+// on the STAGED (non-resident) path ran every projection on the CPU regardless of which backend
+// was active. Keyed by the packed-nibble slice's backing pointer, same residency convention as
+// QuantBackend. Declines (false) fall back to linalg.WeightMat's own CPU W4A8 kernel, so results
+// stay correct either way.
+type QuantBackend4 interface {
+	MatmulW4A8(a []float32, bQ4 []byte, bScales []float32, group int, dst []float32, M, K, N int) bool
+}
+
 // QuantBatchBackend additionally runs a SET of W8A8 matmuls that share one
 // activation a[M,K] — the fused qkv and gate/up projections — as a single
 // submit: quantize once, dispatch all ops, sync once. This is what makes the GPU

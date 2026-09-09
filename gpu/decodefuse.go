@@ -134,6 +134,62 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 }
 `
 
+// gegluQuant is swigluQuant's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
+// docs/task-gpu-paths-2026-09.md). Same fused shape (product recomputed in the pack pass, no
+// inter-wide global-memory round-trip); only the activation differs. gelu_tanh's argument is
+// CLAMPED to ±15 before calling tanh — see gegluShaderWGSL's own comment (layer.go) for why:
+// unclamped, it overflows f32 before saturating, which cost Metal's own port a real cosine
+// regression (0.818→0.994 after the fix) the first time it shipped this exact math.
+const gegluQuantWGSL = `
+struct P { n: u32, np: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       gate:   array<f32>;  // [n]
+@group(0) @binding(1) var<storage, read>       up:     array<f32>;  // [n]
+@group(0) @binding(2) var<storage, read_write> qout:   array<u32>;  // [np/4] packed int8
+@group(0) @binding(3) var<storage, read_write> scales: array<f32>;  // [1]
+@group(0) @binding(4) var<uniform>             p:      P;
+var<workgroup> sh: array<f32, 64>;
+fn gelu_tanh(x: f32) -> f32 {
+    let a = 0.7978845608028654 * (x + 0.044715 * x * x * x);
+    return 0.5 * x * (1.0 + tanh(clamp(a, -15.0, 15.0)));
+}
+fn geglu_up(g: f32, u: f32) -> f32 { return gelu_tanh(g) * u; }
+@compute @workgroup_size(64)
+fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
+    let t = lid.x;
+    // 1) max-abs of mid = gelu_tanh(gate)·up, parallel tree reduce
+    var mx: f32 = 0.0;
+    for (var i: u32 = t; i < p.n; i = i + 64u) { mx = max(mx, abs(geglu_up(gate[i], up[i]))); }
+    sh[t] = mx;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { sh[t] = max(sh[t], sh[t + stride]); }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    var s: f32 = sh[0] / 127.0;
+    if (s == 0.0) { s = 1.0; }
+    if (t == 0u) { scales[0] = s; }
+    let invs = 1.0 / s;
+    // 2) quantize + pack
+    let nw = p.np / 4u;
+    for (var wi: u32 = t; wi < nw; wi = wi + 64u) {
+        var word: u32 = 0u;
+        for (var j: u32 = 0u; j < 4u; j = j + 1u) {
+            let k = wi * 4u + j;
+            var q: i32 = 0;
+            if (k < p.n) {
+                q = i32(round(geglu_up(gate[k], up[k]) * invs));
+                if (q > 127) { q = 127; } else if (q < -127) { q = -127; }
+            }
+            word = word | ((u32(q) & 0xffu) << (8u * j));
+        }
+        qout[wi] = word;
+    }
+}
+`
+
 func (c *Context) ensureFuse() error {
 	// Per-pipeline guards: a mid-build failure must not leave the first-field guard satisfied with a
 	// later pipeline nil (audit R-30). Shared tracked constructor (gpu.go) registers for release (C-26).
@@ -146,6 +202,11 @@ func (c *Context) ensureFuse() error {
 	}
 	if c.swigluQuantPipeline == nil {
 		if c.swigluQuantShader, c.swigluQuantPipeline, c.swigluQuantLayout, err = mk("swigluQuant", swigluQuantWGSL); err != nil {
+			return err
+		}
+	}
+	if c.gegluQuantPipeline == nil {
+		if c.gegluQuantShader, c.gegluQuantPipeline, c.gegluQuantLayout, err = mk("gegluQuant", gegluQuantWGSL); err != nil {
 			return err
 		}
 	}

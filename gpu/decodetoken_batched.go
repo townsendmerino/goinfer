@@ -239,6 +239,12 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		xd[r] = b
 	}
 
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// bind a null storage buffer); this test-only path never carries a real sink, so one shared
+	// harmless dummy + hasSink=0 for every layer/row, matching attnShaderWGSL's convention.
+	noSinks := storF(1)
+	noHasSink := uni([]uint32{0, 0, 0, 0})
+
 	for i := range m.Layers {
 		lw := &m.Layers[i]
 		// attention: batched q/k/v projection, per-row RoPE + KV-store, per-row attn,
@@ -262,7 +268,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		for r := range xd {
 			cv := storF(nH * hd)
 			ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[r] + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-			disp(c.attnPipeline, bind(c.attnLayout, q[r], lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, ap), uint32(nH), 1)
+			disp(c.attnPipeline, bind(c.attnLayout, q[r], lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, noSinks, ap, noHasSink), uint32(nH), 1)
 			ctxv[r] = cv
 		}
 		attnOut := tiledProj(ctxv, lw.Attn.OProj)

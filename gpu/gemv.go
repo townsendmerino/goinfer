@@ -321,24 +321,39 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][
 // avoiding the per-call buffer churn that dominated the one-shot MatmulW8A8GEMV
 // (GPU sync is cheap; wgpu buffer creation is not). This is what the decoder
 // caches per weight matrix.
+//
+// rm is decodeWeight (G6, docs/task-gpu-paths-2026-09.md: the "staged int4" item) — either
+// W8A8 or W4A8; both kernels share the same 6-binding layout (see decodeWeight's own comment
+// in gpu/gemv_w4a8.go), so this runner is precision-agnostic exactly the way DecodeRunner's own
+// gemv/gemvAdd builders already are.
 type GEMVRunner struct {
 	c                                  *Context
-	rm                                 *ResidentW8A8
+	rm                                 decodeWeight
 	aBuf, asBuf, dstBuf, dimsBuf, stag *wgpu.Buffer
 	bg                                 *wgpu.BindGroup
 	n                                  int
 }
 
-// NewGEMVRunner builds a reusable decode runner for a resident weight.
-func (c *Context) NewGEMVRunner(rm *ResidentW8A8) (*GEMVRunner, error) {
-	if err := c.ensureGEMV(); err != nil {
-		return nil, err
+// NewGEMVRunner builds a reusable decode runner for a resident weight (W8A8 or W4A8).
+func (c *Context) NewGEMVRunner(rm decodeWeight) (*GEMVRunner, error) {
+	// Each precision compiles its own pipeline lazily; gPipe(c)/gLayout(c) below assume
+	// whichever one this rm needs has already been ensured.
+	switch rm.(type) {
+	case *ResidentW4A8:
+		if err := c.ensureGEMVW4(); err != nil {
+			return nil, err
+		}
+	default:
+		if err := c.ensureGEMV(); err != nil {
+			return nil, err
+		}
 	}
-	N := rm.rows
+	N := rm.nRows()
+	kp := rm.kPad()
 	mk := func(label string, size uint64, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
 		return c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: size, Usage: usage})
 	}
-	aBuf, err := mk("gemvr-act", uint64(rm.kp/4*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	aBuf, err := mk("gemvr-act", uint64(kp/4*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +379,7 @@ func (c *Context) NewGEMVRunner(rm *ResidentW8A8) (*GEMVRunner, error) {
 		return nil, err
 	}
 	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
-		Label: "gemvr-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
+		Label: "gemvr-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
 		aBuf.Release()
@@ -374,12 +389,12 @@ func (c *Context) NewGEMVRunner(rm *ResidentW8A8) (*GEMVRunner, error) {
 		return nil, err
 	}
 	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
-		Layout: c.gemvLayout,
+		Layout: rm.gLayout(c),
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
-			{Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
+			{Binding: 1, Buffer: rm.wbuf(), Size: rm.wbuf().GetSize()},
 			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
-			{Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
+			{Binding: 3, Buffer: rm.sbuf(), Size: rm.sbuf().GetSize()},
 			{Binding: 4, Buffer: dstBuf, Size: dstBuf.GetSize()},
 			{Binding: 5, Buffer: dimsBuf, Size: dimsBuf.GetSize()},
 		},
@@ -395,10 +410,13 @@ func (c *Context) NewGEMVRunner(rm *ResidentW8A8) (*GEMVRunner, error) {
 	return &GEMVRunner{c: c, rm: rm, aBuf: aBuf, asBuf: asBuf, dstBuf: dstBuf, dimsBuf: dimsBuf, stag: stag, bg: bg, n: N}, nil
 }
 
-// Run computes dst[N] = (aq quantized int8) · rmᵀ, reusing the runner's buffers.
+// Run computes dst[N] = (aq quantized int8) · rmᵀ, reusing the runner's buffers. aq must be
+// exactly K elements (no caller-side padding) — linalg.QuantizeRowsInt8(a, 1, K) already
+// produces that, and aBuf was sized to kPad() bytes at construction time, so the untouched tail
+// stays correctly zero (CreateBuffer zero-inits) regardless of how kPad() rounds K.
 func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
 	c := r.c
-	if err := c.queue.WriteBuffer(r.aBuf, 0, wgpu.ToBytes(packInt8(aq, 1, r.rm.cols))); err != nil {
+	if err := c.queue.WriteBuffer(r.aBuf, 0, wgpu.ToBytes(packInt8(aq, 1, len(aq)))); err != nil {
 		return nil, fmt.Errorf("gpu: GEMVRunner write act: %w", err)
 	}
 	if err := c.queue.WriteBuffer(r.asBuf, 0, wgpu.ToBytes([]float32{aScale})); err != nil {
@@ -407,7 +425,7 @@ func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
 	enc, _ := c.device.CreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
-	pass.SetPipeline(c.gemvPipeline)
+	pass.SetPipeline(r.rm.gPipe(c))
 	pass.SetBindGroup(0, r.bg, nil)
 	gx, gy := gemvGrid(r.n)
 	pass.DispatchWorkgroups(gx, gy, 1)

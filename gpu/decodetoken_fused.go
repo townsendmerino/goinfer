@@ -153,6 +153,12 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	}
 	keepBuf(xd)
 
+	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// bind a null storage buffer); this test-only path never carries a real sink, so one shared
+	// harmless dummy + hasSink=0 for every layer, matching attnShaderWGSL's convention.
+	noSinks := storF(1)
+	noHasSink := uni([]uint32{0, 0, 0, 0})
+
 	for i := range m.Layers {
 		lw := &m.Layers[i]
 		// attention sub-block
@@ -167,7 +173,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		copyKV(v, lw.Attn.VCache.buf)
 		ctxv := storF(nH * hd)
 		ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(pos + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-		disp(c.attnPipeline, bind(c.attnLayout, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, ap), uint32(nH), 1)
+		disp(c.attnPipeline, bind(c.attnLayout, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, noSinks, ap, noHasSink), uint32(nH), 1)
 		cq, cs := quant(ctxv, nH*hd)
 		attnOut := gemv(cq, cs, lw.Attn.OProj)
 		residual(xd, attnOut)

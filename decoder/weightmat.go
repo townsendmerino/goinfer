@@ -380,11 +380,17 @@ func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) 
 var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}
 
 // matmul computes dst[M, rows] = a[M, cols] · wᵀ, dispatching on w's precision
-// with goinfer's backend routing: the f32 and W8A8 paths can run on a GPU backend
-// (be.MatmulBT / QuantBackend.MatmulW8A8); int4 (W4A8) and weight-only int8 (Q8)
-// stay CPU. (The old weightMat.matmul, now a free function over linalg.WeightMat.)
+// with goinfer's backend routing: the f32, W8A8 and W4A8 paths can run on a GPU backend
+// (be.MatmulBT / QuantBackend.MatmulW8A8 / QuantBackend4.MatmulW4A8, the last a G6
+// docs/task-gpu-paths-2026-09.md addition); weight-only int8 (Q8) stays CPU. (The old
+// weightMat.matmul, now a free function over linalg.WeightMat.)
 func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
-	if _, _, _, ok := w.Int4(); ok {
+	if q4, q4s, group, ok := w.Int4(); ok {
+		// G6 (docs/task-gpu-paths-2026-09.md): staged int4 backend consult, mirroring the W8A8
+		// branch below — matmulInto's own int4 branch gets the same fix, for the same reason.
+		if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
+			return
+		}
 		// int4 weights run the int8-activation W4A8 integer kernel at EVERY M (decode
 		// AND prefill): it stays integer (int4 weight × int8 activation) and benchmarks
 		// faster than the dequant-to-f32 Q4 path at every M, and its per-output result
@@ -475,7 +481,12 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
-	if _, _, _, ok := w.Int4(); ok {
+	if q4, q4s, group, ok := w.Int4(); ok {
+		// G6 (docs/task-gpu-paths-2026-09.md): the staged int4 backend consult this branch
+		// never had, mirroring the isW8A8 branch's QuantBackend check above.
+		if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
+			return
+		}
 		// Same threshold matmul's fresh Workspace sets — the point of the reuse is to stop
 		// allocating one per projection per token, not to change how the work is fanned out.
 		// w.MatmulBTW4A8Into, not the raw free function — see matmul's own comment above.
