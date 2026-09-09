@@ -3,7 +3,7 @@ module github.com/townsendmerino/goinfer/metal
 go 1.27.0
 
 require (
-	github.com/townsendmerino/aikit v1.38.0
+	github.com/townsendmerino/aikit v1.39.0
 	github.com/townsendmerino/aikit/gpu v0.32.0
 	github.com/townsendmerino/goinfer v0.17.2
 	golang.org/x/sys v0.47.0

@@ -412,6 +412,12 @@ type gemma4Params struct {
 	FFNPerLayer             []int // variable per-layer FFN width (else Architecture.IntermediateDim is uniform)
 	HiddenSizePerLayerInput int   // PLE per-layer dim (256); 0 ⇒ no PLE
 	VocabSizePerLayerInput  int   // PLE embedding-table vocab (== main vocab)
+
+	// PadTokenID (P7): the id runLayersGemma4FromEmbed's PLE token-identity
+	// lookup uses at a multimodal (image/video/audio) position, in place of the
+	// caller's real token id — matches the real HF multimodal forward's PAD
+	// substitution (see docs/multimodal.md's P7 entry).
+	PadTokenID int
 }
 
 // headDimAt / kvHeadsAt / ffnAt give layer i's attention head_dim, KV-head count,

@@ -19,9 +19,9 @@ type archAdapter func(*Config) (*Architecture, *tensorSchema, error)
 var registry = map[string]archAdapter{
 	"gemma3":              gemma3Architecture,
 	"gemma3_text":         gemma3Architecture,     // the 270M/1B text checkpoints
-	"gemma4":              gemma4Architecture,     // Gemma 4 (E2B/E4B + 12B dense; parity-gated)
-	"gemma4_text":         gemma4Architecture,     // Gemma 4 text checkpoints (the 26B-A4B MoE tiny golden: model_type gemma4_text)
-	"gemma4_unified_text": gemma4Architecture,     // real Gemma 4 unified checkpoints' text_config model_type (E2B/E4B/12B dense + 26B-A4B MoE; K=V globals, model.language_model.* prefix)
+	"gemma4":              gemma4Architecture,     // Gemma 4 top-level model_type for the "gemma4" family wrapper (E2B/E4B/26B-A4B/31B — real vision+audio towers, not built here)
+	"gemma4_text":         gemma4Architecture,     // that family's text_config.model_type (E2B/E4B/26B-A4B MoE/31B dense; parity-gated on E2B+12B)
+	"gemma4_unified_text": gemma4Architecture,     // the SEPARATE "gemma4_unified" family's text_config.model_type — real checkpoints show this is 12B-it ONLY (encoder-free multimodal wrapper, no PLE/MoE in its text decoder; K=V globals, model.language_model.* prefix)
 	"qwen3":               qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":               qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_5_vl":          qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
@@ -373,6 +373,7 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			FFNPerLayer:             cfg.FFNPerLayer,
 			HiddenSizePerLayerInput: cfg.HiddenSizePerLayerInput,
 			VocabSizePerLayerInput:  cfg.VocabSizePerLayerInput,
+			PadTokenID:              cfg.PadTokenID,
 		},
 	}, &gemma3TensorSchema, nil // a dedicated gemma4 tensor schema lands with the loader work
 }

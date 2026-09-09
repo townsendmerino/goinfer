@@ -32,13 +32,7 @@ var g4traceQKV func(layer int, q, k, v []float32)
 // Buffers are allocated per call (parity-first; not the perf path).
 func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
-	g4 := arch.gemma4
-	be := m.be
 	hidden := arch.HiddenDim
-	nH := arch.NumHeads
-	pleDim := g4.HiddenSizePerLayerInput
-	pos := cache.Pos()
-
 	// Embedding × √hidden (inputs_embeds).
 	h := make([]float32, hidden)
 	m.w.Embed.Row(id, h)
@@ -46,6 +40,34 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	for i := range h {
 		h[i] *= es
 	}
+	return m.runLayersGemma4FromEmbed(h, id, cache)
+}
+
+// runLayersGemma4FromEmbed is runLayersGemma4's shared body, parameterized over
+// an already-built (already-scaled) hidden-state embedding h — runLayersGemma4's
+// own case is a real token's embedding; a multimodal caller (P7) substitutes a
+// projected image/video/audio embedding here instead of a token-id lookup, the
+// "embed-by-vector" seam this family lacked (the June seams — runLayersFromEmbed
+// / runLayersFromEmbedN in model.go/forwardn.go — only reach the GENERIC forward
+// path; gemma4's own-forward never went through them).
+//
+// pleTokenID selects which token id's per-layer embedding feeds PLE's
+// token-identity term. For a real text position this is the same id h was
+// embedded from. For a multimodal position the real HF multimodal forward
+// substitutes the checkpoint's pad_token_id THERE, before computing PLE — not
+// the placeholder token's own id, and not a skipped/zeroed term (verified
+// against modeling_gemma4.py's real multimodal forward path, not assumed — see
+// docs/multimodal.md's P7 entry). A caller passes arch.gemma4.PadTokenID for an
+// image/video/audio position.
+func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
+	g4 := arch.gemma4
+	be := m.be
+	hidden := arch.HiddenDim
+	nH := arch.NumHeads
+	pleDim := g4.HiddenSizePerLayerInput
+	pos := cache.Pos()
+
 	if g4traceHidden != nil {
 		g4traceHidden(-1, h)
 	}
@@ -60,7 +82,7 @@ func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {
 	// context_aware = norm( per_layer_model_proj(inputs_embeds) × hidden^-0.5 ).
 	perLayer := make([]float32, arch.NumLayers*pleDim)
 	if pleDim > 0 {
-		m.w.PerLayerTokenEmbed.Row(id, perLayer)
+		m.w.PerLayerTokenEmbed.Row(pleTokenID, perLayer)
 		tScale := float32(math.Sqrt(float64(pleDim)))
 		for i := range perLayer {
 			perLayer[i] *= tScale

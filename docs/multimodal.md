@@ -198,6 +198,123 @@ number is published without provenance.
   Linux box under expert streaming. **One family buys images on every size goinfer already runs
   resident, and audio-in, without a new decoder.** Audio is scoped to *input* (transcribe/understand);
   speech output stays out.
+
+  **Phase 0 DONE, 2026-09-09 — read against the real `modular_gemma4.py`/`configuration_gemma4.py`
+  source, not assumed.** First pass mistakenly researched `gemma3n` (a different, older, unrelated
+  family) on an unverified naming assumption; caught via a checkpoint-size mismatch against
+  `testdata/parity_manifest.json`'s own "google/gemma-4 E2B + 12B" citation, then corrected by
+  confirming `gemma4`/`gemma4_unified` are real, separate transformers model directories. **This
+  doc's own scoping above was already right** — it names `Gemma4VisionConfig`/`Gemma4AudioConfig`
+  correctly; the mixup was this session's research, not a stale doc.
+
+  Confirmed facts: real checkpoints are E2B/E4B/26B-A4B(MoE, 128 experts top-8)/31B under
+  `model_type: gemma4` (`text_config.model_type: gemma4_text`) — this is a DIFFERENT, separate
+  family from the 12B checkpoint (`model_type: gemma4_unified`), which has **no vision or audio
+  tower at all** (`del self.vision_tower` in `Gemma4UnifiedModel.__init__`; raw patches/waveform
+  through a linear embedder instead) and is out of scope for this phase's "real encoder" framing —
+  goinfer's existing `gemma4Architecture` text decoder already covers both families' text side
+  (spot-checked: per-type KV-sharing, `layer_scalar`, scale-less `v_norm` all match real source
+  exactly), so P7 is *purely* the vision/audio build, no text-decoder work needed.
+
+  Vision tower (E2B/E4B/26B-A4B/31B): `Gemma4VisionEncoder`, 16 layers, hidden 768, 12 heads,
+  head_dim 64, intermediate 3072 — a real transformer, LayerNorm not RMSNorm (same primitive P6
+  just built CUDA kernels for), patch_size 16 × pooling_kernel_size 3 = 48px confirming the
+  "divisible by 48" rule exactly. Soft-token budget is one of a fixed small set `{70, 140, 280,
+  560, 1120}` chosen by an aspect-ratio tiling rule, not a single constant. Position embedding is
+  a learned absolute table (`position_embedding_size=10240`) — **one unresolved detail**: the
+  config declares `default_rope_type="axial"` but at least one real checkpoint's `rope_parameters`
+  shows `{"rope_theta":100.0,"rope_type":"default"}`; `apply_multidimensional_rope` and
+  `Gemma4VisionRotaryEmbedding(Sam3ViTRotaryEmbedding)` both exist in source and this wasn't fully
+  reconciled — read `modeling_gemma4.py`'s actual vision forward directly before building the
+  position path, don't assume from the config alone.
+
+  Audio (E2B/E4B/26B-A4B/31B): `Gemma4AudioModel`, 12-layer Conformer-style, hidden 1024, heavily
+  left-biased chunked local attention (`attention_chunk_size=12, context_left=13, context_right=0`
+  — near-causal), conv subsampling front-end (`subsampling_conv_channels=[128,32]`),
+  `output_proj_dims=1536` (matches E2B text hidden). Exact mel-spectrogram parameters (sample
+  rate/hop/n_mels) not yet read — `feature_extraction_gemma4.py` is the source, deferred to when
+  audio work actually starts.
+
+  Multimodal splice: `masked_scatter`, confirmed directly (3 call sites: image/video/audio) in
+  `Gemma4Model.forward`. PLE's multimodal-position treatment is exactly as scoped above — HF's
+  `project_per_layer_inputs` function (in the upstream `transformers` package's
+  `modular_gemma4.py`, not part of this repo) returns the context projection alone when
+  `per_layer_inputs is None`. `use_bidirectional_attention` is real and checkpoint-gated
+  (`null` for E2B/E4B, `"vision"` for 26B-A4B/31B) via `create_masks_for_vision_model`: **global
+  attention layers stay strictly causal**; only **sliding/local layers** get
+  `AND(sliding_window, OR(causal, blockwise))`, where "blockwise" groups each image/audio block —
+  this mask is built only in the multimodal `ForConditionalGeneration` forward, never in the
+  plain text-only path, so it is new decoder-side wiring, not something the existing text gate
+  already exercises.
+
+  Video: frame-sampling into the same `embed_vision(...)` image path per-frame, not a separate
+  temporal mechanism (confirmed for `gemma4_unified`; the plain `gemma4` family reuses the same
+  `convert_video_to_patches`/`pad_to_max_patches` helpers, strongly suggesting the same pattern,
+  not independently confirmed by reading `gemma4`'s own `get_video_features` body).
+
+  **Two corrections to the Phase 0 summary above, found during Phase A implementation — both
+  matter for anyone reading this doc rather than the source:** (1) the vision tower is **RMSNorm
+  sandwich-norm (four independent norms per layer) + a GATED SwiGLU-tanh MLP, NOT LayerNorm +
+  plain GELU** as first written — P6's SigLIP kernels do not transfer here; this tower instead
+  reuses the RMSNorm/gated-GLU primitives every text decoder in this repo already has. (2) the
+  axial-rope "unresolved detail" is resolved: **both** the learned absolute position table **and**
+  axial 2-D rope are real and both fire (θ=100, two independent 32-wide rotate-half chunks, one per
+  axis, sharing 16 log-spaced frequencies) — the `"rope_type":"default"` seen in a raw config.json
+  is a harmless BC shim (`standardize_rope_params`) rewritten to `"axial"` at config-load time, not
+  a real ambiguity. (3) PLE's multimodal treatment is NOT "context projection alone" as Phase 0
+  said — the real multimodal forward substitutes the **PAD token's** id/embedding at every
+  image/video/audio position BEFORE computing PLE's token-identity term (HF's
+  `Gemma4Model.forward`, upstream `modeling_gemma4.py`, not part of this repo), so the term is
+  neither skipped nor zeroed.
+
+  **Phase A (vision, image path, CPU) DONE, 2026-09-09 — the "gemma4" plain family
+  (E2B/E4B/26B-A4B/31B), NOT `gemma4_unified`.** New `vision.Gemma4Encoder` +
+  `vision.Gemma4Preprocess` in aikit (`~/mycode/aikit/aikit/vision/gemma4_encoder.go`,
+  `gemma4_preprocess.go` — aikit v1.38.0+, not yet released as a tagged version; goinfer's
+  `go.work` points at the local checkout for now). Every load-bearing detail was checked against
+  the REAL E2B-it safetensors header, not assumed from source reading alone — this caught two
+  things a source-only read would have missed: `use_clipped_linears=true` on the real checkpoint
+  (genuine finite per-tensor clamp bounds like `[-6.375,6.3125]` on every attention/MLP projection,
+  not the harmless ±inf default `Gemma4ClippableLinear` falls back to), and the position table's
+  real on-disk shape (`[2,10240,768]`, one tensor, not two).
+
+  Gated at cosine **1.000000000** against a tiny-random `Gemma4VisionModel`+`Gemma4MultimodalEmbedder`
+  checkpoint (exercises every component including the real clamp — `scripts/pin_gemma4_vision.py`),
+  and cosine **1.000000000** (max|diff| ≈6.9e-6, pure f32 rounding noise across 16 layers) against
+  the REAL `google/gemma-4-E2B-it` vision-tower weights on synthetic patches, matched f32 precision
+  both sides (`scripts/pin_gemma4_vision_real.py`). The aspect-ratio tiling rule
+  (`Gemma4AspectRatioSize`) is cross-checked numerically against the real
+  `get_aspect_ratio_preserving_size` formula on five width/height/budget combinations — exact
+  match. Pixel-level resize parity (PIL bicubic vs this repo's bilinear) is a known, explicitly
+  deferred gap, same as the existing SigLIP preprocessing's own documented gap — not attempted here.
+
+  Decoder-side wiring (goinfer's own tree, not aikit): `runLayersGemma4` split into a thin wrapper
+  plus `runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVCache)` (`decoder/
+  forward_gemma4.go`) — the "embed-by-vector" seam this family lacked (the June seams,
+  `runLayersFromEmbed`/`runLayersFromEmbedN`, only reach the GENERIC forward path; gemma4's own
+  path never went through them). `pleTokenID` lets a caller feed the checkpoint's `pad_token_id`
+  (new `Config.PadTokenID`/`gemma4Params.PadTokenID`, `json:"pad_token_id"`, picked up automatically
+  from `text_config` by `loadConfig`'s existing merge) at a multimodal position's PLE
+  token-identity lookup, matching HF's real substitution exactly. Verified two ways against the
+  real E2B GGUF: (1) `runLayersGemma4FromEmbed` reproduces `runLayersGemma4` BIT-FOR-BIT on the
+  ordinary text path (a real regression check, not just "no build error") — proven by every
+  existing gemma4 forward-parity gate staying green post-refactor, including the real E2B GGUF
+  gate at cosine 0.99924 (unchanged from before), plus a dedicated equivalence test; (2) PAD
+  substitution genuinely changes the output relative to the real-token-id path — proving the new
+  branch is actually wired, not a silent no-op (`TestGemma4RunLayersFromEmbed_matchesTokenPath`).
+  One simplification worth flagging: E2B/E4B ship `use_bidirectional_attention: null`, so the
+  layer-type-aware image-block bidirectional mask (`AND(sliding_window, OR(causal, blockwise))`,
+  global layers stay causal) is **not** built yet — E2B doesn't need it, and there's no real
+  checkpoint locally to gate it against (only 26B-A4B/31B set `"vision"`). Deferred to whenever
+  that checkpoint is available.
+
+  **What Phase A does NOT include, deliberately scoped out of this pass**: the full serving/
+  generation integration (placeholder-token constants, a `multimodal.Gemma4ImageBlock`-style
+  prompt splice, a `GenerateGemma4VL`-shaped driving loop, HTTP wiring in `internal/serveapp/
+  vision_serve.go`) — the vision-tower primitive and its decoder-side hook are proven correct in
+  isolation; wiring them into an end-to-end image-in-prompt request is real, separate work, sized
+  similarly to Qwen2.5-VL's own `vision_serve.go` integration, and is the natural next slice.
+  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched.
 - **P8 · Finish P5: Qwen3.x-VL image path + GGUF `mmproj`.** Phase 0 on the real Qwen3.6-VL config
   (the vision encoder, dynamic resolution and patch grids, m-RoPE's three position components
   which the text path already degenerates correctly, any DeepStack-style multi-level injection —
@@ -321,7 +438,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
 
-- **VL config flattening** — `decoder/config.go:1306` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:1315` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,

@@ -289,6 +289,15 @@ type Config struct {
 	VocabSizePerLayerInput  int   `json:"vocab_size_per_layer_input"`
 	FFNPerLayer             []int `json:"-"`
 
+	// PadTokenID (gemma4, P7): the real multimodal forward substitutes THIS id's
+	// embedding/per-layer-embedding at every image/video/audio position before
+	// computing PLE's token-identity term — not the placeholder token's own id,
+	// and not a skipped/zeroed term (verified against modeling_gemma4.py's real
+	// multimodal forward, not assumed — see docs/multimodal.md's P7 entry).
+	// Lives under text_config in a real checkpoint; loadConfig's text_config
+	// merge picks it up via this tag with no special-casing needed.
+	PadTokenID int `json:"pad_token_id"`
+
 	// GPT-2 uses a different config vocabulary: n_embd /
 	// n_head / n_layer / n_positions / n_inner / layer_norm_epsilon /
 	// activation_function instead of hidden_size etc. The gpt2 adapter reads
