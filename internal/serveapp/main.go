@@ -432,7 +432,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)
 	flag.BoolVar(&cfg.cpuExactPrefill, "cpu-exact-prefill", false, cpuExactPrefillHelp)
 	flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep resident for a paged MoE model (CUDA: --moe-cache-experts; Metal: the GOINFER_METAL_MOE_SLOTS env var's replacement, docs/task-gpu-paths-2026-09.md Phase 2). On CUDA this is an UPPER BOUND: the runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"). On Metal it is NOT auto-lowered — the request is used as given, and a model that does not fit at that count declines to the CPU path instead (the load-time memory guard, metal/backend.go). 0 keeps the built-in default (CUDA: ask for all, auto-cap; Metal: every expert resident, unpaged). More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at more memory cost")
-	flag.BoolVar(&cfg.fit, "fit", true, "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/task-gpu-paths-2026-09.md, task-fit-to-hardware.md Phase 2). Currently CUDA only: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots — those are always honoured or refused as asked, with or without this flag. --fit=false restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)")
+	flag.BoolVar(&cfg.fit, "fit", true, "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/task-gpu-paths-2026-09.md, task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=false restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model override: --model name=path,ctx=…). 0 (default) keeps the backend default of 4096 — a round, conservative DEFAULT that has never been tuned against real VRAM headroom (raising it would multiply every resident model's KV footprint for callers who never asked); the real per-card ceiling is typically far higher and worth measuring for your model/quant (docs/task-kv-cache-streaming.md: an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is VRAM-checked AT LOAD; if the whole model then can't build resident (either an unfit configured -ctx or the unconfigured default not fitting), it silently loads on the CPU-staged path instead for every request — measured ~15x slower decode, same model/quant — unless -require-backend is set, which refuses to start the server and names the GB shortfall instead. That is a WHOLE-MODEL decision made once at load; a single request whose PROMPT exceeds the active cap is a separate, per-request case and is rejected with a clean 400 context_length_exceeded — there is no per-request fallback to the staged path (an earlier version of this text said there was; a later audit, R-10, replaced that fallback with the clean 400 because it produced a 500 leaking an internal hint). On webgpu this LOWERS the backend cap when smaller (the load-time VRAM check described here is CUDA's); a request LARGER than the backend cap is ignored rather than honoured, since those caps are proven-fit ceilings")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
@@ -445,7 +445,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables)")
 	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
-	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time)")
+	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)")
 	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
 	flag.BoolVar(&cfg.embedInt4, "embed-int4", false, "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
@@ -967,12 +967,18 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and
 	// load that — so --stream-weights "just works" without a manual prequant step.
 	// The served name still derives from the original --model spec, not the cache.
-	loadPath := spec.path
-	if opts.StreamWeights && strings.HasSuffix(spec.path, ".gguf") {
+	// Shared with the auto-retry below (task-fit-to-hardware.md's CPU placement piece), so the
+	// embed-int4 note and the transcode call have exactly one implementation between them.
+	ensureGIW := func() (string, error) {
 		if opts.EmbedInt4 {
 			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")
 		}
-		giwPath, err := prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)
+		return prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)
+	}
+
+	loadPath := spec.path
+	if opts.StreamWeights && strings.HasSuffix(spec.path, ".gguf") {
+		giwPath, err := ensureGIW()
 		if err != nil {
 			return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
 		}
@@ -986,7 +992,34 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	t0 := time.Now()
 	model, err := decoder.Load(loadPath, opts)
 	if err != nil {
-		return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
+		// task-fit-to-hardware.md's CPU placement piece: a plain .gguf that does not fit resident
+		// RAM gets ONE automatic retry with weight streaming instead of just refusing — UNLESS the
+		// model is MoE or an "own-forward" family (decoder.FitDeclineError.DenseStreamable's own
+		// doc: CPU MoE expert-paging is a documented, MEASURED failure — docs/benchmarks.md
+		// "M35/M26 on the Mac" ran a real 20 GB checkpoint through it for 2h10min with ZERO
+		// completions), or the operator already asked for --stream-weights (nothing to retry, it
+		// already ran), or opted out with --fit=off (which restores every fit-by-default behavior,
+		// this one included — decoder.Options.DisableFit's own doc comment).
+		var fde *decoder.FitDeclineError
+		if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&
+			errors.As(err, &fde) && fde.DenseStreamable {
+			fmt.Fprintf(os.Stderr, "note: %q does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)\n", spec.path)
+			declineErr := err
+			opts.StreamWeights = true
+			giwPath, gerr := ensureGIW()
+			if gerr != nil {
+				return nil, fmt.Errorf("load model (%s): %w (auto weight-streaming retry also failed: %v)", spec.path, declineErr, gerr)
+			}
+			loadPath = giwPath
+			if tk, err = loadDecoderTokenizer(loadPath); err != nil {
+				return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
+			}
+			if model, err = decoder.Load(loadPath, opts); err != nil {
+				return nil, fmt.Errorf("load model (%s): %w (auto weight-streaming retry also failed after transcode: %v)", spec.path, declineErr, err)
+			}
+		} else {
+			return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
+		}
 	}
 	// A prequant .giw carries its own quant, so --quant cannot re-quantize it. If the user
 	// explicitly asked for a different one, fail here (before binding) rather than silently

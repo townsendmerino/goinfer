@@ -14,9 +14,18 @@
 > nobara/CUDA hardware, including the exact gemma-4-26B expert-cache scenario §4 uses as its worked
 > example) — Load()-based rather than header-only, see `docs/task-gpu-paths-2026-09.md`'s entries
 > for the scope decision. **The startup banner (Phase 1's third surface) is NOT started**, nor are
-> `pull`'s verdict / the web UI listing (both need the still-deferred header-only work). **Phases
-> 2–5 (fit-by-default on CUDA/Metal/WebGPU, the rate band, host-computed experts) remain entirely
-> unstarted.** Design record for the "run something bigger than my hardware" mode of use; reads
+> `pull`'s verdict / the web UI listing (both need the still-deferred header-only work). **Phase 2
+> is DONE for CUDA and Metal** (context + slots + the real `--fit=off` switch, all measured on real
+> hardware, 2026-09-09) **and for CPU's placement piece** (a dense `.gguf` that will not fit
+> resident RAM gets one automatic `-stream-weights` retry, gated by `--fit`, MoE deliberately
+> excluded after `docs/benchmarks.md`'s "M35/M26 on the Mac" measured that CPU path as
+> catastrophic — 2h10min/zero completions; the dense retry itself measured at streamed/resident =
+> 0.944, real hardware, 2026-09-09 — see `docs/task-gpu-paths-2026-09.md`'s entries). **What's left
+> of Phase 2: the drafter-aware companion-allocation ctx sizing** (§2's own motivating example — a
+> `--drafter` attach after `BuildResident` grabbing VRAM an MoE expert cache already claimed —
+> needs a `decoder.ResidencyBackend` interface change both CUDA and Metal implement). **Phases 3–5
+> (WebGPU, the rate band, host-computed experts) remain entirely unstarted.** Design record for the
+> "run something bigger than my hardware" mode of use; reads
 > `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
 > user's hour. Sibling: `task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes
 > numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's

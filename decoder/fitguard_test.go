@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,21 @@ func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 	// And it must say what the flag DOES, or "-stream-weights" is just another name to guess at.
 	if !strings.Contains(msg, ".giw") || !strings.Contains(msg, "pages weights") {
 		t.Errorf("refusal names the flag without saying what it does:\n%s", msg)
+	}
+
+	// gptoss_tiny.gguf is gpt-oss — MoE, own-forward — so an automatic -stream-weights retry must
+	// NOT be offered: that CPU path is the one docs/benchmarks.md "M35/M26 on the Mac" measured as
+	// 2h10min/zero completions on a real checkpoint. Both the sentinel (errors.Is) and the typed
+	// field (errors.As) have to agree, since main.go's retry decision reads the field directly.
+	if !errors.Is(err, ErrWontFitResident) {
+		t.Error("refusal does not wrap ErrWontFitResident")
+	}
+	var fde *FitDeclineError
+	if !errors.As(err, &fde) {
+		t.Fatal("refusal is not a *FitDeclineError")
+	}
+	if fde.DenseStreamable {
+		t.Error("DenseStreamable = true for gpt-oss (MoE) — an auto-retry would repeat the measured M35/M26 CPU-streaming failure")
 	}
 }
 
@@ -341,6 +357,56 @@ func injectHostRAM(t *testing.T, bytes int64) func() {
 	restore := func() { hostRAM, hostRAMAvailable = prevTotal, prevAvail }
 	t.Cleanup(restore)
 	return restore
+}
+
+// denseStreamable must agree with newLayerPager's own exclusions exactly (dense generic-forward:
+// yes; MoE: no; own-forward dense like lfm2: no) — a disagreement would mean the guard offers an
+// automatic retry the pager then silently declines to build, or refuses one the pager would have
+// handled fine. Three tracked-in-git tiny fixtures, no GOINFER_HEAVY_TESTS needed.
+func TestDenseStreamable_agreesWithLayerPagerEligibility(t *testing.T) {
+	cases := []struct {
+		name string
+		dir  string
+		want bool
+	}{
+		{"llama: dense, generic-forward", "../testdata/llama-tiny", true},
+		{"mixtral: MoE", "../testdata/mixtral-tiny", false},
+		{"lfm2: dense but own-forward", "../testdata/lfm2-tiny", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, err := Load(c.dir, Options{Quant: "f32"})
+			if err != nil {
+				t.Fatalf("Load(%s): %v", c.dir, err)
+			}
+			defer m.Close()
+			if got := denseStreamable(m.Config()); got != c.want {
+				t.Errorf("denseStreamable = %v, want %v", got, c.want)
+			}
+		})
+	}
+	t.Run("nil config (header unreadable)", func(t *testing.T) {
+		if denseStreamable(nil) {
+			t.Error("denseStreamable(nil) = true — an unknown model must not offer an automatic retry")
+		}
+	})
+}
+
+// declineErr must carry fitCheck.denseStreamable through to FitDeclineError.DenseStreamable
+// unchanged in both directions — main.go's retry decision reads only the returned error, never
+// the fitCheck that produced it, so a silent drop here would either offer a retry for MoE (the
+// measured-bad path) or withhold one for a dense model that would have streamed fine.
+func TestFitDeclineError_carriesDenseStreamable(t *testing.T) {
+	for _, want := range []bool{true, false} {
+		f := fitCheck{name: "x.gguf", quant: "int4", weightBytes: 21 << 30, availBytes: 16 << 30, denseStreamable: want}
+		err := f.declineErr()
+		if err.DenseStreamable != want {
+			t.Errorf("denseStreamable=%v: FitDeclineError.DenseStreamable = %v", want, err.DenseStreamable)
+		}
+		if !errors.Is(err, ErrWontFitResident) {
+			t.Errorf("denseStreamable=%v: declineErr() does not wrap ErrWontFitResident", want)
+		}
+	}
 }
 
 // Every quant mode must produce a plausible measured cost. The trap this pins: quantInt4Mix is a

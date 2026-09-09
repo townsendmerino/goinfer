@@ -1813,3 +1813,120 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     (deferred) and the drafter-aware companion-allocation ctx sizing (deferred, needs a
     `ResidencyBackend` interface change). Phases 3-5 (WebGPU, the rate band, host-computed
     experts) remain entirely unstarted.
+
+- 2026-09-09 — `task-fit-to-hardware.md`'s CPU placement piece DONE, at the user's explicit choice
+  between the two remaining Phase 2 items (offered both; this one chosen over the drafter-aware
+  ctx fix). `decoder/fitguard.go`'s load-time guard now gets ONE automatic retry with weight
+  streaming for a plain `.gguf` that will not fit resident RAM, instead of just refusing —
+  gated by `--fit` (default on) the same way CUDA's ctx-default and Metal's slots already are, and
+  scoped to DENSE models only after a real prior-art finding made the MoE case an explicit
+  non-goal (below). **UNCOMMITTED — awaiting go-ahead.**
+  - **The prior-art finding that shaped scope, found before writing any code**: `docs/benchmarks.md`
+    "M35/M26 on the Mac" already measured goinfer's OTHER CPU weight-streaming path — MoE expert
+    demand-paging (`decoder/moepaging.go`'s `expertPager`) — on a real 20 GB checkpoint on this
+    16 GB Mac: **2h10min wall-clock, ZERO completions**, RSS pinned at ~3.2 GB the whole time
+    (consistent with re-reading weights from disk essentially every token, no useful cache
+    retention), very likely the direct cause of a genuine kernel panic shortly afterward. That is
+    exactly the failure mode this session's own explicit condition ("do NOT auto-switch without
+    measuring") exists to catch — an automatic retry that silently walked into it would have been
+    the wrong default, not a bug in the retry mechanism itself. This ruled MoE out of the
+    automatic path by construction, before any new measurement was needed for it.
+  - **Dense weight streaming (`decoder/layerpaging.go`'s `layerPager`) is a structurally different
+    mechanism**, not just a smaller version of the same risk: MoE expert selection is
+    data-dependent and chosen per-token (nothing to prefetch ahead of), while the dense transformer
+    layer loop is strictly sequential and fully known in advance, so `layerPager` issues a real
+    `Advise(WILLNEED)` for the next layer while the current one computes, overlapping the fault
+    with compute (a genuine prefetch-ahead window, not an LRU). Worth measuring on its own rather
+    than tarred with the MoE result — which is exactly what made this the item worth building
+    the retry for, and the MoE case the item to explicitly exclude.
+  - **`decoder.ErrWontFitResident` / `decoder.FitDeclineError`** (new, `decoder/fitguard.go`):
+    `declineErr()` now returns a typed error wrapping the sentinel, carrying a `DenseStreamable
+    bool` field a caller can act on instead of parsing the refusal text. `denseStreamable(cfg
+    *Config)` computes it by calling `resolveArchitecture(cfg)` (needs only the parsed config, no
+    tensor data — already how `fitCheckFor` gets `cfg`) and mirroring `newLayerPager`'s own
+    exclusions EXACTLY: false for `arch.MoE != nil` and for "own-forward" families (gemma4,
+    nemotron-h-moe, lfm2 — resolved dynamically via `arch.ownForward()`, the same call
+    `newLayerPager` itself makes, not a hand-written list, so the guard's retry decision and the
+    pager's own decision to actually build one can never disagree) — and false for a nil `cfg`
+    (header unreadable ⇒ don't know ⇒ don't retry, the same "every unknown proceeds \[without
+    acting\]" discipline this file already states for the refusal path itself).
+  - **`internal/serveapp/main.go`'s `loadDecoder`**: the `.gguf→.giw` transcode block (previously
+    only reachable via an explicit `--stream-weights`) factored into a shared `ensureGIW` closure.
+    On a `decoder.Load` failure, `errors.As` recovers a `*decoder.FitDeclineError`; when
+    `!opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&
+    fde.DenseStreamable`, it prints a note, flips `opts.StreamWeights = true`, transcodes, and
+    retries the tokenizer+model load ONCE — any failure at that point (transcode or the retried
+    load) returns a combined error naming both the original decline and the retry failure, so a
+    genuinely-broken retry never silently swallows the reason the first attempt failed. `--fit=off`
+    (`decoder.Options.DisableFit`, its own doc comment updated) restores the plain refusal exactly,
+    matching CUDA/Metal's existing off-switch semantics. `--fit`'s and `--stream-weights`'s help
+    text both updated to say so.
+  - **Verified with real unit tests, not just build success**: `TestDenseStreamable_
+    agreesWithLayerPagerEligibility` (new, `decoder/fitguard_test.go`) drives `denseStreamable`
+    against three TRACKED tiny fixtures — `testdata/llama-tiny` (dense, generic-forward → true),
+    `testdata/mixtral-tiny` (MoE → false), `testdata/lfm2-tiny` (dense but own-forward → false) —
+    plus the nil-config case, all CI-safe with no `GOINFER_HEAVY_TESTS`. `TestFitDeclineError_
+    carriesDenseStreamable` pins that `declineErr()` carries the field through unchanged in both
+    directions. `TestFitGuard_refusesBeforeAllocating` (existing) gained an assertion that gpt-oss
+    (MoE, the tracked `gptoss_tiny.gguf` fixture) reports `DenseStreamable=false` through the REAL
+    `Load()` refusal path, not just the pure classifier — the safety-critical direction (never
+    auto-retry into the measured-bad MoE path) proven through a real decline, not only through the
+    helper function in isolation.
+  - **The throughput cost, measured on real hardware before treating this as shippable** (the
+    explicit condition this item was deferred under): a throwaway interleaved A/B
+    (`/tmp`-scratchpad `measure_stream_overhead.py`, modeled on `scripts/bench_peer.py`'s own
+    decode-tok/s method: client-side timing from the first streamed token, `usage.completion_tokens`
+    as the count, `stream_options.include_usage`) against a real, safe dense model —
+    `~/models/qwen2.5-7b-instruct-q4_k_m.gguf` (Qwen2.5-7B, llama-family generic-forward, int4,
+    4.4 GB on disk — comfortably resident on this 16 GB Mac, nowhere near the M35/M26/H27/G20
+    off-limits class) — comparing plain resident CPU decode against `--stream-weights
+    --weight-cache 1` (forced small enough that `layerPager` actually windows: 28 layers, window 7
+    resident, confirmed from the load banner, not assumed). Two interleaved rounds
+    (resident/streamed/resident/streamed), 3 requests/arm/round, `--backend cpu`, greedy, a fixed
+    64-token generation on a fixed prompt, server restarted between arms:
+    | arm | n | samples (tok/s) | median |
+    |---|---|---|---|
+    | resident | 6 | 9.39, 9.90, 10.01, 10.09, 10.09, 10.77 | 10.09 |
+    | streamed (window 7/28) | 6 | 9.09, 9.15, 9.44, 9.52, 9.77, 9.89 | 9.52 |
+
+    **streamed/resident = 0.944 — a ~5.6% decode-throughput cost**, with only a quarter of the
+    model's layers resident at once. This is the number that makes shipping the auto-retry a
+    defensible default rather than a guess: a model that would otherwise be refused outright now
+    runs at ~94% of its own resident rate, a world apart from the MoE path's measured 2h10min/zero
+    completions. (Load time also dropped 76.7s → 12.7s/4.8s/8.6s streamed vs resident — the .giw
+    cache reuse on repeat rounds, not a claim about cold-transcode cost, which this run did not
+    separately time.) Servers cleanly shut down between arms; no leftover processes.
+  - **A real, stated test gap, not a silently accepted one**: no CI-level integration test drives
+    `loadDecoder`'s new retry branch itself end-to-end (main.go's specific boolean wiring). Building
+    one needs either a tracked tiny DENSE `.gguf` fixture (none exists anywhere in this repo today
+    — every dense tiny fixture is a safetensors dir, and only `.gguf` reaches the fit guard at
+    all) or an exported `goinfer_testhooks`-gated RAM-override hook callable from
+    `internal/serveapp` (decoder's `hostRAM`/`hostRAMAvailable` indirection is package-private, and
+    the existing `assets_testhook.go`/`fidelity_testhook.go` pattern would need a new entry plus a
+    tag-gated test file). Judged disproportionate to what remained unproven: the classification
+    logic is unit-tested for real (above), and the actual streamed-load-and-decode mechanism the
+    retry activates is the SAME `decoder.Load(.giw, StreamWeights)` path just measured on real
+    hardware above (via the explicit flag, not the auto-retry branch specifically). What is NOT
+    independently proven is that `loadDecoder`'s specific error-handling branch actually executes
+    and wires the two together correctly in production — reviewed by hand twice, not exercised by
+    a test. Flagged here per this repo's own rule about doc comments claiming coverage they don't
+    have, rather than left implicit.
+  - Full regression: `decoder` 418 pass/2 fail(`TestOlmo3_forwardParity` pre-existing;
+    `TestParityManifest_fresh` — both `decoder/fitguard.go`/`decoder/model.go` are `core`-covered
+    files, so this session's edits re-staled the manifest the same way the `--fit` flag work did
+    three entries up)/125 skip, THEN green after the same by-hand refresh procedure that entry
+    already established: golden regex set (`_forwardParity|_logitParity|_textParity|TestGGUF_.*_
+    parity`) re-run with these changes present — **36 pass/1 fail(olmo3, identical)/21 skip,
+    byte-for-byte the same counts as the pre-existing baseline** — then `go test ./decoder/ -run
+    TestParityManifest -update`, `git diff -- testdata/parity_manifest.json` confirmed
+    deps_hash-only (66 lines / 33 families), `TestParityManifest_fresh` re-run green
+    ("35/35 families enforced"). `internal/serveapp` full suite green (unaffected by the
+    manifest refresh). `gofmt -l`/`go vet`/CI-pinned staticcheck (v0.8.0, confirmed via
+    `-version`) clean on both touched packages.
+  - **Not done, left open**: the CI-integration-test gap above; the drafter-aware
+    companion-allocation ctx sizing (still the other deferred Phase 2 item, untouched this
+    session); cold-transcode wall-clock was not separately measured (only cache-hit reload times);
+    Phases 3-5 remain entirely unstarted. This closes Phase 2's CPU piece as scoped — dense
+    auto-retry, measured and gated — not the MoE CPU-streaming failure mode itself, which stays a
+    known, documented capability boundary (unchanged by this session, matching the existing
+    "M35/M26 on the Mac" verdict).

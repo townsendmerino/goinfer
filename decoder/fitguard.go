@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,6 +78,12 @@ type fitCheck struct {
 	// cannot be honoured is refused, never silently downgraded — the G-07 principle)
 	kvF16 bool
 	kvI8  bool
+
+	// denseStreamable is true when a -stream-weights retry after this refusal would engage
+	// decoder/layerpaging.go's windowed dense pager — see denseStreamable(cfg)'s own doc comment.
+	// Carried into declineErr()'s *FitDeclineError so a caller can decide whether an automatic
+	// retry is sound without re-deriving this from the arch registry itself.
+	denseStreamable bool
 }
 
 func (f fitCheck) need() int64   { return f.weightBytes + f.kvBytes }
@@ -128,9 +135,57 @@ func (f fitCheck) remedy() string {
 		"then pages weights out of it on demand instead of holding them all resident."
 }
 
+// ErrWontFitResident is wrapped into every load-time fit-guard refusal (declineErr), so a caller
+// can detect the refusal with errors.Is/errors.As instead of parsing the message text — e.g. to
+// decide whether an automatic -stream-weights retry is worth attempting (see FitDeclineError).
+var ErrWontFitResident = errors.New("decoder: model will not fit resident RAM")
+
+// FitDeclineError is what declineErr returns instead of a bare error.
+type FitDeclineError struct {
+	msg string
+
+	// DenseStreamable is true when a -stream-weights retry after this refusal would engage
+	// decoder/layerpaging.go's windowed dense pager — the mechanism task-fit-to-hardware.md's
+	// CPU placement piece measured as sound for an AUTOMATIC retry
+	// (docs/task-gpu-paths-2026-09.md). It is false for MoE models and "own-forward" families
+	// (gemma4, nemotron-h-moe, lfm2): MoE CPU weight streaming is a documented, MEASURED failure
+	// mode instead — docs/benchmarks.md "M35/M26 on the Mac" ran a real 20 GB MoE checkpoint
+	// through the CPU-staged --stream-weights path for 2h10min with ZERO completions (RSS pinned
+	// at ~3.2 GB against a 20 GB model — re-reading weights from disk essentially every token, no
+	// useful cache retention), and that run is very likely what produced a genuine kernel panic on
+	// this machine shortly afterward. An automatic retry into that path would risk repeating the
+	// same incident silently, so it stays a manual, explicit choice (-stream-weights typed by
+	// hand) rather than something the guard does on the caller's behalf.
+	DenseStreamable bool
+}
+
+func (e *FitDeclineError) Error() string { return e.msg }
+func (e *FitDeclineError) Unwrap() error { return ErrWontFitResident }
+
+// denseStreamable mirrors newLayerPager's own exclusions (decoder/layerpaging.go) exactly, so the
+// fit guard's retry decision and the pager's own decision to actually build one can never
+// disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable's doc for
+// why that path stays manual), and an "own-forward" family (resolved dynamically via
+// arch.ownForward() — not a hand-written list, per the C-02/C-03 lfm2 miss newLayerPager's own
+// comment names) runs a layer loop that never calls enterLayer, so layerPager would never engage
+// for it either. cfg == nil (header unreadable) answers false: "don't know" must not attempt a
+// retry the fit guard cannot vouch for, the same "every unknown proceeds [without acting]"
+// discipline this file states at the top for the refusal path itself.
+func denseStreamable(cfg *Config) bool {
+	if cfg == nil {
+		return false
+	}
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil || arch == nil || arch.MoE != nil {
+		return false
+	}
+	_, own := arch.ownForward()
+	return !own
+}
+
 // declineErr is the refusal. It is an error, not a warning, because the measured alternative is a
 // machine that stops responding: the user cannot read a warning on a box that is thrashing.
-func (f fitCheck) declineErr() error {
+func (f fitCheck) declineErr() *FitDeclineError {
 	// Suggesting a smaller quant to someone already at int4 is noise, and noise in a refusal is
 	// how the useful line gets skipped.
 	//
@@ -146,12 +201,13 @@ func (f fitCheck) declineErr() error {
 		quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8) {
 		alt = "  Or run a smaller model, or --quant int4, which is smaller on this machine.\n"
 	}
-	return fmt.Errorf("decoder: %s.\n"+
+	msg := fmt.Sprintf("decoder: %s.\n"+
 		"  Loading it would page to swap rather than run, so it was NOT loaded.\n"+
 		"  %s\n"+
 		"%s"+
 		"  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it",
 		f.arithmetic(), f.remedy(), alt)
+	return &FitDeclineError{msg: msg, DenseStreamable: f.denseStreamable}
 }
 
 // guardFit runs the check. It returns the context to PIN — 0 meaning "leave the caller's request
@@ -375,6 +431,7 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 		return f
 	}
 	f.cfg = cfg
+	f.denseStreamable = denseStreamable(cfg)
 	f.pinned = opts.ResidentContext > 0
 	switch {
 	case f.pinned:

@@ -217,13 +217,16 @@ type Options struct {
 	// beside the weights, rather than OOM-ing mid-decode. Ignored off the residency path.
 	ResidentContext int
 	// DisableFit is task-fit-to-hardware.md's --fit=off: restores every "fit by default" behavior
-	// to its pre-Phase-2 default exactly (currently: CUDA's unpinned resident context stays the
+	// to its pre-Phase-2 default exactly. Currently: CUDA's unpinned resident context stays the
 	// flat historical constant instead of asking Plan for more when there's room —
-	// cuda/resident.go's resolveCtxCapFit). Does NOT affect a genuine bug fix shipped alongside
-	// Phase 2 work (Metal now honoring an explicit -ctx at all, docs/task-gpu-paths-2026-09.md's
-	// G6 entry) — that is correctness, not an opinionated default, and stays on either way. An
-	// explicitly PINNED request (ResidentContext, MoECacheSlots, etc.) is never affected by this
-	// flag in either direction: fit-by-default only ever acts on the UNPINNED case.
+	// cuda/resident.go's resolveCtxCapFit; and (decoder/fitguard.go's guardFit, read by
+	// internal/serveapp's loadDecoder, not by Load itself) a dense .gguf that will not fit
+	// resident RAM stays a plain refusal instead of getting an automatic -stream-weights retry.
+	// Does NOT affect a genuine bug fix shipped alongside Phase 2 work (Metal now honoring an
+	// explicit -ctx at all, docs/task-gpu-paths-2026-09.md's G6 entry) — that is correctness, not
+	// an opinionated default, and stays on either way. An explicitly PINNED request
+	// (ResidentContext, MoECacheSlots, StreamWeights itself, etc.) is never affected by this flag
+	// in either direction: fit-by-default only ever acts on the UNPINNED case.
 	DisableFit bool
 }
 
