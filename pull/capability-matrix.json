@@ -660,6 +660,26 @@
     "parity": "real-oracle 100.0%/0.99834"
   },
   {
+    "name": "qwen3_vl",
+    "model_types": [
+      "qwen3_vl"
+    ],
+    "display_name": "Qwen3-VL",
+    "description": "Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "smollm3",
     "model_types": [
       "smollm3"
