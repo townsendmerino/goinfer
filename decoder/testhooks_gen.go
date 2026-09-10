@@ -55,6 +55,15 @@ func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp ResidentMRo
 	return m.residentMRoPEPrefill(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos)
 }
 
+// ResidentUploadPrefillForTest wraps residentUploadPrefill (decoder/generate_vl_resident.go) —
+// the generic per-layer KVCache.LayerKV -> ResidentForward.UploadKV bridge GenerateGemma4VL's
+// resident branch uses after a CPU bidirectional prefill — so a real-hardware gate (cuda/) can
+// upload a CPU-computed cache and continue decode on the resident backend directly, on the SAME
+// model instance whose CPU decode it is compared against.
+func (m *Model) ResidentUploadPrefillForTest(cache *KVCache) error {
+	return m.residentUploadPrefill(cache)
+}
+
 // ApplyMRoPEForTest wraps applyMRoPE (decoder/rope.go) — the CPU m-RoPE reference a resident
 // kernel's own rotation must match bit-for-bit. Test-only: production always reaches applyMRoPE
 // through ropeAt, never directly. interleaved selects Qwen3-VL's per-index component layout

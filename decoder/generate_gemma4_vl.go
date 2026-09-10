@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 // prefillLogitsGemma4VL sequentially prefills a Gemma 4 multimodal prompt — ids
@@ -96,14 +97,7 @@ func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []in
 }
 
 // GenerateGemma4VL streams a continuation for a Gemma 4 multimodal prompt. Like
-// GenerateVL (Gemma 3) / GenerateQwenVL in shape, but CPU-only for v1: no
-// resident GPU bridge. Gemma 4's resident CUDA decode has a KV layout
-// (cross-layer KV sharing on its tail layers, per-layer head-dim differences)
-// the generic UploadKV/residentUploadPrefill bridge has never been verified
-// against, so it is not attempted here — deliberately deferred as separate,
-// GPU-verified follow-up work, mirroring how Gemma3/Qwen's own resident bridge
-// ("gap 0", docs/multimodal.md) was itself a later pass after their original
-// CPU-only GenerateVL/GenerateQwenVL shipped first.
+// GenerateVL (Gemma 3) / GenerateQwenVL in shape.
 //
 // Prefill dispatches between two forwards depending on the checkpoint:
 // sequential (prefillLogitsGemma4VL, E2B/E4B-class, causal) or batched
@@ -112,9 +106,25 @@ func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []in
 // per-token path either way — a decode token is never "inside" the image
 // block again, so no masking distinction applies post-prefill.
 //
+// Resident GPU decode (gap 0, docs/multimodal.md) is wired for the
+// bidirectional (26B-A4B/31B, use_bidirectional_attention: "vision") class
+// only: those checkpoints have SharedKVLayers==0 and are exactly the shape
+// resident CUDA decode already admits unconditionally for plain text
+// (decoder/residency.go's decodeRunnerEligible), so a CPU prefill's KV
+// uploads cleanly via the same generic residentUploadPrefill bridge
+// Gemma3/Qwen's own GenerateVL uses. E2B/E4B (SharedKVLayers>0, PLE) are NOT
+// attempted here even though this function reaches them too: resident CUDA
+// decode has no cross-layer-KV-sharing or PLE implementation at all and
+// declines admission outright regardless of vision (a decode-side gap, not a
+// vision gap — see TestGemma4EModel_realDeclinesResident) — attempting the
+// bridge there would be a dead branch, so it is gated on
+// UseBidirectionalAttention explicitly rather than relying on that decline
+// incidentally.
+//
 // `imgHash` is accepted for signature parity with GenerateVL/GenerateQwenVL
 // (driveVL dispatches to all three uniformly) but unused — there is no
-// resident-image-reuse fast path here to key on it.
+// resident-image-reuse (P9a) fast path here to key on it; every turn pays for
+// a fresh CPU prefill before (optionally) uploading to resident decode.
 func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
@@ -125,9 +135,10 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			g.err = err
 			return
 		}
+		bidirectional := m.w.Cfg.UseBidirectionalAttention != ""
 		cache := m.NewCache(len(ids) + maxTokens)
 		var logits []float32
-		if m.w.Cfg.UseBidirectionalAttention != "" {
+		if bidirectional {
 			logits, err = m.prefillLogitsGemma4VLBidirectional(ctx, ids, feats, imgPos, imgLen, cache)
 		} else {
 			logits, err = m.prefillLogitsGemma4VL(ctx, ids, feats, imgPos, imgLen, cache)
@@ -136,14 +147,54 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			g.err = err
 			return
 		}
+
+		useGPU := false
+		gpuPos := 0
+		committed := false
+		if bidirectional && m.tryClaimResident() {
+			// The resident cache is about to hold THIS turn's content. If decode
+			// completes naturally, residentCommitIDs below records it and this
+			// defer's forget is skipped (committed=true); any other exit (error,
+			// cancel, or the upload never engaging at all) forgets
+			// unconditionally — same discipline as GenerateVL's own upload
+			// bridge (decoder/generate_vl.go).
+			defer func() {
+				if !committed {
+					m.residentForgetIDs()
+				}
+				atomic.StoreInt32(&m.resBusy, 0)
+			}()
+			if uerr := m.residentUploadPrefill(cache); uerr == nil {
+				useGPU = true
+				gpuPos = len(ids)
+				if capper, ok := m.resident.(ResidentCapped); ok {
+					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+						maxTokens = ctxCap - gpuPos
+					}
+				}
+			}
+		}
+
 		sampler := NewSampler(sp)
 		sampler.Observe(ids...)
-		m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+		generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+			if useGPU {
+				l, err := m.resident.Forward(m.embedResident(next), gpuPos)
+				gpuPos++
+				return l, err
+			}
 			// Decode reuses the plain per-token path unmodified: m.forward already
 			// dispatches to runLayersGemma4 via arch.ownForward(), so no
 			// gemma4-specific decode step is needed once the image is prefilled.
 			return m.forward(next, cache)
 		})
+		if useGPU && g.err == nil {
+			// nil: no image-block-reuse record — P9a-style resident-image reuse is
+			// out of scope here (see doc comment above), so there is nothing to key
+			// a future turn's reuse check on.
+			m.residentCommitIDs(ids, generated, nil)
+			committed = true
+		}
 	}()
 	return out, g
 }

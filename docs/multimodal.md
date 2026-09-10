@@ -135,8 +135,10 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    text-only here~~ **CLOSED for CPU serving 2026-09-09/10 (P7 Phases B+C): Gemma 4 E2B/E4B
    (Phase B) AND 26B-A4B/31B (Phase C, the bidirectional-block-attention case) now serve real
    images, CPU-only, both gated at cosine 1.0 on real end-to-end fixtures** — see §P7 below for
-   scope (GPU-resident decode remains open; Phase C's real-26B-A4B end-to-end validation is
-   deferred, the tiny fixture is what validates it this pass). Qwen-VL, the most-pulled VL line, is still
+   scope. **GPU-resident decode CLOSED for 26B-A4B/31B, 2026-09-10 (Phase D)**: real-hardware
+   gated on this box's RTX 2070 SUPER; E2B/E4B remain resident-ineligible (a decode-side gap, not
+   a vision gap — see Phase D below). Phase C's real-26B-A4B end-to-end validation is still
+   deferred, the tiny fixture is what validates it this pass. Qwen-VL, the most-pulled VL line, is still
    text-only here.
 3. **No GGUF `mmproj`.** Ollama/llama.cpp users have their VL models as GGUF + mmproj; goinfer
    reads neither half of that pair for vision.
@@ -450,7 +452,61 @@ number is published without provenance.
   **What Phase C does NOT include**: real-checkpoint validation against `~/models/gemma-4-26b-a4b-it`
   (a real 128-expert MoE checkpoint — large and slow to validate on CPU, deliberately deferred; the
   tiny fixture is what validates correctness this pass), the `attendHi` under-attend bug above, and
-  — unchanged from Phase B — GPU-resident decode, video, and audio.
+  GPU-resident decode (**closed for this checkpoint class by Phase D, next**), video, and audio.
+
+  **Phase D (GPU-resident decode, 26B-A4B/31B only) DONE, 2026-09-10.** Resident CUDA decode for
+  dense/MoE Gemma 4 (`SharedKVLayers==0`) already existed and is admitted unconditionally
+  (`decoder/residency.go`'s `decodeRunnerEligible`, Split A/B/Check-A) — independent of vision.
+  Making `GenerateGemma4VL` reach it for the bidirectional (26B-A4B/31B) class turned out to be
+  bridge-only, confirmed by reading the code rather than assumed: the generic upload bridge
+  (`decoder/generate_vl_resident.go`'s `residentUploadPrefill`, already used by Gemma3/Qwen's own
+  "gap 0") needed no changes — `KVCache.LayerKV` already derives each layer's stride from what
+  that layer actually stored (gemma4's per-layer-varying head_dim/KV-head-count), gemma4 has zero
+  rings so `base` is always the bridge's simple case, and K=V layers (`attention_k_eq_v`) already
+  materialize a real V row (`v_norm(k_proj)`) on the CPU side that the resident CUDA side
+  independently recomputes the same way. One dispatch branch added to `GenerateGemma4VL`
+  (`decoder/generate_gemma4_vl.go`), gated on `UseBidirectionalAttention != ""` so the sequential
+  E2B/E4B path — which declines resident admission entirely (PLE feature gate) — is untouched.
+
+  **Gated on real hardware** (this box's RTX 2070 SUPER, not just a tiny synthetic fixture): a new
+  SCALED checkpoint (`scripts/pin_gemma4_vl_bidir_scaled.py` → `testdata/gemma4-vl-bidir-scaled/`)
+  combining `pin_gemma4_dense_scaled.py`'s real geometry (hidden 1024, 12 layers, 5:1 sliding/full,
+  head_dim 256 local / 512 global, K=V on the two global layers — the geometry a tiny hd=16
+  fixture can't exercise, per that script's own documented history) with a vision tower and
+  `use_bidirectional_attention="vision"`. `cuda/gemma4_vl_resident_parity_test.go`
+  (`TestGemma4VLResident_bidirParity`) compares CPU-int4 decode against CPU-bidirectional-prefill
+  + `residentUploadPrefill` + resident decode, using the same calibrated-mean methodology
+  `TestGemma4DenseScaled_residentParity` established (CUDA must agree with CPU-int4 at least as
+  well on average as CPU-int4 itself agrees with f32 — this specific 12-layer random-weight
+  fixture is genuinely chaotic under int4, `TestGemma4DenseScaled_residentParity`'s own doc
+  comment already found this, floor as low as ~0.46).
+
+  **A real scare, resolved, worth recording as a lesson**: the first version of this gate also
+  asserted an absolute `cosine ≥ 0.97` bar at "decode step 0" (copied from
+  `TestGemma4DenseScaled_residentParity`'s own pos-0 check) and FAILED at 0.87 — apparent proof of
+  a genuine upload-bridge bug. It wasn't one. `TestGemma4DenseScaled_residentParity`'s "pos 0" is
+  a position with ZERO attention history, the least int4-noisy point that test can measure; this
+  gate's "decode step 0" always follows a full bidirectional prefill (19-31 positions already in
+  the chaotic regime — that SAME sibling test's own late positions, e.g. pos 15, land at cosine
+  0.68 with **zero bridge involvement at all**, self-consistent resident decode alone). Confirmed
+  with a same-session A/B diagnostic: resident computing every position itself vs. CPU-prefill+
+  upload for an equivalent prefix land EQUALLY far from the CPU reference (0.68 vs 0.72), and
+  disagree with EACH OTHER by exactly that same margin (0.70) — two independent equally-noisy
+  int4 realizations, not a systematic upload defect. Fixed by dropping the invalid absolute bar;
+  the calibrated-mean check (which already accounts for this fixture's own chaos) is the only
+  valid one at this depth and was passing the whole time. Lesson: an absolute cosine bar
+  calibrated for a zero-history position does not transfer to a deep-history one, even on the
+  identical checkpoint — re-derive or reuse the SAME calibration basis the bar was built for,
+  don't just copy the number.
+
+  **What Phase D does NOT include**: E2B/E4B resident decode — NOT attempted, NOT a vision gap.
+  Resident CUDA has no cross-layer-KV-sharing or Per-Layer-Embedding implementation at all
+  (confirmed via `decoder/gemma4_emodel_real_test.go`'s `TestGemma4EModel_realDeclinesResident`
+  and a zero-hit grep for `SharedKVLayers`/`kvSrc` across `cuda/`/`gpu/`) and declines admission
+  outright regardless of vision — a missing text-decode capability needing real new CUDA engine
+  work (a "9d"-shaped effort), not a bridge. Also unchanged: P9(a)-style resident-image-prefix
+  reuse for gemma4 (this pass mirrors `GenerateVL`'s plain upload path only, not its full-reuse
+  fast path), real-26B-A4B end-to-end validation, video, and audio.
 - **P8 · Finish P5: Qwen3.x-VL image path + GGUF `mmproj`.** Phase 0 on the real Qwen3.6-VL config
   (the vision encoder, dynamic resolution and patch grids, m-RoPE's three position components
   which the text path already degenerates correctly, any DeepStack-style multi-level injection —

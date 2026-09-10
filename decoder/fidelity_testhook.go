@@ -111,6 +111,16 @@ func (m *Model) PrefillLogitsGemma4VLForTest(ctx context.Context, ids []int, ima
 	return m.prefillLogitsGemma4VL(ctx, ids, imageFeats, imgPos, imgLen, cache)
 }
 
+// PrefillLogitsGemma4VLBidirectionalForTest exposes prefillLogitsGemma4VLBidirectional —
+// Gemma 4's batched, blockwise-masked CPU prefill for 26B-A4B/31B-class
+// (use_bidirectional_attention: "vision") checkpoints — the twin of
+// PrefillLogitsGemma4VLForTest above, so a cross-package real-hardware gate (the GPU-resident
+// decode bridge, decoder/generate_gemma4_vl.go) can build the exact CPU-computed KVCache
+// GenerateGemma4VL's resident branch uploads, without going through its channel-only API.
+func (m *Model) PrefillLogitsGemma4VLBidirectionalForTest(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsGemma4VLBidirectional(ctx, ids, imageFeats, imgPos, imgLen, cache)
+}
+
 // MRopePositionsForTest exposes mropePositions — Qwen2.5-VL's per-token (t,h,w) rotary position
 // triples from the image grid — so a cross-package test can build the same cache.mropeDelta the
 // production GenerateQwenVL path computes, for the same reason as PrefillLogitsQwenVLForTest.
