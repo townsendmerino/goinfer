@@ -1097,7 +1097,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/attention.go:11` | goinfer | `func addBias(x, b []float32) {` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:142` | goinfer | `// 4. Append this position's K/V, then attend over the stored history. Route` |
 | `docs/audit-2026-09-02.md|decoder/attention.go:157` | goinfer | `ctx := cache.scr.ctx[:nH*hd]` |
-| `docs/audit-2026-09-02.md|decoder/attention.go:166` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)` |
+| `docs/audit-2026-09-02.md|decoder/attention.go:166` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil, acc64)` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:179` | goinfer | `// LOSSLESS BY CONSTRUCTION: every emitted token is one the TARGET's own argmax produced` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:185` | goinfer | `anchor: func (m *Model) NewBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er` |
 | `docs/audit-2026-09-02.md|decoder/blockspec.go:230` | goinfer | `rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak` |
@@ -1269,8 +1269,8 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/scratch.go:232` | goinfer | `// Per slot, in bytes, at the TILED size (G20): scores (tile*nKeys) + kh + vt` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:236` | goinfer | `t := attnRowTile(K, nKeys)` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:275` | goinfer | `for i := range s.headPool[:n] {` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:347` | goinfer | `func newHeadWorkerPool(n, K, nKeys, hd int, wantFused bool) []headWorkerScratch {` |
-| `docs/audit-2026-09-02.md|decoder/scratch.go:370` | goinfer | `p.vt = make([]float32, nKeys*hd)` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:356` | goinfer | `func newHeadWorkerPool(n, K, nKeys, hd int, wantFused bool) []headWorkerScratch {` |
+| `docs/audit-2026-09-02.md|decoder/scratch.go:379` | goinfer | `p.vt = make([]float32, nKeys*hd)` |
 | `docs/audit-2026-09-02.md|decoder/scratch.go:86` | goinfer | `ws := &linalg.Workspace{}` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:1001` | goinfer | `func (w *giwWriter) layer(l *LayerWeights) {` |
 | `docs/audit-2026-09-02.md|decoder/serialize.go:114` | goinfer | `func canSerialize(a *Architecture) *SerializeError {` |
@@ -1585,7 +1585,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/arch.go:529` | goinfer | `RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax` |
 | `docs/audit-2026-09-10.md|decoder/arch.go:809` | goinfer | `// ownForwards is THE list of families that do not use the generic layer loop — one tabl` |
 | `docs/audit-2026-09-10.md|decoder/attention.go:158` | goinfer | `acc64 := true` |
-| `docs/audit-2026-09-10.md|decoder/attention.go:166` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil)` |
+| `docs/audit-2026-09-10.md|decoder/attention.go:166` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil, acc64)` |
 | `docs/audit-2026-09-10.md|decoder/blockdrafter.go:137` | goinfer | `func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {` |
 | `docs/audit-2026-09-10.md|decoder/blockdrafter.go:25` | goinfer | `type BlockDrafterWeights interface {` |
 | `docs/audit-2026-09-10.md|decoder/blockspec.go:199` | goinfer | `width = defaultVerifyWidth` |
@@ -1751,7 +1751,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/rope.go:106` | goinfer | `func mropeDelta(pos [][3]int, seqLen int) int {` |
 | `docs/audit-2026-09-10.md|decoder/sampler.go:216` | goinfer | `if len(s.p.LogitBias) > 0 \|\| s.penaltiesActive() {` |
 | `docs/audit-2026-09-10.md|decoder/sampler.go:237` | goinfer | `} else if s.p.Logprobs {` |
-| `docs/audit-2026-09-10.md|decoder/scratch.go:309` | goinfer | `if c := nKeys * hd; cap(p.kh) < c {` |
+| `docs/audit-2026-09-10.md|decoder/scratch.go:317` | goinfer | `if c := nKeys * hd; cap(p.kh) < c {` |
 | `docs/audit-2026-09-10.md|decoder/serialize.go:1122` | goinfer | `// v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attentio` |
 | `docs/audit-2026-09-10.md|decoder/serialize_census_test.go:87` | goinfer | `"../testdata/qwen3moe-tiny", "../testdata/granite-dense-tiny",` |
 | `docs/audit-2026-09-10.md|decoder/session.go:46` | goinfer | `// fine-tunes without paying its RAM per adapter. Switching adapters changes the` |

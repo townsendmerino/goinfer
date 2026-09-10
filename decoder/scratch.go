@@ -260,7 +260,7 @@ func prefillAttnWorkers(K, nKeys, hd, nH int) int {
 // arrays once as decode extends — the same grow-only discipline the single-
 // buffer attnBatchBufs used, replicated per pool slot so A1 move (a)'s
 // concurrent per-head workers never share mutable scratch.
-func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused bool) []headWorkerScratch {
+func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 bool) []headWorkerScratch {
 	if n > maxAttnWorkers {
 		n = maxAttnWorkers
 	}
@@ -306,10 +306,19 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused bool) []he
 		if cap(p.avAcc) < hd {
 			p.avAcc = make([]float64, hd)
 		}
-		if c := nKeys * hd; cap(p.kh) < c {
-			g := max(2*cap(p.kh), c) // headroom: nKeys grows by 1 each decode step
-			p.kh = make([]float32, g)
-			p.vt = make([]float32, g)
+		// P-03 (audit-2026-09-10): kh/vt are unused whenever useAcc64 is true — the acc64
+		// kernels (MatmulQKAcc64/MatmulAVAcc64, forwardn.go) read keys/vals directly with
+		// strided addressing, skipping the kh/vt gather entirely. headWorkerPool's only
+		// caller (attention.go's decode path) hardcodes acc64 := true unconditionally, so
+		// this is not a runtime toggle at the one call site that exists today — but the
+		// check is on useAcc64 itself, not assumed, so a future non-acc64 caller still
+		// grows them correctly on its own first call.
+		if !useAcc64 {
+			if c := nKeys * hd; cap(p.kh) < c {
+				g := max(2*cap(p.kh), c) // headroom: nKeys grows by 1 each decode step
+				p.kh = make([]float32, g)
+				p.vt = make([]float32, g)
+			}
 		}
 		if c := K * nKeys; cap(p.scores) < c {
 			g := max(2*cap(p.scores), c)

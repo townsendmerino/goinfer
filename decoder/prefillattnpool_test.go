@@ -285,3 +285,36 @@ func TestNewHeadWorkerPool_skipsMaterializedWhenFused(t *testing.T) {
 		}
 	})
 }
+
+// TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64 is P-03 (audit-2026-09-10), the decode-path
+// sibling of P-05 (09-02, newHeadWorkerPool): the acc64 kernels (MatmulQKAcc64/MatmulAVAcc64) read
+// keys/vals directly with strided addressing, so kh/vt are unused whenever useAcc64 is true — and
+// attention.go's decode path hardcodes acc64 := true unconditionally, making this the ONLY case
+// headWorkerPool's one caller ever reaches. Both states are checked directly (kh/vt nil under
+// acc64, still allocated under !acc64) so this doesn't just prove "the acc64 case works" while
+// silently also proving a caller that genuinely needs kh/vt would be left with nothing.
+func TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64(t *testing.T) {
+	arch := &Architecture{HiddenDim: 8, NumHeads: 2, NumKVHeads: 2, HeadDim: 4, IntermediateDim: 8, VocabSize: 8}
+	const nH, K, nKeys, hd = 2, 1, 64, 4
+
+	accScr := newDecodeScratch(arch)
+	accPool := accScr.headWorkerPool(nH, K, nKeys, hd, false, true)
+	if accPool[0].kh != nil {
+		t.Errorf("kh allocated (%d floats) under useAcc64=true — the elimination did not happen", len(accPool[0].kh))
+	}
+	if accPool[0].vt != nil {
+		t.Errorf("vt allocated (%d floats) under useAcc64=true — the elimination did not happen", len(accPool[0].vt))
+	}
+	if len(accPool[0].scores) != K*nKeys {
+		t.Errorf("scores = %d floats, want %d — acc64 still needs it (MatmulQKAcc64 writes into it)", len(accPool[0].scores), K*nKeys)
+	}
+
+	matScr := newDecodeScratch(arch)
+	matPool := matScr.headWorkerPool(nH, K, nKeys, hd, false, false)
+	if len(matPool[0].kh) != nKeys*hd {
+		t.Errorf("kh = %d floats, want %d — the materialized (non-acc64) path needs it", len(matPool[0].kh), nKeys*hd)
+	}
+	if len(matPool[0].vt) != nKeys*hd {
+		t.Errorf("vt = %d floats, want %d — the materialized (non-acc64) path needs it", len(matPool[0].vt), nKeys*hd)
+	}
+}
