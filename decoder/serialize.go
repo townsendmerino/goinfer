@@ -72,13 +72,14 @@ import (
 // (audit-2026-09-02 C-03, a regression of R3).
 
 const (
-	giwMagic       = "GINFW"
-	giwVersion     = 9 // v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
-	giwMinReadV    = 3 // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate; older bundles stay valid and fall back to inference)
-	giwV4Gemma4    = 4 // the version at/after which the gemma4 tail is present
-	giwV6Tail      = 6 // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
-	giwV8ShortConv = 8 // the version at/after which the LFM2 short-conv tail is present
-	giwV9KDAGate   = 9 // the version at/after which the KDA tail + MLA's optional attention-output gate are present
+	giwMagic        = "GINFW"
+	giwVersion      = 10 // v10: no layout change — a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate; older bundles stay valid and fall back to inference)
+	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
+	giwV10GraniteQK = 10 // the version at/after which a dense-granite bundle's q/k are known un-permuted (audit C-05)
+	giwV6Tail       = 6  // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
+	giwV8ShortConv  = 8  // the version at/after which the LFM2 short-conv tail is present
+	giwV9KDAGate    = 9  // the version at/after which the KDA tail + MLA's optional attention-output gate are present
 	// v3: per-layer RouterBias (DeepSeek/GLM e_score_correction_bias); v2: qwen3_5_moe hybrid tail
 	// Sanity ceilings on the count fields, generous vs any real checkpoint
 	// (largest models: ~120 layers, a few hundred experts) but low enough that a
@@ -330,6 +331,15 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 		return nil, &SerializeError{"arch: " + err.Error()}
 	}
 	r.arch = arch // gates the v4 gemma4 model-level + per-layer tail
+	// Audit C-05: before v10 the GGUF loader left dense Granite's q/k in llama.cpp's permuted RoPE
+	// order, so an older granite bundle can be CRC-valid, shape-valid, mtime-fresh and wrong.
+	// Refusing it is what makes prequant's selfCheck see a stale sidecar and rebuild it; a bundle
+	// that came from safetensors is refused too, which costs one rebuild and nothing else.
+	if r.version < giwV10GraniteQK && arch.Name == "granite" {
+		return nil, &SerializeError{fmt.Sprintf("dense-granite bundle is format v%d: before v%d the GGUF "+
+			"loader left q/k in llama.cpp's permuted RoPE order (audit C-05) — rebuild it from the source",
+			r.version, giwV10GraniteQK)}
+	}
 
 	w := &Weights{Cfg: cfg, arch: arch, backing: data, bakedQuant: bakedQuant}
 	w.Embed = r.weightMat()

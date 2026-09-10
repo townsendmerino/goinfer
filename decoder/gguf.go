@@ -2857,12 +2857,12 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 // ggufQKPermuted reports whether llama.cpp's GGUF conversion permuted this
 // architecture's q/k weights (and their per-row biases and head-dim norms). It
 // permutes only for the NORM rope type — llama and its derivatives, including
-// mellum; the NEOX rope type (qwen2/qwen3/gemma and the other modern families)
+// mellum and dense granite (audit C-05: llama.cpp's GraniteModel inherits LlamaModel's undo_permute); the NEOX rope type (qwen2/qwen3/gemma and the other modern families)
 // leaves q/k in HF rotate_half order, so no un-permutation is needed. Unknown
 // archs default to NEOX (no permute), the common modern case.
 func ggufQKPermuted(archName string) bool {
 	switch archName {
-	case "llama", "mellum":
+	case "llama", "mellum", "granite":
 		return true
 	default:
 		return false
