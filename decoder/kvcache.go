@@ -449,12 +449,12 @@ func (c *KVCache) Pos() int { return c.pos }
 // kinds — and a partial rewind reported exact=true, so rewindForReuse warm-reused a prefix whose
 // windows still held the dropped positions (audit-2026-09-02 C-02, audit §0 theme 1).
 //
-// The fourth kind will be added here, once, or it will be missed at four sites again.
+// The fourth kind (KDA) WAS missed here, at every site (audit C-03); recurrent_census_test.go now asks the struct, so a fifth cannot be.
 func (c *KVCache) hasRecurrentState() bool {
-	return c.mamba != nil || c.delta != nil || c.conv != nil
+	return c.mamba != nil || c.delta != nil || c.conv != nil || c.kda != nil
 }
 
-// resetRecurrent re-zeroes the Mamba-2 / Gated DeltaNet rolling state (conv window +
+// resetRecurrent re-zeroes the Mamba-2 / Gated DeltaNet / KDA rolling state (conv window(s) +
 // SSM/linear-attn state) so a reused cache doesn't leak the prior sequence's recurrence
 // into a fresh one (audit C-01). No-op on non-recurrent families (nil slices).
 func (c *KVCache) resetRecurrent() {
@@ -477,6 +477,16 @@ func (c *KVCache) resetRecurrent() {
 	for _, st := range c.delta {
 		if st != nil {
 			st.convWin = nil
+			for i := range st.s {
+				st.s[i] = 0
+			}
+		}
+	}
+	// Bailing Hybrid's KDA (audit C-03): three per-stream conv windows plus the per-head matrix
+	// state, all mutated in place per token — the same leak as the three kinds above.
+	for _, st := range c.kda {
+		if st != nil {
+			st.convWinQ, st.convWinK, st.convWinV = nil, nil, nil
 			for i := range st.s {
 				st.s[i] = 0
 			}

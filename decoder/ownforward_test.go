@@ -181,27 +181,37 @@ func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
 // exists (speculative rollback), KVCache.hasRecurrentState decides once one does (truncate,
 // snapshot, session reconcile). A family recurrent in one sense and not the other is the state that
 // produced C-02, only with the halves swapped.
+// TestOwnForward_recurrentBitMatchesTheCacheKinds is DERIVED, not listed (audit 2026-09-10 C-03,
+// G-05). It used to carry a hand-written map of family -> which cache field to set, and
+// bailing_hybrid was on NEITHER side of it: table Recurrent=false and absent from the map, so it
+// passed as "consistently non-recurrent" while its KDA state leaked across sessions. Both
+// predicates it compared omitted KDA, so their agreement proved nothing — what was missing was an
+// INDEPENDENT view of what the cache actually holds.
+//
+// So the cache is asked directly: each own-forward family's REAL cache is built by NewCache from
+// its representativeConfig, and its recurrent kinds are found by reflection (recurrentKinds). The
+// registry bit, both hasRecurrentState views and speculative rollback must all agree with that.
 func TestOwnForward_recurrentBitMatchesTheCacheKinds(t *testing.T) {
-	kinds := map[string]func(*KVCache){
-		"qwen3_5_moe":      func(c *KVCache) { c.delta = []*deltaState{{}} },
-		"granitemoehybrid": func(c *KVCache) { c.mamba = []*mamba2State{{}} },
-		"nemotron_h":       func(c *KVCache) { c.mamba = []*mamba2State{{}} },
-		"lfm2":             func(c *KVCache) { c.conv = []*shortConvState{{}} },
-	}
 	for _, f := range ownForwards {
-		set, hasKind := kinds[f.Name]
-		if f.Recurrent != hasKind {
-			t.Errorf("%s: table says Recurrent=%v but this test knows %v about a cache kind for it; "+
-				"one of the two is wrong and they are read by different code paths", f.Name, f.Recurrent, hasKind)
-			continue
-		}
-		c := NewKVCache(1, 1, 1, 0, 4)
-		if hasKind {
-			set(c)
-		}
-		if got := c.hasRecurrentState(); got != f.Recurrent {
-			t.Errorf("%s: hasRecurrentState()=%v, table Recurrent=%v", f.Name, got, f.Recurrent)
-		}
+		t.Run(f.Name, func(t *testing.T) {
+			m, c := realCacheFor(t, f)
+			names, _ := recurrentKinds(c)
+			allocated := len(names) > 0
+			if f.Recurrent != allocated {
+				t.Errorf("table Recurrent=%v, but NewCache allocates recurrent kinds %v", f.Recurrent, names)
+			}
+			if got := c.hasRecurrentState(); got != allocated {
+				t.Errorf("KVCache.hasRecurrentState()=%v, but the cache holds recurrent kinds %v — every "+
+					"consumer keyed on it (TruncateTo, Session.reconcile, Snapshot) is blind to them", got, names)
+			}
+			if got := m.hasRecurrentState(); got != allocated {
+				t.Errorf("Model.hasRecurrentState()=%v, but the cache holds recurrent kinds %v", got, names)
+			}
+			if allocated && m.specRollbackSafe() {
+				t.Errorf("specRollbackSafe()=true for a family with recurrent kinds %v: a rejected speculative "+
+					"suffix is 'rolled back' by a TruncateTo that cannot rewind them", names)
+			}
+		})
 	}
 }
 

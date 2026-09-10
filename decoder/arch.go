@@ -836,7 +836,7 @@ var ownForwards = []ownForwardFamily{
 	// bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse mlaAttention
 	// directly), so a.mla != nil alone would also match it and misroute to runLayersDeepseek,
 	// which has no KDA branch at all.
-	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, false},
+	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true}, // Recurrent: KDA state mutates in place per token (audit C-03)
 	// deepseek_v2/v3: Multi-head Latent Attention.
 	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false},
 	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).
