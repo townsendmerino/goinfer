@@ -93,6 +93,12 @@ that are not operator-facing. These may change or disappear without notice:
 `GOINFER_SSM_W8A16`, `GOINFER_SSM_F16MAMBA`, `GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
 `GOINFER_SSM_SKIPFFN`, `GOINFER_SSM_STOP_LAYER`.
 
+`GOINFER_METAL_FUSED_ATTENTION` (`metal/backend.go`) — `=1` opts `attention_prefill_fused`
+(the simdgroup_matrix flash-attention twin of `attention_prefill`, L2-Metal,
+`docs/task-prefill-gap.md` §4) in for benchmarking, in place of the exact scalar kernel.
+Built and tested, but not yet gated (no §3 fidelity/speed run) — defaults off regardless of
+`GOINFER_METAL_FAST_PREFILL`, and not an operator knob until it is.
+
 Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,
 `GOINFER_REQUIRE_FIXTURES`, `GOINFER_TEST_NOTHINK`, `GOINFER_SPEC_PROBE_GIW`.
