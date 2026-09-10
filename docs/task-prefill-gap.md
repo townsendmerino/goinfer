@@ -157,9 +157,9 @@ max/denominator in registers, and does both products on tensor cores; that is wh
 cost looks like on the peer.
 
 Metal's batched path has the same shape: its GEMM is already `simdgroup_matrix` f16 MMA
-(`metal/prefill.go:10`–`:20`), but `attention_prefill` is "one threadgroup per (row m, query head)"
+(`metal/prefill.go:11`–`:20`), but `attention_prefill` is "one threadgroup per (row m, query head)"
 reusing the decode math, with the note "an MMA/flash version is a later throughput lever"
-(`metal/prefill.go:239`–`:214`).
+(`metal/prefill.go:240`–`:214`).
 
 ### 2.3 Why it is one decision
 
@@ -245,7 +245,7 @@ gate it produced cannot answer the question it was built for:
   so a disagreement there is a defect signal. **Fast-vs-exact prefill on Metal compares two
   different numerics of the same model.** The exact (decode) path quantises activations to int8 per
   row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:545`); the batched path
-  keeps them in f16 and dequantises the int4 weights to f16 in-kernel (`metal/prefill.go:12`–`:13`).
+  keeps them in f16 and dequantises the int4 weights to f16 in-kernel (`metal/prefill.go:13`–`:13`).
   They are guaranteed to disagree. The measurement in `measurements/prefill-gate-l1-2026-09-05.md`
   is a correct measurement of *how much* — it is not evidence about *which arm is wrong*.
 - **The prior is that the exact arm is the lossier one.** Per-row int8 activation quantisation is the
@@ -369,7 +369,7 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
   fidelity, not speed, and both arms pay extra teacher-forced Forward calls that would make its
   timings incomparable to a clean TTFT measurement). The decay itself is not a serving effect: per-
   token batched cost rises from 3.4 ms at P=256 to 9.4 ms at P=3900 because `attention_prefill` is
-  one threadgroup per (row, head) reusing the decode math (`metal/prefill.go:239`–`:214`) — the
+  one threadgroup per (row, head) reusing the decode math (`metal/prefill.go:240`–`:214`) — the
   same O(K²) term §2.2 names on CUDA — while the sequential arm pays it too but hidden under a
   ~19 ms/token GEMV. So the speedup L1 delivers is the GEMM's and it shrinks as the attention share
   grows; that is the *next* item's evidence, below.
@@ -387,7 +387,7 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
   overhead-free marginal — the O(K²) attention term this doc's next item targets.
 - **BUILT, MEASURED, AND §3-GATED — SHIPS (2026-09-10):** the Metal twin of L2, a
   `simdgroup_matrix` flash attention for `attention_prefill` (`attention_prefill_fused`,
-  `metal/prefill.go:303`). This paragraph's own pre-registered projection — "would take the
+  `metal/prefill.go:304`). This paragraph's own pre-registered projection — "would take the
   S/K=3900 speedup from 2.02× to ~5×" — is a real measurement, not arithmetic: **4.23× measured**
   (baseline 2.03×) on the real S checkpoint, end to end. Kernel-isolated ratio 5.45× at K=3900,
   1.80× at K=140. The §3 gate (same pooled §3.2 form and reference files L1's gate used, prompt

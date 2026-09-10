@@ -1947,12 +1947,12 @@ supports.
 | `docs/audit-2026-09-10.md|metal/moe.go:701` | goinfer | `// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardco` |
 | `docs/audit-2026-09-10.md|metal/moe.go:744` | goinfer | `r.uPos.SetU32(uint32(pos))` |
 | `docs/audit-2026-09-10.md|metal/moe_model_test.go:302` | goinfer | `embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path` |
-| `docs/audit-2026-09-10.md|metal/prefill.go:341` | goinfer | `for (uint j0=j0start; j0<nKeysMax; j0+=8u) {` |
-| `docs/audit-2026-09-10.md|metal/prefill.go:437` | goinfer | `func (r *resident) ensurePrefill() {` |
-| `docs/audit-2026-09-10.md|metal/prefill.go:490` | goinfer | `xh := make([]uint16, Mpad*H)` |
-| `docs/audit-2026-09-10.md|metal/prefill.go:573` | goinfer | `for l := 0; l < r.nL; l++ {` |
-| `docs/audit-2026-09-10.md|metal/prefill.go:584` | goinfer | `// rope q, k (per-row positions) — bind the PER-LAYER RoPE table and window, exactly as ` |
-| `docs/audit-2026-09-10.md|metal/prefill.go:629` | goinfer | `for m := 0; m < M; m++ {` |
+| `docs/audit-2026-09-10.md|metal/prefill.go:342` | goinfer | `for (uint j0=j0start; j0<nKeysMax; j0+=8u) {` |
+| `docs/audit-2026-09-10.md|metal/prefill.go:438` | goinfer | `func (r *resident) ensurePrefill() {` |
+| `docs/audit-2026-09-10.md|metal/prefill.go:530` | goinfer | `xh := make([]uint16, Mpad*H)` |
+| `docs/audit-2026-09-10.md|metal/prefill.go:609` | goinfer | `for l := 0; l < r.nL; l++ {` |
+| `docs/audit-2026-09-10.md|metal/prefill.go:620` | goinfer | `// rope q, k (per-row positions) — bind the PER-LAYER RoPE table and window, exactly as ` |
+| `docs/audit-2026-09-10.md|metal/prefill.go:665` | goinfer | `for m := 0; m < M; m++ {` |
 | `docs/audit-2026-09-10.md|metal/prefill_gate_ref_test.go:186` | goinfer | `for _, K := range decisionKs {` |
 | `docs/audit-2026-09-10.md|metal/prefill_gate_test.go:75` | goinfer | `depths := []int{256, 1024, 3900}` |
 | `docs/audit-2026-09-10.md|metal/prefill_gemma_test.go:44` | goinfer | `if !r.prefillOK {` |
@@ -2265,10 +2265,10 @@ supports.
 | `docs/task-prefill-gap.md|metal/backend.go:347` | goinfer | `func metalFastPrefillEnabled() bool {` |
 | `docs/task-prefill-gap.md|metal/backend.go:383` | goinfer | `func metalFusedAttentionEnabled() bool {` |
 | `docs/task-prefill-gap.md|metal/model.go:545` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
-| `docs/task-prefill-gap.md|metal/prefill.go:10` | goinfer | `// Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unli` |
-| `docs/task-prefill-gap.md|metal/prefill.go:12` | goinfer | `// across all M prompt rows → ~2.5× the per-token GEMV, flat with M. Activations flow in` |
-| `docs/task-prefill-gap.md|metal/prefill.go:239` | goinfer | `// attention_prefill: one threadgroup per (row m, query head qh). Row m attends CAUSALLY` |
-| `docs/task-prefill-gap.md|metal/prefill.go:303` | goinfer | `kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device const ha` |
+| `docs/task-prefill-gap.md|metal/prefill.go:11` | goinfer | `// Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unli` |
+| `docs/task-prefill-gap.md|metal/prefill.go:13` | goinfer | `// across all M prompt rows → ~2.5× the per-token GEMV, flat with M. Activations flow in` |
+| `docs/task-prefill-gap.md|metal/prefill.go:240` | goinfer | `// attention_prefill: one threadgroup per (row m, query head qh). Row m attends CAUSALLY` |
+| `docs/task-prefill-gap.md|metal/prefill.go:304` | goinfer | `kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device const ha` |
 | `docs/task-recompute-audit.md|cuda/resident.go:329` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/task-recompute-audit.md|decoder/attention.go:89` | goinfer | `matmulInto(scr.ws, be, &lw.QProj, h, q, 1)` |
 | `docs/task-recompute-audit.md|decoder/blockspec.go:195` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |

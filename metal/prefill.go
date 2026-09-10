@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"runtime"
+	"sync"
 )
 
 // Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unlike the
@@ -466,6 +467,45 @@ func (r *resident) ensurePrefill() {
 	}
 }
 
+// parallelEmbedsF32ToF16 converts M rows of embs (each H wide) into dst[m*H:(m+1)*H] as f16 bits,
+// splitting across up to 8 workers by ROW — P-14 (audit-2026-09-10): the serial scalar loop this
+// replaces was 7.3M f32ToF16 calls at M=2048, H=3584 on the TTFT path, and model.go's own
+// parallelF32ToF16 (built for exactly this conversion in the gemma4-26b expert-paging path)
+// already proved the parallel split is byte-identical to serial — every element is independent
+// and f32ToF16 is a pure function of its one input. Not reused directly: embs is [][]float32 (one
+// slice per row, not necessarily contiguous), where parallelF32ToF16 wants one flat []float32; a
+// flatten-then-call would pay its own copy, so this splits by row directly instead, over M×H
+// rather than a flat index range, but is otherwise the same threshold/worker shape.
+func parallelEmbedsF32ToF16(dst []uint16, embs [][]float32, H int) {
+	M := len(embs)
+	workers := min(runtime.GOMAXPROCS(0), 8)
+	if M*H < 8192 || workers <= 1 || M < 2 {
+		for m := range M {
+			row := embs[m]
+			for i := range H {
+				dst[m*H+i] = f32ToF16(row[i])
+			}
+		}
+		return
+	}
+	chunk := (M + workers - 1) / workers
+	var wg sync.WaitGroup
+	for lo := 0; lo < M; lo += chunk {
+		hi := min(lo+chunk, M)
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			for m := lo; m < hi; m++ {
+				row := embs[m]
+				for i := range H {
+					dst[m*H+i] = f32ToF16(row[i])
+				}
+			}
+		}(lo, hi)
+	}
+	wg.Wait()
+}
+
 // PrefillLast ingests M prompt embeddings at positions startPos..startPos+M-1 in ONE command
 // buffer via the f16 MMA path (weights read once, amortized across M — unlike the token-by-token
 // decode loop), populating the resident KV cache, and returns the LAST token's logits[V] (what a
@@ -488,11 +528,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 
 	// f16 activation scratch (per call, sized to the padded prompt).
 	xh := make([]uint16, Mpad*H)
-	for m := range M {
-		for i := range H {
-			xh[m*H+i] = f32ToF16(embs[m][i])
-		}
-	}
+	parallelEmbedsF32ToF16(xh, embs, H)
 	xF := NewBufferU16s(d, xh)
 	normF := NewBufferU16s(d, make([]uint16, Mpad*H))
 	qkvF := NewBufferU16s(d, make([]uint16, Mpad*qkvDim))
