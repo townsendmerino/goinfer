@@ -39,6 +39,10 @@ func TestPrefillTTFT(t *testing.T) {
 		t.Skipf("no fixture at %s (set GOINFER_METAL_MODEL)", path)
 	}
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1") // measurement-only; see prior findings
+	// Since the §3.2 gate (2026-09-09), PrefillLast itself enforces metalFastPrefillFloor (512)
+	// and errors below it — this sweep's P=256 point predates that and needs the same override
+	// the gate test uses (metal/prefill_gate_ref_test.go) to still measure below the floor.
+	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 
 	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4"})
 	if err != nil {

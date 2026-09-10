@@ -369,6 +369,17 @@ func metalFastPrefillFloorFor() int {
 	return metalFastPrefillFloor
 }
 
+// metalFusedAttentionEnabled reports whether attention_prefill_fused (the simdgroup_matrix
+// flash-attention twin of attention_prefill, L2-Metal — docs/task-prefill-gap.md §4) runs in
+// place of the exact scalar kernel. BUILT AND TESTED (metal/attention_prefill_fused_test.go),
+// NOT YET GATED — no §3 fidelity/speed run has happened, so this defaults OFF regardless of
+// metalFastPrefillEnabled. GOINFER_METAL_FUSED_ATTENTION=1 opts in for benchmarking; anything
+// else (including unset) stays off. attention_prefill_fused also requires hd%8==0 && hd<=128
+// (ATTN_MAXHD in metal/prefill.go) — PrefillLast falls back to the exact kernel outside that.
+func metalFusedAttentionEnabled() bool {
+	return strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_FUSED_ATTENTION"))) == "1"
+}
+
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
 // the batched f16-MMA path. Default ON above 512 tokens since §3.2 gate passed 2026-09-09. The
 // floor applies per-call; PrefillPath reports true iff the enabled state AND arch both allow batching.

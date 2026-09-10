@@ -281,6 +281,131 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
 }
 
+// attention_prefill_fused: the simdgroup_matrix (MMA) flash-attention twin of attention_prefill
+// (L2-Metal, docs/task-prefill-gap.md §4). One simdgroup per (query head, 8-row query tile);
+// QKᵀ and PV are both 8×8-tiled MMA matmuls (hd/8 tiles each), replacing attention_prefill's
+// per-key scalar dot products and its fully-serial PV scan. K is read K^T-transposed straight
+// from the row-major cache via simdgroup_load's transpose flag (confirmed against
+// aikit/gpu/metal_vit.go:539's gemm_f32_sg_big, the only prior art for that flag in this
+// codebase) — no explicit transpose step. Online (flash) softmax: running max/sum live in
+// per-row threadgroup scratch (stat[sgid]) so no O(nKeys) score buffer is needed (the exact
+// kernel above allocates sc[4096] and would silently overrun a longer context); the O
+// accumulator is rescaled by alpha=exp(mOld-mNew) each key-tile in scalar code, because a
+// simdgroup_matrix has no addressable per-row view — every rescale/mask/reduce step goes
+// through the float scratch (sScr) or half scratch (pScr) via simdgroup_store/_load, exactly
+// as gemm_w4f16_store's epilogue already does for its own per-element bias/residual step.
+// NOT bit-identical (the online-softmax rescale reorders the sum vs. the exact kernel's single
+// final normalize) — same P19 category as the CUDA L2 twin. Requires hd%8==0 && hd<=128
+// (ATTN_MAXHD); the Go dispatch falls back to attention_prefill outside that range.
+// ATTN_SGPT simdgroups/threadgroup must match attnFusedSGPT (backend.go's Go-side grid helper).
+#define ATTN_SGPT 4
+#define ATTN_MAXHD 128
+kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device const half* kc[[buffer(1)]],
+    device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
+    constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
+    constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
+    constant uint& M[[buffer(11)]],
+    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint sgpt[[simdgroups_per_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint numRowTiles = (M + 7u) / 8u;
+    uint sg = tgid*sgpt + sgid;
+    uint totalTiles = nH * numRowTiles;
+    if (sg >= totalTiles) return;
+    uint qh = sg / numRowTiles, rt = sg % numRowTiles;
+    uint r0 = rt * 8u;
+    uint kvDim = nKV*hd, kvh = qh/(nH/nKV);
+    uint qDim = nH*hd;
+    uint hdTiles = hd/8u;
+    device const half* qBase = qkv + r0*qStride + qh*hd;
+    device const half* kBase = kc + kvh*hd;
+    device const half* vBase = vc + kvh*hd;
+
+    threadgroup float sScr[ATTN_SGPT][64];
+    threadgroup half  pScr[ATTN_SGPT][64];
+    threadgroup float oScr[ATTN_SGPT][8*ATTN_MAXHD];
+    threadgroup float stat[ATTN_SGPT][24]; // [0:8)=m  [8:16)=l  [16:24)=alpha (this block)
+
+    for (uint i=lane; i<8u*hd; i+=32u) oScr[sgid][i] = 0.0f;
+    if (lane < 8u) { stat[sgid][lane] = -INFINITY; stat[sgid][8u+lane] = 0.0f; }
+    simdgroup_barrier(mem_flags::mem_threadgroup);
+
+    simdgroup_half8x8 qTile[ATTN_MAXHD/8];
+    for (uint kk=0; kk<hdTiles; kk++) simdgroup_load(qTile[kk], qBase + kk*8u, qStride);
+
+    uint lastRow = min(r0+7u, M-1u);
+    uint nKeysMax = startPos + lastRow + 1u;
+    uint firstRowKeys = startPos + r0 + 1u;
+    uint winStart0 = (window>0u && firstRowKeys>window) ? firstRowKeys-window : 0u;
+    uint j0start = (winStart0/8u)*8u;
+
+    for (uint j0=j0start; j0<nKeysMax; j0+=8u) {
+        simdgroup_float8x8 Sacc = make_filled_simdgroup_matrix<float,8,8>(0.0);
+        for (uint kk=0; kk<hdTiles; kk++) {
+            simdgroup_half8x8 kT;
+            simdgroup_load(kT, kBase + j0*kvDim + kk*8u, kvDim, ulong2(0,0), true);
+            simdgroup_multiply_accumulate(Sacc, qTile[kk], kT, Sacc);
+        }
+        simdgroup_store(Sacc, sScr[sgid], 8);
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+
+        if (lane < 8u) {
+            uint row = lane, qi = r0+row;
+            if (qi < M) {
+                uint qpos = startPos+qi, rowKeys = qpos+1u;
+                uint rowWin = (window>0u && rowKeys>window) ? rowKeys-window : 0u;
+                float sraw[8]; float rowmax = -INFINITY;
+                for (uint c=0;c<8u;c++) {
+                    uint j = j0+c;
+                    float v = sScr[sgid][row*8u+c]*scale;
+                    if (j>=rowKeys || j<rowWin) v = -INFINITY;
+                    sraw[c]=v; rowmax = max(rowmax, v);
+                }
+                float mOld = stat[sgid][row];
+                float mNew = max(mOld, rowmax);
+                float alpha = (mOld <= -INFINITY) ? 0.0f : exp(mOld-mNew);
+                float blockSum=0.0f;
+                for (uint c=0;c<8u;c++) {
+                    float p = (sraw[c] <= -INFINITY) ? 0.0f : exp(sraw[c]-mNew);
+                    pScr[sgid][row*8u+c] = half(p);
+                    blockSum += p;
+                }
+                stat[sgid][row] = mNew;
+                stat[sgid][8u+row] = stat[sgid][8u+row]*alpha + blockSum;
+                stat[sgid][16u+row] = alpha;
+            } else {
+                for (uint c=0;c<8u;c++) pScr[sgid][row*8u+c] = half(0.0);
+                stat[sgid][16u+row] = 1.0f;
+            }
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint cc=0; cc<hdTiles; cc++) {
+            simdgroup_half8x8 pTile, vTile;
+            simdgroup_load(pTile, pScr[sgid], 8);
+            simdgroup_load(vTile, vBase + j0*kvDim + cc*8u, kvDim);
+            simdgroup_float8x8 pvAcc = make_filled_simdgroup_matrix<float,8,8>(0.0);
+            simdgroup_multiply_accumulate(pvAcc, pTile, vTile, pvAcc);
+            simdgroup_store(pvAcc, sScr[sgid], 8);
+            simdgroup_barrier(mem_flags::mem_threadgroup);
+            if (lane < 8u) {
+                uint row = lane; float a = stat[sgid][16u+row];
+                for (uint c=0;c<8u;c++) {
+                    uint idx = row*hd + cc*8u+c;
+                    oScr[sgid][idx] = oScr[sgid][idx]*a + sScr[sgid][row*8u+c];
+                }
+            }
+            simdgroup_barrier(mem_flags::mem_threadgroup);
+        }
+    }
+
+    for (uint e=lane; e<8u*hd; e+=32u) {
+        uint row = e/hd, col = e%hd, qi = r0+row;
+        if (qi >= M) continue;
+        float l = stat[sgid][8u+row];
+        out[qi*qDim + qh*hd + col] = half(l > 0.0f ? oScr[sgid][row*hd+col]/l : 0.0f);
+    }
+}
+
 // kv_store_f16: scatter M rows' K,V (slices of the fused qkv[M×stride]) into the f16 KV cache
 // at positions[m]. grid = M*kvDim.
 kernel void kv_store_f16(device const half* qkv[[buffer(0)]], device half* kc[[buffer(1)]],
@@ -303,6 +428,10 @@ type prefillState struct {
 	// G8 (docs/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
+	// L2-Metal (docs/task-prefill-gap.md §4): the simdgroup_matrix flash-attention twin of
+	// pAttn. Opt-in via GOINFER_METAL_FUSED_ATTENTION (metalFusedAttentionEnabled, backend.go) —
+	// built and tested, not yet gated, so pAttn stays the default.
+	pAttnFused Pipeline
 }
 
 func (r *resident) ensurePrefill() {
@@ -333,6 +462,7 @@ func (r *resident) ensurePrefill() {
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"),
+		pAttnFused: p("attention_prefill_fused"),
 	}
 }
 
@@ -394,6 +524,10 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	uBaseK := NewBufferU32(d, uint32(nHhd))
 	m0, m1, m2 := NewBufferU32(d, 0), NewBufferU32(d, 1), NewBufferU32(d, 2)
 	dummyBias := NewBufferFloats(d, make([]float32, 1))
+	// L2-Metal: attention_prefill_fused's own row-count uniform — REAL M (unpadded), unlike uM
+	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
+	// such uniform because its Go-side dispatch grid is already sized off the real M.
+	uMReal := NewBufferU32(d, uint32(M))
 	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
 	// Allocated unconditionally (cheap — H floats) rather than gated on whether any layer is
 	// MoE, avoiding a nil-buffer special case in the loop below.
@@ -409,7 +543,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	scratch := []Buffer{
 		xF, normF, qkvF, ctxF, guF, dqF, posB, moeDst,
 		uM, uI, u2I, uQkv, uQDim, uStride, uKOff, uVOff, uStartPos,
-		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias,
+		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias, uMReal,
 	}
 	defer func() {
 		for _, b := range scratch {
@@ -424,6 +558,16 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		total = (total + 255) / 256 * 256
 		return total, 256
 	}
+	// L2-Metal: attention_prefill_fused's grid — nH×ceil(M/8) simdgroups (ATTN_SGPT=4/threadgroup,
+	// prefill.go's own #define, matched here). Real M (unpadded): the tail row-tile's out-of-range
+	// rows are masked in-kernel via buffer(11), not dropped from the grid.
+	const attnFusedSGPT = 4
+	numRowTiles := (M + 7) / 8
+	attnFusedTotal := r.nH * numRowTiles
+	attnFusedTotal = (attnFusedTotal + attnFusedSGPT - 1) / attnFusedSGPT * attnFusedSGPT * 32
+	attnFusedTg := attnFusedSGPT * 32
+	// hd%8==0 && hd<=128 (ATTN_MAXHD) — attention_prefill_fused's compile-time cap.
+	useFusedAttn := metalFusedAttentionEnabled() && g0.hd%8 == 0 && g0.hd <= 128
 
 	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {
@@ -448,7 +592,11 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		// scatter K,V to cache
 		e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 		// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
-		e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow)
+		if useFusedAttn {
+			e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+		} else {
+			e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow)
+		}
 		// o-proj, then either the plain residual epilogue or Gemma's sandwich norm (G8):
 		// mode-0 write into normF (free scratch at this point — its last use, the fused-QKV
 		// input, already ran; its next use, the pre-MLP norm's output, is below), norm the
