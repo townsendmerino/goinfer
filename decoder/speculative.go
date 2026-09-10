@@ -172,10 +172,12 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		}
 		draftPrefill := func() error {
 			if draftResident {
-				for i, id := range prompt {
-					if _, err := draft.resident.Forward(draft.embedResident(id), i); err != nil {
-						return err
-					}
+				// P-06 (audit-2026-09-10): same fix as the target's own prefill above — the
+				// returned logits are discarded either way (the draft just needs its KV filled),
+				// so residentPrefillSeed's batched/KV-only path is a strict improvement here
+				// with nothing to lose.
+				if _, err := draft.residentPrefillSeed(ctx, prompt, 0); err != nil {
+					return err
 				}
 				dpos = len(prompt)
 				return nil
@@ -217,16 +219,17 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		}
 
 		// Prefill the prompt. The target's last-token logits seed cur; the draft's are
-		// discarded (it just needs its KV filled). Resident: seed the GPU KV with
-		// O(prompt) Forwards (mirrors resident Generate). CPU: batched prefillLogits.
+		// discarded (it just needs its KV filled). Resident: residentPrefillSeed (P-06,
+		// audit-2026-09-10) — the batched/KV-only-prefill helper generateInto and genNgramInto
+		// already share, in place of this function's own third copy of the per-token Forward
+		// loop the helper was unified to prevent (+2.66 ms/token vs 0.42 batched, per the audit's
+		// own measurement). CPU: batched prefillLogits, unchanged.
 		var seedLogits []float32
 		var err error
 		if resident {
-			for i, id := range prompt {
-				if seedLogits, err = target.resident.Forward(target.embedResident(id), i); err != nil {
-					g.err = err
-					return
-				}
+			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0); err != nil {
+				g.err = err
+				return
 			}
 		} else {
 			seedLogits, err = target.prefillLogits(ctx, prompt, tc)

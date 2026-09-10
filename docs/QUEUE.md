@@ -1767,8 +1767,8 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:36` | goinfer | `if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:86` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample_test.go:81` | goinfer | `// TestNgramSampledFirstTokenMatchesPlain checks the sampled path against plain` |
-| `docs/audit-2026-09-10.md|decoder/speculative.go:200` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
-| `docs/audit-2026-09-10.md|decoder/speculative.go:224` | goinfer | `if resident {` |
+| `docs/audit-2026-09-10.md|decoder/speculative.go:202` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
+| `docs/audit-2026-09-10.md|decoder/speculative.go:230` | goinfer | `if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0); err != nil {` |
 | `docs/audit-2026-09-10.md|decoder/staged_device_note_test.go:48` | goinfer | `{"metal", "int8", "int8"},` |
 | `docs/audit-2026-09-10.md|decoder/staged_device_note_test.go:63` | goinfer | `func TestStagedDeviceNote(t *testing.T) {` |
 | `docs/audit-2026-09-10.md|decoder/weightmat.go:388` | goinfer | `if q4, q4s, group, ok := w.Int4(); ok {` |
