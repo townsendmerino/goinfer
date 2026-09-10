@@ -394,11 +394,11 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
   set B, S model) **SHIPS**: fused beats exact on all three pooled criteria — hard flips 18→15,
   agreement 92.76%→92.81%, mean KL 0.0405→0.0381 — and set A's independent re-score reaches the
   same verdict. D7 failed the fit guard (same acceptance L1's gate made). Full writeup + numbers:
-  `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5. **Still opt-in**
-  (`GOINFER_METAL_FUSED_ATTENTION=1`, default OFF, `metalFusedAttentionEnabled`,
-  `metal/backend.go:379`) — the gate says the kernel is fit to ship; flipping the default is a
-  separate decision, asked of the user, not made by the gate. Requires hd%8==0 && hd<=128
-  (`ATTN_MAXHD`); falls back to the exact kernel outside that range.
+  `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5. **Default ON since
+  2026-09-10** (`metalFusedAttentionEnabled`, `metal/backend.go:383`) — user-requested flip
+  following the gate pass. `GOINFER_METAL_FUSED_ATTENTION=0` or `--exact-prefill` (transitively,
+  by disabling the whole batched path) opts back to the exact kernel. Requires hd%8==0 &&
+  hd<=128 (`ATTN_MAXHD`); falls back to the exact kernel outside that range regardless of the flag.
 
 ### L2 · CUDA: fused (FlashAttention-style) prefill attention
 

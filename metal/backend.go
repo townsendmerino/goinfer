@@ -371,13 +371,23 @@ func metalFastPrefillFloorFor() int {
 
 // metalFusedAttentionEnabled reports whether attention_prefill_fused (the simdgroup_matrix
 // flash-attention twin of attention_prefill, L2-Metal — docs/task-prefill-gap.md §4) runs in
-// place of the exact scalar kernel. BUILT AND TESTED (metal/attention_prefill_fused_test.go),
-// NOT YET GATED — no §3 fidelity/speed run has happened, so this defaults OFF regardless of
-// metalFastPrefillEnabled. GOINFER_METAL_FUSED_ATTENTION=1 opts in for benchmarking; anything
-// else (including unset) stays off. attention_prefill_fused also requires hd%8==0 && hd<=128
-// (ATTN_MAXHD in metal/prefill.go) — PrefillLast falls back to the exact kernel outside that.
+// place of the exact scalar kernel. Default ON since §3 gate passed 2026-09-10 (S model, set B
+// decision cells K=256/512/1024 + K=3900 confirm; fused beat exact on all three pooled criteria —
+// see docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md §5). GOINFER_METAL_FUSED_ATTENTION=0
+// or --exact-prefill (which also covers metalFastPrefillEnabled) opts back to the exact kernel.
+// attention_prefill_fused also requires hd%8==0 && hd<=128 (ATTN_MAXHD in metal/prefill.go) —
+// PrefillLast falls back to the exact kernel outside that range regardless of this flag.
+//
+//	GOINFER_METAL_FUSED_ATTENTION  1 | true | on   on
+//	                               0 | false | off  off (explicit opt-out; use --exact-prefill on the server)
 func metalFusedAttentionEnabled() bool {
-	return strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_FUSED_ATTENTION"))) == "1"
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_FUSED_ATTENTION"))) {
+	case "0", "false", "off":
+		return false
+	case "1", "true", "on":
+		return true
+	}
+	return true // §3 gate passed 2026-09-10 (S set B decision cells K=256/512/1024 + K=3900 confirm)
 }
 
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use

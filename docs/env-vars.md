@@ -42,6 +42,7 @@ is grep-derivable and enumerated at the bottom.
 | `GOINFER_METAL_BATCHED_PREFILL` | **Deprecated** — superseded by `GOINFER_METAL_FAST_PREFILL`. Still honoured for backward compat: `=1` opt-in (now the default), `=0` opt-out. |
 | `GOINFER_METAL_FAST_PREFILL` | Toggle Metal's f16-MMA batched prefill. Default ON above 512 tokens since §3.2 gate passed (2026-09-09). `=0`/`false`/`off` forces the sequential path everywhere; `=1`/`true`/`on` forces it on (including below the floor). Server flag: `--exact-prefill` sets this to `0`. |
 | `GOINFER_METAL_FAST_PREFILL_FLOOR` | Prompt-length floor (tokens) below which the fast Metal prefill declines even when enabled (default 512). `=0` disables the floor entirely. |
+| `GOINFER_METAL_FUSED_ATTENTION` | Toggle `attention_prefill_fused` (the simdgroup_matrix flash-attention twin of `attention_prefill`, L2-Metal, `docs/task-prefill-gap.md` §4), used inside the batched path above. Default ON since §3 gate passed (2026-09-10, `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5). `=0`/`false`/`off` falls back to the exact scalar kernel; `=1`/`true`/`on` forces it on. Requires hd%8==0 && hd<=128 (`ATTN_MAXHD`) regardless of this flag. Server flag: `--exact-prefill` covers it transitively (disables the whole batched path, so this kernel never dispatches). |
 | `GOINFER_INT4_SLOWPATH` / `GOINFER_INT4_F16_SCALES` | int4 unpack path selectors. |
 | `GOINFER_CUDA_NO_FUSE` | Disable CUDA kernel fusion (debug/A-B). |
 | `GOINFER_MLA_NAIVE` | Use the naive (un-optimized) MLA attention path. |
@@ -92,13 +93,6 @@ that are not operator-facing. These may change or disappear without notice:
 `GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`, `GOINFER_FAKEQUANT_PERROW`,
 `GOINFER_SSM_W8A16`, `GOINFER_SSM_F16MAMBA`, `GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
 `GOINFER_SSM_SKIPFFN`, `GOINFER_SSM_STOP_LAYER`.
-
-`GOINFER_METAL_FUSED_ATTENTION` (`metal/backend.go`) — `=1` opts `attention_prefill_fused`
-(the simdgroup_matrix flash-attention twin of `attention_prefill`, L2-Metal,
-`docs/task-prefill-gap.md` §4) in, in place of the exact scalar kernel. §3 gate SHIPS
-(`docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5) — still defaults OFF
-regardless of `GOINFER_METAL_FAST_PREFILL`; flipping the default is a separate decision from
-the gate passing, not yet made, so this stays a benchmarking opt-in, not an operator knob.
 
 Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,

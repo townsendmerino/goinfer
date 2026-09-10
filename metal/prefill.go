@@ -429,8 +429,8 @@ type prefillState struct {
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
 	// L2-Metal (docs/task-prefill-gap.md §4): the simdgroup_matrix flash-attention twin of
-	// pAttn. Opt-in via GOINFER_METAL_FUSED_ATTENTION (metalFusedAttentionEnabled, backend.go) —
-	// built and tested, not yet gated, so pAttn stays the default.
+	// pAttn. Default ON since §3 gate passed 2026-09-10 (metalFusedAttentionEnabled, backend.go);
+	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
 	pAttnFused Pipeline
 }
 

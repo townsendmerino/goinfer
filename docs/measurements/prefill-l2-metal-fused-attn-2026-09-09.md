@@ -1,4 +1,4 @@
-# Metal prefill L2 — fused (simdgroup_matrix) attention: SHIPS, §3 gate passed 2026-09-10, measured 4.23× on S/K=3900
+# Metal prefill L2 — fused (simdgroup_matrix) attention: SHIPS and DEFAULT ON since 2026-09-10, measured 4.23× on S/K=3900
 
 **Update 2026-09-10: the §3 gate ran and SHIPS.** §5 below is the gate — S's decision set
 (K∈{256,512,1024}, prompt set B, pooled §3.2 form, same reference files and harness L1's own
@@ -6,9 +6,9 @@ gate used) passes all three criteria, and fused *beats* exact on every one (fewe
 slightly higher agreement, lower mean KL). Set A's independent re-score (K∈{256,1024}, informational,
 not deciding) reaches the same SHIPS verdict. D7 failed on the fit guard (12.4 GB needed, ~4 GB
 available) — the same outcome and the same acceptance L1's gate made; S is sufficient for the
-pooled decision. **`GOINFER_METAL_FUSED_ATTENTION` still defaults OFF** — the gate answers
-whether the kernel is *fit* to ship, not whether to flip the default; that is a separate
-decision, asked of the user, not made by this doc.
+pooled decision. **The gate answered whether the kernel is fit to ship; flipping the default
+was then asked of, and approved by, the user separately — `GOINFER_METAL_FUSED_ATTENTION`
+defaults ON as of 2026-09-10** (`metalFusedAttentionEnabled`, `metal/backend.go:383`).
 
 The rest of this doc (§1–§4) is the 2026-09-09 write-up: `attention_prefill_fused` built,
 correctness-tested (kernel + full-pipeline), and measured end to end (4.23× at S/K=3900) —
@@ -85,12 +85,15 @@ engaged (hd=16 and hd=8 respectively) before removing it:
 No fidelity degradation beyond noise at the last digit — both stay at the same cosine level the
 exact batched kernel already sits at versus the sequential reference.
 
-## 4. Scope of what this is NOT
+## 4. Scope of what this is NOT (as of 2026-09-09 — superseded by §5)
 
-- **Not a §3 fidelity gate.** No decision-set sweep, no D7 cell, no pooled §3.2 form comparing
-  against the CPU f32 reference the way L1's gate did.
-- **Not a default change.** `metalFusedAttentionEnabled()` defaults OFF; `attention_prefill`
-  (exact) stays the shipped path. Opt in with `GOINFER_METAL_FUSED_ATTENTION=1`.
+- **Not yet a §3 fidelity gate.** No decision-set sweep, no D7 cell, no pooled §3.2 form
+  comparing against the CPU f32 reference the way L1's gate did. **§5 (2026-09-10) is that gate,
+  and it SHIPS.**
+- **Not yet a default change.** `metalFusedAttentionEnabled()` defaults OFF; `attention_prefill`
+  (exact) stays the shipped path. Opt in with `GOINFER_METAL_FUSED_ATTENTION=1`. **§5 records the
+  gate pass and the subsequent default flip — this bullet describes 2026-09-09, not the current
+  state.**
 - **hd ≤ 128 only.** `attention_prefill_fused` requires `hd%8==0 && hd<=128` (`ATTN_MAXHD`,
   `metal/prefill.go`); `PrefillLast` falls back to the exact kernel outside that range. Every
   family measured or benched here (qwen2.5-coder-1.5b: hd=128; the Gemma/MoE parity fixtures:
@@ -147,7 +150,8 @@ second decision — only set B's pooled result gates.
 **D7 — FAILED the fit guard** (needs 9.3 GB, 3.9–4.2 GB available on this 16 GB Mac mid-session),
 same outcome and same acceptance L1's gate made. S is sufficient for the pooled decision.
 
-**What this gate does and does not decide.** It answers "is `attention_prefill_fused` fit to
-ship" — yes. It does not itself flip `metalFusedAttentionEnabled()`'s default; per the standing
-rule ("ask before: changing a default without its gate cell"), that default change is asked of
-the user separately, now that its gate cell exists.
+**What this gate decided, and what happened next.** It answered "is `attention_prefill_fused`
+fit to ship" — yes. Per the standing rule ("ask before: changing a default without its gate
+cell"), the default flip was asked of the user separately rather than made by the gate itself;
+the user said yes, and `metalFusedAttentionEnabled()` defaults ON as of 2026-09-10
+(`metal/backend.go:383`).

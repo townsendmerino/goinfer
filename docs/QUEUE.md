@@ -1542,6 +1542,7 @@ supports.
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:565` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:607` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, moePrefillScr, m.pager)` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/mlp.go:340` | goinfer | `matmul(be, &ex.Gate, h, gate, 1)` |
+| `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md|metal/backend.go:383` | goinfer | `func metalFusedAttentionEnabled() bool {` |
 | `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/prefill.go:1278` | goinfer | `// weight READS of a 195 MB head, and a host argmax over M x vocab costs ~1.1 ms against` |
 | `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/resident.go:199` | goinfer | `func attnShmemBytes(nWin int) int { return (nWin + 128) * 4 }` |
 | `docs/measurements/prefill-l2l3-phase1-2026-09-05.md|metal/backend.go:347` | goinfer | `func metalFastPrefillEnabled() bool {` |
@@ -1551,7 +1552,7 @@ supports.
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/spec_adaptive.go:177` | goinfer | `case "cuda":` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|internal/serveapp/blockdrafter.go:20` | goinfer | `// IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wan` |
 | `docs/measurements/spec-x-pager-prereg-2026-09-02.md|cuda/prefill.go:180` | goinfer | `return nil, e` |
-| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:508` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
+| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:518` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
 | `docs/multimodal.md|decoder/config.go:1358` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")` |
 | `docs/multimodal.md|decoder/weights.go:426` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
@@ -1790,7 +1791,7 @@ supports.
 | `docs/task-prefill-gap.md|internal/serveapp/main.go:328` | goinfer | `const cpuFastAttentionHelp = "DEFAULT ON since 2026-08-31 (pass --cpu-exact-prefill to t` |
 | `docs/task-prefill-gap.md|internal/serveapp/main.go:439` | goinfer | `flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)` |
 | `docs/task-prefill-gap.md|metal/backend.go:347` | goinfer | `func metalFastPrefillEnabled() bool {` |
-| `docs/task-prefill-gap.md|metal/backend.go:379` | goinfer | `func metalFusedAttentionEnabled() bool {` |
+| `docs/task-prefill-gap.md|metal/backend.go:383` | goinfer | `func metalFusedAttentionEnabled() bool {` |
 | `docs/task-prefill-gap.md|metal/model.go:545` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
 | `docs/task-prefill-gap.md|metal/prefill.go:10` | goinfer | `// Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unli` |
 | `docs/task-prefill-gap.md|metal/prefill.go:12` | goinfer | `// across all M prompt rows → ~2.5× the per-token GEMV, flat with M. Activations flow in` |
