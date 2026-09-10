@@ -239,7 +239,7 @@ DMA admission, hand its expert id to a CPU goroutine (the pinned host copy C′ 
 **Excluding a CPU-handled expert from the GPU's own accumulation needs no kernel change.**
 `gemv_w4a8_moe_wacc` (`cuda/moe.cu:180`) — the "expert combine" kernel, `dst[row] += wgt[slot] *
 result` — is dispatched ONE SLOT AT A TIME, in a `for j := 0; j < topK; j++` loop
-(`cuda/resident.go:2236`ff, confirmed by reading the actual loop, not assumed). Skipping a slot
+(`cuda/resident.go:2242`ff, confirmed by reading the actual loop, not assumed). Skipping a slot
 CPU is handling is a caller-side `continue` in that loop — zero CUDA changes, because the kernel
 was already per-slot, not a fused all-topK-at-once dispatch.
 
