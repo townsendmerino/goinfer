@@ -4,12 +4,17 @@
 > (`docs/audit-2026-09-02.md` L-01) called for, done as a design pass per explicit instruction —
 > size q⋆ from the already-captured trace, work out the split/merge design, re-check the
 > speculation-antagonism risk, write it up, stop before any CUDA. **The headline finding
-> reverses the audit's optimistic framing: at today's measured numbers, computing even one
-> missed expert on the CPU (using the existing kernel as-is) is slower than this layer's own
-> DMA-fetch-everything baseline. The naive form of L-01 is not obviously a win — it needs either
-> a genuinely lower-latency CPU expert path (a bigger prerequisite than scoped) or a much
-> narrower trigger condition than "route every miss to CPU."** This is not a rejection of L-01;
-> it is why the audit said "dedicated future pass" rather than "next PR."
+> reverses the audit's optimistic framing at the MEAN: at today's measured numbers, computing
+> even one missed expert on the CPU (using the existing kernel as-is) is slower than that
+> layer's own DMA-fetch-everything baseline, so the audit's uniform `q⋆ ≈ m·(B_PCIe/B_host)`
+> ratio is the wrong shape.** A same-session follow-up (§8) pulled the miss-count DISTRIBUTION,
+> not just the mean, from the already-captured trace: **half of all decisions (m≤1) have nothing
+> to gain, but the top ~6.5% (m≥5) are exactly where a saturated PCIe bus (G32) meets a real
+> CPU-compute opportunity — so a threshold-gated mechanism, sized against that tail, is the live
+> candidate, not a uniform per-miss ratio.** §7's speculation-antagonism risk was re-run on real
+> hardware today (not re-derived): the four-gate refusal still holds exactly as documented. This
+> is not a rejection of L-01; it is why the audit said "dedicated future pass" rather than "next
+> PR," and it now has a sharper target than when that disposition was written.
 
 ## 0. What L-01 is, verbatim from the audit
 
@@ -172,31 +177,65 @@ GPU-side partial output back from CUDA to combine with the CPU-side partial outp
 second host round trip (defeating the whole point) is — this needs its own design once the
 above is resolved, not before.
 
-## 7. The speculation-antagonism risk — not re-verified this pass
+## 7. The speculation-antagonism risk — RE-CONFIRMED 2026-09-10, still holds
 
-`docs/task-freetoken-techniques.md` §"Pre-registered risk" names four gates that currently make
-the collision moot (nothing large enough to need expert streaming is ever allowed to speculate
-on CUDA today): MoE batched-verify decline, recurrent-rollback refusal, windowed-rollback
-refusal, MLA having no CUDA resident path. **I did not re-confirm all four still exist in
-current code this pass** (a `grep` for one exact phrase came back empty, which may mean the
-comment wording moved, not that the gate is gone — worth a direct check, not a re-derivation,
-before any L-01 code, since L-01 would be the first feature to make expert-streaming and
-speculation coexist).
+Ran `cuda/spec_pager_interaction_test.go` (`TestSpecPagerInteraction`) with
+`GOINFER_HEAVY_TESTS=1` on real hardware (nobara-pc, Qwen3.6-35B-A3B int4, 64 slots/layer,
+today, not re-derived from the doc): **PASS, 217.87s.** Every speculative-decode arm — block
+verify at width 4 and 7, n-gram speculation at width 4 and 7 — **DECLINED**, citing "this model
+has recurrent state (Mamba-2 / Gated DeltaNet)... that speculative rollback cannot losslessly
+restore." Only the `off` arm ran (15.6–17.5 tok/s, 77.3% hit rate, 1.819 misses/stage — this
+run's own miss rate, close to but not identical to G33's 1.915 from a different trace/config,
+consistent). **The four-gate refusal `docs/task-freetoken-techniques.md` documented is still
+exactly what happens today** — nothing large enough to need expert streaming can speculate on
+CUDA. This was a direct re-run, not a grep or a re-derivation of the prior finding.
 
-## 8. Recommended next step
+## 8. Miss-count DISTRIBUTION (not just the mean) — pulled 2026-09-10, no new hardware run
 
-**Not CUDA code.** In order:
+`docs/measurements/g33-routing-trace.json` replayed for the full per-decision histogram (not
+just G33's own headline mean), same validated LRU model, 30 slots, 2730 decisions:
+
+| m (misses/decision) | decisions | % |
+|---|---|---|
+| 0 | 692 | 25.3% |
+| 1 | 693 | 25.4% |
+| 2 | 511 | 18.7% |
+| 3 | 353 | 12.9% |
+| 4 | 205 | 7.5% |
+| 5 | 134 | 4.9% |
+| 6 | 72 | 2.6% |
+| 7 | 27 | 1.0% |
+| 8 (every requested expert missed) | 43 | 1.6% |
+
+mean 1.915 (matches G33), **median 1**, p90=5, p99=8=max.
+
+**This settles §4's open question in favour of a threshold-gated design, not a uniform ratio.**
+Half of all decisions (m≤1, 50.7%) are at or below the point where §3 already found CPU offload
+loses outright — routing THESE through any hybrid-split logic is pure overhead with no upside.
+The audit's `q⋆ ≈ m·(B_PCIe/B_host)` formula applies the SAME ratio uniformly to every decision
+regardless of m, which is exactly wrong here: it would try to peel a fraction off of m=1 (where
+there is nothing to gain) as readily as off of m=8 (where CPU's fixed ~1.98ms cost, if it could
+be shared across several missed experts via cross-expert parallelism, has real headroom against
+that decision's current 1.07+8×0.346=3.84ms). The tail worth targeting is small — roughly the
+top 10% (m≥5, 6.5% of decisions) — but concentrated exactly where the mechanism's premise (CPU
+compute vs. a saturating PCIe bus) is most true, since a bus already asked to move 8 experts in
+one layer is precisely where "bandwidth-bound at line rate" (G32) bites hardest.
+
+## 9. Recommended next step
+
+**Not CUDA code.** §7 and §8 above are done (real hardware re-run; existing-trace re-analysis).
+What remains, in order:
 
 1. The isolated CPU expert-kernel microbenchmark (§4.1) — cheap, synthetic, answers whether
-   B_host≈1.98ms is real or an artifact of folding in attention/router cost.
-2. Pull the miss-count DISTRIBUTION (not just mean) from `g33-routing-trace.json` — already
-   captured, no new hardware run — to check whether a threshold-gated design (§4.3) has a real
-   target (a meaningful tail of high-m layers) or whether misses are evenly spread (in which
-   case a threshold gate helps nobody and the mechanism needs #2 from §4 instead).
-3. Re-confirm the four speculation gates (§7) directly against current `cuda/*.go`.
-4. Only then: a scoped kernel-design pass for whichever of §4's three paths the above supports,
-   with its own pre-registered, paired-and-interleaved measurement plan on the real Qwen3.6-35B-A3B
-   cell per §0's decision rule.
+   B_host≈1.98ms is real or an artifact of folding in attention/router cost into §2's derived
+   estimate. Still not done — the natural next step, and now sharper: it specifically needs to
+   answer whether computing e.g. 5–8 missed experts with SOME cross-expert parallelism (dividing
+   cores across the missed set, not giving each expert the full width) beats today's DMA-only
+   cost at exactly those high-m decisions §8 found — not the mean case, which §3 already answered.
+2. A scoped kernel-design pass for the threshold-gated mechanism §8 now points at, with its own
+   pre-registered, paired-and-interleaved measurement plan on the real Qwen3.6-35B-A3B cell per
+   §0's decision rule — sized against the ~6.5% tail (m≥5), not the 93.5% where §3 already says
+   there's nothing to gain.
 
 ## Sources
 
@@ -205,5 +244,6 @@ Lead 5 (architecture, antagonism risk) · `docs/QUEUE.md` G31–G34 (DMA cost la
 miss classification, block-verify's own infra-gap finding) · `decoder/mlp.go` (`moeMLP`,
 `swiGLUExpert` — the existing sequential CPU expert loop) · aikit `linalg.MatmulBT`/`parallelCols`
 (the existing per-expert core-width parallelism) · `internal/fitcmd/fit.go` (`-measure`, used
-as-is for §2's new number) · `docs/measurements/g33-routing-trace.json` (not re-read for its
-distribution in this pass — named in §8 as the next pull).
+as-is for §2's new number) · `docs/measurements/g33-routing-trace.json` (re-read for its
+per-decision distribution, §8) · `cuda/spec_pager_interaction_test.go` (re-run on real hardware
+for §7's confirmation).
