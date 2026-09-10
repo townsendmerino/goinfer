@@ -99,7 +99,14 @@ func TestPrefillGateVsReference(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Skipf("no fixture at %s (set %s)", path, mc.pathEnv)
 			}
-			m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4"})
+			// Pin ResidentContext to metalCtxCapMax: the 0 (backend-default) auto-cap sizes ctx off
+			// AVAILABLE MEMORY, not this backend's fixed kernel-score-buffer ceiling, so on a box
+			// with generous free RAM it picks something above metalCtxCapMax and BuildResident
+			// declines outright ("resident context ... exceeds this backend's hard ceiling") —
+			// falling back to CPU/staged, which fails this test's *metalResident type assertion.
+			// metalCtxCapMax (4096) comfortably covers every decision/confirm cell here: the
+			// widest, K=3900 + continuationN(64) teacher-forced steps, tops out at pos 3962.
+			m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: metalCtxCapMax})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}

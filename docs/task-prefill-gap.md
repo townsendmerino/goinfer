@@ -385,18 +385,20 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
   Mac peer row is now measured and written up** (`benchmarks.md` §A, 2026-09-09): 2.0–3.75× over
   sequential within goinfer at K≥512, 3.3–8.8× behind Ollama on TTFT, ~9× behind on the
   overhead-free marginal — the O(K²) attention term this doc's next item targets.
-- **BUILT AND MEASURED, NOT GATED (2026-09-09):** the Metal twin of L2, a `simdgroup_matrix`
-  flash attention for `attention_prefill` (`attention_prefill_fused`, `metal/prefill.go:303`).
-  This paragraph's own pre-registered projection — "would take the S/K=3900 speedup from 2.02×
-  to ~5×" — is now a real measurement, not arithmetic: **4.23× measured** (baseline 2.03×) on
-  the real S checkpoint, end to end (`docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md`).
-  Kernel-isolated ratio 5.45× at K=3900, 1.80× at K=140. Correctness: 5/5 synthetic seam cases
-  (cosine 1.0) plus two real-checkpoint parity tests run through the full `PrefillLast` pipeline
-  with the flag on, no fidelity change vs. the exact kernel's own baseline. **Still opt-in**
+- **BUILT, MEASURED, AND §3-GATED — SHIPS (2026-09-10):** the Metal twin of L2, a
+  `simdgroup_matrix` flash attention for `attention_prefill` (`attention_prefill_fused`,
+  `metal/prefill.go:303`). This paragraph's own pre-registered projection — "would take the
+  S/K=3900 speedup from 2.02× to ~5×" — is a real measurement, not arithmetic: **4.23× measured**
+  (baseline 2.03×) on the real S checkpoint, end to end. Kernel-isolated ratio 5.45× at K=3900,
+  1.80× at K=140. The §3 gate (same pooled §3.2 form and reference files L1's gate used, prompt
+  set B, S model) **SHIPS**: fused beats exact on all three pooled criteria — hard flips 18→15,
+  agreement 92.76%→92.81%, mean KL 0.0405→0.0381 — and set A's independent re-score reaches the
+  same verdict. D7 failed the fit guard (same acceptance L1's gate made). Full writeup + numbers:
+  `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5. **Still opt-in**
   (`GOINFER_METAL_FUSED_ATTENTION=1`, default OFF, `metalFusedAttentionEnabled`,
-  `metal/backend.go:379`) — this has NOT been through the §3 decision-set/pooled gate L1 ran;
-  that gate (plus a D7 cell, memory permitting) is the next step before any default change.
-  Requires hd%8==0 && hd<=128 (`ATTN_MAXHD`); falls back to the exact kernel outside that range.
+  `metal/backend.go:379`) — the gate says the kernel is fit to ship; flipping the default is a
+  separate decision, asked of the user, not made by the gate. Requires hd%8==0 && hd<=128
+  (`ATTN_MAXHD`); falls back to the exact kernel outside that range.
 
 ### L2 · CUDA: fused (FlashAttention-style) prefill attention
 

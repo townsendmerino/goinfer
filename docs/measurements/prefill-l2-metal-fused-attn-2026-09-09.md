@@ -1,12 +1,18 @@
-# Metal prefill L2 — fused (simdgroup_matrix) attention: built, correctness-tested, measured 4.23× on S/K=3900 (2026-09-09)
+# Metal prefill L2 — fused (simdgroup_matrix) attention: SHIPS, §3 gate passed 2026-09-10, measured 4.23× on S/K=3900
 
-**`attention_prefill_fused` is real, correct, and measured — but this is NOT a gate pass and
-does NOT ship as a default.** It is built, tested at both the isolated-kernel and full-pipeline
-level, and measured end to end on the real S checkpoint. It has **not** been through the §3
-fidelity/decision-set gate L1 ran (`docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md`) — no
-decision-set sweep, no D7 cell, no pooled §3.2 form. It ships behind
-`GOINFER_METAL_FUSED_ATTENTION=1` (default OFF) until that gate runs, per the standing rule that
-a default change needs its own gate cell.
+**Update 2026-09-10: the §3 gate ran and SHIPS.** §5 below is the gate — S's decision set
+(K∈{256,512,1024}, prompt set B, pooled §3.2 form, same reference files and harness L1's own
+gate used) passes all three criteria, and fused *beats* exact on every one (fewer hard flips,
+slightly higher agreement, lower mean KL). Set A's independent re-score (K∈{256,1024}, informational,
+not deciding) reaches the same SHIPS verdict. D7 failed on the fit guard (12.4 GB needed, ~4 GB
+available) — the same outcome and the same acceptance L1's gate made; S is sufficient for the
+pooled decision. **`GOINFER_METAL_FUSED_ATTENTION` still defaults OFF** — the gate answers
+whether the kernel is *fit* to ship, not whether to flip the default; that is a separate
+decision, asked of the user, not made by this doc.
+
+The rest of this doc (§1–§4) is the 2026-09-09 write-up: `attention_prefill_fused` built,
+correctness-tested (kernel + full-pipeline), and measured end to end (4.23× at S/K=3900) —
+all still true and unchanged by the gate.
 
 ## Provenance
 
@@ -95,9 +101,53 @@ exact batched kernel already sits at versus the sequential reference.
   (the L1 gate's D7 cell hit a fit-guard on this 16 GB machine — the same constraint would apply
   here).
 
-## Next step
+## 5. The §3 gate (2026-09-10) — SHIPS
 
-A real §3 gate for this kernel (decision-set sweep, pooled form, D7 with `GOINFER_NO_FIT_GUARD=1`
-if memory allows) before considering `metalFusedAttentionEnabled()`'s default. Not run this
-session — ask before starting it, per the standing rule that a default change ships only after
-its own gate cell.
+**`TestPrefillGateVsReference` run with `GOINFER_METAL_FUSED_ATTENTION=1`** — same harness, same
+pooled §3.2 form, same `~/goinfer-logs/prefill-ref-b/` reference files L1's own gate scored
+against, so the "fast" arm here is `PrefillLast` with the fused kernel selected instead of the
+exact one. Log: `~/goinfer-logs/l2-metal-gate-b-20260910-080216-fixed.log` (durable). Run time:
+S subtest 2620.75 s (43.7 min); D7 failed the fit guard in 0.12 s.
+
+A pre-existing fragility in the shared harness had to be fixed first, unrelated to this kernel:
+`metal/prefill_gate_ref_test.go`'s `decoder.Load` never pinned `ResidentContext`, so the 0
+(backend-default) auto-cap sizes context off *available memory*, not Metal's fixed
+`metalCtxCapMax` (4096) kernel-score-buffer ceiling — on a box with enough free RAM it picks a
+context above 4096 and `BuildResident` declines outright, falling back to CPU/staged and failing
+this test's `*metalResident` type assertion ("metal resident not built for this model"). Pinned
+`ResidentContext: metalCtxCapMax` — comfortably covers every cell here (K=3900 confirm +
+continuationN(64) tops out at position 3962). This would have broken a plain re-run of L1's own
+gate too; it is not new to fused attention.
+
+**S, decision set (prompt set B, K∈{256,512,1024}, DECIDING) — pooled verdict: SHIPS.** Fused
+beats exact on every criterion, not just ties it:
+
+| criterion | exact | fused | pass? |
+|---|---|---|---|
+| critA hard flips (fast ≤ exact + 2√exact) | 18 | **15** | true |
+| critB agreement (fast ≥ exact − 2√d/N, d=59, N=1920) | 92.76% | **92.81%** | true |
+| critC mean KL (fast ≤ exact, lower on ≥half prompts, no cell >1.1×) | 0.0405 | **0.0381** (22/30 prompts lower, ceiling OK) | true |
+
+Per-cell (set B):
+
+| K | exact agree / HF / meanKL | fused agree / HF / meanKL |
+|---|---|---|
+| 256 | 93.0% / 4 / 0.0347 | 94.1% / 3 / 0.0316 |
+| 512 | 95.0% / 4 / 0.0347 | 94.4% / 4 / 0.0314 |
+| 1024 | 90.3% / 10 / 0.0520 | 90.0% / 8 / 0.0512 |
+| 3900 (confirm, not gating) | 91.2% / 10 / 0.0508 | 92.3% / 10 / 0.0493 |
+
+**Set A, re-scored (K∈{256,1024}, informational, NOT deciding) — same verdict: SHIPS.**
+critA 75→73, critB 87.27%→87.03% (d=35, N=1280), critC meanKL 0.3008→0.2982 (17/20 prompts
+lower). Set A's K=1024 cell includes a rough patch (prompt 2: both arms collapse to ~20% agree,
+KL≈4.24 — a hard prompt for both arms alike, not a fused-specific defect, since exact and fused
+move together). Two independent prompt sets landing on the same verdict is corroboration, not a
+second decision — only set B's pooled result gates.
+
+**D7 — FAILED the fit guard** (needs 9.3 GB, 3.9–4.2 GB available on this 16 GB Mac mid-session),
+same outcome and same acceptance L1's gate made. S is sufficient for the pooled decision.
+
+**What this gate does and does not decide.** It answers "is `attention_prefill_fused` fit to
+ship" — yes. It does not itself flip `metalFusedAttentionEnabled()`'s default; per the standing
+rule ("ask before: changing a default without its gate cell"), that default change is asked of
+the user separately, now that its gate cell exists.
