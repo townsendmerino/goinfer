@@ -1392,7 +1392,7 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/helpers.go:504` | goinfer | `func reqID() string {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:10` | goinfer | `// Model liveness + the drain-based unload path. See docs/completed/task-admin-unload-dr` |
 | `docs/audit-2026-09-02.md|internal/serveapp/liveness.go:159` | goinfer | `if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {` |
-| `docs/audit-2026-09-02.md|internal/serveapp/main.go:1009` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/main.go:1010` | goinfer | `return nil, fmt.Errorf("--model %q: %w", spec.path, err)` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:158` | goinfer | `// default must never conflict with an already-baked bundle.` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:444` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
 | `docs/audit-2026-09-02.md|internal/serveapp/main.go:452` | goinfer | `flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefille` |
@@ -1706,7 +1706,7 @@ supports.
 | `docs/task-embed-and-harness-ux.md|decoder/model.go:193` | goinfer | `type Options struct {` |
 | `docs/task-embed-and-harness-ux.md|decoder/model.go:259` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
 | `docs/task-embed-and-harness-ux.md|decoder/model.go:937` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
-| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:1129` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
+| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:1130` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
 | `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:336` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |

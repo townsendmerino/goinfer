@@ -132,9 +132,11 @@ Three things that make the June plan's assumptions stale, in the direction of *m
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
 2. **Vision is one family.** ~~Gemma 4 — the family most of the resident work went into — is
-   text-only here~~ **PARTIALLY CLOSED 2026-09-09 (P7 Phase B): Gemma 4 E2B/E4B now serves real
-   images, CPU-only, gated at cosine 1.0 on a real end-to-end fixture** — see §P7 below for scope
-   (26B-A4B/31B and GPU-resident decode remain open). Qwen-VL, the most-pulled VL line, is still
+   text-only here~~ **CLOSED for CPU serving 2026-09-09/10 (P7 Phases B+C): Gemma 4 E2B/E4B
+   (Phase B) AND 26B-A4B/31B (Phase C, the bidirectional-block-attention case) now serve real
+   images, CPU-only, both gated at cosine 1.0 on real end-to-end fixtures** — see §P7 below for
+   scope (GPU-resident decode remains open; Phase C's real-26B-A4B end-to-end validation is
+   deferred, the tiny fixture is what validates it this pass). Qwen-VL, the most-pulled VL line, is still
    text-only here.
 3. **No GGUF `mmproj`.** Ollama/llama.cpp users have their VL models as GGUF + mmproj; goinfer
    reads neither half of that pair for vision.
@@ -242,13 +244,26 @@ number is published without provenance.
   `Gemma4Model.forward`. PLE's multimodal-position treatment is exactly as scoped above — HF's
   `project_per_layer_inputs` function (in the upstream `transformers` package's
   `modular_gemma4.py`, not part of this repo) returns the context projection alone when
-  `per_layer_inputs is None`. `use_bidirectional_attention` is real and checkpoint-gated
-  (`null` for E2B/E4B, `"vision"` for 26B-A4B/31B) via `create_masks_for_vision_model`: **global
-  attention layers stay strictly causal**; only **sliding/local layers** get
-  `AND(sliding_window, OR(causal, blockwise))`, where "blockwise" groups each image/audio block —
-  this mask is built only in the multimodal `ForConditionalGeneration` forward, never in the
-  plain text-only path, so it is new decoder-side wiring, not something the existing text gate
-  already exercises.
+  `per_layer_inputs is None`. `use_bidirectional_attention` is real and checkpoint-gated (`null`
+  for E2B/E4B, `"vision"` for 26B-A4B/31B) — this mask is built only in the multimodal
+  `ForConditionalGeneration` forward, never in the plain text-only path, so it is new decoder-side
+  wiring, not something the existing text gate already exercises.
+  **CORRECTED 2026-09-10** (the line above originally read differently and was wrong on two
+  counts, found by reading the actual installed `transformers` source rather than trusting the
+  earlier citation): `create_masks_for_vision_model` **does not exist** in that checkout at all —
+  the real mechanism is `create_masks_for_generate` → `LAYER_PATTERN_TO_MASK_FUNCTION_MAPPING` →
+  `create_causal_mask` / `create_sliding_window_causal_mask` (both in `masking_utils.py`). And
+  **global/full-attention layers do NOT stay strictly causal** — both layer types receive the
+  identical `OR(windowed-or-plain causal, blockwise)` treatment, with no layer-type gate anywhere
+  in the call chain: full-attention is `causal(q,kv) OR (block[q]==block[kv] AND block[q]>=0)`;
+  sliding-attention is `(within_window(q,kv) AND causal(q,kv)) OR (block[q]==block[kv] AND
+  block[q]>=0)` — the blockwise OR is applied at the top level in both cases, so a same-block key
+  outside the sliding window (or, on a full-attention layer, causally in the future) is still
+  attended. P7 Phase C (`decoder/forward_gemma4_batched.go`) implements exactly this, gated at
+  cosine 1.000000 against a real HF forward on a fixture designed to fail under either the wrong
+  (old) claim or a causal-only forward — see that file's own doc comments for the correctness
+  proof (a query's valid key range is always a single contiguous interval, never two disjoint
+  ones) and `scripts/pin_gemma4_vl_bidir_image.py` for the discriminating fixture.
 
   Video: frame-sampling into the same `embed_vision(...)` image path per-frame, not a separate
   temporal mechanism (confirmed for `gemma4_unified`; the plain `gemma4` family reuses the same
@@ -387,7 +402,55 @@ number is published without provenance.
   above), an HTTP-level integration smoke test through `vision_serve.go`'s actual splice/encode path
   (the decoder-level gate above proves the numerics; the HTTP wiring itself is exercised only by
   reading the code, not yet by a running request), and — as already covered — 26B-A4B/31B's
-  bidirectional attention, GPU-resident decode, video, and audio.
+  bidirectional attention (**closed by Phase C, next**), GPU-resident decode, video, and audio.
+
+  **Phase C (26B-A4B/31B bidirectional-block attention) DONE, 2026-09-10.** A query position
+  INSIDE an image/audio block must see LATER block positions too — impossible in Phase B's
+  sequential, one-token-at-a-time forward, since later positions' K/V don't exist yet when an
+  earlier position is processed. Building this turned out simpler than expected, for three facts
+  confirmed by reading the code rather than assumed: (1) gemma4 has no ring-buffer/physical KV
+  eviction at all (`decoder/model.go`'s `enableRings`/`setQuant` calls both exclude it — every
+  layer is append-forever), so there's no ring/`base`-offset machinery to replicate from the
+  generic family's own batched path; (2) the existing single-query-row attention kernel
+  (`gemma4Attend`) already accepts an arbitrary contiguous absolute key range into the full cache
+  arrays, so it needed zero changes; (3) a query's valid key range is PROVABLY always a single
+  contiguous interval, never two disjoint ones (see `decoder/forward_gemma4_batched.go`'s
+  `gemma4AttendRange` doc comment for the proof) — no new interval-union data structure needed.
+  Net: one new file (`decoder/forward_gemma4_batched.go`: `gemma4AttendRange` +
+  `runLayersGemma4FromEmbedN`, the batched twin of `runLayersGemma4FromEmbed`) plus a
+  `prefillLogitsGemma4VLBidirectional` entry point and a one-line dispatch in `GenerateGemma4VL`
+  keyed on `UseBidirectionalAttention != ""` — **zero changes** to the shipped E2B/E4B sequential
+  path, `decoder/kvcache.go`, or the loader/`Architecture` layer.
+
+  **Gated at cosine 1.000000, exact argmax**, on a real, non-degenerate, self-verifying-non-vacuous
+  fixture (`scripts/pin_gemma4_vl_bidir_tiny.py` + `pin_gemma4_vl_bidir_image.py`,
+  `decoder/gemma4_vl_bidir_test.go`): `layer_types` mixing both sliding and full attention (the
+  masking correction above applies to both), an image block deliberately longer than
+  `sliding_window` and positioned so the block's own start falls outside the last block position's
+  causal window — the exact shape that distinguishes a real blockwise-OR-causal mask from a
+  causal-only forward (measured: bidirectional vs causal-only last-logit cosine 0.953, argmax 142
+  vs 115 — genuinely different, so the gate is not vacuous) or from a narrower, window-bound
+  approximation. Dense-only (`enable_moe_block=False`): the masking change is orthogonal to FFN
+  dispatch (`gemma4MoEFFN` is position-independent, confirmed by reading it — no position argument
+  anywhere), already covered by `TestGemma4MoE_forwardParity`; MoE+bidirectional joint verification
+  is exactly what the still-deferred real-26B-A4B gate would add. Text-only input on a
+  `"vision"`-mode checkpoint is also gated: HF degrades `block_sequence_ids` to all `-1` when there
+  is no multimodal content (confirmed by reading `Gemma4Model.forward`), which makes the blockwise
+  term unconditionally false — so this is a real regression check that the new batched path agrees
+  with both HF and the unmodified sequential path on plain text (measured: sequential-vs-batched
+  logit cosine 1.00000000 on this fixture).
+
+  **A separate, pre-existing bug found and deliberately NOT fixed here**: the already-shipped
+  generic-family batched vision path (Gemma3/Qwen, `decoder/kvcache.go`'s `SetImageBlocks`/
+  `attendHi`) never applies the `min(lo, blockStart)` correction the proof above derives — it
+  under-attends a sliding layer's own image block whenever the window is narrower than the query's
+  depth into the block. Out of scope (risks the shipped Gemma3/Qwen path, needs separate
+  verification against Gemma3's own masking semantics) — filed here as a known gap, not fixed.
+
+  **What Phase C does NOT include**: real-checkpoint validation against `~/models/gemma-4-26b-a4b-it`
+  (a real 128-expert MoE checkpoint — large and slow to validate on CPU, deliberately deferred; the
+  tiny fixture is what validates correctness this pass), the `attendHi` under-attend bug above, and
+  — unchanged from Phase B — GPU-resident decode, video, and audio.
 - **P8 · Finish P5: Qwen3.x-VL image path + GGUF `mmproj`.** Phase 0 on the real Qwen3.6-VL config
   (the vision encoder, dynamic resolution and patch grids, m-RoPE's three position components
   which the text path already degenerates correctly, any DeepStack-style multi-level injection —

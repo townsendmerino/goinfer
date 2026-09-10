@@ -20,8 +20,10 @@ import (
 // strictly causally too — a sequential per-position walk IS that forward, not a
 // stand-in for a bidirectional one. A checkpoint with
 // use_bidirectional_attention="vision" (26B-A4B/31B) needs a genuinely batched,
-// blockwise-masked forward this does not implement and must never reach here —
-// see internal/serveapp's vision-tower load-time refusal check.
+// blockwise-masked forward — see prefillLogitsGemma4VLBidirectional /
+// runLayersGemma4FromEmbedN (decoder/forward_gemma4_batched.go) below.
+// GenerateGemma4VL dispatches to the right one; this function itself is never
+// called for a "vision"-mode checkpoint.
 func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if arch.gemma4 == nil {
@@ -65,15 +67,50 @@ func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbed
 	return m.logitsFromHidden(h, cache), nil
 }
 
+// prefillLogitsGemma4VLBidirectional is prefillLogitsGemma4VL's batched twin for
+// 26B-A4B/31B-class checkpoints (use_bidirectional_attention: "vision"): a query
+// position INSIDE the image/audio block must see LATER block positions too, which
+// a sequential per-token walk can never provide (their K/V don't exist yet when
+// an earlier position is processed). See runLayersGemma4FromEmbedN
+// (decoder/forward_gemma4_batched.go) for the batched forward and
+// gemma4AttendRange for the masking primitive + its correctness proof.
+func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	arch := m.w.arch
+	if arch.gemma4 == nil {
+		return nil, fmt.Errorf("decoder: prefillLogitsGemma4VLBidirectional called on a non-gemma4 model")
+	}
+	hidden := arch.HiddenDim
+	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
+		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
+	}
+	if len(imageEmbeds) != imgLen*hidden {
+		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens x %d hidden)", len(imageEmbeds), imgLen*hidden, imgLen, hidden)
+	}
+	h := m.embedN(ids)
+	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale — same convention as embedN's own doc comment (forwardn.go)
+	hLast, err := m.runLayersGemma4FromEmbedN(ctx, h, ids, imgPos, imgLen, cache)
+	if err != nil {
+		return nil, err
+	}
+	return m.logitsFromHidden(hLast, cache), nil
+}
+
 // GenerateGemma4VL streams a continuation for a Gemma 4 multimodal prompt. Like
-// GenerateVL (Gemma 3) / GenerateQwenVL in shape, but CPU-only, sequential-
-// prefill-only for v1: no resident GPU bridge. Gemma 4's resident CUDA decode
-// has a KV layout (cross-layer KV sharing on its tail layers, per-layer
-// head-dim differences) the generic UploadKV/residentUploadPrefill bridge has
-// never been verified against, so it is not attempted here — deliberately
-// deferred as separate, GPU-verified follow-up work, mirroring how Gemma3/Qwen's
-// own resident bridge ("gap 0", docs/multimodal.md) was itself a later pass
-// after their original CPU-only GenerateVL/GenerateQwenVL shipped first.
+// GenerateVL (Gemma 3) / GenerateQwenVL in shape, but CPU-only for v1: no
+// resident GPU bridge. Gemma 4's resident CUDA decode has a KV layout
+// (cross-layer KV sharing on its tail layers, per-layer head-dim differences)
+// the generic UploadKV/residentUploadPrefill bridge has never been verified
+// against, so it is not attempted here — deliberately deferred as separate,
+// GPU-verified follow-up work, mirroring how Gemma3/Qwen's own resident bridge
+// ("gap 0", docs/multimodal.md) was itself a later pass after their original
+// CPU-only GenerateVL/GenerateQwenVL shipped first.
+//
+// Prefill dispatches between two forwards depending on the checkpoint:
+// sequential (prefillLogitsGemma4VL, E2B/E4B-class, causal) or batched
+// (prefillLogitsGemma4VLBidirectional, 26B-A4B/31B-class,
+// use_bidirectional_attention: "vision"). Decode is always the unchanged
+// per-token path either way — a decode token is never "inside" the image
+// block again, so no masking distinction applies post-prefill.
 //
 // `imgHash` is accepted for signature parity with GenerateVL/GenerateQwenVL
 // (driveVL dispatches to all three uniformly) but unused — there is no
@@ -89,7 +126,12 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			return
 		}
 		cache := m.NewCache(len(ids) + maxTokens)
-		logits, err := m.prefillLogitsGemma4VL(ctx, ids, feats, imgPos, imgLen, cache)
+		var logits []float32
+		if m.w.Cfg.UseBidirectionalAttention != "" {
+			logits, err = m.prefillLogitsGemma4VLBidirectional(ctx, ids, feats, imgPos, imgLen, cache)
+		} else {
+			logits, err = m.prefillLogitsGemma4VL(ctx, ids, feats, imgPos, imgLen, cache)
+		}
 		if err != nil {
 			g.err = err
 			return

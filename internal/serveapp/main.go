@@ -961,18 +961,19 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
 
 // loadGemma4VisionTower attaches the Gemma 4 vision tower (aikit) to the single
 // loaded model. No separate projector — Gemma4Encoder.Forward bakes the
-// embed_vision projection in. Refuses a checkpoint whose text_config sets
-// use_bidirectional_attention (26B-A4B/31B-class blockwise image attention),
-// which decoder.GenerateGemma4VL does not implement — see that function's doc
-// comment and docs/multimodal.md's P7 entry — rather than silently serving it
-// with the wrong (causal) mask. No GPU-resident vision path: aikit's
-// Gemma4Encoder has no EnableResident method (unlike vision.Encoder), so
-// --backend webgpu has no effect on this tower beyond the optional int8 CPU
-// weight format.
+// embed_vision projection in. decoder.GenerateGemma4VL dispatches between two
+// forwards depending on the checkpoint: the E2B/E4B-class sequential/causal
+// path (use_bidirectional_attention unset) and the 26B-A4B/31B-class batched
+// path (use_bidirectional_attention: "vision", decoder/forward_gemma4_batched.go).
+// Any OTHER value is refused at load time — rather than silently serving it
+// with the wrong mask — since only those two are implemented. No GPU-resident
+// vision path either way: aikit's Gemma4Encoder has no EnableResident method
+// (unlike vision.Encoder), so --backend webgpu has no effect on this tower
+// beyond the optional int8 CPU weight format.
 func (s *server) loadGemma4VisionTower(dir string, int8Tower bool) error {
 	for _, lm := range s.models {
-		if bd := lm.model.Config().UseBidirectionalAttention; bd != "" {
-			return fmt.Errorf("gemma4 vision: %q sets use_bidirectional_attention=%q (26B-A4B/31B-class blockwise image attention); GenerateGemma4VL only supports the E2B/E4B-class causal case (use_bidirectional_attention unset)", lm.name, bd)
+		if bd := lm.model.Config().UseBidirectionalAttention; bd != "" && bd != "vision" {
+			return fmt.Errorf("gemma4 vision: %q sets use_bidirectional_attention=%q, not the supported %q value; GenerateGemma4VL only implements the E2B/E4B-class causal case (unset) and the 26B-A4B/31B-class %q blockwise case", lm.name, bd, "vision", "vision")
 		}
 	}
 	enc, err := vision.LoadGemma4Encoder(dir, int8Tower)
