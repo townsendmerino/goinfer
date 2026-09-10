@@ -15,7 +15,11 @@
 > async concurrency, or the actual target model (Qwen3.6-35B-A3B, not gemma-4-26b's geometry) —
 > but the bar this pass needed to clear before recommending a real prototype is now cleared,
 > which it was not an hour earlier in this same pass. §7 (speculation-antagonism) was re-run on
-> real hardware and still holds as documented.
+> real hardware and still holds as documented. **§5's remaining open question — whether
+> "always offload" costs too much AGGREGATE host-CPU time across a token's 30 layers — is also
+> now resolved**: the expected case uses only 35% of the GPU's own per-token compute budget,
+> and even the pathological worst case barely exceeds it. The one caveat that arithmetic does
+> NOT cover is multi-tenant contention (a second concurrent request), which stays open.
 
 ## 0. What L-01 is, verbatim from the audit
 
@@ -162,26 +166,35 @@ every measured m. What remains is not "does the compute clear the bar" but "does
 concurrent, merge-including implementation clear it too" — §3's own caveats, and the next step
 named in §9.
 
-## 5. q⋆ — still meaningful, but for a different question than §3 answered
+## 5. q⋆ / aggregate host-CPU occupancy — RESOLVED 2026-09-10 in favour of "send everything"
 
 §3 found that sending EVERY missed expert to CPU (k=m, no DMA at all for misses) beats today's
-path at every measured m. That does not make q⋆ pointless — it reframes what q⋆ would be
-choosing between:
+path at every measured m. That left one open question — whether "always offload" claims too
+much AGGREGATE host CPU across a token's 30 layers, in which case a q⋆-style throttle (send
+only enough to stay within GPU's own per-layer compute window) might still win once
+host-CPU contention with other work is priced in. Answered this pass, arithmetic only, on
+already-measured numbers (§3's per-m CPU-parallel costs weighted by §8's own miss-count
+frequencies, no new hardware run):
 
-- **If CPU has spare capacity beyond what one layer's misses need** (true up to m=8 on this
-  8-core/16-thread box, since CPU-parallel time stays ≤ the GPU's own 1070 µs compute floor
-  even at m=8), there is no latency reason to send anything to GPU/DMA at all — q⋆=0 is optimal
-  for LATENCY.
-- **q⋆ would matter for a reason §3's per-layer latency framing doesn't capture: aggregate CPU
-  occupancy across a token's 30 layers, and interference with whatever else needs the host CPU**
-  (the routing readback, other decode-loop work, a second concurrent request). A design that
-  always sends 100% of misses to CPU claims the host for ~1.1 ms × 30 layers ≈ 33 ms/token in
-  the worst case (all layers at m=8) — real host-CPU budget that competes with everything else
-  the process does, not free just because it overlaps ONE layer's GPU compute. This is exactly
-  the kind of aggregate cost the per-layer table in §3 cannot see, and it's the reason a q⋆-style
-  throttle (send only what's needed to stay within GPU's own compute window, no more) could
-  still beat "send everything" once host-CPU contention with OTHER work is accounted for —
-  untested here.
+| | value |
+|---|---|
+| expected CPU-parallel time, per layer, weighted by measured miss frequency | 377 µs |
+| **expected CPU-parallel time, per TOKEN (× 30 layers)** | **11.3 ms** |
+| GPU's own compute budget, per token (G31, unchanged by any of this) | 32.1 ms |
+| **CPU aggregate as a share of GPU's own budget** | **35%** |
+| worst case: every one of a token's 30 layers at m=8 (astronomically unlikely — P(m=8) alone is 1.6% per layer, so all 30 landing there in one token is not a real scenario, but it bounds the pathological case) | 33.8 ms — barely exceeds the 32.1 ms budget, not a large overrun |
+
+**In the typical case, "always offload" claims barely a third of the CPU time the GPU's own
+compute window already provides — there is no aggregate-occupancy problem to throttle against,
+and even the pathological worst case only marginally exceeds the budget.** This resolves the
+open question in favour of the SIMPLER mechanism: q⋆=0 (send everything, throttle nothing) is
+not just latency-optimal per layer (§3) but also aggregate-occupancy-safe per token, for a
+SINGLE decode stream. **What this arithmetic does NOT cover, and is the one real remaining risk
+for q⋆:** a second concurrent request on the same box, or any other host-CPU work this decode
+stream doesn't already account for (the process's own routing-readback cost, unmeasured here) —
+multi-tenant contention is a genuinely different question than one stream's own budget, and
+"always offload" degrades however badly host-CPU contention degrades under concurrent decode
+generally, which this pass did not measure.
 
 ## 6. Partial-sum merge — the "exactly" in the audit's mechanism
 
@@ -238,24 +251,24 @@ didn't cover them): **mean per-decision saving ≈ 662 µs**, and m≥5 (10.1% o
 accounts for ≈31% of the total aggregate saving across all decisions —
 **most of the aggregate win still comes disproportionately from the tail even though the low-m
 cases are not worthless** (m≤1 decisions are 50.7% of the total but contribute ≈13% of the
-aggregate saving). Relevant to §5's aggregate-host-occupancy question: a throttle that skips the
-cheap, common, low-value cases and only engages CPU for m≥ some threshold trades a small amount
-of the aggregate win for a large cut in how often the host CPU is claimed at all, which §5 named
-as the thing "send everything" does not account for.
+aggregate saving). §5 (updated after this section) resolves the throttle-vs-send-everything
+question this distribution motivated: aggregate host-CPU occupancy for a single decode stream
+turns out NOT to be the constraint — "send everything" wins there too, for a single stream.
 
 ## 9. Recommended next step
 
-**Still not CUDA code**, but the microbenchmark that was this section's top item is now done
-(§3) and reversed the picture it was checking. What remains, in order:
+**Still not CUDA code.** Two of this section's original three items are now done, both
+arithmetic on already-measured numbers, no new hardware run: the isolated microbenchmark (§3,
+reversed the headline finding) and the aggregate host-CPU occupancy question (§5, resolved in
+favour of the simpler "send everything" mechanism — no throttle needed, for a single decode
+stream). What remains, in order:
 
-1. **Model host-CPU aggregate occupancy across a full token** (§5), not just one layer's
-   latency — a real cost if "send everything" claims the CPU for ~30 layers' worth of parallel
-   expert compute every token, competing with the routing readback and anything else on the
-   host. This is arithmetic on already-measured numbers (§3's per-m costs × §8's frequencies
-   × 30 layers), not a new hardware run, and is the natural tie-breaker between "send
-   everything" and a throttled/threshold variant.
-2. **Design the merge path** (§6) concretely enough to estimate its own cost — the one piece of
-   §3's per-layer table that is currently assumed free.
+1. **Design the merge path** (§6) concretely enough to estimate its own cost — the one piece of
+   §3's per-layer table that is currently assumed free, and now the more load-bearing gap since
+   the compute side has cleared its bar.
+2. **Multi-tenant / concurrent-request contention** (§5's one remaining caveat) — this pass only
+   modeled a single decode stream's own aggregate CPU budget; a second concurrent request
+   competing for the same host CPU is a genuinely different question, unmeasured here.
 3. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
    overlaps CPU expert compute with GPU hit-path compute for the SAME layer and measures
    wall-clock, not two separate numbers added by hand. This is where CUDA/async work starts
