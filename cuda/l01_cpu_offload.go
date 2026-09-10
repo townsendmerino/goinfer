@@ -5,14 +5,16 @@ package cuda
 import (
 	"unsafe"
 
+	"github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// L-01 hybrid CPU/GPU MoE expert execution (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE.
-// This file only extracts and CPU-computes one expert from C′'s pinned host stack; nothing
-// here is called from loadRoutedExperts yet. See docs/task-l01-hybrid-moe-cpu-gpu.md §9/§10
-// for why correctness of this extraction is verified in isolation FIRST, before any decode-path
+// L-01 hybrid CPU/GPU MoE expert execution (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE,
+// synchronous only (no overlap yet — correctness first). Wired into loadRoutedExperts and
+// moeMLPPost (cuda/resident.go), behind GOINFER_CUDA_L01_CPU_OFFLOAD, default off. See
+// docs/task-l01-hybrid-moe-cpu-gpu.md §9/§10 for why the extraction below was verified in
+// isolation FIRST (cuda/l01_cpu_offload_test.go), before any decode-path
 // wiring: a wrong nibble layout here would silently produce plausible-looking wrong logits.
 
 // unpermuteFast is the exact inverse of permuteFast (cuda/kernels.go): converts the
@@ -114,7 +116,7 @@ func (r *cudaResident) l01ExtractExpertDown(L *cudaLayer, e int) linalg.WeightMa
 
 // l01ComputeExpert runs expert e's SwiGLU MLP entirely from L-01's pinned-host extraction
 // (l01ExtractExpertGU/Down) — no CUDA involved, a pure CPU compute path exercising the exact
-// bytes the DMA-miss path would otherwise have fetched. Not yet called from the decode path.
+// bytes the DMA-miss path would otherwise have fetched.
 func (r *cudaResident) l01ComputeExpert(L *cudaLayer, e int, h, dst []float32) {
 	gate, up := r.l01ExtractExpertGU(L, e)
 	down := r.l01ExtractExpertDown(L, e)
@@ -122,4 +124,54 @@ func (r *cudaResident) l01ComputeExpert(L *cudaLayer, e int, h, dst []float32) {
 	gateScr := make([]float32, inter)
 	upScr := make([]float32, inter)
 	decoder.ComputeExpertMLP(decoder.CPUExpertWeights{Gate: gate, Up: up, Down: down}, h, dst, inter, gateScr, upScr)
+}
+
+// l01MergeCPUExperts is moeMLPPost's call after its GPU-side per-slot loop: computes every
+// position loadRoutedExperts sent to CPU this layer (r.l01CPUMask), weight-sums them exactly
+// the way moeMLP's own `out[i] += w*expOut[i]` already does (§6 of the design doc — merging an
+// arbitrary expert subset is not new math, just a different SOURCE for some of the subset),
+// then uploads the ONE resulting [hidden] vector and adds it into x via the existing `residual`
+// kernel (cuda/glue.cu) — no new CUDA kernel needed. Synchronous for this prototype: no attempt
+// yet to overlap the CPU compute with the GPU loop above it (docs/task-l01-hybrid-moe-cpu-gpu.md
+// §9's real remaining item).
+func (r *cudaResident) l01MergeCPUExperts(L *cudaLayer, x Buffer) error {
+	any := false
+	for j := 0; j < r.topK; j++ {
+		if r.l01CPUMask[j] {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return nil
+	}
+
+	// Dequantize mq/mSc host-side (plain little-endian 4-per-word, cuda/glue.cu's
+	// rmsnorm_quant — verified against the kernel source, not assumed; see loadRoutedExperts's
+	// own comment on this same download).
+	h := make([]float32, r.hidden)
+	sc := r.hostMSc[0]
+	for i := range h {
+		h[i] = float32(int8(r.hostMQ[i])) * sc
+	}
+
+	for i := range r.l01Sum {
+		r.l01Sum[i] = 0
+	}
+	dst := make([]float32, r.hidden)
+	for j := 0; j < r.topK; j++ {
+		if !r.l01CPUMask[j] {
+			continue
+		}
+		r.l01ComputeExpert(L, int(r.hostIdx[j]), h, dst)
+		w := r.hostWgt[j]
+		for i := range r.l01Sum {
+			r.l01Sum[i] += w * dst[i]
+		}
+	}
+
+	if e := gpu.Upload(r.l01MergeBuf, r.l01Sum); e != nil {
+		return e
+	}
+	return r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.l01MergeBuf), gpu.ArgValue(int32(r.hidden)))
 }

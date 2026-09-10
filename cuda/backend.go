@@ -561,7 +561,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
 		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
-		dnet:         dnetP,
+		// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE, synchronous only, requires
+		// cacheExperts (nothing to offload without the slot cache's own miss classification).
+		l01Enabled: os.Getenv("GOINFER_CUDA_L01_CPU_OFFLOAD") != "" && m.MoECacheExperts(),
+		dnet:       dnetP,
 		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
 		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
 		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
@@ -1333,6 +1336,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.slotIdx = r.au32(topK)
 				r.hostIdx = make([]uint32, topK)
 				r.hostSlot = make([]uint32, topK)
+				if r.l01Enabled { // L-01 prototype scratch (docs/task-l01-hybrid-moe-cpu-gpu.md)
+					r.hostWgt = make([]float32, topK)
+					r.hostMQ = make([]byte, H)
+					r.hostMSc = make([]float32, 1)
+					r.l01CPUMask = make([]bool, topK)
+					r.l01Sum = make([]float32, H)
+					r.l01MergeBuf = r.af(H)
+				}
 			}
 			r.moeGU = r.af(2 * moeInter)
 			r.moeSc, r.moeScr, r.moeQ = r.af(1), r.af(moeInter), r.ai(moeInter/4)

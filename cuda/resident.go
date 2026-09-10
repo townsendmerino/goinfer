@@ -436,6 +436,17 @@ type cudaResident struct {
 	hostIdx    []uint32    // C′: scratch for the per-layer rIdx device→host readback
 	hostSlot   []uint32    // C′: scratch for the per-token slot ids uploaded to slotIdx
 
+	// L-01 hybrid CPU/GPU MoE expert execution (docs/task-l01-hybrid-moe-cpu-gpu.md) —
+	// PROTOTYPE, synchronous only (no overlap yet: correctness first, matching the design
+	// pass's own discipline). GOINFER_CUDA_L01_CPU_OFFLOAD, default off, requires cacheExperts.
+	l01Enabled  bool
+	hostWgt     []float32 // scratch for the per-layer rWgt (routing weights) device→host readback
+	hostMQ      []byte    // scratch for mq (moeMLPPre's quantized MoE input activation) device→host readback
+	hostMSc     []float32 // scratch for mSc (mq's single f32 scale), len 1
+	l01CPUMask  []bool    // per-layer: which of the topK routed positions this call sent to CPU instead of DMA
+	l01Sum      []float32 // scratch: running weighted sum of this layer's CPU-computed expert outputs, len hidden
+	l01MergeBuf Buffer    // device scratch the CPU merge uploads into before the residual-add kernel
+
 	// Sparse MoE. The router projection stays f32 (gemv_f32_a8) while the experts are int4:
 	// the router's output steers a DISCRETE choice, so a quantization error near a tie does not
 	// perturb the result slightly — it runs a DIFFERENT expert and the output is unrelated.
@@ -1135,6 +1146,25 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 	if e := gpu.Download(r.rIdx, r.hostIdx[:r.topK]); e != nil {
 		return e
 	}
+	// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE. Two more small D2H reads, only
+	// when the mechanism is on: rWgt (the routing weight per position, needed to weight a
+	// CPU-computed expert's contribution the same way fMoEWacc's on-device wgt[j] already
+	// does) and mq/mSc (moeMLPPre's already-quantized MoE input activation + its single scale —
+	// dequantized host-side rather than re-deriving the RMSNorm math, since that would be a
+	// SEPARATE correctness risk from the one this reuses: mq's pack is confirmed plain
+	// little-endian 4-per-word (cuda/glue.cu's rmsnorm_quant: `packed |= (q&0xff)<<(8*b)`), not
+	// permuted like the weight stack, so a raw byte reinterpretation is exact.
+	if r.l01Enabled {
+		if e := gpu.Download(r.rWgt, r.hostWgt[:r.topK]); e != nil {
+			return e
+		}
+		if e := gpu.Download(r.mq, r.hostMQ); e != nil {
+			return e
+		}
+		if e := gpu.Download(r.mSc, r.hostMSc); e != nil {
+			return e
+		}
+	}
 	c := L.expCache
 	// Demand accounting (see expertCache). Counted BEFORE admission on purpose: the number must
 	// describe what this stage REQUESTED, not what the cache happened to already hold, or it would
@@ -1162,6 +1192,20 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		e := r.hostIdx[j]
 		slot, hit := c.admit(e)
 		r.hostSlot[j] = uint32(slot)
+		// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE: a miss, with the mechanism on,
+		// goes to CPU instead of DMA. unadmit reverses admit's bookkeeping to EMPTY (the exact
+		// N-09 rollback path below already uses on upload failure) so the cache is left exactly
+		// as if this position had never been admitted — no DMA was queued, so there is nothing
+		// to roll back to; leaving the claim in place would tell a LATER token routing to e that
+		// it is resident when it never actually was uploaded.
+		if !hit && r.l01Enabled {
+			c.unadmit(slot, e)
+			r.l01CPUMask[j] = true
+			continue
+		}
+		if r.l01Enabled {
+			r.l01CPUMask[j] = false
+		}
 		if !hit {
 			r.pendingAdmits = append(r.pendingAdmits, pendingAdmit{slot: slot, expert: e})
 			var td time.Time
@@ -2166,6 +2210,13 @@ func (r *cudaResident) launchGluSplitExpert(gu Buffer, inter int, outQ, outSc, o
 func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 	gu := 2 * r.moeInter
 	for j := 0; j < r.topK; j++ {
+		// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE: loadRoutedExperts already
+		// decided this position goes to CPU instead of GPU (and unadmitted it from the slot
+		// cache, so r.expIdx()[j] is not a valid slot to read here at all). Skip every GPU step
+		// for it; l01MergeCPUExperts (after this loop) computes and merges it instead.
+		if r.l01Enabled && r.l01CPUMask[j] {
+			continue
+		}
 		// gate‖up for the routed expert, in ONE indexed GEMV: the stack interleaves each
 		// expert's gate and up rows (packWeightStack(g0,u0,g1,u1,...)), so one row range of
 		// width 2*moeInter is exactly this expert's pair.
@@ -2202,6 +2253,11 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 			Arg(r.expIdx()), Arg(r.rWgt), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.hidden)),
 			gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(int32(r.moeInter/8)), gpu.ArgValue(int32(r.moeInter/32)),
 			Arg(x)); e != nil {
+			return e
+		}
+	}
+	if r.l01Enabled {
+		if e := r.l01MergeCPUExperts(Ly, x); e != nil {
 			return e
 		}
 	}
