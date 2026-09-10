@@ -1,20 +1,21 @@
 # Task: L-01 — hybrid CPU/GPU expert execution for the 8 GB CUDA MoE path (design pass, 2026-09-10)
 
-> **Status: SCOPING ONLY, no code.** This is the "dedicated future pass" the audit
-> (`docs/audit-2026-09-02.md` L-01) called for, done as a design pass per explicit instruction —
-> size q⋆ from the already-captured trace, work out the split/merge design, re-check the
-> speculation-antagonism risk, write it up, stop before any CUDA. **The headline finding
-> reverses the audit's optimistic framing at the MEAN: at today's measured numbers, computing
-> even one missed expert on the CPU (using the existing kernel as-is) is slower than that
-> layer's own DMA-fetch-everything baseline, so the audit's uniform `q⋆ ≈ m·(B_PCIe/B_host)`
-> ratio is the wrong shape.** A same-session follow-up (§8) pulled the miss-count DISTRIBUTION,
-> not just the mean, from the already-captured trace: **half of all decisions (m≤1) have nothing
-> to gain, but the top ~6.5% (m≥5) are exactly where a saturated PCIe bus (G32) meets a real
-> CPU-compute opportunity — so a threshold-gated mechanism, sized against that tail, is the live
-> candidate, not a uniform per-miss ratio.** §7's speculation-antagonism risk was re-run on real
-> hardware today (not re-derived): the four-gate refusal still holds exactly as documented. This
-> is not a rejection of L-01; it is why the audit said "dedicated future pass" rather than "next
-> PR," and it now has a sharper target than when that disposition was written.
+> **Status: SCOPING ONLY, no CUDA code — but a real isolated Go microbenchmark now exists
+> (`decoder/l01_expert_bench_test.go`) and CORRECTS this doc's own earlier headline finding.**
+> §2's first-pass derived B_host (1.98 ms/expert, folded in with attention/router cost from a
+> whole-decode-step measurement) was **~7× too high**. The isolated benchmark, run on the real
+> target hardware (nobara-pc, AMD Ryzen 7 3700X — the CUDA box's actual host CPU), measures a
+> single expert at **272 µs**, and — the number that matters — **computing ALL of a layer's
+> missed experts on CPU IN PARALLEL (one goroutine per expert) is faster than that layer's own
+> current GPU-compute-plus-DMA cost at every miss count from m=1 to m=8**, by 1.32× at m=1
+> rising to **3.40× at m=8** (§3, revised). **This reverses §3's original pessimistic
+> conclusion and points at a SIMPLER mechanism than the audit's tunable q⋆ split: send every
+> miss to CPU, computed in parallel, rather than a smoothly-tuned fraction.** It is still not a
+> funding decision — the isolated number does not model the merge-back-to-GPU cost, real
+> async concurrency, or the actual target model (Qwen3.6-35B-A3B, not gemma-4-26b's geometry) —
+> but the bar this pass needed to clear before recommending a real prototype is now cleared,
+> which it was not an hour earlier in this same pass. §7 (speculation-antagonism) was re-run on
+> real hardware and still holds as documented.
 
 ## 0. What L-01 is, verbatim from the audit
 
@@ -71,99 +72,116 @@ this same model class):
 (measure) cpu    2.1 tok/s over 32/32 decode steps (includes a 64-token prompt prefill)
 ```
 
-**Derived B_host (rough, NOT an isolated microbenchmark):** 1/2.1 tok/s ≈ 476 ms/token total;
-gemma-4-26b has 30 MoE layers × topK=8 = 240 expert-FFN computes per token. Dividing (ignoring
-attention/router/shared-expert share, which is real but a minority of FLOPs for a MoE model)
-gives **≈1.98 ms per expert, at full machine width** — i.e. this already reflects whatever
-parallelism the CPU kernel gets, not a single-core number. **This estimate needs a real isolated
-microbenchmark before it's trusted for a funding decision** (see §5) — it's good enough to
-motivate or kill the naive design, not good enough to size a shipped q⋆.
+**Derived B_host (rough, NOT an isolated microbenchmark, and — §3 below — ~7× too high):**
+1/2.1 tok/s ≈ 476 ms/token total; gemma-4-26b has 30 MoE layers × topK=8 = 240 expert-FFN
+computes per token. Dividing (ignoring attention/router/shared-expert share, which is real but
+a minority of FLOPs for a MoE model) gives ≈1.98 ms per expert. **Keeping this in the record
+rather than deleting it: it is why this pass initially concluded L-01 likely loses, and the
+isolated measurement below is what caught the error** — folding whole-decode overhead into a
+per-expert rate over-counted badly, exactly the failure mode an isolated benchmark exists to
+catch.
 
-## 3. The finding that reverses the framing: today's CPU expert path has no spare capacity to give
+## 3. The isolated microbenchmark (2026-09-10) — corrects §2, reverses the framing
 
-Read `decoder/mlp.go`'s `moeMLP` (the CPU MoE decode path) directly, not assumed:
+`decoder/l01_expert_bench_test.go`, written this pass: synthetic int4 weights via `quantizeWM`
+(the SAME `repackW4A8IfEligible`/`maybeF16RoundInt4Scales` chain production loading uses, not a
+bare `QuantizeInt4` and not f32 — has to exercise the real W4A8 kernel path or the number means
+nothing), gemma-4-26b's REAL geometry probed via `Model.Dims()`/`MoEResidentParams()` on the
+actual checkpoint (hidden=2816, expert inter=704, nExperts=128, topK=8, no shared expert). Run
+on nobara-pc's real host CPU (AMD Ryzen 7 3700X, the CUDA box's actual target hardware —
+not this Mac, which read ~12× faster on the same code and would have been the wrong number to
+build against):
 
-- **The expert loop is sequential across experts, by design and by comment**: *"The experts run
-  sequentially, so k pairs were never simultaneously live"* — the 2-buffer (not 2k-buffer)
-  scratch reuse actively depends on this and would need restructuring (per-goroutine scratch) to
-  parallelize across experts.
-- **But each expert's OWN matmul already parallelizes across cores** — `swiGLUExpert` → `matmul`
-  → aikit's `linalg.MatmulBT`, which calls `parallelCols(M*N*K, N, ...)`: a work-stealing pool
-  across output columns, gated on a MAC-count threshold. At decode shape (M=1, gemma-4-26b's
-  expert intermediate dim), this MAC count is well above any reasonable threshold, so one
-  expert's own compute already claims most/all 16 cores.
-
-**Consequence: there is little genuinely idle CPU capacity for a second, concurrently-computed
-expert to exploit "for free."** Adding cross-expert parallelism (compute two missed experts on
-different cores simultaneously) means dividing the SAME 16-core pool between them, not finding
-spare cores — a throughput/latency trade that needs its own measurement, not an assumption.
-
-**The per-LAYER arithmetic (the real constraint, since layers are strictly sequential — layer
-L+1 needs layer L's fully-merged output) is unfavorable at today's numbers:**
-
-| quantity | value | source |
+| n (missed experts) | sequential (today's pattern) | parallel (1 goroutine/expert) |
 |---|---|---|
-| per-layer GPU compute (hits) | ≈1.07 ms | 32.1 ms ÷ 30 layers (G31) |
-| per-layer DMA cost at m≈1.915 | ≈0.66 ms | 1.915 × 0.346 ms (G33) |
-| **one CPU expert, full-width, sequential** | **≈1.98 ms** | this pass, §2 |
+| 1 | 380 µs (single-expert isolated: 272 µs) | — |
+| 2 | 546 µs | 450 µs |
+| 4 | 1089 µs | 694 µs |
+| 5 | 1656 µs | 892 µs |
+| 8 | 2880 µs | 1128 µs |
 
-**One CPU-computed expert already costs more than that entire layer's current total (GPU
-compute + DMA for ALL its misses) combined (1.07+0.66=1.73 ms < 1.98 ms).** At the AVERAGE miss
-count (1.915), routing even a single miss to CPU — with the kernel as it exists today — likely
-makes that layer slower, not faster, because CPU compute doesn't overlap with same-layer GPU
-compute the way the mechanism's name suggests: the layer's output needs BOTH paths done and
-merged before the next layer can start, and 1.98 ms already exceeds what GPU alone was going to
-cost.
+**Two corrections to §2's rough estimate, both in L-01's favour:**
 
-**This is a rough estimate from a derived B_host, not a rejection — it is the reason to measure
-before building**, exactly the discipline `CLAUDE.md`'s "measurement discipline" section asks
-for ("A kernel win is not an end-to-end win until Amdahl has been paid" — here, the opposite
-risk: a plausible-sounding mechanism that a derived estimate says may not even be a kernel win).
+1. **A single expert costs 272 µs, not 1.98 ms** — the whole-decode-time division folded in
+   attention/router/KV/sampling overhead as if it were expert compute. That overhead is real
+   but is NOT what a CPU-offload decision is choosing between.
+2. **Cross-expert parallelism works, and the gap widens with n** — read `decoder/mlp.go`'s
+   `moeMLP` directly: the production loop IS sequential ("the experts run sequentially, so k
+   pairs were never simultaneously live"), and each expert's own matmul already claims most of
+   the core pool via `parallelCols` — so the a-priori worry (§3 in the version of this doc
+   written an hour earlier) was that parallelizing across experts would just divide an
+   already-saturated pool with no net win. **Measured, it isn't true**: at n=8, parallel
+   (1128 µs) beats sequential (2880 µs) by 2.55×. Nested parallelism (goroutines each internally
+   re-parallelizing via `parallelCols`) causes some oversubscription, but nowhere near enough to
+   erase the win — there is more slack in an 8-core/16-thread box at this matmul shape than the
+   a-priori worry assumed.
 
-## 4. What would have to be true for L-01 to work anyway
+**The per-layer comparison that matters** (GPU's own compute per layer ≈1.07 ms from G31;
+DMA 346 µs/expert from G31–G33; CPU-parallel from the table above, assuming every miss is sent
+to CPU rather than any DMA'd — k=m, not a partial q⋆ split):
 
-Three ways the numbers above could still support a real win, each naming what it would need:
+| m | today: GPU compute + DMA(m) | CPU-all-parallel, concurrent with GPU compute | speedup |
+|---|---|---|---|
+| 1 | 1416 µs | max(1070, 272) = 1070 µs | 1.32× |
+| 2 | 1762 µs | max(1070, 450) = 1070 µs | 1.65× |
+| 4 | 2454 µs | max(1070, 694) = 1070 µs | 2.29× |
+| 5 | 2800 µs | max(1070, 892) = 1070 µs | 2.62× |
+| 8 | 3838 µs | max(1070, 1128) = 1128 µs | **3.40×** |
 
-1. **B_host is much lower than 1.98 ms in an isolated, single-expert measurement.** My estimate
-   folds in attention/router/shared-expert time as if it were expert compute, which
-   over-counts. If those are, say, 30% of the 476 ms/token, real per-expert cost could be closer
-   to ~1.4 ms — still above the 0.66 ms per-layer DMA baseline, not a game-changer, but the gap
-   matters for exactly how narrow a trigger condition is needed. **First concrete step: an
-   isolated Go benchmark of `swiGLUExpert`/`moeMLP` at gemma-4-26b's exact expert geometry,
-   synthetic weights (same pattern as `metal/attention_prefill_bench_test.go` used real
-   architecture geometry with random data) — no real checkpoint load, seconds not minutes.**
-2. **A genuinely faster, lower-latency single-expert CPU kernel** (different from today's
-   `parallelCols`-parallel-but-still-~2ms path) — e.g. one tuned for minimum latency at M=1
-   rather than the throughput-oriented blocked kernel the decode path shares with everything
-   else. This is real, scoped kernel work, not a wiring change, and was not budgeted by the
-   audit's one-paragraph mechanism description.
-3. **A narrower trigger than "every miss splits":** only route to CPU when a layer's m exceeds
-   some threshold where GPU-side DMA queueing/backpressure already dominates (bursty misses,
-   not the steady 1.915 average) — meaning most tokens never touch the CPU path at all, and it
-   only helps the tail. This changes q⋆'s formula from a smooth ratio to a threshold gate, and
-   needs the trace's own miss-count DISTRIBUTION (not just its mean) to size — `g33-routing-trace.json`
-   already has this; it was not pulled in this pass and is the next thing to read off it if this
-   direction is pursued.
+**At every measured miss count, sending ALL of it to CPU (computed in parallel) beats today's
+GPU-compute-plus-DMA cost — and a partial q⋆ split is not obviously better than sending
+everything, because CPU-parallel time stays at or below the GPU's own compute floor (1070 µs)
+all the way out to m=8.** This is a materially different, SIMPLER mechanism than the audit's
+tunable ratio: "on a miss, compute it on CPU, in parallel with whatever else missed this layer"
+— no q⋆ to size at all, at least not for balancing PER-LAYER latency (§5 below revisits what a
+q⋆-shaped decision would still be for).
 
-## 5. q⋆ sizing: what the formula needs and what's still missing
+**What this table does NOT model, and why it is not yet a funding decision:**
 
-`q⋆ ≈ m·(B_PCIe/B_host)` is the low-traffic-CPU-share approximation of the balance point
-`q⋆ = m·B_PCIe/(B_host+B_PCIe)` (time-to-fetch q⋆ on GPU ≈ time-to-compute the rest on CPU,
-so the two paths, run concurrently, finish together). With this pass's numbers
-(B_PCIe⁻¹≈0.346 ms/expert, B_host⁻¹≈1.98 ms/expert, both as PER-EXPERT COSTS not rates — so
-B_PCIe/B_host in the formula's own terms is (1/0.346)/(1/1.98) ≈ 5.72):
+- **The merge-back cost.** §6 already named this as undesigned; it matters more now that the
+  mechanism looks worth building. Getting a GPU-computed partial sum and a CPU-computed partial
+  sum combined without a second, unbudgeted host round trip is real engineering, not free.
+- **Real concurrency, not an assumption of it.** The table's "max(GPU, CPU)" line assumes the
+  CPU-side goroutines are kicked off early enough to run WHILE the GPU is doing its own
+  hit-path compute for the same layer, and that nothing else on the host CPU (the routing
+  readback itself, other decode-loop work) contends with them. Neither is verified here.
+- **Different model, different card.** This is gemma-4-26b's geometry on nobara's CPU;
+  L-01's own decision rule is pre-registered against Qwen3.6-35B-A3B, end to end, on the CUDA
+  card, paired and interleaved. The isolated number motivates a prototype; it isn't the funding
+  measurement.
+- **Synthetic random weights**, not real gemma-4-26b tensors — unlikely to matter for a
+  compute-bound matmul's timing, but not proven.
 
-- q⋆ ≈ m × 5.72/(1+5.72) ≈ 0.85m — i.e. **the balance point already says ~85% of misses should
-  stay on GPU/DMA, only ~15% go to CPU** — consistent with §3's per-layer arithmetic (CPU is the
-  slower per-unit path here, so the balance naturally leans away from it), and a much more
-  modest mechanism than "split roughly half."
-- This is NOT the same as §3's per-layer finding that even ONE CPU expert may lose outright —
-  the balance-point formula assumes the two paths run perfectly concurrently and finish
-  together; §3's finding is that CPU's OWN latency for one expert already exceeds the layer's
-  total current budget, i.e. concurrency does not save it because there's nothing on the GPU
-  side happening at the same time worth waiting out. **These two views need to be reconciled
-  with a real measurement, not two different approximations talking past each other** — which is
-  exactly why this pass stops here rather than picking one and building against it.
+## 4. What the microbenchmark leaves open — now a prototype question, not a numbers question
+
+The three-way list this section held before the microbenchmark ("B_host might be lower," "might
+need a faster kernel," "might need a narrower trigger") is answered by §3: B_host IS much lower
+than first estimated, and a genuinely faster kernel is not even needed — the EXISTING
+`swiGLUExpert`/`parallelCols` path, called from separate goroutines, already clears the bar at
+every measured m. What remains is not "does the compute clear the bar" but "does a real,
+concurrent, merge-including implementation clear it too" — §3's own caveats, and the next step
+named in §9.
+
+## 5. q⋆ — still meaningful, but for a different question than §3 answered
+
+§3 found that sending EVERY missed expert to CPU (k=m, no DMA at all for misses) beats today's
+path at every measured m. That does not make q⋆ pointless — it reframes what q⋆ would be
+choosing between:
+
+- **If CPU has spare capacity beyond what one layer's misses need** (true up to m=8 on this
+  8-core/16-thread box, since CPU-parallel time stays ≤ the GPU's own 1070 µs compute floor
+  even at m=8), there is no latency reason to send anything to GPU/DMA at all — q⋆=0 is optimal
+  for LATENCY.
+- **q⋆ would matter for a reason §3's per-layer latency framing doesn't capture: aggregate CPU
+  occupancy across a token's 30 layers, and interference with whatever else needs the host CPU**
+  (the routing readback, other decode-loop work, a second concurrent request). A design that
+  always sends 100% of misses to CPU claims the host for ~1.1 ms × 30 layers ≈ 33 ms/token in
+  the worst case (all layers at m=8) — real host-CPU budget that competes with everything else
+  the process does, not free just because it overlaps ONE layer's GPU compute. This is exactly
+  the kind of aggregate cost the per-layer table in §3 cannot see, and it's the reason a q⋆-style
+  throttle (send only what's needed to stay within GPU's own compute window, no more) could
+  still beat "send everything" once host-CPU contention with OTHER work is accounted for —
+  untested here.
 
 ## 6. Partial-sum merge — the "exactly" in the audit's mechanism
 
@@ -209,33 +227,42 @@ just G33's own headline mean), same validated LRU model, 30 slots, 2730 decision
 
 mean 1.915 (matches G33), **median 1**, p90=5, p99=8=max.
 
-**This settles §4's open question in favour of a threshold-gated design, not a uniform ratio.**
-Half of all decisions (m≤1, 50.7%) are at or below the point where §3 already found CPU offload
-loses outright — routing THESE through any hybrid-split logic is pure overhead with no upside.
-The audit's `q⋆ ≈ m·(B_PCIe/B_host)` formula applies the SAME ratio uniformly to every decision
-regardless of m, which is exactly wrong here: it would try to peel a fraction off of m=1 (where
-there is nothing to gain) as readily as off of m=8 (where CPU's fixed ~1.98ms cost, if it could
-be shared across several missed experts via cross-expert parallelism, has real headroom against
-that decision's current 1.07+8×0.346=3.84ms). The tail worth targeting is small — roughly the
-top 10% (m≥5, 6.5% of decisions) — but concentrated exactly where the mechanism's premise (CPU
-compute vs. a saturating PCIe bus) is most true, since a bus already asked to move 8 experts in
-one layer is precisely where "bandwidth-bound at line rate" (G32) bites hardest.
+**Written before §3's microbenchmark corrected the per-layer picture — re-read with that
+correction applied.** §3 found a win at EVERY measured m (1.32× at m=1 up to 3.40× at m=8), not
+just a high-m tail, so this distribution does NOT settle things in favour of a threshold gate
+over "always offload." What it DOES settle: **where the ABSOLUTE savings concentrate.** At m=1
+(25.4% of decisions) the win is 346 µs/layer; at m=8 (1.6% of decisions) it's 2710 µs/layer —
+nearly 8× the per-decision saving, on a rarer event. Weighting §3's per-m savings by §8's own
+frequencies (m=3/6/7 linearly interpolated between the measured points, since the benchmark
+didn't cover them): **mean per-decision saving ≈ 662 µs**, and m≥5 (10.1% of decisions) alone
+accounts for ≈31% of the total aggregate saving across all decisions —
+**most of the aggregate win still comes disproportionately from the tail even though the low-m
+cases are not worthless** (m≤1 decisions are 50.7% of the total but contribute ≈13% of the
+aggregate saving). Relevant to §5's aggregate-host-occupancy question: a throttle that skips the
+cheap, common, low-value cases and only engages CPU for m≥ some threshold trades a small amount
+of the aggregate win for a large cut in how often the host CPU is claimed at all, which §5 named
+as the thing "send everything" does not account for.
 
 ## 9. Recommended next step
 
-**Not CUDA code.** §7 and §8 above are done (real hardware re-run; existing-trace re-analysis).
-What remains, in order:
+**Still not CUDA code**, but the microbenchmark that was this section's top item is now done
+(§3) and reversed the picture it was checking. What remains, in order:
 
-1. The isolated CPU expert-kernel microbenchmark (§4.1) — cheap, synthetic, answers whether
-   B_host≈1.98ms is real or an artifact of folding in attention/router cost into §2's derived
-   estimate. Still not done — the natural next step, and now sharper: it specifically needs to
-   answer whether computing e.g. 5–8 missed experts with SOME cross-expert parallelism (dividing
-   cores across the missed set, not giving each expert the full width) beats today's DMA-only
-   cost at exactly those high-m decisions §8 found — not the mean case, which §3 already answered.
-2. A scoped kernel-design pass for the threshold-gated mechanism §8 now points at, with its own
-   pre-registered, paired-and-interleaved measurement plan on the real Qwen3.6-35B-A3B cell per
-   §0's decision rule — sized against the ~6.5% tail (m≥5), not the 93.5% where §3 already says
-   there's nothing to gain.
+1. **Model host-CPU aggregate occupancy across a full token** (§5), not just one layer's
+   latency — a real cost if "send everything" claims the CPU for ~30 layers' worth of parallel
+   expert compute every token, competing with the routing readback and anything else on the
+   host. This is arithmetic on already-measured numbers (§3's per-m costs × §8's frequencies
+   × 30 layers), not a new hardware run, and is the natural tie-breaker between "send
+   everything" and a throttled/threshold variant.
+2. **Design the merge path** (§6) concretely enough to estimate its own cost — the one piece of
+   §3's per-layer table that is currently assumed free.
+3. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
+   overlaps CPU expert compute with GPU hit-path compute for the SAME layer and measures
+   wall-clock, not two separate numbers added by hand. This is where CUDA/async work starts
+   being unavoidable, and it should happen on Qwen3.6-35B-A3B (the audit's own decision-rule
+   model), not gemma-4-26b (this pass's stand-in for geometry convenience).
+4. Only then: the audit's pre-registered, paired-and-interleaved measurement on the real card
+   per §0's decision rule (fund ≥1.3×, park <1.15×).
 
 ## Sources
 
