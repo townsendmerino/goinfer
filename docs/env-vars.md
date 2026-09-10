@@ -95,9 +95,10 @@ that are not operator-facing. These may change or disappear without notice:
 
 `GOINFER_METAL_FUSED_ATTENTION` (`metal/backend.go`) — `=1` opts `attention_prefill_fused`
 (the simdgroup_matrix flash-attention twin of `attention_prefill`, L2-Metal,
-`docs/task-prefill-gap.md` §4) in for benchmarking, in place of the exact scalar kernel.
-Built and tested, but not yet gated (no §3 fidelity/speed run) — defaults off regardless of
-`GOINFER_METAL_FAST_PREFILL`, and not an operator knob until it is.
+`docs/task-prefill-gap.md` §4) in, in place of the exact scalar kernel. §3 gate SHIPS
+(`docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5) — still defaults OFF
+regardless of `GOINFER_METAL_FAST_PREFILL`; flipping the default is a separate decision from
+the gate passing, not yet made, so this stays a benchmarking opt-in, not an operator knob.
 
 Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,
