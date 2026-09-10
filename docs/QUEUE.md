@@ -1296,8 +1296,8 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/spec_eagle.go:28` | goinfer | `if sp.Temperature != 0 \|\| sp.LogitProcessor != nil {` |
 | `docs/audit-2026-09-02.md|decoder/spec_eagle.go:85` | goinfer | `feats[i] = fuseAt(i)` |
 | `docs/audit-2026-09-02.md|decoder/spec_hitrate_probe_test.go:40` | goinfer | `giw := os.Getenv("GOINFER_SPEC_PROBE_GIW")` |
-| `docs/audit-2026-09-02.md|decoder/spec_ngram.go:358` | goinfer | `lookupCtx := append(slices.Clone(hist), cur)` |
-| `docs/audit-2026-09-02.md|decoder/spec_ngram.go:405` | goinfer | `p := dist(logitsN[i], ph)` |
+| `docs/audit-2026-09-02.md|decoder/spec_ngram.go:374` | goinfer | `lookupCtx := append(slices.Clone(hist), cur)` |
+| `docs/audit-2026-09-02.md|decoder/spec_ngram.go:421` | goinfer | `p := dist(logitsN[i], ph)` |
 | `docs/audit-2026-09-02.md|decoder/spec_ngram_test.go:83` | goinfer | `recurrent := map[string]*Model{` |
 | `docs/audit-2026-09-02.md|decoder/spec_optfwd.go:30` | goinfer | `// GOINFER_OPTFWD_MAX_TEMP overrides it, for MEASUREMENT rather than tuning: moving this` |
 | `docs/audit-2026-09-02.md|decoder/spec_sample.go:121` | goinfer | `for i, v := range slices.Backward(p) { // float-rounding guard: last token with mass` |
@@ -1761,8 +1761,8 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/spec_adaptive.go:228` | goinfer | `if pf, ok := m.resident.(Prefiller); ok {` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:180` | goinfer | `return fmt.Errorf("decoder.GenerateNgramSpeculative: this model has recurrent state (Mam` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:265` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
-| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:295` | goinfer | `target.residentForgetIDs()` |
-| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:399` | goinfer | `if needHist {` |
+| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:310` | goinfer | `target.residentForgetIDs()` |
+| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:415` | goinfer | `if needHist {` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram_test.go:83` | goinfer | `recurrent := map[string]*Model{` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:36` | goinfer | `if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:86` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |

@@ -289,14 +289,30 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// Forward loop, which is how it missed batched prefill entirely when that
 			// landed in c36698a — 6.3x per prompt token, and `off` beating speculation
 			// 3-4.5x on realistic prompts. See residentPrefillSeed's comment.
-			// Speculative verify writes the resident KV at positions this function owns, not
-			// generateInto's, so the recorded id list stops being true here. Forget it: the
-			// next turn cold-prefills, which is slow rather than wrong (resident_reuse.go).
+			//
+			// P-05 (audit-2026-09-10): R-03 already made this function COMMIT the accepted
+			// sequence correctly on exit (target.residentCommitIDs below), but until now nothing
+			// on ENTRY ever consulted what that commit left behind — every round cold-prefilled
+			// the whole prompt from 0 regardless, so a --spec/--drafter agent loop got no prefix
+			// reuse at all despite committing one every round. residentReuseLen answers the exact
+			// same question generateInto already asks before its own forget (model.go) — it is
+			// safe here for the same reason: resIDs is accurate BECAUSE the commit below keeps it
+			// so, and this is the entry moment, not the "verify writes positions this function
+			// owns" moment the forget below is about.
+			//
+			// Speculative verify (this round) writes the resident KV at positions this function
+			// owns, not generateInto's, so the recorded id list stops being an accurate
+			// description of PAST-THIS-POINT state as soon as verify runs. Forget it AFTER
+			// computing reuseFrom, not before: the next turn's commit is what makes it true
+			// again, and forgetting first would only lose the reuse this round could have had —
+			// the same ordering generateInto already uses (resident_reuse.go).
+			reuseFrom := target.residentReuseLen(prompt, nil)
 			target.residentForgetIDs()
-			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0); err != nil {
+			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom); err != nil {
 				g.err = err
 				return
 			}
+			g.PrefillReused = reuseFrom
 		} else {
 			if seedLogits, err = target.prefillLogits(ctx, prompt[prefillFrom:], tc); err != nil {
 				g.err = err
