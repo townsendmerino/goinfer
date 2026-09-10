@@ -21,8 +21,13 @@
 > only the rare worst-case tail erodes, down to breakeven at three simultaneous worst cases,
 > never a net loss in what was measured). **§6's merge path is sketched and verified against
 > the real CUDA kernel signatures** — no kernel rewrite needed, estimated single-digit-µs cost.
-> Every item this pass could resolve without writing CUDA is now resolved; what's left (§9)
-> genuinely needs a real concurrent prototype.
+> Every item this pass could resolve without writing CUDA is now resolved. **First real code
+> landed 2026-09-10** (`cuda/l01_cpu_offload.go`): the pinned-host extraction (unpermute +
+> f16-scale decode + `linalg.WrapInt4`), CORRECTNESS-VERIFIED against an independent ground
+> truth on real hardware (cosine 0.99964–0.9999999 across nine expert/input combinations,
+> `testdata/qwen35-tiny` — the same family as the audit's own decision-rule model) — but NOT
+> yet wired into `loadRoutedExperts`. §9 has the concrete remainder: async overlap, the merge
+> kernel, then the real prototype and funding measurement.
 
 ## 0. What L-01 is, verbatim from the audit
 
@@ -313,13 +318,28 @@ turns out NOT to be the constraint — "send everything" wins there too, for a s
 
 ## 9. Recommended next step
 
-**Still not CUDA code.** Every item this design pass could resolve with arithmetic, an isolated
-Go benchmark, or reading the real kernel signatures is now done: the isolated microbenchmark
-(§3, reversed the headline finding), aggregate host-CPU occupancy (§5, resolved in favour of
-"send everything"), the merge-path sketch (§6, verified against `cuda/resident.go`/`cuda/moe.cu`
-directly), and multi-tenant contention (§5, measured — degrades gracefully, not catastrophically,
-and doesn't touch the realistic mean case at all). What's left genuinely requires CUDA/async
-code, not more design:
+Every item this design pass could resolve with arithmetic, an isolated Go benchmark, or reading
+the real kernel signatures is done: the isolated microbenchmark (§3), aggregate host-CPU
+occupancy (§5), the merge-path sketch (§6), and multi-tenant contention (§5).
+
+**First real code, 2026-09-10: the pinned-host extraction is built and CORRECTNESS-VERIFIED,
+still not wired into the decode path.** `cuda/l01_cpu_offload.go` unpermutes an expert's Gate/
+Up/Down straight out of C′'s pinned host stack (the SAME bytes the DMA-miss path would
+otherwise fetch — `permuteFast`'s exact inverse, round-trip-verified for 2,100,000 sample words)
+and hands them to a new `decoder.ComputeExpertMLP` export. `cuda/l01_cpu_offload_test.go`
+verified the extraction against an INDEPENDENT ground truth — the same model loaded a second
+time on the plain CPU backend, comparing SwiGLU output for the same expert and input across
+three experts × three random inputs on `testdata/qwen35-tiny` (the SAME family, `qwen3_5_moe_text`,
+as the audit's own Qwen3.6-35B-A3B decision-rule target) — real hardware, nobara-pc: cosine
+0.99964–0.9999999, max abs diff 2.5e-7–9.9e-6 across all nine cases. Not bit-identical (this
+fixture quantizes independently on each load from an f32 source, unlike a `.giw` bundle's
+aliased bytes — a real, small, expected source of noise, not a bug) but far too tight to be the
+permutation/field/scale bug this test existed to catch (that would miss by orders of magnitude
+more). Caught and fixed one real bug in the process: `r.inter` (dense MLP intermediate) vs
+`r.moeInter` (the MoE experts' own, different-sized intermediate) — using the wrong field would
+have silently misread every expert's shape.
+
+**Still not wired into `loadRoutedExperts`, and no async/merge code yet.** What remains:
 
 1. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
    overlaps CPU expert compute with GPU hit-path compute for the SAME layer and measures
@@ -340,6 +360,9 @@ as-is for §2's new number) · `docs/measurements/g33-routing-trace.json` (re-re
 per-decision distribution, §8) · `cuda/spec_pager_interaction_test.go` (re-run on real hardware
 for §7's confirmation) · `decoder/l01_expert_bench_test.go` (the isolated microbenchmark and the
 multi-tenant `l01Concurrent` benchmark, §3/§5) · `cuda/resident.go` (`loadRoutedExperts`, the
-existing routing-readback hook point; the per-slot `fMoEWacc` dispatch loop) · `cuda/moe.cu`
-(`gemv_w4a8_moe_wacc`'s per-slot signature) — both read directly for §6's merge sketch, not
-assumed.
+existing routing-readback hook point; the per-slot `fMoEWacc` dispatch loop; `permuteFast`,
+`cudaWQ`'s `srcW`/`srcS`/`perExpertW`/`perExpertS`, `cudaLayer`'s `expGU`/`expDown`) ·
+`cuda/moe.cu` (`gemv_w4a8_moe_wacc`'s per-slot signature) — both read directly for §6's merge
+sketch, not assumed · `cuda/l01_cpu_offload.go`/`decoder/l01_export.go` (the extraction
+prototype, §9) · `cuda/l01_cpu_offload_test.go` (the correctness verification, §9) ·
+`testdata/qwen35-tiny` (the small same-family fixture the correctness test runs against).
