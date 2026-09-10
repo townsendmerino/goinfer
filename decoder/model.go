@@ -500,7 +500,19 @@ func (m *Model) Close() error {
 func (m *Model) NewCache(capHint int) *KVCache {
 	prefillEnters.Add(1)
 	a := m.w.arch
-	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, capHint)
+	// P-02 (audit-2026-09-10): an MLA family (DeepSeek-V2/V3, Kimi K2/V3) never writes
+	// c.keys[l]/c.vals[l] on ANY layer — the per-layer compressed latent (c.mlaLatent, set up
+	// below) is the whole store — but NewKVCache reserved full capHint*kvDim capacity for them
+	// on every layer regardless: ~0.66 MB/position dead weight at DeepSeek-V2-Lite's geometry
+	// (~3.4 GB for a 4k+1k request), 6-12 MB/position for Kimi K2/V3. kvCapHint=0 makes the
+	// reservation itself (not just its later use) match what actually happens: an empty slice
+	// that ordinary append would still grow correctly if anything ever DID write to it (nothing
+	// does), so this is a pure allocation elimination, not a new correctness constraint.
+	kvCapHint := capHint
+	if a.mla != nil {
+		kvCapHint = 0
+	}
+	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint)
 	c.scr = newDecodeScratch(a)
 	// int8 KV storage (opt-in, Options.KVQuant=="i8"): the uniform dense families
 	// only — MoE routes attention through the acc64 kernel for bit-stable expert
