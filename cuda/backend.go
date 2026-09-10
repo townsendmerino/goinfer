@@ -129,6 +129,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// (gelu-tanh act, the attention sandwich norm) and gets its own int4-shape checks. Its nE/topK/
 	// moeInter still come from arch.MoE (MoEResidentParams), matching the bundle.
 	isG4MoE := m.HasGemma4MoEResident()
+	isGemma4 := m.IsGemma4Resident()
 	if isMoE && !isG4MoE {
 		// Decline anything the dispatch does not implement, LOUDLY rather than by dropping it.
 		// Each of these would otherwise be silent-wrong, which is the whole point of the
@@ -556,7 +557,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
 		sharedInter: sharedInter,
-		gemma4Moe:   isG4MoE, g4cap: os.Getenv("GOINFER_G4_CAPTURE") != "",
+		gemma4Moe:   isG4MoE, gemma4Dense: isGemma4, g4cap: os.Getenv("GOINFER_G4_CAPTURE") != "",
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
@@ -1002,28 +1003,39 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		// router_f32 module: Gemma-4 MoE's own kernels, kept off the audited moe.ptx (this box's
-		// 12.9 NVRTC would rewrite every moe.ptx kernel). Pure-f32 router GEMV + per-expert-scale
-		// fold + weightless out-of-place norm + scalar-scale.
-		if r.gemma4Moe {
+		// router_f32 module: Gemma-4's own kernels, kept off the audited moe.ptx (this box's 12.9
+		// NVRTC would rewrite every moe.ptx kernel). Pure-f32 router GEMV + per-expert-scale fold +
+		// weightless out-of-place norm + scalar-scale. gemma4Dense (broader than gemma4Moe: ANY
+		// gemma4 checkpoint, not just enable_moe_block ones) compiles the module too — scale_vec
+		// (fScaleVec) is segB's dense-tail per-layer-output-scalar kernel, nothing router-specific
+		// about it, and was previously compiled ONLY under the MoE-only gate even though every
+		// dense gemma4 layer needs it (a real gap: dense resident decode never applied the
+		// checkpoint's per-layer output scalar at all before this). The three genuinely
+		// router-specific kernels stay gemma4Moe-only — a dense-only build has no router to serve.
+		if r.gemma4Moe || r.gemma4Dense {
 			rmod, e2 := r.dev.CompileLibrary(routerF32PTX)
 			if e2 != nil {
 				return e2
 			}
-			for _, f := range []struct {
-				dst  *Pipeline
-				name string
-			}{
-				{&r.fRouterF32, "gemv_f32_f32"}, {&r.fScaleWgt, "scale_wgt_by_expert"},
-				{&r.fRmsNW, "rmsnorm_nw"}, {&r.fScaleVec, "scale_vec"},
-			} {
-				if *f.dst, e = r.dev.NewComputePipeline(rmod, f.name); e != nil {
-					return e
-				}
+			if r.fScaleVec, e = r.dev.NewComputePipeline(rmod, "scale_vec"); e != nil {
+				return e
 			}
-			if r.g4cap {
-				r.g4capRn, r.g4capWgt = make([][]float32, nLayers), make([][]float32, nLayers)
-				r.g4capX1, r.g4capX2 = make([][]float32, nLayers), make([][]float32, nLayers)
+			if r.gemma4Moe {
+				for _, f := range []struct {
+					dst  *Pipeline
+					name string
+				}{
+					{&r.fRouterF32, "gemv_f32_f32"}, {&r.fScaleWgt, "scale_wgt_by_expert"},
+					{&r.fRmsNW, "rmsnorm_nw"},
+				} {
+					if *f.dst, e = r.dev.NewComputePipeline(rmod, f.name); e != nil {
+						return e
+					}
+				}
+				if r.g4cap {
+					r.g4capRn, r.g4capWgt = make([][]float32, nLayers), make([][]float32, nLayers)
+					r.g4capX1, r.g4capX2 = make([][]float32, nLayers), make([][]float32, nLayers)
+				}
 			}
 		}
 		r.stream = r.dev.NewCommandQueue()
@@ -1143,6 +1155,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// A routed layer has no dense FFN to upload: its hostW's are empty, and
 				// Alloc(0) is an error rather than a harmless no-op.
 				L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
+				// Gemma 4's per-layer output scalar (out = h*layerScalar, applied after the dense
+				// MLP residual add). A real, always-present multiply for every dense gemma4 layer
+				// (defaults to 1 when the checkpoint's tensor is absent, decoder/weights.go), NOT
+				// an edge case — was never wired here at all before, only for enable_moe_block
+				// layers via their own Gemma4MoEResidentBundle copy (set below, which overrides
+				// this for g4moe layers with its own authoritative value). Zero (the "skip"
+				// sentinel segB's dense tail checks) for every non-gemma4 family.
+				L.layerScalar = m.Gemma4DenseLayerScalarAtResident(l)
 			}
 			if (r.sandwich || r.postOnly) && !h.isDeltaNet {
 				// !h.isDeltaNet: postOnly is model-level (Olmo Hybrid's DeltaNet layers use

@@ -534,6 +534,11 @@ func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok boo
 	}, true
 }
 
+// IsGemma4Resident reports whether this is a gemma4 model at all (dense or MoE, shared-KV or
+// not) — the broader signal for resident build steps that apply to every gemma4 checkpoint, not
+// just the enable_moe_block ones HasGemma4MoEResident gates.
+func (m *Model) IsGemma4Resident() bool { return m.w.arch.gemma4 != nil }
+
 // HasGemma4MoEResident reports whether this is a gemma4 model with any enable_moe_block layer — the
 // signal the CUDA backend uses to route around the generic MoE build (which can't express the
 // parallel dense‖MoE join) into gemma4MoeMLP.
@@ -623,6 +628,27 @@ func (m *Model) KVHeadsAtResident(i int) int { return m.w.arch.kvHeadsAt(i) }
 func (m *Model) VFromKResident(i int) bool {
 	return m.w.arch.gemma4 != nil && m.w.arch.gemma4.KVShared && m.w.arch.isGlobalLayer(i)
 }
+
+// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar (out = h*layerScalar,
+// forward_gemma4.go's own `if lw.LayerScalar != 0 { h[i] *= lw.LayerScalar }`, applied AFTER the
+// dense MLP residual add and the PLE branch) for a PLAIN DENSE gemma4 layer — NOT the MoE
+// (enable_moe_block) case, which already carries its own copy via Gemma4MoEResidentBundle.
+// LayerScalar defaults to 1 when a checkpoint's tensor is absent (weights.go), so this is a
+// real, always-present multiply for every dense gemma4 layer, not an edge case. Returns 0 (the
+// CPU forward's own "skip" sentinel) for a non-gemma4 model or an out-of-range index.
+func (m *Model) Gemma4DenseLayerScalarAtResident(i int) float32 {
+	if m.w.arch.gemma4 == nil || i < 0 || i >= len(m.w.Layers) {
+		return 0
+	}
+	return m.w.Layers[i].LayerScalar
+}
+
+// KVSrcAtResident is the layer index whose K/V a resident runner should actually attend over for
+// layer i — itself, unless i is one of Gemma 4's E-model cross-layer-KV-shared tail layers
+// (arch.gemma4.SharedKVLayers, unrelated to VFromKResident/attention_k_eq_v above), in which
+// case it is the last non-shared layer of the SAME attention type. Every non-gemma4 family (and
+// every gemma4 checkpoint with SharedKVLayers==0, e.g. 26B-A4B/31B) returns i unconditionally.
+func (m *Model) KVSrcAtResident(i int) int { return m.w.arch.gemma4KVSrcAt(i) }
 
 // RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i,
 // i.e. 2×rhalf. Gemma 4 rotates the FULL head width on every layer (rhalf = headDim/2, pairing

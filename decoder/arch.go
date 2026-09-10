@@ -653,6 +653,36 @@ func (a *Architecture) isGlobalLayer(i int) bool {
 	return true
 }
 
+// gemma4KVSrcAt returns the layer index whose K/V a Gemma 4 layer i actually attends over —
+// itself for layers < firstShared (which own their KV), or the last non-shared layer of the
+// SAME attention type (global vs sliding) for a cross-layer-KV-shared tail layer
+// (arch.gemma4.SharedKVLayers). Identical algorithm to forward_gemma4.go's own kvSrc closure
+// (runLayersGemma4FromEmbed) — kept as a SEPARATE function rather than refactoring that
+// already-shipped, gated closure to call this one, so this addition (for the resident CUDA
+// bridge) carries zero risk to the proven CPU path; TestGemma4KVSrcAt_matchesCPUClosure pins
+// the two against each other so they cannot silently drift apart.
+func (a *Architecture) gemma4KVSrcAt(i int) int {
+	if a.gemma4 == nil {
+		return i
+	}
+	firstShared := a.NumLayers - a.gemma4.SharedKVLayers
+	if i < firstShared {
+		return i
+	}
+	lastSliding, lastGlobal := -1, -1
+	for j := range firstShared {
+		if a.isGlobalLayer(j) {
+			lastGlobal = j
+		} else {
+			lastSliding = j
+		}
+	}
+	if a.isGlobalLayer(i) {
+		return lastGlobal
+	}
+	return lastSliding
+}
+
 // isNoPELayer reports whether layer i skips RoPE entirely (NoPE — no positional
 // encoding). Cohere2's every-Nth global-attention layer is NoPE while its sliding
 // layers carry RoPE. False when no per-layer function is set (every layer ropes).

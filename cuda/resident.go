@@ -463,7 +463,13 @@ type cudaResident struct {
 	// gemma4MoeMLP). g4cap (GOINFER_G4_CAPTURE) is a DEBUG readback of the four MoE-layer buffers
 	// (rn / wgt / x1 / x2) so a whole-forward miss localizes to router vs dense vs expert vs join in
 	// ONE run — the observation wired BEFORE the gate, not bolted on after it reds.
-	gemma4Moe                           bool
+	gemma4Moe bool
+	// gemma4Dense is true for ANY gemma4 checkpoint (dense or MoE) — broader than gemma4Moe,
+	// which is enable_moe_block layers specifically. Gates compiling fScaleVec (the dense
+	// per-layer-output-scalar kernel, segB's dense tail) even when gemma4Moe is false, since that
+	// kernel was previously compiled ONLY as part of the MoE-only router_f32 module build even
+	// though it has nothing router-specific about it.
+	gemma4Dense                         bool
 	g4cap                               bool
 	g4capRn, g4capWgt, g4capX1, g4capX2 [][]float32
 	g4capIdx                            [][]uint32 // APPEND order (token-outer, layer-inner), matching the CPU routerCaptureBuf — for the per-POSITION routing-agreement check (a top-k flip at pos N reads like accumulation in a cosine)
@@ -2706,6 +2712,16 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		}
 		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); err != nil {
 			return err
+		}
+		// Gemma 4 dense per-layer output scalar (forward_gemma4.go's own `if lw.LayerScalar != 0
+		// { h *= lw.LayerScalar }`, applied AFTER the MLP residual add — matches CPU's order
+		// exactly since this dense tail has no PLE branch yet). 0 (the default for every
+		// non-gemma4 family, and Gemma4DenseLayerScalarAtResident's own "skip" sentinel) never
+		// launches the kernel.
+		if Ly.layerScalar != 0 {
+			if err := r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))); err != nil {
+				return err
+			}
 		}
 	} else {
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, x, 1); e != nil {

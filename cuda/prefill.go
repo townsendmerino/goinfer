@@ -1120,6 +1120,19 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
 						return e
 					}
+					// Gemma 4 dense per-layer output scalar — segB's sequential-decode twin (the
+					// decode path's own fix, cuda/resident.go). fScaleVec is a pure elementwise
+					// dst[i]*=s with no per-row structure, so it batches over the flattened
+					// M*hidden buffer exactly like bRes above, in one launch. Missing this here
+					// (while segB had it) is exactly what TestPrefillNonUniform_bitIdentical exists
+					// to catch: batched prefill and sequential decode diverging on a real per-layer
+					// value, not agreeing on a shared no-op.
+					if Ly.layerScalar != 0 {
+						if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+							Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
+							return e
+						}
+					}
 				} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
 					return e
 				}
