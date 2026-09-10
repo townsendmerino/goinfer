@@ -56,7 +56,8 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot(t *testing.T) {
 	}
 
 	// Sized exactly as forwardLayersN sizes it: from maxKeys, once, for the whole sweep.
-	pool := newHeadWorkerPool(1, K, maxKeys, hd)
+	// wantFused=true: both calls below pass useAcc64=false against a treeMask-less cache.
+	pool := newHeadWorkerPool(1, K, maxKeys, hd, true)
 	ctx := make([]float32, K*qDim)
 	attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, startPos, K,
 		false, arch, false, pool)
@@ -66,7 +67,7 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot(t *testing.T) {
 	// splits independent outputs — no key-dimension split — so a different tile must be
 	// bit-identical. Reference: a pool sized from this layer's own key count, where no clamp
 	// applies and the tile is whatever attnRowTile asked for.
-	ref := newHeadWorkerPool(1, K, nRows, hd)
+	ref := newHeadWorkerPool(1, K, nRows, hd, true)
 	refCtx := make([]float32, K*qDim)
 	attendBatchedHeads(q, refCtx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, startPos, K,
 		false, arch, false, ref)
@@ -101,7 +102,9 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot_acc64(t *testing.T) {
 	alk := make([]float32, maxKeys*kvDim)
 	alv := make([]float32, maxKeys*kvDim)
 	base, nRows := ring.batchReadLocal(0, startPos, K, k, v, alk, alv)
-	pool := newHeadWorkerPool(1, K, maxKeys, hd)
+	// wantFused=false: this call passes useAcc64=true, which needs `scores` (MatmulQKAcc64 writes
+	// into it) even though fusedOK would otherwise be false anyway for a different reason (useAcc64).
+	pool := newHeadWorkerPool(1, K, maxKeys, hd, false)
 	ctx := make([]float32, K*qDim)
 	attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, startPos, K,
 		false, arch, true, pool)

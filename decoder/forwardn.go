@@ -332,7 +332,12 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// K*nKeys floats, quadratic in prompt length, so the worker count falls back
 	// toward serial on long prompts rather than the allocation growing without
 	// bound (prefillAttnWorkers).
-	attnPool := newHeadWorkerPool(prefillAttnWorkers(K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd)
+	// P-05 (audit-2026-09-02): useAcc64 and cache.treeMask are both fixed for this whole call (every
+	// layer below reuses the same attnPool with the same useAcc64/cache), so fusedOK
+	// (attendBatchedHeads: !useAcc64 && cache.treeMask == nil) is the same for every layer too —
+	// exactly the promise newHeadWorkerPool's wantFused needs to safely skip vt/scores.
+	wantFusedPool := !useAcc64 && cache.treeMask == nil
+	attnPool := newHeadWorkerPool(prefillAttnWorkers(K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd, wantFusedPool)
 	// f32 scratch for the assembled local window (ring history + new rows) AND for
 	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
 	// Allocated when the model has ring layers or an int8 cache.

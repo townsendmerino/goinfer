@@ -694,7 +694,9 @@ func TestFusedAttention_matchesMaterialized(t *testing.T) {
 			}
 			run := func(on string) []float32 {
 				t.Setenv("GOINFER_FUSED_ATTENTION", on)
-				pool := newHeadWorkerPool(4, tc.K, tc.nKeys, hd)
+				// wantFused=true: useAcc64=false and cache has no treeMask, for both the "0" and "1"
+				// runs — this exercises P-05's vt/scores elimination on the "1" (fused) run.
+				pool := newHeadWorkerPool(4, tc.K, tc.nKeys, hd, true)
 				ctx := make([]float32, tc.K*qDim)
 				attendBatchedHeads(q, ctx, keys, vals, 0, cache, 0, tc.startPos, tc.K,
 					tc.window == 0, arch, false, pool)

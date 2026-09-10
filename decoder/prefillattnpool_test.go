@@ -231,3 +231,57 @@ func TestPrefillAttnWorkerBudget_countsFusedScratch(t *testing.T) {
 		}
 	}
 }
+
+// TestNewHeadWorkerPool_skipsMaterializedWhenFused is P-05's completion (audit-2026-09-02): the
+// budget-accounting fix above closed the measurable oversubscription, but left this doc's own
+// disposition text recording that "vt is unused when fusion is ACTIVE ... and scores ... is unused
+// whenever fusion is active REGARDLESS of useAcc64" as a genuine, un-eliminated allocation — real
+// memory allocated and never touched. This asserts the elimination directly, not just that the
+// paths it feeds still compute the right answer (TestFusedAttention_matchesMaterialized and
+// TestAttendF32Fanout_bitIdentical already gate that): a caller that can promise fusedOK stays true
+// for the whole pool's lifetime (wantFused=true) gets NIL vt/scores when fusion is actually enabled,
+// and the ordinary fully-allocated pool otherwise — proving both the win and that no caller silently
+// loses a buffer it needs (which is the nil-slice-access risk the original disposition declined to
+// risk without this exact three-way condition pinned down).
+func TestNewHeadWorkerPool_skipsMaterializedWhenFused(t *testing.T) {
+	const K, nKeys, hd = 128, 8192, 64
+
+	t.Run("wantFused_true_fusionOn_skips", func(t *testing.T) {
+		t.Setenv("GOINFER_FUSED_ATTENTION", "1")
+		pool := newHeadWorkerPool(1, K, nKeys, hd, true)
+		if pool[0].vt != nil {
+			t.Errorf("vt allocated (%d floats) despite wantFused=true and fusion enabled — the elimination did not happen", len(pool[0].vt))
+		}
+		if pool[0].scores != nil {
+			t.Errorf("scores allocated (%d floats) despite wantFused=true and fusion enabled — the elimination did not happen", len(pool[0].scores))
+		}
+		if pool[0].fused == nil {
+			t.Fatal("TAUTOLOGY GUARD: fused scratch is nil with fusion enabled — skipping vt/scores would be a correctness bug here, not a savings, if this ever fired")
+		}
+		if pool[0].kh == nil {
+			t.Error("kh must stay allocated — the fused path still reads it (attendTileFused's kh argument; only V moves to vBlk)")
+		}
+	})
+
+	t.Run("wantFused_true_fusionOff_stillAllocates", func(t *testing.T) {
+		t.Setenv("GOINFER_FUSED_ATTENTION", "0")
+		pool := newHeadWorkerPool(1, K, nKeys, hd, true)
+		if len(pool[0].vt) != nKeys*hd {
+			t.Errorf("vt = %d floats, want %d — GOINFER_FUSED_ATTENTION=0 must fall back to materialized scratch even though the caller promised wantFused", len(pool[0].vt), nKeys*hd)
+		}
+		if want := attnRowTile(K, nKeys) * nKeys; len(pool[0].scores) != want {
+			t.Errorf("scores = %d floats, want %d", len(pool[0].scores), want)
+		}
+	})
+
+	t.Run("wantFused_false_alwaysAllocates", func(t *testing.T) {
+		t.Setenv("GOINFER_FUSED_ATTENTION", "1")
+		pool := newHeadWorkerPool(1, K, nKeys, hd, false)
+		if len(pool[0].vt) != nKeys*hd {
+			t.Errorf("vt = %d floats, want %d — a caller that does not hold the wantFused promise (e.g. mixes useAcc64 states across calls) must always get vt/scores", len(pool[0].vt), nKeys*hd)
+		}
+		if want := attnRowTile(K, nKeys) * nKeys; len(pool[0].scores) != want {
+			t.Errorf("scores = %d floats, want %d", len(pool[0].scores), want)
+		}
+	})
+}

@@ -79,14 +79,17 @@ func TestA3FanoutUtilization(t *testing.T) {
 	cache := &KVCache{}
 
 	nw := prefillAttnWorkers(K, nKeys, hd, nH)
-	pool := newHeadWorkerPool(nw, K, nKeys, hd)
+	// wantFused=false: this pool is exercised under BOTH useAcc64 states below (run("acc64", true,
+	// ...) and run("f32-headpar", false, ...) both pass `pool`), so it cannot promise fusedOK stays
+	// true for every call — vt/scores must stay allocated for the acc64 arm's `scores` write.
+	pool := newHeadWorkerPool(nw, K, nKeys, hd, false)
 	fmt.Fprintf(os.Stderr, "A3 fan-out: nH=%d nKV=%d hd=%d nKeys=%d K=%d tile=%d workers=%d GOMAXPROCS=%d\n",
 		nH, nKV, hd, nKeys, K, attnRowTile(K, nKeys), nw, runtime.GOMAXPROCS(0))
 
 	// startPos = nKeys-K so the last query row attends the full depth.
 	startPos := nKeys - K
 
-	one := newHeadWorkerPool(1, K, nKeys, hd) // 1 slot => serial head loop
+	one := newHeadWorkerPool(1, K, nKeys, hd, false) // 1 slot => serial head loop
 
 	run := func(name string, useAcc64 bool, forceSerial bool, p []headWorkerScratch) (time.Duration, float64) {
 		if forceSerial {
@@ -207,13 +210,16 @@ func TestAttendF32Fanout_bitIdentical(t *testing.T) {
 	serialCtx := make([]float32, K*qDim)
 	parCtx := make([]float32, K*qDim)
 
-	serialPool := newHeadWorkerPool(1, K, nKeys, hd)
+	// wantFused=true: both arms below always pass useAcc64=false against a treeMask-less cache, so
+	// this exercises P-05's vt/scores elimination (default GOINFER_FUSED_ATTENTION=on) as well as
+	// the fan-out bit-identity this test is named for.
+	serialPool := newHeadWorkerPool(1, K, nKeys, hd, true)
 	if len(serialPool) != 1 {
 		t.Fatalf("serial arm wants exactly 1 slot, got %d", len(serialPool))
 	}
 	attendBatchedHeads(q, serialCtx, keys, vals, 0, cache, 0, startPos, K, true, arch, false, serialPool)
 
-	parPool := newHeadWorkerPool(6, K, nKeys, hd)
+	parPool := newHeadWorkerPool(6, K, nKeys, hd, true)
 	if len(parPool) < 2 {
 		t.Fatalf("parallel arm needs >1 slot to exercise the fan-out, got %d", len(parPool))
 	}

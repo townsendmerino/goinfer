@@ -325,7 +325,26 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused bool) []he
 // allocates its per-call scratch fresh (no cache.scr to grow-and-reuse across
 // calls the way per-token decode does), so this mirrors that, not the
 // grow-once discipline.
-func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
+//
+// wantFused is the caller's promise that EVERY call using this pool will have
+// fusedOK true (attendBatchedHeads: !useAcc64 && cache.treeMask == nil) — i.e.
+// useAcc64 and cache.treeMask are fixed for this pool's whole lifetime, not
+// just true at construction. Under that promise, vt and scores (P-05,
+// audit-2026-09-02) are skipped whenever fusion is also actually enabled
+// (fusedAttention()): vt is unused once fusion is active — gatherKV only
+// writes it in the non-fused branch — and scores (tile*nKeys, LARGER than
+// vt's nKeys*hd) is unused whenever the fused path is taken, regardless of
+// useAcc64, since attendTileFused writes ch directly. `fused`'s own
+// allocation is intentionally left gated on fusedAttention() alone, exactly
+// as before: changing that too would change which arm callers that pass
+// wantFused=false (because they legitimately mix useAcc64 states against one
+// pool, e.g. TestA3FanoutUtilization) actually exercise, which is a
+// correctness/measurement risk this fix does not need to take to close the
+// audit's claim. A caller that does not hold the promise (mixes useAcc64
+// states, or a treeMask, across calls to the same pool) must pass false —
+// getting this wrong risks a nil-slice access in the prefill hot path every
+// model goes through, exactly the risk the audit's own disposition flagged.
+func newHeadWorkerPool(n, K, nKeys, hd int, wantFused bool) []headWorkerScratch {
 	if n > maxAttnWorkers {
 		n = maxAttnWorkers
 	}
@@ -336,18 +355,22 @@ func newHeadWorkerPool(n, K, nKeys, hd int) []headWorkerScratch {
 	// walks its query rows in tiles of exactly this many, so anything larger would
 	// be allocated and never touched.
 	t := attnRowTile(K, nKeys)
+	skipMaterialized := wantFused && fusedAttention()
 	pool := make([]headWorkerScratch, n)
 	for i := range pool {
-		pool[i] = headWorkerScratch{
-			mmWS:   serialMMWorkspace(),
-			fused:  fusedIfEnabled(t, hd, nKeys),
-			qh:     make([]float32, t*hd),
-			kh:     make([]float32, nKeys*hd),
-			vt:     make([]float32, nKeys*hd),
-			scores: make([]float32, t*nKeys),
-			ch:     make([]float32, t*hd),
-			avAcc:  make([]float64, hd),
+		p := headWorkerScratch{
+			mmWS:  serialMMWorkspace(),
+			fused: fusedIfEnabled(t, hd, nKeys),
+			qh:    make([]float32, t*hd),
+			kh:    make([]float32, nKeys*hd),
+			ch:    make([]float32, t*hd),
+			avAcc: make([]float64, hd),
 		}
+		if !skipMaterialized {
+			p.vt = make([]float32, nKeys*hd)
+			p.scores = make([]float32, t*nKeys)
+		}
+		pool[i] = p
 	}
 	return pool
 }
