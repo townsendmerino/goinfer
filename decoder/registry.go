@@ -668,34 +668,29 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // passing the SAME tensor to every decoder layer regardless of `layer_types[i]` — only the
 // attention MASK varies by layer type (`causal_mask_mapping`), never the rotary table.
 // `Olmo3RotaryEmbedding.__init__` itself reads `self.config.rope_parameters["rope_type"]`
-// directly, which would KeyError on a genuinely per-layer-type nested dict — so no real Olmo3
-// checkpoint can even LOAD with different scaling per layer type regardless of how its
-// config.json is shaped; `PretrainedConfig.standardize_rope_params`'s per-layer-type branch
-// (Case 2) only fires when the source keys already equal the `layer_types` strings, and a
-// config in that shape would crash the very rotary module the doc claimed it fed. The earlier
-// "confirmed independently by re-saving a config" check was verifying serialization output, not
-// that the saved file loads back through the real model class — it does not. So, unlike Mellum
-// (whose real modeling code genuinely does build two separate rotary tables from
-// `rope_parameters["full_attention"]`/`["sliding_attention"]`), olmo3 gets ONE table, read via
-// `parseRopeFlat` below (the qwen3_5_moe-shaped flat reader) — NOT `parseRopeParameters`, which
-// expects the per-layer-type `{"full_attention":{...}}` shape and errors ("missing
-// full_attention") on the real release's flat object. That mismatch shipped once already: this
-// function's fix for the ORIGINAL (per-layer-split) bug above still called the nested parser,
-// so a fresh real-checkpoint load failed outright instead of merely drifting — caught the same
-// way as the original finding, by actually loading a real config rather than trusting the
-// reasoning that had already been written down here.
+// directly, which would KeyError on a genuinely per-layer-type nested dict IF that key were
+// missing — but it is not: `PretrainedConfig`'s own init/save path (`standardize_rope_params` /
+// `convert_rope_params_to_dict`) EXPANDS a flat `rope_theta`/`rope_scaling` into exactly the
+// nested `{"full_attention": {...}, "sliding_attention": {...}}` shape at construction time, and
+// `rope_type` is read from `rope_parameters["full_attention"]`, not the outer object — so a
+// real, from-scratch `Olmo3Config` (this family's own tiny fixture, `transformers==5.15.0`) DOES
+// carry the nested shape on disk, reproducibly (byte-identical across two independent
+// `save_pretrained` runs, 2026-09-10). A prior revision of this comment asserted the opposite —
+// "the real release's rope_parameters is flat" — and swapped the parser below to `parseRopeFlat`
+// on that basis, without re-saving a config to check; that broke loading outright ("rope_theta
+// must be >0") rather than merely drifting, caught the same way as the original 0b0f5c9 finding
+// above: by actually loading a real config rather than trusting the reasoning already written
+// down here. `parseRopeParameters` is correct, and was correct before this comment's detour.
 func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	base := cfg.RoPEGlobalBase
 	var scaling *ropeScaling
 	if len(cfg.RopeParameters) > 0 {
-		// FLAT, not the per-layer-type {"full_attention":{...},"sliding_attention":{...}}
-		// shape parseRopeParameters expects — this function's own doc comment above already
-		// established that a real Olmo3 checkpoint's rope_parameters is one shared object read
-		// directly by Olmo3RotaryEmbedding, never split by layer type. parseRopeFlat is the
-		// qwen3_5_moe-shaped flat reader; its partial-rotary return is unused here because
-		// olmo3's RotaryDim comes from the top-level config field (cfg.rotaryDim()), not from
-		// rope_parameters.
-		full, _, err := parseRopeFlat(cfg.RopeParameters)
+		// NESTED {"full_attention": {...}, "sliding_attention": {...}} — see the doc comment
+		// above. `sliding`'s own base/scaling are read but deliberately UNUSED: 0b0f5c9
+		// established that the real model builds exactly one rotary table from `full` alone and
+		// applies it to every layer regardless of type, so `sliding` is discarded here the same
+		// way it always has been since that fix, not a new omission.
+		full, _, err := parseRopeParameters(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}
