@@ -11,15 +11,18 @@
 > rising to **3.40× at m=8** (§3, revised). **This reverses §3's original pessimistic
 > conclusion and points at a SIMPLER mechanism than the audit's tunable q⋆ split: send every
 > miss to CPU, computed in parallel, rather than a smoothly-tuned fraction.** It is still not a
-> funding decision — the isolated number does not model the merge-back-to-GPU cost, real
-> async concurrency, or the actual target model (Qwen3.6-35B-A3B, not gemma-4-26b's geometry) —
-> but the bar this pass needed to clear before recommending a real prototype is now cleared,
-> which it was not an hour earlier in this same pass. §7 (speculation-antagonism) was re-run on
-> real hardware and still holds as documented. **§5's remaining open question — whether
-> "always offload" costs too much AGGREGATE host-CPU time across a token's 30 layers — is also
-> now resolved**: the expected case uses only 35% of the GPU's own per-token compute budget,
-> and even the pathological worst case barely exceeds it. The one caveat that arithmetic does
-> NOT cover is multi-tenant contention (a second concurrent request), which stays open.
+> funding decision — real async concurrency and the actual target model (Qwen3.6-35B-A3B, not
+> gemma-4-26b's geometry) are still unverified — but the bar this pass needed to clear before
+> recommending a real prototype is now cleared, which it was not an hour earlier in this same
+> pass. §7 (speculation-antagonism) was re-run on real hardware and still holds as documented.
+> **§5's aggregate-occupancy question is resolved** (expected case: 35% of the GPU's own
+> per-token compute budget) **and so is multi-tenant contention** (measured, real hardware:
+> degrades gracefully — the realistic mean case is untouched by a second concurrent stream;
+> only the rare worst-case tail erodes, down to breakeven at three simultaneous worst cases,
+> never a net loss in what was measured). **§6's merge path is sketched and verified against
+> the real CUDA kernel signatures** — no kernel rewrite needed, estimated single-digit-µs cost.
+> Every item this pass could resolve without writing CUDA is now resolved; what's left (§9)
+> genuinely needs a real concurrent prototype.
 
 ## 0. What L-01 is, verbatim from the audit
 
@@ -189,12 +192,31 @@ compute window already provides — there is no aggregate-occupancy problem to t
 and even the pathological worst case only marginally exceeds the budget.** This resolves the
 open question in favour of the SIMPLER mechanism: q⋆=0 (send everything, throttle nothing) is
 not just latency-optimal per layer (§3) but also aggregate-occupancy-safe per token, for a
-SINGLE decode stream. **What this arithmetic does NOT cover, and is the one real remaining risk
-for q⋆:** a second concurrent request on the same box, or any other host-CPU work this decode
-stream doesn't already account for (the process's own routing-readback cost, unmeasured here) —
-multi-tenant contention is a genuinely different question than one stream's own budget, and
-"always offload" degrades however badly host-CPU contention degrades under concurrent decode
-generally, which this pass did not measure.
+SINGLE decode stream.
+
+**Multi-tenant contention — measured 2026-09-10, `decoder/l01_expert_bench_test.go`'s
+`l01Concurrent`, real hardware (nobara-pc, same box, re-confirmed clean after waiting out an
+unrelated heavy test another session was running).** Runs N independent "streams" worth of
+missed-expert goroutines at the exact same instant and times the wall-clock for all of them to
+finish — the tail latency either stream would actually feel under real concurrent decode:
+
+| scenario | solo (1 stream) | 2 concurrent streams | 3 concurrent streams |
+|---|---|---|---|
+| m=8 (worst case, 1.6% of decisions): hybrid speedup vs today | 3.46× | 1.56× | 1.00× (breakeven) |
+| m=2 (near the measured mean, 1.915): hybrid speedup vs today | 1.65× | **1.65× (unchanged)** | not measured |
+
+**At the realistic mean case, contention doesn't erode the win at all** — even degraded ~1.9×
+by a second concurrent stream, CPU-parallel time (925 µs) stays under the GPU's own 1070 µs
+compute floor, so the per-layer comparison in §3 is completely unaffected. **Only at the rare
+worst-case tail (m=8, and specifically multiple decode streams landing on it at the SAME
+instant) does contention meaningfully erode the advantage** — down to a bare breakeven at three
+simultaneous worst-case streams, never a net loss in what was measured. Two simultaneous m=8
+misses across independent streams is already a coincidence (1.6% × 1.6% if independent); three
+at once is not a scenario worth designing against. **This resolves the multi-tenant question
+this pass could measure without a full serving harness**: "always offload" degrades gracefully,
+not catastrophically, under realistic concurrent load. What it does NOT cover: contention from
+non-expert-compute host work (the routing readback itself, sampling, orchestration) running
+alongside — those weren't in this benchmark's loop and stay a real, smaller, unmeasured factor.
 
 ## 6. Partial-sum merge — sketched concretely, verified against the real kernel signatures
 
@@ -291,23 +313,20 @@ turns out NOT to be the constraint — "send everything" wins there too, for a s
 
 ## 9. Recommended next step
 
-**Still not CUDA code.** Three of this section's items are now done, all arithmetic/design on
-already-measured numbers and existing kernel signatures, no new hardware run: the isolated
-microbenchmark (§3, reversed the headline finding), the aggregate host-CPU occupancy question
-(§5, resolved in favour of "send everything," no throttle needed for a single decode stream),
-and the merge-path sketch (§6, verified against the real `cuda/resident.go`/`cuda/moe.cu`
-signatures — no kernel rewrite needed, constant small cost, one bounded stall risk at m=8).
-What remains:
+**Still not CUDA code.** Every item this design pass could resolve with arithmetic, an isolated
+Go benchmark, or reading the real kernel signatures is now done: the isolated microbenchmark
+(§3, reversed the headline finding), aggregate host-CPU occupancy (§5, resolved in favour of
+"send everything"), the merge-path sketch (§6, verified against `cuda/resident.go`/`cuda/moe.cu`
+directly), and multi-tenant contention (§5, measured — degrades gracefully, not catastrophically,
+and doesn't touch the realistic mean case at all). What's left genuinely requires CUDA/async
+code, not more design:
 
-1. **Multi-tenant / concurrent-request contention** (§5's one remaining caveat) — this pass only
-   modeled a single decode stream's own aggregate CPU budget; a second concurrent request
-   competing for the same host CPU is a genuinely different question, unmeasured here.
-2. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
+1. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
    overlaps CPU expert compute with GPU hit-path compute for the SAME layer and measures
-   wall-clock, not two separate numbers added by hand. This is where CUDA/async work starts
-   being unavoidable, and it should happen on Qwen3.6-35B-A3B (the audit's own decision-rule
-   model), not gemma-4-26b (this pass's stand-in for geometry convenience).
-3. Only then: the audit's pre-registered, paired-and-interleaved measurement on the real card
+   wall-clock, not two separate numbers added by hand. This is where CUDA/async work becomes
+   unavoidable, and it should happen on Qwen3.6-35B-A3B (the audit's own decision-rule model),
+   not gemma-4-26b (this pass's stand-in for geometry convenience).
+2. Only then: the audit's pre-registered, paired-and-interleaved measurement on the real card
    per §0's decision rule (fund ≥1.3×, park <1.15×).
 
 ## Sources
@@ -319,7 +338,8 @@ miss classification, block-verify's own infra-gap finding) · `decoder/mlp.go` (
 (the existing per-expert core-width parallelism) · `internal/fitcmd/fit.go` (`-measure`, used
 as-is for §2's new number) · `docs/measurements/g33-routing-trace.json` (re-read for its
 per-decision distribution, §8) · `cuda/spec_pager_interaction_test.go` (re-run on real hardware
-for §7's confirmation) · `decoder/l01_expert_bench_test.go` (the isolated microbenchmark, §3) ·
-`cuda/resident.go` (`loadRoutedExperts`, the existing routing-readback hook point; the
-per-slot `fMoEWacc` dispatch loop) · `cuda/moe.cu` (`gemv_w4a8_moe_wacc`'s per-slot signature) —
-both read directly for §6's merge sketch, not assumed.
+for §7's confirmation) · `decoder/l01_expert_bench_test.go` (the isolated microbenchmark and the
+multi-tenant `l01Concurrent` benchmark, §3/§5) · `cuda/resident.go` (`loadRoutedExperts`, the
+existing routing-readback hook point; the per-slot `fMoEWacc` dispatch loop) · `cuda/moe.cu`
+(`gemv_w4a8_moe_wacc`'s per-slot signature) — both read directly for §6's merge sketch, not
+assumed.

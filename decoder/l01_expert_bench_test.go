@@ -135,3 +135,53 @@ func BenchmarkL01_parallel2(b *testing.B) { l01Parallel(b, 2) }
 func BenchmarkL01_parallel4(b *testing.B) { l01Parallel(b, 4) }
 func BenchmarkL01_parallel5(b *testing.B) { l01Parallel(b, 5) }
 func BenchmarkL01_parallel8(b *testing.B) { l01Parallel(b, 8) }
+
+// l01Concurrent simulates `streams` INDEPENDENT decode streams each offloading
+// expertsPerStream missed experts to CPU at the SAME time — the multi-tenant contention
+// question docs/task-l01-hybrid-moe-cpu-gpu.md §5/§9 named as unmeasured: does a second
+// concurrent request degrade "always offload" badly enough to matter? Measures wall-clock for
+// ALL streams' goroutines to finish (the tail, since that's what either stream's own latency
+// depends on), not aggregate throughput.
+func l01Concurrent(b *testing.B, streams, expertsPerStream int) {
+	rng := rand.New(rand.NewSource(4))
+	allExperts := make([][]*expertWeights, streams)
+	for s := range allExperts {
+		allExperts[s] = make([]*expertWeights, expertsPerStream)
+		for i := range allExperts[s] {
+			allExperts[s][i] = l01SyntheticExpert(rng)
+		}
+	}
+	be := &cpuBackend{}
+	h := make([]float32, l01Hidden)
+	for i := range h {
+		h[i] = rng.Float32()*2 - 1
+	}
+
+	b.ResetTimer()
+	for range b.N {
+		var wg sync.WaitGroup
+		for _, streamExperts := range allExperts {
+			for _, ex := range streamExperts {
+				wg.Add(1)
+				go func(ex *expertWeights) {
+					defer wg.Done()
+					dst := make([]float32, l01Hidden)
+					gate := make([]float32, l01Inter)
+					up := make([]float32, l01Inter)
+					swiGLUExpert(ex, h, dst, l01Inter, be, gate, up)
+				}(ex)
+			}
+		}
+		wg.Wait()
+	}
+}
+
+// BenchmarkL01_concurrent2streams8 is the worst-case pairing: two streams, each at m=8 (the
+// rarest, most expensive miss count per docs/measurements/g33-routing-trace.json's own
+// distribution), offloading at exactly the same instant.
+func BenchmarkL01_concurrent2streams8(b *testing.B) { l01Concurrent(b, 2, 8) }
+func BenchmarkL01_concurrent3streams8(b *testing.B) { l01Concurrent(b, 3, 8) }
+
+// BenchmarkL01_concurrent2streamsMean pairs two streams at m=2, the closest integer to G33's
+// own measured mean (1.915) — the realistic case, not the worst case.
+func BenchmarkL01_concurrent2streamsMean(b *testing.B) { l01Concurrent(b, 2, 2) }
