@@ -26,7 +26,7 @@ import "os"
 //
 // CORRECTNESS IS THE ENTIRE RISK. A wrong prefix match produces confidently wrong output with
 // no error anywhere — no exception, no NaN, just a reply conditioned on someone else's
-// context. Three rules keep it honest:
+// context. Four rules keep it honest:
 //
 //  1. Match on TOKEN IDS, never text. A client that edits its last message shifts
 //     tokenisation, and the longest-common-prefix is exactly what absorbs that.
@@ -36,6 +36,14 @@ import "os"
 //     forgetting is a slow turn, and the failure mode of remembering wrongly is a wrong answer.
 //  3. At least one token is always prefilled, so the seed logits that start decode are always
 //     freshly computed rather than assumed.
+//  4. The record names the WEIGHTS as well as the ids (audit C-02, 2026-09-10). A LoRA adapter
+//     changes every targeted projection, hence the residual stream, hence every later layer's
+//     K/V — so an identical id prefix built under a different adapter (or none) is someone
+//     else's context exactly as surely as a different prompt is. residentCommitIDs records the
+//     bound *loraRuntime and residentReuseLen refuses on any mismatch, which keeps
+//     adapter->same-adapter reuse (the agent-loop win) while closing every crossing. Pointer
+//     identity is sound: LoadAdapter always builds a fresh runtime and registerAdapter RETIRES
+//     the one it displaces rather than freeing it, so a reload under one name never compares equal.
 
 // residentReuseDisabled is the escape hatch / A-B switch, same convention as
 // GOINFER_NO_GREEDY_FASTPATH and GOINFER_NO_KVONLY_PREFILL.
@@ -68,9 +76,15 @@ type residentImageClaim struct {
 // Capped at len(prompt)-1 on purpose: generateInto's contract is that prefill covers at least
 // one token, whose logits seed decode. Returning len(prompt) would leave the caller with no
 // seed logits and nothing to recompute them from.
-func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim) int {
+//
+// lora is the adapter bound for THIS generation (nil = base weights); rule 4 refuses any reuse
+// of KV that was built under a different one.
+func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
 	if residentReuseDisabled() || len(m.resIDs) == 0 || len(prompt) == 0 {
 		return 0
+	}
+	if lora != m.resIDsLora {
+		return 0 // rule 4: same ids, different weights — the KV is not this generation's
 	}
 	// RECURRENT FAMILIES CAN ONLY REUSE AN EXACT, STRICT EXTENSION. The three rules below (LCP
 	// matching, capping at len(prompt)-1) police WHICH PREFIX of the resident KV is matched for an
@@ -156,11 +170,12 @@ func findImageClaim(imgs []residentImageClaim, pos int) (residentImageClaim, boo
 // plain text — the common case).
 //
 // Called ONLY on the fully-completed path. Everything else leaves resIDs (and resImgBlocks) nil.
-func (m *Model) residentCommitIDs(prompt, generated []int, newBlock *residentImageBlock) {
+func (m *Model) residentCommitIDs(prompt, generated []int, newBlock *residentImageBlock, lora *loraRuntime) {
 	ids := make([]int, 0, len(prompt)+len(generated))
 	ids = append(ids, prompt...)
 	ids = append(ids, generated...)
 	m.resIDs = ids
+	m.resIDsLora = lora
 	if newBlock != nil {
 		kept := m.resImgBlocks[:0:0]
 		for _, b := range m.resImgBlocks {
@@ -178,6 +193,7 @@ func (m *Model) residentCommitIDs(prompt, generated []int, newBlock *residentIma
 // merely slow. Clears resImgBlocks together with resIDs, always — an image block's identity is
 // meaningless once the token sequence backing its position is no longer trusted.
 func (m *Model) residentForgetIDs() {
+	m.resIDsLora = nil
 	m.resIDs = nil
 	m.resImgBlocks = nil
 }

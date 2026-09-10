@@ -335,3 +335,80 @@ func TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter(t *testing.T) {
 		t.Errorf("declined-to-CPU first token %d != adapter CPU reference argmax %d", got, argmax(want))
 	}
 }
+
+// TestSeam_ResidentReuseNeverCrossesAdapters is C-02's CALLER-LEVEL gate (audit 2026-09-10). The
+// unit tests pin residentReuseLen's rule; this pins that generateInto actually hands it the bound
+// adapter — a correct rule that no caller invokes with the right argument is exactly the trap
+// CLAUDE.md records from G27. It drives the audit's own failure sequence: turns that share a
+// "system prompt" prefix, crossing base<->adapter in both directions and adapter->adapter, plus the
+// same adapter twice, whose reuse the fix must PRESERVE.
+//
+// NON-VACUITY is the second assertion below. Every other check is "PrefillReused == 0", which
+// passes trivially on a fixture where prefix reuse never fires; base-then-base reusing > 0 is
+// what proves the machinery is live, so the zeros mean something.
+func TestSeam_ResidentReuseNeverCrossesAdapters(t *testing.T) {
+	base, adapterDir := buildLoRAFixture(t)
+	m, _ := loadWithFakeAdapterResident(t, base)
+	if !m.ResidentActive() {
+		t.Skip("fixture is not resident-eligible; the other seam tests still gate the wiring")
+	}
+	for _, name := range []string{"a", "b"} { // same weights, two runtimes: identity is the key
+		if err := m.LoadAdapter(name, adapterDir); err != nil {
+			t.Fatalf("LoadAdapter(%s): %v", name, err)
+		}
+	}
+	sys := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	tail := 10
+	turn := func(adapter string) int { // "" = stateless base Generate, as serve issues it
+		t.Helper()
+		tail++
+		prompt := append(append([]int(nil), sys...), tail%16)
+		if adapter == "" {
+			out, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})
+			for range out {
+			}
+			if err := g.Err(); err != nil {
+				t.Fatalf("base Generate: %v", err)
+			}
+			return g.PrefillReused
+		}
+		s := m.NewSession(0)
+		if err := s.UseAdapter(adapter); err != nil {
+			t.Fatalf("UseAdapter(%s): %v", adapter, err)
+		}
+		out, g := s.Generate(context.Background(), prompt, 2, SamplingParams{})
+		for range out {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("adapter %s Generate: %v", adapter, err)
+		}
+		return g.PrefillReused
+	}
+
+	if got := turn(""); got != 0 {
+		t.Fatalf("first turn reused %d with nothing cached", got)
+	}
+	if got := turn(""); got == 0 {
+		t.Fatal("base then base reused 0 — prefix reuse is not live in this fixture, so every " +
+			"\"== 0\" below would pass vacuously; fix the fixture before trusting this gate")
+	}
+	for _, step := range []struct {
+		adapter string
+		reuse   bool
+		why     string
+	}{
+		{"a", false, "base -> adapter: the adapter would attend over base-projected K/V"},
+		{"", false, "adapter -> base: the audit's headline direction — a base turn served off a fine-tune's K/V"},
+		{"a", false, "base -> adapter again (cache now holds base KV)"},
+		{"a", true, "adapter -> SAME adapter: the agent-loop reuse the fix must keep"},
+		{"b", false, "adapter -> DIFFERENT adapter (identical weights, different runtime)"},
+	} {
+		got := turn(step.adapter)
+		if step.reuse && got == 0 {
+			t.Errorf("%s: PrefillReused = 0, want > 0", step.why)
+		}
+		if !step.reuse && got != 0 {
+			t.Errorf("%s: PrefillReused = %d, want 0 (audit C-02)", step.why, got)
+		}
+	}
+}

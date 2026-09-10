@@ -36,7 +36,8 @@ type Model struct {
 	// resIDs is the token sequence currently committed to the resident positional KV, or nil
 	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
 	// to that cache; see resident_reuse.go for why nil is the safe default.
-	resIDs []int
+	resIDs     []int
+	resIDsLora *loraRuntime // the adapter that built resIDs' KV, nil = base (audit C-02; resident_reuse.go rule 4)
 	// resImgBlocks records every image block committed within resIDs (P9a, docs/multimodal.md)
 	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
 	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
@@ -1242,7 +1243,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
 		// generation completes the cache is mid-write, and any early return must leave the
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
-		reuseFrom := m.residentReuseLen(prompt, nil)
+		reuseFrom := m.residentReuseLen(prompt, nil, lora)
 		m.residentForgetIDs()
 		if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, lora != nil); err != nil {
 			g.err = err
@@ -1339,7 +1340,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// ORIGINAL R-02 fix's blind spot: it only committed at the send-select exit, which
 			// is the rarer of the two cancel-observation points, not the common one.
 			if useGPU {
-				m.residentCommitIDs(prompt, generated, nil)
+				m.residentCommitIDs(prompt, generated, nil, lora)
 			}
 			return
 		default:
@@ -1415,7 +1416,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// that left nothing inconsistent behind. Agent harnesses cancel constantly
 			// (interrupts, timeouts, disconnects), so today every one of them pays this cost.
 			if useGPU {
-				m.residentCommitIDs(prompt, generated, nil)
+				m.residentCommitIDs(prompt, generated, nil, lora)
 			}
 			return
 		case out <- next:
@@ -1463,7 +1464,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// The ONLY place the resident cache's contents are recorded: a generation that ran to
 	// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.
 	if useGPU {
-		m.residentCommitIDs(prompt, generated, nil)
+		m.residentCommitIDs(prompt, generated, nil, lora)
 	}
 	if decodeTiming && nFwd > 0 {
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }

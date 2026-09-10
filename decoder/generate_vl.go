@@ -87,7 +87,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 		// tower or the CPU prefill. Held only long enough to check+use; released either way.
 		if m.tryClaimResident() {
 			claim := []residentImageClaim{{Start: imgPos, Len: imgLen, Hash: imgHash}}
-			if reuseFrom := m.residentReuseLen(ids, claim); reuseFrom >= imgPos+imgLen {
+			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= imgPos+imgLen {
 				// FULL reuse: the image, and everything before it, is already resident.
 				// Stay inside THIS claim (no release/reclaim) — reseed via the ordinary
 				// ResidentForward.Forward path (no CPU prefill, no tower call at all).
@@ -113,7 +113,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 					return l, err
 				})
 				if g.err == nil {
-					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
 				} else {
 					m.residentForgetIDs()
 				}
@@ -163,7 +163,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 					return l, err
 				})
 				if g.err == nil {
-					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
 					committed = true
 				}
 				return
@@ -217,7 +217,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 			return m.forward(next, cache)
 		})
 		if useGPU && g.err == nil {
-			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
 			committed = true
 		}
 	}()
@@ -257,7 +257,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 
 		if r, ok := m.resident.(ResidentMRoPE); ok && m.tryClaimResident() {
 			claim := []residentImageClaim{{Start: imgPos, Len: imgLen, Hash: imgHash}}
-			if reuseFrom := m.residentReuseLen(ids, claim); reuseFrom >= imgPos+imgLen {
+			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= imgPos+imgLen {
 				g.PrefillReused = reuseFrom // observable proof the fast path actually fired
 				m.residentForgetIDs()
 				logits, err := m.residentPrefillSeedMRoPE(ctx, r, ids, reuseFrom, mropeDelta)
@@ -281,7 +281,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 					return l, err
 				})
 				if g.err == nil {
-					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
 				} else {
 					m.residentForgetIDs()
 				}
@@ -332,7 +332,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 						return l, err
 					})
 					if g.err == nil {
-						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
 						committed = true
 					}
 					return
@@ -387,7 +387,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 			return m.forward(next, cache) // decode m-RoPE via cache.mropeDelta
 		})
 		if useGPU && g.err == nil {
-			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash})
+			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
 			committed = true
 		}
 	}()

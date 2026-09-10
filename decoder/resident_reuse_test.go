@@ -26,7 +26,7 @@ func TestResidentReuseLen(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model{resIDs: tc.cached}
-			if got := m.residentReuseLen(tc.prompt, nil); got != tc.want {
+			if got := m.residentReuseLen(tc.prompt, nil, nil); got != tc.want {
 				t.Errorf("residentReuseLen(%v | cached %v) = %d, want %d", tc.prompt, tc.cached, got, tc.want)
 			}
 		})
@@ -43,7 +43,7 @@ func TestResidentReuseLen_neverClaimsTheSeed(t *testing.T) {
 			ids[i] = i + 1
 		}
 		m := &Model{resIDs: ids}
-		if got := m.residentReuseLen(ids, nil); got >= n {
+		if got := m.residentReuseLen(ids, nil, nil); got >= n {
 			t.Errorf("prompt of %d identical tokens reused %d — must leave at least one to prefill", n, got)
 		}
 	}
@@ -85,7 +85,7 @@ func TestResidentReuseLen_recurrentExactExtensionOnly(t *testing.T) {
 			if !m.hasRecurrentState() {
 				t.Fatal("test setup broke: recurrentTestModel is not recognised as recurrent")
 			}
-			if got := m.residentReuseLen(tc.prompt, nil); got != tc.want {
+			if got := m.residentReuseLen(tc.prompt, nil, nil); got != tc.want {
 				t.Errorf("residentReuseLen(%v | cached %v) = %d, want %d", tc.prompt, tc.cached, got, tc.want)
 			}
 		})
@@ -96,7 +96,7 @@ func TestResidentReuseLen_recurrentExactExtensionOnly(t *testing.T) {
 // than none — it would match a prefix that the cache no longer holds.
 func TestResidentForgetIDs(t *testing.T) {
 	m := &Model{}
-	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil)
+	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil, nil)
 	if len(m.resIDs) != 4 {
 		t.Fatalf("commit recorded %v, want prompt+generated", m.resIDs)
 	}
@@ -104,7 +104,7 @@ func TestResidentForgetIDs(t *testing.T) {
 	if m.resIDs != nil {
 		t.Errorf("forget left %v, want nil", m.resIDs)
 	}
-	if got := m.residentReuseLen([]int{1, 2, 3, 4, 5}, nil); got != 0 {
+	if got := m.residentReuseLen([]int{1, 2, 3, 4, 5}, nil, nil); got != 0 {
 		t.Errorf("after forgetting, reuse must be 0, got %d", got)
 	}
 }
@@ -115,7 +115,7 @@ func TestResidentCommitIDs_copies(t *testing.T) {
 	prompt := []int{1, 2, 3}
 	generated := []int{4, 5}
 	m := &Model{}
-	m.residentCommitIDs(prompt, generated, nil)
+	m.residentCommitIDs(prompt, generated, nil, nil)
 	prompt[0], generated[0] = 99, 99
 	if m.resIDs[0] == 99 || m.resIDs[3] == 99 {
 		t.Errorf("resIDs aliases the caller's slice: %v", m.resIDs)
@@ -178,7 +178,7 @@ func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Model{resIDs: cached, resImgBlocks: []residentImageBlock{block}}
-			if got := m.residentReuseLen(tc.prompt, tc.imgs); got != tc.want {
+			if got := m.residentReuseLen(tc.prompt, tc.imgs, nil); got != tc.want {
 				t.Errorf("residentReuseLen(%v, %v) = %d, want %d", tc.prompt, tc.imgs, got, tc.want)
 			}
 		})
@@ -191,7 +191,7 @@ func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
 func TestResidentReuseLen_recurrentRefusesImageClaims(t *testing.T) {
 	m := recurrentTestModel([]int{1, 2, 3})
 	claim := []residentImageClaim{{Start: 1, Len: 1, Hash: 7}}
-	if got := m.residentReuseLen([]int{1, 2, 3, 4}, claim); got != 0 {
+	if got := m.residentReuseLen([]int{1, 2, 3, 4}, claim, nil); got != 0 {
 		t.Errorf("recurrent family with an image claim: residentReuseLen = %d, want 0 (refuse)", got)
 	}
 }
@@ -201,7 +201,7 @@ func TestResidentReuseLen_recurrentRefusesImageClaims(t *testing.T) {
 // sanity check on residentCommitIDs' bookkeeping, not a reuse-correctness test by itself.
 func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
 	m := &Model{resImgBlocks: []residentImageBlock{{start: 2, end: 5, hash: 7}}}
-	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, &residentImageBlock{start: 8, end: 11, hash: 42})
+	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, &residentImageBlock{start: 8, end: 11, hash: 42}, nil)
 	if len(m.resImgBlocks) != 2 {
 		t.Fatalf("resImgBlocks = %v, want 2 entries (old block kept, new block added)", m.resImgBlocks)
 	}
@@ -218,9 +218,52 @@ func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
 // as a stale resIDs, for the same reason.
 func TestResidentForgetIDs_clearsImageBlocksToo(t *testing.T) {
 	m := &Model{resImgBlocks: []residentImageBlock{{start: 2, end: 5, hash: 7}}}
-	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil)
+	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil, nil)
 	m.residentForgetIDs()
 	if m.resImgBlocks != nil {
 		t.Errorf("resImgBlocks = %v after forget, want nil", m.resImgBlocks)
+	}
+}
+
+// TestResidentReuseLen_adapterMustMatch pins audit C-02 (2026-09-10): the resident KV is keyed on
+// WHICH WEIGHTS built it, not only on token ids. Any targeted projection changes the residual
+// stream, so every later layer's K/V differs under an adapter — an identical id prefix computed
+// under different weights is someone else's context, the "confidently wrong, no error" failure
+// resident_reuse.go names as the entire risk. The same-adapter row matters as much as the refusals:
+// forgetting on every adapter change would also be correct, and would quietly throw away the
+// agent-loop win for every fine-tune served off one base.
+func TestResidentReuseLen_adapterMustMatch(t *testing.T) {
+	a, b := &loraRuntime{name: "a"}, &loraRuntime{name: "b"}
+	prompt := []int{1, 2, 3, 4, 5}
+	for _, tc := range []struct {
+		name          string
+		built, asking *loraRuntime
+		want          int
+	}{
+		{"base then base reuses", nil, nil, 3},
+		{"adapter then SAME adapter reuses", a, a, 3},
+		{"adapter then base must NOT reuse", a, nil, 0},
+		{"base then adapter must NOT reuse", nil, a, 0},
+		{"adapter then a DIFFERENT adapter must NOT reuse", a, b, 0},
+		{"same NAME but a reloaded runtime must NOT reuse", a, &loraRuntime{name: "a"}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{}
+			m.residentCommitIDs([]int{1, 2, 3}, nil, nil, tc.built)
+			if got := m.residentReuseLen(prompt, nil, tc.asking); got != tc.want {
+				t.Errorf("reuse = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResidentForgetIDs_clearsAdapterToo: a forgotten record must not leave a stale adapter
+// identity behind for the next commit's absence to be compared against.
+func TestResidentForgetIDs_clearsAdapterToo(t *testing.T) {
+	m := &Model{}
+	m.residentCommitIDs([]int{1, 2}, []int{3}, nil, &loraRuntime{name: "a"})
+	m.residentForgetIDs()
+	if m.resIDs != nil || m.resIDsLora != nil {
+		t.Errorf("after forget: resIDs=%v resIDsLora=%v, want both nil", m.resIDs, m.resIDsLora)
 	}
 }

@@ -306,7 +306,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// computing reuseFrom, not before: the next turn's commit is what makes it true
 			// again, and forgetting first would only lose the reuse this round could have had —
 			// the same ordering generateInto already uses (resident_reuse.go).
-			reuseFrom := target.residentReuseLen(prompt, nil)
+			reuseFrom := target.residentReuseLen(prompt, nil, nil) // the n-gram target never binds an adapter
 			target.residentForgetIDs()
 			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false); err != nil {
 				g.err = err
@@ -361,7 +361,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// add, unlike R-01/R-03's general shape.
 		commitResident := func() {
 			if resident {
-				target.residentCommitIDs(prompt, hist[len(prompt):], nil)
+				target.residentCommitIDs(prompt, hist[len(prompt):], nil, nil)
 			}
 		}
 

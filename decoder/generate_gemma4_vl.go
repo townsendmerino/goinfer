@@ -192,7 +192,7 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			// nil: no image-block-reuse record — P9a-style resident-image reuse is
 			// out of scope here (see doc comment above), so there is nothing to key
 			// a future turn's reuse check on.
-			m.residentCommitIDs(ids, generated, nil)
+			m.residentCommitIDs(ids, generated, nil, nil)
 			committed = true
 		}
 	}()
