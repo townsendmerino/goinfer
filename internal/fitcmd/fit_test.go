@@ -84,3 +84,36 @@ func TestRun_pinnedCtxThatCannotFitDeclinesNotShrinks(t *testing.T) {
 		t.Errorf("an impossible pinned ctx must not report RESIDENT anywhere:\n%s", out)
 	}
 }
+
+// TestRun_measureSelfMeasuresOnAdmittedBackend is task-fit-to-hardware.md §5's self-measure
+// option: on the tracked llama-tiny fixture (CPU-only in this untagged build, so "cpu" is the
+// only admitted backend and therefore the one selfMeasure picks), -measure must actually load
+// and decode, printing a real "(measure)" line with a positive rate — not just echo the dry-run
+// report above it.
+func TestRun_measureSelfMeasuresOnAdmittedBackend(t *testing.T) {
+	var code int
+	out := captureStdout(t, func() {
+		code = Run([]string{"../../testdata/llama-tiny", "-ctx", "512", "-measure"})
+	})
+	if code != 0 {
+		t.Fatalf("Run = %d, want 0; output:\n%s", code, out)
+	}
+	if !bytes.Contains([]byte(out), []byte("(measure) cpu")) {
+		t.Fatalf("output has no '(measure) cpu' line — the probe did not run or picked a different backend:\n%s", out)
+	}
+	if !bytes.Contains([]byte(out), []byte("tok/s")) {
+		t.Errorf("measure line has no tok/s rate:\n%s", out)
+	}
+}
+
+// TestRun_measureOffByDefault confirms -measure is opt-in: without it, Run must never print a
+// "(measure)" line — the probe is a real extra load+decode, not something every dry run should
+// pay for silently (task-fit-to-hardware.md §0: "explicit flags stay, and win").
+func TestRun_measureOffByDefault(t *testing.T) {
+	out := captureStdout(t, func() {
+		Run([]string{"../../testdata/llama-tiny", "-ctx", "512"})
+	})
+	if bytes.Contains([]byte(out), []byte("(measure)")) {
+		t.Errorf("output contains a '(measure)' line without -measure being passed:\n%s", out)
+	}
+}

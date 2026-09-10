@@ -12,11 +12,13 @@
 package fitcmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -27,6 +29,9 @@ const fitUsage = `%[1]s fit <path> — show how this checkpoint would be placed 
   fit <file.gguf|dir> -ctx 32768 report at a specific context (refused if it doesn't fit, not
                                   silently shrunk — pass a smaller -ctx to see what DOES fit)
   fit <file.gguf|dir> -quant int8int8
+  fit <file.gguf|dir> -measure   also self-measure decode rate on the best admitted backend
+                                  (task-fit-to-hardware.md §5) — a REAL load + a short decode,
+                                  not free like the report above; off by default
 
 This loads the checkpoint (unlike a future header-only version): real bytes, real quantization,
 same load time %[1]s itself would pay. It reports EVERY backend compiled into this binary —
@@ -45,6 +50,7 @@ func Run(args []string) int {
 	kvF16 := fs.Bool("kv-f16", false, "plan KV at f16 instead of f32 (halves KV bytes; a lossy precision choice, never chosen silently)")
 	kvI8 := fs.Bool("kv-i8", false, "plan KV at int8 instead of f32 (further shrinks KV bytes; lossy)")
 	slots := fs.Int("moe-cache-slots", 0, "an explicit expert-cache slot count to plan against instead of letting Plan choose the largest that fits")
+	measure := fs.Bool("measure", false, "self-measure decode rate on the best admitted backend (task-fit-to-hardware.md §5) — a real load + short decode, not free")
 
 	var path string
 	rest := args
@@ -77,6 +83,7 @@ func Run(args []string) int {
 	req := decoder.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
 	fmt.Printf("%s @ %s, ctx=%d%s\n\n", path, quantLabel(*quant), *ctx, pinnedNote(ctxPinned))
 
+	var admitted []string // in CompiledBackends() order; "cpu" always eligible, sorted last
 	for _, backend := range decoder.CompiledBackends() {
 		free, known := freeBytesFor(backend)
 		if !known {
@@ -85,8 +92,65 @@ func Run(args []string) int {
 		}
 		p := m.Plan(backend, free, req)
 		fmt.Printf("%-6s  %s\n        %s\n", backend, strings.ToUpper(p.Placement.String()), p.Reason)
+		if p.Placement != decoder.PlacementDecline {
+			admitted = append(admitted, backend)
+		}
+	}
+
+	if *measure {
+		selfMeasure(path, *quant, admitted)
 	}
 	return 0
+}
+
+// selfMeasure is task-fit-to-hardware.md §5's "self-measure" option: after load, decode a fixed
+// probe and print the rate as "measured on this machine" — the SAME model this Model was already
+// planned against, loaded again on the backend actually chosen so the probe runs through the
+// real decode path (not the plan's hypothetical byte arithmetic above). Prefers any admitted
+// non-cpu backend over cpu (cpu is always eligible and always last in admitted, so it is only
+// picked when nothing else was) — a user asking "how fast will it go" almost always means the
+// GPU they compiled in, not the CPU fallback every build has.
+func selfMeasure(path, quant string, admitted []string) {
+	if len(admitted) == 0 {
+		fmt.Println("\n(measure) no backend admitted this checkpoint — nothing to probe")
+		return
+	}
+	backend := admitted[0]
+	for _, b := range admitted {
+		if b != "cpu" {
+			backend = b
+			break
+		}
+	}
+
+	pm, err := decoder.Load(path, decoder.Options{Backend: backend, Quant: quant})
+	if err != nil {
+		fmt.Printf("\n(measure) %s: load failed, skipping probe: %v\n", backend, err)
+		return
+	}
+	defer pm.Close()
+
+	const probePrompt, probeDecode = 64, 32
+	_, _, _, _, _, _, vocab := pm.Dims()
+	prompt := make([]int, probePrompt)
+	for i := range prompt {
+		prompt[i] = (i*2654435761 + 1) % vocab // deterministic, in-range — a throughput probe, not a real prompt
+	}
+
+	t0 := time.Now()
+	out, gen := pm.Generate(context.Background(), prompt, probeDecode, decoder.SamplingParams{Temperature: 0})
+	n := 0
+	for range out {
+		n++
+	}
+	elapsed := time.Since(t0)
+	if gen.Err() != nil {
+		fmt.Printf("\n(measure) %s: probe failed: %v\n", backend, gen.Err())
+		return
+	}
+	rate := float64(n) / elapsed.Seconds()
+	fmt.Printf("\n(measure) %-6s %.1f tok/s over %d/%d decode steps (includes a %d-token prompt prefill; measured on this machine, not projected)\n",
+		backend, rate, n, probeDecode, probePrompt)
 }
 
 // freeBytesFor is CompiledBackends' "cpu" special case (HostRAMAvailableBytes, which predates

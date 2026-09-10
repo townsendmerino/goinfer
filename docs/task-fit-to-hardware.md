@@ -28,7 +28,10 @@
 > nobara hardware — see `docs/task-gpu-paths-2026-09.md`'s entries). **Phase 2 is now fully closed.
 > Phase 3 (WebGPU) is DONE as of 2026-09-10** (`decoder/fitplan.go` admits `"webgpu"`; M-32's
 > family+precision decline and the shared ctx-ceiling helper are what made that safe — see §7's
-> own entry). **Phases 4–5 (the rate band, host-computed experts) remain entirely unstarted.** Design
+> own entry). **Phase 4 is PARTIAL as of 2026-09-10** — `fit -measure`'s self-measure half is
+> done and untested against G1/G5's real hardware reference cells (scoped to "this machine"
+> deliberately); its `pull`/web-UI half stays blocked on Phase 1's unstarted header-only
+> checkpoint reading. **Phase 5 (host-computed experts) remains entirely unstarted.** Design
 > record for the
 > "run something bigger than my hardware" mode of use; reads
 > `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
@@ -272,7 +275,20 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    (`decoder/fitplan_test.go`): generic admit, ctx capped at the ceiling even with byte-budget
    room, a pinned ctx above the ceiling declines, and the family decline fires on a real MLA
    fixture before any byte accounting runs.
-4. **The band** (§5, self-measure first) and the `pull` / web-UI verdicts.
+4. **The band — self-measure half DONE (2026-09-10), `pull`/web-UI half still blocked.**
+   `goinfer-chat fit -measure` (`internal/fitcmd/fit.go`) does §5's self-measure: after the dry
+   run, picks the best ADMITTED backend (any non-cpu over cpu — cpu is always eligible and
+   always tried last), does a REAL `decoder.Load` + `Generate` on it (64-token deterministic
+   prompt, 32 decode steps, greedy), and prints the measured tok/s. Off by default (a second
+   real load is not free); tested on the tracked `llama-tiny` fixture (CPU-only build) plus a
+   real Metal binary on this machine, both real decode paths, not projected. **NOT gated** — G1/
+   G5 (§6) need the SAME reference cells (26B/8GB CUDA, 35B/16GB Mac, Mellum2/8GB WebGPU) real-
+   hardware-measured and compared, which spans the nobara CUDA box and a working WebGPU setup
+   this pass didn't reach; scoped down to "this machine" deliberately (2026-09-10 decision). The
+   `pull` / web-UI verdicts are UNCHANGED — still blocked on Phase 1's still-unstarted
+   header-only checkpoint reading (parsing param counts/MoE geometry without a full `Load()`,
+   which `decoder/gguf.go`'s ~2900 lines of format logic does not separate out today); that is
+   its own scoping pass, not attempted here.
 5. **Host-computed experts** as a placement when L-01 lands — the enum slot exists from step 1.
 
 ## 8. Open questions, deliberately left open
