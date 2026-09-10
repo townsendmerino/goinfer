@@ -137,9 +137,10 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    images, CPU-only, both gated at cosine 1.0 on real end-to-end fixtures** — see §P7 below for
    scope. **GPU-resident decode CLOSED for 26B-A4B/31B, 2026-09-10 (Phase D)**: real-hardware
    gated on this box's RTX 2070 SUPER; E2B/E4B remain resident-ineligible (a decode-side gap, not
-   a vision gap — see Phase D below). Phase C's real-26B-A4B end-to-end validation is still
-   deferred, the tiny fixture is what validates it this pass. Qwen-VL, the most-pulled VL line, is still
-   text-only here.
+   a vision gap — see Phase D below). **Real-checkpoint end-to-end validation CLOSED 2026-09-10
+   (Phase E)** for both E2B and 26B-A4B — also fixed a real, load-blocking bug found along the
+   way in `aikit`'s vision tower (`standardize=true` unimplemented, shipped as `aikit` v1.39.1).
+   Qwen-VL, the most-pulled VL line, is still text-only here.
 3. **No GGUF `mmproj`.** Ollama/llama.cpp users have their VL models as GGUF + mmproj; goinfer
    reads neither half of that pair for vision.
 4. **Image turns defeat prefix reuse and the fit guard.** Agent harnesses with screenshots are the
@@ -392,19 +393,20 @@ number is published without provenance.
   0` (which `google/gemma-4-E2B-it` has: 256) crashed deep in `rmsNorm` on a nil norm weight during
   the FIRST generation, not at load time. Fixed only the failure mode, not the gap: the safetensors
   loader now refuses such a checkpoint loudly at load time with a clear "not implemented yet"
-  error, instead of loading "successfully" and crashing the process on the first request. **Every
-  real gemma4-vision-capable checkpoint checked this session (E2B, 26B-A4B) has PLE** — the E-model
-  family appears to carry it by design, not as an optional feature — so this is now the blocker on
-  any REAL-checkpoint validation of the vision-serving path (the tiny fixture above sidesteps it by
-  construction, `hidden_size_per_layer_input=0`, and is what validates correctness instead).
-  Implementing safetensors PLE loading is real, separate, undone work — whoever picks it up next
-  unblocks real-checkpoint gemma4 vision validation as a side effect.
+  error, instead of loading "successfully" and crashing the process on the first request.
+  **CORRECTED 2026-09-10: this is NOT a blocker on real-checkpoint validation for every size** —
+  the original claim here ("every real gemma4-vision-capable checkpoint checked this session has
+  PLE") was an over-generalization from the E2B finding alone. Checked directly against
+  `~/models/gemma-4-26b-a4b-it/config.json`: `hidden_size_per_layer_input: 0` — **26B-A4B has no
+  PLE at all**, so the safetensors refusal never fires for it; only E2B/E4B need PLE. Implementing
+  safetensors PLE loading remains real, separate, undone work, and now GGUF's already-working PLE
+  loader means it doesn't even block E2B validation — see Phase E below.
 
-  **What Phase B does NOT include**: the real-checkpoint end-to-end gate (blocked on the PLE gap
-  above), an HTTP-level integration smoke test through `vision_serve.go`'s actual splice/encode path
-  (the decoder-level gate above proves the numerics; the HTTP wiring itself is exercised only by
-  reading the code, not yet by a running request), and — as already covered — 26B-A4B/31B's
-  bidirectional attention (**closed by Phase C, next**), GPU-resident decode, video, and audio.
+  **What Phase B does NOT include**: an HTTP-level integration smoke test through `vision_serve.go`'s
+  actual splice/encode path (the decoder-level gate above proves the numerics; the HTTP wiring
+  itself is exercised only by reading the code, not yet by a running request — **closed by Phase E,
+  below**), and — as already covered — 26B-A4B/31B's bidirectional attention (**closed by Phase C,
+  next**), GPU-resident decode, video, and audio.
 
   **Phase C (26B-A4B/31B bidirectional-block attention) DONE, 2026-09-10.** A query position
   INSIDE an image/audio block must see LATER block positions too — impossible in Phase B's
@@ -506,7 +508,45 @@ number is published without provenance.
   outright regardless of vision — a missing text-decode capability needing real new CUDA engine
   work (a "9d"-shaped effort), not a bridge. Also unchanged: P9(a)-style resident-image-prefix
   reuse for gemma4 (this pass mirrors `GenerateVL`'s plain upload path only, not its full-reuse
-  fast path), real-26B-A4B end-to-end validation, video, and audio.
+  fast path), real-26B-A4B end-to-end validation (**closed by Phase E, next**), video, and audio.
+
+  **Phase E (real-checkpoint end-to-end VL validation) DONE, 2026-09-10.** Two new real-checkpoint
+  coherence gates (`internal/serveapp/gemma4_vl_real_test.go`, mirroring
+  `decoder/gemma4_26b_real_test.go`'s known-answer-substring + degeneracy-floor shape rather than
+  an HF-golden cosine gate — a full HF forward on these checkpoints is prohibitively slow on CPU,
+  already established) — and the first-ever run of the REAL serving-side wiring end to end
+  (`loadGemma4VisionTower` → `gemma4VisionPrompt` → `driveVL`, not just decoder-level functions
+  called directly with precomputed features), closing Phase B's own named "HTTP-level integration
+  smoke test" gap for both checkpoint classes at once:
+  - **E2B** (`gemma-4-E2B_q4_0-it.gguf` for text — GGUF's PLE loader already works, safetensors'
+    doesn't — + `gemma-4-E2B-unq`'s safetensors dir for the vision tower, exactly matching
+    production's `--model x.gguf --vision <dir>`): asked to name a solid red synthetic test
+    image's color, answered "The image is a solid, vibrant red color."
+  - **26B-A4B** (`~/models/gemma-4-26b-a4b-it`, `Quant: "int4"`, driving the bidirectional path —
+    the first real-checkpoint proof of Phase C's batched forward, not just the tiny/scaled
+    synthetic fixtures): asked the same about a blue image, answered "Blue."
+
+  **A real, load-blocking bug found and fixed along the way, in `aikit` (not goinfer):** the
+  26B-A4B real gate hit `vision_config.standardize=true is not implemented` outright —
+  `aikit/vision`'s `Gemma4Encoder` (shipped v1.39.0) had `Standardize` as a real config field but
+  no implementation behind it, confirmed false only on the E2B checkpoint at ship time. The real
+  26B-A4B checkpoint sets it true — a genuine per-checkpoint split (confirmed directly against
+  both real `config.json`s), not an edge case — so **every 26B-A4B/31B-class vision request was
+  completely unusable through this encoder before this fix**, independent of anything else in P7
+  Phase C/D. Fixed and shipped as `aikit` v1.39.1: `Gemma4VisionModel.forward`'s own placement,
+  `(hidden_states - std_bias) * std_scale` applied to the pooler's already root-hidden_size-scaled
+  output, immediately before the embedder's RMSNorm+projection. Gated at cosine **1.000000000**
+  against the real 26B-A4B vision-tower weights on synthetic patches
+  (`TestGemma4Encoder_realCheckpointParity_26B` in aikit, the twin of the existing E2B gate — also
+  exercises `use_clipped_linears=false`, which the E2B gate does not); E2B's own
+  `standardize=false` gate is unchanged and still green. Full release ritual run:
+  `releasegate`/`perfgate`/`vulncheck` all pass, see aikit's own `CHANGELOG.md` v1.39.1 entry.
+
+  **What Phase E does NOT include**: a genuine end-to-end HTTP request (this drives the real
+  serving-side Go functions directly, not literal `net/http`); a real E4B/31B checkpoint (neither
+  is present locally — E2B and 26B-A4B are what's available); and, as already covered, GPU-resident
+  decode validation on real weights (Phase D's own real-hardware gate uses the scaled synthetic
+  fixture, not a real checkpoint).
 - **P8 · Finish P5: Qwen3.x-VL image path + GGUF `mmproj`.** Phase 0 on the real Qwen3.6-VL config
   (the vision encoder, dynamic resolution and patch grids, m-RoPE's three position components
   which the text path already degenerates correctly, any DeepStack-style multi-level injection —
