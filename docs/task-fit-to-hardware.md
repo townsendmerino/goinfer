@@ -290,6 +290,9 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    which `decoder/gguf.go`'s ~2900 lines of format logic does not separate out today); that is
    its own scoping pass, not attempted here.
 5. **Host-computed experts** as a placement when L-01 lands — the enum slot exists from step 1.
+   L-01's own design pass (`docs/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found the naive
+   mechanism likely does NOT beat the shipped path at today's measured numbers — no code yet,
+   this phase stays blocked on that resolving, not just on L-01 "landing."
 
 ## 8. Open questions, deliberately left open
 
