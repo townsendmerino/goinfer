@@ -1534,9 +1534,9 @@ supports.
 | `docs/audit-2026-09-10.md|constrain/schema.go:71` | goinfer | `dec := json.NewDecoder(bytes.NewReader(schema))` |
 | `docs/audit-2026-09-10.md|constrain/schema_grammar.go:112` | goinfer | `func (g *schemaGrammar) TryBytes(bs []byte) bool {` |
 | `docs/audit-2026-09-10.md|constrain/tool_grammar.go:17` | goinfer | `type toolGrammar struct {` |
-| `docs/audit-2026-09-10.md|cuda/backend.go:1114` | goinfer | `r.dnHeadP, r.dnBt, r.dnAt = r.af(dp.nv*2), r.af(dp.nv), r.af(dp.nv)` |
-| `docs/audit-2026-09-10.md|cuda/backend.go:1382` | goinfer | `r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)` |
-| `docs/audit-2026-09-10.md|cuda/backend.go:1407` | goinfer | `// the maximum forces the pool for every kernel. That moe_route IS the maximum is not as` |
+| `docs/audit-2026-09-10.md|cuda/backend.go:1131` | goinfer | `if (!r.postOnly && !r.parallelBlock) \|\| h.isDeltaNet {` |
+| `docs/audit-2026-09-10.md|cuda/backend.go:1384` | goinfer | `r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)` |
+| `docs/audit-2026-09-10.md|cuda/backend.go:1409` | goinfer | `// the maximum forces the pool for every kernel. That moe_route IS the maximum is not as` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:365` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:772` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:787` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
@@ -1544,7 +1544,7 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/drafter.go:107` | goinfer | `err := r.do(func() error {` |
 | `docs/audit-2026-09-10.md|cuda/drafter.go:187` | goinfer | `if n > d.ctxCap {` |
 | `docs/audit-2026-09-10.md|cuda/drafter.go:282` | goinfer | `capRows := need + 512` |
-| `docs/audit-2026-09-10.md|cuda/kernel_fma_lint_test.go:67` | goinfer | `macAccum := regexp.MustCompile(`\b\w[\w.]*\s*\+=\s*[^;/]* \* `)` |
+| `docs/audit-2026-09-10.md|cuda/kernel_fma_lint_test.go:66` | goinfer | `macAccum := regexp.MustCompile(`\b\w[\w.]*\s*\+=\s*[^;/]* \* `)` |
 | `docs/audit-2026-09-10.md|cuda/kernel_local_memory_test.go:149` | goinfer | `// AUDITED 2026-08-13 against the embeds: 22 .ptx blobs are go:embed-ed, 12 are here, an` |
 | `docs/audit-2026-09-10.md|cuda/kernel_local_memory_test.go:28` | goinfer | `func ptxModules() []struct {` |
 | `docs/audit-2026-09-10.md|cuda/kernels.go:105` | goinfer | `// attention (GQA online softmax), swiglu_quant, residual. (argmax_reduce moved to argma` |
