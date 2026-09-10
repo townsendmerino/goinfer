@@ -103,6 +103,14 @@ func (m *Model) PrefillLogitsQwenVLForTest(ctx context.Context, ids []int, image
 	return m.prefillLogitsQwenVL(ctx, ids, imageFeats, imgPos, imgLen, mropePos, cache)
 }
 
+// PrefillLogitsGemma4VLForTest exposes prefillLogitsGemma4VL — Gemma 4's sequential,
+// causal-only CPU prefill GenerateGemma4VL drives — same reason as the two hooks above:
+// a cross-package real-checkpoint gate needs the per-step logits, not GenerateGemma4VL's
+// channel-only sampled-token API.
+func (m *Model) PrefillLogitsGemma4VLForTest(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsGemma4VL(ctx, ids, imageFeats, imgPos, imgLen, cache)
+}
+
 // MRopePositionsForTest exposes mropePositions — Qwen2.5-VL's per-token (t,h,w) rotary position
 // triples from the image grid — so a cross-package test can build the same cache.mropeDelta the
 // production GenerateQwenVL path computes, for the same reason as PrefillLogitsQwenVLForTest.

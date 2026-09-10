@@ -131,8 +131,11 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    image blocks (as above), Metal/WebGPU.
 1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
    is cgo). Every Mac and Linux user of the release gets ~minutes per image.
-2. **Vision is one family.** Gemma 4 — the family most of the resident work went into — is
-   text-only here; Qwen-VL, the most-pulled VL line, is text-only here.
+2. **Vision is one family.** ~~Gemma 4 — the family most of the resident work went into — is
+   text-only here~~ **PARTIALLY CLOSED 2026-09-09 (P7 Phase B): Gemma 4 E2B/E4B now serves real
+   images, CPU-only, gated at cosine 1.0 on a real end-to-end fixture** — see §P7 below for scope
+   (26B-A4B/31B and GPU-resident decode remain open). Qwen-VL, the most-pulled VL line, is still
+   text-only here.
 3. **No GGUF `mmproj`.** Ollama/llama.cpp users have their VL models as GGUF + mmproj; goinfer
    reads neither half of that pair for vision.
 4. **Image turns defeat prefix reuse and the fit guard.** Agent harnesses with screenshots are the
@@ -315,6 +318,76 @@ number is published without provenance.
   isolation; wiring them into an end-to-end image-in-prompt request is real, separate work, sized
   similarly to Qwen2.5-VL's own `vision_serve.go` integration, and is the natural next slice.
   Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched.
+
+  **Phase B (serving integration) DONE, 2026-09-09 — CPU-only, E2B/E4B-class (causal) v1.** Wired
+  the Phase A tower into real image-in-prompt requests: `multimodal.Gemma4ImageBlock`/
+  `Gemma4PooledTokens` (the real tokenizer sentinels — `<|image>`/`<|image|>`/`<image|>`, verified
+  against a real E2B-it checkpoint's `tokenizer.json`/`tokenizer_config.json`, not guessed from
+  Gemma 3's symmetric naming), `decoder.GenerateGemma4VL` + `prefillLogitsGemma4VL` (a new file,
+  `decoder/generate_gemma4_vl.go`), and the `internal/serveapp` wiring (`loadedModel.gemma4Enc`,
+  `visionCapable()`'s third disjunct, `driveVL`'s third dispatch arm, `main.go`'s
+  `loadGemma4VisionTower`, both auto-discovery and explicit `--vision <dir>`).
+
+  **The scoping call, and why it's not an approximation for what it covers**: Gemma 4 is an
+  "own-forward" family with no batched embed-by-vector hook (unlike Qwen/Gemma 3, whose CPU image
+  prefill runs one batched pass via the generic `runLayersFromEmbedN`) — only the single-token
+  `runLayersGemma4FromEmbed` exists. `prefillLogitsGemma4VL` walks the prompt ONE TOKEN AT A TIME
+  through it instead. That is not a shortcut for E2B/E4B specifically: those checkpoints ship
+  `use_bidirectional_attention` unset, so the real HF forward already attends to the image block
+  strictly causally — a sequential walk **is** that forward, not a stand-in for a bidirectional
+  one. 26B-A4B/31B (`use_bidirectional_attention: "vision"`) need a genuinely different, blockwise-
+  masked batched forward this does not implement; `loadGemma4VisionTower` refuses those checkpoints
+  at load time with a clear error rather than silently serving the wrong mask. No GPU-resident
+  bridge either — Gemma 4's resident CUDA decode has a KV layout (cross-layer sharing on its tail
+  layers) the generic `UploadKV`/`residentUploadPrefill` bridge was never verified against; deferred
+  as separate, GPU-verified follow-up, mirroring how Gemma3/Qwen's own resident bridge ("gap 0")
+  was itself a later pass after their original CPU-only `GenerateVL`/`GenerateQwenVL` shipped first.
+
+  **Gated at cosine 1.000000, exact argmax** against a real, non-degenerate tiny
+  `Gemma4ForConditionalGeneration` fixture (`scripts/pin_gemma4_vl_tiny.py` +
+  `scripts/pin_gemma4_vl_image.py`, `decoder/gemma4_vl_test.go`) — both the text-only path and the
+  full image→embed→splice→logits path. The fixture deliberately carries `num_kv_shared_layers=2`
+  (of 4 layers, alternating sliding/full types) and norms/layer_scalar strengthened away from HF's
+  identity-init defaults, not an incidental choice — see the next paragraph.
+
+  **Two real, pre-existing bugs found and fixed along the way, both in `decoder/weights.go`'s
+  safetensors gemma4 loader — found only because this session is the first time a real gemma4
+  safetensors checkpoint (rather than a tiny fixture or a GGUF) was pushed through the full decoder
+  end to end.** (1) The loader unconditionally tried to load `k_proj`/`v_proj`/`k_norm` for EVERY
+  layer; a real checkpoint with `num_kv_shared_layers > 0` (confirmed: `google/gemma-4-E2B-it` has
+  20 of 35 layers with no such tensors at all — they reuse an earlier layer's KV, exactly the
+  mechanism `forward_gemma4.go`'s `kvSrc` already implements on the FORWARD side) crashed on load
+  with a missing-tensor error. GGUF's loader (`decoder/gguf.go`) already had this right; the
+  safetensors path mirrors it now. (2) A real checkpoint can vary `intermediate_size` by layer (the
+  same E2B checkpoint: layers 0-14 are 6144-wide, layers 15-34 — exactly the KV-shared tail — are
+  12288-wide), but `config.json` carries only one scalar and, unlike GGUF, has no per-layer array to
+  read; the loader now discovers each layer's real width from its own tensor's on-disk shape (a
+  cheap header lookup) and seeds `arch.gemma4.FFNPerLayer`, which the forward path's `arch.ffnAt(i)`
+  already expected to exist. Both fixes are proven numerically inert for every existing gemma4
+  golden (`scripts/refresh_parity_hashes.sh`'s self-verifying run: 52 forward goldens green, 0
+  failed) and are the exact shape the new tiny VL fixture above deliberately exercises.
+
+  **A third, separate, pre-existing gap found the same way, deliberately NOT fixed here: safetensors
+  Per-Layer-Embedding (PLE) loading was never implemented** (`decoder/weights.go`'s own comment
+  already called this "Phase 4" before this session touched it) — `PerLayerTokenEmbed`/
+  `PerLayerModelProj`/`PerLayerProjNorm`/per-layer `PLEGate`/`PLEProj` are loaded by GGUF's loader
+  and nowhere in the safetensors one. Left alone, a checkpoint with `hidden_size_per_layer_input >
+  0` (which `google/gemma-4-E2B-it` has: 256) crashed deep in `rmsNorm` on a nil norm weight during
+  the FIRST generation, not at load time. Fixed only the failure mode, not the gap: the safetensors
+  loader now refuses such a checkpoint loudly at load time with a clear "not implemented yet"
+  error, instead of loading "successfully" and crashing the process on the first request. **Every
+  real gemma4-vision-capable checkpoint checked this session (E2B, 26B-A4B) has PLE** — the E-model
+  family appears to carry it by design, not as an optional feature — so this is now the blocker on
+  any REAL-checkpoint validation of the vision-serving path (the tiny fixture above sidesteps it by
+  construction, `hidden_size_per_layer_input=0`, and is what validates correctness instead).
+  Implementing safetensors PLE loading is real, separate, undone work — whoever picks it up next
+  unblocks real-checkpoint gemma4 vision validation as a side effect.
+
+  **What Phase B does NOT include**: the real-checkpoint end-to-end gate (blocked on the PLE gap
+  above), an HTTP-level integration smoke test through `vision_serve.go`'s actual splice/encode path
+  (the decoder-level gate above proves the numerics; the HTTP wiring itself is exercised only by
+  reading the code, not yet by a running request), and — as already covered — 26B-A4B/31B's
+  bidirectional attention, GPU-resident decode, video, and audio.
 - **P8 · Finish P5: Qwen3.x-VL image path + GGUF `mmproj`.** Phase 0 on the real Qwen3.6-VL config
   (the vision encoder, dynamic resolution and patch grids, m-RoPE's three position components
   which the text path already degenerates correctly, any DeepStack-style multi-level injection —
@@ -438,7 +511,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
 
-- **VL config flattening** — `decoder/config.go:1315` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:1358` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,

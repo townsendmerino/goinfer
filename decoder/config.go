@@ -8,6 +8,22 @@ import (
 	"slices"
 )
 
+// gemma4BidirectionalAttention is Config.UseBidirectionalAttention's type — see
+// that field's doc comment for why a plain string is unsafe (a same-named,
+// differently-typed field already exists on Gemma 3's own config). Accepts a
+// real JSON string; resolves anything else (bool, null, absent) to "".
+type gemma4BidirectionalAttention string
+
+func (b *gemma4BidirectionalAttention) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*b = gemma4BidirectionalAttention(s)
+		return nil
+	}
+	*b = ""
+	return nil
+}
+
 // Config captures the Gemma 3 architecture constants the forward pass
 // depends on. Field tags follow the HF config.json schema so a checkpoint's
 // config drives the loader rather than hardcoded constants — the same
@@ -297,6 +313,33 @@ type Config struct {
 	// Lives under text_config in a real checkpoint; loadConfig's text_config
 	// merge picks it up via this tag with no special-casing needed.
 	PadTokenID int `json:"pad_token_id"`
+
+	// UseBidirectionalAttention (gemma4, P7 vision serving): "vision" on
+	// 26B-A4B/31B checkpoints enables a blockwise bidirectional attention mask
+	// over image/audio blocks on SLIDING (local) layers only — global layers
+	// stay strictly causal (create_masks_for_vision_model; docs/multimodal.md's
+	// P7 entry, verified against modeling_gemma4.py, not assumed). Empty/null
+	// on E2B/E4B, where image-block attention is plain causal — exactly what
+	// GenerateGemma4VL's sequential embed-by-vector prefill
+	// (decoder/generate_gemma4_vl.go) already produces. GenerateGemma4VL
+	// implements ONLY the causal (E2B/E4B) case; a checkpoint reporting a
+	// non-empty value here must be refused at vision-tower load time
+	// (internal/serveapp), not silently served with the wrong mask. Lives
+	// under text_config in a real checkpoint, picked up automatically by
+	// loadConfig's existing text_config merge — same shape as PadTokenID above.
+	//
+	// Typed as gemma4BidirectionalAttention, NOT plain string: Config is one
+	// flat struct shared by every family, and a REAL, unrelated field of the
+	// SAME NAME already exists on Gemma 3's own config (use_bidirectional_attention
+	// as a bool — confirmed on testdata/gemma-3-270m/config.json and every
+	// gemma3-vl-tiny fixture, a pre-existing field, different semantics). A
+	// plain `string` field failed to unmarshal that bool with a hard error,
+	// breaking gemma3 loading entirely — found by running the full decoder
+	// suite, not assumed safe. The tolerant type accepts a real string
+	// (gemma4's own case) and silently resolves anything else (bool, null,
+	// absent) to "" — exactly the "not gemma4's own field, or genuinely unset"
+	// case this check needs to treat as "no bidirectional attention."
+	UseBidirectionalAttention gemma4BidirectionalAttention `json:"use_bidirectional_attention"`
 
 	// GPT-2 uses a different config vocabulary: n_embd /
 	// n_head / n_layer / n_positions / n_inner / layer_norm_epsilon /

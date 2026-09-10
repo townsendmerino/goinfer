@@ -41,6 +41,7 @@ type visionInput struct {
 	imgPos, imgLen int
 	grid           [3]int // Qwen m-RoPE grid (t,h,w in patch units); zero ⇒ Gemma 3
 	qwen           bool
+	gemma4         bool // selects GenerateGemma4VL in driveVL
 }
 
 // visionPrompt runs img through the tower and assembles the multimodal prompt: the
@@ -125,6 +126,9 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 	if lm.qwenEnc != nil {
 		return lm.qwenVisionPrompt(system, turns, idx, img)
 	}
+	if lm.gemma4Enc != nil {
+		return lm.gemma4VisionPrompt(system, turns, idx, img)
+	}
 	pv, err := vision.Preprocess(img.data, lm.vcfg)
 	if err != nil {
 		return visionInput{}, err
@@ -191,6 +195,43 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
 	}
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
+}
+
+// gemma4VisionPrompt is the Gemma 4 image path: aspect-ratio-preserving preprocess
+// → the tower (projection baked in, no separate projector) → the prompt with the
+// image block prepended. n (soft-token count) is computed from THIS image's own
+// patch grid (multimodal.Gemma4PooledTokens), not a fixed per-checkpoint constant
+// — see that function's doc comment. CPU-only v1 (decoder.GenerateGemma4VL): see
+// its own doc comment for why no resident GPU bridge is attempted here.
+func (lm *loadedModel) gemma4VisionPrompt(system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
+	patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)
+	if err != nil {
+		return visionInput{}, err
+	}
+	imgHash := multimodal.HashImageBytes(img.data)
+	n := multimodal.Gemma4PooledTokens(positionIDs, lm.gemma4Enc.Cfg.PoolingKernelSize)
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		feats, err := lm.gemma4Enc.Forward(patches, positionIDs)
+		if err != nil {
+			return nil, fmt.Errorf("gemma4 vision encoder: %w", err)
+		}
+		if len(feats) != n*hiddenDim {
+			return nil, fmt.Errorf("gemma4 encoder emitted %d features, want %d", len(feats), n*hiddenDim)
+		}
+		return feats, nil
+	}
+	block := multimodal.Gemma4ImageBlock(n) + "\n"
+	turns[idx].Content = block + turns[idx].Content
+	ids, err := encodeVisionSegments(lm, system, turns, block)
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
+	imgPos, imgLen := multimodal.FindImageRun(ids, lm.gemma4ImgTok)
+	if imgLen != n {
+		return visionInput{}, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
+	}
+	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, gemma4: true}, nil
 }
 
 // serveVisionChat handles an OpenAI /v1/chat/completions request that carries an

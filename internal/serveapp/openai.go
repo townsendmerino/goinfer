@@ -94,6 +94,15 @@ type loadedModel struct {
 	qwenPP     multimodal.QwenPreprocessConfig
 	qwenMerge  int // spatial_merge_size
 	qwenImgTok int // <|image_pad|> id
+
+	// Gemma 4 vision tower (P7 serving integration; nil ⇒ not gemma4/no tower). No
+	// separate projector — Gemma4Encoder.Forward bakes the embed_vision projection
+	// in. gemma4MaxSoft is the checkpoint's vision_soft_tokens_per_image budget
+	// (vision.Gemma4Preprocess's maxSoftTokens); the actual per-image token count
+	// is data-dependent and computed per request via multimodal.Gemma4PooledTokens.
+	gemma4Enc     *vision.Gemma4Encoder
+	gemma4MaxSoft int
+	gemma4ImgTok  int // <|image|> id
 }
 
 // cachedTokenBytes returns the constraint masker's token→bytes table, built once per model
@@ -154,7 +163,7 @@ func chatInputBytes(msgs []chatMessage) int {
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
-	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil
+	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.gemma4Enc != nil
 }
 
 // tryEnter claims a queue slot then locks the model's mutex (the decode worker).
@@ -1075,6 +1084,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	var gen *decoder.Generation
 	if vi.qwen {
 		stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+	} else if vi.gemma4 {
+		stream, gen = lm.model.GenerateGemma4VL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
 	} else {
 		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
 	}

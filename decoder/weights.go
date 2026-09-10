@@ -748,21 +748,39 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			if l.QProj, err = loadProj(tn(i, s.QProj), aqDim, hd); err != nil {
 				return err
 			}
-			if l.KProj, err = loadProj(tn(i, s.KProj), akvDim, hd); err != nil {
-				return err
-			}
-			if arch.gemma4.KVShared && arch.isGlobalLayer(i) {
-				l.VFromK = true // V = v_norm(k_proj output); no v_proj tensor
-			} else if l.VProj, err = loadProj(tn(i, s.VProj), akvDim, hd); err != nil {
-				return err
-			}
-			if l.OProj, err = loadProj(tn(i, s.OProj), hd, aqDim); err != nil {
-				return err
-			}
 			if l.QNorm, err = st.TensorF32(tn(i, s.QNorm), ahd); err != nil {
 				return err
 			}
-			if l.KNorm, err = st.TensorF32(tn(i, s.KNorm), ahd); err != nil {
+			// Cross-layer KV sharing (num_kv_shared_layers, P7): the last N layers carry
+			// NO k_proj/k_norm/v_proj tensors at all in the checkpoint — they reuse an
+			// earlier layer's KV at forward time (runLayersGemma4FromEmbed's kvSrc; see
+			// its own comment). Missing entirely from this branch until P7's real-checkpoint
+			// vision gate actually tried to load a real E2B safetensors checkpoint through
+			// the full decoder (num_kv_shared_layers=20 of 35 layers there) — the GGUF
+			// loader (decoder/gguf.go's loadG4) already had this right; this mirrors it.
+			// l.KVShared here is the PER-LAYER "reuses an earlier layer's KV" flag
+			// (decoder/weights.go's own LayerWeights.KVShared doc comment) — NOT the same
+			// thing as arch.gemma4.KVShared below, which is attention_k_eq_v (a config-level
+			// "V reuses K's projection on global layers" flag; same field name, different
+			// struct, different meaning — see decoder/arch.go's two separate doc comments).
+			firstShared := arch.NumLayers - arch.gemma4.SharedKVLayers
+			l.KVShared = i >= firstShared
+			if !l.KVShared {
+				if l.KProj, err = loadProj(tn(i, s.KProj), akvDim, hd); err != nil {
+					return err
+				}
+				if arch.gemma4.KVShared && arch.isGlobalLayer(i) {
+					l.VFromK = true // V = v_norm(k_proj output); no v_proj tensor
+				} else if l.VProj, err = loadProj(tn(i, s.VProj), akvDim, hd); err != nil {
+					return err
+				}
+				if l.KNorm, err = st.TensorF32(tn(i, s.KNorm), ahd); err != nil {
+					return err
+				}
+			}
+			// OProj is per-layer regardless of KVShared — a shared-KV layer still has its
+			// own attention output projection over the (shared-K/V-derived) attention result.
+			if l.OProj, err = loadProj(tn(i, s.OProj), hd, aqDim); err != nil {
 				return err
 			}
 		} else {
@@ -867,13 +885,17 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		// model-level PerLayer tensors; the per-layer inp_gate/proj come from the
 		// GGUF path — the safetensors E-models with PLE are Phase 4.)
 		if arch.gemma4 != nil {
-			if l.GateProj, err = loadProj(tn(i, s.GateProj), cfg.IntermediateDim, hd); err != nil {
+			// Per-layer FFN width: arch.gemma4.FFNPerLayer is seeded (safetensors
+			// checkpoints) below, right before this loop starts, from each layer's own
+			// on-disk tensor shape — see that seeding step's comment for why.
+			ffn := arch.ffnAt(i)
+			if l.GateProj, err = loadProj(tn(i, s.GateProj), ffn, hd); err != nil {
 				return err
 			}
-			if l.UpProj, err = loadProj(tn(i, s.UpProj), cfg.IntermediateDim, hd); err != nil {
+			if l.UpProj, err = loadProj(tn(i, s.UpProj), ffn, hd); err != nil {
 				return err
 			}
-			if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, cfg.IntermediateDim); err != nil {
+			if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, ffn); err != nil {
 				return err
 			}
 			// layer_scalar (a [1] buffer). Absent ⇒ 1.0 (no scaling).
@@ -962,6 +984,59 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			return err
 		}
 		return nil
+	}
+	// Gemma 4 per-layer FFN width (P7): a real safetensors checkpoint can vary
+	// intermediate_size by layer (confirmed on google/gemma-4-E2B-it: layers
+	// 0-14 are 6144-wide, layers 15-34 — exactly the cross-layer-KV-shared tail —
+	// are 12288-wide), but config.json carries only ONE scalar intermediate_size,
+	// unlike GGUF, which stores an explicit per-layer array (gguf.go's
+	// ggufIntArray -> cfg.FFNPerLayer). Missing entirely until P7's real-checkpoint
+	// vision gate actually tried to load this checkpoint's full text decoder — the
+	// forward pass already calls arch.ffnAt(i) per layer (forward_gemma4.go) and
+	// silently fell back to the uniform width for every safetensors-loaded gemma4
+	// model. Seeded HERE, sequentially, before the parallel loop above reads it via
+	// arch.ffnAt(i): each layer's real width comes from its own GateProj tensor's
+	// on-disk shape (a cheap header lookup — Tensor() does not decode data), not a
+	// rule guessed from the KV-shared boundary, which is correlated on this one
+	// checkpoint but not something the config asserts holds in general.
+	if arch.gemma4 != nil {
+		// Per-Layer-Embedding (PLE) inputs are NOT loaded anywhere in this (safetensors)
+		// function — only decoder/gguf.go's loader populates PerLayerTokenEmbed/
+		// PerLayerModelProj/PerLayerProjNorm and each layer's PLEGate/PLEProj (a
+		// pre-existing, documented gap: "the safetensors E-models with PLE are Phase 4",
+		// this function's own comment a few lines below, predating P7). Left unloaded,
+		// runLayersGemma4FromEmbed's PLE branch (pleDim>0) panics deep in rmsNorm on a
+		// nil PerLayerProjNorm — found only now because P7's real-checkpoint vision gate
+		// is the first thing to run a real safetensors E-model checkpoint (which has PLE)
+		// through this loader's forward path at all. Refusing loudly here, at load time,
+		// turns that into a clear error instead of a crash on the first generation —
+		// implementing safetensors PLE loading itself is real, separate work (Phase 4),
+		// out of scope for P7.
+		if arch.gemma4.HiddenSizePerLayerInput > 0 {
+			return nil, fmt.Errorf("gemma4: this checkpoint has per-layer-embedding (PLE) inputs (hidden_size_per_layer_input=%d); safetensors PLE loading is not implemented yet (GGUF loads it; see decoder/weights.go's gemma4 FFN-loading comment)", arch.gemma4.HiddenSizePerLayerInput)
+		}
+		ffnPerLayer := make([]int, cfg.NumLayers)
+		varies := false
+		for i := range ffnPerLayer {
+			ffnPerLayer[i] = cfg.IntermediateDim
+			if gt, terr := st.Tensor(tn(i, s.GateProj)); terr == nil && len(gt.Shape) == 2 {
+				ffnPerLayer[i] = gt.Shape[0]
+			}
+			if ffnPerLayer[i] != cfg.IntermediateDim {
+				varies = true
+			}
+		}
+		// Only record it when it genuinely varies: decoder/features.go's FeatGemma4EModel
+		// gate reads "FFNPerLayer is non-empty" as "this checkpoint declared real per-layer
+		// FFN metadata" (GGUF's own ggufIntArray only returns non-empty for a checkpoint
+		// that actually carries that metadata key at all). Setting it unconditionally here
+		// made every safetensors gemma4 checkpoint — including plain dense/MoE fixtures with
+		// a uniform width — report FeatGemma4EModel, which CUDA/Metal residency does not
+		// implement; found by TestPlan_tableDriven/TestPlan_extraBytesReservedAheadOfExperts
+		// (gemma4-moe-tiny) regressing to "decline" in the full suite, not assumed safe.
+		if varies {
+			arch.gemma4.FFNPerLayer = ffnPerLayer
+		}
 	}
 	if err := parallelLayers(cfg.NumLayers, loadLayer); err != nil {
 		return nil, err

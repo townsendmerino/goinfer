@@ -858,6 +858,8 @@ func (s *server) loadVisionTower(cfg config) error {
 			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
 				if visionModelType(cand) == "qwen2_5_vl" {
 					dir = cand
+				} else if visionModelType(cand) == "gemma4" {
+					dir = cand
 				} else if _, err := multimodal.LoadProjector(cand); err == nil {
 					dir = cand
 				}
@@ -875,6 +877,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	int8Tower := cfg.visionQuant == "int8" || cfg.backend == "webgpu"
 	if visionModelType(dir) == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower)
+	}
+	if visionModelType(dir) == "gemma4" {
+		return s.loadGemma4VisionTower(dir, int8Tower)
 	}
 	enc, err := vision.LoadEncoder(dir, int8Tower)
 	if err != nil {
@@ -950,6 +955,45 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
 		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (merge %d, image-pad id %d) from %s\n", lm.name, lm.qwenMerge, lm.qwenImgTok, dir)
+	}
+	return nil
+}
+
+// loadGemma4VisionTower attaches the Gemma 4 vision tower (aikit) to the single
+// loaded model. No separate projector — Gemma4Encoder.Forward bakes the
+// embed_vision projection in. Refuses a checkpoint whose text_config sets
+// use_bidirectional_attention (26B-A4B/31B-class blockwise image attention),
+// which decoder.GenerateGemma4VL does not implement — see that function's doc
+// comment and docs/multimodal.md's P7 entry — rather than silently serving it
+// with the wrong (causal) mask. No GPU-resident vision path: aikit's
+// Gemma4Encoder has no EnableResident method (unlike vision.Encoder), so
+// --backend webgpu has no effect on this tower beyond the optional int8 CPU
+// weight format.
+func (s *server) loadGemma4VisionTower(dir string, int8Tower bool) error {
+	for _, lm := range s.models {
+		if bd := lm.model.Config().UseBidirectionalAttention; bd != "" {
+			return fmt.Errorf("gemma4 vision: %q sets use_bidirectional_attention=%q (26B-A4B/31B-class blockwise image attention); GenerateGemma4VL only supports the E2B/E4B-class causal case (use_bidirectional_attention unset)", lm.name, bd)
+		}
+	}
+	enc, err := vision.LoadGemma4Encoder(dir, int8Tower)
+	if err != nil {
+		return fmt.Errorf("load gemma4 vision encoder (%s): %w", dir, err)
+	}
+	pp, err := multimodal.LoadGemma4PreprocessConfig(dir)
+	if err != nil {
+		return fmt.Errorf("gemma4 vision preprocessor config (%s): %w", dir, err)
+	}
+	for _, lm := range s.models {
+		lm.gemma4Enc = enc
+		lm.gemma4MaxSoft = pp.MaxSoftTokens
+		lm.gemma4ImgTok = -1
+		if id, ok := lm.tk.TokenID(multimodal.Gemma4ImageSoftToken); ok {
+			lm.gemma4ImgTok = id
+		}
+		if lm.gemma4ImgTok < 0 {
+			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.Gemma4ImageSoftToken)
+		}
+		fmt.Fprintf(os.Stderr, "loaded Gemma 4 vision tower for %q (max %d soft tokens/image, soft-token id %d) from %s\n", lm.name, lm.gemma4MaxSoft, lm.gemma4ImgTok, dir)
 	}
 	return nil
 }
