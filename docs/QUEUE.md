@@ -1338,16 +1338,16 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8.go:146` | goinfer | `func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32, nE, N,` |
 | `docs/audit-2026-09-02.md|gpu/moe_w4a8_expert_test.go:37` | goinfer | `stack, err := ctx.UploadStackedExpertsInt4(nib, sc, nE, N, K)` |
 | `docs/audit-2026-09-02.md|gpu/qwen35_resident_parity_test.go:30` | goinfer | `if os.Getenv("GOINFER_DNET_PARITY") == "" {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:1074` | goinfer | `func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:1122` | goinfer | `func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, ` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:1244` | goinfer | `func (rd *residentDecoder) Reset() {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:1071` | goinfer | `func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:1119` | goinfer | `func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]float32, ` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:1241` | goinfer | `func (rd *residentDecoder) Reset() {` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:125` | goinfer | `_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:159` | goinfer | `// M-31: the cap is READ from decoder's declaration, not restated here. This site had it` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:180` | goinfer | `kvF16 := m.KVCacheF16()` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:210` | goinfer | `ctxCap := 16384` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:210` | goinfer | `// decoder.WebGPUCtxCeiling (fitplan.go) is the single source for these three literals —` |
 | `docs/audit-2026-09-02.md|gpu/residency.go:45` | goinfer | `if K%w4a8GroupSize == 0 && !int4SlowPath {` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:768` | goinfer | `if os.Getenv("GOINFER_SSM_F16MAMBA") != "" { // f16 (no quality gain; kept for experimen` |
-| `docs/audit-2026-09-02.md|gpu/residency.go:848` | goinfer | `// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:765` | goinfer | `if os.Getenv("GOINFER_SSM_F16MAMBA") != "" { // f16 (no quality gain; kept for experimen` |
+| `docs/audit-2026-09-02.md|gpu/residency.go:845` | goinfer | `// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and` |
 | `docs/audit-2026-09-02.md|gpu/residency_c01_reset_test.go:24` | goinfer | `requireHeavyModel(t)` |
 | `docs/audit-2026-09-02.md|gpu/resident_pack_bench_test.go:21` | goinfer | `func BenchmarkResidentPackCost(b *testing.B) {` |
 | `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |
@@ -1743,8 +1743,8 @@ supports.
 | `docs/task-gpu-paths-2026-09.md|decoder/residency.go:205` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
 | `docs/task-gpu-paths-2026-09.md|decoder/residency.go:207` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
 | `docs/task-gpu-paths-2026-09.md|decoder/residency.go:242` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
-| `docs/task-gpu-paths-2026-09.md|gpu/residency.go:1028` | goinfer | `rl.hasSink = true` |
-| `docs/task-gpu-paths-2026-09.md|gpu/residency.go:509` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
+| `docs/task-gpu-paths-2026-09.md|gpu/residency.go:1025` | goinfer | `rl.hasSink = true` |
+| `docs/task-gpu-paths-2026-09.md|gpu/residency.go:486` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
 | `docs/task-gpu-paths-2026-09.md|internal/serveapp/main.go:831` | goinfer | `spec:     cfg.spec == "ngram",` |
 | `docs/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1006` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |

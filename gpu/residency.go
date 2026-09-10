@@ -207,13 +207,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 	}
 
-	ctxCap := 16384
-	switch {
-	case kvI8:
-		ctxCap = 65536
-	case kvF16:
-		ctxCap = 32768
-	}
+	// decoder.WebGPUCtxCeiling (fitplan.go) is the single source for these three literals — the
+	// planner (Model.Plan, Phase 3 of task-fit-to-hardware.md §7) calls the SAME function, so a
+	// plan's promised ctx and this actual allocation can never drift apart.
+	ctxCap := decoder.WebGPUCtxCeiling(kvF16, kvI8)
 	// M-32, the -ctx half: Options.ResidentContext / `serve -ctx` was read nowhere under gpu/,
 	// so -ctx 32768 silently kept 16k (requests past it fail at checkCap) and -ctx 2048 still
 	// allocated 16k per layer. min(), not the request: the caps above are proven-fit ceilings,

@@ -178,6 +178,69 @@ func TestPlan_tableDriven(t *testing.T) {
 				p.DenseBytes, p.Reason)
 		}
 	})
+
+	// Phase 3 (task-fit-to-hardware.md §7): webgpu admitted to Plan now that M-32 is fixed.
+	t.Run("dense/webgpu/generous_admits_like_other_backends", func(t *testing.T) {
+		m := loadDenseTiny(t)
+		dense := m.ResidentDenseWeightBytes()
+		kv := m.kvBytesPerPositionAllLayers(false, false) * ctxWant
+		p := m.Plan("webgpu", 100*(dense+kv), PlanRequest{Ctx: ctxWant})
+		if p.Placement != PlacementResident {
+			t.Fatalf("Placement = %v, want resident (generous budget, no precision flag, a generic GQA arch): %s", p.Placement, p.Reason)
+		}
+		if p.Ctx != ctxWant {
+			t.Errorf("Ctx = %d, want %d", p.Ctx, ctxWant)
+		}
+	})
+
+	t.Run("dense/webgpu/kv_i8_ctx_capped_at_fixed_ceiling_even_with_room", func(t *testing.T) {
+		m := loadDenseTiny(t)
+		dense := m.ResidentDenseWeightBytes()
+		perPos := m.kvBytesPerPositionAllLayers(false, true) // i8
+		const wantCtx = 100000                               // above the 65536 i8 ceiling
+		// Deliberately generous: bytes alone would fit wantCtx, so only the fixed ceiling — not
+		// the budget — should be what caps it.
+		budget := dense + perPos*int64(wantCtx)*2
+		p := m.Plan("webgpu", budget, PlanRequest{Ctx: wantCtx, KVI8: true})
+		if p.Placement != PlacementResident {
+			t.Fatalf("Placement = %v, want resident (unpinned ctx shrinks to the ceiling, does not decline): %s", p.Placement, p.Reason)
+		}
+		if p.Ctx != WebGPUCtxCeiling(false, true) {
+			t.Errorf("Ctx = %d, want the fixed i8 ceiling %d — byte budget had room past it, so only M-32's cap explains a smaller value", p.Ctx, WebGPUCtxCeiling(false, true))
+		}
+	})
+
+	t.Run("dense/webgpu/pinned_ctx_above_ceiling_declines", func(t *testing.T) {
+		m := loadDenseTiny(t)
+		dense := m.ResidentDenseWeightBytes()
+		perPos := m.kvBytesPerPositionAllLayers(true, false) // f16
+		const wantCtx = 40000                                // above the 32768 f16 ceiling
+		budget := dense + perPos*int64(wantCtx)*2            // plenty of bytes; only the ceiling should bite
+		p := m.Plan("webgpu", budget, PlanRequest{Ctx: wantCtx, CtxPinned: true, KVF16: true})
+		if p.Placement != PlacementDecline {
+			t.Fatalf("Placement = %v, want decline (a pinned ctx above webgpu's fixed f16 ceiling must be refused, not silently shrunk): %s", p.Placement, p.Reason)
+		}
+	})
+
+	t.Run("hybrid/webgpu/kv_precision_declines_on_family_not_bytes", func(t *testing.T) {
+		m := loadHybridTiny(t)
+		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
+		_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+		_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
+		dense := m.ResidentDenseWeightBytes()
+		kv := m.kvBytesPerPositionAllLayers(true, false) * ctxWant
+		p := m.Plan("webgpu", 100*(dense+kv), PlanRequest{Ctx: ctxWant, KVF16: true})
+		if mlaOK || dnetOK || nemoOK {
+			if p.Placement != PlacementDecline {
+				t.Fatalf("Placement = %v, want decline (--kv-f16 on a family webgpu's generic KV path doesn't cover): %s", p.Placement, p.Reason)
+			}
+			if p.DenseBytes != 0 {
+				t.Errorf("DenseBytes = %d, want 0 — the M-32 family decline must fire before any byte accounting, mirroring gpu/residency.go's own check", p.DenseBytes)
+			}
+		} else if p.Placement == PlacementDecline && p.DenseBytes != 0 {
+			t.Errorf("declined with byte accounting already computed (DenseBytes=%d) — a feature decline should not run the arithmetic first: %s", p.DenseBytes, p.Reason)
+		}
+	})
 }
 
 // TestPlan_extraBytesReservedAheadOfExperts is the regression this session's own G11 CUDA guard

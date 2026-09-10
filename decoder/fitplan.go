@@ -133,18 +133,39 @@ func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
 	return nE, k, true
 }
 
-// Plan is task-fit-to-hardware.md §2's pure function, scoped to Phase 1 ("no behaviour change
-// yet — the plan is printed beside today's decision"): given this model, a candidate backend, how
-// many bytes are free on it, and what the caller asked for, decide a placement — resident,
+// WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling —
+// gpu/residency.go's own ctxCap before any -ctx request lowers it further via min(): 16384
+// positions at f32 (the proven 8 GB fit), 32768 at f16 (half the per-token bytes), 65536 at i8
+// (a quarter). Shared here, and gpu/residency.go calls THIS function instead of repeating the
+// three literals, so the planner's ctx choice and the backend's actual allocation can never
+// drift apart — exactly what Phase 3 (task-fit-to-hardware.md §7) needs before admitting webgpu:
+// a freeBytes-driven plan alone could pick a context above this fixed ceiling (VRAM allowing),
+// which BuildResident would then silently NOT honour (min() keeps the ceiling, and the plan's
+// promise would be wrong).
+func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
+	switch {
+	case kvI8:
+		return 65536
+	case kvF16:
+		return 32768
+	default:
+		return 16384
+	}
+}
+
+// Plan is task-fit-to-hardware.md §2's pure function ("no behaviour change yet [Phase 1] — the
+// plan is printed beside today's decision"): given this model, a candidate backend, how many
+// bytes are free on it, and what the caller asked for, decide a placement — resident,
 // expert-cached, weight-paged, or decline — following §2's priority order (shrink context toward
 // ctxPlanFloor first, since it costs no numerics; then cap routed experts into a cache; dense
 // weights always stay resident; CPU alone falls to weight-paging rather than ever declining).
 //
 // No I/O, no side effects, and no defaults invented — see PlanRequest's own doc comment. backend
-// is one of "cuda", "metal", "cpu" this phase; WebGPU is Phase 3's own item (task-fit-to-
-// hardware.md §7) because it needs the M-32 KV-precision fix first, so Plan does not attempt it
-// yet — an unrecognised backend name gets the same GPU-shaped feature-eligibility decline a real
-// one would for an unsupported arch, rather than a panic or a silent wrong answer.
+// is "cuda", "metal", "cpu", or (Phase 3, task-fit-to-hardware.md §7) "webgpu" — admitted now that
+// M-32 is fixed (gpu/residency.go: BuildResident declines the same Nemotron/Qwen3.5/MLA +
+// KVF16/KVI8 combo Plan declines below, and honours -ctx via the same WebGPUCtxCeiling); an
+// unrecognised backend name gets the same GPU-shaped feature-eligibility decline a real one would
+// for an unsupported arch, rather than a panic or a silent wrong answer.
 func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	p := Plan{Backend: backend, FreeBytes: freeBytes, ExtraBytes: req.ExtraBytes}
 
@@ -156,6 +177,27 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		}
 	}
 
+	// M-32 (webgpu only): the Nemotron, Qwen3.5 and MLA branches always allocate f32 KV
+	// regardless of the flag — mirrors gpu/residency.go's own decline EXACTLY (same three
+	// eligibility checks, same combination), so Plan never promises a KV precision BuildResident
+	// will not actually honour.
+	var ctxCeiling int
+	if backend == "webgpu" {
+		ctxCeiling = WebGPUCtxCeiling(req.KVF16, req.KVI8)
+		if req.KVF16 || req.KVI8 {
+			_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
+			_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+			_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
+			if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
+				map[bool]string{true: "mla"}[mlaOK]; family != "" {
+				flag := map[bool]string{true: "--kv-i8"}[req.KVI8] + map[bool]string{true: "--kv-f16"}[req.KVF16]
+				p.Placement = PlacementDecline
+				p.Reason = fmt.Sprintf("webgpu: %s does not implement %s KV (only the generic GQA path does) — drop the flag to plan the resident path", family, flag)
+				return p
+			}
+		}
+	}
+
 	p.DenseBytes = m.ResidentDenseWeightBytes()
 	nExperts, topK, isMoE := m.moeGeometry()
 	if isMoE {
@@ -163,10 +205,16 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	}
 
 	// tryCtx computes KV bytes at ctx and reports whether dense+KV+extra alone (i.e. a model with
-	// no experts, or one whose experts are being ignored by THIS attempt) fits.
+	// no experts, or one whose experts are being ignored by THIS attempt) fits — AND, on webgpu,
+	// whether ctx is within WebGPUCtxCeiling: bytes fitting is not enough there, since the fixed
+	// per-precision cap refuses positions past it regardless of free VRAM (M-32).
 	tryCtx := func(ctx int) (kv int64, fits bool) {
 		kv = m.kvBytesPerPositionAllLayers(req.KVF16, req.KVI8) * int64(ctx)
-		return kv, p.DenseBytes+kv+req.ExtraBytes <= freeBytes
+		fits = p.DenseBytes+kv+req.ExtraBytes <= freeBytes
+		if ctxCeiling > 0 && ctx > ctxCeiling {
+			fits = false
+		}
+		return kv, fits
 	}
 
 	// chooseCtx applies the priority order's first step: the requested ctx if it fits (with dense
@@ -188,6 +236,9 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		}
 		budget := freeBytes - p.DenseBytes - req.ExtraBytes
 		fitCtx := int(budget / perPos)
+		if ctxCeiling > 0 && fitCtx > ctxCeiling {
+			fitCtx = ctxCeiling // the fixed per-precision cap, not a byte budget — never grow past it either
+		}
 		if fitCtx < ctxPlanFloor {
 			return req.Ctx, perPos * int64(req.Ctx), false
 		}
@@ -201,6 +252,10 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	p.Ctx, p.KVBytes = ctx, kv
 
 	if !ctxOK {
+		if ctxCeiling > 0 && req.Ctx > ctxCeiling {
+			return p.decline(backend, "context %d exceeds webgpu's fixed %d-position ceiling at this KV precision (M-32) — pass a smaller -ctx or drop --kv-f16/--kv-i8",
+				req.Ctx, ctxCeiling)
+		}
 		return p.decline(backend, "context %d does not fit even at the %d-position floor: dense %.2f GB + KV %.2f GB exceeds %.2f GB free",
 			req.Ctx, ctxPlanFloor, gb(p.DenseBytes), gb(kv), gb(freeBytes))
 	}

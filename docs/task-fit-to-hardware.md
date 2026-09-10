@@ -26,7 +26,9 @@
 > WITHOUT the `ResidencyBackend` interface change the doc originally expected: an out-of-band hint
 > on `decoder.Model` was enough, CUDA-only since Metal hosts no drafter today, verified on real
 > nobara hardware — see `docs/task-gpu-paths-2026-09.md`'s entries). **Phase 2 is now fully closed.
-> Phases 3–5 (WebGPU, the rate band, host-computed experts) remain entirely unstarted.** Design
+> Phase 3 (WebGPU) is DONE as of 2026-09-10** (`decoder/fitplan.go` admits `"webgpu"`; M-32's
+> family+precision decline and the shared ctx-ceiling helper are what made that safe — see §7's
+> own entry). **Phases 4–5 (the rate band, host-computed experts) remain entirely unstarted.** Design
 > record for the
 > "run something bigger than my hardware" mode of use; reads
 > `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
@@ -258,8 +260,18 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    on the reference cells before anything flips.
 2. **Fit by default** on CUDA, Metal and CPU: placement + ctx chosen when not pinned; `--fit=off`;
    Metal slots as an Option/flag; G1 and G6.
-3. **WebGPU**: honour `-ctx`, route every KV allocation through one precision-aware helper
-   (M-32), then admit it to the planner.
+3. **WebGPU — DONE (2026-09-10).** M-32's `-ctx` half was already fixed 2026-09-02 (declining,
+   not implementing); `Plan()` now admits `"webgpu"` (`decoder/fitplan.go`), mirrors
+   `gpu/residency.go`'s own Nemotron/Qwen3.5/MLA + KVF16/KVI8 decline so it never promises a
+   precision `BuildResident` will refuse, and enforces the SAME fixed per-precision ctx ceiling
+   (16k/32k/64k) via one shared `decoder.WebGPUCtxCeiling` both the planner and the backend call
+   — no drift possible between what a plan promises and what gets allocated. `goinfer-chat fit`
+   reports it like any other compiled backend; it just has no live free-memory probe yet (WebGPU
+   exposes no portable query), so it prints "no memory probe available... skipped" until one
+   exists — a separate, harder problem this step did not need to solve. Table-tested
+   (`decoder/fitplan_test.go`): generic admit, ctx capped at the ceiling even with byte-budget
+   room, a pinned ctx above the ceiling declines, and the family decline fires on a real MLA
+   fixture before any byte accounting runs.
 4. **The band** (§5, self-measure first) and the `pull` / web-UI verdicts.
 5. **Host-computed experts** as a placement when L-01 lands — the enum slot exists from step 1.
 

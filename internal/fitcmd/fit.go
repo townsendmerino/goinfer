@@ -31,7 +31,9 @@ const fitUsage = `%[1]s fit <path> — show how this checkpoint would be placed 
 This loads the checkpoint (unlike a future header-only version): real bytes, real quantization,
 same load time %[1]s itself would pay. It reports EVERY backend compiled into this binary —
 a CPU-only build only ever reports "cpu"; the metal/cuda release assets report their own GPU
-backend too. WebGPU is not reported yet (needs its own KV-precision fix first).
+backend too. WebGPU is planned correctly (task-fit-to-hardware.md Phase 3, M-32 fixed) but has
+no live free-memory probe yet — WebGPU exposes no portable query for it — so it reports "no
+memory probe available... skipped" until one exists.
 `
 
 // Run implements `fit`. args excludes the program name and the "fit" word. Returns an exit code.
