@@ -1773,6 +1773,7 @@ supports.
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:1632` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:545` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:547` | goinfer | `r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("ge` |
+| `docs/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2185` | goinfer | `// down-proj, weight-accumulating into the residual: x += wgt[j] * (Down_e · act).` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:287` | goinfer | `#define SA_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:412` | goinfer | `// N-32: dnValueDim is DeltaNet's out-projection staging width. deltanet.go dispatches p` |

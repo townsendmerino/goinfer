@@ -196,17 +196,51 @@ multi-tenant contention is a genuinely different question than one stream's own 
 "always offload" degrades however badly host-CPU contention degrades under concurrent decode
 generally, which this pass did not measure.
 
-## 6. Partial-sum merge — the "exactly" in the audit's mechanism
+## 6. Partial-sum merge — sketched concretely, verified against the real kernel signatures
 
-Not designed in detail this pass (gated on §4/§5 resolving first), but named so it isn't a
-surprise later: `moeMLP`'s existing weighted-sum accumulation (`out[i] += w * expOut[i]` per
-expert, §3 above) already merges an arbitrary subset of experts into one output — GPU-computed
-and CPU-computed expert outputs would merge the SAME way, order-independent for f32 addition
-modulo reassociation (the repo's own `MatmulBTAcc64` precedent shows where that has mattered:
-router-adjacent sums that can flip a near-tie). Merging is not the hard part; getting the
-GPU-side partial output back from CUDA to combine with the CPU-side partial output without a
-second host round trip (defeating the whole point) is — this needs its own design once the
-above is resolved, not before.
+§4/§5 resolved (compute clears the latency bar per layer, and the aggregate-occupancy bar per
+token), so this is no longer "design once the above resolves" — it's the next real gap. Read
+`cuda/resident.go`/`cuda/moe.cu` directly to check the sketch below is buildable, not assumed:
+
+**The hook point already exists and needs no new readback.** `loadRoutedExperts` (`cuda/resident.go`)
+already does a device→host download of `r.rIdx` (the router's topK expert indices) once per MoE
+layer per token — "the only host round trip on the decode path" (its own comment) — then checks
+each against the layer's LRU slot cache, classifying hits vs. misses BEFORE any DMA is issued.
+**This classification point is exactly where L-01 would branch**: instead of queuing a miss for
+DMA admission, hand its expert id to a CPU goroutine (the pinned host copy C′ already holds).
+
+**Excluding a CPU-handled expert from the GPU's own accumulation needs no kernel change.**
+`gemv_w4a8_moe_wacc` (`cuda/moe.cu:180`) — the "expert combine" kernel, `dst[row] += wgt[slot] *
+result` — is dispatched ONE SLOT AT A TIME, in a `for j := 0; j < topK; j++` loop
+(`cuda/resident.go:2185`ff, confirmed by reading the actual loop, not assumed). Skipping a slot
+CPU is handling is a caller-side `continue` in that loop — zero CUDA changes, because the kernel
+was already per-slot, not a fused all-topK-at-once dispatch.
+
+**The merge itself is one small, CONSTANT-cost op, not one-per-expert.** The CPU side should sum
+its own weighted contributions locally (`Σ wgt[j] * expert_j_output`, plain float32 addition in
+host memory — cheap, and exactly the same order-independent accumulation `moeMLP`'s existing
+`out[i] += w*expOut[i]` already does, so GPU-computed and CPU-computed partial sums merge the
+identical way `moeMLP` already merges an arbitrary expert subset) BEFORE uploading anything —
+producing ONE `[hidden]`-sized vector (2816 floats = 11.26 KB for gemma-4-26b) regardless of how
+many experts CPU handled that layer. One async H2D copy of that vector + one trivial add-kernel
+(`x[i] += cpu_partial[i]`, single dispatch, hidden=2816 elements) enqueued AFTER it on the SAME
+CUDA stream the GPU's own `fMoEWacc` calls already use — no new blocking host sync, because
+stream ordering (not a host wait) is what guarantees the add happens after the upload.
+
+**Estimated cost of the merge machinery itself: single-digit microseconds per layer where an
+offload happened** — 11.26 KB at G32's own measured 10.90 GB/s line rate is ~1 µs of transfer;
+the rest is fixed per-call launch overhead (a small async memcpy + a tiny kernel dispatch),
+which on this class of hardware is typically a few µs, not the hundreds-of-µs-to-low-ms this
+pass's savings are measured in. **Not independently measured this pass** — a real number needs
+an actual CUDA harness, which is exactly §9's next item, not this one.
+
+**The one real risk this sketch surfaces: a stall if CPU compute for a layer's misses finishes
+AFTER the GPU would otherwise be ready to move to the next layer.** §3's table shows CPU-parallel
+time exceeds GPU's own 1070 µs compute floor only at m=8 (1128 µs, a ~58 µs stall) — for every
+m≤7, CPU finishes at or before the GPU's own per-layer compute would, so the upload+add is
+already enqueued before it's needed and costs nothing beyond the microseconds above. Bounded,
+small, and shrinking as m falls — not the kind of risk that erodes §3's savings materially, but
+real and worth confirming against actual CUDA stream semantics rather than this arithmetic.
 
 ## 7. The speculation-antagonism risk — RE-CONFIRMED 2026-09-10, still holds
 
@@ -257,24 +291,23 @@ turns out NOT to be the constraint — "send everything" wins there too, for a s
 
 ## 9. Recommended next step
 
-**Still not CUDA code.** Two of this section's original three items are now done, both
-arithmetic on already-measured numbers, no new hardware run: the isolated microbenchmark (§3,
-reversed the headline finding) and the aggregate host-CPU occupancy question (§5, resolved in
-favour of the simpler "send everything" mechanism — no throttle needed, for a single decode
-stream). What remains, in order:
+**Still not CUDA code.** Three of this section's items are now done, all arithmetic/design on
+already-measured numbers and existing kernel signatures, no new hardware run: the isolated
+microbenchmark (§3, reversed the headline finding), the aggregate host-CPU occupancy question
+(§5, resolved in favour of "send everything," no throttle needed for a single decode stream),
+and the merge-path sketch (§6, verified against the real `cuda/resident.go`/`cuda/moe.cu`
+signatures — no kernel rewrite needed, constant small cost, one bounded stall risk at m=8).
+What remains:
 
-1. **Design the merge path** (§6) concretely enough to estimate its own cost — the one piece of
-   §3's per-layer table that is currently assumed free, and now the more load-bearing gap since
-   the compute side has cleared its bar.
-2. **Multi-tenant / concurrent-request contention** (§5's one remaining caveat) — this pass only
+1. **Multi-tenant / concurrent-request contention** (§5's one remaining caveat) — this pass only
    modeled a single decode stream's own aggregate CPU budget; a second concurrent request
    competing for the same host CPU is a genuinely different question, unmeasured here.
-3. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
+2. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
    overlaps CPU expert compute with GPU hit-path compute for the SAME layer and measures
    wall-clock, not two separate numbers added by hand. This is where CUDA/async work starts
    being unavoidable, and it should happen on Qwen3.6-35B-A3B (the audit's own decision-rule
    model), not gemma-4-26b (this pass's stand-in for geometry convenience).
-4. Only then: the audit's pre-registered, paired-and-interleaved measurement on the real card
+3. Only then: the audit's pre-registered, paired-and-interleaved measurement on the real card
    per §0's decision rule (fund ≥1.3×, park <1.15×).
 
 ## Sources
@@ -286,4 +319,7 @@ miss classification, block-verify's own infra-gap finding) · `decoder/mlp.go` (
 (the existing per-expert core-width parallelism) · `internal/fitcmd/fit.go` (`-measure`, used
 as-is for §2's new number) · `docs/measurements/g33-routing-trace.json` (re-read for its
 per-decision distribution, §8) · `cuda/spec_pager_interaction_test.go` (re-run on real hardware
-for §7's confirmation).
+for §7's confirmation) · `decoder/l01_expert_bench_test.go` (the isolated microbenchmark, §3) ·
+`cuda/resident.go` (`loadRoutedExperts`, the existing routing-readback hook point; the
+per-slot `fMoEWacc` dispatch loop) · `cuda/moe.cu` (`gemv_w4a8_moe_wacc`'s per-slot signature) —
+both read directly for §6's merge sketch, not assumed.
