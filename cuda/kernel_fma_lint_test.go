@@ -12,22 +12,20 @@ import (
 // lintedKernels is the contracted-kernel list TestKernelFMALint checks, and the list
 // TestKernelFMALint_coversEmbeddedPTX holds to the set of kernels actually shipped as PTX.
 //
-// moe.cu is exempt because the shipped moe.ptx was a FROZEN artifact, audited at NVRTC 12.6.85.
+// moe.cu is exempt because the shipped moe.ptx is a FROZEN artifact, audited at NVRTC 12.6.85.
 //
-// M-35: IT IS NO LONGER THAT ARTIFACT. It was regenerated at 12.9.86 (610ce7f) against
-// REGEN.md's pinned-toolchain rule, so "frozen audited PTX" is a label with nothing behind it,
-// and this exemption now protects a file that was rebuilt by an un-audited toolchain. moe.cu
-// carries bare MACs whose contraction a different NVRTC may choose differently, and there is no
-// bit-identity sibling for the MoE GEMVs — so this is not a numerics bug today, but the reason
-// for the exemption has expired.
+// M-35 (CLOSED 2026-09-10, option (a)): the shipped moe.ptx (and glue.ptx, gemv_fwd.ptx —
+// cuda/kernels.go names all three as the audited set) had drifted to this box's ambient NVRTC
+// 12.9.86 across three separate regens, none at the pinned toolchain. Re-pinned at genuine
+// 12.6.85 per cuda/testdata/REGEN.md's own "re-pin at 12.6.85" record — moe.cu's bare MACs are
+// still exempt (they were never converted to intrinsics; that is still-open option (b)), but the
+// artifact behind the "frozen, audited" claim is real again. Per-kernel hash audit + the real
+// MoE-resident-parity gate (identical min cosine 0.997829 before/after) found no measurable
+// numeric drift from the three ambient-NVRTC regens either — see REGEN.md for the full record.
 //
-// NOT resolved here, and deliberately: the two honest fixes are (a) pin-regen at 12.6.85 per
-// REGEN.md and record the control, which needs the pinned CUDA toolchain and therefore the
-// Linux box, or (b) drop the exemption — convert moe.cu's MACs to explicit intrinsics and add
-// it to lintedKernels — which changes kernel source that cannot be compiled or measured on this
-// machine. Guessing at either from here would be the same unvalidated change this audit has
-// declined elsewhere. TestMoEPTX_versionMatchesItsDocumentation below pins the ACTUAL state so
-// the claim and the artifact cannot drift apart again while the decision is pending.
+// moe.cu's bare MACs remain unconverted (option (b) from the original M-35 finding), so this
+// exemption stays. TestMoEPTX_versionMatchesItsDocumentation below still runs as a standing
+// guard against a FOURTH ambient regen quietly drifting the pin again.
 //
 // router_f32.cu was added AFTER this lint and never joined the list (audit C-16), so the pure-f32
 // Gemma-4 router projection — on the production decode path, and the one path the repo calls "the
@@ -44,9 +42,10 @@ var lintedKernels = []string{
 // fmaLintExempt lists embedded PTX deliberately outside the lint, with the reason. Anything else
 // that is embedded MUST be linted — see TestKernelFMALint_coversEmbeddedPTX.
 var fmaLintExempt = map[string]string{
-	// See the M-35 note above: the "frozen" premise expired when moe.ptx was regenerated at
-	// 12.9.86. The exemption is kept (converting the MACs unvalidated is worse) and pinned.
-	"moe.cu": "MoE PTX exempted pending M-35: regenerated at 12.9.86, no longer the audited 12.6.85 artifact",
+	// See the M-35 note above: re-pinned at 12.6.85 (2026-09-10), the "frozen, audited" premise
+	// holds again. Still exempt because the bare MACs were never converted to intrinsics
+	// (option (b), still open) — a future ambient regen could re-drift this at any time.
+	"moe.cu": "MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted",
 }
 
 // TestKernelFMALint enforces the bit-identity rule at BUILD TIME: no bare float multiply-accumulate

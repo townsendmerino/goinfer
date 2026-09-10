@@ -1,18 +1,23 @@
 # Regenerating `moe.ptx` (and the other audited 12.6 artifacts)
 
-> **STATUS 2026-09-02 (audit M-35): the shipped `moe.ptx` is NO LONGER the 12.6.85 artifact.**
-> Its header reads `release 12.9, V12.9.86` — it was regenerated at 12.9.86 in `610ce7f`, against
-> the rule this document states. So "audited artifact" below describes the intent, not the file
-> in the tree, and the control the table records (rebuilt unchanged at 12.6.85, byte-identical)
-> no longer corresponds to what ships. Nothing measured says the numerics moved — there is no
-> bit-identity sibling for the MoE GEMVs, and `moe.cu`'s bare MACs may simply have been
-> contracted the same way — but that is an absence of evidence, not evidence.
->
-> Two ways to close it, neither doable off the box: **(a)** pin-regen at 12.6.85 per the
-> procedure below and record the control, or **(b)** drop `moe.cu`'s FMA-lint exemption —
-> convert its MACs to explicit intrinsics and add it to `lintedKernels`, which makes the
-> toolchain's contraction choice stop mattering. `TestMoEPTX_versionMatchesItsDocumentation`
-> pins the current state so this cannot drift further while the decision is open.
+> **STATUS 2026-09-10 (audit M-35): CLOSED via option (a).** `moe.ptx`, `glue.ptx` and
+> `gemv_fwd.ptx` — the three files `cuda/kernels.go` names as the audited set — had each
+> independently drifted to this box's ambient NVRTC 12.9.86 across three unrelated regens
+> (`moe.ptx` in `610ce7f`, `glue.ptx` in `23c46b13`, `gemv_fwd.ptx` in `5b443834`), none of them
+> at the pinned toolchain. Re-pinned at the genuine 12.6.85 via the procedure below (`/tmp/venv-
+> nvrtc12685`, same wheel versions), on the Linux box. Per-kernel hash audit (splitting each PTX
+> on `.visible .entry` and hashing each kernel's own section — the method this doc's control
+> below prescribes) found 14 of 16 kernels across the three files BYTE-IDENTICAL between the two
+> toolchains; only `gemv_f32_a8` (moe.ptx) and `glu_quant` (glue.ptx) differ, and both diffs are
+> register-allocation/scheduling only (confirmed via `diff`: parameter/register renumbering and
+> basic-block relabeling, no operation reordering that would change FMA contraction) — `glu_quant`
+> is additionally in `lintedKernels` (FMA-linted), so its source already forces explicit
+> `__fmaf_rn` ordering regardless of what the compiler would otherwise choose. The real
+> MoE-resident-parity gate (`moe_parity_test.go`) measures the EXACT SAME `min cosine 0.997829`
+> before and after — not just passing, byte-for-byte the same number, on the box's real GPU.
+> `TestMoEPTX_versionMatchesItsDocumentation` is green now that the claim and the artifact agree
+> again; it stays as a standing drift guard rather than being deleted, since nothing prevents a
+> fourth ambient regen.
 
 `moe.ptx` is an **audited artifact**: it ships built at CUDA **NVRTC 12.6.85**, while this dev box
 runs 12.9.86. The standing rule is often paraphrased as "never regenerate moe.ptx". That is not
@@ -54,6 +59,42 @@ sha256sum testdata/moe.ptx                          # MUST equal BEFORE
 
 Comments and whitespace in the `.cu` are codegen-neutral — verified by rebuilding after a
 comment-only edit and getting the same sha — so documenting a kernel never dirties the artifact.
+
+## Record: re-pin at 12.6.85 after three ambient drifts (2026-09-10, audit M-35)
+
+No source edit — this is option (a) closing the M-35 status note above. `moe.ptx`, `glue.ptx`,
+`gemv_fwd.ptx` were each rebuilt from their CURRENT (unchanged) `.cu` sources at the pinned
+12.6.85 toolchain (`/tmp/venv-nvrtc12685`, `nvidia-cuda-nvrtc-cu12==12.6.85` +
+`nvidia-cuda-runtime-cu12==12.6.77`), replacing what three separate ambient-NVRTC regens
+(`610ce7f`, `23c46b13`, `5b443834`) had each left at this box's then-current 12.9.86.
+
+| file | kernels | byte-identical across toolchains | differ |
+|---|---|---|---|
+| `moe.ptx` | 6 | `gemv_w4a8_moe`, `gemv_w4a8_moe_wacc`, `gemv_w4a8_moe_wacc_bias`, `moe_route`, `shared_gate_combine` | `gemv_f32_a8` |
+| `glue.ptx` | 8 | `attention`, `layernorm_quant`, `quant_vec`, `residual`, `rmsnorm_f32`, `rmsnorm_quant`, `rope` | `glu_quant` |
+| `gemv_fwd.ptx` | 2 | `kv_store`, `rope_kv` | — (both identical) |
+
+**Confined-diff audit** on the two kernels that differ: both are register-allocation/basic-block
+relabeling only (`diff` on each kernel's own PTX text shows parameter/register renumbering and
+branch-target relabeling, no reordering of the arithmetic operations themselves).
+`glu_quant` is in `lintedKernels` (FMA-linted — glue.cu is not exempt), so its source already
+forces explicit `__fmaf_rn` ordering; the toolchain has no contraction discretion to exercise
+there regardless. `gemv_f32_a8` lives in moe.cu (still FMA-lint exempt, bare MACs) so is the one
+kernel where a real, if tiny, numeric drift was structurally possible — measured, not assumed:
+`TestMoEResidentParity`'s real-GPU gate (`moe_parity_test.go`) reports `min cosine 0.997829`
+identically before and after, the same run-to-run-stable number this gate has always reported on
+this fixture.
+
+| step | file | sha256 (first 16) |
+|---|---|---|
+| checked in before this fix (12.9.86) | `moe.ptx` | see `git log -p` at this commit's parent |
+| checked in before this fix (12.9.86) | `glue.ptx` | see `git log -p` at this commit's parent |
+| checked in before this fix (12.9.86) | `gemv_fwd.ptx` | see `git log -p` at this commit's parent |
+| after re-pin at 12.6.85 | `moe.ptx` / `glue.ptx` / `gemv_fwd.ptx` | recorded in this commit's own diff |
+
+`argmax.ptx`, `router_f32.ptx`, `prefill_batched.ptx` and everything else in `testdata/` are
+built at whatever NVRTC was on hand when they were added (per this doc's own rule: adding a NEW
+kernel needs no pin) — their 12.9.86 headers are expected and unchanged by this fix.
 
 ## Record: `MOE_MAX_E` 256 → 512 (2026-08-09)
 

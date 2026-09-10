@@ -103,9 +103,13 @@ var gemvRNPTX []byte
 
 // gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
 // attention (GQA online softmax), swiglu_quant, residual. (argmax_reduce moved to argmaxPTX;
-// see below. The committed glue.ptx still contains a dead copy until the next regen — glue.ptx is
-// this box's NVRTC 12.9.86, not 12.6. moe.ptx was the audited 12.6.85 artifact (R-26) and is NOT
-// any more — it was regenerated at 12.9.86 in 610ce7f; see M-35 and cuda/testdata/REGEN.md.)
+// see below. moe.ptx, glue.ptx and gemv_fwd.ptx are the audited artifacts (R-26); M-35 found
+// all three had drifted to this box's ambient NVRTC 12.9.86 — restored to the pinned 12.6.85
+// via cuda/testdata/REGEN.md's procedure, per-kernel hash audit recorded there. Only 2 of the
+// 16 kernels across the three files differ at all between the two toolchains (gemv_f32_a8,
+// glu_quant — both confirmed benign register/scheduling differences, not FMA-contraction: glu_quant
+// is FMA-linted, so its source already forces explicit ordering regardless of compiler discretion),
+// and the real MoE/glue resident-parity gates measure byte-identical before and after.)
 //
 //go:embed testdata/glue.ptx
 var gluePTX []byte

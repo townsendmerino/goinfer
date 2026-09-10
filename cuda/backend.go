@@ -788,9 +788,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		// argmax_reduce lives in its own module (argmax.ptx), off glue.ptx, so the C-14 index tie-break
-		// fix didn't force a glue.ptx regen. (glue.ptx and all production PTX except moe.ptx are this
-		// box's NVRTC 12.9.86; only moe.ptx + the bench kernels are the audited 12.6.85 — audit R-26.)
-		// See cuda/argmax.cu.
+		// fix didn't force a glue.ptx regen. (moe.ptx, glue.ptx and gemv_fwd.ptx are the audited
+		// artifacts, pinned at NVRTC 12.6.85 — audit R-26, restored per M-35/REGEN.md after drifting
+		// to this box's ambient 12.9.86 in 610ce7f/23c46b13/5b443834. Every other production PTX,
+		// including argmax.ptx, is built at whatever NVRTC was on hand when it was added — never
+		// claimed otherwise.) See cuda/argmax.cu.
 		amod, e2 := r.dev.CompileLibrary(argmaxPTX)
 		if e2 != nil {
 			return e2
