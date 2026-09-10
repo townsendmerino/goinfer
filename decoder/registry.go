@@ -676,16 +676,26 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // "confirmed independently by re-saving a config" check was verifying serialization output, not
 // that the saved file loads back through the real model class — it does not. So, unlike Mellum
 // (whose real modeling code genuinely does build two separate rotary tables from
-// `rope_parameters["full_attention"]`/`["sliding_attention"]`), olmo3 gets ONE table under
-// either config form: the flat form is the real release's own shape and needs no expansion, and
-// the nested form — reachable only via `parseRopeParameters` below, never via a real checkpoint
-// — is folded into the same single table rather than split, because a split is not a state the
-// real model can reach.
+// `rope_parameters["full_attention"]`/`["sliding_attention"]`), olmo3 gets ONE table, read via
+// `parseRopeFlat` below (the qwen3_5_moe-shaped flat reader) — NOT `parseRopeParameters`, which
+// expects the per-layer-type `{"full_attention":{...}}` shape and errors ("missing
+// full_attention") on the real release's flat object. That mismatch shipped once already: this
+// function's fix for the ORIGINAL (per-layer-split) bug above still called the nested parser,
+// so a fresh real-checkpoint load failed outright instead of merely drifting — caught the same
+// way as the original finding, by actually loading a real config rather than trusting the
+// reasoning that had already been written down here.
 func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	base := cfg.RoPEGlobalBase
 	var scaling *ropeScaling
 	if len(cfg.RopeParameters) > 0 {
-		full, _, err := parseRopeParameters(cfg.RopeParameters)
+		// FLAT, not the per-layer-type {"full_attention":{...},"sliding_attention":{...}}
+		// shape parseRopeParameters expects — this function's own doc comment above already
+		// established that a real Olmo3 checkpoint's rope_parameters is one shared object read
+		// directly by Olmo3RotaryEmbedding, never split by layer type. parseRopeFlat is the
+		// qwen3_5_moe-shaped flat reader; its partial-rotary return is unused here because
+		// olmo3's RotaryDim comes from the top-level config field (cfg.rotaryDim()), not from
+		// rope_parameters.
+		full, _, err := parseRopeFlat(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}
