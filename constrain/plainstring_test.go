@@ -114,6 +114,84 @@ func TestPlainString_exact(t *testing.T) {
 	}
 }
 
+// TestToolGrammar_plainStringExact is P-17 (audit-2026-09-10): toolGrammar had no InPlainString
+// at all, so inPlainString's type assertion never matched it and every forced tool call paid
+// the full walk on its own JSON body — the exact regression TestPlainString_exact above already
+// gates for schemaGrammar/jsonGrammar directly. Same harness, applied to *toolGrammar's own
+// wrapped shape (a literal prefix, then {"name":const,"arguments":<paramSchema>}, then a literal
+// suffix) so a wrong phase boundary (e.g. treating the literal prefix/suffix as plain-string-able)
+// would be caught here, not just proven absent by construction.
+func TestToolGrammar_plainStringExact(t *testing.T) {
+	vocab := buildAdversarialVocab()
+	eos := []int{0}
+
+	paramSchema, err := SchemaFromStruct(struct {
+		Query string   `json:"query"`
+		Tags  []string `json:"tags"`
+	}{})
+	if err != nil {
+		t.Fatalf("SchemaFromStruct: %v", err)
+	}
+	base, err := ToolCallGrammar("<tool_call>\n", "\n</tool_call>", "arguments", "search", false, paramSchema)
+	if err != nil {
+		t.Fatalf("ToolCallGrammar: %v", err)
+	}
+
+	prefixes := []string{
+		// Phase 0: the literal prefix, partial and complete — never plain-string-able.
+		"", "<tool_call", "<tool_call>\n",
+		// Phase 1: inside the JSON value, at various points including string state.
+		`<tool_call>
+{"name":"`, `<tool_call>
+{"name":"search","arguments":{"query":"`, `<tool_call>
+{"name":"search","arguments":{"query":"find x`,
+		`<tool_call>
+{"name":"search","arguments":{"query":"q","tags":["`,
+		`<tool_call>
+{"name":"search","arguments":{"query":"q","tags":["a`,
+		// Complete JSON value, into phase 2 (the literal suffix) — never plain-string-able.
+		`<tool_call>
+{"name":"search","arguments":{"query":"q","tags":[]}}`,
+	}
+
+	var everEngaged bool
+	for _, prefix := range prefixes {
+		fast := NewMasker(base.Clone(), vocab, eos)
+		slow := NewMasker(base.Clone(), vocab, eos)
+		slow.plainOK = newBitset(len(vocab)) // all zero ⇒ never fast-pathed: the reference
+
+		gf, gs := fast.GrammarClone(), slow.GrammarClone()
+		gf.Reset()
+		gs.Reset()
+		if !gf.TryBytes([]byte(prefix)) {
+			continue // a prefix the grammar rejects is not a reachable state
+		}
+		gf.Commit([]byte(prefix))
+		gs.Commit([]byte(prefix))
+
+		lf := make([]float32, len(vocab))
+		ls := make([]float32, len(vocab))
+		fast.MaskAt(gf, lf)
+		slow.MaskAt(gs, ls)
+
+		plain := inPlainString(gf)
+		everEngaged = everEngaged || plain
+		for id := range vocab {
+			bf, bs := math.IsInf(float64(lf[id]), -1), math.IsInf(float64(ls[id]), -1)
+			if bf != bs {
+				t.Fatalf("prefix %q (plainString=%v): id %d (%q) — fast path says masked=%v, full walk says masked=%v",
+					prefix, plain, id, vocab[id], bf, bs)
+			}
+		}
+	}
+	// TAUTOLOGY GUARD: without InPlainString, inPlainString(gf) is always false (the type
+	// assertion never matches), so fast and slow compute the identical thing and every prefix
+	// above would pass trivially without ever exercising the fast path this test is about.
+	if !everEngaged {
+		t.Fatal("no prefix ever reported plainString=true — InPlainString never engaged, so this test proved nothing")
+	}
+}
+
 // TestPlainString_classification pins the bitmap's meaning: exactly the tokens with no '"',
 // no '\' and no byte < 0x20 (and a non-empty surface) are marked, and nothing else. A drift
 // here would not fail the exactness test if it were conservative, so it is asserted directly.

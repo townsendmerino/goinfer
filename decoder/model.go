@@ -1184,6 +1184,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	var logits []float32
 	var err error
 	if useGPU {
+		// P-09 (audit-2026-09-10, sibling of R-02): a request cancelled while waiting for the
+		// model lock (tryEnter blocks with no context) reaches here with ctx ALREADY done —
+		// residentForgetIDs below would discard a warm cache for a prefill that residentPrefillSeed
+		// is about to refuse anyway, cold-prefilling the whole conversation on the next live turn
+		// for no benefit. Checked before the forget, not left to residentPrefillSeed's own ctx
+		// check, which runs too late to matter.
+		if err := ctx.Err(); err != nil {
+			g.err = err
+			return
+		}
 		// Prefix reuse: skip the leading tokens already committed to the resident positional
 		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
 		// generation completes the cache is mid-write, and any early return must leave the
@@ -1266,6 +1276,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	var generated []int
 	var tProc, tSample, tEmbed, tFwd time.Duration
 	var nFwd int
+	// embScratch is reused across iterations (P-08, audit-2026-09-10): each token's embedding is
+	// consumed synchronously by Forward/ForwardArgmax below before the next one is requested, so
+	// one buffer for the whole loop replaces a fresh [hidden]float32 allocation every token.
+	var embScratch []float32
 	for range maxTokens {
 		select {
 		case <-ctx.Done():
@@ -1372,12 +1386,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			var emb []float32
 			if decodeTiming {
 				t0 = time.Now()
-				emb = m.embedResident(next)
+				emb = m.embedResidentInto(next, embScratch)
 				tEmbed += time.Since(t0)
 				t0 = time.Now()
 			} else {
-				emb = m.embedResident(next)
+				emb = m.embedResidentInto(next, embScratch)
 			}
+			embScratch = emb
 			if fastGreedy {
 				// Greedy fast path: the resident picks the argmax on-device and returns
 				// just the id, skipping the full-logits readback.

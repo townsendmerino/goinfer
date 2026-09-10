@@ -1104,9 +1104,26 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 }
 
 // embedResident returns the input embedding [hidden] for token id — the CPU half of the
-// residency forward, including any embedding scale the arch applies before layer 0.
-func (m *Model) embedResident(id int) []float32 {
-	h := make([]float32, m.w.arch.HiddenDim)
+// residency forward, including any embedding scale the arch applies before layer 0. Always
+// allocates fresh: safe for callers that collect several embeddings into a slice that outlives
+// the call (batch prefill assembly), where a shared buffer would corrupt every entry but the
+// last. The per-token decode loop wants embedResidentInto instead (P-08, audit-2026-09-10).
+func (m *Model) embedResident(id int) []float32 { return m.embedResidentInto(id, nil) }
+
+// embedResidentInto is embedResident with a caller-owned destination: dst is reused when its
+// capacity already fits (grown once otherwise, the same discipline as decodeScratch's buffers),
+// eliminating the make() embedResident pays every call. Safe ONLY where the caller consumes the
+// result synchronously before requesting the next one — the resident decode loop's actual shape
+// (embed → Forward → discard, one token at a time) — never where more than one live embedding
+// must exist at once.
+func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
+	hidden := m.w.arch.HiddenDim
+	var h []float32
+	if cap(dst) >= hidden {
+		h = dst[:hidden]
+	} else {
+		h = make([]float32, hidden)
+	}
 	m.w.Embed.Row(id, h)
 	// Gemma's √hidden embedding multiplier (Architecture.EmbedScale), mirroring runLayers.
 	// Applied here rather than on the GPU so the resident stream starts where the CPU's does.

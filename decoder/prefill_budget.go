@@ -3,7 +3,9 @@ package decoder
 import (
 	"fmt"
 	"os"
+	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // prefillEnters counts every call to (*Model).NewCache — the actual KV allocation a generation
@@ -17,6 +19,45 @@ var prefillEnters atomic.Int64
 // independently measured for this specific context (available-RAM headroom, not a fraction of
 // total RAM) — stated rather than hidden, pending a real measurement of its own.
 const prefillAvailFraction = fitMemFraction
+
+// availProbeTTL rate-limits the CURRENTLY-AVAILABLE memory probe (P-13, audit-2026-09-10):
+// hostRAMAvailable shells out (vm_stat on darwin, a /proc/meminfo read on linux) on every call,
+// and AdmitPrefillMemory runs it on every request that reaches prefill — a fork+exec per chat
+// request on darwin. Available memory does not need sub-250ms freshness for an admission check;
+// it changes on the timescale of other processes starting/exiting, not per-request.
+const availProbeTTL = 250 * time.Millisecond
+
+var (
+	availProbeMu    sync.Mutex
+	availProbeValue int64
+	availProbeAt    time.Time
+)
+
+// cachedHostRAMAvailable is hostRAMAvailable (the raw, uncached, test-injectable indirection)
+// behind a short TTL cache. Kept as a separate wrapper rather than folded into hostRAMAvailable
+// itself so a test overriding hostRAMAvailable directly (fitguard_test.go, prefill_budget_test.go)
+// still sees its own value immediately — resetAvailProbeCache (called from those tests' inject
+// helper) clears the cache so a fresh override is never masked by a stale cached read from a
+// PRIOR test's value within the same 250ms window.
+func cachedHostRAMAvailable() int64 {
+	availProbeMu.Lock()
+	defer availProbeMu.Unlock()
+	if now := time.Now(); now.Sub(availProbeAt) < availProbeTTL {
+		return availProbeValue
+	}
+	v := hostRAMAvailable()
+	availProbeValue = v
+	availProbeAt = time.Now()
+	return v
+}
+
+// resetAvailProbeCache invalidates the cache immediately — test-only, called when a test swaps
+// hostRAMAvailable to a new fake value so the swap takes effect on the very next read.
+func resetAvailProbeCache() {
+	availProbeMu.Lock()
+	availProbeAt = time.Time{}
+	availProbeMu.Unlock()
+}
 
 // AdmitPrefillMemory is the request-time counterpart to fitguard.go's load-time guard (R13,
 // docs/measurements/cold-user-2026-09-07-macbook-arm64.md). The load-time guard prices the WORST
@@ -38,8 +79,9 @@ const prefillAvailFraction = fitMemFraction
 // shared machine were already using more than the remaining 30% assumed available. Weights are
 // NOT subtracted here (unlike the load-time guard): at request time the model is already
 // resident, so `HostRAMAvailableBytes` already excludes its footprint by construction — subtracting
-// it again would double-count. Reads live available memory on every call, never cached (unlike
-// hostRAM/HostRAMBytes, which caches total RAM once because total RAM cannot change).
+// it again would double-count. Reads live available memory through cachedHostRAMAvailable (P-13,
+// audit-2026-09-10: a 250ms TTL cache, not read fresh on every call as this comment used to say —
+// the raw probe forks+execs on darwin, and every request that reaches prefill was paying for one).
 //
 // This runs BEFORE prefill begins (internal/serveapp calls it right after `prepare` resolves the
 // prompt length and clamped max_tokens, for every endpoint that reaches prefill), and prices
@@ -55,7 +97,7 @@ func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int) error {
 	if m == nil || m.w == nil {
 		return nil
 	}
-	avail := hostRAMAvailable()
+	avail := cachedHostRAMAvailable()
 	if avail <= 0 {
 		return nil // unknown ⇒ proceed, the same principle the load-time guard uses
 	}
@@ -97,7 +139,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 	if m == nil || m.w == nil {
 		return 0, 0, 0, 0, false
 	}
-	avail := hostRAMAvailable()
+	avail := cachedHostRAMAvailable()
 	weightBytes = m.ResidentWeightBytes()
 	if avail <= 0 || weightBytes <= 0 {
 		return 0, 0, 0, 0, false

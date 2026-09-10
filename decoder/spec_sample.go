@@ -34,7 +34,11 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 		return v
 	}
 	if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {
-		return softmaxStable(logits, s.p.Temperature) // drawFull draws from this directly
+		// P-04 (audit-2026-09-10): P-14 (09-02) reused distBufN on the greedy and filtered
+		// branches above/below but left this one — the server's DEFAULT sampling shape
+		// (temperature 1, no top_k/top_p/min_p) — calling the always-allocating softmaxStable
+		// directly. softmaxStableInto shares the same scratch the other two branches already use.
+		return softmaxStableInto(logits, s.p.Temperature, s.distBufN(len(logits))) // drawFull draws from this directly
 	}
 	// Same canonical selection the plain sampler uses (topFilterLogits), so the
 	// speculative residual stays lossless against the target distribution.

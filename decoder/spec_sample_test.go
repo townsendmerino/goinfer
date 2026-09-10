@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"testing"
+	"unsafe"
 )
 
 // TestSpecStepLossless is the rigorous (model-free) gate for sampled speculation:
@@ -225,4 +226,43 @@ func TestDistVectorFrom_scratchClearedAcrossPositions(t *testing.T) {
 			t.Fatalf("second call: v[0] = %v, want 0 — stale mass from the first call's kept set leaked through a missing clear()", second[0])
 		}
 	})
+
+	// P-04 (audit-2026-09-10): the temperature-only, no-filter branch (server default:
+	// Temperature 1, no top_k/top_p/min_p) was NOT covered by either subtest above — it calls
+	// softmaxStable/softmaxStableInto directly, which OVERWRITES every element rather than
+	// requiring a clear() first, so this is really proving the scratch-sharing didn't introduce
+	// the bug the other two subtests guard against, not that a clear() is needed here too.
+	t.Run("temp-only (no filters) shares the scratch safely", func(t *testing.T) {
+		s := NewSampler(SamplingParams{Temperature: 1})
+		first := s.distVector([]float32{5, 0, 0, 0, 0})
+		firstZero := first[0] // captured BEFORE the next call: first aliases the shared buffer,
+		// so reading first[0] after distVector runs again would silently read the SECOND call's
+		// overwritten value at that index, not the first's — the exact aliasing trap a shared
+		// scratch buffer invites, guarded against here rather than assumed away.
+		second := s.distVector([]float32{0, 0, 0, 0, 5})
+		if second[0] == firstZero {
+			t.Fatalf("second call's distribution is identical to the first's — the shared buffer was not recomputed")
+		}
+		var sum float64
+		for _, p := range second {
+			sum += p
+		}
+		if math.Abs(sum-1) > 1e-9 {
+			t.Fatalf("second call: distribution sums to %v, want 1", sum)
+		}
+	})
+}
+
+// TestDistVectorFrom_tempOnlyReusesBuffer is P-04 itself: the temp-only branch must return
+// distBuf's own backing array, not a fresh make() — the specific allocation the audit named.
+// Asserted directly (backing-array identity), not inferred from GC stats, so a revert back to
+// bare softmaxStable fails this test immediately rather than only showing up in a profile.
+func TestDistVectorFrom_tempOnlyReusesBuffer(t *testing.T) {
+	s := NewSampler(SamplingParams{Temperature: 1})
+	first := s.distVector([]float32{1, 2, 3, 4, 5})
+	base := unsafe.Pointer(&first[0])
+	second := s.distVector([]float32{5, 4, 3, 2, 1})
+	if unsafe.Pointer(&second[0]) != base {
+		t.Error("distVectorFrom's temp-only branch did not reuse distBuf's backing array — the allocation this fix removes is still happening")
+	}
 }

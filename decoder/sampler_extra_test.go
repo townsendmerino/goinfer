@@ -159,7 +159,7 @@ func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 		}
 		for _, topN := range []int{1, 3, n / 2, n, n + 5} {
 			probs := softmaxStable(logits, 1)
-			_, got := computeLogprobs(logits, 0, 1, topN)
+			_, got := computeLogprobs(logits, 0, 1, topN, nil)
 			want := referenceTopLogprobs(probs, topN)
 			if len(got) != len(want) {
 				t.Fatalf("trial %d topN=%d: len(got)=%d, want %d", trial, topN, len(got), len(want))
@@ -178,9 +178,39 @@ func TestComputeLogprobs_matchesFullSort(t *testing.T) {
 	// A deliberate tie: ids 1 and 3 share the highest logit. Both the reference and
 	// the fix must resolve it toward the smaller id.
 	logits := []float32{0, 5, 1, 5, 2}
-	_, got := computeLogprobs(logits, 0, 1, 2)
+	_, got := computeLogprobs(logits, 0, 1, 2, nil)
 	if got[0].ID != 1 || got[1].ID != 3 {
 		t.Fatalf("tie-break: got IDs [%d %d], want [1 3] (smaller id wins a logit tie)", got[0].ID, got[1].ID)
+	}
+}
+
+// TestComputeLogprobs_reusesProvidedScratch is P-07 (audit-2026-09-10): computeLogprobs called
+// softmaxStable directly, allocating a fresh full-vocab []float64 on every logprobs:true
+// request; SampleWithInfo now passes its own distBufN scratch through. Correctness (matches a
+// nil-scratch call exactly) and the reuse itself (the internal softmax write lands in the
+// caller's own buffer) are both asserted — a fix that reused the wrong buffer or silently
+// stopped reusing would each pass a test that checked only one side.
+func TestComputeLogprobs_reusesProvidedScratch(t *testing.T) {
+	logits := []float32{1, 4, 2, 0.5, 3}
+	wantLP, wantTop := computeLogprobs(logits, 1, 1, 2, nil)
+
+	dst := make([]float64, len(logits))
+	gotLP, gotTop := computeLogprobs(logits, 1, 1, 2, dst)
+	if gotLP != wantLP {
+		t.Fatalf("logprob = %v, want %v (nil-scratch reference)", gotLP, wantLP)
+	}
+	if len(gotTop) != len(wantTop) {
+		t.Fatalf("len(top) = %d, want %d", len(gotTop), len(wantTop))
+	}
+	for i := range wantTop {
+		if gotTop[i] != wantTop[i] {
+			t.Fatalf("top[%d] = %+v, want %+v", i, gotTop[i], wantTop[i])
+		}
+	}
+	// The softmax it computed internally must be dst's own probability values, not a fresh
+	// array's — checked via the one visible side effect: dst[chosen] equals exp(logprob).
+	if got, want := dst[1], math.Exp(gotLP); math.Abs(got-want) > 1e-12 {
+		t.Errorf("dst[1] = %v after the call, want %v (exp(logprob)) — the softmax did not write into the provided scratch", got, want)
 	}
 }
 

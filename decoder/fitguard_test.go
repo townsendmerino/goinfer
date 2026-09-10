@@ -430,7 +430,11 @@ func injectHostRAM(t *testing.T, bytes int64) func() {
 	prevTotal, prevAvail := hostRAM, hostRAMAvailable
 	hostRAM = func() int64 { return bytes }
 	hostRAMAvailable = func() int64 { return bytes }
-	restore := func() { hostRAM, hostRAMAvailable = prevTotal, prevAvail }
+	resetAvailProbeCache()
+	restore := func() {
+		hostRAM, hostRAMAvailable = prevTotal, prevAvail
+		resetAvailProbeCache()
+	}
 	t.Cleanup(restore)
 	return restore
 }

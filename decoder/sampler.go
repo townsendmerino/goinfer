@@ -249,7 +249,7 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 		info.ID = s.sampleChunked(work, s.p.Temperature, s.rng.Float64())
 	}
 	if s.p.Logprobs {
-		info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs)
+		info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs, s.distBufN(len(work)))
 	}
 	s.recordHistory(info.ID)
 	return info, nil
@@ -372,13 +372,16 @@ func (s *Sampler) applyPenaltiesFromCounts(logits []float32, counts map[int]int)
 
 // computeLogprobs returns log P(chosen) and the topN highest-prob (id, logprob)
 // pairs, over the full-vocab softmax at the sampling temperature (1 when greedy
-// — temperature 0 would be a degenerate point mass).
-func computeLogprobs(logits []float32, chosen int, temperature float64, topN int) (float64, []TokenLogprob) {
+// — temperature 0 would be a degenerate point mass). dst is the softmax scratch (P-07,
+// audit-2026-09-10): pass s.distBufN(len(logits)) from a *Sampler's own per-token loop to reuse
+// its buffer instead of paying a fresh full-vocab make() on every logprobs:true request; nil
+// (from the free-standing tests below) falls back to softmaxStableInto's own fresh allocation.
+func computeLogprobs(logits []float32, chosen int, temperature float64, topN int, dst []float64) (float64, []TokenLogprob) {
 	t := temperature
 	if t <= 0 {
 		t = 1
 	}
-	probs := softmaxStable(logits, t)
+	probs := softmaxStableInto(logits, t, dst)
 	lp := math.Log(probs[chosen])
 	if topN <= 0 {
 		return lp, nil
@@ -468,8 +471,19 @@ func argmax(logits []float32) int {
 	return bi
 }
 
-// softmaxStable converts logits to probabilities (numerically stable).
+// softmaxStable converts logits to probabilities (numerically stable). Always allocates fresh —
+// softmaxStableInto is the scratch-reusing sibling for callers on a per-token hot path (P-04/P-07,
+// audit-2026-09-10).
 func softmaxStable(logits []float32, temperature float64) []float64 {
+	return softmaxStableInto(logits, temperature, nil)
+}
+
+// softmaxStableInto is softmaxStable with a caller-owned destination: dst is reused when its
+// capacity already fits (grown once otherwise), eliminating the make() softmaxStable pays every
+// call. Safe ONLY where the caller consumes the result synchronously before requesting the next
+// one — same one-position-at-a-time contract as distBufN/specLogitsBufN, which this now shares
+// its buffer with rather than allocating its own each call.
+func softmaxStableInto(logits []float32, temperature float64, dst []float64) []float64 {
 	if temperature <= 0 {
 		temperature = 1
 	}
@@ -479,7 +493,12 @@ func softmaxStable(logits []float32, temperature float64) []float64 {
 			maxv = float64(v)
 		}
 	}
-	out := make([]float64, len(logits))
+	var out []float64
+	if cap(dst) >= len(logits) {
+		out = dst[:len(logits)]
+	} else {
+		out = make([]float64, len(logits))
+	}
 	var sum float64
 	for i, v := range logits {
 		e := math.Exp((float64(v) - maxv) / temperature)

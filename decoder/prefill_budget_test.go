@@ -3,6 +3,7 @@ package decoder
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // injectHostRAMAvailable replaces the machine's CURRENTLY AVAILABLE memory figure for one test —
@@ -11,7 +12,11 @@ func injectHostRAMAvailable(t *testing.T, bytes int64) func() {
 	t.Helper()
 	prev := hostRAMAvailable
 	hostRAMAvailable = func() int64 { return bytes }
-	restore := func() { hostRAMAvailable = prev }
+	resetAvailProbeCache()
+	restore := func() {
+		hostRAMAvailable = prev
+		resetAvailProbeCache()
+	}
 	t.Cleanup(restore)
 	return restore
 }
@@ -166,5 +171,41 @@ func TestPrefillScratchBytes_scalesWithPromptLength(t *testing.T) {
 	// Unknown dims must still return the real floor, not zero.
 	if got := prefillScratchBytes(nil, 100); got != prefillAttnScratchBudget {
 		t.Errorf("nil config: got %d, want the attention scratch floor %d", got, prefillAttnScratchBudget)
+	}
+}
+
+// TestCachedHostRAMAvailable_rateLimits is P-13 (audit-2026-09-10): AdmitPrefillMemory runs on
+// every request that reaches prefill, and the raw probe forks+execs (vm_stat on darwin). This
+// asserts the rate-limiting directly — calls within the TTL window must not reach the underlying
+// probe — rather than only asserting AdmitPrefillMemory still returns the right answer, which
+// would pass whether or not caching ever happened.
+func TestCachedHostRAMAvailable_rateLimits(t *testing.T) {
+	prev := hostRAMAvailable
+	defer func() { hostRAMAvailable = prev }()
+	resetAvailProbeCache()
+	defer resetAvailProbeCache()
+
+	var calls int
+	hostRAMAvailable = func() int64 {
+		calls++
+		return 42
+	}
+
+	for i := 0; i < 5; i++ {
+		if got := cachedHostRAMAvailable(); got != 42 {
+			t.Fatalf("call %d: got %d, want 42", i, got)
+		}
+	}
+	if calls != 1 {
+		t.Errorf("5 calls within the TTL window reached the underlying probe %d times, want 1 — rate-limiting did not happen", calls)
+	}
+
+	// A fresh value after the TTL expires must be observed, not permanently stuck on the first.
+	availProbeMu.Lock()
+	availProbeAt = time.Now().Add(-2 * availProbeTTL)
+	availProbeMu.Unlock()
+	hostRAMAvailable = func() int64 { calls++; return 99 }
+	if got := cachedHostRAMAvailable(); got != 99 {
+		t.Errorf("after TTL expiry: got %d, want 99 (stale cache never refreshed)", got)
 	}
 }

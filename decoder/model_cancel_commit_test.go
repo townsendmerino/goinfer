@@ -55,6 +55,46 @@ func TestGenerateResident_cancelCommitsExactlyWhatWasEmitted(t *testing.T) {
 	}
 }
 
+// TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache is P-09 (audit-2026-09-10, sibling
+// of R-02 above): a request whose context is cancelled before generateInto even starts (the
+// audit's scenario — cancelled while waiting for the caller's model-lock queue) must not discard
+// a warm resident cache for a prefill it is about to refuse anyway. Warms the cache with one real
+// turn, then drives a second Generate with an ALREADY-cancelled context and asserts resIDs is
+// byte-for-byte unchanged — not merely that the call fails, which it would regardless of whether
+// the forget ran.
+func TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache(t *testing.T) {
+	m, _ := loadWithFakeResident(t)
+	if !m.ResidentActive() {
+		t.Skip("fixture is not resident-eligible; the other seam tests still gate the wiring")
+	}
+
+	prompt := []int{1, 2, 3}
+	stream, gen := m.Generate(context.Background(), prompt, 4, SamplingParams{})
+	for range stream {
+	}
+	if gen.Err() != nil {
+		t.Fatalf("warm-up Generate: %v", gen.Err())
+	}
+	warm := append([]int(nil), m.resIDs...)
+	if len(warm) == 0 {
+		t.Fatal("test setup: warm-up left no resIDs to protect — nothing for this test to check")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled BEFORE Generate is even called, matching the audit's own scenario
+	stream2, gen2 := m.Generate(ctx, prompt, 4, SamplingParams{})
+	for range stream2 {
+	}
+	if !errors.Is(gen2.Err(), context.Canceled) {
+		t.Fatalf("gen2.Err() = %v, want context.Canceled", gen2.Err())
+	}
+	if !equalIntSlices(m.resIDs, warm) {
+		t.Errorf("resIDs = %v after an already-cancelled Generate, want unchanged %v — the warm "+
+			"cache was forgotten for a request that never actually ran, forcing the next live turn "+
+			"to cold-prefill the whole conversation for no benefit", m.resIDs, warm)
+	}
+}
+
 // erroringResident is a ResidentForward that succeeds okCount times then fails — used to drive
 // generateInto's OTHER early exit (a forward error, not cancellation) without going through
 // fakeResident's ContextCap, which generateInto clamps maxTokens against UP FRONT (so it never

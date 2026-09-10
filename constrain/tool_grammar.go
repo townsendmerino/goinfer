@@ -93,6 +93,18 @@ func (g *toolGrammar) CanEnd() bool {
 	return false
 }
 
+// InPlainString (P-17, audit-2026-09-10) lets forced tool-call decoding take the same
+// plain-string fast path (P-20, audit-2026-09-02) every other JSON-shaped grammar already gets.
+// Without it, plainStringGrammar's type assertion (constrain/plainstring.go's inPlainString)
+// simply never matches a *toolGrammar, so every forced tool call paid the full walk on the
+// prefix/suffix's own JSON body — mostly string content, the exact case the fast path exists
+// for. Only meaningful during phase 1 (the JSON value): phases 0/2/3 are the literal
+// prefix/suffix/done, never a JSON string, and inner's own InPlainString is only valid to
+// consult once inner is actually the grammar in play.
+func (g *toolGrammar) InPlainString() bool {
+	return g.phase == 1 && g.inner.InPlainString()
+}
+
 func (g *toolGrammar) TryBytes(bs []byte) bool {
 	g.snapshot()
 	ok := true
