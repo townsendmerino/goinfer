@@ -599,7 +599,7 @@ func cachedIntact(dir string, f File) (string, bool) {
 	if f.SHA256 == "" {
 		return final, true
 	}
-	if sum, err := fileSHA256(final); err == nil && sum == f.SHA256 {
+	if sum, err := cachedFileSHA256(final); err == nil && sum == f.SHA256 {
 		return final, true
 	}
 	return "", false
@@ -616,6 +616,51 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// digestSidecar records path's SHA-256 alongside the (size, mtime) it was computed against — the
+// same "sidecar cache" vocabulary this package's own doc comment already uses for the .gguf→.giw
+// transcode cache, applied here to the hash instead of the bytes.
+type digestSidecar struct {
+	Size    int64  `json:"size"`
+	ModTime int64  `json:"mod_time_unix_nano"`
+	SHA256  string `json:"sha256"`
+}
+
+// sidecarPath is path's digest cache file — a dotfile so it doesn't clutter a directory listing
+// or get mistaken for a second checkpoint.
+func sidecarPath(path string) string {
+	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".sha256")
+}
+
+// cachedFileSHA256 is fileSHA256 behind a sidecar cache keyed on (size, mtime) — P-12
+// (audit-2026-09-10): cachedIntact re-hashes the WHOLE checkpoint on every serve start (Resolve's
+// offline check, Download's own cache check), even when the file has not changed since the last
+// run verified it. A cache hit here means "the file's size and mtime are exactly what they were
+// when this SHA-256 was computed" — the same staleness signal `make`/rsync use, cheap to check
+// (one stat) against the cost it avoids (a full read of a multi-GB checkpoint). A mismatch (or a
+// missing/corrupt sidecar) falls through to the real hash and rewrites the sidecar; a sidecar
+// write failure is not fatal — it only means the NEXT call re-hashes too, same as today.
+func cachedFileSHA256(path string) (string, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	sp := sidecarPath(path)
+	if b, err := os.ReadFile(sp); err == nil {
+		var sc digestSidecar
+		if json.Unmarshal(b, &sc) == nil && sc.Size == st.Size() && sc.ModTime == st.ModTime().UnixNano() && sc.SHA256 != "" {
+			return sc.SHA256, nil
+		}
+	}
+	sum, err := fileSHA256(path)
+	if err != nil {
+		return "", err
+	}
+	if b, err := json.Marshal(digestSidecar{Size: st.Size(), ModTime: st.ModTime().UnixNano(), SHA256: sum}); err == nil {
+		_ = os.WriteFile(sp, b, 0o644) // best-effort: a failed write just costs the next call a re-hash
+	}
+	return sum, nil
 }
 
 // progressWriter reports throughput on a TIME ticker rather than every N bytes, so the line
