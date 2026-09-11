@@ -1035,7 +1035,11 @@ func (g *gpuGate) cudaPTX() {
 		g.ran++
 		g.bad("%d PTX differ from their committed form — the shipped kernels do not match their .cu", diff)
 	default:
-		g.skip("PTX reproducibility (no usable NVRTC for any recorded version)")
+		// Zero artifacts verified is not a pass with a footnote (audit-2026-09-10 G-09). The
+		// device-free TestPTX_matchesSourcesAndBindings still guards kernel names and signatures,
+		// but this group exists to prove byte-identity, and here it proved nothing.
+		g.ran++
+		g.bad("PTX reproducibility: no usable NVRTC for any recorded version — zero of %d artifacts verified", total)
 	}
 	// A partial verification must never read as a full one: name the count AND the files, and make
 	// it a counted SKIP so it appears in the verdict's skipped tally and the notes block.
