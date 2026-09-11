@@ -12,7 +12,8 @@
 #
 # This script makes the exception AUDITABLE and ABUSE-RESISTANT:
 #   1. It runs the forward GOLDENS — the independent numeric ground truth. If any that RAN
-#      failed, the change is numeric, not a refresh: it REFUSES (exit 1).
+#      failed, the change is numeric, not a refresh: it REFUSES (exit 1) — UNLESS the failure is
+#      pre-registered in KNOWN_UNRELATED_FAILURES below (G-04, audit-2026-09-10).
 #   2. If ZERO goldens ran (all skipped for want of fixtures), "green" is vacuous: it REFUSES.
 #      Regenerate the tiny checkpoints (scripts/pin_*.py) so the proof is real.
 #   3. Only then does it refresh deps_hash (deps_hash ONLY — validated_at/metrics/dates
@@ -62,6 +63,45 @@ fi
 # cheaper than authoring the goldens that would have duplicated them.
 GOLDEN_RE='(_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parity$'
 
+# KNOWN_UNRELATED_FAILURES (G-04, audit-2026-09-10): a documented, reviewed escape from the
+# refusal below — the ONLY one. Before this existed, a refresh with a known-unrelated golden red
+# (olmo3's rope_parameters regression, tracked separately from any core-file numeric change) had
+# no way through this script at all: the operator ran `go test ./decoder/ -run TestParityManifest
+# -update` BY HAND instead, bypassing the refusal entirely, and asserted "pre-existing, unrelated"
+# in the commit prose — with NO mechanical link back to whatever investigation actually
+# established that. The audit found this had happened at least five times, and once (db0869e) the
+# "pre-existing, unrelated" belief was WRONG: the golden itself needed a real numeric fix, and the
+# hand-refresh had already preserved validated_at for it as if nothing changed.
+#
+# Listing a test here does NOT skip verifying it EVER — it only stops ITS failure, ALONE, from
+# blocking a refresh that every OTHER golden proves non-numeric. A NEW failure, or any failure not
+# named here, still refuses exactly as before. The excluded failure is still printed (see below),
+# never silently absorbed, and the PROOF block records which entries fired so a reviewer of the
+# resulting commit sees it too.
+#
+# Adding an entry means: someone traced THIS EXACT failure to a cause outside this run's own core
+# change (a reference-implementation version mismatch, a config-parsing bug already fixed
+# elsewhere and pending its own golden regen, etc.) and is vouching for that finding — not "this
+# test is annoying" or "probably fine." It is NOT a general flaky-test escape hatch. Remove the
+# line the moment the test goes green again, or the moment its root cause turns out to be a real
+# regression — a permanently-red entry here is exactly the silent erosion this script exists to
+# prevent, the same failure mode as the hand-refreshes it replaces.
+#
+# Format: one "TestName|YYYY-MM-DD added|one-line reason with a pointer to the investigation".
+KNOWN_UNRELATED_FAILURES=(
+	"TestOlmo3_forwardParity|2026-09-11|rope_parameters config-parsing regression, unrelated to core-file edits (db0869e attempted a fix and was itself reverted by 85f68e7 pending the real one); cosine 0.9899728674750051 (want >=0.9999), argmax correct, maxSampleΔ=0.00000 — confirmed unchanged by a core-file edit via git-stash-diff against the clean baseline; see docs/audit-2026-09-10.md and docs/task-gpu-paths-2026-09.md:1785 for prior independent confirmations of the SAME figure"
+)
+# Fail LOUDLY on a malformed entry rather than silently matching nothing (or everything) —
+# each entry must split into exactly three '|'-separated fields.
+for _entry in "${KNOWN_UNRELATED_FAILURES[@]}"; do
+	_fields=$(awk -F'|' '{print NF}' <<<"$_entry")
+	if [ "$_fields" -ne 3 ]; then
+		echo "ABORT: malformed KNOWN_UNRELATED_FAILURES entry (want 3 '|'-separated fields, got ${_fields}):" >&2
+		echo "    ${_entry}" >&2
+		exit 1
+	fi
+done
+
 # GOINFER_HEAVY_TESTS is set by default here, and that is a coverage decision rather than a
 # convenience. Without it the three int8int8 goldens (gemma4, gemma4-12B, mellum2) all skip on
 # "heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in", which meant EVERY golden that ran
@@ -107,10 +147,47 @@ if [ "$nonf32" -eq 0 ]; then
 	echo "    NOTE: this refresh proves f32 numerics ONLY — no quantized golden ran. See Q1."
 fi
 
+# G-04: separate EXCLUDED failures (named in KNOWN_UNRELATED_FAILURES, above) from real ones.
+# failed_names is every "--- FAIL: TestFoo" line's bare test name, one per line.
+excluded_lines=""
+real_fail=0
 if [ "$fail" -gt 0 ]; then
+	failed_names=$(printf '%s\n' "$out" | grep '^--- FAIL:' | sed -E 's/^--- FAIL: ([A-Za-z0-9_]+).*/\1/')
+	while IFS= read -r name; do
+		[ -n "$name" ] || continue
+		matched=""
+		for entry in "${KNOWN_UNRELATED_FAILURES[@]}"; do
+			entry_name="${entry%%|*}"
+			if [ "$name" = "$entry_name" ]; then
+				matched="$entry"
+				break
+			fi
+		done
+		if [ -n "$matched" ]; then
+			excluded_lines="${excluded_lines}${matched}
+"
+		else
+			real_fail=$((real_fail + 1))
+		fi
+	done <<<"$failed_names"
+fi
+
+if [ -n "$excluded_lines" ]; then
 	echo
-	echo "REFUSING to refresh: ${fail} forward golden(s) FAILED — the core change is NUMERIC."
+	echo "    EXCLUDED (pre-registered in KNOWN_UNRELATED_FAILURES — not counted against the refusal below):"
+	printf '%s' "$excluded_lines" | while IFS='|' read -r name added reason; do
+		[ -n "$name" ] || continue
+		echo "      ${name} (added ${added})"
+		echo "        ${reason}"
+	done
+fi
+
+if [ "$real_fail" -gt 0 ]; then
+	echo
+	echo "REFUSING to refresh: ${real_fail} forward golden(s) FAILED (unexcluded) — the core change is NUMERIC."
 	echo "This is not a hash refresh: re-run the T3 parity gate and bump validated_at, or fix the regression."
+	echo "If a failure above is ALREADY known and unrelated, it needs its own entry in"
+	echo "KNOWN_UNRELATED_FAILURES (this script) — do not bypass this refusal by hand instead (G-04)."
 	printf '%s\n' "$out" | grep '^--- FAIL:' | sed 's/^/    /'
 	exit 1
 fi
@@ -162,7 +239,17 @@ arch="$(go env GOARCH 2>/dev/null || uname -m)"
 echo
 echo "==> PROOF (paste into the commit body — makes the exception auditable):"
 echo "    non-numeric core refresh; validated_at preserved."
-echo "    forward goldens green at ${head} on arch=${arch}: ${pass} passed / ${skip} skipped / 0 failed."
+if [ "$fail" -gt 0 ]; then
+	echo "    forward goldens green at ${head} on arch=${arch}: ${pass} passed / ${skip} skipped /" \
+		"${fail} failed (all pre-registered in KNOWN_UNRELATED_FAILURES, G-04) / 0 unexcluded failed."
+	echo "    Excluded:"
+	printf '%s' "$excluded_lines" | while IFS='|' read -r name added reason; do
+		[ -n "$name" ] || continue
+		echo "      ${name} (added ${added}) — ${reason}"
+	done
+else
+	echo "    forward goldens green at ${head} on arch=${arch}: ${pass} passed / ${skip} skipped / 0 failed."
+fi
 echo
 echo "    Deps-Hash-Refresh: ${head} goldens=${pass} arch=${arch}"
 echo

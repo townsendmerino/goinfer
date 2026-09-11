@@ -1982,7 +1982,7 @@ supports.
 | `docs/audit-2026-09-10.md|scripts/queue_citation_lint.py:692` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|scripts/readme_smoke.sh:55` | goinfer | `# smoke-help: the command is not executed (it needs a real model), but every flag it nam` |
 | `docs/audit-2026-09-10.md|scripts/readme_smoke.sh:62` | goinfer | `for f in $(echo "$c" \| grep -oE '(^\| )-[a-zA-Z][-a-zA-Z0-9]*' \| tr -d ' '); do` |
-| `docs/audit-2026-09-10.md|scripts/refresh_parity_hashes.sh:110` | goinfer | `if [ "$fail" -gt 0 ]; then` |
+| `docs/audit-2026-09-10.md|scripts/refresh_parity_hashes.sh:185` | goinfer | `if [ "$real_fail" -gt 0 ]; then` |
 | `docs/audit-2026-09-10.md|tokenizer/gguf.go:322` | goinfer | `case "gpt-2", "default", "":` |
 | `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:822` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
 | `docs/audit-2026-09-10.md|tokenizer/split_o200k_test.go:44` | goinfer | `// a run at end-of-input, disagreed with the walker, and was itself the thing that` |
