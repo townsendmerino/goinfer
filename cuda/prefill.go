@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -959,17 +960,17 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
 				ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
 			} else {
-				// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp): passed RAW, not
-				// precomputed — this launch covers M rows at DIFFERENT positions (startPos+m), so
-				// the kernel recomputes qTempScale per row device-side (mirrors decoder.Model.
-				// AttnTempParams, which exists for exactly this caller; decode's single-position
-				// rope_kv gets a host-precomputed scalar instead, see launchToken). Not carried
-				// into the m-RoPE branch above: rope_kv_mrope_batched has no attnTemp parameters
-				// (no family needs both features at once today — Ministral 3 doesn't use m-RoPE,
-				// Qwen2.5-VL doesn't use attention temperature).
-				tempArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
-					gpu.ArgValue(float32(r.attnTempBeta)), gpu.ArgValue(float32(r.attnTempOrigMaxPos)))
-				ropeErr = r.launch(r.bRopeKV, ropeCfg, tempArgs...)
+				// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different
+				// positions (startPos+m), so each row's post-RoPE query scale comes from a table
+				// built on the host with launchToken's own float64 expression. That keeps a batched
+				// row bit-identical to decode (audit-2026-09-10 G-11). Not carried into the m-RoPE
+				// branch above: rope_kv_mrope_batched has no attention temperature, and no family
+				// needs both today (Ministral 3 has no m-RoPE, Qwen2.5-VL no temperature).
+				qTemp, qe := r.attnTempRows(startPos, M)
+				if qe != nil {
+					return qe
+				}
+				ropeErr = r.launch(r.bRopeKV, ropeCfg, append(append([]gpu.KernelArg{}, ropeArgs...), qTemp)...)
 			}
 			if ropeErr != nil {
 				return ropeErr
@@ -1323,6 +1324,34 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 }
 
 // bRmsB launches rmsnorm_quant_batched over M rows (shared = [blockDim]+[hidden]).
+// attnTempRows returns rope_kv_batched's per-row query-scale table for rows at positions
+// [startPos, startPos+M). Each entry is launchToken's float64 expression, rounded to float32 once,
+// so a batched row's Q matches decode bit for bit (audit-2026-09-10 G-11). A family without an
+// attention temperature gets a NULL argument, which the kernel reads as scale 1. The table is
+// rebuilt only when (startPos, M) changes, so every layer of one prefill shares one upload.
+func (r *cudaResident) attnTempRows(startPos, M int) (gpu.KernelArg, error) {
+	if r.attnTempBeta == 0 {
+		return ArgNull(), nil
+	}
+	if M > r.qTempRowsCap {
+		if r.qTempRowsCap > 0 {
+			r.dev.ReleaseBuf(r.qTempRowsB)
+		}
+		r.qTempRowsB, r.qTempRowsCap, r.qTempRowsKey = r.af(M), M, [2]int{-1, -1}
+	}
+	if key := [2]int{startPos, M}; key != r.qTempRowsKey {
+		rows := make([]float32, M)
+		for m := range rows {
+			rows[m] = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(startPos+m)/r.attnTempOrigMaxPos)))
+		}
+		if e := gpu.Upload(r.qTempRowsB, rows); e != nil {
+			return ArgNull(), e
+		}
+		r.qTempRowsKey = key
+	}
+	return Arg(r.qTempRowsB), nil
+}
+
 func (r *cudaResident) bRmsB(x, w Buffer, N int, qOut, sOut Buffer, M int) error {
 	return r.launch(r.bRms, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
 		SharedMemBytes: uint32((256 + N) * 4)},

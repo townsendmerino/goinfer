@@ -65,6 +65,10 @@ func TestKernelFMALint(t *testing.T) {
 	//   expression:  ... <expr> * <expr> [+-] <expr>  (val = a*b + c ; a*c - b*s)
 	macAccum := regexp.MustCompile(`\b\w[\w.]*\s*\+=\s*[^;/]* \* `)
 	macExpr := regexp.MustCompile(` \* [^;/]* [+\-] `)
+	// ... and the same MAC with the multiply to the RIGHT of the add (c + a * b). Its absence let
+	// prefill_batched.cu's `1.0f + attnTempBeta * log1pf(...)` ship in a linted kernel
+	// (audit-2026-09-10 G-11).
+	macExprRev := regexp.MustCompile(` [+\-] [^;/()]* \* `) // no parens between: (a - b) * c and c + f(a * b) are not MACs
 	compliant := regexp.MustCompile(`__fmaf_rn|__fmul_rn|__fadd_rn|__fma_rn|__dp4a|__shfl`)
 	arrayIndex := regexp.MustCompile(`\[[^\]]*\]`) // strip array indices (int arithmetic) before matching
 	// Lines that TEXTUALLY match a MAC but are integer / pointer / index arithmetic, not a float MAC:
@@ -83,6 +87,7 @@ func TestKernelFMALint(t *testing.T) {
 		"red[t] += red[t", "rednf[t] += rednf[t", "qkred[t] += qkred[t", // tree reduce-adds
 		"ss += (double)",                                   // qk-norm double reduction — identical expression in both kernels
 		"= vm[", "= v[", "= km[", "vc[o", "kc[o", "cache[", // stores with int index
+		"+ 2 * wi", "qDim + 2 * kvDim", // int2 pointer arithmetic (gemv_w4a8_rn/_batched) and an integer row bound (fused_qkv)
 	}
 	violations := 0
 	for _, fn := range files {
@@ -100,7 +105,7 @@ func TestKernelFMALint(t *testing.T) {
 				continue
 			}
 			code = arrayIndex.ReplaceAllString(code, "[]") // remove int index arithmetic before MAC match
-			if !macAccum.MatchString(code) && !macExpr.MatchString(code) {
+			if !macAccum.MatchString(code) && !macExpr.MatchString(code) && !macExprRev.MatchString(code) {
 				continue
 			}
 			wl := false

@@ -116,18 +116,17 @@ extern "C" __global__ void qk_norm_batched(
 
 // rope_kv_batched: M tokens (grid.y = m, grid.x*blockDim over the per-token index space). Rotates
 // q[m]/k[m] in place and stores K/V at absolute position startPos+m — copy of rope_kv per token.
-// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md):
-// the RAW params, not a precomputed scale — pos varies PER ROW (m) within this one launch, unlike
-// rope_kv's single-position decode call, so qTempScale must be recomputed per row device-side
-// from these (mirrors decoder.Model.AttnTempParams, which exists for exactly this caller).
-// attnTempBeta==0 (every family without this feature) skips the division entirely — same guard
-// decoder/attention.go's sequential path uses, load-bearing: attnTempOrigMaxPos is 0 for those
-// families, and pos/0 would poison every Q with NaN otherwise.
+// qTempRows (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md): row m's post-RoPE query
+// scale, 1 + beta*log1p(floor(pos/origMaxPos)), computed on the HOST with the float64 expression
+// decode uses (launchToken). So a batched row's Q is bit-identical to the sequential path's. The
+// kernel used to recompute it here in f32 with a bare multiply-add, which left both the rounding
+// and the fma-vs-mul+add choice to the compiler (audit-2026-09-10 G-11). NULL for every family
+// without the feature: scale 1.
 __global__ void rope_kv_batched(
     float* __restrict__ q, float* __restrict__ k, const float* __restrict__ v,
     const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
     int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
-    float attnTempBeta, float attnTempOrigMaxPos)
+    const float* __restrict__ qTempRows)
 {
     int m = blockIdx.y; if (m >= M) return;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -139,10 +138,7 @@ __global__ void rope_kv_batched(
     float* km = k + (long)m * kvDim;
     const float* vm = v + (long)m * kvDim;
     if (idx < qn) {
-        float qTempScale = 1.0f;
-        if (attnTempBeta != 0.0f) {
-            qTempScale = 1.0f + attnTempBeta * log1pf(floorf((float)pos / attnTempOrigMaxPos));
-        }
+        float qTempScale = qTempRows ? qTempRows[m] : 1.0f;
         int h = idx / rhalf, d = idx % rhalf;
         float ang = pos * invFreq[d]; float c = cosf(ang) * mscale, s = sinf(ang) * mscale; // YaRN attention_factor; 1.0 elsewhere
         float* base = qm + h * hd;
