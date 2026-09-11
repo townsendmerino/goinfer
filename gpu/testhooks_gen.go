@@ -1,4 +1,4 @@
-//go:build goinfer_testhooks
+//go:build gpu && goinfer_testhooks
 
 // Code relocated by the B-08 build-tag pass: these are test-only hooks, compiled
 // only under -tags goinfer_testhooks so they are NOT part of the public API

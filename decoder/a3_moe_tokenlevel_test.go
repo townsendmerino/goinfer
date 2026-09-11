@@ -40,10 +40,7 @@ func TestA3MoETokenLevel(t *testing.T) {
 	if os.Getenv("GOINFER_DIAG") == "" {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1): reports evidence for a judgement.")
 	}
-	path := os.Getenv("GOINFER_MELLUM_CKPT")
-	if path == "" {
-		t.Skip("set GOINFER_MELLUM_CKPT")
-	}
+	path := assetPath(t, "GOINFER_MELLUM_CKPT")
 	requireHeavyModel(t)
 	K, N := 2048, 48
 	if v := os.Getenv("GOINFER_MELLUM_K"); v != "" {

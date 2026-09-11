@@ -216,16 +216,14 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	}
 }
 
-// loadMoEBitIdentModel resolves a real MoE checkpoint for the gate above.
+// loadMoEBitIdentModel resolves a real MoE checkpoint for the gate above, through the shared
+// asset registry (testdata/assets.json's GOINFER_MELLUM_CKPT entry) rather than a hand-rolled
+// os.Getenv("HOME")+"/models/mellum2-unq" fallback — the old form was invisible to `gate census`
+// and ignored GOINFER_MODELS pointing the models root elsewhere (audit-2026-09-02.md N-41).
+// assetPath itself skips the test when the asset is absent, so a nil error here means Load ran.
 func loadMoEBitIdentModel(t *testing.T) (*Model, error) {
 	t.Helper()
-	path := os.Getenv("GOINFER_MELLUM_CKPT")
-	if path == "" {
-		path = os.Getenv("HOME") + "/models/mellum2-unq"
-	}
-	if _, err := os.Stat(path); err != nil {
-		return nil, err
-	}
+	path := assetPath(t, "GOINFER_MELLUM_CKPT")
 	return Load(path, Options{Quant: "int4"})
 }
 

@@ -41,10 +41,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_MELLUM_CKPT=... GOINFER_MELLUM_K=2048 \
 //	go test -tags goinfer_testhooks ./decoder/ -run TestA3MoEExclusionIsMeasured -v
 func TestA3MoEExclusionIsMeasured(t *testing.T) {
-	path := os.Getenv("GOINFER_MELLUM_CKPT")
-	if path == "" {
-		t.Skip("set GOINFER_MELLUM_CKPT to a batched-path MoE checkpoint")
-	}
+	path := assetPath(t, "GOINFER_MELLUM_CKPT")
 	requireHeavyModel(t)
 	K := 2048
 	if v := os.Getenv("GOINFER_MELLUM_K"); v != "" {

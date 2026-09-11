@@ -1206,7 +1206,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/layerpaging.go:64` | goinfer | `if _, own := w.arch.ownForward(); own {` |
 | `docs/audit-2026-09-02.md|decoder/lfm2_test.go:178` | goinfer | `for _, id := range g.PromptIDs {` |
 | `docs/audit-2026-09-02.md|decoder/llama4_real_test.go:68` | goinfer | `prompt := "The capital of France is"` |
-| `docs/audit-2026-09-02.md|decoder/longprompt_golden_test.go:84` | goinfer | `os.Unsetenv("GOINFER_CPU_FAST_ATTENTION")` |
+| `docs/audit-2026-09-02.md|decoder/longprompt_golden_test.go:90` | goinfer | `t.Setenv("GOINFER_CPU_FAST_ATTENTION", "1")` |
 | `docs/audit-2026-09-02.md|decoder/mamba2.go:44` | goinfer | `inProj  []float32 // [projDim, hidden]` |
 | `docs/audit-2026-09-02.md|decoder/mamba2.go:76` | goinfer | `if ssmQ8CPU { // confirmation seam: match the resident W8A8 — int8 weights AND int8 acti` |
 | `docs/audit-2026-09-02.md|decoder/mamba2_chunked.go:91` | goinfer | `// checkpoint rates — A_log = log(U(1,16)) with dt in [0.001, 0.1] gives a per-step` |
@@ -1226,7 +1226,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/model.go:869` | goinfer | `// Derived from the dispatch table's Captures bit rather than re-listed: the families wh` |
 | `docs/audit-2026-09-02.md|decoder/model.go:899` | goinfer | `// EVERY own-forward family, derived: this seam needs runLayersFromEmbed's uniform block` |
 | `docs/audit-2026-09-02.md|decoder/model.go:975` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
-| `docs/audit-2026-09-02.md|decoder/moe_expert_batch_test.go:220` | goinfer | `func loadMoEBitIdentModel(t *testing.T) (*Model, error) {` |
+| `docs/audit-2026-09-02.md|decoder/moe_expert_batch_test.go:224` | goinfer | `func loadMoEBitIdentModel(t *testing.T) (*Model, error) {` |
 | `docs/audit-2026-09-02.md|decoder/moecap_kernel_pin_test.go:38` | goinfer | `// webgpu: array<f32, 256> score / array<f32, 32> gscore` |
 | `docs/audit-2026-09-02.md|decoder/moepaging.go:61` | goinfer | `anchor: func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {` |
 | `docs/audit-2026-09-02.md|decoder/mtp.go:35` | goinfer | `anchor: type MTPHead struct {` |

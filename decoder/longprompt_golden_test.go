@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"context"
-	"os"
 	"runtime"
 	"testing"
 )
@@ -80,8 +79,16 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 	}
 	prompt := longPromptIDs(K)
 
-	// Default path (no env override): this is what a user gets.
-	os.Unsetenv("GOINFER_CPU_FAST_ATTENTION")
+	// Default path (no env override): this is what a user gets. Pinned via t.Setenv (restores
+	// after the test, unlike the raw os.Unsetenv this replaced) to the DEFAULT-on value for both
+	// knobs that can perturb this golden's exact float sequence — not just
+	// GOINFER_CPU_FAST_ATTENTION. A developer with GOINFER_FUSED_ATTENTION=0 legitimately
+	// exported (fusedattn.go's documented opt-out) used to see this golden fail with
+	// "f32 prefill continuation drifted", a false positive: the golden was recorded fused, and an
+	// ambient =0 silently switched this run to the materialized (non-fused) arithmetic path
+	// instead (N-41 (09-02)).
+	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "1")
+	t.Setenv("GOINFER_FUSED_ATTENTION", "1")
 	out, gen := m.Generate(context.Background(), prompt, 16, SamplingParams{Temperature: 0})
 	var got []int
 	for id := range out {
