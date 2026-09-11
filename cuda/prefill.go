@@ -470,6 +470,15 @@ func (r *cudaResident) prefillStaticDecline() error {
 		return fmt.Errorf("cuda prefill: postOnly/QKNormWhole norm placement is not implemented "+
 			"in the batched glue yet (sequential decode only): %w", errPrefillDeclined)
 	}
+	// Cohere/Command-R (FeatLayerNorm, FeatParallelBlock) are sequential-only for the same reason.
+	// The batched glue runs rmsnorm_quant_batched at every norm site, and it re-normalises the
+	// post-attention residual with Ly.postNorm, which parallelBlock never allocates. On cohere-tiny
+	// that measured "launch bRms: cuda: nil buffer" (audit-2026-09-10 C-04). Decline until the glue
+	// carries the LayerNorm and the parallel-block reuse.
+	if r.layerNorm || r.parallelBlock {
+		return fmt.Errorf("cuda prefill: LayerNorm / parallel-block (Cohere) is not implemented in "+
+			"the batched glue yet (sequential decode only): %w", errPrefillDeclined)
+	}
 	// PER-LAYER geometry, not layer 0's hoisted and asserted uniform. The batched launches bind
 	// each layer's own hd/nKV/qDim/kvDim/rhalf exactly as the decode launches already do, and the
 	// M-sized scratch is sized by the MAX across layers — so a family whose layers differ (Gemma-4:
@@ -1190,7 +1199,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if e := gpu.Upload(r.x, xhost[m*hidden:(m+1)*hidden]); e != nil {
 				return e
 			}
-			if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
+			if e := r.norm(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
 				return e
 			}
 			if tail == tailHiddenLast {
@@ -1249,6 +1258,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	}
 	for _, out := range outs {
 		applySoftcap(out, r.finalSoftcap)
+		applyLogitScale(out, r.logitScale) // step() applies both; this tail used to apply only the softcap (audit C-04)
 	}
 	return outs, ids, nil
 }

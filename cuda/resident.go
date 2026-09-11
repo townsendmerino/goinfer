@@ -2963,7 +2963,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	// their K/V in the cache, and the head is a big-vocab matmul + ~1 MB readback + softcap. The layer
 	// loop above already wrote this position's K/V identically, so decode stays byte-identical.
 	if head {
-		if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
+		if e := r.norm(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
 			return e
 		}
 		if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {

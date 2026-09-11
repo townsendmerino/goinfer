@@ -8,6 +8,9 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
+// This smoke gate passed while every decode token's final norm was the wrong kind (audit-2026-09-10
+// C-04). The numeric gate is TestCohereResidentParityCUDA (cohere_resident_parity_test.go).
+//
 // TestCohereResidentSmokeCUDA and TestCohere2ResidentSmokeCUDA are G5's last row
 // (docs/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
 // (metal/cohere_resident_smoke_test.go) explains why this is deliberately a smoke check
