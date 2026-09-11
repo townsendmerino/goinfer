@@ -1045,18 +1045,19 @@ func declinedToCPUReason(backend, resDecline string) string {
 // overclaim device use.
 //
 // WebGPU's Backend.MatmulBT and QuantBackend.MatmulW8A8 (gpu/backend.go) do real device work in
-// the staged path, unlike cuda/metal — but even WebGPU has no int4 dispatch here: its real int4
-// GPU kernel (gpu/gemv_w4a8.go) is wired only into the separate fully-resident runner
-// (gpu/residency.go), not this per-matmul staged path. So int4 is CPU-equivalent even on
-// webgpu's staged path, and int4mix is half so (its FFN tensors are int4 and take the same
-// CPU-only branch; only its attention tensors are int8 and reach QuantBackend). f32/int8/
-// int8int8 DO reach webgpu's device and get no note.
+// the staged path, unlike cuda/metal. Its int4 dispatch, QuantBackend4.MatmulW4A8 (G6, db81b08),
+// covers M=1 only: decode runs int4 on the device, and a multi-token prefill declines to the host
+// W4A8 kernel because this backend has no int4 GEMM. So int4's note splits decode from prefill,
+// and so does int4mix's, whose FFN tensors are int4 (its attention tensors are int8 and reach
+// QuantBackend). f32/int8/int8int8 DO reach webgpu's device and get no note. Until
+// audit-2026-09-10 G-13(a) the int4 note said no GPU dispatch existed at all, which db81b08 had
+// made false, and TestStagedDeviceNote pinned the false text.
 func stagedDeviceNote(quant string) string {
 	switch quant {
 	case "int4":
-		return " [no GPU dispatch exists for this quant here either — the real int4 kernel is wired only into the resident runner]"
+		return " [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host]"
 	case "int4mix":
-		return " [FFN tensors (int4) have no GPU dispatch in the staged path and run on the host; only attention (int8) reaches webgpu]"
+		return " [decode (one token) runs on webgpu, int4 FFN included; in prefill (several tokens) the int4 FFN tensors run on the host — no multi-token int4 kernel here — and only attention (int8) reaches webgpu]"
 	}
 	return ""
 }
