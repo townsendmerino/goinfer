@@ -655,17 +655,6 @@ var neverConfirmed = map[string]string{}
 // sweep produces a value a person promotes. The date is required so an entry that quietly becomes
 // permanent is visible as one.
 var awaitingFirstConfirmation = map[string]string{
-	"TestGptOssReal_gate":                     "2026-09-02 — newly required (gpt_oss had no gate); promote from the first sweep that runs it",
-	"TestGptOssReal_logitParity":              "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
-	"TestGraniteReal_gate":                    "2026-09-02 — newly required (granite had no gate); promote from the first sweep that runs it",
-	"TestGraniteReal_oracle":                  "2026-09-02 — newly required (granite had no gate); promote from the first sweep that runs it",
-	"TestLagunaReal_gate":                     "2026-09-02 — newly required (laguna had no gate); promote from the first sweep that runs it",
-	"TestLagunaGGUF_gate":                     "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
-	"TestGlm4MoeAir_gate":                     "2026-09-02 — newly required; also newly REACHABLE, and it has never run in any sweep",
-	"TestCohereAyaReal_gate":                  "2026-09-02 — newly required (cohere had no gate); promote from the first sweep that runs it",
-	"TestCohere2R7bReal_gate":                 "2026-09-02 — newly required (cohere2 had no gate); promote from the first sweep that runs it",
-	"TestQwen38Real_gate":                     "2026-09-02 — newly required (dense qwen3.8 had no gate); promote from the first sweep that runs it",
-	"TestQwen38GGUF_gate":                     "2026-09-02 — newly required; also newly REACHABLE, the -run could not select it before G-05",
 	"TestQwen3Moe_forwardParity":              "2026-09-06 — newly required (qwen3_moe had no gate); promote from the first sweep that runs it",
 	"TestGraniteDense_forwardParity":          "2026-09-06 — newly required (dense granite had no gate); promote from the first sweep that runs it",
 	"TestQwen3MoeReal_oracle":                 "2026-09-06 — newly required (F1, docs/task-families-2026-09.md); real-checkpoint T3 for qwen3_moe, not yet run; promote from the first sweep that runs it",

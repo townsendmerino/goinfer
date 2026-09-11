@@ -37,6 +37,24 @@
       "value": "PASS"
     },
     {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestCohere2R7bReal_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "22bbc43b4003c9f9",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestCohereAyaReal_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "9a293654afef5915",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestDeepseekGGUFReal_gate",
@@ -244,6 +262,51 @@
       "value": "PASS"
     },
     {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestGlm4MoeAir_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "f7b5463119d3c226",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestGptOssReal_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "5b04ddbc97f3a06b",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestGptOssReal_logitParity",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "95ad895d6ec9eb86",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestGraniteReal_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "e1907e37d9c0f52f",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestGraniteReal_oracle",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "e32faff14ca97d96",
+      "value": "PASS"
+    },
+    {
       "commit": "bd085de",
       "date": "2026-08-27",
       "gate": "TestInt4_forwardParity",
@@ -259,6 +322,24 @@
       "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
       "promoted_by": "francis",
       "source_sha256": "59857bdf509e979b",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestLagunaGGUF_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "282c8c3feca4313b",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestLagunaReal_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "128f9fb2d4e5be10",
       "value": "PASS"
     },
     {
@@ -439,6 +520,24 @@
       "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
       "promoted_by": "francis",
       "source_sha256": "cf90f5ae4c1b7f2c",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestQwen38GGUF_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "43fa83faf91e2f64",
+      "value": "PASS"
+    },
+    {
+      "commit": "eaa8bb23",
+      "date": "2026-09-06",
+      "gate": "TestQwen38Real_gate",
+      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
+      "promoted_by": "francis",
+      "source_sha256": "53a7373f42c5cde1",
       "value": "PASS"
     },
     {
