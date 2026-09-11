@@ -34,8 +34,16 @@ var gemma3ParityPrompt = []int{1, 7, 42, 100, 5, 200, 13, 88}
 // on WebGPU) this row does not touch — CUDA/Metal both implement it, WebGPU does not yet.
 func TestGemma3ResidentParityWebGPU(t *testing.T) {
 	dir := "../testdata/gemma3-vl-tiny"
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("no fixture (%s)", dir)
+	// Stat the WEIGHTS, not the directory (audit-2026-09-10 G-13(h)). The dir and its config.json
+	// are tracked while the weights are gitignored, so a dir stat passes on every clone. Then Load
+	// failed on the missing weights, and the test skipped saying "no webgpu device".
+	if _, err := os.Stat(dir + "/model.safetensors"); err != nil {
+		t.Skipf("no fixture weights (%s/model.safetensors; config.json alone is tracked)", dir)
+	}
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu device: %v", err)
+	} else {
+		c.Close()
 	}
 	if !decoder.ResidentBackendFeatures("webgpu")[decoder.FeatSandwichNorm] {
 		t.Skip("webgpu does not declare FeatSandwichNorm yet")
@@ -43,7 +51,7 @@ func TestGemma3ResidentParityWebGPU(t *testing.T) {
 
 	mg, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: "int4"})
 	if err != nil {
-		t.Skipf("no webgpu device: %v", err)
+		t.Fatalf("load %s: %v", dir, err)
 	}
 	defer mg.Close()
 	rf := mg.ResidentForwardForTest()
