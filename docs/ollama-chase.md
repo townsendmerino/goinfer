@@ -1087,7 +1087,7 @@ do not have the heads.
 > true when written, and the record of why we thought it is the useful part.
 >
 > What changed is our own loader. `decoder/gguf.go:743`, `decoder/gguf_qwen35.go:33`,
-> `decoder/weights.go:557` and `decoder/registry.go:1694` detect these heads, name them, and skip
+> `decoder/weights.go:576` and `decoder/registry.go:1694` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
 > (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the
@@ -1485,8 +1485,8 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:1108`) does
-  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1367/1014`)
-  can't reroute without breaking the batch caller `decoder/model.go:1154`
+  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1384/1014`)
+  can't reroute without breaking the batch caller `decoder/model.go:1171`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
 - **MoE `moeMLP` allocates MB/token — DONE, P8.** `moeMLP` now takes an optional `*decodeScratch`,
@@ -1495,7 +1495,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   still allocates, amortized over its K-token batch. All MoE-family int4 goldens pass bit-identical.
 - **int4 W4A8 `Workspace` alloc/token — DONE, P9, not via the fix this item originally proposed.** The
   item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in `matmul()`
-  itself (`decoder/weightmat.go:577` `matmulWSPool`), which also covers the free-matmul callers
+  itself (`decoder/weightmat.go:649` `matmulWSPool`), which also covers the free-matmul callers
   `matmulInto` never sees — `matmul()`'s int4 and W8A8-fallback branches now pull their
   `linalg.Workspace` from the pool instead of declaring one fresh per call, so the Workspace's own
   lazily-grown `i8`/`f32` quant scratch survives across calls instead of reallocating

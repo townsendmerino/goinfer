@@ -43,7 +43,7 @@ func TestStreamTranscode_perFamilyBodiesCarryTheirLayers(t *testing.T) {
 			}
 			var body bytes.Buffer
 			n, err := decoder.StreamTranscodeGGUF(context.Background(), tc.path, &body,
-				"int8", false, false, filepath.Base(tc.path))
+				"int8", false, decoder.GIWTargetNone, filepath.Base(tc.path))
 			if err != nil {
 				t.Fatalf("StreamTranscodeGGUF: %v", err)
 			}

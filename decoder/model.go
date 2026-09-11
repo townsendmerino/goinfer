@@ -300,6 +300,23 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, lerr
 		}
+		// L2 (docs/task-int4-layout-2026-09.md): a .giw bakes its int4 representation
+		// in at WRITE time (giwWriter.target), so unlike a GGUF/safetensors load —
+		// where wantsCanonicalInt4 decides needCanonical from THIS opts.Backend before
+		// a byte is quantized — the reader has to check the file's promise against
+		// what THIS Load actually needs. giwReader.weightMat already refuses a kind-5
+		// tensor this core can't run (wrong arch/shape); this catches the other named
+		// mismatch — a kind-5 file loaded under a backend that needs canonical (e.g.
+		// Backend:"metal") — which withResidency's own decline does NOT fail loudly
+		// for (it logs and falls back to CPU/staged, which is non-fatal by design but
+		// not the "fails at load" contract L2 requires for a wrong-representation file).
+		if wantsCanonicalInt4(opts.Backend, be) {
+			if n := repackedOnlyInt4Count(w); n > 0 {
+				_ = mmap.Unmap(data)
+				closeBackend(be)
+				return nil, fmt.Errorf("decoder: %s: %d int4 tensor(s) are stored row4-only (kind 5, a cpu-arm64 prequant target) but Backend %q needs canonical bytes — rebuild with `go run ./cmd/prequant -target <matching this backend>` (or delete the stream-weights cache so it rebuilds automatically)", dir, n, opts.Backend)
+			}
+		}
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}

@@ -239,6 +239,25 @@ func (w *Weights) matmulWeights() []*linalg.WeightMat {
 	return ms
 }
 
+// repackedOnlyInt4Count reports how many of w's matmulWeights() tensors are
+// int4-resident with NO canonical bytes at all (IsInt4() true, Int4()'s ok
+// false) — a kind-5 .giw tensor (docs/task-int4-layout-2026-09.md's L2), or (in
+// principle, never produced by any writer today) an in-RAM repacked-only build
+// that somehow reached a .giw round-trip. Used by decoder.Load's .giw branch to
+// refuse loading such a file under a backend that needs canonical bytes.
+func repackedOnlyInt4Count(w *Weights) int {
+	n := 0
+	for _, m := range w.matmulWeights() {
+		if !m.IsInt4() {
+			continue
+		}
+		if _, _, _, ok := m.Int4(); !ok {
+			n++
+		}
+	}
+	return n
+}
+
 // isLogitTable reports whether m is one of the embedding-class tensors — the token embedding, the
 // LM head, or the Gemma-4 model-level PLE embeddings. In int4 mode these are pinned to int8 by
 // DEFAULT (logit-critical; the EmbedInt4 knob relaxes them), so their precision is orthogonal to the

@@ -1336,7 +1336,7 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonic
 // the qwen35/gemma4 dedicated loaders fall back to a resident build + serialize
 // (those models fit). Returns the bytes written. Typically invoked inside
 // giw.WriteStream as the weights half of a .giw bundle.
-func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant string, embedInt4, row4 bool, id string) (int64, error) {
+func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant string, embedInt4 bool, target GIWTarget, id string) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -1383,21 +1383,20 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	// numerics one. A 35B-A3B MoE OOM'd at 40.5GB resident on a 16GB Mac under the
 	// old resident-then-serialize path; this bounds peak RSS to ~one layer.
 	if needsResidentSerialize(arch) {
-		// needCanonical=true: repacked-only int4 construction (aikit audit M-22,
-		// decoder/weightmat.go's wantsCanonicalInt4) is CPU-in-RAM only for now, not wired into
-		// .giw serialization — a target-aware kind here is docs/task-int4-layout-2026-09.md's L2,
-		// not started as of this comment.
+		// needCanonical=true unconditionally, regardless of target: the writer needs
+		// canonical bytes IN RAM to choose what to write (repackRow4ForEmit computes
+		// row4 from canonical), even on a cpu-arm64 target that will write kind 5
+		// (canonical-absent) to DISK. See docs/task-int4-layout-2026-09.md's L2 — the
+		// in-RAM construction policy (wantsCanonicalInt4) and the on-disk kind policy
+		// (target) are independent decisions.
 		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, nil, "")
 		if berr != nil {
 			return 0, berr
 		}
-		if row4 {
-			return SerializeWeightsToRow4(out, w, id)
-		}
-		return SerializeWeightsTo(out, w, id)
+		return SerializeWeightsToForTarget(out, w, id, target)
 	}
-	wr := &giwWriter{sink: out, row4: row4}
-	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, wr, id); err != nil { // see the other call's comment above: repacked-only .giw kind is L2
+	wr := &giwWriter{sink: out, target: target}
+	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, wr, id); err != nil {
 		return wr.n, err
 	}
 	var crc [4]byte

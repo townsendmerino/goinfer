@@ -1038,7 +1038,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		if opts.EmbedInt4 {
 			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")
 		}
-		return prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant)
+		return prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant, opts.Backend)
 	}
 
 	loadPath := spec.path

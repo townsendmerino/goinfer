@@ -33,23 +33,23 @@ exhausted (`vm.swapusage`: 5.35/6.14 GB used) before the kill. Output `.giw` was
 the process died before writing any real tensor data.
 
 **Mechanism, characterized (not fixed) per this doc's own house discipline:**
-`decoder.StreamTranscodeGGUF` (`decoder/gguf.go:1718-1567`) has an explicit carve-out:
+`decoder.StreamTranscodeGGUF` (`decoder/gguf.go:1717-1567`) has an explicit carve-out:
 
 > `// Dedicated-loader families (qwen35) can't stream; they fit resident.`
 > `if arch.qwen35 != nil { w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, nil, ""); ... }`
 
-and the streaming branch itself refuses the family outright (`decoder/gguf.go:1708-1553`):
+and the streaming branch itself refuses the family outright (`decoder/gguf.go:1707-1553`):
 
 > `if arch.qwen35 != nil || arch.gemma4 != nil { return nil, fmt.Errorf("...streaming transcode
 > unsupported for %s (load resident + prequant instead)", arch.Name) }`
 
-`cmd/prequant`'s own doc comment names the assumption directly (`internal/prequant/prequant.go:69-70`):
+`cmd/prequant`'s own doc comment names the assumption directly (`internal/prequant/prequant.go:70-70`):
 "transcode the GGUF straight into the bundle, ONE LAYER at a time... peak RAM is ~one layer rather
 than the whole resident model... The dedicated qwen35/gemma4 loaders fall back to a resident build
 inside StreamTranscodeGGUF (**those models fit**)." **That assumption is what broke**: it held for
 every qwen35-family model tried before now (all smaller), and for gemma4 26B-A4B on a bigger box —
 a 35B-A3B on a 16 GB Mac is the first case where it doesn't. The generic loader path already proves
-per-layer stream-and-free works on this codebase (`streamQuantized`, `decoder/weightmat.go:125` —
+per-layer stream-and-free works on this codebase (`streamQuantized`, `decoder/weightmat.go:127` —
 "the whole model never sits resident"); qwen35's dedicated loader was written before that pattern
 existed and was never migrated onto it. This is a genuine, fixable bring-up gap, not an inherent
 MoE or quantization-format limit. The separately-known P12 finding (qwen35 family running f32
@@ -130,7 +130,7 @@ bytes. P12's 2026-08-19 fix holds for this real streamed prequant checkpoint —
 gap's explanation**, closing the Phase 0 brief's last open item with a clean negative.
 
 **LM head: verified fast, by tracing the actual load call, not just reading the fix.** `embMat`
-(`decoder/gguf.go:1592`), the SAME shared closure used by every family including qwen35 for
+(`decoder/gguf.go:1591`), the SAME shared closure used by every family including qwen35 for
 `w.Embed`/`w.LMHead`, calls `quant.embeddingWith(embedInt4)` — the exact function the 2026-08-24
 W8A8 fix (`a11c56b`) changed to tag int4-mode embed/head `quantInt8I8` instead of weight-only
 `quantInt8`. Confirmed by tracing the call site this model's load actually goes through (the
@@ -888,8 +888,8 @@ scoping), a roadmap target regardless of any Zeno comparison.
 **Shape:** mirror the generic path's per-layer stream-and-free inside qwen35's dedicated loader —
 both call sites that currently hit the `sink=nil`/resident-fallback branch (`StreamTranscodeGGUF`'s
 own qwen35 carve-out, which both the general load path and `cmd/prequant` route through, per
-`internal/prequant/prequant.go:69-70`'s own comment — there is exactly one code path to fix, not
-two). gemma4 shares the same carve-out (`decoder/gguf.go:1718`) but is NOT in scope here — it fits
+`internal/prequant/prequant.go:70-70`'s own comment — there is exactly one code path to fix, not
+two). gemma4 shares the same carve-out (`decoder/gguf.go:1717`) but is NOT in scope here — it fits
 resident on the boxes it's been run on; touch only the qwen35 branch unless a gemma4-specific
 gap surfaces independently.
 
@@ -914,7 +914,7 @@ comparison. It found one real, designed (not buggy) difference: the old resident
 path bakes a resolved `quantLabel` ("int4mix") into the header because `w` is fully materialized
 before `writeHeadGlobals` runs; the new streaming path calls `writeHeadGlobals` before any layer
 streams in, so `hasPopulatedLayers()` correctly defers the label to "" (pre-existing B11 logic,
-`decoder/serialize.go:178-193`) — exactly how every other already-streaming family already behaves.
+`decoder/serialize.go:152-193`) — exactly how every other already-streaming family already behaves.
 Every other byte agrees, and both bundles resolve to the same live-inferred label once loaded. All
 qwen35-family goldens (`TestQwen35_forwardParity`, `TestQwen3_5_textParity`,
 `TestSerializeQwen35_roundTrip`) stayed green, and the change is provably non-numeric (proven by the

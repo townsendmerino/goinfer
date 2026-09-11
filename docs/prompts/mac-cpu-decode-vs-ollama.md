@@ -42,7 +42,7 @@ CPU-path specific and not a scheduling or serving-layer defect shared by both ba
 
 **The two engines were not running the same quantization.** goinfer was launched with
 `-quant int4`, which is its own W4A8 path (`w.MatmulBTW4A8Into`, see
-`decoder/weightmat.go:622`) — 4-bit weights requantized at load, int8 activations. Ollama ran the
+`decoder/weightmat.go:694`) — 4-bit weights requantized at load, int8 activations. Ollama ran the
 file's **native Q4_K_M** k-quant with llama.cpp's hand-written kernels for that exact format.
 
 Those are different weight formats, different activation precisions, and different kernel families.
@@ -86,7 +86,7 @@ layout and llama.cpp's kernels amortize the unpack differently than W4A8 does. M
 Check, in this order, cheapest first:
 
 1. **Thread count actually used.** goinfer derives workers from `GOMAXPROCS` (see
-   `decoder/weights.go:298`, `decoder/sampler_chunked.go:111`). Confirm what it really runs with on
+   `decoder/weights.go:317`, `decoder/sampler_chunked.go:111`). Confirm what it really runs with on
    the Mac and what ollama runs with — llama.cpp defaults to physical cores and Apple Silicon's
    P/E-core split makes "all cores" the wrong answer. **An E-core-inclusive thread count that
    ollama avoids and goinfer does not would produce exactly this shape of result.**

@@ -1,7 +1,9 @@
 package decoder
 
 import (
+	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -528,6 +530,76 @@ func isBatchedProjTensor(name string) bool {
 		}
 	}
 	return false
+}
+
+// GIWTarget names the single consumer a .giw bundle (or one cmd/prequant run) is
+// built for, so the writer can choose the one on-disk int4 layout that consumer
+// actually reads (docs/task-int4-layout-2026-09.md's L2 — the .giw analogue of
+// wantsCanonicalInt4's load-time decision). GIWTargetNone ("") means
+// unknown/multi-consumer and always keeps every int4 tensor canonical (kind 3) —
+// the safe default: a bundle nobody has promised to a single reader must stay
+// portable, mirroring wantsCanonicalInt4's own "never infer from an omission" rule.
+type GIWTarget string
+
+const (
+	GIWTargetNone     GIWTarget = ""
+	GIWTargetCPUArm64 GIWTarget = "cpu-arm64"
+	GIWTargetCPUAmd64 GIWTarget = "cpu-amd64" // defined for L5; does not yet change what's written
+	GIWTargetMetal    GIWTarget = "metal"
+	GIWTargetCUDA     GIWTarget = "cuda"
+	GIWTargetWebGPU   GIWTarget = "webgpu"
+)
+
+// GIWTargetForBackend derives the GIWTarget for a caller naming backendName as the
+// ONE consumer about to read a .giw bundle being built now (EnsureCachedGIW,
+// cmd/prequant's -target default). Mirrors wantsCanonicalInt4's literal-"cpu"-is-
+// a-promise rule: only backendName == "cpu" unlocks an arch-specific repacked-only
+// target, and only for THIS process's own GOARCH — the box building the bundle now
+// is the box that will read a same-machine cache, never a claim about some other
+// reader. Any GPU name maps to its own always-canonical target (visible in the
+// cache key even though it does not yet change which kind gets written); an
+// unrecognized name returns GIWTargetNone, the safe default.
+func GIWTargetForBackend(backendName string) GIWTarget {
+	switch backendName {
+	case "cpu":
+		switch runtime.GOARCH {
+		case "arm64":
+			return GIWTargetCPUArm64
+		case "amd64":
+			return GIWTargetCPUAmd64
+		default:
+			return GIWTargetNone
+		}
+	case "metal":
+		return GIWTargetMetal
+	case "cuda":
+		return GIWTargetCUDA
+	case "webgpu":
+		return GIWTargetWebGPU
+	default:
+		return GIWTargetNone
+	}
+}
+
+// ParseGIWTarget parses a -target flag value: one of the five named GIWTarget
+// values, "cpu" (resolved via this process's own GOARCH, like
+// GIWTargetForBackend("cpu")), "canonical" (GIWTargetNone, an explicit "no
+// target" for a bundle more than one consumer/arch will read — e.g. one .giw
+// embedded into several cross-compiled release binaries, where no single
+// arch-specific repacked-only layout is safe for all of them), or "" (defaults
+// the same as "cpu": cmd/prequant's traditional single-box use).
+func ParseGIWTarget(s string) (GIWTarget, error) {
+	switch GIWTarget(s) {
+	case GIWTargetCPUArm64, GIWTargetCPUAmd64, GIWTargetMetal, GIWTargetCUDA, GIWTargetWebGPU:
+		return GIWTarget(s), nil
+	}
+	switch s {
+	case "", "cpu":
+		return GIWTargetForBackend("cpu"), nil
+	case "canonical":
+		return GIWTargetNone, nil
+	}
+	return GIWTargetNone, fmt.Errorf("unknown .giw target %q (want cpu-arm64 | cpu-amd64 | metal | cuda | webgpu | cpu | canonical)", s)
 }
 
 // isW8A8 reports whether w uses the int8×int8 (W8A8) path — the only one with a

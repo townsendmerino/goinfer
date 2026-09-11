@@ -30,7 +30,7 @@ func TestMoEPagingPread_matchesByteCopy(t *testing.T) {
 		t.Skipf("no qwen3_5_moe fixture at %s (run scripts/pin_qwen3_5_forward.py --moe): %v", ckpt, err)
 	}
 	giw := filepath.Join(t.TempDir(), "qwen3_5_moe-tiny.giw")
-	if err := prequant.Transcode(context.Background(), ckpt, giw, "int4", false, false); err != nil {
+	if err := prequant.Transcode(context.Background(), ckpt, giw, "int4", false, decoder.GIWTargetNone); err != nil {
 		t.Fatalf("transcode fixture to .giw: %v", err)
 	}
 

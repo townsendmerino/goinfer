@@ -5,8 +5,8 @@
 > Companion to `docs/task-gpu-paths-2026-09.md`; this is the CPU/format half of the same question —
 > which representation of an int4 tensor exists in memory and on disk, and who decided.
 >
-> Suggested order: L1 (in progress, finish first) → L3 (ten minutes, do with L1) → L2 → L5 when
-> split-half is un-parked. L4 is filed, not scheduled.
+> Suggested order: L1 (in progress, finish first) → L3 (ten minutes, do with L1) → L2 → L5 on
+> nobara once L1 lands (its park condition is met — see L5). L4 is filed, not scheduled.
 
 ## The decision this doc records
 
@@ -53,8 +53,8 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
-**Where.** `decoder/weightmat.go:412 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:365` (computed once
+**Where.** `decoder/weightmat.go:414 wantsCanonicalInt4(backendName, be)`,
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:382` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -150,22 +150,28 @@ backend-agnostic data into something with a hidden property and a silent failure
   for it. Did not check `internal/gemmaapp`'s actual callers beyond confirming its own flag
   default, since gemma-web was out of this item's named list.
 
-**Out of scope, unchanged:** down-proj / router / experts; amd64 split-half (parked, L5); the
+**Out of scope, unchanged:** down-proj / router / experts; amd64 split-half (L5); the
 `.giw` path (L2, and its scope note in `decoder/gguf.go:1388` is corrected under L3).
 
 **Size.** Small — the branch already had the mechanism; this was the gate's final shape plus
 reporting and the error.
 
-## L2 — `.giw` kind per target: emit the one layout the reader will use (format v11)
+## L2 — `.giw` kind per target: emit the one layout the reader will use (format v11) (DONE 2026-09-11)
 
-**Where.** `decoder/serialize.go` — format comment (`:40–70`), `giwWriter.row4` (`:895–905`),
-`weightMat()` emit (`:955–985`), `readWeightMat` kinds 3/4 (`:1385–1410`), `giwVersion = 10`
-(`:76`); `decoder/w4a8_row4_emit_arm64.go` (`repackRow4ForEmit`);
-`internal/prequant/prequant.go:36–47` (`Transcode`'s `row4` flag; the comment records that
-`EnsureCachedGIW` "always emits kind 3"), `:181 EnsureCachedGIW`, `streamCachePath`;
-`cmd/prequant/main.go`; `demo/chat/build-embed.sh` around its per-tier `-tags` selection (the
-hyphen in this filename defeats queue_citation_lint.py's path regex for a `:line` suffix, so
-cited by name only, matching this repo's other docs).
+**Where (as implemented).** `decoder/serialize.go` — format comment (`:49–72`), `giwWriter.target`
+(`:933–970`), `weightMat`/`weightMatKind3Only`/`weightMatKind` (`:1009–1103`), `readWeightMat`
+kinds 3/4/5 (`:1466–1525`), `giwVersion = 11` (`:87`), `SerializeWeightsForTarget`/
+`SerializeWeightsToForTarget` (`:207–233`); `decoder/weightmat.go:542–614` (`GIWTarget`,
+`GIWTargetForBackend`, `ParseGIWTarget` — new, not anticipated by the "Where" list above);
+`decoder/gguf.go` (`StreamTranscodeGGUF`'s `target GIWTarget` param); `decoder/weights.go`
+(`repackedOnlyInt4Count`); `decoder/model.go` (the `.giw` branch's post-load backend check);
+`decoder/w4a8_row4_emit_arm64.go` (`repackRow4ForEmit`, reused unchanged);
+`internal/prequant/prequant.go` (`Transcode`'s `target GIWTarget` param, `EnsureCachedGIW`'s new
+`backend string` param, `streamCachePath`, `selfCheck` — see Findings for why the last one
+needed a fix); `cmd/prequant/main.go` (`-target` flag replaces `-row4`); `demo/chat/build-embed.sh`
+around its `go run ./cmd/prequant` call (the hyphen in this filename defeats
+queue_citation_lint.py's path regex for a `:line` suffix, so cited by name only, matching this
+repo's other docs).
 
 **What is wrong today.** Kind 4 stores canonical **and** row4 — 2× disk per int4 tensor — so that
 one file loads on any core (`WrapInt4Row4` gates on `row4Usable()` and falls back). That
@@ -201,14 +207,129 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
    the transcode; the transcode holds canonical transiently anyway) — just skip writing the
    canonical arrays. arm64 build box required for a `cpu-arm64` target, as today.
 
-**Gate.** Round-trip: a kind-5 `.giw` loaded on the Mac CPU is bit-identical in logits to the
-same model loaded from GGUF (the existing `w4a8_row4_giwkind_test.go` pattern, extended); a
-kind-5 file under `Backend: "metal"` fails with the named error; a kind-4 file still loads; file
-size for the 1.5B int4 cache before/after; `serve --stream-weights` on the Mac CPU decode tok/s
-before/after (this is the row4-vs-canonical kernel gap, expected to be the visible number).
+**Gate — done, all green (pre-registered/environmental failures named below).**
+- `decoder.TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical`
+  (`decoder/w4a8_row4_giwkind5_test.go`): on the real int4 fixture, 168/168 row4-eligible int4
+  tensors round-trip through a `SerializeWeightsForTarget(GIWTargetCPUArm64)` bundle with
+  `Int4()`'s ok FALSE and `Int4Row4()`'s ok TRUE (repacked-only); greedy first-token is
+  bit-identical across GGUF (in-RAM row4) / kind-3 `.giw` / kind-5 `.giw`; bundle size delta is
+  **0 bytes** vs kind 3 (497.4 MB both) — row4 swaps in for canonical, doesn't add, confirmed on
+  the real 1.5B checkpoint too (1293375051 bytes, identical to the byte, canonical vs cpu-arm64).
+- `decoder.TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad`: a kind-5 `.giw`
+  loads fine under `Backend:"cpu"`, then fails `decoder.Load` under `Backend:"metal"` with:
+  `"decoder: <path>: 168 int4 tensor(s) are stored row4-only (kind 5, a cpu-arm64 prequant
+  target) but Backend \"metal\" needs canonical bytes — rebuild with \`go run ./cmd/prequant
+  -target <matching this backend>\` (or delete the stream-weights cache so it rebuilds
+  automatically)"`.
+- `decoder.TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only`: hand-built kind-5
+  bytes with `rows=3` (not a multiple of 4 — `Int4Row4Usable` must reject it) fail
+  `giwReader.weightMat` with `"...is stored row4-only (kind 5, a cpu-arm64 prequant target) but
+  this core cannot use that layout — rebuild with \`go run ./cmd/prequant -target <this
+  core>\`..."`. Mutation-checked: the message names "kind 5" / "row4-only" / "this core" as
+  asserted, and the test fails (as intended) if any of those strings changes.
+- `decoder.TestSerializedInt4Weights_row4Kind_matchesCanonical` (existing, unmodified): kind 4
+  still round-trips correctly — the legacy path is unaffected.
+- Three suites, real checkpoints, GOINFER_HEAVY_TESTS=1, run sequentially so they don't contend
+  with each other or with another session's concurrent `linalg -race` run (a first, contended
+  attempt produced spurious OOM/fit-guard failures that vanished on isolated re-run — this box
+  was at load average 5–6.7 on 17 GB RAM at the time):
+  - `decoder`: 4 failures — `TestOlmo3_forwardParity` and `TestParityManifest_fresh`
+    (pre-registered, L1's own baseline, the latter refreshed separately before commit) are real;
+    `TestRequantBar_DoubleQuantCost` and `TestSamplingThroughputGate` are NOT — both are
+    unrelated subsystems (int4 requant timing; sampler top_p throughput ratio) that fit-guard
+    themselves off *currently available* RAM/CPU headroom, both failed with
+    "this machine currently has N GB of memory available" / a throughput-ratio gate a busy box
+    pushes over, and neither touches any file this item edited. Confirmed load-sensitive, not
+    code-sensitive, by re-observation: identical fit-guard-shaped failures appeared on a
+    DIFFERENT, unrelated set of tests during the first (contended) run and disappeared for those
+    once contention cleared.
+  - `-tags metal`: 4 failures — `TestMoE_declinesPrefill` is L1's own pre-registered baseline;
+    `TestEncodeAhead`, `TestPrefillNoNaN`, `TestPrefillParity` are NOT — all three fail with
+    "resident context N positions exceeds this backend's hard ceiling of 4096", where N is
+    whatever the fit guard auto-sized FROM currently-available RAM (20907, 28015, 5986 across the
+    three) — a pre-existing fit-guard-vs-Metal-ceiling interaction, unrelated to int4 layout
+    (none of these tests load an int4 model or touch a `weightMat`/`GIWTarget` code path), and
+    reproduced under the same elevated-load conditions as the decoder suite's two.
+  - `-tags gpu`: fully green, `ok`, no exclusions needed.
+- On-disk size, real 1.5B int4 checkpoint (`~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`,
+  via `cmd/prequant`): `-target canonical` 1293375051 bytes, `-target cpu-arm64` 1293375051
+  bytes — **identical to the byte**.
+- CPU decode tok/s, same checkpoint, `Backend:"cpu"`, greedy, interleaved (canonical then kind-5,
+  ×3, each after its own untimed warm-up generate, 64 timed tokens/run — difference matched, not
+  pooled, per this repo's own measurement discipline): canonical 36.79 / 39.66 / 39.19 tok/s vs
+  cpu-arm64 (kind 5) 47.71 / 49.37 / 46.75 tok/s — **+19% to +30% per pair** (best-of-3: 39.66 →
+  49.37, **+24.5%**). This is the row4-vs-canonical CPU kernel gap the doc predicted as "the
+  visible number" — informational (not a pass/fail gate), same discipline as the existing
+  `TestW4A8Row4GiwKind_loadTimeAndMemoryDelta`.
 
-**Size.** Medium. Format bump, one new kind, a target parameter through three callers, one
-loader error, cache key.
+**Findings / deviations from this doc, reported rather than worked around:**
+- **The ground rule's paging exclusion, checked against the actual pager code, contradicts
+  itself if read broadly.** `decoder/moepaging.go`'s `newExpertPager` and
+  `decoder/layerpaging.go`'s `newLayerPager` BOTH already call `WeightMat.MappedSpanRow4` before
+  falling back to `MappedSpan` — i.e. paging today already prefers a tensor's row4 span over its
+  canonical one whenever a row4 span exists (a kind-4 file), and neither pager requires canonical
+  bytes to be present at all for this to work. So: (a) `weightMatKind3Only`'s MoE-expert exclusion
+  (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
+  is more conservative than the inspected code strictly requires — kept as written rather than
+  silently loosened, since Metal's OWN expert paging (`metal/moe.go:446`,
+  `metal/gemma4_moe.go:225`, cited by the ground rule, NOT inspected this round) may have a real
+  canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
+  "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't
+  fit resident; reading the ground rule to also exclude THOSE would gut L2's own stated purpose
+  for the one case it names. They were NOT excluded (plain `weightMat`, kind-5-eligible), on the
+  strength of the same `MappedSpanRow4`-first inspection. Flagging both rather than deciding
+  either silently.
+- **Item 4's "fails `readWeightMat`" is split across two functions, not one.** The arch/shape
+  mismatch (`WrapInt4Row4Only`'s `ok=false`) DOES fail inside `readWeightMat`, named. The BACKEND
+  mismatch (a kind-5 file loaded under `Backend:"metal"`) cannot — a `.giw`'s target is baked in
+  at WRITE time, and `readWeightMat`/`LoadSerializedWeights` have no visibility into the
+  CALLER's `Options.Backend` (`LoadSerializedWeights(data []byte)`'s existing public signature,
+  ~25 call sites across the tree). Implemented instead as a post-`LoadSerializedWeights` check in
+  `decoder.Load`'s own `.giw` branch (`repackedOnlyInt4Count`, `decoder/weights.go`), reusing the
+  same `wantsCanonicalInt4` the GGUF path already computes — still "fails loudly and at load"
+  (before `Load` returns a `*Model`), without widening `LoadSerializedWeights`'s signature. This
+  check is NOT redundant with L1's Metal `buildResident` decline: `withResidency`'s decline is
+  soft (logged, falls back to CPU/staged, `Load` still succeeds) by design, so it alone would NOT
+  satisfy "fails at load" for this case — verified by writing the test first with only L1's
+  protection in place and watching it fail to fail (i.e. `Load` returned a `*Model` for a
+  Metal-backend kind-5 load with no error) before adding this check.
+- **Kind-5 eligibility scoped to `Weights.matmulWeights()`'s existing enumeration**
+  (dense Q/K/V/O/gate/up/down, embed/lm_head, router, shared-expert(+gate), gemma4 PLE,
+  per-layer-embed) so `decoder.Load`'s post-load census stays complete by construction rather
+  than needing its own separate tensor list. KDA/DeltaNet/qattn mixer projections and gemma4's
+  fused-MoE router+experts (absent from `matmulWeights()`) stay `weightMatKind3Only` — kind 3
+  always — for now; extending kind 5 to them is a follow-on, not started, not blocking.
+- **Found a real bug fixing this: `internal/prequant.selfCheck` used `Options{}` (empty
+  `Backend`).** Empty means "needs canonical" (L1's own literal-"cpu"-is-a-promise design), so
+  EVERY `-target cpu-arm64` transcode failed its own self-check the first time this was run for
+  real: `prequant: self-check: decoder: ...: 196 int4 tensor(s) are stored row4-only ... needs
+  canonical bytes`. Fixed to `Options{Backend: "cpu"}` (accepts both kind 3 and kind 5; matches
+  what the file is actually loaded with in production either way).
+- **`demo/chat/build-embed.sh` builds ONE `.giw` before its cross-compile loop, then embeds the
+  same bytes into several os/arch/backend binaries** (darwin+metal, linux+cuda, windows/plain
+  CPU — potentially cross-arch relative to the build host). No single non-canonical target is
+  safe for all of them; defaulting `-target` to the host's own arch would have silently baked an
+  arm64-only kind-5 layout into e.g. a cross-compiled linux/amd64 binary, failing loudly only on
+  an end user's machine instead of here at build time. Fixed by passing `-target canonical`
+  explicitly — a new value (`ParseGIWTarget`, not one of the doc's 5 named targets) added for
+  exactly this "more than one consumer" case.
+- **Kind 4 (`SerializeWeightsRow4`/`SerializeWeightsToRow4`) was NOT retired**, despite "Kind 4 is
+  no longer emitted" in the Fix list above. Read that as describing the NEW target-driven pathway
+  (`Transcode`/`EnsureCachedGIW`/`cmd/prequant`, which indeed never chooses kind 4 anymore after
+  this change), not as an instruction to delete the pre-existing legacy API and its three
+  dedicated tests, which still exercise a real, working, independently useful format ("usable on
+  any core" portability kind 5 does not have). `giwWriter` carries both `row4 bool` (legacy) and
+  `target GIWTarget` (new) as independent fields; kind 5 wins if a caller somehow set both, though
+  none does.
+
+**Out of scope, unchanged:** L4 (Metal-resident triple-residency, filed); L5 (amd64 split-half —
+blocked on an aikit prerequisite, see that section).
+
+**Size.** Medium, as scoped. Touched `decoder/serialize.go`, `decoder/weightmat.go`,
+`decoder/gguf.go`, `decoder/weights.go`, `decoder/model.go`, `internal/prequant/prequant.go` (+
+its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build-embed.sh`,
+`metal/moe_pread_test.go`, plus one new test file
+(`decoder/w4a8_row4_giwkind5_test.go`).
 
 ## L3 — Doc corrections (do with L1) (DONE 2026-09-11)
 
@@ -216,7 +337,7 @@ loader error, cache key.
   "mirroring `repackW4A8Row4IfEligible`'s 'deliberately NOT wired into the .giw loader'
   precedent" and that "the existing canonical+row4 both policy isn't wired into `.giw` loading".
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
-  `decoder/serialize.go:1406`. The true precedent is that the **in-RAM** repack is not applied to a
+  `decoder/serialize.go:1499`. The true precedent is that the **in-RAM** repack is not applied to a
   mmap'd `.giw`. Replace both with a pointer to L2.
 - `internal/prequant/prequant.go:36–47` comment: "always emits kind 3" becomes the L2 target
   rule when L2 lands; until then add one line saying the CPU cache is on the canonical kernel.
