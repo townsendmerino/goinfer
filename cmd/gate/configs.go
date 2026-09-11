@@ -33,7 +33,14 @@ func heavyConfig() *gateConfig {
 			Serial: true,
 			Env: map[string]string{
 				"GOINFER_HEAVY_TESTS": "1",
-				"GOINFER_MODELS_DIR":  models,
+				// Both names, not just one (audit-2026-09-02.md N-41): GOINFER_MODELS_DIR is
+				// realckpt-tagged tests' own root (decoder/modelsdir_test.go's modelPath, G-06),
+				// GOINFER_MODELS is the shared asset registry's (decoder/assets.go's modelsRoot(),
+				// what assetPath/GOINFER_MELLUM_CKPT-style tests resolve through) — the SAME cell
+				// runs both kinds of heavy test, so GOINFER_GATE_MODELS pointing elsewhere used to
+				// reach only the first kind, silently splitting one run across two roots.
+				"GOINFER_MODELS_DIR": models,
+				"GOINFER_MODELS":     models,
 			},
 		})
 	}

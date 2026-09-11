@@ -1006,9 +1006,9 @@ supports.
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:375` | goinfer | `// Safety net: any OTHER parity/gate-shaped test that skipped — a family the lists forgo` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:443` | goinfer | `// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting ` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity.go:597` | goinfer | `// This exists because the distinction cost five weeks. TestQwen3NextReal_oracle was rep` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity.go:606` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity.go:618` | goinfer | `func whyNoResult(test string, cells []cell) string {` |
 | `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:284` | goinfer | `func TestRealckptCellCanReachEveryGate(t *testing.T) {` |
-| `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:320` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
+| `docs/audit-2026-09-02.md|cmd/gate/parity_test.go:333` | goinfer | `func TestParity_missingGateSaysWhichCause(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|constrain/constrain.go:153` | goinfer | `logits[id] = neg` |
 | `docs/audit-2026-09-02.md|constrain/constrain.go:198` | goinfer | `if len(m.eosIDs) > 0 {` |
 | `docs/audit-2026-09-02.md|constrain/constrain.go:50` | goinfer | `isEOS  []bool` |
@@ -1349,7 +1349,6 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/residency.go:845` | goinfer | `// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and` |
 | `docs/audit-2026-09-02.md|gpu/residency_c01_reset_test.go:24` | goinfer | `requireHeavyModel(t)` |
 | `docs/audit-2026-09-02.md|gpu/resident_pack_bench_test.go:21` | goinfer | `func BenchmarkResidentPackCost(b *testing.B) {` |
-| `docs/audit-2026-09-02.md|gpu/testhooks_gen.go:1` | goinfer | `//go:build goinfer_testhooks` |
 | `docs/audit-2026-09-02.md|gpu/vision.go:52` | goinfer | `let mean = smean[0] / f32(p.h);` |
 | `docs/audit-2026-09-02.md|gpu/vision_encoder.go:202` | goinfer | `for head := range nH {` |
 | `docs/audit-2026-09-02.md|internal/chatapp/main.go:305` | goinfer | `// bundle, or raw tokenizer.json for a safetensors-sourced one).` |
@@ -1523,9 +1522,9 @@ supports.
 | `docs/audit-2026-09-10.md|cmd/gate/gpu.go:445` | goinfer | `g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "pref` |
 | `docs/audit-2026-09-10.md|cmd/gate/gpu.go:893` | goinfer | `func probeNVRTC(w io.Writer) map[string][2]string {` |
 | `docs/audit-2026-09-10.md|cmd/gate/parity.go:448` | goinfer | `switch ledger(g.Test) {` |
-| `docs/audit-2026-09-10.md|cmd/gate/parity.go:859` | goinfer | `// metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged ` |
-| `docs/audit-2026-09-10.md|cmd/gate/parity_test.go:427` | goinfer | `case isPending && !isoDatePrefix(pending):` |
-| `docs/audit-2026-09-10.md|cmd/gate/parity_test.go:759` | goinfer | `func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {` |
+| `docs/audit-2026-09-10.md|cmd/gate/parity.go:871` | goinfer | `// metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged ` |
+| `docs/audit-2026-09-10.md|cmd/gate/parity_test.go:460` | goinfer | `case isPending && !isoDatePrefix(pending):` |
+| `docs/audit-2026-09-10.md|cmd/gate/parity_test.go:792` | goinfer | `func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {` |
 | `docs/audit-2026-09-10.md|cmd/prequant/main.go:31` | goinfer | `embedInt4 := flag.Bool("embed-int4", false, "in int4 mode, quantize the token-embedding/` |
 | `docs/audit-2026-09-10.md|constrain/constrain.go:236` | goinfer | `if plain && !canEnd && m.plainOK.has(id) {` |
 | `docs/audit-2026-09-10.md|constrain/plainstring.go:339` | goinfer | `UNKEYABLE` |
