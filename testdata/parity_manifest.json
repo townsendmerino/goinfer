@@ -571,7 +571,7 @@
         "scripts/pin_olmo_hybrid_real.py",
         "scripts/pin_olmo_hybrid_tiny.py"
       ],
-      "deps_hash": "sha256:529ca068349f39305aa53a2ad80972f064905476e314d7641f0e21fc79ff73a2",
+      "deps_hash": "sha256:be2d34ce0c65eac308d1235c8adf8c503e0ae1382d86923e3b879c168935645a",
       "status": "validated",
       "validated_at": "493897af",
       "date": "2026-09-07",
