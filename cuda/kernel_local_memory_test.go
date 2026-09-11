@@ -10,6 +10,8 @@ import (
 	"unsafe"
 
 	gc "github.com/eitamring/gocudrv/cuda"
+	"os"
+	"path/filepath"
 )
 
 // pipeShim mirrors aikit's `type Pipeline struct{ f *gc.Function }` so a test can reach the driver
@@ -22,33 +24,32 @@ func rawFunc(p Pipeline) *gc.Function { return (*pipeShim)(unsafe.Pointer(&p)).f
 
 var ptxEntry = regexp.MustCompile(`\.visible\s+\.entry\s+([A-Za-z_][A-Za-z0-9_$]*)`)
 
-// ptxModules is every PTX blob goinfer embeds. Enumerated here rather than sampled: the whole point
-// of A9's correction is that measuring two kernels and generalising is the sibling-drift shape, and
-// a local-memory reservation is a per-kernel property that nothing else in the tree reports.
+// ptxModules is every PTX blob goinfer embeds, DERIVED from kernels.go's //go:embed list (audit
+// 2026-09-10 G-13(b)): the hand-written list covered 15 of 22 modules, so the census never saw
+// gptoss_act.ptx, the expert-cache path its moe_route precondition exists for. Reading
+// testdata/<name>.ptx is byte-for-byte what go:embed embeds. TestPTXModules_coverEveryEmbed holds
+// the result to the embed list, as TestKernelFMALint_coversEmbeddedPTX does for the FMA lint.
 func ptxModules() []struct {
 	name string
 	ptx  []byte
 } {
-	return []struct {
+	var out []struct {
 		name string
 		ptx  []byte
-	}{
-		{"glue.ptx", gluePTX},
-		{"moe.ptx", moePTX},
-		{"router_f32.ptx", routerF32PTX},
-		{"argmax.ptx", argmaxPTX},
-		{"gemv_fwd.ptx", gemvFwdPTX},
-		{"gemv_w4a8_batched.ptx", gemvBatchedPTX},
-		{"gemv_w8a8_batched.ptx", gemvW8BatchedPTX},
-		{"prefill_batched.ptx", prefillBatchedPTX},
-		{"decode_splitkv.ptx", decodeSplitKVPTX},
-		{"gemv_w4a8_staged.ptx", gemvStagedPTX},
-		{"gemv_w4a8_rn.ptx", gemvRNPTX},
-		{"fused_qkv.ptx", fusedQKVPTX},
-		{"deltanet.ptx", deltaNetPTX},
-		{"attn_fused.ptx", attnFusedPTX},
-		{"gemm_w4a8_mma.ptx", gemmMMAPTX},
 	}
+	kb, err := os.ReadFile("kernels.go")
+	if err != nil {
+		return out
+	}
+	for _, m := range regexp.MustCompile(`//go:embed testdata/([A-Za-z0-9_]+\.ptx)`).FindAllStringSubmatch(string(kb), -1) {
+		if b, err := os.ReadFile(filepath.Join("testdata", m[1])); err == nil {
+			out = append(out, struct {
+				name string
+				ptx  []byte
+			}{m[1], b})
+		}
+	}
+	return out
 }
 
 // TestKernelLocalMemoryCensus reports CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES for every entry point in
@@ -172,6 +173,10 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		"moe_route":       4416, // two float[MOE_MAX_E] at MOE_MAX_E=512, plus the group scratch
 		"rope_kv":         32,
 		"rope_kv_batched": 32,
+		// The next two were invisible until ptxModules() was derived from kernels.go's embeds
+		// (audit-2026-09-10 G-13(b)). Both figures are this census's first reading of them.
+		"route_gptoss":          4608, // gptoss_act.ptx; larger than moe_route, so backend.go forces it too
+		"rope_kv_mrope_batched": 32,   // rope_mrope_prefill.ptx
 	}
 	got := map[string]int{}
 	for _, r := range rows {
@@ -207,9 +212,14 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 	// with deeper per-thread scratch would make the warm-up force the wrong pool, allocSlots would
 	// again size against memory about to be taken, and nothing would say so — naming one member of a
 	// set is the sibling-drift shape, and this is what keeps the naming honest.
+	//
+	// route_gptoss is the one exception, and it declares more (G-13(b)). It is bound only on gpt-oss,
+	// and backend.go forces it in the same warm-up wherever it is bound; that launch is checked below.
+	// Every other kernel runs where moe_route alone is forced, so moe_route must be the maximum of
+	// the rest.
 	maxFn, maxLocal := "", -1
 	for _, r := range rows {
-		if r.local > maxLocal {
+		if r.fn != "route_gptoss" && r.local > maxLocal {
 			maxFn, maxLocal = r.fn, r.local
 		}
 	}
@@ -218,6 +228,13 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 			"moe_route before allocSlots to pay the deferred local-memory reservation, and that is "+
 			"sound only while moe_route is the maximum. Force %s there instead, or force both, and "+
 			"re-measure the demand threshold", maxFn, maxLocal, pinned["moe_route"], maxFn)
+	}
+	if be, err := os.ReadFile("backend.go"); err != nil {
+		t.Fatalf("read backend.go: %v", err)
+	} else if !strings.Contains(string(be), "r.stream.Launch(r.gptOssRoute, onecfg(1, 0),") {
+		t.Errorf("backend.go no longer forces route_gptoss before allocSlots, and it declares %d B/thread "+
+			"against moe_route's %d: on gpt-oss the larger local-memory pool would grow after the "+
+			"expert cache was sized (G-13(b))", got["route_gptoss"], pinned["moe_route"])
 	}
 
 	// ---- the multiplier, checked rather than assumed ----
