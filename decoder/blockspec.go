@@ -212,22 +212,38 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// model.go's useGPU check: NewCPUBlockSpec's host never touches the resident device KV (it
 	// has its own CPU cache — decoder/blockspec_cpu.go), so it must not contend for resBusy or
 	// forget a resIDs commit it never wrote.
+	var reuseFrom int
 	if m.resident != nil {
 		if !atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
 			return nil, 0, errBlockSpecResidentBusy
 		}
 		defer atomic.StoreInt32(&m.resBusy, 0)
+		// P-05 (audit-2026-09-10), the deferred drafter-reuse half: compute reuse BEFORE
+		// forgetting — forgetting clears the very state residentReuseLen reads. BlockSpec never
+		// binds an adapter (nil lora, matching residentCommitIDs' own nil below).
+		reuseFrom = m.residentReuseLen(prompt, nil, nil)
+		// resIDs matching is NOT enough on its own: a plain Generate or n-gram-speculative turn
+		// can commit resIDs without ever touching THIS drafter's own context, so the token
+		// prefix can match while rd's state does not reflect it at all. Only trust reuseFrom
+		// when the last resident write was this same *BlockSpec's own completed generate().
+		if m.resDrafterSynced != s {
+			reuseFrom = 0
+		}
 		// Forget FIRST — from here until the generation completes (or this call returns early)
 		// the resident KV is mid-write, so the next turn must cold-prefill rather than trust it
-		// (decoder/resident_reuse.go). This path always prefills the whole prompt from position 0
-		// (no reuse attempted), so there is nothing to preserve by deferring the forget.
+		// (decoder/resident_reuse.go).
 		m.residentForgetIDs()
 	}
 	if err := host.SetBatchedCapture(s.taps); err != nil {
 		return nil, 0, err
 	}
 	defer func() { _ = host.SetBatchedCapture(nil) }()
-	rd.TruncateContext(0) // fresh sequence: the previous generation's context must not leak in
+	// Keep the drafter's own context for the reused prefix instead of always wiping to 0: its
+	// positions correspond 1:1 with the target's (each prompt token appends exactly one fused
+	// row via fuse, below), so TruncateContext(reuseFrom) is the drafter-side twin of the
+	// target's own resident-KV reuse — reuseFrom is 0 (a full wipe, byte-identical to before
+	// this fix) whenever nothing is safely reusable.
+	rd.TruncateContext(reuseFrom)
 
 	hidden := m.w.arch.HiddenDim
 	eos := blockSpecStopSet(m, opt)
@@ -249,26 +265,27 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		return rd.ExtendContext(fused)
 	}
 
-	embs := make([][]float32, len(prompt))
-	for i, id := range prompt {
+	suffix := prompt[reuseFrom:]
+	embs := make([][]float32, len(suffix))
+	for i, id := range suffix {
 		embs[i] = m.embedResident(id)
 	}
 	// C-12: the seed reads ONE id. Ask for one when the backend can, which skips an M x vocab
 	// device buffer, host slice, D2H copy and host argmax — gigabytes at prompt lengths over ~1k.
 	var anchor int
 	if seeder, ok := host.(ResidentSeedArgmax); ok {
-		anchor, err = seeder.PrefillSeedArgmax(embs, 0)
+		anchor, err = seeder.PrefillSeedArgmax(embs, reuseFrom)
 		if err != nil {
 			return nil, 0, err
 		}
 	} else {
-		ids, e := host.PrefillLastNArgmax(embs, 0)
+		ids, e := host.PrefillLastNArgmax(embs, reuseFrom)
 		if e != nil {
 			return nil, 0, e
 		}
 		anchor = ids[len(ids)-1]
 	}
-	if err := fuse(host.BatchedCapture(), len(prompt)); err != nil {
+	if err := fuse(host.BatchedCapture(), len(suffix)); err != nil {
 		return nil, 0, err
 	}
 	pos := len(prompt)
@@ -428,11 +445,15 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// generation that ran to completion"). Every early return above (a device error, or the
 	// caller's emit stopping consumption early) leaves resIDs nil, so the next turn cold-prefills
 	// rather than trusting a state this function cannot vouch for as fully written. This gives the
-	// next PLAIN Generate turn a warm prefix after a --drafter turn; reusing the prefix on the
-	// drafter's OWN next turn is a separate, deferred half (residentReuseLen + TruncateContext +
-	// PrefillSeedArgmax on the drafter's context, not attempted here).
+	// next PLAIN Generate turn a warm prefix after a --drafter turn. resDrafterSynced = s marks
+	// THIS BlockSpec instance's own drafter context as the one that's actually in sync with the
+	// commit below (the deferred half this fix completes) — the next call into this same
+	// instance's generate() can then reuse both the target's resident KV AND the drafter's own
+	// context; any OTHER writer's commit (plain Generate, n-gram) clears it via
+	// residentForgetIDs, so a drafter turn never trusts a context it never built.
 	if m.resident != nil {
 		m.residentCommitIDs(prompt, out, nil, nil) // BlockSpec never binds an adapter
+		m.resDrafterSynced = s
 	}
 	return out, rounds, nil
 }

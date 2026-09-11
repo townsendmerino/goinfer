@@ -42,19 +42,27 @@ type Model struct {
 	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
 	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
 	resImgBlocks []residentImageBlock
-	kvF16        bool         // residency KV cache precision request (Options.KVPrecision == "f16")
-	kvPrecI8     bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8         bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	resCtxReq    int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	disableFit   bool         // task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
-	moeCache     bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
-	moeSlots     int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
-	extraBytes   int64        // Options.ExtraResidentBytes — see that field's own doc comment
-	mmap         []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
-	srcPath      string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
-	pager        *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
-	layerPager   *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
-	quant        string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+	// resDrafterSynced identifies which *BlockSpec's own drafter context is currently in sync
+	// with resIDs (P-05, audit-2026-09-10) — nil means no drafter context is trustworthy for
+	// reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit
+	// resIDs without ever touching a block drafter's own context, so the TOKEN prefix can match
+	// while the DRAFTER's state does not reflect it at all. Cleared by residentForgetIDs (every
+	// resident write invalidates it) and set only by BlockSpec.generate's own fully-completed
+	// exit — the one path that keeps resIDs and the drafter's context advancing together.
+	resDrafterSynced *BlockSpec
+	kvF16            bool         // residency KV cache precision request (Options.KVPrecision == "f16")
+	kvPrecI8         bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8             bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	resCtxReq        int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	disableFit       bool         // task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
+	moeCache         bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	moeSlots         int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
+	extraBytes       int64        // Options.ExtraResidentBytes — see that field's own doc comment
+	mmap             []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	srcPath          string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	pager            *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	layerPager       *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
+	quant            string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
 	// resDecline records WHY resident is nil on a non-CPU backend — the reason withResidency
 	// would otherwise discard. Empty when residency was built, or when it was never attempted
 	// (CPU backend). DecodePath / -require-backend read it; see withResidency.

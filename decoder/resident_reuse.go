@@ -196,4 +196,5 @@ func (m *Model) residentForgetIDs() {
 	m.resIDsLora = nil
 	m.resIDs = nil
 	m.resImgBlocks = nil
+	m.resDrafterSynced = nil // P-05: any resident write invalidates a block drafter's own reuse too
 }
