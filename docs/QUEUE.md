@@ -1722,9 +1722,11 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/mtp.go:35` | goinfer | `anchor: type MTPHead struct {` |
 | `docs/audit-2026-09-10.md|decoder/olmo3_test.go:33` | goinfer | `if testing.Short() {` |
 | `docs/audit-2026-09-10.md|decoder/ownforward_test.go:194` | goinfer | `func TestOwnForward_recurrentBitMatchesTheCacheKinds(t *testing.T) {` |
-| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:186` | goinfer | `func familyDepFiles(m *parityManifest, fam familyParity) []string {` |
-| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:207` | goinfer | `func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {` |
-| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:301` | goinfer | `if *updateMatrix {` |
+| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:193` | goinfer | `func familyDepFiles(m *parityManifest, fam familyParity) []string {` |
+| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:221` | goinfer | `func rootAikitVersion() (string, error) {` |
+| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:240` | goinfer | `func TestRootAikitVersion_readsFromGoMod(t *testing.T) {` |
+| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:265` | goinfer | `func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {` |
+| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:363` | goinfer | `if *updateMatrix {` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:100` | goinfer | `avail := cachedHostRAMAvailable()` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:114` | goinfer | `var kv int64` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:116` | goinfer | `kv = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(positions)` |

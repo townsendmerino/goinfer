@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -47,10 +48,16 @@ var mergeRowsPath = flag.String("merge-rows", "", "merge collected PARITY_ROW li
 // (metrics/status/dates/etc.) while still letting us read+rewrite deps_hash and
 // inspect uses/own/validated_at. Field order matches the on-disk schema so that
 // re-marshaling produces a stable, zero-diff layout.
+//
+// No AikitVersion field (G-01, audit-2026-09-10): the manifest used to carry a hand-typed
+// "aikit_version" string mixed into every family's deps_hash, which drifted from the real pin —
+// stale seventeen versions once (CHANGELOG v0.17.0's "re-arm"), then drifted again two releases
+// later when that fix re-TYPED the value instead of deriving it. freshDepsHash now reads the
+// ROOT go.mod's aikit require directly (rootAikitVersion, below) at hash time, so there is no
+// stored value left to drift from reality — the file this field used to duplicate.
 type parityManifest struct {
-	AikitVersion string                  `json:"aikit_version"`
-	SharedSets   map[string][]string     `json:"shared_sets"`
-	Families     map[string]familyParity `json:"families"`
+	SharedSets map[string][]string     `json:"shared_sets"`
+	Families   map[string]familyParity `json:"families"`
 }
 
 type familyParity struct {
@@ -201,6 +208,57 @@ func familyDepFiles(m *parityManifest, fam familyParity) []string {
 	return out
 }
 
+// aikitVersionRE matches the aikit require line in a go.mod file — the same pattern
+// TestAikitPinsAgree (aikit_pin_test.go) uses per-module; rootAikitVersion below is its
+// root-go.mod-only twin.
+var aikitVersionRE = regexp.MustCompile(`(?m)^\s*github\.com/townsendmerino/aikit (v[0-9][^\s]*)`)
+
+// rootAikitVersion reads the ROOT go.mod's aikit require directly (G-01, audit-2026-09-10) —
+// freshDepsHash's replacement for the manifest's old hand-typed "aikit_version" field. Deriving
+// it here instead of storing it makes drift structurally impossible: the hash always mixes in
+// whatever go.mod actually pins, at the moment it is computed, not whatever someone last typed
+// into the JSON.
+func rootAikitVersion() (string, error) {
+	b, err := os.ReadFile(repoPath("go.mod"))
+	if err != nil {
+		return "", err
+	}
+	m := aikitVersionRE.FindStringSubmatch(string(b))
+	if m == nil {
+		return "", fmt.Errorf("root go.mod does not require github.com/townsendmerino/aikit")
+	}
+	return m[1], nil
+}
+
+// TestRootAikitVersion_readsFromGoMod is G-01's direct unit gate (audit-2026-09-10): asserts
+// rootAikitVersion actually reads go.mod rather than returning a stale or hardcoded value.
+// Deliberately does NOT assert a specific version string — that would just be a second place to
+// remember to bump on every aikit release, the exact hand-typed-value failure mode this fix
+// removes. Instead: independently re-parse go.mod with a SEPARATE regexp match (not calling
+// rootAikitVersion's own machinery) and require exact agreement, so a bug in the function itself
+// (wrong path, wrong pattern) cannot pass by coincidence.
+func TestRootAikitVersion_readsFromGoMod(t *testing.T) {
+	got, err := rootAikitVersion()
+	if err != nil {
+		t.Fatalf("rootAikitVersion: %v", err)
+	}
+	if !strings.HasPrefix(got, "v") {
+		t.Errorf("rootAikitVersion() = %q, want a v-prefixed version", got)
+	}
+
+	b, err := os.ReadFile(repoPath("go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	want := regexp.MustCompile(`(?m)^\tgithub\.com/townsendmerino/aikit (v\S+)$`).FindStringSubmatch(string(b))
+	if want == nil {
+		t.Fatal("go.mod has no tab-indented aikit require line — test setup assumption broke")
+	}
+	if got != want[1] {
+		t.Errorf("rootAikitVersion() = %q, want %q (go.mod's own require line, independently parsed)", got, want[1])
+	}
+}
+
 // freshDepsHash computes the deterministic content hash over a family's
 // dependency set: for each path (sorted) write path + NUL + file bytes + NUL,
 // then mix in the aikit_version. Returns "sha256:" + hex.
@@ -216,7 +274,11 @@ func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {
 		h.Write(b)
 		h.Write([]byte{0})
 	}
-	h.Write([]byte("aikit_version=" + m.AikitVersion))
+	aikitVer, err := rootAikitVersion()
+	if err != nil {
+		return "", err
+	}
+	h.Write([]byte("aikit_version=" + aikitVer))
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
