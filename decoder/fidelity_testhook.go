@@ -172,14 +172,16 @@ func NearTieArgmaxForTest(refLogits, candLogits []float32) (agree bool, gapPct f
 // through position i-1 (teacher-forced, not autoregressive on the engine's own output);
 // refTokens[i] is the token the reference continuation actually placed at position i. Reports
 // the fraction of positions where the engine's argmax equals the reference token, and the first
-// position that disagrees (-1 if none). Returns 0, -1 if the slices are empty or mismatched in
-// length -- a caller error, not a measurement of zero agreement.
+// position that disagrees (-1 if none). Returns 0, 0 if the slices are empty or mismatched in
+// length -- a caller error, not a measurement. firstDivergence is 0 there, never -1, so a caller
+// gating only on firstDivergence == -1 ("no position disagreed") cannot pass on a comparison that
+// never ran (audit-2026-09-10 G-13(k)).
 func TeacherForcedTop1AgreementForTest(candLogits [][]float32, refTokens []int) (agreementRate float64, firstDivergence int) {
-	firstDivergence = -1
 	n := len(candLogits)
 	if n == 0 || n != len(refTokens) {
-		return 0, firstDivergence
+		return 0, 0
 	}
+	firstDivergence = -1
 	agree := 0
 	for i, lg := range candLogits {
 		if argmax(lg) == refTokens[i] {
