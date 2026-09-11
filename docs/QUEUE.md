@@ -1524,7 +1524,7 @@ supports.
 | `docs/audit-2026-09-10.md|cmd/gate/gpu.go:445` | goinfer | `g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "pref` |
 | `docs/audit-2026-09-10.md|cmd/gate/gpu.go:893` | goinfer | `func probeNVRTC(w io.Writer) map[string][2]string {` |
 | `docs/audit-2026-09-10.md|cmd/gate/parity.go:448` | goinfer | `switch ledger(g.Test) {` |
-| `docs/audit-2026-09-10.md|cmd/gate/parity.go:870` | goinfer | `// metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged ` |
+| `docs/audit-2026-09-10.md|cmd/gate/parity.go:859` | goinfer | `// metalDirs are the packages scanned for Metal's gate-shaped, goinfer_testhooks-tagged ` |
 | `docs/audit-2026-09-10.md|cmd/gate/parity_test.go:427` | goinfer | `case isPending && !isoDatePrefix(pending):` |
 | `docs/audit-2026-09-10.md|cmd/gate/parity_test.go:759` | goinfer | `func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {` |
 | `docs/audit-2026-09-10.md|cmd/prequant/main.go:30` | goinfer | `embedInt4 := flag.Bool("embed-int4", false, "in int4 mode, quantize the token-embedding/` |
