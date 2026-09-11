@@ -1799,7 +1799,7 @@ supports.
 | `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:555` | goinfer | `return constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete().Process` |
 | `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:599` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
 | `docs/audit-2026-09-10.md|examples/embed/main.go:36` | goinfer | `tok, err := tokenizer.LoadGGUF(path)` |
-| `docs/audit-2026-09-10.md|examples/embed/main.go:43` | goinfer | `if tmpl, terr := chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken: tok.H` |
+| `docs/audit-2026-09-10.md|examples/embed/main.go:56` | goinfer | `func buildPrompt(tok *tokenizer.Tokenizer, prompt string) ([]int, error) {` |
 | `docs/audit-2026-09-10.md|examples/embed/main_test.go:54` | goinfer | `out, err := exec.Command(bin, fixture, "Say hello in five words").CombinedOutput()` |
 | `docs/audit-2026-09-10.md|gpu/attention.go:34` | goinfer | `let theta = f32(p.pos) * invFreq[d];` |
 | `docs/audit-2026-09-10.md|gpu/attention.go:586` | goinfer | `let ki = s * kvDim + kvbase + d;` |
