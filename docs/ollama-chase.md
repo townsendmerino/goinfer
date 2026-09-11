@@ -1484,7 +1484,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   `keys`/`vals` directly via aikit's strided `MatmulBTAcc64` instead of gathering+transposing into
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
-- **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:1099`) does
+- **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:1108`) does
   `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1367/1014`)
   can't reroute without breaking the batch caller `decoder/model.go:1154`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
@@ -1495,7 +1495,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   still allocates, amortized over its K-token batch. All MoE-family int4 goldens pass bit-identical.
 - **int4 W4A8 `Workspace` alloc/token — DONE, P9, not via the fix this item originally proposed.** The
   item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in `matmul()`
-  itself (`decoder/weightmat.go:380` `matmulWSPool`), which also covers the free-matmul callers
+  itself (`decoder/weightmat.go:577` `matmulWSPool`), which also covers the free-matmul callers
   `matmulInto` never sees — `matmul()`'s int4 and W8A8-fallback branches now pull their
   `linalg.Workspace` from the pool instead of declaring one fresh per call, so the Workspace's own
   lazily-grown `i8`/`f32` quant scratch survives across calls instead of reallocating
