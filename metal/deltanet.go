@@ -136,10 +136,10 @@ func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
 	e.Dispatch(r.pGemv, dp.valueDim*32, 32, D.zW, D.zS, r.aq, r.aSc, r.dnZOut, r.uH)
 	e.Dispatch(r.pDnConv, dp.convDim, 256, r.dnMixed, D.convW, D.win, r.dnConvOut, r.uDnConvDim, r.uDnK)
 	e.Dispatch(r.pDnGates, dp.nv, 64, r.dnBt, r.dnAt, D.dtBias, D.negExpA, r.dnHeadP, r.uDnNv)
-	e.Dispatch(r.pDnNorm, dp.nk*128, 128, r.dnConvOut, r.dnQn, r.dnKn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale)
+	e.Dispatch(r.pDnNorm, dp.nk*tgReduceAttn, tgReduceAttn, r.dnConvOut, r.dnQn, r.dnKn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale)
 	e.Dispatch(r.pDnRule, dp.valueDim, 128, r.dnQn, r.dnKn, r.dnConvOut, r.dnHeadP, D.state, r.dnCore,
 		r.uDnNv, r.uDnHk, r.uDnHv, r.uDnRep, r.uDnVBase)
-	e.Dispatch(r.pDnGNorm, dp.nv*128, 128, r.dnCore, r.dnZOut, D.normW, r.dnGated, r.uDnNv, r.uDnHv, r.uEps)
+	e.Dispatch(r.pDnGNorm, dp.nv*tgReduceAttn, tgReduceAttn, r.dnCore, r.dnZOut, D.normW, r.dnGated, r.uDnNv, r.uDnHv, r.uEps)
 	// Quantize the gated output, then out_proj straight into the residual (accum via _resid),
 	// exactly as the ordinary attention path's o-proj does. Dispatch width is r.H*32 — one
 	// (packed) simdgroup per OUTPUT row (hidden, same output width the o-proj GEMV has), not per

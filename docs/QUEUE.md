@@ -1128,7 +1128,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/embed.go:44` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-02.md|decoder/features.go:303` | goinfer | `// residentBackendMoECap is the router-kernel capacity of each backend whose MoE scorebo` |
 | `docs/audit-2026-09-02.md|decoder/features.go:315` | goinfer | `"webgpu": {experts: 512, groups: 32}, // gpu/moe.go: MAXE 512, array<f32,512> score/sel ` |
-| `docs/audit-2026-09-02.md|decoder/features.go:514` | goinfer | `//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU` |
+| `docs/audit-2026-09-02.md|decoder/features.go:518` | goinfer | `//   FeatAttnSink  the learned per-head softmax sink, the clamped interleaved-SwiGLU` |
 | `docs/audit-2026-09-02.md|decoder/features_test.go:560` | goinfer | `// The cap was raised 256 -> 512 (MOE_MAX_E / MAXE) so Kimi-K2's 384 is now ADMITTED on ` |
 | `docs/audit-2026-09-02.md|decoder/forward_gemma4.go:242` | goinfer | `if lw.LayerScalar != 0 {` |
 | `docs/audit-2026-09-02.md|decoder/forward_gemma4.go:327` | goinfer | `for kvh := range nKV {` |
@@ -1324,8 +1324,8 @@ supports.
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:498` | goinfer | `buildErr = fmt.Errorf("gpu: newDecodeRunner: nil buffer for binding %d (allocation faile` |
 | `docs/audit-2026-09-02.md|gpu/decoderunner.go:608` | goinfer | `gemv := func(aq, as *wgpu.Buffer, w decodeWeight) *wgpu.Buffer {` |
 | `docs/audit-2026-09-02.md|gpu/decodetoken_batched.go:11` | goinfer | `// DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it` |
-| `docs/audit-2026-09-02.md|gpu/deltanet.go:13` | goinfer | `// This is the mixer that makes every DeltaNet hybrid CPU-only on every backend today: 4` |
-| `docs/audit-2026-09-02.md|gpu/doc.go:19` | goinfer | `// Status: FOUNDATION cut. A single `dst = a·bᵀ` GEMM offloaded to the GPU` |
+| `docs/audit-2026-09-02.md|gpu/deltanet.go:13` | goinfer | `// N-34 (09-02): this comment used to say the mixer below "makes every DeltaNet hybrid C` |
+| `docs/audit-2026-09-02.md|gpu/doc.go:19` | goinfer | `// Status (corrected N-34 (09-02) — this said "FOUNDATION cut: a single dst = a·bᵀ GEMM` |
 | `docs/audit-2026-09-02.md|gpu/doc.go:6` | goinfer | `// wgpu-native Rust library) is allowed to appear. Every file except this doc` |
 | `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:121` | goinfer | `// load-bearing one — every W4A8 group-scale upload and NewKVCacheF16 go through it. It ` |
 | `docs/audit-2026-09-02.md|gpu/gemv_w4a8.go:25` | goinfer | `@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [kp/16] in` |
@@ -1449,10 +1449,10 @@ supports.
 | `docs/audit-2026-09-02.md|metal/batched_verify_test.go:140` | goinfer | `e.Dispatch(r.pRope, r.nH*g.half, 64, qkv.At(m*qkvRows*4), L.invf, g.uHd, uPos, g.uQtotal` |
 | `docs/audit-2026-09-02.md|metal/close_leak_test.go:46` | goinfer | `if testing.Short() {` |
 | `docs/audit-2026-09-02.md|metal/cmdbuf_status_test.go:94` | goinfer | `// This exercises the ceil-sized reduction on device for a %8 vocab (tmVocab=64) — a com` |
-| `docs/audit-2026-09-02.md|metal/deltanet.go:139` | goinfer | `e.Dispatch(r.pDnNorm, dp.nk*128, 128, r.dnConvOut, r.dnQn, r.dnKn, r.uDnNk, r.uDnHk, r.u` |
+| `docs/audit-2026-09-02.md|metal/deltanet.go:139` | goinfer | `e.Dispatch(r.pDnNorm, dp.nk*tgReduceAttn, tgReduceAttn, r.dnConvOut, r.dnQn, r.dnKn, r.u` |
 | `docs/audit-2026-09-02.md|metal/deltanet.go:149` | goinfer | `e.DispatchTG(r.pSAResid, r.H*32, 256, dp.valueDim*2, D.outW, D.outS, r.dnGq, r.dnGSc, r.` |
 | `docs/audit-2026-09-02.md|metal/gemma4_moe.go:334` | goinfer | `panic(fmt.Sprintf("metal gemma4 MoE pread gate\|up expert %d: %v", ei, err))` |
-| `docs/audit-2026-09-02.md|metal/gemma4_moe.go:388` | goinfer | `e.Dispatch(r.pRms, 256, 256, r.x, ml.preFFN, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)` |
+| `docs/audit-2026-09-02.md|metal/gemma4_moe.go:388` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, ml.preFFN, r.mq, r.mSc, r.uH, r.uEps` |
 | `docs/audit-2026-09-02.md|metal/gemma4_moe.go:409` | goinfer | `for j := 0; j < g.topK; j++ {` |
 | `docs/audit-2026-09-02.md|metal/gptoss_real20b_test.go:42` | goinfer | `// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF` |
 | `docs/audit-2026-09-02.md|metal/heavytest_test.go:20` | goinfer | `func requireHeavyModel(t *testing.T) {` |
@@ -1474,7 +1474,7 @@ supports.
 | `docs/audit-2026-09-02.md|metal/moe.go:242` | goinfer | `uint biasOff = hasBias != 0u ? idx[slot]*2u*I : 0u;` |
 | `docs/audit-2026-09-02.md|metal/moe.go:425` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
 | `docs/audit-2026-09-02.md|metal/moe.go:538` | goinfer | `panic(fmt.Sprintf("metal MoE pread gate expert %d: %v", ei, err))` |
-| `docs/audit-2026-09-02.md|metal/moe.go:608` | goinfer | `e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)` |
+| `docs/audit-2026-09-02.md|metal/moe.go:608` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEp` |
 | `docs/audit-2026-09-02.md|metal/moe.go:651` | goinfer | `for j := 0; j < mo.k; j++ {` |
 | `docs/audit-2026-09-02.md|metal/moe.go:654` | goinfer | `e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,` |
 | `docs/audit-2026-09-02.md|metal/moe.go:735` | goinfer | `func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {` |
@@ -1625,7 +1625,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/features.go:292` | goinfer | `func ResidentEligible(a *Architecture, backend string) bool {` |
 | `docs/audit-2026-09-10.md|decoder/features.go:440` | goinfer | `// rotary, and MoE (routed + ungated shared expert). Still NOT implemented: per-layer ro` |
 | `docs/audit-2026-09-10.md|decoder/features.go:474` | goinfer | `FeatMoE:               true, // moe_route + indexed stacked experts + ungated shared exp` |
-| `docs/audit-2026-09-10.md|decoder/features.go:566` | goinfer | `// R7B. FeatLayerNorm is a genuinely NEW kernel (layernorm_quant, cuda/glue.cu) — this` |
+| `docs/audit-2026-09-10.md|decoder/features.go:570` | goinfer | `// R7B. FeatLayerNorm is a genuinely NEW kernel (layernorm_quant, cuda/glue.cu) — this` |
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:149` | goinfer | `func NearTieArgmaxForTest(refLogits, candLogits []float32) (agree bool, gapPct float64, ` |
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:202` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:129` | goinfer | `// Only a .gguf can reach a refusal (fitCheckFor prices nothing else), and goinfer-serve` |
@@ -2273,6 +2273,7 @@ supports.
 | `docs/task-int4-layout-2026-09.md|decoder/gguf.go:1388` | goinfer | `// row4 from canonical), even on a cpu-arm64 target that will write kind 5` |
 | `docs/task-int4-layout-2026-09.md|decoder/model.go:382` | goinfer | `w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), ` |
 | `docs/task-int4-layout-2026-09.md|decoder/serialize.go:1499` | goinfer | `return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)` |
+| `docs/task-int4-layout-2026-09.md|decoder/weightmat.go:262` | goinfer | `// the parked .giw-kind decision is waiting on, docs/task-w4a8-neon-` |
 | `docs/task-int4-layout-2026-09.md|decoder/weightmat.go:414` | goinfer | `func wantsCanonicalInt4(backendName string, be Backend) bool {` |
 | `docs/task-int4-layout-2026-09.md|decoder/weightmat.go:542` | goinfer | `type GIWTarget string` |
 | `docs/task-int4-layout-2026-09.md|internal/chatapp/main.go:177` | goinfer | `backend = flag.String("backend", "cpu", "compute backend: cpu \| webgpu \| cuda \| metal (c` |
