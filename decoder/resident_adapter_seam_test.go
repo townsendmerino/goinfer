@@ -29,14 +29,37 @@ import (
 // fakeResidentAdapter extends fakeResident with ResidentAdapter, recording every bind/clear.
 // lastBind is NOT cleared by SetAdapter(nil) — a clear call is recorded via clears/boundNow so
 // tests can inspect what was bound even after generation has cleared it.
+//
+// It also implements Prefiller (PrefillLast) — audit C-01/G-06 (09-10): the real CUDA/Metal
+// batched-prefill launch reads no adapter state at all, so it is not "the adapter's math done a
+// different way" but a SEPARATE, adapter-blind path. Giving the fake the same shape (increments
+// prefillCalls, otherwise identical to a per-token Forward loop) makes TestSeam_AdapterSession
+// BindsAndClearsResidentAdapter's ≥8-token prompt able to actually reach it if
+// residentPrefillSeed's hasAdapter guard were ever dropped — before this, the fake had no
+// Prefiller method at all, so the 3-token prompt below the batching floor and the missing
+// interface made the gate blind to C-01 by construction (G-06's own finding).
 type fakeResidentAdapter struct {
 	*fakeResident
 	fail bool
 
-	binds    int32
-	clears   int32
-	lastBind []ResidentAdapterLayer
-	boundNow bool
+	binds        int32
+	clears       int32
+	lastBind     []ResidentAdapterLayer
+	boundNow     bool
+	prefillCalls int32
+}
+
+func (f *fakeResidentAdapter) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	atomic.AddInt32(&f.prefillCalls, 1)
+	var last []float32
+	for i, emb := range embeddings {
+		r, err := f.Forward(emb, startPos+i)
+		if err != nil {
+			return nil, err
+		}
+		last = r
+	}
+	return last, nil
 }
 
 func (f *fakeResidentAdapter) SetAdapter(layers []ResidentAdapterLayer) error {
@@ -206,6 +229,50 @@ func TestSeam_AdapterSessionBindsAndClearsResidentAdapter(t *testing.T) {
 			t.Errorf("layer %d: untargeted projection present in the bound delta (K=%v O=%v Up=%v) — "+
 				"the fixture's adapter never targets these", i, l.K != nil, l.O != nil, l.Up != nil)
 		}
+	}
+}
+
+// TestSeam_AdapterSessionNeverUsesBatchedPrefill is the G-06 companion to C-01: an adapter
+// session's prompt must never take the batched Prefiller path, because that launch (real CUDA/
+// Metal or this fake) does not consult the bound delta at all — only the sequential per-token
+// Forward loop does (residentPrefillSeed's hasAdapter guard). Unlike the main gate above, this
+// prompt is deliberately ≥8 tokens (GOINFER_BATCHED_PREFILL's own floor) and the fake now
+// implements Prefiller, so — before the hasAdapter guard existed — this test would have reached
+// PrefillLast and passed anyway (fakeResident.Forward never applies the adapter either; the
+// defect is structural, not numeric, so it can only be caught by call count, not by output).
+func TestSeam_AdapterSessionNeverUsesBatchedPrefill(t *testing.T) {
+	base, adapter := buildLoRAFixture(t)
+	m, be := loadWithFakeAdapterResident(t, base)
+	if !m.ResidentActive() {
+		t.Skip("fixture is not resident-eligible; the other seam tests still gate the wiring")
+	}
+	if err := m.LoadAdapter("a", adapter); err != nil {
+		t.Fatalf("LoadAdapter: %v", err)
+	}
+	s := m.NewSession(0)
+	if err := s.UseAdapter("a"); err != nil {
+		t.Fatalf("UseAdapter: %v", err)
+	}
+
+	prompt := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	out, g := s.Generate(context.Background(), prompt, 1, SamplingParams{})
+	for range out {
+	}
+	if err := g.Err(); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if be.rf.prefillCalls != 0 {
+		t.Errorf("PrefillLast called %d times for a %d-token adapter-session prompt — the batched "+
+			"prefill path was reached with an adapter bound; it never reads the delta, so the "+
+			"prompt's K/V (and, on a real backend, the first token's logits) would have come from "+
+			"the base model (audit C-01)", be.rf.prefillCalls, len(prompt))
+	}
+	if be.rf.forwards == 0 {
+		t.Error("neither PrefillLast nor the sequential Forward loop ran — the prompt was not seeded at all")
+	}
+	if be.rf.binds == 0 || be.rf.clears == 0 {
+		t.Errorf("binds=%d clears=%d, want both >0 — the batched-prefill guard must not disturb SetAdapter bind/clear", be.rf.binds, be.rf.clears)
 	}
 }
 

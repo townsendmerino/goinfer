@@ -176,7 +176,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				// returned logits are discarded either way (the draft just needs its KV filled),
 				// so residentPrefillSeed's batched/KV-only path is a strict improvement here
 				// with nothing to lose.
-				if _, err := draft.residentPrefillSeed(ctx, prompt, 0); err != nil {
+				if _, err := draft.residentPrefillSeed(ctx, prompt, 0, false); err != nil {
 					return err
 				}
 				dpos = len(prompt)
@@ -227,7 +227,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		var seedLogits []float32
 		var err error
 		if resident {
-			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0); err != nil {
+			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0, false); err != nil {
 				g.err = err
 				return
 			}

@@ -91,9 +91,9 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 				// FULL reuse: the image, and everything before it, is already resident.
 				// Stay inside THIS claim (no release/reclaim) — reseed via the ordinary
 				// ResidentForward.Forward path (no CPU prefill, no tower call at all).
-				g.PrefillReused = reuseFrom // observable proof the fast path actually fired
-				m.residentForgetIDs()       // forget first — from here the cache is mid-write
-				logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom)
+				g.PrefillReused = reuseFrom                                      // observable proof the fast path actually fired
+				m.residentForgetIDs()                                            // forget first — from here the cache is mid-write
+				logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom, false) // no adapter path here yet
 				if err != nil {
 					atomic.StoreInt32(&m.resBusy, 0)
 					g.err = err

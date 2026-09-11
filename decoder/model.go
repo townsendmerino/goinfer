@@ -1017,12 +1017,22 @@ func warnPrefillDeclined(n int, err error) {
 }
 
 // is positional. from == 0 is the cold path.
-func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int) ([]float32, error) {
+//
+// hasAdapter must be true whenever this call runs under a bound resident adapter (cache.lora
+// != nil at generateInto, the only caller where that is possible — GenerateVL, the n-gram
+// spec target and GenerateSpeculative's target and draft never bind one). The batched Prefiller path is a separate encoded launch per
+// backend (cuda/prefill.go, metal/prefill.go) that never reads the bound delta at all, so an
+// adapter session that reaches it would prefill the prompt's K/V from the BASE weights and only
+// start applying the adapter at decode — plausible, wrong, HTTP 200 (audit C-01, 09-10). Mirrors
+// the CPU sequential/batched split's own rule: decoder/forwardn.go's canBatchN caller declines
+// batched prefill whenever cache.lora != nil, because compute-time LoRA is wired only into the
+// sequential forward.
+func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int, hasAdapter bool) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token, whose logits start decode
 	}
 	suffix := prompt[from:]
-	if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(suffix) >= 8 {
+	if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(suffix) >= 8 && !hasAdapter {
 		if pf, ok := m.resident.(Prefiller); ok {
 			embs := make([][]float32, len(suffix))
 			for i, id := range suffix {
@@ -1234,7 +1244,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
 		reuseFrom := m.residentReuseLen(prompt, nil)
 		m.residentForgetIDs()
-		if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom); err != nil {
+		if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, lora != nil); err != nil {
 			g.err = err
 			return
 		}

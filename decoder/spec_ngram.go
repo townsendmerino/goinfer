@@ -308,7 +308,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// the same ordering generateInto already uses (resident_reuse.go).
 			reuseFrom := target.residentReuseLen(prompt, nil)
 			target.residentForgetIDs()
-			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom); err != nil {
+			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false); err != nil {
 				g.err = err
 				return
 			}
