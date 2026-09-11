@@ -84,7 +84,7 @@ func causalAttention(
 		scr.qkvOpsW4[1], _ = wmW4A8Op(&lw.KProj, k)
 		scr.qkvOpsW4[2], _ = wmW4A8Op(&lw.VProj, v)
 		scr.ws.SetThreshold(int4ParThreshold)
-		matmulW4A8Batch(scr.ws, h, 1, lw.QProj.Cols(), group, scr.qkvOpsW4[:])
+		matmulW4A8Batch(be, scr.ws, h, 1, lw.QProj.Cols(), group, scr.qkvOpsW4[:])
 	} else {
 		matmulInto(scr.ws, be, &lw.QProj, h, q, 1)
 		matmulInto(scr.ws, be, &lw.KProj, h, k, 1)

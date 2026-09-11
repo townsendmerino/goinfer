@@ -72,9 +72,21 @@ func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, op
 	linalg.MatmulBTW8A8Batch(ws, a, M, K, ops)
 }
 
-// matmulW4A8Batch runs a shared-activation W4A8 batch (audit R-06) — CPU only, no
-// GPU backend implements an int4 batch dispatch, unlike the W8A8 case above.
-func matmulW4A8Batch(ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.W4A8Op) {
+// QuantBatchBackend4 is QuantBatchBackend's int4 (W4A8) counterpart (P-16, audit-2026-09-10):
+// staged int4 had no batch dispatch on any GPU backend, so a fused q/k/v or gate/up call on an
+// int4 model paid one sync PER PROJECTION instead of one for the whole group — exactly the
+// per-dispatch overhead QuantBatchBackend exists to remove for int8, never extended to int4.
+// Same decline contract: false falls back to the CPU batch kernel.
+type QuantBatchBackend4 interface {
+	MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool
+}
+
+// matmulW4A8Batch routes a shared-activation W4A8 batch through a QuantBatchBackend4 (one GPU
+// submit) when available, else the CPU batch kernel — the int4 twin of matmulW8A8Batch above.
+func matmulW4A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.W4A8Op) {
+	if qb, ok := be.(QuantBatchBackend4); ok && qb.MatmulW4A8Batch(a, M, K, group, ops) {
+		return
+	}
 	linalg.MatmulBTW4A8Batch(ws, a, M, K, group, ops)
 }
 

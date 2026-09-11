@@ -44,7 +44,11 @@ func TestBatchGEMV_parity(t *testing.T) {
 		}
 		refs[i] = ref
 	}
-	outs, err := ctx.BatchGEMV(aq, aScales[0], rms)
+	dw := make([]decodeWeight, len(rms)) // BatchGEMV is precision-agnostic (P-16)
+	for i, rm := range rms {
+		dw[i] = rm
+	}
+	outs, err := ctx.BatchGEMV(aq, aScales[0], dw)
 	if err != nil {
 		t.Fatalf("BatchGEMV: %v", err)
 	}
@@ -136,15 +140,20 @@ func TestBatchGEMV_microbench(t *testing.T) {
 		ops[i] = linalg.W8A8Op{BQ: bq, Scales: bScales, Dst: make([]float32, sh.N), N: sh.N}
 	}
 
+	dw := make([]decodeWeight, len(rms)) // BatchGEMV is precision-agnostic (P-16)
+	for i, rm := range rms {
+		dw[i] = rm
+	}
+
 	// warm up
-	ctx.BatchGEMV(aq, aScales[0], rms)
+	ctx.BatchGEMV(aq, aScales[0], dw)
 	for _, r := range runners {
 		r.Run(aq, aScales[0])
 	}
 
 	t0 := time.Now()
 	for range iters {
-		if _, err := ctx.BatchGEMV(aq, aScales[0], rms); err != nil {
+		if _, err := ctx.BatchGEMV(aq, aScales[0], dw); err != nil {
 			t.Fatalf("BatchGEMV: %v", err)
 		}
 	}

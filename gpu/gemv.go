@@ -182,15 +182,33 @@ func (c *Context) ensureGEMV() error {
 // BatchGEMV runs several decode GEMVs that share one activation (the fused
 // qkv / gate-up projections) as ONE submit with ONE Poll — the sync-floor cut.
 // aq+aScale are the quantized shared activation; rms are the resident weights
-// (all the same K). Returns each op's [rms[i].rows] output. Buffers are per-call
+// (all the same K). Returns each op's [rms[i].nRows()] output. Buffers are per-call
 // (the win here is collapsing N syncs to one, not buffer reuse).
-func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][]float32, error) {
-	if err := c.ensureGEMV(); err != nil {
-		return nil, err
+//
+// rms is decodeWeight (P-16, audit-2026-09-10: the "staged int4 batch" item) — W8A8 and W4A8
+// share the same 6-binding layout (decodeWeight's own comment, gpu/gemv_w4a8.go), so one
+// generic dispatch loop serves both; MatmulW8A8Batch and MatmulW4A8Batch each wrap their
+// concrete resident type before calling in. A mixed-precision batch works too (each op's own
+// pipeline is bound just before its dispatch) though callers only ever build homogeneous ones —
+// a fused q/k/v or gate/up group is always one model's own uniform quantization.
+func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []decodeWeight) ([][]float32, error) {
+	if len(rms) == 0 {
+		return nil, fmt.Errorf("gpu: BatchGEMV: no ops")
 	}
-	K := rms[0].cols
+	for _, rm := range rms {
+		switch rm.(type) {
+		case *ResidentW4A8:
+			if err := c.ensureGEMVW4(); err != nil {
+				return nil, err
+			}
+		default:
+			if err := c.ensureGEMV(); err != nil {
+				return nil, err
+			}
+		}
+	}
 	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
-		Label: "batch-act", Contents: wgpu.ToBytes(packInt8(aq, 1, K)), Usage: wgpu.BufferUsageStorage,
+		Label: "batch-act", Contents: wgpu.ToBytes(packInt8(aq, 1, len(aq))), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: BatchGEMV act: %w", err)
@@ -230,16 +248,15 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][
 	enc, _ := c.device.CreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
-	pass.SetPipeline(c.gemvPipeline)
 	for i, rm := range rms {
-		N := rm.rows
+		N := rm.nRows()
 		dst, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "batch-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if err != nil {
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchGEMV dst: %w", err)
 		}
-		dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kPad()), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
 			dst.Release()
 			pass.Release()
@@ -247,12 +264,12 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][
 			return nil, fmt.Errorf("gpu: BatchGEMV dims: %w", err)
 		}
 		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
-			Layout: c.gemvLayout,
+			Layout: rm.gLayout(c),
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
-				{Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
+				{Binding: 1, Buffer: rm.wbuf(), Size: rm.wbuf().GetSize()},
 				{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
-				{Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
+				{Binding: 3, Buffer: rm.sbuf(), Size: rm.sbuf().GetSize()},
 				{Binding: 4, Buffer: dst, Size: dst.GetSize()},
 				{Binding: 5, Buffer: dims, Size: dims.GetSize()},
 			},
@@ -265,6 +282,7 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []*ResidentW8A8) ([][
 			return nil, fmt.Errorf("gpu: BatchGEMV bind: %w", err)
 		}
 		pops[i] = perOp{dst: dst, dims: dims, bg: bg, n: N}
+		pass.SetPipeline(rm.gPipe(c)) // per-op: a mixed-precision batch needs each op's own pipeline
 		pass.SetBindGroup(0, bg, nil)
 		gx, gy := gemvGrid(N)
 		pass.DispatchWorkgroups(gx, gy, 1)

@@ -111,8 +111,8 @@ func TestFusedMLP_microbench(t *testing.T) {
 	defer ctx.Close()
 	const H, I, iters = 1536, 8960, 100
 	f := newMLPFixture(t, ctx, H, I)
-	gateUp := []*ResidentW8A8{f.gateRM, f.upRM}
-	guRun, _ := ctx.NewGEMVRunner(f.gateRM) // not used directly; staged uses BatchGEMV + a down runner
+	gateUp := []decodeWeight{f.gateRM, f.upRM} // BatchGEMV is precision-agnostic (P-16)
+	guRun, _ := ctx.NewGEMVRunner(f.gateRM)    // not used directly; staged uses BatchGEMV + a down runner
 	_ = guRun
 	downRun, _ := ctx.NewGEMVRunner(f.downRM)
 	defer downRun.Release()

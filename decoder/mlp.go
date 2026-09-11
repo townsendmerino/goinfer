@@ -438,7 +438,7 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		scr.guOpsW4[0], group = wmW4A8Op(&lw.GateProj, gate)
 		scr.guOpsW4[1], _ = wmW4A8Op(&lw.UpProj, up)
 		scr.ws.SetThreshold(int4ParThreshold)
-		matmulW4A8Batch(scr.ws, h, 1, lw.GateProj.Cols(), group, scr.guOpsW4[:])
+		matmulW4A8Batch(be, scr.ws, h, 1, lw.GateProj.Cols(), group, scr.guOpsW4[:])
 	} else {
 		matmulInto(scr.ws, be, &lw.GateProj, h, gate, 1)
 		matmulInto(scr.ws, be, &lw.UpProj, h, up, 1)

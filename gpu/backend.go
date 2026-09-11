@@ -163,41 +163,9 @@ func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales []float32, g
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	key := &bQ4[0]
-	qr := b.q4resident[key]
-	if qr == nil {
-		var rm *ResidentW4A8
-		var err error
-		if K%w4a8GroupSize == 0 && !int4SlowPath {
-			// Fast path: decoder's 2-nibble/byte int4 is byte-identical to the GPU packed
-			// layout when K%32==0 (TestInt4LayoutMatch) — upload the bytes straight, mirroring
-			// uploadProj's own fast path.
-			rm, err = b.ctx.UploadW4A8Packed(bQ4, bScales, N, K)
-		} else {
-			// Fallback (K not a multiple of 32 → row padding differs): unpack 2-nibble/byte to
-			// one nibble (0..15) per element and let UploadW4A8 re-pack. Values preserved —
-			// identical unpack loop to uploadProj's own fallback.
-			nib := make([]uint8, N*K)
-			for r := range N {
-				row := bQ4[r*((K+1)/2):]
-				dstRow := nib[r*K : r*K+K]
-				for k := range K {
-					v := row[k>>1]
-					if k&1 == 0 {
-						dstRow[k] = v & 0x0F
-					} else {
-						dstRow[k] = v >> 4
-					}
-				}
-			}
-			rm, err = b.ctx.UploadW4A8(nib, bScales, N, K)
-		}
-		if err != nil {
-			b.fallbacks++
-			return false
-		}
-		qr = &q4Resident{rm: rm}
-		b.q4resident[key] = qr
+	qr, ok := b.residentW4A8For(bQ4, bScales, N, K)
+	if !ok {
+		return false
 	}
 	aq, aScales := linalg.QuantizeRowsInt8(a, M, K)
 	if qr.runner == nil {
@@ -214,6 +182,87 @@ func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales []float32, g
 		return false
 	}
 	copy(dst, out)
+	return true
+}
+
+// residentW4A8For resolves (or uploads and caches) the resident W4A8 weight for one packed
+// int4 buffer, keyed by its backing pointer — shared by MatmulW4A8 and MatmulW4A8Batch (P-16,
+// audit-2026-09-10) so the upload/unpack logic exists exactly once. Caller holds b.mu. ok=false
+// means upload failed; the caller counts the fallback.
+func (b *webgpuBackend) residentW4A8For(bQ4 []byte, bScales []float32, N, K int) (*q4Resident, bool) {
+	key := &bQ4[0]
+	if qr := b.q4resident[key]; qr != nil {
+		return qr, true
+	}
+	var rm *ResidentW4A8
+	var err error
+	if K%w4a8GroupSize == 0 && !int4SlowPath {
+		// Fast path: decoder's 2-nibble/byte int4 is byte-identical to the GPU packed
+		// layout when K%32==0 (TestInt4LayoutMatch) — upload the bytes straight, mirroring
+		// uploadProj's own fast path.
+		rm, err = b.ctx.UploadW4A8Packed(bQ4, bScales, N, K)
+	} else {
+		// Fallback (K not a multiple of 32 → row padding differs): unpack 2-nibble/byte to
+		// one nibble (0..15) per element and let UploadW4A8 re-pack. Values preserved —
+		// identical unpack loop to uploadProj's own fallback.
+		nib := make([]uint8, N*K)
+		for r := range N {
+			row := bQ4[r*((K+1)/2):]
+			dstRow := nib[r*K : r*K+K]
+			for k := range K {
+				v := row[k>>1]
+				if k&1 == 0 {
+					dstRow[k] = v & 0x0F
+				} else {
+					dstRow[k] = v >> 4
+				}
+			}
+		}
+		rm, err = b.ctx.UploadW4A8(nib, bScales, N, K)
+	}
+	if err != nil {
+		b.fallbacks++
+		return nil, false
+	}
+	qr := &q4Resident{rm: rm}
+	b.q4resident[key] = qr
+	return qr, true
+}
+
+// MatmulW4A8Batch runs several W4A8 GEMVs that share one activation (fused q/k/v or gate/up,
+// M=1 decode) as ONE GPU submit — quantize once, dispatch all, sync once. P-16's int4 twin of
+// MatmulW8A8Batch: staged int4 previously had no batch dispatch on ANY GPU backend, so a fused
+// call on an int4 model paid one sync PER PROJECTION (three for q/k/v, two for gate/up) instead
+// of one for the whole group — exactly the per-dispatch overhead MatmulW8A8Batch exists to
+// remove for int8, never extended to int4. Falls back (returns false) for M>1, a group other
+// than w4a8GroupSize, or any GPU error — matmulW4A8Batch's caller then uses the CPU batch kernel,
+// the same decline contract MatmulW4A8/MatmulW8A8Batch already use.
+func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool {
+	if M != 1 || len(ops) == 0 || group != w4a8GroupSize {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	rms := make([]decodeWeight, len(ops))
+	for i, op := range ops {
+		if len(op.W4) == 0 {
+			return false
+		}
+		qr, ok := b.residentW4A8For(op.W4, op.Scales, op.N, K)
+		if !ok {
+			return false
+		}
+		rms[i] = qr.rm
+	}
+	aq, aScales := linalg.QuantizeRowsInt8(a, M, K)
+	outs, err := b.ctx.BatchGEMV(aq, aScales[0], rms)
+	if err != nil {
+		b.fallbacks++
+		return false
+	}
+	for i := range ops {
+		copy(ops[i].Dst, outs[i])
+	}
 	return true
 }
 
@@ -282,7 +331,11 @@ func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8
 	var outs [][]float32
 	var err error
 	if M == 1 { // coalesced GEMV (decode); else tiled GEMM (prefill) — both one sync
-		outs, err = b.ctx.BatchGEMV(aq, aScales[0], rms)
+		dw := make([]decodeWeight, len(rms)) // BatchGEMV is precision-agnostic (P-16); wrap the concrete type
+		for i, rm := range rms {
+			dw[i] = rm
+		}
+		outs, err = b.ctx.BatchGEMV(aq, aScales[0], dw)
 	} else {
 		outs, err = b.ctx.BatchTiled(aq, aScales, M, rms)
 	}
