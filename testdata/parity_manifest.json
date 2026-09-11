@@ -558,8 +558,19 @@
       }
     },
     "olmo_hybrid": {
-      "uses": [],
-      "own": [],
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "deltanet"
+      ],
+      "own": [
+        "decoder/forward_qwen35.go",
+        "decoder/olmo_hybrid_real_test.go",
+        "decoder/olmo_hybrid_test.go",
+        "scripts/pin_olmo_hybrid_real.py",
+        "scripts/pin_olmo_hybrid_tiny.py"
+      ],
       "deps_hash": "sha256:529ca068349f39305aa53a2ad80972f064905476e314d7641f0e21fc79ff73a2",
       "status": "validated",
       "validated_at": "493897af",

@@ -349,6 +349,7 @@ func TestParityManifest_fresh(t *testing.T) {
 	sort.Strings(famKeys)
 
 	var stale []string
+	var emptyDeps []string
 	// Count what was actually ENFORCED, not just what came back stale. An empty `stale` means
 	// either "every validated family's hash matched" or "no family was enforced at all" — the
 	// loop `continue`s past every validated_at:null row, so a manifest whose rows were all
@@ -370,6 +371,14 @@ func TestParityManifest_fresh(t *testing.T) {
 			continue
 		}
 		enforced++
+		// A validated family whose uses/own sets name no files hashes nothing but the aikit version,
+		// so no edit to its forward can ever restale it (audit-2026-09-10 G-02: olmo_hybrid sat
+		// validated with "uses": [], "own": []). Its green would cover nothing. Keyed on status, not
+		// validated_at: an experimental family (bailing_hybrid) carries a validated_at but claims no
+		// validation, and gets its sets when it is promoted.
+		if f.Status == "validated" && len(familyDepFiles(&m, f)) == 0 {
+			emptyDeps = append(emptyDeps, fam)
+		}
 		if fresh != f.DepsHash {
 			var validatedAt string
 			_ = json.Unmarshal(f.ValidatedAt, &validatedAt)
@@ -379,6 +388,11 @@ func TestParityManifest_fresh(t *testing.T) {
 			}
 			stale = append(stale, fmt.Sprintf("  %-16s stale since %s  [covers: %s]", fam, validatedAt, scope))
 		}
+	}
+	if len(emptyDeps) > 0 {
+		t.Fatalf("%d validated family(ies) name no dependency files, so their deps_hash covers no source "+
+			"and can never go stale: %s. Give each its uses/own sets (audit-2026-09-10 G-02).",
+			len(emptyDeps), strings.Join(emptyDeps, ", "))
 	}
 	// Collect EVERY mismatch and fail once with the full blast radius. A staleness is
 	// systemic when a shared file changes (every family that `uses` that set restales at
