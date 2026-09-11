@@ -43,7 +43,10 @@ const metaPrefixCap = 64 << 20
 // build, falls back to kind 3 automatically for that tensor. Never implied by
 // quant alone — this is cmd/prequant's own opt-in flag, separate from EnsureCachedGIW's
 // serve-side auto-cache, which always emits kind 3 (a user who wants row4 in that
-// cache runs cmd/prequant explicitly, per the format doc's "opt-in" decision).
+// cache runs cmd/prequant explicitly, per the format doc's "opt-in" decision) — so
+// `serve --stream-weights` at int4 on the Mac runs the canonical W4A8 kernel, not row4,
+// until a target-aware kind replaces this row4 bool (docs/task-int4-layout-2026-09.md's
+// L2, not started as of this comment).
 func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool) error {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
 		return transcodeDir(ctx, in, out, quant, embedInt4, row4)

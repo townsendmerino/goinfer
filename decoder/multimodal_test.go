@@ -53,7 +53,7 @@ func tinyLlamaModel(t *testing.T) (*Model, int) {
 	}
 	writeSafetensors(t, filepath.Join(base, "model.safetensors"), ts)
 
-	w, err := loadWeights(base, quantNone, false, nil)
+	w, err := loadWeights(base, quantNone, false, true, nil)
 	if err != nil {
 		t.Fatalf("loadWeights: %v", err)
 	}

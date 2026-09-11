@@ -138,7 +138,7 @@ func TestGGUF_hostileDims_typedError(t *testing.T) {
 					t.Fatalf("loader panicked on hostile block_count: %v", r)
 				}
 			}()
-			if _, err := buildGGUFWeights(g, quantNone, false); err == nil {
+			if _, err := buildGGUFWeights(g, quantNone, false, true); err == nil {
 				t.Fatalf("expected a typed error for %s block_count", tc.name)
 			}
 		})

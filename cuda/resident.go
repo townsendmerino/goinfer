@@ -3061,7 +3061,21 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 		if K%32 != 0 {
 			return hostW{}, fmt.Errorf("cuda: int4 K=%d not a multiple of 32", K)
 		}
-		q4, sc, _, _ := w.Int4()
+		// Kind() reports precision, not layout, and stays "int4" for a repacked-only tensor
+		// (aikit audit M-22) — so this switch alone cannot tell canonical from repacked-only.
+		// The ok this used to discard is that distinction: without it, a repacked-only tensor's
+		// nil q4 indexes out of range below instead of declining cleanly (found by inspection,
+		// unverified on real hardware — no CUDA device to run this on; mirrors the identical bug
+		// metal/model.go's int4Concat had and was fixed for, decoder/weightmat.go's
+		// wantsCanonicalInt4 doc comment has the full policy). Under that gate this case should
+		// be unreachable in practice (repacked-only only activates for Options.Backend=="cpu"
+		// literally, never "cuda"), so this is defense in depth, not a path expected to fire.
+		q4, sc, _, ok := w.Int4()
+		if !ok {
+			return hostW{}, fmt.Errorf("cuda: int4 tensor has no canonical bytes (layout %s-only): "+
+				"model was loaded for a CPU-only backend; load with Options.Backend set to "+
+				"\"cuda\" to keep canonical bytes for residency", w.Int4Layout())
+		}
 		wpk := make([]uint32, N*(K/8))
 		for i := range wpk {
 			b := q4[i*4 : i*4+4]

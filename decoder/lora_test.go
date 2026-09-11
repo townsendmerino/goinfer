@@ -184,7 +184,7 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 		"base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": {[]int{qDim, r}, bData},
 	})
 
-	w0, err := loadWeights(base, quantNone, false, nil)
+	w0, err := loadWeights(base, quantNone, false, true, nil)
 	if err != nil {
 		t.Fatalf("load base: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestLoRA_mergeAtLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lo.close()
-	w1, err := loadWeights(base, quantNone, false, lo)
+	w1, err := loadWeights(base, quantNone, false, true, lo)
 	if err != nil {
 		t.Fatalf("load merged: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestLoRA_mergeAtLoad_prefixedBaseRejects(t *testing.T) {
 	})
 
 	// Sanity: the base loads fine without an adapter (the prefix layout is valid).
-	if _, err := loadWeights(base, quantNone, false, nil); err != nil {
+	if _, err := loadWeights(base, quantNone, false, true, nil); err != nil {
 		t.Fatalf("prefixed base should load without an adapter: %v", err)
 	}
 	lo, err := loadLoRA(adapter)
@@ -272,7 +272,7 @@ func TestLoRA_mergeAtLoad_prefixedBaseRejects(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lo.close()
-	if _, err := loadWeights(base, quantNone, false, lo); err == nil {
+	if _, err := loadWeights(base, quantNone, false, true, lo); err == nil {
 		t.Error("merging an unprefixed adapter into a language_model.*-prefixed base must fail loudly, not silently no-op (M18)")
 	}
 }

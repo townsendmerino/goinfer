@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -988,7 +989,15 @@ func (m *Model) DecodePath() string {
 	case m.resident != nil:
 		return fmt.Sprintf("%s-resident (%s)", be, residentQuantLabel(be, m.Quant()))
 	case be == "cpu":
-		return fmt.Sprintf("cpu (%s)", m.Quant())
+		s := fmt.Sprintf("cpu (%s)", m.Quant())
+		// The repacked-only int4 policy (wantsCanonicalInt4, aikit audit M-22) only ever
+		// activates when Options.Backend is the literal "cpu" promise — appended here rather
+		// than in every DecodePath case, since a GPU-backend case always keeps canonical(+row4)
+		// by construction and has nothing new to say.
+		if layout := m.int4LayoutSummary(); layout != "" {
+			s += " [" + layout + "]"
+		}
+		return s
 	case !isWebGPUBackend(be):
 		// R9 (docs/measurements/cold-user-2026-09-06-nobara-pc.md, corrected on review):
 		// "cuda-staged (int4)" on an 8 GB card sat at the idle VRAM baseline (464 MiB,
@@ -1330,8 +1339,70 @@ func (m *Model) Qwen35AttnWeights(i int) (qProj, kProj, vProj, oProj *linalg.Wei
 //
 // See backendNames for why this exists — v0.16.0's banner printed Options.Backend, the REQUEST,
 // one line after the runtime had already said it was falling back to CPU.
+//
+// Appends int4LayoutSummary when non-empty (aikit audit M-22's repacked-only int4 policy,
+// wantsCanonicalInt4 in decoder/weightmat.go) — the visible counterpart to a load-time decision
+// that is otherwise invisible until a resident/staged build declines for a reason that traces
+// back to it. See int4LayoutSummary's own doc comment for the format and why this belongs here.
 func (m *Model) BackendReport() string {
-	return BackendSummary(m.reqBackend, m.effBackend, m.beDecline)
+	s := BackendSummary(m.reqBackend, m.effBackend, m.beDecline)
+	if layout := m.int4LayoutSummary(); layout != "" {
+		s += " [" + layout + "]"
+	}
+	return s
+}
+
+// int4LayoutSummary reports which int4 layout each tensor CLASS resolved to (aikit's
+// WeightMat.Int4Layout(), per class rather than per tensor — every tensor in one class shares
+// the same needCanonical decision from a single Load call, so one representative per class is
+// the whole story): "int4 layout: row4-only (embed, qkv, gate/up); canonical (down)" —
+// diagnosable by reading this line instead of by a tok/s comparison when a resident or staged
+// build declines for a reason that traces back to wantsCanonicalInt4's decision (M-22). ""
+// when the model has no layers (a degenerate/partial Weights) or nothing in it is int4-resident
+// at all (int8/f32 mode, or every candidate tensor's shape was ineligible for row4).
+func (m *Model) int4LayoutSummary() string {
+	if m.w == nil || len(m.w.Layers) == 0 {
+		return ""
+	}
+	type class struct {
+		label string
+		wm    linalg.WeightMat
+	}
+	classes := []class{{"embed", m.w.Embed}}
+	if m.w.LMHead.Rows() > 0 {
+		classes = append(classes, class{"lm_head", m.w.LMHead})
+	}
+	l0 := m.w.Layers[0]
+	classes = append(classes,
+		class{"qkv", l0.QProj},
+		class{"gate/up", l0.GateProj},
+		class{"down", l0.DownProj},
+	)
+	byLayout := map[string][]string{}
+	for _, c := range classes {
+		if !c.wm.IsInt4() {
+			continue
+		}
+		byLayout[c.wm.Int4Layout()] = append(byLayout[c.wm.Int4Layout()], c.label)
+	}
+	if len(byLayout) == 0 {
+		return ""
+	}
+	layouts := make([]string, 0, len(byLayout))
+	for l := range byLayout {
+		layouts = append(layouts, l)
+	}
+	sort.Strings(layouts)
+	parts := make([]string, len(layouts))
+	for i, l := range layouts {
+		name := l
+		if l == "row4" || l == "splithalf" {
+			name += "-only" // distinguish from the canonical+row4/canonical+splithalf "both" policy
+		}
+		sort.Strings(byLayout[l])
+		parts[i] = fmt.Sprintf("%s (%s)", name, strings.Join(byLayout[l], ", "))
+	}
+	return "int4 layout: " + strings.Join(parts, "; ")
 }
 
 // EffectiveBackend is the backend actually executing ("cpu" when a request fell back).

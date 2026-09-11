@@ -479,6 +479,22 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 		}
 		q8, sc, _, ok := w.Int8()
 		if !ok {
+			// int4DirectWords already declined above (its own w.Int4() check failed), and this is
+			// not int8 either. The common real cause is the repacked-only int4 policy
+			// (wantsCanonicalInt4, aikit audit M-22): a tensor built with Options.Backend != "cpu"
+			// stays canonical, but one built WITH Backend:"cpu" (or loaded generically and handed
+			// to Metal's own BuildResident out of band — decoder.Load has no way to see that
+			// coming) may have no canonical bytes left at all. Name that condition specifically —
+			// the previous message ("weight kind %q not int8 or int4") both mis-stated the
+			// check (it read Int4()'s narrower "canonical present" ok, not Kind()) and gave no
+			// actionable next step. A tensor that is neither int8 nor int4 at all (a real
+			// programming error reaching this function) still gets a message, just the older,
+			// more generic one.
+			if w.IsInt4() {
+				panic(fmt.Sprintf("metal: int4 tensor has no canonical bytes (layout %s-only): "+
+					"model was loaded for a CPU-only backend; load with Options.Backend set to "+
+					"\"metal\" to keep canonical bytes for residency", w.Int4Layout()))
+			}
 			panic(fmt.Sprintf("metal: int4Concat weight kind %q not int8 or int4", w.Kind()))
 		}
 		N, K := w.Rows(), w.Cols()

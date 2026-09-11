@@ -124,7 +124,7 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 
 	be, _ := NewBackend("")
 	newModel := func(lo *loraAdapter) *Model {
-		w, err := loadWeights(base, quantNone, false, lo)
+		w, err := loadWeights(base, quantNone, false, true, lo)
 		if err != nil {
 			t.Fatalf("loadWeights: %v", err)
 		}
