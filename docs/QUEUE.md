@@ -1726,7 +1726,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:221` | goinfer | `func rootAikitVersion() (string, error) {` |
 | `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:240` | goinfer | `func TestRootAikitVersion_readsFromGoMod(t *testing.T) {` |
 | `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:265` | goinfer | `func freshDepsHash(m *parityManifest, fam familyParity) (string, error) {` |
-| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:363` | goinfer | `if *updateMatrix {` |
+| `docs/audit-2026-09-10.md|decoder/parity_manifest_test.go:301` | goinfer | `anchor: func TestParityManifest_fresh(t *testing.T) {` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:100` | goinfer | `avail := cachedHostRAMAvailable()` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:114` | goinfer | `var kv int64` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:116` | goinfer | `kv = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(positions)` |
