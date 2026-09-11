@@ -454,6 +454,27 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**G23 · `.repowise/`'s 87.6 MB stays in git history — the purge decision is still open** —
+`mac`, **filed 2026-09-11 (audit-2026-09-02.md N-41: the decision existed only in a commit
+message, invisible to anyone browsing the queues).**
+
+`13bea28` untracked and gitignored `.repowise/` (repowise's generated codebase-intelligence
+index — wiki.db 45.6 MB, duplication_cache.pkl 22.1 MB, parse_cache.pkl 6.7 MB,
+knowledge-graph.json 5.7 MB, ~370 lancedb transaction files; all regenerable from source in
+about three minutes via `repowise init`, none of it worth version control). That commit's own
+message says explicitly: **"NOT FIXED HERE: the blobs remain in history, which is already
+pushed... Purging them needs a history rewrite (`git filter-repo`) plus a force-push, which is
+a separate, deliberate decision because it rewrites shared history."**
+
+That "separate, deliberate decision" was never actually made one way or the other, and nothing
+records that it is still pending — a reader would have to know to `git log --all --grep
+repowise` to find it at all. Filed here so it stops being invisible. The blobs add ~87.6 MB to
+every clone's `.git` (`.git` was 216 MB total at the time of `13bea28`) regardless of untracking,
+since history still contains every blob.
+
+**Gate for it:** a decision — purge (via `git filter-repo`, coordinated force-push, and every
+clone/fork re-cloning) or explicitly accept the permanent clone-size cost — not a code change.
+
 **INHERITED · `scripts/shard_checkpoint.py` moved here from aikit** — `unclaimed`, **filed 2026-08-14**.
 aikit's zero-Python campaign found this script in `aikit/scripts/`, but it is goinfer's: it splits a
 single-file safetensors checkpoint into N shards + `model.safetensors.index.json`, and

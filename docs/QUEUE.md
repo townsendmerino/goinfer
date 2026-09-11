@@ -1055,7 +1055,6 @@ supports.
 | `docs/audit-2026-09-02.md|cuda/foreign_context_test.go:52` | goinfer | `func foreignCUDAContexts() (out []foreignCtx, ok bool) {` |
 | `docs/audit-2026-09-02.md|cuda/gptoss_cache_ab_test.go:52` | goinfer | `opts.MoECacheSlots = wantSlots` |
 | `docs/audit-2026-09-02.md|cuda/gptoss_real20b_test.go:36` | goinfer | `// Skips until CUDA declares the two features, exactly as metal/gptoss_real_test.go does` |
-| `docs/audit-2026-09-02.md|cuda/gptoss_real20b_test.go:44` | goinfer | `// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF` |
 | `docs/audit-2026-09-02.md|cuda/graphs_safe.go:109` | goinfer | `// admitGraphs applies the safe-gate: it is the ONLY place r.graphs is promoted from "re` |
 | `docs/audit-2026-09-02.md|cuda/kernel_fma_lint_test.go:15` | goinfer | `// moe.cu is exempt because the shipped moe.ptx is a FROZEN artifact, audited at NVRTC 1` |
 | `docs/audit-2026-09-02.md|cuda/kernels.go:107` | goinfer | `// all three had drifted to this box's ambient NVRTC 12.9.86 — restored to the pinned 12` |
@@ -1453,7 +1452,6 @@ supports.
 | `docs/audit-2026-09-02.md|metal/gemma4_moe.go:334` | goinfer | `panic(fmt.Sprintf("metal gemma4 MoE pread gate\|up expert %d: %v", ei, err))` |
 | `docs/audit-2026-09-02.md|metal/gemma4_moe.go:388` | goinfer | `e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, ml.preFFN, r.mq, r.mSc, r.uH, r.uEps` |
 | `docs/audit-2026-09-02.md|metal/gemma4_moe.go:409` | goinfer | `for j := 0; j < g.topK; j++ {` |
-| `docs/audit-2026-09-02.md|metal/gptoss_real20b_test.go:42` | goinfer | `// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF` |
 | `docs/audit-2026-09-02.md|metal/heavytest_test.go:20` | goinfer | `func requireHeavyModel(t *testing.T) {` |
 | `docs/audit-2026-09-02.md|metal/kernels.go:511` | goinfer | `kernel void rope(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],` |
 | `docs/audit-2026-09-02.md|metal/kernels.go:515` | goinfer | `float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;` |

@@ -472,7 +472,10 @@
         "$MODELS/gpt-oss-20b-MXFP4.gguf"
       ],
       "used_by": [
-        "TestGptOssSafetensors_vsGGUF"
+        "TestGptOssSafetensors_vsGGUF",
+        "TestGptOssResidentParityCUDA",
+        "TestGptOssResidentParityReal20B",
+        "TestGptOssResidentMemGuardDeclines"
       ],
       "note": "The validated-reader side of the safetensors diff. Same weights: its attn_norm matches the safetensors input_layernorm at max|diff| = 0."
     },

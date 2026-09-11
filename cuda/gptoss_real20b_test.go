@@ -41,14 +41,14 @@ func TestGptOssResidentParityCUDA(t *testing.T) {
 	if !decoder.ResidentBackendFeatures("cuda")[decoder.FeatAttnSink] {
 		t.Skip("cuda does not declare FeatAttnSink/FeatOutBias — the gate below is what must pass first")
 	}
-	// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF and
-	// TestAssetRegistry_noDirectReads fails any second resolution of it, so the gate and the sweep
-	// preflight cannot drift apart on which checkpoints count as present. That gate is a regex
-	// over SOURCE TEXT, so it fires on the call spelled out in a comment too -- as this one did.
-	path := modelPath("gpt-oss-20b-MXFP4.gguf")
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no gpt-oss checkpoint at %s", path)
-	}
+	// decoder.AssetPathForTest, NOT modelPath: this used to call modelPath("gpt-oss-20b-MXFP4.gguf"),
+	// which reads GOINFER_MODELS_DIR — a DIFFERENT variable from the one the comment claimed to
+	// honour. It satisfied TestAssetRegistry_noDirectReads (a source-text regex over
+	// os.Getenv(...) of that name, which this call never spelled) while actually bypassing
+	// the registry's real GOINFER_GPTOSS_GGUF override entirely (audit-2026-09-02.md N-41, found
+	// 2026-09-11). AssetPathForTest resolves the SAME registry entry decoder's own
+	// TestGptOssSafetensors_vsGGUF uses, and skips with the reason when absent.
+	path := decoder.AssetPathForTest(t, "GOINFER_GPTOSS_GGUF")
 	const steps = 8
 	seed := []int{3, 14, 7, 42, 1, 99, 5, 60}
 
