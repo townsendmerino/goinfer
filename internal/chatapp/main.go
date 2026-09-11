@@ -457,47 +457,64 @@ func (s *session) generate() string {
 		stream, gen = s.model.Generate(ctx, ids, s.maxTok, sp)
 	}
 
-	// Stream with UTF-8 holdback: decode the whole generated slice each step and
-	// print only newly-completed bytes (a byte-fallback token may be a partial
-	// rune).
 	fmt.Print("\033[36m") // cyan reply
-	var out []int
-	printed := 0
 	start := time.Now()
-	flush := func(final bool) {
-		text, derr := s.tk.Decode(out)
-		if derr != nil {
-			return
-		}
-		b := []byte(text)
-		end := len(b)
-		if !final {
-			end = completeUTF8Len(b)
-		}
-		if end > printed {
-			os.Stdout.Write(b[printed:end])
-			printed = end
-		}
-	}
-	for id := range stream {
-		out = append(out, id)
-		flush(false)
-	}
-	flush(true)
+	text, nTok := s.streamGen(stream, func(chunk string) { os.Stdout.WriteString(chunk) })
 	fmt.Print("\033[0m\n")
 
 	if err := gen.Err(); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "(generation error: %v)\n", err)
 	}
-	if elapsed := time.Since(start); elapsed > 0 && len(out) > 0 {
-		fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", len(out), float64(len(out))/elapsed.Seconds())
+	if elapsed := time.Since(start); elapsed > 0 && nTok > 0 {
+		fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", nTok, float64(nTok)/elapsed.Seconds())
 		if gen.Spec != nil {
 			fmt.Fprintf(os.Stderr, "\033[2m [spec: %.0f%% accepted, %.1f tok/pass]\033[0m", gen.Spec.AcceptanceRate()*100, gen.Spec.TokensPerRound())
 		}
 		fmt.Fprintln(os.Stderr)
 	}
-	text, _ := s.tk.Decode(out)
 	return strings.TrimSpace(text)
+}
+
+// streamGen drains a token channel into text with UTF-8 holdback, calling onChunk with each
+// newly-completed span (a byte-fallback token may be a partial rune, so a flush emits only the
+// longest complete-rune prefix of what has not been emitted yet), and returns the full text plus
+// the token count.
+//
+// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole generated
+// sequence every token (P-17, audit-2026-09-10 — this demo's own twin of R-08, already fixed in
+// internal/serveapp/openai.go's streamTokens for the same reason). DecodePiece(id) appended one
+// token at a time is byte-identical to a fresh whole-sequence decode at every flush point
+// (TestDecodeContinuation_isIncrementallyAssociative, tokenizer/). strings.Builder, not
+// `text += piece`: Go strings are immutable, so naive concatenation is itself O(n) per append and
+// would silently reintroduce the O(n^2) this removes.
+func (s *session) streamGen(tokens <-chan int, onChunk func(string)) (text string, nTok int) {
+	var sb strings.Builder
+	printed := 0
+	flush := func(final bool) {
+		txt := sb.String() // O(1): a view over the Builder's buffer, not a copy
+		tail := txt[printed:]
+		end := len(tail) + printed
+		if !final {
+			end = completeUTF8Len([]byte(tail)) + printed
+		}
+		if end > printed {
+			if onChunk != nil {
+				onChunk(txt[printed:end])
+			}
+			printed = end
+		}
+	}
+	for id := range tokens {
+		nTok++
+		// DecodePiece, not Decode: these ids CONTINUE the prompt (no sequence-level
+		// dummy-prefix strip — M-25), and appending each token's own piece is exactly what a
+		// whole-sequence decode does internally, one token at a time.
+		piece, _ := s.tk.DecodePiece(id)
+		sb.WriteString(piece)
+		flush(false)
+	}
+	flush(true)
+	return sb.String(), nTok
 }
 
 // command handles a /slash line; returns true to quit.

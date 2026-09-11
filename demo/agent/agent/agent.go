@@ -448,30 +448,39 @@ func (s *Session) generate(ctx context.Context, system string, turns []msg, sp d
 // newly-completed span to onToken. Shared by the text path (generate) and the
 // vision path (generateImage).
 func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder.Generation, onToken func(string)) (string, error) {
-	// Decode the whole generated slice each step and emit only newly-completed
-	// bytes (a byte-fallback token may be a partial rune).
-	var out []int
+	// Stream with UTF-8 holdback: a byte-fallback token may be a partial rune, so a flush emits
+	// only the longest complete-rune prefix of what has not been emitted yet.
+	//
+	// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole generated
+	// sequence every token (P-17, audit-2026-09-10 — this demo's own twin of R-08, already
+	// fixed in internal/serveapp/openai.go's streamTokens for the same reason). DecodePiece(id)
+	// appended one token at a time is byte-identical to a fresh whole-sequence decode at every
+	// flush point (TestDecodeContinuation_isIncrementallyAssociative, tokenizer/).
+	// strings.Builder, not `text += piece`: Go strings are immutable, so naive concatenation is
+	// itself O(n) per append and would silently reintroduce the O(n^2) this removes.
+	var sb strings.Builder
 	emitted := 0
 	flush := func(final bool) {
 		if onToken == nil {
 			return
 		}
-		text, derr := s.tk.Decode(out)
-		if derr != nil {
-			return
-		}
-		b := []byte(text)
-		end := len(b)
+		text := sb.String() // O(1): a view over the Builder's buffer, not a copy
+		tail := text[emitted:]
+		end := len(tail) + emitted
 		if !final {
-			end = completeUTF8Len(b)
+			end = completeUTF8Len([]byte(tail)) + emitted
 		}
 		if end > emitted {
-			onToken(string(b[emitted:end]))
+			onToken(text[emitted:end])
 			emitted = end
 		}
 	}
 	for id := range tokens {
-		out = append(out, id)
+		// DecodePiece, not Decode: these ids CONTINUE the prompt (no sequence-level
+		// dummy-prefix strip — M-25), and appending each token's own piece is exactly what a
+		// whole-sequence decode does internally, one token at a time.
+		piece, _ := s.tk.DecodePiece(id)
+		sb.WriteString(piece)
 		flush(false)
 	}
 	flush(true)
@@ -479,8 +488,7 @@ func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder
 	if err := gen.Err(); err != nil && ctx.Err() == nil {
 		return "", fmt.Errorf("generation: %w", err)
 	}
-	text, _ := s.tk.Decode(out)
-	return strings.TrimSpace(text), nil
+	return strings.TrimSpace(sb.String()), nil
 }
 
 // buildPrompt renders system + turns via the detected chat template, falling
