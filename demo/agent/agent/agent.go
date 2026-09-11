@@ -128,6 +128,11 @@ type Session struct {
 	stopIDs []int
 	vocab   int
 
+	// tokenBytes is the constraint masker's token→bytes table (P-17, audit-2026-09-10), built
+	// once in newSession rather than by schemaMasker on every constrained turn — the same fix
+	// serve's own cachedTokenBytes made for the same table (internal/serveapp/openai.go).
+	tokenBytes [][]byte
+
 	// Vision tower (Gemma 3 VL) — nil unless Options.Vision is set / auto-discovered.
 	// When present, TurnImage runs an image through preprocess → encoder → projector
 	// and answers it via decoder.GenerateVL.
@@ -539,7 +544,7 @@ func (s *Session) schemaMasker(schema []byte) func(generated []int, logits []flo
 			eos = append(eos, id)
 		}
 	}
-	return constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhenComplete().Process
+	return constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete().Process
 }
 
 // loadFromPath loads tokenizer + model from a .gguf file or HF checkpoint dir.
@@ -582,6 +587,7 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, dt time.Duration)
 		LoadSummary: fmt.Sprintf("loaded %d-layer model (hidden %d, vocab %d) in %s [quant=%s]",
 			cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.Quant()),
 	}
+	s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {
 		s.LoadSummary += " (no recognized chat template; raw completions)"

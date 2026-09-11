@@ -63,6 +63,11 @@ type session struct {
 	stopIDs []int          // turn-stop token ids resolved from tmpl.Stops()
 	vocab   int
 
+	// tokenBytes is the constraint masker's token→bytes table (P-17, audit-2026-09-10), built
+	// once in newSession rather than by jsonMasker on every constrained turn — the same fix
+	// serve's own cachedTokenBytes made for the same table (internal/serveapp/openai.go).
+	tokenBytes [][]byte
+
 	system  string
 	history []msg
 	sp      decoder.SamplingParams
@@ -363,6 +368,7 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Opti
 		fmt.Fprintln(os.Stderr, sum)
 	}
 	s := &session{tk: tk, model: model, special: tk.Special(), vocab: cfg.VocabSize}
+	s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "note: no recognized chat template; replies may be raw completions")
@@ -611,7 +617,7 @@ func (s *session) jsonMasker() func(generated []int, logits []float32) {
 			g = sg
 		}
 	}
-	m := constrain.NewMasker(g, constrain.TokenBytes(s.vocab, s.tk.TokenText), eos).StopWhenComplete()
+	m := constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete()
 	return m.Process
 }
 
