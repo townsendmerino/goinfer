@@ -427,7 +427,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			ensures = append(ensures, c.ensureSharedGate)
 		}
 		if m.moe.gptoss { // G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink's three MoE kernels
-			ensures = append(ensures, c.ensureRouteGptOss, c.ensureGptOssGluQuant, c.ensureMoEExpertGptOssDown)
+			ensures = append(ensures, c.ensureRouteGptOss, c.ensureGptOssGluQuant, c.ensureMoEExpertGptOssDown, c.ensureMoEExpertGptOssDownW4)
 		}
 	}
 	if m.mla != nil {
@@ -995,7 +995,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		moeExpertGptOssDown = func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dbias, dst *wgpu.Buffer, slot int) {
 			d := uni([]uint32{uint32(s.kp), uint32(s.rows), uint32(slot), 0})
 			gx, gy := gemvGrid(s.rows)
-			add(c.moeExpertGptOssDownPipeline, bind(c.moeExpertGptOssDownLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, dbias, d), gx, gy)
+			pl, ly := c.gptOssDownPipelineFor(s)
+			add(pl, bind(ly, aq, s.bq, as, s.bScales, dst, idx, wgt, dbias, d), gx, gy)
 		}
 	}
 	// sharedGatedCombine records the qwen2_moe gated shared-expert add: dst[n] +=

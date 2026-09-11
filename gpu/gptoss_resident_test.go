@@ -25,9 +25,12 @@ var gptOssParityPrompt = []int{1, 7, 42, 20, 5, 30, 13, 40}
 // what the router bias means and what the activation clamps — see routeGptOssWGSL/
 // gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL's own comments in gpu/moe.go).
 //
-// 0.95 is the SAME floor Metal's own gpt-oss tiny-fixture gate uses (metal/gptoss_real_test.go),
-// not a looser bar invented for this backend — measured 0.9943-0.9967 across all 8 positions at
-// implementation time, comfortably inside it.
+// The floor was 0.95 (Metal's own tiny-fixture bar), and this backend measured 0.9943-0.9967
+// against it. That margin was the defect. The fixture is bias-dominated (audit-2026-09-10 G-07),
+// so C-06, where every int4 routed expert's down matmul collapsed to its bias, moved the logits only
+// a few percent and passed. The bar is now cosine >= 0.998 with argmax matching at every position.
+// It was registered before C-06's fix, from Metal's 0.9989 on the same fixture, and the 0.9943
+// baseline fails it.
 func TestGptOssResidentParityWebGPU(t *testing.T) {
 	dir := "../decoder/testdata/gptoss_tiny.gguf"
 	if _, err := os.Stat(dir); err != nil {
@@ -67,7 +70,16 @@ func TestGptOssResidentParityWebGPU(t *testing.T) {
 	defer mcpu.Close()
 
 	cache := mcpu.NewCache(len(gptOssParityPrompt))
-	minCos := 1.0
+	minCos, argmaxMiss := 1.0, 0
+	argmaxLogits := func(v []float32) int {
+		b := 0
+		for i := range v {
+			if v[i] > v[b] {
+				b = i
+			}
+		}
+		return b
+	}
 	for i, tok := range gptOssParityPrompt {
 		cpuL, err := mcpu.ForwardForTest(tok, cache)
 		if err != nil {
@@ -92,10 +104,16 @@ func TestGptOssResidentParityWebGPU(t *testing.T) {
 			minCos = cos
 		}
 		t.Logf("  pos %2d cosine %.6f", i, cos)
+		if a, b := argmaxLogits(cpuL), argmaxLogits(gpuL); a != b {
+			argmaxMiss++
+			t.Logf("  pos %2d argmax differs: cpu %d, resident %d", i, a, b)
+		}
 	}
-	t.Logf("gpt-oss tiny, resident vs CPU (int4 both sides): minCosine=%.6f", minCos)
-	if minCos < 0.95 {
-		t.Errorf("minCosine %.6f < 0.95 — resident diverges from CPU (same floor Metal's own "+
-			"gpt-oss tiny-fixture gate uses)", minCos)
+	t.Logf("gpt-oss tiny, resident vs CPU (int4 both sides): minCosine=%.6f, argmax mismatches %d/%d",
+		minCos, argmaxMiss, len(gptOssParityPrompt))
+	if minCos < 0.998 || argmaxMiss > 0 {
+		t.Errorf("minCosine %.6f (want >= 0.998), argmax mismatches %d (want 0) — the resident diverges "+
+			"from CPU (bar registered before C-06's fix, from Metal's 0.9989 on this fixture; audit G-07)",
+			minCos, argmaxMiss)
 	}
 }
