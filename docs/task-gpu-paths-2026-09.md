@@ -105,7 +105,7 @@ re-run on the 0.5B.
 the only serving caller.
 
 **Fix.** A resident `HiddenLast`: the resident prefill already exposes hidden-state capture for the
-block drafter (`hidCapTaps`, `cuda/prefill.go:311–319`), so a "prefill and return the last row's
+block drafter (`hidCapTaps`, `cuda/prefill.go:312–319`), so a "prefill and return the last row's
 pre-LM-head hidden state" entry is mostly wiring on CUDA; Metal and WebGPU need the same tap. Must
 respect `ownForward` families (they error today, keep that), claim `resBusy`, and forget `resIDs`
 after (it drives the shared positional KV).
