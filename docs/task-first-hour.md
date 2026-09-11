@@ -490,7 +490,7 @@ quantization and asking `wmBytes` what it cost:
 | `int8` / `int8int8` | **1.0156** | 1.0156 |
 | `int4` / `int4mix` | **1.2500** | 0.6250 |
 
-The cause is `RepackInt4Row4` (`linalg/weightmat_row4_arm64.go:21`): on arm64 with dotprod it
+The cause is `RepackInt4Row4` (`linalg/weightmat_row4_arm64.go:23`): on arm64 with dotprod it
 populates `q4Row4` and `q4Row4Scales` **in addition to** the canonical `q4`/`q4s`, clearing
 neither — so an int4 weight carries two full layouts, 0.625 + 0.625. int8 has no such repack. The
 same shape applies on AVX2-without-VNNI amd64 via the split-half repack.

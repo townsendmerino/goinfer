@@ -18,6 +18,8 @@ github.com/townsendmerino/aikit v1.39.1 h1:GbZiE/u55Dvd2k3MAaARkERBP+hENZBVLQnKl
 github.com/townsendmerino/aikit v1.39.1/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit v1.40.0 h1:6SSDQMdO4EbADF0Kfg/zz2lwrUmnmUX3kOj8WN7Yb98=
 github.com/townsendmerino/aikit v1.40.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
+github.com/townsendmerino/aikit v1.41.0 h1:89XvScqkWqDF3OqoWu9gHYOvLpBUzmlSLCe2bEda6iM=
+github.com/townsendmerino/aikit v1.41.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/goinfer v0.17.2 h1:7wDqLrwy/DOLL6mBmd4zNlVuabKn0iBxbW0peXPGlZc=
 github.com/townsendmerino/goinfer v0.17.2/go.mod h1:3AyCJl5nc9ow6qVfPsQeewgdkR7rlGCFOukS+EF3IOg=
 github.com/townsendmerino/goinfer/gpu v0.17.2 h1:jgqibibWyGq5fCzlzCSYkJ0CbsrrPak+cjQbQZdsASo=
