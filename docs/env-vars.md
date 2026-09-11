@@ -99,7 +99,9 @@ docs/task-l01-hybrid-moe-cpu-gpu.md — synchronous only, no overlap yet, defaul
 
 Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,
-`GOINFER_REQUIRE_FIXTURES`, `GOINFER_TEST_NOTHINK`, `GOINFER_SPEC_PROBE_GIW`.
+`GOINFER_REQUIRE_FIXTURES`, `GOINFER_TEST_NOTHINK`, `GOINFER_SPEC_PROBE_GIW`, and the
+heavy-cell knobs `cmd/gate` reads through its `env()` helper: `GOINFER_GATE_MODELS` (the models
+root), `GOINFER_HEAVY_RUN` (a -run filter), `GOINFER_HEAVY_TIMEOUT`, `GOINFER_HEAVY_PKGS`.
 
 ## CUDA graphs (perf, opt-in)
 
