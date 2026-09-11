@@ -939,7 +939,7 @@ of them:
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
 | `decoder/forwardn.go:1118` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
 | `decoder/model.go:869` | unchanged — same freeze |
-| `metal/model.go:1065` | unchanged — Metal is on hold for core-numerics surfaces |
+| `metal/model.go:1079` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
 reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,
