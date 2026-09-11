@@ -174,7 +174,7 @@ unknown kind declines cleanly), gated on the real Nano checkpoint on the Linux b
 ### G8 — Metal prefill is sequential for every non-plain-dense family, flag or no flag
 
 **Where.** `metal/model.go:63–67`: `prefillFeatures` is exactly `{FeatQKNorm, FeatSlidingWindow,
-FeatPartialRotary}`; `metal/model.go:535` sets `prefillOK` from it; `metal/backend.go:258` declines.
+FeatPartialRotary}`; `metal/model.go:550` sets `prefillOK` from it; `metal/backend.go:258` declines.
 Separately, `metal/backend.go:251` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
 (the 54% stream divergence, §A2-Metal). So MoE, Gemma, DeltaNet, gpt-oss and GPT-2 prompts on the
 Mac are one forward per prompt token regardless of `--metal-fast-prefill`. CUDA's batched prefill
@@ -199,7 +199,7 @@ seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit 
 
 ### G10 — Metal has no int8 weight kernel: `int8int8` is requantized to W4A8 on device
 
-**Where.** `metal/model.go:346–363` (`int4Buf`): an int4 weight is packed directly; an int8 weight
+**Where.** `metal/model.go:361–363` (`int4Buf`): an int4 weight is packed directly; an int8 weight
 is dequantized to f32 and re-packed as 4-bit/group-32. There is no W8 GEMV in `metal/`. So
 `-quant int8int8` on Metal runs int4 numerics on the GPU while holding the int8 host copy — more
 RAM, not more precision. `metal/backend.go:55`'s comment ("weights must be int8-loaded…") is stale

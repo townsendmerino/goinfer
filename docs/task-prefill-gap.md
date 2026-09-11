@@ -244,7 +244,7 @@ gate it produced cannot answer the question it was built for:
 - **CUDA-decode-vs-CPU compares two implementations of the same numerics** — W4A8 on both sides —
   so a disagreement there is a defect signal. **Fast-vs-exact prefill on Metal compares two
   different numerics of the same model.** The exact (decode) path quantises activations to int8 per
-  row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:545`); the batched path
+  row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:560`); the batched path
   keeps them in f16 and dequantises the int4 weights to f16 in-kernel (`metal/prefill.go:13`–`:13`).
   They are guaranteed to disagree. The measurement in `measurements/prefill-gate-l1-2026-09-05.md`
   is a correct measurement of *how much* — it is not evidence about *which arm is wrong*.

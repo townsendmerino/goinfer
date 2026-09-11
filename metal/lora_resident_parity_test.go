@@ -121,6 +121,152 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 	}
 }
 
+// TestLoRAResidentParityMetal_armedExecutorThenBind is C-07 (audit-2026-09-10), and closes G-06's
+// Metal half: the ORIGINAL gate above binds SetAdapter on a fresh, never-yet-used executor
+// (r.execReq == nil, nothing pre-encoded) and only compares the LAST token, so it is green over
+// C-07 by construction — that ordering can never observe a stale pre-encoded buffer. This test
+// drives the one ordering that can: arm the pipelined executor with a plain (no-adapter) Forward
+// call FIRST — which, before C-07's fix, leaves a "next" command buffer pre-encoded under
+// r.loraLayers == nil — then bind the adapter and re-run the SAME position. The KV cache is
+// positional, so the second call's write overwrites the first's; what survives is determined
+// entirely by which encode actually gets COMMITTED, which is exactly what C-07 got wrong.
+func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
+	const ckpt = "../testdata/llama-tiny"
+	adapterDir := buildLlamaTinyLoRAFixture(t)
+
+	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "metal", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load metal: %v", err)
+	}
+	defer mRes.Close()
+	rf := mRes.ResidentForwardForTest()
+	if rf == nil {
+		t.Fatalf("llama-tiny did not go resident (BuildResident refused) — decode path %q; decline: %s",
+			mRes.DecodePath(), mRes.ResidentDecline())
+	}
+	ra, ok := rf.(decoder.ResidentAdapter)
+	if !ok {
+		t.Fatalf("metal resident runner does not implement decoder.ResidentAdapter")
+	}
+	if err := mRes.LoadAdapter("a", adapterDir); err != nil {
+		t.Fatalf("LoadAdapter (metal side): %v", err)
+	}
+
+	mCPU, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatalf("load cpu: %v", err)
+	}
+	defer mCPU.Close()
+	if err := mCPU.LoadAdapter("a", adapterDir); err != nil {
+		t.Fatalf("LoadAdapter (cpu side): %v", err)
+	}
+
+	_, _, _, _, _, _, vocab := mCPU.Dims()
+	tok := 5 % vocab
+
+	// ARM: a plain Forward with no adapter bound. Through ForwardEmbPipe, this both commits an
+	// encode for position 0 AND pre-encodes the NEXT command buffer — still under the no-adapter
+	// state, since SetAdapter has not run yet.
+	if _, err := rf.Forward(mRes.EmbedResidentForTest(tok), 0); err != nil {
+		t.Fatalf("arm: %v", err)
+	}
+
+	if err := ra.SetAdapter(mRes.ResidentAdapterLayersForTest("a")); err != nil {
+		t.Fatalf("resident SetAdapter after arming: %v", err)
+	}
+	got, err := rf.Forward(mRes.EmbedResidentForTest(tok), 0)
+	if err != nil {
+		t.Fatalf("resident forward after bind: %v", err)
+	}
+	got = append([]float32(nil), got...)
+
+	want, err := mCPU.PrefillLogitsWithAdapterForTest(context.Background(), []int{tok}, "a")
+	if err != nil {
+		t.Fatalf("cpu compute-time prefill: %v", err)
+	}
+
+	cos, maxAbs := cosF32(want, got)
+	t.Logf("armed-then-bound resident vs CPU-with-adapter: cosine=%.6f maxAbs=%.4g argmax_match=%v",
+		cos, maxAbs, argmaxF32(want) == argmaxF32(got))
+	if cos < 0.95 {
+		t.Errorf("cosine %.6f < 0.95 after binding on an already-armed executor — the pre-encoded "+
+			"buffer from the arming call was committed instead of a fresh encode under the bound "+
+			"adapter (C-07)", cos)
+	}
+
+	if err := ra.SetAdapter(nil); err != nil {
+		t.Fatalf("resident SetAdapter(nil): %v", err)
+	}
+}
+
+// TestSetAdapter_cachesDeviceBuffersAcrossRebind is P-10's Metal half (audit-2026-09-10):
+// SetAdapter used to release and re-upload every projection's device buffers on EVERY bind,
+// including a bind of the SAME adapter that was just cleared — the dominant real shape (one chat
+// session, many turns, bind→clear→bind→clear on the identical adapter every turn) paid the full
+// re-upload cost on every single turn for no reason. Verifies the cache directly at the pointer
+// level: a rebind of the SAME adapter must reuse the exact *residLoRAProj (same underlying device
+// buffers, no NewBufferFloats calls), while a bind of a DIFFERENT adapter must evict the cache
+// and upload fresh — proving the identity check is pointer-based, not accidentally
+// content-based, by binding two adapters built from IDENTICAL data (buildLlamaTinyLoRAFixture is
+// deterministic) but loaded as separate loraRuntime instances.
+func TestSetAdapter_cachesDeviceBuffersAcrossRebind(t *testing.T) {
+	const ckpt = "../testdata/llama-tiny"
+	adapterDirA := buildLlamaTinyLoRAFixture(t)
+	adapterDirB := buildLlamaTinyLoRAFixture(t) // same content, different files/instance
+
+	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "metal", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load metal: %v", err)
+	}
+	defer mRes.Close()
+	rf := mRes.ResidentForwardForTest()
+	mr, ok := rf.(*metalResident)
+	if !ok {
+		t.Fatalf("ResidentForwardForTest did not return *metalResident (%T)", rf)
+	}
+	if err := mRes.LoadAdapter("a", adapterDirA); err != nil {
+		t.Fatalf("LoadAdapter a: %v", err)
+	}
+	if err := mRes.LoadAdapter("b", adapterDirB); err != nil {
+		t.Fatalf("LoadAdapter b: %v", err)
+	}
+
+	if err := mr.SetAdapter(mRes.ResidentAdapterLayersForTest("a")); err != nil {
+		t.Fatalf("bind a (1st): %v", err)
+	}
+	if mr.r.loraLayers == nil || mr.r.loraLayers[0].q == nil {
+		t.Fatal("bind a (1st): loraLayers[0].q is nil — fixture targets q_proj on every layer")
+	}
+	firstQ := mr.r.loraLayers[0].q
+
+	if err := mr.SetAdapter(nil); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if mr.r.loraLayers != nil {
+		t.Error("loraLayers not nil after SetAdapter(nil) — dispatch sites would still apply a delta")
+	}
+	if mr.r.loraCached == nil {
+		t.Fatal("P-10: loraCached was released on clear instead of kept for a same-adapter rebind")
+	}
+
+	if err := mr.SetAdapter(mRes.ResidentAdapterLayersForTest("a")); err != nil {
+		t.Fatalf("bind a (2nd, rebind): %v", err)
+	}
+	if mr.r.loraLayers[0].q != firstQ {
+		t.Error("P-10: rebinding the SAME adapter got a NEW *residLoRAProj — the device buffers " +
+			"were re-uploaded instead of reused from the cache")
+	}
+
+	if err := mr.SetAdapter(mRes.ResidentAdapterLayersForTest("b")); err != nil {
+		t.Fatalf("bind b (different adapter): %v", err)
+	}
+	if mr.r.loraLayers[0].q == firstQ {
+		t.Error("binding a DIFFERENT adapter (identical content, separate loraRuntime instance) " +
+			"reused adapter a's cached buffers — the identity check is matching by content, not " +
+			"by pointer, which would silently apply the wrong adapter's delta for two distinct binds")
+	}
+}
+
 // buildLlamaTinyLoRAFixture writes a PEFT adapter directory targeting ALL SEVEN projections
 // (q,k,v,o,gate,up,down) across every layer of testdata/llama-tiny (4 layers, hidden=64,
 // qDim=64, kvDim=32, inter=128 — testdata/llama-tiny/config.json), rank 4 / alpha 8 (scale 2).
