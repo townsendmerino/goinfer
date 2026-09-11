@@ -644,8 +644,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// only catches the local/global head_dim variance dense Gemma 4 has; nothing about g4moe's
 	// FFN shape is geometry). Explicit, checked directly rather than assumed caught by the other
 	// guard — the exact class of blind spot this doc's own G6 WebGPU incident already burned once.
+	// C-08 (audit-2026-09-10): a PAGED generic MoE's per-layer expGuW/expGuS/expDW/expDS buffers
+	// are zero-value (moe.go — the real weights live in the slot pool instead), but PrefillLast's
+	// row loop calls the same non-paged encodeMoERoute/encodeMoEExperts pair unconditionally.
+	// Same predicate as the dense Gemma-4 MoE guard above, generalized to the generic twin.
 	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && m.PerLayerGeomOK("webgpu") &&
-		!m.HasGemma4MoEResident()
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged)
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
