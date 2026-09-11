@@ -261,7 +261,9 @@ func (c *Client) Structured(ctx context.Context, model string) Result {
 
 // Stop checks that a stop sequence ends the turn and is NOT echoed — the failure mode is a
 // stop string split across token boundaries leaking into the output, which a harness sees as
-// corrupted text rather than as a bug here.
+// corrupted text rather than as a bug here. It also checks that the count actually REACHED the
+// stop ("4" before "5"). A reply that never gets there, such as "Sure, I can count.", contains no
+// "5" either, and used to pass (audit-2026-09-10 G-12).
 func (c *Client) Stop(ctx context.Context, model string) Result {
 	res := Result{Name: "stop sequences"}
 	body := map[string]any{
@@ -292,6 +294,10 @@ func (c *Client) Stop(ctx context.Context, model string) Result {
 	txt := out.Choices[0].Message.Content
 	if strings.Contains(txt, "5") {
 		res.Detail = fmt.Sprintf("stop string leaked into the output: %q", trunc(txt, 60))
+		return res
+	}
+	if !strings.Contains(txt, "4") {
+		res.Detail = fmt.Sprintf("the reply never reached the stop sequence, so this proves nothing about it: %q", trunc(txt, 60))
 		return res
 	}
 	res.OK = true
@@ -498,11 +504,23 @@ func (c *Client) Tools(ctx context.Context, model string) Result {
 	}
 	var out struct {
 		Choices []struct {
-			Message struct{ Content string } `json:"message"`
+			Message struct {
+				Content   string            `json:"content"`
+				ToolCalls []json.RawMessage `json:"tool_calls"`
+			} `json:"message"`
 		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) == 0 {
 		res.Detail = "unparseable response to the tool result"
+		return res
+	}
+	// A 200 is not a use of the result (audit-2026-09-10 G-12): asking for the tool again is M-18's
+	// agent-livelock shape, and an empty answer is a conversation that dies on turn two.
+	if msg := out.Choices[0].Message; len(msg.ToolCalls) > 0 {
+		res.Detail = "turn two asked for the tool again instead of answering — the agent-livelock shape (M-18)"
+		return res
+	} else if strings.TrimSpace(msg.Content) == "" {
+		res.Detail = "empty answer to the tool result — the conversation dies on turn two"
 		return res
 	}
 	res.OK = true
