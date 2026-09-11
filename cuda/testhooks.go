@@ -2,7 +2,12 @@
 
 // Code relocated by the B-08 build-tag pass: these are test-only hooks, compiled
 // only under -tags goinfer_testhooks so they are NOT part of the public API
-// (audit B-08). See RELEASING.md. Mirrors decoder/testhooks_gen.go and gpu/testhooks_gen.go.
+// (audit B-08). See RELEASING.md. Mirrors decoder/testhooks.go and gpu/testhooks.go.
+//
+// HAND-MAINTAINED, NOT MACHINE-GENERATED — despite this file's former name
+// (testhooks_gen.go, renamed 2026-09-11, audit-2026-09-02.md N-41). There is no
+// //go:generate directive and nothing regenerates it; edit it directly like any
+// other file.
 
 package cuda
 
