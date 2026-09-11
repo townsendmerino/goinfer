@@ -1418,10 +1418,10 @@ supports.
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:946` | goinfer | `func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:960` | goinfer | `func genErr(err error) error {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/openai.go:982` | goinfer | `// GPU-resident models take the STATELESS path. decoder.Generate only engages the reside` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:139` | goinfer | `ids, err := lm.chatPrompt(messages)` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:236` | goinfer | `var stopBeat func()` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:287` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
-| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:318` | goinfer | `func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:148` | goinfer | `ids, err := lm.chatPrompt(messages)` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:245` | goinfer | `var stopBeat func()` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:296` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
+| `docs/audit-2026-09-02.md|internal/serveapp/responses.go:327` | goinfer | `func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses.go:94` | goinfer | `if req.PreviousResponseID != "" {` |
 | `docs/audit-2026-09-02.md|internal/serveapp/responses_test.go:133` | goinfer | `// 4. Tool round-trip: forced function call → a function_call output item.` |
 | `docs/audit-2026-09-02.md|internal/serveapp/sessions.go:136` | goinfer | `func (l *sessionLRU) acquire(prompt []int) *decoder.Session {` |
@@ -1917,9 +1917,9 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/openai.go:677` | goinfer | `// residentPath tells prepare whether THIS request will actually run the stateless GPU-r` |
 | `docs/audit-2026-09-10.md|internal/serveapp/openai.go:784` | goinfer | `eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)` |
 | `docs/audit-2026-09-10.md|internal/serveapp/responses.go:115` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(messages)); err != nil {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/responses.go:134` | goinfer | `if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" && lm.tmpl != nil && l` |
-| `docs/audit-2026-09-10.md|internal/serveapp/responses.go:144` | goinfer | `gr, err := lm.prepare(sm, ids, lm.adapter == "")` |
-| `docs/audit-2026-09-10.md|internal/serveapp/responses.go:191` | goinfer | `writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out` |
+| `docs/audit-2026-09-10.md|internal/serveapp/responses.go:138` | goinfer | `toolsActive := len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none"` |
+| `docs/audit-2026-09-10.md|internal/serveapp/responses.go:153` | goinfer | `gr, err := lm.prepare(sm, ids, lm.adapter == "")` |
+| `docs/audit-2026-09-10.md|internal/serveapp/responses.go:200` | goinfer | `writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out` |
 | `docs/audit-2026-09-10.md|internal/serveapp/sessions.go:165` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/tools.go:198` | goinfer | `writeJSON(w, http.StatusOK, map[string]any{` |
 | `docs/audit-2026-09-10.md|internal/serveapp/tools.go:24` | goinfer | `if lm.tmpl == nil \|\| !lm.tmpl.SupportsTools() {` |
@@ -2137,9 +2137,9 @@ supports.
 | `docs/review-2026-09-04.md|internal/serveapp/main.go:628` | goinfer | `// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a ` |
 | `docs/review-2026-09-04.md|internal/serveapp/main.go:649` | goinfer | `mux.HandleFunc("GET /{$}", srv.handleWebUI)` |
 | `docs/review-2026-09-04.md|internal/serveapp/openai.go:112` | goinfer | `lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)` |
-| `docs/review-2026-09-04.md|internal/serveapp/responses.go:272` | goinfer | `toolCalls = append(toolCalls, tc)` |
-| `docs/review-2026-09-04.md|internal/serveapp/responses.go:287` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
-| `docs/review-2026-09-04.md|internal/serveapp/responses.go:305` | goinfer | `func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assist` |
+| `docs/review-2026-09-04.md|internal/serveapp/responses.go:281` | goinfer | `toolCalls = append(toolCalls, tc)` |
+| `docs/review-2026-09-04.md|internal/serveapp/responses.go:296` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
+| `docs/review-2026-09-04.md|internal/serveapp/responses.go:314` | goinfer | `func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assist` |
 | `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:211` | goinfer | `if unconditionalStreamCall(cb) {` |
 | `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:276` | goinfer | `func unconditionalStreamCall(cb string) bool {` |
 | `docs/review-2026-09-04.md|internal/serveapp/vision_serve.go:83` | goinfer | `func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, erro` |
