@@ -80,6 +80,7 @@ after upgrading needs one place to look.
 | `GOINFER_MOE_RESIDENCY` / `GOINFER_MOE_RESIDENCY_SCOPE` | Metal MoE residency mode and scope. |
 | `GOINFER_PRECISE_MATH` | Metal: precise (non-fast) math in generated shaders. |
 | `GOINFER_NO_RESIDENT_REUSE` | Disable resident-forward reuse across requests. |
+| `GOINFER_NO_LORA_CACHE` | CUDA: re-upload a LoRA adapter on every bind and free it on every clear (the pre-cache behaviour; audit P-10 A/B switch). |
 | `GOINFER_NVRTC_DIRS` | Extra directories to search for NVRTC when building CUDA kernels. |
 | `GOINFER_CUDA_GRAPHS_SYNC` | Force a synchronize around CUDA graph launches. |
 

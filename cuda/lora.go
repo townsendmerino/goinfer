@@ -4,6 +4,8 @@ package cuda
 
 import (
 	"fmt"
+	"os"
+	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -51,12 +53,12 @@ func projForCUDA(l *decoder.ResidentAdapterLayer) [7]*decoder.ResidentAdapterPro
 	return [7]*decoder.ResidentAdapterProj{l.Q, l.K, l.V, l.O, l.Gate, l.Up, l.Down}
 }
 
-// releaseLoraLayers frees every device buffer a previously-bound adapter allocated. Unlike
-// Metal/WebGPU, this backend's Device ledger normally frees every allocation ONLY at Close
-// (ReleaseObjects) — r.dev.ReleaseBuf exists precisely for a dynamic, per-call allocation like
-// this one, and skipping it here would leak VRAM on every rebind for the resident's whole life.
-func (r *cudaResident) releaseLoraLayers() {
-	for _, l := range r.loraLayers {
+// releaseLoraLayers frees an explicit set of adapter buffers. This backend's Device ledger
+// normally frees every allocation only at Close (ReleaseObjects); r.dev.ReleaseBuf exists for a
+// dynamic allocation like an adapter's, which a different adapter's bind must return rather than
+// accumulate. Used for the evicted cache entry and for a partially-built set on a failed bind.
+func (r *cudaResident) releaseLoraLayers(layers []cudaLoraLayer) {
+	for _, l := range layers {
 		for _, p := range []*cudaLoraProj{l.q, l.k, l.v, l.o, l.gate, l.up, l.down} {
 			if p == nil {
 				continue
@@ -67,15 +69,61 @@ func (r *cudaResident) releaseLoraLayers() {
 	}
 }
 
-// SetAdapter implements decoder.ResidentAdapter: uploads (layers != nil) or clears (layers ==
-// nil) the compute-time LoRA delta for every subsequent Forward call, until the next
-// SetAdapter. Runs on the executor thread (r.do) like every other device-touching call in this
-// file — CUDA contexts are thread-affine, and BuildResident's own setup follows the same rule.
+// loraCacheDisabled is the escape hatch / A-B switch for the adapter device cache (audit P-10),
+// same convention as GOINFER_NO_RESIDENT_REUSE: with it set, every bind uploads and every clear
+// frees, which is exactly the pre-cache behaviour.
+func loraCacheDisabled() bool { return os.Getenv("GOINFER_NO_LORA_CACHE") != "" }
+
+// loraKeyOf records what a bind would upload, projection by projection.
+func loraKeyOf(layers []decoder.ResidentAdapterLayer) [][7]loraProjKey {
+	key := make([][7]loraProjKey, len(layers))
+	for i := range layers {
+		for j, p := range projForCUDA(&layers[i]) {
+			if p != nil {
+				key[i][j] = loraProjKey{a: p.A, b: p.B, r: p.R, in: p.In, out: p.Out, scale: p.Scale}
+			}
+		}
+	}
+	return key
+}
+
+// sameLoraKey reports whether two keys name the same adapter: every projection's A and B are the
+// SAME backing arrays (not merely equal contents — identity, which is what makes the cached
+// device copy valid) with the same shape and scale.
+func sameLoraKey(x, y [][7]loraProjKey) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for i := range x {
+		for j := range x[i] {
+			p, q := &x[i][j], &y[i][j]
+			if unsafe.SliceData(p.a) != unsafe.SliceData(q.a) || len(p.a) != len(q.a) ||
+				unsafe.SliceData(p.b) != unsafe.SliceData(q.b) || len(p.b) != len(q.b) ||
+				p.r != q.r || p.in != q.in || p.out != q.out || p.scale != q.scale {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// SetAdapter implements decoder.ResidentAdapter: binds (layers != nil) or clears (layers == nil)
+// the compute-time LoRA delta for every subsequent Forward call, until the next SetAdapter. Runs on
+// the executor thread (r.do) like every other device-touching call in this file — CUDA contexts
+// are thread-affine, and BuildResident's own setup follows the same rule.
+//
+// Clearing UNBINDS but keeps the uploaded buffers (audit P-10), so the next bind of the same
+// adapter is a pointer swap rather than a full re-upload; a different adapter evicts them. The
+// cache holds one adapter — the most recently uploaded — so it adds no VRAM beyond what a bound
+// adapter already costs, and adapters that alternate still upload each time, as before.
 func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	return r.do(func() error {
-		r.releaseLoraLayers()
-		r.loraLayers = nil
+		r.loraLayers = nil // unbind first: every error below leaves NO adapter bound
 		if layers == nil {
+			if loraCacheDisabled() {
+				r.releaseLoraLayers(r.lora.cache)
+				r.lora.cache, r.lora.key = nil, nil
+			}
 			return nil
 		}
 		if r.graphs {
@@ -87,6 +135,14 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		if len(layers) != len(r.layers) {
 			return fmt.Errorf("cuda: SetAdapter got %d layers, model has %d", len(layers), len(r.layers))
 		}
+		key := loraKeyOf(layers)
+		if r.lora.cache != nil && !loraCacheDisabled() && sameLoraKey(key, r.lora.key) {
+			r.lora.hits++
+			r.loraLayers = r.lora.cache
+			return nil
+		}
+		r.releaseLoraLayers(r.lora.cache) // a different adapter: return the cached one first
+		r.lora.cache, r.lora.key = nil, nil
 		built := make([]cudaLoraLayer, len(layers))
 		for i := range layers {
 			projs := projForCUDA(&layers[i])
@@ -96,36 +152,23 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 					continue
 				}
 				if proj.R <= 0 || proj.R > loraRMax {
-					r.releaseLoraLayers2(built[:i+1])
+					r.releaseLoraLayers(built[:i+1])
 					return fmt.Errorf("cuda: SetAdapter: LoRA rank %d out of range (want 1..%d)", proj.R, loraRMax)
 				}
 				*dst[j] = &cudaLoraProj{a: r.up32(proj.A), b: r.up32(proj.B), rank: proj.R, outn: proj.Out, scale: proj.Scale}
 				if r.setupErr != nil {
 					err := r.setupErr
 					r.setupErr = nil
-					r.releaseLoraLayers2(built[:i+1])
+					r.releaseLoraLayers(built[:i+1])
 					return fmt.Errorf("cuda: SetAdapter: uploading layer %d projection %d: %w", i, j, err)
 				}
 			}
 		}
+		r.lora.uploads++
+		r.lora.cache, r.lora.key = built, key
 		r.loraLayers = built
 		return nil
 	})
-}
-
-// releaseLoraLayers2 is releaseLoraLayers over an explicit slice (not r.loraLayers) — used to
-// clean up a partially-built set on a mid-loop error in SetAdapter, so a rejected bind (bad
-// rank, a failed upload) never leaks the projections it already allocated.
-func (r *cudaResident) releaseLoraLayers2(layers []cudaLoraLayer) {
-	for _, l := range layers {
-		for _, p := range []*cudaLoraProj{l.q, l.k, l.v, l.o, l.gate, l.up, l.down} {
-			if p == nil {
-				continue
-			}
-			r.dev.ReleaseBuf(p.a)
-			r.dev.ReleaseBuf(p.b)
-		}
-	}
 }
 
 // applyLora dispatches one projection's compute-time LoRA delta into dst, ADDITIVELY — no-op if
@@ -145,4 +188,26 @@ func (r *cudaResident) applyLora(p *cudaLoraProj, aq, ascale Buffer, k int, dst 
 	return r.launch(r.fLoraUp, g1cfg(p.outn, 256),
 		Arg(p.b), Arg(r.loraT), Arg(dst),
 		gpu.ArgValue(int32(p.rank)), gpu.ArgValue(int32(p.outn)), gpu.ArgValue(p.scale))
+}
+
+// loraCacheState is the adapter device cache (audit P-10). generateInto binds an adapter before
+// every adapter generation and clears it after, and SetAdapter used to upload every A/B matrix
+// and free them all again each time — ~90 MB and ~400 allocations per request on a 7B at rank 16,
+// before the first token. The cache keeps the most recently bound adapter's buffers across a
+// clear, so repeated requests to one fine-tune (an agent loop) upload it once.
+type loraCacheState struct {
+	cache   []cudaLoraLayer  // device buffers of the most recently uploaded adapter
+	key     [][7]loraProjKey // what those buffers were uploaded FROM
+	uploads uint64           // binds that transferred an adapter to the device
+	hits    uint64           // binds that reused the cached one
+}
+
+// loraProjKey is one projection's identity. It holds the backing slices themselves — not just
+// their addresses — so the GC cannot free and reuse that memory while it is cached: the slices
+// alias the adapter's own loraDelta storage (decoder/residency.go residentAdapterProj), which a
+// fresh LoadAdapter never shares, even under the same name. The scalars are compared too.
+type loraProjKey struct {
+	a, b       []float32
+	r, in, out int
+	scale      float32
 }

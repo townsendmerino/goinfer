@@ -113,3 +113,13 @@ func (r *cudaResident) ResetPagerStatsForTest() {
 // caps it to measured free VRAM, and an over-request degrades to fewer slots rather than failing.
 // A slot-ladder arm that reported its REQUEST would silently collapse its top rungs into one.
 func (r *cudaResident) CacheSlotsForTest() int { return r.cacheSlots }
+
+// LoraCacheStatsForTest reports SetAdapter's bind counters (audit P-10): uploads is how many binds
+// transferred an adapter to the device, hits how many reused the cached one.
+func (r *cudaResident) LoraCacheStatsForTest() (uploads, hits uint64) {
+	_ = r.do(func() error {
+		uploads, hits = r.lora.uploads, r.lora.hits
+		return nil
+	})
+	return uploads, hits
+}

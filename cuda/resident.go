@@ -407,11 +407,12 @@ type cudaResident struct {
 	// rather than bind under graphs; graphs are opt-in (GOINFER_CUDA_GRAPHS) and off by default,
 	// so this only matters for that explicit opt-in, never for a default deployment.
 	loraLayers  []cudaLoraLayer
-	loraT       Buffer // [loraRMax]f32 scratch, shared by every projection/layer's down→up pair
-	graphs      bool   // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
-	graphsSync  bool   // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
-	graphMask   string // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
-	layerCap    bool   // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
+	loraT       Buffer         // [loraRMax]f32 scratch, shared by every projection/layer's down→up pair
+	lora        loraCacheState // audit P-10: the bound adapter's device cache + bind counters (cuda/lora.go)
+	graphs      bool           // CUDA graphs: replay each layer's static segments instead of re-issuing launches (off ⇒ byte-identical)
+	graphsSync  bool           // DEBUG probe: r.stream.Sync() after each segment replay (bisects inter- vs intra-segment ordering hazards)
+	graphMask   string         // DEBUG probe: if non-empty, replay ONLY the named segments (e.g. "A","B","C","AB") and issue the rest live — localizes a replay hazard to a segment
+	layerCap    bool           // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
 	layerCapBuf [][]float32
 
 	// hidCap is the PRODUCTION hidden-state seam (P10 / docs/spec/08): the resident

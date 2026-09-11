@@ -116,8 +116,16 @@ func TestLoRAResidentParityCUDA(t *testing.T) {
 // qDim=64, kvDim=32, inter=128 — testdata/llama-tiny/config.json), rank 4 / alpha 8 (scale 2).
 func buildLlamaTinyLoRAFixtureCUDA(t *testing.T) string {
 	t.Helper()
+	return buildLlamaTinyLoRAFixtureCUDASeeded(t, 0)
+}
+
+// buildLlamaTinyLoRAFixtureCUDASeeded is the same adapter with every weight pattern shifted by
+// off, so two calls with different offsets give two genuinely different adapters of one shape.
+func buildLlamaTinyLoRAFixtureCUDASeeded(t *testing.T, off int) string {
+	t.Helper()
 	const hidden, qDim, kvDim, inter, layers, r = 64, 64, 32, 128, 4, 4
 	fill := func(n, seed int) []float32 {
+		seed += off
 		d := make([]float32, n)
 		for i := range d {
 			// Same magnitude decoder/lora_compute_test.go's TestLoRACompute_forwardParity already
