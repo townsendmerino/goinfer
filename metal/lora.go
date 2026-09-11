@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"unsafe"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -29,19 +30,20 @@ import (
 // the gap to close first.
 
 // loraRMax bounds the LoRA rank this backend accepts — generous against real adapters (typically
-// rank 4-64, rarely above 128) and small enough that loraT (below) costs nothing. SetAdapter
-// declines (does not silently truncate) a projection whose rank exceeds it.
+// rank 4-64, rarely above 128) and small enough that lora_delta's fixed-size threadgroup t[256]
+// scratch (kernels.go) always fits it. SetAdapter declines (does not silently truncate) a
+// projection whose rank exceeds it.
 const loraRMax = 256
 
 // residLoRAProj is one projection's bound delta: the device-resident A[R,In]/B[Out,R] matrices
-// (row-major f32, PEFT's own layout) plus the small uniforms lora_delta_down/_up need. out is
-// kept as a plain Go int (not a uniform buffer) — it only sizes lora_delta_up's dispatch grid,
-// never read inside a kernel (an exact non-uniform grid needs no bounds check).
+// (row-major f32, PEFT's own layout) plus the uniforms the fused lora_delta kernel needs (P-11,
+// audit-2026-09-10). uOut is a uniform buffer, not a plain Go dispatch-size int, because the
+// fused kernel's up stage strides ITS OWN threads over Out rows internally — it needs the value
+// INSIDE the kernel now, not just to size an external grid.
 type residLoRAProj struct {
-	a, b   Buffer // A[R,In], B[Out,R]
-	uK, uR Buffer // uint32 uniforms: K=In (lora_delta_down's reduction width), R (both kernels)
-	uScale Buffer // float32 uniform: this projection's LoRA scale (alpha/rank)
-	out    int
+	a, b         Buffer // A[R,In], B[Out,R]
+	uK, uR, uOut Buffer // uint32 uniforms: K=In, R, Out
+	uScale       Buffer // float32 uniform: this projection's LoRA scale (alpha/rank)
 }
 
 // residLoRALayer is one transformer layer's per-projection bound deltas; a nil field is a
@@ -65,24 +67,78 @@ func releaseLoRALayers(d *Device, layers []residLoRALayer) {
 			d.ReleaseBuf(p.b)
 			d.ReleaseBuf(p.uK)
 			d.ReleaseBuf(p.uR)
+			d.ReleaseBuf(p.uOut)
 			d.ReleaseBuf(p.uScale)
 		}
 	}
 }
 
+// loraProjIdentical reports whether two ResidentAdapterProj values describe the SAME uploaded
+// delta — compared by the A/B slices' DATA POINTERS, not their contents. residentAdapterLayers
+// (decoder/residency.go) never copies a loraDelta's A/B — it wraps the loraRuntime's own,
+// load-time-allocated-and-never-mutated backing arrays in a fresh []ResidentAdapterLayer on
+// every call, so the same adapter produces the same data pointers on every SetAdapter call for
+// as long as it stays loaded. Two nils match (both untargeted); one nil and one non-nil do not.
+func loraProjIdentical(a, b *decoder.ResidentAdapterProj) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return unsafe.SliceData(a.A) == unsafe.SliceData(b.A) && unsafe.SliceData(a.B) == unsafe.SliceData(b.B)
+}
+
+// loraLayersIdentical reports whether layers is the SAME adapter bind as cached (P-10's cache
+// key) — same length, and every projection in every layer pointer-identical per
+// loraProjIdentical. A nil or length-mismatched cached side never matches.
+func loraLayersIdentical(layers, cached []decoder.ResidentAdapterLayer) bool {
+	if len(layers) != len(cached) || layers == nil {
+		return false
+	}
+	for i := range layers {
+		l, c := layers[i], cached[i]
+		if !loraProjIdentical(l.Q, c.Q) || !loraProjIdentical(l.K, c.K) || !loraProjIdentical(l.V, c.V) ||
+			!loraProjIdentical(l.O, c.O) || !loraProjIdentical(l.Gate, c.Gate) ||
+			!loraProjIdentical(l.Up, c.Up) || !loraProjIdentical(l.Down, c.Down) {
+			return false
+		}
+	}
+	return true
+}
+
 // SetAdapter implements decoder.ResidentAdapter: uploads (layers != nil) or clears (layers ==
 // nil) the compute-time LoRA delta for every subsequent Forward/ForwardN call, until the next
-// SetAdapter. Always releases whatever was previously bound first — a bind that returns an error
-// leaves NO adapter bound (r.loraLayers is nil), which is what generateInto's fallback-to-CPU
-// path assumes (it never calls Forward on a half-bound resident).
+// SetAdapter. A bind that returns an error leaves NO adapter bound (r.loraLayers is nil), which
+// is what generateInto's fallback-to-CPU path assumes (it never calls Forward on a half-bound
+// resident).
+//
+// C-07: stopExec FIRST, before touching r.loraLayers at all — the pipelined executor
+// (ForwardEmbPipe/execLoop) may already hold a pre-encoded "next" command buffer that baked in
+// the OLD r.loraLayers at encode time. Left running, that buffer would be committed under the
+// NEW adapter state on the very next Forward call: one token's K/V computed with the wrong (or a
+// just-released) delta, corrupting every later token that attends to it. stopExec drains and
+// tears the executor down; ForwardEmbPipe re-arms it lazily on its next call, encoding fresh
+// under whatever r.loraLayers this call leaves behind. Safe with no extra lock: SetAdapter and
+// ForwardEmbPipe are never concurrent (the resBusy winner's own sequential SetAdapter → Forward*
+// → SetAdapter(nil)).
+//
+// P-10: layers == nil (the end-of-generation clear) does NOT release r.loraCached — it only nils
+// r.loraLayers, so applyResidentLoRA's dispatch sites no-op. The device buffers stay resident,
+// keyed against r.loraCacheSrc, for a future SAME-adapter rebind (the dominant real shape: one
+// chat session, many turns, bind→clear→bind→clear on the identical adapter every turn) to reuse
+// with NO re-upload and NO device allocation. A bind of a DIFFERENT adapter evicts the cache
+// (releases the old buffers) exactly as before P-10 — this never holds more than one adapter's
+// worth of device memory at a time.
 func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
-	releaseLoRALayers(r.d, r.loraLayers)
-	r.loraLayers = nil
+	r.stopExec()
 	if layers == nil {
+		r.loraLayers = nil
 		return nil
 	}
 	if len(layers) != r.nL {
 		return fmt.Errorf("metal: SetAdapter got %d layers, model has %d", len(layers), r.nL)
+	}
+	if loraLayersIdentical(layers, r.loraCacheSrc) {
+		r.loraLayers = r.loraCached
+		return nil
 	}
 	conv := func(p *decoder.ResidentAdapterProj) (*residLoRAProj, error) {
 		if p == nil {
@@ -94,8 +150,8 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		return &residLoRAProj{
 			a: NewBufferFloats(r.d, p.A), b: NewBufferFloats(r.d, p.B),
 			uK: NewBufferU32(r.d, uint32(p.In)), uR: NewBufferU32(r.d, uint32(p.R)),
+			uOut:   NewBufferU32(r.d, uint32(p.Out)),
 			uScale: NewBufferFloats(r.d, []float32{p.Scale}),
-			out:    p.Out,
 		}, nil
 	}
 	out := make([]residLoRALayer, len(layers))
@@ -123,7 +179,10 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			return err
 		}
 	}
+	releaseLoRALayers(r.d, r.loraCached) // evict the previous (different) adapter's device buffers
 	r.loraLayers = out
+	r.loraCached = out
+	r.loraCacheSrc = layers
 	return nil
 }
 
@@ -132,14 +191,13 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 // SAME quantized activation the base projection this delta rides alongside already consumed
 // (see the file comment). out must already hold the base projection's result — the delta is
 // added on top, matching applyLoRA's "matmul, then add" order exactly.
+//
+// ONE dispatch, not two (P-11, audit-2026-09-10) — lora_delta (kernels.go) fuses the down and up
+// GEMVs into a single kernel over one threadgroup, removing a whole dispatch's launch overhead
+// per targeted projection.
 func (r *resident) applyResidentLoRA(e *Encoder, p *residLoRAProj, aq, aSc, out Buffer) {
 	if p == nil {
 		return
 	}
-	e.Dispatch(r.pLoraDown, tgReduceNorm, tgReduceNorm, aq, aSc, p.a, r.loraT, p.uK, p.uR)
-	tg := p.out
-	if tg > 256 {
-		tg = 256
-	}
-	e.Dispatch(r.pLoraUp, p.out, tg, p.b, r.loraT, out, p.uR, p.uScale)
+	e.Dispatch(r.pLoraDelta, tgReduceNorm, tgReduceNorm, aq, aSc, p.a, p.b, out, p.uK, p.uR, p.uOut, p.uScale)
 }

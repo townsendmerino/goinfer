@@ -822,32 +822,38 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
 
-// lora_delta_down / lora_delta_up: compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md), the
-// two-GEMV low-rank delta y[o] += scale·Σ_r B[o,r]·(A·x)[r]. Split into two dispatches (rather
-// than fused) because they have different natural parallelism: the down-project reduces over K
-// (potentially thousands of elements) per rank, the up-project has no reduction at all (one MAC
-// chain of length R per output row). x is the SAME quantized activation (aq/asc) the base
-// projection this delta rides alongside already consumed — matching applyLoRA's CPU reference,
-// which takes the identical input the base matmul does (decoder/lora.go).
+// lora_delta: compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md), the two-GEMV low-rank
+// delta y[o] += scale·Σ_r B[o,r]·(A·x)[r], fused into ONE dispatch (P-11, audit-2026-09-10 —
+// mirrors CUDA's own P-11 finding, "14 extra launches per layer per token... before the
+// serialized reduction": up to 7 targeted projections/layer each paid TWO dispatches — down then
+// up — for pure per-dispatch launch overhead no different in kind from CUDA's). x is the SAME
+// quantized activation (aq/asc) the base projection this delta rides alongside already consumed
+// — matching applyLoRA's CPU reference, which takes the identical input the base matmul does
+// (decoder/lora.go).
 //
-// lora_delta_down: ONE THREADGROUP ONLY (dispatched with n==tg, e.g. 256) — R is small (LoRA
-// ranks are typically 4-64), so looping over ranks serially and reusing one threadgroup's
-// reduction scratch is simpler and cheap; a single dispatch computing all R ranks in parallel
-// would need R× the threadgroup memory for one-time use. t[R] is a small scratch buffer, reused
-// across every projection/layer within one command buffer's dispatch order (dispatches in one
-// MTLComputeCommandEncoder observe each other's writes, same guarantee every other multi-stage
-// GEMV in this file already relies on).
-kernel void lora_delta_down(device const char* aq[[buffer(0)]], device const float* asc[[buffer(1)]],
-    device const float* A[[buffer(2)]], device float* t[[buffer(3)]],
-    constant uint& K[[buffer(4)]], constant uint& R[[buffer(5)]],
+// ONE THREADGROUP ONLY (dispatched with n==tg, e.g. 256), same as the down-only kernel this
+// replaces — R is small (LoRA ranks are typically 4-64, capped at loraRMax=256 in Go), so looping
+// over ranks serially and reusing one threadgroup's reduction scratch is cheap. t[R] is now
+// PURELY threadgroup-local (no longer a device-memory scratch buffer reused across dispatches —
+// fusing removed the round trip that required one). The up stage, previously one thread per
+// output row across a wide multi-threadgroup grid, now STRIDES each of the 256 threads over
+// however many output rows there are — more serial work per thread when Out is large (thousands),
+// but R multiply-adds per row is cheap enough that trading a little up-stage parallelism for one
+// fewer dispatch (halving the per-projection dispatch count) is the right trade at this size.
+kernel void lora_delta(device const char* aq[[buffer(0)]], device const float* asc[[buffer(1)]],
+    device const float* A[[buffer(2)]], device const float* B[[buffer(3)]],
+    device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], constant uint& R[[buffer(6)]], constant uint& Out[[buffer(7)]],
+    constant float& scale[[buffer(8)]],
     uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
-    // Fixed-size STATIC threadgroup array (matches rmsnorm_quant's own reduction, kernels.go
-    // top) — tgs is pinned to tgReduceNorm (256, model.go) by every dispatch site, same as every
+    // Fixed-size STATIC threadgroup arrays (matches rmsnorm_quant's own reduction, kernels.go
+    // top) — tgs is pinned to tgReduceNorm (256, model.go) by the dispatch site, same as every
     // other norm-class reduction kernel in this file. Deliberately NOT a [[threadgroup(0)]]
     // dynamic parameter: that form requires the caller to use DispatchTG (which sets the length
     // explicitly) rather than plain Dispatch — using a static array here avoids that footgun
     // entirely, the same way every other single-threadgroup reduction kernel in this file does.
     threadgroup float red[256];
+    threadgroup float t[256]; // R <= loraRMax (256, model.go)
     float sc = asc[0];
     for (uint r = 0; r < R; r++) {
         device const float* Ar = A + r*K;
@@ -859,16 +865,12 @@ kernel void lora_delta_down(device const char* aq[[buffer(0)]], device const flo
         if (tid == 0) t[r] = red[0];
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
-}
-// lora_delta_up: one thread per output row (dispatched with n==Out, exact non-uniform grid —
-// no bounds guard needed). R is small, so a serial dot product per row is cheap.
-kernel void lora_delta_up(device const float* B[[buffer(0)]], device const float* t[[buffer(1)]],
-    device float* out[[buffer(2)]], constant uint& R[[buffer(3)]], constant float& scale[[buffer(4)]],
-    uint row[[thread_position_in_grid]]) {
-    device const float* Br = B + row*R;
-    float acc = 0.0f;
-    for (uint r = 0; r < R; r++) acc += Br[r] * t[r];
-    out[row] += scale*acc;
+    for (uint row = tid; row < Out; row += tgs) {
+        device const float* Br = B + row*R;
+        float acc = 0.0f;
+        for (uint r = 0; r < R; r++) acc += Br[r] * t[r];
+        out[row] += scale*acc;
+    }
 }
 
 // qk_norm: per-head RMSNorm on Q and K in the fused qkv buffer, applied BEFORE RoPE (Qwen3,

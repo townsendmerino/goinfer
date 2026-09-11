@@ -195,14 +195,24 @@ type resident struct {
 	attnSink                 bool    // arch.gptoss != nil
 	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
 
-	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md — see lora.go). pLoraDown/pLoraUp and
-	// loraT are allocated once in BuildResident unconditionally (cheap; same "always create, gate
-	// on the per-model state" shape every other optional pipeline in this struct already uses).
+	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md — see lora.go). pLoraDelta is
+	// allocated once in BuildResident unconditionally (cheap; same "always create, gate on the
+	// per-model state" shape every other optional pipeline in this struct already uses). Fused
+	// down+up into one kernel/dispatch (P-11, audit-2026-09-10) — t[R] lives in the kernel's own
+	// threadgroup memory now, no device-side scratch buffer to hold between dispatches.
 	// loraLayers is nil until SetAdapter binds one; the dispatch sites (encodeAttention/encodeLayer)
 	// no-op per projection when it is nil or the targeted projection's delta is nil.
-	pLoraDown, pLoraUp Pipeline
-	loraT              Buffer // [loraRMax]float32 scratch, reused across every projection/layer
-	loraLayers         []residLoRALayer
+	pLoraDelta Pipeline
+	loraLayers []residLoRALayer
+
+	// loraCacheSrc/loraCached are P-10's single-adapter device cache (audit-2026-09-10): the
+	// source layers a bind's device buffers were built from, and those buffers themselves,
+	// KEPT ALIVE across a SetAdapter(nil) clear rather than released — a rebind of the SAME
+	// adapter (the common "one chat session, many turns" shape internal/serveapp/main.go's
+	// N-adapters-one-resident design produces) then skips the re-upload entirely instead of
+	// paying it on every generation. See SetAdapter's own comment for the identity check.
+	loraCacheSrc []decoder.ResidentAdapterLayer
+	loraCached   []residLoRALayer
 
 	qkv, gu Buffer // fused QKV out, fused gate/up out
 
@@ -257,8 +267,13 @@ type resident struct {
 
 	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
 	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms
-	// host encode bubble. Lazily started on first ForwardEmbPipe; stopped in Close.
-	execOnce sync.Once
+	// host encode bubble. Lazily (re-)started on the first ForwardEmbPipe after execReq is nil —
+	// C-07: SetAdapter tears the executor down (stopExec) rather than a sync.Once, because its
+	// pre-encoded t+1 buffer bakes in r.loraLayers AT ENCODE TIME; a bind/switch/clear between
+	// two ForwardEmbPipe calls left that stale buffer to be committed under the NEW adapter
+	// state. ForwardEmbPipe and SetAdapter are never concurrent (the resBusy winner's own
+	// sequential SetAdapter → Forward* → SetAdapter(nil)), so the plain nil-check below needs no
+	// extra lock.
 	execReq  chan execJob
 	execAck  chan []float32
 	execDone chan struct{} // closed when execLoop returns — Close must WAIT on this before freeing
@@ -559,8 +574,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.sandwich = m.SandwichNormResident()
 	r.postOnly = m.PostOnlyNormResident() // G5: Olmo 3/Olmo Hybrid
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
-	r.pLoraDown, r.pLoraUp = pipe("lora_delta_down"), pipe("lora_delta_up") // G3: compute-time LoRA
-	r.loraT = d.NewBufferLen(loraRMax)
+	r.pLoraDelta = pipe("lora_delta") // G3/P-11: compute-time LoRA, down+up fused into one kernel
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
 	r.layerNorm = m.LayerNormResident()
 	r.parallelBlock = m.ParallelBlockResident() // G5: Cohere/Command-R + Cohere2/Command-R7B
@@ -1333,12 +1347,12 @@ func (r *resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 	if r.moe != nil && r.moe.paged { // generic MoE's twin — same reasoning, same fallback
 		return r.ForwardEmb(emb, pos)
 	}
-	r.execOnce.Do(func() {
+	if r.execReq == nil {
 		r.execReq = make(chan execJob)
 		r.execAck = make(chan []float32)
 		r.execDone = make(chan struct{})
 		go r.execLoop()
-	})
+	}
 	r.execReq <- execJob{emb: emb, pos: pos}
 	return <-r.execAck
 }
