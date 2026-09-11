@@ -313,6 +313,10 @@ type Context struct {
 	moeExpertGptOssDownShader   *wgpu.ShaderModule
 	moeExpertGptOssDownPipeline *wgpu.ComputePipeline
 	moeExpertGptOssDownLayout   *wgpu.BindGroupLayout
+	// moeExpertGptOssDownW4*: the int4 twin, for Quant "int4" expert stacks (audit C-06).
+	moeExpertGptOssDownW4Shader   *wgpu.ShaderModule
+	moeExpertGptOssDownW4Pipeline *wgpu.ComputePipeline
+	moeExpertGptOssDownW4Layout   *wgpu.BindGroupLayout
 	// Gated shared-expert combine (Lever C3d, qwen2_moe): xd[n] += sigmoid(gl[0])·src[n].
 	sharedGateShader   *wgpu.ShaderModule
 	sharedGatePipeline *wgpu.ComputePipeline

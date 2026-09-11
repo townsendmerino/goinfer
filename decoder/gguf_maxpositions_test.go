@@ -1,6 +1,9 @@
 package decoder
 
 import (
+	"os"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -104,8 +107,17 @@ func TestGGUFConfig_everyArchitectureReadsMaxPositions(t *testing.T) {
 		{"llama4", dense("llama4")},
 		{"gpt-oss", dense("gpt-oss")},
 	}
-	if len(cases) != 18 {
-		t.Fatalf("this covers %d architectures; ggufConfig's switch dispatches 18 functions (19 case labels, nemotron_h_moe aliases nemotron_h) — update this table, not just its count", len(cases))
+	// The architecture list comes from ggufConfig's own switch, not a hand count (audit-2026-09-10
+	// G-13(c)). A hard-coded "18" let a 20th case with no MaxPositions pass untouched.
+	covered := map[string]bool{}
+	for _, tc := range cases {
+		covered[tc.name] = true
+	}
+	for _, label := range ggufConfigCaseLabels(t) {
+		if !covered[label] && !covered[ggufConfigAliases[label]] {
+			t.Errorf("ggufConfig dispatches %q, which this test does not cover — add a case for it, so "+
+				"that a family which forgets MaxPositions fails here", label)
+		}
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -123,4 +135,38 @@ func TestGGUFConfig_everyArchitectureReadsMaxPositions(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ggufConfigAliases maps a ggufConfig case label that shares another label's builder to the label
+// this test covers it under.
+var ggufConfigAliases = map[string]string{"gemma3_text": "gemma3", "nemotron_h_moe": "nemotron_h"}
+
+// ggufConfigCaseLabels reads ggufConfig's switch labels from gguf.go, so the covered set is derived
+// from the dispatch itself rather than kept in step with it by hand.
+func ggufConfigCaseLabels(t *testing.T) []string {
+	t.Helper()
+	b, err := os.ReadFile("gguf.go")
+	if err != nil {
+		t.Fatalf("read gguf.go: %v", err)
+	}
+	src := string(b)
+	start := strings.Index(src, "\nfunc ggufConfig(")
+	if start < 0 {
+		t.Fatal("ggufConfig not found in gguf.go")
+	}
+	end := strings.Index(src[start+1:], "\n}\n")
+	if end < 0 {
+		t.Fatal("ggufConfig's closing brace not found")
+	}
+	body := src[start : start+1+end]
+	var labels []string
+	for _, m := range regexp.MustCompile(`(?m)^\s*case\s+([^:]+):`).FindAllStringSubmatch(body, -1) {
+		for _, q := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(m[1], -1) {
+			labels = append(labels, q[1])
+		}
+	}
+	if len(labels) < 15 {
+		t.Fatalf("found only %d case labels in ggufConfig — the scan is broken", len(labels))
+	}
+	return labels
 }

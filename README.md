@@ -213,7 +213,7 @@ goinfer-chat pull gpt-oss-20b
 
 ```bash
 # <!-- smoke-help --> the flag to reach for whenever the checkpoint file is larger than about half your physical RAM
-goinfer-serve -stream-weights -weight-cache 6GiB -model ~/models/gpt-oss-20b-MXFP4.gguf
+goinfer-serve -stream-weights -weight-cache 6 -model ~/models/gpt-oss-20b-MXFP4.gguf
 ```
 
 Resident memory is then capped near `-weight-cache` rather than the model size, because only the

@@ -427,7 +427,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			ensures = append(ensures, c.ensureSharedGate)
 		}
 		if m.moe.gptoss { // G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink's three MoE kernels
-			ensures = append(ensures, c.ensureRouteGptOss, c.ensureGptOssGluQuant, c.ensureMoEExpertGptOssDown)
+			ensures = append(ensures, c.ensureRouteGptOss, c.ensureGptOssGluQuant, c.ensureMoEExpertGptOssDown, c.ensureMoEExpertGptOssDownW4)
 		}
 	}
 	if m.mla != nil {
@@ -850,14 +850,16 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// ropeKUniFor feeds ropeStoreShaderWGSL, whose P struct has TWO distinct roles: slot 3
 	// ("pos") is the rotation angle, slot 5 ("base") is the KV-cache write offset pos*kvDim —
 	// confirmed directly against the shader source (attention.go). Only slot 3 switches to
-	// ropePos; slot 5 stays keyed on the true sequential pos.
+	// ropePos; slot 5 stays keyed on the true sequential pos. Slot 7 ("spos") carries the true pos
+	// too: the int8 variant indexes its per-(position, KV-head) scale by it, and the f32/f16 variants
+	// never read it. The int8 variant used slot 3, the rope angle, until audit-2026-09-10 C-09.
 	ropeKUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
 		if b, ok := g.ropeKUnis[rs]; ok {
 			return b
 		}
 		b := uni([]uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), 0, f32bits(rs), 0, uint32(g.nKV), 0})
 		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos, ropePos int) []uint32 {
-			return []uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(ropePos), f32bits(rs), uint32(pos * g.kvDim), uint32(g.nKV), 0}
+			return []uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(ropePos), f32bits(rs), uint32(pos * g.kvDim), uint32(g.nKV), uint32(pos)}
 		}})
 		g.ropeKUnis[rs] = b
 		return b
@@ -995,7 +997,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		moeExpertGptOssDown = func(aq, as *wgpu.Buffer, s *ResidentStackedW8A8, idx, wgt, dbias, dst *wgpu.Buffer, slot int) {
 			d := uni([]uint32{uint32(s.kp), uint32(s.rows), uint32(slot), 0})
 			gx, gy := gemvGrid(s.rows)
-			add(c.moeExpertGptOssDownPipeline, bind(c.moeExpertGptOssDownLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, dbias, d), gx, gy)
+			pl, ly := c.gptOssDownPipelineFor(s)
+			add(pl, bind(ly, aq, s.bq, as, s.bScales, dst, idx, wgt, dbias, d), gx, gy)
 		}
 	}
 	// sharedGatedCombine records the qwen2_moe gated shared-expert add: dst[n] +=

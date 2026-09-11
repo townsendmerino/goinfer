@@ -64,6 +64,18 @@ if [ "${#HELPCMDS[@]}" -gt 0 ]; then
 					echo "    FLAG NOT IN --help: $f"; fail=1
 				fi
 			done
+			# ... and every VALUE it gives must parse (audit-2026-09-10 G-13(f)). A flag that exists with
+			# a value the binary rejects is the same dead end for the reader: M-47's -weight-cache 6GiB
+			# died with "invalid value" and a 39-flag usage dump. Only serve lines, whose arguments are
+			# all flags, are parsed this way; -h ends the parse, and the timeout keeps a line that
+			# somehow runs anyway from hanging the gate.
+			read -r -a tok <<<"$c"
+			if [[ "${tok[0]}" == *serve ]]; then
+				out=$(timeout 20 "$GOBIN/serve" "${tok[@]:1}" -h 2>&1)
+				if echo "$out" | grep -q "invalid value"; then
+					echo "    VALUE DOES NOT PARSE: $(echo "$out" | grep -m1 'invalid value')"; fail=1
+				fi
+			fi
 			ran=$((ran + 1))
 		done
 	else

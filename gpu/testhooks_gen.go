@@ -232,3 +232,77 @@ func (c *Context) IndexedGEMVForTestInt4(s *ResidentStackedW8A8, aq []int8, aSca
 	stg.Unmap()
 	return out, nil
 }
+
+// GptOssDownForTest runs gpt-oss's down-projection combine standalone for one router slot:
+// dst[n] = dstInit[n] + wgt[slot]·(aScale·(aq·dequant(expert[idx[slot]])ᵀ)[n] + dbias[idx[slot]·N+n]).
+// It dispatches whatever gptOssDownPipelineFor selects for s, which is the resident builder's own
+// choice. So a stack routed to the wrong kernel fails here exactly as it does in decode (audit C-06).
+func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale float32, idx []int, wgt, dbias, dstInit []float32, slot int) ([]float32, error) {
+	if err := c.ensureMoEExpertGptOssDown(); err != nil {
+		return nil, err
+	}
+	if err := c.ensureMoEExpertGptOssDownW4(); err != nil {
+		return nil, err
+	}
+	N := s.rows
+	pl, ly := c.gptOssDownPipelineFor(s)
+	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-act", Contents: wgpu.ToBytes(packInt8(aq, 1, s.cols)), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, err
+	}
+	defer aBuf.Release()
+	asBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-as", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
+	defer asBuf.Release()
+	idxU := make([]uint32, len(idx))
+	for i, v := range idx {
+		idxU[i] = uint32(v)
+	}
+	idxBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-idx", Contents: wgpu.ToBytes(idxU), Usage: wgpu.BufferUsageStorage})
+	defer idxBuf.Release()
+	wgtBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-wgt", Contents: wgpu.ToBytes(wgt), Usage: wgpu.BufferUsageStorage})
+	defer wgtBuf.Release()
+	dbBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-dbias", Contents: wgpu.ToBytes(dbias), Usage: wgpu.BufferUsageStorage})
+	defer dbBuf.Release()
+	dstBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-dst", Contents: wgpu.ToBytes(dstInit), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	defer dstBuf.Release()
+	dims, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gd-dims", Contents: wgpu.ToBytes([]uint32{uint32(s.kp), uint32(N), uint32(slot), 0}), Usage: wgpu.BufferUsageUniform})
+	defer dims.Release()
+	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: s.bq, Size: s.bq.GetSize()},
+		{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: s.bScales, Size: s.bScales.GetSize()},
+		{Binding: 4, Buffer: dstBuf, Size: dstBuf.GetSize()}, {Binding: 5, Buffer: idxBuf, Size: idxBuf.GetSize()},
+		{Binding: 6, Buffer: wgtBuf, Size: wgtBuf.GetSize()}, {Binding: 7, Buffer: dbBuf, Size: dbBuf.GetSize()},
+		{Binding: 8, Buffer: dims, Size: dims.GetSize()},
+	}})
+	if err != nil {
+		return nil, err
+	}
+	defer bg.Release()
+	enc, _ := c.device.CreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(pl)
+	pass.SetBindGroup(0, bg, nil)
+	gx, gy := gemvGrid(N)
+	pass.DispatchWorkgroups(gx, gy, 1)
+	pass.End()
+	pass.Release()
+	stg, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	defer stg.Release()
+	enc.CopyBufferToBuffer(dstBuf, 0, stg, 0, uint64(N*4))
+	cmd, _ := enc.Finish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	var st wgpu.BufferMapAsyncStatus
+	if err := stg.MapAsync(wgpu.MapModeRead, 0, uint64(N*4), func(s wgpu.BufferMapAsyncStatus) { st = s }); err != nil {
+		return nil, err
+	}
+	c.device.Poll(true, nil)
+	if st != wgpu.BufferMapAsyncStatusSuccess {
+		return nil, fmt.Errorf("gpu: gpt-oss down map failed: %v", st)
+	}
+	out := make([]float32, N)
+	copy(out, wgpu.FromBytes[float32](stg.GetMappedRange(0, uint(N*4))))
+	stg.Unmap()
+	return out, nil
+}

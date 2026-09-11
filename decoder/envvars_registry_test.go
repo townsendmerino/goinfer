@@ -30,7 +30,9 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 		documented[v] = true
 	}
 
-	getenv := regexp.MustCompile(`os\.Getenv\("(GOINFER_[A-Z0-9_]+)"\)`)
+	// Every way the tree reads a knob, not just os.Getenv (audit-2026-09-10 G-13(e)): os.LookupEnv,
+	// and cmd/gate's env(key, default) helper, whose four knobs were undocumented and invisible here.
+	getenv := regexp.MustCompile(`(?:os\.Getenv|os\.LookupEnv|\benv)\("(GOINFER_[A-Z0-9_]+)"`)
 	anyRef := regexp.MustCompile(`"(GOINFER_[A-Z0-9_]+)"`)
 	readInProd := map[string]string{} // var -> first file that reads it
 	referencedAnywhere := map[string]bool{}

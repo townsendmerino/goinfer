@@ -65,8 +65,8 @@ func TestStagedDeviceNote(t *testing.T) {
 		quant   string
 		wantAny []string // note must contain at least one of these (nil = must be "")
 	}{
-		{"int4", []string{"no GPU dispatch", "resident runner"}},
-		{"int4mix", []string{"FFN tensors (int4)", "attention (int8) reaches webgpu"}},
+		{"int4", []string{"decode (one token) runs on webgpu"}},
+		{"int4mix", []string{"decode (one token) runs on webgpu"}},
 		{"int8", nil},
 		{"int8int8", nil},
 		{"", nil}, // native f32: webgpu's be.MatmulBT is called unconditionally

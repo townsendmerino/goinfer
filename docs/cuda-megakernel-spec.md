@@ -51,11 +51,11 @@ in `decoder/` changes:
 
 `BuildResident` uploads weights **once**; `Forward` rewrites only the input embedding
 + the position-dependent uniforms (rope pos, KV-store base `pos*kvDim`, `nKeys=pos+1`)
-per token — the same static-plan/per-token-delta split as `gpu/decoderunner.go:1088`.
+per token — the same static-plan/per-token-delta split as `gpu/decoderunner.go:1091`.
 
 ## 2. The per-layer op-DAG (what the megakernel fuses)
 
-One dense layer today = **~13 WGSL dispatches** (`gpu/decoderunner.go:957-958`). Ordered
+One dense layer today = **~13 WGSL dispatches** (`gpu/decoderunner.go:959-960`). Ordered
 stages (H=hidden, I=intermediate, hd=headDim, nH/nKV heads, kvDim=nKV·hd, half=rotaryDim/2):
 
 | # | stage | in→out | notes |

@@ -1410,6 +1410,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails
 		// if any other kernel declares more, naming this site.
 		//
+		// One kernel does: route_gptoss, at 4608 B/thread against moe_route's 4416. The census could
+		// not see it until its module list was derived from kernels.go's embeds (audit-2026-09-10
+		// G-13(b)); gptoss_act.ptx was one of the seven it missed. It is bound only on gpt-oss, the
+		// model the expert cache exists for, so on exactly that path the larger pool was left to grow
+		// on the first real token, after allocSlots had read free VRAM — by 8,388,608 B on the RTX
+		// 2070 SUPER (TestRouteGptOssGrowsPoolPastMoERoute; 0 B once both are forced). It is forced
+		// below wherever it is bound. Forcing both is right whether the pool is sized by the max or
+		// by the sum.
+		//
 		// REGIME: `max` was measured with sequential single-stream launch, which is what goinfer
 		// does. Concurrent streams would reopen whether the bound is max or a sum.
 		if r.moe && r.cacheExperts {
@@ -1423,6 +1432,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				gpu.ArgValue(int32(0)), gpu.ArgValue(float32(1)),
 				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
 				return fmt.Errorf("pre-sizing warm-up of moe_route failed: %w", e)
+			}
+			if r.gptOssRoute != (Pipeline{}) {
+				// nE=1, k=1, with the same discarded outputs and rLogits as the bias.
+				if e := r.stream.Launch(r.gptOssRoute, onecfg(1, 0),
+					Arg(r.rLogits), Arg(r.rLogits), Arg(r.rIdx), Arg(r.rWgt),
+					gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+					return fmt.Errorf("pre-sizing warm-up of route_gptoss failed: %w", e)
+				}
 			}
 			// Synchronise: the reservation must be a fact before free VRAM is read, and an async
 			// launch would let allocSlots read the pre-launch figure and reproduce the whole defect.

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/tokenizer"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -19,9 +22,23 @@ func TestEmbedExample_outputIsNotARepeatedToken(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a binary and loads a real checkpoint")
 	}
-	fixture := "../../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+	// A fixture whose chat template chat.Detect RECOGNISES (ChatML), so the example's templated path
+	// is the one this drives (audit-2026-09-10 G-13(g)). TinyLlama's Zephyr-style template is not one
+	// Detect knows: the example fed it the raw prompt with or without chat.Detect, and its output was
+	// byte-identical either way, so removing the call could not fail this test.
+	fixture := "../../testdata/qwen2-gguf/qwen2.5-0.5b-instruct-q8_0.gguf"
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skipf("no fixture at %s", fixture)
+	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("no go toolchain")
+	}
+	tok, err := tokenizer.LoadGGUF(fixture)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	if _, err := chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken: tok.Has}); err != nil {
+		t.Fatalf("chat.Detect does not recognise %s's template (%v), so the templated path would go untested", fixture, err)
 	}
 
 	bin := filepath.Join(t.TempDir(), "embed")
@@ -33,24 +50,23 @@ func TestEmbedExample_outputIsNotARepeatedToken(t *testing.T) {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 
+	// The fixture is present, so a failure to run is a failure, not a skip.
 	out, err := exec.Command(bin, fixture, "Say hello in five words").CombinedOutput()
 	if err != nil {
-		t.Skipf("could not run against %s (fixture likely absent on this box): %v\n%s", fixture, err, out)
+		t.Fatalf("run against %s: %v\n%s", fixture, err, out)
 	}
 	text := strings.TrimSpace(string(out))
 	if text == "" {
 		t.Fatal("embed example produced no output")
 	}
+	// A templated instruct model answers and ENDS its turn; fed the raw prompt it runs on to the
+	// 256-token cap. Measured on this fixture: 32 chars with the template, 852 without it. The 400
+	// bound was fixed before the run that tested it.
+	if len(text) > 400 {
+		t.Fatalf("the reply ran %d chars — the model never ended its turn, which is the shape of a prompt "+
+			"sent without its chat template:\n%s", len(text), text)
+	}
 
-	// A CONSECUTIVE-repeat check, not "this substring appears 3 times anywhere" — the latter
-	// false-positives on real, varied output that shares a phrase template (this fixture likes
-	// numbered lists that each start "I'm not X, but I'm Y", which is thematically repetitive
-	// and not the defect). What both the original "Hello. Hello. Hello." shape and a
-	// mid-generation "...Byeagain.User:Byeagain.Assistant:Byeagain..." loop have in common is a
-	// substring immediately followed by itself, back to back, several times running — a real
-	// loop, not similar sentences scattered through otherwise-different text. No word-split (this
-	// example decodes token-by-token with no UTF-8/space holdback — an accepted limitation of
-	// staying under the 40-line cap — so whitespace between decoded pieces is unreliable).
 	if run, reps := longestConsecutiveRepeat(text, 8); reps >= 3 {
 		t.Fatalf("%q repeats %d times back to back — degenerate output:\n%s", run, reps, text)
 	}

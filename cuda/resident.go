@@ -362,13 +362,18 @@ type cudaResident struct {
 	// passed raw into rope_kv_batched, which must recompute it per row (position varies within
 	// one batched launch, unlike decode's single scalar per call).
 	attnTempBeta, attnTempOrigMaxPos float64
-	vNormUnit                        Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
-	qkNorm                           bool   // arch needs per-head Q/K RMSNorm before RoPE
-	qkNormWhole                      bool   // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
-	rmsAddOne                        bool   // (1+w) offset — false for Qwen3/Llama
-	act                              int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
-	sandwich                         bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
-	postOnly                         bool   // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
+	// qTempRowsB is rope_kv_batched's per-row query-scale table (attnTempRows, audit G-11), sized to
+	// the largest batched pass seen; qTempRowsKey is the (startPos, M) it currently holds.
+	qTempRowsB   Buffer
+	qTempRowsCap int
+	qTempRowsKey [2]int
+	vNormUnit    Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
+	qkNorm       bool   // arch needs per-head Q/K RMSNorm before RoPE
+	qkNormWhole  bool   // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
+	rmsAddOne    bool   // (1+w) offset — false for Qwen3/Llama
+	act          int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
+	sandwich     bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
+	postOnly     bool   // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
 	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
@@ -2963,7 +2968,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	// their K/V in the cache, and the head is a big-vocab matmul + ~1 MB readback + softcap. The layer
 	// loop above already wrote this position's K/V identically, so decode stays byte-identical.
 	if head {
-		if e := r.rms(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
+		if e := r.norm(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
 			return e
 		}
 		if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {

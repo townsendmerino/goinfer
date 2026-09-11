@@ -547,3 +547,13 @@ func (c *Context) ensureMoEExpertGptOssDown() error {
 	c.moeExpertGptOssDownShader, c.moeExpertGptOssDownPipeline, c.moeExpertGptOssDownLayout = sh, pl, c.bgl(pl)
 	return nil
 }
+
+// gptOssDownPipelineFor picks gpt-oss's down-projection combine kernel for a stacked expert set.
+// It is the one place that choice is made, shared by the resident builder and GptOssDownForTest,
+// so the test exercises the builder's own selection (audit-2026-09-10 C-06).
+func (c *Context) gptOssDownPipelineFor(s *ResidentStackedW8A8) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
+	if s.w4 { // int4 stack: nibbles + f16 group scales, which the int8 kernel misreads
+		return c.moeExpertGptOssDownW4Pipeline, c.moeExpertGptOssDownW4Layout
+	}
+	return c.moeExpertGptOssDownPipeline, c.moeExpertGptOssDownLayout
+}

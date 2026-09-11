@@ -20,6 +20,11 @@ import (
 // they also land near 0.90 the bar is wrong; if they land near 0.99 then gpt-oss has a real
 // remaining defect.
 func TestParityFloorControl(t *testing.T) {
+	// A measurement harness: it prints cosines and asserts nothing, so a gate cell that reaches it
+	// must count a SKIP, not a PASS (audit-2026-09-10 G-13(j)). Run it by hand to take the reading.
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("GOINFER_PARITY_FLOOR_CONTROL") == "" {
+		t.Skip("measurement harness, no assertion — set GOINFER_HEAVY_TESTS=1 GOINFER_PARITY_FLOOR_CONTROL=1")
+	}
 	seed := []int{3, 14, 7, 42, 1, 99, 5, 60}
 	// Measured 2026-08-31 on the RTX 2070 SUPER, all via this harness:
 	//
