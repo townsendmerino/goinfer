@@ -260,7 +260,7 @@ gate it produced cannot answer the question it was built for:
 
 **What replaces it.** The reference is the CPU backend on the same GGUF with f32 activations —
 `Options{Backend:"cpu", Quant:""}` (f32 weights) where the model fits, else `Quant:"int8"`
-(weight-only per-row int8, f32 activations; `decoder/model.go:195`). Both Metal arms share identical
+(weight-only per-row int8, f32 activations; `decoder/model.go:196`). Both Metal arms share identical
 int4 weights, so the weight-requantisation error is common-mode and the comparison isolates the
 activation path. The reference's own greedy 64-token continuation is the teacher-forced token
 stream for both arms. Reference logits are computed once per (model, K) in a separate process and

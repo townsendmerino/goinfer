@@ -1485,8 +1485,8 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:1098`) does
-  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1348/1013`)
-  can't reroute without breaking the batch caller `decoder/model.go:1135`
+  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1359/1014`)
+  can't reroute without breaking the batch caller `decoder/model.go:1146`
   (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
 - **MoE `moeMLP` allocates MB/token — DONE, P8.** `moeMLP` now takes an optional `*decodeScratch`,
@@ -1539,16 +1539,16 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   bit-identity is structural (per-element, no accumulation order to perturb), not merely convenient.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
-  cuda/resident.go:594,1182) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
+  cuda/resident.go:595,1183) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
 
 ### Medium / larger — verify + measure before funding
-- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:843) does Sync → D2H routing
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:844) does Sync → D2H routing
   indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `metal/gemma4_moe.go`).
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
   speculation). cuda/metal not frozen.
-- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1755) runs the selected experts
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1756) runs the selected experts
   sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
   association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
   against the added scratch VRAM.

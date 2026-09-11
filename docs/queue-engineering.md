@@ -938,7 +938,7 @@ of them:
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
 | `decoder/forwardn.go:1118` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
-| `decoder/model.go:869` | unchanged — same freeze |
+| `decoder/model.go:870` | unchanged — same freeze |
 | `metal/model.go:1065` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
@@ -1187,7 +1187,7 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 |---|---|---|
 | C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
-| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:657` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:658` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
@@ -1445,7 +1445,7 @@ needlessly dropping a field the buffered path wrote.
 
 **Fixed by testing the real thing:** `hasPopulatedLayers()` checks whether any body matmul weight
 actually has `Rows() > 0`, and `writeHeadGlobals` gates the label on that instead of on which
-writer is in use. `decoder/serialize.go:779` (`hasPopulatedLayers`).
+writer is in use. `decoder/serialize.go:789` (`hasPopulatedLayers`).
 
 **The other half mattered more than the byte count.** `quantLabel()`'s own "nothing matched" case
 returns `"native"` — a real, valid quant mode, not an empty string. Measured directly on an
