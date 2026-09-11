@@ -612,7 +612,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // ropeStoreI8: rotate K, per-head absmax → int8. One thread per KV head; two
 // passes over headDim (recompute the cheap rope rather than spill a local array).
 const ropeStoreI8ShaderWGSL = `
-struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, nKV: u32, _c: u32 };
+struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, nKV: u32, spos: u32 };
 @group(0) @binding(0) var<storage, read>       src:     array<f32>;  // [heads*headDim]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
 @group(0) @binding(2) var<storage, read_write> dst:     array<u32>;  // K cache int8-packed
@@ -640,7 +640,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var d: u32 = 0u; d < p.headDim; d = d + 1u) { amax = max(amax, abs(rot(off, d))); }
     var sc: f32 = amax / 127.0;
     if (sc == 0.0) { sc = 1.0; }
-    scales[p.pos * p.nKV + h] = sc;
+    scales[p.spos * p.nKV + h] = sc; // the TRUE position; p.pos is the rope angle's (audit C-09)
     let inv = 1.0 / sc;
     let wbase = (p.base + off) / 4u;
     for (var d: u32 = 0u; d < p.headDim; d = d + 4u) {

@@ -850,14 +850,16 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// ropeKUniFor feeds ropeStoreShaderWGSL, whose P struct has TWO distinct roles: slot 3
 	// ("pos") is the rotation angle, slot 5 ("base") is the KV-cache write offset pos*kvDim —
 	// confirmed directly against the shader source (attention.go). Only slot 3 switches to
-	// ropePos; slot 5 stays keyed on the true sequential pos.
+	// ropePos; slot 5 stays keyed on the true sequential pos. Slot 7 ("spos") carries the true pos
+	// too: the int8 variant indexes its per-(position, KV-head) scale by it, and the f32/f16 variants
+	// never read it. The int8 variant used slot 3, the rope angle, until audit-2026-09-10 C-09.
 	ropeKUniFor := func(g *attnGeom, rs float32) *wgpu.Buffer {
 		if b, ok := g.ropeKUnis[rs]; ok {
 			return b
 		}
 		b := uni([]uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), 0, f32bits(rs), 0, uint32(g.nKV), 0})
 		r.posUnis = append(r.posUnis, posUni{buf: b, gen: func(pos, ropePos int) []uint32 {
-			return []uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(ropePos), f32bits(rs), uint32(pos * g.kvDim), uint32(g.nKV), 0}
+			return []uint32{uint32(g.nKV), uint32(g.hd), uint32(g.half), uint32(ropePos), f32bits(rs), uint32(pos * g.kvDim), uint32(g.nKV), uint32(pos)}
 		}})
 		g.ropeKUnis[rs] = b
 		return b
