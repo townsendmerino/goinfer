@@ -1261,7 +1261,7 @@ func (g *gpuGate) webgpu(present bool, backend string) {
 	// a vacuous Pass.
 	_, cr2, out2 := g.run(cell{
 		Name: "webgpu-parity", Pkgs: []string{"./gpu/"}, Tags: []string{"gpu", "goinfer_testhooks"},
-		Run:     "ResidentParity",
+		Run:     webgpuParityRun, // parity.go; checked by TestWebGPUGateIsListedOrExplicitlyNotRequired (G-10)
 		Serial:  true,
 		Timeout: "10m",
 		Env:     map[string]string{"GOINFER_DNET_PARITY": "1", "GOINFER_SSM_PARITY": "1"},

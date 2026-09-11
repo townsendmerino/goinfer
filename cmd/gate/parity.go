@@ -895,6 +895,33 @@ const metalParityRun = "ResidentParity|residentParity|_bitExact|matchesNonPaged|
 // covered by metalParityRun; add here, with a reason, if a future one is deliberately not.
 var metalNotRequired = map[string]string{}
 
+// webgpuDirs, webgpuGateTests, webgpuParityRun and webgpuNotRequired are the WebGPU twin of the
+// Metal scan above (audit-2026-09-10 G-10). webgpu-parity used to select only "ResidentParity",
+// so gate-shaped goinfer_testhooks-tagged gpu/ tests like the staged-int4 matmul gate, ForwardN
+// parity, both DeltaNet kernel parities, MoE route and the int4 expert GEMV ran in no gate cell
+// and no CI runner.
+var webgpuDirs = []string{"gpu"}
+
+// webgpuGateShaped widens gateShaped (capital "Parity", _gate, _oracle) with the forms WebGPU's
+// CPU-reference gates use: a lowercase _parity suffix, matchesCPU and matchesSequential.
+func webgpuGateShaped(name string) bool {
+	return gateShaped(name) || strings.HasSuffix(name, "_parity") || strings.Contains(name, "matchesCPU") ||
+		strings.Contains(name, "matchesSequential")
+}
+
+// webgpuGateTests scans gpu/'s goinfer_testhooks-tagged test files for gate-shaped top-level tests.
+func webgpuGateTests(root string) []string {
+	return buildTaggedTests(root, webgpuDirs, metalTesthooksWordRe, webgpuGateShaped)
+}
+
+// webgpuParityRun is webgpu-parity's -run pattern (cmd/gate/gpu.go), shared with
+// TestWebGPUGateIsListedOrExplicitlyNotRequired so the cell and its check read the same string.
+const webgpuParityRun = "Parity|_parity|matchesCPU|matchesSequential"
+
+// webgpuNotRequired names a gate-shaped WebGPU test deliberately left out of webgpuParityRun,
+// with the reason. An empty reason is an error, as for metalNotRequired.
+var webgpuNotRequired = map[string]string{}
+
 // realckptRun derives the realckpt cell's -run from the tree, and returns a note saying how.
 //
 // THE PATTERN THAT COULD NOT REACH A REQUIRED GATE, GENERALISED. legacyRealckptRun was widened by
