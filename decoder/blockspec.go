@@ -423,6 +423,17 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		}
 		guard.observe(1 + accepted)
 	}
+	// P-05 (audit-2026-09-10): the ONLY exit that commits, mirroring generateInto's own rule
+	// (decoder/model.go, "the ONLY place the resident cache's contents are recorded: a
+	// generation that ran to completion"). Every early return above (a device error, or the
+	// caller's emit stopping consumption early) leaves resIDs nil, so the next turn cold-prefills
+	// rather than trusting a state this function cannot vouch for as fully written. This gives the
+	// next PLAIN Generate turn a warm prefix after a --drafter turn; reusing the prefix on the
+	// drafter's OWN next turn is a separate, deferred half (residentReuseLen + TruncateContext +
+	// PrefillSeedArgmax on the drafter's context, not attempted here).
+	if m.resident != nil {
+		m.residentCommitIDs(prompt, out, nil)
+	}
 	return out, rounds, nil
 }
 
