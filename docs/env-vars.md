@@ -103,7 +103,9 @@ Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,
 `GOINFER_REQUIRE_FIXTURES`, `GOINFER_TEST_NOTHINK`, `GOINFER_SPEC_PROBE_GIW`, and the
 heavy-cell knobs `cmd/gate` reads through its `env()` helper: `GOINFER_GATE_MODELS` (the models
-root), `GOINFER_HEAVY_RUN` (a -run filter), `GOINFER_HEAVY_TIMEOUT`, `GOINFER_HEAVY_PKGS`.
+root), `GOINFER_HEAVY_RUN` (a -run filter), `GOINFER_HEAVY_TIMEOUT`, `GOINFER_HEAVY_PKGS`. `GOINFER_RELEASE_TAG` names the version being
+tagged; set, it makes `TestParity_noPendingGateOutlivesARelease` enforce (RELEASING.md pre-flight 6,
+and `release-assets.yml`), and unset it skips.
 
 ## CUDA graphs (perf, opt-in)
 
