@@ -1485,7 +1485,7 @@ supports.
 | `docs/audit-2026-09-02.md|multimodal/qwen_preprocess_test.go:14` | goinfer | `// TestQwenPreprocess_exact gates the Qwen2.5-VL preprocessing (normalize +` |
 | `docs/audit-2026-09-02.md|scripts/apidiff_check.sh:11` | goinfer | `#   scripts/apidiff_check.sh                 # baseline v0.13.0 (the last released tag)` |
 | `docs/audit-2026-09-02.md|scripts/asset_registry.py:45` | goinfer | `def models_root():` |
-| `docs/audit-2026-09-02.md|scripts/ci_checks.py:51` | goinfer | `HYGIENE = re.compile(r"gofmt\|staticcheck\|^vet\|^build\|cleanliness\|lint", re.I)` |
+| `docs/audit-2026-09-02.md|scripts/ci_checks.py:51` | goinfer | `HYGIENE = re.compile(r"gofmt\|staticcheck\|^vet\|^build\|cleanliness\|lint\|apidiff", re.I)` |
 | `docs/audit-2026-09-02.md|scripts/gate_ledger.py:151` | goinfer | `if e is None:` |
 | `docs/audit-2026-09-02.md|scripts/gptoss_tiny_golden.py:32` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-02.md|scripts/queue_citation_lint.py:578` | goinfer | `update = "--update" in sys.argv` |
