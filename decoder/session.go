@@ -149,7 +149,10 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 
 	go func() {
 		defer close(out)
-		s.m.generateInto(ctx, out, g, s.cache, prompt, matched, maxTokens, sp, commit)
+		// P-01 (audit-2026-09-10): nil newCache — s.cache always exists already (the session
+		// owns its cache's whole lifetime), so generateInto's lazy-allocation branch (cache ==
+		// nil) is never taken for a session call; nothing here needs to construct one.
+		s.m.generateInto(ctx, out, g, s.cache, nil, prompt, matched, maxTokens, sp, commit)
 		// Bookkeeping runs before the deferred close, so a consumer that observes the channel close
 		// (and then starts the next request) always sees a reconciled session: tokens == what the
 		// cache holds, no partial position.

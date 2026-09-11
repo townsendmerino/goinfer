@@ -949,10 +949,14 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
-	cache := m.NewCache(len(prompt) + maxTokens)
+	// P-01 (audit-2026-09-10): the host KV cache (numLayers*2*(prompt+maxTokens)*kvDim*4B — 5.2 GB
+	// of heap CAPACITY for a 7B at 16k+4k) is not allocated here at all: generateInto only calls
+	// newCache when it actually reaches the CPU path (never resident, or lost the resBusy race),
+	// so a resident-and-won call never pays for host KV capacity it never touches.
+	newCache := func() *KVCache { return m.NewCache(len(prompt) + maxTokens) }
 	go func() {
 		defer close(out)
-		m.generateInto(ctx, out, g, cache, prompt, 0, maxTokens, sp, nil)
+		m.generateInto(ctx, out, g, nil, newCache, prompt, 0, maxTokens, sp, nil)
 	}()
 	return out, g
 }
@@ -1120,7 +1124,7 @@ func (m *Model) tryClaimResident() bool {
 	return atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)
 }
 
-func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
+func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, newCache func() *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
 	if len(prompt) == 0 {
 		g.err = fmt.Errorf("decoder.Generate: empty prompt")
 		return
@@ -1153,7 +1157,15 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// missing resident capability, never silently running an adapter session's tokens through
 	// the base model's resident weights (which would return correct-looking but WRONG,
 	// base-model output — audit R-01's whole reason for existing).
-	lora := cache.lora
+	// P-01 (audit-2026-09-10): cache may be nil here (Model.Generate now defers allocation to
+	// whichever branch below actually needs it) — nil-safe read, not a change in meaning: only
+	// Session.Generate's cache ever has .lora set (an adapter is bound through a Session, never
+	// through the plain Model.Generate path this nil case is for), so this reads exactly the
+	// same lora value either caller would have produced.
+	var lora *loraRuntime
+	if cache != nil {
+		lora = cache.lora
+	}
 	var resAdapter ResidentAdapter
 	if lora != nil {
 		resAdapter, _ = m.resident.(ResidentAdapter)
@@ -1191,6 +1203,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		} else {
 			useGPU = false
 		}
+	}
+	// P-01 (audit-2026-09-10): allocate the host KV cache HERE, not before the CAS above —
+	// covers both "never going to be resident" (useGPU started false) and "lost the race for
+	// the shared resident KV" (useGPU flipped false in the CAS block just above), the only two
+	// ways this function reaches the CPU path below. A resident-and-won call never allocates one
+	// at all; newCache is nil (never called) whenever cache is already non-nil, which is every
+	// Session.Generate call — its own cache always exists already, this branch is simply never
+	// taken for it.
+	if !useGPU && cache == nil {
+		cache = newCache()
 	}
 	gpuPos := 0
 	var logits []float32

@@ -90,7 +90,7 @@ func resetAvailProbeCache() {
 // Metal's own residency guard (metal/backend.go's residentFitsMemory) prices weights only,
 // against host RAM (Metal's unified memory IS host RAM), and has no per-request check at all — this
 // is additive to it, not a replacement.
-func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int) error {
+func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int, residentPath bool) error {
 	if os.Getenv("GOINFER_NO_FIT_GUARD") != "" {
 		return nil
 	}
@@ -105,7 +105,16 @@ func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int) error {
 
 	cfg := m.Config()
 	positions := promptTokens + maxTokens
-	kv := kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(positions)
+	// P-01 (audit-2026-09-10): a request that will actually run the stateless GPU-resident path
+	// (internal/serveapp/openai.go's own residentPath — false for vision and adapter requests,
+	// which stay on the CPU/staged session path and DO need this term) never allocates the host
+	// KV this prices: generateInto's lazy allocation (P-01's other half, model.go) only
+	// constructs one on the CPU fallback. Pricing it here anyway is what could 413 a request an
+	// 8 GB CUDA box would have served entirely in VRAM.
+	var kv int64
+	if !(residentPath && m.ResidentActive()) {
+		kv = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(positions)
+	}
 	scratch := prefillScratchBytes(cfg, promptTokens)
 	need := kv + scratch
 	if need <= remaining {

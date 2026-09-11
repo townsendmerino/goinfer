@@ -792,7 +792,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// (including the C-18 clamp above), so the numbers in a refusal are the real ones, and every
 	// prepare() caller gets this for free rather than needing its own copy of the check.
 	if lm.model != nil {
-		if aerr := lm.model.AdmitPrefillMemory(len(gr.promptIDs), gr.maxTokens); aerr != nil {
+		if aerr := lm.model.AdmitPrefillMemory(len(gr.promptIDs), gr.maxTokens, residentPath); aerr != nil {
 			return genRequest{}, &prefillMemoryError{aerr}
 		}
 	}

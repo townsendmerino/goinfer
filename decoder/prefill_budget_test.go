@@ -48,7 +48,7 @@ func TestAdmitPrefillMemory_refusesAnOversizedRequest(t *testing.T) {
 	// A prompt+max_tokens shaped like the run's own opencode request: tens of thousands of
 	// positions, which this fixture's KV rate (measured elsewhere: 512 B/position) alone already
 	// exceeds a few-MiB available-memory margin.
-	err = m.AdmitPrefillMemory(20000, 4096)
+	err = m.AdmitPrefillMemory(20000, 4096, false)
 	if err == nil {
 		t.Fatal("AdmitPrefillMemory admitted a request that cannot fit the currently-available memory")
 	}
@@ -78,7 +78,7 @@ func TestAdmitPrefillMemory_admitsARequestThatFits(t *testing.T) {
 	}
 	defer m.Close()
 
-	if err := m.AdmitPrefillMemory(64, 128); err != nil {
+	if err := m.AdmitPrefillMemory(64, 128, false); err != nil {
 		t.Errorf("AdmitPrefillMemory refused a small request on an ample machine: %v", err)
 	}
 }
@@ -99,7 +99,7 @@ func TestAdmitPrefillMemory_envOverrideAdmits(t *testing.T) {
 	}
 	defer m.Close()
 
-	if err := m.AdmitPrefillMemory(20000, 4096); err != nil {
+	if err := m.AdmitPrefillMemory(20000, 4096, false); err != nil {
 		t.Errorf("GOINFER_NO_FIT_GUARD=1 did not bypass AdmitPrefillMemory: %v", err)
 	}
 }
@@ -119,8 +119,38 @@ func TestAdmitPrefillMemory_unknownAvailabilityProceeds(t *testing.T) {
 	}
 	defer m.Close()
 
-	if err := m.AdmitPrefillMemory(20000, 4096); err != nil {
+	if err := m.AdmitPrefillMemory(20000, 4096, false); err != nil {
 		t.Errorf("AdmitPrefillMemory refused with unknown (0) availability: %v — unknown must proceed", err)
+	}
+}
+
+// TestAdmitPrefillMemory_residentPathSkipsHostKV is P-01(b) (audit-2026-09-10): a request that will
+// actually run the stateless GPU-resident path never allocates the host KV AdmitPrefillMemory
+// prices, so pricing it anyway could 413 a request an 8 GB CUDA box would have served entirely in
+// VRAM. availBytes is chosen so the window is narrow: prefill scratch alone must fit (residentPath
+// admits), but scratch+KV together must not (residentPath=false — the CPU/staged path, which does
+// need the term — still refuses). If admission stopped depending on residentPath at all, the first
+// assertion would go green vacuously; if the KV term were never skipped, the second would fail.
+func TestAdmitPrefillMemory_residentPathSkipsHostKV(t *testing.T) {
+	restore := injectHostRAM(t, 64<<30)
+	defer restore()
+	restoreAvail := injectHostRAMAvailable(t, 406<<20) // between scratch alone and scratch+KV, ×0.70
+	defer restoreAvail()
+
+	m, _ := loadWithFakeResident(t)
+	if !m.ResidentActive() {
+		t.Skip("fixture is not resident-eligible; the other seam tests still gate the wiring")
+	}
+
+	const promptTokens, maxTokens = 20000, 4096
+
+	if err := m.AdmitPrefillMemory(promptTokens, maxTokens, false); err == nil {
+		t.Fatal("residentPath=false: AdmitPrefillMemory admitted a request that only fits once the " +
+			"host-KV term is dropped — the CPU/staged path still needs that term and must be refused")
+	}
+	if err := m.AdmitPrefillMemory(promptTokens, maxTokens, true); err != nil {
+		t.Errorf("residentPath=true on a resident-active model: AdmitPrefillMemory refused (%v) — "+
+			"the host-KV term should have been skipped, since the resident path never allocates it", err)
 	}
 }
 
