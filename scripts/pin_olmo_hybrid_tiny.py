@@ -106,7 +106,7 @@ def main():
     for name, t in m.state_dict().items():
         parts = name.split(".")
         if len(parts) >= 4 and parts[0] == "model" and parts[1] == "layers" and parts[3] == "linear_attn" \
-                and name.endswith("conv1d.weight") and int(parts[2]) in linear_layers:
+                and name.endswith("linear_attn.conv1d.weight") and int(parts[2]) in linear_layers:
             prefix = ".".join(parts[:4])
             q, k, v = t[:key_dim], t[key_dim:2 * key_dim], t[2 * key_dim:]
             assert q.shape[0] == key_dim and k.shape[0] == key_dim and v.shape[0] == value_dim
