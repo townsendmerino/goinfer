@@ -2049,7 +2049,7 @@ supports.
 | `docs/parity-coverage-policy.md|cuda/resident.go:1483` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:65` | goinfer | `"phi3":             phi3Architecture,          // Phi-3 / Phi-4 dense: llama skeleton + ` |
-| `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:551` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
+| `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:584` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
 | `docs/post-v1.0-models.md|decoder/registry.go:1331` | goinfer | `Name:            "qwen3_5_moe",` |
 | `docs/post-v1.0-models.md|decoder/registry.go:2017` | goinfer | `func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
 | `docs/post-v1.0-models.md|decoder/registry.go:2133` | goinfer | `func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
@@ -2057,7 +2057,7 @@ supports.
 | `docs/post-v1.0-models.md|decoder/registry.go:917` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
 | `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:741` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:951` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
-| `docs/prompts/goinfer-w4a8-opsperbyte-citations.md|linalg/quant.go:283` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
+| `docs/prompts/goinfer-w4a8-opsperbyte-citations.md|linalg/quant.go:319` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/sampler_chunked.go:111` | goinfer | `workers := min(runtime.GOMAXPROCS(0), numChunks)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:415` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:298` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
@@ -2179,7 +2179,7 @@ supports.
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:851` | goinfer | `// MatmulBTAcc64Strided runs the SAME sequential f64 reduction as` |
 | `docs/task-attention-decode-cost.md|decoder/forwardn.go:951` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
 | `docs/task-attention-decode-cost.md|internal/serveapp/main.go:436` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
-| `docs/task-attention-decode-cost.md|linalg/linalg.go:58` | aikit | `var parThreshold = 1 << 24 // 16.78M MACs` |
+| `docs/task-attention-decode-cost.md|linalg/linalg.go:59` | aikit | `var parThreshold = 1 << 24 // 16.78M MACs` |
 | `docs/task-attention-decode-cost.md|linalg/matmul_strided.go:30` | aikit | `func MatmulBTAcc64Strided(a, bMat, dst []float32, M, K, N, bOff, bRowStride, bElemStride` |
 | `docs/task-embed-and-harness-ux.md|chat/chat.go:112` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
 | `docs/task-embed-and-harness-ux.md|decoder/model.go:194` | goinfer | `type Options struct {` |

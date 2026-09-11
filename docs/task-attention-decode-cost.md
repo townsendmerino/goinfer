@@ -254,7 +254,7 @@ curve gets re-measured against it.
 ...)` internally — it has real parallel capability. But at the shape `attendBatchedHeads` calls it
 with (`decoder/forwardn.go`'s QKᵀ call: `M=K=1, N=nKeys=130, K=hd=128` ⇒ **M·N·K = 16,640 MACs**;
 the scores·V call is the same magnitude), against aikit's package-default threshold
-(`parThreshold = 1<<24 = 16,777,216`, `linalg/linalg.go:58` in aikit): **16,640 is ~1000x below
+(`parThreshold = 1<<24 = 16,777,216`, `linalg/linalg.go:59` in aikit): **16,640 is ~1000x below
 threshold.** Every one of these calls takes `parallelCols`'s serial fast path, every time, with
 no exception.
 
