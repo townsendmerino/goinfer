@@ -11,17 +11,21 @@
 
 extern "C" {
 
-// lora_delta_down: ONE BLOCK ONLY (launched via onecfg — GridX=1). R is small (LoRA ranks are
-// typically 4-64), so looping over ranks serially and reusing one block's reduction scratch is
-// simpler and cheap. aq is the SAME packed-int8 activation (4 int8 per int, low byte first —
-// rmsnorm_quant's own packing, glue.cu) every GEMV kernel in this backend already consumes.
+// lora_delta_down: block b reduces ranks b, b+gridDim.x, ... — launched with one block per rank
+// (loraDownCfg in lora.go, audit P-11). It used to be ONE block looping over every rank, which
+// pulled all R rows of A through a single SM: +11 ms on an 8.9 ms qwen3-4b token. A GridX=1 launch
+// is still that old kernel exactly, and each block of a GridX=R launch runs the same per-rank
+// arithmetic (same per-thread partial order, same tree reduction), so the two shapes give
+// BIT-IDENTICAL output; TestLoRADownGridBitIdenticalCUDA holds that. aq is the SAME packed-int8
+// activation (4 int8 per int, low byte first — rmsnorm_quant's own packing, glue.cu) every GEMV
+// kernel in this backend already consumes.
 __global__ void lora_delta_down(const int* __restrict__ aq, const float* __restrict__ ascale,
                                  const float* __restrict__ amat, float* __restrict__ tout,
                                  int K, int R) {
     extern __shared__ float red[];
     int t = threadIdx.x, nt = blockDim.x;
     float sc = *ascale;
-    for (int r = 0; r < R; r++) {
+    for (int r = blockIdx.x; r < R; r += gridDim.x) {
         const float* Ar = amat + (long)r * K;
         float part = 0.f;
         for (int k = t; k < K; k += nt) {

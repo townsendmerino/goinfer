@@ -195,19 +195,50 @@ func TestLoRACostMeasure(t *testing.T) {
 		}
 		return float64(time.Since(s).Microseconds()) / 1000 / N
 	}
-	var fb, fn []float64
+	// Three arms per pair, order rotated each pair: unbound, bound with the old single-block
+	// lora_delta_down (loraDownSerial), bound with the per-rank grid. The rule registered in the
+	// audit's P-11 disposition before the kernel change: the grid SHIPS if its overhead is ≥50% below
+	// the single-block overhead in ≥9/10 pairs individually; PARKED if the mean reduction is
+	// 25-50%; REJECTED below 25%.
+	defer func() { loraDownSerial = false }()
+	var fn, fs, fg []float64
 	for i := range pairs {
-		for _, bound := range [2]bool{i%2 == 0, i%2 == 1} {
-			if bound {
-				fb = append(fb, perTok(true))
-			} else {
+		for j := range 3 {
+			switch (i + j) % 3 {
+			case 0:
 				fn = append(fn, perTok(false))
+			case 1:
+				loraDownSerial = true
+				fs = append(fs, perTok(true))
+				loraDownSerial = false
+			case 2:
+				fg = append(fg, perTok(true))
 			}
 		}
 	}
-	d, w = loraPaired(fb, fn)
-	fmt.Fprintf(os.Stderr, "[lora-measure] P-11 per-token Forward: adapter bound median %.2f ms | unbound median %.2f ms | paired overhead %.2f ms (%.1f%% of unbound), bound faster %d/%d\n",
-		loraMedian(fb), loraMedian(fn), d, 100*d/loraMedian(fn), w, pairs)
+	ohS, ohG := make([]float64, pairs), make([]float64, pairs)
+	var sumS, sumG float64
+	halved := 0
+	for i := range pairs {
+		ohS[i], ohG[i] = fs[i]-fn[i], fg[i]-fn[i]
+		sumS += ohS[i]
+		sumG += ohG[i]
+		if ohG[i] <= 0.5*ohS[i] {
+			halved++
+		}
+	}
+	red := 1 - sumG/sumS
+	verdict := "REJECTED (<25%)"
+	switch {
+	case halved >= 9:
+		verdict = "SHIPS (>=50% in >=9/10 pairs)"
+	case red >= 0.25:
+		verdict = "PARKED (25-50%, or >=50% in fewer than 9/10 pairs)"
+	}
+	fmt.Fprintf(os.Stderr, "[lora-measure] P-11 per-token Forward: unbound median %.2f ms | single-block median %.2f ms | per-rank grid median %.2f ms\n",
+		loraMedian(fn), loraMedian(fs), loraMedian(fg))
+	fmt.Fprintf(os.Stderr, "[lora-measure] P-11 paired overhead vs unbound: single-block %.2f ms (%.1f%%) | grid %.2f ms (%.1f%%) | mean reduction %.1f%%, pairs halved %d/%d -> %s\n",
+		sumS/pairs, 100*sumS/pairs/loraMedian(fn), sumG/pairs, 100*sumG/pairs/loraMedian(fn), 100*red, halved, pairs, verdict)
 	must(cr.SetAdapter(nil))
 	up, hit := cr.LoraCacheStatsForTest()
 	fmt.Fprintf(os.Stderr, "[lora-measure] bind counters over the run: uploads=%d hits=%d\n", up, hit)

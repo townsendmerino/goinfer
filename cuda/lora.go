@@ -180,7 +180,7 @@ func (r *cudaResident) applyLora(p *cudaLoraProj, aq, ascale Buffer, k int, dst 
 	if p == nil {
 		return nil
 	}
-	if err := r.launch(r.fLoraDown, onecfg(256, 256*4),
+	if err := r.launch(r.fLoraDown, loraDownCfg(p.rank),
 		Arg(aq), Arg(ascale), Arg(p.a), Arg(r.loraT),
 		gpu.ArgValue(int32(k)), gpu.ArgValue(int32(p.rank))); err != nil {
 		return err
@@ -211,3 +211,19 @@ type loraProjKey struct {
 	r, in, out int
 	scale      float32
 }
+
+// loraDownCfg is lora_delta_down's launch shape (audit P-11): one 256-thread block per rank, so the
+// R reductions run side by side instead of one after another in a single block. loraDownSerial
+// restores the old single-block shape. It exists so a test can prove the two shapes bit-identical,
+// and so the measurement can A/B them on one resident.
+func loraDownCfg(rank int) LaunchConfig {
+	cfg := onecfg(256, 256*4)
+	if !loraDownSerial {
+		cfg.GridX = uint32(rank)
+	}
+	return cfg
+}
+
+// loraDownSerial is test-only. Tests set it between Forward calls, which reach the executor
+// through r.do's channel, so the write happens-before the launch that reads it.
+var loraDownSerial bool
