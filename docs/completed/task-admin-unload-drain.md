@@ -1,5 +1,12 @@
 # Design: draining `/admin/models/unload` so it can free device memory safely
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 **Status:** design only — nothing implemented. Read this before any code. It is the durable target
 for the two comments that describe the hazard inline: `handleAdminUnload` (internal/serveapp/admin.go:95–121)
 and the reciprocal note at `resident.Close` (metal/model.go:972–976); update both to cite this file

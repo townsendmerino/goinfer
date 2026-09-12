@@ -1,5 +1,12 @@
 # aikit task: Qwen2.5-VL vision encoder (second ViT family, dynamic resolution)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **STATUS: SUPERSEDED — the family shipped without this.** Qwen2.5-VL landed as goinfer's second
 > vision family in v0.7.0 (`decoder/qwen25vl_test.go`, gated against HF). The encoder was built on
 > the goinfer side rather than in aikit, so this ask is moot. Kept for the design discussion of

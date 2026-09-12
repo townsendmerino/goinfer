@@ -1,5 +1,12 @@
 # MacBook task: verify the Metal half of `gate gpu` against the script it replaced
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **STATUS: DONE 2026-08-21. Do not re-run this as a task.** The Metal half agrees with the retired
 > script to the CUDA half's standard — identical verdict and exit code, 7 declared → 7 reported,
 > 6 pass / 2 skip / 1 fail, every verdict line matching including the evidence lines. The Homebrew-bash

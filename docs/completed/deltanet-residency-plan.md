@@ -1,5 +1,12 @@
 # Gated-DeltaNet residency — the plan, and why WebGPU proves it first
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 **Status: DONE AND MEASURED — 2026-08-19.** The family is RESIDENT on WebGPU, gated end-to-end
 against the CPU forward for both siblings AND at the released head geometry, at **11.4–12.2×
 CPU decode**. Getting a real-width number surfaced a blocker that the tiny fixtures had hidden

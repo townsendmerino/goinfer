@@ -70,7 +70,10 @@ moves — a superseded measurement stays as it was and the page that quotes it i
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
 lint**, so archiving a document also retires its citations from the live gate. When a document
-moves here, a pointer stub is left behind, because other pages link to the old path.
+moves here, a pointer stub is left behind, because other pages link to the old path, and the
+standard archival header (`parity-coverage-policy.md`'s "archiving a doc strips its imperatives"
+rule) is prepended **in the same move** — 21 files were found missing it 2026-09-12, added in a
+separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 

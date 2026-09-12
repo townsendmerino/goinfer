@@ -1,5 +1,12 @@
 # Task — Decoder-as-embedder (`qwen3-embedding`, `embeddinggemma`)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 **Origin:** aikit `docs/task-embedding-coverage.md`, **Bucket B**. Buckets A (encoder-side
 loaders/pooling/tokenizers) and the multilingual stack are done and certified in aikit;
 this is the remaining piece and it lives **here**, not in aikit — hence this doc.

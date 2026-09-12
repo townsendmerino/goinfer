@@ -1,5 +1,12 @@
 # Gemma-3 on Metal — localize the mid-channel sign-flip (within-layer bisect)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **STATUS: DELIVERED — the mechanism was localized and the harness kept.** `metal/bisect_test.go`
 > and `metal/gemma_sublayer_test.go` are the seams this prompt asked for, and the finding is
 > written up in `docs/parity-hunt-playbook.md` (the sign-flipped channels amplified by the final

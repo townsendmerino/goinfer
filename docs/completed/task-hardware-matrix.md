@@ -1,5 +1,12 @@
 # Model × hardware matrix — generate it from the taxonomy, never hand-maintain
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > The "can I run model X on my hardware?" table is the #1 user question — worth having.
 > But a **hand-maintained** one rots: the current README coverage table **already has
 > drifted cells** — Gemma-3-Metal and MoE-CUDA both landed resident this cycle, yet the
