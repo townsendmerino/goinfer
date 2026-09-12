@@ -95,4 +95,18 @@ func TestResolveRunRef_registryShortNameRewrites(t *testing.T) {
 	if got.Repo == "" {
 		t.Errorf("resolveRunRef(%q): empty repo in resolved ref", names[0])
 	}
+	// M-32 (audit-2026-09-10.md): a recommended checkpoint's SHA256/Bytes used to be dropped
+	// on the round trip through ParseRef(c.Ref()), which only ever sets Pin for a "demo:" ref
+	// — so every OTHER registry entry verified against whatever HF's API reports today instead
+	// of the digest this build vouches for.
+	c, ok := pull.Recommended(names[0])
+	if !ok {
+		t.Fatalf("pull.Recommended(%q): not found (was in RecommendedNames)", names[0])
+	}
+	if c.SHA256 != "" && got.Pin != c.SHA256 {
+		t.Errorf("resolveRunRef(%q).Pin = %q, want the registry's SHA256 %q", names[0], got.Pin, c.SHA256)
+	}
+	if c.Bytes != 0 && got.Bytes != c.Bytes {
+		t.Errorf("resolveRunRef(%q).Bytes = %d, want the registry's Bytes %d", names[0], got.Bytes, c.Bytes)
+	}
 }

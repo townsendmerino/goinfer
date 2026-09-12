@@ -29,6 +29,21 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	for _, v := range regexp.MustCompile(`GOINFER_[A-Z0-9_]+`).FindAllString(string(doc), -1) {
 		documented[v] = true
 	}
+	// M-56 (audit-2026-09-10.md): everything ABOVE the first "not contract" heading is an
+	// operator-facing promise (docs/api-tiers.md's Hard tier); a var documented only there but
+	// referenced by nothing except _test.go files is exactly GOINFER_GEMMA4_RESIDENT's shape —
+	// a bring-up gate that went silently unread while its doc row kept promising an effect. The
+	// phantom check below already tolerates a test-only reference for the diagnostics section
+	// (test-only IS what "not contract" means there); operatorDoc is scanned separately so that
+	// same tolerance can't hide a dead operator knob again.
+	operatorDoc := string(doc)
+	if i := strings.Index(operatorDoc, "## Diagnostics and experiment knobs"); i >= 0 {
+		operatorDoc = operatorDoc[:i]
+	}
+	operatorDocumented := map[string]bool{}
+	for _, v := range regexp.MustCompile(`GOINFER_[A-Z0-9_]+`).FindAllString(operatorDoc, -1) {
+		operatorDocumented[v] = true
+	}
 
 	// Every way the tree reads a knob, not just os.Getenv (audit-2026-09-10 G-13(e)): os.LookupEnv,
 	// and cmd/gate's env(key, default) helper, whose four knobs were undocumented and invisible here.
@@ -36,6 +51,7 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	anyRef := regexp.MustCompile(`"(GOINFER_[A-Z0-9_]+)"`)
 	readInProd := map[string]string{} // var -> first file that reads it
 	referencedAnywhere := map[string]bool{}
+	referencedInNonTest := map[string]bool{} // any mention (not just a getenv call) outside _test.go
 
 	err = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") {
@@ -50,6 +66,9 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 		}
 		if strings.HasSuffix(p, "_test.go") {
 			return nil
+		}
+		for _, m := range anyRef.FindAllStringSubmatch(string(b), -1) {
+			referencedInNonTest[m[1]] = true
 		}
 		for _, m := range getenv.FindAllStringSubmatch(string(b), -1) {
 			if _, seen := readInProd[m[1]]; !seen {
@@ -90,5 +109,20 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	if len(phantom) > 0 {
 		t.Errorf("%d documented variable(s) appear in NO .go file, test or otherwise — the doc "+
 			"promises a knob that does not exist (N-42):\n  %s", len(phantom), strings.Join(phantom, "\n  "))
+	}
+
+	var operatorPhantom []string
+	for v := range operatorDocumented {
+		if !referencedInNonTest[v] {
+			operatorPhantom = append(operatorPhantom, v)
+		}
+	}
+	sort.Strings(operatorPhantom)
+	if len(operatorPhantom) > 0 {
+		t.Errorf("%d operator-facing variable(s) are referenced by _test.go files ONLY, not by "+
+			"any non-test code (M-56, audit-2026-09-10.md) — an operator setting this knob has no "+
+			"effect. Move to the Diagnostics section (if it's a deliberate test-only knob) or "+
+			"delete the row (if it's simply dead):\n  %s",
+			len(operatorPhantom), strings.Join(operatorPhantom, "\n  "))
 	}
 }

@@ -43,7 +43,7 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
-| **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 11 architectures vs peers' dozens | Table 1 |
+| **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 36 architectures ʲ vs peers' dozens | Table 1 |
 
 **One-line reading:** goinfer is a *small-model, short-context, single-request* engine that trades
 throughput and breadth for a static binary, no native dependency, and a decode you can reproduce
@@ -73,7 +73,7 @@ bit-for-bit. Where it loses it loses honestly, and the losses are in this table 
 > carries multi-threaded CPU decode, a GPU backend, checkpoint formats beyond GGUF (safetensors,
 > GPTQ, AWQ), and compiling the model **into** the binary. No head-to-head numbers exist in either
 > direction; neither project has published any. It trades peak throughput and breadth (no continuous batching,
-> vision-in only — no audio, CPU-slow — 11 architectures) for a static binary that
+> vision-in only — no audio, CPU-slow — 36 architectures ʲ) for a static binary that
 > boots in ~0.5 s.
 
 > **Anchor stack for every CUDA row: driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2, since
@@ -269,7 +269,7 @@ absent — this pass read the engine and packaging, not the library surface.
 | GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only | ✗ no GPU backend ᵏ |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ | — |
 | Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL + Qwen2.5-VL, pure-Go SigLIP/ViT → serve + agent; **31.3 s/image CPU** (SigLIP) — 2026-09-08 row, §A; `-tags gpu` webgpu resident figure (18.8 s) not re-measured at this row's date; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
-| Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
+| Model coverage | ~ **36 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
 | Multi-threaded CPU decode | ✓ | — | — | — | — | — | — | ✗ single-threaded ᵏ |
 
 **Reading it:** *no-native-dep pure-Go execution* is no longer goinfer's alone — `go-llama`
@@ -317,8 +317,12 @@ merged at load) · ⁱ `ARCHITECTURE.md` §2 + `docs/completed/gpu-assessment.md
 residency; cgo quarantined behind `-tags gpu`) + §B2/§B3 below (`cuda/`, `metal/`:
 driver-JIT / MSL, **CGO_ENABLED=0**, admission-gated by
 `decoder/features.go`) ·
-ʲ `decoder/registry.go` — **13 registered `model_type` keys, 11 distinct architectures**
-(`gemma3_text`/`qwen3_5_moe_text` are text-decoder aliases of `gemma3`/`qwen3_5_moe`).
+ʲ **36 architectures** (M-57, audit-2026-09-10.md: this footnote's own "13 keys, 11
+architectures" was stale) — `docs/capability-matrix.json`'s row count, generated from
+`decoder/registry.go` by `go test ./decoder -run CapabilityMatrix -update`; one row per family,
+`model_type` aliases (e.g. `gemma3_text`/`qwen3_5_moe_text`) grouped rather than counted twice.
+Cited by row count rather than restated as a literal here on purpose — the number moves with
+the registry, this footnote should not need editing every time a family ships.
 
 ---
 

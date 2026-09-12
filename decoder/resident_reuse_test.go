@@ -185,6 +185,22 @@ func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
 	}
 }
 
+// TestResidentReuseLen_zeroHashNeverMatches (M-06, audit-2026-09-10.md): a caller with no reuse
+// story of its own passes imgHash 0 ("no claim"). Two such callers, at the same position with
+// different actual images, both produce hash 0 — before the fix, `claim.Hash == blk.hash`
+// matched on 0 == 0 and the second image's KV was silently reused from the first's.
+func TestResidentReuseLen_zeroHashNeverMatches(t *testing.T) {
+	cached := []int{100, 101, 900, 900, 900, 200, 201}
+	block := residentImageBlock{start: 2, end: 5, hash: 0}
+	m := &Model{resIDs: cached, resImgBlocks: []residentImageBlock{block}}
+	prompt := []int{100, 101, 900, 900, 900, 200, 201, 300}
+	claims := []residentImageClaim{{Start: 2, Len: 3, Hash: 0}}
+	if got := m.residentReuseLen(prompt, claims, nil); got != 2 {
+		t.Errorf("residentReuseLen with stored hash=0 and claim hash=0 = %d, want 2 (stop at the "+
+			"block's start, never treat 0 == 0 as a verified match)", got)
+	}
+}
+
 // TestResidentReuseLen_recurrentRefusesImageClaims: no recurrent-family VL architecture exists
 // today, and the rewind-free recurrent rule has no notion of an image block's atomicity — a
 // claim there must refuse (fall to 0) rather than silently mis-serve it.
