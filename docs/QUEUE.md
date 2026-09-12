@@ -1545,13 +1545,6 @@ supports.
 | `docs/ollama-chase.md|decoder/weights.go:576` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1494` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
-| `docs/plan-cpubrrr-steal-and-bindings.md|decoder/registry.go:65` | goinfer | `"phi3":             phi3Architecture,          // Phi-3 / Phi-4 dense: llama skeleton + ` |
-| `docs/plan-cpubrrr-steal-and-bindings.md|linalg/quant.go:584` | aikit | `func QuantizeGroupInt4Row(row []float32, cols, group int, packed []byte, scales []float3` |
-| `docs/post-v1.0-models.md|decoder/registry.go:1352` | goinfer | `Name:            "qwen3_5_moe",` |
-| `docs/post-v1.0-models.md|decoder/registry.go:2038` | goinfer | `func nemotronhArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
-| `docs/post-v1.0-models.md|decoder/registry.go:2154` | goinfer | `func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {` |
-| `docs/post-v1.0-models.md|decoder/registry.go:65` | goinfer | `"phi3":             phi3Architecture,          // Phi-3 / Phi-4 dense: llama skeleton + ` |
-| `docs/post-v1.0-models.md|decoder/registry.go:938` | goinfer | `// cohere2Architecture expresses Cohere2 / Command-R7B (model_type "cohere2":` |
 | `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:741` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/prompts/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:951` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
 | `docs/prompts/goinfer-w4a8-opsperbyte-citations.md|linalg/quant.go:319` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |

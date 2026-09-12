@@ -1668,9 +1668,13 @@ the Mac.
 | nobara | CUDA (`-moe-cache-experts`) | **62.4** | 26.5 | 31.6 |
 | Mac | CPU | declined — see below | not attempted | not attempted |
 
-**Mac capability boundary, not a bug.** goinfer's `gpt_oss` architecture has no resident
-CUDA/Metal/WebGPU backend today (`decoder/registry.go`, `decoder/features.go`), so this cell must
-run `-backend cpu` on any box. On the Mac, a plain CPU decode of the 13.8 GB checkpoint — no
+**Mac capability boundary, not a bug.** As of this row's own date (2026-09-04/05), goinfer's
+`gpt_oss` architecture had no resident CUDA/Metal/WebGPU backend (`decoder/registry.go`,
+`decoder/features.go`), so this cell had to run `-backend cpu` on any box. **Stale since:** gpt-oss
+is now resident on all three (CUDA 2026-08-31, WebGPU 2026-09-08 — `docs/hardware-matrix.md`), so
+this specific capability gap no longer exists; the swap/kill outcome measured below is unaffected
+(it is about the CPU path specifically, which this Mac cell used because residency wasn't there
+yet, not because CPU was the only option going forward). On the Mac, a plain CPU decode of the 13.8 GB checkpoint — no
 `-stream-weights` paging, the model nominally fits 16 GB RAM on paper — drove swap to 22.6–22.9 GB
 on a 23.5 GB swap file. Caught via a single-request smoke test and killed before a real measurement
 was taken, rather than letting it run — this same night already had one kernel-panic incident from

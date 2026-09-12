@@ -31,7 +31,11 @@
 > corrected status. Also: aikit was bumped to v1.33.0 in the same round (`gpu` stays v0.32.0,
 > pinned consistently by every module now — metal's go.mod was itself stale at v0.30.1 until this
 > bump); v1.33.0 ships S-03's NEON quantiser (built 2026-09-03, per aikit's own tracking, unmeasured
-> as of that note) but not yet `MatmulBTW4A8Batch` — R-06 still needs the batch-matmul half.
+> as of that note) but not yet `MatmulBTW4A8Batch` — R-06 still needs the batch-matmul half. **Since
+> shipped:** aikit v1.34.0 added it; R-06's own table row below has the current disposition (wired
+> behind `GOINFER_W4A8_BATCH`, measured, PARKED default-off — inside the ambiguous 1.05×/1.15×
+> park/ship zone). This paragraph is a snapshot of the v1.33.0 round and is left as the historical
+> record of that state, not updated in place.
 > Cross-references: `docs/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
 > `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
 > narrow state snapshot"), `docs/task-freetoken-techniques.md` (Lead 1), aikit
