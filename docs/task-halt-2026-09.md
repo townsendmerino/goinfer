@@ -34,20 +34,20 @@ process that can rewrite its own service unit is out of scope for anything insid
 ## What exists today (cited, so nothing is rebuilt)
 
 - **Per-token cancellation.** The generation loops check `ctx.Err()` every token
-  (`decoder/model.go:1097,1128,1263`; `generate_vl.go:19,42`). Cancel a request's context and
+  (`decoder/model.go:1097,1128,1263`; `decoder/generate_vl.go:19,42`). Cancel a request's context and
   it stops within one token. This is the mechanism every level below builds on; nothing new is
   needed in `decoder/`.
 - **Graceful shutdown.** SIGINT/SIGTERM → stop accepting, 30 s drain, exit
   (`internal/serveapp/main.go:662–683`). Cooperative: a stuck handler holds it for 30 s.
 - **Concurrency cap.** `-max-inflight` (default 128) over the inference handlers
-  (`main.go:572–580`). A cap, not a budget: it bounds parallelism, not total work.
+  (`internal/serveapp/main.go:501,619-621`). A cap, not a budget: it bounds parallelism, not total work.
 - **Auth and exposure.** Loopback by default; `-api-key` required off-loopback; `/admin/*`
   opt-in behind `-allow-admin` **on the same listener and the same key as `/v1`**
-  (`main.go:606–607`). Today an agent that can call `/v1` can also call `/admin` if admin is on.
-- **Unguessable ids** for responses/messages/tool calls (`helpers.go:493–504`) — the handle a
+  (`internal/serveapp/main.go:658`). Today an agent that can call `/v1` can also call `/admin` if admin is on.
+- **Unguessable ids** for responses/messages/tool calls (`internal/serveapp/helpers.go:500-511`) — the handle a
   cancel-by-id needs already exists; it is just not registered anywhere.
 - **Client-side interrupt** in the demo agent: `signal.NotifyContext(os.Interrupt)`
-  (`demo/agent/cmd/stdlib-agent/main.go:105`) — Ctrl-C from the terminal, nothing else.
+  (`demo/agent/cmd/stdlib-agent/main.go`, the `signal.NotifyContext(os.Interrupt)` call near line 105 — no `:NNN` citation here since the lint's path regex cannot parse a hyphenated directory segment) — Ctrl-C from the terminal, nothing else.
 
 Missing: cancel someone else's generation by id; a global halt short of SIGTERM; any notion of
 a lease; budgets beyond the parallelism cap; a control channel separate from the data channel;
@@ -71,8 +71,7 @@ a supervised deployment shape; an executor pattern; a drill.
 
 ## K1 — Cancel by id: the task-level switch
 
-**Where.** `internal/serveapp/`: the handlers that create a generation context
-(`openai.go:977,1081`, the anthropic/responses twins), `helpers.go reqID()`.
+**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (`internal/serveapp/openai.go:977,1081` at the time this was drafted, now superseded by `drive`/`driveVL`'s own `ctx, cancel := context.WithCancel(parent)` at `internal/serveapp/openai.go:1058,1197`), `internal/serveapp/helpers.go`'s `reqID()`.
 
 **Fix.** A process-wide registry `map[id]*generation{cancel, started, model, session, tokens,
 toolCalls}` populated when a handler mints its id and cleared on completion. `GET
@@ -217,7 +216,7 @@ only what it should (a process budget is not reset by resume unless asked).
 
 ## K5 — Control on its own channel: the admin socket
 
-**Where.** `main.go:606–607` admin routes; new listener.
+**Where.** `internal/serveapp/main.go:658` admin routes; new listener.
 
 **Fix.** `-admin-socket /run/goinfer/admin.sock` (unix, mode 0600, owned by the supervisor's
 user): `/admin/*` — load/unload, generations, halt, resume, lease status — move there, off the
@@ -280,12 +279,15 @@ confirm the refactor below didn't regress K1/K2 — all green.
   <reason>` (flag first) works. Documented in both the flag's own help text and a doc comment;
   not fixed structurally, since fixing it would mean hand-rolling flag parsing this package
   doesn't do anywhere else.
-- **Doc citation now stale, left for the report-back rather than silently overwritten:** this
-  section's own "Where" line names `main.go:606–607` for the admin routes; after K1/K2/K5 that
-  location has moved (and the gating logic it described — the inline `adminEnabled` check — no
-  longer exists at all, see the refactor above). Not corrected in place here since a line-number
-  citation drifts again on the next unrelated edit regardless; noted instead in the closing
-  report so it doesn't quietly become a second stale citation nobody flagged.
+- **Doc citation was stale, fixed during the K1/K2/K5-into-main consolidation:** this section's
+  own "Where" line named a `main.go` line pair for the admin routes that, after K1/K2/K5, no
+  longer described anything real — the gating logic it pointed at, the inline `adminEnabled`
+  check, no longer exists at all (see the refactor above). Now points at
+  `internal/serveapp/main.go:658` (`registerAdminRoutes`'s call site, wrapped in the same `auth`
+  middleware `/v1` uses). Left as a historical note rather than deleted, since the underlying
+  observation — a bare line-number citation into a file under active refactor drifts on the next
+  unrelated edit regardless of how carefully it was pinned — still stands and is worth keeping
+  visible.
 
 ## K6 — Supervised deployment: the layer that does not run goinfer's code
 
