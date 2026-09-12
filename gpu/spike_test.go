@@ -34,23 +34,13 @@ func TestSpike_capabilities(t *testing.T) {
 		hasFeature(ctx.adapter.GetFeatures(), wgpu.FeatureNameTimestampQuery),
 		ctx.device.HasFeature(wgpu.FeatureNameTimestampQuery))
 
-	// dot4I8Packed: try compiling a shader that uses it. Success ⇒ the packed
-	// int8 fast path is available; failure ⇒ we ship the unpacked int8 fallback.
-	const dotShader = `
-@group(0) @binding(0) var<storage, read_write> out: array<i32>;
-@compute @workgroup_size(1)
-fn main() {
-    out[0] = dot4I8Packed(0x01020304u, 0x05060708u);
-}`
-	sm, derr := ctx.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:      "dot4I8Packed-probe",
-		WGSLSource: &wgpu.ShaderSourceWGSL{Code: dotShader},
-	})
-	if derr != nil {
-		t.Logf("dot4I8Packed: NOT supported (%v) — W8A8 must use the unpacked int8 fallback", derr)
+	// dot4I8Packed: New() already probed this (probeDP4A, gpu.go) and cached it as
+	// ctx.hasDP4A — ensureTiled uses it to pick the DP4A tiled-GEMM kernel over the
+	// scalar-unpack fallback. Report the cached result rather than re-probing.
+	if ctx.hasDP4A {
+		t.Logf("dot4I8Packed: SUPPORTED — W8A8 tiled-GEMM fast path available")
 	} else {
-		sm.Release()
-		t.Logf("dot4I8Packed: SUPPORTED — W8A8 fast path available")
+		t.Logf("dot4I8Packed: NOT supported — W8A8 must use the unpacked int8 fallback")
 	}
 }
 

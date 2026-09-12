@@ -77,6 +77,16 @@ type Context struct {
 	// crashed, and only on a machine with a real GPU.
 	closed bool
 
+	// hasDP4A records whether this adapter's WGSL compiler accepts dot4I8Packed
+	// (probed once in New(), never re-checked). gfx-rs/wgpu merged the builtin in
+	// April 2025; whether it's actually reachable here depends on the wgpu-native
+	// build this binding vendors, not on anything goinfer controls, so it must be
+	// probed live rather than assumed from the backend/OS. ensureTiled uses it to
+	// pick the DP4A kernel (native hardware dot-product instruction on backends
+	// that lower it, e.g. Vulkan's VK_KHR_shader_integer_dot_product on the DP4A-
+	// capable TU10x+) over the scalar-unpack fallback every backend accepts.
+	hasDP4A bool
+
 	// W8A8 (int8×int8) pipeline, compiled lazily by ensureQuant (quant.go).
 	quantShader   *wgpu.ShaderModule
 	quantPipeline *wgpu.ComputePipeline
@@ -438,7 +448,31 @@ func New() (*Context, error) {
 		shader:   shader,
 		pipeline: pipeline,
 		layout:   pipeline.GetBindGroupLayout(0),
+		hasDP4A:  probeDP4A(device),
 	}, nil
+}
+
+// probeDP4A tries to compile a one-line dot4I8Packed shader — success means the WGSL
+// compiler this binding vendors accepts the builtin (same probe as
+// TestSpike_capabilities, just live instead of test-only). A failed probe is an
+// expected outcome on backends/drivers that haven't caught up, not an error.
+const dp4aProbeShaderWGSL = `
+@group(0) @binding(0) var<storage, read_write> out: array<i32>;
+@compute @workgroup_size(1)
+fn main() {
+    out[0] = dot4I8Packed(0x01020304u, 0x05060708u);
+}`
+
+func probeDP4A(device *wgpu.Device) bool {
+	sm, err := device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "dot4I8Packed-probe",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: dp4aProbeShaderWGSL},
+	})
+	if err != nil {
+		return false
+	}
+	sm.Release()
+	return true
 }
 
 // Backend reports the underlying graphics backend ("Metal", "Vulkan",
