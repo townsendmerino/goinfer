@@ -270,7 +270,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	if !lm.enter(w) {
+	if !lm.enter(w, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -360,7 +360,11 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		writeAnthropicErr(w, prepareErrStatus(err), "invalid_request_error", err.Error())
 		return
 	}
-	if !lm.tryEnter() {
+	if ok, haltReason := lm.tryEnter(s.haltState); !ok {
+		if haltReason != "" {
+			writeAnthropicErr(w, http.StatusServiceUnavailable, "overloaded_error", "halted: "+haltReason)
+			return
+		}
 		w.Header().Set("Retry-After", "1")
 		writeAnthropicErr(w, 529, "overloaded_error", fmt.Sprintf("model %q is busy; retry", lm.name))
 		return

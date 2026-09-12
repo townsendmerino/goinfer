@@ -145,6 +145,38 @@ Under `-max-inflight` saturation too — a halt that has to wait for a slot is n
 
 **Size.** Small.
 
+**Status: DONE 2026-09-12** (branch `killswitch-k1-k2-k5`, off `main`). `halt.go`: atomic
+`haltInfo{reason, at, trigger}` (an `atomic.Pointer`, lock-free reads on the hot path), `POST
+/admin/halt`/`POST /admin/resume`, `GET /health`'s `halted`/`halt_reason`/`halt_at`,
+`-halt-file` (250ms poll, edge-triggered so a standing halt doesn't re-log every tick),
+`SIGUSR1`/`SIGUSR2`, `-halt-exit-code`. All smoke-tested against a real running binary, not just
+compiled: `-halt-file` touch/rm, `SIGUSR1`/`SIGUSR2`, and `-halt-exit-code` (confirmed the
+process actually exits with the configured code after quiescence) — `SIGUSR1` against `go run`
+looked broken on the first attempt (silently no-op) purely because `go run` wraps the binary in
+a child process that doesn't forward the signal; the real built binary receives it correctly.
+Gate test: `TestServe_haltUnderLoad`, real local `.gguf`.
+
+**Found while building:**
+- **A second, more serious version of K1's own bug** (see K1's status line): `-max-inflight 32`
+  admits all 32 requests, but goinfer serializes every generation for one model behind a single
+  mutex (`loadedModel.mu`, "the single decode worker"). Only the ONE request currently holding
+  that mutex is ever registered in K1's registry; the other 31 are blocked in `sync.Mutex.Lock()`
+  — which is not context-aware — and would have run to natural completion one at a time
+  regardless of the halt, ignoring it entirely in practice for 31 of 32 requests. Fixed by
+  re-checking halted status a second time, INSIDE `tryEnter`/`enter`, immediately after the
+  (possibly long) mutex wait and before any generation starts — closing the gap between "admitted
+  past the front-of-chain gate" and "actually running." Found by reasoning through this gate's
+  own "32 concurrent, halt, every stream cancelled" scenario BEFORE writing the test (unlike K1's
+  bug, which the test itself caught) — then confirmed by the test: 1 of 32 requests actually
+  reaches `finish_reason: "cancelled"` (the one genuinely streaming when halt landed), the other
+  31 get an immediate `503 {"error":"halted"}` without ever running a real generation. Both are
+  "the halt worked" outcomes for this architecture; a literal 32/32 `"cancelled"` is not
+  achievable with one decode worker per model and isn't what this fix produces or should aim for.
+- Measured time-to-quiescence on this box (M1 Pro-class Apple Silicon, CPU backend, Qwen2.5-Coder
+  0.5B int8int8): **~10-40ms**, dominated by the one active generation's next per-token ctx
+  check, not by anything K2 itself adds. First value for the K8 ledger this doc's own intro
+  names as owed.
+
 ## K3 — The lease: fail-closed by default when nobody is renewing
 
 **Where.** New `internal/serveapp/lease.go`; `main.go` flags.

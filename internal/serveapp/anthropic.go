@@ -506,7 +506,11 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 
 	// A full queue is honest backpressure: 529 overloaded_error (the kind
 	// Anthropic clients back off on), not the OpenAI 429.
-	if !lm.tryEnter() {
+	if ok, haltReason := lm.tryEnter(s.haltState); !ok {
+		if haltReason != "" {
+			writeAnthropicErr(w, http.StatusServiceUnavailable, "overloaded_error", "halted: "+haltReason)
+			return
+		}
 		w.Header().Set("Retry-After", "1")
 		writeAnthropicErr(w, 529, "overloaded_error", fmt.Sprintf("model %q is busy; retry", lm.name))
 		return

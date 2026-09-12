@@ -328,6 +328,8 @@ type config struct {
 	spec             string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
 	drafter          string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
 	allowAdmin       bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	haltFile         string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed (K2)
+	haltExitCode     int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence (K2); 0 = stay up
 	web              bool          // -web: serve the local browser UI + its model-pull routes
 	requireBE        bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath       string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
@@ -432,7 +434,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
 	flag.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
-	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS listener — model load/unload (loads attacker-named paths), GET /admin/generations, and POST /admin/generations/{id}/cancel (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too")
+	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume")
+	flag.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
+	flag.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
@@ -618,20 +622,24 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
 	// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.
 	mux.HandleFunc("GET /health", auth(srv.handleHealth))
+	// K2 (docs/task-halt-2026-09.md): halt is checked AFTER auth (a bad key is still rejected
+	// during a halt) and BEFORE inf (a halt must not wait for an inflight slot — "a halt that
+	// has to wait for a slot is not a halt", the doc's own words). /admin/* and /health are
+	// deliberately NOT wrapped in this — an operator must always be able to resume/check status.
 	if len(srv.models) > 0 {
-		mux.HandleFunc("POST /v1/chat/completions", auth(inf(maxBytes(visionCap, srv.handleChat))))
-		mux.HandleFunc("POST /v1/completions", auth(inf(maxBytes(textCap, srv.handleCompletions))))
-		mux.HandleFunc("POST /v1/responses", auth(inf(maxBytes(textCap, srv.handleResponses))))
-		mux.HandleFunc("POST /v1/messages", auth(inf(maxBytes(visionCap, srv.handleMessages))))
-		mux.HandleFunc("POST /v1/messages/count_tokens", auth(inf(maxBytes(textCap, srv.handleCountTokens))))
+		mux.HandleFunc("POST /v1/chat/completions", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat)))))
+		mux.HandleFunc("POST /v1/completions", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions)))))
+		mux.HandleFunc("POST /v1/responses", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses)))))
+		mux.HandleFunc("POST /v1/messages", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages)))))
+		mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
 	}
 	// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a JSON
 	// error naming -embed-model rather than a bare 404, so an SDK sees "unconfigured" not "wrong URL".
-	mux.HandleFunc("POST /v1/embeddings", auth(inf(maxBytes(embedCap, srv.handleEmbeddings,
+	mux.HandleFunc("POST /v1/embeddings", auth(srv.haltGate(inf(maxBytes(embedCap, srv.handleEmbeddings,
 		// The per-input / per-batch bounds are per-DIMENSION and multiply out past any body cap, so
 		// name all three: a client within both per-dimension limits can still exceed the total.
 		fmt.Sprintf("this route also limits each request to %d inputs of at most %d bytes each; "+
-			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes)))))
+			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes))))))
 	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(textCap, srv.handleAdminLoad)))
 	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(textCap, srv.handleAdminUnload)))
 	// K1 (docs/task-halt-2026-09.md): cancel-by-id. GET/health-style uncapped body (list has
@@ -639,6 +647,11 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// this consistent with the load/unload routes above rather than inventing a third cap.
 	mux.HandleFunc("GET /admin/generations", auth(srv.handleAdminGenerationsList))
 	mux.HandleFunc("POST /admin/generations/{id}/cancel", auth(maxBytes(textCap, srv.handleAdminGenerationCancel)))
+	// K2 (docs/task-halt-2026-09.md): global halt/resume, no restart. Not wrapped in haltGate —
+	// resume must always be reachable, and halt must always be callable again (the latest call
+	// wins; see halt.go).
+	mux.HandleFunc("POST /admin/halt", auth(maxBytes(textCap, srv.handleAdminHalt)))
+	mux.HandleFunc("POST /admin/resume", auth(srv.handleAdminResume))
 	if cfg.web {
 		// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and
 		// would turn every unknown GET into the UI page instead of a 404, which is worse than
@@ -692,6 +705,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if cfg.kvIdleDemote > 0 {
 		go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)
 	}
+	// K2's -halt-file poller stop channel; declared here (not beside its goroutine start below)
+	// so the shutdown handler just below can close it alongside stopDemote.
+	stopHaltPoll := make(chan struct{})
 
 	// Graceful shutdown: on SIGINT/SIGTERM, stop accepting, drain in-flight
 	// generations, then checkpoint the KV sessions to -session-dir (if set).
@@ -710,8 +726,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			fmt.Fprintln(os.Stderr, "second signal — forcing exit")
 			os.Exit(1)
 		}()
-		close(stopDemote) // stop demoting before we checkpoint
-		srvCancel()       // cancel in-flight generations (via BaseContext) so they release lm.mu
+		close(stopDemote)   // stop demoting before we checkpoint
+		close(stopHaltPoll) // stop polling -halt-file; nothing left to react to it after shutdown
+		srvCancel()         // cancel in-flight generations (via BaseContext) so they release lm.mu
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
@@ -731,6 +748,30 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			}
 		}
 	}()
+
+	// K2 (docs/task-halt-2026-09.md): SIGUSR1 halts, SIGUSR2 resumes — a supervisor can pull
+	// this switch without opening a socket or an HTTP client. Separate from the SIGINT/SIGTERM
+	// channel above: those are one-shot (shutdown then exit), these repeat for the life of the
+	// process, so they get their own Notify and a loop rather than a single <-sig receive.
+	haltSig := make(chan os.Signal, 1)
+	signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)
+	go func() {
+		for s := range haltSig {
+			switch s {
+			case syscall.SIGUSR1:
+				srv.halt("SIGUSR1", "SIGUSR1")
+			case syscall.SIGUSR2:
+				srv.resume("SIGUSR2")
+			}
+		}
+	}()
+
+	// K2: -halt-file. Polled in its own goroutine; stopHaltPoll (declared above, closed
+	// alongside stopDemote at shutdown) is best-effort background work with no result main()
+	// waits on.
+	if cfg.haltFile != "" {
+		go haltFilePoller(srv, cfg.haltFile, stopHaltPoll)
+	}
 
 	useTLS := *tlsCert != ""
 	scheme := "http"

@@ -26,6 +26,17 @@ any surface may still change.
   it for a natural stop. Non-streaming responses get a 499 JSON error instead of a 200. Served
   behind the existing `-allow-admin` gate.
 
+- **K2, global halt with no restart (docs/task-halt-2026-09.md).** `POST /admin/halt
+  {"reason":...}` stops every inference route with a `503 {"error":"halted","reason":...}`
+  before it would take an inflight slot, cancels every in-flight generation (K1's registry), and
+  blocks until they have actually stopped (bounded 30s) before responding — the response itself
+  carries the measured `quiesced_in_ms`. `POST /admin/resume` clears it; the model stays loaded
+  either way, so resume is instant. `GET /health` gains `halted`/`halt_reason`/`halt_at`. Two
+  non-HTTP triggers: `-halt-file <path>` (polled every 250ms — `touch` halts, `rm` resumes, no
+  HTTP client needed) and `SIGUSR1`/`SIGUSR2`. `-halt-exit-code N` makes any halt exit the
+  process with `N` once quiescence is reached, for a supervisor whose restart policy must not
+  undo a deliberate halt. All off by default; existing behavior is unchanged until one is set.
+
 ### Fixed
 
 - **`cuda/testdata/glue.ptx` (the embedded, driver-JIT'd kernel blob every CUDA resident load

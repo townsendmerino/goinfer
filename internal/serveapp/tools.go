@@ -59,7 +59,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
-	if !lm.enter(w) {
+	if !lm.enter(w, s.haltState) {
 		return
 	}
 	defer lm.exit()

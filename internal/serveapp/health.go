@@ -36,10 +36,23 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.regMu.RUnlock()
 	sort.Strings(draining)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	// K2 (docs/task-halt-2026-09.md): halted is always present so a client's shape doesn't
+	// change between the two states; reason/at are null when not halted rather than omitted,
+	// for the same reason.
+	var haltedFields map[string]any
+	if hi := s.haltState(); hi != nil {
+		haltedFields = map[string]any{"halted": true, "halt_reason": hi.reason, "halt_at": hi.at}
+	} else {
+		haltedFields = map[string]any{"halted": false, "halt_reason": nil, "halt_at": nil}
+	}
+	resp := map[string]any{
 		"status":   "ok",
 		"backend":  s.cfg.backend,
 		"models":   models,
 		"draining": draining,
-	})
+	}
+	for k, v := range haltedFields {
+		resp[k] = v
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

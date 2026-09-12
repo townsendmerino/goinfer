@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -166,29 +167,56 @@ func (lm *loadedModel) visionCapable() bool {
 	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.gemma4Enc != nil
 }
 
-// tryEnter claims a queue slot then locks the model's mutex (the decode worker).
-// It returns false (writing nothing) when the queue is full, so each API surface
-// can render the backpressure failure in its own error shape.
-func (lm *loadedModel) tryEnter() bool {
+// tryEnter claims a queue slot then locks the model's mutex (the decode worker). It returns
+// (false, "") when the queue is full, so each API surface can render the backpressure failure in
+// its own error shape.
+//
+// haltState, when non-nil, is checked AFTER the (possibly blocking) mutex acquisition, and its
+// non-nil result is returned as (false, reason) with both the mutex and queue slot released
+// again — K2's haltGate (main.go) only runs once, at the front of the chain, before a request is
+// admitted; a request already admitted and QUEUED behind this model's single decode worker when
+// a halt lands is invisible to that gate and to K1's cancelAll (nothing has registered it in the
+// generation registry yet — that happens inside drive/driveVL, further down the call stack than
+// this). Without this second check, sync.Mutex.Lock() is not context-aware, so a halt would
+// cancel only the ONE generation currently holding the mutex; everything else queued behind it
+// would run to natural completion one at a time, un-cancelled — found by reasoning through the
+// K2 gate's own "32 concurrent generations, halt, every stream ended cancelled" scenario before
+// writing that test, not by the test failing first (unlike K1's registered-context bug).
+func (lm *loadedModel) tryEnter(haltState func() *haltInfo) (ok bool, haltReason string) {
 	if lm.queue != nil {
 		select {
 		case lm.queue <- struct{}{}:
 		default:
-			return false
+			return false, ""
 		}
 	}
 	lm.mu.Lock()
-	return true
+	if haltState != nil {
+		if hi := haltState(); hi != nil {
+			lm.mu.Unlock()
+			if lm.queue != nil {
+				<-lm.queue
+			}
+			return false, hi.reason
+		}
+	}
+	return true, ""
 }
 
-// enter is the OpenAI-flavored wrapper: a full queue writes a 429 + Retry-After.
-func (lm *loadedModel) enter(w http.ResponseWriter) bool {
-	if !lm.tryEnter() {
-		w.Header().Set("Retry-After", "1")
-		writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
+// enter is the OpenAI-flavored wrapper: a full queue writes a 429 + Retry-After; a halt found
+// after the queue wait writes the same 503 shape haltGate does at the front of the chain.
+func (lm *loadedModel) enter(w http.ResponseWriter, haltState func() *haltInfo) bool {
+	ok, haltReason := lm.tryEnter(haltState)
+	if ok {
+		return true
+	}
+	if haltReason != "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": haltReason})
 		return false
 	}
-	return true
+	w.Header().Set("Retry-After", "1")
+	writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
+	return false
 }
 
 // exit releases the mutex then the queue slot (paired with enter).
@@ -241,6 +269,10 @@ type server struct {
 	// gens is the K1 cancel-by-id registry (docs/task-halt-2026-09.md), shared by every
 	// generation surface. Never nil after newServer.
 	gens *generationRegistry
+
+	// halted is K2's global halt state (docs/task-halt-2026-09.md); nil = running normally. See
+	// halt.go. Zero value is nil, so no explicit init in newServer is needed.
+	halted atomic.Pointer[haltInfo]
 }
 
 // pick resolves the OpenAI `model` field to a loaded generative model: an exact
@@ -544,7 +576,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
 	}
-	if !lm.enter(w) {
+	if !lm.enter(w, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -637,7 +669,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	if !lm.enter(w) {
+	if !lm.enter(w, s.haltState) {
 		return
 	}
 	defer lm.exit()

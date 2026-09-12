@@ -156,7 +156,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	gr.id = id // K1: registers this generation for cancel-by-id
-	if !lm.enter(w) {
+	if !lm.enter(w, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -234,7 +234,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)
 		return
 	}
-	if !lm.enter(w) {
+	if !lm.enter(w, s.haltState) {
 		return
 	}
 	defer lm.exit()

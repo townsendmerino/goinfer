@@ -147,3 +147,32 @@ func (r *generationRegistry) list() []generationSnapshot {
 	}
 	return out
 }
+
+// count reports how many generations are currently registered.
+func (r *generationRegistry) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.gens)
+}
+
+// waitEmpty polls until no generation is registered, or timeout elapses, and returns how long it
+// actually took (K2's time-to-quiescence — docs/task-halt-2026-09.md). Each registered generation
+// stops at its next per-token ctx check (already the fastest signal there is; see generations.go's
+// top doc comment), so this is normally fast — the poll interval trades a little latency in the
+// measurement for not spinning a goroutine per halt. Used by K2's halt path after cancelAll: the
+// cancel calls return immediately (they only flip a context), but "halted" should mean the work
+// actually stopped, not merely that stopping was requested.
+func (r *generationRegistry) waitEmpty(timeout time.Duration) time.Duration {
+	start := time.Now()
+	const poll = 10 * time.Millisecond
+	deadline := start.Add(timeout)
+	for {
+		if r.count() == 0 {
+			return time.Since(start)
+		}
+		if time.Now().After(deadline) {
+			return time.Since(start)
+		}
+		time.Sleep(poll)
+	}
+}
