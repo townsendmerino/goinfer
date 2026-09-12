@@ -165,7 +165,9 @@ func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
 // M-32 is fixed (gpu/residency.go: BuildResident declines the same Nemotron/Qwen3.5/MLA +
 // KVF16/KVI8 combo Plan declines below, and honours -ctx via the same WebGPUCtxCeiling); an
 // unrecognised backend name gets the same GPU-shaped feature-eligibility decline a real one would
-// for an unsupported arch, rather than a panic or a silent wrong answer.
+// for an unsupported arch, rather than a panic or a silent wrong answer — enforced by the
+// ResidentEligible(m.w.arch, backend) check below, not by MissingResidentFeatures alone (M-08:
+// that check alone passed a feature-free arch on ANY name, including an unregistered one).
 func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	p := Plan{Backend: backend, FreeBytes: freeBytes, ExtraBytes: req.ExtraBytes}
 
@@ -173,6 +175,21 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		if missing := m.MissingResidentFeatures(ResidentBackendFeatures(backend)); len(missing) > 0 {
 			p.Placement = PlacementDecline
 			p.Reason = fmt.Sprintf("%s does not implement %v for this architecture — use the staged/CPU path", backend, missing)
+			return p
+		}
+		// M-08 (docs/audit-2026-09-10.md): MissingResidentFeatures alone is not admission —
+		// ResidentEligible additionally checks that the backend is a REGISTERED one at all (an
+		// unrecognised name plus a feature-free arch made the check above vacuously pass, since
+		// missingFeatures(nil-required, nil-implemented) is empty), that the arch's own forward
+		// is bridged to the resident runner (decodeRunnerEligible), that its MoE router fits the
+		// backend's fixed-size scoreboard, and that per-layer attention geometry (Gemma 4's split
+		// head_dim) is implemented. Missing any of those reported "resident" for Llama-4/cuda,
+		// dense Gemma-4/webgpu, Kimi-K2/metal, and any unrecognised backend name.
+		if !ResidentEligible(m.w.arch, backend) {
+			p.Placement = PlacementDecline
+			p.Reason = fmt.Sprintf("%s: not eligible for this architecture's resident path (unrecognised backend, "+
+				"an own-forward shape the runner does not bridge, MoE router capacity, or per-layer attention "+
+				"geometry) — use the staged/CPU path", backend)
 			return p
 		}
 	}
