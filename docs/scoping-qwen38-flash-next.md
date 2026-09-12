@@ -98,7 +98,7 @@ over 24 tokens) and on Gemma-4 26B-A4B (32/128 experts resident, 77.5% hit rate)
 `docs/task-moe-streaming.md`. Current families top out at 256 experts (`qwen3_5_moe`); scaling to
 512 experts at a 10-routed+1-shared split is an extension of `moeMLP`'s existing routed+shared+gate
 machinery, not a new mechanism — though the 10:1 ratio needs the same kind of config-flag gotcha
-check that `qwen3_5_moe`'s bring-up hit with `NormTopKProb` (`docs/qwen3_5_moe.md`: silently wrong
+check that `qwen3_5_moe`'s bring-up hit with `NormTopKProb` (`docs/completed/qwen3_5_moe.md`: silently wrong
 without it, cosine 0.9985 vs 1.0).
 
 **The native MTP head lands on a question goinfer's own spec-decode campaign already answered
@@ -205,7 +205,7 @@ Beyond the license re-read, one practical gate this pass could **not** confirm �
 harder than the license:
 
 - **Is there a runnable HF reference yet?** Every hybrid bring-up in this repo so far — `qwen3_5_moe`
-  pinned against `transformers==5.10.2`'s `modeling_qwen3_5_moe.py` (`docs/qwen3_5_moe.md`) — has
+  pinned against `transformers==5.10.2`'s `modeling_qwen3_5_moe.py` (`docs/completed/qwen3_5_moe.md`) — has
   had a working `transformers` forward pass (native or `trust_remote_code`) to pin a golden
   against. No `modeling_*.py` was found linked from the GitHub repo (README + `tech_report.pdf`
   only); the repo does link a kernel library, `github.com/QwenLM/FlashQLA` (the fused GDN kernel
@@ -261,7 +261,7 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
   and read directly, 28 pages, in full
 - [MarkTechPost coverage](https://www.marktechpost.com/2026/08/26/alibabas-qwen-team-releases-qwen3-8-flash-next-a-125b-multimodal-moe-with-6b-active-parameters-previewing-the-qwen4-architecture/)
 - goinfer tree, read directly 2026-08-27: `decoder/registry.go`, `decoder/config.go`,
-  `decoder/forwardn.go`, `decoder/moepaging.go`, `docs/qwen3_5_moe.md`,
+  `decoder/forwardn.go`, `decoder/moepaging.go`, `docs/completed/qwen3_5_moe.md`,
   the completed qwen3.6 real-checkpoint task record (internal, untracked), `docs/queue-correctness.md`,
   `docs/task-moe-streaming.md`, `docs/spec/README.md`, `docs/task-parity-coverage.md`,
   `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,

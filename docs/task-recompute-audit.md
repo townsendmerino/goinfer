@@ -141,8 +141,9 @@ positions are inherent, not recompute.
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only
   hybrid-specific refusal on that path is `reconcile`'s reset after a mid-sweep rollback
-  (`decoder/session.go:98-102`). So `docs/qwen3_5_moe.md:115` ("falls back to full recompute") is
-  stale for the case that matters; correct it with the test below.
+  (`decoder/session.go:98-102`). So `docs/completed/qwen3_5_moe.md:132` ("falls back to full
+  recompute") was stale for the case that matters; corrected 2026-09-12 alongside that doc's
+  archival, with the test below already the evidence for the fix.
 - **Phase 0 — exact extension, no snapshot.** Replace the blanket refusal with the staged rule:
   for a recurrent family, `residentReuseLen` returns `len(m.resIDs)` when the prompt extends the
   entire committed sequence by at least one token, else 0. The existing cap (`len(prompt)-1`) makes
@@ -504,7 +505,8 @@ listed so the inventory is complete.
 0. **R-00** (the bug), then **R-02** and **R-03** for attention-only families: three small commits,
    all gated on token-identity vs cold, all worth having before any measurement.
 1. **R-01 phase 0**: the exact-extension rule, the two-turn tests, L-05's TTFT rule on the 35B.
-   Correct `docs/qwen3_5_moe.md:115` in the same commit.
+   (Shipped 2026-09-03; the `docs/completed/qwen3_5_moe.md:132` correction it called for landed
+   2026-09-12, with the archival.)
 2. **R-01 phase 1**: `dnWin`/`dnState` snapshot via `CopyDeviceBatch`; lift `specRollbackSafe`'s
    refusal for the hybrid families on the resident path; measure per round as spec/09 did.
 3. **R-04** (P-18's cell first) and **R-01 phase 2** together — one parking mechanism.
@@ -518,7 +520,7 @@ listed so the inventory is complete.
 `hasRecurrentState`, `resetRecurrent`), `decoder/forwardn.go` (`hasRecurrentState`,
 `specRollbackSafe`), `decoder/blockspec.go`, `decoder/speculative.go`, `decoder/moepaging.go`,
 `decoder/attention.go`, `internal/serveapp/openai.go`; `docs/spec/09-mtp-heads.md` (snapshot
-pricing, 2026-08-28); `docs/qwen3_5_moe.md` §"Hybrid cache"; `docs/audit-2026-09-02.md` (C-12,
+pricing, 2026-08-28); `docs/completed/qwen3_5_moe.md` §"Hybrid cache"; `docs/audit-2026-09-02.md` (C-12,
 P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aikit
 `gpu/cuda_copy.go`, `gpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
 `docs/task-simd-audit.md` (S-01, S-02, S-03, S-09.1).

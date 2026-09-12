@@ -222,5 +222,5 @@ Chapter 5 turns to the other memory problem: the weights themselves.
 
 ---
 
-*Sources: `internal/serveapp/openai.go` (the decode mutex, the bounded queue, the 429), `internal/serveapp/main.go` (`--max-queue`, `--max-inflight`), `decoder/deltanet.go:145-153`, [`docs/qwen3_5_moe.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/qwen3_5_moe.md), `docs/ollama-chase.md`,
+*Sources: `internal/serveapp/openai.go` (the decode mutex, the bounded queue, the 429), `internal/serveapp/main.go` (`--max-queue`, `--max-inflight`), `decoder/deltanet.go:145-153`, [`docs/completed/qwen3_5_moe.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/qwen3_5_moe.md), `docs/ollama-chase.md`,
 [`docs/api-tiers.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/api-tiers.md) (`.giw-kv`), [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (prefill baselines).*

@@ -7,7 +7,7 @@
 > `docs/completed/gemma4-resident-scope.md`). A ~20x gap that model size doesn't explain.
 > **This task is diagnosis only.** The deliverable is a ranked cost table; fixes are the next
 > campaign's business. Value is independent of Zeno — Qwen3.6-35B-A3B is a roadmap target
-> (`docs/qwen3_5_moe.md`), and whatever this finds is that campaign's opening fact.
+> (`docs/completed/qwen3_5_moe.md`), and whatever this finds is that campaign's opening fact.
 
 ## Cheap reads first — before any stub work
 

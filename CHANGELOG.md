@@ -2503,7 +2503,7 @@ untrusted-input fuzzing hardening._
   GGUF path proven by weight-diff against the safetensors load. **Honest scope:**
   this is the **text decoder of the Qwen3-VL 35B-A3B** model (the language tower),
   and the hybrid arch runs the **staged path — not GPU residency**. Parity-first f32
-  forward. See `docs/qwen3_5_moe.md`.
+  forward. See `docs/completed/qwen3_5_moe.md`.
 - **Mellum2 chat template** — `chat.Mellum2()` (a named ChatML alias) + a `Detect`
   fingerprint (its distinctive `normalize_content` macro) so JetBrains Mellum2 is
   identified as `mellum2` by `cmd/serve` / `demo/chat` rather than falling through

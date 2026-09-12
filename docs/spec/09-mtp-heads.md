@@ -104,9 +104,12 @@ itself: `qwen35Architecture` sets `layerIsLinear: cfg.IsLinearLayer // Gated Del
 target's KV by K and rolls back the rejected tail, which a recurrent state cannot losslessly
 restore.
 
-This is the same root cause already recorded for this family in `docs/qwen3_5_moe.md:114`: the
-recurrent state "is not position-truncatable", cross-call prefix KV reuse "falls back to full
-recompute", and *"optimizing those for hybrid models (state checkpoints) is a later track."*
+This is the same root cause already recorded for this family in
+`docs/completed/qwen3_5_moe.md:131`: the recurrent state "is not position-truncatable" — still
+true, and still why rollback is refused — though the doc's own since-corrected note explains that
+prefix reuse no longer blanket-falls-back to full recompute (R-01 phase 0, fixed 2026-09-03; it
+now reuses on an exact strict extension). *"Optimizing those for hybrid models (state
+checkpoints) is a later track"* for the speculation half specifically, which this spec is about.
 
 **So if Gate 1 passes on a Qwen family, the follow-on is not a capture-seam project — it is that
 state-checkpoint track**, and that is a materially bigger build than wiring a seam. The likely
@@ -201,9 +204,12 @@ because a good result is exactly when a pre-registered gate stops being consulte
 
 What it *does* do is add a second reason to a decision that already exists on its own merits. The
 hybrid state-checkpoint work is already a deferred item with an independent payoff:
-`docs/qwen3_5_moe.md:114` records that cross-call prefix KV reuse falls back to **full recompute**
-for these models today. MTP acceptance would be evidence joining that case, not creating it — and
-the case gets decided on the combined value of prefix reuse plus speculation, by a person, not by
+`docs/completed/qwen3_5_moe.md:131` records that recurrent state is not position-truncatable —
+still true — though prefix reuse itself no longer blanket-falls-back to full recompute (R-01
+phase 0, fixed 2026-09-03; it now reuses on an exact strict extension, never an arbitrary
+rewind, for exactly the reason given there). Speculation's rollback need is the weaker,
+unsolved half: MTP acceptance would be evidence joining that case, not creating it — and the
+case gets decided on the combined value of prefix reuse plus speculation, by a person, not by
 this page.
 
 **The tension worth stating plainly, because it will decide whether this becomes a project.** The
@@ -372,10 +378,10 @@ size, independent of sequence length, and **not position-truncatable**. A verify
 state by K tokens; a partial rejection needs it as of an earlier token, which no truncation or
 inversion recovers. `decoder/speculative.go:92` is where that refusal is applied.
 
-`docs/qwen3_5_moe.md:117` defers a remedy — *"optimizing those for hybrid models (state
+`docs/completed/qwen3_5_moe.md:134` defers a remedy — *"optimizing those for hybrid models (state
 checkpoints) is a later track"* — but that entry was scoped for **cross-call prefix reuse**:
 restore to an arbitrary earlier position, later, possibly across requests
-(`docs/qwen3_5_moe.md:114`). Speculation needs something much weaker: snapshot immediately before
+(`docs/completed/qwen3_5_moe.md:131`). Speculation needs something much weaker: snapshot immediately before
 the verify, restore on rejection, discard. **One buffer, one round deep, lifetime of
 milliseconds.** The two were bundled because they share a root cause, not because they are the
 same size of problem.
@@ -609,8 +615,8 @@ primitive, never the composition** — the same lesson the hysteresis test produ
 a different subsystem, from the opposite direction.
 
 **Design note, not a chase:** if the conv windows were contiguous, or issued as one copy, most of
-the 2× penalty disappears. That moves ~446 µs toward ~250 µs. Recorded in `docs/qwen3_5_moe.md`
-beside the buffer-reuse and `convWin` notes.
+the 2× penalty disappears. That moves ~446 µs toward ~250 µs. Recorded in
+`docs/completed/qwen3_5_moe.md` beside the buffer-reuse and `convWin` notes.
 
 ### Where this leaves the decision
 

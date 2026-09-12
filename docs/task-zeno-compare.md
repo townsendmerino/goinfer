@@ -882,8 +882,8 @@ Deliberately **not attempted as part of Phase 0** — "feasibility only, no benc
 doc's own charter, and implementing per-layer streaming for a dedicated loader is real engineering,
 not a quick characterization. Scoped here so the record exists independent of when (or whether) the
 fix lands, and because it has value beyond this comparison: the "dedicated-loader families fit
-resident" assumption was already going to be tested by Qwen3.6-35B-A3B (`docs/qwen3_5_moe.md`
-scoping), a roadmap target regardless of any Zeno comparison.
+resident" assumption was already going to be tested by Qwen3.6-35B-A3B
+(`docs/completed/qwen3_5_moe.md` scoping), a roadmap target regardless of any Zeno comparison.
 
 **Shape:** mirror the generic path's per-layer stream-and-free inside qwen35's dedicated loader —
 both call sites that currently hit the `sink=nil`/resident-fallback branch (`StreamTranscodeGGUF`'s
