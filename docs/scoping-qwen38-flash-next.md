@@ -11,6 +11,10 @@
 > `docs/parity-coverage-policy.md` ("a claim that arrives with its own corroborating detail has
 > not been corroborated"). One thing fable said did **not** reconcile even after the primary
 > source; flagged in place below, not smoothed over.
+>
+> **Reaffirmed 2026-09-12** by `docs/audit-2026-09-10.md`'s **L-02**: llama.cpp PR #27742 merged
+> 2026-08-27, and its notes give the concrete QSA indexer shapes a synthetic-tiny bring-up needs.
+> Neither pickup trigger below has fired.
 
 **Verdict:** the specific checkpoint is out of reach on both rigs and isn't worth chasing. The
 architecture is a different question — three of its five new-or-scaled pieces ride substrate
@@ -214,13 +218,20 @@ harder than the license:
   oracle to validate a synthetic-tiny fixture against yet — check this before scoping the
   bring-up further, it may be the actual gate, license aside.
 - **Confirm the checkpoint dtype** (BF16 vs FP8) from the HF repo's actual file listing — it
-  changes download size ~2× and, if it's genuinely FP8, raises the same blocker already on record
-  for DeepSeek V4-Flash: **"there is no fp8 support anywhere in the tree today"**
-  (`docs/post-v1.0-models.md`). Worth checking early since it could gate the whole effort
-  independently of QSA/GR/n-gram-embed.
-- **Five-minute check:** is `Qwen3.8-27B-Base` (the tech report's own comparison baseline) the same
-  family goinfer already runs as `qwen35DenseArchitecture`? If so, GDN's real-checkpoint coverage
-  extends one model further than stated above.
+  changes download size ~2× and, if it's genuinely FP8, the gate is narrower than a flat "no fp8
+  support" now: `decoder/fp8.go` reads e4m3 weights with blockwise **f32** scales from
+  `*.weight_scale_inv` (shipped for Q3), so the real question is the SCALE format, not the
+  element format — does this checkpoint use that f32-blockwise form, or the exponent-only 8-bit
+  `ue8m0` encoding, which nothing in `decoder/` handles (`grep ue8m0 decoder/` is empty)? This is
+  the same half-lift `docs/queue-correctness.md`'s **G8** entry records for DeepSeek V4-Flash,
+  whose config declares `scale_fmt: "ue8m0"` specifically. Worth checking early since it could
+  gate the whole effort independently of QSA/GR/n-gram-embed.
+- **Five-minute check — done, 2026-09-12: yes.** `docs/capability-matrix.md:28` lists Qwen3.8
+  under `qwen3_5`/`qwen3_5_text` — "the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE,
+  with a plain SwiGLU in place of the router" — with a parity row of `experimental: tiny-oracle
+  100.0%/1.00000 +coherent`. So GDN's real-checkpoint coverage already extends to
+  `Qwen3.8-27B-Base`, the tech report's own comparison baseline, one model further than stated
+  above.
 
 ## Effort, if picked up (synthetic-tiny bring-up only — not the 180B)
 
