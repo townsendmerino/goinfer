@@ -27,6 +27,21 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+// TestFreeBytesFor_cpuUsesThePassedInValue is the M-19 gate (docs/audit-2026-09-10.md):
+// freeBytesFor's "cpu" branch must report EXACTLY the caller-supplied hostFreeBeforeLoad, proving
+// it no longer re-queries HostRAMAvailableBytes() itself after Run has already loaded the model
+// into that same RAM budget. A non-positive value must report unknown, matching the old
+// HostRAMAvailableBytes()-returns-0-means-unknown convention.
+func TestFreeBytesFor_cpuUsesThePassedInValue(t *testing.T) {
+	const want = 123456789
+	if got, ok := freeBytesFor("cpu", want); !ok || got != want {
+		t.Errorf("freeBytesFor(\"cpu\", %d) = (%d, %v), want (%d, true)", want, got, ok, want)
+	}
+	if got, ok := freeBytesFor("cpu", 0); ok || got != 0 {
+		t.Errorf("freeBytesFor(\"cpu\", 0) = (%d, %v), want (0, false)", got, ok)
+	}
+}
+
 func TestRun_noPathIsUsageError(t *testing.T) {
 	if code := Run(nil); code != 2 {
 		t.Errorf("Run(nil) = %d, want 2 (usage error)", code)

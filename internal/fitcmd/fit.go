@@ -73,6 +73,13 @@ func Run(args []string) int {
 		}
 	})
 
+	// M-19 (docs/audit-2026-09-10.md): the CPU free-RAM probe must be read BEFORE decoder.Load,
+	// or the budget it reports has already been depleted by the very model being planned for —
+	// a guard that inverts under the condition it exists for (CLAUDE.md's own name for this
+	// class of bug). GPU probes read DEVICE memory, which a CPU-resident load never touches, so
+	// only "cpu" needs its free bytes captured early; freeBytesFor still queries the rest live.
+	hostFreeBeforeLoad := decoder.HostRAMAvailableBytes()
+
 	m, err := decoder.Load(path, decoder.Options{Quant: *quant})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load %s: %v\n", path, err)
@@ -85,7 +92,7 @@ func Run(args []string) int {
 
 	var admitted []string // in CompiledBackends() order; "cpu" always eligible, sorted last
 	for _, backend := range decoder.CompiledBackends() {
-		free, known := freeBytesFor(backend)
+		free, known := freeBytesFor(backend, hostFreeBeforeLoad)
 		if !known {
 			fmt.Printf("%-6s  no memory probe available (driver/device not found) — skipped\n", backend)
 			continue
@@ -156,10 +163,13 @@ func selfMeasure(path, quant string, admitted []string) {
 // freeBytesFor is CompiledBackends' "cpu" special case (HostRAMAvailableBytes, which predates
 // the RegisterMemoryProbe registry and lives directly on decoder) plus everything else via the
 // registry backends register their own probe into (metal/backend.go, cuda/backend.go).
-func freeBytesFor(backend string) (int64, bool) {
+// hostFreeBeforeLoad is the CPU free-RAM probe captured BEFORE decoder.Load — see the M-19
+// comment at the call site. GPU backends are unaffected by a CPU-resident load, so they still
+// query live.
+func freeBytesFor(backend string, hostFreeBeforeLoad int64) (int64, bool) {
 	if backend == "cpu" {
-		if b := decoder.HostRAMAvailableBytes(); b > 0 {
-			return b, true
+		if hostFreeBeforeLoad > 0 {
+			return hostFreeBeforeLoad, true
 		}
 		return 0, false
 	}
