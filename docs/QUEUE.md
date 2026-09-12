@@ -1674,6 +1674,21 @@ supports.
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:1666` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI)` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:576` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
 | `docs/task-int4-int8-exact-mma.md|metal/model.go:578` | goinfer | `r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("ge` |
+| `docs/task-int4-layout-2026-09.md|cuda/resident.go:3070` | goinfer | `// Kind() reports precision, not layout, and stays "int4" for a repacked-only tensor` |
+| `docs/task-int4-layout-2026-09.md|decoder/gguf.go:1388` | goinfer | `// row4 from canonical), even on a cpu-arm64 target that will write kind 5` |
+| `docs/task-int4-layout-2026-09.md|decoder/model.go:384` | goinfer | `w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), ` |
+| `docs/task-int4-layout-2026-09.md|decoder/serialize.go:1499` | goinfer | `return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)` |
+| `docs/task-int4-layout-2026-09.md|decoder/weightmat.go:262` | goinfer | `// the parked .giw-kind decision is waiting on, docs/task-w4a8-neon-` |
+| `docs/task-int4-layout-2026-09.md|decoder/weightmat.go:414` | goinfer | `func wantsCanonicalInt4(backendName string, be Backend) bool {` |
+| `docs/task-int4-layout-2026-09.md|decoder/weightmat.go:542` | goinfer | `type GIWTarget string` |
+| `docs/task-int4-layout-2026-09.md|internal/chatapp/main.go:177` | goinfer | `anchor: func Main() {` |
+| `docs/task-int4-layout-2026-09.md|internal/gemmaapp/main.go:47` | goinfer | `backend  = flag.String("backend", "cpu", "compute backend: cpu \| webgpu \| metal (metal n` |
+| `docs/task-int4-layout-2026-09.md|internal/prequant/prequant.go:36` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
+| `docs/task-int4-layout-2026-09.md|internal/serveapp/main.go:418` | goinfer | `// --version answers "what is in this binary" WITHOUT a model, which is the question the` |
+| `docs/task-int4-layout-2026-09.md|metal/gemma4_moe.go:225` | goinfer | `if p := m.GiwPath(); p != "" {` |
+| `docs/task-int4-layout-2026-09.md|metal/model.go:465` | goinfer | `func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {` |
+| `docs/task-int4-layout-2026-09.md|metal/moe.go:446` | goinfer | `if p := m.GiwPath(); p != "" {` |
+| `docs/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:124` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
 | `docs/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2254` | goinfer | `// down-proj, weight-accumulating into the residual: x += wgt[j] * (Down_e · act).` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:287` | goinfer | `#define SA_BODY \` |

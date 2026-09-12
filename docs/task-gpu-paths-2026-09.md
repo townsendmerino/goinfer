@@ -1263,7 +1263,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     refutes the OTHER half of that same memory (a claimed "−23% v29 decode penalty") with a real
     re-measurement (per-dispatch cgo record cost identical, 1.1µs both; gemv compute within 4%) —
     and no commit anywhere ever describes `dot4I8Packed` as measured rather than blocked; every
-    mention in `roadmap.md`/`gpu-assessment.md`, before and after that date, says "blocked" /
+    mention in `completed/roadmap-2026-06.md`/`gpu-assessment.md`, before and after that date, says "blocked" /
     "upstream-blocked". The memory had conflated a reasoned prediction ("decode's M=1 GEMV is
     already bandwidth-saturated, so packed int8 dot arithmetic wouldn't help even if it existed")
     with an actual test. Corrected in this session's memory store, not just noted here.

@@ -1,7 +1,7 @@
 # Ideas: weight-memory reduction (the next program after KV)
 
 > **Audience:** internal brainstorming, written in the planning-doc style of
-> `completed/task-memory-program.md` / `roadmap.md`. The KV-cache program (rings + int8 +
+> `completed/task-memory-program.md` / `completed/roadmap-2026-06.md`. The KV-cache program (rings + int8 +
 > GPU int8) is shipped/scoped; **weights are the larger, less-attacked half of
 > resident RAM** and the roadmap only watches them (TurboQuant "weights angle =
 > watch", `.giw` f16 scales = "lowest value of all"). This doc proposes the

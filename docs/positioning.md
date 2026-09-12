@@ -6,7 +6,8 @@ other pure-Go options.
 
 ## What makes it different
 
-Moved from the README (2026-08-27) when the front page was shortened; unchanged.
+Moved from the README (2026-08-27) when the front page was shortened; refreshed 2026-09-12 against
+the generated matrices (`docs/capability-matrix.md`, `docs/hardware-matrix.md`).
 
 goinfer is a pure-Go, no-cgo decoder-only LLM runtime that loads open-weight checkpoints
 and runs them **in-process**. What makes it different — you don't have to choose:
@@ -24,16 +25,21 @@ and runs them **in-process**. What makes it different — you don't have to choo
   and a portable **WebGPU** backend (runs on *any* GPU and streams bigger-than-VRAM MoE weights).
   Its standing ~60–70%-of-native figure is narrower and older than it reads: **dense-Qwen2/Llama
   residency decode only**, measured 2026-06-08 against a 2025-era peer, so it is not a current
-  ratio and does not describe the families added since — residency requires dense attention, and
-  Granite, Nemotron, DeepSeek, GLM, Kimi and Gemma 4 are all ineligible for it
-  (`docs/benchmarks.md` §B). Going fast never costs you the single binary.
-- **27 model families, one binary.** All four attention / sequence-mixing families —
+  ratio. Which families each backend runs GPU-resident is generated from the admission predicate,
+  not maintained by hand — [`docs/hardware-matrix.md`](hardware-matrix.md). As of 2026-09-12 that
+  table reads 27 of 36 families resident on Metal, 26 on CUDA, 23 on WebGPU, 19 on all three;
+  the recurrent families (Mamba-2, Gated DeltaNet) and MoE are among them. The gaps are specific:
+  MLA (DeepSeek-V2/V3, Kimi K2) and Nemotron-H are WebGPU-only; Gemma 4, Command-R, Olmo,
+  SmolLM3 and Ministral 3 are CUDA/Metal-only; Llama 4, Granite-4.0-H, LFM2.5, Laguna and Ling 3.0
+  run on the CPU path everywhere. Going fast never costs you the single binary.
+- **36 model families, one binary.** All four attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV (MLA) — plus dense
-  and sparse-MoE, across 27 model families — the count is generated, not maintained by hand:
-  `docs/capability-matrix.md` is emitted from the `decoder` registry, so it cannot drift from the
-  code (Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral,
-  Qwen-MoE, GLM-4.5/4.6, DeepSeek-V2/V3 + Kimi, Phi-3/4, Granite-4.0-H, Nemotron-H, GPT-2,
-  Mellum2). From safetensors, GGUF, GPTQ, or AWQ; f32 / bf16 / f16 + int8 / int4.
+  and sparse-MoE, across 36 model families as of 2026-09-12 — the count is generated, not
+  maintained by hand: `docs/capability-matrix.md` is emitted from the `decoder` registry, so it
+  cannot drift from the code (Gemma 3/4, Qwen 2.5/3/3.5/3.8/Next and the Qwen VL pair, Llama and
+  Llama 4, Mistral/Ministral, Mixtral, Qwen-MoE, GLM-4.5/4.6, DeepSeek-V2/V3 + Kimi, Phi-3/4,
+  Granite, Nemotron-H, gpt-oss, Command-R, Olmo 3 and Olmo Hybrid, SmolLM3, InternLM2, Mellum2,
+  GPT-2, and more). From safetensors, GGUF, GPTQ, or AWQ; f32 / bf16 / f16 + int8 / int4.
 - **Parity-gated against the reference implementation.** Every forward pass is parity-gated
   against the HuggingFace reference (argmax-exact + logit cosine). A shared feature taxonomy
   means a backend declares a feature only when it ships the kernel — so an architecture it
@@ -101,6 +107,24 @@ at 30 it measures 16.12. Read the slot count as part of the claim.
 goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 [docs/task-moe-streaming.md](task-moe-streaming.md).)*
 
+> **Running a model larger than your card is opt-in, and the runtime does the sizing.** Gemma 4
+> residency is on by default; host→VRAM expert streaming is not. Without it the 26B's experts must
+> fit VRAM, and on an 8 GB card they do not, so the runtime declines to the CPU path and says why.
+> Turn it on with the flag the README documents — `goinfer-serve -backend cuda -moe-cache-experts`
+> — and the per-layer expert-slot cache is sized to the VRAM actually free at load (a display,
+> another process, a longer `--ctx` all shrink it), capped to what fits rather than to a number you
+> chose; on a bare 8 GB card that is 30–33 slots today. `goinfer-chat fit` answers "does this fit,
+> and how fast" before anything loads. The measured slot ladder — from an inert cache at the old
+> default of 8 to **16.12 tok/s at 30** — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
+> read the slot count as part of any number quoted from it. The remaining work to make this
+> invisible is [`docs/task-fit-to-hardware.md`](task-fit-to-hardware.md).
+
+<details>
+<summary>History — sizing the expert-slot cache by hand (superseded 2026-09; kept for the record)</summary>
+
+This is what this page said before the runtime sized the cache itself. Every number in it was
+measured and is still accurate for the build it describes; none of it is the user's job any more.
+
 > **Running a model larger than your card is opt-in.** Gemma-4 residency is on by default, but
 > host→VRAM expert streaming is not — without it the 26B's experts must fit VRAM, and on an 8 GB
 > card they do not, so the runtime declines to CPU (and says so). Reproducing the number above
@@ -160,3 +184,5 @@ goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 > at the free VRAM these tests observe the cap lands at 34, which fails. The number was real and
 > the configuration was narrow — it ran with roughly the forward's own demand left over. Treat it
 > as the ceiling this approach reached on one occasion, not as a target to configure toward.
+
+</details>

@@ -258,7 +258,7 @@ post-freeze family: visible, reasoned, not claimed. Pick up when either holds:
 Either way, gate zero is unchanged: re-read the LICENSE, confirm an HF reference exists, resolve
 the dtype discrepancy — in that order, before any code.
 
-**Cross-reference:** added under `docs/post-v1.0-models.md`'s "Watching" section pointing here, so
+**Cross-reference:** added under `docs/next-models.md`'s "Watching" section pointing here, so
 this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
 
 ## Sources checked this pass
@@ -276,4 +276,4 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
   the completed qwen3.6 real-checkpoint task record (internal, untracked), `docs/queue-correctness.md`,
   `docs/task-moe-streaming.md`, `docs/spec/README.md`, `docs/task-parity-coverage.md`,
   `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,
-  `docs/completed/scoping-lfm2.md`, `docs/post-v1.0-models.md`
+  `docs/completed/scoping-lfm2.md`, `docs/next-models.md`

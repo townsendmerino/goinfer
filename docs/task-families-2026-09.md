@@ -414,7 +414,7 @@ proceeds; per the brief's explicit scope for this item ("proceed ONLY to a synth
 
 ### Phase 0
 
-**(a) Weights are posted, not announced-only** — the specific trap `docs/post-v1.0-models.md`
+**(a) Weights are posted, not announced-only** — the specific trap `docs/next-models.md`
 already recorded for Ling 3.0's July announcement. Confirmed via the HF API, not a model card:
 32 real safetensors shards (`model-00000-of-00032.safetensors` … `-00031-of-00032`) plus
 `model.safetensors.index.json`, `torch_dtype: "bfloat16"` — readable today (no fp8/mxfp4 blocker,
@@ -520,7 +520,7 @@ primitives with their own existing proof).
   new-primitive cost — not a `qwen3_next`-scale undertaking, because the hardest primitive (KDA's
   core math) is now de-risked by this rehearsal rather than an open question.
 - **Why this matters beyond Ling itself**: this rehearsal is explicitly filed as the dry run for
-  Kimi K3 (`docs/post-v1.0-models.md`'s "Watch — Kimi K3": MLA on only 24 of 93 layers, the rest
+  Kimi K3 (`docs/next-models.md`'s "Watch — Kimi K3": MLA on only 24 of 93 layers, the rest
   KDA, plus a latent-MoE wrapper and a new activation — "closer to qwen3_5_moe's DeltaNet family
   than to anything MLA-shaped"). K3's own weights are still `mxfp4-pack-quantized` in an unconfirmed
   layout and its arch should still be re-checked when they actually drop (per that doc's own
@@ -663,7 +663,7 @@ change the scope.**
 ["Mistral3ForConditionalGeneration"]`, `model_type: "mistral3"` (outer VL wrapper) with a nested
 `text_config.model_type: "ministral3"`. **The checkpoints ship natively FP8-quantized**
 (`quantization_config.quant_method: "fp8"`) — the exact blocker that stopped DeepSeek-V4-Flash
-scoping (`docs/post-v1.0-models.md`) — but a `-BF16` sibling repo exists for every size
+scoping (`docs/next-models.md`) — but a `-BF16` sibling repo exists for every size
 (`mistralai/Ministral-3-8B-Instruct-2512-BF16`), so this is not a stop condition here; **target
 the `-BF16` repos, not the default FP8 ones.**
 

@@ -1,5 +1,23 @@
 # Residency-port ROI triage — Llama4 vs Granite vs Nemotron
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status: SUPERSEDED THE DAY AFTER IT WAS WRITTEN — archived 2026-09-12 as a recorded wrong
+> call.** Written 2026-06-18 (`f2521b9`). Its central verdict — Granite-4.0-H and Nemotron-H are
+> "INTRACTABLE" for residency because Mamba-2 is a sequential scan — was reversed on 2026-06-19
+> by `ssm-residency-scope.md` (now in this directory): the scan objection was about *prefill*;
+> Mamba-2 *decode* is a bounded per-token recurrence, KV-cache-shaped, and the resident SSM
+> engine shipped that day (`d2ba970`). Nemotron-H has been WebGPU-resident since. Granite-4.0-H
+> is still CPU on every backend per `docs/hardware-matrix.md`, but for the MoE-capacity reason,
+> not this one. The recommendation — port `llama4_text` first — was never executed; Llama 4 is
+> still CPU-everywhere, and the gate table and phase sketch below remain the only scoping of that
+> port. Cite them from here rather than re-deriving.
+
 Read-only scoping (no production change). Prize per family ≈ **3× / ~19 ms→~10 ms per token**
 (the architecture-independent §2 fence-tax recovery measured in `decode-twe-split.md`). Cost is
 what differs. Verdict up front:

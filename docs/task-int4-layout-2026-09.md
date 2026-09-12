@@ -365,9 +365,48 @@ fallback (LoRA/session paths, `task-gpu-paths` G3/G4). Whether to skip the row4 
 resident box, or release the CPU copies after a successful upload, is a residency-policy
 decision with its own measurement — file here, do not do under L1/L2.
 
-## L5 — amd64 split-half-only (DEFERRED until split-half is un-parked)
+## L5 — amd64 split-half-only: re-open the parked decision, its own condition is now met
 
-Same shape as L1/L2 for `cpu-amd64`: `RepackInt4SplitHalfInPlace` / `WrapInt4SplitHalfOnly` at
-load; kind 6 on disk (split-half nibbles + canonical scales, which split-half shares). Nothing
-to do until the parked amd64 split-half feature is back; when it is, the nobara box is the
-measuring box.
+**Where.** `decoder/weightmat.go:262–305 repackW4A8SplitHalfIfEligible`, `:323–347
+w4a8SplitHalfRepackEnabled` (env opt-in `GOINFER_W4A8_SPLITHALF`, default-off);
+`docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`; aikit
+`linalg/weightmat_splithalf_amd64.go` (`RepackInt4SplitHalf` declines on AVX-512 VNNI hosts —
+numerics, not caution — so this is AVX2-without-VNNI only: nobara's Zen 2 qualifies).
+
+**Why it is parked.** Measured, pre-registered: +2.10% decode tok/s on Qwen2.5-Coder-1.5B int4
+on the 3700X, against a +4% bar set in advance as the price of its memory cost — a second copy
+of every eligible tensor's nibbles, **+624.8 MiB** on that model (int4 weights 781 → 1.37 GiB).
+Landed in the "ambiguous → parked" band. The comment names the re-open condition: "if the
+kernel gets faster than 1.12×, **or if canonical can be dropped for a build that only ever
+decodes**." aikit v1.41.0's `RepackInt4SplitHalfInPlace` / `WrapInt4SplitHalfOnly` is the
+second condition. The trade inverts: +2.1% for zero extra bytes.
+
+**Fix.** Same shape as L1/L2 for a `cpu-amd64` target: `RepackInt4SplitHalfInPlace` at load
+under `Backend: "cpu"` where `Int4SplitHalfUsable`; kind 6 on disk (split-half nibbles +
+canonical scales, which split-half shares). The env flag's meaning changes from "opt into the
+duplicate" to nothing — remove it, or keep it only as an off-switch for A/B.
+
+**aikit prerequisite (VERIFIED 2026-09-11, blocks this item).** aikit
+`linalg/weightmat_splithalf_amd64.go`'s `MatmulBTW4A8Into` serves split-half at **M=1 only**;
+for a split-half-only WeightMat at M>1 it panics by design ("has no path for M>1 — the
+split-half AVX2 kernel is M=1 only and there is no canonical fallback"), and
+`TestWeightMatSplitHalf_repackedOnlyMatchesCanonical` covers M=1 only. So a split-half-only
+tensor cannot serve prefill today. Two aikit items, one release, before L5 starts:
+1. A split-half-input variant of the S-01b AVX2 tile (`quant_w4a8_tile_amd64.go`), dispatched
+   from `MatmulBTW4A8Into` at M>1 when `q4SplitHalf != nil` — the amd64 twin of arm64's
+   `MatmulBTW4A8Row4TileInto`. Not a per-row loop over the M=1 kernel: that re-pays the
+   nibble unpack per activation row (the S-01 mechanism) and would make prefill on a
+   split-half-only box slower than canonical. Bit-identity gate at M>1, and the existing
+   `TestWeightMatW4A8_MConsistentAcrossRow4Dispatch`-style M=1-vs-in-batch check for amd64.
+2. `W4A8Op` has `Row4`/`Row4Scales` but no split-half field, so `MatmulBTW4A8Batch` panics for
+   a split-half-only op at any M. Unreachable from goinfer today (`w4a8BatchEnabled` default-off)
+   but it is the same seam; add the field and route it, or document the batch path as
+   canonical/row4-only and have goinfer's batch gate check `Int4Layout()`.
+Measure on nobara (AVX2, no VNNI). Ship as its own aikit release; L5 then bumps to it.
+
+**Gate.** A fresh paired A/B in the same measurements file (same discipline: interleaved, same
+binary, repacked count read and non-zero), decode tok/s and RSS, on nobara. Ship if decode ≥
+the parked +2.1% at ≤ canonical RSS — the bar the pre-registration would have set had the
+memory cost been zero.
+
+**Size.** Medium on aikit (one `.s` tile variant + gates); small on goinfer after; the measurement is the goinfer work.

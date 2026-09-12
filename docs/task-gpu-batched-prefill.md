@@ -1,7 +1,7 @@
 # Task (goinfer): batched on-device GPU prefill (long-prompt TTFT)
 
 > **For:** Claude Code, in `~/tmcode/goinfer` (GPU work → the 64 GB RTX box;
-> `-tags gpu`). Deferred follow-on from `docs/roadmap.md`. Increments ordered and
+> `-tags gpu`). Deferred follow-on from `docs/completed/roadmap-2026-06.md`. Increments ordered and
 > independently shippable. **Bit-exact greedy parity is the non-negotiable gate —
 > none of this touches the CPU forward; it must match the sequential GPU prefill
 > token-for-token.** Pure-Go core CI job stays untouched.
@@ -13,7 +13,7 @@
 > 748 GFLOP/s-equiv → batched prefill ≈ 0.91× (RTX), ≈1.2× (Metal): a wash. It's
 > kernel-limited, not silicon-limited. **Prerequisite: `dot4I8Packed` unblocks in
 > `cogentcore/webgpu`** (TU104 has the DP4A hardware) — only then does the tiled GEMM
-> clear the bandwidth wall and these increments pay off. See `docs/roadmap.md`
+> clear the bandwidth wall and these increments pay off. See `docs/completed/roadmap-2026-06.md`
 > (Backlog → GPU long-context, and the dp4a item).
 
 ## Problem
