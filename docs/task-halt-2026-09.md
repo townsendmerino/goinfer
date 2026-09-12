@@ -44,7 +44,7 @@ process that can rewrite its own service unit is out of scope for anything insid
 - **Auth and exposure.** Loopback by default; `-api-key` required off-loopback; `/admin/*`
   opt-in behind `-allow-admin` **on the same listener and the same key as `/v1`**
   (`internal/serveapp/main.go:606–607`). Today an agent that can call `/v1` can also call `/admin` if admin is on.
-- **Unguessable ids** for responses/messages/tool calls (`internal/serveapp/helpers.go:493–504`) — the handle a
+- **Unguessable ids** for responses/messages/tool calls (`internal/serveapp/helpers.go:503–514`) — the handle a
   cancel-by-id needs already exists; it is just not registered anywhere.
 - **Client-side interrupt** in the demo agent: `signal.NotifyContext(os.Interrupt)`
   (`demo/agent/cmd/stdlib-agent/main.go`, the `signal.NotifyContext(os.Interrupt)` call near line 105 — no `:NNN` citation here since the lint's path regex cannot parse a hyphenated directory segment) — Ctrl-C from the terminal, nothing else.
