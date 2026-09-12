@@ -1228,9 +1228,11 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/resident_reuse.go:5` | goinfer | `// Prefix reuse on the RESIDENT positional KV.` |
 | `docs/audit-2026-09-10.md|decoder/resident_reuse.go:93` | goinfer | `func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRunt` |
 | `docs/audit-2026-09-10.md|decoder/rope.go:106` | goinfer | `func mropeDelta(pos [][3]int, seqLen int) int {` |
-| `docs/audit-2026-09-10.md|decoder/sampler.go:216` | goinfer | `if len(s.p.LogitBias) > 0 \|\| s.penaltiesActive() {` |
-| `docs/audit-2026-09-10.md|decoder/sampler.go:237` | goinfer | `} else if s.p.Logprobs {` |
-| `docs/audit-2026-09-10.md|decoder/sampler.go:252` | goinfer | `info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs` |
+| `docs/audit-2026-09-10.md|decoder/sampler.go:253` | goinfer | `if len(s.p.LogitBias) > 0 \|\| s.penaltiesActive() {` |
+| `docs/audit-2026-09-10.md|decoder/sampler.go:256` | goinfer | `work = s.workBufN(len(logits))` |
+| `docs/audit-2026-09-10.md|decoder/sampler.go:277` | goinfer | `} else if s.p.Logprobs {` |
+| `docs/audit-2026-09-10.md|decoder/sampler.go:292` | goinfer | `info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs` |
+| `docs/audit-2026-09-10.md|decoder/sampler.go:591` | goinfer | `func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP float64` |
 | `docs/audit-2026-09-10.md|decoder/scratch.go:317` | goinfer | `if c := nKeys * hd; cap(p.kh) < c {` |
 | `docs/audit-2026-09-10.md|decoder/serialize.go:1225` | goinfer | `// v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attentio` |
 | `docs/audit-2026-09-10.md|decoder/serialize_census_test.go:87` | goinfer | `"../testdata/qwen3moe-tiny", "../testdata/granite-dense-tiny",` |
@@ -1499,9 +1501,9 @@ supports.
 | `docs/how-inference-works.md|decoder/model.go:1163` | goinfer | `func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *` |
 | `docs/how-inference-works.md|decoder/model.go:1353` | goinfer | `for range maxTokens {` |
 | `docs/how-inference-works.md|decoder/registry.go:19` | goinfer | `var registry = map[string]archAdapter{` |
-| `docs/how-inference-works.md|decoder/sampler.go:179` | goinfer | `// can never silently diverge. They are separate predicates, not one widened one, so tha` |
-| `docs/how-inference-works.md|decoder/sampler.go:186` | goinfer | `// though a temperature is set — the `top_k=1` shape. It is TRUE at any temperature, whi` |
-| `docs/how-inference-works.md|decoder/sampler.go:188` | goinfer | `// distribution restricted to ONE token is deterministic regardless of that token's prob` |
+| `docs/how-inference-works.md|decoder/sampler.go:258` | goinfer | `s.applyLogitBias(work)` |
+| `docs/how-inference-works.md|decoder/sampler.go:264` | goinfer | `info.ID = argmax(work)` |
+| `docs/how-inference-works.md|decoder/sampler.go:265` | goinfer | `} else if s.p.TopK > 0 \|\| s.p.TopP > 0 \|\| s.p.MinP > 0 {` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:70` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
