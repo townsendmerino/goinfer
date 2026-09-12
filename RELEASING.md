@@ -67,6 +67,15 @@ survives to a tag unless caught here.
    only gate that reads the product from outside: v0.16.0 shipped a README naming a binary that was
    not in the release and a Mac asset that could not use the GPU, and every internal gate was green.
    The report goes in `docs/measurements/cold-user-<date>.md`, verbatim.
+6. **No required gate pending since before the previous release** (audit-2026-09-10 G-03):
+   `GOINFER_RELEASE_TAG=vX.Y.Z go test ./cmd/gate/ -count=1 -v -run '^TestParity_noPendingGateOutlivesARelease$'`.
+   A gate in `awaitingFirstConfirmation` may ride through one release unconfirmed, never two: a
+   failure in a pending gate reads as an item, not a blocker. The previous release is the newest
+   dated CHANGELOG header that is not vX.Y.Z, so it gives the same answer before or after the
+   `[Unreleased]` move. A red names each gate. Run it and promote it
+   (`scripts/gate_ledger.py promote --gate <gate> --value PASS --by <you>`), or move it to
+   `neverConfirmed` in `cmd/gate/parity.go` with the reason it will never be confirmed. Between
+   releases nothing is enforced, and `release-assets.yml` runs the same check as a backstop.
 
 ## The two-step tag (post-M-19)
 

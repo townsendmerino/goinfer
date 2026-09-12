@@ -83,8 +83,12 @@ passed and simply never call `emitParityRow`.
 
 **Two known-red gates, so you can tell them from your own findings:**
 
-- `TestQwen38GGUF_weightDiff` — `k_proj` cosine 0.997047 against a 0.999 bar. Pre-existing, its
-  first-ever execution, reproduces bit-identically at aikit v1.35.0. Not yours.
+- ~~`TestQwen38GGUF_weightDiff` — `k_proj` cosine 0.997047 against a 0.999 bar.~~ **No longer
+  known-red: FIXED 2026-09-12 and now PASSES.** Struck rather than deleted because this list is
+  read to decide what to ignore, and a stale entry here would teach you to dismiss a real red. The
+  0.997047 was Q4_K dequant noise measured against a bar calibrated for Q8_0; floors are now per
+  tensor. **If it reds on your box now, that IS yours** — report it. (Needs the 55.6 GB safetensors
+  plus the GGUF, so it more likely skips.)
 - `TestSamplingThroughputGate` — **flaky, ~1 run in 4**, on an unchanged tree (measured 3.88–5.19×
   against a 5.0 bar). See `docs/queue-performance.md` P17. If it reds, re-run once before believing
   it — and if it reds *consistently* on arm64, that is new and worth reporting.

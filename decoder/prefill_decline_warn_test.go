@@ -75,8 +75,23 @@ func TestResidentPrefillSeed_DeclineIsLoggedWithReason(t *testing.T) {
 	}
 
 	prompt := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} // >= 8 tokens: GOINFER_BATCHED_PREFILL's own floor
-	stream, g := m.Generate(context.Background(), prompt, 1, SamplingParams{})
+
+	// Generate MUST be started INSIDE the capture, not before it. captureStderr installs its pipe
+	// by assigning the os.Stderr global, and warnPrefillDeclined reads that global from the
+	// generation goroutine — so starting the goroutine first is a genuine data race on os.Stderr
+	// (caught by -race in CI on both linux and darwin, 2026-09-12, run 34711378811; the detector
+	// fired during this test and so blamed it, while the write was this line's own).
+	//
+	// It was also a correctness bug independent of the detector: the decline is logged during
+	// PREFILL, which is the first thing the goroutine does, so any decline emitted between
+	// Generate returning and the swap landing went to the REAL stderr and was missed. The test
+	// would then assert on output it never captured — a flake that looks like a missing log line.
+	// Starting inside the closure makes the capture cover the whole generation, which is what the
+	// assertion below already assumed.
+	var g *Generation
 	got := captureStderr(t, func() {
+		var stream <-chan int
+		stream, g = m.Generate(context.Background(), prompt, 1, SamplingParams{})
 		for range stream { //nolint:revive // draining the stream is the point
 		}
 	})

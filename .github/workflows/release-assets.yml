@@ -34,6 +34,14 @@ jobs:
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with: { go-version-file: 'go.mod' }
+      # A pending gate's failure reads as an item, not a blocker, so one that rides through two
+      # releases unconfirmed is a required gate that could block neither (audit-2026-09-10 G-03,
+      # chosen over a calendar bound 2026-09-11). RELEASING.md's pre-flight runs this before tagging;
+      # this is the backstop, and it fails the job before any asset is built.
+      - name: no required gate pending since before the previous release (G-03)
+        run: |
+          GOINFER_RELEASE_TAG="${{ github.event.inputs.tag || github.ref_name }}" \
+            go test ./cmd/gate/ -count=1 -v -run '^TestParity_noPendingGateOutlivesARelease$'
       - name: cross-compile six targets, with the backend each platform can use
         run: |
           set -euo pipefail
