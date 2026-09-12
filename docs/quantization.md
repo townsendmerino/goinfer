@@ -132,7 +132,7 @@ Stated so nobody reads absence as endorsement:
 
 [`nemotron-resident.md`](nemotron-resident.md) (int4 default-on evidence; the granite contrast) ·
 [`task-first-hour.md`](task-first-hour.md) (the arm64 int4/int8 footprint inversion) ·
-[`audit-2026-09-02.md`](audit-2026-09-02.md) L-10 (the 3-bit KV NO-GO) ·
+[`audit-2026-09-02.md`](completed/audit-2026-09-02.md) L-10 (the 3-bit KV NO-GO) ·
 [`release-1.0-gate.md`](release-1.0-gate.md) (router flips, 779 of 3200) ·
 [`benchmarks.md`](benchmarks.md) (speed rows and their provenance) ·
 `internal/serveapp/main.go` (`-quant`, the flag this page explains)

@@ -84,7 +84,7 @@ moves here, a pointer stub is left behind, because other pages link to the old p
 - `audit-<date>.md` — a whole-repo audit at a named commit; findings are dispositioned in place
   and the file moves to `completed/` when every one is closed. Current:
   [audit-2026-09-10.md](audit-2026-09-10.md) (at `c7ef16a`); the previous ones are
-  [audit-2026-09-02.md](audit-2026-09-02.md) and
+  [completed/audit-2026-09-02.md](completed/audit-2026-09-02.md) and
   [completed/audit-2026-08-05.md](completed/audit-2026-08-05.md).
 
 ## The one rule worth knowing before you cite anything
