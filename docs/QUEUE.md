@@ -406,16 +406,26 @@ rediscovered:
   loaded), which is no longer what happens. An exclusion keyed to one symptom is silently covering
   a worse one.
 
-- **The strided scores·V negative result has no live home.** It was preserved as the local tag
-  `negative-result/strided-v-scoresv` when its branch was deleted, because its numbers appear in no
-  document: +13.38% (1.5B/512), +40.35% (1.5B/4096), +5.21% (0.5B/512), interleaved A/B with the
-  floor characterised in advance and both polarities run — against P1's recorded **−3.8%** at the
-  same model and context, opposite sign. Mechanism measured, not guessed: `attendBatchedHeads`
-  hoists the V gather above the GQA group loop, so removing it converts one amortised gather into
-  `group` un-amortised strided reads; at `bElemStride = kvDim` every element lands on its own 64B
-  line, 14.68 MB → 201.33 MB at 1.5B/4096. `docs/task-attention-decode-cost.md` would have been its
-  home but was archived 2026-09-12, so a live destination needs choosing. A tag is not a record
-  anyone will find.
+- **WITHDRAWN same day it was filed: the strided scores·V result was never homeless.** This bullet
+  claimed its numbers "appear in no document" and "contradict P1's −3.8% … opposite sign", and asked
+  for a destination. **Both claims were false.** Kept rather than deleted because HOW the error was
+  made is the reusable part: the absence was concluded from a `grep … | head -8` whose eight lines
+  filled up from one file, so the real hit — `docs/measurements/aikit-kv-regather-strided-p1.md`, a
+  LIVE doc — never printed. **An absence established from a truncated search is not an absence.**
+
+  P1 already records the x86-64 arm, in more detail than the deleted branch had: +13.38% (1.5B/512)
+  and +5.21% (0.5B/512) identically, **+41.20%** at 1.5B/4096 where the branch had one polarity's
+  +40.35%, plus a **7B/4096 +23.49%** confirming shape the branch never ran, the absolute penalties
+  (20 → 295 → 401 ms), the 14.68 MB → 201.33 MB / ~13.7× line-bytes account, and both polarities at
+  every shape.
+
+  There is also no contradiction to file. P1's §"The sign flips on x86-64" **is** that finding, and
+  its decision is already correctly scoped: adopt on arm64/M1 (−3.8%), do NOT adopt on x86-64 (+40%
+  at 4k). The branch message's "same model, same context, opposite sign" elided the BOX — the
+  comparability field `benchmarks.md` makes mandatory precisely so two arches cannot be read as one
+  disagreement — and repeating it without checking the architecture was that same omission one level
+  up. The only thing the branch held that P1 does not is the prototype code and its bit-identity
+  harness, reachable as tag `negative-result/strided-v-scoresv`. **No action outstanding.**
 
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 
