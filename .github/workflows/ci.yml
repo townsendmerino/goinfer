@@ -149,6 +149,26 @@ jobs:
       #     detector. It passed on linux/-race and failed on darwin/-race (3.86x, 3.99x vs a 3.0x
       #     bound) on commits touching no sampler code.
       # ~25s. Linux only: both are platform-independent, so running them twice buys nothing.
+      #
+      # ZERO-MATCH GUARD (audit-2026-09-10.md, found 2026-09-11): `go test -run '<pattern>'`
+      # exits 0 and prints `ok ... [no tests to run]` when the pattern matches NOTHING —
+      # verified directly (`go test -run 'DoesNotExist12345' ./decoder/` -> `ok`, exit 0). A
+      # renamed/deleted test here would report green while running none of these four gates.
+      # `go test -list` prints one line per matched test name; filtering for lines that are
+      # themselves a bare identifier (no spaces/tabs) is deliberate, not `grep -v '^ok\b'` —
+      # a multi-package `./...`-shaped target ALSO prints `?   <pkg>  [no test files]` lines
+      # unconditionally, even at zero matches, which `grep -v '^ok\b'` would not filter out
+      # and would make this guard pass wrongly (caught by testing that exact case here).
+      - name: sampler gates exist (zero-match guard)
+        run: |
+          pattern='TestTopFilterLogits_MatchesReference|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage'
+          matched=$(go test -list "$pattern" ./decoder/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ -z "$matched" ]; then
+            echo "::error::pattern '$pattern' matched NO test in ./decoder/ — renamed or deleted? the next step would silently report green running nothing"
+            exit 1
+          fi
+          echo "matched:"
+          echo "$matched"
       - name: sampler gates (no -race)
         run: go test -count=1 -run 'TestTopFilterLogits_MatchesReference|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage' ./decoder/
 
@@ -378,5 +398,16 @@ jobs:
       # falsifiability gate, which asserts the NaN<minCos guard fails on degenerate output using no
       # GPU and no checkpoint. Everything device-bound is gated by `go run ./cmd/gate gpu` on a real
       # Metal box; build+vet above are the CI compile-check.
+      # ZERO-MATCH GUARD (audit-2026-09-10.md, found 2026-09-11): same risk as the sampler-gates
+      # step above, and worse here — this is the ONLY test this job runs (everything else would
+      # SIGSEGV the runner), so a renamed/deleted TestParity_NaNCosineFailsTheGate would report
+      # green while running literally nothing, with no other step in this job to catch it.
+      - name: falsifiability gate exists (zero-match guard)
+        run: |
+          matched=$(go test -list 'TestParity_NaNCosineFailsTheGate' ./metal/... | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ -z "$matched" ]; then
+            echo "::error::TestParity_NaNCosineFailsTheGate matched NOTHING in ./metal/... — renamed or deleted? the next step would silently report green running nothing, and it is the ONLY test this job runs"
+            exit 1
+          fi
       - name: test (device-free falsifiability gate only — the runner's Metal layer SIGSEGVs)
         run: go test -run 'TestParity_NaNCosineFailsTheGate' ./metal/...
