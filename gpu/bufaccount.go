@@ -5,7 +5,7 @@ package gpu
 import (
 	"sync/atomic"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Live device-buffer accounting.

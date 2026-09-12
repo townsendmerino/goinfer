@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // TestDecodeToken_throughput times the one-fence DecodeToken on the real Qwen-1.5B
@@ -100,7 +100,7 @@ func TestDecodeToken_throughput(t *testing.T) {
 	timeSteps := func(keep func(s runStep) bool) time.Duration {
 		best := time.Hour
 		for range 30 {
-			enc, _ := ctx.device.CreateCommandEncoder(nil)
+			enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			for _, s := range runner.steps {
 				if !keep(s) {
@@ -110,9 +110,9 @@ func TestDecodeToken_throughput(t *testing.T) {
 				pass.SetBindGroup(0, s.bg, nil)
 				pass.DispatchWorkgroups(s.gx, s.gy, 1)
 			}
-			pass.End()
+			pass.TryEnd()
 			pass.Release()
-			cmd, _ := enc.Finish(nil)
+			cmd, _ := enc.TryFinish(nil)
 			t0 := time.Now()
 			ctx.queue.Submit(cmd)
 			ctx.device.Poll(true, nil)

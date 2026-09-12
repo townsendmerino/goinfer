@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Device (submit-no-poll) variants of the layer ops + the attention sub-block, so
@@ -25,8 +25,8 @@ func (c *Context) rmsnormDevice(x, weight *DeviceBuffer, H int, eps float32, add
 	if err != nil {
 		return nil, nil, err
 	}
-	pbuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rmsn-p", Contents: wgpu.ToBytes([]uint32{uint32(H), f32bits(eps), boolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rmsn-p", Contents: wgpu.ToBytes([]uint32{uint32(H), f32bits(eps), boolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: x.buf, Size: x.buf.GetSize()}, {Binding: 1, Buffer: weight.buf, Size: weight.buf.GetSize()},
 		{Binding: 2, Buffer: out, Size: out.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
 	}})
@@ -48,7 +48,7 @@ func (c *Context) residualInPlace(x, y *DeviceBuffer, H int) ([]func(), error) {
 		return nil, err
 	}
 	pbuf, _ := c.dims4("res-p", uint32(H), 0)
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: x.buf, Size: x.buf.GetSize()}, {Binding: 1, Buffer: y.buf, Size: y.buf.GetSize()},
 		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
 	}})
@@ -68,8 +68,8 @@ func (c *Context) ropeInPlace(vec, invFreq *DeviceBuffer, heads, headDim, pos in
 		return nil, err
 	}
 	half := headDim / 2
-	pbuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), f32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.ropeLayout, Entries: []wgpu.BindGroupEntry{
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), f32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.ropeLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: vec.buf, Size: vec.buf.GetSize()}, {Binding: 1, Buffer: invFreq.buf, Size: invFreq.buf.GetSize()},
 		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
 	}})
@@ -86,12 +86,12 @@ func (c *Context) ropeInPlace(vec, invFreq *DeviceBuffer, heads, headDim, pos in
 // kvAppend copies a device k or v [kvDim] into the cache at position pos (a copy
 // command, submitted; no poll).
 func (c *Context) kvAppend(src, cache *DeviceBuffer, pos, kvDim int) error {
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
-	if err := enc.CopyBufferToBuffer(src.buf, 0, cache.buf, uint64(pos*kvDim*4), uint64(kvDim*4)); err != nil {
+	if err := enc.TryCopyBufferToBuffer(src.buf, 0, cache.buf, uint64(pos*kvDim*4), uint64(kvDim*4)); err != nil {
 		return err
 	}
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -107,13 +107,13 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 	if err != nil {
 		return nil, nil, err
 	}
-	pbuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
 	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
 	// bind a null storage buffer); this test-only path never carries a real sink, so a harmless
 	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
-	sinksBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
-	hsBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.attnLayout, Entries: []wgpu.BindGroupEntry{
+	sinksBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	hsBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.attnLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: q.buf, Size: q.buf.GetSize()}, {Binding: 1, Buffer: kCache.buf, Size: kCache.buf.GetSize()},
 		{Binding: 2, Buffer: vCache.buf, Size: vCache.buf.GetSize()}, {Binding: 3, Buffer: ctxBuf, Size: ctxBuf.GetSize()},
 		{Binding: 4, Buffer: sinksBuf, Size: sinksBuf.GetSize()}, {Binding: 5, Buffer: pbuf, Size: pbuf.GetSize()},
@@ -126,13 +126,13 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 		hsBuf.Release()
 		return nil, nil, err
 	}
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.attnPipeline)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(nH), 1, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		ctxBuf.Release()
 		pbuf.Release()
@@ -142,7 +142,7 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 		return nil, nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	free := []func(){func() { ctxBuf.Release() }, pbuf.Release, sinksBuf.Release, hsBuf.Release, bg.Release}
@@ -255,7 +255,7 @@ func (c *Context) swigluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer
 		return nil, nil, err
 	}
 	pbuf, _ := c.dims4("swiglu-p", uint32(inter), 0)
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: gate.buf, Size: gate.buf.GetSize()}, {Binding: 1, Buffer: up.buf, Size: up.buf.GetSize()},
 		{Binding: 2, Buffer: mid, Size: mid.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
 	}})
@@ -384,12 +384,12 @@ func (c *Context) DecodeToken(x []float32, m ModelW, hidden, nH, nKV, hd, inter,
 // NewKVCache creates a resident KV cache buffer of capElems f32 with the first
 // len(initial) prefilled (prior positions). CopyDst lets kvAppend write into it.
 func (c *Context) NewKVCache(initial []float32, capElems int) (*DeviceBuffer, error) {
-	buf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache", Size: uint64(capElems * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	buf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache", Size: uint64(capElems * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	if len(initial) > 0 {
-		if err := c.queue.WriteBuffer(buf, 0, wgpu.ToBytes(initial)); err != nil {
+		if err := c.queue.TryWriteBuffer(buf, 0, wgpu.ToBytes(initial)); err != nil {
 			buf.Release()
 			return nil, err
 		}
@@ -405,12 +405,12 @@ func (c *Context) NewKVCache(initial []float32, capElems int) (*DeviceBuffer, er
 // kernels apply), so a prefilled f16 cache matches what a decode would have written.
 func (c *Context) NewKVCacheF16(initial []float32, capElems int) (*DeviceBuffer, error) {
 	words := (capElems + 1) / 2
-	buf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-f16", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	buf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-f16", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	if len(initial) > 0 {
-		if err := c.queue.WriteBuffer(buf, 0, wgpu.ToBytes(packF16Pairs(initial))); err != nil {
+		if err := c.queue.TryWriteBuffer(buf, 0, wgpu.ToBytes(packF16Pairs(initial))); err != nil {
 			buf.Release()
 			return nil, err
 		}
@@ -430,23 +430,23 @@ func (c *Context) NewKVCacheF16(initial []float32, capElems int) (*DeviceBuffer,
 func (c *Context) NewKVCacheI8(initial []float32, capElems, nKV, hd int) (*DeviceBuffer, *DeviceBuffer, error) {
 	words := (capElems + 3) / 4
 	scaleElems := capElems / hd // = ctxCap*nKV (one scale per position×KV-head)
-	dataBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	dataBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, nil, err
 	}
-	scaleBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8-scale", Size: uint64(scaleElems * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	scaleBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8-scale", Size: uint64(scaleElems * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		dataBuf.Release()
 		return nil, nil, err
 	}
 	if len(initial) > 0 {
 		w, s := packKVInt8(initial, nKV, hd)
-		if err := c.queue.WriteBuffer(dataBuf, 0, wgpu.ToBytes(w)); err != nil {
+		if err := c.queue.TryWriteBuffer(dataBuf, 0, wgpu.ToBytes(w)); err != nil {
 			dataBuf.Release()
 			scaleBuf.Release()
 			return nil, nil, err
 		}
-		if err := c.queue.WriteBuffer(scaleBuf, 0, wgpu.ToBytes(s)); err != nil {
+		if err := c.queue.TryWriteBuffer(scaleBuf, 0, wgpu.ToBytes(s)); err != nil {
 			dataBuf.Release()
 			scaleBuf.Release()
 			return nil, nil, err

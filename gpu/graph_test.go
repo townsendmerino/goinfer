@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // TestGraph_oneFencePerToken is the §0.5 probe: does recording a whole token's
@@ -64,21 +64,21 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 
 	// scratch buffers
 	stor := func(n int) *wgpu.Buffer {
-		b, err := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		b, err := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return b
 	}
 	packBuf := func(words int) *wgpu.Buffer {
-		b, err := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage})
+		b, err := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return b
 	}
 	uni := func(v []uint32) *wgpu.Buffer {
-		b, err := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		b, err := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,13 +89,13 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	gI, uI, mI := stor(FFN), stor(FFN), stor(FFN)
 	aI, asI := packBuf(padK(FFN)/4), stor(1)
 	dSmall, dKV, dLM := stor(H), stor(KV), stor(VOCAB)
-	stagLM, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(VOCAB * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stagLM, _ := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(VOCAB * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	defer stagLM.Release()
 
 	// bindgroup builders
 	gemvBG := func(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, dst *wgpu.Buffer) *wgpu.BindGroup {
 		dims := uni([]uint32{1, uint32(rm.kp), uint32(rm.rows), 0})
-		bg, err := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.gemvLayout, Entries: []wgpu.BindGroupEntry{
+		bg, err := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.gemvLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
 			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
 			{Binding: 4, Buffer: dst, Size: dst.GetSize()}, {Binding: 5, Buffer: dims, Size: dims.GetSize()},
@@ -108,7 +108,7 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	rmsW := stor(H)
 	rmsBG := func() *wgpu.BindGroup {
 		p := uni([]uint32{H, 0x3727c5ac, 0, 0}) // eps≈1e-5 bits
-		bg, err := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
+		bg, err := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: xH, Size: xH.GetSize()}, {Binding: 1, Buffer: rmsW, Size: rmsW.GetSize()},
 			{Binding: 2, Buffer: xnH, Size: xnH.GetSize()}, {Binding: 3, Buffer: p, Size: p.GetSize()},
 		}})
@@ -119,7 +119,7 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	}()
 	quantBG := func(src, qb, sc *wgpu.Buffer, K int) *wgpu.BindGroup {
 		p := uni([]uint32{1, uint32(K), uint32(padK(K)), 0})
-		bg, err := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.quantizeLayout, Entries: []wgpu.BindGroupEntry{
+		bg, err := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.quantizeLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: src, Size: src.GetSize()}, {Binding: 1, Buffer: qb, Size: qb.GetSize()},
 			{Binding: 2, Buffer: sc, Size: sc.GetSize()}, {Binding: 3, Buffer: p, Size: p.GetSize()},
 		}})
@@ -132,7 +132,7 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	qI := quantBG(mI, aI, asI, FFN)
 	swBG := func() *wgpu.BindGroup {
 		p := uni([]uint32{FFN, 0, 0, 0})
-		bg, err := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.swigluLayout, Entries: []wgpu.BindGroupEntry{
+		bg, err := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.swigluLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: gI, Size: gI.GetSize()}, {Binding: 1, Buffer: uI, Size: uI.GetSize()},
 			{Binding: 2, Buffer: mI, Size: mI.GetSize()}, {Binding: 3, Buffer: p, Size: p.GetSize()},
 		}})
@@ -180,23 +180,23 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	t.Logf("recorded %d dispatches/token (L=%d)", len(ops), L)
 
 	readLogits := func() {
-		stagLM.MapAsync(wgpu.MapModeRead, 0, uint64(VOCAB*4), func(s wgpu.BufferMapAsyncStatus) { _ = s })
+		stagLM.TryMapAsync(wgpu.MapModeRead, 0, uint64(VOCAB*4), func(s wgpu.MapAsyncStatus) { _ = s })
 		ctx.device.Poll(true, nil)
-		stagLM.Unmap()
+		stagLM.TryUnmap()
 	}
 
 	// (A) one fence: all dispatches, one submit, one Poll.
 	oneFence := func() {
-		enc, _ := ctx.device.CreateCommandEncoder(nil)
+		enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(nil)
 		for _, o := range ops {
 			pass.SetPipeline(o.pl)
 			pass.SetBindGroup(0, o.bg, nil)
 			pass.DispatchWorkgroups(o.gx, o.gy, 1)
 		}
-		pass.End()
-		enc.CopyBufferToBuffer(dLM, 0, stagLM, 0, uint64(VOCAB*4))
-		cmd, ferr := enc.Finish(nil)
+		pass.TryEnd()
+		enc.TryCopyBufferToBuffer(dLM, 0, stagLM, 0, uint64(VOCAB*4))
+		cmd, ferr := enc.TryFinish(nil)
 		if ferr != nil {
 			t.Fatal(ferr)
 		}
@@ -212,15 +212,15 @@ func TestGraph_oneFencePerToken(t *testing.T) {
 	staged := func() {
 		for i := 0; i < len(ops); i += grp {
 			end := min(i+grp, len(ops))
-			enc, _ := ctx.device.CreateCommandEncoder(nil)
+			enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			for _, o := range ops[i:end] {
 				pass.SetPipeline(o.pl)
 				pass.SetBindGroup(0, o.bg, nil)
 				pass.DispatchWorkgroups(o.gx, o.gy, 1)
 			}
-			pass.End()
-			cmd, _ := enc.Finish(nil)
+			pass.TryEnd()
+			cmd, _ := enc.TryFinish(nil)
 			ctx.queue.Submit(cmd)
 			ctx.device.Poll(true, nil) // the per-group fence
 			cmd.Release()

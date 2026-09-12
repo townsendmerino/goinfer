@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -132,7 +132,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	timePlan := func(skip *wgpu.ComputePipeline) time.Duration {
 		best := time.Hour
 		for range reps {
-			enc, err := c.device.CreateCommandEncoder(nil)
+			enc, err := c.device.TryCreateCommandEncoder(nil)
 			if err != nil {
 				t.Fatalf("encoder: %v", err)
 			}
@@ -147,9 +147,9 @@ func TestDecode_dispatchProfile(t *testing.T) {
 					pass.DispatchWorkgroups(s.gx, s.gy, 1)
 				}
 			}
-			pass.End()
+			pass.TryEnd()
 			pass.Release()
-			cmd, err := enc.Finish(nil)
+			cmd, err := enc.TryFinish(nil)
 			if err != nil {
 				t.Fatalf("finish: %v", err)
 			}

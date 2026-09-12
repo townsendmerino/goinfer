@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Resident Gated-DeltaNet decode step (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8).
@@ -318,13 +318,13 @@ func (c *Context) ensureDeltaAttnGate() error {
 // compute is the ensure* boilerplate these four kernels share: compile, pipeline, register the
 // releases at creation (audit C-26), and wrap both errors with the kernel's name.
 func (c *Context) compute(name, wgsl string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, error) {
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: name, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: wgsl},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: name, WGSLSource: &wgpu.ShaderSourceWGSL{Code: wgsl},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("gpu: compile %s: %w", name, err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: name, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {

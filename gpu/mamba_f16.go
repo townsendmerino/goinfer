@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // f16 mixed-precision path for the Mamba projections (in/out_proj). The R2 control
@@ -82,7 +82,7 @@ func packF16(w []float32, N, K int, mult float32) []uint32 {
 // UploadF16Weight uploads a packed-f16 [N,K] weight (build-once resident buffer).
 func (c *Context) UploadF16Weight(w []float32, N, K int, mult float32) (*wgpu.Buffer, error) {
 	packed := packF16(w, N, K, mult)
-	return c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	return c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "mamba-f16", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 }
@@ -127,13 +127,13 @@ func (c *Context) ensureMambaF16() error {
 	if c.mambaF16Pipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "mambaGemvF16", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: mambaGemvF16WGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "mambaGemvF16", WGSLSource: &wgpu.ShaderSourceWGSL{Code: mambaGemvF16WGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile mambaGemvF16: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "mambaGemvF16", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {

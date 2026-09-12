@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // W8A16 GEMV: int8 WEIGHT × f32 ACTIVATION (no activation quantization). Control/fix for the
@@ -130,13 +130,13 @@ func (c *Context) ensureGEMVW8A16() error {
 
 // buildCompute compiles a WGSL compute shader → (module, pipeline, group-0 layout).
 func (c *Context) buildCompute(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: label, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: code},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: label, WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {

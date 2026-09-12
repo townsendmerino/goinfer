@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Tiled W8A8 GEMM (the prefill, M>1 kernel). The naive matmul re-streams a full
@@ -74,14 +74,14 @@ func (c *Context) ensureTiled() error {
 	if c.tiledPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:          "matmulTiledW8A8",
-		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: matmulTiledW8A8ShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "matmulTiledW8A8",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: matmulTiledW8A8ShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile tiled shader: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label:   "matmulTiledW8A8",
 		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
@@ -106,12 +106,12 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 		return nil, err
 	}
 	K := rms[0].cols
-	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: BatchTiled act: %w", err)
 	}
 	defer aBuf.Release()
-	asBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
+	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: BatchTiled ascales: %w", err)
 	}
@@ -135,26 +135,26 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 			}
 		}
 	}
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.tiledPipeline)
 	for i, rm := range rms {
 		N := rm.rows
-		dst, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if err != nil {
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled dst: %w", err)
 		}
-		dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		dims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
 			dst.Release()
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled dims: %w", err)
 		}
-		bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.tiledLayout, Entries: []wgpu.BindGroupEntry{
+		bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.tiledLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()}, {Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
 			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()}, {Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
 			{Binding: 4, Buffer: dst, Size: dst.GetSize()}, {Binding: 5, Buffer: dims, Size: dims.GetSize()},
@@ -170,28 +170,28 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 		pass.SetBindGroup(0, bg, nil)
 		pass.DispatchWorkgroups((uint32(N)+15)/16, (uint32(M)+15)/16, 1)
 	}
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		release()
 		return nil, fmt.Errorf("gpu: BatchTiled pass: %w", err)
 	}
 	pass.Release()
 	for i := range pops {
-		stag, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-stage", Size: uint64(M * pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-stage", Size: uint64(M * pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled stage: %w", err)
 		}
 		pops[i].stag = stag
-		enc.CopyBufferToBuffer(pops[i].dst, 0, stag, 0, uint64(M*pops[i].n*4))
+		enc.TryCopyBufferToBuffer(pops[i].dst, 0, stag, 0, uint64(M*pops[i].n*4))
 	}
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	statuses := make([]wgpu.BufferMapAsyncStatus, len(pops))
+	statuses := make([]wgpu.MapAsyncStatus, len(pops))
 	for i := range pops {
 		idx := i
-		if err := pops[i].stag.MapAsync(wgpu.MapModeRead, 0, uint64(M*pops[i].n*4), func(s wgpu.BufferMapAsyncStatus) { statuses[idx] = s }); err != nil {
+		if err := pops[i].stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(M*pops[i].n*4), func(s wgpu.MapAsyncStatus) { statuses[idx] = s }); err != nil {
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled map: %w", err)
 		}
@@ -199,13 +199,13 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 	c.device.Poll(true, nil) // ONE sync for the whole batch
 	outs := make([][]float32, len(pops))
 	for i := range pops {
-		if statuses[i] != wgpu.BufferMapAsyncStatusSuccess {
+		if statuses[i] != wgpu.MapAsyncStatusSuccess {
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled map[%d] failed: %v", i, statuses[i])
 		}
 		out := make([]float32, M*pops[i].n)
 		copy(out, wgpu.FromBytes[float32](pops[i].stag.GetMappedRange(0, uint(M*pops[i].n*4))))
-		pops[i].stag.Unmap()
+		pops[i].stag.TryUnmap()
 		outs[i] = out
 	}
 	release()
@@ -223,14 +223,14 @@ func (c *Context) MatmulW8A8Tiled(aq []int8, aScales []float32, rm *ResidentW8A8
 	if len(aq) < M*K || len(aScales) < M {
 		return nil, fmt.Errorf("gpu: MatmulW8A8Tiled input too small")
 	}
-	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "tiled-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled act buffer: %w", err)
 	}
 	defer aBuf.Release()
-	asBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "tiled-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -239,28 +239,28 @@ func (c *Context) MatmulW8A8Tiled(aq []int8, aScales []float32, rm *ResidentW8A8
 	defer asBuf.Release()
 
 	dstSize := uint64(M * N * 4)
-	dstBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "tiled-dst", Size: dstSize, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled dst buffer: %w", err)
 	}
 	defer dstBuf.Release()
-	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "tiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled dims buffer: %w", err)
 	}
 	defer dimsBuf.Release()
-	stage, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "tiled-stage", Size: dstSize, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled staging buffer: %w", err)
 	}
 	defer stage.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.tiledLayout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
@@ -275,34 +275,34 @@ func (c *Context) MatmulW8A8Tiled(aq []int8, aScales []float32, rm *ResidentW8A8
 		return nil, fmt.Errorf("gpu: tiled bind: %w", err)
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.tiledPipeline)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups((uint32(N)+15)/16, (uint32(M)+15)/16, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: tiled pass: %w", err)
 	}
 	pass.Release()
-	if err := enc.CopyBufferToBuffer(dstBuf, 0, stage, 0, dstSize); err != nil {
+	if err := enc.TryCopyBufferToBuffer(dstBuf, 0, stage, 0, dstSize); err != nil {
 		return nil, fmt.Errorf("gpu: tiled copy: %w", err)
 	}
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	status := wgpu.BufferMapAsyncStatusUnknown
-	if err := stage.MapAsync(wgpu.MapModeRead, 0, dstSize, func(s wgpu.BufferMapAsyncStatus) { status = s }); err != nil {
+	status := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, dstSize, func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
 		return nil, fmt.Errorf("gpu: tiled map: %w", err)
 	}
 	c.device.Poll(true, nil)
-	if status != wgpu.BufferMapAsyncStatusSuccess {
+	if status != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: tiled map failed: %v", status)
 	}
 	out := make([]float32, M*N)
 	copy(out, wgpu.FromBytes[float32](stage.GetMappedRange(0, uint(dstSize))))
-	if err := stage.Unmap(); err != nil {
+	if err := stage.TryUnmap(); err != nil {
 		return nil, fmt.Errorf("gpu: tiled unmap: %w", err)
 	}
 	return out, nil

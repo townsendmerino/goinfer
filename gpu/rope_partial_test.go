@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // TestRopeStorePartialRotary_tailStored gates C4: for partial rotary (rotaryDim < headDim — GLM,

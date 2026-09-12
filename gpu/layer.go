@@ -5,7 +5,7 @@ package gpu
 import (
 	"math"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Stage 3 — whole-sub-block residency. The decode floor is syncs per token
@@ -134,30 +134,30 @@ func (c *Context) ensureLayer() error {
 // the output device buffer. binds = the bind-group entries (output already
 // included by the caller); n is the dispatch element count (ceil/64 workgroups).
 func (c *Context) submitUnary(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, n int) error {
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups((uint32(n)+63)/64, 1, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
 }
 
 func (c *Context) newF32(label string, n int) (*wgpu.Buffer, error) {
-	return c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	return c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 }
 
 func (c *Context) dims4(label string, a uint32, bf float32) (*wgpu.Buffer, error) {
 	// pack {a, bf-as-bits-or-0, 0, 0}; for rmsnorm bf is eps, else unused.
-	return c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes([]uint32{a, math.Float32bits(bf), 0, 0}), Usage: wgpu.BufferUsageUniform})
+	return c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes([]uint32{a, math.Float32bits(bf), 0, 0}), Usage: wgpu.BufferUsageUniform})
 }
 
 // FusedMLP runs RMSNorm → gate/up → SwiGLU → down → residual entirely on-device,
@@ -192,12 +192,12 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	// liveBufferBytes, since only the wrapper kept here ever gets Close()d by rel().
 	xnDB := newDeviceBuffer(xn, H)
 	keep = append(keep, xnDB)
-	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rms-p", Contents: wgpu.ToBytes([]uint32{uint32(H), math.Float32bits(eps), boolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rms-p", Contents: wgpu.ToBytes([]uint32{uint32(H), math.Float32bits(eps), boolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}
 	keep = append(keep, pbuf)
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: xd.buf, Size: xd.buf.GetSize()},
 		{Binding: 1, Buffer: rmsW.buf, Size: rmsW.buf.GetSize()},
 		{Binding: 2, Buffer: xn, Size: xn.GetSize()},
@@ -241,7 +241,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 		return nil, err
 	}
 	keep = append(keep, sp)
-	sbg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
+	sbg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: gd.buf, Size: gd.buf.GetSize()},
 		{Binding: 1, Buffer: ud.buf, Size: ud.buf.GetSize()},
 		{Binding: 2, Buffer: mid, Size: mid.GetSize()},
@@ -273,7 +273,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 		return nil, err
 	}
 	keep = append(keep, rp)
-	rbg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
+	rbg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: xd.buf, Size: xd.buf.GetSize()},
 		{Binding: 1, Buffer: dd.buf, Size: dd.buf.GetSize()},
 		{Binding: 2, Buffer: rp, Size: rp.GetSize()},

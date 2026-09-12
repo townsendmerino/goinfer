@@ -6,11 +6,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // TestSpike_capabilities is the GPU Stage-1 "binding spike": it reports the
-// adapter the WebGPU binding selects and whether cogentcore/webgpu exposes the
+// adapter the WebGPU binding selects and whether the wgpu binding exposes the
 // features the W8A8 plan needs — packed int8 dot (dot4I8Packed) and timestamp
 // queries — plus the storage-buffer binding limit (the sharding constraint).
 // Informational; it never fails (a missing feature is a finding, not a bug).
@@ -23,15 +23,15 @@ func TestSpike_capabilities(t *testing.T) {
 
 	info := ctx.adapter.GetInfo()
 	t.Logf("adapter: %q (%s) | backend=%s type=%s | driver=%q",
-		info.Name, info.VendorName, info.BackendType, info.AdapterType, info.DriverDescription)
+		info.Device, info.Vendor, info.BackendType, info.AdapterType, info.Description)
 
-	lim := ctx.adapter.GetLimits().Limits
+	lim := ctx.adapter.GetLimits()
 	t.Logf("maxStorageBufferBindingSize = %d MiB | maxBufferSize = %d MiB | maxComputeWorkgroupStorageSize = %d KiB",
 		lim.MaxStorageBufferBindingSize/(1<<20), lim.MaxBufferSize/(1<<20), lim.MaxComputeWorkgroupStorageSize/(1<<10))
 
 	// Timestamp queries (for kernel profiling in the microbenchmark stage).
 	t.Logf("timestamp-query feature: adapter=%v device=%v",
-		hasFeature(ctx.adapter.EnumerateFeatures(), wgpu.FeatureNameTimestampQuery),
+		hasFeature(ctx.adapter.GetFeatures(), wgpu.FeatureNameTimestampQuery),
 		ctx.device.HasFeature(wgpu.FeatureNameTimestampQuery))
 
 	// dot4I8Packed: try compiling a shader that uses it. Success ⇒ the packed
@@ -42,9 +42,9 @@ func TestSpike_capabilities(t *testing.T) {
 fn main() {
     out[0] = dot4I8Packed(0x01020304u, 0x05060708u);
 }`
-	sm, derr := ctx.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:          "dot4I8Packed-probe",
-		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: dotShader},
+	sm, derr := ctx.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "dot4I8Packed-probe",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: dotShader},
 	})
 	if derr != nil {
 		t.Logf("dot4I8Packed: NOT supported (%v) — W8A8 must use the unpacked int8 fallback", derr)

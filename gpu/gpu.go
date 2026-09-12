@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync/atomic"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // matmulShaderWGSL computes dst[m,n] = Σ_k a[m,k]·b[n,k], i.e. dst =
@@ -385,7 +385,7 @@ func New() (*Context, error) {
 	// verbatim fails — some advertised limits, e.g. maxBufferSize, aren't valid as
 	// required limits). maxBufferSize must be ≥ the binding size.
 	lim := wgpu.DefaultLimits()
-	al := adapter.GetLimits().Limits
+	al := adapter.GetLimits()
 	lim.MaxStorageBufferBindingSize = al.MaxStorageBufferBindingSize
 	// Raise MaxBufferSize to the binding max (2 GB on this card) so large single
 	// weights fit — a 7B's LM head is ~272 MB int4 / ~545 MB int8, past the 256 MB
@@ -399,16 +399,16 @@ func New() (*Context, error) {
 		lim.MaxComputeWorkgroupsPerDimension = al.MaxComputeWorkgroupsPerDimension
 	}
 	device, err := adapter.RequestDevice(&wgpu.DeviceDescriptor{
-		RequiredLimits: &wgpu.RequiredLimits{Limits: lim},
+		RequiredLimits: &lim,
 	})
 	if err != nil {
 		adapter.Release()
 		inst.Release()
 		return nil, fmt.Errorf("gpu: request device (%d goinfer Contexts already live; this driver allows ~63): %w", liveContexts.Load(), err)
 	}
-	shader, err := device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:          "matmulBT",
-		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: matmulShaderWGSL},
+	shader, err := device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "matmulBT",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: matmulShaderWGSL},
 	})
 	if err != nil {
 		device.Release()
@@ -416,7 +416,7 @@ func New() (*Context, error) {
 		inst.Release()
 		return nil, fmt.Errorf("gpu: compile shader: %w", err)
 	}
-	pipeline, err := device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pipeline, err := device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label:   "matmulBT",
 		Compute: wgpu.ProgrammableStageDescriptor{Module: shader, EntryPoint: "main"},
 		// Layout nil ⇒ auto layout inferred from the shader bindings.
@@ -472,13 +472,13 @@ func (c *Context) bgl(pl *wgpu.ComputePipeline) *wgpu.BindGroupLayout {
 // On pipeline-creation failure the shader is released immediately and NOTHING is registered, so a
 // failed ensure* leaves the Context exactly as it found it.
 func (c *Context) mkPipeline(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: label, WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: code},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: label, WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
 	})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -568,7 +568,7 @@ func (c *Context) UploadMatrix(b []float32, rows, cols int) (*ResidentMatrix, er
 	if len(b) < rows*cols {
 		return nil, fmt.Errorf("gpu: UploadMatrix input too small: len(b)=%d need %d", len(b), rows*cols)
 	}
-	buf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	buf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "resident-b", Contents: wgpu.ToBytes(b[:rows*cols]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -589,7 +589,7 @@ func (c *Context) MatmulBTResident(a []float32, rm *ResidentMatrix, M int) ([]fl
 	if len(a) < M*K {
 		return nil, fmt.Errorf("gpu: MatmulBTResident input too small: len(a)=%d need %d", len(a), M*K)
 	}
-	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "a", Contents: wgpu.ToBytes(a[:M*K]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -612,7 +612,7 @@ func (c *Context) MatmulBT(a, b []float32, M, K, N int) ([]float32, error) {
 		return nil, fmt.Errorf("gpu: matmulBT input too small: len(a)=%d need %d, len(b)=%d need %d",
 			len(a), M*K, len(b), N*K)
 	}
-	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "a", Contents: wgpu.ToBytes(a[:M*K]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -620,7 +620,7 @@ func (c *Context) MatmulBT(a, b []float32, M, K, N int) ([]float32, error) {
 	}
 	defer aBuf.Release()
 
-	bBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	bBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "b", Contents: wgpu.ToBytes(b[:N*K]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -637,7 +637,7 @@ func (c *Context) MatmulBT(a, b []float32, M, K, N int) ([]float32, error) {
 func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 	dstSize := uint64(M * N * 4)
 
-	dstBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "dst", Size: dstSize,
 		Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
@@ -648,7 +648,7 @@ func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 
 	// Dims uniform: 3 u32 + 1 pad word (uniform buffers need 16-byte size).
 	dims := []uint32{uint32(M), uint32(K), uint32(N), 0}
-	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
@@ -656,7 +656,7 @@ func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 	}
 	defer dimsBuf.Release()
 
-	stage, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "stage", Size: dstSize,
 		Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
@@ -665,7 +665,7 @@ func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 	}
 	defer stage.Release()
 
-	bindGroup, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+	bindGroup, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.layout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
@@ -679,7 +679,7 @@ func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 	}
 	defer bindGroup.Release()
 
-	enc, err := c.device.CreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create command encoder: %w", err)
 	}
@@ -691,16 +691,16 @@ func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 	// global_invocation_id.x ranges over rows (M), .y over cols (N);
 	// 16×16 threads per workgroup, so ceil-divide the counts.
 	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
 	}
 	pass.Release()
 
-	if err := enc.CopyBufferToBuffer(dstBuf, 0, stage, 0, dstSize); err != nil {
+	if err := enc.TryCopyBufferToBuffer(dstBuf, 0, stage, 0, dstSize); err != nil {
 		return nil, fmt.Errorf("gpu: copy dst→stage: %w", err)
 	}
-	cmd, err := enc.Finish(nil)
+	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, fmt.Errorf("gpu: finish encoder: %w", err)
 	}
@@ -708,21 +708,21 @@ func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 	c.queue.Submit(cmd)
 
 	// Map the staging buffer and block until the GPU work + map complete.
-	mapStatus := wgpu.BufferMapAsyncStatusUnknown
-	if err := stage.MapAsync(wgpu.MapModeRead, 0, dstSize, func(s wgpu.BufferMapAsyncStatus) {
+	mapStatus := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, dstSize, func(s wgpu.MapAsyncStatus) {
 		mapStatus = s
 	}); err != nil {
 		return nil, fmt.Errorf("gpu: map async: %w", err)
 	}
 	c.device.Poll(true, nil) // wait=true: flush queue + fire map callback
-	if mapStatus != wgpu.BufferMapAsyncStatusSuccess {
+	if mapStatus != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: staging map failed: %v", mapStatus)
 	}
 
 	raw := stage.GetMappedRange(0, uint(dstSize))
 	out := make([]float32, M*N)
 	copy(out, wgpu.FromBytes[float32](raw))
-	if err := stage.Unmap(); err != nil {
+	if err := stage.TryUnmap(); err != nil {
 		return nil, fmt.Errorf("gpu: unmap staging: %w", err)
 	}
 	return out, nil

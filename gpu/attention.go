@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Stage 3 attention primitives — RoPE and single-query attention on the GPU, so a
@@ -736,22 +736,22 @@ func (c *Context) RoPE(vec []float32, heads, headDim, pos int, invFreq []float32
 		return nil, err
 	}
 	half := len(invFreq)
-	vBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-vec", Contents: wgpu.ToBytes(vec), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	vBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-vec", Contents: wgpu.ToBytes(vec), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer vBuf.Release()
-	fBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
+	fBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
 	defer fBuf.Release()
-	pBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), f32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), f32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}
 	defer pBuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.ropeLayout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.ropeLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: vBuf, Size: vBuf.GetSize()},
 		{Binding: 1, Buffer: fBuf, Size: fBuf.GetSize()},
 		{Binding: 2, Buffer: pBuf, Size: pBuf.GetSize()},
@@ -781,27 +781,27 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 // than the kernel the runner uses.
 func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout, q, keys, vals []float32, nH, nKV, hd, nKeys, start int, scale float32) ([]float32, error) {
 	group := nH / nKV
-	qBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
+	qBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
 	defer qBuf.Release()
-	kBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
+	kBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
 	defer kBuf.Release()
-	vBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
+	vBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
 	defer vBuf.Release()
-	cBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "attn-ctx", Size: uint64(nH * hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	cBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "attn-ctx", Size: uint64(nH * hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer cBuf.Release()
-	pBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), f32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
 	defer pBuf.Release()
 	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
 	// bind a null storage buffer); this test helper never carries a real sink, so a harmless
 	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
-	sinksBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	sinksBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
 	defer sinksBuf.Release()
-	hsBuf, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	hsBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 	defer hsBuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
 		{Binding: 1, Buffer: kBuf, Size: kBuf.GetSize()},
 		{Binding: 2, Buffer: vBuf, Size: vBuf.GetSize()},
@@ -814,18 +814,18 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(nH), 1, 1) // one workgroup per query head
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return c.readbackRaw(cBuf, nH*hd)
@@ -1016,7 +1016,7 @@ func (c *Context) ensureAttnWide() error {
 	// maxComputeInvocationsPerWorkgroup is 256 in the WebGPU default limits, but "default" is a
 	// floor for conformant implementations, not a promise from this adapter. Check it: a decline
 	// here falls back to the staged path, whereas compiling past it is a device error mid-build.
-	if lim := c.device.GetLimits().Limits.MaxComputeInvocationsPerWorkgroup; lim < attnWGWide {
+	if lim := c.device.GetLimits().MaxComputeInvocationsPerWorkgroup; lim < attnWGWide {
 		return fmt.Errorf("gpu: device maxComputeInvocationsPerWorkgroup=%d < %d — cannot run the "+
 			"wide attention kernel needed for head_dim > %d", lim, attnWGWide, attnWG)
 	}

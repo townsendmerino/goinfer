@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // int8 KV kernel correctness (task-gpu-kv-i8.md Inc 1). Real-HW; validates the
@@ -38,34 +38,34 @@ func (c *Context) dispatchI8(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLay
 	for i, u := range unis {
 		entries = append(entries, wgpu.BindGroupEntry{Binding: uint32(len(storage) + i), Buffer: u, Size: u.GetSize()})
 	}
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries})
 	if err != nil {
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(groups), 1, 1)
-	pass.End()
-	cb, _ := enc.Finish(nil)
+	pass.TryEnd()
+	cb, _ := enc.TryFinish(nil)
 	c.queue.Submit(cb)
 	c.device.Poll(true, nil)
 	return nil
 }
 
 func (c *Context) sbuf(data []float32) *wgpu.Buffer {
-	b, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "i8t-s", Contents: wgpu.ToBytes(data), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	b, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "i8t-s", Contents: wgpu.ToBytes(data), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	return b
 }
 func (c *Context) ubuf(data []uint32) *wgpu.Buffer {
-	b, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "i8t-u", Contents: wgpu.ToBytes(data), Usage: wgpu.BufferUsageUniform})
+	b, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "i8t-u", Contents: wgpu.ToBytes(data), Usage: wgpu.BufferUsageUniform})
 	return b
 }
 func (c *Context) zbuf(n int) *wgpu.Buffer { // zeroed storage, readable
-	b, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "i8t-z", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	b, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "i8t-z", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	return b
 }
 func (c *Context) readWords(b *wgpu.Buffer, n int) []uint32 {
@@ -188,7 +188,7 @@ func TestKVI8Kernels(t *testing.T) {
 }
 
 func (c *Context) wbuf(data []uint32) *wgpu.Buffer {
-	b, _ := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "i8t-w", Contents: wgpu.ToBytes(data), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	b, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "i8t-w", Contents: wgpu.ToBytes(data), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	return b
 }
 

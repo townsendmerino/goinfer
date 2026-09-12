@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -144,13 +144,13 @@ func TestDecodeTWE_split(t *testing.T) {
 func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 	bestTicks := math.MaxFloat64
 	for range 30 {
-		qset, e := c.device.CreateQuerySet(&wgpu.QuerySetDescriptor{Label: "ts", Type: wgpu.QueryTypeTimestamp, Count: 2})
+		qset, e := c.device.TryCreateQuerySet(&wgpu.QuerySetDescriptor{Label: "ts", Type: wgpu.QueryTypeTimestamp, Count: 2})
 		if e != nil || qset == nil {
 			return -1
 		}
-		resolve, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "ts-resolve", Size: 16, Usage: wgpu.BufferUsageQueryResolve | wgpu.BufferUsageCopySrc})
-		readback, _ := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "ts-rb", Size: 16, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-		enc, _ := c.device.CreateCommandEncoder(nil)
+		resolve, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-resolve", Size: 16, Usage: wgpu.BufferUsageQueryResolve | wgpu.BufferUsageCopySrc})
+		readback, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-rb", Size: 16, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		enc, _ := c.device.TryCreateCommandEncoder(nil)
 		enc.WriteTimestamp(qset, 0)
 		pass := enc.BeginComputePass(nil)
 		for _, s := range steps {
@@ -158,19 +158,19 @@ func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 			pass.SetBindGroup(0, s.bg, nil)
 			pass.DispatchWorkgroups(s.gx, s.gy, 1)
 		}
-		pass.End()
+		pass.TryEnd()
 		pass.Release()
 		enc.WriteTimestamp(qset, 1)
 		enc.ResolveQuerySet(qset, 0, 2, resolve, 0)
-		enc.CopyBufferToBuffer(resolve, 0, readback, 0, 16)
-		cmd, _ := enc.Finish(nil)
+		enc.TryCopyBufferToBuffer(resolve, 0, readback, 0, 16)
+		cmd, _ := enc.TryFinish(nil)
 		c.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
-		st := wgpu.BufferMapAsyncStatusUnknown
-		readback.MapAsync(wgpu.MapModeRead, 0, 16, func(s wgpu.BufferMapAsyncStatus) { st = s })
+		st := wgpu.MapAsyncStatus(0)
+		readback.TryMapAsync(wgpu.MapModeRead, 0, 16, func(s wgpu.MapAsyncStatus) { st = s })
 		c.device.Poll(true, nil)
-		if st == wgpu.BufferMapAsyncStatusSuccess {
+		if st == wgpu.MapAsyncStatusSuccess {
 			tsv := wgpu.FromBytes[uint64](readback.GetMappedRange(0, 16))
 			if d := float64(tsv[1] - tsv[0]); d < bestTicks {
 				bestTicks = d

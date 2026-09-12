@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Per-head QK-norm (Lever C — extend resident DecodeRunner eligibility). Qwen3 / GLM /
@@ -52,13 +52,13 @@ func (c *Context) ensureQKNorm() error {
 	if c.qkNormPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "qkNorm", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: qkNormWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "qkNorm", WGSLSource: &wgpu.ShaderSourceWGSL{Code: qkNormWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile qkNorm: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "qkNorm", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {

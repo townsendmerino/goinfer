@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // DecodeTokenFusedBatched is the Stage-B (docs/spec/07) batched verify forward: it
@@ -24,7 +24,7 @@ import (
 // — the first arch of the Stage-B rollout.
 //
 // NOT one command buffer end to end, despite the name's original intent: cogentcore/webgpu's
-// Metal backend allocates a fresh native MTLCommandBuffer inside every ComputePassEncoder.End()
+// Metal backend allocates a fresh native MTLCommandBuffer inside every ComputePassEncoder.TryEnd()
 // (wgpuComputePassEncoderEnd -> wgpu_hal Metal begin_encoding -> -[MTLCommandQueue
 // commandBufferWithUnretainedReferences]), and MTLCommandQueue caps how many can exist
 // uncommitted at once — block on that cap and Submit() is unreachable because nothing already
@@ -68,7 +68,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	keepBuf := func(b *wgpu.Buffer) { keep = append(keep, b.Release) }
 	keepBG := func(b *wgpu.BindGroup) { keep = append(keep, b.Release) }
 
-	enc, err := c.device.CreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -94,7 +94,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -114,7 +114,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 			}
 			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
-		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
+		bg, e := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -131,7 +131,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		if buildErr != nil {
 			return
 		}
-		cmd, e := enc.Finish(nil)
+		cmd, e := enc.TryFinish(nil)
 		if e != nil {
 			buildErr = e
 			return
@@ -139,7 +139,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		c.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
-		enc, e = c.device.CreateCommandEncoder(nil)
+		enc, e = c.device.TryCreateCommandEncoder(nil)
 		if e != nil {
 			buildErr = e
 		}
@@ -158,7 +158,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		pass.SetPipeline(pl)
 		pass.SetBindGroup(0, bg, nil)
 		pass.DispatchWorkgroups(gx, gy, 1)
-		pass.End()
+		pass.TryEnd()
 		pass.Release()
 		dispCount++
 		if dispCount >= passesPerFlush {
@@ -172,7 +172,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 		if buildErr != nil || src == nil || dst == nil {
 			return
 		}
-		enc.CopyBufferToBuffer(src, so, dst, do, sz)
+		enc.TryCopyBufferToBuffer(src, so, dst, do, sz)
 	}
 
 	// --- per-row ops (one row's [hidden]/[dim] buffer) ---
@@ -231,7 +231,7 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	// Upload the M input rows.
 	xd := make([]*wgpu.Buffer, M)
 	for r := range xs {
-		b, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xs[r]), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		b, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xs[r]), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			return nil, err
 		}
@@ -311,37 +311,37 @@ func (c *Context) DecodeTokenFusedBatched(xs [][]float32, m ModelW, hidden, nH, 
 	vocab := m.LMHead.rows
 	stag := make([]*wgpu.Buffer, M)
 	for r := range stag {
-		s, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		s, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			return nil, err
 		}
 		keepBuf(s)
-		enc.CopyBufferToBuffer(logits[r], 0, s, 0, uint64(vocab*4))
+		enc.TryCopyBufferToBuffer(logits[r], 0, s, 0, uint64(vocab*4))
 		stag[r] = s
 	}
-	cmd, err := enc.Finish(nil)
+	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, err
 	}
 	defer cmd.Release()
 	c.queue.Submit(cmd) // the FINAL submit — everything since the last flushPasses, plus the readback copies
 
-	statuses := make([]wgpu.BufferMapAsyncStatus, M)
+	statuses := make([]wgpu.MapAsyncStatus, M)
 	for r := range stag {
 		idx := r
-		if err := stag[r].MapAsync(wgpu.MapModeRead, 0, uint64(vocab*4), func(s wgpu.BufferMapAsyncStatus) { statuses[idx] = s }); err != nil {
+		if err := stag[r].TryMapAsync(wgpu.MapModeRead, 0, uint64(vocab*4), func(s wgpu.MapAsyncStatus) { statuses[idx] = s }); err != nil {
 			return nil, err
 		}
 	}
 	c.device.Poll(true, nil) // the ONE fence for all M rows
 	out := make([][]float32, M)
 	for r := range stag {
-		if statuses[r] != wgpu.BufferMapAsyncStatusSuccess {
+		if statuses[r] != wgpu.MapAsyncStatusSuccess {
 			return nil, fmt.Errorf("gpu: DecodeTokenFusedBatched map[%d] failed: %v", r, statuses[r])
 		}
 		row := make([]float32, vocab)
 		copy(row, wgpu.FromBytes[float32](stag[r].GetMappedRange(0, uint(vocab*4))))
-		stag[r].Unmap()
+		stag[r].TryUnmap()
 		out[r] = row
 	}
 	return out, nil

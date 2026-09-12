@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -130,18 +130,18 @@ func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			return nil, fmt.Errorf("gpu: SetAdapter: no dispatch hook for layer %d projection %d "+
 				"(arch shape mismatch — LoadAdapter should have rejected this model)", layer, kind)
 		}
-		aBuf, err := r.c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		aBuf, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 			Label: "lora-A", Contents: wgpu.ToBytes(proj.A), Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			return nil, err
 		}
-		bBuf, err := r.c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		bBuf, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 			Label: "lora-B", Contents: wgpu.ToBytes(proj.B), Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			aBuf.Release()
 			return nil, err
 		}
-		uDown, err := r.c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		uDown, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 			Label: "lora-uDown", Contents: wgpu.ToBytes([]uint32{uint32(h.k), uint32(proj.R), 0, 0}),
 			Usage: wgpu.BufferUsageUniform})
 		if err != nil {
@@ -149,7 +149,7 @@ func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			bBuf.Release()
 			return nil, err
 		}
-		uUp, err := r.c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		uUp, err := r.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 			Label: "lora-uUp", Contents: wgpu.ToBytes([]uint32{uint32(proj.R), uint32(proj.Out), f32bits(proj.Scale), 0}),
 			Usage: wgpu.BufferUsageUniform})
 		if err != nil {
@@ -158,7 +158,7 @@ func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			uDown.Release()
 			return nil, err
 		}
-		bgDown, err := r.c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: r.c.loraDownLayout, Entries: []wgpu.BindGroupEntry{
+		bgDown, err := r.c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: r.c.loraDownLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: h.aq, Size: h.aq.GetSize()},
 			{Binding: 1, Buffer: h.ascale, Size: h.ascale.GetSize()},
 			{Binding: 2, Buffer: aBuf, Size: aBuf.GetSize()},
@@ -172,7 +172,7 @@ func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			uUp.Release()
 			return nil, err
 		}
-		bgUp, err := r.c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: r.c.loraUpLayout, Entries: []wgpu.BindGroupEntry{
+		bgUp, err := r.c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: r.c.loraUpLayout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: bBuf, Size: bBuf.GetSize()},
 			{Binding: 1, Buffer: r.loraT, Size: r.loraT.GetSize()},
 			{Binding: 2, Buffer: h.dst, Size: h.dst.GetSize()},

@@ -8,7 +8,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -307,11 +307,11 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// stateBuf allocates a build-once, zeroed, in-place-updatable Mamba state buffer
 	// (Storage|CopyDst so Reset can re-zero it per generation).
 	stateBuf := func(n int) (*wgpu.Buffer, error) {
-		b2, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		b2, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			return nil, err
 		}
-		c.queue.WriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
+		c.queue.TryWriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
 		keepF(b2.Release)
 		return b2, nil
 	}
@@ -1209,28 +1209,28 @@ func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error
 		vw, vs := packKVInt8(vals, rd.nKV, rd.hd)
 		kvOff := uint64(base) * uint64(kvDim)
 		scOff := uint64(base) * uint64(rd.nKV) * 4
-		if err := rd.c.queue.WriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.WriteBuffer(l.kScale, scOff, wgpu.ToBytes(ks)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kScale, scOff, wgpu.ToBytes(ks)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.WriteBuffer(l.vCache, kvOff, wgpu.ToBytes(vw)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.vCache, kvOff, wgpu.ToBytes(vw)); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vScale, scOff, wgpu.ToBytes(vs))
+		return rd.c.queue.TryWriteBuffer(l.vScale, scOff, wgpu.ToBytes(vs))
 	case rd.rm.kvF16:
 		off := uint64(base) * uint64(kvDim) * 2
-		if err := rd.c.queue.WriteBuffer(l.kCache, off, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kCache, off, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vCache, off, wgpu.ToBytes(packF16Pairs(vals)))
+		return rd.c.queue.TryWriteBuffer(l.vCache, off, wgpu.ToBytes(packF16Pairs(vals)))
 	default:
 		off := uint64(base) * uint64(kvDim) * 4
-		if err := rd.c.queue.WriteBuffer(l.kCache, off, wgpu.ToBytes(keys)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kCache, off, wgpu.ToBytes(keys)); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vCache, off, wgpu.ToBytes(vals))
+		return rd.c.queue.TryWriteBuffer(l.vCache, off, wgpu.ToBytes(vals))
 	}
 }
 
@@ -1244,7 +1244,7 @@ func (rd *residentDecoder) Reset() {
 	// continues from it with no sign anything went wrong.
 	rd.resetErr = nil
 	wr := func(b *wgpu.Buffer, data []byte) {
-		if err := rd.c.queue.WriteBuffer(b, 0, data); err != nil && rd.resetErr == nil {
+		if err := rd.c.queue.TryWriteBuffer(b, 0, data); err != nil && rd.resetErr == nil {
 			rd.resetErr = fmt.Errorf("gpu: resident Reset failed to re-zero recurrent state: %w", err)
 		}
 	}

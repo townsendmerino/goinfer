@@ -5,7 +5,7 @@ package gpu
 import (
 	"math"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Resident SigLIP vision encoder — the path to a GPU-fast image prefill
@@ -171,12 +171,12 @@ func (c *Context) copyHeadDevice(src, dst *wgpu.Buffer, rows, hd, srcStride, off
 
 // twoBufKernel runs a kernel with two storage buffers (binding 0,1) + a uniform.
 func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, b0, b1 *wgpu.Buffer, p []uint32, dispatch int) error {
-	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "k-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "k-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return err
 	}
 	defer pbuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: b0, Size: b0.GetSize()},
 		{Binding: 1, Buffer: b1, Size: b1.GetSize()},
 		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
@@ -185,18 +185,18 @@ func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupL
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(dispatch), 1, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -206,12 +206,12 @@ func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupL
 // no Poll. dispatch = number of workgroups. Shared by gelu (n/64 groups) and
 // softmaxRows (one group per row).
 func (c *Context) inplaceKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, x *wgpu.Buffer, p []uint32, dispatch int) error {
-	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ip-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ip-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return err
 	}
 	defer pbuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: x, Size: x.GetSize()},
 		{Binding: 1, Buffer: pbuf, Size: pbuf.GetSize()},
 	}})
@@ -219,18 +219,18 @@ func (c *Context) inplaceKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroup
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(dispatch), 1, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -270,12 +270,12 @@ func (c *Context) geluHost(x []float32) ([]float32, error) {
 // layerNormRowsDevice runs LayerNorm over `rows`×`h`, src→dst device buffers, no
 // Poll (chains into the next op). weight/bias are resident [h] buffers.
 func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffer, dst *wgpu.Buffer, rows, h int, eps float32) error {
-	pbuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ln-p", Contents: wgpu.ToBytes([]uint32{uint32(rows), uint32(h), math.Float32bits(eps), 0}), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ln-p", Contents: wgpu.ToBytes([]uint32{uint32(rows), uint32(h), math.Float32bits(eps), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return err
 	}
 	defer pbuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.lnRowsLayout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.lnRowsLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: src, Size: src.GetSize()},
 		{Binding: 1, Buffer: weight, Size: weight.GetSize()},
 		{Binding: 2, Buffer: bias, Size: bias.GetSize()},
@@ -286,18 +286,18 @@ func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffe
 		return err
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.lnRowsPipeline)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(rows), 1, 1) // one workgroup per row
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -308,7 +308,7 @@ func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffe
 // patch-embed and the attention QKᵀ / scores·V (activation×activation, no resident
 // weight). a,b are device buffers.
 func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer, error) {
-	dst, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "mm", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mm", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
@@ -320,12 +320,12 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 			dst.Release()
 		}
 	}()
-	dims, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(K), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+	dims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(K), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}
 	defer dims.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.layout, Entries: []wgpu.BindGroupEntry{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: a, Size: a.GetSize()},
 		{Binding: 1, Buffer: b, Size: b.GetSize()},
 		{Binding: 2, Buffer: dst, Size: dst.GetSize()},
@@ -335,18 +335,18 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.pipeline)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	ok = true // dst now owned by the returned DeviceBuffer

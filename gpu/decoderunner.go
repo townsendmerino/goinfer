@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // DecodeRunner is the production one-command-buffer decode forward: it builds every
@@ -470,7 +470,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -481,7 +481,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -500,7 +500,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			}
 			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
-		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
+		bg, e := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -521,12 +521,12 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			buildErr = e
 			return nil
 		}
-		c.queue.WriteBuffer(b, 0, make([]byte, n*4))
+		c.queue.TryWriteBuffer(b, 0, make([]byte, n*4))
 		return keepBuf(b)
 	}
 	rmsQuant := func(in, w *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
@@ -661,7 +661,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			}
 			en[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: e.b, Offset: e.off, Size: sz}
 		}
-		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: en})
+		bg, e := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: en})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -1065,7 +1065,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -1414,7 +1414,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	logits := gemv(fq, fs, m.lmHead)
 	r.lastLogits = logits
 	if buildErr == nil {
-		stag, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			buildErr = e
 		} else {
@@ -1444,11 +1444,11 @@ func (r *DecodeRunner) GeomVariantCount() int { return r.geomVariants }
 // the batched RunN can prime K runners before recording one command buffer. ropePos:
 // see posUni's doc comment — equal to pos except for Qwen2.5-VL m-RoPE decode.
 func (r *DecodeRunner) writeInputs(x []float32, pos, ropePos int) error {
-	if err := r.c.queue.WriteBuffer(r.xd, 0, wgpu.ToBytes(x)); err != nil {
+	if err := r.c.queue.TryWriteBuffer(r.xd, 0, wgpu.ToBytes(x)); err != nil {
 		return err
 	}
 	for _, pu := range r.posUnis {
-		if err := r.c.queue.WriteBuffer(pu.buf, 0, wgpu.ToBytes(pu.gen(pos, ropePos))); err != nil {
+		if err := r.c.queue.TryWriteBuffer(pu.buf, 0, wgpu.ToBytes(pu.gen(pos, ropePos))); err != nil {
 			return err
 		}
 	}
@@ -1470,23 +1470,23 @@ func (r *DecodeRunner) writeInputs(x []float32, pos, ropePos int) error {
 // panic on a device-boundary failure takes the caller's process down. Returns an error now.
 func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []float32, err error) {
 	rd := func(b *wgpu.Buffer, n int) ([]float32, error) {
-		stag, _ := r.c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, _ := r.c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		defer stag.Release()
-		enc, _ := r.c.device.CreateCommandEncoder(nil)
-		enc.CopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
-		cmd, _ := enc.Finish(nil)
+		enc, _ := r.c.device.TryCreateCommandEncoder(nil)
+		enc.TryCopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
+		cmd, _ := enc.TryFinish(nil)
 		r.c.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
-		st := wgpu.BufferMapAsyncStatusUnknown
-		stag.MapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		st := wgpu.MapAsyncStatus(0)
+		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
 		r.c.device.Poll(true, nil)
-		if st != wgpu.BufferMapAsyncStatusSuccess {
+		if st != wgpu.MapAsyncStatusSuccess {
 			return nil, fmt.Errorf("gpu: ReadMambaCap: buffer map failed (status %v)", st)
 		}
 		out := make([]float32, n)
 		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
-		stag.Unmap()
+		stag.TryUnmap()
 		return out, nil
 	}
 	if proj, err = rd(r.mcapProj, projN); err != nil {
@@ -1523,7 +1523,7 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	}
 	r.TWrite = time.Since(tw)
 	te := time.Now()
-	enc, err := c.device.CreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1534,10 +1534,10 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	// / kv-store), so nothing forces a pass break.
 	pass := enc.BeginComputePass(nil)
 	r.record(pass)
-	pass.End()
+	pass.TryEnd()
 	pass.Release()
-	enc.CopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))
-	cmd, err := enc.Finish(nil)
+	enc.TryCopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))
+	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1545,17 +1545,17 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	r.TEncode = time.Since(te)
 	ts := time.Now()
 	c.queue.Submit(cmd)
-	st := wgpu.BufferMapAsyncStatusUnknown
-	if err := r.stag.MapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(s wgpu.BufferMapAsyncStatus) { st = s }); err != nil {
+	st := wgpu.MapAsyncStatus(0)
+	if err := r.stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(s wgpu.MapAsyncStatus) { st = s }); err != nil {
 		return nil, err
 	}
 	c.device.Poll(true, nil)
 	r.TSync = time.Since(ts)
-	if st != wgpu.BufferMapAsyncStatusSuccess {
+	if st != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: DecodeRunner map failed: %v", st)
 	}
 	copy(r.logitsHost, wgpu.FromBytes[float32](r.stag.GetMappedRange(0, uint(r.vocab*4))))
-	r.stag.Unmap()
+	r.stag.TryUnmap()
 	return r.logitsHost, nil
 }
 
@@ -1576,7 +1576,7 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 			return nil, err
 		}
 	}
-	enc, err := c.device.CreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1585,22 +1585,22 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	for i := range n {
 		runners[i].record(pass)
 	}
-	pass.End()
+	pass.TryEnd()
 	pass.Release()
 	for i := range n {
-		enc.CopyBufferToBuffer(runners[i].lastLogits, 0, runners[i].stag, 0, uint64(runners[i].vocab*4))
+		enc.TryCopyBufferToBuffer(runners[i].lastLogits, 0, runners[i].stag, 0, uint64(runners[i].vocab*4))
 	}
-	cmd, err := enc.Finish(nil)
+	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, err
 	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	sts := make([]wgpu.BufferMapAsyncStatus, n)
+	sts := make([]wgpu.MapAsyncStatus, n)
 	var mapErr error
 	for i := range n {
-		sts[i] = wgpu.BufferMapAsyncStatusUnknown
-		if err := runners[i].stag.MapAsync(wgpu.MapModeRead, 0, uint64(runners[i].vocab*4), func(s wgpu.BufferMapAsyncStatus) { sts[i] = s }); err != nil {
+		sts[i] = wgpu.MapAsyncStatus(0)
+		if err := runners[i].stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(runners[i].vocab*4), func(s wgpu.MapAsyncStatus) { sts[i] = s }); err != nil {
 			mapErr = fmt.Errorf("gpu: runBatch row %d MapAsync: %w", i, err)
 			break // later rows are not requested; the ones already requested settle on the Poll below
 		}
@@ -1614,8 +1614,8 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	consumed := make([]bool, n)
 	defer func() {
 		for i := range n {
-			if sts[i] == wgpu.BufferMapAsyncStatusSuccess && !consumed[i] {
-				runners[i].stag.Unmap()
+			if sts[i] == wgpu.MapAsyncStatusSuccess && !consumed[i] {
+				runners[i].stag.TryUnmap()
 			}
 		}
 	}()
@@ -1624,12 +1624,12 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	}
 	out := make([][]float32, n)
 	for i := range n {
-		if sts[i] != wgpu.BufferMapAsyncStatusSuccess {
+		if sts[i] != wgpu.MapAsyncStatusSuccess {
 			return nil, fmt.Errorf("gpu: runBatch row %d map failed: %v", i, sts[i])
 		}
 		row := make([]float32, runners[i].vocab)
 		copy(row, wgpu.FromBytes[float32](runners[i].stag.GetMappedRange(0, uint(runners[i].vocab*4))))
-		runners[i].stag.Unmap()
+		runners[i].stag.TryUnmap()
 		consumed[i] = true
 		out[i] = row
 	}

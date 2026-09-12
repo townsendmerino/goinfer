@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // W8A8 (int8×int8) matmul on the GPU — the Stage-1 "quantized matmul" unlock.
@@ -65,14 +65,14 @@ func (c *Context) ensureQuant() error {
 	if c.quantPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:          "matmulW8A8",
-		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: matmulW8A8ShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "matmulW8A8",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: matmulW8A8ShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile W8A8 shader: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label:   "matmulW8A8",
 		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
@@ -149,13 +149,13 @@ func (c *Context) UploadW8A8(q8 []int8, scales []float32, N, K int) (*ResidentW8
 		return nil, fmt.Errorf("gpu: UploadW8A8 input too small: q8=%d (need %d) scales=%d (need %d)", len(q8), N*K, len(scales), N)
 	}
 	packed := packInt8(q8, N, K)
-	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w8a8-weight", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 weight buffer: %w", err)
 	}
-	sc, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w8a8-bscales", Contents: wgpu.ToBytes(scales[:N]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -181,14 +181,14 @@ func (c *Context) MatmulW8A8(aq []int8, aScales []float32, rm *ResidentW8A8, M i
 		return nil, fmt.Errorf("gpu: MatmulW8A8 input too small: aq=%d (need %d) aScales=%d (need %d)", len(aq), M*K, len(aScales), M)
 	}
 	packed := packInt8(aq, M, K)
-	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w8a8-act", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 act buffer: %w", err)
 	}
 	defer aBuf.Release()
-	asBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w8a8-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -201,7 +201,7 @@ func (c *Context) MatmulW8A8(aq []int8, aScales []float32, rm *ResidentW8A8, M i
 // runQuant dispatches the W8A8 pipeline and reads back the [M,N] f32 result.
 func (c *Context) runQuant(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, M, N int) ([]float32, error) {
 	dstSize := uint64(M * N * 4)
-	dstBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "w8a8-dst", Size: dstSize, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
@@ -210,7 +210,7 @@ func (c *Context) runQuant(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, M, N int)
 	defer dstBuf.Release()
 
 	dims := []uint32{uint32(M), uint32(rm.kp), uint32(N), 0}
-	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w8a8-dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
@@ -218,7 +218,7 @@ func (c *Context) runQuant(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, M, N int)
 	}
 	defer dimsBuf.Release()
 
-	stage, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "w8a8-stage", Size: dstSize, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
 	if err != nil {
@@ -226,7 +226,7 @@ func (c *Context) runQuant(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, M, N int)
 	}
 	defer stage.Release()
 
-	bindGroup, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+	bindGroup, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.quantLayout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
@@ -242,7 +242,7 @@ func (c *Context) runQuant(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, M, N int)
 	}
 	defer bindGroup.Release()
 
-	enc, err := c.device.CreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W8A8 encoder: %w", err)
 	}
@@ -252,34 +252,34 @@ func (c *Context) runQuant(aBuf, asBuf *wgpu.Buffer, rm *ResidentW8A8, M, N int)
 	pass.SetPipeline(c.quantPipeline)
 	pass.SetBindGroup(0, bindGroup, nil)
 	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: end W8A8 pass: %w", err)
 	}
 	pass.Release()
 
-	if err := enc.CopyBufferToBuffer(dstBuf, 0, stage, 0, dstSize); err != nil {
+	if err := enc.TryCopyBufferToBuffer(dstBuf, 0, stage, 0, dstSize); err != nil {
 		return nil, fmt.Errorf("gpu: copy W8A8 dst→stage: %w", err)
 	}
-	cmd, err := enc.Finish(nil)
+	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, fmt.Errorf("gpu: finish W8A8 encoder: %w", err)
 	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 
-	mapStatus := wgpu.BufferMapAsyncStatusUnknown
-	if err := stage.MapAsync(wgpu.MapModeRead, 0, dstSize, func(s wgpu.BufferMapAsyncStatus) { mapStatus = s }); err != nil {
+	mapStatus := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, dstSize, func(s wgpu.MapAsyncStatus) { mapStatus = s }); err != nil {
 		return nil, fmt.Errorf("gpu: W8A8 map async: %w", err)
 	}
 	c.device.Poll(true, nil)
-	if mapStatus != wgpu.BufferMapAsyncStatusSuccess {
+	if mapStatus != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: W8A8 staging map failed: %v", mapStatus)
 	}
 	raw := stage.GetMappedRange(0, uint(dstSize))
 	out := make([]float32, M*N)
 	copy(out, wgpu.FromBytes[float32](raw))
-	if err := stage.Unmap(); err != nil {
+	if err := stage.TryUnmap(); err != nil {
 		return nil, fmt.Errorf("gpu: W8A8 unmap staging: %w", err)
 	}
 	return out, nil

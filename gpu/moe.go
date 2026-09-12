@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // MoE residency (Lever C3) — sparse expert routing + dispatch on the GPU so the MoE
@@ -365,13 +365,13 @@ func (c *Context) ensureSharedGate() error {
 	if c.sharedGatePipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "sharedGate", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: sharedGateWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "sharedGate", WGSLSource: &wgpu.ShaderSourceWGSL{Code: sharedGateWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile sharedGate: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "sharedGate", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -423,11 +423,11 @@ func (c *Context) UploadStackedExperts(q8 [][]int8, scales [][]float32, nE, N, K
 		copy(packed[e*N*words:(e+1)*N*words], packInt8(q8[e], N, K))
 		copy(allScales[e*N:(e+1)*N], scales[e][:N])
 	}
-	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
+	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: stacked experts buffer: %w", err)
 	}
-	sc, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-scales", Contents: wgpu.ToBytes(allScales), Usage: wgpu.BufferUsageStorage})
+	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-scales", Contents: wgpu.ToBytes(allScales), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		bq.Release()
 		return nil, fmt.Errorf("gpu: stacked expert scales buffer: %w", err)
@@ -439,13 +439,13 @@ func (c *Context) ensureMoEExpert() error {
 	if c.moeExpertPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "moeExpertGEMV", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: moeExpertGEMVWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "moeExpertGEMV", WGSLSource: &wgpu.ShaderSourceWGSL{Code: moeExpertGEMVWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile moeExpertGEMV: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "moeExpertGEMV", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -461,13 +461,13 @@ func (c *Context) ensureMoERoute() error {
 	if c.moeRoutePipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "moeRoute", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: moeRouteWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "moeRoute", WGSLSource: &wgpu.ShaderSourceWGSL{Code: moeRouteWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile moeRoute: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "moeRoute", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -486,13 +486,13 @@ func (c *Context) ensureRouteGptOss() error {
 	if c.routeGptOssPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "routeGptOss", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: routeGptOssWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "routeGptOss", WGSLSource: &wgpu.ShaderSourceWGSL{Code: routeGptOssWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile routeGptOss: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "routeGptOss", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -508,13 +508,13 @@ func (c *Context) ensureGptOssGluQuant() error {
 	if c.gptossGluQuantPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "gptossGluQuant", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: gptossGluQuantWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "gptossGluQuant", WGSLSource: &wgpu.ShaderSourceWGSL{Code: gptossGluQuantWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile gptossGluQuant: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "gptossGluQuant", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -530,13 +530,13 @@ func (c *Context) ensureMoEExpertGptOssDown() error {
 	if c.moeExpertGptOssDownPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "moeExpertGptOssDownGEMV", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: moeExpertGptOssDownGEMVWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "moeExpertGptOssDownGEMV", WGSLSource: &wgpu.ShaderSourceWGSL{Code: moeExpertGptOssDownGEMVWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile moeExpertGptOssDownGEMV: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "moeExpertGptOssDownGEMV", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
