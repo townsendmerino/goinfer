@@ -124,7 +124,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   `TestBackendReport_int4LayoutVisible` (both surfaces, both arms — `Backend:"cpu"` shows
   `row4-only`, unspecified does not).
 - **Item 3 ("Same by inspection in `cuda/` and `gpu/`") found a REAL latent bug in `cuda/`, worse
-  than Metal's.** `cuda/resident.go:3064`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
+  than Metal's.** `cuda/resident.go:3070`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
   for a repacked-only tensor — `Kind()` is precision, not layout) and used to discard `Int4()`'s
   `ok` entirely (`q4, sc, _, _ := w.Int4()`), so a repacked-only tensor's nil `q4` would panic on
   an out-of-range slice index (`q4[i*4:i*4+4]`) rather than decline through the function's own

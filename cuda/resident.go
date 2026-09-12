@@ -420,10 +420,16 @@ type cudaResident struct {
 	layerCap    bool           // DEBUG probe: snapshot the residual r.x after every layer (localizes where a full-forward divergence first appears)
 	layerCapBuf [][]float32
 
-	// hidCap is the PRODUCTION hidden-state seam (P10 / docs/spec/08): the resident
-	// analogue of decoder.Model.ForwardCapture, which exists only on the CPU forward. A
-	// hidden-state drafter (DFlash, DSpark) reads a handful of the target's layer outputs
-	// per token; without this a resident target cannot feed one at all.
+	// hidCap is the hidden-state seam (P10 / docs/spec/08) a resident CUDA target would need
+	// to feed a hidden-state drafter (DFlash, DSpark) — the resident analogue of
+	// decoder.Model.ForwardCapture, which exists only on the CPU forward. NOT wired into
+	// production yet (audit-2026-09-02.md N-34, checked 2026-09-11): SetHiddenCapture/
+	// HiddenCapture have no non-test caller anywhere in the tree today — internal/serveapp's
+	// --drafter flag attaches through decoder.DFlashDrafter/LoadDFlashDrafter, which does not
+	// call into this seam, and decoder/*.go's only hidden-capture callers
+	// (SetGemma4HiddenCaptureForTest and friends) are a SEPARATE, Gemma4-CPU-specific,
+	// test-only mechanism. Built ahead of the caller that will use it, same shape as
+	// decoder/mtp.go's Gate 1 adapter — a seam, not a claim that anything reaches it yet.
 	//
 	// Distinct from layerCap above, deliberately. layerCap is a divergence-localization
 	// probe: EVERY layer, a stream.Sync() and a download each, appended to an unbounded
