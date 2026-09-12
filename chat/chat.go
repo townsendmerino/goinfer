@@ -6,7 +6,18 @@
 //
 // WHAT "BYTE-EXACT" COVERS, precisely (N-37 — the claim here used to be unqualified):
 //
-//   - The `sys_user` and `sys_multi` shapes are byte-exact for every family.
+//   - The `sys_user` and `sys_multi` shapes are byte-exact for every family EXCEPT Harmony
+//     (gpt-oss)'s multi-turn case: a prior ASSISTANT turn re-rendered into history is emitted
+//     as `<|start|>assistant<|message|>{content}<|end|>` with no `<|channel|>` marker at all —
+//     this file's own Harmony() doc comment says the channel is declared, never optional
+//     ("gpt-oss always answers on a channel... Channel must be included for every message"), so
+//     a real gpt-oss conversation's prior turns would carry `<|channel|>final` and this
+//     rendering diverges from it. NOT fixed here: unlike ChatML's no-system case there is no
+//     harmony golden to render the correct channel marker against (checked 2026-09-11 — none
+//     exists in testdata/chat_goldens), so guessing the exact byte sequence would risk being
+//     wrong in a way that looks right, the same reasoning that kept the other three families'
+//     no-system goldens unmade below. Single-turn harmony (no prior assistant turn) is
+//     unaffected.
 //   - The NO-SYSTEM shape is byte-exact only where a family's template has no default system
 //     prompt. ChatML is the exception and it is DELIBERATE: Qwen 2.5's template inserts "You
 //     are Qwen, created by Alibaba Cloud…" when the conversation has no system turn, and this
