@@ -2,8 +2,8 @@
 
 > **Status: OPEN, drafted 2026-09-08** from the code at `c9db2ec`, not from the docs — R9
 > (`docs/task-first-hour.md`) showed the docs can say "GPU" where the code says CPU, so every item
-> below cites the line that decides. Companion to `docs/gpu-residency-coverage.md` (the WebGPU
-> runner's per-family scoping) and `docs/hardware-matrix.md` (the generated admission table).
+> below cites the line that decides. Companion to `docs/gpu-residency-coverage.md` (the standing
+> residency backlog, cross-backend) and `docs/hardware-matrix.md` (the generated admission table).
 >
 > The question this answers: after R9 (CUDA/Metal have no staged GPU path; WebGPU's staged path
 > reaches the GPU for f32/int8 only) and R13, what *else* on a GPU box runs on the CPU when it

@@ -1,258 +1,126 @@
-# GPU resident-decode coverage — what's covered, and the path to the rest
+# GPU resident-decode coverage — the why/how, not the table
 
-How far the GPU **resident decode runner** reaches across the model zoo, and a
-grounded, per-family scoping of what putting each *remaining* family resident
-would take. Companion to [`capability-matrix.md`](capability-matrix.md) (the
-per-arch `gpu_residency_eligible` column) — this doc is the *why* and the *how*.
-
-Grounded in the live `gpu/` + `decoder/` seam as of the resident **Mamba-2 SSM engine** +
-Nemotron-H default-on (commit `d2ba970`, 2026-06-19; the C-lever ladder through C7 is
-`6553d72`). No "would be easy" without a code reference.
+This is the standing residency backlog — for each family still declined somewhere, which
+predicate declines it and what shipping it would take. The coverage claim itself lives
+elsewhere, generated so it can never drift from the code: [docs/hardware-matrix.md](hardware-matrix.md).
 
 ## What "resident decode" is
 
-The resident runner (`gpu/decoderunner.go`) keeps the whole model on-device and
-runs `Forward(embedding, pos) → logits` as one command buffer per token — one
-submit, one poll, no CPU interleave. The decoder routes a plain `Generate`
-through it whenever `DecodeRunnerEligible()` holds and the webgpu backend's
-`BuildResident` accepts the model (`decoder/residency.go`). Anything ineligible
-falls back to the staged per-matmul path, gracefully.
+A resident (GPU) decode path keeps the whole model on-device and runs
+`Forward(embedding, pos) → logits` as one command submission per token — no CPU interleave
+between layers. Each backend (`gpu/decoderunner.go` for WebGPU, `cuda/resident.go` for CUDA,
+`metal/model.go` for Metal) routes a plain `Generate` through its own resident runner whenever
+the architecture is eligible (`decoder.ResidentEligible`, `decoder/features.go`) and that
+backend's `BuildResident` accepts the model. Anything ineligible on a given backend falls back to
+that backend's staged per-matmul path, or to CPU, gracefully — declining is never silent
+mis-execution.
 
-The runner expresses ONE uniform per-layer block, in int8 W8A8:
+Every resident runner expresses ONE uniform per-layer block by default, in int8 W8A8:
 
 ```
 input_RMSNorm → q/k/v/o GQA attention (RoPE) → +residual
              → post_RMSNorm → SwiGLU(silu) MLP  OR  sparse MoE → +residual
 ```
 
-A family is resident-eligible only if every layer collapses onto that block (or
-a variant the levers below added). The eligibility predicate
-(`Architecture.decodeRunnerEligible`) is the authoritative list of what's
-allowed; `BuildResident` is where the per-layer weights are quantized/uploaded.
+A family is eligible on a backend only if every layer collapses onto that block, or a shape the
+backend has separately declared it can express (`ResidentFeature`s below). The eligibility
+predicate (`Architecture.decodeRunnerEligible`, `decoder/residency.go`) is arch-level and
+backend-agnostic; `residentBackendFeatures` (`decoder/features.go`) is where each backend
+declares which of those shapes it actually implements — and that declared set is exactly what
+`hardware-matrix.md` is generated from.
 
-## The coverage ladder (shipped)
+## The gaps, as of 2026-09-12
 
-Each lever taught the runner one more shape. All are parity-gated (a GPU forward
-vs a CPU int8 oracle at cosine ~1.0, often bit-identical), and several are
-additionally validated end-to-end on a real tiny checkpoint loaded through the
-normal path.
+Two kinds: a family CPU on every backend (the arch itself isn't bridged onto any resident
+runner), and a family resident on some backends but not others (a specific backend is missing
+one feature or geometry seam). For each, the predicate that declines it and one line on the lift.
 
-| Lever | Added | Unlocked | Gate |
-|------|-------|----------|------|
-| C1 | per-head QK-norm before RoPE | Qwen3 | `4d26637` |
-| C3a–c | MoE router top-k + indexed stacked-expert GEMV + combine | Mixtral-class MoE | `4af1db2`/`c20b851`/`ad03c37` |
-| C3d | always-on shared expert (sigmoid-gated qwen2_moe / ungated GLM-DeepSeek) | qwen2_moe | `ae7e1fa` |
-| C4a–d | **MLA latent attention** (q-LoRA, compressed-KV latent cache, decoupled interleaved RoPE, rank-space absorb attend, W_UK/W_UV lift, group-limited routing) | **DeepSeek-V2/V3, Kimi K2** | `4df70f4`/`88abd21`/`b130f27`/`f96b386` |
-| C5 | partial RoPE (rotary_dim < head_dim) | **GLM-4.5/4.6** | `f1bde3b` |
-| C6 | sliding-window (local) attention — per-layer windowed start | **Mistral** | `793252b` |
-| C7 | per-layer-type RoPE (different invFreq + mscale per global/local layer) | **Mellum** | `6553d72` |
-| **SSM** | **resident Mamba-2 decode engine** (`mambaConv`/`mambaSSM`/`mambaGatedNorm` kernels + build-once {conv-ring, ssm} state) + **single-op-per-block** wiring + **squared-ReLU MLP** (`relu2Quant`) + NoPE-via-zeroed-invFreq | **Granite-4.0-H** (opt-in), **Nemotron-H** (DEFAULT-on int4) | `ede17ae`/`f912a25`/`64aa9cc`/`0928611` |
+### CPU on every backend
 
-Resident coverage today: **dense Llama / Qwen2 / Qwen2.5 / Phi-3·Phi-4 / Qwen3 ·
-Mixtral · Qwen2-MoE · GLM-4.5/4.6 · DeepSeek-V2/V3 · Kimi K2 · Mistral · Mellum ·
-Granite-4.0-H (opt-in) · Nemotron-H (default-on int4)** — i.e. the first recurrent/hybrid
-SSM families, not just the attention transformers. The SSM engine came from the reframe that
-*decode is a bounded per-token recurrence, not the prefill scan*. Nemotron-H is default-on
-because, with no MoE router, it quantizes near-losslessly; Granite stays opt-in because its
-64-expert router makes int8 a fundamental cliff (`ssm-int8-quality.md`,
-`nemotron-resident.md`, `decode-residency-campaign.md`).
+- **Llama 4** (`llama4_text`, `decoder/forward_llama4.go`) — declines at the arch-shape gate
+  before any feature is even checked (`decoder/residency.go:374`, `case a.llama4 != nil: return
+  false // own forward, not yet bridged`). Needs: **iRoPE** (per-layer RoPE/NoPE interleave —
+  RoPE layers use interleaved complex-pair RoPE + a parameter-free L2 QK-norm applied after
+  rope; NoPE layers skip rope and apply an attention-temperature tweak to the query), and
+  **top-1 sigmoid, input-scaled MoE** routing (route by raw sigmoid logit, no softmax/group-limit,
+  scale the expert *input* by the gate rather than the output — a variant of the existing MoE
+  router kernel, not the current one). All three are new kernels, individually small, medium in
+  aggregate; no recurrence involved.
+- **LFM2.5** — also an arch-shape decline (`decoder/residency.go:375-390`, `case a.lfm2 != nil:
+  ... return false`), same discipline as Llama 4: 22 of 30 layers run a gated short convolution
+  with a rolling window no uniform-layer runner can express. Even past that gate, no backend
+  declares `FeatShortConv` (`decoder/features.go:97`) — "no resident backend implements the conv
+  OR its recurrent state."
+- **Laguna** — needs `FeatAttnOutputGate` (`decoder/features.go:96`): `ctx *=
+  softplus(g_proj·h)` applied before `o_proj`, plus a per-layer query head count. "No resident
+  backend implements either." WebGPU's Gated-DeltaNet output gate is a similar shape (fused
+  double-width q-proj + sigmoid) but not interchangeable — Laguna's is a separate `g_proj`
+  through softplus, spelled differently on purpose (`decoder/features.go:52-65` explains why the
+  two must not be conflated).
+- **Ling 3.0** — needs `FeatKDA` (`decoder/features.go:132`), Kimi Delta Attention: a delta-rule
+  recurrence structurally close to Gated DeltaNet but with a per-channel decay (one value per
+  state-matrix row) where DeltaNet's is a single scalar per head. "No resident backend
+  implements it."
+- **Granite-4.0-H** — genuinely different from the other four: it is **opt-in, not unimplemented**.
+  `decoder/residency.go:395-396` declines it unless `GOINFER_SSM_RESIDENT` is set
+  (`if a.granite != nil { return os.Getenv("GOINFER_SSM_RESIDENT") != "" }`), and the
+  hardware-matrix generator explicitly runs with that variable forced empty
+  (`decoder/hardware_matrix_test.go:41`, `t.Setenv("GOINFER_SSM_RESIDENT", "")`) — the same
+  deliberate "show the off-by-default state" choice `hardware-matrix.md`'s own footnote makes
+  for Nemotron-H's int4-vs-int8 policy, just not footnoted for Granite the same way. Both
+  Granite-4.0-H and Nemotron-H need `FeatSSM`, which only WebGPU declares
+  (`decoder/features.go:595`); with the flag set, the same arch-level gate that admits
+  Nemotron-H's Mamba-2 engine on WebGPU should admit Granite-4.0-H's too — not independently
+  verified here beyond the arch gate itself, flagged rather than asserted. Not a code finding:
+  the generator is working as designed, showing the real default state.
 
-Two design notes that recur:
+### Resident on some backends, not others
 
-- **Many "blocking" features were already expressible.** C5 (partial RoPE) and
-  C6 (sliding window) needed *no new kernel* — the rope kernel already takes a
-  `half` independent of `head_dim`, and the attention kernel already honors a
-  `start` index. The work was the eligibility relaxation + a posUni wired per
-  layer. C7 was similar: a per-distinct-scale rope-uniform cache.
-- **The big lever was MLA** (C4), the one genuinely new attention primitive — a
-  single-query attend over a shared compressed latent where the score width
-  (rank+rope) exceeds the value width (rank). See [`gpu/mla.go`](../gpu/mla.go).
+- **MLA family** — DeepSeek-V2, DeepSeek-V3, Kimi K2: resident on WebGPU, CPU on CUDA and Metal.
+  Both decline on the same missing feature, `FeatMLA`, declared only for webgpu
+  (`decoder/features.go:594`). Named reuse path already scoped:
+  [docs/completed/task-mla-cuda-residency.md](completed/task-mla-cuda-residency.md).
+- **Nemotron-H** — resident on WebGPU (default-on, int4), CPU on CUDA and Metal. Declines there
+  on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:595`, webgpu
+  only) — the Mamba-2 scan a CUDA/Metal port would need already exists on WebGPU
+  (`gpu/mamba2.go`), so this is a port, not a new design.
+- **Gemma 4** (dense + MoE) — resident on CUDA and Metal, CPU on WebGPU. Not a missing
+  `ResidentFeature` — WebGPU otherwise has everything Gemma 4 needs. The decline is
+  `residentPerLayerGeomBackends` (`decoder/features.go:388`, `map[string]bool{"cuda": true,
+  "metal": true}`): a layer's own head_dim/KV-head count genuinely differing from another's
+  (Gemma 4's local/global split, head_dim 256 vs 512) needs a per-layer geometry seam CUDA and
+  Metal both implement (`cuda/resident.go`'s `cudaLayer.hd/nKV`, `metal/model.go`'s
+  `residLayer.geom`) and WebGPU's own twin fields exist but are never populated by its per-layer
+  builder (`decoder/features.go:371-388`'s own comment has the full history, including the
+  2026-09-08 near-miss this predicate was added to prevent).
+- **Command-R / Command-R7B** — resident on CUDA and Metal, CPU on WebGPU. Missing
+  `FeatLayerNorm` (declared `decoder/features.go:580` for cuda, `decoder/features.go:674` for
+  metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
+  learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
+  once the norm exists.
+- **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
+  `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
+  declared `decoder/features.go:563` for cuda, `decoder/features.go:683` for metal) and
+  `FeatQKNormWhole` (QK-norm over the whole projected vector, not per head — declared
+  `decoder/features.go:568` for cuda, `decoder/features.go:684` for metal), neither declared on
+  webgpu.
+- **SmolLM3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatNoPE` (declared
+  `decoder/features.go:549` for cuda, `decoder/features.go:681` for metal, absent from webgpu) —
+  some layers skip RoPE entirely, an all-zero per-layer invFreq table rather than a new kernel.
+- **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
+  `decoder/features.go:557` for cuda, `decoder/features.go:682` for metal, absent from webgpu) —
+  a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the
+  backends that have it.
+- **GPT-2** — resident on Metal ONLY, CPU on both WebGPU and CUDA (not just WebGPU — the one
+  family here where the gap isn't purely "WebGPU is behind"). Needs `FeatLayerNorm`,
+  `FeatNonGatedMLP`, `FeatLearnedPos`, `FeatOutBias`. Metal declares all four
+  (`decoder/features.go:674-677`). CUDA declares `FeatLayerNorm` (`decoder/features.go:580`,
+  added for Command-R) and `FeatOutBias` (`decoder/features.go:543`, added for gpt-oss) but not
+  `FeatNonGatedMLP` or `FeatLearnedPos` anywhere. WebGPU declares none of the four.
 
-### Hardware reality
+## What's not here
 
-The newly-covered families' *real* checkpoints are large: DeepSeek-V2-Lite /
-Moonlight ≈ 16B, Mellum2 ≈ 12B. At int8 those exceed the dev box's 8 GB (RTX 2070
-SUPER), so the real-model runs are HW-bound here and fall back to staged
-gracefully — eligibility is on and the path is parity-proven on tiny checkpoints
-(`testdata/deepseek-tiny`, `glm-tiny`). A bigger-VRAM box (or int4 residency for
-the experts) is the gate to a full real run.
-
-## The remaining families — per-family scoping
-
-The capability matrix still shows these `gpu_residency_eligible: no`. Grouped by
-lift. "New kernel" means a primitive the runner cannot express today; "plumbing"
-means new variants of existing ops + eligibility/bridge wiring.
-
-### Small lifts — no new kernel, just feature plumbing
-
-**`gpt2`** (generic forward + GPT-2 specifics). All primitives already exist
-elsewhere in the codebase; only the *combination* is new to the resident path:
-- **LayerNorm** (mean-centered, with bias) instead of RMSNorm — a norm variant.
-- **Learned position embeddings** (`wpe[pos]` added to the input) instead of RoPE.
-- **Non-gated GELU MLP** (up → gelu → down, with biases) — non-gated activation.
-- Fused QKV / fused gate-up projections + QKV bias + attn-output bias + tied
-  embeddings + Conv1D weight layout (all handled at load).
-- *Verdict:* small, but low value (GPT-2 is legacy). Would mostly exercise the
-  "non-RMSNorm + learned-pos + non-gated-gelu" plumbing.
-
-**`gemma3` / `gemma3_text`** (generic forward + gemma specifics,
-`registry.go` `gemma3Architecture`). Sliding window and per-layer dual-base RoPE
-are now handled (C6/C7); the remaining deltas are all expressible primitives:
-- **`NormSandwich4`** — post-attention and post-FFN norms in addition to the two
-  pre-norms (`decoder/registry.go:272`). The runner does Pre2 only; this needs 2
-  extra RMSNorm dispatches/weights per layer and a norm-placement branch.
-- **GeGLU** (gelu activation in the gated MLP) instead of SwiGLU(silu) — a
-  one-line activation variant of the existing `swigluQuant` fuse.
-- **Embedding scale** (×√hidden on the input embedding) — the bridge's
-  `embedResident` would apply it (eligible archs currently have no scale).
-- **query_pre_attn_scalar** attention scale — already representable via the
-  runner's `scale` param (like MLA's override).
-- *Verdict:* small–medium. No new kernel. The honest blocker count is 3 (sandwich
-  norm, GeGLU, embed scale), each individually cheap. Gemma3 is partly superseded
-  by Gemma4, so weigh ROI.
-
-### Medium lifts — a few new op variants, no recurrence
-
-**`llama4_text`** (`decoder/forward_llama4.go`). The text decoder shipped on the
-staged path (see `llama4-family.md`); residency needs:
-- **iRoPE** — per-layer RoPE/NoPE interleave: RoPE layers use *interleaved
-  (complex-pair) RoPE* + a parameter-free **L2 QK-norm** (RMS-over-head-dim, no
-  weight) applied AFTER rope; NoPE layers skip rope and apply an
-  **attention-temperature** tweak to the query (`log1p(floor((pos+1)/floor_scale))
-  · attn_scale + 1`).
-- **Top-1 sigmoid, input-scaled MoE** — route to one expert by raw sigmoid logit
-  (no softmax/group-limit/norm), and scale the expert *input* by the gate
-  (`sigmoid(logit)·h`) rather than the output. A variant of the C3 MoE path
-  (`llama4MoE`), not the current router kernel.
-- Dense/MoE per-layer interleave (already expressible: per-layer `isMoE`).
-- *New kernels:* interleaved-complex RoPE, parameter-free L2 norm, input-scaled
-  top-1 MoE routing. All small individually; medium in aggregate.
-
-**`gemma4`** (`decoder/forward_gemma4.go`). Per-layer attention geometry is the
-theme:
-- **Per-layer head_dim and KV-head count** (global 512 / local 256;
-  `forward_gemma4.go`), **per-attention-type partial RoPE** (only global layers
-  rotate, `GlobalRotaryDim`), **cross-layer KV sharing** (last N layers reuse an
-  earlier layer's KV cache), **scale-less V-norm** (RMSNorm without weight),
-  **per-layer output scalar**, and on E2B/E4B a **Per-Layer-Embedding** branch
-  (gate→gelu→×PLE→proj→norm→+residual) plus variable per-layer FFN width.
-- The runner assumes one `hd`/`nKV`/cache shape for all layers; per-layer KV
-  widths (see `gemma4-per-layer-kv-widths.md`) break the single-`kvDim` cache
-  allocation and attention dispatch.
-- *Verdict:* medium — mostly per-layer-geometry bookkeeping + a v-norm variant +
-  the PLE branch; no recurrence. The per-layer KV-width generalization is the
-  riskiest piece.
-
-### Large lifts — entirely new sequence mixers (state-space / linear attention)
-
-These interleave **non-attention mixers** whose state is a fixed-size recurrent
-matrix, not a growing KV cache. The resident runner's whole attention path
-(rope-store → windowed softmax attend) does not apply; they need a new on-device
-*scan* primitive that is inherently sequential per token.
-
-**`granitemoehybrid` / Granite-4.0-H** (`decoder/forward_granite.go`,
-`decoder/mamba2.go`): alternates **Mamba-2 selective-scan** layers with GQA
-attention layers, MoE on every layer, plus 3 scalar multipliers
-(embedding/attention/residual) and a logits scale. A resident Mamba-2 layer
-needs: a depthwise causal conv over `xBC`, the SSM recurrence over an
-`[nHeads × headDim × dState]` state (cached, not KV), and a **grouped** gated
-RMSNorm. New kernels: Mamba-2 scan + grouped gated norm.
-
-**`nemotron_h`** (`decoder/forward_nemotron.go`): **single-op-per-block** hybrid —
-each layer is exactly one of {Mamba-2, NoPE GQA attention, relu² MLP}. Reuses the
-Mamba-2 scan (shared with Granite); adds a NoPE attention path (no rope) and a
-non-gated relu² activation. Medium-on-top-of-Mamba-2 once the scan exists.
-
-**`qwen3_5` / `qwen3_5_moe`** (`decoder/forward_qwen35.go`, `decoder/deltanet.go`):
-most layers are **Gated DeltaNet linear attention** — a depthwise causal conv over
-`[q;k;v]`, a recurrent matrix state `S [head_k_dim × head_v_dim]` per value head
-updated by the delta rule, and a gated output RMSNorm; softmax layers interleave
-with a double-width (query‖gate) projection + sigmoid output gate + partial RoPE,
-and the FFN is MoE+shared-expert. New kernels: the Gated DeltaNet scan
-(linear-attention recurrence) + depthwise conv + gated norm.
-
-The common blocker for all three: **a recurrent state cache and a sequential scan
-kernel** (Mamba-2 SSM or DeltaNet). That is a different residency substrate than
-the positional KV cache the runner is built around — the biggest single piece of
-work remaining, and the reason these stay staged.
-
-## If the program resumes
-
-Recommended order by (value × tractability):
-
-1. **`llama4_text`** — medium, no recurrence, and a current frontier model. The
-   iRoPE / L2-norm / input-scaled-MoE variants are self-contained.
-2. **`gemma4`** — medium; unblocks the Gemma frontier but the per-layer KV-width
-   generalization touches the cache allocation broadly.
-3. **`gemma3` / `gpt2`** — small, but lower value (superseded / legacy). Good
-   "warm-up" tasks that exercise sandwich-norm + non-gated-gelu + learned-pos.
-4. **Mamba-2 / DeltaNet substrate** (`granite`, `nemotron_h`, `qwen3_5`) — large;
-   only worth it as a deliberate "state-space residency" project, since one new
-   scan kernel + recurrent-state cache unlocks all three at once.
-
-Orthogonal to coverage: the **perf** levers (DP4A/`dot4I8Packed`, GPU speculative
-decode) are tracked separately in
-[`gpu-next-levers-assessment.md`](gpu-next-levers-assessment.md), and the real
-big-model runs need a bigger-VRAM box or int4-expert residency.
-
-## Which architectures run resident — summary table
-
-Moved here from the README (2026-08-27), unchanged. This is a CAPABILITY table, not a measured
-one, which is why it landed here beside the per-family scoping rather than in the
-provenance-gated `benchmarks.md`.
-
-### What runs on the GPU
-
-GPU-resident decode covers a subset of architectures. **Everything else runs on the
-pure-Go CPU path automatically.** A shared feature taxonomy checks each model's required
-features against what the backend implements; an unsupported architecture is *declined at
-load and falls back to CPU* rather than run with a feature quietly dropped.
-
-| Family | CUDA | Metal |
-|---|---|---|
-| Qwen2 · Qwen3 · Llama | ✅ resident | ✅ resident |
-| Mistral · Phi-3-mini-4k | ✅ resident | ✅ resident¹ |
-| Gemma 3 | ✅ resident³ | ✅ resident³ |
-| MoE — Mixtral · Qwen2-MoE · Qwen3-MoE · GLM-MoE | ✅ resident⁴ | ✅ resident² |
-| Gemma 4 (dense + MoE) | ✅ resident⁵ | ✅ resident⁵ |
-| MLA · DeltaNet/YaRN | CPU fallback | CPU fallback |
-
-The full per-family × 4-backend (CPU · WebGPU · CUDA · Metal) table is **generated** from the
-residency predicate (`decoder.ResidentEligible`) and freshness-gated in CI, so it can never drift
-from what a backend actually admits: [docs/hardware-matrix.md](hardware-matrix.md).
-
-¹ Metal Mistral-7B needs > 16 GB unified memory (int8 + int4). Both backends implement
-qk-norm + sliding-window; Metal also does partial rotary, so a partial-rotary Phi
-variant is resident on Metal but falls back on CUDA.
-
-³ Gemma 3 (both backends) covers the sandwich-norm block, GeGLU, the (1+w) RMS offset, the
-√hidden embedding scale, and Gemma's dual RoPE base — validated on a real gemma-3-4b-it against
-the CPU path. Metal parity was gated on a GELU-tanh overflow fix (the `<bos>` massive-activation
-gate drove `tanh`'s argument past its internal `exp` range → NaN; clamped).
-
-⁵ Gemma 4 (both the dense variants and the `enable_moe_block` MoE) runs resident on CUDA and
-Metal. It was opt-in behind `GOINFER_GEMMA4_RESIDENT` through the bring-up and is now
-unconditional; the variable is inert and can be removed from any script that sets it. WebGPU
-still declines — it lacks the four Gemma kernels — and **E-models (E2B/E4B, per-layer
-embeddings) decline on every backend**, since none implements the PLE branch and admitting one
-would silently skip it. Both are the feature gate's answer, not a hardcoded row, and both are
-asserted (`TestGemma4Admission_unconditional`, `TestGemma4EModel_realDeclinesResident`).
-
-⁴ CUDA MoE runs Mixtral and GLM-MoE resident (on-GPU router, row-stacked int4 experts, ungated
-shared expert). Qwen2-MoE / Qwen3-MoE decline to CPU on CUDA — their gated shared expert
-(sigmoid-scaled) isn't built yet.
-
-² Metal MoE (router + stacked experts + shared expert) is validated by assembly
-equivalence (identical experts ≡ the dense FFN, cosine 1.0) + per-kernel parity vs CPU;
-a real MoE checkpoint needs a Mac with enough unified memory (Qwen1.5-MoE-A2.7B is 14.3B
-≈ 14 GB at int8 load), so the real-model e2e cross-check runs on the CUDA box. The
-DeltaNet/Llama-4/Gemma hybrids stay on CPU (declined before residency).
-
-An unlisted or unsupported model still runs — in pure Go on the CPU. The portable
-WebGPU backend (`-tags gpu`) covers a broader resident set (MoE, MLA, SSM, YaRN); see
-[docs/capability-matrix.md](capability-matrix.md) for the full map.
-
-> **Note:** in `cmd/serve`, a GPU-resident model skips prompt-prefix KV reuse and
-> speculative decoding — the resident decode path is fast enough that the per-request
-> session optimization isn't worth it. The OpenAI API is stateless (clients resend the
-> whole conversation), so this is a throughput trade, not a correctness change.
+Perf levers (int4-expert residency, GPU speculative decode) are a different axis from coverage
+and tracked separately: [gpu-next-levers-assessment.md](gpu-next-levers-assessment.md). The full
+per-family history behind the levers already shipped (C1–C7, the SSM engine) is archived, not
+repeated here: [docs/completed/gpu-residency-coverage-2026-06.md](completed/gpu-residency-coverage-2026-06.md).

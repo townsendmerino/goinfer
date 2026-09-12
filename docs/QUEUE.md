@@ -1462,7 +1462,29 @@ supports.
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
-| `docs/gpu-residency-coverage.md|decoder/registry.go:272` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:132` | goinfer | `FeatKDA ResidentFeature = "kda"` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:371` | goinfer | `// residentPerLayerGeomBackends declares which resident backends implement PER-LAYER att` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:388` | goinfer | `var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true}` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:52` | goinfer | `// FeatDeltaNet bundles the TWO departures of the Gated-DeltaNet hybrids (qwen3_5_moe,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:543` | goinfer | `FeatOutBias:  true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:549` | goinfer | `FeatNoPE: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:557` | goinfer | `FeatAttnTemp: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:563` | goinfer | `FeatPostOnlyNorm: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:568` | goinfer | `FeatQKNormWhole: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:580` | goinfer | `FeatLayerNorm:     true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:594` | goinfer | `FeatMLA:            true, // C4a-d latent-KV attention` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:595` | goinfer | `FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:674` | goinfer | `FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, gener` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:681` | goinfer | `FeatNoPE:              true, // SmolLM3 NoPE layers — all-zero invFreq (RopeInvFreqLayer` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:682` | goinfer | `FeatAttnTemp:          true, // Ministral 3 post-RoPE query scale (rope2's qTempScale pa` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:683` | goinfer | `FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid no-pre-norm — quant_vec on the raw ` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:684` | goinfer | `FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (n` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:96` | goinfer | `FeatAttnOutputGate ResidentFeature = "attn-output-gate" // Laguna: ctx *= softplus(g_pro` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:97` | goinfer | `FeatShortConv      ResidentFeature = "short-conv"       // LFM2/LFM2.5: the gated short-` |
+| `docs/gpu-residency-coverage.md|decoder/hardware_matrix_test.go:41` | goinfer | `t.Setenv("GOINFER_SSM_RESIDENT", "")` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:374` | goinfer | `return false // own forward, not yet bridged` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:375` | goinfer | `case a.lfm2 != nil:` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:395` | goinfer | `if a.granite != nil {` |
 | `docs/how-inference-works.md|decoder/attention.go:124` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:175` | goinfer | `cache.Append(layer, k, v)` |
 | `docs/how-inference-works.md|decoder/attention.go:59` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
@@ -1549,7 +1571,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/main.go:707` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1095` | goinfer | `if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {` |
-| `docs/queue-engineering.md|scripts/bench_peer.py:617` | goinfer | `def gate_cell_idle():` |
+| `docs/queue-engineering.md|scripts/bench_peer.py:763` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1124` | goinfer | `gpu.HostCopy{Dst: w.W.At(slot * w.perExpertW * 4), Src: srcW[wOff : wOff+wLen]},` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1128` | goinfer | `_, cr, out := g.run(cell{` |
 | `docs/review-2026-09-04.md|cmd/gate/gpu.go:1211` | goinfer | `if cr.RC != 0 \|\| cr.vacuous() {` |
@@ -1604,8 +1626,8 @@ supports.
 | `docs/review-2026-09-04.md|pull/pull.go:593` | goinfer | `func cachedIntact(dir string, f File) (string, bool) {` |
 | `docs/review-2026-09-04.md|pull/resolve.go:32` | goinfer | `func resolveOffline(ref Ref) (string, bool) {` |
 | `docs/review-2026-09-04.md|pull/resolve.go:55` | goinfer | `func Resolve(ctx context.Context, spec string, progress func(done, total int64)) (string` |
-| `docs/review-2026-09-04.md|scripts/bench_peer.py:40` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
-| `docs/review-2026-09-04.md|scripts/bench_peer.py:919` | goinfer | `# Keep whichever identifying keys the previous header actually had. A reconstructed` |
+| `docs/review-2026-09-04.md|scripts/bench_peer.py:1297` | goinfer | `for eng, be in [("goinfer","cpu"), ("ollama","cpu"), ("llamacpp","cpu"),` |
+| `docs/review-2026-09-04.md|scripts/bench_peer.py:47` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
 | `docs/review-2026-09-04.md|scripts/bench_peer_prefill.py:108` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
 | `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:28` | goinfer | `UNKEYABLE` |
 | `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:49` | goinfer | `def mapline(o):` |
