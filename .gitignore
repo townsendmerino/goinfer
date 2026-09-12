@@ -51,6 +51,33 @@ demo/chat/dist/
 # built UNTIED on purpose: the tied families cannot exercise the separate-LMHead path.
 !testdata/llama-tiny/
 !testdata/llama-tiny/model.safetensors
+# EXCEPTION: the five v0.17.0 tiny fixtures (0.7-1.2 MB each, deterministic random weights
+# from scripts/pin_{granite_dense,ministral3,smollm3,olmo_hybrid,qwen3moe}_tiny.py). Committed
+# 2026-09-12 for the reason G-03 (docs/audit-2026-09-10.md) gives: while they were gitignored
+# their forward-parity gates and the .giw census SKIPPED in CI and had never run there, so
+# seven families were "parity-gated" by gates that could not block anything — CI skipped them,
+# and `go test` prints ok for a package whose tests all skipped. Same rationale as
+# mixtral-tiny/cohere-tiny/llama-tiny above; see docs/parity-coverage-policy.md, "A gate must
+# be able to run, and able to fail".
+#
+# Each was confirmed GREEN on nobara-pc before being committed — forward parity cosine
+# 0.999999999999 or better with exact argmax, and its own census subtest passing — because
+# committing a fixture whose gate is red just moves a red into CI.
+#
+# The other two of the seven stay OUT, and not by oversight: olmo3-tiny's forward golden is
+# red on a pre-registered config-parsing regression (committing it would make CI red), and
+# bailing_hybrid-tiny does not exist on this box — its pin script needs a venv this machine
+# lacks, so it is the MacBook's to commit.
+!testdata/granite-dense-tiny/
+!testdata/granite-dense-tiny/model.safetensors
+!testdata/ministral3-tiny/
+!testdata/ministral3-tiny/model.safetensors
+!testdata/olmo_hybrid-tiny/
+!testdata/olmo_hybrid-tiny/model.safetensors
+!testdata/qwen3moe-tiny/
+!testdata/qwen3moe-tiny/model.safetensors
+!testdata/smollm3-tiny/
+!testdata/smollm3-tiny/model.safetensors
 
 # EXCEPTION: the DFlash reference trace (2.6 MB, scripts/pin_dflash_trace.py). It is the
 # upstream implementation's OWN per-layer output, not weights — the oracle P10's kill-gate 1
@@ -174,12 +201,7 @@ testdata/granite-tiny/
 testdata/nemotron-tiny/
 testdata/nemotron3nano-tiny/
 testdata/qwen3next-tiny/
-testdata/qwen3moe-tiny/
-testdata/granite-dense-tiny/
-testdata/ministral3-tiny/
-testdata/smollm3-tiny/
 testdata/olmo3-tiny/
-testdata/olmo_hybrid-tiny/
 testdata/bailing_hybrid-tiny/
 testdata/deepseek-tiny/
 testdata/phi3-tiny/
