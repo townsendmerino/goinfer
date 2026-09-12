@@ -79,6 +79,34 @@ type session struct {
 	specK int            // speculative draft length per verify pass
 }
 
+// fitFlag is a lenient bool flag.Value: plain flag.Bool only accepts strconv.ParseBool's
+// spellings (1/t/T/TRUE/true/True/0/f/F/FALSE/false/False), not "on"/"off" — the spelling
+// serve's own --fit help and task-fit-to-hardware.md use. chatapp had no --fit flag at all until
+// this (M-14, audit-2026-09-10); mirrors internal/serveapp's fitFlag.
+type fitFlag bool
+
+func (f *fitFlag) String() string {
+	if f == nil {
+		return "true"
+	}
+	return strconv.FormatBool(bool(*f))
+}
+
+func (f *fitFlag) Set(v string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on", "1", "t", "true":
+		*f = true
+	case "off", "0", "f", "false":
+		*f = false
+	default:
+		return fmt.Errorf("invalid value %q for -fit (want on|off|true|false)", v)
+	}
+	return nil
+}
+
+// IsBoolFlag lets a bare `--fit` (no `=value`) mean `--fit=true`, matching flag.Bool's own UX.
+func (f *fitFlag) IsBoolFlag() bool { return true }
+
 func Main() {
 	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set.
 	//
@@ -194,6 +222,8 @@ All flags:
 		specK       = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
 		showVersion = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	)
+	fit := fitFlag(true)
+	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")
 	flag.Parse()
 	if *showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
@@ -211,7 +241,7 @@ All flags:
 		os.Exit(2)
 	}
 
-	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora}
+	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora, DisableFit: !bool(fit)}
 	// The quant the user EXPLICITLY chose (vs the "int4" default) — for the .giw mismatch check
 	// (T1-7); a bare default must not conflict with an already-baked bundle.
 	explicitQuant := ""

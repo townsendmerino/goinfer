@@ -219,6 +219,34 @@ func (a *adapterFlag) Set(v string) error {
 	return nil
 }
 
+// fitFlag is a lenient bool flag.Value: plain flag.Bool only accepts strconv.ParseBool's
+// spellings (1/t/T/TRUE/true/True/0/f/F/FALSE/false/False), so --fit=off — the spelling this
+// flag's own help and task-fit-to-hardware.md print — was rejected by the parser with exit 2
+// (M-14, audit-2026-09-10). Accepts on/off in addition to the usual set.
+type fitFlag bool
+
+func (f *fitFlag) String() string {
+	if f == nil {
+		return "true"
+	}
+	return strconv.FormatBool(bool(*f))
+}
+
+func (f *fitFlag) Set(v string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on", "1", "t", "true":
+		*f = true
+	case "off", "0", "f", "false":
+		*f = false
+	default:
+		return fmt.Errorf("invalid value %q for -fit (want on|off|true|false)", v)
+	}
+	return nil
+}
+
+// IsBoolFlag lets a bare `--fit` (no `=value`) mean `--fit=true`, matching flag.Bool's own UX.
+func (f *fitFlag) IsBoolFlag() bool { return true }
+
 func orStr(p *string, def string) string {
 	if p != nil {
 		return *p
@@ -439,7 +467,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)
 	flag.BoolVar(&cfg.cpuExactPrefill, "cpu-exact-prefill", false, cpuExactPrefillHelp)
 	flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep resident for a paged MoE model (CUDA: --moe-cache-experts; Metal: the GOINFER_METAL_MOE_SLOTS env var's replacement, docs/task-gpu-paths-2026-09.md Phase 2). On CUDA this is an UPPER BOUND: the runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"). On Metal it is NOT auto-lowered — the request is used as given, and a model that does not fit at that count declines to the CPU path instead (the load-time memory guard, metal/backend.go). 0 keeps the built-in default (CUDA: ask for all, auto-cap; Metal: every expert resident, unpaged). More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at more memory cost")
-	flag.BoolVar(&cfg.fit, "fit", true, "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/task-gpu-paths-2026-09.md, task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=false restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)")
+	cfg.fit = true // fitFlag has no BoolVar-style default parameter; set it before registering
+	flag.Var((*fitFlag)(&cfg.fit), "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/task-gpu-paths-2026-09.md, task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=off restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
 	flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model override: --model name=path,ctx=…). 0 (default) keeps the backend default of 4096 — a round, conservative DEFAULT that has never been tuned against real VRAM headroom (raising it would multiply every resident model's KV footprint for callers who never asked); the real per-card ceiling is typically far higher and worth measuring for your model/quant (docs/task-kv-cache-streaming.md: an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is VRAM-checked AT LOAD; if the whole model then can't build resident (either an unfit configured -ctx or the unconfigured default not fitting), it silently loads on the CPU-staged path instead for every request — measured ~15x slower decode, same model/quant — unless -require-backend is set, which refuses to start the server and names the GB shortfall instead. That is a WHOLE-MODEL decision made once at load; a single request whose PROMPT exceeds the active cap is a separate, per-request case and is rejected with a clean 400 context_length_exceeded — there is no per-request fallback to the staged path (an earlier version of this text said there was; a later audit, R-10, replaced that fallback with the clean 400 because it produced a 500 leaking an internal hint). On webgpu this LOWERS the backend cap when smaller (the load-time VRAM check described here is CUDA's); a request LARGER than the backend cap is ignored rather than honoured, since those caps are proven-fit ceilings")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")

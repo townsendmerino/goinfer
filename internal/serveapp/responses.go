@@ -131,7 +131,16 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 
 	// Tool path: render declarations, constrain when unambiguous, buffer the full
 	// output, parse into function_call items (buffered, like the chat tools path).
-	if len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
+	//
+	// toolsActive mirrors serveChatToolsWith/anthropic.go's own gate: a template with no tool form
+	// must 400, not silently fall through to the tools-less prompt below and drop the caller's
+	// tools (M-16, audit-2026-09-10) — the other two surfaces already refuse this.
+	toolsActive := len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none"
+	if toolsActive {
+		if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
+			writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
+			return
+		}
 		s.respondTools(w, r, lm, req, messages, sm, id, created, store)
 		return
 	}

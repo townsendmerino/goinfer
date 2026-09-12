@@ -36,14 +36,7 @@ func main() {
 	tok, err := tokenizer.LoadGGUF(path)
 	check(err, "tokenizer")
 
-	// Generate is a raw completion primitive — it has no idea what a "chat turn" is.
-	// Detect resolves THIS checkpoint's own template from its tokenizer metadata;
-	// ErrUnknownTemplate means fall back to feeding the prompt as raw text.
-	text := prompt
-	if tmpl, terr := chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken: tok.Has}); terr == nil {
-		text = tmpl.Render("", []chat.Turn{{Role: "user", Content: prompt}})
-	}
-	ids, err := tok.Encode(text, true)
+	ids, err := buildPrompt(tok, prompt)
 	check(err, "encode")
 
 	out, _ := m.Generate(context.Background(), ids, 256, decoder.SamplingParams{})
@@ -53,6 +46,21 @@ func main() {
 		fmt.Print(s)
 	}
 	fmt.Println()
+}
+
+// buildPrompt renders the checkpoint's own chat template when Detect recognizes it (ErrUnknownTemplate
+// means fall back to the raw prompt) and encodes it. A rendered template already carries the family's
+// own BOS marker (chat.Detect's contract, chat/chat.go:73-76); addBOS=true would double it on
+// Gemma/Llama-3/Mistral (M-39, audit-2026-09-10). Only the raw-text fallback needs the tokenizer to
+// prepend one.
+func buildPrompt(tok *tokenizer.Tokenizer, prompt string) ([]int, error) {
+	text := prompt
+	rendered := false
+	if tmpl, terr := chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken: tok.Has}); terr == nil {
+		text = tmpl.Render("", []chat.Turn{{Role: "user", Content: prompt}})
+		rendered = true
+	}
+	return tok.Encode(text, !rendered)
 }
 
 func check(err error, what string) {
