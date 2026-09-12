@@ -151,7 +151,7 @@ naming as a side benefit — not a reason to prioritize this model on its own.
    the blast-radius finding: `decoder/forwardn.go` is in the explicit **core** hashed-file set
    (`docs/task-parity-coverage.md:33`, alongside `model.go`/`attention.go`/`mlp.go`/`kvcache.go`/
    `rope.go`/`rmsnorm.go`/`registry.go`/`arch.go`/`config.go`) — changing it re-stales every
-   family's parity record, the same "maximum blast radius" `docs/scoping-lfm2.md` §G flagged for
+   family's parity record, the same "maximum blast radius" `docs/completed/scoping-lfm2.md` §G flagged for
    touching `registry.go`/`kvcache.go`. `forwardn.go` today assumes one residual stream through the
    attention+MLP fold (its own comments mark "one residual add" points in the batched path);
    widening that to 4 gated branches touches the shared spine every family's forward pass runs
@@ -234,7 +234,7 @@ harder than the license:
 
 ## Sequencing
 
-**Not started; nothing is queued.** This is prep, filed the way `docs/scoping-lfm2.md` files a
+**Not started; nothing is queued.** This is prep, filed the way `docs/completed/scoping-lfm2.md` files a
 post-freeze family: visible, reasoned, not claimed. Pick up when either holds:
 
 1. A real Qwen4 checkpoint ships at a size that actually fits goinfer's niche (the stated target of
@@ -265,4 +265,4 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
   the completed qwen3.6 real-checkpoint task record (internal, untracked), `docs/queue-correctness.md`,
   `docs/task-moe-streaming.md`, `docs/spec/README.md`, `docs/task-parity-coverage.md`,
   `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,
-  `docs/scoping-lfm2.md`, `docs/post-v1.0-models.md`
+  `docs/completed/scoping-lfm2.md`, `docs/post-v1.0-models.md`

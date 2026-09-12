@@ -27,6 +27,23 @@ Parity, numerics, goldens, quantization, model families. Anything whose success 
 > so nothing in this queue is startable today. That is a real state, not an empty-queue
 > formality — read G8's entry for what would unpark it.
 
+**G12 · LFM2/LFM2.5 GGUF loader — safetensors-only today, llama.cpp already supports it** — `cpu`.
+
+`docs/completed/scoping-lfm2.md`'s own scoping never owned this — it is the one remainder its
+"GGUF status" line named and did not scope. G1 (`7098769`, 2026-08-31) shipped LFM2/LFM2.5
+safetensors-only; the capability matrix still shows only `safetensors` for `lfm2`
+(`docs/capability-matrix.md:111`), and `ggufConfig`'s architecture switch
+(`decoder/gguf.go:50-88`) has no `"lfm2"` case — a GGUF checkpoint for this family fails to load
+today with "architecture unsupported", listing every arch that DOES have one. llama.cpp supports
+arch `lfm2` natively and an official `LiquidAI/LFM2.5-2.6B-GGUF` checkpoint exists, so the gap is
+real: a user reaching for LFM2.5 via `goinfer-chat pull` (the GGUF-first surface most pulls use)
+cannot get it. The family's numerics are already validated one tier past this doc's own
+experimental ceiling (T3 full-forward-oracle, cosine 1.0, `testdata/parity_manifest.json`'s
+`lfm2` row, 2026-09-07), so this is pure loader plumbing — an `lfm2Config` case in the same shape
+as any other GGUF-native family already there (see `ggufMellumConfig`/`ggufGraniteDenseConfig`
+for the closest-shaped precedent: dense, no MoE routing table to reconcile), not a new numeric
+frontier.
+
 **G8 · DeepSeek V4-Flash as a new family** — `any`, **PARKED — and the reason has CHANGED
 (2026-08-31). It is no longer "lowest priority"; it is UNVALIDATABLE on any hardware here.**
 

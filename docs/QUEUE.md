@@ -817,7 +817,7 @@ D3's refresh in the rebase worktree and getting `goldens=7`.)*
 | E2 | `testdata/parity_manifest.json` | matched when written; **resolved 2026-08-15** — all four are now `validated`. What the description got wrong was not its status but its FRAMING: it called them "demotion judgments", inheriting the campaign doc's "validation + recording, NOT engineering". Two of the four were engineering, and only a released checkpoint could say so |
 | E4 | `scripts/bench_compare.sh` | **stale** — the entry says "status unconfirmed, may still measure the two sides differently"; the script now refuses that use and points at `scripts/bench_peer.py`. Corrected in the status sweep above |
 | E6 | aikit tree + `gpu/v0.27.0` | **now stale by design** — the tag it pinned is superseded by `gpu/v0.28.0`. Re-checked at the bump: `be049df` is an ancestor of `gpu/v0.27.0`, and across `gpu/v0.27.0..gpu/v0.28.0` the quantized GEMV PTX is byte-identical |
-| G1 | `docs/scoping-lfm2.md` | matches |
+| G1 | `docs/completed/scoping-lfm2.md` | matches |
 | P1, P2, P4, P5, P8 | audit lines + the cited source | match; each carries a measured figure or an explicit ESTIMATE label |
 
 **Split: 9 entries had an external source and were checkable; 2 of those 9 were wrong (D3, E4).
@@ -1328,8 +1328,8 @@ supports.
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:658` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
 | `docs/audit-2026-09-10.md|internal/chatapp/prequant.go:118` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|internal/chatapp/serveonly.go:133` | goinfer | `UNKEYABLE` |
-| `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:100` | goinfer | `if *measure {` |
-| `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:76` | goinfer | `m, err := decoder.Load(path, decoder.Options{Quant: *quant})` |
+| `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:107` | goinfer | `if *measure {` |
+| `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:83` | goinfer | `m, err := decoder.Load(path, decoder.Options{Quant: *quant})` |
 | `docs/audit-2026-09-10.md|internal/gemmaapp/main.go:96` | goinfer | `cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), mod` |
 | `docs/audit-2026-09-10.md|internal/prequant/prequant.go:149` | goinfer | `m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4})` |
 | `docs/audit-2026-09-10.md|internal/prequant/prequant.go:154` | goinfer | `f, err := os.Create(out)` |
@@ -1552,6 +1552,7 @@ supports.
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:694` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
 | `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:317` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
 | `docs/prompts/mac-demo-finish.md|internal/chatapp/main.go:501` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", nTok, float64(nTok)/elapsed` |
+| `docs/queue-correctness.md|decoder/gguf.go:50` | goinfer | `anchor: func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:423` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
@@ -1573,15 +1574,6 @@ supports.
 | `docs/queue-engineering.md|metal/model.go:1095` | goinfer | `if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:763` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1124` | goinfer | `gpu.HostCopy{Dst: w.W.At(slot * w.perExpertW * 4), Src: srcW[wOff : wOff+wLen]},` |
-| `docs/scoping-lfm2.md|decoder/arch.go:240` | goinfer | `type nemotronParams struct {` |
-| `docs/scoping-lfm2.md|decoder/attention.go:109` | goinfer | `if arch.QKNorm {` |
-| `docs/scoping-lfm2.md|decoder/config.go:1151` | goinfer | `case c.UseQKNorm:` |
-| `docs/scoping-lfm2.md|decoder/deltanet.go:182` | goinfer | `// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1` |
-| `docs/scoping-lfm2.md|decoder/forward_qwen35.go:39` | goinfer | `if arch.isLinearLayer(l) {` |
-| `docs/scoping-lfm2.md|decoder/kvcache.go:54` | goinfer | `type KVCache struct {` |
-| `docs/scoping-lfm2.md|decoder/mamba2.go:89` | goinfer | `// 2. Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last` |
-| `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
-| `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2827` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:51` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:322` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
