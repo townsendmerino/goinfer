@@ -492,7 +492,8 @@
       ],
       "used_by": [
         "TestQwen38Real_gate",
-        "TestQwen38Real_oracle"
+        "TestQwen38Real_oracle",
+        "TestQwen38GGUF_weightDiff"
       ],
       "note": "Qwen/Qwen3.8-27B, 18 bf16 shards / 55.6 GB. The whole multimodal repo is downloaded because the text decoder's shards are interleaved with the vision tower's; the loader requests neither model.visual.* nor mtp.*. Loaded at int4 -- Options{} would ask for the f32 dequant of a 27.8B model. TestQwen38Real_oracle is the T3 numeric row (2026-09-08), pinned via scripts/pin_sequential_oracle.py against the SAME checkpoint."
     },
@@ -525,7 +526,8 @@
         "$MODELS/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf"
       ],
       "used_by": [
-        "TestQwen38GGUF_gate"
+        "TestQwen38GGUF_gate",
+        "TestQwen38GGUF_weightDiff"
       ],
       "note": "unsloth/Qwen3.8-27B-GGUF UD-Q4_K_M, 16.5 GB \u2014 the dense qwen35 GGUF. 3.4x smaller than the 55.6 GB bf16 safetensors the same model ships as, and it loads without re-quantizing."
     },
