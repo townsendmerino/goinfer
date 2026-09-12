@@ -190,6 +190,42 @@ way §B2 already prints Ollama's decode-only rate alongside its wall clock — w
 remaining the one that counts for a peer comparison. Existing rows (incl. §B4's 16.98 tok/s, re-confirmed)
 are correctly measured and unchanged.
 
+**New in `bench_peer.py` (2026-09-12), not yet reflected in any row on this page:**
+
+- **A goinfer-vs-goinfer before/after A/B** (`BENCH_ENGINES=goinfer,goinfer_old,...`, `SERVE_OLD` /
+  `GOINFER_SERVE_*_OLD`): a second, named-prior-commit binary interleaved against the current one
+  AND a real peer in one sweep, so a "did the last N days move this row" question gets the same
+  session-interleaving discipline as a peer claim already does, not a comparison against a number
+  written in a prior doc. Record the old binary's commit in the path you give it
+  (`serve-cpu-c7ef16a`, not just `serve-cpu-old`) — the binary itself carries no `-version` flag,
+  so the path is the only provenance for which commit it was built from.
+- **An RSS column** (`rss_peak_kb`/`rss_peak` per cell): peak resident set of the WHOLE process
+  group the cell's server launched, polled every 200ms, not a single post-hoc sample. Group, not
+  the one PID this harness itself spawns — found live smoke-testing this, not assumed: Ollama's
+  `ollama serve` is a thin supervisor whose child `llama-server` process holds the actual model
+  weights, so sampling only the parent PID measured the supervisor's own overhead (tens of MB) and
+  would have reported Ollama's memory footprint as near-zero, backwards from the true number (1.5
+  GB, confirmed for a 1.5B q4_k_m checkpoint). Subject to the same darwin RSS caution already on
+  record for a different memory guard in this repo (CLAUDE.md's "a guard that INVERTS" note): the
+  OS can reclaim clean pages under pressure, so RSS can under-report true peak on a loaded box —
+  useful as a same-session comparative number between engines, not as an allocation-accurate one.
+- **Embeddings throughput** (`BENCH_EMBED_LENGTHS`, `GOINFER_EMBED_MODEL`): goinfer's
+  `-embed-model` path (a CodeRankEmbed-family HF dir, not a GGUF) against Ollama's `nomic-embed-text`
+  — the same NomicBERT architecture family, confirmed via `internal/serveapp/embeddings_test.go`'s
+  own compatibility table, but NOT the same weights or quantization. A throughput comparison only;
+  never present it as a quality/parity claim, the same restriction §M26 above already states for
+  its own cross-provenance quant pairing.
+- **Vision TTFT, one image** (`BENCH_VISION=1`, `BENCH_VISION_MODEL`): goinfer's served
+  `/v1/chat/completions` (image content part) against Ollama's `/api/chat` (`images` field),
+  time-to-first-token only. This is a NEW instrument, not a re-measurement of the 31.3 s/image
+  SigLIP-tower row above — that figure comes from an in-process Go driver timing the tower alone;
+  this one is a served-HTTP round trip on both sides. Both are evidence about the same underlying
+  cost; they are not the same number and must not be plotted as if they were.
+
+None of the four above has a published row yet — see `docs/measurements/` for the first pass once
+one exists, following this page's own Methodology bullets above (same machine, same checkpoint,
+pinned versions, dated, thermal note, verified-idle box).
+
 ---
 
 ## Model storage — archive remote, benchmark local

@@ -32,8 +32,15 @@ intended 2048-token prompt into 9094 and silently blew the context window.
 
   GOINFER_SERVE=/path/to/cuda-serve OLLAMA_BIN=~/ollama-0325/bin/ollama \
     python3 scripts/bench_peer.py results.json
+
+BEFORE/AFTER A/B (a second goinfer binary from a named prior commit, interleaved against the
+current one AND a real peer in one sweep -- see SERVE_OLD and plan_engines()' own note):
+
+  GOINFER_SERVE_CPU_OLD=/path/to/serve-cpu-c7ef16a GOINFER_SERVE_CPU=/path/to/serve-cpu-HEAD \
+    BENCH_ENGINES=goinfer,goinfer_old,ollama BENCH_BACKENDS=cpu \
+    python3 scripts/bench_peer.py results.json
 """
-import json, os, signal, socket, subprocess, sys, time, urllib.request, statistics
+import json, os, signal, socket, subprocess, sys, threading, time, urllib.request, statistics
 
 GOINFER = os.environ.get("GOINFER_SERVE", "./goinfer-serve")
 OLLAMA = os.environ.get("OLLAMA_BIN", os.path.expanduser("~/ollama-0325/bin/ollama"))
@@ -177,6 +184,26 @@ SERVE = {
     # BENCH_BACKENDS=metal on darwin.
     "metal":  os.environ.get("GOINFER_SERVE_METAL",  "/nonexistent/serve-metal"),
 }
+# SERVE_OLD: a SECOND goinfer binary per backend, for a before/after A/B against a named prior
+# commit (docs/benchmarks.md's "a ratio across sessions is not a ratio" -- this is how the same
+# rule is satisfied for a goinfer-vs-goinfer comparison instead of a goinfer-vs-peer one: build
+# both binaries once, then let ENGINE selection alone tell them apart within one sweep, so they
+# get the same interleaving, restart discipline and machine-state stamping as any peer cell).
+# Empty string by default (not a fake path like SERVE's Linux defaults above) so an operator who
+# asks for the "goinfer_old" engine without setting these gets a clear "no such binary" failure
+# at launch rather than a silently-wrong one at a placeholder path.
+#
+# CAVEAT, not defended against in code: the two binaries must accept the SAME CLI flags this
+# harness passes (-model, -backend, -addr, -quant, -moe-cache-experts, -ctx, -stream-weights). An
+# "old" commit predating one of those flags will fail to start with an "unknown flag" error, which
+# is loud and correct -- not a flag compatibility shim, since one would silently narrow what the
+# comparison actually covers.
+SERVE_OLD = {
+    "cpu":    os.environ.get("GOINFER_SERVE_CPU_OLD", ""),
+    "cuda":   os.environ.get("GOINFER_SERVE_CUDA_OLD", ""),
+    "webgpu": os.environ.get("GOINFER_SERVE_WEBGPU_OLD", ""),
+    "metal":  os.environ.get("GOINFER_SERVE_METAL_OLD", ""),
+}
 GPORT, OPORT, LPORT, MPORT = 8099, 11499, 8098, 8097
 # DEEP CONTEXT (§B7). BENCH_DEEP_CTX sets the resident/served context cap in positions; 0 keeps
 # the shallow protocol untouched. A 32k prefill costs orders of magnitude more than the decode being
@@ -215,6 +242,34 @@ NGEN = int(os.environ.get("BENCH_NGEN", "64"))  # tokens generated per completio
 # ~fixed KV depth, so the window size under test is the completion length. Default unchanged.
 NCOMP = 8          # completions per run  (>= 8 required)
 NRUNS = 2          # runs per cell        (>= 2 required, spread reported)
+
+# --- EMBEDDINGS PEER (docs/task-peer-benchmarks.md W8; scoped 2026-09-03, never run before this
+# harness gained the capability) -------------------------------------------------------------
+# goinfer's /v1/embeddings takes a CodeRankEmbed-family HF dir (config.json + model.safetensors +
+# tokenizer.json) via -embed-model, NOT a GGUF -- a structurally different checkpoint format from
+# every entry in MODELS above, so this gets its own path variable. Default env var name matches
+# the existing convention in internal/serveapp/embeddings_test.go (GOINFER_EMBED_MODEL), not a
+# new BENCH_-prefixed name, so the same env already set for that test works here unchanged.
+EMBED_MODEL_PATH = os.path.expanduser(os.environ.get("GOINFER_EMBED_MODEL", "~/models/coderankembed"))
+# Ollama's peer: nomic-embed-text is the SAME architecture family as CodeRankEmbed (both NomicBERT
+# derivatives -- embeddings_test.go's own compatibility table loads "nomic-ai/nomic-embed-text-v1.5"
+# through the identical goinfer encoder path), the closest same-family pair this harness can offer.
+# NOT the same weights or quantization (Ollama's is its own GGUF conversion) -- a THROUGHPUT
+# comparison only, never a quality/parity claim. BENCH_EMBED_OLLAMA_TAG overrides for a different
+# peer model (e.g. bge-m3, a different architecture entirely -- fine for throughput, but say so
+# wherever the row is quoted, the same flagging discipline MODELS/M26 above already uses for its
+# own double-quantization caveat).
+EMBED_OLLAMA_TAG = os.environ.get("BENCH_EMBED_OLLAMA_TAG", "nomic-embed-text")
+EMBED_PORT = 8096
+
+# --- VISION PEER (new; docs/benchmarks.md's 2026-09-08 SigLIP row explicitly notes "no vision
+# peer harness exists either") -------------------------------------------------------------------
+# Reuses a real, already-committed test asset (goinfer's own SigLIP preprocessing golden) rather
+# than generating or fetching a new image.
+VISION_IMAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                                  "testdata", "gemma3_preprocess_image.png")
+VISION_MODEL_PATH = os.path.expanduser(os.environ.get("BENCH_VISION_MODEL", "~/models/gemma-3-4b-it"))
+VISION_OLLAMA_TAG = os.environ.get("BENCH_VISION_OLLAMA_TAG", "gemma3:4b")
 
 
 def gen_params():
@@ -302,6 +357,88 @@ def _gpu_compute_apps():
     out = _sh(["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader"])
     return [l.strip() for l in out.splitlines() if l.strip()]
 
+def _group_rss_kb(pgid):
+    """SUM of RSS across every process sharing pgid, via `ps` (not /proc) so this works on both
+    boxes -- Linux and darwin, the two this harness runs on. Returns None if nothing in the group
+    is alive (process exited, or `ps` itself failed) rather than 0, so a dead-group sample cannot
+    masquerade as a real measurement of zero memory.
+
+    MUST be group RSS, not one PID's RSS -- found live smoke-testing this on the Mac, not assumed:
+    `ollama serve` is a thin Go supervisor that SPAWNS A CHILD `llama-server` PROCESS which holds
+    the actual model weights (confirmed via `ps -eo pid,pgid,rss,command` while a real chat request
+    was in flight -- the parent read 50 MB RSS, its child read 1.25 GB). Sampling only the Popen
+    PID this harness itself launched would have reported Ollama's memory footprint as its
+    supervisor's overhead alone -- not merely imprecise, actively backwards, the exact "reports
+    the opposite of what it exists to catch" failure CLAUDE.md's own measurement-discipline rule
+    warns about for a different memory guard. Every engine here is launched with
+    `preexec_fn=os.setsid`, so the Popen PID IS its own new process group leader and any child it
+    spawns (like llama-server here) inherits that SAME pgid unless it calls setsid itself -- which
+    is also exactly the group `os.killpg` already tears down, so this reuses an invariant the code
+    already depended on rather than adding a new one."""
+    out = _sh(["ps", "-eo", "pgid,rss"])
+    total, seen = 0, False
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        try:
+            pg, rss = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        if pg == pgid:
+            total += rss
+            seen = True
+    return total if seen else None
+
+class RSSSampler:
+    """Peak SUM-OF-GROUP RSS, polled on a background thread while a cell's completions run.
+
+    A single post-hoc sample would catch whatever the process happened to be holding at the
+    moment this script asked -- not the peak, which is the number that actually matters for "does
+    this fit in the box's RAM" (L1's 890 MB figure, docs/benchmarks.md). Peak-by-polling is a
+    lower bound on the true peak (it can only see what it happens to sample), so a short-lived
+    spike between two polls is invisible; POLL_S is short enough that no completion in this
+    harness's own NGEN/NCOMP range is likely to spike and fully subside between two ticks.
+
+    NOT a substitute for a real profiler and not claimed as one -- see the darwin RSS caution
+    already on record in this repo (CLAUDE.md's "a guard that INVERTS under the condition it
+    exists for" measurement-discipline note, and madvise-dontneed-defeats-warm-cold-rerun): RSS
+    reports what a process is CURRENTLY HOLDING, and on darwin the OS (UBC) can reclaim clean
+    pages under memory pressure, so this number can UNDER-report true peak working set on a loaded
+    box -- the same mechanism that made an RSS-keyed budget guard read LESS memory at MORE
+    pressure elsewhere in this repo. preflight()/gate_cell_idle() keep the box otherwise quiet
+    during a sweep, which is the mitigation this repo already relies on for the same class of
+    measurement, not a new one invented here; it does not make RSS an allocation-accurate number,
+    only a usable comparative one between engines measured the same way in the same session.
+    """
+    POLL_S = 0.2
+
+    def __init__(self, pid):
+        # preexec_fn=os.setsid (every Popen call in this file) makes pid its own process group
+        # leader, so pgid == pid at launch -- getpgid is still called explicitly rather than
+        # assumed equal, since that is what os.killpg's own teardown already does and this should
+        # track the SAME group that teardown kills, not a value merely equal to it by convention.
+        self.pgid = os.getpgid(pid)
+        self.peak_kb = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.is_set():
+            v = _group_rss_kb(self.pgid)
+            if v is not None and (self.peak_kb is None or v > self.peak_kb):
+                self.peak_kb = v
+            self._stop.wait(self.POLL_S)
+
+    def start(self):
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=2)
+        return self.peak_kb
+
 def _ollama_version():
     """`ollama --version` prints a "could not connect" warning line when no server is up, and the
     warning also carries a version. Pull the first version-shaped token rather than a line, so the
@@ -350,6 +487,15 @@ def provenance():
                                                                   time.gmtime(os.path.getmtime(v)))
                                                    if os.path.exists(v) else None)}
                            for k, v in SERVE.items()},
+        # Only entries an operator actually set (SERVE_OLD defaults to "", unlike SERVE's Linux
+        # defaults) -- an unused goinfer_old slot should not clutter every provenance header with
+        # "path": "". A binary's own commit is not recoverable from the file alone (no `-version`
+        # flag reports it), so the operator-chosen PATH is the record; name it after the commit
+        # (e.g. serve-cpu-c7ef16a) the same way this repo already names bench binaries.
+        "serve_binaries_old": {k: {"path": v, "mtime": (time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                                       time.gmtime(os.path.getmtime(v)))
+                                                        if os.path.exists(v) else None)}
+                               for k, v in SERVE_OLD.items() if v},
         "gpu": _gpu_state(),
         "cpu_count": os.cpu_count(),
         "loadavg_at_start": _loadavg(),
@@ -664,7 +810,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     load_timeout = 900 if model_key in MOE_MODELS else LOAD_TIMEOUT
     proc = None
     try:
-        if engine == "goinfer":
+        if engine in ("goinfer", "goinfer_old"):
             # MOE_MODELS: `-moe-cache-experts` is added for every model in this set so a >8GB-VRAM
             # MoE actually runs resident-with-streaming on CUDA instead of silently declining to
             # the CPU path. GOINFER_MOE_PATH is the NARROWER subset (M35/M26) that also load
@@ -678,8 +824,13 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             quant_args = [] if has_own_bundle else \
                 ["-quant", GOINFER_QUANT_OVERRIDE.get(model_key, "int4")]
             moe_args = ["-moe-cache-experts"] if (model_key in MOE_MODELS and backend == "cuda") else []
+            # "goinfer_old" picks SERVE_OLD instead of SERVE -- same flags, same port (the two never
+            # run concurrently: run_cell always tears one engine down before the next starts), a
+            # DIFFERENT binary built from a named prior commit. Empty SERVE_OLD entry -> Popen raises
+            # immediately (a clear "no such file" rather than a silently-wrong placeholder path).
+            serve_map = SERVE_OLD if engine == "goinfer_old" else SERVE
             proc = subprocess.Popen(
-                [SERVE[backend], "-model", f"bench={gpath}", "-backend", backend,
+                [serve_map[backend], "-model", f"bench={gpath}", "-backend", backend,
                  "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
                 + (["-ctx", str(DEEP_CTX)] if DEEP_CTX else [])
                 + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else []),
@@ -755,6 +906,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             else wait_port(port, timeout=load_timeout)
         if not ready:
             return None, "server did not come up", None
+        # RSS sampling starts once the server is confirmed up -- the process exists and its RSS
+        # already reflects the checkpoint load, which is itself worth capturing (L1's 890 MB figure
+        # was a LOAD-time footprint, not just a decode-time one). Stopped just before teardown below,
+        # so the peak covers load + warmup + every measured completion.
+        rss = RSSSampler(proc.pid).start()
         # warm: one discarded completion (model load + first-run outlier)
         try:
             post_stream(url, mk(), parse)
@@ -785,8 +941,10 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 # always computed and then discarded, reporting only the mean of 8.
                 comp_rates.extend(rates)
         ratio = (tok_total / chunk_total) if chunk_total else None
+        rss_peak_kb = rss.stop()
         return run_rates, None, {"tokens": tok_total, "chunks": chunk_total, "tokens_per_chunk": ratio,
-                                 "completion_rates": comp_rates, "ngen": gen_params()[0]}
+                                 "completion_rates": comp_rates, "ngen": gen_params()[0],
+                                 "rss_peak_kb": rss_peak_kb}
     except Exception as e:
         return None, str(e), None
     finally:
@@ -800,6 +958,180 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 except Exception:
                     pass
             time.sleep(3)  # let VRAM settle before the next engine loads
+
+def _stop_proc(proc):
+    """Shared teardown for run_embed_cell/run_vision_cell -- identical to run_cell's own inline
+    finally block, factored out so it is not typed a third time."""
+    if not proc:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=30)
+    except Exception:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            pass
+    time.sleep(3)
+
+def _embed_filler_text(approx_tokens):
+    """Filler text for the embeddings length axis. ~1.3 tokens/word is an APPROXIMATION for
+    plain-English filler on a BPE-family tokenizer, not a calibration (unlike prompts.json's
+    per-model-tokenizer-exact depths for the decode rows) -- the real per-request token count is
+    always read back from the engine's own `usage` field and recorded, never assumed from this
+    label. Throughput does not depend on content (same reasoning prompts.json's own filler already
+    relies on for decode), only on length, so filler is fine here for the same reason it is there."""
+    words = max(4, int(approx_tokens / 1.3))
+    return " ".join(["the"] * words)
+
+def embed_payload_goinfer(texts):
+    return {"model": "bench", "input": texts}
+
+def embed_payload_ollama(texts):
+    return {"model": EMBED_OLLAMA_TAG, "input": texts}
+
+def _embed_post(url, payload):
+    """POST one embeddings request; return the engine's reported prompt-token count (or None if it
+    reports none), matching the "count from the engine's own usage, never from bytes sent" rule
+    docs/benchmarks.md's Methodology section already states for the decode rows."""
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        d = json.loads(r.read())
+    u = d.get("usage") or {}
+    return u.get("prompt_tokens") or u.get("total_tokens") or d.get("prompt_eval_count")
+
+def run_embed_cell(engine, approx_tokens, n_inputs):
+    """Embeddings throughput: N inputs in one batched request, timed client-side wall-clock around
+    the whole call (no SSE stream to time inter-event gaps against, unlike run_cell's decode path
+    -- embeddings responses are not streamed on either side). texts/s is the primary number;
+    tokens/s is reported too where the engine's own usage field gives a count. goinfer and Ollama
+    only -- llamacpp/mlx have no embeddings endpoint this harness speaks to.
+
+    docs/task-peer-benchmarks.md W8, scoped 2026-09-03, never run until this function existed.
+    """
+    texts = [_embed_filler_text(approx_tokens) for _ in range(n_inputs)]
+    proc = None
+    try:
+        if engine == "goinfer":
+            if not os.path.exists(EMBED_MODEL_PATH):
+                return None, f"no goinfer embed checkpoint at {EMBED_MODEL_PATH} (GOINFER_EMBED_MODEL)", None
+            proc = subprocess.Popen(
+                [SERVE["cpu"], "-embed-model", EMBED_MODEL_PATH, "-addr", f"127.0.0.1:{EMBED_PORT}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+            port, url, build = EMBED_PORT, f"http://127.0.0.1:{EMBED_PORT}/v1/embeddings", \
+                (lambda: embed_payload_goinfer(texts))
+        elif engine == "ollama":
+            env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
+            proc = subprocess.Popen([OLLAMA, "serve"], env=env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    preexec_fn=os.setsid)
+            port, url, build = OPORT, f"http://127.0.0.1:{OPORT}/api/embed", \
+                (lambda: embed_payload_ollama(texts))
+        else:
+            return None, f"embeddings cell: unsupported engine {engine!r}", None
+
+        if not wait_port(port, timeout=LOAD_TIMEOUT):
+            return None, "server did not come up", None
+        try:
+            _embed_post(url, build())   # warm: model load + first-run outlier
+        except Exception as e:
+            return None, f"warmup failed: {e}", None
+
+        rss = RSSSampler(proc.pid).start()
+        _, _, nruns = gen_params()
+        rates, tok_rates, tokens_seen = [], [], 0
+        for _ in range(nruns):
+            t0 = time.perf_counter()
+            tok = _embed_post(url, build())
+            dt = time.perf_counter() - t0
+            rates.append(n_inputs / dt)
+            if tok:
+                tok_rates.append(tok / dt)
+                tokens_seen += tok
+        rss_peak_kb = rss.stop()
+        return rates, None, {
+            "metric": "inputs_per_sec", "n_inputs": n_inputs,
+            "tokens_per_sec": round(statistics.mean(tok_rates), 1) if tok_rates else None,
+            "tokens_per_request_mean": round(tokens_seen / max(1, len(tok_rates)), 1) if tok_rates else None,
+            "rss_peak_kb": rss_peak_kb,
+        }
+    except Exception as e:
+        return None, str(e), None
+    finally:
+        _stop_proc(proc)
+
+def vision_payload_goinfer(b64):
+    return {"model": "bench", "stream": True, "max_tokens": 1,
+            # TTFT only: the doc's own 31.3 s/image figure is the SigLIP tower's cost, front-loaded
+            # before any token is produced, so decode length past the first token is not this row's
+            # subject. stream_options.include_usage is harmless here (unused) but kept for parity
+            # with goinfer_payload's own shape.
+            "stream_options": {"include_usage": True},
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": "Describe this image."},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            ]}]}
+
+def vision_payload_ollama(b64):
+    return {"model": VISION_OLLAMA_TAG, "stream": True,
+            "options": {"num_gpu": 0},  # CPU-forced -- matches the CPU peer row this compares to
+            "messages": [{"role": "user", "content": "Describe this image.", "images": [b64]}]}
+
+def run_vision_cell(engine):
+    """One image through a vision model, TIME TO FIRST TOKEN only. docs/benchmarks.md's own
+    2026-09-08 SigLIP row notes explicitly that no vision peer harness exists -- this is new
+    capability, not a re-measurement of an existing served-HTTP baseline (the existing 31.3
+    s/image figure is an IN-PROCESS driver measurement of the tower alone, a different instrument
+    from this one; the two are not directly comparable numbers, only both evidence about the same
+    underlying cost). goinfer and Ollama only. CPU only, matching the existing row's own backend.
+    """
+    with open(VISION_IMAGE_PATH, "rb") as f:
+        import base64
+        b64 = base64.b64encode(f.read()).decode()
+    proc = None
+    try:
+        if engine == "goinfer":
+            if not os.path.exists(VISION_MODEL_PATH):
+                return None, f"no goinfer vision checkpoint at {VISION_MODEL_PATH} (BENCH_VISION_MODEL)", None
+            proc = subprocess.Popen(
+                [SERVE["cpu"], "-model", f"bench={VISION_MODEL_PATH}", "-backend", "cpu",
+                 "-addr", f"127.0.0.1:{GPORT}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+            port, url, parse, build = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", \
+                parse_openai, (lambda: vision_payload_goinfer(b64))
+        elif engine == "ollama":
+            env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
+            proc = subprocess.Popen([OLLAMA, "serve"], env=env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    preexec_fn=os.setsid)
+            port, url, parse, build = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
+                (lambda: vision_payload_ollama(b64))
+        else:
+            return None, f"vision cell: unsupported engine {engine!r}", None
+
+        if not wait_port(port, timeout=LOAD_TIMEOUT):
+            return None, "server did not come up", None
+
+        rss = RSSSampler(proc.pid).start()
+        _, _, nruns = gen_params()
+        ttfts = []
+        for i in range(nruns + 1):  # i==0 is warmup: model load + first-run outlier, discarded
+            t0 = time.perf_counter()
+            try:
+                _, t_first, _, _, _ = post_stream(url, build(), parse)
+            except Exception as e:
+                if i == 0:
+                    return None, f"warmup failed: {e}", None
+                continue
+            if i > 0 and t_first:
+                ttfts.append(t_first - t0)
+        rss_peak_kb = rss.stop()
+        return ttfts, None, {"metric": "ttft_seconds", "rss_peak_kb": rss_peak_kb}
+    except Exception as e:
+        return None, str(e), None
+    finally:
+        _stop_proc(proc)
 
 def plan_models():
     """The models the sweep runs. DEFAULTS TO THE HISTORICAL LIST, unchanged.
@@ -839,12 +1171,18 @@ def plan_engines():
     For an INTERNAL A/B — the same binary against itself under an env flag — the peer cell measures
     nothing and doubles the sweep. USING THIS FORFEITS THE DRIFT CONTROL, which is the whole reason
     a peer cell sits in a comparison, so it is legitimate ONLY where no cross-engine claim is being
-    made. Never use it for a row that quotes a ratio."""
+    made. Never use it for a row that quotes a ratio.
+
+    "goinfer_old" is a DIFFERENT thing, not the case above: a second, distinct binary (SERVE_OLD)
+    built from a named prior commit, so `BENCH_ENGINES=goinfer,goinfer_old,ollama` genuinely
+    measures three things, not one thing twice. This is the before/after A/B path -- interleaved
+    with a real peer in the same sweep, not compared against numbers written in a doc from a
+    different session."""
     raw = os.environ.get("BENCH_ENGINES", "").strip()
     if not raw:
         return ["goinfer", "ollama"]
     picked = [e.strip() for e in raw.split(",") if e.strip()]
-    known = ("goinfer", "ollama", "llamacpp", "mlx")
+    known = ("goinfer", "goinfer_old", "ollama", "llamacpp", "mlx")
     unknown = [e for e in picked if e not in known]
     if unknown:
         sys.exit(f"BENCH_ENGINES: unknown engine(s) {unknown}; known: {list(known)}")
@@ -887,6 +1225,25 @@ def plan_configs():
     if unknown:
         sys.exit(f"BENCH_CONFIGS: unknown config(s) {unknown}; known: {sorted(CONFIGS)}")
     return picked
+
+
+def plan_embed_lengths():
+    """Embeddings length axis (approximate tokens per input; see _embed_filler_text). EMPTY by
+    default, like plan_configs() -- a phase that ran by default would silently lengthen every
+    future sweep, and this one needs GOINFER_EMBED_MODEL set to do anything useful anyway.
+
+        BENCH_EMBED_LENGTHS=128,512 python3 scripts/bench_peer.py ...
+    """
+    raw = os.environ.get("BENCH_EMBED_LENGTHS", "").strip()
+    if not raw:
+        return []
+    return [int(x) for x in raw.split(",") if x.strip()]
+
+
+def plan_vision():
+    """Vision TTFT phase (run_vision_cell). Off by default (BENCH_VISION=1 opts in) -- one image,
+    one model pair, no axis to sweep, so this is a bool rather than a list like the phases above."""
+    return os.environ.get("BENCH_VISION", "").strip() == "1"
 
 
 def main():
@@ -953,7 +1310,12 @@ def main():
                         # just the record label, matching how webgpu's goinfer-only row above has
                         # no peer counterpart in that pairing either. Skipped per-model rather than
                         # failing when MLX_MODELS has no entry (run_cell's mlx branch).
-                        ("mlx","metal")]:
+                        ("mlx","metal"),
+                        # "goinfer_old" (a second, prior-commit binary; SERVE_OLD) on every backend
+                        # goinfer itself has -- inert unless BENCH_ENGINES asks for it, same as every
+                        # other row here being inert unless its backend/engine is selected.
+                        ("goinfer_old","cpu"), ("goinfer_old","cuda"), ("goinfer_old","webgpu"),
+                        ("goinfer_old","metal")]:
             if be in bes and eng in engs:
                 plan.append(("A", eng, be, mk, 128, "greedy"))
     # B) depth curve, CUDA only, all engines. "cuda" here is no longer just a label (V-08): every
@@ -975,6 +1337,23 @@ def main():
             for eng in plan_engines():
                 plan.append(("C", eng, "cuda", mk, 128, cfg))
 
+    # Phase D: embeddings throughput (run_embed_cell). Different request shape entirely from A/B/C
+    # (no streaming, no chat model, no depth-curve semantics -- "depth" here is
+    # run_embed_cell's approx_tokens instead), so it is dispatched separately below rather than
+    # forced through run_cell. goinfer and Ollama only. Empty unless BENCH_EMBED_LENGTHS is set.
+    n_embed_inputs = int(os.environ.get("BENCH_EMBED_N", "32"))
+    for length in plan_embed_lengths():
+        for eng in plan_engines():
+            if eng in ("goinfer", "ollama"):
+                plan.append(("D", eng, "embed", "embed", length, "greedy"))
+
+    # Phase E: vision TTFT (run_vision_cell), one image, CPU only. New surface -- see
+    # run_vision_cell's own doc comment. goinfer and Ollama only. Off unless BENCH_VISION=1.
+    if plan_vision():
+        for eng in plan_engines():
+            if eng in ("goinfer", "ollama"):
+                plan.append(("E", eng, "vision", "vision", 0, "greedy"))
+
     print(f"# {len(plan)} cells planned, {len(done)} already done", flush=True)
     for phase, engine, backend, mk, depth, cfg in plan:
         key = (phase, engine, backend, mk, depth, cfg)
@@ -984,9 +1363,18 @@ def main():
         gate_cell_idle()
         t0 = time.time()
         machine = machine_state()
-        rates, err, counts = run_cell(engine, mk, depth, cfg, backend)
+        if phase == "D":
+            rates, err, counts = run_embed_cell(engine, depth, n_embed_inputs)
+        elif phase == "E":
+            rates, err, counts = run_vision_cell(engine)
+        else:
+            rates, err, counts = run_cell(engine, mk, depth, cfg, backend)
+        # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
+        # MODELS keys and D's "depth" is an approximate embeddings length, not a calibrated one, so
+        # phases D/E record None here rather than raising a KeyError against prompts.json.
+        ptoks = prompt_tokens(depth, mk) if phase in ("A", "B", "C") else None
         rec = {"phase": phase, "engine": engine, "backend": backend, "model": mk,
-               "depth": depth, "prompt_tokens": prompt_tokens(depth, mk),
+               "depth": depth, "prompt_tokens": ptoks,
                "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
                "machine": machine,
@@ -1000,6 +1388,9 @@ def main():
             if r:
                 print(f"#   tokens/chunks = {r:.4f}  ({counts['tokens']} tok / {counts['chunks']} chunks)",
                       flush=True)
+            rss = counts.get("rss_peak_kb")
+            if rss:
+                print(f"#   rss_peak = {rss / (1<<20):.3f} GiB ({rss} KiB)", flush=True)
         if rates:
             rec["mean"] = round(statistics.mean(rates), 1)
             rec["spread"] = round(max(rates) - min(rates), 1)
