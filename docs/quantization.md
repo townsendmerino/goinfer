@@ -47,7 +47,7 @@ accuracy-per-byte on the shapes this project targets, not because it is smallest
 - **Nemotron-H, int4-resident vs f32:** 92.5% greedy agreement, ppl 1.677 against f32's 1.695,
   KL 0.058 — and, decisively, **top-2 agreement 99.6%**, with 16 of 17 disagreements picking f32's
   own #2 and **zero** harmful. That is what flipped it default-on
-  ([`nemotron-resident.md`](nemotron-resident.md)).
+  ([`nemotron-resident.md`](completed/nemotron-resident.md)).
 - **Coherence at scale:** Llama-4-Scout 109B from a Q2_K source at int4 generates coherent,
   factual text; gemma4-26b at int4 is fully coherent once its real chat template is rendered.
 
@@ -91,7 +91,7 @@ closed:
 - **Resident int8 for Mamba-2 hybrids.** Granite's resident int8 decode sat at **66% agreement**
   with f32 and the gap proved **precision-invariant** — W8A8 66% ≈ f16 64% ≈ W8A16 — so it is not
   a precision knob but distributed accumulation over a 40-layer MoE stack. Closed, opt-in,
-  greedy-only, and explicitly *do not re-fund* ([`nemotron-resident.md`](nemotron-resident.md)).
+  greedy-only, and explicitly *do not re-fund* ([`nemotron-resident.md`](completed/nemotron-resident.md)).
 - **Weight-space per-row IMMA scale search.** A 1.24× win in weight space; the forward gate put it
   at **ppl 108 against 28.5**. The cheap path died there, and the lesson stuck: a weight-space
   proxy can look fine while the forward is destroyed.
@@ -130,7 +130,7 @@ Stated so nobody reads absence as endorsement:
 
 ## Sources
 
-[`nemotron-resident.md`](nemotron-resident.md) (int4 default-on evidence; the granite contrast) ·
+[`nemotron-resident.md`](completed/nemotron-resident.md) (int4 default-on evidence; the granite contrast) ·
 [`task-first-hour.md`](task-first-hour.md) (the arm64 int4/int8 footprint inversion) ·
 [`audit-2026-09-02.md`](completed/audit-2026-09-02.md) L-10 (the 3-bit KV NO-GO) ·
 [`release-1.0-gate.md`](release-1.0-gate.md) (router flips, 779 of 3200) ·

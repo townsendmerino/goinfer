@@ -1048,7 +1048,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     this is the third) explaining the Nemotron-H row is generated from a DENSE representative
     config and does not apply to the two real MoE checkpoints — regenerated via `-update`,
     `TestHardwareMatrix_fresh` passes.
-  - `docs/nemotron-resident.md` (scoped entirely to the dense port, but titled generically enough
+  - `docs/completed/nemotron-resident.md` (scoped entirely to the dense port, but titled generically enough
     a reader could miss that) gets an explicit scope callout up top. `docs/task-families-2026-09.md`'s
     F2 (Lightning) section — which verified CPU-path config-identity against Nano in detail but
     never once mentioned GPU residency — gets a closing note stating CPU-only-on-every-backend
@@ -1158,7 +1158,8 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     for `(nemotron+MoE, webgpu)`, leaving cuda/metal's decline (and the arch-only predicate
     itself) completely untouched. `withResidency()`'s own G7-part-1 specific-decline-reason
     branch got the same `isWebGPUBackend` exclusion, so it stops firing for the one backend that
-    isn't actually declining. `docs/hardware-matrix.md`'s generator footnote, `docs/nemotron-resident.md`,
+    isn't actually declining. `docs/hardware-matrix.md`'s generator footnote,
+    `docs/completed/nemotron-resident.md`,
     and `docs/task-families-2026-09.md`'s F2 section (all written in part 1, when "no backend
     implements it" was still true) updated to say webgpu now does.
   - **`TestNemotronMoEResidentParityWebGPU`** (new, `gpu/nemotron_moe_resident_test.go`): real

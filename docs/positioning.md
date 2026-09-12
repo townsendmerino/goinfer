@@ -86,7 +86,7 @@ multi-threaded, reach a GPU, and load safetensors, GPTQ and AWQ alongside GGUF. 
 pure-Go WebGPU backend (no CUDA, no Python, no llama.cpp); a 12B that won't fit 8 GB at
 int8 runs **fully resident** at int4, ~13–21 tok/s. It writes idiomatic Go. Prequant the
 weights once to a `.giw` bundle and it reloads in ~13 s
-([docs/mellum2-resident.md](mellum2-resident.md)).*
+([docs/completed/mellum2-resident.md](completed/mellum2-resident.md)).*
 
 *And bigger still — **Gemma 4 26B-A4B** (a 26B MoE whose ~11.4 GB of int4 experts **do not
 fit 8 GB even at 4-bit**) decodes coherently on the same card, running **fully GPU-resident** —

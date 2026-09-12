@@ -1,5 +1,12 @@
 # Nemotron-H (nemotron_h) resident DecodeRunner port
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 Porting Nemotron-Nano (Nemotron-H hybrid) to the GPU full-residency DecodeRunner, reusing the
 granite SSM engine (`mambaConv`/`mambaSSM`/`mambaGatedNorm`, the parity/drift/quality harnesses).
 RTX 2070 SUPER (8 GB). Status: **COMPLETE (P0–P7).** Headline: **DEFAULT-on at int4 — 92.5% greedy / 99.6% top-2 agreement,
@@ -10,7 +17,7 @@ confident errors). NOT granite's wall — the dense/no-MoE hybrid quantizes clea
 > similar). Nemotron 3 Nano (30B-A3B) and Nemotron 3.5 Lightning (30B-A3B) share the
 > `nemotron_h` family name but add a FOURTH per-layer block kind (MoE FFN) that nothing on this
 > page's port touches. WebGPU implements a resident builder for it now (G7 part 2,
-> [`task-gpu-paths-2026-09.md`](task-gpu-paths-2026-09.md) — routed non-gated relu² experts, not
+> [`task-gpu-paths-2026-09.md`](../task-gpu-paths-2026-09.md) — routed non-gated relu² experts, not
 > a generic gated-MoE reuse); CUDA and Metal still decline it, so those two real, downloadable
 > checkpoints stay CPU-only there. `decoder.Model.DecodePath()` names the exact gap for a loaded
 > MoE checkpoint on whichever backend it declines, rather than the generic decline this page's

@@ -301,7 +301,7 @@ func (m *Model) DecodeRunnerEligible() bool {
 	// Nemotron-H resident is DEFAULT-on at int4 — characterized benign vs f32 (92.5% greedy /
 	// 99.6% top-2 agreement, perplexity 1.677≈1.695, KL 0.058; the ~7.5% disagreements are all
 	// at near-tied positions, int4 picking f32's #2, zero confident-token errors — see
-	// docs/nemotron-resident.md). int8 (unmeasured on 8 GB; fits ≥12 GB) stays OPT-IN behind
+	// docs/completed/nemotron-resident.md). int8 (unmeasured on 8 GB; fits ≥12 GB) stays OPT-IN behind
 	// GOINFER_SSM_RESIDENT. Other resident families are unchanged.
 	if m.w.arch.nemotron != nil && os.Getenv("GOINFER_SSM_RESIDENT") == "" {
 		return m.residentProjsInt4()

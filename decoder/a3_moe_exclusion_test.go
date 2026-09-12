@@ -51,7 +51,7 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 	}
 	// Quant is an axis here, not a detail. The full 28-layer Mellum2 is ~12 GB at
 	// int8int8 and does not fit the 16 GB Mac at all, but ~6 GB at int4 does — and
-	// int4 is what mellum2-resident.md actually runs. The attention swap under test
+	// int4 is what docs/completed/mellum2-resident.md actually runs. The attention swap under test
 	// is quant-INDEPENDENT (acc64 vs f32 accumulation), but its SHARE is not: int4's
 	// faster weight matmul raises attention's fraction of prefill and so raises the
 	// speedup. So an int4 number is the operator-facing one and an int8int8 number is
