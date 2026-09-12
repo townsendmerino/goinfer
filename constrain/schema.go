@@ -85,7 +85,7 @@ func JSONSchema(schema []byte) (Grammar, error) {
 	if _, err := dec.Token(); err != io.EOF {
 		return nil, fmt.Errorf("constrain: parse schema: unexpected data after the top-level value")
 	}
-	n, err := compile(doc)
+	n, err := compile(doc, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,17 @@ func JSONSchema(schema []byte) (Grammar, error) {
 	return g, nil
 }
 
-// compile turns one JSON Schema object into a node.
+// maxSchemaDepth caps object/array nesting (M-40, docs/audit-2026-09-10.md): unbounded depth let
+// a several-MB `response_format` body force the model down ~160k levels of
+// {"type":"array","minItems":1,"items":...}, making one Process step's mask-frame-stack copy
+// O(vocab × depth) — 151936 × 5000 × 64 B ≈ 49 GB of memcpy per step at depth 5000. 64 is
+// generous against any schema a human writes (the package's own >64 properties/enum-entries caps
+// use the same order of magnitude) and small against the attack shape.
+const maxSchemaDepth = 64
+
+// compile turns one JSON Schema object into a node. depth is the nesting level this call is
+// compiling AT (0 for the schema's top-level object), threaded through compileObject/compileArray
+// so every object property and array items schema counts, not just object-under-object nesting.
 // schemaKeywords are the keywords compile enforces plus the annotation-only
 // keywords it may safely ignore. Any other keyword is an assertion we do NOT enforce
 // (pattern, minimum, maxLength, oneOf, $ref, uniqueItems, …) — the package contract
@@ -121,7 +131,10 @@ func checkSchemaKeys(s map[string]any) error {
 	return nil
 }
 
-func compile(s map[string]any) (*node, error) {
+func compile(s map[string]any, depth int) (*node, error) {
+	if depth > maxSchemaDepth {
+		return nil, fmt.Errorf("constrain: schema nesting exceeds %d levels", maxSchemaDepth)
+	}
 	if err := checkSchemaKeys(s); err != nil {
 		return nil, err
 	}
@@ -155,9 +168,9 @@ func compile(s map[string]any) (*node, error) {
 	typ, _ := s["type"].(string)
 	switch typ {
 	case "object":
-		return compileObject(s)
+		return compileObject(s, depth)
 	case "array":
-		return compileArray(s)
+		return compileArray(s, depth)
 	case "string":
 		return &node{kind: kString}, nil
 	case "number", "integer":
@@ -173,7 +186,7 @@ func compile(s map[string]any) (*node, error) {
 	case "":
 		// "properties" with no explicit type is conventionally an object.
 		if _, ok := s["properties"]; ok {
-			return compileObject(s)
+			return compileObject(s, depth)
 		}
 		return nil, fmt.Errorf("constrain: schema needs a \"type\", \"enum\", or \"const\"")
 	default:
@@ -195,7 +208,7 @@ func validPropertyName(name string) error {
 	return nil
 }
 
-func compileObject(s map[string]any) (*node, error) {
+func compileObject(s map[string]any, depth int) (*node, error) {
 	// Closed objects only: the grammar can't enforce an open additionalProperties
 	// (that would need a free-JSON sub-grammar). Reject an explicit `true`.
 	apClosed := false
@@ -257,7 +270,7 @@ func compileObject(s map[string]any) (*node, error) {
 		if !ok {
 			return nil, fmt.Errorf("constrain: property %q is not a schema object", name)
 		}
-		child, err := compile(ps)
+		child, err := compile(ps, depth+1)
 		if err != nil {
 			return nil, fmt.Errorf("constrain: property %q: %w", name, err)
 		}
@@ -269,12 +282,12 @@ func compileObject(s map[string]any) (*node, error) {
 	return n, nil
 }
 
-func compileArray(s map[string]any) (*node, error) {
+func compileArray(s map[string]any, depth int) (*node, error) {
 	itemsRaw, ok := s["items"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("constrain: array needs an \"items\" schema")
 	}
-	items, err := compile(itemsRaw)
+	items, err := compile(itemsRaw, depth+1)
 	if err != nil {
 		return nil, fmt.Errorf("constrain: array items: %w", err)
 	}

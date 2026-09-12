@@ -644,3 +644,44 @@ func TestSchemaFromStruct_unsignedRejectsNegative(t *testing.T) {
 		t.Log("uint8 now bounds magnitude — update SchemaFromStruct's docstring, which says it does not")
 	}
 }
+
+// nestedArraySchema builds {"type":"array","minItems":1,"items": ... n levels ... {"type":"string"}}
+// — the audit's own attack shape (M-40, docs/audit-2026-09-10.md): a schema that FORCES the model
+// down n levels of array nesting before it can emit anything.
+func nestedArraySchema(n int) []byte {
+	s := `{"type":"string"}`
+	for range n {
+		s = `{"type":"array","minItems":1,"items":` + s + `}`
+	}
+	return []byte(s)
+}
+
+// TestSchema_depthIsBounded is the M-40 gate: unbounded nesting let a several-MB schema force
+// ~160k levels of forced array nesting, making one Process step's per-vocab-id mask-frame copy
+// O(vocab x depth) — tens of GB of memcpy per decode step at ordinary attack depths. compile must
+// refuse past maxSchemaDepth rather than accept and let the masker pay for it at every step.
+func TestSchema_depthIsBounded(t *testing.T) {
+	if _, err := JSONSchema(nestedArraySchema(maxSchemaDepth - 1)); err != nil {
+		t.Errorf("a schema within the depth cap was rejected: %v", err)
+	}
+	if _, err := JSONSchema(nestedArraySchema(maxSchemaDepth * 100)); err == nil {
+		t.Fatal("a schema 100x past the depth cap compiled — M-40 is not fixed")
+	} else if !strings.Contains(err.Error(), "nesting") {
+		t.Errorf("rejection did not name the reason: %v", err)
+	}
+}
+
+// TestToolCallGrammar_depthIsBounded pins the SAME cap through the OTHER compile entry point the
+// finding named explicitly: a tool's paramSchema, not just a bare JSONSchema document.
+func TestToolCallGrammar_depthIsBounded(t *testing.T) {
+	deep := nestedArraySchema(maxSchemaDepth * 100)
+	// A bare array schema is not itself a valid "object" paramSchema shape, but ToolCallGrammar
+	// wraps whatever it is handed in an object — the depth cap must fire before that shape
+	// mismatch would, proving the recursion limit applies to a REAL tool-arguments schema, not a
+	// synthetic top-level one.
+	paramSchema := []byte(`{"type":"object","additionalProperties":false,"properties":{"x":` +
+		string(deep) + `}}`)
+	if _, err := ToolCallGrammar("", "", "arguments", "t", false, paramSchema); err == nil {
+		t.Fatal("ToolCallGrammar compiled a tool argument schema 100x past the depth cap — M-40 is not fixed")
+	}
+}
