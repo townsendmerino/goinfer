@@ -71,7 +71,7 @@ a supervised deployment shape; an executor pattern; a drill.
 
 ## K1 — Cancel by id: the task-level switch
 
-**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (`internal/serveapp/openai.go:1058,1081` at the time this was drafted, now superseded by `drive`/`driveVL`'s own `ctx, cancel := context.WithCancel(parent)` at `internal/serveapp/openai.go:1058,1197`), `internal/serveapp/helpers.go`'s `reqID()`.
+**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/serveapp/openai.go:1058,1197` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/serveapp/helpers.go`'s `reqID()`.
 
 **Fix.** A process-wide registry `map[id]*generation{cancel, started, model, session, tokens,
 toolCalls}` populated when a handler mints its id and cleared on completion. `GET
@@ -98,13 +98,18 @@ behind the existing `-allow-admin` gate on the TCP listener (K5 moves them to th
 (`GOINFER_SERVE_MODEL`, this box's `qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`); it caught a real
 bug before landing — see "found while building" below.
 
-**NOT done: `POST /admin/sessions/{id}/cancel`.** goinfer's own "session" (`sessionLRU`/
-`decoder.Session`, `sessions.go`) is a content-addressed KV-reuse cache selected by
-longest-common-prefix match (`bestExtend`) — it has no client-visible, stable identifier an
-operator could type into a cancel request, and none of the four request surfaces carries a
-session/user/thread id either (`embeddings.go`'s `User` field is the only "user" field in the
-tree, and it is explicitly "accepted, ignored"). Flagging this rather than inventing an id
-scheme unilaterally, per this doc's own instruction.
+**NOT done here, moved to K4, not dropped: `POST /admin/sessions/{key}/cancel`.** goinfer's own
+"session" (`sessionLRU`/`decoder.Session`, `sessions.go`) is a content-addressed KV-reuse cache
+selected by longest-common-prefix match (`bestExtend`) — it has no client-visible, stable
+identifier an operator could type into a cancel request. But the API surfaces already carry one
+that goinfer simply never reads: OpenAI chat/completions and Responses both accept `user` ("a
+unique identifier representing your end-user"), Responses also chains `previous_response_id`,
+and Anthropic has `metadata.user_id` — exactly the field an agent loop sets. So this is not a
+missing concept, it's an unused one: the session registry should be keyed by whichever of those
+a request carries (a request with none gets no session semantics — no worse than today, and
+should say so in its own docs). Deferred to K4 rather than retrofitted here because K4 needs the
+identical key for its own per-session budgets, and building the key twice — once for cancel, once
+for budgets — would just be two chances for the two to drift apart.
 
 **Found while building, not assumed:**
 - The registry's cancel function MUST cancel `parent` (the context the handler received), not
@@ -123,6 +128,20 @@ scheme unilaterally, per this doc's own instruction.
   the tools-path cancellation exit needed its own `sendUsage` call, matching every other exit —
   the guard's own count of "normal completions" moved from 4 to 5 as a result, which is exactly
   what the guard exists to force a human to notice and justify, not silently absorb.
+- **Verified live against the official SDKs, not a hand-rolled parser** (openai-python 3.8.0,
+  anthropic-python 1.5.0): under default client settings, all three surfaces are clean — no
+  exception, cancellation observed correctly (`finish_reason`/`stop_reason`/`status:
+  "cancelled"`) on `chat.completions`, `responses`, and Anthropic `messages`. Two real caveats
+  found, documented rather than worked around: (1) `openai.OpenAI(_strict_response_validation=
+  True)` — an opt-in flag, not the SDK's default — throws `APIResponseValidationError` on both
+  `chat.completions`' bare `goinfer_cancelled` chunk and `responses`' unrecognized
+  `response.cancelled` event type; (2) the Anthropic SDK's stream iterator (both `.stream()` and
+  raw `.create(stream=True)`) silently drops the `goinfer_cancelled` event before user code ever
+  sees it — no exception, but the reason text is unreachable through the SDK; `stop_reason:
+  "cancelled"` is unaffected. Deliberately not changed in response: the fallback of
+  `finish_reason: "stop"` plus the reason only in the named event would trade this doc's own
+  "every halt/cancel is loud" rule for default-mode clients in order to placate a non-default
+  strict-mode flag.
 
 ## K2 — Global halt: the server-level switch, no restart
 
@@ -172,9 +191,11 @@ Gate test: `TestServe_haltUnderLoad`, real local `.gguf`.
   "the halt worked" outcomes for this architecture; a literal 32/32 `"cancelled"` is not
   achievable with one decode worker per model and isn't what this fix produces or should aim for.
 - Measured time-to-quiescence on this box (M1 Pro-class Apple Silicon, CPU backend, Qwen2.5-Coder
-  0.5B int8int8): **~10-40ms**, dominated by the one active generation's next per-token ctx
-  check, not by anything K2 itself adds. First value for the K8 ledger this doc's own intro
-  names as owed.
+  0.5B int8int8): **~10ms** (up to ~40ms under `-race`), dominated by the one active generation's
+  next per-token ctx check, not by anything K2 itself adds. First value for the ledger this doc's
+  own intro names as owed — recorded at
+  `docs/measurements/kill-switch-quiescence-2026-09-12.md` with the box/model label, since K8's
+  `gate kill` (which will own this ledger for real) is not built yet.
 
 ## K3 — The lease: fail-closed by default when nobody is renewing
 
@@ -199,7 +220,9 @@ renewer, assert resume. Start with no lease file, assert halted from the first r
 
 ## K4 — Budgets: hard caps the model never sees
 
-**Where.** `serveapp` request handling; per-session state (`lm.sessions`).
+**Where.** `serveapp` request handling; per-session state (`lm.sessions`); K1's registry
+(the session key defined here is also what K1's deferred `POST /admin/sessions/{key}/cancel`
+needs — see K1's status line).
 
 **Fix.** Caps enforced in serve, each producing K1's `cancelled` (per generation) or K2's halt
 (process-wide) with the cap named as the reason: per generation — wall-clock (`-max-gen-seconds`)
@@ -209,8 +232,19 @@ total tokens since start or since resume (`-token-budget`), after which serve ha
 halted until an explicit resume. The session and process budgets are the ones that catch a loop:
 a client in a retry storm never trips a per-request cap.
 
+**The session key** (this is also K1's deferred `POST /admin/sessions/{key}/cancel`, built once
+here rather than twice): OpenAI chat/completions and Responses' `user` field, Responses'
+`previous_response_id` chain, and Anthropic's `metadata.user_id` — fields an agent loop already
+sets and goinfer already accepts and ignores. Index K1's registry and K4's own per-session
+counters by whichever of these a request carries. A request with none of them gets no session
+semantics (no per-session budget, no `sessions/{key}/cancel` reachability) — document this
+plainly rather than silently falling back to something that looks like a session but isn't one.
+
 **Gate.** Exceed each cap in a test; assert the stop, the reason string, and that resume clears
-only what it should (a process budget is not reset by resume unless asked).
+only what it should (a process budget is not reset by resume unless asked). Also: two requests
+sharing a `user`/`metadata.user_id` both appear under one session key; a request with none of the
+three fields is absent from `GET /admin/generations`' session grouping and untouched by any
+session budget.
 
 **Size.** Small–medium (the session accounting is the work).
 
@@ -342,6 +376,17 @@ the switch timestamp; process tree empty within the grace; resident state sane a
 parity check against a fresh process); time-to-quiescence recorded in the ledger with the
 machine label. CPU-only, so it runs on every box and in CI. Counts, like perfgate, as release
 evidence: a release that has not pulled the switches has not shipped a kill switch.
+
+**The first case this drill must reproduce, not a hypothetical one:** K2's own gate test
+(`TestServe_haltUnderLoad`) found that `-max-inflight N` admitting N requests does not mean N
+generations are actually cancellable — goinfer serializes each model behind one decode-worker
+mutex, so only the current mutex holder was ever registered for cancellation, and the other
+N−1 would have ignored a halt and run to completion afterward (fixed in `tryEnter`/`enter`, see
+K2's status line). `gate kill` needs a queued-not-yet-started case as its FIRST scenario, not an
+afterthought: queue 32 requests to saturation, halt, and assert **zero** of them ever start a
+generation (503 before entering, not "cancelled" after entering) — the class of bug a drill that
+only checks "already-running" generations would never have caught, since this one wasn't running
+yet when it happened.
 
 **Size.** Medium. This is the item that makes the rest true.
 
