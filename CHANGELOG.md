@@ -465,7 +465,7 @@ This release is two things at once. The headline is prefill: CUDA prompt ingesti
 cores and is on by default above 512 tokens, MoE prefill runs expert-major, and the CPU path gets
 head fan-out, a fused schedule and aikit's register-blocked int4 tile — so the prefill deficit
 against Ollama, the repo's largest open gap, narrows on every backend. Underneath that is a
-whole-repo audit (`docs/audit-2026-09-02.md`) and its review (`docs/review-2026-09-04.md`) worked
+whole-repo audit (`docs/audit-2026-09-02.md`) and its review (`docs/completed/review-2026-09-04.md`) worked
 through in a fortnight, plus the first pieces of the onboarding work: a `pull` command, a browser
 UI, a `serve check` doctor and a startup banner. Three defaults in this release change output at
 temperature 0 on long prompts; all three are called out below with their opt-outs.
@@ -826,7 +826,7 @@ temperature 0 on long prompts; all three are called out below with their opt-out
   with no error to notice.
 
 - **From the audit and its review** (`docs/audit-2026-09-02.md`, 2026-09-02/03;
-  `docs/review-2026-09-04.md`, 2026-09-04) — the fixes a user could have hit, each with a gate that
+  `docs/completed/review-2026-09-04.md`, 2026-09-04) — the fixes a user could have hit, each with a gate that
   can fail:
   - **One writer per SSE response.** Two goroutines wrote the same `http.ResponseWriter` on the
     incremental tool-call stream; every frame in both protocols now goes through one `sseWriter`

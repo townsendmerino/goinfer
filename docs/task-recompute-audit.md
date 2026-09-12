@@ -240,7 +240,7 @@ positions are inherent, not recompute.
   `decoder/model.go` is a parity-manifest core file; `scripts/refresh_parity_hashes.sh` was run
   after this edit (31/31 forward goldens that ran stayed green, `deps_hash` refreshed for 28
   families, `validated_at` untouched). Full decoder suite green.
-- **Correction (2026-09-04, docs/review-2026-09-04.md V-04): the fix above was incomplete.** An
+- **Correction (2026-09-04, docs/completed/review-2026-09-04.md V-04): the fix above was incomplete.** An
   iteration is `top-of-loop check → sample (µs) → send → Forward (ms)`; a cancel that arrives
   during Forward — the dominant interval by far — is not observed until the TOP-OF-LOOP select on
   the NEXT iteration, not the send-select this fix originally targeted. At that point the previous

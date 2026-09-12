@@ -57,7 +57,7 @@ Three things that make the June plan's assumptions stale, in the direction of *m
 
 0. **RESOLVED 2026-09-08 (CUDA + WebGPU; Metal deferred).** `GenerateVL`/`GenerateQwenVL` used to
    be stateless and CPU-only by design (`decoder/generate_vl.go`'s old doc comments; the premise
-   was inherited, not re-derived, when V-11 fixed the race around it — `docs/review-2026-09-04.md`)
+   was inherited, not re-derived, when V-11 fixed the race around it — `docs/completed/review-2026-09-04.md`)
    — they never touched `m.resident` at all, so on a GPU box an image turn ran the WHOLE turn on
    CPU, decode included, not only the tower. Fixed via a hybrid design: the CPU prefill (the
    bidirectional image-block attention mask has no resident equivalent) stays on CPU exactly as

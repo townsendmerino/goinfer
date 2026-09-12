@@ -1585,9 +1585,9 @@ makes a HANG indistinguishable from a slow real-model gate for the first hour.
 **Deferred to post-1.0 deliberately** (the v1.0 gate's §7 scope discipline): it changes the release
 tool during a release. File, do not touch mid-flight.
 
-## B20 — `residentPrefillSeed`'s batched-prefill decline is invisible to the operator
+## B20 — `residentPrefillSeed`'s batched-prefill decline is invisible to the operator (FIXED)
 
-**Found 2026-09-04, deliberately left open by V-05 of `docs/review-2026-09-04.md`**, which fixed the
+**Found 2026-09-04, deliberately left open by V-05 of `docs/completed/review-2026-09-04.md`**, which fixed the
 finding it names (a shared-memory launch past 48 KB failing SILENTLY, ~9x slower prefill with no
 error) by making `PrefillLast`'s launch REFUSE loudly instead of crashing — but the caller one level
 up still throws the refusal away.
@@ -1629,6 +1629,34 @@ warn-once-per-reason log at `residentPrefillSeed`'s fallback, keyed on the error
 typed reason so repeats within one session do not spam. Needs its own gate: a fixture that forces a
 decline and asserts the operator-visible log line names the reason, mirroring how V-05's own tests
 verify the decline message's CONTENT rather than only that a decline occurred.
+
+**DISPOSITION — FIXED, 2026-09-12.** The swallow this entry describes was already gone by the time
+it was checked: `5cc4854` (2026-09-04, later the same day as the review that filed V-05) wired
+`warnPrefillDeclined(len(suffix), perr)` into `residentPrefillSeed`'s fallback as part of closing
+that commit's own observability gap — `perr` is read, checked for `context.Canceled` /
+`context.DeadlineExceeded` (a cancelled prefill is returned, not swallowed), and otherwise logged
+to stderr once via `prefillDeclineOnce` naming the prompt length and the decline's `%v`. That
+already covers every reason reaching `residentPrefillSeed`, shmem (V-05) included, since
+`checkPrefillShmem`'s error propagates unwrapped through `prefillChunked`/`PrefillLast`.
+
+What was missing, and is now closed here: the gate this entry itself asked for. Nothing asserted
+on the log line's CONTENT — `TestResidentPrefillSeed_DeclineIsLoggedWithReason`
+(`decoder/prefill_decline_warn_test.go`) now drives a fake declining `Prefiller` through
+`Model.Generate` and asserts the captured stderr contains the decline's exact reason string, that
+the sequential fallback still completes the request, and (mutation-proven: deleting the
+`warnPrefillDeclined` call reddens it) that the log line is not merely present by construction.
+
+One piece of this entry's own sketch was NOT built, by a considered choice rather than an
+oversight: **per-reason** dedupe. The shipped mechanism (`prefillDeclineOnce`, a single
+process-lifetime `sync.Once`) logs only the FIRST decline a process ever sees, of any reason,
+ever again. `TestWarnPrefillDeclined_FiresOncePerProcess` pins this coarser behaviour so a future
+change to it is a decision, not drift. It is adequate for the actual call shape:
+`prefillCore` checks `prefillStaticDecline()` (MoE, K=V, non-uniform geometry) BEFORE
+`checkPrefillShmem`, so a resident that declines statically never reaches the shmem check at
+all — one resident, in practice, only ever produces ONE decline reason across its whole process
+lifetime, which is exactly what a plain `sync.Once` reports correctly. The machine-readable
+reason-code plumbing this entry sketched would only earn its keep for a resident whose decline
+reason can change turn to turn, which none of today's backends are.
 
 **Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
 
