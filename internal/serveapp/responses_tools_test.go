@@ -2,7 +2,11 @@ package serveapp
 
 import (
 	"encoding/json"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
 )
 
 // M-18: A RESPONSES TOOL LOOP COULD NOT COMPLETE.
@@ -77,5 +81,34 @@ func TestResponses_toolOutputNeverDecodesToNothing(t *testing.T) {
 	}
 	if got := toolOutputText(nil); got != "" {
 		t.Errorf("absent output should stay empty, got %q", got)
+	}
+}
+
+// TestServeResponsesWith_toolsOnUnsupportedTemplateReturns400 is M-16 (audit-2026-09-10):
+// /v1/responses silently dropped `tools` on a template with no tool form and answered without
+// them, HTTP 200 — the other two surfaces (serveChatToolsWith, anthropic.go's own toolsActive
+// gate) already 400 here. gemma3 is a real template with SupportsTools()==false; chatml is the
+// contrast case that must still take the tools path (verified via respondTools panicking on a
+// nil lm.tk before it would ever reach real generation, which is a LOUDER failure than a silent
+// 200 and proves the request was not rejected).
+func TestServeResponsesWith_toolsOnUnsupportedTemplateReturns400(t *testing.T) {
+	s := &server{}
+	req := responseReq{
+		Input: json.RawMessage(`"weather in Paris?"`),
+		Tools: []toolSpec{{Type: "function", Function: struct {
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			Parameters  json.RawMessage `json:"parameters"`
+		}{Name: "get_weather"}}},
+	}
+	lm := &loadedModel{tmpl: chat.Gemma3()} // SupportsTools() == false
+	w := httptest.NewRecorder()
+	s.serveResponsesWith(w, httptest.NewRequest("POST", "/v1/responses", nil), req, lm)
+
+	if w.Code != 400 {
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "no tool-calling template") {
+		t.Errorf("body does not name the reason: %s", w.Body.String())
 	}
 }

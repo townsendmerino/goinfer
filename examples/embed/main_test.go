@@ -73,6 +73,45 @@ func TestEmbedExample_outputIsNotARepeatedToken(t *testing.T) {
 	t.Logf("output (%d chars): %s", len(text), text)
 }
 
+// TestBuildPrompt_rendersOnlyOneLeadingBOS is M-39 (audit-2026-09-10): buildPrompt must not
+// prepend a second BOS when the chat template it just rendered already carries the family's own
+// BOS marker. chatml-tiny.gguf (tokenizer/testdata) is a small fixture whose ChatML template
+// chat.Detect recognizes AND whose vocab carries a real BOS id (unlike Qwen's real ChatML
+// checkpoints, whose BOS is -1 — the reason the full-binary integration test above can't exercise
+// this path at all, per the audit's own note). Encoding the rendered text with addBOS=true (the
+// pre-fix bug) visibly double-prepends the BOS id; this asserts exactly one.
+func TestBuildPrompt_rendersOnlyOneLeadingBOS(t *testing.T) {
+	fixture := filepath.Join("..", "..", "tokenizer", "testdata", "chatml-tiny.gguf")
+	tok, err := tokenizer.LoadGGUF(fixture)
+	if err != nil {
+		t.Skipf("no committed tiny tokenizer fixture at %s: %v", fixture, err)
+	}
+	if _, terr := chat.Detect(chat.Meta{ChatTemplate: tok.ChatTemplate(), HasToken: tok.Has}); terr != nil {
+		t.Fatalf("chat.Detect does not recognise %s's template (%v), so the templated path would go untested", fixture, terr)
+	}
+
+	ids, err := buildPrompt(tok, "hi")
+	if err != nil {
+		t.Fatalf("buildPrompt: %v", err)
+	}
+	if len(ids) < 2 {
+		t.Fatalf("buildPrompt returned only %d ids: %v", len(ids), ids)
+	}
+	bosID := ids[0]
+	count := 0
+	for _, id := range ids {
+		if id == bosID {
+			count++
+		} else {
+			break // only the LEADING run of BOS matters; the id can legitimately reappear later
+		}
+	}
+	if count != 1 {
+		t.Fatalf("ids = %v start with %d copies of id %d back to back — the rendered template's own "+
+			"BOS marker plus addBOS=true both fired (M-39)", ids, count, bosID)
+	}
+}
+
 // longestConsecutiveRepeat checks every window size from minLen up to a cap for a substring
 // that occurs immediately followed by itself two or more times running (the repeating unit's
 // PERIOD, which a real loop can land on at any width — a fixed handful of guessed widths missed
