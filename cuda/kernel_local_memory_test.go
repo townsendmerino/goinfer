@@ -137,23 +137,26 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 	}
 	t.Logf("%d entry points across %d modules; %d declare per-thread local memory",
 		len(rows), len(ptxModules()), nonZero)
-	// DENOMINATOR, stated every run. ptxModules() is a HAND-MAINTAINED list: a new .ptx blob that
-	// nobody adds to it is simply absent, and the census stays green while covering less. Naming the
-	// modules examined makes that omission visible in the log instead of invisible in the count.
+	// DENOMINATOR, stated every run. ptxModules() is DERIVED from kernels.go's own //go:embed
+	// list (audit 2026-09-10 G-13(b), see the function's own doc comment), not hand-maintained —
+	// so it cannot silently drop a new production module the way a hand-picked list could.
+	// Naming the modules examined still makes the set visible in the log, not just the count.
 	names := make([]string, 0, len(ptxModules()))
 	for _, m := range ptxModules() {
 		names = append(names, m.name)
 	}
-	t.Logf("EXAMINED: %d module(s) — %s. Any shipped PTX absent from ptxModules() is NOT in this "+
-		"census; the list is hand-maintained, so this line is the audit of it.",
+	t.Logf("EXAMINED: %d module(s) — %s. Derived straight from kernels.go's //go:embed list, so "+
+		"this line names exactly what that list currently contains.",
 		len(names), strings.Join(names, " "))
-	// AUDITED 2026-08-13 against the embeds: 22 .ptx blobs are go:embed-ed, 12 are here, and all 10
-	// of the difference (gemv_w4a8{,_coal,_coal2,_coal3,_coal4,_fast,_v4}.ptx, gemv_w8a8.ptx,
-	// addone.ptx, megakernel.ptx) are referenced ONLY from _test.go — variant-comparison blobs, no
-	// production path. So the denominator is right at 12 today. It is NOT self-maintaining: a new
-	// production PTX added without a ptxModules() entry would drop straight out of this census while
-	// the count stayed green. Re-run the audit (`grep go:embed`, then which vars non-test files use)
-	// when a module is added.
+	// AUDITED 2026-09-12 against the embeds (docs/completed/cuda-megakernel-closeout.md): 31 .ptx
+	// blobs are go:embed-ed across cuda/*.go today, 22 of them in kernels.go — exactly what
+	// ptxModules() reports, since G-13(b) made it read that same file. The other 9
+	// (gemv_w4a8{,_coal,_coal2,_coal3,_coal4,_fast,_v4}.ptx, gemv_w8a8.ptx, addone.ptx) are
+	// referenced only from _test.go — variant-comparison blobs, no production path; megakernel.ptx
+	// (the tenth such blob as of the prior audit) was deleted in this closeout along with the rest
+	// of the dead scaffold. Re-run this count (`grep -n go:embed cuda/*.go`, then which vars
+	// non-test files use) if kernels.go's own embed list ever needs independent confirmation —
+	// the derivation above means it can no longer drift silently, only the source file can move.
 	t.Logf("SUM of per-kernel backing stores at full occupancy: %d B (%.1f MiB) — an UPPER BOUND on "+
 		"the deferred cost, not a prediction: the driver may share or reuse a backing store across "+
 		"kernels, and nothing here shows that it allocates them all simultaneously",

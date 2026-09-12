@@ -65,7 +65,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (63)
+## Archive — `completed/` (69)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
@@ -74,7 +74,7 @@ moves here, a pointer stub is left behind, because other pages link to the old p
 
 ## Other kinds
 
-- `prompts/` (24) — briefs written for another session or the other machine to execute.
+- `prompts/` (25) — briefs written for another session or the other machine to execute.
 - `releases/` (8) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of

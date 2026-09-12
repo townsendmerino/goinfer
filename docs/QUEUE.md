@@ -1011,7 +1011,7 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/drafter.go:187` | goinfer | `if n > d.ctxCap {` |
 | `docs/audit-2026-09-10.md|cuda/drafter.go:282` | goinfer | `capRows := need + 512` |
 | `docs/audit-2026-09-10.md|cuda/kernel_fma_lint_test.go:66` | goinfer | `macAccum := regexp.MustCompile(`\b\w[\w.]*\s*\+=\s*[^;/]* \* `)` |
-| `docs/audit-2026-09-10.md|cuda/kernel_local_memory_test.go:150` | goinfer | `// AUDITED 2026-08-13 against the embeds: 22 .ptx blobs are go:embed-ed, 12 are here, an` |
+| `docs/audit-2026-09-10.md|cuda/kernel_local_memory_test.go:150` | goinfer | `len(names), strings.Join(names, " "))` |
 | `docs/audit-2026-09-10.md|cuda/kernel_local_memory_test.go:32` | goinfer | `func ptxModules() []struct {` |
 | `docs/audit-2026-09-10.md|cuda/kernels.go:105` | goinfer | `// attention (GQA online softmax), swiglu_quant, residual. (argmax_reduce moved to argma` |
 | `docs/audit-2026-09-10.md|cuda/lora.go:119` | goinfer | `func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {` |
@@ -1462,11 +1462,6 @@ supports.
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
-| `docs/cuda-megakernel-spec.md|gpu/attention.go:18` | goinfer | `// uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).` |
-| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:1091` | goinfer | `// relu²→int8 → down + residual into xd. The other kinds fall through to the mixer.` |
-| `docs/cuda-megakernel-spec.md|gpu/decoderunner.go:959` | goinfer | `// moeExpert records one indexed sparse-expert GEMV: dst[n] = expert[idx[slot]]·aq` |
-| `docs/cuda-megakernel-spec.md|gpu/forward_parity_test.go:36` | goinfer | `func TestWebGPU_forwardParity(t *testing.T) {` |
-| `docs/cuda-megakernel-spec.md|gpu/gemv.go:41` | goinfer | `@compute @workgroup_size(64)` |
 | `docs/gpu-residency-coverage.md|decoder/registry.go:272` | goinfer | `IntermediateDim:   cfg.IntermediateDim,` |
 | `docs/how-inference-works.md|decoder/attention.go:124` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:175` | goinfer | `cache.Append(layer, k, v)` |
@@ -2301,10 +2296,11 @@ loaded `int8int8`, GPU-resident), greedy/temp-0, warm, best-of-6 × 48 tokens. L
 "the box fills": production backend, real-checkpoint parity, W4A8 coalescing 43%→80% of peak, the
 launch diet (18→13→8 launches/layer), **and the §5.2 three-super-kernel fusion itself** — K1
 (rmsnorm folded into the QKV GEMV) and K3a shipped as `cuda/fused_qkv.cu` behind `fuseQKV` /
-`GOINFER_CUDA_NO_FUSE`; **K2 built, measured at ~0%, and reverted.** `cuda/megakernel.cu` is a dead
-July scaffold referenced only from tests; the work landed elsewhere. Nothing in Experiment A was
-open. Recorded here because the spec (`docs/cuda-megakernel-spec.md`) still reads as a live
-prep artifact and does not say the spike it belongs to has closed.
+`GOINFER_CUDA_NO_FUSE`; **K2 built, measured at ~0%, and reverted.** `cuda/megakernel.cu` was a dead
+July scaffold referenced only from tests, deleted in the 2026-09-12 closeout; the work landed
+elsewhere. Nothing in Experiment A was open. Recorded here because the spec
+(`docs/completed/cuda-megakernel-spec.md`) then still read as a live prep artifact and did not
+say the spike it belongs to had closed — archived 2026-09-12.
 
 ### (B) 3 WGSL dispatches/layer is NOT reachable — and 8 is already the floor CUDA found
 
