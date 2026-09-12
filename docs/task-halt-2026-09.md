@@ -34,7 +34,7 @@ process that can rewrite its own service unit is out of scope for anything insid
 ## What exists today (cited, so nothing is rebuilt)
 
 - **Per-token cancellation.** The generation loops check `ctx.Err()` every token
-  (`decoder/model.go:1097,1128,1263`; `decoder/generate_vl.go:19,42`). Cancel a request's context and
+  (`decoder/model.go:1122,1128,1263`; `decoder/generate_vl.go:19,42`). Cancel a request's context and
   it stops within one token. This is the mechanism every level below builds on; nothing new is
   needed in `decoder/`.
 - **Graceful shutdown.** SIGINT/SIGTERM → stop accepting, 30 s drain, exit

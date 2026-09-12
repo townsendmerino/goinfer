@@ -94,14 +94,23 @@ KNOWN_UNRELATED_FAILURES=(
 )
 # Fail LOUDLY on a malformed entry rather than silently matching nothing (or everything) —
 # each entry must split into exactly three '|'-separated fields.
-for _entry in "${KNOWN_UNRELATED_FAILURES[@]}"; do
-	_fields=$(awk -F'|' '{print NF}' <<<"$_entry")
-	if [ "$_fields" -ne 3 ]; then
-		echo "ABORT: malformed KNOWN_UNRELATED_FAILURES entry (want 3 '|'-separated fields, got ${_fields}):" >&2
-		echo "    ${_entry}" >&2
-		exit 1
-	fi
-done
+#
+# Guarded on the count, not just "${KNOWN_UNRELATED_FAILURES[@]}": under `set -u`, bash 3.2
+# (macOS's stock /bin/bash — there is no newer GPLv2 bash on a default Mac) treats expanding an
+# EMPTY array as an unbound variable and aborts the whole script before this loop even starts.
+# The tempting fix, "${KNOWN_UNRELATED_FAILURES[@]:-}", does not actually solve it either: for an
+# empty array that still iterates ONCE with _entry="", which then fails the loudly-fail check
+# below (0 fields, not 3) — trading one false abort for another.
+if [ "${#KNOWN_UNRELATED_FAILURES[@]}" -gt 0 ]; then
+	for _entry in "${KNOWN_UNRELATED_FAILURES[@]}"; do
+		_fields=$(awk -F'|' '{print NF}' <<<"$_entry")
+		if [ "$_fields" -ne 3 ]; then
+			echo "ABORT: malformed KNOWN_UNRELATED_FAILURES entry (want 3 '|'-separated fields, got ${_fields}):" >&2
+			echo "    ${_entry}" >&2
+			exit 1
+		fi
+	done
+fi
 
 # GOINFER_HEAVY_TESTS is set by default here, and that is a coverage decision rather than a
 # convenience. Without it the three int8int8 goldens (gemma4, gemma4-12B, mellum2) all skip on
@@ -157,13 +166,15 @@ if [ "$fail" -gt 0 ]; then
 	while IFS= read -r name; do
 		[ -n "$name" ] || continue
 		matched=""
-		for entry in "${KNOWN_UNRELATED_FAILURES[@]}"; do
-			entry_name="${entry%%|*}"
-			if [ "$name" = "$entry_name" ]; then
-				matched="$entry"
-				break
-			fi
-		done
+		if [ "${#KNOWN_UNRELATED_FAILURES[@]}" -gt 0 ]; then
+			for entry in "${KNOWN_UNRELATED_FAILURES[@]}"; do
+				entry_name="${entry%%|*}"
+				if [ "$name" = "$entry_name" ]; then
+					matched="$entry"
+					break
+				fi
+			done
+		fi
 		if [ -n "$matched" ]; then
 			excluded_lines="${excluded_lines}${matched}
 "

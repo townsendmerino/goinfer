@@ -1488,7 +1488,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1129`);
   `embedResident` itself is now a one-line `dst=nil` wrapper (`:1121`) kept for the batch-collection
   call sites that must not share a buffer. The resident decode loop's two hot call sites now pass a
-  reused `embScratch` (`decoder/model.go:1459,1463`) instead of allocating fresh per token. Gated by
+  reused `embScratch` (`decoder/model.go:1484,1463`) instead of allocating fresh per token. Gated by
   `decoder/embed_resident_scratch_test.go`. Found stale 2026-09-12: this bullet's own line-number
   citations had been silently re-keyed by `--update` in the SAME commit that fixed the code, without
   the "still open" claim itself being revisited. Bigger follow-on, still genuinely open: an

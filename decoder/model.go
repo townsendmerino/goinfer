@@ -2,10 +2,12 @@ package decoder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -395,7 +397,30 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}).withBackendNames(opts.Backend, beErr)
+	// M-04 (docs/audit-2026-09-10.md): write the RESOLVED EOS set — config.json plus any extra
+	// ids generation_config.json adds — back into w.Cfg.EOSTokenID, not just onto this Model's
+	// own eosIDs field. w.Cfg is what a .giw bundle serializes (internal/prequant, via
+	// SerializeWeightsToForTarget), and a .giw's own Load branch reads eosIDs straight from
+	// w.Cfg.EOSIDs() with no directory to re-resolve generation_config.json from — so without
+	// this, a checkpoint whose stop ids live only in generation_config.json (Qwen3:
+	// <|endoftext|> 151643 beside config.json's <|im_end|> 151645) loses the extra id the moment
+	// it round-trips through `cmd/prequant`, and a completion that emits it runs to max_tokens
+	// instead of stopping. Cfg.EOSTokenID has no other reader that needs the UNRESOLVED
+	// config.json-only value (EOSIDs() is its only consumer anywhere in the tree), so
+	// overwriting it here is safe.
+	// resolveEOSIDs looks for generation_config.json via os.DirFS(eosDir) — a real DIRECTORY.
+	// For a .gguf load, dir is the FILE path, so os.DirFS(dir) can never open anything inside it
+	// (the fallback decoder/gguf.go:107-108's own comment claims); generation_config.json for a
+	// GGUF conversion lives beside the file, in its parent directory, same as M-04 found.
+	eosDir := dir
+	if strings.HasSuffix(dir, ".gguf") {
+		eosDir = filepath.Dir(dir)
+	}
+	resolvedEOS := resolveEOSIDs(eosDir, &w.Cfg)
+	if raw, err := json.Marshal(resolvedEOS); err == nil {
+		w.Cfg.EOSTokenID = raw
+	}
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.
