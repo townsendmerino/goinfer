@@ -331,7 +331,8 @@ still-open lever if CPU-vs-GPU vision throughput becomes the question again.
 >
 > **Re-running goinfer alone would not fix it, and would look like it had.** goinfer's side is
 > expected to land in the same place: dense WebGPU decode is at the WGSL wall (~90 tok/s int8,
-> megakernel inexpressible in WGSL — `docs/task-benchmark-refresh.md`), and nothing since
+> megakernel inexpressible in WGSL — `docs/completed/task-benchmark-refresh.md`, itself archived
+> 2026-09-12 since the wall figure was withdrawn), and nothing since
 > 2026-06-08 touches that path. What has actually changed is the *peer*, so the ratio can move
 > without goinfer moving at all. Redo it as one same-session interleaved pair at int8/q8_0, or
 > retire the section — do not carry the ratio forward.

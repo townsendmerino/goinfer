@@ -1,5 +1,47 @@
 # Plan: benchmark refresh — what's worth (re-)measuring, and what isn't
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status: SUPERSEDED, 2026-09-12.** Written 2026-06-17 to 2026-09-05 against v0.7.0
+> ("15+ families; three attention axes"); the tree is now v0.17.2+ with 36 families. Its
+> organizing premise — **the "scope trap": GPU residency is dense-Qwen2/Llama-only, so
+> MoE/hybrid/MLA are stuck on the staged or CPU lane** — is no longer true. `docs/roadmap.md`'s
+> Superseded table records the reversal: MoE, MLA, sliding-window and hybrid (Gated DeltaNet)
+> residency have shipped on WebGPU (`decoder/residency.go`'s `decodeRunnerEligible` now admits
+> `a.MoE != nil` and `a.mla != nil` unconditionally, and `decoder/features.go`'s `"webgpu"` block
+> declares `FeatMoE`/`FeatMLA`/`FeatSlidingWindow`/`FeatDeltaNet`/`FeatSSM`), and the ~90 tok/s
+> WGSL-wall figure this doc built Tier 1/4 and the whole Lever A/B/C ladder around was itself
+> withdrawn 2026-09-02 (G35/G36: 118.4 tok/s from a bit-identical reduce fix). B14's staged-path
+> 0.57× finding stands as a historical measurement, but the families it was measured for are no
+> longer confined to that path, so its "only Lever C beats CPU" conclusion no longer describes
+> the current ladder.
+>
+> **What separately shipped, closing individual items on their own terms:** B2 (peer baseline
+> refresh) — `docs/benchmarks.md` is anchored to Ollama v0.32.5 (2026-08-04), which the doc's own
+> header already flagged. B10 (CPU spec-decode speedup) — n-gram spec shipped and is measured in
+> `docs/spec/experiments.md` (e.g. 1.09–1.43×). B6 (MLA KV footprint) has its underlying numbers
+> in `docs/completed/task-cpu-kv-quant.md` and `docs/completed/task-mla-cuda-residency.md`, not
+> centrally re-surfaced as this doc's vs-GQA table but not an open gap either.
+>
+> **Genuinely unmeasured, and no live doc owns them today (orphans):** B1 (dense GPU decode with
+> spec-on, vs Ollama/llama.cpp-CUDA — the only item that bears on the promotion gate directly),
+> B3 (Vulkan same-API comparison), B4 (CPU-vs-llama.cpp-CPU per new family — only a stale
+> 2026-06-10 Mellum2 row exists), B5 (MoE expert-paging RSS-vs-budget curve — an adjacent
+> hit-rate/budget measurement exists in `docs/completed/task-gemma4-moe.md` but not this exact
+> table), B7 (Mamba-2 long-context memory flatness), and a re-confirmation of B8/B9 (the
+> weight-memory and cold-start numbers in `benchmarks.md` are still dated to the "v0.5.0-era CPU
+> campaign"). B11 stays PARKED exactly as scoped: `docs/task-gpu-paths-2026-09.md` (2026-09-09)
+> confirms `dot4I8Packed` is still unwired. B12's gate cleared since this was written —
+> `demo/gemma-web/` is real, not a stub — so it is now unblocked, not gated.
+>
+> If any of these orphans get picked up, they belong in `docs/queue-performance.md`, not a revival
+> of this doc: its own Tier/Lever structure is what's stale, not just its numbers.
+
 > **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
 > in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
 > multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of

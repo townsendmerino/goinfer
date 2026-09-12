@@ -48,7 +48,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
 
-## Design records — `task-*.md` (44)
+## Design records — `task-*.md` (43)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -67,7 +67,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (80)
+## Archive — `completed/` (81)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
