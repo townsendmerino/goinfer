@@ -34,7 +34,7 @@ all of it."
 **Rate check: confirms scalar-chain-speed behavior.** The recurrence did Σ 927,989,760 state-element
 updates (`nv·hk·hv` per step, accumulated) at **3.145 ns/element**. Each element does ~3 MACs
 (the `kv` accumulation, the `S` update, the `o` accumulation) — **~1.05 ns/MAC, at or below the
-~1.4 ns/MAC serial-chain signature** (`docs/task-attention-decode-cost.md`'s A0 finding: the speed of
+~1.4 ns/MAC serial-chain signature** (`docs/completed/task-attention-decode-cost.md`'s A0 finding: the speed of
 an unoverlapped scalar/f64 FMA dependency chain on this box, ~4 cycles/MAC at ~3GHz). **Gate D0's own
 test (Gate D0 §2) is satisfied: the recurrence runs at scalar-chain speed. The A1 playbook transfers.**
 

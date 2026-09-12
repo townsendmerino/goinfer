@@ -225,7 +225,7 @@ Absolute numbers on an M1 Pro (dense 1.5B, `int8int8`, prefill + 1 token): **170
 (51.5 tok/s) · 620 tok 19.7 s · 1520 tok 93.2 s · 3020 tok 334.9 s (9.0 tok/s)** — the best-case
 rate is the same order as this model's *decode* rate, and it falls as the prompt grows because
 the attention half is serial (aikit's weight matmuls do fan out; attention's heads do not — A1's
-deferral, `docs/task-attention-decode-cost.md`). On a 6-performance-core box the process sits at
+deferral, `docs/completed/task-attention-decode-cost.md`). On a 6-performance-core box the process sits at
 ~100% CPU through a large prefill. **Practical consequence:** long prompts on the CPU backend are
 much slower than "3.4× faster prefill" suggests — size expectations from the absolute table, not
 the speedup. GPU backends do not share this (`PrefillLast` is batched on-device). Sparse-MoE prefill is now batched too — **2.4×** on Mellum2

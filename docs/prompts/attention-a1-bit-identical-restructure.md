@@ -2,7 +2,7 @@
 
 > **For:** Claude Code, in `~/tmcode/goinfer` (with sibling `~/tmcode/aikit` — kernel work lands
 > there). Written 2026-08-23. This is the implementation work order for **option A1 only** of
-> `docs/task-attention-decode-cost.md` — read that doc first; it carries the measurements, the
+> `docs/completed/task-attention-decode-cost.md` — read that doc first; it carries the measurements, the
 > invariant enumeration, and the closed Gate A0. **A2/A3 are NOT in scope.** The deliverable is
 > the three A1 moves, measured after each, with every bit-identity gate green and **zero golden
 > churn** — plus results appended to the campaign doc, negatives included at full value.
@@ -97,7 +97,7 @@ GOMAXPROCS=8, per the mac-cpu measurement doc). Two sub-points:
 - Depth-8192 before/after reported (no hard target promised — measure and record; heads-parallel
   plus the depth-aware axis should deliver more than the depth-130 factor there).
 - Results, including any move that measures negative, appended to
-  `docs/task-attention-decode-cost.md` in the same style as its Gate A0 sections.
+  `docs/completed/task-attention-decode-cost.md` in the same style as its Gate A0 sections.
 
 ## Not in scope — do not drift into these
 
@@ -114,6 +114,6 @@ GOMAXPROCS=8, per the mac-cpu measurement doc). Two sub-points:
 Three moves landed (or a documented negative for any that don't pay), each with its isolated
 depth-cell measurement; the exact-equality kernel tests and all existing gates green with zero
 golden churn; the before/after `bench_peer` table and the refilled acceptance numbers appended
-to `docs/task-attention-decode-cost.md`; aikit and goinfer suites green; both working trees
+to `docs/completed/task-attention-decode-cost.md`; aikit and goinfer suites green; both working trees
 clean and committed, aikit version bumped/tagged per its own release convention if its API
 grew (the new kernels are additive — no existing signature changes expected).

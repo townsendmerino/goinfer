@@ -141,7 +141,7 @@ class out; the residue is likely small.
 aikit (18.26) and fin (5.66), so not an outlier. repowise scopes this to I/O-in-loop / N+1,
 resource and defer-in-loop, blocking-in-async; it explicitly does *not* cover algorithmic blowups
 or GC pressure, which is where this repo's actual performance work lives. Low expected value here;
-`docs/task-w4a8-neon-bandwidth.md` and `docs/task-attention-decode-cost.md` are where the real
+`docs/task-w4a8-neon-bandwidth.md` and `docs/completed/task-attention-decode-cost.md` are where the real
 levers are.
 
 **4.5 · "0 architectural decisions" is retired.** The sandboxed pass concluded repowise's ADR-miner
@@ -181,4 +181,4 @@ Suggested order, cheapest-first, and each independently droppable:
 4. **`gguf.go` duplication** (§3.2) — only behind a `.giw` byte-identity gate.
 
 Items 1–3 are small enough not to need a gate. Item 4 does. Nothing here is urgent, and none of it
-should preempt `task-w4a8-neon-bandwidth.md` or `task-attention-decode-cost.md`.
+should preempt `task-w4a8-neon-bandwidth.md` or `completed/task-attention-decode-cost.md`.

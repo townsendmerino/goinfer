@@ -67,7 +67,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (78)
+## Archive — `completed/` (80)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
@@ -87,8 +87,13 @@ separate sweep because this step kept being skipped at move time.
   below are the internal detail on how it is established and chased.
 - `parity-coverage-policy.md`, `parity-hunt-playbook.md` — how parity is established and chased.
 - `audit-<date>.md` — a whole-repo audit at a named commit; findings are dispositioned in place
-  and the file moves to `completed/` when every one is closed. Current:
-  [audit-2026-09-10.md](audit-2026-09-10.md) (at `c7ef16a`); the previous ones are
+  and the file moves to `completed/` when every one is closed. A large audit may split its closed
+  findings out incrementally before that, the way the queue docs do — a
+  [`completed/audit-<date>.md`](completed/) sibling holding the closed Critical/Gate/Major
+  findings, with a summary note in the live doc pointing to it; the live doc is not empty and is
+  not archived by this. Current: [audit-2026-09-10.md](audit-2026-09-10.md) (at `c7ef16a`; 40
+  closed findings split to [completed/audit-2026-09-10.md](completed/audit-2026-09-10.md)
+  2026-09-12); the previous ones are
   [completed/audit-2026-09-02.md](completed/audit-2026-09-02.md) and
   [completed/audit-2026-08-05.md](completed/audit-2026-08-05.md).
 

@@ -347,7 +347,7 @@ for configurations that don't need spec-decode bit-identity (an f32 fast path, g
 `--metal-fast-prefill` already gates a different exactness/speed tradeoff elsewhere in this
 codebase). That is a new, separate, real design question this probe surfaces — not scoped or
 started here; flagging it as the standout candidate for a follow-up task doc of its own.
-**(Now scoped: `docs/task-attention-decode-cost.md`, 2026-08-23 — invariant enumeration, an
+**(Now scoped: `docs/completed/task-attention-decode-cost.md`, 2026-08-23 — invariant enumeration, an
 A1/A2/A3 ladder starting with bit-identity-preserving restructuring, and acceptance math tied
 back to this doc's revised table.)**
 
@@ -626,7 +626,7 @@ reproducible **1.41-1.47x hot, 1.39-1.41x cold** across 2 runs. `dotW4A8FoldSDOT
 chains) measured **the same ~1.4x** — two accumulators already fully hides the FMLA latency at
 this shape; a third/fourth lane buys nothing further in isolation.
 
-**This is now a three-data-point picture, not a one-off:** `docs/task-attention-decode-cost.md`'s
+**This is now a three-data-point picture, not a one-off:** `docs/completed/task-attention-decode-cost.md`'s
 A1 move (b) (8-wide interleaved QK^T accumulators, replacing one serial f64 chain) measured
 **4.41x** at the qwen2.5-1.5b decode attention shape — the identical mechanism, same ISA, a
 different kernel. AVX2's `dotW4A8Fold4AVX2` attempt at the same fix (`perf-dead-ends.md` §8.9)
@@ -796,7 +796,7 @@ per this campaign's convention pending the plumbing decision.
   ISA, new evidence, per `priors-microgpt-c.md` §2's own porting-caution rule). Two ISAs, two
   different bottlenecks: AVX2 was port-bound (shuffle-port contention the issue-width probe
   couldn't see), NEON is latency-bound (the same mechanism A1's move (b) fixed in attention's
-  QK^T fold, `docs/task-attention-decode-cost.md`).
+  QK^T fold, `docs/completed/task-attention-decode-cost.md`).
 - **The decoupled Σact-correction pass (Gate 1 items 1+2 shape).** Measured 0.972x on
   `apple-m1pro`; full record above. The only sanctioned retry is the folded-into-repack
   variant inside item 3's harness, per the resequenced next steps.

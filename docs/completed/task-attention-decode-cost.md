@@ -1,5 +1,25 @@
 # Task: decode attention's f64 cost — cut the ~26% floor without breaking bit-identity
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status: COMPLETE, archived 2026-09-12.** Gate A0 closed GO (2026-08-23); A1's three moves
+> (thread across heads, interleave independent QK/AV dots, fix AV's memory order) all landed the
+> same day, cleared the ≥3x acceptance bar at depth 130 (3.86x) and did far better at long context
+> (9.72-10.20x at 2048-8192), and shipped in aikit v1.25.0 — `linalg.MatmulQKAcc64`/
+> `MatmulAVAcc64` are still the live decode-attention kernels at today's aikit v1.41.0. A2/A3
+> (an M-independent f32 kernel; a gated fast-path) were explicitly closed-for-now with a stated
+> re-open trigger (long-context work after the W4A8 campaign) that has not fired. The doc's one
+> named loose end — the prefill-attention-threading deferral, "tracked as G16, not opened here" —
+> has since shipped: G16 (DONE 2026-08-26) and its follow-on G20 (same day), both in
+> `docs/completed/queue-performance.md`, corrected in place below rather than silently rewritten.
+> `docs/task-w4a8-neon-bandwidth.md`, the sibling this doc's acceptance table cross-references, is
+> still live — this archival does not close that doc.
+
 > Scoping doc. Opened 2026-08-23 from `docs/task-w4a8-neon-bandwidth.md` § "Probes 1+2 result"
 > (attention = 99-115% of the non-matmul decode floor at both model sizes) — the follow-up that
 > probe flagged as "the standout candidate for a task doc of its own." Sibling to the W4A8
@@ -422,7 +442,10 @@ clearly (see below), so no floor was needed in practice on this box/shape.
 Batched (M=K>1) attention deliberately gets a 1-element pool (serial by construction) — threading
 prefill/verify's heads is explicitly out of scope (the brief: "no M>1-specific work here"); batching
 already amortizes the weight-matmul cost the way threading amortizes decode's per-token fork-join,
-so there's no equivalent pressure to relieve there.
+so there's no equivalent pressure to relieve there. **RETRACTED 2026-09-12: no longer true.** G16
+(`docs/completed/queue-performance.md`, DONE 2026-08-26) threaded batched prefill's heads too — see
+"The prefill deferral has a MEASURED cost" below for the correction in the section that actually
+scoped this decision.
 
 **The two named traps, both handled:**
 - **Shared scratch** — solved by the pool itself; each worker's qh/scores/ch/avAcc are its own,
@@ -580,6 +603,16 @@ this — a real consumer session, not a benchmark.
 across workers/registers — heads, layers' KV groups, individual QK scores, individual AV dims"* —
 heads are named first. Threading prefill attention's heads is inside the bit-identity guarantee, not
 a renegotiation of it. Estimated ceiling ~4–5×; tracked as G16, not opened here.
+
+**Correction (2026-09-12): G16 shipped, not just tracked.** `docs/completed/queue-performance.md`'s
+G16 (DONE 2026-08-26) built exactly this — batched prefill attention's heads now thread the same
+way decode's do — and a follow-on, G20 (DONE the same day), tiled prefill's `scores` buffer over K
+so long prompts can parallelize within their memory budget too. `decoder/forwardn.go`'s
+`attendBatchedHeads` now takes the same `pool []headWorkerScratch` for both the decode (K=1) and
+batched (M=K>1) callers this doc's own A1(a) section described as getting "a 1-element pool
+(serial by construction)" — that was true when this doc was written and is no longer true today.
+See G16/G20 for the measured payoff; not re-derived here, since this doc's own ladder never
+funded that work — it only measured the cost of deferring it.
 
 ## Non-goals
 
