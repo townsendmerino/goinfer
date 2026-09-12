@@ -997,6 +997,7 @@ supports.
 | `docs/audit-2026-09-10.md|constrain/schema.go:324` | goinfer | `if f < 0 \|\| f != math.Trunc(f) {` |
 | `docs/audit-2026-09-10.md|constrain/schema.go:71` | goinfer | `dec := json.NewDecoder(bytes.NewReader(schema))` |
 | `docs/audit-2026-09-10.md|constrain/schema_grammar.go:112` | goinfer | `func (g *schemaGrammar) TryBytes(bs []byte) bool {` |
+| `docs/audit-2026-09-10.md|constrain/tool_grammar.go:104` | goinfer | `func (g *toolGrammar) InPlainString() bool {` |
 | `docs/audit-2026-09-10.md|constrain/tool_grammar.go:17` | goinfer | `type toolGrammar struct {` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:1131` | goinfer | `if (!r.postOnly && !r.parallelBlock) \|\| h.isDeltaNet {` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:1384` | goinfer | `r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)` |
@@ -1170,10 +1171,12 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/model.go:1209` | goinfer | `useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil \|\| (lora != nil && res` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1222` | goinfer | `if m.tryClaimResident() {` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1224` | goinfer | `if err := resAdapter.SetAdapter(residentAdapterLayers(lora)); err != nil {` |
+| `docs/audit-2026-09-10.md|decoder/model.go:1257` | goinfer | `// P-09 (audit-2026-09-10, sibling of R-02): a request cancelled while waiting for the` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1271` | goinfer | `reuseFrom := m.residentReuseLen(prompt, nil, lora)` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1272` | goinfer | `m.residentForgetIDs()` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1313` | goinfer | `// Optimistic forward: sampled decode's (Temperature>0) sibling of the greedy fast path` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1368` | goinfer | `m.residentCommitIDs(prompt, generated, nil, lora)` |
+| `docs/audit-2026-09-10.md|decoder/model.go:1459` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1538` | goinfer | `// (audit M-04). It equals the requested maxTokens unless prompt+maxTokens would` |
 | `docs/audit-2026-09-10.md|decoder/model.go:323` | goinfer | `m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.` |
 | `docs/audit-2026-09-10.md|decoder/model.go:325` | goinfer | `if opts.StreamWeights {` |
@@ -1198,6 +1201,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:100` | goinfer | `avail := cachedHostRAMAvailable()` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:114` | goinfer | `var kv int64` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:116` | goinfer | `kv = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(positions)` |
+| `docs/audit-2026-09-10.md|decoder/prefill_budget.go:41` | goinfer | `// PRIOR test's value within the same 250ms window.` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:1082` | goinfer | `// backfillFlatRope BEFORE validateLlama: the released checkpoints carry ONLY a nested` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:181` | goinfer | `func validateConfigBounds(cfg *Config) error {` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:19` | goinfer | `var registry = map[string]archAdapter{` |
@@ -1208,6 +1212,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/residency.go:1008` | goinfer | `// metal: both backends' own Backend.MatmulBT implementations are themselves bare CPU` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:1030` | goinfer | `// weight is silently re-quantized to W4A8 (int4) at resident-build time (metal/model.go` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:1092` | goinfer | `return false, "sequential — this arch has its own per-token forward (no batched CPU pref` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:1129` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:138` | goinfer | `// scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:35` | goinfer | `// v1 scope (documented limitations):` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:373` | goinfer | `case a.llama4 != nil:` |
@@ -1225,6 +1230,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/rope.go:106` | goinfer | `func mropeDelta(pos [][3]int, seqLen int) int {` |
 | `docs/audit-2026-09-10.md|decoder/sampler.go:216` | goinfer | `if len(s.p.LogitBias) > 0 \|\| s.penaltiesActive() {` |
 | `docs/audit-2026-09-10.md|decoder/sampler.go:237` | goinfer | `} else if s.p.Logprobs {` |
+| `docs/audit-2026-09-10.md|decoder/sampler.go:252` | goinfer | `info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs` |
 | `docs/audit-2026-09-10.md|decoder/scratch.go:317` | goinfer | `if c := nKeys * hd; cap(p.kh) < c {` |
 | `docs/audit-2026-09-10.md|decoder/serialize.go:1225` | goinfer | `// v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attentio` |
 | `docs/audit-2026-09-10.md|decoder/serialize_census_test.go:87` | goinfer | `"../testdata/qwen3moe-tiny", "../testdata/granite-dense-tiny",` |
@@ -1530,10 +1536,9 @@ supports.
 | `docs/ollama-chase.md|cuda/resident.go:855` | goinfer | `// declined to the staged/CPU path upstream.` |
 | `docs/ollama-chase.md|decoder/gguf.go:743` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
-| `docs/ollama-chase.md|decoder/model.go:1171` | goinfer | `// logits. On the batched archs this runs the layers at M=len in one pass (each` |
-| `docs/ollama-chase.md|decoder/model.go:1384` | goinfer | `// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.` |
+| `docs/ollama-chase.md|decoder/model.go:1459` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1715` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
-| `docs/ollama-chase.md|decoder/residency.go:1108` | goinfer | `return false, "sequential — this backend has no batched prefill (per-token resident forw` |
+| `docs/ollama-chase.md|decoder/residency.go:1129` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:649` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:576` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1494` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |

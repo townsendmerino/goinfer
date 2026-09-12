@@ -1484,10 +1484,14 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   `keys`/`vals` directly via aikit's strided `MatmulBTAcc64` instead of gathering+transposing into
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
-- **embedResident host-scratch reuse — still open.** `embedResident` (`decoder/residency.go:1108`) does
-  `make([]float32, HiddenDim)` per token, then H2D. The decode-hot-path call sites (`decoder/model.go:1384/1014`)
-  can't reroute without breaking the batch caller `decoder/model.go:1171`
-  (`embs[i]=embedResident(id)` collection would alias). Small (~6-14 KB/token). Bigger follow-on: an
+- ~~**embedResident host-scratch reuse — still open.**~~ **DONE, `c28c847` (2026-09-10, P-08 of
+  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1129`);
+  `embedResident` itself is now a one-line `dst=nil` wrapper (`:1121`) kept for the batch-collection
+  call sites that must not share a buffer. The resident decode loop's two hot call sites now pass a
+  reused `embScratch` (`decoder/model.go:1459,1463`) instead of allocating fresh per token. Gated by
+  `decoder/embed_resident_scratch_test.go`. Found stale 2026-09-12: this bullet's own line-number
+  citations had been silently re-keyed by `--update` in the SAME commit that fixed the code, without
+  the "still open" claim itself being revisited. Bigger follow-on, still genuinely open: an
   **on-device embed table** (GPU looks the row up from the id — Metal's `loadEmbedRow` already does).
 - **MoE `moeMLP` allocates MB/token — DONE, P8.** `moeMLP` now takes an optional `*decodeScratch`,
   backing its router-logits/accumulator/expert-gate-up buffers with reused per-stream scratch at the
