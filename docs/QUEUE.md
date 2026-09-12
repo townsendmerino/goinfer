@@ -1573,73 +1573,6 @@ supports.
 | `docs/queue-engineering.md|metal/model.go:1095` | goinfer | `if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:763` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1124` | goinfer | `gpu.HostCopy{Dst: w.W.At(slot * w.perExpertW * 4), Src: srcW[wOff : wOff+wLen]},` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1128` | goinfer | `_, cr, out := g.run(cell{` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1211` | goinfer | `if cr.RC != 0 \|\| cr.vacuous() {` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:1251` | goinfer | `// The resident-parity gates G-09 found opt-in-by-private-env-var. Every qwen3.5 fixture` |
-| `docs/review-2026-09-04.md|cmd/gate/gpu.go:408` | goinfer | `func classifyAdapterProbe(out []byte, err error) (present bool, backend, note string) {` |
-| `docs/review-2026-09-04.md|cmd/gate/run.go:218` | goinfer | `func (r *results) tally(cellName string, topOnly bool) cellResult {` |
-| `docs/review-2026-09-04.md|constrain/reflect.go:77` | goinfer | `for f := range t.Fields() {` |
-| `docs/review-2026-09-04.md|constrain/reflect.go:78` | goinfer | `// V-14 (docs/review-2026-09-04.md): an anonymous field's reflect name IS its type` |
-| `docs/review-2026-09-04.md|cuda/backend.go:658` | goinfer | `if req := m.MoECacheSlotsRequest(); req > 0 && req < topK {` |
-| `docs/review-2026-09-04.md|cuda/drafter.go:471` | goinfer | `if e := d.r.bGemvB(L.q, s.aq, s.aSc, ArgNull(), s.q, M, 0); e != nil {` |
-| `docs/review-2026-09-04.md|cuda/prefill.go:533` | goinfer | `maxNWin := startPos + M` |
-| `docs/review-2026-09-04.md|cuda/resident.go:2913` | goinfer | `mustSplit := splitKVRequired(nWin)` |
-| `docs/review-2026-09-04.md|decoder/generate_vl.go:117` | goinfer | `m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + img` |
-| `docs/review-2026-09-04.md|decoder/generate_vl.go:96` | goinfer | `m.residentForgetIDs()                                            // forget first — from ` |
-| `docs/review-2026-09-04.md|decoder/lora.go:273` | goinfer | `case hasOwnForward:` |
-| `docs/review-2026-09-04.md|decoder/model.go:1034` | goinfer | `// it is worth a line when it happens rather than another silent 4.5×.` |
-| `docs/review-2026-09-04.md|decoder/model.go:1353` | goinfer | `for range maxTokens {` |
-| `docs/review-2026-09-04.md|decoder/model.go:1355` | goinfer | `case <-ctx.Done():` |
-| `docs/review-2026-09-04.md|decoder/model.go:285` | goinfer | `if strings.HasSuffix(dir, ".giw") {` |
-| `docs/review-2026-09-04.md|decoder/residency.go:883` | goinfer | `rf, ok, err := rb.BuildResident(m)` |
-| `docs/review-2026-09-04.md|decoder/spec_eagle.go:21` | goinfer | `// resident-commit fix that applied to genNgramInto does NOT apply here for the same` |
-| `docs/review-2026-09-04.md|decoder/speculative.go:167` | goinfer | `l, err := draft.resident.Forward(draft.embedResident(tok), dpos)` |
-| `docs/review-2026-09-04.md|demo/agent/agent/agent.go:339` | goinfer | `turns := append([]msg(nil), s.history...)` |
-| `docs/review-2026-09-04.md|gpu/attention.go:293` | goinfer | `// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the ol` |
-| `docs/review-2026-09-04.md|gpu/bufaccount.go:20` | goinfer | `// to the test that caused it. See TestNoBufferLeak.` |
-| `docs/review-2026-09-04.md|gpu/bufaccount_test.go:25` | goinfer | `func TestNoBufferLeak(t *testing.T) {` |
-| `docs/review-2026-09-04.md|gpu/device.go:282` | goinfer | `func (c *Context) readbackRaw(buf *wgpu.Buffer, n int) ([]float32, error) {` |
-| `docs/review-2026-09-04.md|gpu/layer.go:193` | goinfer | `xnDB := newDeviceBuffer(xn, H)` |
-| `docs/review-2026-09-04.md|gpu/qwen35_resident_parity_test.go:29` | goinfer | `func TestQwen35ResidentParity(t *testing.T) {` |
-| `docs/review-2026-09-04.md|internal/prequant/prequant.go:95` | goinfer | `tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"` |
-| `docs/review-2026-09-04.md|internal/serveapp/decoder_embedder.go:253` | goinfer | `func truncateForContext(ids []int, maxTokens, appendID int) []int {` |
-| `docs/review-2026-09-04.md|internal/serveapp/helpers.go:103` | goinfer | `func requireAuth(key string, h http.HandlerFunc) http.HandlerFunc {` |
-| `docs/review-2026-09-04.md|internal/serveapp/limits_test.go:187` | goinfer | `func TestDecoderEmbedder_truncatesToTheContextWindow(t *testing.T) {` |
-| `docs/review-2026-09-04.md|internal/serveapp/main.go:566` | goinfer | `if !addrIsLoopback(*addr) && authKey == "" {` |
-| `docs/review-2026-09-04.md|internal/serveapp/main.go:634` | goinfer | `// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a ` |
-| `docs/review-2026-09-04.md|internal/serveapp/main.go:655` | goinfer | `mux.HandleFunc("GET /{$}", srv.handleWebUI)` |
-| `docs/review-2026-09-04.md|internal/serveapp/openai.go:112` | goinfer | `lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)` |
-| `docs/review-2026-09-04.md|internal/serveapp/responses.go:281` | goinfer | `toolCalls = append(toolCalls, tc)` |
-| `docs/review-2026-09-04.md|internal/serveapp/responses.go:296` | goinfer | `// Tool-call continuations round-trip via the next request's input; store the` |
-| `docs/review-2026-09-04.md|internal/serveapp/responses.go:314` | goinfer | `func (s *server) maybeStore(store bool, id, model string, messages []chatMessage, assist` |
-| `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:211` | goinfer | `if unconditionalStreamCall(cb) {` |
-| `docs/review-2026-09-04.md|internal/serveapp/sse_writer_test.go:276` | goinfer | `func unconditionalStreamCall(cb string) bool {` |
-| `docs/review-2026-09-04.md|internal/serveapp/vision_serve.go:83` | goinfer | `func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, erro` |
-| `docs/review-2026-09-04.md|internal/serveapp/webui.go:139` | goinfer | `func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {` |
-| `docs/review-2026-09-04.md|internal/serveapp/webui.go:74` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |
-| `docs/review-2026-09-04.md|internal/servecheck/check.go:210` | goinfer | `// Structured checks the promise the README makes: a schema the model cannot violate. Us` |
-| `docs/review-2026-09-04.md|internal/servecheck/check.go:253` | goinfer | `if n.String() != "366" {` |
-| `docs/review-2026-09-04.md|internal/servecheck/cmd.go:102` | goinfer | `if skipped > 0 {` |
-| `docs/review-2026-09-04.md|metal/batched_verify_test.go:289` | goinfer | `func TestBatchedVerifyKernelParity(t *testing.T) {` |
-| `docs/review-2026-09-04.md|metal/gemma4_dense_scaled_test.go:25` | goinfer | `func TestGemma4DenseScaled_metalParity(t *testing.T) {` |
-| `docs/review-2026-09-04.md|metal/gemma4_router_parity_test.go:31` | goinfer | `func TestGemma4Router_residentIdxParity(t *testing.T) {` |
-| `docs/review-2026-09-04.md|pull/pull.go:593` | goinfer | `func cachedIntact(dir string, f File) (string, bool) {` |
-| `docs/review-2026-09-04.md|pull/resolve.go:32` | goinfer | `func resolveOffline(ref Ref) (string, bool) {` |
-| `docs/review-2026-09-04.md|pull/resolve.go:55` | goinfer | `func Resolve(ctx context.Context, spec string, progress func(done, total int64)) (string` |
-| `docs/review-2026-09-04.md|scripts/bench_peer.py:1297` | goinfer | `for eng, be in [("goinfer","cpu"), ("ollama","cpu"), ("llamacpp","cpu"),` |
-| `docs/review-2026-09-04.md|scripts/bench_peer.py:47` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
-| `docs/review-2026-09-04.md|scripts/bench_peer_prefill.py:108` | goinfer | `OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models` |
-| `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:28` | goinfer | `UNKEYABLE` |
-| `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:49` | goinfer | `def mapline(o):` |
-| `docs/review-2026-09-04.md|scripts/remap_gate_citations.py:83` | goinfer | `file_basename = path.split('/')[-1]` |
-| `docs/review-2026-09-04.md|tokenizer/bytelevel.go:218` | goinfer | `// N-24: an ADDED token's surface is stored verbatim, NOT byte-level-encoded, so pushing` |
-| `docs/review-2026-09-04.md|tokenizer/bytelevel.go:466` | goinfer | `func isBareByteLevelUseRegex(raw json.RawMessage) bool {` |
-| `docs/review-2026-09-04.md|tokenizer/bytelevel.go:52` | goinfer | `case isBareByteLevelUseRegex(tj.PreTokenizer):` |
-| `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:456` | goinfer | `func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error) {` |
-| `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:831` | goinfer | `func (t *Tokenizer) TokenText(id int) []byte {` |
-| `docs/review-2026-09-04.md|tokenizer/sentencepiece.go:841` | goinfer | `if id < len(t.isAdded) && t.isAdded[id] {` |
-| `docs/review-2026-09-04.md|tokenizer/splitshape.go:101` | goinfer | `case gpt2Letters.MatchString(c) && gpt2LeadContraction.MatchString(c):` |
-| `docs/review-2026-09-04.md|tokenizer/splitshape.go:42` | goinfer | `// shapeGPT2Original is GPT-2's own` |
 | `docs/scoping-lfm2.md|decoder/arch.go:240` | goinfer | `type nemotronParams struct {` |
 | `docs/scoping-lfm2.md|decoder/attention.go:109` | goinfer | `if arch.QKNorm {` |
 | `docs/scoping-lfm2.md|decoder/config.go:1151` | goinfer | `case c.UseQKNorm:` |
@@ -1726,6 +1659,15 @@ supports.
 | `docs/task-gpu-paths-2026-09.md|metal/model.go:361` | goinfer | `// bytesToU32 reinterprets a little-endian byte slice as uint32 words (len must be a mul` |
 | `docs/task-gpu-paths-2026-09.md|metal/model.go:566` | goinfer | `if e != nil {` |
 | `docs/task-gpu-paths-2026-09.md|metal/model.go:63` | goinfer | `return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "` |
+| `docs/task-halt-2026-09.md|decoder/generate_vl.go:19` | goinfer | `case <-ctx.Done():` |
+| `docs/task-halt-2026-09.md|decoder/model.go:1097` | goinfer | `if err = ctx.Err(); err != nil {` |
+| `docs/task-halt-2026-09.md|demo/agent/agent/kenclient.go:42` | goinfer | `Name: "search",` |
+| `docs/task-halt-2026-09.md|internal/serveapp/helpers.go:493` | goinfer | `// reqID is a short, monotonically increasing id suffix (unique per process run).` |
+| `docs/task-halt-2026-09.md|internal/serveapp/main.go:572` | goinfer | `anchor: func Main() {` |
+| `docs/task-halt-2026-09.md|internal/serveapp/main.go:606` | goinfer | `auth := func(h http.HandlerFunc) http.HandlerFunc { return requireAuth(authKey, h) }` |
+| `docs/task-halt-2026-09.md|internal/serveapp/main.go:662` | goinfer | `// its own (pullState), which is the bound that actually fits it.` |
+| `docs/task-halt-2026-09.md|internal/serveapp/openai.go:396` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
+| `docs/task-halt-2026-09.md|internal/serveapp/openai.go:977` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:223` | goinfer | `device const half*  srow = bsc + (uint)gid*(K/32u); \` |
 | `docs/task-int4-int8-exact-mma.md|metal/kernels.go:231` | goinfer | `acc += float(gi) * float(srow[wi>>2]); \` |
