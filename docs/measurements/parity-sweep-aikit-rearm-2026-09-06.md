@@ -72,6 +72,24 @@ Confirmed **not** caused by today's work: re-run on the pre-M2 tree at aikit v1.
 is a DIFFERENT test from `TestQwen35GGUF_weightDiff`, whose failure is separately bisected to
 `6d4fc79`; conflating the two would misattribute both.
 
+> **RESOLVED 2026-09-12 — the loader was correct; the BAR was wrong.** Recorded here rather than
+> rewritten above, because the observation on the day was accurate: those numbers are real and do
+> reproduce bit-identically. What was wrong was the inference this document repeated from the test's
+> own error message — *"attributes it to a loader transform rather than Q8_0/Q4_K quantization."*
+> The bit-identical reproduction should have been the clue: a loader bug and a deterministic
+> dequant are both perfectly reproducible, so reproducibility distinguished nothing, and it read
+> as corroboration.
+>
+> The gate applied one whole-file 0.999 floor inherited from the MoE sibling, whose asset is a
+> uniform Q8_0 file. This asset is unsloth's UD-Q4_K_M, a *dynamic* quant assigning a bit-width per
+> tensor by sensitivity — nine ggml types in one file. Measured per tensor, agreement is a function
+> of the source quant ALONE: F32 1.000000 (max|diff| exactly 0), Q8_0 0.99998, Q6_K 0.99975, Q5_K
+> 0.99920, Q4_K 0.99700. The two failures were exactly, and only, the Q4_K tensors, spanning 7e-5
+> across two layer kinds and five tensor roles — which no transform defect can do — and landing 3e-4
+> from the first-principles Q4_K estimate. The 0.999 bar was also INSIDE the Q5_K band, so this
+> gate's greens were luck too. Floors are now per tensor (`ggufQuantCosFloor`); the gate passes and
+> was proved still able to redden. See `docs/audit-2026-09-10.md` G-03.
+
 ## What this sweep did NOT re-validate — read this before trusting the green
 
 Three families kept `status: validated` while their `deps_hash` absorbed the aikit bump. Two have

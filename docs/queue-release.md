@@ -856,17 +856,23 @@ than the runners. **If it reds at tag time: re-run once. Do NOT re-bound it** �
 fit today's spread is what `benchmarks.md`'s methodology exists to prevent, and the real fix is to
 stop dividing by a co-measured arm. Full record: `queue-performance.md` P17 (REOPENED).
 
-**2. `TestQwen38GGUF_weightDiff` — red on its first-ever execution.** `k_proj` cosine **0.997047**
-against a 0.999 bar (worst tensor 0.996974, `in_proj_z`); the test's own message attributes it to a
-loader transform rather than Q8_0/Q4_K quantization. `task-families-2026-09.md` records it as
-*"added, not yet RUN"* — the 2026-09-06 parity sweep was the first time it ever ran.
+**2. `TestQwen38GGUF_weightDiff` — RESOLVED 2026-09-12, and the defect was in the GATE.** ~~`k_proj`
+cosine 0.997047 against a 0.999 bar (worst tensor 0.996974, `in_proj_z`); the test's own message
+attributes it to a loader transform rather than Q8_0/Q4_K quantization.~~ **That attribution is
+WITHDRAWN.** The loader was correct the whole time; the bar was a single whole-file 0.999 inherited
+from the MoE sibling, whose asset is a uniform Q8_0 file, while this one's asset is unsloth's
+UD-Q4_K_M — a *dynamic* quant carrying nine ggml types chosen per tensor. Agreement turned out to
+be a function of the source quant alone (F32 1.000000 at max|diff| exactly 0, Q8_0 0.99998, Q6_K
+0.99975, Q5_K 0.99920, Q4_K 0.99700), and the two "failures" were exactly, and only, the Q4_K
+tensors. The 0.999 bar was itself sitting inside the Q5_K band, so that gate's greens were luck.
+Floors are now per tensor, keyed on the source quant, and the gate PASSES; it was also proved still
+able to go red (deleting one real transform craters the tensor to 0.046). See
+`docs/audit-2026-09-10.md` G-03 and `decoder/gguf_tensorquant_test.go`.
 
-**Not a regression and not a tag risk**: it reproduces **bit-identically** on the pre-M2 tree at
-aikit v1.35.0, and it is `realckpt`+heavy so CI never builds it — only the release sweep runs it.
-The `qwen3_5` family is `status: experimental` / `method: tiny-golden+coherent`, so no validated
-claim is affected. **It is a different test from `TestQwen35GGUF_weightDiff`**, whose failure is
-separately bisected to `6d4fc79`; conflating the two misattributes both. Disposition owed, but not
-before a tag.
+It was never a tag risk: `realckpt`+heavy, so CI never built it, and the `qwen3_5` family is
+`status: experimental` / `method: tiny-golden+coherent`, so no validated claim was affected. **It is
+a different test from `TestQwen35GGUF_weightDiff`**, whose failure is separately bisected to
+`6d4fc79`; conflating the two misattributes both — and that one is still open.
 
 ## Draft: contents of the next release
 
