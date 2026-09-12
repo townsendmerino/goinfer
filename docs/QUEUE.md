@@ -1233,8 +1233,7 @@ supports.
 | `docs/audit-2026-09-02.md|decoder/registry.go:118` | goinfer | `func (a *Architecture) validateResolved() error {` |
 | `docs/audit-2026-09-02.md|decoder/registry.go:1836` | goinfer | `QKNorm:          true, // per-head RMSNorm over head_dim — see the note above` |
 | `docs/audit-2026-09-02.md|decoder/registry.go:2155` | goinfer | `// DeepSeek's YaRN attention_factor (the cos/sin mscale) is NOT the generic` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:2235` | goinfer | `// Plain qk_head_dim^-0.5. ⚠️ Phase 3: the real V2-Lite/V3 fold YaRN's` |
-| `docs/audit-2026-09-02.md|decoder/registry.go:2612` | goinfer | `llama4: &llama4Params{` |
+| `docs/audit-2026-09-02.md|decoder/registry.go:2619` | goinfer | `llama4: &llama4Params{` |
 | `docs/audit-2026-09-02.md|decoder/registry.go:280` | goinfer | `AttnScale:         math.Pow(cfg.QueryPreAttnScalar, -0.5),` |
 | `docs/audit-2026-09-02.md|decoder/registry.go:440` | goinfer | `scaling, err := parseRopeScaling(cfg.RopeScaling)` |
 | `docs/audit-2026-09-02.md|decoder/registry.go:482` | goinfer | `// backfillFlatRope fills the flat rope_theta / rope_scaling fields from transformers >=` |
@@ -2174,7 +2173,7 @@ supports.
 | `docs/scoping-lfm2.md|decoder/mamba2.go:89` | goinfer | `// 2. Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last` |
 | `docs/scoping-lfm2.md|decoder/mamba2_chunked.go:60` | goinfer | `// Depthwise causal conv over xBC (+bias, +SiLU), then split into x/B/C.` |
 | `docs/scoping-lfm2.md|decoder/rmsnorm.go:49` | goinfer | `func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {` |
-| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2799` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
+| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2806` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:51` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:322` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:329` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |

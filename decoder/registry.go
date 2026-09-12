@@ -2232,9 +2232,16 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			NGroup:                cfg.NGroup,
 			TopkGroup:             cfg.TopkGroup,
 		},
-		// Plain qk_head_dim^-0.5. ⚠️ Phase 3: the real V2-Lite/V3 fold YaRN's
-		// mscale_all_dim² into this scale (DeepSeek's dual-mscale); wire that with the
-		// real-model gate. The tiny golden uses default RoPE, so no mscale.
+		// Plain qk_head_dim^-0.5 — NOT a TODO (audit-2026-09-02.md N-34, resolved 2026-09-11):
+		// an older version of this comment claimed the real V2-Lite/V3 fold YaRN's
+		// mscale_all_dim² into this scale and called it unwired, contradicting the OTHER
+		// mscale comment in this same function (parseRopeScaling's caller above, "transformers
+		// 5.12 does NOT fold mscale² into it"). The real-model gates settle it:
+		// testdata/parity_manifest.json's deepseek_v2/deepseek_v3 entries are "validated"
+		// against real HF bf16 oracles (DeepSeek-V2-Lite 15.7B, Moonlight-16B-A3B) at
+		// cosine_min 0.999+ with THIS plain scale — a ~2x attention-softmax error from a
+		// missing mscale_all_dim²≈0.5 fold would not read as 0.999. No fold needed; the tiny
+		// golden also uses default RoPE, so no mscale there either.
 		AttnScale:      math.Pow(float64(qk), -0.5),
 		RoPELocalBase:  base,
 		RoPEGlobalBase: base,
