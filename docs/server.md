@@ -86,12 +86,20 @@ RENORMALIZED survivors, which is a strictly wider set for the same `top_p`. Eith
 reading of two filters that OpenAI's API never defined together, but a client that tuned `top_p`
 against HF will see a tighter cut here. Each filter alone matches.
 
-**Sampling: pass `top_k` alongside your temperature.** Since v0.10.3, `top_k`/`top_p`/`min_p` use
-bounded selection instead of a full-vocabulary sort, so they are cheap. Plain `temperature` with
-*neither* set is the one configuration that still normalizes over the **entire** vocabulary every
-token, which makes it now the **slowest** sampled configuration — roughly **3× behind `top_k=20` on
-a 152k-vocabulary model**, and worse as the vocabulary grows. If you are setting a temperature,
-adding `top_k` is faster than leaving it off. (Removing that remaining cost is scoped in
+**Sampling performance (corrected 2026-09-11, audit-2026-09-02.md N-36 — this section used to
+recommend adding `top_k` for speed; that was right before P2b, 2026-08-09, and is backwards now).**
+`top_k`/`top_p`/`min_p` use bounded
+selection instead of a full-vocabulary sort (since v0.10.3), and plain `temperature` alone
+normalizes over the entire vocabulary — but P2b made that full-vocabulary normalization itself
+~3-4.7× cheaper (parallel chunked reduction), closing the gap this section used to describe.
+Measured directly just now (`benchSample`, `decoder/sampler_selection_test.go`'s own harness,
+best-of-3, same machine): at a 152k vocab, temperature-only and `temperature`+`top_k=20` cost
+about the same (**0.99×**, noise-level); at 262k, temperature-only is **~15% FASTER** than adding
+`top_k=20` (**0.86×**), not 3× slower. **Do not add `top_k` purely for speed** — it no longer
+helps and can cost a little. `top_k`/`top_p`/`min_p` are still cheap in their own right (bounded
+selection, not the old O(V·log V) sort) and remain the right choice when you want their actual
+sampling behavior, just not as a performance workaround for plain `temperature` anymore.
+(Removing the last full-vocabulary-normalization cost entirely is scoped in
 `docs/ollama-chase.md` §8 D6.) Greedy (`temperature=0`) stays the fastest path and is unaffected.
 
 > **Tie-break (changed in v0.10.3).** Tokens with *equal* probability now resolve by **ascending
@@ -148,25 +156,33 @@ Compatible, not full-spec (llama.cpp's bar): `thinking` / `cache_control` /
 `metadata` are accepted and ignored. Agentic use wants a roomy-context model
 (≥32k).
 
-**Vision (image→text), pure Go.** With a Gemma 3 VL checkpoint loaded behind
-`--vision <dir>` (auto-discovered when `--model` is a VL dir), `cmd/serve` accepts
-images on both surfaces — OpenAI `image_url` content parts and Anthropic `image`
-blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an SSRF
-guard, returns 400). An image runs through the pure-Go `vision` tower (SigLIP
-encoder + projector, HF-parity-gated) into the decoder's embed-by-vector seam;
-image tokens count in `usage`. `demo/agent`'s web UI takes a dropped/pasted image
-too. Caveat: the SigLIP prefill is CPU-heavy (~3 min/image at 896²) — correct but
-slow; an int8 tower is the planned speedup (`docs/completed/task-cpu-vision-prefill.md`).
+**Vision (image→text), pure Go.** With a vision-capable checkpoint loaded behind
+`--vision <dir>` (auto-discovered when `--model` is a VL dir — Gemma 3's SigLIP
+projector, Qwen2.5-VL's own ViT, or Gemma 4's vision tower are each detected and
+routed to their own loader; `internal/serveapp/main.go`'s `loadVisionTower`), `cmd/serve`
+accepts images on both surfaces — OpenAI `image_url` content parts and Anthropic
+`image` blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an
+SSRF guard, returns 400). An image runs through the matching pure-Go vision tower
+(SigLIP encoder + projector for Gemma 3, HF-parity-gated) into the decoder's
+embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s web UI takes a
+dropped/pasted image too. Caveat (Gemma 3's SigLIP path specifically): the tower's
+prefill is CPU-heavy (~3 min/image at 896²) — correct but slow; an int8 tower is
+the planned speedup (`docs/completed/task-cpu-vision-prefill.md`).
 
 ```bash
 go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it
 # then POST an image_url data: URI to /v1/chat/completions, or an image block to /v1/messages
 ```
 
-**Prompt-prefix KV caching.** Across requests the server reuses the KV cache for
-the longest token prefix a new prompt shares with a recent one, prefilling only
-the new suffix — so a continuing chat (or an agent loop with a fixed system
-prompt + tool specs) skips re-encoding the whole history.
+**Prompt-prefix KV caching.** Across requests the server reuses the KV cache of a
+warm session **whose entire token history is a prefix of the new prompt** —
+not the longest prefix the two merely share (`internal/serveapp/sessions.go`'s
+`bestExtend`: a session that diverges anywhere, even one token in, is not
+reused at all; among the sessions that DO qualify, the longest — most
+reused — one wins) — prefilling only the new suffix. So a continuing chat (or
+an agent loop with a fixed system prompt + tool specs) skips re-encoding the
+whole history, as long as each new turn's prompt still starts with the exact
+tokens of a session already warm.
 
 Reuse is exact — bit-identical to a cold prefill — under `GOINFER_CPU_FAST_ATTENTION=0`.
 With the default fast prefill attention ON, a suffix of 512 tokens or more is prefilled
@@ -219,7 +235,14 @@ window. It must emit a tool call *and then answer from the result*; a model that
 tool forever looks like a server bug and is not one. A 1.5B failed this; **Qwen2.5-7B-Instruct
 passes**. Prefill dominates an agent turn (the harness sends a ~4 KB system prompt plus ~25 tool
 schemas, ~8k tokens), so a GPU backend is strongly preferred: measured **270 tok/s prefill on an
-RTX 2070 SUPER** vs ~30 tok/s on an M1 Pro CPU.
+RTX 2070 SUPER** vs ~30 tok/s on an M1 Pro CPU. This trades away the prompt-prefix KV caching
+above, not just adds to it: GPU-resident models (`-backend cuda`/`metal`/`webgpu`) take a
+STATELESS decode path with no session and no cross-turn prefix reuse at all — every turn of the
+agent loop reprefills the whole ~8k-token history from scratch, including the system prompt and
+tool schemas that stayed fixed. That is still the right trade here (measured 13 tok/s stateless
+CPU/staged fallback vs ~460 resident on a 0.5B, RTX 2070 SUPER — the loss from going stateless is
+far smaller than the loss from leaving the GPU's resident decode path), but it means the doc's
+usual advice to expect reuse across turns does not apply once `-backend cuda` is in play.
 
 ```bash
 # Loopback:
