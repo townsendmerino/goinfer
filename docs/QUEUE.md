@@ -393,18 +393,31 @@ rediscovered:
   `promoted_by` means a person checked the gate's value, and the assertion itself just changed.
   `scripts/gate_ledger.py promote --gate TestQwen38GGUF_weightDiff --value PASS --by francis`.
 
-- **olmo3-tiny cannot be committed, and the cause is now known: the FIXTURE disagrees with the
-  released checkpoint about schema.** `TestOlmo3_forwardParity` fails at *load* —
-  `rope_parameters: missing full_attention`. `db0869e1` read `rope_parameters` as one flat table and
-  `85f68e72` reverted it because the real released config is the nested per-layer-type shape; that
-  revert was right for the real model. But `scripts/pin_olmo3_tiny.py` passes `rope_scaling={...}`
-  to the HF constructor and transformers 5.12 serialises it FLAT, so no single parser greens both
-  the tiny gate and the real one. Fix is the pin script, or a parser accepting both shapes — not
-  re-litigated here because an attempt was already made and reverted. **Note the pre-registered
-  exclusion is now stale about the symptom:** `scripts/refresh_parity_hashes.sh`'s
-  `KNOWN_UNRELATED_FAILURES` entry records a *cosine* miss (0.9899…, argmax correct — i.e. it
-  loaded), which is no longer what happens. An exclusion keyed to one symptom is silently covering
-  a worse one.
+- **olmo3 is FIXED (`2aa4540`) and the gate is green — but it still fails on nobara-pc, and the
+  reason is a fixture-propagation gap worth generalising.** CORRECTION: an earlier revision of this
+  entry concluded "no single parser greens both the tiny gate and the real one." **That was wrong.**
+  `2aa4540` restored olmo3's per-layer-type RoPE split in `decoder/registry.go` — transformers
+  5.15.0's `Olmo3RotaryEmbedding.forward` takes an explicit `layer_type` and returns a genuinely
+  different (cos, sin) per call (full-attention YaRN-scaled, sliding-attention plain at the same
+  theta), so the nested `rope_parameters` shape is correct for the real model AND for the fixture,
+  and one parser greens both. Reading transformers' own Olmo3 modeling source (described, not cited
+  as a path — it is an upstream file no clone here can resolve) had twice suggested a single shared
+  table; only calling the real class settled it, which is the reusable half of this item.
+  **Why it is nonetheless red on nobara-pc:** that commit regenerated the checkpoint and the golden
+  together, but `testdata/olmo3_forward_golden.json` is TRACKED while `testdata/olmo3-tiny/` is
+  GITIGNORED (0 tracked files). So only half the regeneration travels through git — every other box
+  keeps its old locally-generated checkpoint and gets new-golden-vs-old-checkpoint. Worse, the shape
+  `scripts/pin_olmo3_tiny.py` emits depends on the installed transformers: **5.15.0 serialises
+  `rope_parameters` NESTED, 5.12.0 serialises it FLAT**, and nobara-pc's only rig is 5.12.0 — so its
+  fixture fails at *load* (`rope_parameters: missing full_attention`), not on a numeric bar. Remedy
+  per box: install the pinned transformers 5.15.0 and re-run the pin script. **The general trap: a
+  TRACKED golden paired with a GITIGNORED fixture makes a both-sides regeneration propagate only
+  half-way, and the result reads as a code regression on every machine that did not generate it.**
+  **Also: the pre-registered exclusion is stale about the symptom.**
+  `scripts/refresh_parity_hashes.sh`'s `KNOWN_UNRELATED_FAILURES` entry records a *cosine* miss
+  (0.9899…, argmax correct — i.e. it loaded). Now it either passes (5.15 boxes) or fails at load
+  (5.12 boxes); neither is what the entry describes, so the exclusion should be retired rather than
+  left covering a symptom it no longer matches.
 
 - **The strided scores·V negative result has no live home.** It was preserved as the local tag
   `negative-result/strided-v-scoresv` when its branch was deleted, because its numbers appear in no
@@ -971,6 +984,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `0b0f5c9b` | fix(decoder): olmo3 RoPE applies YaRN to every layer, not full-attention only |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `25a4711` | refactor(cuda): re-point the device layer onto aikit/gpu v0.3.1 (native-GPU Phase 1) |
+| `2aa4540` | fix(decoder): olmo3 RoPE per-layer-type split was wrong, plus a stale golden |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
 | `3358e6ba` | perf(decoder): prefix reuse on the resident KV — agent turn 3 goes 9.13s → 0.42s (21.7x) |
 | `3d6ae1e` | chore: go fix modernizers, one deterministic pass (G2) |
@@ -984,7 +998,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |
 | `6a4e0ae` | decoder: optimistic next-token forward for sampled decode (Metal-verified, CUDA untested) |
-| `85f68e72` | fix(olmo3): revert db0869e's parser swap — the real config IS the nested shape |
 | `8f003f2` | parity: v0.15.0 sweep GREEN at bd085de; qwen3_next validated by real oracle |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
@@ -998,7 +1011,6 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cda8cfe` | docs: re-declare the freeze as a proof requirement; clear G2 for amd64 alone |
 | `d64afe4` | chore(parity): record real-model validations for the new families + sweep gates |
-| `db0869e1` | fix(olmo3): read rope_parameters as one flat table, not per-layer-type |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
 | `e8fa53c` | G7 follow-up: land the goldens the CUDA mscale declaration was supposed to move |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
@@ -1631,6 +1643,7 @@ than papered over.
 | `scripts/gate_ledger.py` | goinfer |
 | `scripts/pin_olmo3_tiny.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
+| `modeling_olmo3.py` | **RESOLVES NOWHERE** |
 
 <!-- /CITATION-INDEX -->
 ## RETRACTION, 2026-08-27 — the "152k sampler crossover" was a microbenchmark artifact
