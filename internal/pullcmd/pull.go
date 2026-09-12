@@ -68,8 +68,15 @@ multi-gigabyte transfer — a community GGUF re-upload of the same model is usua
 // itself).
 func resolveRunRef(refArg string) (ref pull.Ref, resolvedArg string, note string, err error) {
 	if c, ok := pull.Recommended(refArg); ok {
+		// M-32 (audit-2026-09-10.md): build the Ref directly from the checkpoint rather than
+		// round-tripping through ParseRef(c.Ref()) — that string is just "repo:file", and
+		// ParseRef only ever sets Pin for a "demo:" ref (pull.go's Curated() branch), so the
+		// registry's own SHA256/Bytes were silently dropped for every recommended checkpoint.
+		// Without Pin, an upstream re-upload verifies against whatever HF's API reports THAT
+		// DAY instead of the digest this build vouches for (the exact hazard Pin exists to
+		// close, per Ref's own doc comment).
 		note = fmt.Sprintf("%s → %s (%s, %.2f GB) — %s\n", refArg, c.Ref(), c.Quant, float64(c.Bytes)/1e9, c.GoodFor)
-		refArg = c.Ref()
+		return pull.Ref{Repo: c.Repo, File: c.File, Pin: c.SHA256, Bytes: c.Bytes}, c.Ref(), note, nil
 	}
 	refArg = strings.TrimPrefix(refArg, "hf:")
 	ref, err = pull.ParseRef(refArg)

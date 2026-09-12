@@ -10,10 +10,13 @@ import (
 
 // Resident Gated-DeltaNet decode step (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8).
 //
-// This is the mixer that makes every DeltaNet hybrid CPU-only on every backend today: 48 of
-// Qwen3.8's 64 layers are this recurrence, and `decodeRunnerEligible` refuses the whole
-// arch.qwen35 family rather than run half a model with a silently missing mixer. See
-// docs/deltanet-residency-plan.md.
+// N-34 (09-02): this comment used to say the mixer below "makes every DeltaNet hybrid CPU-only
+// on every backend today" — true when it was written, false once this file shipped. Status per
+// decoder/features.go's FeatDeltaNet declarations: webgpu (here) and metal (metal/deltanet.go,
+// metal/deltanet_kernels.go) both implement the full family, dense and MoE siblings alike; cuda
+// (cuda/deltanet.ptx) implements it too, gated end-to-end by TestQwen35ResidentParityCUDA. See
+// docs/deltanet-residency-plan.md (DONE AND MEASURED 2026-08-19 for this backend, 11.4-12.2x CPU
+// decode) for the webgpu measurement this file is the result of.
 //
 // It slots onto the resident DecodeRunner the same way the Mamba-2 engine does — the conv window
 // and the gated norm are that engine's (mambaConv / mambaGNorm, same shapes) and the persistent

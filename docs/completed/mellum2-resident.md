@@ -1,5 +1,12 @@
 # Mellum2 — resident decode on an 8 GB card (measured)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 How fast Mellum2 decodes, the path it takes, and the one lever that makes it faster.
 RTX 2070 SUPER (8 GB, ~7.2 GB free, ~343 GB/s effective), `-tags gpu` / Vulkan.
 

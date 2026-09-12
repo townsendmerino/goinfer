@@ -1,5 +1,12 @@
 # Plan: demo refresh — new models in the existing demos, one tape, no new modules
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **STATUS 2026-08-22 — Tier 1 SHIPPED; Tier 2 gates 1–4 run, gate 4 KILLS the straight swap.**
 > Full numbers: `docs/measurements/demo-chat-tier2-gates-2026-08-22.md` and
 > `docs/measurements/demo-chat-incumbent-2026-08-22.md`.

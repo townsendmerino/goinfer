@@ -44,8 +44,8 @@ jobs:
           - { pkg: constrain, fn: FuzzJSONSchema }
           - { pkg: constrain, fn: FuzzSchemaGrammarBytes }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
@@ -60,10 +60,21 @@ jobs:
         shell: bash
         run: |
           crashdir="${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fn }}"
+          out="$(mktemp)"
           for attempt in 1 2; do
             echo "::group::fuzz attempt ${attempt}: ${{ matrix.pkg }} ${{ matrix.fn }}"
-            if go test "./${{ matrix.pkg }}/" -run '^$' -fuzz "^${{ matrix.fn }}\$" -fuzztime=5m; then
+            if go test "./${{ matrix.pkg }}/" -run '^$' -fuzz "^${{ matrix.fn }}\$" -fuzztime=5m 2>&1 | tee "$out"; then
               echo "::endgroup::"
+              # ZERO-MATCH GUARD (audit-2026-09-10.md N-41/M-shape, found 2026-09-11): `go
+              # test -fuzz` with a pattern matching NO fuzz function prints "testing:
+              # warning: no fuzz tests to fuzz" and still EXITS 0 -- verified directly:
+              # `go test ./decoder/ -fuzz '^FuzzDoesNotExist$'` reports `ok` and PASS. A
+              # renamed/deleted matrix.fn would fuzz nothing for 5 minutes and report
+              # green, silently losing the coverage this workflow exists to run.
+              if grep -q "no fuzz tests to fuzz" "$out"; then
+                echo "::error::${{ matrix.fn }} matched NO fuzz function in ./${{ matrix.pkg }}/ — renamed or deleted? fix the matrix entry, do not let this report green"
+                exit 1
+              fi
               exit 0
             fi
             echo "::endgroup::"
@@ -80,7 +91,7 @@ jobs:
       # can be replayed locally (go test ./pkg -run <Target>/<hash>) and committed as a seed.
       - name: upload crashers
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-crash-${{ matrix.fn }}
           path: "**/testdata/fuzz/${{ matrix.fn }}/**"

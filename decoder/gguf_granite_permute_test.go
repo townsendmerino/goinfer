@@ -151,7 +151,7 @@ func loadTinyGGUFWeights(t *testing.T, raw []byte, wantArch string) *Weights {
 	if arch.Name != wantArch {
 		t.Fatalf("resolved arch %q, want %q", arch.Name, wantArch)
 	}
-	w, err := buildWeightsFromGGUF(cfg, arch, g, quantNone, false, nil, "")
+	w, err := buildWeightsFromGGUF(cfg, arch, g, quantNone, false, true, nil, "")
 	if err != nil {
 		t.Fatalf("buildWeightsFromGGUF: %v", err)
 	}

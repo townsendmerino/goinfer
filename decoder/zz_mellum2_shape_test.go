@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"os"
 	"testing"
 )
 
@@ -13,10 +12,7 @@ import (
 // moe_intermediate 896 = 7168 = intermediate_size exactly, so the MoE and dense
 // paths have IDENTICAL MAC counts and differ only in batching efficiency.
 func TestMellum2SliceShape(t *testing.T) {
-	path := os.Getenv("GOINFER_MELLUM_CKPT")
-	if path == "" {
-		t.Skip("set GOINFER_MELLUM_CKPT")
-	}
+	path := assetPath(t, "GOINFER_MELLUM_CKPT")
 	requireHeavyModel(t)
 	m, err := Load(path, Options{Quant: "int8int8"})
 	if err != nil {

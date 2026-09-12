@@ -1,10 +1,20 @@
 # Engineering queue — CLOSED ENTRIES, archived 2026-08-31
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 Closed entries from [`docs/queue-engineering.md`](../queue-engineering.md), moved here 2026-08-31
 so the live queue holds only open work. The same split the performance and correctness queues use.
 
-**Thirteen entries, moved verbatim — headers, evidence and all.** Read them for what was learned,
-not for status; several record a mechanism that outlived the task.
+**Thirteen entries, moved verbatim — headers, evidence and all — on 2026-08-31.** Read them for
+what was learned, not for status; several record a mechanism that outlived the task. A fourteenth,
+`G22`, was archived separately on 2026-09-11 (audit-2026-09-02.md's N-30: it shipped 2026-08-26
+but was left reading "QUEUED" in the live queue for two weeks) — appended at the end rather than
+folded into the count above, since it wasn't part of this same sweep.
 
 **What was deliberately NOT moved, and why it matters more than what was.** Four entries LOOK
 closed in their headers and are not, so they stayed live:
@@ -658,3 +668,48 @@ neither defect can recur through either route.
 the `2e8dfb6` arm64-vs-amd64 question could only be inferred. The `2026-08-13` arm64 gate run is the
 first refresh since, and its record answers the question **directly**: proof block and trailer both
 read `arch=arm64`. The record now says which arch ran the goldens instead of leaving it to inference.
+
+---
+
+**G22 · The Metal `fault 0x10` flake is an UNPINNED AUTORELEASE POOL in aikit's Encoder — fix it
+where the pool lives** — `aikit`+`mac`, **DONE, shipped 2026-08-26 (aikit `592352f`/`f2fb1e5`,
+aikit/gpu v0.30.1). Archived 2026-09-11 (audit-2026-09-02.md's N-30: this entry was still marked
+"QUEUED" here for two weeks after it shipped.)**
+
+**Not a shipping bug, and not a mystery — the mechanism is already written down in this repo.**
+`metal/model.go`'s `resident.Forward` says it outright: *"the NSAutoreleasePool (begin/end) is
+per-OS-thread, and Go can migrate goroutines mid-call — draining a pool on a different thread than
+it was pushed is UB (intermittent SIGSEGV). Same discipline the CUDA backend's LockOSThread executor
+uses."* The crash is exactly that drain: `aikit/gpu.(*Encoder).End` → `e.pool.Send(selDrain)`.
+
+**Why it only ever bites tests.** goinfer's production Metal paths PIN — `resident.Forward` and
+`BuildResident` both `runtime.LockOSThread`. aikit's `Encoder` API did not: it created its pool
+inline (three sites in `metal.go`) and drained it in `End()`, with `LockOSThread` appearing nowhere
+in aikit's production code — only in its own tests. Any caller that does not pin is on UB, and
+**97 of goinfer's 108 metal test files do not pin.** That accounted for every observed property: the
+crash was probabilistic (it needed a scheduler migration in the window), its site MIGRATED between
+runs, it survived isolation (`TestSAQVFusion` alone: 3/3 pass in <0.5 s), and it never appeared in
+the shipped product.
+
+**Observed rate here 2026-08-26 (before the fix):** `-short` full suite 1 fail / 3 runs; without
+`-short` 4/4 pass; a clean sequential gate run passed. `docs/task-gate-runner.md` records ~50% and
+once 6-of-7, with the operator's read that the rate tracked cumulative GPU dispatch volume —
+consistent with a migration-window race.
+
+**The fix landed in aikit, not in 97 test files.** aikit's `gpu/metal.go` now pins the OS thread
+for each autorelease pool's lifetime (commit `592352f`) and releases it only after the drain
+(`Encoder.End`'s `e.pinned`/`runtime.UnlockOSThread`, explicitly commented `// G22`), so the
+invariant holds for whoever calls next rather than needing every caller to pin for itself.
+
+**Verified 2026-09-11 (N-30 archival):** `metal/go.mod` pins `aikit/gpu v0.32.0` (well past
+v0.30.1); read `gpu/metal.go` in the aikit checkout directly and confirmed the pin/unpin
+bracketing the drain; ran `go test -tags metal ./metal/... -short -count=1` 6× in a row — zero
+`fault 0x10` deaths, zero panics/SIGSEGVs (the only failure across all 6 runs was
+`TestMoE_declinesPrefill`, an unrelated, separately pre-registered failure). Short of the doc's
+own "20+ runs" bar, but consistent with it and with the mechanism being fully understood and
+fixed at its source rather than papered over.
+
+**Gate it was filed against:** the `-short` metal suite run N times with zero `fault 0x10` deaths
+(N large enough to beat the observed rate — 20+ given ~30-50%), plus the existing goldens
+unchanged — the goldens check is `TestMetalSnapshotGolden`, still green (see L1/L2's own suite
+runs this same session, docs/task-int4-layout-2026-09.md).

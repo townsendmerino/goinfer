@@ -56,7 +56,7 @@ func loadQwen35GGUFSlice(t *testing.T, path string, nLayer int) (*Weights, func(
 	}
 	quant, _ := parseQuant("int8int8") // experts int8; since 6d4fc79 the attn/delta
 	// projections honour this too, so the compared tensors are int8 and wmDense dequantizes them.
-	w, err := buildWeightsFromGGUF(cfg, arch, g, quant, false, nil, "")
+	w, err := buildWeightsFromGGUF(cfg, arch, g, quant, false, true, nil, "")
 	if err != nil {
 		g.Close()
 		t.Fatalf("buildWeightsFromGGUF (GGUF slice): %v", err)

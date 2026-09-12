@@ -1,5 +1,12 @@
 # goinfer Metal spike — Phase 1: set the GO bar, then Layer A (with the MSL-version landmine pre-armed)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **STATUS: DELIVERED — Metal shipped.** GPU residency on Metal was admitted end-to-end (G9/G10 in
 > the v0.14.0 CHANGELOG) and the backend has been through several optimization campaigns since.
 > The warning below still holds and matters more with age: **every peer number here is stale.**

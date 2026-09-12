@@ -385,19 +385,19 @@ func (r *resident) encodeG4Phase1(e *Encoder, L *residLayer) {
 	g := r.g4moe
 	ml := L.g4moe
 	// dense branch → g4x1 (xd = preFFN(h), gelu-tanh GeGLU, own post-norm)
-	e.Dispatch(r.pRms, 256, 256, r.x, ml.preFFN, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, ml.preFFN, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 	e.DispatchTG(r.pSA, (2*g.denseInter)*32, 256, r.H*2, ml.denseGuW, ml.denseGuS, r.mq, r.mSc, r.gu, r.uH)
 	e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.denseInter*4), r.dq, r.dSc, g.uDenseInter, r.uAct)
 	e.Dispatch(r.pGemv, r.H*32, 32, ml.denseDW, ml.denseDS, r.dq, r.dSc, g.g4x1, g.uDenseInter)
-	e.Dispatch(r.pRmsF32, 256, 256, g.g4x1, ml.postFFN1, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, g.g4x1, ml.postFFN1, r.uH, r.uEps, r.uAddOne)
 	// router on RAW h: weightless out-of-place norm → pure-f32 proj → top-k → per-expert-scale
-	e.Dispatch(g.pRmsNW, 256, 256, r.x, g.g4rn, r.uH, r.uEps)
+	e.Dispatch(g.pRmsNW, tgReduceNorm, tgReduceNorm, r.x, g.g4rn, r.uH, r.uEps)
 	e.Dispatch(g.pRouterF32, g.nE*32, 32, ml.routerW, g.g4rn, g.rLogits, r.uH)
 	e.Dispatch(g.pRoute, 1, 1, g.rLogits, ml.routerBias, g.rIdx, g.rWgt,
 		g.uNE, g.uK, g.uSig0, g.uNorm1, g.uScale1, g.uOne, g.uOne)
 	e.Dispatch(g.pScaleWgt, g.topK, g.topK, g.rWgt, g.rIdx, ml.perExpertScale, g.uK)
 	// expert-branch input: xe = preFFN2(h) → mq/mSc (consumed by phase 2)
-	e.Dispatch(r.pRms, 256, 256, r.x, ml.preFFN2, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, ml.preFFN2, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 }
 
 // encodeG4Phase2NonPaged runs the k selected experts out of the STACKED all-E buffers (rIdx read at
@@ -540,7 +540,7 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 		arp.Drain()
 	}
 	e := r.q.Begin()
-	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
 	r.recordExecErr(e.Err()) // C-09
@@ -553,9 +553,9 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 func (r *resident) encodeG4Join(e *Encoder, L *residLayer) {
 	g := r.g4moe
 	ml := L.g4moe
-	e.Dispatch(r.pRmsF32, 256, 256, g.g4x2, ml.postFFN2, r.uH, r.uEps, r.uAddOne)
-	e.Dispatch(r.pRes, r.H, 256, g.g4x1, g.g4x2)                                 // g4x1 += g4x2
-	e.Dispatch(r.pRmsF32, 256, 256, g.g4x1, ml.postFFN, r.uH, r.uEps, r.uAddOne) // g4x1 = postFFN(x1+x2)
-	e.Dispatch(r.pRes, r.H, 256, r.x, g.g4x1)                                    // r.x = h + comb
-	e.Dispatch(g.pScaleVec, r.H, 256, r.x, ml.uLayerScalar)                      // r.x *= layerScalar
+	e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, g.g4x2, ml.postFFN2, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRes, r.H, 256, g.g4x1, g.g4x2)                                                   // g4x1 += g4x2
+	e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, g.g4x1, ml.postFFN, r.uH, r.uEps, r.uAddOne) // g4x1 = postFFN(x1+x2)
+	e.Dispatch(r.pRes, r.H, 256, r.x, g.g4x1)                                                      // r.x = h + comb
+	e.Dispatch(g.pScaleVec, r.H, 256, r.x, ml.uLayerScalar)                                        // r.x *= layerScalar
 }

@@ -2,10 +2,12 @@ package decoder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -300,6 +302,23 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, lerr
 		}
+		// L2 (docs/task-int4-layout-2026-09.md): a .giw bakes its int4 representation
+		// in at WRITE time (giwWriter.target), so unlike a GGUF/safetensors load —
+		// where wantsCanonicalInt4 decides needCanonical from THIS opts.Backend before
+		// a byte is quantized — the reader has to check the file's promise against
+		// what THIS Load actually needs. giwReader.weightMat already refuses a kind-5
+		// tensor this core can't run (wrong arch/shape); this catches the other named
+		// mismatch — a kind-5 file loaded under a backend that needs canonical (e.g.
+		// Backend:"metal") — which withResidency's own decline does NOT fail loudly
+		// for (it logs and falls back to CPU/staged, which is non-fatal by design but
+		// not the "fails at load" contract L2 requires for a wrong-representation file).
+		if wantsCanonicalInt4(opts.Backend, be) {
+			if n := repackedOnlyInt4Count(w); n > 0 {
+				_ = mmap.Unmap(data)
+				closeBackend(be)
+				return nil, fmt.Errorf("decoder: %s: %d int4 tensor(s) are stored row4-only (kind 5, a cpu-arm64 prequant target) but Backend %q needs canonical bytes — rebuild with `go run ./cmd/prequant -target <matching this backend>` (or delete the stream-weights cache so it rebuilds automatically)", dir, n, opts.Backend)
+			}
+		}
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
@@ -362,7 +381,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	w, err := loadWeights(dir, quant, opts.EmbedInt4, lora)
+	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), lora)
 	if err != nil {
 		closeBackend(be)
 		return nil, err
@@ -378,7 +397,30 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolveEOSIDs(dir, &w.Cfg), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}).withBackendNames(opts.Backend, beErr)
+	// M-04 (docs/audit-2026-09-10.md): write the RESOLVED EOS set — config.json plus any extra
+	// ids generation_config.json adds — back into w.Cfg.EOSTokenID, not just onto this Model's
+	// own eosIDs field. w.Cfg is what a .giw bundle serializes (internal/prequant, via
+	// SerializeWeightsToForTarget), and a .giw's own Load branch reads eosIDs straight from
+	// w.Cfg.EOSIDs() with no directory to re-resolve generation_config.json from — so without
+	// this, a checkpoint whose stop ids live only in generation_config.json (Qwen3:
+	// <|endoftext|> 151643 beside config.json's <|im_end|> 151645) loses the extra id the moment
+	// it round-trips through `cmd/prequant`, and a completion that emits it runs to max_tokens
+	// instead of stopping. Cfg.EOSTokenID has no other reader that needs the UNRESOLVED
+	// config.json-only value (EOSIDs() is its only consumer anywhere in the tree), so
+	// overwriting it here is safe.
+	// resolveEOSIDs looks for generation_config.json via os.DirFS(eosDir) — a real DIRECTORY.
+	// For a .gguf load, dir is the FILE path, so os.DirFS(dir) can never open anything inside it
+	// (the fallback decoder/gguf.go:107-108's own comment claims); generation_config.json for a
+	// GGUF conversion lives beside the file, in its parent directory, same as M-04 found.
+	eosDir := dir
+	if strings.HasSuffix(dir, ".gguf") {
+		eosDir = filepath.Dir(dir)
+	}
+	resolvedEOS := resolveEOSIDs(eosDir, &w.Cfg)
+	if raw, err := json.Marshal(resolvedEOS); err == nil {
+		w.Cfg.EOSTokenID = raw
+	}
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.

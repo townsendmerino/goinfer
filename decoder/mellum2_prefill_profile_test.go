@@ -84,13 +84,7 @@ func TestMellum2PrefillProfile(t *testing.T) {
 	// the embedding's share of the total (4 layers amortize it over 7x less work);
 	// the LM head is excluded by construction, since forwardLayersN stops at the
 	// layer stack.
-	path := os.Getenv("GOINFER_MELLUM_CKPT")
-	if path == "" {
-		path = os.Getenv("HOME") + "/models/mellum2-unq"
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no Mellum2 checkpoint (%v)", err)
-	}
+	path := assetPath(t, "GOINFER_MELLUM_CKPT")
 	quant := os.Getenv("GOINFER_BENCH_QUANT")
 	if quant == "" {
 		quant = "int8int8"

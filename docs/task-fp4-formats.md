@@ -82,7 +82,7 @@ difference is bandwidth or arithmetic.
 ## B — MXFP4 beyond gpt-oss
 
 Today MXFP4 handling is entangled with the gpt-oss family (`forward_gptoss.go`,
-`gptoss_safetensors.go`, `stackedExperts` routing in `decoder/gguf.go:850`). Establish what is
+`gptoss_safetensors.go`, `stackedExperts` routing in `decoder/gguf.go:851`). Establish what is
 family-specific and what is format-general.
 
 Note one real trap already recorded in the tree: `decoder/gptoss_safetensors.go:17` documents that MXFP4

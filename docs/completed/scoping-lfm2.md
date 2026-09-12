@@ -1,5 +1,32 @@
 # Scoping: LFM2.5-2.6B as an EXPERIMENTAL family
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **SHIPPED, 2026-09-12 — the status line below was stale by twelve days.** The "build NOT
+> started" line under it describes the state as of 2026-08-31, the day this doc was last edited —
+> but the build it scoped landed THAT SAME DAY, in `7098769` ("G1: LFM2.5 as an experimental
+> family — and two silent bugs the forward hid"). It has since gone one tier past this doc's own
+> "experimental, T1 tiny-golden" ceiling: `testdata/parity_manifest.json`'s `lfm2` row is
+> `status: "validated"`, `method: "full-forward-oracle"`, argmax 100.0% / cosine 1.0 against HF
+> f32 LFM2.5-2.6B on `linux-62gb`, dated 2026-09-07 — a T3 real-checkpoint result, not the T1 this
+> scoping asked for. Two things the scoping never owned, left here rather than invented at
+> archival:
+> - **GGUF loader.** The capability matrix (`docs/capability-matrix.md:111`) shows `lfm2` as
+>   `safetensors` only. llama.cpp supports arch `lfm2` natively and an official
+>   `LiquidAI/LFM2.5-2.6B-GGUF` checkpoint exists — this doc's own last line named the gap and
+>   left it there. Filed as `docs/queue-correctness.md`'s **G12**.
+> - **Residency.** `FeatShortConv` is unimplemented on every backend, by the feature-gate's own
+>   design (§G of `decoder/features.go`: declines rather than mis-runs) — LFM2 is CPU-only.
+>   Lifting that is a separate decision, not filed here: architecturally small if taken (a
+>   depthwise causal conv over a rolling K-1 window, the same shape as the Mamba-2 conv this doc's
+>   §B already found reusable), but residency is a capacity/priority call this scoping's brief
+>   never asked, so it stays a noted option rather than a queued item.
+
 **Status (updated 2026-08-31):** scoping COMPLETE, build NOT started, and **no longer
 freeze-gated — the core-numerics freeze was LIFTED 2026-08-18/19** (`docs/ollama-chase.md`
 §"Formerly freeze-blocked"). This page said "cannot land until the v1.0 tag lifts the freeze" for

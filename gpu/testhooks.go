@@ -1,8 +1,15 @@
-//go:build goinfer_testhooks
+//go:build gpu && goinfer_testhooks
 
 // Code relocated by the B-08 build-tag pass: these are test-only hooks, compiled
 // only under -tags goinfer_testhooks so they are NOT part of the public API
 // (audit B-08). See RELEASING.md. Imports are added to satisfy the moved bodies.
+//
+// HAND-MAINTAINED, NOT MACHINE-GENERATED — despite this file's former name
+// (testhooks_gen.go, renamed 2026-09-11, audit-2026-09-02.md N-41; a separate
+// same-day fix gave it back the missing `gpu` tag this build line requires —
+// see git history). There is no //go:generate directive and nothing
+// regenerates it; edit it directly like any other file. Mirrors
+// decoder/testhooks.go and cuda/testhooks.go.
 
 package gpu
 

@@ -956,9 +956,15 @@ def main() -> int:
           f"rule below; {len(_internal)} excluded as docs/internal/, which is gitignored and so "
           f"resolves on this machine only). A document that leaves this denominator leaves the "
           f"lint silently.")
-    print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s), "
-          f"{len(paths) - len(unkeyable)} path:line citation(s) across {ndocs} live document(s), and "
-          f"{len(bresolved)} bare file reference(s) in the queue (existence only).")
+    # SCOPE STATED PRECISELY (N-41, audit-2026-09-02.md, found 2026-09-11): commit-SHA validation
+    # reads docs/QUEUE.md ONLY (see `text = QUEUE.read_text()` above) — it does NOT cover the ~51
+    # other SHA citations in docs/queue-engineering.md / docs/queue-release.md. Only the path:line
+    # check runs across every live document. The old wording ("N commit citation(s), M path:line
+    # citation(s) across K live document(s)") let "across K live documents" read as covering both
+    # clauses; it covers only the second.
+    print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s) in "
+          f"docs/QUEUE.md, {len(paths) - len(unkeyable)} path:line citation(s) across {ndocs} live "
+          f"document(s), and {len(bresolved)} bare file reference(s) in the queue (existence only).")
     if unkeyable:
         print(f"  {len(unkeyable)} path citation(s) are EXISTENCE-CHECKED ONLY — their line content "
               f"does not discriminate, so a shift in them is invisible.")

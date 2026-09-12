@@ -47,10 +47,7 @@ func TestP13_mmapAliasRisk_classifiesDTypes(t *testing.T) {
 // so the structural fact is the testable one.
 func TestP13_realCheckpointReleases(t *testing.T) {
 	requireHeavyModel(t)
-	dir := os.Getenv("GOINFER_MELLUM_CKPT")
-	if dir == "" {
-		dir = os.Getenv("HOME") + "/models/mellum2-unq"
-	}
+	dir := assetPath(t, "GOINFER_MELLUM_CKPT")
 	if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
 		t.Skipf("no safetensors checkpoint at %s", dir)
 	}
@@ -91,10 +88,7 @@ func TestP13_rssAfterLoad(t *testing.T) {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1)")
 	}
 	requireHeavyModel(t)
-	dir := os.Getenv("GOINFER_MELLUM_CKPT")
-	if dir == "" {
-		dir = os.Getenv("HOME") + "/models/mellum2-unq"
-	}
+	dir := assetPath(t, "GOINFER_MELLUM_CKPT")
 	if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
 		t.Skipf("no checkpoint at %s", dir)
 	}

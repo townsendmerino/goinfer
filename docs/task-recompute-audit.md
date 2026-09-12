@@ -31,7 +31,11 @@
 > corrected status. Also: aikit was bumped to v1.33.0 in the same round (`gpu` stays v0.32.0,
 > pinned consistently by every module now — metal's go.mod was itself stale at v0.30.1 until this
 > bump); v1.33.0 ships S-03's NEON quantiser (built 2026-09-03, per aikit's own tracking, unmeasured
-> as of that note) but not yet `MatmulBTW4A8Batch` — R-06 still needs the batch-matmul half.
+> as of that note) but not yet `MatmulBTW4A8Batch` — R-06 still needs the batch-matmul half. **Since
+> shipped:** aikit v1.34.0 added it; R-06's own table row below has the current disposition (wired
+> behind `GOINFER_W4A8_BATCH`, measured, PARKED default-off — inside the ambiguous 1.05×/1.15×
+> park/ship zone). This paragraph is a snapshot of the v1.33.0 round and is left as the historical
+> record of that state, not updated in place.
 > Cross-references: `docs/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
 > `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
 > narrow state snapshot"), `docs/task-freetoken-techniques.md` (Lead 1), aikit
@@ -57,7 +61,7 @@
 | id | what is recomputed | where | size of the redo | fix shape | status |
 |---|---|---|---|---|---|
 | **R-00** | a plain turn reuses resident KV rows a block-spec or draft-model generation overwrote | `decoder/blockspec.go:195`, `decoder/speculative.go:125-130` — neither calls `residentForgetIDs` | wrong output, silently | forget (or commit) on both paths; a test that alternates the paths | **bug — fix first** |
-| **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:109` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | **phase 0 fixed 2026-09-03** (exact-extension reuse; CUDA-hardware scenarios unrun); phase 1/2 open; L-05 |
+| **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:120` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | **phase 0 fixed 2026-09-03** (exact-extension reuse; CUDA-hardware scenarios unrun); phase 1/2 open; L-05 |
 | **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | **fixed 2026-09-03** |
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
@@ -86,8 +90,8 @@ positions are inherent, not recompute.
   `resident_reuse.go`, `spec_eagle.go`, `spec_ngram.go`. `blockspec.go` does not claim `resBusy`
   either.
 - **Mechanism:** `resIDs` is written only by `residentCommitIDs` at the end of a completed plain
-  generation (`decoder/model.go:1473`) and read by `residentReuseLen` at the start of the next
-  (`decoder/model.go:1254-1248`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
+  generation (`decoder/model.go:1515`) and read by `residentReuseLen` at the start of the next
+  (`decoder/model.go:1296-1248`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
   sampled one to `Model.Generate` on the **same** `*Model` (`internal/serveapp/openai.go`, the
   `--drafter` branch). So: plain turn A commits A's ids → greedy turn B prefills B over the same
   positional rows → sampled turn C whose prompt extends A matches A's ids and skips the prefix,
@@ -121,11 +125,11 @@ positions are inherent, not recompute.
   needs a much heavier harness than `BlockSpec.generate`'s synchronous call, and R-03 (which
   upgrades the forget to a commit) is the natural point to build that harness rather than
   duplicating it now for a single-line change whose shape is otherwise identical to the
-  already-tested `decoder/model.go:1254-1248` pattern.
+  already-tested `decoder/model.go:1296-1248` pattern.
 
 ### R-01 · The hybrid families re-prefill the whole conversation every turn (resident path)
 
-- **Where:** `decoder/resident_reuse.go:109` — `if m.hasRecurrentState() {`, added
+- **Where:** `decoder/resident_reuse.go:120` — `if m.hasRecurrentState() {`, added
   2026-09-02 after repeated identical greedy prompts on qwen3.6-35B-A3B decoded from the previous
   generation's tail state. `decoder/forwardn.go:134-145` is the shared predicate;
   `cuda/resident.go:329` holds the per-layer `dnWin`/`dnState` that are mutated in place and
@@ -137,8 +141,9 @@ positions are inherent, not recompute.
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only
   hybrid-specific refusal on that path is `reconcile`'s reset after a mid-sweep rollback
-  (`decoder/session.go:98-102`). So `docs/qwen3_5_moe.md:115` ("falls back to full recompute") is
-  stale for the case that matters; correct it with the test below.
+  (`decoder/session.go:98-102`). So `docs/completed/qwen3_5_moe.md:132` ("falls back to full
+  recompute") was stale for the case that matters; corrected 2026-09-12 alongside that doc's
+  archival, with the test below already the evidence for the fix.
 - **Phase 0 — exact extension, no snapshot.** Replace the blanket refusal with the staged rule:
   for a recurrent family, `residentReuseLen` returns `len(m.resIDs)` when the prompt extends the
   entire committed sequence by at least one token, else 0. The existing cap (`len(prompt)-1`) makes
@@ -215,7 +220,7 @@ positions are inherent, not recompute.
 ### R-02 · A cancelled generation forgets a prefix that is intact
 
 - **Where:** `generateInto`'s `select { case <-ctx.Done(): g.err = ctx.Err(); return ... }` before
-  `out <- next` (`decoder/model.go:1338`, the send that M8 made cancellable).
+  `out <- next` (`decoder/model.go:1380`, the send that M8 made cancellable).
 - **Mechanism:** at that point the last forward has completed and been sampled, `next` has not been
   forwarded, and `generated` holds exactly the tokens whose K/V (and, for a hybrid, whose recurrent
   state) the cache holds. The cache is as consistent as it is at the commit two branches later; the
@@ -235,7 +240,7 @@ positions are inherent, not recompute.
   `decoder/model.go` is a parity-manifest core file; `scripts/refresh_parity_hashes.sh` was run
   after this edit (31/31 forward goldens that ran stayed green, `deps_hash` refreshed for 28
   families, `validated_at` untouched). Full decoder suite green.
-- **Correction (2026-09-04, docs/review-2026-09-04.md V-04): the fix above was incomplete.** An
+- **Correction (2026-09-04, docs/completed/review-2026-09-04.md V-04): the fix above was incomplete.** An
   iteration is `top-of-loop check → sample (µs) → send → Forward (ms)`; a cancel that arrives
   during Forward — the dominant interval by far — is not observed until the TOP-OF-LOOP select on
   the NEXT iteration, not the send-select this fix originally targeted. At that point the previous
@@ -244,7 +249,7 @@ positions are inherent, not recompute.
   consistent there as at the send-select exit — but the top-of-loop exit was never wired to commit,
   so most real cancels (the ones landing during Forward, not during the microsecond sample/send
   window) still cold-prefilled. Fixed: the same `if useGPU { m.residentCommitIDs(prompt, generated)
-  }` added to the top-of-loop exit too (`decoder/model.go:1338`). Mutation-checked at
+  }` added to the top-of-loop exit too (`decoder/model.go:1380`). Mutation-checked at
   `-count 100`: without this second commit the existing test fails intermittently (~35/100 runs,
   confirming V-10's "scheduling-dependent" characterization empirically); with it, 100/100 pass,
   and `-race -count 20` alongside the R-03 sibling test is clean.
@@ -500,7 +505,8 @@ listed so the inventory is complete.
 0. **R-00** (the bug), then **R-02** and **R-03** for attention-only families: three small commits,
    all gated on token-identity vs cold, all worth having before any measurement.
 1. **R-01 phase 0**: the exact-extension rule, the two-turn tests, L-05's TTFT rule on the 35B.
-   Correct `docs/qwen3_5_moe.md:115` in the same commit.
+   (Shipped 2026-09-03; the `docs/completed/qwen3_5_moe.md:132` correction it called for landed
+   2026-09-12, with the archival.)
 2. **R-01 phase 1**: `dnWin`/`dnState` snapshot via `CopyDeviceBatch`; lift `specRollbackSafe`'s
    refusal for the hybrid families on the resident path; measure per round as spec/09 did.
 3. **R-04** (P-18's cell first) and **R-01 phase 2** together — one parking mechanism.
@@ -514,7 +520,7 @@ listed so the inventory is complete.
 `hasRecurrentState`, `resetRecurrent`), `decoder/forwardn.go` (`hasRecurrentState`,
 `specRollbackSafe`), `decoder/blockspec.go`, `decoder/speculative.go`, `decoder/moepaging.go`,
 `decoder/attention.go`, `internal/serveapp/openai.go`; `docs/spec/09-mtp-heads.md` (snapshot
-pricing, 2026-08-28); `docs/qwen3_5_moe.md` §"Hybrid cache"; `docs/audit-2026-09-02.md` (C-12,
+pricing, 2026-08-28); `docs/completed/qwen3_5_moe.md` §"Hybrid cache"; `docs/audit-2026-09-02.md` (C-12,
 P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aikit
 `gpu/cuda_copy.go`, `gpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
 `docs/task-simd-audit.md` (S-01, S-02, S-03, S-09.1).

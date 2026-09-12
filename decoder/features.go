@@ -489,8 +489,12 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// Gated-DeltaNet: the deltanet.ptx mixer (conv ring + delta rule + gated norm) plus the
 		// family's fused double-width q_proj and sigmoid output gate. Declared 2026-08-20 with
 		// the end-to-end gate, not ahead of it — the same discipline the GPT-2/gpt-oss entries
-		// record. This admits the DENSE sibling only: qwen3_5_moe and qwen3_next additionally
-		// need FeatMoEGatedShared, which CUDA still does not implement.
+		// record. This admits BOTH siblings: the dense one needs only this feature, and
+		// qwen3_5_moe/qwen3_next additionally need FeatMoEGatedShared (declared above, same
+		// day) — TestQwen35ResidentParityCUDA covers both (N-34 (09-02): a stale comment here
+		// once said CUDA "still does not implement" FeatMoEGatedShared, written before or
+		// alongside the entry two lines up that declares it; the map and the prose disagreed
+		// within the same block).
 		FeatDeltaNet: true,
 		// FeatRopeMscale: YaRN's attention_factor, folded into cos/sin by rope / rope_kv /
 		// rope_kv_batched (cuda/glue.cu, gemv_fwd.cu, prefill_batched.cu) and threaded per LAYER

@@ -39,14 +39,14 @@ func TestGptOssResidentParityReal20B(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model from ~/models)")
 	}
-	// modelPath, NOT a direct environment read: the asset registry owns GOINFER_GPTOSS_GGUF and
-	// TestAssetRegistry_noDirectReads fails any second resolution of it, so the gate and the sweep
-	// preflight cannot drift apart on which checkpoints count as present. That gate is a regex
-	// over SOURCE TEXT, so it fires on the call spelled out in a comment too -- as this one did.
-	path := modelPath("gpt-oss-20b-MXFP4.gguf")
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no gpt-oss checkpoint at %s: %v", path, err)
-	}
+	// decoder.AssetPathForTest, NOT modelPath: this used to call modelPath("gpt-oss-20b-MXFP4.gguf"),
+	// which reads GOINFER_MODELS_DIR — a DIFFERENT variable from the one the comment claimed to
+	// honour. It satisfied TestAssetRegistry_noDirectReads (a source-text regex over
+	// os.Getenv(...) of that name, which this call never spelled) while actually bypassing
+	// the registry's real GOINFER_GPTOSS_GGUF override entirely (audit-2026-09-02.md N-41, found
+	// 2026-09-11). AssetPathForTest resolves the SAME registry entry decoder's own
+	// TestGptOssSafetensors_vsGGUF uses, and skips with the reason when absent.
+	path := decoder.AssetPathForTest(t, "GOINFER_GPTOSS_GGUF")
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
@@ -157,10 +157,7 @@ func TestGptOssResidentMemGuardDeclines(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
 	}
-	path := modelPath("gpt-oss-20b-MXFP4.gguf") // see the note in the parity gate above
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no gpt-oss checkpoint at %s", path)
-	}
+	path := decoder.AssetPathForTest(t, "GOINFER_GPTOSS_GGUF") // see the note in the parity gate above
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}

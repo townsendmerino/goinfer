@@ -52,10 +52,7 @@ func TestA3MoERouteFlips(t *testing.T) {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1): prints evidence for a judgement, asserts only " +
 			"what holds under either story. Not a gate.")
 	}
-	path := os.Getenv("GOINFER_MELLUM_CKPT")
-	if path == "" {
-		t.Skip("set GOINFER_MELLUM_CKPT to a batched-path MoE checkpoint")
-	}
+	path := assetPath(t, "GOINFER_MELLUM_CKPT")
 	requireHeavyModel(t)
 	K := 2048
 	if v := os.Getenv("GOINFER_MELLUM_K"); v != "" {

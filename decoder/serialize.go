@@ -46,20 +46,31 @@ import (
 // f32  = uint32 len + len*4 LE-float32 bytes   (len 0 ⇒ nil on load)
 // i8   = uint32 len + len bytes                (aliased on load)
 // raw  = uint32 len + len bytes                (aliased on load)
-// weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4|4 q4-row4); if non-empty:
-//             int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
-//             kind 4 (v7+) is kind 3's arrays (q4s, q4 — canonical, always present
-//             and always authoritative) followed by q4Row4Scales, q4Row4 (the arm64
+// weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4|4 q4-row4|5 q4-row4-only); if
+//             non-empty: int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
+//             kind 4 (v7+, legacy — no longer emitted, still read) is kind 3's arrays
+//             (q4s, q4 — canonical) followed by q4Row4Scales, q4Row4 (the arm64
 //             split-half + 4-row-interleaved layout, docs/task-w4a8-neon-bandwidth.md
-//             "Format follow-on") — the on-disk form of the row4 layout the load-time
-//             repack (decoder/weightmat.go's repackW4A8Row4IfEligible) otherwise
-//             builds in RAM. Opt-in at prequant time (SerializeWeightsRow4/
-//             SerializeWeightsToRow4/StreamTranscodeGGUF's row4 param) for shapes
+//             "Format follow-on") — both layouts, so any reader could use the file.
+//             Opt-in via SerializeWeightsRow4/SerializeWeightsToRow4, for shapes
 //             RepackW4A8Row4/RepackW4A8Row4Scales accept; every other int4 tensor
-//             still writes kind 3. Bit-identical dispatch either way
-//             (TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical) — this is a storage
-//             choice, not a numerics one, so no golden depends on which kind a
-//             tensor took.
+//             still writes kind 3.
+//
+//             kind 5 (v11+) is q4Row4Scales, q4Row4 ALONE — no canonical arrays at
+//             all, the on-disk form of aikit audit M-22's repacked-only WeightMat
+//             (docs/task-int4-layout-2026-09.md's L2). Chosen per tensor by
+//             giwWriter.target: only on a cpu-arm64 target, only for a tensor whose
+//             call site opted into kind-5 eligibility (weightMat, not
+//             weightMatKind3Only — see that function's doc for which tensors are
+//             excluded and why), and only when repackRow4ForEmit succeeds for this
+//             shape/core; everything else stays kind 3. Loaded with
+//             linalg.WrapInt4Row4Only, which declines (a named *SerializeError, not a
+//             panic or silent fallback) when Int4Row4Usable is false for the
+//             reader's own core — a kind-5 file is a promise to ONE target, unlike
+//             kind 4's "usable anywhere" portability. Bit-identical dispatch either
+//             way (TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical) — this is a
+//             storage choice, not a numerics one, so no golden depends on which kind
+//             a tensor took.
 //
 // v2 added the per-layer hybrid tail so the qwen3_5_moe (DeltaNet + gated-softmax)
 // family round-trips through .giw; v1 blobs (no tail) are rejected by the version
@@ -73,8 +84,8 @@ import (
 
 const (
 	giwMagic        = "GINFW"
-	giwVersion      = 10 // v10: no layout change — a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
-	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate; older bundles stay valid and fall back to inference)
+	giwVersion      = 11 // v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate, v11 kind 5; older bundles stay valid and fall back to inference)
 	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
 	giwV10GraniteQK = 10 // the version at/after which a dense-granite bundle's q/k are known un-permuted (audit C-05)
 	giwV6Tail       = 6  // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
@@ -193,6 +204,38 @@ func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error)
 	return wr.n + 4, nil
 }
 
+// SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE
+// consumer (docs/task-int4-layout-2026-09.md's L2): on a cpu-arm64 target, every
+// eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5
+// (row4-only — no canonical arrays at all) instead of kind 3; every other target,
+// including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
+// SerializeWeights. This is what internal/prequant.Transcode/EnsureCachedGIW and
+// cmd/prequant drive now — SerializeWeightsRow4/kind 4 is legacy, kept for its own
+// "usable on any core" contract, not for this one.
+func SerializeWeightsForTarget(w *Weights, id string, target GIWTarget) ([]byte, error) {
+	wr := &giwWriter{target: target}
+	if err := wr.writeBundle(w, id); err != nil {
+		return nil, err
+	}
+	wr.u32(crc32.ChecksumIEEE(wr.buf))
+	return wr.buf, nil
+}
+
+// SerializeWeightsToForTarget is SerializeWeightsTo with SerializeWeightsForTarget's
+// target-aware kind-5 opt-in — see that function's doc for the contract.
+func SerializeWeightsToForTarget(out io.Writer, w *Weights, id string, target GIWTarget) (int64, error) {
+	wr := &giwWriter{sink: out, target: target}
+	if err := wr.writeBundle(w, id); err != nil {
+		return wr.n, err
+	}
+	var crc [4]byte
+	binary.LittleEndian.PutUint32(crc[:], wr.crc)
+	if _, err := out.Write(crc[:]); err != nil {
+		return wr.n, err
+	}
+	return wr.n + 4, nil
+}
+
 // writeBundle writes the bundle body (everything but the trailing CRC) via the
 // writer's current sink (buffer or stream). Shared by SerializeWeights and
 // SerializeWeightsTo so the field order can't drift between them or from the reader.
@@ -253,7 +296,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 
 	wr.weightMat(&w.Embed)
 	wr.weightMat(&w.LMHead)
-	wr.weightMat(&w.PosEmbed)
+	wr.weightMatKind3Only(&w.PosEmbed)
 	wr.f32(w.FinalNorm)
 	wr.f32(w.FinalNormBias)
 
@@ -896,14 +939,27 @@ type giwWriter struct {
 	arch *Architecture // set in writeBundle; gates the v4 gemma4 model-level + per-layer tail
 
 	// row4 opts weightMat into emitting kind 4 (the on-disk split-half + 4-row
-	// layout) for every eligible int4 tensor, instead of always kind 3. Never the
-	// default: set only by SerializeWeightsRow4/SerializeWeightsToRow4/
-	// StreamTranscodeGGUF's row4 parameter — docs/task-w4a8-neon-bandwidth.md's
-	// "Format follow-on" requires this be opt-in, since a tensor's WeightMat may
-	// ALREADY carry an in-RAM row4 repack (repackW4A8Row4IfEligible, wired into
-	// the GGUF/safetensors streaming loaders unconditionally) that has nothing to
-	// do with whether THIS serialize call should bake it onto disk.
+	// layout, BOTH canonical and row4) for every eligible int4 tensor, instead of
+	// always kind 3. Legacy: set only by SerializeWeightsRow4/SerializeWeightsToRow4
+	// (kept for their own "usable on any core" portability and their existing
+	// tests) — no current production caller sets it; StreamTranscodeGGUF and
+	// internal/prequant now drive target (below) instead. docs/task-w4a8-neon-
+	// bandwidth.md's "Format follow-on" requires this be opt-in, since a tensor's
+	// WeightMat may ALREADY carry an in-RAM row4 repack (repackW4A8Row4IfEligible,
+	// wired into the GGUF/safetensors streaming loaders unconditionally) that has
+	// nothing to do with whether THIS serialize call should bake it onto disk.
 	row4 bool
+
+	// target opts weightMat into emitting kind 5 (row4-only — NO canonical arrays)
+	// for every eligible int4 tensor on a cpu-arm64 target, instead of kind 3
+	// (docs/task-int4-layout-2026-09.md's L2 — the one-representation-per-target
+	// policy, .giw's counterpart to wantsCanonicalInt4's in-RAM decision).
+	// GIWTargetNone (the zero value) keeps kind 3 for every int4 tensor, exactly
+	// today's default — so every existing caller that never sets this field is
+	// unaffected. Checked ahead of row4 in weightMat: a caller has no reason to set
+	// both, but if it did, the newer, narrower promise (one target) should win over
+	// the older, broader one (any core).
+	target GIWTarget
 }
 
 func (w *giwWriter) raw(b []byte) {
@@ -950,7 +1006,34 @@ func (w *giwWriter) i8(s []int8) {
 	}
 }
 
-func (w *giwWriter) weightMat(m *linalg.WeightMat) {
+// weightMat writes m, eligible for kind 5 (row4-only) under a cpu-arm64 target —
+// see weightMatKind3Only for the tensors that must never take kind 5.
+func (w *giwWriter) weightMat(m *linalg.WeightMat) { w.weightMatKind(m, true) }
+
+// weightMatKind3Only is weightMat for a tensor that must never take kind 5
+// regardless of target — it always writes kind 3 (or, under the legacy row4
+// opt-in, kind 4) for an int4 tensor. Two independent reasons land a call site
+// here, per docs/task-int4-layout-2026-09.md's L2:
+//
+//   - MoE-paged experts (l.Experts[*], gemma4's mo.expertsGateUp/expertsDown): the
+//     doc's ground rule — decoder/moepaging.go reads these off the mmap with no
+//     load-time repack step, so the file must carry whatever layout the pager
+//     needs, chosen once at write time, not per-reader. (decoder/layerpaging.go's
+//     DENSE per-layer pager pages QProj/KProj/VProj/OProj/GateProj/UpProj/DownProj
+//     too, and already prefers WeightMat.MappedSpanRow4 over MappedSpan — so on
+//     inspection it does NOT need this exclusion; those stay kind-5-eligible via
+//     plain weightMat. Flagged as a finding in the L2 status line rather than
+//     silently narrowing the ground rule to MoE alone.)
+//   - Not yet scoped: KDA/DeltaNet/qattn mixer projections and gemma4's fused-MoE
+//     router (mo.routerProj). These are absent from Weights.matmulWeights(), which
+//     decoder.Load's post-load kind-5-vs-backend check walks (see repackedOnlyInt4Count)
+//     — routing them through plain weightMat would let a kind-5 instance of one of
+//     these slip past that check, relying solely on the (soft, logged-not-fatal)
+//     residency decline downstream. Kept kind-3-only until they get their own
+//     entry in that census, rather than widening the census for this cut.
+func (w *giwWriter) weightMatKind3Only(m *linalg.WeightMat) { w.weightMatKind(m, false) }
+
+func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	if m.Rows() == 0 {
 		w.raw([]byte{0}) // empty
 		return
@@ -964,14 +1047,21 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 	switch {
 	case isQ4:
 		kind = 3
-		// row4 emission is purely a function of the opt-in flag + this tensor's
-		// shape — NEVER of whatever repack state already happens to sit in RAM
-		// (repackW4A8Row4IfEligible populates q4Row4 unconditionally for every
-		// GGUF/safetensors-streamed int4 tensor on an arm64 box, regardless of
-		// whether THIS serialize call is the opt-in prequant path). Recomputing
-		// from canonical q4/q4s here, rather than reading m.Int4Row4(), keeps
-		// kind 3 the default for every existing caller unless w.row4 is set.
-		if w.row4 {
+		// Row4 emission (kind 4 or 5) is purely a function of the writer's own
+		// opt-in state + this tensor's shape — NEVER of whatever repack state
+		// already happens to sit in RAM (repackW4A8Row4IfEligible populates
+		// q4Row4 unconditionally for every GGUF/safetensors-streamed int4 tensor
+		// on an arm64 box, regardless of whether THIS serialize call is a
+		// prequant path at all). Recomputing from canonical q4/q4s here, rather
+		// than reading m.Int4Row4(), keeps kind 3 the default for every existing
+		// caller unless w.target or w.row4 is set.
+		switch {
+		case eligible && w.target == GIWTargetCPUArm64:
+			if r4, r4s, ok := repackRow4ForEmit(q4, q4s, m.Rows(), m.Cols(), group); ok {
+				kind = 5
+				q4Row4, q4Row4Scales = r4, r4s
+			}
+		case w.row4:
 			if r4, r4s, ok := repackRow4ForEmit(q4, q4s, m.Rows(), m.Cols(), group); ok {
 				kind = 4
 				q4Row4, q4Row4Scales = r4, r4s
@@ -1005,6 +1095,9 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) {
 		w.bytesField(q4)
 		w.f32(q4Row4Scales)
 		w.bytesField(q4Row4)
+	case 5:
+		w.f32(q4Row4Scales)
+		w.bytesField(q4Row4)
 	}
 }
 
@@ -1034,9 +1127,9 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.f32(l.RouterBias) // v3: DeepSeek/GLM e_score_correction_bias
 	w.u32(uint32(len(l.Experts)))
 	for e := range l.Experts {
-		w.weightMat(&l.Experts[e].Gate)
-		w.weightMat(&l.Experts[e].Up)
-		w.weightMat(&l.Experts[e].Down)
+		w.weightMatKind3Only(&l.Experts[e].Gate)
+		w.weightMatKind3Only(&l.Experts[e].Up)
+		w.weightMatKind3Only(&l.Experts[e].Down)
 	}
 	w.weightMat(&l.SharedExpert.Gate)
 	w.weightMat(&l.SharedExpert.Up)
@@ -1148,19 +1241,19 @@ func (w *giwWriter) v9Layer(l *LayerWeights) {
 	}
 	w.raw([]byte{1})
 	k := l.kda
-	w.weightMat(&k.qProj)
-	w.weightMat(&k.kProj)
-	w.weightMat(&k.vProj)
+	w.weightMatKind3Only(&k.qProj)
+	w.weightMatKind3Only(&k.kProj)
+	w.weightMatKind3Only(&k.vProj)
 	w.f32(k.qConvW)
 	w.f32(k.kConvW)
 	w.f32(k.vConvW)
-	w.weightMat(&k.fProj)
+	w.weightMatKind3Only(&k.fProj)
 	w.f32(k.dtBias)
 	w.f32(k.aLog)
 	w.f32(k.bProj)
-	w.weightMat(&k.gProj)
+	w.weightMatKind3Only(&k.gProj)
 	w.f32(k.oNormW)
-	w.weightMat(&k.oProj)
+	w.weightMatKind3Only(&k.oProj)
 }
 
 // gemma4Layer writes the v4 Gemma 4 per-layer tail: the PLE branch, the per-layer
@@ -1185,13 +1278,13 @@ func (w *giwWriter) gemma4Layer(l *LayerWeights) {
 	w.f32(mo.postFFNNorm1)
 	w.f32(mo.preFFNNorm2)
 	w.f32(mo.postFFNNorm2)
-	w.weightMat(&mo.routerProj)
+	w.weightMatKind3Only(&mo.routerProj)
 	w.f32(mo.routerScale)
 	w.f32(mo.perExpertScale)
 	w.u32(uint32(len(mo.expertsGateUp)))
 	for e := range mo.expertsGateUp {
-		w.weightMat(&mo.expertsGateUp[e])
-		w.weightMat(&mo.expertsDown[e])
+		w.weightMatKind3Only(&mo.expertsGateUp[e])
+		w.weightMatKind3Only(&mo.expertsDown[e])
 	}
 }
 
@@ -1210,22 +1303,22 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 	case l.delta != nil:
 		w.raw([]byte{1})
 		d := l.delta
-		w.weightMat(&d.inProjQKV)
-		w.weightMat(&d.inProjZ)
+		w.weightMatKind3Only(&d.inProjQKV)
+		w.weightMatKind3Only(&d.inProjZ)
 		w.f32(d.inProjB)
 		w.f32(d.inProjA)
 		w.f32(d.convW)
 		w.f32(d.dtBias)
 		w.f32(d.negExpA) // the precomputed −exp(A_log); stored as-is, no recompute on load
 		w.f32(d.normW)
-		w.weightMat(&d.outProj)
+		w.weightMatKind3Only(&d.outProj)
 	case l.qattn != nil:
 		w.raw([]byte{2})
 		q := l.qattn
-		w.weightMat(&q.qProj)
-		w.weightMat(&q.kProj)
-		w.weightMat(&q.vProj)
-		w.weightMat(&q.oProj)
+		w.weightMatKind3Only(&q.qProj)
+		w.weightMatKind3Only(&q.kProj)
+		w.weightMatKind3Only(&q.vProj)
+		w.weightMatKind3Only(&q.oProj)
 		w.f32(q.qNorm)
 		w.f32(q.kNorm)
 	default:
@@ -1404,6 +1497,31 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			return linalg.WeightMat{}
 		}
 		return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)
+	case 5:
+		if group <= 0 {
+			r.fail(fmt.Sprintf("int4-row4-only weightMat group %d ≤ 0", group))
+			return linalg.WeightMat{}
+		}
+		// row4 arrays share kind 3/4's own want* values (a repack, not a requant —
+		// RepackW4A8Row4/RepackW4A8Row4Scales preserve length exactly).
+		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
+		q4Row4Scales := r.f32()
+		q4Row4 := r.rawAlias() // zero-copy — no canonical bytes exist in this file at all
+		if len(q4Row4) != wantQ4 || len(q4Row4Scales) != wantScales {
+			r.fail(fmt.Sprintf("int4-row4-only weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
+			return linalg.WeightMat{}
+		}
+		wm, ok := linalg.WrapInt4Row4Only(q4Row4, q4Row4Scales, rows, cols, group)
+		if !ok {
+			// Named and actionable, per docs/task-int4-layout-2026-09.md's ground rules — a
+			// kind-5 file is a promise to ONE target (the box/core that wrote it), unlike
+			// kind 4's "usable anywhere". ok=false here means Int4Row4Usable rejected this
+			// core: wrong arch (this file was written on/for arm64), or a shape this core's
+			// build cannot run the row4 kernel for.
+			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d is stored row4-only (kind 5, a cpu-arm64 prequant target) but this core cannot use that layout — rebuild with `go run ./cmd/prequant -target <this core>` (or delete the stream-weights cache so it rebuilds automatically)", rows, cols, group))
+			return linalg.WeightMat{}
+		}
+		return wm
 	default:
 		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
 		return linalg.WeightMat{}

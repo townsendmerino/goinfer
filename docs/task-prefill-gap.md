@@ -15,7 +15,7 @@
 > forecloses tensor cores on the weight term (`cuda/gemv_w4a8_batched.cu:19`) and a fused schedule
 > on the attention term (`cuda/prefill_batched.cu:156`). The CPU backend already split this contract
 > — `--cpu-fast-attention` is default ON and `--cpu-exact-prefill` buys identity back
-> (`internal/serveapp/main.go:467`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
+> (`internal/serveapp/main.go:486`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
 > rather than to bytes (`benchmarks.md` §B2). This doc extends that contract to the GPU backends and
 > sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on —
 > **measured twice on 2026-09-05; against a real f32-activation reference the fast path is equal
@@ -165,7 +165,7 @@ reusing the decode math, with the note "an MMA/flash version is a later throughp
 
 The CPU backend already faced this and split the contract: f32 prefill attention became the default
 above 512 tokens, P19's fused schedule ships under the same flag, and `--cpu-exact-prefill` is the
-documented way back to `decode == prefill` byte-identity (`internal/serveapp/main.go:356`). Metal
+documented way back to `decode == prefill` byte-identity (`internal/serveapp/main.go:359`). Metal
 built the fast path and then declined it by default on a *stream-divergence* number (54%,
 measured against its own exact path as oracle, withdrawn 2026-09-05) — a measure of whether any
 token ever differs, which is the wrong gate for quality: CUDA decode is not held to it either (`benchmarks.md` §B2, "3% near-tie parity
@@ -204,7 +204,7 @@ when, on ≥10 realistic prose prompts per model (not `prompts.json`) spanning K
 | greedy stream divergence rate | **reported, not gating** | it is what gated Metal; it measures reproducibility, not quality |
 
 **Floor.** As `--cpu-fast-attention` already does (exact below 512 prompt tokens, because the win
-scales with length and the divergence does not — `internal/serveapp/main.go:356`), each backend's
+scales with length and the divergence does not — `internal/serveapp/main.go:359`), each backend's
 fast path engages only above a prompt-length floor set where its measured win starts; short prompts
 stay exact at no cost.
 
@@ -244,7 +244,7 @@ gate it produced cannot answer the question it was built for:
 - **CUDA-decode-vs-CPU compares two implementations of the same numerics** — W4A8 on both sides —
   so a disagreement there is a defect signal. **Fast-vs-exact prefill on Metal compares two
   different numerics of the same model.** The exact (decode) path quantises activations to int8 per
-  row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:560`); the batched path
+  row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:576`); the batched path
   keeps them in f16 and dequantises the int4 weights to f16 in-kernel (`metal/prefill.go:13`–`:13`).
   They are guaranteed to disagree. The measurement in `measurements/prefill-gate-l1-2026-09-05.md`
   is a correct measurement of *how much* — it is not evidence about *which arm is wrong*.
@@ -260,7 +260,7 @@ gate it produced cannot answer the question it was built for:
 
 **What replaces it.** The reference is the CPU backend on the same GGUF with f32 activations —
 `Options{Backend:"cpu", Quant:""}` (f32 weights) where the model fits, else `Quant:"int8"`
-(weight-only per-row int8, f32 activations; `decoder/model.go:204`). Both Metal arms share identical
+(weight-only per-row int8, f32 activations; `decoder/model.go:206`). Both Metal arms share identical
 int4 weights, so the weight-requantisation error is common-mode and the comparison isolates the
 activation path. The reference's own greedy 64-token continuation is the teacher-forced token
 stream for both arms. Reference logits are computed once per (model, K) in a separate process and

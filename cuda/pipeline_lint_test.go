@@ -91,7 +91,7 @@ func TestPipelineLint_boundKernelsAreLaunched(t *testing.T) {
 // hidden it, and made the benchmark's throughput read as the shipping kernel's. A field launched
 // only from tests is precisely what this must flag.
 //
-// It DOES include build-tagged non-test files (testhooks_gen.go among them), since it reads every
+// It DOES include build-tagged non-test files (testhooks.go among them), since it reads every
 // .go in the directory rather than a tag-filtered set — so a field launched only from
 // goinfer_testhooks production code is seen. That is the opposite exposure and it is not present.
 func packageSources(t *testing.T) map[string]string {

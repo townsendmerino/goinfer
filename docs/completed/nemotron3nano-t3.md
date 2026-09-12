@@ -1,5 +1,12 @@
 # Prompt: Nemotron 3 Nano T3 real-checkpoint parity (run on the CUDA box)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **STATUS: DELIVERED.** `TestNemotron3NanoMoEReal_gate` (`decoder/nemotron_moe_real_test.go`)
 > exists and the v0.14.0 CHANGELOG records the T3 real oracle at **cosine 0.997668**, continuation
 > exact, plus a real Q4_K_M GGUF gate.

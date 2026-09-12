@@ -1,7 +1,7 @@
 # Task (goinfer): f16 group scales in the `.giw` (smaller W4A8 files)
 
 > **For:** Claude Code, in `~/tmcode/goinfer`. Deferred follow-on from
-> `docs/roadmap.md`. **This is a FILE-SIZE win only — it does NOT speed decode**
+> `docs/completed/roadmap-2026-06.md`. **This is a FILE-SIZE win only — it does NOT speed decode**
 > (see "Rationale, corrected"). It is **lossy for the CPU W4A8 path** (GPU is
 > unaffected), so it needs a cosine re-gate, and it's a **versioned-format change**
 > needing a bump + back-compat read. Lowest-value of the open follow-ons.

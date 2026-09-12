@@ -45,7 +45,7 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 	if array {
 		doc = fmt.Sprintf(`{"type":"array","minItems":1,"maxItems":1,"items":%s}`, obj)
 	}
-	n, err := compile(mustMap(doc))
+	n, err := compile(mustMap(doc), 0)
 	if err != nil {
 		return nil, fmt.Errorf("constrain: tool grammar: %w", err)
 	}

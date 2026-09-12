@@ -26,41 +26,6 @@ Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything w
 
 ## In flight
 
-**G22 · The Metal `fault 0x10` flake is an UNPINNED AUTORELEASE POOL in aikit's Encoder — fix it
-where the pool lives** — `aikit`+`mac`, **QUEUED, diagnosed 2026-08-26.**
-
-**Not a shipping bug, and not a mystery — the mechanism is already written down in this repo.**
-`metal/model.go`'s `resident.Forward` says it outright: *"the NSAutoreleasePool (begin/end) is
-per-OS-thread, and Go can migrate goroutines mid-call — draining a pool on a different thread than
-it was pushed is UB (intermittent SIGSEGV). Same discipline the CUDA backend's LockOSThread executor
-uses."* The crash is exactly that drain: `aikit/gpu.(*Encoder).End` → `e.pool.Send(selDrain)`.
-
-**Why it only ever bites tests.** goinfer's production Metal paths PIN — `resident.Forward` and
-`BuildResident` both `runtime.LockOSThread`. aikit's `Encoder` API does not: it creates its pool
-inline (three sites in `metal.go`) and drains it in `End()`, with `LockOSThread` appearing nowhere
-in aikit's production code — only in its own tests. Any caller that does not pin is on UB, and
-**97 of goinfer's 108 metal test files do not pin.** That accounts for every observed property: the
-crash is probabilistic (it needs a scheduler migration in the window), its site MIGRATES between
-runs, it survives isolation (`TestSAQVFusion` alone: 3/3 pass in <0.5 s), and it never appears in
-the shipped product.
-
-**Observed rate here 2026-08-26:** `-short` full suite 1 fail / 3 runs; without `-short` 4/4 pass;
-a clean sequential gate run passed. `docs/task-gate-runner.md` records ~50% and once 6-of-7, with
-the operator's read that the rate tracks cumulative GPU dispatch volume — consistent with a
-migration-window race.
-
-**The fix belongs in aikit, not in 97 test files.** Whoever creates the pool should pin the thread
-and unpin after the drain, making the API safe regardless of caller — the same discipline
-`aikit/gpu/cuda.go` already documents for CUDA's locked executor. Pinning per-test is the wrong
-shape: it leaves the invariant unenforced for the next caller, and the crash site migrates precisely
-because any unpinned caller can be the victim.
-
-**Coordination:** aikit is not in goinfer's `go.work`, so this needs an aikit change, a version bump
-and a goinfer `require` bump — which is why it is filed rather than started.
-
-**Gate for it:** the `-short` metal suite run N times with zero `fault 0x10` deaths (N large enough
-to beat the observed rate — 20+ given ~30-50%), plus the existing goldens unchanged.
-
 **A13 · A device-draining predecessor poisons the `attention` kernel — zeros at hd≥64, with the
 card empty and every call succeeding** — `linux`, **open, BISECTED 2026-08-13**
 
@@ -488,6 +453,27 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 
 ## Queued
+
+**G23 · `.repowise/`'s 87.6 MB stays in git history — the purge decision is still open** —
+`mac`, **filed 2026-09-11 (audit-2026-09-02.md N-41: the decision existed only in a commit
+message, invisible to anyone browsing the queues).**
+
+`13bea28` untracked and gitignored `.repowise/` (repowise's generated codebase-intelligence
+index — wiki.db 45.6 MB, duplication_cache.pkl 22.1 MB, parse_cache.pkl 6.7 MB,
+knowledge-graph.json 5.7 MB, ~370 lancedb transaction files; all regenerable from source in
+about three minutes via `repowise init`, none of it worth version control). That commit's own
+message says explicitly: **"NOT FIXED HERE: the blobs remain in history, which is already
+pushed... Purging them needs a history rewrite (`git filter-repo`) plus a force-push, which is
+a separate, deliberate decision because it rewrites shared history."**
+
+That "separate, deliberate decision" was never actually made one way or the other, and nothing
+records that it is still pending — a reader would have to know to `git log --all --grep
+repowise` to find it at all. Filed here so it stops being invisible. The blobs add ~87.6 MB to
+every clone's `.git` (`.git` was 216 MB total at the time of `13bea28`) regardless of untracking,
+since history still contains every blob.
+
+**Gate for it:** a decision — purge (via `git filter-repo`, coordinated force-push, and every
+clone/fork re-cloning) or explicitly accept the permanent clone-size cost — not a code change.
 
 **INHERITED · `scripts/shard_checkpoint.py` moved here from aikit** — `unclaimed`, **filed 2026-08-14**.
 aikit's zero-Python campaign found this script in `aikit/scripts/`, but it is goinfer's: it splits a
@@ -938,8 +924,8 @@ of them:
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
 | `decoder/forwardn.go:1118` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
-| `decoder/model.go:878` | unchanged — same freeze |
-| `metal/model.go:1079` | unchanged — Metal is on hold for core-numerics surfaces |
+| `decoder/model.go:920` | unchanged — same freeze |
+| `metal/model.go:1095` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
 reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,
@@ -971,7 +957,7 @@ marks where else the same class may live.
 rediscoveries** — unclaimed. Filed 2026-08-28.
 
 Within one day the same guard was arrived at twice, by different work, without either knowing about
-the other: `gate_cell_idle()` in `scripts/bench_peer.py:617` (re-check before every cell, refuse on
+the other: `gate_cell_idle()` in `scripts/bench_peer.py:763` (re-check before every cell, refuse on
 timeout), and a `settle()` in the snapshot-cost driver on the `linux` box. Both started as
 check-once-at-start, both were found insufficient the same way, and **both converged on the same
 non-obvious rule: refuse rather than proceed.**
@@ -1187,11 +1173,11 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 |---|---|---|
 | C-05 gemma-4 stride on snapshot restore | **fixed**, with a gate | `decoder/kvsnapshot_gemma4_test.go:10` |
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
-| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:663` |
+| C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:669` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
-| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:701` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:746` |
 | C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
 
 **These are correctness and security items, so a wrong entry costs more here than in P or B — in both
@@ -1445,7 +1431,7 @@ needlessly dropping a field the buffered path wrote.
 
 **Fixed by testing the real thing:** `hasPopulatedLayers()` checks whether any body matmul weight
 actually has `Rows() > 0`, and `writeHeadGlobals` gates the label on that instead of on which
-writer is in use. `decoder/serialize.go:789` (`hasPopulatedLayers`).
+writer is in use. `decoder/serialize.go:832` (`hasPopulatedLayers`).
 
 **The other half mattered more than the byte count.** `quantLabel()`'s own "nothing matched" case
 returns `"native"` — a real, valid quant mode, not an empty string. Measured directly on an
@@ -1599,9 +1585,9 @@ makes a HANG indistinguishable from a slow real-model gate for the first hour.
 **Deferred to post-1.0 deliberately** (the v1.0 gate's §7 scope discipline): it changes the release
 tool during a release. File, do not touch mid-flight.
 
-## B20 — `residentPrefillSeed`'s batched-prefill decline is invisible to the operator
+## B20 — `residentPrefillSeed`'s batched-prefill decline is invisible to the operator (FIXED)
 
-**Found 2026-09-04, deliberately left open by V-05 of `docs/review-2026-09-04.md`**, which fixed the
+**Found 2026-09-04, deliberately left open by V-05 of `docs/completed/review-2026-09-04.md`**, which fixed the
 finding it names (a shared-memory launch past 48 KB failing SILENTLY, ~9x slower prefill with no
 error) by making `PrefillLast`'s launch REFUSE loudly instead of crashing — but the caller one level
 up still throws the refusal away.
@@ -1643,6 +1629,34 @@ warn-once-per-reason log at `residentPrefillSeed`'s fallback, keyed on the error
 typed reason so repeats within one session do not spam. Needs its own gate: a fixture that forces a
 decline and asserts the operator-visible log line names the reason, mirroring how V-05's own tests
 verify the decline message's CONTENT rather than only that a decline occurred.
+
+**DISPOSITION — FIXED, 2026-09-12.** The swallow this entry describes was already gone by the time
+it was checked: `5cc4854` (2026-09-04, later the same day as the review that filed V-05) wired
+`warnPrefillDeclined(len(suffix), perr)` into `residentPrefillSeed`'s fallback as part of closing
+that commit's own observability gap — `perr` is read, checked for `context.Canceled` /
+`context.DeadlineExceeded` (a cancelled prefill is returned, not swallowed), and otherwise logged
+to stderr once via `prefillDeclineOnce` naming the prompt length and the decline's `%v`. That
+already covers every reason reaching `residentPrefillSeed`, shmem (V-05) included, since
+`checkPrefillShmem`'s error propagates unwrapped through `prefillChunked`/`PrefillLast`.
+
+What was missing, and is now closed here: the gate this entry itself asked for. Nothing asserted
+on the log line's CONTENT — `TestResidentPrefillSeed_DeclineIsLoggedWithReason`
+(`decoder/prefill_decline_warn_test.go`) now drives a fake declining `Prefiller` through
+`Model.Generate` and asserts the captured stderr contains the decline's exact reason string, that
+the sequential fallback still completes the request, and (mutation-proven: deleting the
+`warnPrefillDeclined` call reddens it) that the log line is not merely present by construction.
+
+One piece of this entry's own sketch was NOT built, by a considered choice rather than an
+oversight: **per-reason** dedupe. The shipped mechanism (`prefillDeclineOnce`, a single
+process-lifetime `sync.Once`) logs only the FIRST decline a process ever sees, of any reason,
+ever again. `TestWarnPrefillDeclined_FiresOncePerProcess` pins this coarser behaviour so a future
+change to it is a decision, not drift. It is adequate for the actual call shape:
+`prefillCore` checks `prefillStaticDecline()` (MoE, K=V, non-uniform geometry) BEFORE
+`checkPrefillShmem`, so a resident that declines statically never reaches the shmem check at
+all — one resident, in practice, only ever produces ONE decline reason across its whole process
+lifetime, which is exactly what a plain `sync.Once` reports correctly. The machine-readable
+reason-code plumbing this entry sketched would only earn its keep for a resident whose decline
+reason can change turn to turn, which none of today's backends are.
 
 **Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
 

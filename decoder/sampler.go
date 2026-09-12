@@ -79,6 +79,18 @@ type Sampler struct {
 	// vectors live at once (spec_ngram.go's verify loop) — so one buffer covers the whole round.
 	specLogitsBuf []float32 // [vocab] scratch for distVectorHist's history-dependent copy (P-14):
 	// same one-position-at-a-time lifetime as distBuf.
+	workBuf []float32 // [vocab] scratch for SampleWithInfo's bias/penalty-mutated copy (P-07,
+	// audit-2026-09-10). Replaces a fresh slices.Clone(logits) every token a penalty or bias is
+	// active: `work` is read by argmax/drawFiltered/softmaxStable/sampleChunked/computeLogprobs
+	// within that same SampleWithInfo call and never stored or returned, so one buffer reused
+	// every token is safe — the same reasoning distBuf/specLogitsBuf already document above.
+	candBuf []int // [vocab] scratch for topFilterLogits' candidate-id list in its no-filter
+	// default case (P-07). Consumed synchronously by the SAME call's indexedProb pass
+	// immediately below it, never retained past topFilterLogits' own return.
+	ipsBuf []indexedProb // [vocab] scratch for topFilterLogits' indexed-probability pairs (P-07)
+	// — the audit's own "2.4 MB" figure, the largest single allocation topFilterLogits made, on
+	// EVERY call regardless of which candidate branch ran. Consumed synchronously by
+	// drawFiltered/distVectorFrom immediately after topFilterLogits returns, never retained.
 	histCounts map[int]int // per-id occurrence count over the WHOLE of history, maintained
 	// incrementally by recordHistory (P-15) so applyPenalties' unbounded-window case (the
 	// default: RepeatLastN ≤ 0) never rebuilds a map by rescanning all of history — every
@@ -130,6 +142,31 @@ func (s *Sampler) specLogitsBufN(n int) []float32 {
 		s.specLogitsBuf = make([]float32, n)
 	}
 	return s.specLogitsBuf[:n]
+}
+
+// workBufN is vocabBufN's counterpart for SampleWithInfo's bias/penalty-mutated logits copy
+// (P-07): a []float32 scratch the same shape as the caller's own logits.
+func (s *Sampler) workBufN(n int) []float32 {
+	if cap(s.workBuf) < n {
+		s.workBuf = make([]float32, n)
+	}
+	return s.workBuf[:n]
+}
+
+// candBufN is vocabBufN's counterpart for topFilterLogits' no-filter candidate-id list (P-07).
+func (s *Sampler) candBufN(n int) []int {
+	if cap(s.candBuf) < n {
+		s.candBuf = make([]int, n)
+	}
+	return s.candBuf[:n]
+}
+
+// ipsBufN is vocabBufN's counterpart for topFilterLogits' indexed-probability pairs (P-07).
+func (s *Sampler) ipsBufN(n int) []indexedProb {
+	if cap(s.ipsBuf) < n {
+		s.ipsBuf = make([]indexedProb, n)
+	}
+	return s.ipsBuf[:n]
 }
 
 // Observe seeds the penalty history with already-seen tokens (the generation
@@ -214,7 +251,10 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 	// the no-op path (greedy parity) keeps using the caller's slice directly.
 	work := logits
 	if len(s.p.LogitBias) > 0 || s.penaltiesActive() {
-		work = slices.Clone(logits)
+		// P-07 (audit-2026-09-10): reused workBuf instead of a fresh slices.Clone every token —
+		// same reasoning as vocabBuf/distBuf above, work never escapes this call.
+		work = s.workBufN(len(logits))
+		copy(work, logits)
 		s.applyLogitBias(work)
 		s.applyPenalties(work)
 	}
@@ -226,7 +266,7 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 		// Bounded selection in logit space — no softmax over the whole vocabulary
 		// (amendment 3). The old path softmaxed all V then full-sorted all V; both
 		// are gone for the filtered case, replaced by topFilterLogits below.
-		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(work))))
+		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(work)), s.candBufN(len(work)), s.ipsBufN(len(work))))
 		if info.ID < 0 {
 			// Unreachable: every filter is documented to keep at least the top token, and
 			// NewSampler clamps the one input that could empty the set (M-08). If it ever
@@ -542,7 +582,13 @@ type indexedProb struct {
 // the NORMALIZED mass, so it needs the full-vocab softmax denominator Z — computed as a
 // single O(V) exp-sum, with no full probability array and no O(V·log V) sort. That Z
 // pass is irreducible for an exact nucleus; the sort it replaces is not.
-func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP float64, vocabScratch []float64) []indexedProb {
+//
+// candScratch/ipsScratch (P-07, audit-2026-09-10): caller-owned scratch for the no-filter
+// default case's candidate list and for the indexed-probability pairs every case builds — the
+// audit's own "2.4 MB" figure, previously a fresh make() on every call regardless of branch. Both
+// are consumed synchronously within this call (by the sort/cut logic below and by the caller
+// immediately after return) and never retained, the same lifetime vocabScratch already has.
+func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP float64, vocabScratch []float64, candScratch []int, ipsScratch []indexedProb) []indexedProb {
 	texp := temperature
 	if texp <= 0 {
 		texp = 1 // defensive; SampleWithInfo only reaches here for temperature > 0
@@ -583,7 +629,7 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 	default:
 		// Only reachable when the sole "filter" is top-p ≥ 1 (i.e. no effective filter);
 		// keep every token, matching the reference. Degenerate and rare.
-		cand = make([]int, len(logits))
+		cand = candScratch[:len(logits)]
 		for i := range cand {
 			cand[i] = i
 		}
@@ -593,7 +639,7 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 	// id asc). We MUST sort by e, not by the raw logit: at low temperature many distinct
 	// logits underflow to the same e (typically 0), so they are tied in probability and
 	// the contract orders those by id — sorting by logit would split that tie wrongly.
-	ips := make([]indexedProb, len(cand))
+	ips := ipsScratch[:len(cand)]
 	for i, id := range cand {
 		ips[i] = indexedProb{id: id, p: math.Exp((float64(logits[id]) - maxL) / texp)}
 	}

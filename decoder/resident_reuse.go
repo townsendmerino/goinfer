@@ -61,6 +61,17 @@ type residentImageBlock struct {
 	hash       uint64
 }
 
+// hash == 0 means "no claim" (M-06, audit-2026-09-10.md): a caller with no reuse story of its
+// own may pass 0 for imgHash, and residentReuseLen's block-match guard requires blk.hash != 0
+// before comparing against a claim's hash — otherwise two callers who both pass 0 satisfy
+// `claim.Hash == blk.hash` by coincidence (0 == 0) and the block is treated as verified when
+// nothing was actually checked. The block itself is still RECORDED with hash 0 (residentCommitIDs
+// makes no exception for it) rather than omitted: an unrecorded region falls through to the
+// plain per-position id comparison, which is exactly M-07's hazard — image placeholder ids are
+// content-independent, so that comparison would silently treat two different images sharing a
+// slot as identical. Recording the block (even hash-less) keeps the atomicity check in play; the
+// guard here just ensures it can never emit a false positive.
+
 // residentImageClaim describes one image block in the PROMPT being checked for reuse.
 // GenerateVL/GenerateQwenVL each produce exactly one claim per call (today's one-image-per-turn
 // shape), but residentReuseLen itself doesn't assume a count of one.
@@ -133,7 +144,7 @@ func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *
 		if bi < len(m.resImgBlocks) && m.resImgBlocks[bi].start == i {
 			blk := m.resImgBlocks[bi]
 			if claim, ok := findImageClaim(imgs, blk.start); ok &&
-				claim.Len == blk.end-blk.start && claim.Hash == blk.hash && blk.end <= n {
+				claim.Len == blk.end-blk.start && blk.hash != 0 && claim.Hash == blk.hash && blk.end <= n {
 				// Whole block verified byte-identical: jump straight past it, atomically —
 				// never a partial in-block stop (see residentImageBlock's doc comment).
 				i = blk.end

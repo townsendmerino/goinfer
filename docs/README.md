@@ -26,12 +26,14 @@ These are the pages to trust, and to update when reality moves.
 | | |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | modules, packages, the forward pass, where cgo is quarantined |
-| [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 27 model families. The registry is the source of truth; do not hand-edit |
+| [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 36 model families as of 2026-09-12. The registry is the source of truth; do not hand-edit |
 | [benchmarks.md](benchmarks.md) | **current claims only**, provenance-gated: machine, checkpoint, quant, date, thermal note. Section IDs are stable; a *Retired section IDs* index maps the ones that moved |
 | [legacy-benchmarks.md](legacy-benchmarks.md) | the retired, superseded and historical rows `benchmarks.md` used to carry — moved verbatim 2026-08-31 and 2026-09-05 (was `benchmarks-archive.md`). **Never a current claim**; kept so a retraction can be audited |
 | [server.md](server.md) | the HTTP surface — OpenAI, Anthropic, vision, embeddings, admin |
 | [api-tiers.md](api-tiers.md) | which surfaces v1.0 semver-binds, and which are explicitly Experimental |
 | [positioning.md](positioning.md) | what goinfer is for and is not — the long form of the README's framing |
+| [roadmap.md](roadmap.md) | direction — where we are, the promotion gate, open programs by owner, what is parked and why, the v1.0 checklist; the June 2026 roadmap is archived |
+| [next-models.md](next-models.md) | which model families next, and why; what became of the last list (was `post-v1.0-models.md`) |
 | [capability-matrix.md](capability-matrix.md), [hardware-matrix.md](hardware-matrix.md), [env-vars.md](env-vars.md), [giw-bundles.md](giw-bundles.md) | generated or reference tables |
 
 ## Open work — four queues by success criterion
@@ -42,11 +44,11 @@ exactly one queue, keyed by *the question it answers*:
 | queue | the question |
 |---|---|
 | [queue-performance.md](queue-performance.md) | how fast, how much memory — **empty as of 2026-08-31**; the closed record is [completed/queue-performance.md](completed/queue-performance.md) |
-| [queue-correctness.md](queue-correctness.md) | does it compute the right thing — open: G7, G8, G1, Q1; closed entries in [completed/queue-correctness.md](completed/queue-correctness.md) |
+| [queue-correctness.md](queue-correctness.md) | does it compute the right thing — one PARKED item (G8, unvalidatable on hardware here) as of 2026-08-31; closed entries in [completed/queue-correctness.md](completed/queue-correctness.md) |
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
 
-## Design records — `task-*.md` (37)
+## Design records — `task-*.md` (44)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -59,22 +61,25 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (104)
+## Evidence — `measurements/` (151)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (63)
+## Archive — `completed/` (78)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
 lint**, so archiving a document also retires its citations from the live gate. When a document
-moves here, a pointer stub is left behind, because other pages link to the old path.
+moves here, a pointer stub is left behind, because other pages link to the old path, and the
+standard archival header (`parity-coverage-policy.md`'s "archiving a doc strips its imperatives"
+rule) is prepended **in the same move** — 21 files were found missing it 2026-09-12, added in a
+separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (24) — briefs written for another session or the other machine to execute.
+- `prompts/` (26) — briefs written for another session or the other machine to execute.
 - `releases/` (8) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
@@ -84,7 +89,7 @@ moves here, a pointer stub is left behind, because other pages link to the old p
 - `audit-<date>.md` — a whole-repo audit at a named commit; findings are dispositioned in place
   and the file moves to `completed/` when every one is closed. Current:
   [audit-2026-09-10.md](audit-2026-09-10.md) (at `c7ef16a`); the previous ones are
-  [audit-2026-09-02.md](audit-2026-09-02.md) and
+  [completed/audit-2026-09-02.md](completed/audit-2026-09-02.md) and
   [completed/audit-2026-08-05.md](completed/audit-2026-08-05.md).
 
 ## The one rule worth knowing before you cite anything

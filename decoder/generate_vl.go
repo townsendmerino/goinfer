@@ -57,7 +57,8 @@ func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation,
 // `ids` are the text token ids with a run of `imgLen` image-placeholder ids
 // starting at `imgPos`; `imgHash` is a content hash of the raw image bytes behind
 // that run (P9a, docs/multimodal.md — used for resident prefix-reuse; a caller
-// with no reuse story of its own may pass 0, which just never matches). `features`
+// with no reuse story of its own may pass 0, which residentReuseLen treats as "no
+// claim" and never matches, M-06). `features`
 // is invoked AT MOST ONCE, and only when the image cannot be fully reused from the
 // resident KV — a lazy closure specifically so an unchanged, resent screenshot
 // never re-runs the vision tower at all.

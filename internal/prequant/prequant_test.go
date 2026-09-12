@@ -5,18 +5,27 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 func TestStreamCachePath(t *testing.T) {
-	cases := []struct{ gguf, quant, want string }{
-		{"/m/foo.gguf", "int8int8", "/m/foo.int8int8.giw"},
-		{"/m/foo.gguf", "int4", "/m/foo.int4.giw"},
-		{"/m/foo.gguf", "", "/m/foo.f32.giw"}, // "" → f32 label
-		{"bar.gguf", "int8", "bar.int8.giw"},
+	cases := []struct {
+		gguf, quant string
+		target      decoder.GIWTarget
+		want        string
+	}{
+		{"/m/foo.gguf", "int8int8", decoder.GIWTargetCPUArm64, "/m/foo.int8int8.cpu-arm64.giw"},
+		{"/m/foo.gguf", "int4", decoder.GIWTargetCPUArm64, "/m/foo.int4.cpu-arm64.giw"},
+		{"/m/foo.gguf", "", decoder.GIWTargetCPUArm64, "/m/foo.f32.cpu-arm64.giw"}, // "" → f32 label
+		{"bar.gguf", "int8", decoder.GIWTargetMetal, "bar.int8.metal.giw"},
+		// GIWTargetNone (unknown/multi-consumer) spells as "canonical" in the cache key, not a
+		// blank segment — so the path stays unambiguous and never collides with a real target.
+		{"bar.gguf", "int8", decoder.GIWTargetNone, "bar.int8.canonical.giw"},
 	}
 	for _, c := range cases {
-		if got := streamCachePath(c.gguf, c.quant); got != c.want {
-			t.Errorf("streamCachePath(%q,%q) = %q, want %q", c.gguf, c.quant, got, c.want)
+		if got := streamCachePath(c.gguf, c.quant, c.target); got != c.want {
+			t.Errorf("streamCachePath(%q,%q,%q) = %q, want %q", c.gguf, c.quant, c.target, got, c.want)
 		}
 	}
 }

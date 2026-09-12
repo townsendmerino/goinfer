@@ -1,10 +1,21 @@
 # Gated-DeltaNet residency — the plan, and why WebGPU proves it first
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 **Status: DONE AND MEASURED — 2026-08-19.** The family is RESIDENT on WebGPU, gated end-to-end
 against the CPU forward for both siblings AND at the released head geometry, at **11.4–12.2×
 CPU decode**. Getting a real-width number surfaced a blocker that the tiny fixtures had hidden
 completely — see "The head_dim 256 wall" below. Written at Phase 0 so the phases, the reuse claims and the kill criteria were on record
 before any shader was.
+
+**All three resident backends shipped:** WebGPU 2026-08-19 (this doc), CUDA 2026-08-20 (see "CUDA:
+DONE" below), Metal 2026-08-20 (`1d1fd7a`) — the "What is NOT done" section's Metal bullet below
+is retracted.
 
 ## Why this, why now
 
@@ -225,7 +236,14 @@ things; the absolute is not.
   not 64 — and error in a recurrent stack compounds with depth. Separately the resident path
   quantizes `in_proj_b`/`in_proj_a` to W8A8 where the CPU deliberately keeps them f32 (they feed
   the write/decay gates, where the recurrence is most precision-sensitive).
-- **Metal.** Declines at the feature gate, correctly.
+- ~~**Metal.** Declines at the feature gate, correctly.~~ **RETRACTED 2026-09-12.** Already false
+  before this doc was archived (2026-08-30, `5f7b1c1`): Metal Gated-DeltaNet residency landed
+  2026-08-20 in `1d1fd7a` (`FeatDeltaNet` declared for metal in `decoder/features.go`), gated
+  end-to-end by `TestQwen35ResidentParityMetal` (`metal/qwen35_resident_parity_test.go`). Sibling
+  drift: `docs/completed/audit-2026-09-02.md` N-34 already caught and fixed the matching stale
+  claim in `gpu/deltanet.go`'s own comment (it named `decoder/features.go`'s cuda/metal
+  `FeatDeltaNet` declarations and pointed back at this doc, without this doc's own Metal bullet
+  having been corrected in turn).
 - **The next lever is compute/launch, not the routing readback.** Measured (below): the round trip
   is 42% of generation and is 78% DMA, ~5% stall. The readback SYNC costs almost nothing; the
   remaining ~58% of the token is kernels and launches.

@@ -11,6 +11,10 @@
 > `docs/parity-coverage-policy.md` ("a claim that arrives with its own corroborating detail has
 > not been corroborated"). One thing fable said did **not** reconcile even after the primary
 > source; flagged in place below, not smoothed over.
+>
+> **Reaffirmed 2026-09-12** by `docs/audit-2026-09-10.md`'s **L-02**: llama.cpp PR #27742 merged
+> 2026-08-27, and its notes give the concrete QSA indexer shapes a synthetic-tiny bring-up needs.
+> Neither pickup trigger below has fired.
 
 **Verdict:** the specific checkpoint is out of reach on both rigs and isn't worth chasing. The
 architecture is a different question — three of its five new-or-scaled pieces ride substrate
@@ -71,7 +75,7 @@ niche (single-user, consumer hardware, safetensors/GGUF).
 
 **Possibly-relevant, not confirmed:** Tab. 11's comparison baseline is named `Qwen3.8-27B-Base` —
 a plausible match for the dense hybrid goinfer's `qwen35DenseArchitecture` already implements and
-calls "Qwen3.8" in its own code comment (`decoder/registry.go:2799`). If they're the same family,
+calls "Qwen3.8" in its own code comment (`decoder/registry.go:2827`). If they're the same family,
 goinfer already runs a sibling from this exact lineage today, not merely something
 architecturally adjacent. Worth a five-minute config check at pickup — not asserted here.
 
@@ -98,7 +102,7 @@ over 24 tokens) and on Gemma-4 26B-A4B (32/128 experts resident, 77.5% hit rate)
 `docs/task-moe-streaming.md`. Current families top out at 256 experts (`qwen3_5_moe`); scaling to
 512 experts at a 10-routed+1-shared split is an extension of `moeMLP`'s existing routed+shared+gate
 machinery, not a new mechanism — though the 10:1 ratio needs the same kind of config-flag gotcha
-check that `qwen3_5_moe`'s bring-up hit with `NormTopKProb` (`docs/qwen3_5_moe.md`: silently wrong
+check that `qwen3_5_moe`'s bring-up hit with `NormTopKProb` (`docs/completed/qwen3_5_moe.md`: silently wrong
 without it, cosine 0.9985 vs 1.0).
 
 **The native MTP head lands on a question goinfer's own spec-decode campaign already answered
@@ -151,7 +155,7 @@ naming as a side benefit — not a reason to prioritize this model on its own.
    the blast-radius finding: `decoder/forwardn.go` is in the explicit **core** hashed-file set
    (`docs/task-parity-coverage.md:33`, alongside `model.go`/`attention.go`/`mlp.go`/`kvcache.go`/
    `rope.go`/`rmsnorm.go`/`registry.go`/`arch.go`/`config.go`) — changing it re-stales every
-   family's parity record, the same "maximum blast radius" `docs/scoping-lfm2.md` §G flagged for
+   family's parity record, the same "maximum blast radius" `docs/completed/scoping-lfm2.md` §G flagged for
    touching `registry.go`/`kvcache.go`. `forwardn.go` today assumes one residual stream through the
    attention+MLP fold (its own comments mark "one residual add" points in the batched path);
    widening that to 4 gated branches touches the shared spine every family's forward pass runs
@@ -205,7 +209,7 @@ Beyond the license re-read, one practical gate this pass could **not** confirm �
 harder than the license:
 
 - **Is there a runnable HF reference yet?** Every hybrid bring-up in this repo so far — `qwen3_5_moe`
-  pinned against `transformers==5.10.2`'s `modeling_qwen3_5_moe.py` (`docs/qwen3_5_moe.md`) — has
+  pinned against `transformers==5.10.2`'s `modeling_qwen3_5_moe.py` (`docs/completed/qwen3_5_moe.md`) — has
   had a working `transformers` forward pass (native or `trust_remote_code`) to pin a golden
   against. No `modeling_*.py` was found linked from the GitHub repo (README + `tech_report.pdf`
   only); the repo does link a kernel library, `github.com/QwenLM/FlashQLA` (the fused GDN kernel
@@ -214,13 +218,20 @@ harder than the license:
   oracle to validate a synthetic-tiny fixture against yet — check this before scoping the
   bring-up further, it may be the actual gate, license aside.
 - **Confirm the checkpoint dtype** (BF16 vs FP8) from the HF repo's actual file listing — it
-  changes download size ~2× and, if it's genuinely FP8, raises the same blocker already on record
-  for DeepSeek V4-Flash: **"there is no fp8 support anywhere in the tree today"**
-  (`docs/post-v1.0-models.md`). Worth checking early since it could gate the whole effort
-  independently of QSA/GR/n-gram-embed.
-- **Five-minute check:** is `Qwen3.8-27B-Base` (the tech report's own comparison baseline) the same
-  family goinfer already runs as `qwen35DenseArchitecture`? If so, GDN's real-checkpoint coverage
-  extends one model further than stated above.
+  changes download size ~2× and, if it's genuinely FP8, the gate is narrower than a flat "no fp8
+  support" now: `decoder/fp8.go` reads e4m3 weights with blockwise **f32** scales from
+  `*.weight_scale_inv` (shipped for Q3), so the real question is the SCALE format, not the
+  element format — does this checkpoint use that f32-blockwise form, or the exponent-only 8-bit
+  `ue8m0` encoding, which nothing in `decoder/` handles (`grep ue8m0 decoder/` is empty)? This is
+  the same half-lift `docs/queue-correctness.md`'s **G8** entry records for DeepSeek V4-Flash,
+  whose config declares `scale_fmt: "ue8m0"` specifically. Worth checking early since it could
+  gate the whole effort independently of QSA/GR/n-gram-embed.
+- **Five-minute check — done, 2026-09-12: yes.** `docs/capability-matrix.md:28` lists Qwen3.8
+  under `qwen3_5`/`qwen3_5_text` — "the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE,
+  with a plain SwiGLU in place of the router" — with a parity row of `experimental: tiny-oracle
+  100.0%/1.00000 +coherent`. So GDN's real-checkpoint coverage already extends to
+  `Qwen3.8-27B-Base`, the tech report's own comparison baseline, one model further than stated
+  above.
 
 ## Effort, if picked up (synthetic-tiny bring-up only — not the 180B)
 
@@ -234,7 +245,7 @@ harder than the license:
 
 ## Sequencing
 
-**Not started; nothing is queued.** This is prep, filed the way `docs/scoping-lfm2.md` files a
+**Not started; nothing is queued.** This is prep, filed the way `docs/completed/scoping-lfm2.md` files a
 post-freeze family: visible, reasoned, not claimed. Pick up when either holds:
 
 1. A real Qwen4 checkpoint ships at a size that actually fits goinfer's niche (the stated target of
@@ -247,7 +258,7 @@ post-freeze family: visible, reasoned, not claimed. Pick up when either holds:
 Either way, gate zero is unchanged: re-read the LICENSE, confirm an HF reference exists, resolve
 the dtype discrepancy — in that order, before any code.
 
-**Cross-reference:** added under `docs/post-v1.0-models.md`'s "Watching" section pointing here, so
+**Cross-reference:** added under `docs/next-models.md`'s "Watching" section pointing here, so
 this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
 
 ## Sources checked this pass
@@ -261,8 +272,8 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
   and read directly, 28 pages, in full
 - [MarkTechPost coverage](https://www.marktechpost.com/2026/08/26/alibabas-qwen-team-releases-qwen3-8-flash-next-a-125b-multimodal-moe-with-6b-active-parameters-previewing-the-qwen4-architecture/)
 - goinfer tree, read directly 2026-08-27: `decoder/registry.go`, `decoder/config.go`,
-  `decoder/forwardn.go`, `decoder/moepaging.go`, `docs/qwen3_5_moe.md`,
+  `decoder/forwardn.go`, `decoder/moepaging.go`, `docs/completed/qwen3_5_moe.md`,
   the completed qwen3.6 real-checkpoint task record (internal, untracked), `docs/queue-correctness.md`,
   `docs/task-moe-streaming.md`, `docs/spec/README.md`, `docs/task-parity-coverage.md`,
   `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,
-  `docs/scoping-lfm2.md`, `docs/post-v1.0-models.md`
+  `docs/completed/scoping-lfm2.md`, `docs/next-models.md`

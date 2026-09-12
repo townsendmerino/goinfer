@@ -43,7 +43,7 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
-| **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 11 architectures vs peers' dozens | Table 1 |
+| **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 36 architectures ʲ vs peers' dozens | Table 1 |
 
 **One-line reading:** goinfer is a *small-model, short-context, single-request* engine that trades
 throughput and breadth for a static binary, no native dependency, and a decode you can reproduce
@@ -73,7 +73,7 @@ bit-for-bit. Where it loses it loses honestly, and the losses are in this table 
 > carries multi-threaded CPU decode, a GPU backend, checkpoint formats beyond GGUF (safetensors,
 > GPTQ, AWQ), and compiling the model **into** the binary. No head-to-head numbers exist in either
 > direction; neither project has published any. It trades peak throughput and breadth (no continuous batching,
-> vision-in only — no audio, CPU-slow — 11 architectures) for a static binary that
+> vision-in only — no audio, CPU-slow — 36 architectures ʲ) for a static binary that
 > boots in ~0.5 s.
 
 > **Anchor stack for every CUDA row: driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2, since
@@ -190,6 +190,42 @@ way §B2 already prints Ollama's decode-only rate alongside its wall clock — w
 remaining the one that counts for a peer comparison. Existing rows (incl. §B4's 16.98 tok/s, re-confirmed)
 are correctly measured and unchanged.
 
+**New in `bench_peer.py` (2026-09-12), not yet reflected in any row on this page:**
+
+- **A goinfer-vs-goinfer before/after A/B** (`BENCH_ENGINES=goinfer,goinfer_old,...`, `SERVE_OLD` /
+  `GOINFER_SERVE_*_OLD`): a second, named-prior-commit binary interleaved against the current one
+  AND a real peer in one sweep, so a "did the last N days move this row" question gets the same
+  session-interleaving discipline as a peer claim already does, not a comparison against a number
+  written in a prior doc. Record the old binary's commit in the path you give it
+  (`serve-cpu-c7ef16a`, not just `serve-cpu-old`) — the binary itself carries no `-version` flag,
+  so the path is the only provenance for which commit it was built from.
+- **An RSS column** (`rss_peak_kb`/`rss_peak` per cell): peak resident set of the WHOLE process
+  group the cell's server launched, polled every 200ms, not a single post-hoc sample. Group, not
+  the one PID this harness itself spawns — found live smoke-testing this, not assumed: Ollama's
+  `ollama serve` is a thin supervisor whose child `llama-server` process holds the actual model
+  weights, so sampling only the parent PID measured the supervisor's own overhead (tens of MB) and
+  would have reported Ollama's memory footprint as near-zero, backwards from the true number (1.5
+  GB, confirmed for a 1.5B q4_k_m checkpoint). Subject to the same darwin RSS caution already on
+  record for a different memory guard in this repo (CLAUDE.md's "a guard that INVERTS" note): the
+  OS can reclaim clean pages under pressure, so RSS can under-report true peak on a loaded box —
+  useful as a same-session comparative number between engines, not as an allocation-accurate one.
+- **Embeddings throughput** (`BENCH_EMBED_LENGTHS`, `GOINFER_EMBED_MODEL`): goinfer's
+  `-embed-model` path (a CodeRankEmbed-family HF dir, not a GGUF) against Ollama's `nomic-embed-text`
+  — the same NomicBERT architecture family, confirmed via `internal/serveapp/embeddings_test.go`'s
+  own compatibility table, but NOT the same weights or quantization. A throughput comparison only;
+  never present it as a quality/parity claim, the same restriction §M26 above already states for
+  its own cross-provenance quant pairing.
+- **Vision TTFT, one image** (`BENCH_VISION=1`, `BENCH_VISION_MODEL`): goinfer's served
+  `/v1/chat/completions` (image content part) against Ollama's `/api/chat` (`images` field),
+  time-to-first-token only. This is a NEW instrument, not a re-measurement of the 31.3 s/image
+  SigLIP-tower row above — that figure comes from an in-process Go driver timing the tower alone;
+  this one is a served-HTTP round trip on both sides. Both are evidence about the same underlying
+  cost; they are not the same number and must not be plotted as if they were.
+
+None of the four above has a published row yet — see `docs/measurements/` for the first pass once
+one exists, following this page's own Methodology bullets above (same machine, same checkpoint,
+pinned versions, dated, thermal note, verified-idle box).
+
 ---
 
 ## Model storage — archive remote, benchmark local
@@ -269,7 +305,7 @@ absent — this pass read the engine and packaging, not the library surface.
 | GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only | ✗ no GPU backend ᵏ |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ | — |
 | Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL + Qwen2.5-VL, pure-Go SigLIP/ViT → serve + agent; **31.3 s/image CPU** (SigLIP) — 2026-09-08 row, §A; `-tags gpu` webgpu resident figure (18.8 s) not re-measured at this row's date; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
-| Model coverage | ~ **11 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
+| Model coverage | ~ **36 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
 | Multi-threaded CPU decode | ✓ | — | — | — | — | — | — | ✗ single-threaded ᵏ |
 
 **Reading it:** *no-native-dep pure-Go execution* is no longer goinfer's alone — `go-llama`
@@ -317,8 +353,12 @@ merged at load) · ⁱ `ARCHITECTURE.md` §2 + `docs/completed/gpu-assessment.md
 residency; cgo quarantined behind `-tags gpu`) + §B2/§B3 below (`cuda/`, `metal/`:
 driver-JIT / MSL, **CGO_ENABLED=0**, admission-gated by
 `decoder/features.go`) ·
-ʲ `decoder/registry.go` — **13 registered `model_type` keys, 11 distinct architectures**
-(`gemma3_text`/`qwen3_5_moe_text` are text-decoder aliases of `gemma3`/`qwen3_5_moe`).
+ʲ **36 architectures** (M-57, audit-2026-09-10.md: this footnote's own "13 keys, 11
+architectures" was stale) — `docs/capability-matrix.json`'s row count, generated from
+`decoder/registry.go` by `go test ./decoder -run CapabilityMatrix -update`; one row per family,
+`model_type` aliases (e.g. `gemma3_text`/`qwen3_5_moe_text`) grouped rather than counted twice.
+Cited by row count rather than restated as a literal here on purpose — the number moves with
+the registry, this footnote should not need editing every time a family ships.
 
 ---
 
@@ -1628,9 +1668,13 @@ the Mac.
 | nobara | CUDA (`-moe-cache-experts`) | **62.4** | 26.5 | 31.6 |
 | Mac | CPU | declined — see below | not attempted | not attempted |
 
-**Mac capability boundary, not a bug.** goinfer's `gpt_oss` architecture has no resident
-CUDA/Metal/WebGPU backend today (`decoder/registry.go`, `decoder/features.go`), so this cell must
-run `-backend cpu` on any box. On the Mac, a plain CPU decode of the 13.8 GB checkpoint — no
+**Mac capability boundary, not a bug.** As of this row's own date (2026-09-04/05), goinfer's
+`gpt_oss` architecture had no resident CUDA/Metal/WebGPU backend (`decoder/registry.go`,
+`decoder/features.go`), so this cell had to run `-backend cpu` on any box. **Stale since:** gpt-oss
+is now resident on all three (CUDA 2026-08-31, WebGPU 2026-09-08 — `docs/hardware-matrix.md`), so
+this specific capability gap no longer exists; the swap/kill outcome measured below is unaffected
+(it is about the CPU path specifically, which this Mac cell used because residency wasn't there
+yet, not because CPU was the only option going forward). On the Mac, a plain CPU decode of the 13.8 GB checkpoint — no
 `-stream-weights` paging, the model nominally fits 16 GB RAM on paper — drove swap to 22.6–22.9 GB
 on a 23.5 GB swap file. Caught via a single-request smoke test and killed before a real measurement
 was taken, rather than letting it run — this same night already had one kernel-panic incident from

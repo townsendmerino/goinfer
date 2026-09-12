@@ -11,7 +11,7 @@
 ## Where goinfer sits, and what that means for a kill switch
 
 goinfer is the **model server**. `serve` turns prompts into tokens and, when a client asks for
-tools, emits `tool_calls` (`internal/serveapp/openai.go:396`); **the client executes them**.
+tools, emits `tool_calls` (`internal/serveapp/openai.go:432`); **the client executes them**.
 The one in-tree agent (`demo/agent`) has a single read-only tool — ken `search` over MCP
 (`demo/agent/agent/kenclient.go:42`). So goinfer cannot, by itself, stop a client that already
 received a `tool_call` from acting on it, and it cannot undo anything. What it can do, and what
@@ -38,7 +38,7 @@ process that can rewrite its own service unit is out of scope for anything insid
   it stops within one token. This is the mechanism every level below builds on; nothing new is
   needed in `decoder/`.
 - **Graceful shutdown.** SIGINT/SIGTERM → stop accepting, 30 s drain, exit
-  (`internal/serveapp/main.go:662–683`). Cooperative: a stuck handler holds it for 30 s.
+  (`internal/serveapp/main.go:685–683`). Cooperative: a stuck handler holds it for 30 s.
 - **Concurrency cap.** `-max-inflight` (default 128) over the inference handlers
   (`internal/serveapp/main.go:501,619-621`). A cap, not a budget: it bounds parallelism, not total work.
 - **Auth and exposure.** Loopback by default; `-api-key` required off-loopback; `/admin/*`
@@ -71,7 +71,7 @@ a supervised deployment shape; an executor pattern; a drill.
 
 ## K1 — Cancel by id: the task-level switch
 
-**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (`internal/serveapp/openai.go:977,1081` at the time this was drafted, now superseded by `drive`/`driveVL`'s own `ctx, cancel := context.WithCancel(parent)` at `internal/serveapp/openai.go:1058,1197`), `internal/serveapp/helpers.go`'s `reqID()`.
+**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (`internal/serveapp/openai.go:1058,1081` at the time this was drafted, now superseded by `drive`/`driveVL`'s own `ctx, cancel := context.WithCancel(parent)` at `internal/serveapp/openai.go:1058,1197`), `internal/serveapp/helpers.go`'s `reqID()`.
 
 **Fix.** A process-wide registry `map[id]*generation{cancel, started, model, session, tokens,
 toolCalls}` populated when a handler mints its id and cleared on completion. `GET

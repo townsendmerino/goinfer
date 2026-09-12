@@ -278,3 +278,23 @@ func TestPlan_extraBytesReservedAheadOfExperts(t *testing.T) {
 		t.Errorf("NeedBytes() = %d exceeds budget %d even after Plan adjusted for ExtraBytes", withExtra.NeedBytes(), budget)
 	}
 }
+
+// TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch is the M-08 gate
+// (docs/audit-2026-09-10.md): the existing "nonsense backend declines" test
+// (moe/nonsense_backend_declines_on_features_not_bytes, above) only proves the decline for an
+// arch with NON-EMPTY RequiredResidentFeatures — a plain Llama has none, so
+// MissingResidentFeatures(nil) returned empty (nothing required, nothing implemented, so
+// "nothing missing") and Plan fell through to RESIDENT for ANY backend name, including one that
+// does not exist. This is the same shape as "Llama-4/cuda", "dense Gemma-4/webgpu" and
+// "Kimi-K2/metal" in the finding: a family whose feature list alone doesn't catch the decline.
+func TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch(t *testing.T) {
+	m := loadDenseTiny(t)
+	if got := m.RequiredResidentFeatures(); len(got) != 0 {
+		t.Fatalf("fixture requires %v — need a feature-free arch for this gate to mean anything", got)
+	}
+	p := m.Plan("a-backend-that-does-not-exist", 1<<60, PlanRequest{Ctx: 8192})
+	if p.Placement != PlacementDecline {
+		t.Fatalf("Placement = %v, want decline — a feature-free arch on an unregistered backend name "+
+			"must still decline (M-08), not fall through to resident: %s", p.Placement, p.Reason)
+	}
+}

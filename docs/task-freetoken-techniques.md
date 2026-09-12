@@ -14,12 +14,12 @@
 > already be identified next-levers blocked on a dependency; one turns out to be a
 > named-and-deferred track goinfer already has a term for; one is a deliberate,
 > reasoned decision worth revisiting only for a specific regime, not a bug; two are
-> genuinely new. Read alongside `docs/task-moe-streaming.md` and `docs/qwen3_5_moe.md`,
+> genuinely new. Read alongside `docs/task-moe-streaming.md` and `docs/completed/qwen3_5_moe.md`,
 > not instead of them.
 
 | Lead | Status | Priority |
 |---|---|---|
-| 1. State-checkpoint KV reuse for hybrid/recurrent models | named, deferred (`docs/qwen3_5_moe.md`) | high |
+| 1. State-checkpoint KV reuse for hybrid/recurrent models | named, deferred (`docs/completed/qwen3_5_moe.md`) | high |
 | 2. Async-H2D overlap for the CUDA expert cache | already scoped (`task-moe-streaming.md` §C′) | high |
 | 3. Pin the CUDA expert-stack buffer after filling, not before | unverified, now precise | medium |
 | 4. Pool the CUDA expert cache globally instead of per-layer | half-true already (CPU path has it) | medium |
@@ -30,14 +30,15 @@
 
 ## Lead 1 — state-checkpoint KV reuse for hybrid/recurrent models
 
-**Status: goinfer already named this.** `docs/qwen3_5_moe.md`'s "Hybrid cache (decision:
+**Status: goinfer already named this.** `docs/completed/qwen3_5_moe.md`'s "Hybrid cache (decision:
 correctness-first)" section states plainly, for `qwen3_5_moe`'s 30 DeltaNet layers + 10
-full-attention layers: because the recurrent state is not position-truncatable,
-cross-call prefix KV reuse (`Session`, v0.3.0) **falls back to full recompute**
-(`docs/qwen3_5_moe.md:115`), and "optimizing those for hybrid models (state
-checkpoints) is a later track." That's the same shape as FreeToken's "semantic anchor
-checkpoints": a compressed recurrent state can't be sliced like an attention KV cache,
-so it needs its own full-state checkpoint instead of a truncate-and-reuse.
+full-attention layers: because the recurrent state is not position-truncatable, cross-call
+prefix KV reuse (`Session`, v0.3.0) **falls back to full recompute** on cold or non-extending
+prefixes (`docs/completed/qwen3_5_moe.md:132` — the resident path's exact-strict-extension case
+was fixed 2026-09-03, R-01 phase 0; the general fallback for anything else stands), and
+"optimizing those for hybrid models (state checkpoints) is a later track." That's the same shape
+as FreeToken's "semantic anchor checkpoints": a compressed recurrent state can't be sliced like
+an attention KV cache, so it needs its own full-state checkpoint instead of a truncate-and-reuse.
 
 What FreeToken adds beyond the one-line deferral: checkpoints aren't taken at arbitrary
 positions — they're anchored to special-token boundaries (thinking segments, tool calls
@@ -138,7 +139,7 @@ land in the same cache. That already matches what FreeToken calls a "shared LRU
 residency space."
 
 The CUDA path doesn't: `GOINFER_MOE_CACHE_SLOTS` is a **per-layer** slot count
-(`decoder/model.go:219`, `internal/serveapp/main.go:307`), auto-capped to free VRAM at
+(`decoder/model.go:221`, `internal/serveapp/main.go:307`), auto-capped to free VRAM at
 load. `task-moe-streaming.md`'s §C′ never discusses pooling it across layers — every
 mention of slot budgeting there is per-layer. If expert "hotness" is uneven across
 layers (plausible, and apparently never measured either way — the doc's own hit-rate
@@ -245,7 +246,7 @@ forever for every model size.
 ## Sources
 
 - The comparison this opened from: claude.ai/code/artifact/cd014aea-6e94-4f6d-b71a-196ba99b6bfa
-- `docs/qwen3_5_moe.md` — "Hybrid cache (decision: correctness-first)"; `:115` for the
+- `docs/completed/qwen3_5_moe.md` — "Hybrid cache (decision: correctness-first)"; `:132` for the
   fallback-to-full-recompute line
 - `docs/task-moe-streaming.md` — §C′ (`:346`), Lever 1 (`:107`), Lever 3 (`:185`),
   Lever 4 (`:226`)

@@ -239,6 +239,25 @@ func (w *Weights) matmulWeights() []*linalg.WeightMat {
 	return ms
 }
 
+// repackedOnlyInt4Count reports how many of w's matmulWeights() tensors are
+// int4-resident with NO canonical bytes at all (IsInt4() true, Int4()'s ok
+// false) — a kind-5 .giw tensor (docs/task-int4-layout-2026-09.md's L2), or (in
+// principle, never produced by any writer today) an in-RAM repacked-only build
+// that somehow reached a .giw round-trip. Used by decoder.Load's .giw branch to
+// refuse loading such a file under a backend that needs canonical bytes.
+func repackedOnlyInt4Count(w *Weights) int {
+	n := 0
+	for _, m := range w.matmulWeights() {
+		if !m.IsInt4() {
+			continue
+		}
+		if _, _, _, ok := m.Int4(); !ok {
+			n++
+		}
+	}
+	return n
+}
+
 // isLogitTable reports whether m is one of the embedding-class tensors — the token embedding, the
 // LM head, or the Gemma-4 model-level PLE embeddings. In int4 mode these are pinned to int8 by
 // DEFAULT (logit-critical; the EmbedInt4 knob relaxes them), so their precision is orthogonal to the
@@ -280,7 +299,7 @@ func (w *Weights) bodyMatmulWeights() []*linalg.WeightMat {
 //
 // Use LoadWeightsFromFS for fs.FS-backed (MapFS, embed.FS) paths — that
 // route stays heap-backed because fs.FS doesn't expose a file descriptor.
-func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone, false, nil) }
+func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone, false, true, nil) }
 
 // parallelLayers runs fn over the n layer indices across a worker pool, so the
 // per-tensor dequant + re-quant (independent per layer — distinct linalg.WeightMat
@@ -341,13 +360,13 @@ func parallelLayers(n int, fn func(i int) error) error {
 // big quantized checkpoint load in a quarter (int8) or eighth (int4) of the RAM
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
-func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter) (*Weights, error) {
+func loadWeights(dir string, quant quantMode, embedInt4, needCanonical bool, lora *loraAdapter) (*Weights, error) {
 	// One atomic add per model load, so the fit guard's test can OBSERVE that a refused load
 	// allocated nothing rather than infer it from an error string. Inferring is how a guard that
 	// fires after the allocation still looks correct (docs/task-first-hour.md, R3).
 	weightAllocs.Add(1)
 	if strings.HasSuffix(dir, ".gguf") {
-		return loadGGUFWeights(dir, quant, embedInt4) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
+		return loadGGUFWeights(dir, quant, embedInt4, needCanonical) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
 	}
 	if quant == quantInt4Mix {
 		return nil, fmt.Errorf("decoder: int4mix is GGUF-only (got safetensors %s)", dir)
@@ -368,7 +387,7 @@ func loadWeights(dir string, quant quantMode, embedInt4 bool, lora *loraAdapter)
 	// on any of its ~40 error returns st would otherwise leak the mapping + fd. A serve process
 	// probing candidate dirs, or retrying a load of a checkpoint with one missing tensor,
 	// accumulates GBs of address space — the exact leak Model.Close exists to avoid (audit M-08).
-	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, lora)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, needCanonical, lora)
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -468,7 +487,7 @@ func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*Weights, error
 	if err != nil {
 		return nil, err
 	}
-	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, nil)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, true, nil)
 	if err != nil {
 		_ = st.Close() // st is retained only on success; close it on error so the mapping/fd doesn't leak (M-08)
 		return nil, err
@@ -499,7 +518,7 @@ func openCheckpointFromFS(fsys fs.FS, dir string) (*embed.SafetensorsFile, error
 // against Cfg. Factored out so the heap (fs.FS) and mmap paths share one
 // tensor-name + shape contract — a schema change is one edit, not two.
 // Mirrors encoder.buildWeightsFromSafetensors.
-func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4 bool, lora *loraAdapter) (*Weights, error) {
+func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical bool, lora *loraAdapter) (*Weights, error) {
 	if arch.Name == "gpt2" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the gpt2 (Conv1D/fused-QKV) layout")
@@ -637,7 +656,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// load — merges any LoRA delta into it, then quantizes to the requested
 	// resident format (freeing the f32 before the next tensor; the streaming-quant
 	// memory win). The LoRA merge must happen here, on the f32, before quantization.
-	loadProj := func(name string, out, in int) (linalg.WeightMat, error) {
+	// batched marks a projection reached through the batched W4A8 dispatch (attention Q/K/V,
+	// MLP gate/up) — quantizeBatchedProjWM instead of the plain quantizeWM, so it may build
+	// repacked-only int4 (aikit audit M-22) when this load's backend allows it. See that
+	// function's own doc comment for the safety argument and why other projections (o_proj,
+	// down_proj) are not marked this way yet.
+	loadProj := func(name string, out, in int, batched bool) (linalg.WeightMat, error) {
 		var data []float32
 		var derr error
 		switch {
@@ -664,7 +688,11 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			return linalg.WeightMat{}, derr
 		}
 		m := linalg.WrapF32(data, out, in)
-		m = quantizeWM(m, quant)
+		if batched {
+			m = quantizeBatchedProjWM(m, quant, needCanonical)
+		} else {
+			m = quantizeWM(m, quant)
+		}
 		return m, nil
 	}
 
@@ -674,7 +702,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	if w.Embed, err = loadMat(st, mp(s.Embed), cfg.VocabSize, hd); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embeddingWith(embedInt4))
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32(mp(s.FinalNorm), hd); err != nil {
 		return nil, err
 	}
@@ -684,7 +712,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	arch.TiedLMHead = true
 	if s.LMHead != "" {
 		if head, herr := loadMat(st, s.LMHead, cfg.VocabSize, hd); herr == nil {
-			head = quantizeWM(head, quant.embeddingWith(embedInt4))
+			head = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 			w.LMHead = head
 			arch.TiedLMHead = false
 		}
@@ -745,7 +773,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			ahd := arch.headDimAt(i)
 			aKV := arch.kvHeadsAt(i)
 			aqDim, akvDim := arch.NumHeads*ahd, aKV*ahd
-			if l.QProj, err = loadProj(tn(i, s.QProj), aqDim, hd); err != nil {
+			if l.QProj, err = loadProj(tn(i, s.QProj), aqDim, hd, true); err != nil {
 				return err
 			}
 			if l.QNorm, err = st.TensorF32(tn(i, s.QNorm), ahd); err != nil {
@@ -766,12 +794,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			firstShared := arch.NumLayers - arch.gemma4.SharedKVLayers
 			l.KVShared = i >= firstShared
 			if !l.KVShared {
-				if l.KProj, err = loadProj(tn(i, s.KProj), akvDim, hd); err != nil {
+				if l.KProj, err = loadProj(tn(i, s.KProj), akvDim, hd, true); err != nil {
 					return err
 				}
 				if arch.gemma4.KVShared && arch.isGlobalLayer(i) {
 					l.VFromK = true // V = v_norm(k_proj output); no v_proj tensor
-				} else if l.VProj, err = loadProj(tn(i, s.VProj), akvDim, hd); err != nil {
+				} else if l.VProj, err = loadProj(tn(i, s.VProj), akvDim, hd, true); err != nil {
 					return err
 				}
 				if l.KNorm, err = st.TensorF32(tn(i, s.KNorm), ahd); err != nil {
@@ -780,7 +808,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			}
 			// OProj is per-layer regardless of KVShared — a shared-KV layer still has its
 			// own attention output projection over the (shared-K/V-derived) attention result.
-			if l.OProj, err = loadProj(tn(i, s.OProj), hd, aqDim); err != nil {
+			if l.OProj, err = loadProj(tn(i, s.OProj), hd, aqDim, false); err != nil {
 				return err
 			}
 		} else {
@@ -790,16 +818,16 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			// layer 0 and [8192,2048] on layer 1. headsAt collapses to NumHeads for every
 			// other family, leaving lqDim == qDim.
 			lqDim := arch.headsAt(i) * headDim
-			if l.QProj, err = loadProj(tn(i, s.QProj), lqDim, hd); err != nil {
+			if l.QProj, err = loadProj(tn(i, s.QProj), lqDim, hd, true); err != nil {
 				return err
 			}
-			if l.KProj, err = loadProj(tn(i, s.KProj), kvDim, hd); err != nil {
+			if l.KProj, err = loadProj(tn(i, s.KProj), kvDim, hd, true); err != nil {
 				return err
 			}
-			if l.VProj, err = loadProj(tn(i, s.VProj), kvDim, hd); err != nil {
+			if l.VProj, err = loadProj(tn(i, s.VProj), kvDim, hd, true); err != nil {
 				return err
 			}
-			if l.OProj, err = loadProj(tn(i, s.OProj), hd, lqDim); err != nil {
+			if l.OProj, err = loadProj(tn(i, s.OProj), hd, lqDim, false); err != nil {
 				return err
 			}
 			// Laguna attention output gate. Its row count SELECTS the granularity —
@@ -813,13 +841,13 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 				if arch.laguna != nil && !arch.laguna.GatePerHead {
 					rows = perElem
 				}
-				if l.GProj, err = loadProj(tn(i, s.GProj), rows, hd); err != nil {
+				if l.GProj, err = loadProj(tn(i, s.GProj), rows, hd, false); err != nil {
 					if rows == perHead {
 						rows = perElem
 					} else {
 						rows = perHead
 					}
-					if l.GProj, err = loadProj(tn(i, s.GProj), rows, hd); err != nil {
+					if l.GProj, err = loadProj(tn(i, s.GProj), rows, hd, false); err != nil {
 						return fmt.Errorf("decoder(laguna): layer %d g_proj is neither per-head [%d,%d] nor per-element [%d,%d]: %w", i, perHead, hd, perElem, hd, err)
 					}
 				}
@@ -889,13 +917,13 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			// checkpoints) below, right before this loop starts, from each layer's own
 			// on-disk tensor shape — see that seeding step's comment for why.
 			ffn := arch.ffnAt(i)
-			if l.GateProj, err = loadProj(tn(i, s.GateProj), ffn, hd); err != nil {
+			if l.GateProj, err = loadProj(tn(i, s.GateProj), ffn, hd, true); err != nil {
 				return err
 			}
-			if l.UpProj, err = loadProj(tn(i, s.UpProj), ffn, hd); err != nil {
+			if l.UpProj, err = loadProj(tn(i, s.UpProj), ffn, hd, true); err != nil {
 				return err
 			}
-			if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, ffn); err != nil {
+			if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, ffn, false); err != nil {
 				return err
 			}
 			// layer_scalar (a [1] buffer). Absent ⇒ 1.0 (no scaling).
@@ -974,13 +1002,13 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			return nil
 		}
 		// Gated MLP (GeGLU / SwiGLU — same weights, activation differs).
-		if l.GateProj, err = loadProj(tn(i, s.GateProj), cfg.IntermediateDim, hd); err != nil {
+		if l.GateProj, err = loadProj(tn(i, s.GateProj), cfg.IntermediateDim, hd, true); err != nil {
 			return err
 		}
-		if l.UpProj, err = loadProj(tn(i, s.UpProj), cfg.IntermediateDim, hd); err != nil {
+		if l.UpProj, err = loadProj(tn(i, s.UpProj), cfg.IntermediateDim, hd, true); err != nil {
 			return err
 		}
-		if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, cfg.IntermediateDim); err != nil {
+		if l.DownProj, err = loadProj(tn(i, s.DownProj), hd, cfg.IntermediateDim, false); err != nil {
 			return err
 		}
 		return nil

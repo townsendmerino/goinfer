@@ -651,46 +651,58 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // uses), `tie_word_embeddings: false`. Tensor names are llama-shaped except the post-only norms
 // and whole-vector QK-norm weight width — `olmo3TensorSchema`.
 //
-// A THIRD real finding, on RoPE: A SINGLE rotary table applies to EVERY layer, sliding and
-// full alike — NOT split by layer type. This corrects the family's own original claim (found
-// wrong by the real-checkpoint T3 gate, 2026-09-07: argmax and the greedy continuation both
-// matched exactly, but last-logit cosine was 0.992789, not >= 0.9999 — a magnitude-only drift
-// consistent with 24 of 32 layers running at the wrong RoPE frequency, not a dropped feature).
+// A THIRD real finding, on RoPE, corrected 2026-09-12 (a prior revision of this comment had it
+// backwards — see below): sliding-attention and full-attention layers use GENUINELY DIFFERENT
+// rotary tables, at the SAME theta but different scaling — full gets YaRN (mscale 1.1 on this
+// fixture), sliding gets plain unscaled RoPE (mscale 1.0, no NTK-by-parts interpolation). This
+// is the ORIGINAL family design (the local/global RoPE split Mellum already implements,
+// `RoPELocalBase`/`RoPEGlobalBase` + `ropeScaling`/`ropeScalingLocal`, dispatched on
+// `arch.layerIsGlobal`), and `TestOlmo3_forwardParity` scored 0.9999999999997883 under it at
+// ship time (docs/task-families-2026-09.md G2).
 //
-// The original reasoning was that the real released config.json's flat top-level `rope_scaling`
-// is a backward-compat shim that `configuration_olmo3.py`'s `convert_rope_params_to_dict`
-// expands into a per-layer-type split — `rope_parameters["full_attention"]` gets the YaRN
-// object, `rope_parameters["sliding_attention"]` stays plain `{"rope_type": "default"}` — and
-// that a re-saved config demonstrates the same expansion. That serialization claim is correct
-// but does not describe what the model actually RUNS: `Olmo3Model.__init__` builds exactly ONE
-// `self.rotary_emb = Olmo3RotaryEmbedding(config=config)`, and `Olmo3Model.forward` computes
-// `position_embeddings = self.rotary_emb(hidden_states, position_ids)` ONCE per forward call,
-// passing the SAME tensor to every decoder layer regardless of `layer_types[i]` — only the
-// attention MASK varies by layer type (`causal_mask_mapping`), never the rotary table.
-// `Olmo3RotaryEmbedding.__init__` itself reads `self.config.rope_parameters["rope_type"]`
-// directly, which would KeyError on a genuinely per-layer-type nested dict IF that key were
-// missing — but it is not: `PretrainedConfig`'s own init/save path (`standardize_rope_params` /
-// `convert_rope_params_to_dict`) EXPANDS a flat `rope_theta`/`rope_scaling` into exactly the
-// nested `{"full_attention": {...}, "sliding_attention": {...}}` shape at construction time, and
-// `rope_type` is read from `rope_parameters["full_attention"]`, not the outer object — so a
-// real, from-scratch `Olmo3Config` (this family's own tiny fixture, `transformers==5.15.0`) DOES
-// carry the nested shape on disk, reproducibly (byte-identical across two independent
-// `save_pretrained` runs, 2026-09-10). A prior revision of this comment asserted the opposite —
-// "the real release's rope_parameters is flat" — and swapped the parser below to `parseRopeFlat`
-// on that basis, without re-saving a config to check; that broke loading outright ("rope_theta
-// must be >0") rather than merely drifting, caught the same way as the original 0b0f5c9 finding
-// above: by actually loading a real config rather than trusting the reasoning already written
-// down here. `parseRopeParameters` is correct, and was correct before this comment's detour.
+// **Verified by calling the real forward, not by reading source.** A prior revision of this
+// comment ("0b0f5c9") read `modeling_olmo3.py` and concluded `Olmo3Model.__init__` builds ONE
+// shared `self.rotary_emb` and calls it once per forward with no per-layer distinction — citing
+// the real-checkpoint T3 gate's cosine 0.992789 as confirmation of a "24 of 32 layers at the
+// wrong frequency" bug, and switching every layer to `full`'s YaRN table discarding `sliding`
+// entirely. That reading was WRONG for transformers 5.15.0 (this repo's pinned version, the same
+// one `pin_olmo3_tiny.py` uses): `Olmo3RotaryEmbedding.forward` takes an explicit `layer_type`
+// argument and returns a DIFFERENT (cos, sin) pair per call — confirmed by instantiating the real
+// class and calling `rotary_emb(hidden, pos_ids, "full_attention")` vs `(..., "sliding_attention")`
+// directly: sliding's cos/sin come back with `attention_scaling == 1.0` and no YaRN
+// interpolation; full's come back YaRN-scaled. The forward signature REQUIRING a layer_type
+// argument is itself the tell that a single shared table cannot be what runs — a uniform table
+// would need no such argument. The "uniform" fix's own T3 finding (cosine 0.992789) was real,
+// but the fix over-corrected: it likely traded one wrong frequency table (whatever the T3
+// checkpoint's bug actually was) for a table that is now wrong on 3 of every 4 layers instead of
+// being right on all 4 — this tiny golden's post-fix cosine (0.98997287, argmax still exact) is
+// the same magnitude-only-drift signature as the original bug, on the layers this fix touched.
+// `base` (theta) IS the same value on both layer types on the real release — only the SCALING
+// differs, which is why `localBase`/`base` collapse to the same number below but
+// `scalingLocal`/`scaling` do not.
+//
+// The flat-top-level branch (the real 7B/32B release's on-disk form) is unaffected by this
+// correction: `PretrainedConfig`'s `standardize_rope_params` expands it into the identical
+// nested full/sliding split at construction time, so both branches now agree.
 func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	base := cfg.RoPEGlobalBase
-	var scaling *ropeScaling
+	localBase := base
+	var scaling, scalingLocal *ropeScaling
 	if len(cfg.RopeParameters) > 0 {
-		// NESTED {"full_attention": {...}, "sliding_attention": {...}} — see the doc comment
-		// above. `sliding`'s own base/scaling are read but deliberately UNUSED: 0b0f5c9
-		// established that the real model builds exactly one rotary table from `full` alone and
-		// applies it to every layer regardless of type, so `sliding` is discarded here the same
-		// way it always has been since that fix, not a new omission.
-		full, _, err := parseRopeParameters(cfg.RopeParameters)
+		// NESTED {"full_attention": {...yarn...}, "sliding_attention": {"rope_type": "default",
+		// "rope_theta": <same theta>}} — see the doc comment above (found 2026-09-12):
+		// `full`/`sliding` are BOTH real and DIFFERENT, not "sliding discarded, one uniform
+		// table" — verified by actually calling `Olmo3RotaryEmbedding.forward(hidden, pos,
+		// layer_type)` for both layer types against transformers 5.15.0 (the same install that
+		// generates olmo3_forward_full.json): sliding_attention's cos/sin come back PLAIN
+		// (attention_scaling 1.0, no YaRN interpolation), full_attention's come back YaRN-scaled
+		// (mscale 1.1 on this fixture). The forward signature itself requiring an explicit
+		// layer_type argument is the tell — a single shared table would need none. A prior
+		// revision of this comment ("0b0f5c9") concluded the opposite from reading
+		// modeling_olmo3.py's forward rather than calling it, and that reading was wrong for
+		// this transformers version. base (theta) is the same value on both layer types on the
+		// real release, so only the SCALING differs — sliding gets no scaling at all.
+		full, sliding, err := parseRopeParameters(cfg.RopeParameters)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}
@@ -698,12 +710,21 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			base = full.base
 			scaling = full.scaling
 		}
+		localBase = base
+		if sliding != nil {
+			localBase = sliding.base
+			scalingLocal = sliding.scaling
+		}
 		cfg.RoPEGlobalBase = base // so validateLlama's rope_theta>0 check sees a populated base
 	} else {
 		sc, err := parseRopeScaling(cfg.RopeScaling)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decoder(olmo3): %w", err)
 		}
+		// The flat top-level form is what PretrainedConfig expands into the SAME nested shape
+		// above at construction time (standardize_rope_params) — so a real release loaded this
+		// way gets identical full/sliding behavior to the nested branch: YaRN on full-attention
+		// layers, plain RoPE at the same theta on sliding-attention layers.
 		scaling = sc
 	}
 	if err := cfg.validateLlama(); err != nil {
@@ -740,11 +761,11 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		AttnScale:        math.Pow(float64(hd), -0.5),
 		SlidingWindow:    cfg.SlidingWindow,
 		layerIsGlobal:    isGlobal,
-		RoPELocalBase:    base, // uniform: the real model has exactly one shared rotary table
-		RoPEGlobalBase:   base,
+		RoPELocalBase:    localBase, // sliding-attention layers: same theta, no YaRN scaling
+		RoPEGlobalBase:   base,      // full-attention layers: YaRN-scaled
 		RotaryDim:        cfg.rotaryDim(),
 		ropeScaling:      scaling,
-		ropeScalingLocal: scaling, // uniform, same reason
+		ropeScalingLocal: scalingLocal,
 		EmbedScale:       0,
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
 	}, &olmo3TensorSchema, nil
@@ -2232,9 +2253,16 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			NGroup:                cfg.NGroup,
 			TopkGroup:             cfg.TopkGroup,
 		},
-		// Plain qk_head_dim^-0.5. ⚠️ Phase 3: the real V2-Lite/V3 fold YaRN's
-		// mscale_all_dim² into this scale (DeepSeek's dual-mscale); wire that with the
-		// real-model gate. The tiny golden uses default RoPE, so no mscale.
+		// Plain qk_head_dim^-0.5 — NOT a TODO (audit-2026-09-02.md N-34, resolved 2026-09-11):
+		// an older version of this comment claimed the real V2-Lite/V3 fold YaRN's
+		// mscale_all_dim² into this scale and called it unwired, contradicting the OTHER
+		// mscale comment in this same function (parseRopeScaling's caller above, "transformers
+		// 5.12 does NOT fold mscale² into it"). The real-model gates settle it:
+		// testdata/parity_manifest.json's deepseek_v2/deepseek_v3 entries are "validated"
+		// against real HF bf16 oracles (DeepSeek-V2-Lite 15.7B, Moonlight-16B-A3B) at
+		// cosine_min 0.999+ with THIS plain scale — a ~2x attention-softmax error from a
+		// missing mscale_all_dim²≈0.5 fold would not read as 0.999. No fold needed; the tiny
+		// golden also uses default RoPE, so no mscale there either.
 		AttnScale:      math.Pow(float64(qk), -0.5),
 		RoPELocalBase:  base,
 		RoPEGlobalBase: base,

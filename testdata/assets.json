@@ -472,7 +472,10 @@
         "$MODELS/gpt-oss-20b-MXFP4.gguf"
       ],
       "used_by": [
-        "TestGptOssSafetensors_vsGGUF"
+        "TestGptOssSafetensors_vsGGUF",
+        "TestGptOssResidentParityCUDA",
+        "TestGptOssResidentParityReal20B",
+        "TestGptOssResidentMemGuardDeclines"
       ],
       "note": "The validated-reader side of the safetensors diff. Same weights: its attn_norm matches the safetensors input_layernorm at max|diff| = 0."
     },
@@ -664,6 +667,14 @@
       "candidates": ["$MODELS/glm-air/GLM-4.5-Air-Q2_K.int4.giw"],
       "used_by": ["TestGlm4MoeAir_gate"],
       "note": "int4 .giw prequantized from GOINFER_GLM_GGUF, 67 GB. A LOCALLY BUILT asset, not a download: `go run ./cmd/prequant -o <giw> -quant int4 <gguf>`. 106B will not sit resident in 62 GB, so the gate streams experts out of the mmap under a 24 GB weight-cache budget."
+    },
+    {
+      "env": "GOINFER_MELLUM_CKPT",
+      "kind": "dir",
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/mellum2-unq"],
+      "used_by": ["TestMoEExpertMajor_bitIdentical", "TestMoEExpertMajor_endToEnd"],
+      "note": "P18's default-ON expert-major bit-identity gate. Was a hand-rolled os.Getenv(\"HOME\")+\"/models/mellum2-unq\" fallback, invisible to gate census and blind to GOINFER_MODELS pointing elsewhere (audit-2026-09-02.md N-41) -- registered here instead."
     }
   ]
 }

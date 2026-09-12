@@ -1,7 +1,7 @@
 # Task (goinfer): batched on-device GPU prefill (long-prompt TTFT)
 
 > **For:** Claude Code, in `~/tmcode/goinfer` (GPU work → the 64 GB RTX box;
-> `-tags gpu`). Deferred follow-on from `docs/roadmap.md`. Increments ordered and
+> `-tags gpu`). Deferred follow-on from `docs/completed/roadmap-2026-06.md`. Increments ordered and
 > independently shippable. **Bit-exact greedy parity is the non-negotiable gate —
 > none of this touches the CPU forward; it must match the sequential GPU prefill
 > token-for-token.** Pure-Go core CI job stays untouched.
@@ -13,7 +13,7 @@
 > 748 GFLOP/s-equiv → batched prefill ≈ 0.91× (RTX), ≈1.2× (Metal): a wash. It's
 > kernel-limited, not silicon-limited. **Prerequisite: `dot4I8Packed` unblocks in
 > `cogentcore/webgpu`** (TU104 has the DP4A hardware) — only then does the tiled GEMM
-> clear the bandwidth wall and these increments pay off. See `docs/roadmap.md`
+> clear the bandwidth wall and these increments pay off. See `docs/completed/roadmap-2026-06.md`
 > (Backlog → GPU long-context, and the dp4a item).
 
 ## Problem
@@ -51,7 +51,7 @@ Today's attention (`gpu/attention.go` `attnShaderWGSL`, `c.attnPipeline`) is
 `[0, pos]`. Prefill needs **M queries**, each query i (abs pos `startPos+i`)
 attending causally to keys `[0, startPos+i]` — a **plain causal mask, no sliding
 window.** `DecodeRunnerEligible` requires `SlidingWindow == 0` (verified,
-`decoder/residency.go:89`), so the residency path is **full-attention-only** by
+`decoder/residency.go:90`), so the residency path is **full-attention-only** by
 construction — there are no local/windowed layers to handle. K/V for all M are
 written into the resident cache by the batched `ropeStore`/`vStore` *before* the
 attention reads it, so it's a self-contained pass. This kernel doesn't exist yet,

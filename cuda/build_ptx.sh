@@ -67,8 +67,6 @@ mkdir -p testdata
 for k in "${targets[@]}"; do
 	src="./${k%.cu}.cu"
 	[ -f "$src" ] || { echo "build_ptx: no such kernel source: $src" >&2; exit 1; }
-	# megakernel.cu is a spike artifact, not embedded — skip unless asked by name.
-	if [ "$k" = megakernel ] && [ $# -eq 0 ]; then continue; fi
 	out="testdata/${k%.cu}.ptx"
 	LD_LIBRARY_PATH="$NVRTC_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 		NVRTC_SO="$NVRTC_LIB/libnvrtc.so.12" \

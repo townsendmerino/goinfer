@@ -86,7 +86,7 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 	// SerializeWeights (buffer mode, whole-buffer CRC) — the exact code path
 	// this fix removes for qwen35.
 	gOld, cfgOld, archOld := openFresh()
-	wOld, err := buildWeightsFromGGUF(cfgOld, archOld, gOld, q, false, nil, "")
+	wOld, err := buildWeightsFromGGUF(cfgOld, archOld, gOld, q, false, true, nil, "")
 	if err != nil {
 		t.Fatalf("old path build: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestQwen35StreamingTranscode_matchesResident(t *testing.T) {
 	// StreamTranscodeGGUF uses when writing to a real file).
 	gNew, cfgNew, archNew := openFresh()
 	wr := &giwWriter{}
-	if _, err := buildWeightsFromGGUF(cfgNew, archNew, gNew, q, false, wr, "streaming-gate-test"); err != nil {
+	if _, err := buildWeightsFromGGUF(cfgNew, archNew, gNew, q, false, true, wr, "streaming-gate-test"); err != nil {
 		t.Fatalf("new path build: %v", err)
 	}
 	wr.u32(crc32.ChecksumIEEE(wr.buf))

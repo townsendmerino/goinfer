@@ -317,27 +317,60 @@ var oneUnfilteredCell = []cell{{Name: "./decoder/", Pkgs: []string{"./decoder/"}
 // still reported nothing is a build failure, an absent asset, or a dead cell. TestQwen3NextReal_oracle
 // was the first kind and the report implied the second, which sent three sessions after a 163 GB
 // checkpoint that was fine.
+//
+// N-41 (audit-2026-09-02.md, found 2026-09-11): this test used to pass classifyChecks a cells list
+// production never produces — a lone FILTERED cell, no unfiltered one — to exercise the
+// "UNREACHABLE" branch. parityCells always prepends an unfiltered base cell (base.Run == "", see
+// TestBaseCellIsUnfiltered), so whyNoResult's loop matches that FIRST for any test name and can
+// never reach the UNREACHABLE fallthrough via the sweep's one real call site. Worse than dead code:
+// with the REALISTIC list below, TestQwen3NextReal_oracle is diagnosed as "selected by cell
+// ...(unfiltered)... but reported nothing" — the WRONG cause, reproducing the exact five-week
+// misdiagnosis this function exists to prevent, because whyNoResult's "unfiltered" check does not
+// know that a cell's Pkgs/Tags might never even COMPILE a realckpt-tagged test. Fixing that needs
+// a real reachability check (e.g. `go test -tags <cell> -list` per cell) rather than a -run regex
+// match; not done here — this only stops the test from certifying a scenario that cannot occur and
+// records the live gap plainly instead of leaving it invisible under a green mutation-adjacent test.
 func TestParity_missingGateSaysWhichCause(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestPasses": "pass"})
 	checks := []gateCheck{{"a", "TestPasses"}, {"b", "TestQwen3NextReal_oracle"}}
+	// The REAL shape: parityCells always puts an unfiltered base cell first (TestBaseCellIsUnfiltered).
+	unfilteredBase := cell{Name: "./decoder/ ./tokenizer/", Run: ""}
 
-	// Filtered cell that cannot match the oracle — the real bug.
+	// Realistic cells, oracle selected by neither in a way whyNoResult can currently tell apart:
+	// the base cell's empty Run makes whyNoResult call it "selected (unfiltered)" for EVERY test,
+	// including one no cell's build even contains. This is today's actual (wrong) behavior for the
+	// bug TestQwen3NextReal_oracle was — recorded, not asserted as correct.
 	rows, _, _, _ := classifyChecks(res, checks, func(string) string { return "CONFIRMED" },
-		[]cell{{Name: "realckpt", Run: "Qwen35|Real_gate"}})
+		[]cell{unfilteredBase, {Name: "realckpt", Run: "Qwen35|Real_gate"}})
 	got := rowFor(t, rows, "TestQwen3NextReal_oracle")
-	if !strings.Contains(got, "UNREACHABLE") {
-		t.Errorf("an unselectable gate must say so; got %q", got)
+	if strings.Contains(got, "UNREACHABLE") {
+		t.Errorf("with a realistic (unfiltered-base-first) cell list, whyNoResult should NOT say "+
+			"UNREACHABLE (that branch is unreachable via the sweep's real call site) — got %q; if "+
+			"this now fails, whyNoResult gained real build-tag reachability and this test (and its "+
+			"doc comment) should be updated to match", got)
 	}
 
-	// Same gate, a cell that DOES select it: a different cause, and it must not say UNREACHABLE.
+	// Same gate, a cell that DOES select it by -run: still "reported nothing", same as above —
+	// whyNoResult cannot currently distinguish these two realistic cases from each other either,
+	// since the unfiltered base cell's own branch fires first regardless.
 	rows, _, _, _ = classifyChecks(res, checks, func(string) string { return "CONFIRMED" },
-		[]cell{{Name: "realckpt", Run: "Real_gate|Real_oracle"}})
+		[]cell{unfilteredBase, {Name: "realckpt", Run: "Real_gate|Real_oracle"}})
 	got = rowFor(t, rows, "TestQwen3NextReal_oracle")
-	if strings.Contains(got, "UNREACHABLE") {
-		t.Errorf("a selectable gate that reported nothing is not unreachable; got %q", got)
-	}
 	if !strings.Contains(got, "reported nothing") {
-		t.Errorf("want the other cause named; got %q", got)
+		t.Errorf("want the \"reported nothing\" cause named; got %q", got)
+	}
+}
+
+// TestWhyNoResult_unreachableBranchOwnLogic tests whyNoResult's UNREACHABLE fallthrough directly,
+// AS ITS OWN UNIT — not as a claim that classifyChecks/parityCells can produce this input today
+// (they cannot; see TestParity_missingGateSaysWhichCause's comment). The branch is kept as a
+// defensive fallback should a caller ever pass a cells list with no unfiltered entry; this pins
+// that it still does the right thing if that ever happens, without pretending it is exercised by
+// the real sweep.
+func TestWhyNoResult_unreachableBranchOwnLogic(t *testing.T) {
+	got := whyNoResult("TestQwen3NextReal_oracle", []cell{{Name: "realckpt", Run: "Qwen35|Real_gate"}})
+	if !strings.Contains(got, "UNREACHABLE") {
+		t.Errorf("a cells list with no unfiltered entry and no matching -run must say UNREACHABLE; got %q", got)
 	}
 }
 

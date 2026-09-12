@@ -1,6 +1,6 @@
 # Plan: a generated, community-readable capability matrix (from the registry, not instead of it)
 
-> **Audience:** internal planning, `roadmap.md` Track-style. Goal: give the
+> **Audience:** internal planning, `completed/roadmap-2026-06.md` Track-style. Goal: give the
 > community a readable map of *what model families goinfer supports and how each
 > is configured* — **generated from the Go registry**, so the code stays the
 > single source of truth and the artifact can't drift. Explicitly **not** a

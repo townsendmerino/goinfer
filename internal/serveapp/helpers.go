@@ -359,7 +359,17 @@ func completionChunk(id string, created int64, model, text string, finish *strin
 
 // --- JSON responses ---
 
+// jsonWriteTimeout bounds a non-streaming response's write — writeJSON's twin of sseWriteTimeout
+// above, closing M-13 (docs/audit-2026-09-10.md, M-17 (09-02)'s sibling): a client that stops
+// reading a large buffered body (logprobs, a long completion — easily ~10 MB) blocked
+// Encode/Write with no deadline, pinning the decode worker, its queue slot, and its inflight slot
+// until the client closed. A var so tests can drive it, same as sseWriteTimeout.
+var jsonWriteTimeout = 30 * time.Second
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
+	// An unsupported controller is not a failure — httptest's recorder has no deadline support —
+	// so the error is deliberately dropped, matching sseWriter.frame's own comment.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(jsonWriteTimeout))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)

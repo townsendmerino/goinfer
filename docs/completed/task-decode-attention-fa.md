@@ -1,5 +1,12 @@
 # Task: FA-class decode attention — the fast-mode fork, scoped as a campaign
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **Status: SCOPED — campaign of record (source-verified).** Drafted 2026-08-10 from the
 > plan-still-slow relay record; the load-bearing claims were verified against the working tree (state
 > through the Metal leg, b3ac838) — test names, the WebGPU precedent, the softcap/sink

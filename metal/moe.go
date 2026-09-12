@@ -605,7 +605,7 @@ func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
 // first command buffer; the host then reads rIdx and stages the routed experts before the second.
 func (r *resident) encodeMoERouter(e *Encoder, L *residLayer) {
 	// post-attn RMSNorm → quantized activation mq/mSc (same as the dense FFN entry).
-	e.Dispatch(r.pRms, 256, 256, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 	r.encodeMoERoute(e, L)
 }
 
@@ -777,7 +777,7 @@ func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
 		r.recordExecErr(e.Err())
 	}
 	e := r.q.Begin()
-	e.Dispatch(r.pRms, 256, 256, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
 	r.recordExecErr(e.Err())

@@ -603,6 +603,18 @@ func sortedSet(m map[string]bool) []string {
 // A gate no pattern selects cannot be fixed by any machine, asset or environment. A gate that IS
 // selected and still produced nothing is a different problem entirely. Saying which halves the
 // search.
+//
+// KNOWN GAP (N-41, audit-2026-09-02.md, found 2026-09-11): this only checks -run REGEX selection,
+// not build-tag reachability. parityCells' base cell has an empty Run (deliberately — see
+// TestBaseCellIsUnfiltered) and no Tags, so the loop's first branch below fires for EVERY test name
+// via the sweep's one real call site, and the UNREACHABLE fallthrough is provably unreachable
+// there — see TestParity_missingGateSaysWhichCause. Worse, that means a realckpt-tagged test base
+// cannot even COMPILE would be diagnosed as "selected (unfiltered) but reported nothing" (implying
+// an asset/build problem) instead of UNREACHABLE (implying a pattern/name problem) — reproducing
+// the original TestQwen3NextReal_oracle misdiagnosis this function was built to stop, for the exact
+// shape of bug that caused it. A real fix needs per-cell reachability (e.g. `go test -tags <cell's
+// Tags> -list '^<test>$' <cell's Pkgs>` and checking for a match), not a -run string match against
+// Run alone. Filed, not fixed, to avoid rushing a change to a pre-push-adjacent gate's own logic.
 func whyNoResult(test string, cells []cell) string {
 	for _, c := range cells {
 		if c.Run == "" {

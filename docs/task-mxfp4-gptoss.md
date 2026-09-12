@@ -1,7 +1,13 @@
 # task: MXFP4 quantization + gpt-oss model family, and the CPU decode scheduler
 
-> Status: **NOT STARTED.** Drafted 2026-07-26 from a review of
-> [`arizqi/cpubrrr`](https://github.com/arizqi/cpubrrr).
+> Status: **SHIPPED (CPU MXFP4/gpt-oss + GPU residency), reworked in place 2026-09-12** —
+> stale since the doc's own Phase 0/Phase 2 sections closed it out. §1–§3 (CPU format +
+> architecture support) shipped as scoped. §5 (the yielding spin-barrier) is CLOSED, NEGATIVE,
+> then answered by a different mechanism — see `docs/completed/plan-cpubrrr-steal-and-bindings.md`'s
+> A3 disposition. GPU residency — scoped below as "NOT recommended as the next step" — shipped
+> anyway, on all three resident backends (`docs/hardware-matrix.md`); see the retraction on that
+> section. This page stays live because `docs/task-fp4-formats.md` plans to extend it (its own
+> items A/B), not because anything here remains undone.
 >
 > Depends on aikit's Q8_K integer-accumulation task note (uncommitted in that repo, so not reachable from here) for §4 only. §1–§3 and §5
 > are independent and can start immediately.
@@ -245,6 +251,16 @@ the implementation shared its mistake — a test and an implementation derived f
 assumption cannot check each other.
 
 ## Phase 2 scoping — GPU residency: NOT recommended as the next step
+
+**RETRACTED 2026-09-12 — overturned by later work, not by this scoping being wrong at the
+time.** The CORRECTION section below already found the path (a third kernel, `route_gptoss`,
+alongside the two named here) and reasoned gpt-oss might be bridgeable after all; that path
+shipped in full — CUDA admitted 2026-08-31 (G7), WebGPU 2026-09-08 (G6,
+`docs/task-gpu-paths-2026-09.md`), and `docs/hardware-matrix.md` now reads gpt-oss resident on
+all three backends. `decoder/gptoss_decline_test.go`'s own doc comment already tells this exact
+story ("CUDA MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE", "WEBGPU MOVED..."). Kept below as
+the record of what the scoping looked like before the CORRECTION and the eventual ship, not as
+a standing recommendation.
 
 Phase 1 made the CPU path format-complete (GGUF **and** safetensors, the latter diffed against
 the former at cosine 0.999121 with identical argmax). Residency was always the other half of

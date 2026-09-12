@@ -1,5 +1,12 @@
 # Qwen3.5/3.6 MoE (`qwen3_5_moe`) — bring-up spec & plan
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 Qwen 3.6 (HF `model_type: qwen3_5_moe`, `Qwen3_5MoeForConditionalGeneration`;
 the 3.5 and 3.6 checkpoints share this architecture) is a **hybrid
 linear/softmax-attention MoE**. It is the largest forward-pass addition in
@@ -109,9 +116,19 @@ between cosine 0.9985 and 1.0).
 
 ## Hybrid cache (decision: correctness-first)
 
+**CORRECTED 2026-09-12 (R-01 phase 0, `task-recompute-audit.md`, fixed 2026-09-03 but never
+applied here).** The two bullets below described the ORIGINAL decision; reuse is no longer a
+blanket fallback. `decoder/resident_reuse.go`'s recurrent-family branch (`hasRecurrentState()`)
+now reuses on an EXACT, STRICT EXTENSION — a prompt that is exactly the previous turn's resIDs
+plus new tokens continues the live recurrent state with no rewind, which is what an agent turn
+actually is. Full recompute is now the fallback only for a genuine divergence (an edited earlier
+message, a resend, anything that isn't a strict extension), not the default. Speculative
+decoding's `TruncateTo` stays disabled — that part is still true — pending R-01 phase 1's state
+snapshot (the design notes below).
+
 A sequence's state is **hybrid**: KV cache for the 10 full layers + a recurrent
 `DeltaState{S, convState}` for the 30 linear layers. Because the recurrent state
-is not position-truncatable, for `qwen3_5_moe`:
+is not position-truncatable, for `qwen3_5_moe`, as originally decided here:
 - cross-call prefix KV reuse (`Session`, v0.3.0) **falls back to full recompute**;
 - speculative decoding's `TruncateTo` is **disabled**.
 Optimizing those for hybrid models (state checkpoints) is a later track.

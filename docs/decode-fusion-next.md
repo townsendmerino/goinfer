@@ -101,7 +101,7 @@ further here.
 
 ### Confirmed against the CUDA spike's stage-grouping (2026-09-02)
 
-The obvious next question — can `docs/cuda-megakernel-spec.md` §5.2's K1/K2/K3
+The obvious next question — can `docs/completed/cuda-megakernel-spec.md` §5.2's K1/K2/K3
 super-kernel grouping be built as 3 WGSL dispatches, since it was designed specifically
 to avoid needing grid-wide cooperative launch? — is **NO**, and the ceiling above is why.
 K2 (attention ⊕ quant ⊕ O-proj) needs a grid-wide sync: attention is one workgroup per

@@ -28,7 +28,7 @@ next, and so on, until you decide to stop. Everything below is detail about (a)
 how that one prediction works and (b) the engineering tricks that make running it
 thousands of times not unbearably slow.
 
-That outer loop lives in [`decoder/model.go:1146-1474`](../decoder/model.go#L1138-L1474), a
+That outer loop lives in [`decoder/model.go:1188-1474`](../decoder/model.go#L1138-L1474), a
 function called `generateInto`.
 
 ---
@@ -160,22 +160,22 @@ many layers → one score per possible next token.**
 
 Now we have 100,000 scores. How do we choose one? That's
 [sampler.go](../decoder/sampler.go), specifically
-[`SampleWithInfo`](../decoder/sampler.go#L114-L133).
+[`SampleWithInfo`](../decoder/sampler.go#L246-L296).
 
 - The simplest choice: just take the highest-scoring token. That's **greedy /
-  argmax** ([decoder/sampler.go:186](../decoder/sampler.go#L129)) — deterministic, the
+  argmax** ([decoder/sampler.go:264](../decoder/sampler.go#L264)) — deterministic, the
   model's single best guess.
 - More commonly we add controlled randomness so output isn't robotic.
   **Temperature** flattens or sharpens the scores (high temperature = more
   adventurous, low = more predictable). Then we usually restrict the random draw
   to the top few candidates — **top-k** (only the k best), **top-p / nucleus**
   (the smallest set covering p% of the probability) — to avoid picking something
-  absurd ([decoder/sampler.go:188-190](../decoder/sampler.go#L131-L133)).
+  absurd ([decoder/sampler.go:265-267](../decoder/sampler.go#L265-L267)).
 
 The scores are turned into actual probabilities via **softmax** (exponentiate and
 normalize so they sum to 1), and one token is drawn. There are also **penalties**
 to discourage the model from repeating itself
-([decoder/sampler.go:179-181](../decoder/sampler.go#L122-L124)).
+([decoder/sampler.go:258-259](../decoder/sampler.go#L258-L259)).
 
 The output is a single integer — the next token.
 
@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L893-L1131). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:1336](../decoder/model.go#L1004-L1130)).
+   ([decoder/model.go:1378](../decoder/model.go#L1004-L1130)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one

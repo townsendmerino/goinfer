@@ -2,8 +2,8 @@
 
 > **Status: OPEN, drafted 2026-09-08** from the code at `c9db2ec`, not from the docs — R9
 > (`docs/task-first-hour.md`) showed the docs can say "GPU" where the code says CPU, so every item
-> below cites the line that decides. Companion to `docs/gpu-residency-coverage.md` (the WebGPU
-> runner's per-family scoping) and `docs/hardware-matrix.md` (the generated admission table).
+> below cites the line that decides. Companion to `docs/gpu-residency-coverage.md` (the standing
+> residency backlog, cross-backend) and `docs/hardware-matrix.md` (the generated admission table).
 >
 > The question this answers: after R9 (CUDA/Metal have no staged GPU path; WebGPU's staged path
 > reaches the GPU for f32/int8 only) and R13, what *else* on a GPU box runs on the CPU when it
@@ -54,9 +54,9 @@ to the readme-smoke job for the chat binary too.
 ### G2 — image turns run the whole text decoder on the CPU, not just the tower
 
 **Where.** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
-CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1076–1077`
+CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1179–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
-(`internal/serveapp/openai.go:677–663`).
+(`internal/serveapp/openai.go:735–663`).
 
 **Effect.** On the Mac or a CUDA box, a Gemma 3 image request runs the *text* decode at CPU speed
 even though `gemma3` text is resident on both backends. `-tags gpu` moves only the SigLIP tower
@@ -79,10 +79,10 @@ record it there as P6a and do it with the tower move rather than after.
 
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
-**Where.** `internal/serveapp/openai.go:1006`: `if lm.model.ResidentActive() && lm.adapter == ""` —
-adapter models take the session path below it, and `decoder/model.go:1080` makes a session
+**Where.** `internal/serveapp/openai.go:1087`: `if lm.model.ResidentActive() && lm.adapter == ""` —
+adapter models take the session path below it, and `decoder/model.go:1122` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
-commit == nil`). The comment at `internal/serveapp/openai.go:980–967` records the cost: 13 tok/s vs ~460 resident on
+commit == nil`). The comment at `internal/serveapp/openai.go:1061–967` records the cost: 13 tok/s vs ~460 resident on
 a 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
 **Fix.** Apply the compute-time LoRA on the resident path: the adapter is a per-projection
@@ -91,7 +91,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:860`).
+assumes (`internal/serveapp/main.go:932`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -130,8 +130,8 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
 | DeepSeek-V2/V3, Kimi K2 | `FeatMLA` | `FeatMLA` | exists on WebGPU; **gate the nGroup/topkGroup mapping first** (the CUDA TRAP comment, `decoder/features.go:396–405`) |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
-| LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:207` declines it before features are consulted |
-| Llama 4 | own forward, not bridged | same | `decoder/residency.go:205` |
+| LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:208` declines it before features are consulted |
+| Llama 4 | own forward, not bridged | same | `decoder/residency.go:206` |
 | Ling 3.0 | `FeatKDA` | same | not on any backend |
 | Gemma 4 E2B/E4B | `FeatGemma4EModel` | same | PLE + shared-KV + per-layer FFN — not on any backend; the 26B/31B are resident |
 
@@ -153,7 +153,7 @@ WebGPU.
 
 ### G7 — Nemotron 3 Nano / 3.5 Lightning are CPU on every backend, and the matrix says otherwise
 
-**Where.** `decoder/residency.go:242`: `if a.nemotron != nil { return a.MoE == nil }` — the
+**Where.** `decoder/residency.go:243`: `if a.nemotron != nil { return a.MoE == nil }` — the
 MoE block kind has no resident builder on any backend (comment at 234–240). `docs/hardware-matrix.md`
 row "Nemotron-H → WebGPU ✅ resident" is generated from the *dense* representative config, so it is
 true of Nemotron-H and false of the two models people download. task-families-2026-09 F2
@@ -174,7 +174,7 @@ unknown kind declines cleanly), gated on the real Nano checkpoint on the Linux b
 ### G8 — Metal prefill is sequential for every non-plain-dense family, flag or no flag
 
 **Where.** `metal/model.go:63–67`: `prefillFeatures` is exactly `{FeatQKNorm, FeatSlidingWindow,
-FeatPartialRotary}`; `metal/model.go:550` sets `prefillOK` from it; `metal/backend.go:258` declines.
+FeatPartialRotary}`; `metal/model.go:566` sets `prefillOK` from it; `metal/backend.go:258` declines.
 Separately, `metal/backend.go:251` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
 (the 54% stream divergence, §A2-Metal). So MoE, Gemma, DeltaNet, gpt-oss and GPT-2 prompts on the
 Mac are one forward per prompt token regardless of `--metal-fast-prefill`. CUDA's batched prefill
@@ -191,7 +191,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:940`: "WebGPU implements no Prefiller"; `gpu/residency.go:1025`
+**Where.** `decoder/model.go:982`: "WebGPU implements no Prefiller"; `gpu/residency.go:1025`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
@@ -223,11 +223,11 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 
 ## Things checked and found fine
 
-- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1209–1067`), but serve
-  serializes each model's generations (`internal/serveapp/openai.go:62` `mu`), so it never fires
+- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1251–1067`), but serve
+  serializes each model's generations (`internal/serveapp/openai.go:63` `mu`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
-- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1006`).
+- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1087`).
 - The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
   the CPU block drafter is measured-negative and deliberately not wired (`blockspec_cpu.go`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.
@@ -1048,7 +1048,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     this is the third) explaining the Nemotron-H row is generated from a DENSE representative
     config and does not apply to the two real MoE checkpoints — regenerated via `-update`,
     `TestHardwareMatrix_fresh` passes.
-  - `docs/nemotron-resident.md` (scoped entirely to the dense port, but titled generically enough
+  - `docs/completed/nemotron-resident.md` (scoped entirely to the dense port, but titled generically enough
     a reader could miss that) gets an explicit scope callout up top. `docs/task-families-2026-09.md`'s
     F2 (Lightning) section — which verified CPU-path config-identity against Nano in detail but
     never once mentioned GPU residency — gets a closing note stating CPU-only-on-every-backend
@@ -1158,7 +1158,8 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     for `(nemotron+MoE, webgpu)`, leaving cuda/metal's decline (and the arch-only predicate
     itself) completely untouched. `withResidency()`'s own G7-part-1 specific-decline-reason
     branch got the same `isWebGPUBackend` exclusion, so it stops firing for the one backend that
-    isn't actually declining. `docs/hardware-matrix.md`'s generator footnote, `docs/nemotron-resident.md`,
+    isn't actually declining. `docs/hardware-matrix.md`'s generator footnote,
+    `docs/completed/nemotron-resident.md`,
     and `docs/task-families-2026-09.md`'s F2 section (all written in part 1, when "no backend
     implements it" was still true) updated to say webgpu now does.
   - **`TestNemotronMoEResidentParityWebGPU`** (new, `gpu/nemotron_moe_resident_test.go`): real
@@ -1262,7 +1263,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     refutes the OTHER half of that same memory (a claimed "−23% v29 decode penalty") with a real
     re-measurement (per-dispatch cgo record cost identical, 1.1µs both; gemv compute within 4%) —
     and no commit anywhere ever describes `dot4I8Packed` as measured rather than blocked; every
-    mention in `roadmap.md`/`gpu-assessment.md`, before and after that date, says "blocked" /
+    mention in `completed/roadmap-2026-06.md`/`gpu-assessment.md`, before and after that date, says "blocked" /
     "upstream-blocked". The memory had conflated a reasoned prediction ("decode's M=1 GEMV is
     already bandwidth-saturated, so packed int8 dot arithmetic wouldn't help even if it existed")
     with an actual test. Corrected in this session's memory store, not just noted here.

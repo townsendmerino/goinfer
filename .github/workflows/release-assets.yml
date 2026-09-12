@@ -30,9 +30,9 @@ jobs:
     name: runtime binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with: { go-version-file: 'go.mod' }
       - name: cross-compile six targets, with the backend each platform can use
         run: |
@@ -263,7 +263,7 @@ jobs:
           done
           [ "$fail" = 0 ] || { echo "serve asset assertions FAILED"; exit 1; }
           echo "serve assets: 6 present, darwin=metal linux=cuda confirmed from build settings; linux-amd64 --version lists cuda"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: plain, path: dist/ }
 
   embedded:
@@ -287,7 +287,7 @@ jobs:
             sha256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
             bytes: 1117320768
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - name: skip 1.5B unless asked
         id: gate
@@ -302,7 +302,7 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: steps.gate.outputs.skip == 'false'
         with: { go-version-file: 'go.mod' }
       - name: fetch the model + verify the pinned digest
@@ -392,10 +392,10 @@ jobs:
             perl -0777 -ne 'BEGIN{$t=shift @ARGV} exit(/(?<!\t)\Q$t\E/ ? 0 : 1)' "$TAG" "$f" || { echo "$f carries no -X copy of $TAG (a build-info copy does not count, G-13(d))"; fail=1; }
           done
           [ "$fail" = 0 ] || { echo "embedded-${{ matrix.tier }} version assertions FAILED"; exit 1; }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.gate.outputs.skip == 'false'
         with: { name: 'embedded-${{ matrix.tier }}', path: demo/chat/dist/ }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.gate.outputs.skip == 'false'
         with: { name: 'model-license-${{ matrix.tier }}', path: licenses/, overwrite: true }
 
@@ -405,9 +405,9 @@ jobs:
     if: always() && needs.plain.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { path: staged }
       - name: collect + checksum
         run: |

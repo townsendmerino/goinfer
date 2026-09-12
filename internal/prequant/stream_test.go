@@ -35,7 +35,7 @@ func TestGIWRoundTripPreservesRouterBias(t *testing.T) {
 	// directly (StreamTranscodeGGUF → LoadSerializedWeights) rather than the full
 	// .giw bundle — it's the serialize round-trip we're guarding.
 	var body bytes.Buffer
-	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &body, "int4", false, false, "glm-tiny"); err != nil {
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &body, "int4", false, decoder.GIWTargetNone, "glm-tiny"); err != nil {
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	w, err := decoder.LoadSerializedWeights(body.Bytes())
@@ -65,7 +65,7 @@ func TestStreamTranscode_ctxCancel_M21(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancelled
 	var body bytes.Buffer
-	n, err := decoder.StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, false, "glm-tiny")
+	n, err := decoder.StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, decoder.GIWTargetNone, "glm-tiny")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
 	}
@@ -149,7 +149,7 @@ func transcodeBothWays(t *testing.T, gguf, quant string) (resident, streamed []b
 		t.Fatalf("SerializeWeights: %v", err)
 	}
 	var buf bytes.Buffer
-	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &buf, quant, false, false, "glm-tiny.gguf"); err != nil {
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &buf, quant, false, decoder.GIWTargetNone, "glm-tiny.gguf"); err != nil {
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	return resident, buf.Bytes(), label
@@ -274,7 +274,7 @@ func TestSidecar_failedTranscodeLeavesNoFinalFile(t *testing.T) {
 	}
 	out := filepath.Join(dir, "model.int8.giw")
 
-	if err := Transcode(context.Background(), src, out, "int8", false, false); err == nil {
+	if err := Transcode(context.Background(), src, out, "int8", false, decoder.GIWTargetNone); err == nil {
 		t.Fatal("Transcode accepted a non-GGUF source")
 	}
 	if _, err := os.Stat(out); err == nil {
@@ -319,7 +319,7 @@ func TestTranscode_realGGUFSucceedsAndPublishedBundleLoads(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "qwen05.int4.giw")
 
-	if err := Transcode(context.Background(), gguf, out, "int4", false, false); err != nil {
+	if err := Transcode(context.Background(), gguf, out, "int4", false, decoder.GIWTargetNone); err != nil {
 		t.Fatalf("Transcode: %v", err)
 	}
 	if _, err := os.Stat(out); err != nil {

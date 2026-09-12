@@ -1,5 +1,12 @@
 # Prompt: measure the Metal verify curve for P10 (run on the M1 Pro)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **STATUS: DELIVERED — the curve was measured (2026-08-15/16).** `docs/queue-performance.md`
 > reasons from "the measured verify curve" to the DSpark Gate-2 projections (2.12× / 2.15× /
 > 1.29×), which is this prompt's output being used downstream.

@@ -316,7 +316,7 @@ has been green on the Mac since. Re-confirmed green again 2026-09-06
 ## Test hooks build tag (`goinfer_testhooks`)
 
 Cross-module test-only hooks (the `*ForTest` / `Set*ForTest` seams a backend's tests use to
-poke the decoder — audit B-08) live in `testhooks_gen.go` files under
+poke the decoder — audit B-08) live in `testhooks.go` files under
 `//go:build goinfer_testhooks`, so they are **not** part of the public API. Any test file that
 calls one carries the tag too (`//go:build … && goinfer_testhooks`). Consequences:
 

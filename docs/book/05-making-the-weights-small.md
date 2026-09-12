@@ -94,9 +94,13 @@ Measured after a fix to how the LM head is quantized:
 | 0.5B | 81.9–83.75 tok/s | 85.25 tok/s |
 | 1.5B | 39.1–40.7 tok/s | 37.56 tok/s |
 
-**int4 now matches or beats int8int8 at both sizes, at half the weight RAM.** The current
-guidance in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) is that int4 is the right default on Apple Silicon CPU
-decode.
+**int4 now matches or beats int8int8's speed at both sizes.** RAM is the opposite story on Apple
+Silicon: the loader keeps a second, repacked copy of int4's nibbles alongside the canonical ones
+for the fast NEON kernel, so int4 actually costs *more* resident RAM there than int8int8, not
+less (`decoder/fitguard.go`). The current guidance in
+[`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) is
+that int4 is the right default on Apple Silicon CPU decode for speed — reach for int8int8 instead
+if RAM, not speed, is the binding constraint.
 
 What is instructive is what `docs/benchmarks.md` does with the *old* advice, which said the
 opposite. The old advice is not deleted. The old advice is kept, marked superseded, with the

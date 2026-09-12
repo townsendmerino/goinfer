@@ -36,17 +36,21 @@ const metaPrefixCap = 64 << 20
 // output. A cancelled ctx aborts a long streaming transcode at the next layer boundary
 // (audit M-21) and removes the partial output.
 //
-// row4 opts every eligible int4 tensor into weightMat kind 4 — the on-disk arm64
-// split-half + 4-row-interleaved layout (docs/task-w4a8-neon-bandwidth.md's "Format
-// follow-on") — instead of kind 3. Requires running on an arm64 box (the repack
-// functions are NEON-only in aikit); a shape the repack rejects, or a non-arm64
-// build, falls back to kind 3 automatically for that tensor. Never implied by
-// quant alone — this is cmd/prequant's own opt-in flag, separate from EnsureCachedGIW's
-// serve-side auto-cache, which always emits kind 3 (a user who wants row4 in that
-// cache runs cmd/prequant explicitly, per the format doc's "opt-in" decision).
-func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool) error {
+// target names the ONE consumer this bundle is promised to (docs/task-int4-layout-
+// 2026-09.md's L2): on a cpu-arm64 target, every eligible int4 tensor writes kind
+// 5 (row4-only — the on-disk arm64 split-half + 4-row-interleaved layout,
+// docs/task-w4a8-neon-bandwidth.md's "Format follow-on") instead of kind 3
+// (decoder/serialize.go's weightMat vs weightMatKind3Only decides which tensors
+// are eligible, and why); every other target, including decoder.GIWTargetNone,
+// writes kind 3 for every int4 tensor. decoder.GIWTargetForBackend derives a
+// target from a backend name (EnsureCachedGIW, below); decoder.ParseGIWTarget
+// parses cmd/prequant's own -target flag. Requires running on an arm64 box for a
+// cpu-arm64 target (the repack functions are NEON-only in aikit); a shape the
+// repack rejects, or a non-arm64 build, falls back to kind 3 automatically for
+// that tensor — always safe to pass any target.
+func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
-		return transcodeDir(ctx, in, out, quant, embedInt4, row4)
+		return transcodeDir(ctx, in, out, quant, embedInt4, target)
 	}
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
@@ -94,7 +98,7 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool)
 		return fmt.Errorf("create %s: %w", tmp, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, false, row4, filepath.Base(in))
+		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, false, target, filepath.Base(in))
 	})
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
@@ -125,7 +129,7 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4, row4 bool)
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
 // blob isn't GGUF metadata). Peak RAM ≈ the resident weight size, since the whole model
 // is loaded rather than layer-streamed — acceptable for the models this targets.
-func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4, row4 bool) error {
+func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -152,10 +156,7 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4, row4 b
 		return fmt.Errorf("create %s: %w", out, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		if row4 {
-			return decoder.SerializeWeightsToRow4(w, m.Weights(), filepath.Base(dir))
-		}
-		return decoder.SerializeWeightsTo(w, m.Weights(), filepath.Base(dir))
+		return decoder.SerializeWeightsToForTarget(w, m.Weights(), filepath.Base(dir), target)
 	})
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
@@ -173,20 +174,24 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4, row4 b
 }
 
 // EnsureCachedGIW returns a .giw for the GGUF at ggufPath quantized to quant,
-// transcoding once into a sidecar cache (alongside the GGUF, "<base>.<quant>.giw")
-// when no fresh cache exists. The cache is fresh when it's newer than the source,
-// so replacing the GGUF rebuilds it. The one-time transcode is logged to stderr
-// (it can take minutes and write tens of GB) so a slow first start isn't mistaken
-// for a hang. Returns the .giw path to load.
-func EnsureCachedGIW(ctx context.Context, ggufPath, quant string) (string, error) {
-	cache := streamCachePath(ggufPath, quant)
+// promised to backend — transcoding once into a sidecar cache (alongside the
+// GGUF, "<base>.<quant>.<target>.giw") when no fresh cache exists. The cache is
+// fresh when it's newer than the source AND was built for the same target (L2:
+// the cache key carries the target, so a CPU-built cache is never reused by a
+// Metal load — the same "wrong file → rebuild" path the version guard already
+// takes for a stale writer). The one-time transcode is logged to stderr (it can
+// take minutes and write tens of GB) so a slow first start isn't mistaken for a
+// hang. Returns the .giw path to load.
+func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (string, error) {
+	target := decoder.GIWTargetForBackend(backend)
+	cache := streamCachePath(ggufPath, quant, target)
 	if cacheFresh(cache, ggufPath) {
 		return cache, nil
 	}
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
-	if err := Transcode(ctx, ggufPath, cache, quant, false, false); err != nil {
+	if err := Transcode(ctx, ggufPath, cache, quant, false, target); err != nil {
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {
@@ -196,10 +201,16 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant string) (string, error
 	return cache, nil
 }
 
-// streamCachePath is the sidecar cache for a GGUF at a quant: "<base>.<quant>.giw".
-func streamCachePath(ggufPath, quant string) string {
+// streamCachePath is the sidecar cache for a GGUF at a quant and target:
+// "<base>.<quant>.<target>.giw" — GIWTargetNone spells as "canonical" rather than
+// an empty segment, so the path stays unambiguous.
+func streamCachePath(ggufPath, quant string, target decoder.GIWTarget) string {
 	base := ggufPath[:len(ggufPath)-len(filepath.Ext(ggufPath))]
-	return base + "." + quantLabel(quant) + ".giw"
+	tgt := string(target)
+	if tgt == "" {
+		tgt = "canonical"
+	}
+	return base + "." + quantLabel(quant) + "." + tgt + ".giw"
 }
 
 // cacheFresh reports whether cache exists, is newer than src, AND actually loads.
@@ -243,8 +254,17 @@ func quantLabel(q string) string {
 
 // selfCheck verifies a freshly written bundle loads through the real mmap path
 // (lazy, low RAM) — the streamed weights deserialize.
+//
+// Backend:"cpu", not Options{} (found writing L2, docs/task-int4-layout-2026-09.md):
+// an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's own literal-"cpu"-
+// is-a-promise rule, L1), so Options{} declined every kind-5 (row4-only) bundle
+// this function itself just wrote for a cpu-arm64 target — self-check would have
+// failed every -target cpu-arm64 transcode. "cpu" accepts both kind 3 and kind 5
+// (the plain CPU backend implements none of wantsCanonicalInt4's interfaces, so it
+// never needs canonical either way) and matches what a real cpu-arm64-target
+// bundle is actually loaded with in production.
 func selfCheck(path string) error {
-	m, err := decoder.Load(path, decoder.Options{})
+	m, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
 	if err != nil {
 		return err
 	}

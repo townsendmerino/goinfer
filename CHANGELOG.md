@@ -15,6 +15,23 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **Three default-ON flips that change greedy output on `serve`/`goinfer-chat`, none previously
+  recorded here (M-53):**
+  - Metal's f16-MMA batched prefill is now default ON above 512 tokens (§3.2 gate, 2026-09-09).
+    Opt out with `GOINFER_METAL_BATCHED_PREFILL=0` or `--exact-prefill`. `--metal-fast-prefill` is
+    now a no-op (deprecated, kept for compatibility — see Added).
+  - Metal's fused flash-attention prefill kernel (`attention_prefill_fused`) is now default ON
+    (§3 gate, 2026-09-10), replacing the exact scalar kernel wherever `hd%8==0 && hd<=128`. Opt
+    out with `GOINFER_METAL_FUSED_ATTENTION=0` or `--exact-prefill`.
+  - `--fit` is now default ON (`docs/task-gpu-paths-2026-09.md`, `task-fit-to-hardware.md` Phase
+    2): an unpinned CUDA context now sizes to real free VRAM headroom instead of a flat 4096
+    positions (commonly up to 8192, `cuda/resident.go`'s `fitDefaultCtx`, or higher); a dense
+    `.gguf` that won't fit resident RAM on CPU gets one automatic `--stream-weights` retry instead
+    of a bare refusal. Never overrides an explicitly-set `-ctx`/`-quant`/`--moe-cache-slots`/
+    `--stream-weights`. Opt out entirely with `--fit=off`.
+
 ### Added
 
 - **K1, cancel-by-id (docs/task-halt-2026-09.md).** A process-wide registry of in-flight
@@ -47,6 +64,16 @@ any surface may still change.
   on macOS). Control it with the same binary: `serve status|ls|cancel <id> [reason]|halt
   [reason]|resume`, dispatched the same way `pull`/`check` already are. Off by default; existing
   behavior is unchanged until it's set.
+
+- `--exact-prefill` — forces bit-exact prompt ingestion on all backends, disabling both the CPU
+  f32-attention fast path and Metal's fast/fused prefill kernels in one flag.
+- `fit` subcommand (`fit [-measure]`) — reports what `--fit` would size a model to without
+  actually serving it.
+
+### Deprecated
+
+- `--metal-fast-prefill` — superseded by the default-ON behavior above; now a no-op, kept only so
+  existing invocations don't fail to parse.
 
 ### Fixed
 
@@ -469,7 +496,7 @@ This release is two things at once. The headline is prefill: CUDA prompt ingesti
 cores and is on by default above 512 tokens, MoE prefill runs expert-major, and the CPU path gets
 head fan-out, a fused schedule and aikit's register-blocked int4 tile — so the prefill deficit
 against Ollama, the repo's largest open gap, narrows on every backend. Underneath that is a
-whole-repo audit (`docs/audit-2026-09-02.md`) and its review (`docs/review-2026-09-04.md`) worked
+whole-repo audit (`docs/audit-2026-09-02.md`) and its review (`docs/completed/review-2026-09-04.md`) worked
 through in a fortnight, plus the first pieces of the onboarding work: a `pull` command, a browser
 UI, a `serve check` doctor and a startup banner. Three defaults in this release change output at
 temperature 0 on long prompts; all three are called out below with their opt-outs.
@@ -830,7 +857,7 @@ temperature 0 on long prompts; all three are called out below with their opt-out
   with no error to notice.
 
 - **From the audit and its review** (`docs/audit-2026-09-02.md`, 2026-09-02/03;
-  `docs/review-2026-09-04.md`, 2026-09-04) — the fixes a user could have hit, each with a gate that
+  `docs/completed/review-2026-09-04.md`, 2026-09-04) — the fixes a user could have hit, each with a gate that
   can fail:
   - **One writer per SSE response.** Two goroutines wrote the same `http.ResponseWriter` on the
     incremental tool-call stream; every frame in both protocols now goes through one `sseWriter`
@@ -2507,7 +2534,7 @@ untrusted-input fuzzing hardening._
   GGUF path proven by weight-diff against the safetensors load. **Honest scope:**
   this is the **text decoder of the Qwen3-VL 35B-A3B** model (the language tower),
   and the hybrid arch runs the **staged path — not GPU residency**. Parity-first f32
-  forward. See `docs/qwen3_5_moe.md`.
+  forward. See `docs/completed/qwen3_5_moe.md`.
 - **Mellum2 chat template** — `chat.Mellum2()` (a named ChatML alias) + a `Detect`
   fingerprint (its distinctive `normalize_content` macro) so JetBrains Mellum2 is
   identified as `mellum2` by `cmd/serve` / `demo/chat` rather than falling through
