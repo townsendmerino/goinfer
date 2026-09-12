@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -106,6 +107,14 @@ type residentDecoder struct {
 	// to the largest K seen. batch[0] aliases runner. newRunner builds one more.
 	newRunner func() (*DecodeRunner, error)
 	batch     []*DecodeRunner
+
+	// prefillLast is decoder.Prefiller's batched-M forward (task-gpu-batched-
+	// prefill.md), captured as a closure over BuildResident's hidden/nH/inter/eps/
+	// scale/addOne locals the same way newRunner is — rd.rm (not a snapshot: this
+	// closure reads it lazily, at call time, well after BuildResident returns) is
+	// converted to the plain-dense-W8A8 ModelW shape PrefillLastW8A8 needs via
+	// runModelToModelW, declining models outside that scope.
+	prefillLast func(xs [][]float32, startPos int) ([]float32, error)
 
 	// resetErr holds the first error from Reset's state re-zero (N-15). Reset() satisfies the
 	// cross-backend ResidentForward interface and returns nothing, so the errors cannot be
@@ -1042,6 +1051,17 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	rd.newRunner = func() (*DecodeRunner, error) {
 		return c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
 	}
+	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
+		mw, ok := runModelToModelW(&rd.rm)
+		if !ok {
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/bias/QK-norm/sliding-window/…)")
+		}
+		positions := make([]int, len(xs))
+		for i := range positions {
+			positions[i] = startPos + i
+		}
+		return c.PrefillLastW8A8(xs, mw, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
+	}
 	runner, err := rd.newRunner()
 	if err != nil {
 		return fail(err)
@@ -1166,6 +1186,43 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 		}
 	}
 	return out, nil
+}
+
+var _ decoder.Prefiller = (*residentDecoder)(nil)
+
+// PrefillLast is decoder.Prefiller: process the whole embeddings slice in ONE
+// on-device batched pass (task-gpu-batched-prefill.md) and return only the LAST
+// position's logits — the sub-linear-TTFT alternative to residentPrefillSeed's
+// per-token Forward loop. Declines (falls back to that loop) when this model
+// isn't plain dense W8A8 (rd.prefillLast's runModelToModelW guard) — a decline is
+// not an error the caller should treat as fatal, so warnPrefillDeclined logs it
+// and the sequential loop takes over exactly as if PrefillLast didn't exist.
+func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err // checked once, up front — the whole pass has no finer-grained cancel point
+	}
+	n := len(embeddings)
+	if n == 0 {
+		return nil, fmt.Errorf("gpu: PrefillLast: no embeddings")
+	}
+	if err := rd.checkCap(startPos, n); err != nil {
+		return nil, err
+	}
+	if startPos == 0 {
+		rd.Reset() // fresh sequence (prefill from 0): re-zero Mamba {win,ssm} state (audit C-01) —
+		// mirrors Forward/ForwardN's own pos==0/startPos==0 reset, even though
+		// runModelToModelW currently declines every model that HAS such state; keeping the
+		// call here means this doesn't silently stop resetting if that scope ever widens.
+		if rd.resetErr != nil {
+			return nil, rd.resetErr
+		}
+	}
+	logits, err := rd.prefillLast(embeddings, startPos)
+	if err != nil {
+		return nil, err
+	}
+	applySoftcap(logits, rd.finalSoftcap)
+	return logits, nil
 }
 
 // TruncateTo is a no-op on the resident cache: it is positional and Forward sets
