@@ -376,6 +376,47 @@ rather than hiding inside it. Raw will be `g26-anchor-n15.json` / `g26-head-n15.
 substantially cell variance, every step reads as noise and the search converges on whichever commit
 happened to draw high. Variance first, then bisect only if a real step survives it.
 
+**Three items inherited from G-03, filed here because the finding that carried them was
+ARCHIVED while they were still open** *(2026-09-12)*. `docs/audit-2026-09-10.md`'s G-03 was moved to
+`docs/completed/audit-2026-09-10.md` — correct, its substance IS closed — but the residual decisions
+travelled with it into a directory the citation lint deliberately excludes and that readers treat as
+settled. An open item inside a closed finding is the same failure mode as a retraction that never
+reaches the page quoting it, so they are restated here, in the live list, rather than left to be
+rediscovered:
+
+- **`TestQwen38GGUF_weightDiff` is fixed and PASSES, but is still `FIRST-RUN` in the ledger.** The
+  fix made the cosine floor per tensor, keyed on each tensor's own source quant (the old single
+  0.999 bar was inherited from a uniform-Q8_0 asset and applied to a *dynamic* UD-Q4_K_M carrying
+  nine ggml types, so it measured the quantizer rather than the loader — the loader was correct
+  throughout). Evidence: `goinfer-logs/qwen38-weightdiff-20260912-104137.log`, plus a mutation run
+  proving the loosened gate can still redden. Promotion is deliberately NOT a session's to make:
+  `promoted_by` means a person checked the gate's value, and the assertion itself just changed.
+  `scripts/gate_ledger.py promote --gate TestQwen38GGUF_weightDiff --value PASS --by francis`.
+
+- **olmo3-tiny cannot be committed, and the cause is now known: the FIXTURE disagrees with the
+  released checkpoint about schema.** `TestOlmo3_forwardParity` fails at *load* —
+  `rope_parameters: missing full_attention`. `db0869e1` read `rope_parameters` as one flat table and
+  `85f68e72` reverted it because the real released config is the nested per-layer-type shape; that
+  revert was right for the real model. But `scripts/pin_olmo3_tiny.py` passes `rope_scaling={...}`
+  to the HF constructor and transformers 5.12 serialises it FLAT, so no single parser greens both
+  the tiny gate and the real one. Fix is the pin script, or a parser accepting both shapes — not
+  re-litigated here because an attempt was already made and reverted. **Note the pre-registered
+  exclusion is now stale about the symptom:** `scripts/refresh_parity_hashes.sh`'s
+  `KNOWN_UNRELATED_FAILURES` entry records a *cosine* miss (0.9899…, argmax correct — i.e. it
+  loaded), which is no longer what happens. An exclusion keyed to one symptom is silently covering
+  a worse one.
+
+- **The strided scores·V negative result has no live home.** It was preserved as the local tag
+  `negative-result/strided-v-scoresv` when its branch was deleted, because its numbers appear in no
+  document: +13.38% (1.5B/512), +40.35% (1.5B/4096), +5.21% (0.5B/512), interleaved A/B with the
+  floor characterised in advance and both polarities run — against P1's recorded **−3.8%** at the
+  same model and context, opposite sign. Mechanism measured, not guessed: `attendBatchedHeads`
+  hoists the V gather above the GQA group loop, so removing it converts one amortised gather into
+  `group` un-amortised strided reads; at `bElemStride = kvDim` every element lands on its own 64B
+  line, 14.68 MB → 201.33 MB at 1.5B/4096. `docs/task-attention-decode-cost.md` would have been its
+  home but was archived 2026-09-12, so a live destination needs choosing. A tag is not a record
+  anyone will find.
+
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 
 Raw: `docs/measurements/g26-anchor-n15.json`, `g26-head-n15.json`, log `g26-n15_run.log`.
@@ -943,6 +984,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |
 | `6a4e0ae` | decoder: optimistic next-token forward for sampled decode (Metal-verified, CUDA untested) |
+| `85f68e72` | fix(olmo3): revert db0869e's parser swap — the real config IS the nested shape |
 | `8f003f2` | parity: v0.15.0 sweep GREEN at bd085de; qwen3_next validated by real oracle |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
@@ -956,6 +998,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `ca29d6c` | cuda: resident context cap becomes configuration-derived (-ctx), VRAM-checked at load |
 | `cda8cfe` | docs: re-declare the freeze as a proof requirement; clear G2 for amd64 alone |
 | `d64afe4` | chore(parity): record real-model validations for the new families + sweep gates |
+| `db0869e1` | fix(olmo3): read rope_parameters as one flat table, not per-layer-type |
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
 | `e8fa53c` | G7 follow-up: land the goldens the CUDA mscale declaration was supposed to move |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
@@ -1549,17 +1592,6 @@ supports.
 | `docs/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/task-recompute-audit.md|decoder/speculative.go:125` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
 | `docs/task-verification-surface-audit.md|decoder/blockspec.go:582` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
-| `docs/task-work-queue-2026-09.md|internal/chatapp/main.go:203` | goinfer | `model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference f` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:507` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/helpers.go:77` | goinfer | `// distinct from the per-model 429. sem == nil disables it (-max-inflight 0). The slot i` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/main.go:500` | goinfer | `flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefille` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/main.go:506` | goinfer | `flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests ` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/openai.go:1040` | goinfer | `func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegi` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/openai.go:170` | goinfer | `// tryEnter claims a queue slot then locks the model's mutex (the decode worker). It ret` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/openai.go:180` | goinfer | `// this). Without this second check, sync.Mutex.Lock() is not context-aware, so a halt w` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/openai.go:77` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
-| `docs/task-work-queue-2026-09.md|internal/serveapp/sessions.go:13` | goinfer | `UNKEYABLE` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1604` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1720` | goinfer | `if g.Has("output.weight") {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1730` | goinfer | `if arch.gemma4 != nil {` |
@@ -1596,6 +1628,8 @@ than papered over.
 | `internal/serveapp/openai.go` | goinfer |
 | `scripts/bench_compare.sh` | goinfer |
 | `scripts/bench_peer.py` | goinfer |
+| `scripts/gate_ledger.py` | goinfer |
+| `scripts/pin_olmo3_tiny.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
 
 <!-- /CITATION-INDEX -->
