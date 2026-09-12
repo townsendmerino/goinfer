@@ -111,7 +111,7 @@ func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byt
 	}
 	gr.maxTokens = maxTokens
 	var sb strings.Builder
-	_, n, _, _, err := lm.driveVL(context.Background(), gr, vi, func(s string) { sb.WriteString(s) })
+	_, n, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, func(s string) { sb.WriteString(s) })
 	if err != nil {
 		t.Fatalf("driveVL: %v", err)
 	}

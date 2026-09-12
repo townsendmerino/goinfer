@@ -406,6 +406,8 @@ func toolUseBlock(c chat.ToolCall) map[string]any {
 // stop_sequence (with the sequence); otherwise (EOS / turn-stop) → end_turn.
 func anthropicStopReason(finish, stopSeq string) (string, any) {
 	switch {
+	case finish == "cancelled": // K1, docs/task-halt-2026-09.md — not a real Anthropic stop_reason, a deliberate goinfer extension
+		return "cancelled", nil
 	case finish == "length":
 		return "max_tokens", nil
 	case stopSeq != "":
@@ -516,10 +518,16 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 
+	id := "msg_" + reqID()
+	gr.id = id
 	var sb strings.Builder
-	finish, nComp, _, stopSeq, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		writeAnthropicErr(w, statusCancelled, "cancelled", "generation cancelled: "+cancelReason)
 		return
 	}
 
@@ -544,7 +552,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":            "msg_" + reqID(),
+		"id":            id,
 		"type":          "message",
 		"role":          "assistant",
 		"model":         lm.name,

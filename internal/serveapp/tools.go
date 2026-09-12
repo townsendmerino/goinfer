@@ -64,6 +64,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	defer lm.exit()
 	id := "chatcmpl-" + reqID()
+	gr.id = id
 	created := time.Now().Unix()
 
 	// Tool decisions need the whole output, so buffer (even when streaming).
@@ -115,7 +116,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		// cover the whole generation as before.
 		stopBeat = sseHeartbeat(ss)
 	}
-	finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) {
+	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
 		sb.WriteString(t)
 		if prose == nil {
 			return
@@ -135,6 +136,23 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		// K1: cancelled mid-generation, so sb holds a partial buffer — do not attempt to
+		// parse a tool call out of it. Reported the same way a generation error is: an SSE
+		// error frame if streaming (already flushed headers, see G19's note above), a
+		// statusCancelled JSON error otherwise. sendUsage still runs — real tokens were
+		// generated before the cancel landed, and a client counting cost wants that count
+		// regardless of how the stream ended (M-26's own reasoning, applied to this exit too).
+		if ss != nil {
+			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
+			sendUsage(ss, req.StreamOptions, id, created, lm.name,
+				usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
+			sseDone(ss)
+			return
+		}
+		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())

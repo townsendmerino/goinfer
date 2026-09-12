@@ -237,6 +237,10 @@ type server struct {
 
 	// Responses API (/v1/responses) state store for store/previous_response_id.
 	responses *responseStore
+
+	// gens is the K1 cancel-by-id registry (docs/task-halt-2026-09.md), shared by every
+	// generation surface. Never nil after newServer.
+	gens *generationRegistry
 }
 
 // pick resolves the OpenAI `model` field to a loaded generative model: an exact
@@ -545,6 +549,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 	defer lm.exit()
 	id := "chatcmpl-" + reqID()
+	gr.id = id // K1: registers this generation for cancel-by-id, drive/driveVL's job
 	created := time.Now().Unix()
 
 	if req.Stream {
@@ -554,7 +559,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(ss, role)
-		finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
@@ -563,6 +568,11 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		if cancelReason != "" {
+			// K1: one final SSE event naming the reason, so a client cannot mistake this for
+			// a natural stop even though finish_reason alone is already "cancelled" above.
+			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
+		}
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
 			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
@@ -570,9 +580,13 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 
 	var sb strings.Builder
-	finish, nComp, lps, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
 	choice := map[string]any{
@@ -628,6 +642,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	}
 	defer lm.exit()
 	id := "cmpl-" + reqID()
+	gr.id = id
 	created := time.Now().Unix()
 
 	if req.Stream {
@@ -635,7 +650,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
-		finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
 		if gerr != nil {
@@ -644,15 +659,22 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 			return
 		}
 		sseSend(ss, completionChunk(id, created, lm.name, "", &finish))
+		if cancelReason != "" {
+			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
+		}
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
 			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, _, reused, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -669,7 +691,11 @@ type genRequest struct {
 	sp          decoder.SamplingParams
 	maxTokens   int
 	stopStrings []string
-	masker      *constrain.Masker // set on constrained requests (response_format / tool grammar); enables grammar-spec
+	// id, when set, registers this generation in the server's K1 cancel-by-id registry for the
+	// duration of drive/driveVL. "" (the zero value) skips registration — a caller that hasn't
+	// been wired for cancellation (or a test calling drive/driveVL directly) is unaffected.
+	id     string
+	masker *constrain.Masker // set on constrained requests (response_format / tool grammar); enables grammar-spec
 }
 
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams,
@@ -966,14 +992,37 @@ func genErr(err error) error {
 
 // drive runs the generation, applying stop strings and UTF-8 holdback, calling
 // onText with each newly-completed text fragment. Returns the finish reason
-// ("stop" | "length"), the completion token count, (non-stream) per-token
-// logprobs, the stop string that was hit (empty unless a stop sequence ended the
-// turn), how many leading prompt tokens this generation's prefill skipped via
-// resident/session reuse (decoder.Generation.PrefillReused — 0 when nothing was
-// reused or the path doesn't track it), and any terminal generation error (nil on
-// a clean end — see genErr). The context is cancelled on a stop-string hit to end
-// generation.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(string)) (string, int, []decoder.SampleInfo, string, int, error) {
+// ("stop" | "length" | "cancelled" — K1, docs/task-halt-2026-09.md), the completion
+// token count, (non-stream) per-token logprobs, the stop string that was hit
+// (empty unless a stop sequence ended the turn), how many leading prompt tokens
+// this generation's prefill skipped via resident/session reuse
+// (decoder.Generation.PrefillReused — 0 when nothing was reused or the path
+// doesn't track it), the K1 admin-cancel reason (empty unless an admin cancel —
+// not a client disconnect or shutdown — ended the turn), and any terminal
+// generation error (nil on a clean end — see genErr). The context is cancelled
+// on a stop-string hit to end generation.
+//
+// gens is the server's K1 registry; nil (or gr.id == "") skips registration — every
+// generation funnels through here or driveVL, so this is the one place that bookkeeping
+// lives, not each of the ~15 call sites (see generations.go's own doc comment).
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+	var g *generation
+	if gens != nil && gr.id != "" {
+		// K1's cancel must land on `parent` itself, not on `ctx` below (drive's own
+		// stop-string-derived child context) — streamTokens tells an admin cancel apart from a
+		// stop-string hit by checking parent.Err(), specifically BECAUSE the stop-string cancel
+		// only ever touches ctx (see streamTokens' own doc comment, M-23). Registering ctx's
+		// cancel here would make an admin cancel indistinguishable from a natural stop:
+		// discovered by the K1 gate test failing to see "cancelled" even though the generation
+		// genuinely stopped — cancelling ctx silences the loop but parent.Err() stays nil.
+		var adminCancel context.CancelFunc
+		parent, adminCancel = context.WithCancel(parent)
+		defer adminCancel()
+		g = gens.register(gr.id, lm.name, adminCancel)
+		defer gens.remove(gr.id)
+		wrapped := onText
+		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
+	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var stream <-chan int
@@ -1024,7 +1073,11 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 			stream, gen = lm.model.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 		}
 		finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-		return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, genErr(gen.Err())
+		cr := cancelledReason(g, parent, stopHit)
+		if cr != "" {
+			finish = "cancelled"
+		}
+		return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 	}
 
 	// Reuse the KV of whichever cached session already holds this prompt as a
@@ -1064,7 +1117,25 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, genErr(gen.Err())
+	cr := cancelledReason(g, parent, stopHit)
+	if cr != "" {
+		finish = "cancelled"
+	}
+	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
+}
+
+// cancelledReason reports the K1 admin-cancel reason for this generation's finish, or "" if it
+// wasn't an admin cancel. g is nil for an unregistered generation (gr.id == "" or gens == nil).
+// Conditions mirror streamTokens' own "length" fallback (M-23): parent (not the stop-string
+// derived ctx) carries the external-cancel signal, and a stop-string hit always wins (the
+// generation completed naturally at essentially the same moment, so the natural "stop" reason
+// is reported rather than a race with the timing of an admin cancel that arrived too late to
+// matter).
+func cancelledReason(g *generation, parent context.Context, stopHit string) string {
+	if g == nil || parent.Err() == nil || stopHit != "" {
+		return ""
+	}
+	return g.reason()
 }
 
 // driveVL is drive for a multimodal turn: it prefills gr.promptIDs with the
@@ -1074,10 +1145,23 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, onText func(
 // decoder.Session (multimodal opts out of that CPU-side prefix reuse) — but on a
 // resident backend, GenerateVL/GenerateQwenVL do their own resident-GPU-KV image
 // reuse when the SAME image is resent (P9a); vi.features is then never invoked at
-// all. Returns finish reason, completion token count, stop string, how many
-// leading prompt tokens were reused (see drive's doc comment), and any terminal
-// generation error (nil on a clean end — see genErr).
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, onText func(string)) (string, int, string, int, error) {
+// all. Returns finish reason ("stop" | "length" | "cancelled" — K1), completion
+// token count, stop string, how many leading prompt tokens were reused (see
+// drive's doc comment), the K1 admin-cancel reason (empty unless an admin cancel
+// ended the turn), and any terminal generation error (nil on a clean end — see
+// genErr). gens is drive's own K1 registry parameter; see its doc comment.
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, onText func(string)) (finish string, nComp int, stopHitOut string, prefillReused int, cancelReason string, err error) {
+	var g *generation
+	if gens != nil && gr.id != "" {
+		// See drive's identical block for why this must wrap parent, not the ctx derived below.
+		var adminCancel context.CancelFunc
+		parent, adminCancel = context.WithCancel(parent)
+		defer adminCancel()
+		g = gens.register(gr.id, lm.name, adminCancel)
+		defer gens.remove(gr.id)
+		wrapped := onText
+		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
+	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var stream <-chan int
@@ -1090,7 +1174,11 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-	return finish, n, stopHit, gen.PrefillReused, genErr(gen.Err())
+	cr := cancelledReason(g, parent, stopHit)
+	if cr != "" {
+		finish = "cancelled"
+	}
+	return finish, n, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
 // streamTokens consumes a token-id channel, applying stop strings (including

@@ -365,6 +365,14 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// statusCancelled is the non-streaming status for a K1 admin-cancelled generation
+// (docs/task-halt-2026-09.md). 499 is not a registered HTTP status (net/http has no
+// constant for it) — nginx's convention for "client closed request" repurposed here for
+// its closest available meaning, "the SERVER ended this request on someone's behalf,
+// not a normal 4xx/5xx" — but http.ResponseWriter.WriteHeader accepts any int, so it
+// works exactly like any other status code; no framework magic required.
+const statusCancelled = 499
+
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	// Type mirrors the status so typed OpenAI-SDK client retry logic keys off it
 	// (429 → back off, 5xx → retry, 4xx → don't).

@@ -432,7 +432,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
 	flag.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
-	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable POST /admin/models/{load,unload} (loads attacker-named paths — deliberate opt-in; requires -api-key)")
+	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS listener — model load/unload (loads attacker-named paths), GET /admin/generations, and POST /admin/generations/{id}/cancel (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too")
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
@@ -634,6 +634,11 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes)))))
 	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(textCap, srv.handleAdminLoad)))
 	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(textCap, srv.handleAdminUnload)))
+	// K1 (docs/task-halt-2026-09.md): cancel-by-id. GET/health-style uncapped body (list has
+	// none; cancel's {reason} body is tiny) — textCap is generous enough either way and keeps
+	// this consistent with the load/unload routes above rather than inventing a third cap.
+	mux.HandleFunc("GET /admin/generations", auth(srv.handleAdminGenerationsList))
+	mux.HandleFunc("POST /admin/generations/{id}/cancel", auth(maxBytes(textCap, srv.handleAdminGenerationCancel)))
 	if cfg.web {
 		// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and
 		// would turn every unknown GET into the UI page instead of a 404, which is worse than
@@ -786,6 +791,7 @@ func newServer(cfg config) (*server, error) {
 		draining:  map[string]struct{}{},
 		cfg:       cfg,
 		responses: newResponseStore(256),
+		gens:      newGenerationRegistry(),
 	}
 	for _, spec := range cfg.models {
 		// An `hf:`/`demo:` spec is fetched (or found in the cache) BEFORE the load, so the

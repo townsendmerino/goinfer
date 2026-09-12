@@ -155,7 +155,7 @@ func serverBanner(s *server, cfg config) []string {
 		routes = append(routes, "/ (web UI)")
 	}
 	if cfg.allowAdmin {
-		routes = append(routes, "/admin/models/{load,unload}")
+		routes = append(routes, "/admin/models/{load,unload}", "/admin/generations", "/admin/generations/{id}/cancel")
 	}
 	out := []string{"routes: " + strings.Join(routes, " ")}
 	// Load cost, split by phase. task-embed-and-harness-ux.md 3.3 already names the banner as the

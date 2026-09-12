@@ -3,6 +3,7 @@ package serveapp
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +16,45 @@ import (
 // freeing its native memory (purego has no ARC / finalizers, so GC never reclaims
 // it) — see handleAdminUnload and docs/completed/task-admin-unload-drain.md. It snapshots warm
 // KV as part of the drain, and reports 200 (freed) or 202 (draining) per the wait.
+
+// adminCancelReq is the body of POST /admin/generations/{id}/cancel (K1,
+// docs/task-halt-2026-09.md). reason is required so a cancelled generation's finish_reason and
+// log line always say WHY, not just THAT — "every halt/cancel is loud and attributed" is this
+// doc's own ground rule.
+type adminCancelReq struct {
+	Reason string `json:"reason"`
+}
+
+// handleAdminGenerationsList lists every in-flight generation (K1). No liveness/regMu
+// interaction needed — s.gens is its own registry, independent of model load/unload.
+func (s *server) handleAdminGenerationsList(w http.ResponseWriter, r *http.Request) {
+	if !s.adminEnabled(w) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"generations": s.gens.list()})
+}
+
+// handleAdminGenerationCancel cancels one generation by id (K1). Cancelling an id that has
+// already finished (or never existed) is reported the same way either finding leaves the
+// generation stopped, which is what the caller asked for — 200 either way, with found:false
+// distinguishing them for an operator or test that cares.
+func (s *server) handleAdminGenerationCancel(w http.ResponseWriter, r *http.Request) {
+	if !s.adminEnabled(w) {
+		return
+	}
+	id := r.PathValue("id")
+	var req adminCancelReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Reason == "" {
+		writeErr(w, http.StatusBadRequest, "reason is required")
+		return
+	}
+	found := s.gens.cancel(id, req.Reason)
+	fmt.Fprintf(os.Stderr, "admin: cancel %s (found=%v reason=%q)\n", id, found, req.Reason)
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "found": found})
+}
 
 type adminLoadReq struct {
 	Name  string `json:"name"` // served id (default: file/dir basename)

@@ -50,6 +50,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		return
 	}
 	id := "msg_" + reqID()
+	gr.id = id // K1: registers this generation for cancel-by-id
 	anthropicEvent(ss, "message_start", map[string]any{
 		"type": "message_start",
 		"message": map[string]any{
@@ -70,7 +71,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		"type": "content_block_start", "index": 0,
 		"content_block": map[string]any{"type": "text", "text": ""},
 	})
-	finish, nComp, _, stopSeq, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
 			"delta": map[string]any{"type": "text_delta", "text": t},
@@ -83,7 +84,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	}
 	anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, reason, seq, nComp)
+	anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 }
 
 // streamMessagesTools buffers the generation (a tool decision needs the whole
@@ -99,10 +100,17 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 	// (audit-2026-09-02 M-19). Safe to add only now: before sseWriter, a ticker writing here would
 	// have raced the handler on the same ResponseWriter (C-06).
 	stopBeat := sseHeartbeat(ss)
-	finish, nComp, _, stopSeq, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
 	stopBeat()
 	if gerr != nil {
 		anthropicStreamErr(ss, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		// K1: cancelled mid-generation — sb holds a partial buffer, do not attempt to parse a
+		// tool call out of it.
+		reason, seq := anthropicStopReason(finish, stopSeq)
+		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 		return
 	}
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
@@ -110,7 +118,7 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 	if len(calls) == 0 { // model declined to call: one text block with the output
 		streamTextBlock(ss, 0, sb.String())
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, nComp)
+		anthropicMessageEnd(ss, reason, seq, nComp, "")
 		return
 	}
 
@@ -136,7 +144,7 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": idx})
 		idx++
 	}
-	anthropicMessageEnd(ss, "tool_use", nil, nComp)
+	anthropicMessageEnd(ss, "tool_use", nil, nComp, "")
 }
 
 // streamTextBlock emits a complete text content block (start, one delta, stop) —
@@ -157,11 +165,17 @@ func streamTextBlock(ss *sseWriter, index int, text string) {
 
 // anthropicMessageEnd writes the closing message_delta (stop reason + final
 // output token count) and message_stop. There is no [DONE] terminator.
-func anthropicMessageEnd(ss *sseWriter, reason string, seq any, nComp int) {
+// cancelReason, when non-empty (K1, docs/task-halt-2026-09.md), adds one more named event
+// naming the admin-cancel reason before message_stop — reason == "cancelled" alone doesn't
+// carry WHY, and a client must not be able to mistake this for a natural end_turn.
+func anthropicMessageEnd(ss *sseWriter, reason string, seq any, nComp int, cancelReason string) {
 	anthropicEvent(ss, "message_delta", map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": reason, "stop_sequence": seq},
 		"usage": map[string]any{"output_tokens": nComp},
 	})
+	if cancelReason != "" {
+		anthropicEvent(ss, "goinfer_cancelled", map[string]any{"type": "goinfer_cancelled", "reason": cancelReason})
+	}
 	anthropicEvent(ss, "message_stop", map[string]any{"type": "message_stop"})
 }

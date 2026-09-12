@@ -15,6 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added
+
+- **K1, cancel-by-id (docs/task-halt-2026-09.md).** A process-wide registry of in-flight
+  generations, keyed by the id every response already carried. `GET /admin/generations` lists
+  them; `POST /admin/generations/{id}/cancel {"reason":...}` stops one from outside the request
+  that started it — the token loop exits at its next context check (already there; nothing in
+  `decoder/` changed), and the response reports it loudly: `finish_reason`/`stop_reason`
+  `"cancelled"` plus one more named event/field carrying the reason, so a client cannot mistake
+  it for a natural stop. Non-streaming responses get a 499 JSON error instead of a 200. Served
+  behind the existing `-allow-admin` gate.
+
 ### Fixed
 
 - **`cuda/testdata/glue.ptx` (the embedded, driver-JIT'd kernel blob every CUDA resident load

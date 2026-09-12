@@ -275,6 +275,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	}
 	defer lm.exit()
 	id := "chatcmpl-" + reqID()
+	gr.id = id // K1: registers this generation for cancel-by-id
 	created := time.Now().Unix()
 
 	if req.Stream {
@@ -285,7 +286,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
 		// nComp was discarded here; include_usage needs the real generated-token count,
 		// which no count of emitted chunks can report (M-26).
-		finish, nComp, _, reused, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
+		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
@@ -294,15 +295,22 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		if cancelReason != "" {
+			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
+		}
 		sendUsage(ss, req.StreamOptions, id, created, lm.name,
 			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, reused, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -359,6 +367,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	defer lm.exit()
 	id := "msg_" + reqID()
+	gr.id = id // K1: registers this generation for cancel-by-id
 
 	if req.Stream {
 		ss, ok := anthropicSSEStart(w)
@@ -378,7 +387,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
-		finish, nComp, stopSeq, _, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) {
+		finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
@@ -391,13 +400,17 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		}
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, nComp)
+		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, stopSeq, _, gerr := lm.driveVL(r.Context(), gr, vi, func(t string) { sb.WriteString(t) })
+	finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		writeAnthropicErr(w, statusCancelled, "cancelled", "generation cancelled: "+cancelReason)
 		return
 	}
 	reason, seq := anthropicStopReason(finish, stopSeq)

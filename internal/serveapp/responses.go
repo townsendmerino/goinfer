@@ -155,6 +155,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
+	gr.id = id // K1: registers this generation for cancel-by-id
 	if !lm.enter(w) {
 		return
 	}
@@ -170,7 +171,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
-		finish, nComp, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) {
+		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
 			sb.WriteString(t)
 			sseEvent(ss, "response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
@@ -185,15 +186,22 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		sseEvent(ss, "response.completed", map[string]any{
 			"type": "response.completed", "response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp),
 		})
+		if cancelReason != "" {
+			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": cancelReason})
+		}
 		sseDone(ss)
 		s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
 		return
 	}
 
 	var sb strings.Builder
-	finish, nComp, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
@@ -219,6 +227,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
+	gr.id = id // K1: registers this generation for cancel-by-id
 	forced := forcedTool(req.ToolChoice, tools)
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
 	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, tools); cerr != nil {
@@ -246,7 +255,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if ss != nil {
 		stopBeat = sseHeartbeat(ss)
 	}
-	finish, nComp, _, _, _, gerr := lm.drive(r.Context(), gr, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
 	if stopBeat != nil {
 		stopBeat() // joins the ticker goroutine before anything else writes to w
 	}
@@ -257,6 +266,22 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 			return
 		}
 		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		// K1: cancelled mid-generation — sb holds a partial buffer, do not attempt to parse a
+		// tool call out of it; report it as a plain (partial) text message instead, same as the
+		// "model produced nothing parseable" fallback below, so a client still gets a
+		// well-formed response object with real usage rather than a bare event.
+		resp := responseObject(id, lm.name, created, respStatus(finish), []any{outputMessage(id+"-msg", sb.String())}, inTok, nComp)
+		if ss != nil {
+			sseEvent(ss, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+			sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
+			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": cancelReason})
+			sseDone(ss)
+			return
+		}
+		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
 	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
@@ -454,10 +479,14 @@ func responseObject(id, model string, created int64, status string, output []any
 // respStatus maps drive's finish reason to a Responses status: "length" (truncated by
 // max_output_tokens) → "incomplete"; everything else → "completed" (N-15).
 func respStatus(finish string) string {
-	if finish == "length" {
+	switch finish {
+	case "cancelled": // K1, docs/task-halt-2026-09.md — a real value in OpenAI's own Responses status enum
+		return "cancelled"
+	case "length":
 		return "incomplete"
+	default:
+		return "completed"
 	}
-	return "completed"
 }
 
 func outputMessage(itemID, text string) map[string]any {
