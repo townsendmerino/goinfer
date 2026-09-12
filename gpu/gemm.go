@@ -15,7 +15,11 @@ import (
 // shared memory, so each loaded element is reused across the tile (arithmetic
 // intensity ↑). One workgroup computes a 16×16 output block; K is walked in
 // 16-wide strips (kp is a multiple of 16). Math identical to MatmulBTW8A8.
-const matmulTiledW8A8ShaderWGSL = `
+//
+// The inner product over each 4-int8-packed word is factored out as dot4 so the
+// tiling/scheduling code is written once and shared by two dot4 implementations
+// (see below) rather than duplicating the whole kernel.
+const matmulTiledW8A8KernelWGSL = `
 struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };
 
 @group(0) @binding(0) var<storage, read>       aq:      array<u32>;  // [M, kp/4] packed int8
@@ -33,14 +37,7 @@ const TS: u32 = 16u;
 var<workgroup> As: array<u32, 256>;  // [16 rows][16 words]
 var<workgroup> Bs: array<u32, 256>;  // [16 cols][16 words]
 
-fn unpack_i8x4(w: u32) -> vec4<i32> {
-    return vec4<i32>(i32(w << 24u) >> 24u, i32(w << 16u) >> 24u, i32(w << 8u) >> 24u, i32(w) >> 24u);
-}
-fn dot4(a: u32, b: u32) -> i32 {
-    let av = unpack_i8x4(a);
-    let bv = unpack_i8x4(b);
-    return av.x*bv.x + av.y*bv.y + av.z*bv.z + av.w*bv.w;
-}
+%s
 
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -70,19 +67,54 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
+// dot4UnpackedWGSL: every backend accepts this — four sign-extended int8 unpacked
+// from the unpackged word and multiply-accumulated in scalar ALU ops.
+const dot4UnpackedWGSL = `
+fn unpack_i8x4(w: u32) -> vec4<i32> {
+    return vec4<i32>(i32(w << 24u) >> 24u, i32(w << 16u) >> 24u, i32(w << 8u) >> 24u, i32(w) >> 24u);
+}
+fn dot4(a: u32, b: u32) -> i32 {
+    let av = unpack_i8x4(a);
+    let bv = unpack_i8x4(b);
+    return av.x*bv.x + av.y*bv.y + av.z*bv.z + av.w*bv.w;
+}
+`
+
+// dot4PackedWGSL: the native WGSL builtin (gfx-rs/wgpu PR #7494/#7595), only used
+// when Context.hasDP4A (probed live in New()) — on a backend that lowers it to real
+// hardware DP4A (e.g. Vulkan's VK_KHR_shader_integer_dot_product on a DP4A-capable
+// NVIDIA part), this is what clears the compute/bandwidth wall the tiled GEMM was
+// gated on (docs/task-gpu-batched-prefill.md). Same math as the unpacked fallback —
+// dot4I8Packed treats the u32 as four little-endian sign-extended int8 lanes,
+// verified against the unpacked path's parity gate (TestMatmulW8A8Tiled_dp4aParity).
+const dot4PackedWGSL = `
+fn dot4(a: u32, b: u32) -> i32 {
+    return dot4I8Packed(a, b);
+}
+`
+
+var (
+	matmulTiledW8A8ShaderWGSL     = fmt.Sprintf(matmulTiledW8A8KernelWGSL, dot4UnpackedWGSL)
+	matmulTiledW8A8DP4AShaderWGSL = fmt.Sprintf(matmulTiledW8A8KernelWGSL, dot4PackedWGSL)
+)
+
 func (c *Context) ensureTiled() error {
 	if c.tiledPipeline != nil {
 		return nil
 	}
+	code, label := matmulTiledW8A8ShaderWGSL, "matmulTiledW8A8"
+	if c.hasDP4A {
+		code, label = matmulTiledW8A8DP4AShaderWGSL, "matmulTiledW8A8DP4A"
+	}
 	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:      "matmulTiledW8A8",
-		WGSLSource: &wgpu.ShaderSourceWGSL{Code: matmulTiledW8A8ShaderWGSL},
+		Label:      label,
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile tiled shader: %w", err)
 	}
 	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
-		Label:   "matmulTiledW8A8",
+		Label:   label,
 		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
