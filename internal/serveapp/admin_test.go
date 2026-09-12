@@ -21,8 +21,11 @@ func TestServe_admin(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.HandleFunc("POST /v1/chat/completions", srv.handleChat)
 		mux.HandleFunc("GET /v1/models", srv.handleModels)
-		mux.HandleFunc("POST /admin/models/load", srv.handleAdminLoad)
-		mux.HandleFunc("POST /admin/models/unload", srv.handleAdminUnload)
+		// requireAdmin (admin.go) is the chain-level --allow-admin gate as of K5 — the handlers
+		// themselves no longer check it, so this test's "admin off -> 403" case needs it wired
+		// here explicitly, the same way main.go wires it for the real TCP listener.
+		mux.HandleFunc("POST /admin/models/load", srv.requireAdmin(srv.handleAdminLoad))
+		mux.HandleFunc("POST /admin/models/unload", srv.requireAdmin(srv.handleAdminUnload))
 		return httptest.NewServer(mux)
 	}
 	post := func(ts *httptest.Server, p, body string) int {

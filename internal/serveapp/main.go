@@ -330,6 +330,7 @@ type config struct {
 	allowAdmin       bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	haltFile         string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed (K2)
 	haltExitCode     int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence (K2); 0 = stay up
+	adminSocket      string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener (K5); "" = off
 	web              bool          // -web: serve the local browser UI + its model-pull routes
 	requireBE        bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath       string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
@@ -370,6 +371,13 @@ func Main() {
 	// operator chose — which is what a harness meets.
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(servecheck.Run(os.Args[2:], filepath.Base(os.Args[0])))
+	}
+	// K5 (docs/task-halt-2026-09.md): `status|ls|cancel|halt|resume` are a CLIENT talking to a
+	// RUNNING server's admin socket (-admin-socket), not the server itself — same dispatch shape
+	// as pull/check above, so the operator's command is one word instead of a raw curl-to-a-Unix-
+	// socket incantation.
+	if len(os.Args) > 1 && isAdminCLICmd(os.Args[1]) {
+		os.Exit(runAdminCLI(os.Args[1], os.Args[2:], filepath.Base(os.Args[0])))
 	}
 	// A SKIMMABLE HELP HEADER, printed before the 39-flag dump.
 	//
@@ -434,9 +442,10 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
 	flag.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
-	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume")
+	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
 	flag.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
 	flag.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
+	flag.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
@@ -541,8 +550,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// -web counts as a reason to start with no model: fetching one is the whole point of
 	// the UI's Models tab, and requiring a model in order to go and get a model is a
 	// bootstrap the user cannot satisfy.
-	if len(cfg.models) == 0 && cfg.embedPath == "" && !cfg.allowAdmin && !cfg.web {
-		fmt.Fprintln(os.Stderr, "error: need at least one of --model, --embed-model, --web, or --allow-admin")
+	if len(cfg.models) == 0 && cfg.embedPath == "" && !cfg.allowAdmin && !cfg.web && cfg.adminSocket == "" {
+		fmt.Fprintln(os.Stderr, "error: need at least one of --model, --embed-model, --web, --allow-admin, or --admin-socket")
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -640,18 +649,14 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		// name all three: a client within both per-dimension limits can still exceed the total.
 		fmt.Sprintf("this route also limits each request to %d inputs of at most %d bytes each; "+
 			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes))))))
-	mux.HandleFunc("POST /admin/models/load", auth(maxBytes(textCap, srv.handleAdminLoad)))
-	mux.HandleFunc("POST /admin/models/unload", auth(maxBytes(textCap, srv.handleAdminUnload)))
-	// K1 (docs/task-halt-2026-09.md): cancel-by-id. GET/health-style uncapped body (list has
-	// none; cancel's {reason} body is tiny) — textCap is generous enough either way and keeps
-	// this consistent with the load/unload routes above rather than inventing a third cap.
-	mux.HandleFunc("GET /admin/generations", auth(srv.handleAdminGenerationsList))
-	mux.HandleFunc("POST /admin/generations/{id}/cancel", auth(maxBytes(textCap, srv.handleAdminGenerationCancel)))
-	// K2 (docs/task-halt-2026-09.md): global halt/resume, no restart. Not wrapped in haltGate —
-	// resume must always be reachable, and halt must always be callable again (the latest call
-	// wins; see halt.go).
-	mux.HandleFunc("POST /admin/halt", auth(maxBytes(textCap, srv.handleAdminHalt)))
-	mux.HandleFunc("POST /admin/resume", auth(srv.handleAdminResume))
+	// /admin/* (load/unload, K1's cancel-by-id, K2's halt/resume, K5's status) lives on EITHER
+	// the TCP listener (gated by auth+ -allow-admin, as always) OR the admin socket (K5,
+	// docs/task-halt-2026-09.md) when -admin-socket is set — never both, so a request against
+	// the surface that was deliberately not chosen 404s instead of merely being refused (a 403
+	// would confirm the surface exists; a 404 does not). See admin_socket.go for the socket side.
+	if cfg.adminSocket == "" {
+		registerAdminRoutes(mux, srv, textCap, func(h http.HandlerFunc) http.HandlerFunc { return auth(srv.requireAdmin(h)) })
+	}
 	if cfg.web {
 		// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and
 		// would turn every unknown GET into the UI page instead of a 404, which is worse than
@@ -673,6 +678,19 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
 		// its own (pullState), which is the bound that actually fits it.
 		mux.HandleFunc("POST /web/models/pull", sameOrigin(auth(maxBytes(textCap, srv.handleWebPull))))
+	}
+
+	// K5 (docs/task-halt-2026-09.md): the admin socket. closeAdminSock is a no-op when
+	// -admin-socket is unset, so the shutdown handler below can call it unconditionally.
+	closeAdminSock := func() {}
+	if cfg.adminSocket != "" {
+		var err error
+		closeAdminSock, err = startAdminSocket(srv, cfg.adminSocket, textCap)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: -admin-socket %s: %v\n", cfg.adminSocket, err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "admin socket: %s (mode 0600, no api-key — file permissions are the auth; /admin/* is NOT registered on the TCP listener while this is set)\n", cfg.adminSocket)
 	}
 
 	// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-body
@@ -728,6 +746,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}()
 		close(stopDemote)   // stop demoting before we checkpoint
 		close(stopHaltPoll) // stop polling -halt-file; nothing left to react to it after shutdown
+		closeAdminSock()    // close + unlink the admin socket (K5), if one was started
 		srvCancel()         // cancel in-flight generations (via BaseContext) so they release lm.mu
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()

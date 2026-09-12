@@ -233,6 +233,60 @@ no api-key; a `/v1` client with the key cannot halt or resume.
 
 **Size.** Small.
 
+**Status: DONE 2026-09-12** (branch `killswitch-k1-k2-k5`, off `main`). `-admin-socket <path>`:
+unlink-stale-then-listen, mode 0600, a second `http.Server` on `net.Listen("unix", …)` serving
+`/admin/*` (load/unload, K1's generations list/cancel, K2's halt/resume, plus a new `GET
+/admin/status` — see below) with no wrapper at all, not even `-allow-admin`'s check: the socket's
+own file permissions are the entire gate. When set, the TCP listener does not register `/admin/*`
+at all — confirmed as a genuine 404 (`http.ServeMux` on an unregistered pattern), not a
+handler-internal 403, so a probe against the TCP listener cannot even confirm the surface exists.
+Default paths implemented exactly as scoped: `/run/goinfer/admin.sock` (everywhere but macOS),
+`~/Library/Application Support/goinfer/admin.sock` (macOS, via `os.UserHomeDir()`). CLI: `serve
+status|ls|cancel <id> [reason]|halt [reason]|resume`, dispatched the same way `pull`/`check`
+already are (`os.Args[1]`, before `flag.Parse`), talking to the socket over a plain
+`net.Dialer.DialContext("unix", …)` transport. Gate test `TestServe_adminSocket` needs no model
+(halt/resume/status/generations never touch one) and passed first try once the wiring below was
+right; also re-ran `TestServe_admin`/`TestServe_cancelByID`/`TestServe_haltUnderLoad` afterward to
+confirm the refactor below didn't regress K1/K2 — all green.
+
+**Found while building, not assumed:**
+- **A real refactor, not just new code.** The admin handlers (`handleAdminLoad`, `…Unload`,
+  K1's `…GenerationsList`/`…GenerationCancel`, K2's `…Halt`/`…Resume`) all checked
+  `-allow-admin` INTERNALLY (`s.adminEnabled(w)`, first line of each handler body) — fine when
+  every registration went through the same TCP path, but wrong for K5: registering those same
+  handlers on the socket with that check still inside them would have made `-admin-socket`
+  useless without ALSO passing `-allow-admin`, contradicting this item's own "no api-key check"
+  line. Moved the check out to a chain-level `requireAdmin` wrapper (`admin.go`, same shape as
+  `auth`/`haltGate`/`inf` in `main.go`) applied only at the TCP registration site;
+  `registerAdminRoutes` (also `admin.go`) now registers the six-plus-one routes once, called
+  twice — TCP with `auth(requireAdmin(...))`, socket with the identity wrapper. Caught a real,
+  if narrow, regression this uncovered: `admin_test.go`'s existing "`--allow-admin` off → 403"
+  case built its own bare test mux with the handlers registered directly (no wrapper) — it had
+  been relying on the since-removed internal check the whole time. Fixed by wiring
+  `srv.requireAdmin(...)` into that test's mux too, matching what `main.go` now does for real.
+  `cancel_test.go`/`chaos_test.go`/`halt_test.go` were unaffected: they already ran with
+  `allowAdmin: true`, so they never exercised the check either way.
+- **No admin-scoped status endpoint existed.** The CLI's own `status` verb (named in this
+  section's own "Fix" line) had nothing to call: `/health` carries K2's halted fields but is
+  deliberately NOT one of "the existing load/unload plus K1/K2's" routes this item says move to
+  the socket, and the socket serves `/admin/*` only — registering `/health` there too would have
+  been scope creep in the other direction (a `/v1`-shaped route on an admin-only channel). Added
+  `GET /admin/status` (halted/halt_reason/halt_trigger/halt_at plus K1's live generation count)
+  instead — the minimal thing the doc's own CLI line requires to be true.
+- **A real CLI usability trap, found by running the built binary, not by reading the code.**
+  `serve halt <reason> -admin-socket <path>` silently used the WRONG (default) socket path and
+  failed to connect — Go's `flag` package stops parsing at the first non-flag argument, so a
+  reason typed before the flag hides the flag entirely. `serve halt -admin-socket <path>
+  <reason>` (flag first) works. Documented in both the flag's own help text and a doc comment;
+  not fixed structurally, since fixing it would mean hand-rolling flag parsing this package
+  doesn't do anywhere else.
+- **Doc citation now stale, left for the report-back rather than silently overwritten:** this
+  section's own "Where" line names `main.go:606–607` for the admin routes; after K1/K2/K5 that
+  location has moved (and the gating logic it described — the inline `adminEnabled` check — no
+  longer exists at all, see the refactor above). Not corrected in place here since a line-number
+  citation drifts again on the next unrelated edit regardless; noted instead in the closing
+  report so it doesn't quietly become a second stale citation nobody flagged.
+
 ## K6 — Supervised deployment: the layer that does not run goinfer's code
 
 **Where.** New `deploy/systemd/goinfer-serve.service`, `goinfer-lease.timer`, and a launchd

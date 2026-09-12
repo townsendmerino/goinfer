@@ -28,9 +28,6 @@ type adminCancelReq struct {
 // handleAdminGenerationsList lists every in-flight generation (K1). No liveness/regMu
 // interaction needed — s.gens is its own registry, independent of model load/unload.
 func (s *server) handleAdminGenerationsList(w http.ResponseWriter, r *http.Request) {
-	if !s.adminEnabled(w) {
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]any{"generations": s.gens.list()})
 }
 
@@ -39,9 +36,6 @@ func (s *server) handleAdminGenerationsList(w http.ResponseWriter, r *http.Reque
 // generation stopped, which is what the caller asked for — 200 either way, with found:false
 // distinguishing them for an operator or test that cares.
 func (s *server) handleAdminGenerationCancel(w http.ResponseWriter, r *http.Request) {
-	if !s.adminEnabled(w) {
-		return
-	}
 	id := r.PathValue("id")
 	var req adminCancelReq
 	if !decodeJSON(w, r, &req) {
@@ -67,19 +61,56 @@ type adminUnloadReq struct {
 	Name string `json:"name"`
 }
 
-func (s *server) adminEnabled(w http.ResponseWriter) bool {
-	if !s.cfg.allowAdmin {
-		writeErr(w, http.StatusForbidden, "admin API disabled (start serve with --allow-admin)")
-		return false
+// requireAdmin is the TCP-listener gate for /admin/* — chain-level (alongside auth/haltGate/inf
+// in main.go), not a handler-internal check, so it can be left off entirely when registering the
+// same handlers on the admin socket (K5, docs/task-halt-2026-09.md): there, the socket's file
+// permissions (mode 0600) are the auth, and -allow-admin has no TCP-listener meaning to enforce.
+func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.cfg.allowAdmin {
+			writeErr(w, http.StatusForbidden, "admin API disabled (start serve with --allow-admin)")
+			return
+		}
+		h(w, r)
 	}
-	return true
+}
+
+// registerAdminRoutes registers every /admin/* route — model load/unload, K1's generation
+// list/cancel/status, K2's halt/resume — onto mux, each wrapped with wrap. main.go calls this
+// twice: once for the TCP mux (wrap = auth+requireAdmin, gated by -api-key/-allow-admin), and
+// once for the admin socket when -admin-socket is set (K5, docs/task-halt-2026-09.md; wrap =
+// identity there — the socket's file permissions are the auth, and it replaces the TCP
+// registration rather than adding to it, so the two never both run for the same server).
+func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func(http.HandlerFunc) http.HandlerFunc) {
+	mux.HandleFunc("POST /admin/models/load", wrap(maxBytes(textCap, s.handleAdminLoad)))
+	mux.HandleFunc("POST /admin/models/unload", wrap(maxBytes(textCap, s.handleAdminUnload)))
+	mux.HandleFunc("GET /admin/generations", wrap(s.handleAdminGenerationsList))
+	mux.HandleFunc("POST /admin/generations/{id}/cancel", wrap(maxBytes(textCap, s.handleAdminGenerationCancel)))
+	mux.HandleFunc("POST /admin/halt", wrap(maxBytes(textCap, s.handleAdminHalt)))
+	mux.HandleFunc("POST /admin/resume", wrap(s.handleAdminResume))
+	// GET /admin/status: not asked for outside K5, but K5's one-word CLI needs a "status"
+	// subcommand that works over a socket serving ONLY /admin/* (health.go's /health is
+	// deliberately not registered there — it's a /v1-shaped route with no admin content). Admin
+	// scoped rather than reusing /health so it is reachable wherever /admin/* is.
+	mux.HandleFunc("GET /admin/status", wrap(s.handleAdminStatus))
+}
+
+// handleAdminStatus is GET /admin/status: the current halt state (mirroring /health's own
+// halted/halt_reason/halt_at fields) plus K1's live generation count, so `serve status` (K5) has
+// something to report without needing /health on the same listener.
+func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
+	hi := s.haltState()
+	resp := map[string]any{"halted": hi != nil, "generations_inflight": s.gens.count()}
+	if hi != nil {
+		resp["halt_reason"] = hi.reason
+		resp["halt_trigger"] = hi.trigger
+		resp["halt_at"] = hi.at
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleAdminLoad loads a new generative model into the registry.
 func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
-	if !s.adminEnabled(w) {
-		return
-	}
 	var req adminLoadReq
 	if !decodeJSON(w, r, &req) {
 		return
@@ -178,9 +209,6 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 // draining. ?wait=false skips straight to 202. (This replaces the old 409-busy, which was only ever
 // safe because it never freed anything.)
 func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
-	if !s.adminEnabled(w) {
-		return
-	}
 	var req adminUnloadReq
 	if !decodeJSON(w, r, &req) {
 		return

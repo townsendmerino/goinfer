@@ -37,6 +37,17 @@ any surface may still change.
   process with `N` once quiescence is reached, for a supervisor whose restart policy must not
   undo a deliberate halt. All off by default; existing behavior is unchanged until one is set.
 
+- **K5, the admin socket (docs/task-halt-2026-09.md).** `-admin-socket <path>` serves `/admin/*`
+  (load/unload, K1's generations list/cancel, K2's halt/resume, and a new `GET /admin/status`)
+  on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at
+  start, no `-api-key` check at all (the socket's file permissions are the auth). When set,
+  `/admin/*` is not registered on the TCP listener at all (a request there 404s, not 403s — the
+  surface is not even advertised); `-allow-admin` keeps its TCP-only meaning otherwise. Default
+  suggested path `/run/goinfer/admin.sock` (`~/Library/Application Support/goinfer/admin.sock`
+  on macOS). Control it with the same binary: `serve status|ls|cancel <id> [reason]|halt
+  [reason]|resume`, dispatched the same way `pull`/`check` already are. Off by default; existing
+  behavior is unchanged until it's set.
+
 ### Fixed
 
 - **`cuda/testdata/glue.ptx` (the embedded, driver-JIT'd kernel blob every CUDA resident load

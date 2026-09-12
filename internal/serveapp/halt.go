@@ -82,9 +82,6 @@ type adminHaltReq struct {
 // response itself is proof the halt landed, not just that it was requested — and so a caller
 // (an operator, or the K2 gate test) gets the real time-to-quiescence back directly.
 func (s *server) handleAdminHalt(w http.ResponseWriter, r *http.Request) {
-	if !s.adminEnabled(w) {
-		return
-	}
 	var req adminHaltReq
 	if !decodeJSON(w, r, &req) {
 		return
@@ -101,9 +98,6 @@ func (s *server) handleAdminHalt(w http.ResponseWriter, r *http.Request) {
 
 // handleAdminResume is POST /admin/resume.
 func (s *server) handleAdminResume(w http.ResponseWriter, r *http.Request) {
-	if !s.adminEnabled(w) {
-		return
-	}
 	s.resume("admin")
 	writeJSON(w, http.StatusOK, map[string]any{"halted": false})
 }

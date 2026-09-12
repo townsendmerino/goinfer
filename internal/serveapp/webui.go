@@ -238,8 +238,8 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// webEnabled mirrors adminEnabled: the routes exist only when -web was passed, and say so
-// in the same shape the rest of the API uses rather than 404-ing.
+// webEnabled mirrors requireAdmin's TCP-listener gate: the routes exist only when -web was
+// passed, and say so in the same shape the rest of the API uses rather than 404-ing.
 func (s *server) webEnabled(w http.ResponseWriter) bool {
 	if !s.cfg.web {
 		writeErr(w, http.StatusForbidden, "web UI is disabled; start the server with -web")
