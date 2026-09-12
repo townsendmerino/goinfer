@@ -1,5 +1,14 @@
 name: ci
 
+# ACTIONS ARE PINNED BY COMMIT SHA, NOT TAG (audit-2026-09-02.md N-41, found 2026-09-11, applied
+# repo-wide across every .github/workflows/*.yml). A major-version tag like `@v4` is mutable —
+# its owner (or an attacker who compromises the action repo) can move it to point at different
+# code without the pin here ever changing, the exact supply-chain risk GitHub's own hardening
+# guide names. Every `uses:` line reads `owner/action@<40-char-sha> # vN`, so the sha is what
+# actually runs and the `# vN` comment is just for a human skimming which release that was.
+# To bump: find the new tag's commit (`git ls-remote --tags https://github.com/<owner>/<action>
+# <new-tag>` — verify it is NOT an annotated tag, i.e. no `^{}` peeled ref printed alongside, or
+# use that peeled sha instead), replace both the sha and the trailing comment together.
 on:
   push:
     branches: [main]
@@ -22,10 +31,10 @@ jobs:
       #
       # The other jobs deliberately keep the shallow default — they run builds and tests, do not
       # touch git history, and a full clone would cost them fetch time for nothing.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -181,8 +190,8 @@ jobs:
     name: readme-smoke (a stranger's install, from an empty dir)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with: { go-version-file: 'go.mod' }
       # Runs the README's <!-- smoke --> commands in a temp dir OUTSIDE the checkout with
       # GOWORK=off, then BUILDS against what they installed. The build step is the one that
@@ -195,8 +204,8 @@ jobs:
   gpu:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache-dependency-path: gpu/go.sum
@@ -254,8 +263,8 @@ jobs:
   cuda:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache-dependency-path: cuda/go.sum
@@ -288,8 +297,8 @@ jobs:
   root-darwin:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -320,8 +329,8 @@ jobs:
   gpu-darwin:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache-dependency-path: gpu/go.sum
@@ -355,8 +364,8 @@ jobs:
   metal-darwin:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache-dependency-path: metal/go.sum
