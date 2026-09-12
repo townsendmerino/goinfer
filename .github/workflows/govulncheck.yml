@@ -9,6 +9,14 @@ name: govulncheck
 # govulncheck does call-graph reachability by default: it reports only vulnerabilities
 # in functions actually reachable from the build targets, so the signal is low-noise —
 # an unreachable CVE in a transitive dependency does not fail the build.
+#
+# M-44 (audit-2026-09-10.md), fixed 2026-09-11: this used to scan the root module only,
+# while the actual GPU release assets (release-assets.yml: darwin from metal/, linux from
+# cuda/) went unscanned entirely — "scans the one module none of the GPU release assets is
+# built from". Now mirrors ci.yml's own per-module job shape (same runners, same ephemeral
+# `go work init` stitch to resolve the unpublished goinfer root locally, same provisioning)
+# so a module that CI already knows how to build is scanned the same way, rather than this
+# workflow inventing its own second way to do it.
 on:
   push:
     branches: [main]
@@ -20,8 +28,16 @@ on:
 permissions:
   contents: read
 
+# PINNED, not @latest (audit-2026-09-02.md N-41, found 2026-09-11): an unpinned install can
+# change what every job scans without a code change here, and a new govulncheck release
+# changing its own findings format/behavior would be indistinguishable from a real
+# regression. Bump deliberately; check `go list -m -versions golang.org/x/vuln` for the
+# current release first. One env var so every job stays in lockstep.
+env:
+  GOVULNCHECK_VERSION: v1.8.0
+
 jobs:
-  govulncheck:
+  root:
     name: govulncheck (root module)
     runs-on: ubuntu-latest
     steps:
@@ -30,9 +46,86 @@ jobs:
         with:
           go-version-file: go.mod
       - name: install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
       # Root module = the pure-Go CPU serve/decode binary (cmd/serve, cmd/chat, decoder,
-      # constrain, tokenizer, internal/*). The gpu/cuda/metal submodules are separate
-      # modules with their own go.mod + native deps and are scanned separately if added.
+      # constrain, tokenizer, internal/*). No workspace needed: unlike the submodules below,
+      # the root does not depend on any of them.
       - name: govulncheck ./...
+        run: govulncheck ./...
+
+  gpu:
+    name: govulncheck (gpu + demo/agent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: gpu/go.sum
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+      # cogentcore/webgpu (wgpu-native) cgo build deps for Linux — same package list ci.yml's
+      # gpu job installs, since govulncheck has to build the package graph the same way `go
+      # build`/`go vet` do to analyze it.
+      - name: install GPU build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+      # Stitch root + gpu + demo/agent into an ephemeral workspace so they resolve the
+      # UNPUBLISHED goinfer root/gpu from this checkout, not whatever demo/agent/go.mod's
+      # pinned (published) versions say — verified 2026-09-11: `GOWORK=off go build ./...`
+      # in demo/agent fails against its own pinned v0.17.2 with undefined symbols, the same
+      # "between releases" gap ci.yml's gpu job comment documents for gpu itself. Same three
+      # modules ci.yml's gpu job stitches, same reason.
+      - name: workspace (resolve unpublished goinfer/gpu locally)
+        run: go work init . ./gpu ./demo/agent
+      - name: govulncheck ./... (gpu)
+        working-directory: gpu
+        run: govulncheck -tags 'gpu goinfer_testhooks' ./...
+      # demo/agent is a network-facing artifact (cmd/agent-web is a browser-facing HTTP
+      # server) — precisely the shape this workflow exists to catch, not a demo carve-out.
+      - name: govulncheck ./... (demo/agent)
+        working-directory: demo/agent
+        run: govulncheck ./...
+
+  cuda:
+    name: govulncheck (cuda)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: cuda/go.sum
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+      - name: workspace (resolve unpublished goinfer locally)
+        run: go work init . ./cuda
+      # No CUDA toolkit or GPU needed to analyze — same note as ci.yml's cuda job: it is
+      # cgo-free (CGO_ENABLED=0, dlopen libcuda, driver-JIT of embedded PTX), so nothing
+      # native has to be present on the runner for this to build/scan.
+      - name: govulncheck ./... (cuda)
+        working-directory: cuda
+        env:
+          CGO_ENABLED: "0"
+        run: govulncheck -tags 'cuda goinfer_testhooks' ./...
+
+  metal:
+    name: govulncheck (metal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: metal/go.sum
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+      - name: workspace (resolve unpublished goinfer locally)
+        run: go work init . ./metal
+      # No `metal` build tag: the module registers on plain darwin (same as ci.yml's
+      # metal-darwin build step) — the release asset this scan is actually meant to cover
+      # (release-assets.yml: darwin binaries built from metal/).
+      - name: govulncheck ./... (metal)
+        working-directory: metal
         run: govulncheck ./...
