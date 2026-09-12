@@ -89,7 +89,8 @@ GOLDEN_RE='(_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parity$'
 #
 # Format: one "TestName|YYYY-MM-DD added|one-line reason with a pointer to the investigation".
 KNOWN_UNRELATED_FAILURES=(
-	"TestOlmo3_forwardParity|2026-09-11|rope_parameters config-parsing regression, unrelated to core-file edits (db0869e attempted a fix and was itself reverted by 85f68e7 pending the real one); cosine 0.9899728674750051 (want >=0.9999), argmax correct, maxSampleΔ=0.00000 — confirmed unchanged by a core-file edit via git-stash-diff against the clean baseline; see docs/audit-2026-09-10.md and docs/task-gpu-paths-2026-09.md:1785 for prior independent confirmations of the SAME figure"
+	# TestOlmo3_forwardParity's rope_parameters regression: FIXED 2026-09-12, see
+	# docs/audit-2026-09-10.md's G-03/G-04 dispositions. Removed per this array's own rule above.
 )
 # Fail LOUDLY on a malformed entry rather than silently matching nothing (or everything) —
 # each entry must split into exactly three '|'-separated fields.

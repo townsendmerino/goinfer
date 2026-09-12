@@ -33,13 +33,15 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// Olmo 3: NormPostOnly + QKNormWhole, plus the standard sliding-window/YaRN features every
 	// backend already has. G5 (docs/task-gpu-paths-2026-09.md) declares both on cuda+metal, so
 	// this now reaches both.
-	// NOT FeatPerLayerRoPE: the original claim here (YaRN applies to full_attention layers
-	// only, so local/global inv-freq tables genuinely differ) was WRONG — found by the
-	// real-checkpoint T3 gate (2026-09-07, cosine 0.9928 not 1.0), then confirmed by reading
-	// modeling_olmo3.py directly: Olmo3Model builds exactly ONE rotary table and applies it to
-	// every layer uniformly. olmo3Architecture now returns a uniform base/scaling regardless of
-	// config form, so ropeUniform() correctly holds and this feature does not fire.
-	"olmo3": {FeatPostOnlyNorm, FeatQKNormWhole, FeatRopeMscale, FeatSlidingWindow},
+	// FeatPerLayerRoPE IS needed (restored 2026-09-12, docs/audit-2026-09-10.md G-03/G-04's
+	// disposition): YaRN applies to full_attention layers only, sliding_attention gets plain
+	// RoPE at the same theta — genuinely different local/global tables. A prior revision of this
+	// comment ("0b0f5c9") claimed the opposite from reading modeling_olmo3.py's forward rather
+	// than calling it; `Olmo3RotaryEmbedding.forward` in the pinned transformers==5.15.0 takes an
+	// explicit layer_type argument and returns different (cos, sin) per call, which is the tell
+	// that a single shared table cannot be what runs. See registry.go's olmo3Architecture comment
+	// for the full account.
+	"olmo3": {FeatPostOnlyNorm, FeatQKNormWhole, FeatRopeMscale, FeatSlidingWindow, FeatPerLayerRoPE},
 	// Olmo Hybrid: qwen3_5's own FeatDeltaNet (shared math), plus olmo3's FeatPostOnlyNorm/
 	// FeatQKNormWhole (its full-attention layers only, but the arch-level check reads
 	// NormPlacement/QKNormWhole model-wide, not per-layer) and FeatNoPE (layerNoPE set
