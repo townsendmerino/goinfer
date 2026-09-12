@@ -15,11 +15,19 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 # OpenAI base URL: http://localhost:8080/v1
 ```
 
-> **Default quantization is `int4`** (smallest, and fastest on the GPU backends). Override with `--quant
-> int8int8|int8|int4mix|""`: `int8int8` is more accurate at ~2× the RAM and is **required for
-> `--backend metal`** (int4 declines to CPU there). All quantized modes get batched CUDA prefill
-> (fast TTFT); only native f32 falls back to the sequential path. `--quant -h` explains all five.
-> A prequantized `.giw` model ignores `--quant` (it carries its own).
+> **Default quantization is `int4`** (fastest on every backend, including Metal, which consumes it
+> directly). Override with `--quant int8int8|int8|int4mix|""`: `int8int8` is more accurate. All
+> quantized modes get batched CUDA prefill (fast TTFT); only native f32 falls back to the
+> sequential path. `--quant -h` explains all five. A prequantized `.giw` model ignores `--quant`
+> (it carries its own).
+>
+> **`int4` is not the smallest option everywhere.** On Apple Silicon and non-VNNI amd64 hosts, the
+> loader keeps a second, repacked copy of the int4 nibbles beside the canonical ones (the layout
+> the fast NEON/AVX2 kernels need), so `int4` measures ~1.25 bytes/element resident against
+> `int8int8`'s ~1.02 — **more** RAM, not less, on exactly those platforms (`decoder/fitguard.go`).
+> `int4` is still the default there, for speed, not for RAM: if RAM is the constraint on Apple
+> Silicon, `int8int8` is the smaller choice, not the fallback for "more accuracy, more RAM" its
+> name suggests.
 >
 > **On `--backend cpu` on Apple Silicon, `int4` is now the right default for speed, not the wrong
 > one.** A 2026-08-22 measurement (below, kept for the record) found `int8int8` ~60% faster than
@@ -28,10 +36,9 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > head's drag, not the W4A8 matmul kernel. Both the NEON W4A8 kernel and the `int4`-mode LM head
 > shipped (`docs/task-w4a8-neon-bandwidth.md`) and the ranking flipped: measured on the same M1 Pro,
 > goinfer commit `a11c56b` (2026-08-24), `int4` now decodes **at or above `int8int8`'s speed** (1.5B:
-> 39.1-40.7 vs 37.56 tok/s; 0.5B: 81.9-83.75 vs 85.25 tok/s) at **half the weight RAM** — see
-> `docs/benchmarks.md` for the full table. `int8int8` remains **required for `--backend metal`**
-> (int4 declines to CPU there) and is still the higher-accuracy choice if precision matters more
-> than either speed or RAM.
+> 39.1-40.7 vs 37.56 tok/s; 0.5B: 81.9-83.75 vs 85.25 tok/s) — see `docs/benchmarks.md` for the full
+> table. `int8int8` is still the higher-accuracy AND (on this platform) lower-RAM choice if either
+> matters more than speed.
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`, and `GET /health` — which is **auth-gated like every

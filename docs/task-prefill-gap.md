@@ -15,7 +15,7 @@
 > forecloses tensor cores on the weight term (`cuda/gemv_w4a8_batched.cu:19`) and a fused schedule
 > on the attention term (`cuda/prefill_batched.cu:156`). The CPU backend already split this contract
 > — `--cpu-fast-attention` is default ON and `--cpu-exact-prefill` buys identity back
-> (`internal/serveapp/main.go:467`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
+> (`internal/serveapp/main.go:473`, `:318`) — and CUDA decode is held to the 3% near-tie parity rule
 > rather than to bytes (`benchmarks.md` §B2). This doc extends that contract to the GPU backends and
 > sequences the four levers it unlocks, cheapest first: **L1** flip Metal's batched prefill on —
 > **measured twice on 2026-09-05; against a real f32-activation reference the fast path is equal

@@ -91,7 +91,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:860`).
+assumes (`internal/serveapp/main.go:866`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.

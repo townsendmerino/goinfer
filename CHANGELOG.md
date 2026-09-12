@@ -15,6 +15,35 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **Three default-ON flips that change greedy output on `serve`/`goinfer-chat`, none previously
+  recorded here (M-53):**
+  - Metal's f16-MMA batched prefill is now default ON above 512 tokens (§3.2 gate, 2026-09-09).
+    Opt out with `GOINFER_METAL_BATCHED_PREFILL=0` or `--exact-prefill`. `--metal-fast-prefill` is
+    now a no-op (deprecated, kept for compatibility — see Added).
+  - Metal's fused flash-attention prefill kernel (`attention_prefill_fused`) is now default ON
+    (§3 gate, 2026-09-10), replacing the exact scalar kernel wherever `hd%8==0 && hd<=128`. Opt
+    out with `GOINFER_METAL_FUSED_ATTENTION=0` or `--exact-prefill`.
+  - `--fit` is now default ON (`docs/task-gpu-paths-2026-09.md`, `task-fit-to-hardware.md` Phase
+    2): an unpinned CUDA context now sizes to real free VRAM headroom instead of a flat 4096
+    positions (commonly up to 8192, `cuda/resident.go`'s `fitDefaultCtx`, or higher); a dense
+    `.gguf` that won't fit resident RAM on CPU gets one automatic `--stream-weights` retry instead
+    of a bare refusal. Never overrides an explicitly-set `-ctx`/`-quant`/`--moe-cache-slots`/
+    `--stream-weights`. Opt out entirely with `--fit=off`.
+
+### Added
+
+- `--exact-prefill` — forces bit-exact prompt ingestion on all backends, disabling both the CPU
+  f32-attention fast path and Metal's fast/fused prefill kernels in one flag.
+- `fit` subcommand (`fit [-measure]`) — reports what `--fit` would size a model to without
+  actually serving it.
+
+### Deprecated
+
+- `--metal-fast-prefill` — superseded by the default-ON behavior above; now a no-op, kept only so
+  existing invocations don't fail to parse.
+
 ### Fixed
 
 - **`cuda/testdata/glue.ptx` (the embedded, driver-JIT'd kernel blob every CUDA resident load
