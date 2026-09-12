@@ -139,8 +139,12 @@ func TestDecodeTWE_split(t *testing.T) {
 
 // gpuTimePlanTWE returns the min/30 on-GPU ms for the runner's dispatch plan via a
 // timestamp query, or -1 if the device lacks the timestamp feature (so the harness
-// degrades to TSync wall-clock). Cogentcore lacks pass-descriptor TimestampWrites, so
-// this brackets the pass with encoder WriteTimestamp.
+// degrades to TSync wall-clock). The old cogentcore/webgpu binding lacked
+// pass-descriptor TimestampWrites, so this used to bracket the pass with a
+// standalone encoder WriteTimestamp instead; oliverbestmann/webgpu removed that
+// method entirely (it never survived into the current WebGPU spec — native
+// backends couldn't implement it reliably outside a pass) and only exposes
+// TimestampWrites on the pass descriptor, so this now uses that directly.
 func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 	bestTicks := math.MaxFloat64
 	for range 30 {
@@ -151,8 +155,9 @@ func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 		resolve, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-resolve", Size: 16, Usage: wgpu.BufferUsageQueryResolve | wgpu.BufferUsageCopySrc})
 		readback, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "ts-rb", Size: 16, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		enc, _ := c.device.TryCreateCommandEncoder(nil)
-		enc.WriteTimestamp(qset, 0)
-		pass := enc.BeginComputePass(nil)
+		pass := enc.BeginComputePass(&wgpu.ComputePassDescriptor{
+			TimestampWrites: &wgpu.PassTimestampWrites{QuerySet: qset, BeginningOfPassWriteIndex: 0, EndOfPassWriteIndex: 1},
+		})
 		for _, s := range steps {
 			pass.SetPipeline(s.pl)
 			pass.SetBindGroup(0, s.bg, nil)
@@ -160,8 +165,7 @@ func gpuTimePlanTWE(c *Context, steps []runStep) float64 {
 		}
 		pass.TryEnd()
 		pass.Release()
-		enc.WriteTimestamp(qset, 1)
-		enc.ResolveQuerySet(qset, 0, 2, resolve, 0)
+		_ = enc.TryResolveQuerySet(qset, 0, 2, resolve, 0)
 		enc.TryCopyBufferToBuffer(resolve, 0, readback, 0, 16)
 		cmd, _ := enc.TryFinish(nil)
 		c.queue.Submit(cmd)
