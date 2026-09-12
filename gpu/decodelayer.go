@@ -156,6 +156,11 @@ type AttnWeights struct {
 	OProj               *ResidentW8A8 //
 	InvFreq             *DeviceBuffer // [headDim/2]
 	KCache, VCache      *DeviceBuffer // [maxLen*kvDim] resident
+
+	// QBias, KBias, VBias: optional per-output bias (Qwen2); nil ⇒ no bias. Only
+	// PrefillLastW8A8 (gpu/prefillrunner.go) reads these today — DecodeToken/
+	// DecodeTokenFused/DecodeTokenFusedBatched predate bias support and ignore them.
+	QBias, KBias, VBias *DeviceBuffer
 }
 
 // attnBlockInto runs the attention sub-block on the device buffer xd IN PLACE

@@ -1052,9 +1052,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
 	}
 	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
-		mw, ok := runModelToModelW(&rd.rm)
+		mw, ok := runModelToModelW(&rd.rm, hd)
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/bias/QK-norm/sliding-window/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/QK-norm/sliding-window/bias/…)")
 		}
 		positions := make([]int, len(xs))
 		for i := range positions {

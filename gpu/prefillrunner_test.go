@@ -122,7 +122,22 @@ func TestPrefillLastW8A8_parity(t *testing.T) {
 // dense W8A8 — sliding window here as the representative case.
 func TestPrefillLastW8A8_declines(t *testing.T) {
 	rm := &runModel{slidingWindow: 128}
-	if _, ok := runModelToModelW(rm); ok {
+	if _, ok := runModelToModelW(rm, 64); ok {
 		t.Fatal("runModelToModelW accepted a sliding-window model; PrefillLastW8A8 has no windowed-attention support")
+	}
+}
+
+// TestPrefillLastW8A8_declinesGenuinePartialRoPE checks the hd/2 distinction:
+// ropeHalf==hd/2 is full rotation (just set explicitly rather than left at the 0
+// sentinel — real checkpoints do this, see TestResidentPrefillLast_parity's
+// qwen2.5-coder-0.5b, hd=64, ropeHalf=32, which that test proves is ACCEPTED
+// end-to-end); ropeHalf<hd/2 is genuine partial RoPE, which rope()'s hardcoded
+// half:=hd/2 cannot express, and must be DECLINED — checked here since it only
+// needs the early guard, not a full ModelW build (no GPU/real weights needed,
+// same shape as TestPrefillLastW8A8_declines).
+func TestPrefillLastW8A8_declinesGenuinePartialRoPE(t *testing.T) {
+	const hd = 64
+	if _, ok := runModelToModelW(&runModel{ropeHalf: hd/2 - 8}, hd); ok {
+		t.Fatal("runModelToModelW accepted genuine partial RoPE (ropeHalf < hd/2); PrefillLastW8A8's rope() hardcodes full rotation")
 	}
 }

@@ -12,28 +12,57 @@ import (
 // representation DecodeRunner uses — W8A8/W4A8, MoE, MLA, Mamba, DeltaNet,
 // sliding window, QK-norm, bias, per-layer geometry overrides, …) down to the
 // plain dense-W8A8 ModelW shape PrefillLastW8A8 accepts, or reports ok=false when
-// this model uses ANY feature outside that shape. This is the same scope
-// DecodeTokenFusedBatched already declares ("no MoE/MLA/SSM/bias/QK-norm") —
-// PrefillLastW8A8 reuses that exact restriction rather than growing a new one, so
-// the two stay in lockstep as the batched-M paths gain arch coverage over time.
+// this model uses ANY feature outside that shape. The same scope
+// DecodeTokenFusedBatched declares ("no MoE/MLA/SSM/bias/QK-norm").
+//
+// q/k/v bias (Qwen2) is DELIBERATELY declined despite AttnWeights/biasAdd having
+// working plumbing for it below (kept rather than deleted — see their own
+// comments): measured on a real checkpoint (qwen2.5-coder-0.5b, GOINFER_HEAVY_TESTS=1,
+// TestResidentPrefillLast_parity), enabling it is bit-exact for M≤2 (nKeys≤2) but
+// diverges (cosine ~0.99 at nKeys=3, ~0.62 at nKeys=6-7 — worse as nKeys grows) once
+// a query attends to 3+ cached keys. It reproduces ONLY with bias enabled AND a real
+// checkpoint's weight magnitudes — the M=20 synthetic-weight gate
+// (TestPrefillLastW8A8_parity, no bias) stays bit-exact throughout, and disabling
+// bias entirely makes the real-checkpoint case WORSE (cosine ~0.2-0.5), so bias
+// itself is not simply wrong — something in its interaction with attention at
+// nKeys≥3 on real-magnitude data is. Root cause not yet found (ruled out so far:
+// the K/V bias-add width bug fixed alongside this — reproduces identically before
+// and after that fix; the flushPasses Metal-command-buffer-cap mechanism — a huge
+// passesPerFlush disables it with no change). Re-enable only after this is
+// resolved and re-gated; until then this decline keeps residentPrefillSeed's
+// fallback to the (slower, proven-correct) sequential loop, rather than risk
+// serving silently-wrong prefill logits for the most common dense-checkpoint
+// family (Qwen2.5-*).
 //
 // It is a zero-copy view: every *wgpu.Buffer is wrapped, not duplicated, and the
 // caller must not Close() the resulting ModelW (ModelW.Release would double-free
 // buffers rd.rm still owns) — the wrapper DeviceBuffers exist only so ModelW's
 // field types match; PrefillLastW8A8 never calls Close on them either.
-func runModelToModelW(rm *runModel) (ModelW, bool) {
+// hd is the model's head dimension — needed only to tell genuine partial RoPE
+// (ropeHalf set to something less than hd/2) apart from ropeHalf simply being SET
+// to the full-rotation value instead of left at its 0 "use hd/2" sentinel; both
+// PrefillLastW8A8's and DecodeTokenFusedBatched's rope() closures hardcode
+// half:=hd/2 (full rotation, no partial-RoPE support), so the latter is fine and
+// only the former must decline.
+func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 	if rm.moe != nil || rm.mla != nil || rm.mamba != nil || rm.dnet != nil ||
-		rm.kvF16 || rm.kvI8 || rm.slidingWindow != 0 || rm.gatedGELU || rm.ropeHalf != 0 {
+		rm.kvF16 || rm.kvI8 || rm.slidingWindow != 0 || rm.gatedGELU ||
+		(rm.ropeHalf != 0 && rm.ropeHalf != hd/2) {
 		return ModelW{}, false
 	}
-	view := func(b *wgpu.Buffer) *DeviceBuffer { return &DeviceBuffer{buf: b} }
+	view := func(b *wgpu.Buffer) *DeviceBuffer {
+		if b == nil {
+			return nil
+		}
+		return &DeviceBuffer{buf: b}
+	}
 	layers := make([]LayerW, len(rm.layers))
 	for i := range rm.layers {
 		l := &rm.layers[i]
 		if l.qBias != nil || l.kBias != nil || l.vBias != nil ||
 			l.qNorm != nil || l.kNorm != nil ||
 			l.oBias != nil || l.postAttnNorm != nil || l.postMLPNorm != nil ||
-			l.hasSink || l.isLocal || l.ropeScale != 0 ||
+			l.hasSink || l.isLocal || (l.ropeScale != 0 && l.ropeScale != 1) ||
 			l.ghd != 0 || l.gnKV != 0 || l.ghalf != 0 || l.gKEqV ||
 			l.isMoE || l.shGate != nil ||
 			l.mlaQA != nil || l.mlaQB != nil || l.mlaQ != nil || l.mlaKVA != nil || l.mlaO != nil ||
@@ -236,6 +265,14 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		p := uni([]uint32{uint32(hidden), 0, 0, 0})
 		disp(c.residualPipeline, bind(c.residualLayout, x, y, p), uint32(hidden+63)/64, 1)
 	}
+	// biasAdd is residual's shape (vec[i] += bias[i]) at an explicit width n, for the
+	// q/k/v bias epilogue — q/k/v projections are qDim/kvDim/kvDim wide, NOT hidden
+	// (GQA makes kvDim < hidden), so residual's hardcoded hidden width would read/
+	// write past the buffer. Mirrors decoderunner.go's own biasAdd exactly.
+	biasAdd := func(vec, bias *wgpu.Buffer, n int) {
+		p := uni([]uint32{uint32(n), 0, 0, 0})
+		disp(c.residualPipeline, bind(c.residualLayout, vec, bias, p), uint32(n+63)/64, 1)
+	}
 
 	// tiledProj batches a projection over the given rows: gather each row's quantized
 	// activation into one packed buffer, run ONE unbounded-M tiled GEMM (weight streamed
@@ -292,6 +329,13 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		q := tiledProj(xn, lw.Attn.QProj)
 		k := tiledProj(xn, lw.Attn.KProj)
 		v := tiledProj(xn, lw.Attn.VProj)
+		if lw.Attn.QBias != nil { // Qwen2 q/k/v bias — applied before RoPE, matching decoderunner.go
+			for r := range xd {
+				biasAdd(q[r], lw.Attn.QBias.buf, nH*hd)
+				biasAdd(k[r], lw.Attn.KBias.buf, kvDim)
+				biasAdd(v[r], lw.Attn.VBias.buf, kvDim)
+			}
+		}
 		for r := range xd {
 			rope(q[r], lw.Attn.InvFreq.buf, nH, positions[r])
 			rope(k[r], lw.Attn.InvFreq.buf, nKV, positions[r])
