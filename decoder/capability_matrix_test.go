@@ -1,6 +1,6 @@
 package decoder
 
-// Generated capability matrix (docs/task-capability-matrix.md).
+// Generated capability matrix (docs/completed/task-capability-matrix.md).
 //
 // This in-package test resolves every registry model_type against a minimal
 // representative Config, reads the FAMILY-CONSTANT traits off the resulting

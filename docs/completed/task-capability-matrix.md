@@ -1,3 +1,37 @@
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (2026-09-13, COMPLETE): every deliverable this plan scoped has shipped.** The
+> generator + freshness gate landed as `decoder/capability_matrix_test.go`
+> (`TestCapabilityMatrix`, `TestCapabilityMatrix_CoverageComplete`) starting
+> `a6abc597` (2026-06-16) and has been kept current through family additions since (most
+> recently `315450d7`, 2026-09-08, regenerating for qwen3_vl). `docs/capability-matrix.json`
+> and `docs/capability-matrix.md` are the generated artifacts, organized by coverage axis
+> (gated-linear hybrid, latent-KV, softmax-GQA, …) exactly as Deliverable 1 asked, each row
+> joined to `testdata/parity_manifest.json`. The `familyDoc` annotation map (presentation-only
+> fields with no `Architecture` equivalent) lives beside the registry in the same test file, and
+> `TestCapabilityMatrix_CoverageComplete` enforces that every registry `model_type` has one —
+> stronger than the plan's own ask of "add a checklist line to `parity-coverage-policy.md`",
+> since it's a CI-enforced invariant rather than a step someone can forget. README.md and
+> `docs/README.md` both link the generated matrix (Deliverable 3). The tie-in to
+> `completed/task-model-families-next.md` Step 0 (coverage-axis positioning) is discharged by the
+> matrix's axis-organized sections. Non-goals were honored: the registry stayed Go, no
+> config-transform DSL was built, per-checkpoint dims are excluded, and the files are
+> machine-generated with a header warning against hand-editing.
+>
+> A companion generated artifact this plan did not scope, `docs/hardware-matrix.md` /
+> `decoder/hardware_matrix_test.go` (per-backend residency), was built alongside it using the
+> same registry-resolve-and-render pattern — not this doc's deliverable, noted here only because
+> it explains why `familyDocs` is referenced from two test files.
+>
+> Nothing here is open. This plan's own writing is left below as the design record for *why*
+> generate-not-author was chosen and what the column set means; none of it is an instruction to a
+> future reader.
+
 # Plan: a generated, community-readable capability matrix (from the registry, not instead of it)
 
 > **Audience:** internal planning, `completed/roadmap-2026-06.md` Track-style. Goal: give the

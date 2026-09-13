@@ -218,7 +218,7 @@ matter more than a sixth/seventh family and should land **before** this backlog:
 
 1. **Validate what just shipped.** GLM, Granite, Nemotron-H, DeepSeek-V2/V3 arrived
    fast. Each needs its `parity_manifest.json` row + T1 golden + capability-matrix
-   entry (`task-parity-coverage.md`, `task-capability-matrix.md`), or the support
+   entry (`task-parity-coverage.md`, `completed/task-capability-matrix.md`), or the support
    claims are unbacked and green CI is hiding asset-skips. Backfilling those five is
    worth more than any new family.
 2. **Cut v1.0.** The roadmap's v1.0 trigger was "a second hybrid family survives the
