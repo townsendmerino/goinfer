@@ -70,7 +70,7 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 	// attn_batched and compare it against itself. This test compares KERNELS; which kernel the gate
 	// picks at a given depth is TestSplitKVGate_measuredGeometries' job.
 	rf.skMinKeys = 0
-	if rf.splitkvMin(0) != 0 {
+	if rf.splitkvMin(0, 0) != 0 {
 		t.Fatal("override did not take: the split path would not be exercised")
 	}
 	run := func(useSplitKV bool) ([]float32, []int) {
@@ -173,7 +173,7 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 	// attn_batched and compare it against itself. This test compares KERNELS; which kernel the gate
 	// picks at a given depth is TestSplitKVGate_measuredGeometries' job.
 	rf.skMinKeys = 0
-	if rf.splitkvMin(0) != 0 {
+	if rf.splitkvMin(0, 0) != 0 {
 		t.Fatal("override did not take: the split path would not be exercised")
 	}
 	run := func(useSplitKV bool) ([]float32, []int) {

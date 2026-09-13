@@ -16,39 +16,50 @@ import "testing"
 func TestSplitKVGate_measuredGeometries(t *testing.T) {
 	// nWin is the EFFECTIVE attended span (window-clamped), not the raw position.
 	cases := []struct {
-		name    string
-		nH, hd  int
-		nWin    int
-		wantSK  bool
-		measure string
+		name        string
+		nH, nKV, hd int
+		nWin        int
+		wantSK      bool
+		measure     string
 	}{
 		// qwen2.5-0.5b (nH=14, hd=64): OFF wins 256–2048 (worst 0.819 at 512), ON only at 3900.
-		{"qwen0.5b@256", 14, 64, 256, false, "0.839 — the 18% regression band the old gate fired in"},
-		{"qwen0.5b@512", 14, 64, 512, false, "0.819 — worst cell on this geometry (−18%)"},
-		{"qwen0.5b@2048", 14, 64, 2048, false, "0.955"},
-		{"qwen0.5b@3900", 14, 64, 3900, true, "1.197"},
+		{"qwen0.5b@256", 14, 2, 64, 256, false, "0.839 — the 18% regression band the old gate fired in"},
+		{"qwen0.5b@512", 14, 2, 64, 512, false, "0.819 — worst cell on this geometry (−18%)"},
+		{"qwen0.5b@2048", 14, 2, 64, 2048, false, "0.955"},
+		{"qwen0.5b@3900", 14, 2, 64, 3900, true, "1.197"},
 
 		// qwen2.5-1.5b (nH=12, hd=128): the geometry the OLD constant was characterized on. It loses
 		// at 256 and 512 — the old "break-even at 256, clear win from 384+" is refuted here.
-		{"qwen1.5b@256", 12, 128, 256, false, "0.941 — old gate fired; refutes 'break-even at 256'"},
-		{"qwen1.5b@512", 12, 128, 512, false, "0.939 — refutes 'clear win from 384+'"},
-		{"qwen1.5b@1024", 12, 128, 1024, true, "1.078"},
-		{"qwen1.5b@2048", 12, 128, 2048, true, "1.191"},
+		{"qwen1.5b@256", 12, 2, 128, 256, false, "0.941 — old gate fired; refutes 'break-even at 256'"},
+		{"qwen1.5b@512", 12, 2, 128, 512, false, "0.939 — refutes 'clear win from 384+'"},
+		{"qwen1.5b@1024", 12, 2, 128, 1024, true, "1.078"},
+		{"qwen1.5b@2048", 12, 2, 128, 2048, true, "1.191"},
 
 		// phi3-mini (nH=32, MHA): NEVER crosses over — the ratio declines monotonically with depth
 		// (0.993 → 0.969 → 0.919 → 0.815 → 0.754). No threshold in nWin can express this: a formula
 		// gate has the form "ON iff nWin ≥ f(geometry)", which ALWAYS predicts ON wins at sufficient
 		// depth. phi3 falsifies that FORM, not just its constants — hence a lookup with a "never" class.
-		{"phi3@256", 32, 96, 256, false, "0.993"},
-		{"phi3@2048", 32, 96, 2048, false, "0.815 — −19%"},
-		{"phi3@3900", 32, 96, 3900, false, "0.754 — worst cell measured (−25%); still declining"},
+		{"phi3@256", 32, 32, 96, 256, false, "0.993"},
+		{"phi3@2048", 32, 32, 96, 2048, false, "0.815 — −19%"},
+		{"phi3@3900", 32, 32, 96, 3900, false, "0.754 — worst cell measured (−25%); still declining"},
 
 		// gemma3-1b (nH=4, hd=256, window=512): its windowed layers cap at nWin=512 forever. Gating on
 		// nWin (not position) is what keeps them on the single-block path at every depth.
-		{"gemma3-windowed-layer@512", 4, 256, 512, false, "windowed layer never exceeds its 512 span"},
+		{"gemma3-windowed-layer@512", 4, 1, 256, 512, false, "windowed layer never exceeds its 512 span"},
+
+		// The two geometries the OLD nH>=24 rule wrongly excluded, and the reason the key changed.
+		// Both are GQA with LOW KV traffic per key, both measure wins, and both sat in the never
+		// class purely because they have many query heads — the variable that does not decide this.
+		// docs/measurements/splitkv-aa-floor-2026-09-12.md, splitkv-d7-fthreshold-2026-09-13.md.
+		{"mistral7b@3900", 32, 8, 128, 3900, true, "1.0240 — was NEVER under nH>=24 (1024 floats/key)"},
+		{"mistral7b@8000", 32, 8, 128, 8000, true, "1.0354"},
+		{"d7-qwen7b@3900", 28, 4, 128, 3900, true, "1.0496 — was NEVER under nH>=24 (512 floats/key)"},
+		{"d7-qwen7b@8000", 28, 4, 128, 8000, true, "1.0993 — +9.94%, the P24 cell"},
+		// …and still OFF below the conservative default, because their shallow depths are unmeasured.
+		{"d7-qwen7b@2048", 28, 4, 128, 2048, false, "unmeasured shallow; conservative default holds"},
 	}
 	for _, c := range cases {
-		got := c.nWin >= splitkvThreshold(c.nH, c.hd)
+		got := c.nWin >= splitkvThreshold(c.nH, c.nKV, c.hd)
 		if got != c.wantSK {
 			t.Errorf("%s (nH=%d hd=%d nWin=%d): split-KV selected=%v, want %v (measured ON/OFF %s)",
 				c.name, c.nH, c.hd, c.nWin, got, c.wantSK, c.measure)
@@ -60,8 +71,8 @@ func TestSplitKVGate_measuredGeometries(t *testing.T) {
 // nWin the resident can produce, so the plain >= comparison at the gate can never accidentally admit
 // a high-head geometry at extreme depth.
 func TestSplitKVGate_neverClassIsUnreachable(t *testing.T) {
-	if got := splitkvThreshold(splitkvMaxHeads, 128); got != splitkvNever {
-		t.Fatalf("nH=%d should be the never class, got threshold %d", splitkvMaxHeads, got)
+	if got := splitkvThreshold(32, splitkvNeverKVFloats/128, 128); got != splitkvNever {
+		t.Fatalf("nKV*hd=%d should be the never class, got threshold %d", splitkvNeverKVFloats, got)
 	}
 	// The cap is configurable now, so this must hold against the largest context anyone could
 	// configure, not merely the default. 1<<20 positions is far past any model's window.
@@ -76,10 +87,12 @@ func TestSplitKVGate_neverClassIsUnreachable(t *testing.T) {
 // firing early costs up to 18–25%, firing late costs a few percent, so an unknown geometry must not
 // take the split path in the shallow band where every measured geometry regressed.
 func TestSplitKVGate_conservativeDefault(t *testing.T) {
-	// An unmeasured GQA-ish geometry.
-	const nH, hd = 16, 128
+	// An unmeasured GQA-ish geometry. nKV*hd = 512, below the never class, so it lands in the
+	// conservative default — which is the point: re-keying the never class must not make an
+	// unmeasured geometry take the split path in the shallow band.
+	const nH, nKV, hd = 16, 4, 128
 	for _, nWin := range []int{256, 512, 1024, 2048} {
-		if nWin >= splitkvThreshold(nH, hd) {
+		if nWin >= splitkvThreshold(nH, nKV, hd) {
 			t.Errorf("unmeasured geometry (nH=%d hd=%d) selected split-KV at nWin=%d; the default must "+
 				"stay conservative through the band where all four measured geometries lost", nH, hd, nWin)
 		}

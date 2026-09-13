@@ -21,17 +21,31 @@ extern "C" __global__ void splitkv_scores(
     const float* __restrict__ q, const float* __restrict__ kc,
     int nH, int nKV, int hd, int winStart, int nKeys, float scale,
     float* __restrict__ scStore, int nWin) {
-    int h = blockIdx.x; if (h >= nH) return;
+    int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
+
+    // q IS BLOCK-INVARIANT — it depends only on h = blockIdx.x — but every one of the 128 threads
+    // used to re-load all hd/4 float4 of it from GLOBAL inside the inner loop. Warp-uniform
+    // addresses broadcast, so that cost almost no bandwidth and was invisible in every DRAM, L1TEX
+    // and sector metric. What it cost was LSU ISSUE: half the inner loop's global loads were
+    // redundant q broadcasts, and ncu measured this kernel at 93.5% lg_throttle, 203.7 warp-cycles
+    // per issued instruction (docs/measurements/splitkv-stall-profile-2026-09-13.md). Staging q in
+    // shared moves those loads off the throttled local/global pipe onto LDS.
+    //
+    // BIT-IDENTICAL BY CONSTRUCTION: same values, same d-order, same __fmaf_rn sequence. Only the
+    // address space q is read from changes, so no reduction tree moves and no golden re-bases.
+    extern __shared__ __align__(16) float qs[];
+    for (int t = threadIdx.x; t < hd; t += blockDim.x) qs[t] = q[(long)h * hd + t];
+    __syncthreads();   // BEFORE the divergent return below — every thread in the block reaches it
+
     int i = blockIdx.y * blockDim.x + threadIdx.x;   // window index
     int s = winStart + i;
     if (i >= nWin || s >= nKeys) return;
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
-    const float* qh = q + (long)h * hd;
     const float* ks = kc + (long)s * kvDim + (long)kvh * hd;
     float dot = 0.f;
     // float4 K-read, separate adds — attn_batched's exact d-order (bit-identical; only load width).
     int d4 = hd >> 2;
-    const float4* q4 = (const float4*)qh;
+    const float4* q4 = (const float4*)qs;
     const float4* k4 = (const float4*)ks;
     for (int j = 0; j < d4; j++) {
         float4 qq = q4[j], kk = k4[j];
@@ -40,7 +54,7 @@ extern "C" __global__ void splitkv_scores(
         dot = __fmaf_rn(qq.z, kk.z, dot);
         dot = __fmaf_rn(qq.w, kk.w, dot);
     }
-    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qh[d], ks[d], dot);
+    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], ks[d], dot);
     scStore[(long)h * nWin + i] = dot * scale;
 }
 
@@ -118,5 +132,59 @@ extern "C" __global__ void splitkv_vsum(
     float acc = 0.f;
     for (int s = winStart; s < nKeys; s++)
         acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + (long)kvh * hd + d], acc);
+    ctx[(long)h * hd + d] = acc * invStore[h];
+}
+
+// ---------------------------------------------------------------------------------------------
+// FLASH-DECODE V-SUM SPIKE — OPT-IN, and deliberately NOT bit-identical.
+// docs/scoping-decode-tree-recanon.md §6 is the decision rule this exists to feed.
+//
+// splitkv_vsum above is pinned at nH*hd threads BY the bit-identity constraint: each output dim's
+// fold must stay whole and in ascending s. ncu on D7 @8000 measured it at 9.09% occupancy and
+// 75.5% long_scoreboard — genuinely memory-latency-bound, unlike splitkv_scores next door, which is
+// 93.5% lg_throttle (issue-limited) and gains nothing from more warps. Latency-bound is exactly the
+// case more warps DO help, and the only way to get them here is to split the key axis, which
+// changes the reduction tree.
+//
+// So this pair prices that trade before anyone pays for it: S contiguous partial folds, then a
+// fixed-order combine. It is deterministic and self-consistent — the chunk boundaries are a
+// function of (nKeys, nSplit) alone, never of grid shape or M — so it could in principle become a
+// new canonical tree. It is NOT bit-identical to attn_batched, so it is never selected unless
+// GOINFER_SPLITKV_VSUM_SPLIT is set, and the shipped default is untouched.
+extern "C" __global__ void splitkv_vsum_partial(
+    const float* __restrict__ scStore, const float* __restrict__ vc,
+    int nH, int nKV, int hd, int winStart, int nKeys, int nWin, int nSplit,
+    float* __restrict__ partials) {
+    int h = blockIdx.x; if (h >= nH) return;
+    int d = blockIdx.y * blockDim.x + threadIdx.x;
+    if (d >= hd) return;
+    int sp = blockIdx.z; if (sp >= nSplit) return;
+    int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
+    const float* sc = scStore + (long)h * nWin;
+    // Chunk boundaries from (nKeys, nSplit) ONLY — the cross-M condition in the scoping doc. A
+    // boundary that depended on grid shape or on M would tile a verify row differently than the
+    // decode at the same position.
+    int span = nKeys - winStart;
+    int per = (span + nSplit - 1) / nSplit;
+    int lo = winStart + sp * per;
+    int hi = lo + per; if (hi > nKeys) hi = nKeys;
+    float acc = 0.f;
+    for (int s = lo; s < hi; s++)
+        acc = __fmaf_rn(sc[s - winStart], vc[(long)s * kvDim + (long)kvh * hd + d], acc);
+    partials[((long)h * hd + d) * nSplit + sp] = acc;
+}
+
+// splitkv_vsum_combine: fixed ASCENDING split order, never atomics — an atomic combine would make
+// the result depend on scheduling and destroy determinism, which is the one property this spike
+// must keep even while giving up bit-identity to history.
+extern "C" __global__ void splitkv_vsum_combine(
+    const float* __restrict__ partials, const float* __restrict__ invStore,
+    int nH, int hd, int nSplit, float* __restrict__ ctx) {
+    int h = blockIdx.x; if (h >= nH) return;
+    int d = blockIdx.y * blockDim.x + threadIdx.x;
+    if (d >= hd) return;
+    const float* pp = partials + ((long)h * hd + d) * nSplit;
+    float acc = 0.f;
+    for (int sp = 0; sp < nSplit; sp++) acc += pp[sp];
     ctx[(long)h * hd + d] = acc * invStore[h];
 }

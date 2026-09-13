@@ -203,11 +203,11 @@ func attnShmemBytes(nWin int) int { return (nWin + 128) * 4 }
 // when split-KV is preferred; this decides when it is mandatory.
 func splitKVRequired(nWin int) bool { return attnShmemBytes(nWin) > singleBlockAttnShmemLimit }
 
-func splitkvThreshold(nH, hd int) int {
+func splitkvThreshold(nH, nKV, hd int) int {
 	switch {
-	case nH >= splitkvMaxHeads:
-		// Enough blocks to keep a 40-SM part busy: no deficit to buy, and the score array is at its
-		// largest. phi3-mini (nH=32) measures a monotone loss to 0.754 at 3900 — it never crosses.
+	case nKV*hd >= splitkvNeverKVFloats:
+		// The never class, re-keyed 2026-09-13 from query-head count to KV traffic per key. See the
+		// constant below for why nH was wrong and what replaced it.
 		return splitkvNever
 	case nH == 12 && hd == 128:
 		return 1024 // qwen2.5-1.5b class: measured crossover in (512, 1024]
@@ -216,11 +216,34 @@ func splitkvThreshold(nH, hd int) int {
 	}
 }
 
-// splitkvMaxHeads: at/above this many query heads the single-block kernel already fills the device,
-// so split-KV is pure cost. Anchored at phi3-mini's measured nH=32 ("never") and lowered to 24
-// because the asymmetric loss says be conservative between the measured points (the next geometry
-// down is nH=14, which does cross over).
-const splitkvMaxHeads = 24
+// splitkvNeverKVFloats: at/above this many KV floats per key (nKV*hd, i.e. one of K or V), the
+// single-block kernel is close enough to the DRAM roof that extra blocks cannot help, and split-KV
+// is pure cost.
+//
+// THIS REPLACED A RULE KEYED ON QUERY-HEAD COUNT (splitkvMaxHeads = 24), WHICH WAS REFUTED.
+// That rule read: "at/above this many query heads the single-block kernel already fills the
+// device." Both halves were measured false in 2026-09:
+//
+//   - Two models at the anchor's OWN nH=32 measure OPPOSITE signs — phi3-mini (MHA, 3072 floats/key)
+//     0.746 at depth 3900, mistral-7b (GQA 4:1, 1024/key) 1.024. Same head count, so nH cannot be
+//     what decides. A/A floor 0.268%, effect 9.5-37x it, reproduced across two runs.
+//   - "Already fills the device" is false: three geometries measure 11-13% achieved occupancy at
+//     nH=28-32, ~4 active warps per SM against a theoretical 50%.
+//
+// What does order the sign is how close the kernel already runs to the DRAM roof,
+// f = 2*nKeys*nKV*hd*4B / (t*BW), and f is set by nKV*hd. Measured at depth 3900, monotone across a
+// 6x span of KV traffic:
+//
+//	 512 floats/key (Qwen2.5-7B, nH=28)  f 13.5%  ratio 1.0496   +9.94% at depth 8000
+//	1024 floats/key (mistral-7b, nH=32)  f 26.9%  ratio 1.0240
+//	3072 floats/key (phi3-mini,  nH=32)  f 67.8%  ratio 0.7460
+//
+// 3072 is the lowest MEASURED loss, not a midpoint: everything at or above phi3-mini's traffic is
+// excluded, everything below keeps whatever depth threshold it already had. The gap between 1024
+// and 3072 is unmeasured and lands in the default, which stays conservative.
+//
+// docs/measurements/splitkv-aa-floor-2026-09-12.md, splitkv-d7-fthreshold-2026-09-13.md.
+const splitkvNeverKVFloats = 3072
 
 // splitkvConservative: qwen2.5-0.5b's measured first-clear-win depth (2560 break-even, 3072 → 1.061),
 // which also serves as the default for any geometry not in the table. Three of the four measured
@@ -232,11 +255,13 @@ const splitkvConservative = 3072
 // previous constant could only be re-characterized by rebuilding, which is part of why a refuted
 // number survived a release: GOINFER_SPLITKV_MIN_KEYS=<n> re-gates a stock binary (0 ⇒ always take
 // the split path, the force-on A/B arm), GOINFER_SPLITKV_ATTN=0 still force-disables entirely.
-func (r *cudaResident) splitkvMin(hd int) int {
+// nKV is taken PER LAYER, not from layers[0]: gemma4's layers differ in KV width, and a global
+// nKV would misclassify its narrow layers against its wide ones.
+func (r *cudaResident) splitkvMin(nKV, hd int) int {
 	if r.skMinKeys >= 0 {
 		return r.skMinKeys
 	}
-	return splitkvThreshold(r.nH, hd)
+	return splitkvThreshold(r.nH, nKV, hd)
 }
 
 // cudaWQ is a device projection weight in whatever precision the checkpoint stored it.
@@ -517,6 +542,9 @@ type cudaResident struct {
 	bNormF32                                     Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
 	skScores, skSoftmax, skVsum                  Pipeline // Campaign-A split-KV decode attention (high-occupancy, bit-identical)
 	skScoreBuf, skInvBuf                         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
+	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
+	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
 
 	// L2 (docs/task-prefill-gap.md §4 L2): the fused prefill attention, one instantiation per
 	// supported head dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module
@@ -2006,7 +2034,10 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	nWin := nKeys - winStart
 	const dTile = 32 // 1 warp/block; keeps the coalesced V-read, maximizes blocks without sub-warp waste
 	// 1. scores → r.skScoreBuf[h*nWin + i] (raw, ·scale). One thread per key; no reduction.
-	if e := r.launch(r.skScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1},
+	// SharedMemBytes: hd floats for the staged q. splitkv_scores stages the block-invariant q vector
+	// once instead of every thread re-loading it from global — see the kernel's own comment and
+	// docs/measurements/splitkv-stall-profile-2026-09-13.md (93.5% lg_throttle before).
+	if e := r.launch(r.skScores, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((nWin + 127) / 128), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(Ly.hd * 4)},
 		Arg(r.qB), Arg(r.kc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), Arg(r.skScoreBuf), gpu.ArgValue(int32(nWin))); e != nil {
 		return e
@@ -2020,6 +2051,22 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 		return e
 	}
 	// 3. V-sum → r.cctx (each thread the whole ascending-s fold for one output dim).
+	// SPIKE PATH, opt-in only. Splits the V fold over S key chunks and combines in fixed order —
+	// NOT bit-identical to attn_batched, which is why it is unreachable unless
+	// GOINFER_SPLITKV_VSUM_SPLIT is set. Prices the trade the scoping doc's kill criteria decide on.
+	if r.skVsumSplit > 1 && r.skVsumPartial != (Pipeline{}) && r.skVsumCombine != (Pipeline{}) {
+		nSplit := r.skVsumSplit
+		dy := uint32((Ly.hd + dTile - 1) / dTile)
+		if e := r.launch(r.skVsumPartial, LaunchConfig{GridX: uint32(r.nH), GridY: dy, GridZ: uint32(nSplit), BlockX: dTile, BlockY: 1, BlockZ: 1},
+			Arg(r.skScoreBuf), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)),
+			gpu.ArgValue(int32(nSplit)), Arg(r.skPartialBuf)); e != nil {
+			return e
+		}
+		return r.launch(r.skVsumCombine, LaunchConfig{GridX: uint32(r.nH), GridY: dy, GridZ: 1, BlockX: dTile, BlockY: 1, BlockZ: 1},
+			Arg(r.skPartialBuf), Arg(r.skInvBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.hd)),
+			gpu.ArgValue(int32(nSplit)), Arg(r.cctx))
+	}
 	return r.launch(r.skVsum, LaunchConfig{GridX: uint32(r.nH), GridY: uint32((Ly.hd + dTile - 1) / dTile), GridZ: 1, BlockX: dTile, BlockY: 1, BlockZ: 1},
 		Arg(r.skScoreBuf), Arg(r.vc[l]), Arg(r.skInvBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
 		gpu.ArgValue(int32(winStart)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(int32(nWin)), Arg(r.cctx))
@@ -2918,7 +2965,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 				singleBlockAttnShmemLimit,
 				map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 		}
-		if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.hd)) {
+		if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)) {
 			// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
 			// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
 			// Gated PER LAYER on nWin (the EFFECTIVE attended span) against a per-geometry threshold, so

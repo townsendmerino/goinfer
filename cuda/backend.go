@@ -973,6 +973,34 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				if skOK {
 					r.skScoreBuf = r.af(r.nH * r.ctxCap)
 					r.skInvBuf = r.af(r.nH)
+					// Flash-decode V-sum SPIKE, opt-in and NOT bit-identical. Loaded and allocated
+					// only when asked for, so a stock binary carries neither the pipelines nor the
+					// scratch. See docs/scoping-decode-tree-recanon.md §6.
+					if v, err := strconv.Atoi(os.Getenv("GOINFER_SPLITKV_VSUM_SPLIT")); err == nil && v > 1 {
+						// maxHd comes from the MODEL, not r.layers: r.layers is not populated until
+						// later in BuildResident, so reading it here silently yielded 0 and the
+						// resulting 0-byte allocation panicked the executor and declined the whole
+						// resident path to CPU. And hidden/nH is not a substitute — qwen3_5's
+						// head_dim is 256 where hidden/heads is not.
+						maxHd := 0
+						for l := 0; l < nLayers; l++ {
+							if h := m.HeadDimAtResident(l); h > maxHd {
+								maxHd = h
+							}
+						}
+						if maxHd <= 0 {
+							// Never attempt the allocation on a degenerate size: that is the exact
+							// failure above, and it takes the entire resident path down with it.
+							fmt.Fprintf(os.Stderr, "[cuda] GOINFER_SPLITKV_VSUM_SPLIT ignored: no positive head dim\n")
+						} else {
+							loadSK(&r.skVsumPartial, "splitkv_vsum_partial")
+							loadSK(&r.skVsumCombine, "splitkv_vsum_combine")
+							if r.skVsumPartial != (Pipeline{}) && r.skVsumCombine != (Pipeline{}) {
+								r.skPartialBuf = r.af(r.nH * maxHd * v)
+								r.skVsumSplit = v
+							}
+						}
+					}
 					// Default ON (bit-identical; gated per layer at runtime on the effective attended span
 					// nWin ≥ splitkvThreshold(nH, hd), so geometries and depths it loses on are unaffected).
 					// GOINFER_SPLITKV_ATTN=0 force-disables it (A/B / rollback); GOINFER_SPLITKV_MIN_KEYS
