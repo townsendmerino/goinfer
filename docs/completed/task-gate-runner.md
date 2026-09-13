@@ -1,5 +1,37 @@
 # Task: one Go gate-runner over `go test -json` — collapse the tallying shell + census Python
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Archive status (doc-review, 2026-09-13): COMPLETE.** Verified against the tree: none of the
+> seven scripts this doc names (`scripts/parity_sweep.sh`, `scripts/gpu_gate.sh`,
+> `scripts/heavy_gate.sh`, `scripts/skip_census.py`, `scripts/sweep_composition.py`,
+> `scripts/selector_coverage.py`, `scripts/mutation_check.sh`) exist in `scripts/` any more, and
+> `cmd/gate` carries all seven subcommands (`census`, `heavy`, `parity`, `composition`, `selector`,
+> `gpu`, `mutation`). E8 is structurally done, as the doc claims.
+>
+> **One correction: §9's "remedy is a judgement call and is NOT taken here" is stale.** It was
+> taken the next day. `decoder/qwen35_gguf_gate_test.go` carries a `RE-BASELINED 2026-08-22 for
+> v0.15.0` comment: the min-cosine floor moved 0.992 → 0.985 and a new mean-cosine floor (0.995)
+> was added to carry systematic-drift duty, with the same reasoning §9 records (min is
+> box-sensitive, `6d4fc79` was a deliberate bandwidth trade, nudging a floor to just-clear the
+> observation is how a regression gets blessed) — i.e. the remedy this doc left open was made
+> the following day, correctly, for the reasons this doc anticipated.
+>
+> **One remainder, still open, owned by nobody live:** §12's INCONCLUSIVE-verdict live
+> demonstration. `docs/completed/metal-gate-gpu-verify.md` (also archived) names the same loose
+> end and how cheap it is to close — `touch` a tracked file before a `go run ./cmd/gate gpu` run
+> and check for `INCONCLUSIVE`/rc 1 — but no doc has picked it up since 2026-08-21. Low value
+> (the arm is read straight from source and unit-tested in `cmd/gate/gpu_test.go`; this is only
+> about a live demonstration), so this is noted rather than escalated.
+>
+> Every instruction below (the acceptance criteria, the sequencing, "not in scope") describes what
+> was asked and done in 2026-08; none of it is a task.
+
 > **Status: ALL SIX MIGRATED, PLUS `mutation_check` (2026-08-20/21).** `cmd/gate` carries `census`,
 > `heavy`, `parity`, `composition`, `selector`, `gpu` and `mutation`; all seven scripts are deleted.
 > **Both halves of `gate gpu` are now verified against the script they replace** — CUDA on the Linux

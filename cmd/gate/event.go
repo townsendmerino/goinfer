@@ -195,8 +195,8 @@ func (r *results) add(ev testEvent) {
 // (only its `--- PASS` result line is indented), so the shell gate's `grep -cE '^=== RUN'` counted
 // subtests while its `grep -cE '^--- SKIP'` did not. The pair "ran 238 tests, skipped 22" therefore
 // mixes units — 238 tests-and-subtests started against 22 top-level skips. Reproduced exactly,
-// because E8 changes the substrate and not what a gate reports; flagged in docs/task-gate-runner.md
-// §10 as a number that should probably say which unit it is in.
+// because E8 changes the substrate and not what a gate reports; flagged in
+// docs/completed/task-gate-runner.md §10 as a number that should probably say which unit it is in.
 func (r *results) noteOutput(out string) {
 	if strings.HasPrefix(out, "=== RUN ") {
 		r.runLines++
