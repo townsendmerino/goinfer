@@ -200,6 +200,27 @@ func runPrefillGateSet(t *testing.T, rf *metalResident, m *decoder.Model, tk *to
 		t.Logf("%s (%s, set %q): no decision-set reference cells found under %s — run TestPrefillGateReference (decoder package) first", modelName, role, setLabel, refDir)
 		return false
 	}
+	// G-02 (audit-metal-2026-09-12.md): a missing reference file used to silently drop that K
+	// from the pool (runPrefillRefGateCellK returns nil, the loop above just skips appending it) —
+	// so a pooled verdict that says "SHIPS" could rest on fewer decision cells than decisionKs
+	// names, with nothing in the output calling that out unless a reader compares the header's K
+	// list against decisionCells' own count by hand. Observed for real, repeatedly, this same
+	// audit: S set "a" K=512 has no reference file and was pooled over silently in every prior
+	// M-03/M-04 oracle run. A partial decision set is fine to REPORT (re-scoring, deciding=false,
+	// is explicitly "never fails the test on its own" per this function's own doc comment above)
+	// but must not silently DECIDE — Fatalf here, not there, so the message names exactly which K
+	// is missing rather than requiring a reader to diff the header against the cell count.
+	if deciding && len(decisionCells) != len(decisionKs) {
+		gotKs := make([]int, len(decisionCells))
+		for i, cs := range decisionCells {
+			gotKs[i] = cs.K
+		}
+		t.Fatalf("%s (%s, set %q): only %d of %d decision-set cells have reference data (got K=%v, "+
+			"want K=%v) — a pooled verdict over a PARTIAL decision set is not a decision; run "+
+			"TestPrefillGateReference (decoder package) to generate the missing reference file(s) "+
+			"under %s before trusting this gate", modelName, role, setLabel, len(decisionCells),
+			len(decisionKs), gotKs, decisionKs, refDir)
+	}
 
 	pooled := poolCells(decisionCells)
 	ships := pooled.critA && pooled.critB && pooled.critC

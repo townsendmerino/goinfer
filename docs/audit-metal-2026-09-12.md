@@ -559,6 +559,20 @@ re-baked by the code it checks (G-04).
   not fit).
 - **Fix:** `len(decisionCells) != len(decisionKs) ⇒ Fatalf`; a decision model that does not build is a
   FAIL when deciding. **Confidence:** confirmed. **Prior:** G-08.
+- **CLOSED 2026-09-13, first half fixed.** Implemented the missing-reference-file half exactly as
+  scoped: a DECIDING pooled set (`deciding=true`) now Fatalfs if `len(decisionCells) !=
+  len(decisionKs)`, naming which K is missing and where to generate it, rather than silently
+  pooling a partial set — `deciding=false` (the set-A re-score) is unaffected, matching its own
+  "never fails the test on its own" contract. Verified live: re-running the gate on S now Fatalfs
+  at exactly this check once K=256 and K=1024 complete (K=512's reference file is still missing —
+  a real, pre-existing data gap this fix now surfaces instead of hiding). The SECOND half this
+  finding named — "D7 that fails to build → Skipf" — was NOT reproduced: every D7 run this audit
+  session actually hit `t.Fatalf("load: %v", err)` at the fit-guard's hard refusal (the citation's
+  `:114-117` line numbers now point at the `ResidentForwardForTest` type-assertion Skipf, a
+  DIFFERENT decline shape — a model that loads but silently isn't GPU-resident — which this
+  session never observed either). Left as-is rather than fixed speculatively against a symptom
+  not reproduced; re-open if a real "D7 loads, isn't resident, SKIPs, gate reports SHIPS anyway"
+  case turns up.
 
 #### G-03 · `TestPrefillParityGemma` gates the "Gemma set" on a fixture shaped so `prefillOK` is true — the shape every real Gemma 3 lacks
 - **Where:** `metal/prefill_gemma_test.go:44-47`; fixture `[sliding, sliding]` shares one RoPE base
