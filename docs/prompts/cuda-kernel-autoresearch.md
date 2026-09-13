@@ -59,7 +59,7 @@
 
 ## What this is
 
-The same harness pattern from `docs/task-autoresearch-loop.md` (E9) — edit one kernel file, gate
+The same harness pattern from `docs/tasks/task-autoresearch-loop.md` (E9) — edit one kernel file, gate
 correctness first, measure a fresh baseline, keep or revert — just run by hand, one target at a time,
 rather than as an unattended loop. It was run this way against `metal/` for the last several rounds
 (28 rounds: 15 real wins landed, 2 genuine unresolved correctness mysteries characterized and
@@ -103,7 +103,7 @@ Per target:
   editing and testing. `build_ptx.sh`'s own header explains why NVRTC and not `nvcc` (gcc 15 on this
   box can't drive `nvcc`'s host compiler).
 - **The bit-identical decode long-context attention lever is already closed.** Per
-  `docs/task-autoresearch-loop.md` §3: Campaign A (hand-tuned) topped out at ~1.17×, the V-sum unroll
+  `docs/tasks/task-autoresearch-loop.md` §3: Campaign A (hand-tuned) topped out at ~1.17×, the V-sum unroll
   was refuted, and the walls there are structural (dispatch-/occupancy-bound). A loop pointed at THAT
   specific lever will mostly re-derive a known ceiling — acceptable as a cheap, logged refutation, not
   worth spending a night on. This is a narrower, more specific caveat than "don't touch attention

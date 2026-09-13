@@ -37,7 +37,8 @@ degrades (227 → 124). The decode crossover is ~1000 tokens. A1 coalescing + sp
 97 → 160 (the old "1.94× behind" → 1.17×), but did not reach parity, and 3900 is 1.46× behind. The
 remaining long-context lever is a bit-identical flash-attention-style decode (the §A2 split-KV is the
 start; the arithmetic says parity is reachable but not yet built). **Execution method for this search:**
-an autonomous edit→bench→keep/revert loop over the gates is scoped in `docs/task-autoresearch-loop.md`
+an autonomous edit→bench→keep/revert loop over the gates is scoped in
+`docs/tasks/task-autoresearch-loop.md`
 (queue-engineering E9) — its primary target is this lever's fast-mode lane, since the exact-path
 bit-identical levers are largely exhausted (Campaign A ceiling).
 

@@ -620,7 +620,7 @@ re-baked by the code it checks (G-04).
 #### G-04 · The absolute snapshot golden is re-baked by the code it checks after each accepted kernel round; the autoresearch ledger is outside the tree
 - **Where:** `metal/snapshot_golden_test.go:20,177-184` ("the ABSOLUTE STORED REFERENCE";
   `GOINFER_UPDATE_GOLDENS` writes whatever current code produces), `metal/kernels.go:26-29` ("only
-  deep-mantissa sha bits move — see the round's own commit"); `docs/task-autoresearch-loop.md:3`
+  deep-mantissa sha bits move — see the round's own commit"); `docs/tasks/task-autoresearch-loop.md:3`
   ("not started") and §3 ("Do NOT point it at Metal") vs `metal/kernels.go:102,147,729-754` (Metal rounds
   ran on the norm-class kernels); `scripts/autoresearch_rmsnorm_results.tsv` not in
   `docs/measurements/`.
@@ -631,7 +631,7 @@ re-baked by the code it checks (G-04).
   golden is declared an OS-drift detector only; move the tsv into `docs/measurements/`; fix the
   autoresearch doc's status. **Confidence:** plausible (the tsv is not here).
 - **PARTIALLY CLOSED 2026-09-13 — doc corrected, tsv/gate-line not done.** Fixed
-  `docs/task-autoresearch-loop.md`'s stale "not started" status to note the contradiction directly
+  `docs/tasks/task-autoresearch-loop.md`'s stale "not started" status to note the contradiction directly
   (kernels.go's own comments cite the tsv as a real Metal experiment) rather than restate the
   wrong claim. The tsv itself could not be moved into `docs/measurements/` — it is not anywhere in
   the tree, not merely misplaced; whatever generated it either never committed the file or it was
@@ -709,7 +709,7 @@ re-baked by the code it checks (G-04).
   re-quantises to W4A8 (`metal/model.go:435-461`). Qwen2.5-VL/Qwen3-VL "✅ resident" Metal cells are
   text-only (no `ForwardMRoPE` in `metal/`); Gemma 4 E2B/E4B CPU-only under a "✅" row — no footnote.
 - N-05 `docs/audit-2026-09-10.md:153` lists C-08 open; `:1216-1224` records it fixed (d9139bc).
-- N-06 `docs/task-autoresearch-loop.md:3` "not started" / §3 "do NOT point it at Metal" — it ran on
+- N-06 `docs/tasks/task-autoresearch-loop.md:3` "not started" / §3 "do NOT point it at Metal" — it ran on
   Metal (norm-class kernels); ledger tsv outside the tree (G-04).
 - N-07 `docs/task-metal-batched-verify-kernel.md:3` header says "CONFIRMED"; §Go/no-go is NO-GO
   (code honours the NO-GO).

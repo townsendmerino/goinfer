@@ -1,19 +1,37 @@
 # Task: an autonomous kernel-optimization loop (autoresearch) over goinfer's gates
 
-> **Status: PLAN / setup guide.** "Not started" no longer describes the whole picture (G-04,
-> audit-metal-2026-09-12.md): `metal/kernels.go`'s own comments on `rmsnorm_quant`/`quant_vec`
-> (the norm-class kernels) cite `scripts/autoresearch_rmsnorm_results.tsv` as the record of a
-> real vectorization-safety experiment run against Metal — contradicting §3's "do NOT point it at
-> Metal" below, at least for that one round. That tsv is not in this tree (not committed, or lost
-> since) — the SHA/reduction-order history it recorded cannot be audited from the repo as it
-> stands. Whether this was the full autoresearch LOOP (automated N-candidate search) or a
-> hand-driven experiment that happened to produce a similarly-named log is not established either
-> way; flagged here rather than guessed at. Tracked as queue-engineering **E9**. This is an
-> *execution method* for kernel campaigns, not a new campaign: an agent runs
+> **Status (corrected 2026-09-13, doc-review): LIVE — the method shipped and is proven on two
+> backends; one target remains open.** The previous version of this note (added same-session, then
+> immediately superseded on re-check) hedged on whether G-04's finding was the real automated loop
+> or a hand-driven experiment with a similar name. It was the real loop:
+> `docs/completed/queue-engineering.md`'s **E9** entry — corrected 2026-08-22, i.e. already on record
+> before this doc's own hedge was written — documents **14 `autoresearch/*` scratch branches** that
+> ran on the Mac 2026-08-20/21 (delta-rule, gemv-w8a8-coal, gemv-w8a8-amax, quant-vec,
+> layernorm-quant, rmsnorm-f32, rmsnorm-quant, act-quant, swiglu-quant, qk-norm, gpu-delta-rule,
+> plus two stale-pointer branches with no divergence from main). Survivors landed as
+> individually-authored commits per §5(d) below, not merged branches; the non-survivors
+> (`rmsnorm-quant`/`swiglu-quant`/`qk-norm`/`act-quant`/`gpu-delta-rule`) correctly reverted —
+> written-refutation artifacts, not gaps. The `autoresearch/*` branches are gone now (superseded by
+> main). `scripts/autoresearch_rmsnorm_results.tsv` — the artifact G-04 found cited in
+> `metal/kernels.go`'s comments — is still not in this tree; that is a retention gap in the audit
+> trail, not doubt about whether the loop ran.
+>
+> The method also transferred to CUDA: `docs/prompts/cuda-kernel-autoresearch.md` ran its own first
+> pass 2026-08-22 (7 rounds, 6 landed wins, 1 honest refutation on `attn_block_full`), an independent
+> confirmation of the harness/keep-revert discipline this doc specifies.
+>
+> **What's still open:** target 1b, the FA fast-lane (§3) — blocked on `--mode fast` and its
+> quality lane, neither of which exist yet, and no other doc in this tree tracks building them.
+> §6's freeze note ("after v0.13.0, behind §C1 + the CUDA gate") describes the plan as originally
+> drafted; in practice target 2 (GEMV/norm-class, both backends) already ran and landed without
+> waiting on that gate — which, per `docs/release-1.0-gate.md`, is still open today (C1, CUDA
+> drain/unload verification, unchecked as of this review). Read the freeze language below as
+> historical, not a live blocker on the FA-lane round.
+>
+> This is an *execution method* for kernel campaigns, not a new campaign: an agent runs
 > edit → benchmark → keep/revert unattended, gated by goinfer's existing correctness harness.
 > Drafted 2026-08-13 after sankalp's "232× kernel via a Codex autoresearch loop" (GPU Mode qr_v2) and
-> the `autokernel` project it spawned. Same freeze as the rest of E — code after the v0.13.0 tag; this
-> doc lands now.
+> the `autokernel` project it spawned.
 
 ## 1. What it is, and why goinfer is unusually suited to it
 
