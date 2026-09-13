@@ -1,5 +1,31 @@
 # Task (goinfer): promote `qwen3_next` from tiny-oracle to a real-checkpoint T3 row
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **CLOSED 2026-09-13.** The work order ran, on `nobara-pc`, starting the same day it was written
+> (`3b7facd` .. `8f003f2`, 2026-08-26/27). `qwen3_next` cleared T3: `testdata/parity_manifest.json`
+> shows `status: "validated"`, `method: "real-model-oracle"`, real `Qwen3-Next-80B-A3B-Instruct`
+> (int4 weights, f32 activations) against a full HF bf16 reference via `accelerate` disk offload —
+> argmax 100.0%, logit cosine 0.98988. `docs/capability-matrix.md`'s Qwen3-Next row reads
+> `real-oracle 100.0%/0.98988`, not `experimental: tiny-oracle`.
+>
+> The shared-path proxy was checked first and correctly rejected (own-set diverges from
+> `qwen3_5_moe` by six files). The first run (`dc35a31`) measured cosine 0.989876 and initially
+> read as a fail against the 0.99 gate — but that gate was calibrated for int8 and this was the
+> repo's first int4 T3 row. Two separate defects, not one: the realckpt gate's `-run` filter
+> couldn't reach the test at all (`20fc6e6`, `...Real_oracle` matched neither `Qwen35` nor
+> `Real_gate`), and the bar itself needed a per-precision split (`c62f2b7`: int8/int8int8 keep 0.99,
+> int4 takes 0.98, pre-registered before the fix was applied). With both fixed, the measured
+> 0.989876 clears 0.98 and the row was written by the gate (`8f003f2`), never by hand. A broader
+> question — whether the bar also needs a sparsity axis, not just precision — was filed as `G25` in
+> `docs/QUEUE.md` and parked; it does not block this family's validated status. Full record:
+> `docs/measurements/qwen3next-t3-int4-2026-08-26.md` and the archived sweep logs beside it.
+
 > **For:** Claude Code, in `~/mycode/goinfer` on **`nobara-pc`** (the linux/CUDA box — note the
 > path is `mycode`, not `tmcode`; that mistake has already been made once). Written 2026-08-26.
 > **Box: linux, and it must be.** T3 is the "on the big box" tier, the reference needs host RAM the
