@@ -29,7 +29,7 @@
 
 > **For:** Claude Code in `~/tmcode/goinfer`, module `cuda`.
 > Written 2026-08-29 from the aikit side, as the counter-proposal to
-> `docs/prompts/aikit-subrange-async-upload.md` — **which was declined**, see the DECISION
+> `docs/completed/aikit-subrange-async-upload.md` — **which was declined**, see the DECISION
 > section at the foot of that file. This is the change that captures its prize instead.
 >
 > **Bump first:** `aikit/gpu` is at **`gpu/v0.32.0`**. `UploadBatch` landed there (`220372b`).

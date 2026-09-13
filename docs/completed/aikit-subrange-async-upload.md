@@ -1,5 +1,39 @@
 # aikit task: a sub-range async upload, because profiling now shows `Buffer.upload` on a hot path
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **STATUS (2026-09-13): DECLINED-AND-SUPERSEDED — the recommended alternative shipped, was
+> adopted, and beat its own projection.** The DECISION section below (2026-08-28) declined the
+> sub-range async ask as scoped and recommended a batched upload instead. That recommendation is
+> no longer hypothetical:
+>
+> - **aikit shipped it.** `aikit/gpu` commit `220372b`, "UploadBatch — N host->device copies, ONE
+>   synchronize", landed at `gpu/v0.32.0`, tested (`gpu/upload_batch_test.go`). goinfer's `go.mod`
+>   now pins `aikit v1.41.0` / `aikit/gpu v0.32.0` — past the point this needs.
+> - **goinfer adopted it.** `cuda/resident.go`'s `loadExpertSlot`/`loadRoutedExperts` now collect a
+>   layer's misses into `expBatch []gpu.HostCopy` and issue one `gpu.UploadBatch` per layer instead
+>   of two `gpu.Upload` (two syncs) per expert — see `docs/prompts/goinfer-adopt-uploadbatch.md` for
+>   the change spec.
+> - **It was measured, not just landed.** `docs/measurements/uploadbatch-cprime-2026-08-28.md`:
+>   copies-that-synchronize dropped 20,916 → 2,038 (10.3× fewer) on a real gemma-4-26b-a4b-it C′
+>   run, H2D time −10.2% (2.98 ms/token, a direct hit on the doc's own "~3.0 ms of 3.6 ms" estimate),
+>   and end-to-end **+9.3% tok/s** (14.55 → 15.90, arm spreads ±1.0%/±0.4%, interleaved same-session,
+>   bit-exact on hardware). The original ask's own headline (1.18×) was never what was on offer —
+>   this alternative captured the real prize (the 5.6% sync term) and then some, via a mechanism the
+>   sync-drain analysis in that write-up says reaches beyond the H2D accounting alone.
+>
+> The async form itself (`CopyFromHostRangeAsync`) was never built and remains declined; §"Revisit
+> if" below still names the conditions for reopening *that specific* ask (a quiesced box to resolve
+> the sub-5% band, a DMA-volume-changing workload, or a future need for genuine H2D/compute overlap)
+> — none has fired, and with the prize already banked by the batched form, none is currently worth
+> chasing. The follow-through spec is `docs/prompts/goinfer-adopt-uploadbatch.md` (itself now done
+> and not yet separately archived — out of scope for this file's review).
+
 > **STATUS: OPEN and UNANSWERED as of 2026-08-21.** aikit/gpu has cut **v0.29.0** since this was
 > written and `Buffer.upload` there still ends in a full device `Synchronize`; no
 > sub-range async API exists in any cached version. So this has neither been built nor explicitly
