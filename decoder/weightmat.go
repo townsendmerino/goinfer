@@ -373,7 +373,7 @@ var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""
 // Re-open the decision with a fresh paired measurement — ideally on a
 // different day/machine state, per this same repo's own "a single-machine
 // result needs to reproduce before a remedy gets built against it" rule
-// (docs/task-zeno-compare.md's R-05 saga) — before flipping this default.
+// (docs/completed/task-zeno-compare.md's R-05 saga) — before flipping this default.
 var w4a8BatchEnabled = os.Getenv("GOINFER_W4A8_BATCH") != ""
 
 // repackW4A8IfEligible applies whichever ISA-specific W4A8 layout THIS build

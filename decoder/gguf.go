@@ -1389,7 +1389,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	}
 	// gemma4's fused PLE/MoE tail can't stream incrementally; it falls back to a
 	// resident build + one-shot serialize. qwen35 no longer needs this fallback
-	// (2026-08-24, docs/task-zeno-compare.md): its own loadQ35 already builds one
+	// (2026-08-24, docs/completed/task-zeno-compare.md): its own loadQ35 already builds one
 	// layer at a time internally, so buildWeightsFromGGUF's sink!=nil branch below
 	// streams it like every other family — a control-flow fix (write + release
 	// each layer instead of holding all of them until one final serialize), not a
@@ -1928,7 +1928,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// concurrency is an unrelated speed choice, not a correctness dependency —
 		// so a sequential build-then-write-then-release loop produces bit-identical
 		// per-layer output while bounding peak RSS to ~one layer instead of all of
-		// them (docs/task-zeno-compare.md, 2026-08-24: the old always-parallel,
+		// them (docs/completed/task-zeno-compare.md, 2026-08-24: the old always-parallel,
 		// always-resident path OOM'd a 35B-A3B MoE at 40.5GB on a 16GB Mac).
 		// Non-streaming (sink == nil, regular resident load): unchanged, still
 		// parallel — every qwen35-family model tried before now fits resident, and

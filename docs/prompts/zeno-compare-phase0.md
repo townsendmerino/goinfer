@@ -13,7 +13,7 @@
 
 ## Deliverable
 
-A short feasibility note — `docs/task-zeno-compare.md`, opening section — with a go/no-go for
+A short feasibility note — `docs/completed/task-zeno-compare.md`, opening section — with a go/no-go for
 Phase 1 and the "what's measurable" inventory that Phase 1's cell design depends on. A no-go
 with reasons is a complete deliverable.
 

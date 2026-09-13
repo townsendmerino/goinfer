@@ -1,7 +1,7 @@
 # Task (goinfer): paged-MoE decode — attack the 70.5%, with the diagnostic as the before
 
 > **For:** Claude Code, in `~/tmcode/goinfer`, on the 16 GB M1 Pro. Written 2026-08-24, from
-> the 35B diagnostic (`0081d3e`, recorded in `docs/task-zeno-compare.md`): steady-state
+> the 35B diagnostic (`0081d3e`, recorded in `docs/completed/task-zeno-compare.md`): steady-state
 > ~1.2-1.4 tok/s; split **paged MoE ~70.5%** (I/O-dominated: ~25 GB read for one 79-token
 > request — 1.5x the 16.36 GB expert pool — against a 6 GB budget), DeltaNet ~19%, LM head
 > ~7%, attention ~3.5%. This campaign is the MoE share only. **DeltaNet is the named
@@ -19,7 +19,7 @@
 > **What survives, rescoped:** Step 0.1 and Lever 4 collapse to citations (below). Lever 2 is
 > already the status quo on darwin (nothing to build). The read-rate probe below confirmed
 > page-fault-driven reads ARE queue-depth-1-bound (0.32→1.79 GB/s at QD8, 5.5x) — but a direct
-> admit-time I/O-vs-compute split (`docs/task-zeno-compare.md`, "the admit-time I/O-vs-compute
+> admit-time I/O-vs-compute split (`docs/completed/task-zeno-compare.md`, "the admit-time I/O-vs-compute
 > split, measured directly") then found the MoE bucket is **86% compute, only 14% I/O** — so that
 > 5.5x barely moves the total (1.09x end-to-end).
 >
@@ -27,7 +27,7 @@
 > as "the next opening fact" above on the strength of "compute-dominated" alone — but that left
 > compute a location, not an attribution (Francis's own catch: ~465ms of compute over the touched
 > bytes was ~3GB/s, an order of magnitude under the canonical kernel's own ~40GB/s). A finer split
-> (router/gather/GEMV-by-shape/shared, `docs/task-zeno-compare.md` "compute was a location, not an
+> (router/gather/GEMV-by-shape/shared, `docs/completed/task-zeno-compare.md` "compute was a location, not an
 > attribution") found 91.6% of compute is genuinely GEMV time, ruled out the threshold-bug-class
 > hypothesis by direct A/B (forcing serial made it SLOWER, not faster), and found the real
 > mechanism by reading the code: paged `.giw` MoE experts never get the arm64 split-half kernel's
@@ -134,7 +134,7 @@ any concurrency is touched.
   puts gemma4-class paging behavior.
 - Each lever measured separately (hit rate, faulted bytes/token, tok/s, pressure) then
   combined — the diagnostic's table refilled as the after.
-- Results appended to `docs/task-zeno-compare.md`; the Zeno Phase 1 question gets re-answered
+- Results appended to `docs/completed/task-zeno-compare.md`; the Zeno Phase 1 question gets re-answered
   there once the number lands (Part B still gated on Francis regardless).
 
 ## Not in scope

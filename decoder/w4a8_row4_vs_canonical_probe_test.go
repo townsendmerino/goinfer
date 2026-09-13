@@ -14,7 +14,7 @@ import (
 // TestRow4_vsCanonical_gemma4Shapes is the follow-up the mmap-vs-heap result directly
 // suggests: memory source is ruled out (TestRow4_mmapVsHeapResident, +1.7% noise), so
 // if gemma4's paged decode is still ~47-49% slower with kind-4 than kind-3
-// (docs/task-zeno-compare.md's "Quiet-machine re-measure"), the remaining candidate is
+// (docs/completed/task-zeno-compare.md's "Quiet-machine re-measure"), the remaining candidate is
 // that the row4 kernel itself is not faster than canonical on THESE SPECIFIC expert
 // shapes -- the original 1.6-1.75x figure (docs/task-w4a8-neon-bandwidth.md) may have
 // been measured on different tensor dimensions. Calls both free-function kernels

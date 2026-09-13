@@ -11,7 +11,7 @@ import (
 )
 
 // TestQwen35StreamingTranscode_matchesResident is the correctness gate
-// docs/task-zeno-compare.md's streaming-transcode fix owes: the qwen35
+// docs/completed/task-zeno-compare.md's streaming-transcode fix owes: the qwen35
 // dedicated loader's per-layer output must be BYTE-IDENTICAL whether built
 // via the old always-parallel/always-resident path (buildWeightsFromGGUF
 // with sink=nil, then SerializeWeights) or the new streaming path

@@ -271,7 +271,7 @@ This repo's measurements are the product, so the standards are load-bearing:
 - **A RETRACTION IS NOT DONE UNTIL IT REACHES EVERY PAGE QUOTING THE FIGURE.** When you strike a
   number, `grep` for *the figure with its unit* right then and fix every instance, at the retraction
   site, while you still have the context. Recording the correction where it was found is not enough:
-  measured 2026-08-28, `~1.2-1.4 tok/s` was withdrawn in `task-zeno-compare.md` and went on
+  measured 2026-08-28, `~1.2-1.4 tok/s` was withdrawn in `docs/completed/task-zeno-compare.md` and went on
   disqualifying `Qwen3.5-35B-A3B` from a qualifying agent-loop run in `queue-engineering.md` for
   months, on a figure that direct measurement then put at 1.52-1.73 (CPU) / 1.97-2.02 (Metal).
   Grep the figure WITH its unit: the bare digits matched six unrelated quantities (ms, kernel

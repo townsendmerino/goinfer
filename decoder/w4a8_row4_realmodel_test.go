@@ -133,7 +133,7 @@ func TestRow4GiwKind_qwen35_pagedEviction(t *testing.T) {
 }
 
 // assertAdvisedBytesSane is the durable, contamination-proof I/O-waste check the
-// campaign's original acceptance run had no way to make (docs/task-zeno-compare.md's
+// campaign's original acceptance run had no way to make (docs/completed/task-zeno-compare.md's
 // "At-scale acceptance run"/"Pass 1"): bytes actually passed to WILLNEED per miss
 // should track the pager's own average per-expert size, not exceed it by a wide
 // margin -- a member registering redundant spans (the exact kind-4 double-WILLNEED

@@ -10,7 +10,7 @@ import (
 )
 
 // TestGemma4EndToEndThroughput re-measures the END-TO-END paged-decode gap
-// (docs/task-zeno-compare.md's "Quiet-machine re-measure": gemma4-26b kind-4
+// (docs/completed/task-zeno-compare.md's "Quiet-machine re-measure": gemma4-26b kind-4
 // vs kind-3, -47.0%/-49.0% at 4GB/8GB, budget-invariant) — the number the
 // whole cold-touch investigation was chasing an explanation for, now that
 // the kernel-level 69%-slower finding has failed to reproduce 3/3 on a
