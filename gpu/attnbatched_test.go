@@ -43,7 +43,7 @@ func TestAttnBatched_parity(t *testing.T) {
 		wantKeysPath bool
 	}{
 		{"keys-eligible(hd=64,kvDim=128)", 8, 4, 64, true},
-		{"plain-fallback(hd=48,kvDim=48)", 4, 1, 48, false},
+		{"plain-fallback(hd=50,kvDim=50)", 4, 1, 50, false}, // 50 % 4 != 0 -> attnKeysEligible declines
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
