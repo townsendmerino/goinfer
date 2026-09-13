@@ -1,5 +1,26 @@
 # Task (goinfer): Zeno head-to-head, Phase 0 — feasibility only, no benchmarking yet
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (doc-review, 2026-09-13): COMPLETE, archived.** This brief's own deliverable — "a short
+> feasibility note … with a go/no-go for Phase 1 … a no-go with reasons is a complete
+> deliverable" — was produced in full at `docs/completed/task-zeno-compare.md`: Part A (can goinfer
+> run the real checkpoint) cleared 2026-08-24 (streaming-transcode fix landed, real 35B-A3B decodes
+> coherently), Part B hit its own required Francis-install checkpoint and did not proceed past it
+> (his clearance never came — exactly the outcome this brief's own gating text allowed for), and the
+> doc's closing section states the resulting verdict plainly: "Overall: still NO-GO for Phase 1,
+> gated on Part B alone." That is this prompt's own scope, fully discharged; Phase 1 itself
+> (matched-depth benchmarking) was explicitly out of scope for THIS brief ("Not in scope: Any Phase
+> 1 benchmarking...") and never launched — not a gap in this doc, a different doc's job. The
+> question this brief fed has since moved: `docs/tasks/task-peer-benchmarks.md` (SCOPED
+> 2026-09-03) now owns Zeno as an optional Mac peer for "the 35B-on-16-GB cell," so nothing this
+> prompt opened is an orphan.
+
 > **For:** Claude Code, in `~/tmcode/goinfer`, on the 16 GB M1 Pro MacBook. Written 2026-08-24.
 > Context: Icosa's Zeno (r/ollama post, 2026-08) ships 4-bit Qwen3.5-35B-A3B on 16 GB Macs via
 > disk offloading and posts: 10k prompt — 214 tok/s prefill / 8.7 tok/s decode; 541 prompt —

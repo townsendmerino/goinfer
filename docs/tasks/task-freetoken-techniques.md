@@ -322,4 +322,4 @@ Lead 1; nothing further to revisit here on its own.
 Nothing here has been opened into a `docs/prompts/` brief yet, per the usual
 Cowork-drafts / vscode-claude-executes split — this is the scoping pass, not the work
 order. Say which lead(s) to open first and a brief can follow the same shape as
-`docs/prompts/zeno-compare-phase0.md`.
+`docs/completed/zeno-compare-phase0.md` (archived 2026-09-13, its own scope complete).
