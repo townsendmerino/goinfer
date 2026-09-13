@@ -2023,7 +2023,7 @@ func (r *cudaResident) norm(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 // l at position pos (M=1): three launches replacing the single attn_batched(M=1). scores tile over
 // keys (nH·⌈nWin/128⌉ blocks), softmax keeps the exact 128-wide partition+tree (byte-identical max +
 // denominator), vsum tiles over output dims (nH·⌈hd/32⌉ blocks, each thread the whole per-d fold).
-// Writes r.cctx exactly as attn_batched would. See docs/task-decode-splitkv-attention.md.
+// Writes r.cctx exactly as attn_batched would. See docs/tasks/task-decode-splitkv-attention.md.
 func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	Ly := &r.layers[l]
 	nKeys := pos + 1
