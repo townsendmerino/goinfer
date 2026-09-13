@@ -1,6 +1,6 @@
 # Task: bit-identical high-occupancy decode attention (Campaign A, split-KV)
 
-> Scoping doc. Opened 2026-08-04 from the A1-reprofile (`ollama-chase.md` §A2) + D4 (§D4).
+> Scoping doc. Opened 2026-08-04 from the A1-reprofile (`../ollama-chase.md` §A2) + D4 (§D4).
 > Status: ~~**design + build in progress.** Bit-identity argument settled; kernels being written.~~
 > **SHIPPED, DEFAULT-ON per geometry; one measurement open.** *(Status line corrected 2026-09-12: it
 > still read "kernels being written" five weeks after they landed, while every section below records
@@ -8,6 +8,14 @@
 > mis-read the whole doc.)* The three kernels landed 2026-08-04 (`cuda/decode_splitkv.cu`,
 > `a4932832`), went default-on the same day (`26ae07da`), and were re-gated per geometry 2026-08-09
 > (P6a, `2693dcec`).
+>
+> **Update 2026-09-13:** the "one measurement open" above turned out to be more than a depth gap. A
+> same-day campaign (11 records under `docs/measurements/splitkv-*-2026-09-13.md` and
+> `splitkv-8000-reanchor-2026-09-12.md`) found the `splitkvNever` class itself was keyed on the wrong
+> variable — query-head count, not KV traffic per key — and shipped a re-key (`61fe66fe`). The same
+> campaign also spiked a follow-on V-sum kernel that clears the reopen bar for a much larger
+> re-canonicalization question. See the "RE-KEYED" section below (replacing "OPEN") for the corrected
+> state and the new open item.
 >
 > **This doc is the DESIGN RECORD, not the open-work tracker.** `docs/queue-performance.md`'s
 > **decode-depth-falloff P24** holds the open work and says so in as many words ("the design record
@@ -20,16 +28,16 @@
 > `595.91.07` / Nobara 44, per CLAUDE.md's rule that a driver change invalidates comparability).
 > The **ratios survived** — most cells agree to ±0.005, and 1.5B @2048 reads 1.189 there against the
 > 1.20× below — so the conclusions in this doc stand and only the absolutes need re-reading from
-> §B6.3. Separately, `ollama-chase.md`'s live TL;DR annotates a 2026-08-09 re-measure of the headline
+> §B6.3. Separately, `../ollama-chase.md`'s live TL;DR annotates a 2026-08-09 re-measure of the headline
 > cell, 157.6 vs 179.2 = Ollama **1.14×**, beside the 1.17× recorded below.
 >
 > **CUDA only.** Split-KV was built on Metal, measured a regression, and reverted
-> (`ollama-chase.md` §A2-Metal); Metal ships the single attention path. Nothing below is a
+> (`../ollama-chase.md` §A2-Metal); Metal ships the single attention path. Nothing below is a
 > cross-backend claim.
 
 ## The problem (measured, not inferred)
 
-A1 coalesced the decode attention K-read (`ollama-chase.md` §A1) — 232.7 → 134.2 µs, L1TEX 71 →
+A1 coalesced the decode attention K-read (`../ollama-chase.md` §A1) — 232.7 → 134.2 µs, L1TEX 71 →
 38%. The A1-reprofile then showed the bound **moved to occupancy**: the decode `attn_batched` at
 M=1 launches **one block per query head = 12 blocks** on a 40-SM card. Waves/SM 0.04, achieved
 occupancy **11.9%** (theoretical 87.5% — *not* register/shared limited), 93% no-eligible-warp,
@@ -189,7 +197,7 @@ Bit-identity is unaffected and still gated on both the GQA/hd=128/no-window path
 winStart>0) — both now force the split path via the override so a raised threshold cannot make them
 pass vacuously by comparing `attn_batched` against itself.
 
-### OPEN: every threshold in the table stops around 3900 keys, and the cells that matter run at 8000
+### RE-KEYED (was "OPEN"): every threshold in the table stops around 3900 keys, and the cells that matter run at 8000
 
 *(2026-09-05.)* The per-geometry lookup this section installed is sound for the depths it was
 measured at, and **it was measured at 2560–3900 attended keys at the most** — `splitkvConservative`
@@ -213,6 +221,51 @@ never` may well still hold at 8000; nobody has run it, and the honest statement 
 was not extended rather than that the answer is known. Re-measure with
 `GOINFER_SPLITKV_MIN_KEYS=0` end-to-end, not from `TestSplitKVCrossover` — for the reason this
 section already gives.
+
+> **RE-ANCHORED, 2026-09-13.** Someone did run it, and found something narrower and more consequential
+> than a missing depth: `nH` was never the right variable. Two production models at the anchor's OWN
+> `nH=32` measure **opposite signs** — phi3-mini (MHA, 3072 KV floats/key) loses 0.746 at 3900,
+> mistral-7b (GQA 4:1, 1024/key) wins 1.024 — and `ncu` puts all three geometries at 11–13% achieved
+> occupancy, directly refuting `cuda/resident.go`'s old comment that "the single-block kernel already
+> fills the device" at high `nH`
+> (`docs/measurements/splitkv-8000-reanchor-2026-09-12.md`, `splitkv-mechanism-ncu-2026-09-12.md`).
+> What actually orders the sign is `f = nKeys·nKV·hd·4B / (t·BW)` — how close the single-block kernel
+> already runs to the DRAM roof — set by `nKV·hd` (KV floats per key), monotone across a 6× span:
+>
+> | geometry | nH | KV floats/key | f @3900 | force-ratio @3900 | @8000 |
+> |---|--:|--:|--:|--:|--:|
+> | D7 (Qwen2.5-7B) | 28 | 512 | 13.5% | 1.0496 | **1.0993** |
+> | mistral-7b | 32 | 1024 | 26.9% | 1.0240 | 1.0354 |
+> | phi3-mini | 32 | 3072 | 67.8% | 0.7460 | — (4k-context model, can't reach 8000) |
+>
+> (`docs/measurements/splitkv-d7-fthreshold-2026-09-13.md`, `splitkv-f-depth-invariance-2026-09-13.md`.)
+>
+> **Shipped the same day** (`61fe66fe`): `splitkvNever` re-keyed from `nH ≥ splitkvMaxHeads` (24) to
+> `nKV·hd ≥ splitkvNeverKVFloats` (3072) — see the constant's own comment in `cuda/resident.go` for
+> the full derivation. **D7 is no longer in the never class** (512 ≪ 3072); it now falls through to
+> the conservative default threshold (3072 keys) like any unmeasured geometry. The old
+> misclassification had a real, measured cost: **+9.94% at depth 8000** (35.84 → 39.40 tok/s),
+> moving D7's retention of its shallow-decode rate against llama.cpp from **0.49 to 0.54** — real
+> progress on P24, about a fifth of the gap, not the whole of it.
+>
+> **The re-anchor's own pre-registered primary question is separately PARKED, not resolved by the
+> table above.** The decisive cell — does `never` survive at depth for a genuinely high-`nH`,
+> high-traffic geometry — read mistral-7b at 8000 as 1.0354, inside the pre-registered ambiguous band
+> (1.00, 1.05). Its validity check also failed: mistral does not reproduce phi3-mini's direction at
+> 3900 (a win, not phi3's loss), so mistral is not a valid stand-in for phi3-mini's class and
+> phi3-mini's own "never" remains un-re-anchored past its native 4k-context ceiling. The re-key above
+> rests on the three-point `f`-ordering, not on this parked cell.
+>
+> **New open item the same campaign surfaced, not answered here:** an opt-in flash-decode-style V-sum
+> kernel (key-axis split onto a blocked reduction tree, giving up bit-identity-to-history) measures
+> **+40–43% on the attention kernel** and an arithmetic-projected **+15.6% end-to-end** on D7 at depth
+> 8000 (`docs/measurements/vsum-split-spike-2026-09-13.md`) — well past the >15% bar
+> `docs/scoping-decode-tree-recanon.md` pre-registered for its own prerequisite (making
+> `attn_batched` and `splitkv_vsum` share one blocked tree, which touches 79 test files / 36 parity
+> families / 116 goldens / 4 backends). **Fidelity is not established** — no gate has run the spike
+> against an f32 reference yet, only a synthetic near-tie test — and it stays behind
+> `GOINFER_SPLITKV_VSUM_SPLIT`, unreachable in a stock binary. `docs/scoping-decode-tree-recanon.md`
+> owns that decision now, not this doc.
 
 ## Why this one is worth it (recap from §4)
 

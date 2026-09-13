@@ -30,7 +30,7 @@
 
 The recurrence is sequential **across tokens**; within one step, the state matrix's elements
 are updated independently — the same independent-axes-never-the-reduction structure A1
-exploited (`task-decode-splitkv-attention.md:60`). So:
+exploited (`docs/tasks/task-decode-splitkv-attention.md:68`). So:
 
 - **(a) SIMD across independent state elements** — vectorize the per-step update across the
   state's value dimension with each element's own fold order unchanged: bit-identical by

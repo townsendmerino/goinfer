@@ -17,7 +17,7 @@ campaign doc's § "The invariant, precisely". Concretely:
 - Parallelism may only split **independent outputs** across workers/registers — heads, layers'
   KV groups, individual QK scores (one dot per key), individual AV dims (one fold per dim).
   Never split, chunk, or reassociate any single output's reduction. This is
-  `docs/task-decode-splitkv-attention.md:60`'s principle, applied on CPU.
+  `docs/tasks/task-decode-splitkv-attention.md:68`'s principle, applied on CPU.
 - Gates that must pass unchanged, with no golden regeneration of any kind:
   `TestForwardN_matchesSequential`, `TestSpeculativeGreedyParity`, the full goinfer parity
   suite, and aikit's own `linalg` suite. If a change needs a golden updated, the change is

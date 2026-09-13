@@ -307,7 +307,7 @@ The A1-reprofile refuted the KV-layout hypothesis (reads already coalesced) and 
 12 blocks on 40 SMs. The fix is parallelism over the *independent* axes, **not** a relayout and not
 FA's non-bit-exact online rescale. Full design + the associativity argument (why a contiguous
 key-split fails but a scores-over-keys / V-sum-over-dims split is byte-identical) in
-`docs/task-decode-splitkv-attention.md`. D4 confirmed Ollama does exactly this via flash attention.
+`docs/tasks/task-decode-splitkv-attention.md`. D4 confirmed Ollama does exactly this via flash attention.
 
 Built as a 3-kernel split (`decode_splitkv.cu`, own file): `splitkv_scores` (tile over keys),
 `splitkv_softmax` (exact 128-wide partition+tree → byte-identical max/denominator), `splitkv_vsum`
@@ -358,7 +358,7 @@ one bit-identical lever left — a **V-sum ILP unroll** — was **tried and REFU
 pipelines the scalar loop's independent loads, so a clean unroll landed 158 vs 160 (no gain) and a
 naive-indexed one regressed to 111. Pushing past ~160 needs a non-bit-identical reduction (the §7
 fork), which Campaign A does not take. The tiling primitive still stands to be shared with **B1**
-(prefill query-tiling). See `docs/task-decode-splitkv-attention.md`.
+(prefill query-tiling). See `docs/tasks/task-decode-splitkv-attention.md`.
 
 ### A2-old. KV cache layout (kept for the record) — *not indicated*
 

@@ -58,7 +58,7 @@ var prefillBatchedPTX []byte
 // splitkv_softmax, splitkv_vsum. The single-block attn_batched(M=1) is split along its INDEPENDENT
 // axes (scores over keys, V-sum over dims) so every order-dependent softmax fold stays whole and
 // in-order → byte-identical to attn_batched(M=1), but fills the SMs. Own file (decode_splitkv.cu);
-// audited glue.ptx / moe.ptx untouched. See docs/task-decode-splitkv-attention.md.
+// audited glue.ptx / moe.ptx untouched. See docs/tasks/task-decode-splitkv-attention.md.
 //
 //go:embed testdata/decode_splitkv.ptx
 var decodeSplitKVPTX []byte

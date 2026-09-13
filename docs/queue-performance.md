@@ -377,7 +377,7 @@
   mistake §8 now warns against.
 
   **The design record already exists — do NOT write a second one.**
-  `docs/task-decode-splitkv-attention.md` is this problem, written up and cited from
+  `docs/tasks/task-decode-splitkv-attention.md` is this problem, written up and cited from
   `cuda/resident.go`, `cuda/kernels.go` and `cuda/splitkv_bitident_test.go`: decode attention at M=1
   launches one block per query head, 11.9% achieved occupancy on a 40-SM card, "latency-bound purely
   because there are too few blocks to hide memory latency", against Ollama's flash attention. Its

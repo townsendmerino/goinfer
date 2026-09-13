@@ -16,7 +16,7 @@ import (
 // greedy decode twice on the real 1.5B — once with the split-KV path off (baseline = attn_batched),
 // once on — and asserts the decoded token stream and the final logits match bit-for-bit. The two
 // runs write identical KV (the decode attn choice doesn't touch rope/kv-store), so any divergence is
-// the split-KV math, which the design (docs/task-decode-splitkv-attention.md) forbids. Long-ctx depth
+// the split-KV math, which the design (docs/tasks/task-decode-splitkv-attention.md) forbids. Long-ctx depth
 // (2048) is where the split matters and where a reordered fold would first bite. Heavy; gated.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestSplitKV_bitIdentical -v
