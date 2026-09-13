@@ -152,6 +152,48 @@ func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(
 	return nil
 }
 
+// validateComputeTimeDims checks every targeted delta's declared [Out,In] shape against the
+// ACTUAL base projection it will be added to — the same check merge() already makes for every
+// tensor on the merge-at-load path (its own `d.out != out || d.in != in` above), which the
+// compute-time path never made: buildLoraRuntime maps deltas onto projections by NAME only, with
+// no shape check at all. A same-family adapter trained against a different-size base (a narrower
+// or wider hidden/head/intermediate dim) then reaches every resident backend's SetAdapter
+// carrying a rank-only-checked delta whose In/Out the kernel trusts blindly — on Metal this writes
+// past the Q slot into K/V (audit-metal-2026-09-12.md C-03). Fixed once here, at the one
+// chokepoint every backend's compute-time LoRA passes through, rather than duplicated per backend.
+func (a *loraAdapter) validateComputeTimeDims(numLayers int, layers []LayerWeights, s *tensorSchema, name func(layer int, suffix string) string) error {
+	check := func(i int, suf string, proj *linalg.WeightMat) error {
+		if suf == "" {
+			return nil
+		}
+		base := name(i, suf)
+		d, ok := a.deltas[base]
+		if !ok {
+			return nil
+		}
+		if d.out != proj.Rows() || d.in != proj.Cols() {
+			return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]",
+				base, d.out, d.in, proj.Rows(), proj.Cols())
+		}
+		return nil
+	}
+	for i := range numLayers {
+		l := &layers[i]
+		for _, c := range []struct {
+			suf  string
+			proj *linalg.WeightMat
+		}{
+			{s.QProj, &l.QProj}, {s.KProj, &l.KProj}, {s.VProj, &l.VProj}, {s.OProj, &l.OProj},
+			{s.GateProj, &l.GateProj}, {s.UpProj, &l.UpProj}, {s.DownProj, &l.DownProj},
+		} {
+			if err := check(i, c.suf, c.proj); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // merge adds this tensor's LoRA delta into the f32 weight in place:
 // data[o,:] += scale·Σ_k B[o,k]·A[k,:]. No-op when the tensor isn't a target.
 func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
@@ -284,6 +326,14 @@ func (m *Model) LoadAdapter(name, dir string) error {
 	// Compute-time application (buildLoraRuntime) indexes deltas by the bare tensorName, so validate
 	// against that — this path is prefix-agnostic (it applies by layer/projection, not physical name).
 	if err := a.validateTargets(arch.NumLayers, m.w.schema, tensorName); err != nil {
+		a.close()
+		return err
+	}
+	// C-03 (audit-metal-2026-09-12.md): validateTargets only checks that every target NAME is a
+	// known projection — it says nothing about SHAPE. Every resident backend's SetAdapter trusts
+	// In/Out from the checkpoint (Metal only range-checks rank); catch a mismatched adapter here,
+	// once, before it reaches any of them.
+	if err := a.validateComputeTimeDims(arch.NumLayers, m.w.Layers, m.w.schema, tensorName); err != nil {
 		a.close()
 		return err
 	}

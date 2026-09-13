@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -174,6 +175,80 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 	}
 	if cosine(lNone, lMerged) > 0.999999 {
 		t.Error("base (no adapter) logits indistinguishable from merged — adapter has no effect, test is vacuous")
+	}
+}
+
+// TestLoadAdapter_dimMismatchRejects gates C-03 (audit-metal-2026-09-12.md): LoadAdapter (the
+// compute-time path, #7) validated only that a delta's tensor NAME matched a known projection —
+// never that its [Out,In] shape matched the ACTUAL base projection. A same-family adapter trained
+// against a different-size base (e.g. one more attention head) passed straight through to every
+// resident backend's SetAdapter, which trusts In/Out from the checkpoint (Metal only range-checks
+// rank); a mismatched Out overruns the kernel's own output bound and writes past the Q slot into
+// K/V. The merge-at-load path (weights.go's loadProj -> loraAdapter.merge) already made exactly
+// this check; validateComputeTimeDims is its twin for the compute-time path.
+func TestLoadAdapter_dimMismatchRejects(t *testing.T) {
+	const hidden, heads, headDim, inter, vocab = 8, 2, 4, 16, 16
+	qDim := heads * headDim // 8
+	base := t.TempDir()
+	cfg := `{"model_type":"llama","vocab_size":16,"hidden_size":8,"num_hidden_layers":1,
+		"num_attention_heads":2,"num_key_value_heads":2,"head_dim":4,"intermediate_size":16,
+		"max_position_embeddings":128,"rms_norm_eps":1e-6,"rope_theta":10000}`
+	if err := os.WriteFile(filepath.Join(base, "config.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fill := func(n int) []float32 {
+		d := make([]float32, n)
+		for i := range d {
+			d[i] = float32(i%7)*0.1 - 0.3
+		}
+		return d
+	}
+	ts := map[string]stTensor{
+		"model.embed_tokens.weight":                      {[]int{vocab, hidden}, fill(vocab * hidden)},
+		"model.norm.weight":                              {[]int{hidden}, fill(hidden)},
+		"lm_head.weight":                                 {[]int{vocab, hidden}, fill(vocab * hidden)},
+		"model.layers.0.self_attn.q_proj.weight":         {[]int{qDim, hidden}, fill(qDim * hidden)},
+		"model.layers.0.self_attn.k_proj.weight":         {[]int{qDim, hidden}, fill(qDim * hidden)},
+		"model.layers.0.self_attn.v_proj.weight":         {[]int{qDim, hidden}, fill(qDim * hidden)},
+		"model.layers.0.self_attn.o_proj.weight":         {[]int{hidden, qDim}, fill(hidden * qDim)},
+		"model.layers.0.mlp.gate_proj.weight":            {[]int{inter, hidden}, fill(inter * hidden)},
+		"model.layers.0.mlp.up_proj.weight":              {[]int{inter, hidden}, fill(inter * hidden)},
+		"model.layers.0.mlp.down_proj.weight":            {[]int{hidden, inter}, fill(hidden * inter)},
+		"model.layers.0.input_layernorm.weight":          {[]int{hidden}, fill(hidden)},
+		"model.layers.0.post_attention_layernorm.weight": {[]int{hidden}, fill(hidden)},
+	}
+	writeSafetensors(t, filepath.Join(base, "model.safetensors"), ts)
+
+	w, err := loadWeights(base, quantNone, false, true, false, nil)
+	if err != nil {
+		t.Fatalf("loadWeights: %v", err)
+	}
+	be, _ := NewBackend("")
+	m := &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}
+	defer m.Close()
+
+	// A same-family adapter trained against a WIDER q_proj (e.g. one extra attention head):
+	// internally consistent (A/B agree with each other and with r=2), but its Out=qDim+headDim
+	// disagrees with THIS base's actual q_proj [qDim,hidden].
+	const r = 2
+	wrongQDim := qDim + headDim
+	adapter := t.TempDir()
+	if err := os.WriteFile(filepath.Join(adapter, "adapter_config.json"),
+		[]byte(`{"r":2,"lora_alpha":4}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeSafetensors(t, filepath.Join(adapter, "adapter_model.safetensors"), map[string]stTensor{
+		"base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": {[]int{r, hidden}, fill(r * hidden)},
+		"base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": {[]int{wrongQDim, r}, fill(wrongQDim * r)},
+	})
+
+	if err := m.LoadAdapter("a", adapter); err == nil {
+		t.Fatal("LoadAdapter accepted a q_proj delta shaped for a different base (Out mismatch) — should reject (C-03)")
+	} else if !strings.Contains(err.Error(), "q_proj") || !strings.Contains(err.Error(), "!=") {
+		t.Errorf("error %q does not name the mismatched projection/shape", err)
+	}
+	if m.HasAdapter("a") {
+		t.Error("a rejected adapter must not register")
 	}
 }
 

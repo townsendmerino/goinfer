@@ -1152,7 +1152,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/kvsnapshot.go:71` | goinfer | `if c.hasRecurrentState() \|\| len(c.mlaLatent) > 0 {` |
 | `docs/audit-2026-09-10.md|decoder/layerpaging.go:64` | goinfer | `if _, own := w.arch.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/lora.go:137` | goinfer | `func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer in` |
-| `docs/audit-2026-09-10.md|decoder/lora.go:269` | goinfer | `_, hasOwnForward := arch.ownForward()` |
+| `docs/audit-2026-09-10.md|decoder/lora.go:311` | goinfer | `_, hasOwnForward := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/mlp.go:126` | goinfer | `if pager != nil {` |
 | `docs/audit-2026-09-10.md|decoder/mlp.go:150` | goinfer | `for j, e := range idx {` |
 | `docs/audit-2026-09-10.md|decoder/mlp.go:545` | goinfer | `func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend` |
@@ -1330,9 +1330,9 @@ supports.
 | `docs/audit-2026-09-10.md|metal/moe.go:286` | goinfer | `// pool is non-nil when mo.paged: a bounded LRU slot pool + on-demand staging (expertpoo` |
 | `docs/audit-2026-09-10.md|metal/moe.go:463` | goinfer | `ml.routerW = f32Mat(d, &lw.Router)` |
 | `docs/audit-2026-09-10.md|metal/moe.go:524` | goinfer | `gOff, ok1 := m.MmapByteOffset(gq)` |
-| `docs/audit-2026-09-10.md|metal/moe.go:651` | goinfer | `for j := 0; j < mo.k; j++ {` |
-| `docs/audit-2026-09-10.md|metal/moe.go:701` | goinfer | `// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardco` |
-| `docs/audit-2026-09-10.md|metal/moe.go:744` | goinfer | `r.uPos.SetU32(uint32(pos))` |
+| `docs/audit-2026-09-10.md|metal/moe.go:670` | goinfer | `for j := 0; j < mo.k; j++ {` |
+| `docs/audit-2026-09-10.md|metal/moe.go:720` | goinfer | `// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardco` |
+| `docs/audit-2026-09-10.md|metal/moe.go:763` | goinfer | `r.uPos.SetU32(uint32(pos))` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:377` | goinfer | `for (uint j0s=j0superStart; j0s<nKeysMax; j0s+=ATTN_KTILE) {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:482` | goinfer | `func (r *resident) ensurePrefill() {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:574` | goinfer | `xh := make([]uint16, Mpad*H)` |
@@ -1393,9 +1393,9 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:150` | goinfer | `p.slots[s] = expertSlot{` |
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:164` | goinfer | `func (p *expertPool) ensureResident(e int) expertSlot {` |
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:41` | goinfer | `func copyBytesToU32Buf(dst Buffer, src []byte) {` |
-| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:434` | goinfer | `// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Ste` |
+| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:449` | goinfer | `// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Ste` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:470` | goinfer | `anchor: func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {` |
-| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:520` | goinfer | `e2 := begin() // phase 2: experts from slots + join` |
+| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:535` | goinfer | `e2 := begin() // phase 2: experts from slots + join` |
 | `docs/audit-metal-2026-09-12.md|metal/gemv_w4a8_coal_bench_test.go:29` | goinfer | `gemvW4A8CoalN = 512  // sample rows -- enough to exercise every lane/tail shape` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:102` | goinfer | `// (see scripts/autoresearch_rmsnorm_results.tsv) -- verified here against` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
@@ -1433,11 +1433,11 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:29` | goinfer | `kernel void gemv_wf32_a8(device const float* wf[[buffer(0)]], device const char* aq[[buf` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:425` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:546` | goinfer | `_, gs, _ := int4DirectBytes(&experts[ei].Gate) // f16 scales from heap q4s (no mmap faul` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:643` | goinfer | `func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:747` | goinfer | `for l := 0; l < r.nL; l++ {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:764` | goinfer | `slots := make([]expertSlot, mo.k)` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:768` | goinfer | `e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:774` | goinfer | `e := r.q.Begin()` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:662` | goinfer | `func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:766` | goinfer | `for l := 0; l < r.nL; l++ {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:783` | goinfer | `slots := make([]expertSlot, mo.k)` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:787` | goinfer | `e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:793` | goinfer | `e := r.q.Begin()` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_model_test.go:302` | goinfer | `embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_prefill_measure_test.go:14` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-12.md|metal/pagecost_measure_test.go:47` | goinfer | `// which doesn't fit and is the new path), so this measures the SUBMISSION-STRUCTURE cos` |
@@ -1540,7 +1540,7 @@ supports.
 | `docs/measurements/splitkv-mechanism-ncu-2026-09-12.md|cuda/resident.go:218` | goinfer | `anchor: func splitkvThreshold(nH, nKV, hd int) int {` |
 | `docs/measurements/splitkv-mechanism-ncu-PREREGISTERED.md|cuda/resident.go:2940` | goinfer | `// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryD` |
 | `docs/measurements/splitkv-sector-efficiency-2026-09-13.md|cuda/resident.go:218` | goinfer | `anchor: func splitkvThreshold(nH, nKV, hd int) int {` |
-| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:560` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
+| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:569` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
 | `docs/multimodal.md|decoder/config.go:1358` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")` |
 | `docs/multimodal.md|decoder/weights.go:447` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
@@ -1697,6 +1697,23 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/tasks/task-recompute-audit.md|decoder/speculative.go:125` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
 | `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:582` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:113` | goinfer | `func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/anthropic.go:35` | goinfer | `// dropped by the decoder); stop_reason is therefore never "thinking" in v1.` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:391` | goinfer | `TopP                *float64        `json:"top_p"`` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:243` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:35` | goinfer | `//go:embed webui/index.html` |
+| `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:179` | goinfer | `Size   int64` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:203` | goinfer | `model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference f` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:507` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/helpers.go:77` | goinfer | `// distinct from the per-model 429. sem == nil disables it (-max-inflight 0). The slot i` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:500` | goinfer | `flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefille` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:506` | goinfer | `flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests ` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:1040` | goinfer | `func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegi` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:170` | goinfer | `// tryEnter claims a queue slot then locks the model's mutex (the decode worker). It ret` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:180` | goinfer | `// this). Without this second check, sync.Mutex.Lock() is not context-aware, so a halt w` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:77` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
 
 ## Bare file index
 
