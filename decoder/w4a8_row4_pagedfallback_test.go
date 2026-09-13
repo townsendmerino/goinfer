@@ -3,7 +3,7 @@ package decoder
 import "testing"
 
 // TestSerializedInt4Weights_neverRepacked_pagedFallback proves the plumbing
-// brief's paged-MoE carve-out (docs/prompts/w4a8-plumbing.md, docs/task-w4a8-
+// brief's paged-MoE carve-out (docs/completed/w4a8-plumbing.md, docs/task-w4a8-
 // neon-bandwidth.md) BY TEST rather than by construction argument alone: a
 // .giw-loaded (zero-copy mmap-alias-shaped, via SerializeWeights/
 // LoadSerializedWeights — the same round-trip path real .giw loading uses)
