@@ -705,7 +705,7 @@ prefill penalty. **goinfer's total-time advantage is a small-model, short-prompt
 | --- | --- |
 | model | Gemma 4 **26B-A4B**, int4 (128 experts, top-8, 30 layers) — experts ~11.4 GB, **does not fit 8 GB** |
 | decode | **16.98 tok/s** (64-tok greedy, capture-free, synchronous H2D) — *see the reproducibility note below; not currently reproducible on this card* |
-| expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate over the whole run** (17816 / 4024) — the steady-state decode figure is higher, **89.1%**, because this one includes the cold-cache fill (see §"production-config decomposition", `docs/task-moe-streaming.md`) |
+| expert cache | 38 slots/layer (auto-capped from 48 to measured free VRAM), **81.6% hit rate over the whole run** (17816 / 4024) — the steady-state decode figure is higher, **89.1%**, because this one includes the cold-cache fill (see §"production-config decomposition", `docs/tasks/task-moe-streaming.md`) |
 | **configuration (required — not the default)** | `GOINFER_MOE_CACHE_EXPERTS=1` (host→VRAM expert streaming) + `GOINFER_MOE_CACHE_SLOTS=48` (auto-caps to 38). Omitting the second leaves the cache at its `topK` default — fresh-load per token, ~5 tok/s, not 17. *(`GOINFER_GEMMA4_RESIDENT=1` was also required when this was measured; Gemma-4 residency became unconditional in `a5ebb35` and the variable is now inert.)* |
 | resident VRAM | ~1.3 GB core + ~3.8 GB slots + KV — the 11.4 GB of experts live in host RAM |
 | coherence | greedy through the real chat template: distinct-trigram 0.818, *"…**Paris**… the Eiffel Tower, the Louvre Museum… **Gastronomy:**"* |
@@ -730,7 +730,7 @@ prefill penalty. **goinfer's total-time advantage is a small-model, short-prompt
   (same 21840 expert reads, more slots), and **89.1%** is 38 slots *steady-state decode only*,
   which excludes the cold-cache fill. Quote the basis with the number.
 - **Which number to quote: 16.98 tok/s** (capture-free, the headline). The **4.98 tok/s** that also
-  appears in `docs/task-moe-streaming.md` is the `GOINFER_G4_CAPTURE` readback / fresh-load
+  appears in `docs/tasks/task-moe-streaming.md` is the `GOINFER_G4_CAPTURE` readback / fresh-load
   (`nSlots=topK`, no reuse) FLOOR — informative, not the benchmark. Don't cite 4.98 as the rate.
 
 ---

@@ -99,7 +99,7 @@ not a new one — 36 of its 48 layers ride it.
 against fully-resident (`TestExpertPaging_bitExact`) and validated on `Qwen3.6-35B-A3B` (512 MB
 cache against ~16 GB of experts: hits=4706, misses=5534, evictions=5190, byte-identical decode
 over 24 tokens) and on Gemma-4 26B-A4B (32/128 experts resident, 77.5% hit rate) —
-`docs/task-moe-streaming.md`. Current families top out at 256 experts (`qwen3_5_moe`); scaling to
+`docs/tasks/task-moe-streaming.md`. Current families top out at 256 experts (`qwen3_5_moe`); scaling to
 512 experts at a 10-routed+1-shared split is an extension of `moeMLP`'s existing routed+shared+gate
 machinery, not a new mechanism — though the 10:1 ratio needs the same kind of config-flag gotcha
 check that `qwen3_5_moe`'s bring-up hit with `NormTopKProb` (`docs/completed/qwen3_5_moe.md`: silently wrong
@@ -274,6 +274,6 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
 - goinfer tree, read directly 2026-08-27: `decoder/registry.go`, `decoder/config.go`,
   `decoder/forwardn.go`, `decoder/moepaging.go`, `docs/completed/qwen3_5_moe.md`,
   the completed qwen3.6 real-checkpoint task record (internal, untracked), `docs/queue-correctness.md`,
-  `docs/task-moe-streaming.md`, `docs/spec/README.md`, `docs/task-parity-coverage.md`,
+  `docs/tasks/task-moe-streaming.md`, `docs/spec/README.md`, `docs/task-parity-coverage.md`,
   `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,
   `docs/completed/scoping-lfm2.md`, `docs/next-models.md`

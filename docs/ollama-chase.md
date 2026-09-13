@@ -1150,7 +1150,7 @@ stating as a mechanism, not a number:
 **So expert paging is very likely the wrong shape for an oversized model on a PCIe-attached GPU.**
 It moves the big thing (weights) across the slow link every token; the layer split moves the small
 thing (activations) once. This is consistent with the **Metal** track also hitting a floor on the
-same model class. The durable value of the whole host↔VRAM paging line (`task-moe-streaming.md`) is
+same model class. The durable value of the whole host↔VRAM paging line (`docs/tasks/task-moe-streaming.md`) is
 the **method record** — the LRU expert cache, the slot-id device-read trick, the mixed-M join, the
 isolation-proves-the-primitive-never-the-composition lesson — **not the throughput.**
 

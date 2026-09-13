@@ -168,7 +168,7 @@ v1.26.0) documents `MADV_DONTNEED` as a deliberate no-op on this OS: there is no
 a resident drop on this read-only mapping, so the pager's budget is bookkeeping, not an enforced
 cap, and the real replacement decision belongs to macOS's Unified Buffer Cache reclaiming under
 genuine system memory pressure — independent of the pager's own LRU signal. This was already
-documented in `docs/task-moe-streaming.md`, missed here for want of a prior-art check before
+documented in `docs/tasks/task-moe-streaming.md`, missed here for want of a prior-art check before
 writing the explanation (see `docs/prompts/qwen35b-paging-campaign.md`'s own prior-art correction).
 The observation itself (no warm/cold difference despite heavy real I/O) stands; only the mechanism
 was wrong. The observed 24.8 GB also exceeds a naive miss-count estimate (logical miss rate 79-84%,
@@ -194,7 +194,7 @@ attention being already fast still stand.
 
 `docs/prompts/qwen35b-paging-campaign.md` (rescoped after a prior-art correction — see
 `[[qwen35-paging-campaign-rescoped]]` in memory; two of its four levers were already answered by
-`docs/task-moe-streaming.md`) asked for a cheap three-way read-rate probe before committing to any
+`docs/tasks/task-moe-streaming.md`) asked for a cheap three-way read-rate probe before committing to any
 owned-buffer engineering. Real spans from the real 35B-A3B `.giw` (900 experts/set, ~472 MB/set,
 disjoint), same file, same box:
 

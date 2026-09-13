@@ -18,7 +18,7 @@ it was wrong. This fixture is the composition gate.
 TWO PROPERTIES MUST STAY REAL, AND ONLY ONE OF THEM IS A DIMENSION
 ==================================================================
 1. GEOMETRY: hidden_size and moe_intermediate_size. THIS IS THE SENSITIVE AXIS.
-   The A' post-mortem (docs/task-moe-streaming.md) rules out the others explicitly: "The
+   The A' post-mortem (docs/tasks/task-moe-streaming.md) rules out the others explicitly: "The
    divergence is not offset, K, occupancy, EXPERT COUNT, or the allocation/VRAM-layout change."
    It was measured both ways -- a many-expert/small-K fixture (32 experts, top-8, hidden 256)
    was 0/256 bit-exact, and hidden 2048 / moe_inter 768 was 255/256 wrong.

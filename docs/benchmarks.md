@@ -182,7 +182,7 @@ Both import the 1.5B as `q15`. When re-measuring, use v0.32.5; keep 0.5.7 for th
 **Forward vs serve split (new — future rows may state both).** Every published row here is a
 **serve-path, client-wall-clock** number (prefill, sampling, detok, HTTP all inside it) — the
 methodology-symmetric bar, and it stays. But a direct decomposition now exists
-(`GOINFER_DECODE_TIMING=1`, `docs/task-moe-streaming.md`): on the 26B the greedy **forward** is
+(`GOINFER_DECODE_TIMING=1`, `docs/tasks/task-moe-streaming.md`): on the 26B the greedy **forward** is
 ~36 ms/tok while the **serve** number is ~57 ms/tok, the gap being **prefill amortization** (sequential
 full-logits prefill, no batched `PrefillLast`) plus context-depth growth — *not* a per-token serve tail
 (greedy `sample`/`embed` ≈ 0). So future rows may state both a forward rate and a wall-clock rate, the
@@ -1045,7 +1045,7 @@ the occupancy/latency rewrite, not KV-quant; q8 on Metal buys VRAM/reachability,
 This is a **capability/architecture** row. **Gemma 4 26B-A4B** (128 experts, top-8, ~11.4 GB of
 int4 experts) does not fit an 8 GB card. goinfer decodes it **fully GPU-resident** by keeping the
 ~1.3 GB non-expert core in VRAM and streaming the experts from pinned host memory into a VRAM slot
-cache (host↔VRAM "C′" path, `docs/task-moe-streaming.md`) — the experts execute on the GPU, not
+cache (host↔VRAM "C′" path, `docs/tasks/task-moe-streaming.md`) — the experts execute on the GPU, not
 CPU. Current Ollama runs the same model by CPU-offloading the part that doesn't fit (measured
 above); the two take opposite approaches to the same over-capacity problem.
 

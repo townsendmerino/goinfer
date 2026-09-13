@@ -234,6 +234,13 @@ becomes the binding constraint after the batched GEMV lands.
 > little, independently confirmed by the 2026-09-01 profile at 1.7% of `moeMLP`); it does not
 > bound this. Tracked as **P18** in `docs/queue-performance.md`. The gather/scatter cost is still
 > unmeasured and is what decides the item.
+>
+> **CORRECTED 2026-09-13 — P18 has since shipped; this note is stale.** Measured directly on
+> the real Mellum2 28-layer MoE prefill (K=4096, paired and interleaved): **4.364× end to end,
+> bit-identical**, clearing the pre-registered ≥15% fund bar by more than twenty times. The
+> gather/scatter cost this note called "unmeasured" turned out not to be the binding cost.
+> Shipped default ON 2026-09-01, `GOINFER_MOE_EXPERT_MAJOR=0` opts out
+> (`docs/queue-performance.md` §P18). This lever is done.
 
 `decoder/forwardn.go:97` states it plainly: batched prefill vectorizes attention but "the
 MoE FFN itself stays per-row (router picks different experts per token)" — the per-row call
@@ -489,6 +496,12 @@ decoding at pos 27–91 vs 29 ms at the direct-drive's pos 12–60; attention is
    batched `PrefillLast` on cudaResident is the larger version.
 2. **Task 3 (CUDA graphs):** the 24–30 ms compute/dispatch forward floor (~19 ms dispatch) — the largest
    *decode* lever, parked behind the tenancy/MPS gate.
+   **CORRECTED 2026-09-13 — measured since, and it is not a lever.** CUDA graphs are a **measured
+   null on real models (1.01×)**; the ~1.4–1.7× this ranking was projecting from was a
+   tiny-model/dispatch-dominated artifact. Only a safe-gate shipped (`GOINFER_CUDA_GRAPHS=1`,
+   promotes to live under EXCLUSIVE_PROCESS/MPS + a startup bit-exactness self-test), default
+   declines (`CHANGELOG.md`, "Findings" — 2026-09 entry). Item 2's "largest decode lever" ranking
+   is stale; nothing here replaces it as a decode lever.
 3. **Softcap** (temperature>0, Gemma only): ~4.5 ms/tok host loop — parallelize/SIMD the tanh. Small, gated.
 4. **Task 2 (async miss-DMA):** 4.28 ms at 38 slots.
 5. **Task 1 (idx readback):** 0.81 ms — retired (re-enters only within on-device cache mgmt).
@@ -531,6 +544,16 @@ batches with the LM head on the last row only, or the sequential fallback runs `
 for `prompt[:-1]`), and **Metal already has batched `PrefillLast`** (`metal/prefill.go`). So batched
 CUDA prefill is the outstanding lever, and it is the single biggest TTFT win — bigger than any decode
 lever for long prompts.
+
+**CORRECTED 2026-09-13 — the cudaResident MoE gap named here has since been closed, with a result
+that reinforces this doc's own Lever 1 rather than contradicting this section.** `PrefillLast`
+landed for the MoE families and Gemma 4 26B-A4B (M26) is on the batched path as of 2026-09-04
+(`docs/queue-performance.md` §P20), removing all three blockers (per-layer geometry, `kEqV`, the
+FFN) with no new CUDA kernel. But the win is only **1.085×** (47.382 → 43.681 ms/token, M=512) —
+the pre-registered *ambiguous* band, not the "single biggest TTFT win" this section projected.
+**Why: batching was never the bottleneck; the host→VRAM expert DMA is** — exactly the Lever 1 /
+C′ concern this doc already tracks. M35 (Gated-DeltaNet) remains sequential; P20 stays open,
+redirected toward the expert-DMA cost rather than the batching itself.
 
 ## Measurement and gates
 

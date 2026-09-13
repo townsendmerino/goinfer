@@ -564,7 +564,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			//	4096      93.9%        6.1%
 			//	8192      97.1%        2.9%
 			//
-			// So batching this FFN expert-major (task-moe-streaming.md Lever 4) is not a
+			// So batching this FFN expert-major (docs/tasks/task-moe-streaming.md Lever 4) is not a
 			// compute lever at agentic prompt lengths: an upper bound on what it could
 			// return was measured at 4.6-5.1% at K=1-2k and was NOT RESOLVABLE above
 			// run-to-run spread at K>=4096. Its case has to be made on streaming I/O,

@@ -168,6 +168,6 @@ generation are two different performance problems.
 ---
 
 *Sources: [`docs/deltanet-residency-plan.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/deltanet-residency-plan.md) (35B-A3B CUDA figures, expert DMA share),
-[`docs/task-moe-streaming.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/task-moe-streaming.md), [`decoder/moepaging.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/moepaging.go), [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (tests, measurement
+[`docs/tasks/task-moe-streaming.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/tasks/task-moe-streaming.md), [`decoder/moepaging.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/moepaging.go), [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (tests, measurement
 discipline), [`docs/completed/task-metal-expert-streaming-at-scale.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-metal-expert-streaming-at-scale.md),
 [`docs/measurements/mellum2-moe-prefill-split-RESULT.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/mellum2-moe-prefill-split-RESULT.md) (the under-5% batching bound).*
