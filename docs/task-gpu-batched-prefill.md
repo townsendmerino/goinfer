@@ -6,15 +6,31 @@
 > none of this touches the CPU forward; it must match the sequential GPU prefill
 > token-for-token.** Pure-Go core CI job stays untouched.
 >
-> **⚠️ GATED — do not build yet (measured 2026-06-09, RTX 2070 SUPER + M1 Pro).**
-> The whole premise — amortize the 91% VRAM weight-read with a compute-bound tiled
-> GEMM — fails on current hardware because the WGSL tiled GEMM has no `dot4I8Packed`
-> and tops out at 680 GFLOP/s (RTX), *below* the bandwidth-bound M=1 GEMV's
-> 748 GFLOP/s-equiv → batched prefill ≈ 0.91× (RTX), ≈1.2× (Metal): a wash. It's
-> kernel-limited, not silicon-limited. **Prerequisite: `dot4I8Packed` unblocks in
-> `cogentcore/webgpu`** (TU104 has the DP4A hardware) — only then does the tiled GEMM
-> clear the bandwidth wall and these increments pay off. See `docs/completed/roadmap-2026-06.md`
+> **⚠️ GATED (2026-06-09 verdict) — superseded 2026-09-13, see below.** Original text
+> preserved as a record: the premise — amortize the 91% VRAM weight-read with a compute-bound
+> tiled GEMM — failed on 2026-06-09 hardware because the WGSL tiled GEMM had no `dot4I8Packed`
+> and topped out at 680 GFLOP/s (RTX), *below* the bandwidth-bound M=1 GEMV's 748 GFLOP/s-equiv
+> → batched prefill ≈ 0.91× (RTX), ≈1.2× (Metal): a wash. **Prerequisite: `dot4I8Packed` unblocks
+> in `cogentcore/webgpu`** (TU104 has the DP4A hardware) — only then does the tiled GEMM clear
+> the bandwidth wall and these increments pay off. See `docs/completed/roadmap-2026-06.md`
 > (Backlog → GPU long-context, and the dp4a item).
+>
+> **2026-09-13 status: the prerequisite is met and the branch built ahead of this doc's own
+> ordering (Increment 2 before Increment 1) — read `docs/measurements/
+> prefill-batched-ttft-2026-09-13.md` before touching this doc further.** `cogentcore/webgpu`
+> was abandoned; migrated to the maintained `oliverbestmann/webgpu` fork (branch
+> `gpu-dp4a-batched-prefill`), unblocking `dot4I8Packed`. `PrefillLastW8A8` (Increment 2's
+> shape) was built and its bit-exact gates pass on real Vulkan/RTX 2070 SUPER hardware
+> (`TestPrefillLastW8A8_parity`, `TestResidentPrefillLast_parity`) — but Increment 1 (below)
+> was **not** built first as this doc's own ordering says to; the implementation used a
+> per-row loop into the existing M=1 attention kernel instead, and that plus a matching
+> per-row dispatch pattern everywhere else measured 7–29× **slower** than the sequential loop
+> it was meant to replace (`gpu-dp4a-fix` branch, first commit) — the Definition of Done's own
+> "long-prompt TTFT measurement" line, unchecked below for three months, would have caught this
+> before it shipped. Fixed on the same branch (packed-buffer dispatch consolidation, not a real
+> Increment-1 attention kernel) to a consistent 2.5–3.5× **win** at P=64/256/1024. Increment 3
+> (wiring into `decoder.Generate`) is still not done — nothing calls `PrefillLastW8A8` in
+> production yet.
 
 ## Problem
 
@@ -88,8 +104,13 @@ prefill the decode `Run` continues from `pos = M`. Per layer, mirror
 - **LM head on the LAST row only** (`h[M-1]` → norm → head) — the other rows'
   logits aren't needed (matches `prefillLogits`); avoids the M×vocab matmul.
 - one Submit (or a few; see chunking).
-- [ ] **Gate:** bit-exact vs M sequential `DecodeRunner.Run` calls — same KV cache
-      contents and same `h[M-1]` logits. Run on real HW.
+- [x] **Gate:** bit-exact vs M sequential `DecodeRunner.Run` calls — same KV cache
+      contents and same `h[M-1]` logits. Run on real HW. **2026-09-13**:
+      `TestPrefillLastW8A8_parity` + `TestResidentPrefillLast_parity`, real
+      Vulkan/RTX 2070 SUPER hardware, cosine 1.0 / maxAbsDiff 0. Built via a per-row
+      attention loop into the M=1 kernel, NOT the Increment-1 kernel below (see the
+      banner) — that gap is what cost the first attempt its whole performance case;
+      see `docs/measurements/prefill-batched-ttft-2026-09-13.md`.
 
 ### Increment 3 — wire into `decoder.Generate`
 In the residency prefill (`decoder/model.go` ~338 / `residency.go`), when
@@ -142,8 +163,15 @@ those workloads imply).
 
 ## Definition of done
 
-- [ ] Increments 1–3 landed, each with its bit-exact gate on real hardware.
-- [ ] Long-prompt TTFT measurement recorded (option (a) vs batched) in the GPU
-      campaign doc / CHANGELOG.
+- [ ] Increments 1–3 landed, each with its bit-exact gate on real hardware. **2026-09-13:
+      Increment 2 landed and gated (see its own checkbox above); Increment 1 (the real
+      batched-causal-attention kernel) still not built — the shipped shape substitutes a
+      per-row loop into the M=1 kernel; Increment 3 (wiring into `decoder.Generate`) not
+      started.**
+- [x] Long-prompt TTFT measurement recorded (option (a) vs batched) in the GPU
+      campaign doc / CHANGELOG. **2026-09-13**: `docs/measurements/
+      prefill-batched-ttft-2026-09-13.md` — first run ever (7-29× slower, worsening with
+      M), fixed, re-run (2.5-3.5× faster at every size tested).
 - [ ] `TestDecodeParity` + the GPU parity gates green; software-adapter CI still
-      skips the hardware-sensitive ones (no CI regression).
+      skips the hardware-sensitive ones (no CI regression). Gates pass on real hardware
+      (see Increment 2's checkbox); this branch has not been pushed through CI itself.
