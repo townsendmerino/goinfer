@@ -16,7 +16,7 @@ import (
 )
 
 // TestResidentPrefillLast_TTFT is the real end-to-end number the whole
-// task-gpu-batched-prefill.md build was for: sequential per-token Forward (today's
+// docs/completed/task-gpu-batched-prefill.md build was for: sequential per-token Forward (today's
 // shipped residentPrefillSeed loop) vs one PrefillLast call, at realistic prompt
 // lengths, on the actual resident decode pipeline (not an isolated matmul
 // microbenchmark like TestTiledDP4A_microbench — that one only measured the

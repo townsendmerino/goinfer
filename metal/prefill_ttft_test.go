@@ -17,7 +17,7 @@ import (
 // batched PrefillLast shipped for prompt ingestion, how much TTFT would it actually
 // buy on a real prompt-length range, vs today's shipped sequential Forward-per-token
 // prefill? See the "Metal batched prefill... a TTFT lever" note in
-// docs/ollama-chase.md §A2-Metal and docs/task-gpu-batched-prefill.md (the WebGPU
+// docs/ollama-chase.md §A2-Metal and docs/completed/task-gpu-batched-prefill.md (the WebGPU
 // analog, GATED as a wash on this hardware class — this measures the NATIVE metal/
 // path, a different kernel).
 //

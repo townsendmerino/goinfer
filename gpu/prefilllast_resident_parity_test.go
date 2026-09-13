@@ -15,7 +15,7 @@ import (
 )
 
 // TestResidentPrefillLast_parity is the Increment-3 gate for the resident
-// PrefillLast wiring (docs/task-gpu-batched-prefill.md): PrefillLast(embeddings,
+// PrefillLast wiring (docs/completed/task-gpu-batched-prefill.md): PrefillLast(embeddings,
 // startPos)'s single returned row must match the LAST of len(embeddings) sequential
 // Forward calls at the same positions — the real production path this replaces
 // (decoder/model.go's residentPrefillSeed). Same shape as TestResidentForwardN_parity

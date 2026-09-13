@@ -182,7 +182,7 @@ type Context struct {
 	ropeBatchedShader   *wgpu.ShaderModule
 	ropeBatchedPipeline *wgpu.ComputePipeline
 	ropeBatchedLayout   *wgpu.BindGroupLayout
-	// task-gpu-batched-prefill.md Increment 1: batched causal attention (PrefillLastW8A8
+	// docs/completed/task-gpu-batched-prefill.md Increment 1: batched causal attention (PrefillLastW8A8
 	// only, lazy via ensurePrefillBatched, prefillrunner.go) — grid (nH, M), one dispatch
 	// for ALL M query rows against the shared resident K/V cache, each row's causal bound
 	// computed in-kernel as basePos+row+1. Two variants matching attnKernel's own

@@ -9,7 +9,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestAttnBatched_parity gates task-gpu-batched-prefill.md's Increment 1: does ONE
+// TestAttnBatched_parity gates docs/completed/task-gpu-batched-prefill.md's Increment 1: does ONE
 // grid-(nH,M) dispatch of attnBatchedKernel's chosen kernel match M separate
 // dispatches of attnKernel's chosen kernel (the shape PrefillLastW8A8 used before
 // this fix, and what decode still uses today) over the SAME fully-pre-populated

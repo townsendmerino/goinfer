@@ -198,7 +198,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
-(`task-gpu-batched-prefill.md`). **Size.** Medium-large; lower priority (see G6).
+(`docs/completed/task-gpu-batched-prefill.md`). **Size.** Medium-large; lower priority (see G6).
 
 ### G10 — Metal has no int8 weight kernel: `int8int8` is requantized to W4A8 on device
 
@@ -1249,7 +1249,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     (v0.8.0) all clean.
 
 - 2026-09-09 — G9 SCOPED, NOT IMPLEMENTED: still a legitimate wash, gate unchanged since
-  2026-06-09. `task-gpu-batched-prefill.md` (which this item's own Fix line points to) carries an
+  2026-06-09. `docs/completed/task-gpu-batched-prefill.md` (which this item's own Fix line points to) carries an
   explicit "GATED — do not build yet" banner: batched prefill only wins if the WGSL tiled GEMM
   clears the bandwidth-bound M=1 GEMV, which needs `dot4I8Packed`/DP4A in `cogentcore/webgpu`;
   without it the 2026-06-09 measurement found it a wash on both backends (RTX ≈0.91×, Metal

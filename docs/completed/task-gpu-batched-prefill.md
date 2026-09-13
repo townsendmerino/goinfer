@@ -1,5 +1,24 @@
 # Task (goinfer): batched on-device GPU prefill (long-prompt TTFT)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status, 2026-09-13 (doc-review close-out).** COMPLETE. All three increments landed on
+> `gpu-dp4a-batched-prefill` and are merged to `main` (`250bb4a8`); CI is green on `main` as of
+> that merge and every push since (`gh run list`, last checked `908ed535`). The Definition of
+> Done's last box below was still unticked as of the doc's own last inline edit ("this branch has
+> not been pushed through CI itself") — it has been since; ticked here. One real, still-open
+> remainder the doc never named: WebGPU's `PrefillLast` declines q/k/v-bias models (Qwen2) on any
+> backend but Vulkan — Metal (via WebGPU) is measured to diverge past `nKeys~15` (cosine ~0.998,
+> not float noise; `gpu/residency.go:1060-1069`). That gap is not orphaned: the same comment points
+> at `docs/task-prefill-gap.md` §3.2 as the ship gate to re-check it against. Below this block, the
+> doc's own instructions (increment order, "do first", etc.) are a record of what was asked, not a
+> task list — see the ARCHIVED note above.
+
 > **For:** Claude Code, in `~/tmcode/goinfer` (GPU work → the 64 GB RTX box;
 > `-tags gpu`). Deferred follow-on from `docs/completed/roadmap-2026-06.md`. Increments ordered and
 > independently shippable. **Bit-exact greedy parity is the non-negotiable gate —
@@ -197,6 +216,8 @@ those workloads imply).
       prefill-batched-ttft-2026-09-13.md` — first run ever (7-29× slower, worsening with
       M), fixed (2.5-3.5× faster), Increment 1 built for real (6.3-8.7× faster, now
       flat-to-improving with M instead of shrinking).
-- [ ] `TestDecodeParity` + the GPU parity gates green; software-adapter CI still
+- [x] `TestDecodeParity` + the GPU parity gates green; software-adapter CI still
       skips the hardware-sensitive ones (no CI regression). Gates pass on real hardware
-      (see Increment 2's checkbox); this branch has not been pushed through CI itself.
+      (see Increment 2's checkbox). **2026-09-13 (doc-review close-out)**: this line was
+      unticked when last edited on-branch ("not yet pushed through CI"); the merge to `main`
+      (`250bb4a8`) and every push since have run CI green (`gh run list`), so ticking it here.
