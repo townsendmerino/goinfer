@@ -301,6 +301,24 @@ re-baked by the code it checks (G-04).
   at context > 128. Tile budget: 16 KB `sc` + 8 KB staging + 0.5 KB `red` < 32 KB.
 - **Confidence:** plausible — the probe decides. **Prior:** metal-verdict §2b/§4 split-KV, grouped
   dedup, staged dedup — not re-proposed; this is the fourth corner.
+- **CLOSED 2026-09-13, NEGATIVE — materially SLOWER, not faster.** Built the probe next to
+  `attn_kvwidth_probe_test.go` (`attn_kread_staged_probe_test.go`): a coalesced device->threadgroup
+  copy of a 64-key tile (16 KB — a different split of the same <32 KB budget than the fix text's
+  16+8+0.5, still well inside it) per round, each thread then computing its own keys' dot products
+  from the staged copy instead of device memory; reduction/PV code untouched. All-28-layer,
+  nKeys=2048, min-of-20 GPU-busy: shipped 17.024 ms vs staged 39.629 ms — **0.43x, i.e. staged is
+  2.3x SLOWER**, not faster. The probe also flagged a correctness mismatch (maxAbs 1.7e38 between
+  the two kernels' outputs) that was NOT root-caused — hand-traced the staging/compute index
+  algebra twice (thread tid's iterations over a tile write dimension tid of every key in it; the
+  compute read at tid*hd recovers key tileBase+tid from exactly those writes) without finding the
+  discrepancy — but the timing result alone settles the port-or-not question regardless of whether
+  that bug is real or a probe-harness artifact: a design already 2.3x slower than shipped has
+  nothing to gain from being fixed. Plausible cause, not confirmed: only 64 of 128 threads compute
+  per tile round (idle during compute, busy only during staging) against the shipped kernel's full
+  128-thread occupancy throughout, plus 64 barrier-pairs (32 tile rounds x 2) against the shipped
+  loop's ~4 for the whole K-read+softmax phase — either alone could plausibly account for a 2x+
+  regression without DRAM bandwidth being the bottleneck at all, consistent with the L1-issue-wall
+  reading M-09's own mechanism section already favored over pure DRAM latency. Not re-proposed.
 
 #### M-10 · The dense down-projection (22% of per-token weight bytes) is the only decode GEMV still on the unstaged byte-gather kernel the tree's own Stage-A comment calls LSU-issue-dominated
 - **Where:** `metal/kernels.go:220-233` (`W4A8_BODY`: 8 scalar byte loads of the activation + one
@@ -828,9 +846,9 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
 6. **M-08** (LoRA grid): with a Mac adapter-decode measurement recorded for the first time.
 7. **Paged:** M-14 (aikit selector, one release) → M-13 (auto-sized slots; the M35/M26/G20 rows
    re-run against the pager) → M-11 + G-05 (the shared-event re-run on the paged shape) → M-12.
-8. **Probes:** M-09 (30 lines, behind a discriminating measurement). M-10 CLOSED 2026-09-13,
-   NEGATIVE — built and A/B'd on the depth bench, slower at every depth (see M-10's own entry
-   above); reverted.
+8. **Probes:** both CLOSED 2026-09-13, NEGATIVE (see their own entries above). M-09 — the staged
+   K-read probe measured 2.3x SLOWER than shipped, not faster; not ported. M-10 — built and A/B'd
+   on the depth bench, slower at every depth; reverted.
 9. **Docs and gates batch:** N-01…N-14, G-02, G-04, G-07, G-08, G-09; the §A Metal row re-measured
    after 1–3 with the same protocol and Ollama in the same session.
 10. **M-15** (cross-repo, aikit first): the three Metal tower shapes; then `EnableResident` on Metal.
