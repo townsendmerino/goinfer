@@ -302,6 +302,41 @@ func attnKeysEligible(hd, kvDim int, kvF16, kvI8 bool) bool {
 	return hd%4 == 0 && kvDim%4 == 0
 }
 
+// attnKernel picks the non-int8-KV attention pipeline+layout for a given geometry —
+// factored out of decoderunner.go's per-token dispatch (the newDecodeRunner build
+// loop) so every caller that dispatches attention against a plain-f32 or f16 KV
+// cache picks the SAME kernel for the SAME geometry. This one call site existing
+// twice (once inline in decoderunner.go, once copy-pasted into prefillrunner.go)
+// is exactly how PrefillLastW8A8 and the sequential resident DecodeRunner ended up
+// dispatching DIFFERENT kernels for the identical hd=64/kvDim=128/f32-KV geometry
+// (qwen2.5-coder-0.5b is attnKeysEligible, so decode used the key-split kernel
+// while the batched path always used the plain one) — found 2026-09-12 via a
+// real-checkpoint parity test that diverged (cosine ~0.99 at nKeys=3, ~0.62 at
+// nKeys=6-7) despite the M=20 synthetic-weight gate (which never varies the
+// kernel choice, since ITS reference also goes through the plain kernel) staying
+// bit-exact throughout. Does not cover kvI8 — that path binds a different
+// (9-argument) bind group shape entirely; callers that might see kvI8 must keep
+// handling it separately, as decoderunner.go already does.
+func (c *Context) attnKernel(hd, kvDim int, kvF16 bool) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
+	wide := hd > attnWG
+	switch {
+	case kvF16 && wide:
+		return c.attnF16WidePipeline, c.attnF16WideLayout
+	case kvF16:
+		return c.attnF16Pipeline, c.attnF16Layout
+	case wide:
+		return c.attnWidePipeline, c.attnWideLayout
+	case !attnKeysDisabled && attnKeysEligible(hd, kvDim, kvF16, false):
+		// Key-split attention: one reduction per TILE instead of one per key. Last
+		// case on purpose — the f16/wide paths above have their own kernels and
+		// attnKeysEligible declines them anyway, so this only ever claims the
+		// plain f32 narrow geometry the old kernel used to serve.
+		return c.attnKeysPipeline, c.attnKeysLayout
+	default:
+		return c.attnPipeline, c.attnLayout
+	}
+}
+
 // ropeStore: like rope, but reads the q/k-projection output from a separate src
 // buffer and writes the rotated result into dst (the KV cache) at element offset
 // p.base = pos*kvDim. Used for K so the decode token never needs a

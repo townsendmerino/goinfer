@@ -18,21 +18,44 @@ import (
 // q/k/v bias (Qwen2) is DELIBERATELY declined despite AttnWeights/biasAdd having
 // working plumbing for it below (kept rather than deleted — see their own
 // comments): measured on a real checkpoint (qwen2.5-coder-0.5b, GOINFER_HEAVY_TESTS=1,
-// TestResidentPrefillLast_parity), enabling it is bit-exact for M≤2 (nKeys≤2) but
-// diverges (cosine ~0.99 at nKeys=3, ~0.62 at nKeys=6-7 — worse as nKeys grows) once
-// a query attends to 3+ cached keys. It reproduces ONLY with bias enabled AND a real
-// checkpoint's weight magnitudes — the M=20 synthetic-weight gate
-// (TestPrefillLastW8A8_parity, no bias) stays bit-exact throughout, and disabling
-// bias entirely makes the real-checkpoint case WORSE (cosine ~0.2-0.5), so bias
-// itself is not simply wrong — something in its interaction with attention at
-// nKeys≥3 on real-magnitude data is. Root cause not yet found (ruled out so far:
-// the K/V bias-add width bug fixed alongside this — reproduces identically before
-// and after that fix; the flushPasses Metal-command-buffer-cap mechanism — a huge
-// passesPerFlush disables it with no change). Re-enable only after this is
-// resolved and re-gated; until then this decline keeps residentPrefillSeed's
-// fallback to the (slower, proven-correct) sequential loop, rather than risk
-// serving silently-wrong prefill logits for the most common dense-checkpoint
-// family (Qwen2.5-*).
+// TestResidentPrefillLast_parity).
+//
+// UPDATE (2026-09-12, second investigation round): the original "diverges at
+// nKeys>=3" symptom had TWO causes, not one. Cause #1, now FIXED: this function
+// unconditionally dispatched c.attnPipeline (the plain f32 kernel), while
+// decoderunner.go's sequential resident decode picks its kernel per-geometry via
+// attnKernel (attention.go) — for this exact checkpoint's geometry (hd=64,
+// kvDim=128, f32 KV) that's attnKeysEligible, so decode used the KEY-SPLIT kernel
+// while this function always used the plain one. Two different kernels computing
+// the same attention is not guaranteed bit-identical. Fixing this function to call
+// the same c.attnKernel(hd, kvDim, false) decoderunner.go uses took nKeys=3
+// bias-enabled parity from cosine 0.99/maxAbs 1.24 to EXACT (cosine 1.0, maxAbs
+// ~2.9e-6, i.e. float32 noise) — confirmed correct up through nKeys=4.
+//
+// Cause #2, still OPEN: even with both paths on the identical kernel, nKeys=5+
+// still diverges (cosine ~0.995-0.999, maxAbs ~0.5-0.99 depending on nKeys — not
+// monotonic with nKeys, e.g. nKeys=20 is BETTER than nKeys=5). Exact break point:
+// nKeys<=4 bit-exact, nKeys>=5 diverges. Since both paths now dispatch the
+// SAME c.attnKeysPipeline for the SAME cached K/V, either (a) the K/V cache
+// contents themselves differ subtly between this function's rope()+cpy() writes
+// and decoderunner.go's fused qkvFinalize writes (never diffed line-by-line — see
+// attnKeysShaderWGSL vs qkvFinalizeShaderWGSL/ropeShaderWGSL), or (b)
+// attnKeysShaderWGSL (attention.go, the multi-key tiled online-softmax kernel) has
+// a real bug at 5+ keys that a same-kernel-vs-itself comparison can still expose if
+// the SOURCE data feeding it differs. Ruled out separately: the K/V bias-add width
+// bug fixed alongside the kernel-mismatch fix (reproduces identically before/after
+// that fix, in isolation); flushPasses/passesPerFlush (a huge passesPerFlush
+// disables it with no change); bias being simply wrong (disabling it entirely
+// makes the real-checkpoint case WORSE, ~0.2-0.5 cosine, at ANY nKeys). The M=20
+// synthetic-weight gate (TestPrefillLastW8A8_parity, no bias, always uses
+// c.attnKernel now too) stays bit-exact throughout — this is real-checkpoint-
+// weight-magnitude-specific, or specific to a code path the synthetic test never
+// exercises (e.g. real RoPE frequency values vs the test's synthetic invFreq).
+//
+// Re-enable bias only after cause #2 is found and re-gated; until then this
+// decline keeps residentPrefillSeed's fallback to the (slower, proven-correct)
+// sequential loop, rather than risk serving silently-wrong prefill logits for the
+// most common dense-checkpoint family (Qwen2.5-*).
 //
 // It is a zero-copy view: every *wgpu.Buffer is wrapped, not duplicated, and the
 // caller must not Close() the resulting ModelW (ModelW.Release would double-free
@@ -47,7 +70,11 @@ import (
 func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 	if rm.moe != nil || rm.mla != nil || rm.mamba != nil || rm.dnet != nil ||
 		rm.kvF16 || rm.kvI8 || rm.slidingWindow != 0 || rm.gatedGELU ||
-		(rm.ropeHalf != 0 && rm.ropeHalf != hd/2) {
+		(rm.ropeHalf != 0 && rm.ropeHalf != hd/2) ||
+		hd > attnWG { // ensureAttnWide is never in PrefillLastW8A8's ensure-list (attnKernel
+		// would otherwise dispatch a nil c.attnWidePipeline); dnet/mamba above already
+		// exclude the one real hd=256 family (Gated-DeltaNet hybrids), so this only
+		// guards a theoretical wide-head-dim dense model, not a real gap.
 		return ModelW{}, false
 	}
 	view := func(b *wgpu.Buffer) *DeviceBuffer {
@@ -349,11 +376,17 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		// Increment 1) is a perf follow-on once dispatch-count overhead at real M is
 		// actually measured (Increment 3's TTFT gate) — this per-row loop into the
 		// existing M=1 kernel is correctness-equivalent today.
+		// attnKernel picks the SAME kernel decoderunner.go's sequential resident
+		// decode would pick for this geometry (kvF16=false always: runModelToModelW
+		// declines kvF16/kvI8 models). Dispatching a different kernel than the
+		// production Forward() path for the same geometry is exactly what caused the
+		// nKeys>=3 divergence this comment's neighbor (attnKernel, attention.go) documents.
+		attnPl, attnLy := c.attnKernel(hd, kvDim, false)
 		ctxv := make([]*wgpu.Buffer, M)
 		for r := range xd {
 			cv := storF(nH * hd)
 			ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[r] + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-			disp(c.attnPipeline, bind(c.attnLayout, q[r], lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, noSinks, ap, noHasSink), uint32(nH), 1)
+			disp(attnPl, bind(attnLy, q[r], lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, noSinks, ap, noHasSink), uint32(nH), 1)
 			ctxv[r] = cv
 		}
 		attnOut := tiledProj(ctxv, lw.Attn.OProj)

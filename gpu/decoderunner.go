@@ -1285,21 +1285,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				}
 				add(pl, bind(ly, q, lw.kCache, lw.vCache, lw.kScale, lw.vScale, ctxv, attnSinks, aUni, hasSinkUni), uint32(nH), 1)
 			} else {
-				attnPl, attnLy := c.attnPipeline, c.attnLayout
-				switch {
-				case m.kvF16 && wide:
-					attnPl, attnLy = c.attnF16WidePipeline, c.attnF16WideLayout
-				case m.kvF16:
-					attnPl, attnLy = c.attnF16Pipeline, c.attnF16Layout
-				case wide:
-					attnPl, attnLy = c.attnWidePipeline, c.attnWideLayout
-				case !attnKeysDisabled && attnKeysEligible(g.hd, g.kvDim, m.kvF16, m.kvI8):
-					// Key-split attention: one reduction per TILE instead of one per key.
-					// Last case on purpose — the f16/wide paths above have their own kernels
-					// and attnKeysEligible declines them anyway, so this only ever claims the
-					// plain f32 narrow geometry the old kernel used to serve.
-					attnPl, attnLy = c.attnKeysPipeline, c.attnKeysLayout
-				}
+				attnPl, attnLy := c.attnKernel(g.hd, g.kvDim, m.kvF16)
 				add(attnPl, bind(attnLy, q, lw.kCache, lw.vCache, ctxv, attnSinks, aUni, hasSinkUni), uint32(nH), 1)
 			}
 			if aGate != nil { // ctx *= sigmoid(gate), before o_proj (matches CPU)
