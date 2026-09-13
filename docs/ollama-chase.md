@@ -664,7 +664,7 @@ TTFT is 2.1 s, down from 13.1 s) and cannot reach parity.
 Design-first (before writing the kernel) found the clean ~1.3× is **not bit-identical-buildable on
 Turing**: bit-identity pins the denom to the 128-strided tree ⇒ Bk=128, but a Bk=128 K-tile at hd=128 =
 **64 KB maxes sm_75 shared alone** — K+V can't co-reside (128 KB). Three explicit paths now in
-`task-prefill-attention.md`: (1) **bit-identical 2D key+dim tiling, ~1.15×** — intricate, multi-session,
+`docs/tasks/task-prefill-attention.md`: (1) **bit-identical 2D key+dim tiling, ~1.15×** — intricate, multi-session,
 byte-exact-critical (removes ~half the O(M²)); (2) **reduction-order re-baseline, ~1.3×** — one goldens
 refresh (deterministic per-query denom, Bk-free), but cascades to decode + `attn_batched`/`splitkv_*`;
 (3) **tolerance-gated flash, largest** — abandons bit-identity. **Banked:** prefill is past usability

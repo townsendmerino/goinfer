@@ -2,6 +2,24 @@
 
 Status: **DESIGN REVISED (2026-08-04) — the clean ~1.3× is NOT bit-identical-buildable on Turing.**
 
+> **Correction (2026-09-13, doc review) — the "Why" and "Profiled bound" numbers below are
+> PRE-A1.** Five minutes after this doc's profiling commit (`52b24dbf`), commit `55c850af`
+> ("attn(coalesce): float4 the QK K-read — 3.1x, bit-identical, ncu-confirmed") shipped the
+> float4 coalescing fix — this doc was never updated to reflect it. Current, reproduced numbers:
+> `attn_batched` at M=2048 runs **29.9 ms** (not 92 ms), bytes/sector **66.32%** (not 21.96%),
+> compute **23%** (not 11.5%), stall **46.6 cyc/instr** (not 145.7). End-to-end attention share
+> at K=2048 is now **39.0%** (not 56%), confirmed self-reproducing on 2026-09-01 across a
+> driver/distro re-anchor (`docs/measurements/cuda-prefill-attention-share-2026-09-01.md`); K=3900
+> is 55.0%. Confirmed independently by `docs/ollama-chase.md`'s A1/A1-reprofile section and by
+> `docs/measurements/splitkv-sector-efficiency-2026-09-13.md`, which found the coalescing fix
+> this doc's numbers would otherwise motivate **already shipped and intact**. **This does not
+> change the verdict.** A1 fixed only the per-lane coalescing; the residual is the O(M²)
+> redundant re-read traffic the fix's own commit message names as "the next, bigger build" — the
+> exact target of the three paths below, and the 64 KB shared-memory wall is an architectural
+> constant A1 does not touch. `docs/ollama-chase.md` §B1 independently carries the same verdict
+> (BANKED, not funded) as of today. Kept here rather than silently rewriting the numbers below,
+> per this repo's retraction discipline.
+
 > **The 64 KB wall (design-first finding, before writing the kernel).** Bit-identity pins the softmax
 > denominator to `attn_batched`'s exact 128-strided partition + tree reduce (`ls += e` over keys
 > {t, 128+t, …}). Preserving that order under tiling forces **Bk=128** (thread ↔ within-tile position ⇒
@@ -47,6 +65,8 @@ file. (Original scope preserved below.)
 | 512 | 25% |
 | 2048 | **56%** |
 
+*(Pre-A1; see the 2026-09-13 correction note above — current reproduced share at 2048 is 39%.)*
+
 Attention overtakes the GEMV past ~1–2k tokens. `attn_batched` is a naive O(M²) kernel: `GridX = nH`,
 `GridY = M`, each `(head, query)` block runs the M=1 online-softmax over that query's causal window. At
 M=2048 that is 2.6 s of the 4.6 s prefill. This lever is **attributed and needs no further measurement
@@ -55,6 +75,10 @@ begins (the same `TestGemvBatchedBandwidth`-style isolation), not a conclusion t
 has recorded three plausible-mechanism-as-conclusion attributions already; profile first.
 
 ## Profiled bound (ncu, 1.5B shape, M=2048) — CONFIRMED traffic, not latency
+
+*(Pre-A1 — see the 2026-09-13 correction note at the top. These numbers predate the float4
+coalescing fix by 5 minutes and no longer describe the shipped kernel; kept as the design-time
+record of what motivated the tiling analysis below.)*
 
 Measured `attn_batched` in isolation (nH=12, hd=128, M=2048, full attention): 92 ms, **1.6% of
 compute peak**. ncu:
