@@ -58,6 +58,6 @@ features). Two load-time notes the taxonomy does not encode:
 - **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable
   Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE
   FFN) this representative config never exercises — WebGPU implements it (G7 part 2,
-  docs/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`
+  docs/tasks/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`
   names this specific per-checkpoint gap for a loaded model; this table cannot, since its
   rows are one per architecture, not per checkpoint.

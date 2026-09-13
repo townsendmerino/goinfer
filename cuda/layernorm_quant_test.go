@@ -12,7 +12,7 @@ import (
 )
 
 // TestLayerNormQuant is the CUDA twin of metal/gpt2_kernels_test.go's TestLayerNormQuant — this
-// backend's layernorm_quant (cuda/glue.cu) is a BRAND NEW kernel (G5, docs/task-gpu-paths-2026-09.md,
+// backend's layernorm_quant (cuda/glue.cu) is a BRAND NEW kernel (G5, docs/tasks/task-gpu-paths-2026-09.md,
 // the last row: Cohere/Command-R + Cohere2/Command-R7B), so it gets the same isolated,
 // exact-CPU-reference proof Metal's kernel already had before any family was declared resident on
 // the strength of it.

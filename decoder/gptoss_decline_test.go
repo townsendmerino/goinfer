@@ -26,7 +26,7 @@ import (
 // ran.
 //
 // WEBGPU MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE on 2026-09-08 (G6,
-// docs/task-gpu-paths-2026-09.md): the sink threaded through every attention kernel (attn,
+// docs/tasks/task-gpu-paths-2026-09.md): the sink threaded through every attention kernel (attn,
 // attn-keys, attn-f16, attn-i8, and all three wide variants — 7 pipelines), plus three brand-new
 // MoE kernels (gpt-oss disagrees with the generic MoE path on what the router bias means and what
 // the activation clamps — routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL,

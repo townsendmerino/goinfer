@@ -36,7 +36,7 @@ func TestDeclinedToCPUReason(t *testing.T) {
 	}
 }
 
-// TestResidentQuantLabel pins G10's reporting fix (docs/task-gpu-paths-2026-09.md): Metal has no
+// TestResidentQuantLabel pins G10's reporting fix (docs/tasks/task-gpu-paths-2026-09.md): Metal has no
 // int8 GEMV kernel, so an int8int8 resident load must not claim that precision back to the user —
 // every other (backend, quant) pair, including int8int8 on cuda/webgpu (which DO have a real W8A8
 // kernel) and every non-int8int8 quant on metal, must be a pure passthrough of the requested quant

@@ -125,7 +125,7 @@ type Context struct {
 	gemmRowPipeline *wgpu.ComputePipeline
 	gemmRowLayout   *wgpu.BindGroupLayout
 
-	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md), lazy via ensureLora (lora.go).
+	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md), lazy via ensureLora (lora.go).
 	loraDownShader   *wgpu.ShaderModule
 	loraDownPipeline *wgpu.ComputePipeline
 	loraDownLayout   *wgpu.BindGroupLayout
@@ -148,7 +148,7 @@ type Context struct {
 	swigluShader           *wgpu.ShaderModule
 	swigluPipeline         *wgpu.ComputePipeline
 	swigluLayout           *wgpu.BindGroupLayout
-	// G6 (docs/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
 	// twin, plain (W8A16) variant.
 	gegluShader      *wgpu.ShaderModule
 	gegluPipeline    *wgpu.ComputePipeline
@@ -277,7 +277,7 @@ type Context struct {
 	swigluQuantShader   *wgpu.ShaderModule
 	swigluQuantPipeline *wgpu.ComputePipeline
 	swigluQuantLayout   *wgpu.BindGroupLayout
-	// G6 (docs/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) fused quantized variant.
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) fused quantized variant.
 	gegluQuantShader   *wgpu.ShaderModule
 	gegluQuantPipeline *wgpu.ComputePipeline
 	gegluQuantLayout   *wgpu.BindGroupLayout
@@ -351,7 +351,7 @@ type Context struct {
 	moeExpertW4Shader   *wgpu.ShaderModule
 	moeExpertW4Pipeline *wgpu.ComputePipeline
 	moeExpertW4Layout   *wgpu.BindGroupLayout
-	// gpt-oss's three MoE kernels (FeatAttnSink, G6 docs/task-gpu-paths-2026-09.md): own router
+	// gpt-oss's three MoE kernels (FeatAttnSink, G6 docs/tasks/task-gpu-paths-2026-09.md): own router
 	// (biased logits both select AND weight), own clamped-gated activation, own biased
 	// down-projection combine — each a separate kernel from the generic MoE set above because
 	// gpt-oss disagrees with it on what the router bias means and what the activation clamps.

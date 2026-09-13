@@ -222,10 +222,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 
 	sandwich := m.SandwichNormResident()
-	// G5 (docs/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid.
+	// G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid.
 	postOnly := m.PostOnlyNormResident()
 	qkNormWhole := m.QKNormWholeResident()
-	// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
 	layerNorm := m.LayerNormResident()
 	parallelBlock := m.ParallelBlockResident()
 	logitScale, _ := m.LogitScaleResident() // ok=false ⇒ 1, already the applyLogitScale no-op value
@@ -274,7 +274,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			// The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
 			// dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
 			// dnAttnGate=false, and falls through to default below — G5,
-			// docs/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` case, silently
+			// docs/tasks/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` case, silently
 			// wrong the moment a non-gated hybrid family reached residency, since
 			// Qwen35ResidentParams hardcoded attnGate=true). Its weights live off lw.QProj (the
 			// family keeps them in its own struct), and q_proj is DOUBLE WIDTH — [query ‖ gate]
@@ -800,7 +800,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fArg, e = r.dev.NewComputePipeline(amod, "argmax_reduce"); e != nil {
 			return e
 		}
-		// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md) — own module, same isolation
+		// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md) — own module, same isolation
 		// reasoning as argmax_reduce/router_f32 above. Loaded unconditionally: cheap, and whether
 		// this model will ever receive an adapter isn't known here.
 		lmod, e2 := r.dev.CompileLibrary(loraPTX)

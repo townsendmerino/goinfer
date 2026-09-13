@@ -352,7 +352,7 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 				// attention_factor — so 1.0, not a value fetched from nowhere. A YaRN drafter
 				// would have to thread RopeMscaleLayer through geo first; this is where it lands.
 				gpu.ArgValue(float32(1)),
-				// Same reasoning for FeatAttnTemp (G5 docs/task-gpu-paths-2026-09.md): no drafter
+				// Same reasoning for FeatAttnTemp (G5 docs/tasks/task-gpu-paths-2026-09.md): no drafter
 				// geometry carries AttnTempBeta/OrigMaxPos, and beta=0 makes rope_kv_batched skip
 				// the scale entirely (see its own comment) — a Ministral-3-shaped drafter would
 				// need AttnTempParams threaded through geo first, same as YaRN above.

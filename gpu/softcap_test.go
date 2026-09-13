@@ -14,7 +14,7 @@ import (
 // decoder/model.go and metal/model.go. Kept verbatim so the gate compares against the thing the
 // other four siblings still do, not against a re-derivation of it. This is the WebGPU twin of
 // cuda/softcap_test.go — gpu/softcap.go is a byte-identical port of cuda/softcap.go's
-// applySoftcap (G6, docs/task-gpu-paths-2026-09.md), so this test is a direct port too.
+// applySoftcap (G6, docs/tasks/task-gpu-paths-2026-09.md), so this test is a direct port too.
 func softcapSerial(dst []float32, sc float32) {
 	for j, v := range dst {
 		dst[j] = sc * float32(math.Tanh(float64(v/sc)))

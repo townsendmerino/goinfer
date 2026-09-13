@@ -8,7 +8,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// Compute-time LoRA on the resident path (G3, docs/task-gpu-paths-2026-09.md) — the WebGPU
+// Compute-time LoRA on the resident path (G3, docs/tasks/task-gpu-paths-2026-09.md) — the WebGPU
 // backend, following metal/lora.go's design (same math, same "reuse the base projection's own
 // quantized activation" input, same before-any-subsequent-op ordering) but adapted to this
 // backend's architecture: newDecodeRunner builds a FIXED dispatch-step list (r.steps) ONCE, and

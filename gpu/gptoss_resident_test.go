@@ -14,7 +14,7 @@ import (
 // same convention as gemma3ParityPrompt.
 var gptOssParityPrompt = []int{1, 7, 42, 20, 5, 30, 13, 40}
 
-// TestGptOssResidentParityWebGPU is G6's gpt-oss gate (docs/task-gpu-paths-2026-09.md):
+// TestGptOssResidentParityWebGPU is G6's gpt-oss gate (docs/tasks/task-gpu-paths-2026-09.md):
 // FeatAttnSink + FeatOutBias against the REAL, committed decoder/testdata/gptoss_tiny.gguf —
 // not a seeded/synthetic fixture, so this is a genuine numeric floor, the same class of evidence
 // gpu/gemma3_resident_parity_test.go established for the Gemma set.

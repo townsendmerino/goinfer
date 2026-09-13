@@ -16,7 +16,7 @@ import (
 // (e.g. "webgpu:metal" on macOS, "webgpu:vulkan" on Linux) — every OTHER backend's Name() is a
 // bare string ("cpu", "cuda", "metal"), so this asymmetry is specific to webgpu.
 //
-// Found while wiring G7 part 2 (docs/task-gpu-paths-2026-09.md): a NEW `== "webgpu"` check
+// Found while wiring G7 part 2 (docs/tasks/task-gpu-paths-2026-09.md): a NEW `== "webgpu"` check
 // written for that row silently never matched on this exact Mac, which led straight to a
 // PRE-EXISTING bug this asymmetry already caused — DecodePath()'s own `case be != "webgpu":`
 // (below) has never matched a real webgpu backend on any platform, so a declined webgpu load has
@@ -129,7 +129,7 @@ type Prefiller interface {
 // positions startPos..startPos+len-1 and return the LAST position's hidden state AFTER the
 // model's final norm — the resident twin of Prefiller, but stopping before the LM head instead
 // of after it (decoder/embed.go's HiddenLast never needs logits, and the head is the single
-// most expensive matmul in a forward). Used by HiddenLast/G4 (docs/task-gpu-paths-2026-09.md):
+// most expensive matmul in a forward). Used by HiddenLast/G4 (docs/tasks/task-gpu-paths-2026-09.md):
 // an embedding request on a GPU box otherwise runs the whole text decoder on the CPU even when
 // the same arch decodes resident, the exact defect G2 documents for image turns.
 //
@@ -145,7 +145,7 @@ type ResidentHiddenLast interface {
 }
 
 // ResidentAdapterProj is one projection's low-rank compute-time LoRA delta (G3,
-// docs/task-gpu-paths-2026-09.md) — the exported twin of the package-private loraDelta, since a
+// docs/tasks/task-gpu-paths-2026-09.md) — the exported twin of the package-private loraDelta, since a
 // resident backend lives in another module and cannot see unexported fields. Same layout and
 // semantics as applyLoRA's CPU reference (decoder/lora.go): y[o] += Scale · Σ_k B[o,k]·(A·x)[k].
 type ResidentAdapterProj struct {
@@ -286,7 +286,7 @@ func (m *Model) DecodeRunnerEligible() bool {
 	a := m.w.arch
 	eligible := a.decodeRunnerEligible()
 	if !eligible && a.nemotron != nil && a.MoE != nil && m.be != nil && isWebGPUBackend(m.be.Name()) {
-		// G7 part 2 (docs/task-gpu-paths-2026-09.md): decodeRunnerEligible's own Nemotron branch
+		// G7 part 2 (docs/tasks/task-gpu-paths-2026-09.md): decodeRunnerEligible's own Nemotron branch
 		// hard-declines ANY MoE-block variant for every backend — a real crash-risk guard, since
 		// cuda/metal's own per-layer block-kind switches have no MoE case at all and would
 		// otherwise nil-dereference on the first token. webgpu now implements it for real
@@ -696,7 +696,7 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 // RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32 — the global
 // or local table per the layer's attention type (Mellum YaRN-on-global vs default-local).
 //
-// G5 (docs/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's no_rope_layers,
+// G5 (docs/tasks/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's no_rope_layers,
 // Cohere2's every-Nth global layer — arch.isNoPELayer) gets an all-ZERO table instead of the
 // real one, same length. The resident rope kernels compute cos=cos(pos·invFreq)·mscale,
 // sin=sin(pos·invFreq)·mscale (cuda/gemv_fwd.cu, metal/kernels.go); at invFreq==0 that is
@@ -749,7 +749,7 @@ func (m *Model) RopeMscaleLayer(i int) float64 { return m.w.arch.ropeMscale(i) }
 // AttnTempScale returns the query-side attention-temperature scale (Ministral 3's
 // AttnTempBeta/AttnTempOrigMaxPos — see that field's own comment for the formula and its
 // own-family caveats) for the resident forward at absolute position pos. G5
-// (docs/task-gpu-paths-2026-09.md), FeatAttnTemp. 1 (no-op) for every family without it — the
+// (docs/tasks/task-gpu-paths-2026-09.md), FeatAttnTemp. 1 (no-op) for every family without it — the
 // SAME beta==0 guard decoder/attention.go's sequential path uses, load-bearing here too:
 // evaluating the formula unconditionally would divide by AttnTempOrigMaxPos==0 (every family
 // that doesn't set this leaves it at its zero value) and poison Q with NaN.
@@ -863,7 +863,7 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
-		// G7 (docs/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
+		// G7 (docs/tasks/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
 		// kind (MoE FFN) has no GPU resident implementation on cuda/metal — decodeRunnerEligible's
 		// own nemotron branch already declines this for them (`a.MoE == nil`), but that predicate
 		// returns a bare bool, so the generic "arch is not eligible" message below would otherwise
@@ -1026,7 +1026,7 @@ func (m *Model) DecodePath() string {
 // residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a
 // live Model (see decoder/staged_device_note_test.go) — same shape as declinedToCPUReason below.
 //
-// G10 (docs/task-gpu-paths-2026-09.md): Metal has no int8 GEMV kernel at all — an int8-loaded
+// G10 (docs/tasks/task-gpu-paths-2026-09.md): Metal has no int8 GEMV kernel at all — an int8-loaded
 // weight is silently re-quantized to W4A8 (int4) at resident-build time (metal/model.go's
 // int4Buf), so "metal-resident (int8int8)" would claim a precision this backend never actually
 // runs. Say what executes, not what was requested; every other (backend, quant) pair is
@@ -1295,7 +1295,7 @@ func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, nu
 	if g == nil {
 		return 0, 0, 0, 0, 0, false, false
 	}
-	// G5 (docs/task-gpu-paths-2026-09.md): attnGate used to be hardcoded true here — correct for
+	// G5 (docs/tasks/task-gpu-paths-2026-09.md): attnGate used to be hardcoded true here — correct for
 	// every family that had reached residency (qwen3_5/qwen3_5_moe/qwen3_next), silently wrong
 	// for Olmo Hybrid (AttnGate=false), whose full-attention layer is olmo3's plain scheme, not
 	// qwen3.5's gated one. A caller that assumed attnGate==ok would build Olmo Hybrid's

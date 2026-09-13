@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMinistral3ResidentSmokeMetal is G5's FeatAttnTemp row (docs/task-gpu-paths-2026-09.md)
+// TestMinistral3ResidentSmokeMetal is G5's FeatAttnTemp row (docs/tasks/task-gpu-paths-2026-09.md)
 // smoke gate: the model actually goes resident and produces finite, non-degenerate output when
 // the post-RoPE query scale is genuinely exercised (testdata/ministral3-tiny's
 // AttnTempOrigMaxPos=8, so a 32-token run steps through four distinct scale values, past the

@@ -95,7 +95,7 @@ type residentDecoder struct {
 	ctxCap  int      // resident KV capacity in positions; writes past it corrupt (M20)
 	keep    []func() // release the resident buffers (norms, biases, KV, projections)
 
-	// G6 (docs/task-gpu-paths-2026-09.md): Gemma 2/3/4's final-logit softcap
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): Gemma 2/3/4's final-logit softcap
 	// (FeatFinalLogitSoftcap), applied host-side after readback — the same site and shape as
 	// cuda/resident.go's step()/metal/model.go's finalizeLogits. 0 ⇒ none (every non-Gemma
 	// family). Skipped for greedy decode (ForwardArgmax-shaped fast paths don't exist on this
@@ -402,7 +402,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			nE: nExp, k: topK, inter: moeInter, sigmoid: sig, norm: normTopK, scale: float32(rScale),
 			sharedInter: shInter, sharedUngated: shUngated, nGroup: nGroup, topkGroup: topkGroup,
 		}
-		// G6 (docs/task-gpu-paths-2026-09.md): gpt-oss's clamped-SwiGLU constants — uniform
+		// G6 (docs/tasks/task-gpu-paths-2026-09.md): gpt-oss's clamped-SwiGLU constants — uniform
 		// across every gpt-oss layer, same as CUDA's/Metal's own model-level alpha/limit fields.
 		if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
 			rd.rm.moe.gptoss = true
@@ -438,7 +438,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			return fail(ze)
 		}
 	}
-	// G6 (docs/task-gpu-paths-2026-09.md): Gemma's NormSandwich4 (FeatSandwichNorm) — extra
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): Gemma's NormSandwich4 (FeatSandwichNorm) — extra
 	// norms on each sublayer OUTPUT, applied before the residual add. Required present on every
 	// layer when the arch declares it (a silently-missing one would DROP the norm, not error),
 	// matching cuda/backend.go's/metal/model.go's own validation for the same feature.
@@ -622,7 +622,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				if rl.down, e = proj(&lw.DownProj); e != nil {
 					return fail(e)
 				}
-			case 3: // MoE FFN (G7 part 2, docs/task-gpu-paths-2026-09.md)
+			case 3: // MoE FFN (G7 part 2, docs/tasks/task-gpu-paths-2026-09.md)
 				// rd.rm.moe is already populated MODEL-level by MoEResidentParams above (it reads
 				// arch.MoE generically, which Nemotron also sets) — what was actually missing is
 				// this PER-LAYER weight build: every case above always append+continues before
@@ -1007,7 +1007,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				return fail(e)
 			}
 		}
-		// G6 (docs/task-gpu-paths-2026-09.md): FeatOutBias (gpt-oss o_proj bias) and
+		// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatOutBias (gpt-oss o_proj bias) and
 		// FeatSandwichNorm (Gemma's post-sublayer norms) — same "len>0, else leave nil" gate as
 		// QBias/QNorm above.
 		if len(lw.OBias) > 0 {
@@ -1244,7 +1244,7 @@ func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float
 // (see the ResidentForward.TruncateTo contract).
 func (rd *residentDecoder) TruncateTo(pos int) {}
 
-// SetAdapter implements decoder.ResidentAdapter (G3, docs/task-gpu-paths-2026-09.md) —
+// SetAdapter implements decoder.ResidentAdapter (G3, docs/tasks/task-gpu-paths-2026-09.md) —
 // generateInto calls this to bind/clear a compute-time LoRA adapter for an admitted session.
 // Forwards to rd.runner only: generateInto's adapter-admission path calls Forward exclusively
 // (never ForwardN), and ForwardN's batched verify runners (rd.batch) are speculative-decode-only

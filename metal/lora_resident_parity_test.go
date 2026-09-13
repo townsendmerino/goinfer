@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestLoRAResidentParityMetal is the G3 numeric gate (docs/task-gpu-paths-2026-09.md): compute-
+// TestLoRAResidentParityMetal is the G3 numeric gate (docs/tasks/task-gpu-paths-2026-09.md): compute-
 // time LoRA applied on Metal's resident decode path must match the CPU reference (the same
 // adapter applied via decoder's generic gatedMLP/causalAttention forward) to within the
 // established resident-vs-CPU floor. 0.95 is not a looser bar invented for this test — it is the

@@ -20,7 +20,7 @@ import (
 // nothing could ever fail.
 const hiddenLastResidentBar = 0.998
 
-// TestHiddenLastResidentParityMetal is the G4 gate (docs/task-gpu-paths-2026-09.md): the resident
+// TestHiddenLastResidentParityMetal is the G4 gate (docs/tasks/task-gpu-paths-2026-09.md): the resident
 // HiddenLast path (metalResident.HiddenLast / resident.forwardHiddenNoHead) must match the CPU
 // HiddenLast to within hiddenLastResidentBar on real weights. resident_embed_seam_test.go
 // (decoder package) already proves the WIRING with a fake backend; this proves the NUMBERS with

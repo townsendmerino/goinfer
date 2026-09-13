@@ -14,7 +14,7 @@ import (
 // fixed token sequence, not tied to the fixture's real tokenizer.
 var moePrefillPrompt = []int{1, 7, 42, 100, 5, 200, 13, 88, 21, 64, 9, 150}
 
-// TestPrefillParityMoE is G8's second gate (docs/task-gpu-paths-2026-09.md): the batched f16 MMA
+// TestPrefillParityMoE is G8's second gate (docs/tasks/task-gpu-paths-2026-09.md): the batched f16 MMA
 // prefill path, extended this row to run a MoE layer's FFN row by row off the batched residual
 // (reusing the unchanged per-token decode MoE dispatch chain — encodeMoERoute/encodeMoEExperts/
 // encodeMoESharedExpert — the same "batch attention, loop the FFN" shape CUDA's own batched

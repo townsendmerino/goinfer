@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G3 seam gate (docs/task-gpu-paths-2026-09.md).
+// G3 seam gate (docs/tasks/task-gpu-paths-2026-09.md).
 //
 // WHY THIS EXISTS. Same shape as resident_seam_test.go's TestSeam_GenerateRunsOnTheResident and
 // resident_embed_seam_test.go's G4 tests: a resident capability nothing ever calls is

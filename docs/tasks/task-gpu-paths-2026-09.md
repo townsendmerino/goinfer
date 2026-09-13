@@ -14,6 +14,28 @@
 > Suggested order: G1 → G2 (folded into multimodal P6) → G3+G4 together → G5 (four one-kernel
 > families) → G6 → G7 (Metal TTFT) → the rest as they come up. Items are independent; each lands
 > with its own gate and hardware-matrix/CHANGELOG touch, in the pattern of task-families-2026-09.
+>
+> **Status, doc-reviewed 2026-09-13 (verdict: LIVE-STALE, corrected below, not archived — real open
+> work remains).** Checked every item against the tree rather than trusting this file's own status
+> log, which stops at 2026-09-09 and was never updated for work landed after that date by other
+> sessions: **G1, G3 (all 4 backends), G5 (all 6 families), G6, G8 (both Metal halves), G10 are
+> DONE and committed.** **G2 is ALSO DONE** — this file's own G2 section below was never corrected
+> to say so; see the note inserted there. **G7** is done for its trivial doc-honesty half and for
+> WebGPU's MoE FFN case; CUDA/Metal still decline it, accurately as written. **G9** remains an
+> accurately-scoped wash — see the note inserted there (the underlying WebGPU binding was swapped
+> 2026-09-12, `oliverbestmann/webgpu` replacing the abandoned `cogentcore/webgpu`, but it still has
+> no `dot4`/`dp4a` symbol, so the verdict is unchanged even though the old citation is stale).
+> **G4** is done on decoder+Metal; CUDA is written and compiles (confirmed still on `main`, CI
+> green) but has never been run against real hardware or gained a numeric parity test — genuinely
+> still open, not a stale claim. **G11** was redirected to `docs/task-fit-to-hardware.md`, whose
+> Phases 0–2 got closed in the process (recorded in this file's own status log below, which stops
+> at 2026-09-09 saying "Phases 3-5 remain entirely unstarted" — that line is itself now stale and
+> is corrected in place near the end of the log rather than rewritten, per this doc's own
+> per-entry-is-a-timestamp convention). `docs/task-fit-to-hardware.md`'s own status line (its
+> authority, checked directly) says **Phase 3 (WebGPU) is DONE (2026-09-10), Phase 4 is PARTIAL,
+> and only Phase 5 (host-computed experts) remains entirely unstarted** — all three now that doc's
+> to own, not this one's; this repo's own `docs/audit-2026-09-10.md` N-95 already flagged this same
+> drift independently.
 
 ## Ground rules (same as every task doc here)
 
@@ -53,7 +75,20 @@ to the readme-smoke job for the chat binary too.
 
 ### G2 — image turns run the whole text decoder on the CPU, not just the tower
 
-**Where.** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
+**DONE, 2026-09-08/09 — this section describes the problem as it stood before the fix; the tree
+has since closed it and this status line was never added.** Shipped as `a630a2cc`
+("decoder,cuda,gpu: resident GPU decode for image turns (gap 0)"), `a825c9d1` (resident image-block
+prefill for Gemma 3 on CUDA), `16f97d8e` (Qwen2.5-VL resident m-RoPE decode) and `714b7276` (P6's
+CUDA SigLIP tower half) — landed by the session this doc's own G2 entry handed the work to, and
+never folded back into this file per its own "findings go into this file's per-item status line"
+rule. The shipped design differs from the Fix section below in one respect worth noting: CPU
+prefill stays CPU (the bidirectional image-block attention mask has no resident equivalent), and
+only *decode* moves to the resident GPU path, via `UploadKV` pushing the CPU-computed KV into the
+resident cache rather than moving prefill itself onto the resident runners. Net effect is the same
+one this item asked for — a Gemma 3 / Qwen2.5-VL image turn's text decode no longer runs at CPU
+speed on a GPU box.
+
+**Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
 CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1179–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
 (`internal/serveapp/openai.go:735–663`).
@@ -299,8 +334,9 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     first (catches anything the darwin gofmt-only check below could not), then a CUDA twin of
     `hiddenlast_resident_parity_test.go` against a real dense checkpoint, then decide whether the
     0.998-vs-0.9999 recalibration found on Metal also applies here (CUDA's kernels are the ones the
-    codebase already made FMA-bit-identical for batched prefill — `docs/task-batched-prefill-
-    bitidentity.md` — so it may legitimately clear 0.9999 where Metal cannot; do not assume either
+    codebase already made FMA-bit-identical for batched prefill — `docs/completed/task-batched-
+    prefill-bitidentity.md` (archived since this entry was written) — so it may legitimately clear
+    0.9999 where Metal cannot; do not assume either
     way). Verified only: `gofmt -l` (valid Go syntax, correctly formatted) and a manual re-read of
     every touched line against `resident.go`'s existing `r.aq`/`r.aSc` M=1 decode-path usage.
 - 2026-09-08 — G5 row 1 (SmolLM3/`FeatNoPE`) DONE on decoder+Metal, WRITTEN-UNVERIFIED on CUDA
@@ -1258,6 +1294,12 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   `dot4`/`dp4a` symbol anywhere. Nothing has changed since June; building the `Prefiller` now
   would cost real engineering effort for ~0 net TTFT gain per the doc's own component-level
   measurement on real hardware.
+  - **Doc-review correction, 2026-09-13**: `gpu/go.mod` no longer pins `cogentcore/webgpu` at
+    all — `a16a537d` (2026-09-12) migrated the whole binding to `github.com/oliverbestmann/webgpu
+    v1.36.0` after the cogentcore module was abandoned upstream. That makes the citation above
+    stale, but re-checked directly against the new module's cached source: still no `dot4`/`dp4a`
+    symbol anywhere. The blocker, and G9's "still a wash" verdict, are unchanged — only the module
+    name/version in the stale citation needed correcting.
   - **Also found and corrected a stale internal record while checking for a contradicting
     signal**: a session memory claimed a June 2026 branch (`gpu-wgpu-dot4`, deleted after harvest)
     had actually gotten `dot4I8Packed` working and measured it at "~0 gain, bandwidth-bound" —
@@ -2071,3 +2113,15 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     Metal (slots + the `-ctx` bug fix), CPU (dense auto-retry), and the drafter-aware sizing, all
     measured on real hardware. Phases 3-5 (WebGPU, the rate band, host-computed experts) remain
     entirely unstarted.
+
+- **2026-09-13 — doc-review correction, not a new status entry: the "Phases 3-5 … remain entirely
+  unstarted" line directly above (and its earlier echoes) went stale the day after it was written.**
+  `docs/task-fit-to-hardware.md`'s own status line — its authority, not this file — now says Phase 3
+  (WebGPU) shipped 2026-09-10, Phase 4 is PARTIAL, and only Phase 5 (host-computed experts) is still
+  entirely unstarted. `docs/audit-2026-09-10.md` (N-95) flagged this same drift independently.
+  Left the entries above as they were written, timestamped, rather than edited to sound
+  retroactively correct — this note is the correction. **This closes out this file's own G-items**:
+  G1/G3/G5/G6/G8/G10 done and committed, G2 done (see the corrected note in its own section above),
+  G7 done for its doc-honesty half and WebGPU, open for CUDA/Metal, G9 an accurately-scoped parked
+  wash, G4 open only for CUDA verification on real hardware, G11 redirected and its target doc now
+  owns what remains (Phase 4's remainder, Phase 5).

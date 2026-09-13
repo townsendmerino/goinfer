@@ -65,7 +65,7 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 			return nil, fmt.Errorf("decoder.HiddenLast: token %d at index %d out of vocab [0,%d)", id, i, a.VocabSize)
 		}
 	}
-	// G4 (docs/task-gpu-paths-2026-09.md): on a GPU box this arch may decode resident while
+	// G4 (docs/tasks/task-gpu-paths-2026-09.md): on a GPU box this arch may decode resident while
 	// embedding requests still ran the whole text decoder on the CPU — the same class of gap G2
 	// documents for image turns. Same resBusy claim Generate uses (M9): a loser (a generation
 	// already in flight on this Model) falls through to the CPU path below exactly like it

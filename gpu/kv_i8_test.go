@@ -26,7 +26,7 @@ func randF(rng *rand.Rand, n int) []float32 {
 }
 
 // dispatch binds storage buffers (binding 0..k-1) + one or more trailing uniforms (binding
-// k, k+1, …) and runs. G6 (docs/task-gpu-paths-2026-09.md) widened this from a single trailing
+// k, k+1, …) and runs. G6 (docs/tasks/task-gpu-paths-2026-09.md) widened this from a single trailing
 // uniform to a slice: attnI8ShaderWGSL now carries TWO (the shared geometry P, and the
 // genuinely-per-layer HS attention-sink flag — see attnShaderWGSL's own comment for why they
 // can't be merged into one).
@@ -273,7 +273,7 @@ func TestKVI8Attn(t *testing.T) {
 
 	ctx := c.zbuf(nH * hd)
 	uni := c.ubuf([]uint32{nH, nKV, uint32(hd), nKeys, 0, uint32(group), math.Float32bits(scale), 0})
-	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
 	noSinks := c.zbuf(1)
 	noHasSink := c.ubuf([]uint32{0, 0, 0, 0})
 	if err := c.dispatchI8(c.attnI8Pipeline, c.attnI8Layout, nH, []*wgpu.Buffer{c.sbuf(q), c.wbuf(kWords), c.wbuf(vWords), c.sbuf(kSc), c.sbuf(vSc), ctx, noSinks}, uni, noHasSink); err != nil {

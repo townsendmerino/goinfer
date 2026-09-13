@@ -822,7 +822,7 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
 
-// lora_delta: compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md), the two-GEMV low-rank
+// lora_delta: compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md), the two-GEMV low-rank
 // delta y[o] += scale·Σ_r B[o,r]·(A·x)[r], fused into ONE dispatch (P-11, audit-2026-09-10 —
 // mirrors CUDA's own P-11 finding, "14 extra launches per layer per token... before the
 // serialized reduction": up to 7 targeted projections/layer each paid TWO dispatches — down then

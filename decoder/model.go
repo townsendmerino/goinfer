@@ -250,7 +250,7 @@ type Options struct {
 	// internal/serveapp's loadDecoder, not by Load itself) a dense .gguf that will not fit
 	// resident RAM stays a plain refusal instead of getting an automatic -stream-weights retry.
 	// Does NOT affect a genuine bug fix shipped alongside Phase 2 work (Metal now honoring an
-	// explicit -ctx at all, docs/task-gpu-paths-2026-09.md's G6 entry) — that is correctness, not
+	// explicit -ctx at all, docs/tasks/task-gpu-paths-2026-09.md's G6 entry) — that is correctness, not
 	// an opinionated default, and stays on either way. An explicitly PINNED request
 	// (ResidentContext, MoECacheSlots, StreamWeights itself, etc.) is never affected by this flag
 	// in either direction: fit-by-default only ever acts on the UNPINNED case.
@@ -1207,7 +1207,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// for future prefix-reuse; batched on-device prefill, the long-prompt fix,
 	// is deferred).
 	//
-	// G3 (docs/task-gpu-paths-2026-09.md): a plain session (commit != nil, no adapter) still
+	// G3 (docs/tasks/task-gpu-paths-2026-09.md): a plain session (commit != nil, no adapter) still
 	// keeps the CPU/staged path — sessions exist for prefix reuse, which the prior paragraph
 	// already rules out combining with resident. But an ADAPTER session (cache.lora != nil) is
 	// the one case where going through Session.Generate is NOT about prefix reuse at all — it is

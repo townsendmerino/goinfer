@@ -12,7 +12,7 @@ import (
 // C-04). The numeric gate is TestCohereResidentParityCUDA (cohere_resident_parity_test.go).
 //
 // TestCohereResidentSmokeCUDA and TestCohere2ResidentSmokeCUDA are G5's last row
-// (docs/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
+// (docs/tasks/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
 // (metal/cohere_resident_smoke_test.go) explains why this is deliberately a smoke check
 // (admission + no NaN) rather than a resident-vs-CPU cosine floor: testdata/cohere-tiny and
 // testdata/cohere2-tiny are both "tiny-random" (scripts/pin_cohere_tiny.py), the same

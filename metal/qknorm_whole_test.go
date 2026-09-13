@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestQKNorm_wholeVector is G5's real gate for FeatQKNormWhole (docs/task-gpu-paths-2026-09.md,
+// TestQKNorm_wholeVector is G5's real gate for FeatQKNormWhole (docs/tasks/task-gpu-paths-2026-09.md,
 // Olmo 3/Olmo Hybrid): unlike the last two G5 rows, this feature has no new pure-Go formula to
 // unit-test — the whole change is a DISPATCH-GEOMETRY reinterpretation of the ALREADY-SHIPPED
 // per-head qk_norm kernel (encodeAttention passes nH=1,nKV=1,hd=nH_orig*hd_orig instead of the

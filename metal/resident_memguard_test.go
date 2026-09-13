@@ -73,7 +73,7 @@ func tinyDenseModelWithMoESlots(t *testing.T, slots int) *decoder.Model {
 // except an invalid/unset value means "assume unpaged" here (safe: buildResident still validates
 // and declines on a bad value) rather than a hard error.
 //
-// Phase 2 (docs/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag"): the
+// Phase 2 (docs/tasks/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag"): the
 // env-var cases below now go through a model whose Options.MoECacheSlots is 0 (unset), so
 // metalMoESlotsRequest's fallback to GOINFER_METAL_MOE_SLOTS is what's actually exercised — an
 // additional case pins the NEW priority order directly (Options wins over the env var when both

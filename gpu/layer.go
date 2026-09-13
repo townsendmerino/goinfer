@@ -63,7 +63,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `
 
 // gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
-// docs/task-gpu-paths-2026-09.md). The tanh argument is CLAMPED to ±15 before calling tanh:
+// docs/tasks/task-gpu-paths-2026-09.md). The tanh argument is CLAMPED to ±15 before calling tanh:
 // unclamped, tanh's argument overflows f32 before saturating at Gemma's activation magnitudes,
 // producing NaN — the exact defect Metal's own port hit (metal/kernels.go's glu_act, logit
 // cosine 0.818→0.994 after the clamp fix, decoder/features.go's FeatGatedGELU-adjacent note).

@@ -153,7 +153,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	}
 	keepBuf(xd)
 
-	// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
 	// bind a null storage buffer); this test-only path never carries a real sink, so one shared
 	// harmless dummy + hasSink=0 for every layer, matching attnShaderWGSL's convention.
 	noSinks := storF(1)

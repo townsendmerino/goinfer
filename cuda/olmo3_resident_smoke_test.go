@@ -9,7 +9,7 @@ import (
 )
 
 // TestOlmo3ResidentSmokeCUDA and TestOlmoHybridResidentSmokeCUDA are G5's FeatPostOnlyNorm +
-// FeatQKNormWhole row (docs/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
+// FeatQKNormWhole row (docs/tasks/task-gpu-paths-2026-09.md) smoke gates on CUDA — the Metal twin
 // (metal/olmo3_resident_smoke_test.go) explains why this is deliberately a smoke check (admission
 // + no NaN) rather than a resident-vs-CPU cosine floor: testdata/olmo3-tiny and
 // testdata/olmo_hybrid-tiny are both seeded/synthetic, and this feature has no new pure-Go

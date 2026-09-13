@@ -112,7 +112,7 @@ func renderHardwareMD(rows []hwRow) []byte {
 	b.WriteString("- **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable\n")
 	b.WriteString("  Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE\n")
 	b.WriteString("  FFN) this representative config never exercises — WebGPU implements it (G7 part 2,\n")
-	b.WriteString("  docs/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`\n")
+	b.WriteString("  docs/tasks/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`\n")
 	b.WriteString("  names this specific per-checkpoint gap for a loaded model; this table cannot, since its\n")
 	b.WriteString("  rows are one per architecture, not per checkpoint.\n")
 	return []byte(b.String())

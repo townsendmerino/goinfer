@@ -66,7 +66,7 @@ func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 // compiles MSL / creates the device and panics on failure — recover → decline (ok=false) →
 // the decoder falls back to the staged/CPU path. Callers gate on DecodeRunnerEligible first;
 // weights load as either int4 or int8 (Options{Quant:"int4"/"int8int8"}) — an f32 projection
-// declines. G10 (docs/task-gpu-paths-2026-09.md): this backend has NO int8 GEMV kernel at all —
+// declines. G10 (docs/tasks/task-gpu-paths-2026-09.md): this backend has NO int8 GEMV kernel at all —
 // int4Buf (model.go) re-quantizes an int8-loaded weight through the SAME W4A8 packer an int4
 // load uses, so `--quant int8int8` on Metal runs int4 numerics on the GPU while holding the int8
 // host copy (more RAM, not more precision). decoder.Model.DecodePath() reports this honestly
@@ -100,7 +100,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	// pressure, so "available" reports what survived rather than what can be asked for; an
 	// RSS-keyed ceiling once reported LESS memory at a known failure point than at baseline,
 	// which is a guard that inverts exactly when it is needed.
-	// G6 (docs/task-gpu-paths-2026-09.md — "honoured or refused with numbers"): an explicit -ctx
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md — "honoured or refused with numbers"): an explicit -ctx
 	// above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable
 	// budget) and must be a NAMED refusal, not folded into the generic "BuildResident declined"
 	// swallow below (buildResident itself also calls resolveMetalCtxCap and would hit the exact
@@ -148,7 +148,7 @@ func fitsResidentBudget(need int64, ram uint64) bool {
 // strconv.Atoi + validation metal/moe.go and metal/gemma4_moe.go already do at their real
 // dispatch-building call sites: `--moe-cache-slots` / decoder.Options.MoECacheSlots
 // (m.MoECacheSlotsRequest(), the SAME flag CUDA's own auto-cap-to-VRAM already reads) wins when
-// set (Phase 2, docs/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag");
+// set (Phase 2, docs/tasks/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag");
 // GOINFER_METAL_MOE_SLOTS is kept as a deprecated fallback for anyone still setting it directly.
 // "" means unset either way — n==0/unset ⇒ every expert resident, today's behavior, unchanged.
 func metalMoESlotsRequest(m *decoder.Model) string {
@@ -513,7 +513,7 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 
 // HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos and
 // returns the LAST position's hidden state after the model's final norm — the resident twin of
-// PrefillLast, but for embedding requests (G4, docs/task-gpu-paths-2026-09.md) instead of
+// PrefillLast, but for embedding requests (G4, docs/tasks/task-gpu-paths-2026-09.md) instead of
 // generation: it never runs the LM head. Metal's batched (f16-MMA) PrefillLast is declined by
 // default because it is not bit-identical to decode (§A2-Metal); rather than reuse that
 // divergent path, this runs the SAME per-token sequential kernels decode uses — one
@@ -576,7 +576,7 @@ func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]floa
 
 // UploadKV (prefix-reuse bridge) is not supported: the resident decoder owns its KV writes
 // per Forward, and the stateless Generate path re-runs the prompt through Forward instead.
-// SetAdapter implements decoder.ResidentAdapter (G3, docs/task-gpu-paths-2026-09.md) —
+// SetAdapter implements decoder.ResidentAdapter (G3, docs/tasks/task-gpu-paths-2026-09.md) —
 // generateInto calls this to bind/clear a compute-time LoRA adapter for an admitted session.
 func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	return a.r.SetAdapter(layers)

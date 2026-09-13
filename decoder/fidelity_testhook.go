@@ -68,7 +68,7 @@ func (m *Model) PrefillLogitsForTest(ctx context.Context, prompt []int, cache *K
 
 // PrefillLogitsWithAdapterForTest is PrefillLogitsForTest with a compute-time LoRA adapter
 // (already loaded via Model.LoadAdapter) bound to a fresh cache before prefilling — the CPU-side
-// half of a resident-vs-CPU LoRA numeric parity gate (G3, docs/task-gpu-paths-2026-09.md) driven
+// half of a resident-vs-CPU LoRA numeric parity gate (G3, docs/tasks/task-gpu-paths-2026-09.md) driven
 // from a package (e.g. metal) that cannot reach KVCache.lora or Model.adapter directly, both
 // unexported.
 func (m *Model) PrefillLogitsWithAdapterForTest(ctx context.Context, prompt []int, adapterName string) ([]float32, error) {
@@ -254,7 +254,7 @@ var PrefillGateProseFilesB = []string{
 	"../docs/how-inference-works.md",
 	"../docs/task-peer-benchmarks.md",
 	"../docs/task-recompute-audit.md",
-	"../docs/task-gpu-paths-2026-09.md",
+	"../docs/tasks/task-gpu-paths-2026-09.md",
 	"../docs/cuda-backend.md",
 	"../docs/completed/audit-2026-08-05.md",
 }

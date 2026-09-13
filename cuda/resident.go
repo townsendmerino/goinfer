@@ -381,7 +381,7 @@ type cudaResident struct {
 	nH             int
 	eps, attnScale float32
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
-	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md):
+	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/tasks/task-gpu-paths-2026-09.md):
 	// the raw params behind the post-RoPE query scale (decoder.Model.AttnTempParams) — 0 for every
 	// family without it. Recomputed into qTempScale per decode call (rope_kv's new parameter) or
 	// passed raw into rope_kv_batched, which must recompute it per row (position varies within
@@ -399,7 +399,7 @@ type cudaResident struct {
 	act          int32  // gated MLP activation, decoder.ActKind (0=gelu-tanh, 1=silu)
 	sandwich     bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 	postOnly     bool   // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
-	// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
 	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
@@ -529,7 +529,7 @@ type cudaResident struct {
 	dev                                                                                     *Device
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
-	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
+	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
 	// (lora.ptx), loaded unconditionally like every other glue pipeline — cheap, and whether a
 	// model will ever receive an adapter isn't known at BuildResident time.
 	fLoraDown, fLoraUp Pipeline
@@ -2558,7 +2558,7 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			}
 		}
 	}
-	// G3 (docs/task-gpu-paths-2026-09.md): compute-time LoRA — q/k/v deltas, right after the base
+	// G3 (docs/tasks/task-gpu-paths-2026-09.md): compute-time LoRA — q/k/v deltas, right after the base
 	// projection, before qk_norm/RoPE below, matching applyLoRA's CPU order exactly. Not reached
 	// for Ly.qGate (documented gap — see cuda/lora.go's file comment, same scope decision Metal
 	// made for the identical reason: qGate's q_proj takes a different path entirely, into
@@ -2870,7 +2870,7 @@ func (r *cudaResident) captureGraphs() error {
 func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
 	nullBias := ArgNull()
-	// qTempScale (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md): computed ONCE
+	// qTempScale (Ministral 3, FeatAttnTemp, G5 docs/tasks/task-gpu-paths-2026-09.md): computed ONCE
 	// per token (same value at every layer, unlike mscale which is per-layer) — mirrors
 	// decoder.Model.AttnTempScale exactly. attnTempBeta==0 (every family without this feature)
 	// skips the division entirely: attnTempOrigMaxPos is 0 for those families, and pos/0 would

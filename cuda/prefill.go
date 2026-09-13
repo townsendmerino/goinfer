@@ -237,7 +237,7 @@ func prefillChunkRows() int {
 }
 
 // HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for G4
-// (docs/task-gpu-paths-2026-09.md, embedding requests): the resident batched pass ingests the
+// (docs/tasks/task-gpu-paths-2026-09.md, embedding requests): the resident batched pass ingests the
 // whole sequence exactly as PrefillLast does — same chunking, same K/V it writes, bit-identical
 // per-row math — but the final chunk's tail computes the last row's post-final-norm hidden state
 // instead of logits, and never dispatches the LM head at all: an embedder never needs it
@@ -458,7 +458,7 @@ func (r *cudaResident) prefillStaticDecline() error {
 		return fmt.Errorf("cuda prefill: Gated-DeltaNet recurrent state advances one token at a "+
 			"time and cannot be batched: %w", errPrefillDeclined)
 	}
-	// G5 (docs/task-gpu-paths-2026-09.md): Olmo 3's no-pre-norm (postOnly) and whole-vector
+	// G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3's no-pre-norm (postOnly) and whole-vector
 	// QK-norm (qkNormWhole) are wired into the SEQUENTIAL decode path (segA/segB/segBFFN) only —
 	// prefillCore's batched glue (rmsnorm_quant_batched, qk_norm_batched) still assumes a real
 	// pre-norm weight and per-head QK-norm geometry unconditionally. Since CUDA's batched prefill
@@ -745,7 +745,7 @@ const (
 	// ForwardNoLogits — the final norm, the ~389 M-parameter head GEMV and the
 	// [M, hidden] readback are all dead work for a chunk whose logits nobody reads.
 	tailHiddenLast // head the LAST row only, but with the norm instead of the head (HiddenLast,
-	// G4, docs/task-gpu-paths-2026-09.md): runs the SAME per-row final-norm+quant
+	// G4, docs/tasks/task-gpu-paths-2026-09.md): runs the SAME per-row final-norm+quant
 	// the head reads from, then dequantizes r.aq/r.aSc into a float32 hidden
 	// vector instead of running the LM head GEMV at all — an embedder never
 	// needs logits, and the head is the single most expensive matmul in a

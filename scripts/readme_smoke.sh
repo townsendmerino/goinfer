@@ -102,7 +102,7 @@ if [ "${#MODELCMDS[@]}" -gt 0 ]; then
 	registry=""
 	if [ -x "$GOBIN/chat" ]; then
 		registry="$("$GOBIN/chat" models 2>&1)"
-		# G1 (docs/task-gpu-paths-2026-09.md): the pure-Go `go install .../demo/chat@latest` path
+		# G1 (docs/tasks/task-gpu-paths-2026-09.md): the pure-Go `go install .../demo/chat@latest` path
 		# from the README must at least answer --version — the release-workflow assertions cover
 		# the shipped binaries, this covers the path a reader actually runs.
 		echo "==> goinfer-chat --version (go install .../demo/chat@latest)"

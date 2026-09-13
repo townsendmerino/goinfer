@@ -15,7 +15,7 @@ import (
 // tokenizer.
 var gemmaPrefillPrompt = []int{1, 7, 42, 100, 5, 200, 13, 88, 21, 64, 9, 150}
 
-// TestPrefillParityGemma is the G8 gate (docs/task-gpu-paths-2026-09.md): the batched f16 MMA
+// TestPrefillParityGemma is the G8 gate (docs/tasks/task-gpu-paths-2026-09.md): the batched f16 MMA
 // prefill path, extended this row to admit Gemma's sandwich norms / (1+w) RMS offset / GeGLU
 // (prefillFeatures, metal/model.go), must match the sequential Forward loop's last-token logits
 // on a REAL Gemma checkpoint — same structure as TestPrefillParity, same bar (argmax match,

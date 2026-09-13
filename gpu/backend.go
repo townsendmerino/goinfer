@@ -60,7 +60,7 @@ type webgpuBackend struct {
 	mu         sync.Mutex // Context is not goroutine-safe
 	resident   map[*float32]*ResidentMatrix
 	qresident  map[*int8]*qResident  // W8A8 weights kept resident (+ a decode runner)
-	q4resident map[*byte]*q4Resident // G6 (docs/task-gpu-paths-2026-09.md): W4A8 twin — the "staged int4" item
+	q4resident map[*byte]*q4Resident // G6 (docs/tasks/task-gpu-paths-2026-09.md): W4A8 twin — the "staged int4" item
 	fallbacks  int
 }
 
@@ -146,7 +146,7 @@ func (b *webgpuBackend) MatmulW8A8(a []float32, bQ []int8, bScales []float32, ds
 	return true
 }
 
-// MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/task-gpu-paths-2026-09.md), the "staged
+// MatmulW4A8 is MatmulW8A8's int4 (W4A8) twin — G6 (docs/tasks/task-gpu-paths-2026-09.md), the "staged
 // int4" item: decoder/weightmat.go's matmulInto never consulted a backend for int4 before this
 // (its int8 branch already did, via MatmulW8A8/QuantBackend), so an int4-quantized model on the
 // STAGED (non-resident) path ran every projection on the CPU regardless of which backend was

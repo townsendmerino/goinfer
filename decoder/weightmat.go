@@ -707,11 +707,11 @@ var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}
 // matmul computes dst[M, rows] = a[M, cols] · wᵀ, dispatching on w's precision
 // with goinfer's backend routing: the f32, W8A8 and W4A8 paths can run on a GPU backend
 // (be.MatmulBT / QuantBackend.MatmulW8A8 / QuantBackend4.MatmulW4A8, the last a G6
-// docs/task-gpu-paths-2026-09.md addition); weight-only int8 (Q8) stays CPU. (The old
+// docs/tasks/task-gpu-paths-2026-09.md addition); weight-only int8 (Q8) stays CPU. (The old
 // weightMat.matmul, now a free function over linalg.WeightMat.)
 func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if w.IsInt4() {
-		// G6 (docs/task-gpu-paths-2026-09.md): staged int4 backend consult, mirroring the W8A8
+		// G6 (docs/tasks/task-gpu-paths-2026-09.md): staged int4 backend consult, mirroring the W8A8
 		// branch below — matmulInto's own int4 branch gets the same fix, for the same reason.
 		//
 		// Nested under Int4()'s narrower ok (canonical bytes present), not the outer IsInt4():
@@ -817,7 +817,7 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 		return
 	}
 	if w.IsInt4() {
-		// G6 (docs/task-gpu-paths-2026-09.md): the staged int4 backend consult this branch
+		// G6 (docs/tasks/task-gpu-paths-2026-09.md): the staged int4 backend consult this branch
 		// never had, mirroring the isW8A8 branch's QuantBackend check above.
 		//
 		// Nested under Int4()'s ok, not the outer IsInt4() — see matmul()'s own comment on
