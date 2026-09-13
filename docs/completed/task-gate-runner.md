@@ -138,7 +138,7 @@ not reimplement it. No new dependency; nothing in the main `go.mod`.
 - E7's non-matrix Python (`queue_citation_lint`, `bench_peer`, the opportunistic tail) — different
   shape, stays in E7.
 - The nvrtc build helper (E7 build-tooling item) and the `oracle/` reference-forward plan
-  (`docs/task-oracle-refforward.md`) — independent; share nothing with this.
+  (`docs/tasks/parked/task-oracle-refforward.md`) — independent; share nothing with this.
 - Any change to what the gates *decide* — E8 changes the *substrate* (shell → Go over `go test -json`),
   not the pass/fail criteria. A verdict change would violate acceptance (a).
 

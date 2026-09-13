@@ -89,7 +89,7 @@ promoting are separate decisions with separate gates (see the last section).
 - **int4 KV, TurboQuant (NO-GO), `.giw` f16 scales, W4A8 VNNI** — triggers as written in the June
   archive; none has fired.
 - **Pure-Go reference oracle** replacing the `pin_*.py` generators —
-  [`task-oracle-refforward.md`](task-oracle-refforward.md); post-1.0 infrastructure, and the
+  [`task-oracle-refforward.md`](tasks/parked/task-oracle-refforward.md); post-1.0 infrastructure, and the
   carve-out named in the v1.0 gate's "no Python in the repo" line.
 
 ## Superseded — June claims and what replaced them
