@@ -1,6 +1,6 @@
 package decoder
 
-// Canonical parity-row emitter (docs/task-parity-coverage.md Item 1d). The
+// Canonical parity-row emitter (docs/completed/task-parity-coverage.md Item 1d). The
 // real-checkpoint gates (decoder/*real_test.go, qwen35 gates) that measure argmax/
 // cosine against a real oracle call emitParityRow at the end of a passing run; the
 // parity sweep (EMIT_MANIFEST=1 go run ./cmd/gate parity) captures the PARITY_ROW

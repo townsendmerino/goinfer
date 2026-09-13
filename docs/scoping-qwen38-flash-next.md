@@ -153,7 +153,7 @@ naming as a side benefit — not a reason to prioritize this model on its own.
    in front of it, and there are **two** GR modules per layer — one for the attention/mixer
    sublayer, one for the MLP/MoE sublayer (`tech_report.pdf` §2.2, eq. 21–34). None of that changes
    the blast-radius finding: `decoder/forwardn.go` is in the explicit **core** hashed-file set
-   (`docs/task-parity-coverage.md:33`, alongside `model.go`/`attention.go`/`mlp.go`/`kvcache.go`/
+   (`docs/completed/task-parity-coverage.md:73`, alongside `model.go`/`attention.go`/`mlp.go`/`kvcache.go`/
    `rope.go`/`rmsnorm.go`/`registry.go`/`arch.go`/`config.go`) — changing it re-stales every
    family's parity record, the same "maximum blast radius" `docs/completed/scoping-lfm2.md` §G flagged for
    touching `registry.go`/`kvcache.go`. `forwardn.go` today assumes one residual stream through the
@@ -274,6 +274,6 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
 - goinfer tree, read directly 2026-08-27: `decoder/registry.go`, `decoder/config.go`,
   `decoder/forwardn.go`, `decoder/moepaging.go`, `docs/completed/qwen3_5_moe.md`,
   the completed qwen3.6 real-checkpoint task record (internal, untracked), `docs/queue-correctness.md`,
-  `docs/task-moe-streaming.md`, `docs/spec/README.md`, `docs/task-parity-coverage.md`,
+  `docs/task-moe-streaming.md`, `docs/spec/README.md`, `docs/completed/task-parity-coverage.md`,
   `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,
   `docs/completed/scoping-lfm2.md`, `docs/next-models.md`

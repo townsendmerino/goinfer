@@ -1,7 +1,7 @@
 # Policy: parity & e2e coverage — what "supported" means
 
-> **Audience:** durable contract (not a task — the task doc is
-> `task-parity-coverage.md`). Defines the testing tiers, the gates a model family
+> **Audience:** durable contract (not a task — the task doc that scoped it is
+> `completed/task-parity-coverage.md`, now archived: COMPLETE). Defines the testing tiers, the gates a model family
 > must clear, and the rule binding README support *claims* to a current
 > validation record. The motivating problem: real-checkpoint parity is
 > necessarily asset-gated and `t.Skip`s when assets are absent, so **a green CI
