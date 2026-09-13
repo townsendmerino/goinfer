@@ -325,20 +325,60 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 	return logits, nil
 }
 
+// ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY its
+// resident K/V — skipping the final norm's LM-head dispatch, the ~1 MB logits readback, and any
+// softcap. residentPrefillSeed calls this for every prompt token but the last (audit-
+// metal-2026-09-12.md M-01): before this existed every sequential-prefill token on Metal paid the
+// full int8 LM head + a 608 KB readback for logits nobody read (233 MB/token on a 1.5B, 671 MB on
+// a Gemma-class vocabulary). The layer chain — hence the K/V written at pos — is identical to
+// Forward, so decode from the last prompt token is byte-identical.
+//
+// Synchronous (forwardHiddenNoHead), not routed through the pipelined encode-ahead executor that
+// Forward uses: mirrors cuda/resident.go's own ForwardNoLogits, which is synchronous for the same
+// reason. M-01's fuller fix — a noHead bit on execJob so KV-only tokens keep encode-ahead's
+// overlap too — is a follow-up worth ~0.9 ms/token; this lands the head-skip itself first.
+//
+// On a paged MoE (g4moe or generic moe), forwardHiddenNoHead's trunk encoder has no paged branch
+// — only Forward → forwardLogitsPaged/forwardLogitsMoEPaged does (the same gap C-02 found at
+// HiddenLast/ForwardArgmax) — so this falls back to the full head-bearing Forward and discards
+// the logits: correct K/V either way, just without the head-skip win on that family.
+func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
+	if len(embedding) != a.hidden {
+		return fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)
+	}
+	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
+		_, err := a.Forward(embedding, pos)
+		return err
+	}
+	if e := a.checkCap(pos, 1); e != nil {
+		return e
+	}
+	if pos == 0 {
+		a.Reset() // fresh sequence — same reason as Forward
+	}
+	if _, err := a.r.forwardHiddenNoHead(embedding, pos, false); err != nil {
+		return err
+	}
+	return a.r.takeExecErr() // C-09: a command buffer aborted — surface it
+}
+
 // metalFastPrefillFloor is the PROMPT-LENGTH floor (whole prompt = startPos+M) below which
-// the f16-MMA batched pass declines and the sequential per-token loop runs instead. Set to 512
-// to match CUDA's measured floor (K=256 is expected to fail §3.2; the gate test disables this
-// floor via GOINFER_METAL_FAST_PREFILL_FLOOR=0 to confirm). On Phase B pass, if K=256 fails as
-// expected, this floor stands. Override with GOINFER_METAL_FAST_PREFILL_FLOOR (0 = no floor).
-const metalFastPrefillFloor = 512
+// the f16-MMA batched pass declines and the sequential per-token loop runs instead. Lowered to
+// 256 (2026-09-12, audit-metal-2026-09-12.md M-02): the K=256 "expected to fail §3.2" this floor
+// was originally set against is CUDA's own combined L2+L3 result, not Metal's — Metal's K=256
+// decision cell has PASSED on both the ref-B gate (docs/measurements/prefill-gate-l1-ref-
+// b-2026-09-09.md) and the fused-attention gate (prefill-l2-metal-fused-attn-2026-09-09.md).
+// Going lower needs one more passing decision cell at the new depth (the harness already
+// parameterises FLOOR via GOINFER_METAL_FAST_PREFILL_FLOOR, 0 = no floor).
+const metalFastPrefillFloor = 256
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
 //
 // CURRENTLY OPT-IN (default off) pending Phase B (TestPrefillGateVsReference, 2026-09-09). When
 // Phase B passes under §3.2's pooled form, the default flips to ON above metalFastPrefillFloor
 // and this comment is updated to name the measurement doc. The infrastructure is here now so the
-// Default ON above 512 tokens since §3.2 gate passed 2026-09-09 (S model, K=256/512/1024).
-// GOINFER_METAL_FAST_PREFILL=0/false/off or --exact-prefill to opt out.
+// Default ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate passed 2026-09-09
+// (S model, K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0/false/off or --exact-prefill to opt out.
 //
 //	GOINFER_METAL_FAST_PREFILL  1 | true | on   on (even below the floor — for tests)
 //	                            0 | false | off  off (explicit opt-out; use --exact-prefill on the server)
@@ -391,8 +431,9 @@ func metalFusedAttentionEnabled() bool {
 }
 
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
-// the batched f16-MMA path. Default ON above 512 tokens since §3.2 gate passed 2026-09-09. The
-// floor applies per-call; PrefillPath reports true iff the enabled state AND arch both allow batching.
+// the batched f16-MMA path. Default ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2
+// gate passed 2026-09-09. The floor applies per-call; PrefillPath reports true iff the enabled
+// state AND arch both allow batching.
 func (a *metalResident) PrefillPath() (bool, string) {
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
@@ -418,13 +459,14 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// DEFAULT ON above 512 tokens since §3.2 gate passed 2026-09-09 (S cells K=256/512/1024).
-	// GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
+	// DEFAULT ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate passed 2026-09-09
+	// (S cells K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
 	if !metalFastPrefillEnabled() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
-	// FLOOR: below metalFastPrefillFloor the fidelity gate has NOT passed (K=256 cell failed §3.2).
-	// Sequential path there; fast path only where the gate cleared.
+	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet. Sequential path there;
+	// fast path only where the gate cleared (K=256 itself passed §3.2 on Metal — see the floor's
+	// own doc comment).
 	promptLen := startPos + len(embeddings)
 	if floor := metalFastPrefillFloorFor(); floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)

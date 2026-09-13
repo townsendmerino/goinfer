@@ -93,7 +93,8 @@ separate sweep because this step kept being skipped at move time.
   findings, with a summary note in the live doc pointing to it; the live doc is not empty and is
   not archived by this. Current: [audit-2026-09-10.md](audit-2026-09-10.md) (at `c7ef16a`; 40
   closed findings split to [completed/audit-2026-09-10.md](completed/audit-2026-09-10.md)
-  2026-09-12); the previous ones are
+  2026-09-12) and, focused on one backend, [audit-metal-2026-09-12.md](audit-metal-2026-09-12.md)
+  (Metal, performance-led, at `da1e461`; M-/C-/G-/N- numbering is its own); the previous ones are
   [completed/audit-2026-09-02.md](completed/audit-2026-09-02.md) and
   [completed/audit-2026-08-05.md](completed/audit-2026-08-05.md).
 

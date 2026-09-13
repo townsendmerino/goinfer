@@ -321,6 +321,9 @@ func TestMoE_declinesPrefill(t *testing.T) {
 	// bit-identity decline that gates the Metal backend by default (54% divergence, §A2-Metal).
 	// Opt past that outer gate so the arch logic is what's under test.
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
+	// 8 embeddings is below even the lowered 256-token floor (metalFastPrefillFloor); this test is
+	// about MoE arch admission, not the floor, so disable it the same way prefill_ttft_test.go does.
+	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 	moeLogits, err := load(moeDir).PrefillLast(context.Background(), embs, 0)
 	if err != nil {
 		t.Fatalf("MoE resident wrongly declined prefill: %v", err)
