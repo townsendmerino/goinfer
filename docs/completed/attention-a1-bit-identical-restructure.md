@@ -1,5 +1,29 @@
 # Task (goinfer + aikit): A1 — restructure decode attention for speed, changing no numerics
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status: COMPLETE, archived 2026-09-13 (doc review).** All three A1 moves — (c) AV loop-order
+> (keys-outer/dims-inner), (b) QK output-interleaving, (a) threading across independent heads —
+> landed the same day this doc was written (2026-08-23): `feat(decoder): wire attention A1 moves
+> (c)+(b) — bit-identical, 2.4-2.8x` (`96e78173`) and `feat(decoder): A1 move (a) — thread
+> attention across independent heads` (`8d3cb49a`). Results were appended to the campaign doc,
+> `docs/completed/task-attention-decode-cost.md`, in its "A1 implementation" sections exactly as
+> this doc asked: acceptance (≥3x at depth ~130) cleared at 3.86x isolated / 1.27x end-to-end
+> (`bench_peer`, ≥21 tok/s target met at 21.52 tok/s), long-context did far better (9.72-10.20x at
+> depth 2048/8192), all gates green under `-race` with zero golden churn, and the new kernels
+> (`linalg.MatmulQKAcc64`/`MatmulAVAcc64`) shipped in aikit v1.25.0 and are still the live
+> decode-attention kernels at today's aikit v1.41.0 — both call sites are annotated in place
+> (`decoder/forwardn.go:855` "A1 move (b)", `:954` "A1 move (c)"), and the threading/scratch-pool
+> machinery move (a) called for is `attendOneHead`/`headWorkerScratch` in the same file. A2/A3
+> (out of scope here) were separately closed-for-now with a stated re-open trigger that has not
+> fired — see the campaign doc's own status block. Every instruction below is a record of what was
+> asked, not a live task list.
+
 > **For:** Claude Code, in `~/tmcode/goinfer` (with sibling `~/tmcode/aikit` — kernel work lands
 > there). Written 2026-08-23. This is the implementation work order for **option A1 only** of
 > `docs/completed/task-attention-decode-cost.md` — read that doc first; it carries the measurements, the
