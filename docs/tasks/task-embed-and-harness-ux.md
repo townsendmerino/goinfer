@@ -129,8 +129,8 @@ now with a reason to exist beyond release hygiene.
 |---|---|---|
 | one command from nothing to a running endpoint | `serve -web` can start with no model and pull one (shipped) | `serve -model hf:…` one-command run (§3.2) |
 | streaming that survives a silent minute | C-06 (one SSE writer), M-17 (write deadline), M-19 (Anthropic heartbeat) fixed | — |
-| tool calls that round-trip | M-18 (Responses loop) fixed | M-20 Gemma-4 tool template; N-18 `tool_choice` required/any; M-26 usage chunk on tool streams |
-| structured output through the API | works for objects | M-27 top-level scalars; M-30 no-arg tool schema |
+| tool calls that round-trip | M-18 (Responses loop) fixed; **M-20 Gemma-4 tool template fixed 2026-09-02** (`chat/gemma4_tools.go`'s `gemmaValue`/`gemmaParseValue`, byte-exact `call_result`); **M-26 usage chunk on tool streams fixed 2026-09-02**, confirmed by measurement in §6 phase 2 | N-18 `tool_choice` required/any with 2+ tools (the named-tool-not-found half of N-18 was fixed 2026-09-02; `any`/`required` with 2+ tools is still unenforced) |
+| structured output through the API | works for objects; **M-27 top-level scalars fixed 2026-09-02** (`StopWhenComplete` may-end/must-end split); **M-30 no-arg tool schema fixed 2026-09-02** (narrowed in `ToolCallGrammar`, not `compile`) | magnitude bounds on sized/unsigned ints (M-28's "NOT fixed: magnitude" — shape and requiredness are enforced, a `uint8` can still be handed an out-of-range value that `Unmarshal` then rejects) |
 | an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30; **resident prefix reuse shipped 2026-09-02 (3358e6b)** — agent turn 3 went 9.13 → 0.42 s, so a turn now costs its suffix, not its history | reuse is token-id bookkeeping only (`residentReuseLen`, `decoder/resident_reuse.go`) and nothing rewinds a recurrent state: on the Gated-DeltaNet/Mamba hybrids a reused prefix runs against the state decode left behind, and it was found silently corrupting Qwen3.5 output on CUDA (2026-09-02 run on the 8 GB box; its QUEUE §A entry was still uncommitted there when this line was written) — needs a family exclusion until the state is snapshotted with the prefix; also single-conversation (QUEUE §A) |
 | knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:1231-986`) | the rest of §3.3 |
 | finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
@@ -154,8 +154,9 @@ on/off** — and when off, why ("hybrid family: reuse excluded until the recurre
 with the prefix; each turn re-prefills, ~N s at 8k tokens on this machine" — since 3358e6b the
 resident path reuses too, so the why-line is for the exclusions, not the path); routes enabled
 (`/v1/chat/completions`, `/v1/messages`, `/v1/responses`, embeddings,
-vision, `-web`); features (tools: yes/no per template — Gemma-4 says "partial" until M-20 closes;
-structured output; speculative); the expected-rate band if one exists (`task-fit-to-hardware.md`
+vision, `-web`); features (tools: yes/no per template — Gemma-4 said "partial" until M-20 closed,
+**which it did, 2026-09-02, after this line was written: `call_result` is byte-exact and nested
+arguments round-trip**; structured output; speculative); the expected-rate band if one exists (`task-fit-to-hardware.md`
 §5). Every line is a fact the runtime already knows; the banner is where it stops being private.
 
 ### 3.4 `serve check` — the doctor
@@ -198,7 +199,8 @@ variable; quant names; that `internal/chatapp` is the real example.
 
 **Mode 3:** slot counts and placements (mode 4 owns them); that the resident path re-prefills on
 the families where reuse is excluded;
-that Gemma-4 tool calls render differently after the first turn (until M-20); that `-web` is off
+that Gemma-4 tool calls rendered differently after the first turn, **until M-20 closed this same
+day (2026-09-02)** — this is no longer something mode 3 needs shielding from; that `-web` is off
 by default (the banner says how to turn it on); which of the five routes a given harness speaks.
 
 ## 5. Gates — pre-registered
@@ -208,6 +210,12 @@ by default (the banner says how to turn it on); which of the five routes a given
   a filled struct. Fails on any Hard-tier rename by construction.
 - **G2 · `Into[T]` corpus.** The eight shapes in §2, each round-tripping on the tiny fixture with
   `Unmarshal` succeeding and `DisallowUnknownFields` on. Today's expected state: five red.
+  **CORRECTED 2026-09-02 (dated note, doc-reviewed 2026-09-13): the constrain-layer bugs behind
+  four of those five (M-27, M-29, M-30 fully; M-28 for shape/requiredness, not magnitude) were
+  fixed the same day, after this line was written — see the corrected §3.1 table. G2 itself still
+  cannot run, because `Into[T]` and the facade it lives in do not exist yet (phase 1, below, is
+  unstarted); "five red" describes the state of the underlying bugs at the time this line was
+  written, not the corpus once phase 1 is built.**
 - **G3 · `serve check` in CI on the tiny fixtures**, every row green; on the box against one
   real model per backend before a tag (§C1 gains a row).
 - **G4 · constrained decoding cost.** `Into[T]` on a resident GPU model must cost ≤ 1.5× the
@@ -288,10 +296,15 @@ by default (the banner says how to turn it on); which of the five routes a given
    exercises the same routes and the same tool round-trip, so what is missing is dsh's harness,
    not the server behaviour.
 
-   **Two of G5's three preconditions are still open**, which the recipe states rather than
-   hides: N-18 (`tool_choice` `any`/`required` does not force a call with 2+ tools — `forcedTool`
-   handles `none` and a named function, and `required` falls through to the single-tool case)
-   and M-20 (Gemma-4 tool rendering). Only M-26 was fixed, and the measurement confirms it.
+   **One of G5's three preconditions is still open** (corrected 2026-09-13 doc-review; this
+   paragraph originally said two, written before M-20's fix landed later the same day): N-18
+   (`tool_choice` `any`/`required` does not force a call with 2+ tools — `forcedTool` handles
+   `none` and a named function, and `required` falls through to the single-tool case) remains
+   open. **M-20 (Gemma-4 tool rendering) was fixed 2026-09-02**, about an hour after this
+   paragraph was first written (`fix(chat,gpu,cuda,ci): M-20, M-31, M-34, M-35`, `0e7a5956`) —
+   `chat/gemma4_tools.go`'s `gemmaValue`/`gemmaParseValue` now recurse and `call_result` is
+   byte-exact, confirmed still true in the tree at review time. M-26 was fixed too, and the
+   measurement confirms it.
 3. **Constrained-decoding speed** (L-07) so `Into[T]` is usable on the GPU backends — G4.
 4. ~~**Session anchors** (L-05) and longest-prefix reuse (L-15) so an agent loop stops paying a
    cold prefill per turn on the resident path.~~ **SHIPPED 2026-09-02, by a different route than

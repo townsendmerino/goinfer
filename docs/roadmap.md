@@ -51,7 +51,7 @@ promoting are separate decisions with separate gates (see the last section).
 4. **Fit to hardware** — [`task-fit-to-hardware.md`](task-fit-to-hardware.md): phases 0–3 done,
    4 partial (`goinfer-chat fit` dry run and self-measure ship; startup banner and `pull` verdict
    open). `completed/task-model-pull.md` phase 1 shipped.
-5. **First hour / cold user** — [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
+5. **First hour / cold user** — [`task-embed-and-harness-ux.md`](tasks/task-embed-and-harness-ux.md)
    (the five modes of use); the cold-user protocol on published tags; owed: the formal Mac
    two-scenario re-run on v0.17.2.
 6. **Peer measurement** — [`task-peer-benchmarks.md`](task-peer-benchmarks.md) (the matrix, with

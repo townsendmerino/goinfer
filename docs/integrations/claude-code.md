@@ -68,7 +68,7 @@ as they alternate.
 
 ## Retiring this page
 
-Per `docs/task-embed-and-harness-ux.md` §3.5, a recipe is retired when `serve check` covers
+Per `docs/tasks/task-embed-and-harness-ux.md` §3.5, a recipe is retired when `serve check` covers
 what it says. `goinfer-serve check <url>` already covers the model list, streamed chat with
 usage, structured output, stop sequences and `count_tokens`; the tool-loop and agent-turn-TTFT
 rows above are what it does not cover yet.

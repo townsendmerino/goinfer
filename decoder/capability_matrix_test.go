@@ -649,10 +649,11 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		GoodFor: "the 20-35B-class MoE this project has the most measurements on (docs/benchmarks.md §B4/§B4.1): a 26B-A4B that does not fit an 8 GB card, kept fully GPU-resident via host↔VRAM expert streaming (the C′ cache, -moe-cache-experts) rather than CPU-offloaded",
 		Needs:   "~11.4 GB of int4 experts; does not fit an 8 GB card resident. Measured on an RTX 2070 SUPER: 16.12 tok/s at 30 cached expert slots (§B4.1) — capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency",
 		// Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). This
-		// checkpoint is multimodal (image-text-to-text) and Gemma-4's tool template is a known
-		// partial (docs/task-embed-and-harness-ux.md §3.1: "M-20 Gemma-4 tool template"), so a
-		// harness-scale skip here would need to distinguish "too small" from "template gap" —
-		// worth running deliberately, not inferring from another family's result.
+		// checkpoint is multimodal (image-text-to-text); Gemma-4's tool template was a known
+		// partial (M-20, docs/tasks/task-embed-and-harness-ux.md §3.1) but that was fixed
+		// 2026-09-02 (chat/gemma4_tools.go's gemmaValue/gemmaParseValue, byte-exact call_result) —
+		// the remaining reason to run this deliberately rather than infer it is simply that it is
+		// not yet measured, not a template gap.
 		Tools: "not yet measured",
 	},
 	// R7 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the README's own "bigger than

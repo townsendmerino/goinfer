@@ -193,7 +193,7 @@ test problem**: the tests are correctly reporting it.
 **`TestPrefillAttnRowTileInvariance` fails in `./decoder/`** *(found 2026-09-02, unfiled)*. Also
 reproduces on a clean `origin/main` checkout. Not investigated.
 
-**G5 leftovers** *(the harness-UX gate, `docs/task-embed-and-harness-ux.md`)*. The Claude Code half
+**G5 leftovers** *(the harness-UX gate, `docs/tasks/task-embed-and-harness-ux.md`)*. The Claude Code half
 is done and `docs/integrations/claude-code.md` is published with measured numbers. Still open:
 - **dsh's 277 s run is un-re-measured** — deliberately parked 2026-09-02 (dsh is not installed and
   `server.md` documents the install as an ordeal). The figure stands unverified, not disproven.
@@ -209,7 +209,7 @@ cold-prefill as they alternate. The fix is per-conversation KV parked in host RA
 (~257 MiB and ~43 ms for a 2.3k-token conversation, against ~8.9 s to recompute it) — worth doing
 when concurrency is real, not before.
 
-**The facade (`task-embed-and-harness-ux.md` phase 1) is unblocked and undecided.** G4 was the
+**The facade (`docs/tasks/task-embed-and-harness-ux.md` phase 1) is unblocked and undecided.** G4 was the
 gate and it passes at 1.21×.
 
 **Model-pull leftovers** — three small items left when `task-model-pull.md` was archived
@@ -1601,12 +1601,12 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:578` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
-| `docs/task-embed-and-harness-ux.md|chat/chat.go:123` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
-| `docs/task-embed-and-harness-ux.md|decoder/model.go:1000` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
-| `docs/task-embed-and-harness-ux.md|decoder/model.go:204` | goinfer | `type Options struct {` |
-| `docs/task-embed-and-harness-ux.md|decoder/model.go:270` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:1231` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
-| `docs/task-embed-and-harness-ux.md|internal/serveapp/main.go:367` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
+| `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:123` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
+| `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1000` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
+| `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:204` | goinfer | `type Options struct {` |
+| `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:270` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1231` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:367` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/task-fit-to-hardware.md|decoder/model.go:181` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
 | `docs/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
 | `docs/task-fit-to-hardware.md|internal/serveapp/main.go:450` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
@@ -2527,7 +2527,7 @@ maxAbsDiff=0) both pass with it on.
 ## G37 · P-20 measured, then fixed: constrained decoding 1.9× → **1.21×** — and the ratio is model-dependent by construction
 
 Measured 2026-09-02, before designing anything on top of it, per the ordering revision in
-`docs/task-embed-and-harness-ux.md` §6. P-20 was explicit that its numbers were an **estimate**
+`docs/tasks/task-embed-and-harness-ux.md` §6. P-20 was explicit that its numbers were an **estimate**
 ("Estimate 40–120 ns/token → 6–30 ms per step… plausibly 3–10× slower per token on GPU") and
 named the measurement to run; the audit itself lists P-20 among the items whose measurement is
 cheap. It cost about an hour and it changes the answer.

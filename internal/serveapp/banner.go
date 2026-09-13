@@ -10,7 +10,7 @@ import (
 // A harness user reads exactly one thing before their first request: the lines `serve` prints
 // before it says it is listening. Everything below is a fact the runtime already knows and
 // used to keep private — which is how someone discovers, one request at a time, that their
-// agent loop re-prefills every turn (docs/task-embed-and-harness-ux.md §3.3, and
+// agent loop re-prefills every turn (docs/tasks/task-embed-and-harness-ux.md §3.3, and
 // docs/server.md's dsh recipe: "set expectations, don't let the harness discover them").
 //
 // Built as a function returning lines rather than a run of Fprintf calls so a test can assert
@@ -158,7 +158,7 @@ func serverBanner(s *server, cfg config) []string {
 		routes = append(routes, "/admin/models/{load,unload}", "/admin/generations", "/admin/generations/{id}/cancel")
 	}
 	out := []string{"routes: " + strings.Join(routes, " ")}
-	// Load cost, split by phase. task-embed-and-harness-ux.md 3.3 already names the banner as the
+	// Load cost, split by phase. docs/tasks/task-embed-and-harness-ux.md 3.3 already names the banner as the
 	// UI for a harness user; this is one line of it. The SPLIT is what makes it actionable — "load
 	// 9.2s" is a number to be annoyed by, "9.2s, 82% build" says the disk is not the problem and a
 	// different quant might be. Printed only for a model whose loader instrumented it.

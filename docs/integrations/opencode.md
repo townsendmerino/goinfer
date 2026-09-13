@@ -121,7 +121,7 @@ tested, and 7B has only been shown to fit on a discrete GPU with real VRAM headr
 
 ## Retiring this page
 
-Per `docs/task-embed-and-harness-ux.md` §3.5, a recipe is retired when `serve check` covers what
+Per `docs/tasks/task-embed-and-harness-ux.md` §3.5, a recipe is retired when `serve check` covers what
 it says. It now covers the tools-schema prediction *and* that prediction has been confirmed
 against a real, completed opencode-driven multi-turn loop with real token/VRAM numbers — the two
 things this page previously said were still missing. What is not yet covered: a registry
