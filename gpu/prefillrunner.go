@@ -382,6 +382,68 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 			buildErr = err
 		}
 	}
+	// bindEntry / bindOff: like bind(), but each argument may be a byte-range VIEW into
+	// a larger buffer rather than the whole thing — needed by dispFlat's chunking below.
+	// Every offset dispFlat passes is a multiple of maxChunkElems*4 bytes, and
+	// maxChunkElems is itself a multiple of 64 (the workgroup size), so every offset is
+	// automatically a multiple of 256 — satisfying GPUBindGroupEntry.offset's
+	// minStorageBufferOffsetAlignment requirement (the same constraint that ruled out
+	// per-row offset views for the attention step above, where nH*hd*4 was not
+	// guaranteed 256-aligned; a chunk boundary chosen as a multiple of the workgroup
+	// size always is).
+	type bindEntry struct {
+		buf    *wgpu.Buffer
+		off, n uint32 // n in ELEMENTS (f32); off in elements too
+	}
+	whole := func(b *wgpu.Buffer) bindEntry { return bindEntry{buf: b} }
+	bindOff := func(layout *wgpu.BindGroupLayout, entries ...bindEntry) *wgpu.BindGroup {
+		if buildErr != nil {
+			return nil
+		}
+		es := make([]wgpu.BindGroupEntry, len(entries))
+		for i, e := range entries {
+			if e.buf == nil {
+				buildErr = fmt.Errorf("gpu: PrefillLastW8A8: nil buffer for binding %d (allocation failed)", i)
+				return nil
+			}
+			sz := e.buf.GetSize() - uint64(e.off)*4
+			if e.n != 0 {
+				sz = uint64(e.n) * 4
+			}
+			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: e.buf, Offset: uint64(e.off) * 4, Size: sz}
+		}
+		bg, e := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
+		if e != nil {
+			buildErr = e
+			return nil
+		}
+		keepBG(bg)
+		return bg
+	}
+	// maxChunkElems: WebGPU's per-dimension workgroup-COUNT limit is 65535
+	// (maxComputeWorkgroupsPerDimension); each workgroup here covers 64 elements, so a
+	// single 1-D dispatch tops out at 65535*64 elements. Hit for real at M=1024 on
+	// qwen2.5-coder-0.5b (inter=4864: M*inter=4,980,736 > 4,194,240) — surfaced as a
+	// WebGPU validation error PrefillLast would otherwise decline into (safe, just
+	// slow), not a silent wrong-output risk, but worth actually fixing.
+	const maxChunkElems = 65535 * 64
+	dispFlat := func(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout, total int, bufs ...*wgpu.Buffer) {
+		off := 0
+		for off < total {
+			n := total - off
+			if n > maxChunkElems {
+				n = maxChunkElems
+			}
+			p := uni([]uint32{uint32(n), 0, 0, 0})
+			entries := make([]bindEntry, 0, len(bufs)+1)
+			for _, b := range bufs {
+				entries = append(entries, bindEntry{buf: b, off: uint32(off), n: uint32(n)})
+			}
+			entries = append(entries, whole(p))
+			disp(pl, bindOff(ly, entries...), uint32(n+63)/64, 1)
+			off += n
+		}
+	}
 
 	// rmsB/ropeB/residualB/swigluB/quantPackedM/tiledProjB below all operate on PACKED
 	// [M, width] row-major buffers — ONE dispatch across all M rows, not M separate
@@ -409,16 +471,13 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	// (residualShaderWGSL/swigluShaderWGSL, layer.go), so [M, width] IS [M*width]
 	// to them; only the dispatch count and per-call uniform-buffer overhead drop.
 	residualB := func(xPacked, yPacked *wgpu.Buffer) *wgpu.Buffer { // x += y, in place; returns x
-		n := M * hidden
-		p := uni([]uint32{uint32(n), 0, 0, 0})
-		disp(c.residualPipeline, bind(c.residualLayout, xPacked, yPacked, p), uint32(n+63)/64, 1)
+		dispFlat(c.residualPipeline, c.residualLayout, M*hidden, xPacked, yPacked)
 		return xPacked
 	}
 	swigluB := func(gatePacked, upPacked *wgpu.Buffer) *wgpu.Buffer {
 		n := M * inter
 		dst := storF(n)
-		p := uni([]uint32{uint32(n), 0, 0, 0})
-		disp(c.swigluPipeline, bind(c.swigluLayout, gatePacked, upPacked, dst, p), uint32(n+63)/64, 1)
+		dispFlat(c.swigluPipeline, c.swigluLayout, n, gatePacked, upPacked, dst)
 		return dst
 	}
 	// quantPackedM quantizes ALL M rows of a packed [M, K] buffer in ONE dispatch,
