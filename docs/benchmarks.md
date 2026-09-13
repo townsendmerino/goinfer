@@ -1539,7 +1539,7 @@ not the quant, dominates what a user feels.
 
 ## Peer matrix 2026-09 — tier 1/2, first pass (2026-09-04/05, IN PROGRESS)
 
-Executes `docs/task-peer-benchmarks.md`'s redone matrix via `scripts/bench_peer.py`. **This is a
+Executes `docs/tasks/task-peer-benchmarks.md`'s redone matrix via `scripts/bench_peer.py`. **This is a
 first pass, not the finished matrix** — W2 (prefill), W4 (agent-turn replay), the fidelity column,
 and the pass@1 row are all still unbuilt (see "Not done yet" below), and one re-measurement is
 still in flight as this section is written. Raw provenance-stamped JSON for every cell below is at
@@ -1710,7 +1710,7 @@ second look on the CUDA side before treating this as settled either way.
 
 ### W4 (Qwen2.5-7B-Instruct, GGUF Q4_K_M) — agent-turn transcript replay, nobara CUDA only
 
-First measurement of `docs/task-peer-benchmarks.md`'s W4 workload — the doc's own words, "the row
+First measurement of `docs/tasks/task-peer-benchmarks.md`'s W4 workload — the doc's own words, "the row
 that did not exist before and matters most": a scripted 10-turn tool-calling conversation replayed
 as strict prefix extensions, timing per-turn TTFT and how much of each turn's prompt the resident
 cache actually reused. Harness and fixtures newly built this session; goinfer also gained a real

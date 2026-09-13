@@ -54,7 +54,7 @@ promoting are separate decisions with separate gates (see the last section).
 5. **First hour / cold user** — [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
    (the five modes of use); the cold-user protocol on published tags; owed: the formal Mac
    two-scenario re-run on v0.17.2.
-6. **Peer measurement** — [`task-peer-benchmarks.md`](task-peer-benchmarks.md) (the matrix, with
+6. **Peer measurement** — [`task-peer-benchmarks.md`](tasks/task-peer-benchmarks.md) (the matrix, with
    the 10-turn agent-turn TTFT as headline) and
    [`task-llamacpp-inproc.md`](tasks/task-llamacpp-inproc.md) (in-process llama.cpp via purego, drafted
    2026-09-12 — the fidelity column and per-token cost vs depth).

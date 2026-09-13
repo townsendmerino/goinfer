@@ -360,7 +360,7 @@
   *(Filed as P24, not P21: P21–P23 were taken by another session's filing of the 2026-09-01
   measurements while this was in flight. Renumbered rather than shadowing an existing entry — the
   same call this queue records making for P19-not-P17.)*
-  it existed only as prose in `docs/task-peer-benchmarks.md` §8 and as a mechanism note inside P19,
+  it existed only as prose in `docs/tasks/task-peer-benchmarks.md` §8 and as a mechanism note inside P19,
   neither of which is a queue.
 
   **Measured, `nobara-pc` CUDA, `docs/measurements/peer-matrix-2026-09/nobara-w1-d7-m35-m26_2026-09-04.json`:**

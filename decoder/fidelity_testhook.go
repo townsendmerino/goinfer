@@ -1,7 +1,7 @@
 //go:build goinfer_testhooks
 
 // Code added for docs/task-prefill-gap.md §3's fidelity gate (a backend's fast/batched prefill
-// vs its own exact/sequential path) and docs/task-peer-benchmarks.md §4's fidelity column
+// vs its own exact/sequential path) and docs/tasks/task-peer-benchmarks.md §4's fidelity column
 // (goinfer vs a peer engine) -- both want the same teacher-forced top-1 agreement and KL
 // divergence scorer, so it is written once here rather than twice. Test-only hook (B-08): these
 // gate correctness/quality, not production inference, so they stay off the public API surface.
@@ -252,7 +252,7 @@ var PrefillGateProseFilesB = []string{
 	"../docs/completed/queue-performance.md",
 	"../docs/ARCHITECTURE.md",
 	"../docs/how-inference-works.md",
-	"../docs/task-peer-benchmarks.md",
+	"../docs/tasks/task-peer-benchmarks.md", // moved from ../docs/task-peer-benchmarks.md, still LIVE
 	"../docs/task-recompute-audit.md",
 	"../docs/task-gpu-paths-2026-09.md",
 	"../docs/cuda-backend.md",

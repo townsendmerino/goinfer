@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """bench_peer_transcript.py — W4: the agent-turn transcript replay
-(docs/task-peer-benchmarks.md §3/§7).
+(docs/tasks/task-peer-benchmarks.md §3/§7).
 
 WHAT IT MEASURES. A scripted N-turn tool-calling conversation is replayed
 against goinfer's /v1/chat/completions as strict prefix extensions — each
@@ -68,7 +68,7 @@ import argparse, json, os, platform, signal, socket, subprocess, sys, time, urll
 HERE = os.path.dirname(os.path.abspath(__file__))
 GPORT = 8098  # same value bench_peer_prefill.py uses; not run concurrently with it
 SERVE_CUDA = os.environ.get("GOINFER_SERVE_CUDA", os.path.expanduser("~/bench-cur/serve-cuda"))
-# Only the model cell this pass validates against (docs/task-peer-benchmarks.md's "D7"
+# Only the model cell this pass validates against (docs/tasks/task-peer-benchmarks.md's "D7"
 # cell) — add more MODELS entries here if a later pass extends coverage.
 MODELS = {
     "7B": (os.path.expanduser("~/models/qwen2.5-7b-instruct-q4_k_m.gguf"), "q7b"),
@@ -88,7 +88,7 @@ def wait_port(port, timeout=240):
 
 class GoinferServer:
     """A single-engine, CUDA-only analogue of bench_peer_prefill.py's Engine —
-    this pass validates goinfer alone (docs/task-peer-benchmarks.md scoped this
+    this pass validates goinfer alone (docs/tasks/task-peer-benchmarks.md scoped this
     workload's first landing to one engine, one box); a peer arm is future work,
     not dropped by oversight."""
 
