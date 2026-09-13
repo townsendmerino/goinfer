@@ -459,7 +459,7 @@ re-baked by the code it checks (G-04).
   slots are given); task-gpu-paths Phase 2 delivered the flag, not the default.
 
 #### M-14 · The residency set rides on every command buffer because aikit's binding has `Queue.AddResidencySet` but not `MTLCommandBuffer.useResidencySet:` — a recorded +62 ms/token waiting on one selector (aikit item)
-- **Where:** aikit `gpu/residencyset.go:107-109` (only the queue-level attach; `:22-29` lists five
+- **Where:** aikit `residencyset.go:107-109` (only the queue-level attach; `:22-29` lists five
   selectors, none per-command-buffer); `metal/model.go:1138-1144` ("+2.07 ms/CB → +62 ms/tok …
   FIX (fold into the next aikit release …): a PHASE-SCOPED residency set attached only to phase-2's
   command buffers (per-encoder useResidencySet)").
@@ -475,14 +475,16 @@ re-baked by the code it checks (G-04).
 
 #### M-15 · On a Metal box every image turn runs the vision tower on the CPU, and aikit's Metal tower cannot be wired as a win until three shapes change (aikit M-14/M-09/M-10 Metal halves)
 - **Where:** `internal/serveapp/main.go:988-992` (`EnableResident` only for `webgpu`; nothing imports
-  `visionmetal`/`qwenmetal`); aikit `gpu/metal_vit.go:168-221` (attention: one threadgroup per
+  `visionmetal`/`qwenmetal`); aikit `metal_vit.go:168-221` (attention: one threadgroup per
   (head, query), re-streams K and V per query — no query tile; score lanes 4,608 B apart; PV keeps
   hd=72 of 256 lanes busy), `:397-420` (`gemm_w8a8_tiled`: one output per thread, byte-granular
-  staging, scalar int8 — the shape CUDA's M-14 retired), `gpu/qwenmetal/encoder.go:188-213,311-334`
+  staging, scalar int8 — the shape CUDA's M-14 retired), `qwenmetal/encoder.go:188-213,311-334`
   (per-op `Run1D`/`Run2D`, each a commit + `waitUntilCompleted` + pool drain: 544–704 synchronous
   submits per image at 32 blocks); aikit `CHANGELOG.md:292-293` (batched SigLIP tower 0.46×/0.33× of
   CPU by its own crossover), `:316-318` (M-10 "NOT DONE: the Metal half"); `docs/multimodal.md:172`
   ("Metal — still not started"), `docs/benchmarks.md:554-557` (CPU SigLIP 31.3 s/image).
+<!-- citation-lint: allow-path qwenmetal/encoder.go aikit's own SEPARATE Go module (own go.mod), added after the aikit/gpu v0.32.0 release goinfer's cuda/go.mod currently pins — goinfer does not depend on it yet (line 477's own "nothing imports qwenmetal" is this in prose), so no checked-out or module-cache root can verify it here. -->
+<!-- citation-lint: allow-path visionmetal/encoder.go same as qwenmetal/encoder.go above: aikit's own separate, not-yet-pinned Go module. -->
 - **Mechanism and bound (counted):** at so400m (np=4096, nH=16, hd=72, 27 layers) the attention
   re-reads K+V 4,096× → **≈4.2 TB per image** of L2/DRAM traffic against a 37.7 MB/layer minimum;
   the int8 GEMM amplifies fc1's operands ~260× (2.5 GB of tile traffic per GEMM vs 9.7 MB); the
@@ -497,7 +499,7 @@ re-baked by the code it checks (G-04).
 - **Prior:** aikit audit M-14/M-09/M-10 (CUDA halves done); goinfer task-gpu-paths G2 / multimodal P6.
 
 #### M-16 · Every buffer is hazard-tracked and every encoder serial; the binding exposes neither the untracked option bit nor `computeCommandEncoderWithDispatchType:`, and the record calls the resulting per-dispatch floor "unassessed"
-- **Where:** aikit `gpu/metal.go:424,432,443,491,500` (every `newBuffer*` passes `options = 0` =
+- **Where:** aikit `metal.go:424,432,443,491,500` (every `newBuffer*` passes `options = 0` =
   Shared + DefaultCache + HazardTrackingModeDefault), `:682,701,906` (`selComputeEncoder`, serial);
   `docs/completed/metal-verdict.md:131-133` ("~14 cores + serial hazard-tracked encoding ⇒ a ~3.8
   µs/dispatch GPU-side floor"), `:248-249` (watch item, "unassessed").
@@ -535,7 +537,7 @@ re-baked by the code it checks (G-04).
   `metal/model.go:1262-1271` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
   paging lives only in `Forward`'s dispatch to `forwardLogitsPaged`, `:1241`), `metal/moe.go:289-291`
   ("expGuW/expGuS/expDW/expDS stay zero-value when paged"), `:651-659` (bound unconditionally);
-  `gpu/metal.go:745-748` (OOB/unmapped reads are silently tolerated).
+  `metal.go:745-748` (OOB/unmapped reads are silently tolerated).
 - **Failure:** on a `--moe-cache-slots` MoE (generic or Gemma 4), an embeddings request returns a
   finite garbage vector with no error; the snapshot golden's `Forward` path likewise.
 - **Fix:** decline in `HiddenLast`/`Forward`/`ForwardArgmax` when `r.g4moe.paged || r.moe.paged`,
@@ -558,7 +560,7 @@ re-baked by the code it checks (G-04).
   impact, ratchets across failed binds).
 
 #### C-05 · aikit `Queue.Run1DBatchTG` / `Run1DTG` own an NSAutoreleasePool without the G22 OS-thread pin every sibling helper has
-- **Where:** aikit `gpu/metal.go:953-982` (`pool := … Send(selInit); defer pool.Send(selDrain)` with
+- **Where:** aikit `metal.go:901-928` (`pool := … Send(selInit); defer pool.Send(selDrain)` with
   no `runtime.LockOSThread`) vs `:585-589,621-625,925-929` (siblings pin, citing "intermittent
   SIGSEGV (fault 0x10) inside objc_msgSend"). Only production caller (`qwenmetal.ForwardViT`) pins
   for the whole forward; goinfer's batch-k harnesses call it unpinned.
@@ -566,9 +568,9 @@ re-baked by the code it checks (G-04).
   G22 (missed one helper).
 
 #### C-06 · `visionmetal` has no threadgroup-memory budget guard (qwenmetal's C-02 fix was not mirrored), and the status latch it relies on cannot fire on Apple silicon
-- **Where:** aikit `gpu/visionmetal/encoder.go:225-228` (`DispatchTG(…, np*4, …)` — over the 32 KiB
-  limit above np=7,680) vs `gpu/qwenmetal/encoder.go:247-250,368` (`attnThreadgroupBytes` guard);
-  `gpu/metal.go:743-748` ("silently tolerates … over-budget threadgroup memory … status Completed").
+- **Where:** aikit `visionmetal/encoder.go:225-228` (`DispatchTG(…, np*4, …)` — over the 32 KiB
+  limit above np=7,680) vs `qwenmetal/encoder.go:247-250,368` (`attnThreadgroupBytes` guard);
+  `metal.go:743-748` ("silently tolerates … over-budget threadgroup memory … status Completed").
 - **Failure:** a SigLIP tower with >7,680 patches returns a plausible wrong hidden state. Not a
   shipped shape today (so400m/896 = 4,096).
 - **Fix:** the qwenmetal check with `np` in `newEncoder`. **Confidence:** plausible. **Prior:** aikit
@@ -646,7 +648,7 @@ re-baked by the code it checks (G-04).
   `metal/model.go:1360`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
-- **Where:** `metal/close_leak_test.go:160-169,224-248` vs aikit `gpu/metal.go:382-390`
+- **Where:** `metal/close_leak_test.go:160-169,224-248` vs aikit `metal.go:382-390`
   (`ids := d.allocs; d.allocs = nil; … for … Send(selRelease)`): `LedgerLen()` is emptied
   regardless of whether `release` is sent; the test's own comment (`:229-231`) records RSS "DID NOT
   ratchet" under a neutered `ReleaseAll` because macOS compressed the pages. **Fix:** assert on
@@ -684,7 +686,7 @@ re-baked by the code it checks (G-04).
   cells. **Fix:** let it run on the paged 35B, sequential vs expert-major once M-05 exists.
 
 #### G-10 · The C-09 status latch (`mustCmdBufOK` / `Encoder.Err()`) is, by its own comment, inert on Apple silicon — host-side pre-checks are the real gate
-- **Where:** aikit `gpu/metal.go:743-748,770-775`, `metal/cmdbuf_status_test.go:19-22` (both repos'
+- **Where:** aikit `metal.go:743-748,770-775`, `metal/cmdbuf_status_test.go:19-22` (both repos'
   tests inject the error). Documentation, not a lever: every "Err() will catch it" reliance needs a
   pre-check (C-06 is the bare one).
 
@@ -769,9 +771,9 @@ re-baked by the code it checks (G-04).
   scales through the serial loop. ≈0.5 s at 1.5B.
 - N-30 `metal/kernels.go:737-777` — `swiglu_quant` evaluates `glu_act_pinned` twice per element;
   <1%. `:276` "K<=1536" stale. `:563-567` rope2_kv recorded null (0.6%) — not re-proposed.
-- N-31 `gpu/metal.go:713-717` — `WaitDone` reads four GPU timestamps per production token for
+- N-31 `metal.go:713-717` — `WaitDone` reads four GPU timestamps per production token for
   `LastGPUTimes` (tests only); µs.
-- N-32 `gpu/metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
+- N-32 `metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
   fast-math OFF library-wide for one exact divide; `precise::divide` per op would free the rest.
 - N-33 `metal/expertpool.go:41-48` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
 - N-34 `gpu/metal_copy.go`, `metal_upload_batch.go` — unused by goinfer (correct on UMA); note they
@@ -800,7 +802,7 @@ re-baked by the code it checks (G-04).
   `waitUntilCompleted`, one serial encoder, 310 dispatches, ~1,030 purego transitions, one heap
   allocation per token; no per-token buffer creation; `setBuffers` batching already cut binds from
   ~2,600 to ~337 msgSends/token; ICB and unretained references are recorded nulls
-  (`metal/model.go:1379-1412`, `gpu/metal.go:700-812`, `metal-verdict.md:171-172`).
+  (`metal/model.go:1379-1412`, `metal.go:700-812`, `metal-verdict.md:171-172`).
 - **Encode-ahead on the production path:** `metalResident.Forward` → `ForwardEmbPipe` → `execLoop`;
   t+1 encoded between `Commit(t)` and `WaitDone(t)`; value-independent (pos/nKeys/`r.x` written at
   commit); only 1 token in 64 (pool drain), the first token after `SetAdapter`, paged models and

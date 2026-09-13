@@ -1366,22 +1366,16 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1111` | goinfer | `kvOnly, hasKV := m.resident.(ResidentPrefillKV)` |
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:100` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:414` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal.go:382` | aikit | `func (d *Device) ReleaseAll() {` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal.go:424` | aikit | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal.go:700` | aikit | `func (q Queue) BeginNP() *Encoder {` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal.go:713` | aikit | `func (e *Encoder) WaitDone() {` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal.go:743` | aikit | `// cmdBufError formats an aborted command buffer's NSError (or a nil NSError) into a Go ` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal.go:745` | aikit | `// real GPU abort is nearly impossible to provoke on demand (the hardware silently toler` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal.go:953` | aikit | `func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal_vit.go:168` | aikit | `// attention: bidirectional multi-head self-attention, ONE threadgroup per (head, query)` |
-| `docs/audit-metal-2026-09-12.md|gpu/metal_vit.go:576` | aikit | `// KernelGEMMF32SGBig is the aligned (M%64==0, N%64==0, K%8==0) fast path: 64×64 tile,` |
-| `docs/audit-metal-2026-09-12.md|gpu/qwenmetal/encoder.go:188` | aikit | `func (e *encoder) proj(src gpu.Buffer, m mat, bias, dst gpu.Buffer, M int) {` |
-| `docs/audit-metal-2026-09-12.md|gpu/qwenmetal/encoder.go:247` | aikit | `maxSegAny := max(plan.MaxWinSeg, plan.MaxFullSeg)` |
-| `docs/audit-metal-2026-09-12.md|gpu/residencyset.go:107` | aikit | `// AddResidencySet attaches the set to this command queue: every command buffer committe` |
-| `docs/audit-metal-2026-09-12.md|gpu/visionmetal/encoder.go:225` | aikit | `func (e *encoder) attn(enc *gpu.Encoder, q, k, v, out gpu.Buffer, np, nH, hd int, scale ` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:483` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:988` | goinfer | `anchor: func (s *server) loadVisionTower(cfg config) error {` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1081` | goinfer | `// Adapter (compute-time LoRA) models MUST NOT take the stateless resident path: the LoR` |
+| `docs/audit-metal-2026-09-12.md|metal.go:382` | gpu | `func (d *Device) ReleaseAll() {` |
+| `docs/audit-metal-2026-09-12.md|metal.go:424` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
+| `docs/audit-metal-2026-09-12.md|metal.go:700` | gpu | `return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}` |
+| `docs/audit-metal-2026-09-12.md|metal.go:713` | gpu | `e.captureErr()` |
+| `docs/audit-metal-2026-09-12.md|metal.go:743` | gpu | `// real GPU abort is nearly impossible to provoke on demand (the hardware silently toler` |
+| `docs/audit-metal-2026-09-12.md|metal.go:745` | gpu | `// such command buffer still reports status Completed), which is exactly why this status` |
+| `docs/audit-metal-2026-09-12.md|metal.go:901` | gpu | `func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {` |
 | `docs/audit-metal-2026-09-12.md|metal/attention_prefill_fused_test.go:39` | goinfer | `anchor: func TestAttentionPrefillFused(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:154` | goinfer | `func metalMoESlotsRequest(m *decoder.Model) string {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:199` | goinfer | `for l := 0; l < nLayers; l++ {` |
@@ -1472,6 +1466,9 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/spec_prefill_regression_test.go:43` | goinfer | `// METAL-SPECIFIC PRECONDITION — GOINFER_METAL_BATCHED_PREFILL=1 IS MANDATORY HERE, and ` |
 | `docs/audit-metal-2026-09-12.md|metal/spec_prefill_regression_test.go:46` | goinfer | `// decode path (54% stream divergence, a figure once measured by TestMetalPrefillDiverge` |
 | `docs/audit-metal-2026-09-12.md|metal/spec_verify_curve_test.go:22` | goinfer | `// path once measured 54% stream divergence, §A2-Metal, docs/ollama-chase.md:623 — histo` |
+| `docs/audit-metal-2026-09-12.md|metal_vit.go:168` | gpu | `// attention: bidirectional multi-head self-attention, ONE threadgroup per (head, query)` |
+| `docs/audit-metal-2026-09-12.md|metal_vit.go:576` | gpu | `// KernelGEMMF32SGBig is the aligned (M%64==0, N%64==0, K%8==0) fast path: 64×64 tile,` |
+| `docs/audit-metal-2026-09-12.md|residencyset.go:107` | gpu | `// AddResidencySet attaches the set to this command queue: every command buffer committe` |
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
