@@ -27,7 +27,7 @@
 - **Serving.** Single-request by design: one decode worker per model behind a bounded queue.
   Resident prefix reuse since 2026-09-02 (exact-extension only for recurrent families);
   speculative decoding still off for hybrids pending the state snapshot
-  (`task-recompute-audit.md` R-01 phase 1).
+  (`tasks/task-recompute-audit.md` R-01 phase 1).
 
 ## The gate that orders everything
 
@@ -63,7 +63,7 @@ promoting are separate decisions with separate gates (see the last section).
    (P10/P15); MTP heads (`spec/09`) phase 3 untouched.
 8. **Multimodal** — [`multimodal.md`](multimodal.md) P6–P11.
 9. **Correctness programs** — [`audit-2026-09-10.md`](audit-2026-09-10.md)'s 8-step program in
-   progress; [`task-recompute-audit.md`](task-recompute-audit.md) R-01 phase 1;
+   progress; [`task-recompute-audit.md`](tasks/task-recompute-audit.md) R-01 phase 1;
    [`task-int4-layout-2026-09.md`](tasks/task-int4-layout-2026-09.md) (one int4 layout per tensor, L1–L5)
    and [`task-halt-2026-09.md`](tasks/task-halt-2026-09.md) (cancel / halt / lease, K1–K9), both drafted
    this week.

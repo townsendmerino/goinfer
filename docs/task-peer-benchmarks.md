@@ -203,5 +203,5 @@ whichever mechanism the reader already had in mind.
 `docs/task-zeno-compare.md`, `docs/task-freetoken-techniques.md`, `docs/integrations/claude-code.md`
 (the loop W4 replays), `docs/measurements/cpu-peer-prefill-2026-09-01.md`, `docs/task-fit-to-hardware.md`
 (the zero-flag question, the never-silently rule), `docs/audit-2026-09-02.md` (G28, L-01, L-05),
-`docs/task-recompute-audit.md` (R-01…R-03, R-07), aikit `CHANGELOG.md` 1.32.0–1.34.0 and
+`docs/tasks/task-recompute-audit.md` (R-01…R-03, R-07), aikit `CHANGELOG.md` 1.32.0–1.34.0 and
 `docs/task-simd-audit.md` (S-06).

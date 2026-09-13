@@ -1674,20 +1674,6 @@ supports.
 | `docs/task-prefill-gap.md|metal/prefill.go:13` | goinfer | `// across all M prompt rows → ~2.5× the per-token GEMV, flat with M. Activations flow in` |
 | `docs/task-prefill-gap.md|metal/prefill.go:265` | goinfer | `// attention_prefill: one threadgroup per (row m, query head qh). Row m attends CAUSALLY` |
 | `docs/task-prefill-gap.md|metal/prefill.go:339` | goinfer | `kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device const ha` |
-| `docs/task-recompute-audit.md|cuda/resident.go:354` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
-| `docs/task-recompute-audit.md|decoder/attention.go:89` | goinfer | `matmulInto(scr.ws, be, &lw.QProj, h, q, 1)` |
-| `docs/task-recompute-audit.md|decoder/blockspec.go:195` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
-| `docs/task-recompute-audit.md|decoder/forwardn.go:134` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
-| `docs/task-recompute-audit.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
-| `docs/task-recompute-audit.md|decoder/kvcache.go:510` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
-| `docs/task-recompute-audit.md|decoder/model.go:1296` | goinfer | `reuseFrom := m.residentReuseLen(prompt, nil, lora)` |
-| `docs/task-recompute-audit.md|decoder/model.go:1380` | goinfer | `case <-ctx.Done():` |
-| `docs/task-recompute-audit.md|decoder/model.go:1515` | goinfer | `// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.` |
-| `docs/task-recompute-audit.md|decoder/moepaging.go:62` | goinfer | `// A kind-4 tensor carries TWO on-disk representations (canonical + row4,` |
-| `docs/task-recompute-audit.md|decoder/resident_reuse.go:120` | goinfer | `if m.hasRecurrentState() {` |
-| `docs/task-recompute-audit.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
-| `docs/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
-| `docs/task-recompute-audit.md|decoder/speculative.go:125` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
 | `docs/task-verification-surface-audit.md|decoder/blockspec.go:582` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1604` | goinfer | `embMat := func(name string, out, in int) (linalg.WeightMat, error) {` |
 | `docs/task-zeno-compare.md|decoder/gguf.go:1720` | goinfer | `if g.Has("output.weight") {` |
@@ -1726,6 +1712,22 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:471` | goinfer | `func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:446` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:124` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
+| `docs/tasks/task-recompute-audit.md|cuda/resident.go:354` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
+| `docs/tasks/task-recompute-audit.md|decoder/attention.go:89` | goinfer | `matmulInto(scr.ws, be, &lw.QProj, h, q, 1)` |
+| `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:195` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
+| `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:229` | goinfer | `if m.resDrafterSynced != s {` |
+| `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:134` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
+| `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/tasks/task-recompute-audit.md|decoder/kvcache.go:510` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1296` | goinfer | `reuseFrom := m.residentReuseLen(prompt, nil, lora)` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1380` | goinfer | `case <-ctx.Done():` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1515` | goinfer | `// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:47` | goinfer | `// resDrafterSynced identifies which *BlockSpec's own drafter context is currently in sy` |
+| `docs/tasks/task-recompute-audit.md|decoder/moepaging.go:62` | goinfer | `// A kind-4 tensor carries TWO on-disk representations (canonical + row4,` |
+| `docs/tasks/task-recompute-audit.md|decoder/resident_reuse.go:120` | goinfer | `if m.hasRecurrentState() {` |
+| `docs/tasks/task-recompute-audit.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
+| `docs/tasks/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
+| `docs/tasks/task-recompute-audit.md|decoder/speculative.go:125` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
 
 ## Bare file index
 
