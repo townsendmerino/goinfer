@@ -1,5 +1,30 @@
 # Task (aikit): expose a device-to-device copy in `aikit/gpu`
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (2026-09-13): DONE — shipped, well past the pin this prompt asked for, and already
+> consumed.** aikit added `CopyDevice` and `CopyDeviceBatch` to `gpu/cuda_copy.go` /
+> `gpu/metal_copy.go` (commit `4cefe8f`, first tagged `gpu/v0.31.0`, 2026-08-28 — one tag later
+> than this prompt's own `gpu/v0.30.1` reference, not `v0.30.1` itself). goinfer's `cuda/go.mod`
+> and `metal/go.mod` both pin `gpu v0.32.0`, comfortably past it. Both gates this prompt asked for
+> are met: a device-derived-ceiling bandwidth test exists for both shapes
+> (`gpu/cuda_copy_test.go`, `gpu/copy_coalesce_test.go`), and Metal got the symmetric
+> implementation as scoped ("not the motivation", added for API symmetry). goinfer already has a
+> real consumer exercising it in situ — `cuda/deltanet_snapshot_cuda_test.go` snapshots/restores
+> DeltaNet `dnWin`/`dnState` via `gpu.CopyDeviceBatch`, exactly the R-01 phase 1 consumer this
+> prompt's motivating measurement (§"Why this is worth doing") was pricing for. The fuller
+> campaign record — what unblocked, what's still open on the goinfer side (the snapshot isn't yet
+> wired into the resident decode path; `specRollbackSafe` still refuses recurrent families) — is
+> `docs/tasks/task-recompute-audit.md`, R-01 phase 1, which explicitly notes "that blocker no
+> longer exists" for this exact primitive. Archived here because this prompt's own scope (the
+> aikit-side primitive) is complete; the goinfer-side wiring was explicitly out of scope for this
+> prompt (see "Explicitly NOT in scope" below) and is tracked separately.
+
 > **For:** Claude Code in `~/mycode/aikit/aikit`, module `github.com/townsendmerino/aikit/gpu`.
 > The local checkout's newest tag is `gpu/v0.30.0`; goinfer pins **v0.30.1**, so `git fetch` first.
 > Written 2026-08-28 from goinfer-side measurements.
