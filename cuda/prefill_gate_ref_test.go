@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGateVsReferenceCUDA is docs/task-prefill-gap.md §3's fidelity gate, run on CUDA for
+// TestPrefillGateVsReferenceCUDA is docs/completed/task-prefill-gap.md §3's fidelity gate, run on CUDA for
 // the L2 (attn_fused) + L3 (gemm_w4a8_mma) fast prefill. It is the ONLY thing that can justify
 // changing the default, and until it passes both levers stay opt-in however fast they are.
 //

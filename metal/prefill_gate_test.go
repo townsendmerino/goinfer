@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGate is docs/task-prefill-gap.md §3's gate: may Metal's batched (f16-MMA) PrefillLast
+// TestPrefillGate is docs/completed/task-prefill-gap.md §3's gate: may Metal's batched (f16-MMA) PrefillLast
 // become the DEFAULT prompt-ingestion path, in place of today's shipped sequential Forward-per-
 // token prefill? It runs both paths on the SAME model, SAME prompts, and scores the batched path
 // against the sequential one as the oracle — sequential decode is what every other gate in this
@@ -97,7 +97,7 @@ func TestPrefillGate(t *testing.T) {
 			}
 			if runPrefillGateModel(t, mc.name, path, depths, continuationN) {
 				t.Fatalf("§3 GATE FAILED for model %s — see log above for which (model, K) cell; "+
-					"the default stays exact there (docs/task-prefill-gap.md §3, §7)", mc.name)
+					"the default stays exact there (docs/completed/task-prefill-gap.md §3, §7)", mc.name)
 			}
 		})
 	}

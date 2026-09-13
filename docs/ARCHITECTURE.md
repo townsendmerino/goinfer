@@ -201,7 +201,7 @@ forward* on the device through `DecodeRunner` with quantized kernels (`W4A8`, `W
 - **CUDA** (`-tags cuda`) — cgo-free: `gocudrv` dlopens `libcuda` and NVRTC at runtime;
   kernels ship as prebuilt PTX with NVRTC as the fallback compiler. Batched prefill with
   a fused attention kernel and a tensor-core int4 GEMM, **default ON above a 512-token
-  prompt** (the §3 fidelity gate, `task-prefill-gap.md`; `GOINFER_CUDA_FAST_PREFILL=0` opts
+  prompt** (the §3 fidelity gate, `completed/task-prefill-gap.md`; `GOINFER_CUDA_FAST_PREFILL=0` opts
   out). MoE experts resident, or **streamed host→VRAM per token** when they exceed VRAM
   (`-moe-cache-experts`) — a 26B MoE runs on an 8 GB card that way.
 - **Metal** (`-tags metal`, darwin) — cgo-free: `purego` + Obj-C runtime, MSL compiled at

@@ -6,7 +6,7 @@ import "testing"
 
 // TestPoolCells pins §3.2's pooled arithmetic (prefill_gate_ref_test.go's poolCells) against
 // hand-computed numbers on synthetic cells — no device, no checkpoint, pure logic — before
-// trusting it with real compute (docs/task-prefill-gap.md §4 L1, 2026-09-09). The bug class this
+// trusting it with real compute (docs/completed/task-prefill-gap.md §4 L1, 2026-09-09). The bug class this
 // guards: a per-cell veto silently reappearing (the exact defect §3.2 found and removed from the
 // 2026-09-05 form) would still compile and would still produce plausible-looking numbers.
 func TestPoolCells(t *testing.T) {

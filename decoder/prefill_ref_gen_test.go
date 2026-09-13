@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGateReference is Phase A of docs/task-prefill-gap.md §3.1's L1 re-run: build the CPU
+// TestPrefillGateReference is Phase A of docs/completed/task-prefill-gap.md §3.1's L1 re-run: build the CPU
 // f32-activation reference logits that BOTH Metal arms (metal/prefill_gate_ref_test.go, Phase B)
 // are scored against. §3's first form scored Metal's fast (f16-activation) path against Metal's
 // own exact (int8-per-row-activation) path and called the exact path truth — but the exact path is
@@ -87,7 +87,7 @@ func TestPrefillGateReference(t *testing.T) {
 
 	const continuationN = 64
 	workers := min(8, runtime.NumCPU())
-	// K=512 joins the decision set here (task-prefill-gap.md §4 L1, 2026-09-09): CUDA's floor was
+	// K=512 joins the decision set here (docs/completed/task-prefill-gap.md §4 L1, 2026-09-09): CUDA's floor was
 	// set from a MEASURED K=512 cell, never interpolated between 256 and 1024 (§3, "a floor placed
 	// between two measured cells would be interpolating a fidelity result nobody took") — Metal's
 	// floor needs the same discipline if this run ships.
@@ -181,7 +181,7 @@ func refKs(def []int) []int {
 // f32 7B is ~28 GB. That default is correct there and is left alone.
 //
 // GOINFER_CPU_REF_QUANT_D7="" selects true f32 weights, which is what the 62 GB Linux box uses for
-// the CUDA gate (docs/task-prefill-gap.md Phase 3 names `Options{Backend:"cpu", Quant:""}` for both
+// the CUDA gate (docs/completed/task-prefill-gap.md Phase 3 names `Options{Backend:"cpu", Quant:""}` for both
 // models there). Either is a valid reference for the property that matters: §3.1's point is that
 // the reference must have f32 ACTIVATIONS, since that is the axis both arms differ from it on, and
 // the weight-requantisation error is common-mode across the two arms — they share identical int4

@@ -350,7 +350,7 @@ func (c *Context) ensurePrefillBatched() error {
 // verify it against TestLocalize_BiasEpilogue-style isolated tests BEFORE wiring
 // it into the main loop, and re-measure both backends. Also worth checking: this
 // repo's real ship gate for a fast-prefill path is the §3.2 pooled fidelity gate
-// against the CPU-f32 reference (docs/task-prefill-gap.md), not bit-exactness
+// against the CPU-f32 reference (docs/completed/task-prefill-gap.md), not bit-exactness
 // against sequential GPU decode — Metal's current gap might already clear that
 // bar even before a further fix, which would change the urgency here.
 //

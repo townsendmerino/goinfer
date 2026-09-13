@@ -128,7 +128,7 @@ re-baked by the code it checks (G-04).
   fail §3.2"), `:426-431` (the decline), `:340,358` (the same file: "gate passed 2026-09-09 (S
   model, K=256/512/1024)"); `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:23` ("S K=256 …
   94.2% / 4 / 0.0328 vs exact 93.0% / 4 / 0.0347 **PASS**"), `prefill-l2-metal-fused-attn-2026-09-09.md:138`
-  (fused gate, K=256 pass again); `docs/task-prefill-gap.md:226-227` ("Moving the floor DOWN
+  (fused gate, K=256 pass again); `docs/completed/task-prefill-gap.md:226-227` ("Moving the floor DOWN
   requires a passing gate cell at the new depth").
 - **Mechanism and bound (record):** the K=256 failure the comment cites is CUDA's combined L2+L3
   run; the floor was "set to 512 to match CUDA's measured floor". On Metal the cell passed twice.
@@ -144,7 +144,7 @@ re-baked by the code it checks (G-04).
 
 #### M-03 · `gemm_w4f16_store` dequants each weight tile with 8 of 32 lanes, runs 4 MMAs per barrier pair, and stages neither operand — the flat 3.3–3.6× GEMM term at every K
 - **Where:** `metal/prefill.go:66-119` (kernel; `if (lane < 8u)` dequant at `:87-92`, `RPS 4` at
-  `:23`, per-k-step barrier pair), `:590-596` (grid), `docs/task-prefill-gap.md:159-162` ("Metal's
+  `:23`, per-k-step barrier pair), `:590-596` (grid), `docs/completed/task-prefill-gap.md:159-162` ("Metal's
   GEMM is already simdgroup_matrix f16 MMA" — and stops there).
 - **Mechanism and bound (counted + record):** one simdgroup owns a 32(M)×8(N) block and walks K in
   steps of 8. Per k-step: 8 lanes do 8 nibble extracts + 8 f16 converts each while 24 lanes idle →

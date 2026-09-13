@@ -4,7 +4,7 @@
 //
 // The spike changes the reduction tree, so it is NOT bit-identical and TestSplitKV_bitIdentical
 // cannot cover it. What matters instead is whether the new tree moves the OUTPUT DISTRIBUTION
-// relative to the tree the engine already trusts — the same question docs/task-prefill-gap.md §3
+// relative to the tree the engine already trusts — the same question docs/completed/task-prefill-gap.md §3
 // asks of the fused prefill path, scored the same way (teacher-forced top-1 agreement + KL).
 //
 // Both arms run on the SAME resident with the same weights and the same prefilled cache; only

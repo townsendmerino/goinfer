@@ -5,7 +5,7 @@ package cuda
 // SetFastPrefillForTest flips the L2/L3 lever selection on an ALREADY-LOADED resident, loading the
 // fused kernels on first use if the env did not already ask for them.
 //
-// WHY THIS SEAM EXISTS. docs/task-prefill-gap.md Phase 3 requires the exact arm and the fast arm to
+// WHY THIS SEAM EXISTS. docs/completed/task-prefill-gap.md Phase 3 requires the exact arm and the fast arm to
 // run "in one process ... teacher-forced on the reference's tokens", and the env var is read once
 // at model load (backend.go). Without this hook the gate would have to load the model twice, which
 // is not merely wasteful: D7 at int4 is ~4 GB of an 8 GB card, so two residents do not fit at once,

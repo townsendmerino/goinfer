@@ -546,7 +546,7 @@ type cudaResident struct {
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
 	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
 
-	// L2 (docs/task-prefill-gap.md §4 L2): the fused prefill attention, one instantiation per
+	// L2 (docs/completed/task-prefill-gap.md §4 L2): the fused prefill attention, one instantiation per
 	// supported head dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module
 	// loaded; every selection site treats the zero Pipeline as "use attn_batched". Kept in its own
 	// alignment group so adding them does not re-align (and so re-diff) the fields above.

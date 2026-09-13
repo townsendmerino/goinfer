@@ -203,7 +203,7 @@ var layernormQuantPTX []byte
 var geluQuantPTX []byte
 
 // attnFusedPTX: attn_fused_hd64 / attn_fused_hd128 — the L2 FlashAttention-style fused prefill
-// attention (docs/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
+// attention (docs/completed/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
 // attn_block.cu records: adding a kernel to prefill_batched.cu regenerates that PTX and risks
 // shifting codegen for the kernels every batched-prefill parity gate rests on. Verified at build
 // time: prefill_batched.ptx, moe.ptx and glue.ptx are byte-unchanged. See cuda/attn_fused.cu.
@@ -212,7 +212,7 @@ var geluQuantPTX []byte
 var attnFusedPTX []byte
 
 // gemmMMAPTX: gemm_w4a8_mma — the L3 tensor-core int4xint8 GEMM with group scales
-// (docs/task-prefill-gap.md §4 L3). Own module, same isolation reason as attn_fused.cu: the
+// (docs/completed/task-prefill-gap.md §4 L3). Own module, same isolation reason as attn_fused.cu: the
 // audited moe.ptx / glue.ptx / prefill_batched.ptx must not be regenerated to add a kernel.
 //
 //go:embed testdata/gemm_w4a8_mma.ptx

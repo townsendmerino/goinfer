@@ -9,7 +9,7 @@ import (
 )
 
 // TestAttentionPrefillFused checks attention_prefill_fused (the simdgroup_matrix flash-attention
-// twin of attention_prefill, L2-Metal — docs/task-prefill-gap.md §4) against the exact scalar
+// twin of attention_prefill, L2-Metal — docs/completed/task-prefill-gap.md §4) against the exact scalar
 // kernel across GQA, non-multiple-of-8 M (ragged last row-tile), sliding window, a mid-context
 // startPos offset, and a small hd (single MMA tile). NOT bit-identical by design (online-softmax
 // rescale reorders the sum vs. the exact kernel's single final normalize — same P19 category as

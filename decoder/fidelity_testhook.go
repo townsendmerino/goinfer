@@ -1,6 +1,6 @@
 //go:build goinfer_testhooks
 
-// Code added for docs/task-prefill-gap.md §3's fidelity gate (a backend's fast/batched prefill
+// Code added for docs/completed/task-prefill-gap.md §3's fidelity gate (a backend's fast/batched prefill
 // vs its own exact/sequential path) and docs/task-peer-benchmarks.md §4's fidelity column
 // (goinfer vs a peer engine) -- both want the same teacher-forced top-1 agreement and KL
 // divergence scorer, so it is written once here rather than twice. Test-only hook (B-08): these
@@ -213,7 +213,7 @@ func KLDivergenceForTest(pLogits, qLogits []float32) float64 {
 }
 
 // PrefillGateProseFiles are real prose read at run time — not scripts/prompts.json's word-
-// repetition filler, which docs/task-prefill-gap.md §0 rules out for anything content-dependent
+// repetition filler, which docs/completed/task-prefill-gap.md §0 rules out for anything content-dependent
 // ("the fidelity gate (§3) uses prose"). Ten distinct real technical documents from this repo,
 // chosen only for being real, sizeable (each encodes to well over 3900 tokens on its own, so no
 // prompt needs repeating to reach the deepest K), and stable — not for their content, the same
@@ -238,7 +238,7 @@ var PrefillGateProseFiles = []string{
 	"../docs/queue-release.md",
 }
 
-// PrefillGateProseFilesB is prompt set B (docs/task-prefill-gap.md §4 L1's fresh-prompt decision
+// PrefillGateProseFilesB is prompt set B (docs/completed/task-prefill-gap.md §4 L1's fresh-prompt decision
 // run, 2026-09-09): ten more real repo documents, disjoint from set A above, each verified >3900
 // tokens against S's own tokenizer (queue-correctness.md, the brief's own tenth candidate, was
 // dropped at 1571 tokens — task-gpu-paths-2026-09.md substitutes, at 48027). LIVE paths, same
@@ -282,7 +282,7 @@ func PrefillGatePromptSet() (label string, files []string) {
 
 // PrefillGatePromptSetFor returns one NAMED set's snapshot files regardless of
 // GOINFER_PREFILL_GATE_PROMPTS — for a caller that needs a specific set explicitly (e.g.
-// re-scoring set A's stored results alongside a set-B decision run, task-prefill-gap.md §4 L1)
+// re-scoring set A's stored results alongside a set-B decision run, docs/completed/task-prefill-gap.md §4 L1)
 // rather than "whichever set the environment currently selects". label other than "b" means "a".
 func PrefillGatePromptSetFor(label string) (files []string) {
 	live := PrefillGateProseFiles
@@ -323,7 +323,7 @@ func PrefillGateProseIDsForTest(t *testing.T, tk *tokenizer.Tokenizer, f string,
 	return ids
 }
 
-// WritePrefillReferenceForTest serializes docs/task-prefill-gap.md §3.1's CPU f32-activation
+// WritePrefillReferenceForTest serializes docs/completed/task-prefill-gap.md §3.1's CPU f32-activation
 // reference for a later cross-process read (ReadPrefillReferenceForTest) — Phase A
 // (decoder/prefill_ref_gen_test.go, its own process, CPU only) writes these; Phase B
 // (metal/prefill_gate_ref_test.go) reads them back to score both Metal arms against a reference
