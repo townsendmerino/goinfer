@@ -699,7 +699,7 @@ func (r *cudaResident) fusedAttnNote() string {
 //	D7 K=512 SHIPS (agree 86.41% v 86.56%, flips 16 v 16), D7 K=1024 SHIPS
 //
 // It FAILS at K=256, which is why the floor exists and why it is 512 and not lower; that cell
-// stands on the record and is not withdrawn (docs/task-prefill-gap.md §3, and
+// stands on the record and is not withdrawn (docs/completed/task-prefill-gap.md §3, and
 // measurements/prefill-l2l3-phase3-2026-09-05.md).
 //
 // The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-identical to

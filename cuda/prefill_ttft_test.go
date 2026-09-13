@@ -31,7 +31,7 @@ import (
 // THE DEFAULTS ARE THE REGRESSION TEST AND DO NOT MOVE. The four env knobs below only widen what a
 // deliberate measurement run can ask for; with none of them set this test runs exactly the model,
 // quants and depths it always has, so its role as a standing check is unchanged. They exist because
-// docs/task-prefill-gap.md §4 L2 sets its band on an END-TO-END cell this test could not reach —
+// docs/completed/task-prefill-gap.md §4 L2 sets its band on an END-TO-END cell this test could not reach —
 // S at K=3900 — and prices L2/L3 on D7 as a second model, while the fixed list stops at K=2048 on a
 // 1.5B (which is exactly the blind spot prefill-chunking-d7-2026-09-04.md records: "TestPrefillTTFT,
 // the harness built for exactly this question, stops at M=2048 on a 1.5B model — a shape that fits,

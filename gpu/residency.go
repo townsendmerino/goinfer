@@ -1065,7 +1065,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		// rather than either fully shipping an unverified-on-Metal result or
 		// throwing away a confirmed fix everywhere. Revisit once the Metal gap is
 		// found, or once it's checked against this repo's real ship gate
-		// (docs/task-prefill-gap.md §3.2 pooled fidelity vs the CPU-f32
+		// (docs/completed/task-prefill-gap.md §3.2 pooled fidelity vs the CPU-f32
 		// reference, not cosine-vs-sequential-GPU-decode).
 		if mw.hasBias() && c.Backend() != "vulkan" {
 			return nil, fmt.Errorf("gpu: PrefillLast declines — q/k/v bias on backend %q is not yet verified bit-exact (Vulkan only for now)", c.Backend())

@@ -894,7 +894,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		// L2 fused prefill attention (docs/task-prefill-gap.md §4 L2). OPT-IN: the fast path becomes
+		// L2 fused prefill attention (docs/completed/task-prefill-gap.md §4 L2). OPT-IN: the fast path becomes
 		// a default only when §3's reference gate passes on CUDA (Phase 3), so until then this loads
 		// only when asked. Own module — prefill_batched.ptx is untouched, the isolation pattern
 		// attn_block.cu established. A load failure is not fatal: it leaves bAttnFused* zero and

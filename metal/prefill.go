@@ -308,7 +308,7 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
 }
 
 // attention_prefill_fused: the simdgroup_matrix (MMA) flash-attention twin of attention_prefill
-// (L2-Metal, docs/task-prefill-gap.md §4). One simdgroup per (query head, 8-row query tile);
+// (L2-Metal, docs/completed/task-prefill-gap.md §4). One simdgroup per (query head, 8-row query tile);
 // QKᵀ and PV are both 8×8-tiled MMA matmuls (hd/8 tiles each), replacing attention_prefill's
 // per-key scalar dot products and its fully-serial PV scan. K is read K^T-transposed straight
 // from the row-major cache via simdgroup_load's transpose flag (confirmed against
@@ -473,7 +473,7 @@ type prefillState struct {
 	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
-	// L2-Metal (docs/task-prefill-gap.md §4): the simdgroup_matrix flash-attention twin of
+	// L2-Metal (docs/completed/task-prefill-gap.md §4): the simdgroup_matrix flash-attention twin of
 	// pAttn. Default ON since §3 gate passed 2026-09-10 (metalFusedAttentionEnabled, backend.go);
 	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
 	pAttnFused Pipeline

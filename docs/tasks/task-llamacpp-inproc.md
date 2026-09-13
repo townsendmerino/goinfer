@@ -150,7 +150,7 @@ S resident-both, D7 alternate-load.
 | I1 | **tokenizer agreement** on the matrix's 20 fidelity prompts + the W4 transcript | mismatched positions, first divergence per prompt | precondition for every other row; a mismatch is a finding on its own (a matrix row taken on different token streams is comparing different prompts) |
 | I2 | **logit fidelity, same file** — teacher-forced over the matrix §4 fixtures (≥256-token reference continuations): per-position full-vocab KL, argmax agreement, first-disagreement position | arms: llama.cpp Q4_K_M, llama.cpp f16, goinfer W4A8 default, goinfer int8int8; reference: HF fp16 where it fits (S, D7), llama.cpp f16 elsewhere | the matrix's fidelity column, built; also answers how far goinfer's group-32 W4A8 requant sits from llama.cpp's dequant of the same Q4_K_M tensors — a number nobody has |
 | I3 | **per-token decode cost vs depth** — positions 1…128 at contexts 128 / 2k / 8k | p50 / p95 per-token latency, the marginal-cost-vs-depth curve per engine | P19's claim (goinfer's marginal token cost rises with KV depth where the peers' stays flat) measured with one clock instead of inferred from wall-clock differences |
-| I4 | **prefill at K = 512 / 3900** with llama.cpp's `n_batch`/`n_ubatch` ladder (512, 1024, 2048) beside goinfer's batched prefill | wall time per K per setting; the do-nothing arm is llama.cpp at its defaults | names what llama.cpp's chunking buys, against `docs/task-prefill-gap.md`'s two-term model |
+| I4 | **prefill at K = 512 / 3900** with llama.cpp's `n_batch`/`n_ubatch` ladder (512, 1024, 2048) beside goinfer's batched prefill | wall time per K per setting; the do-nothing arm is llama.cpp at its defaults | names what llama.cpp's chunking buys, against `docs/completed/task-prefill-gap.md`'s two-term model |
 | I5 | **CPU lane**, `n_gpu_layers = 0`, threads = `GOMAXPROCS` on both | I2 + I3 on S | the pure-Go story with the thread count actually matched — the HTTP CPU row cannot pin llama.cpp's threads to goinfer's |
 
 Every cell records load time, peak RSS / VRAM, the exact parameter structs (serialised), and the
@@ -245,7 +245,7 @@ standing IOU.
 `scripts/bench_peer.py` (header record, idle gate, `gguf_same_weights.py` discipline);
 `CLAUDE.md` (§ Benchmarking — `bench_compare.sh` vs peer numbers; § Measurement discipline —
 inverting guards, paired differencing, pre-registration, retractions); `docs/tasks/parked/task-bindings.md`
-(purego under `CGO_ENABLED=0` precedent); `docs/task-prefill-gap.md` (two-term prefill model, I4);
+(purego under `CGO_ENABLED=0` precedent); `docs/completed/task-prefill-gap.md` (two-term prefill model, I4);
 `docs/audit-2026-09-10.md` (dense Granite q/k permute Critical, §6 "Later" (a));
 `queue-performance.md` P19 (attention at depth) and P20 (MoE batched prefill);
 golang/go#81450 — https://github.com/golang/go/issues/81450 (proposal stage, 2026-09);

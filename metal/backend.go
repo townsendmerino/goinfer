@@ -410,7 +410,7 @@ func metalFastPrefillFloorFor() int {
 }
 
 // metalFusedAttentionEnabled reports whether attention_prefill_fused (the simdgroup_matrix
-// flash-attention twin of attention_prefill, L2-Metal — docs/task-prefill-gap.md §4) runs in
+// flash-attention twin of attention_prefill, L2-Metal — docs/completed/task-prefill-gap.md §4) runs in
 // place of the exact scalar kernel. Default ON since §3 gate passed 2026-09-10 (S model, set B
 // decision cells K=256/512/1024 + K=3900 confirm; fused beat exact on all three pooled criteria —
 // see docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md §5). GOINFER_METAL_FUSED_ATTENTION=0

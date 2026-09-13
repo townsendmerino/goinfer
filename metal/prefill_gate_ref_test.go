@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGateVsReference is Phase B of docs/task-prefill-gap.md §4 L1's fresh-prompt decision
+// TestPrefillGateVsReference is Phase B of docs/completed/task-prefill-gap.md §4 L1's fresh-prompt decision
 // run (2026-09-09), superseding the §3.1 per-cell form this file used before. TestPrefillGate
 // (prefill_gate_test.go) scored Metal's fast (f16-activation) path against Metal's own exact
 // (int8-per-row-activation) path and treated the exact path as truth; §3.1 found that comparison
@@ -36,7 +36,7 @@ import (
 // per-position agreement is attributable to the arm alone, not to which one's tokens happened to
 // be used as the "ground truth" stream.
 //
-// §3.2's POOLED form (docs/task-prefill-gap.md §3, as amended by §3.1 and §3.2) — the per-cell
+// §3.2's POOLED form (docs/completed/task-prefill-gap.md §3, as amended by §3.1 and §3.2) — the per-cell
 // binary form this file used on 2026-09-05 has NO resolving power at these sample sizes (§3.2's
 // own arithmetic: a per-cell veto over N criteria fails an arm of EQUAL quality most of the time).
 // The decision is now pooled over every decision-set cell for one model (K ∈ {256, 512, 1024} —

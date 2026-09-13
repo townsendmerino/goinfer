@@ -1,5 +1,43 @@
 # Task: the prefill gap — one contract, four levers (2026-09-05)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status, doc-reviewed 2026-09-13 — COMPLETE, archived.** All four levers this doc scoped are
+> closed: L1 (Metal batched prefill) and L2-Metal (Metal fused attention) shipped and default ON;
+> L2+L3 (CUDA fused attention + tensor-core int4 GEMM) shipped and default ON; L4 step 0/1 shipped
+> 2026-09-06, steps 2-3 (softmax reduction order) not started but were always scoped to a separate
+> aikit-side brief ("the brief for the aikit session is separate", §4 L4) rather than owned here —
+> check that brief's own tracker for current status, not this doc.
+>
+> **Two claims below are stale and are corrected here rather than in the body (this file is
+> frozen):**
+> 1. **"The W4 agent-turn replay harness does not exist yet"** (the BLUF, and §5 item 6) is wrong
+>    as of this review. It was built and first-measured **2026-09-09**, the same week this doc's
+>    later corrections were written: `scripts/bench_peer_transcript.py`
+>    (`a275a08b`, "feat(w4): agent-turn transcript replay harness + first real measurement"),
+>    fixtures `scripts/w4_transcript_{base,edited_turn6}.json`, one real cell recorded at
+>    `docs/measurements/peer-matrix-2026-09/nobara-w4-transcript-d7_2026-09-09.json` and written up
+>    in `docs/benchmarks.md` ("W4 (Qwen2.5-7B-Instruct...) — agent-turn transcript replay, nobara
+>    CUDA only"). Only D7 on nobara/CUDA is measured; the Mac/Metal box and W7 (4-client
+>    concurrency, which reuses this same transcript) are still open. The harness itself is no
+>    longer this doc's open item — it is `docs/task-peer-benchmarks.md`'s (W4/W7 rows), which owns
+>    completing the campaign.
+> 2. **The Metal fast-prefill floor this doc cites throughout as "above 512 tokens"** (BLUF, §4 L1
+>    disposition, §6.3) was lowered to **256 tokens** on 2026-09-12, after this doc's last edit
+>    (`6cc862a0`, "fix(metal): lower prefill floor to 256... audit-metal-2026-09-12 M-01/M-02/G-01"
+>    — `metal/backend.go`'s `metalFastPrefillFloor` constant). The 512 figure was correct at the
+>    time it was written and remains correct for **CUDA**, whose floor (`cuda/prefill.go`'s
+>    `fastPrefillFloor`) is unchanged at 512.
+>
+> Every instruction, "not yet built", or "remains open" phrase below is a record of this doc's
+> state as written, not a live task list — see the corrections above and the ARCHIVED note at top
+> for what has since changed.
+
 > **BLUF.** Decode is a ~30% problem everywhere (0.71–1.24× of Ollama, `benchmarks.md` §B8).
 > Prefill is not: on CUDA the overhead-free marginal cost per prompt token is **5.8× behind at
 > K≈512 and 12.7–14.8× at K≈3900**, and it *grows* with K while Ollama's is flat

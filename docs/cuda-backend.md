@@ -148,7 +148,7 @@ and **14.5× → 1.89×** (0.5B).
 
 **Why there is a 512-token floor, and why it is not a round number.** These kernels are not
 bit-identical — L2 uses f16 K/V with an online-rescaled softmax, L3 re-associates the cross-group
-float sum — so they went through `task-prefill-gap.md` §3's fidelity gate: both arms scored against
+float sum — so they went through `completed/task-prefill-gap.md` §3's fidelity gate: both arms scored against
 a CPU reference with f32 weights AND f32 activations, teacher-forced on the reference's own tokens.
 The gate **fails at K=256** and **passes at 512, 1024 and 3900 on both bench models**, so short
 prompts keep the exact path. At depth the fast path is *closer to the reference than the exact path

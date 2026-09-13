@@ -41,7 +41,7 @@ is grep-derivable and enumerated at the bottom.
 | `GOINFER_METAL_BATCHED_PREFILL` | **Deprecated** — superseded by `GOINFER_METAL_FAST_PREFILL`. Still honoured for backward compat: `=1` opt-in (now the default), `=0` opt-out. |
 | `GOINFER_METAL_FAST_PREFILL` | Toggle Metal's f16-MMA batched prefill. Default ON above 512 tokens since §3.2 gate passed (2026-09-09). `=0`/`false`/`off` forces the sequential path everywhere; `=1`/`true`/`on` forces it on (including below the floor). Server flag: `--exact-prefill` sets this to `0`. |
 | `GOINFER_METAL_FAST_PREFILL_FLOOR` | Prompt-length floor (tokens) below which the fast Metal prefill declines even when enabled (default 512). `=0` disables the floor entirely. |
-| `GOINFER_METAL_FUSED_ATTENTION` | Toggle `attention_prefill_fused` (the simdgroup_matrix flash-attention twin of `attention_prefill`, L2-Metal, `docs/task-prefill-gap.md` §4), used inside the batched path above. Default ON since §3 gate passed (2026-09-10, `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5). `=0`/`false`/`off` falls back to the exact scalar kernel; `=1`/`true`/`on` forces it on. Requires hd%8==0 && hd<=128 (`ATTN_MAXHD`) regardless of this flag. Server flag: `--exact-prefill` covers it transitively (disables the whole batched path, so this kernel never dispatches). |
+| `GOINFER_METAL_FUSED_ATTENTION` | Toggle `attention_prefill_fused` (the simdgroup_matrix flash-attention twin of `attention_prefill`, L2-Metal, `docs/completed/task-prefill-gap.md` §4), used inside the batched path above. Default ON since §3 gate passed (2026-09-10, `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5). `=0`/`false`/`off` falls back to the exact scalar kernel; `=1`/`true`/`on` forces it on. Requires hd%8==0 && hd<=128 (`ATTN_MAXHD`) regardless of this flag. Server flag: `--exact-prefill` covers it transitively (disables the whole batched path, so this kernel never dispatches). |
 | `GOINFER_INT4_SLOWPATH` / `GOINFER_INT4_F16_SCALES` | int4 unpack path selectors. |
 | `GOINFER_CUDA_NO_FUSE` | Disable CUDA kernel fusion (debug/A-B). |
 | `GOINFER_MLA_NAIVE` | Use the naive (un-optimized) MLA attention path. |
@@ -139,7 +139,7 @@ and `release-assets.yml`), and unset it skips.
 | `GOINFER_HEAVY_TESTS=1` | Opt into the ~120 heavy (real-checkpoint) tests that `go test ./...` otherwise skips. |
 | `GOINFER_MANIFEST_EMIT` / `GOINFER_MANIFEST_MACHINE` | Emit parity-manifest rows / stamp the generating machine. |
 | `GOINFER_PAR_THRESHOLD` / `GOINFER_PAR_WIDTH` | Sweep the CPU matmul parallel threshold (MACs) / fan-out width. |
-| `GOINFER_PREFILL_GATE_PROMPTS` | `docs/task-prefill-gap.md`'s §3 fidelity gate: `a` (default) or `b` selects which snapshotted 10-prompt set (`testdata/prefill-gate-prose-<label>/`) `TestPrefillGateReference`/`TestPrefillGateVsReference` build their reference and score against. |
+| `GOINFER_PREFILL_GATE_PROMPTS` | `docs/completed/task-prefill-gap.md`'s §3 fidelity gate: `a` (default) or `b` selects which snapshotted 10-prompt set (`testdata/prefill-gate-prose-<label>/`) `TestPrefillGateReference`/`TestPrefillGateVsReference` build their reference and score against. |
 
 ## Test-model overrides (a large class — point tests at your local checkpoints)
 

@@ -38,7 +38,7 @@ promoting are separate decisions with separate gates (see the last section).
 
 ## Open programs — each owned by a live doc
 
-1. **Prefill gap** — [`task-prefill-gap.md`](task-prefill-gap.md). CUDA: L2 + L3 shipped
+1. **Prefill gap** — [`task-prefill-gap.md`](completed/task-prefill-gap.md) (archived, COMPLETE). CUDA: L2 + L3 shipped
    2026-09-05, next lever is P24 (`attn_fused` at 1.72% of tensor peak). Metal: the L1 default flip
    is still open pending one fresh-prompt gate run; L2-Metal fused attention and the W2 Mac peer row
    are unrun. This is the program that moves the headline.
