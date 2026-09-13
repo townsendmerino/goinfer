@@ -1,6 +1,6 @@
 # The docs, and how they fit together
 
-`docs/` holds ~270 files. They are not one kind of thing, and reading them as if they were is the
+`docs/` holds ~320 files. They are not one kind of thing, and reading them as if they were is the
 main way people get a wrong answer here: a **design record** explains why something is built as it
 is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
 on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
@@ -71,13 +71,13 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (151)
+## Evidence — `measurements/` (75)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (96)
+## Archive — `completed/` (117)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
@@ -89,7 +89,10 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (26) — briefs written for another session or the other machine to execute.
+- `prompts/` (4) — briefs written for another session or the other machine to execute. 21 of the
+  original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered; the 4
+  remaining are each genuinely still open (drafted-by-decision, blocked, or unshipped, per their
+  own status).
 - `releases/` (8) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
