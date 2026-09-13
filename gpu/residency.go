@@ -1054,7 +1054,21 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
 		mw, ok := runModelToModelW(&rd.rm, hd)
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/QK-norm/sliding-window/bias/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/QK-norm/sliding-window/…)")
+		}
+		// q/k/v bias (Qwen2): the fused-epilogue tiled GEMM (gemm.go's
+		// matmulTiledW8A8BiasKernelWGSL, added to fix a real nKeys-dependent
+		// divergence — see runModelToModelW's doc comment) is measured BIT-EXACT
+		// on Vulkan (RTX 2070 SUPER, nKeys 1-50) but STILL diverges on Metal
+		// (M1 Pro) past nKeys~15, cosine ~0.998 — a real, smaller, still-open gap,
+		// not float noise. Gate bias to the backend where it's actually proven
+		// rather than either fully shipping an unverified-on-Metal result or
+		// throwing away a confirmed fix everywhere. Revisit once the Metal gap is
+		// found, or once it's checked against this repo's real ship gate
+		// (docs/task-prefill-gap.md §3.2 pooled fidelity vs the CPU-f32
+		// reference, not cosine-vs-sequential-GPU-decode).
+		if mw.hasBias() && c.Backend() != "vulkan" {
+			return nil, fmt.Errorf("gpu: PrefillLast declines — q/k/v bias on backend %q is not yet verified bit-exact (Vulkan only for now)", c.Backend())
 		}
 		positions := make([]int, len(xs))
 		for i := range positions {

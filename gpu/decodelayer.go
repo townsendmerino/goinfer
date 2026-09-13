@@ -332,6 +332,19 @@ type ModelW struct {
 	LMHead    *ResidentW8A8
 }
 
+// hasBias reports whether any layer carries q/k/v bias (Qwen2) — callers that
+// need to gate bias support more conservatively than runModelToModelW's
+// architecture-only scope guard (e.g. by backend, pending further verification)
+// check this rather than re-deriving it.
+func (m ModelW) hasBias() bool {
+	for i := range m.Layers {
+		if m.Layers[i].Attn.QBias != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // DecodeToken runs a full decode step for one token entirely on device — every
 // layer's attention + MLP chained, then final norm + LM head — as ONE command
 // stream with ONE fence (the logits readback). x is the token's input embedding;

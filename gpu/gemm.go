@@ -98,6 +98,107 @@ var (
 	matmulTiledW8A8DP4AShaderWGSL = fmt.Sprintf(matmulTiledW8A8KernelWGSL, dot4PackedWGSL)
 )
 
+// matmulTiledW8A8BiasKernelWGSL is matmulTiledW8A8KernelWGSL with one addition: a
+// per-output-column bias, added in the SAME expression as the dequant multiply
+// (`f32(acc) * aScales[row] * bScales[col] + bias[col]`) — textually identical
+// operand order to gemvW8A8BiasShaderWGSL's epilogue (gemv.go), which is the
+// point. PrefillLastW8A8 used to do this as TWO dispatches (this kernel without
+// bias, then a separate residualShaderWGSL add) — mathematically the same
+// formula, but forced through an f32 round-trip through memory between the
+// multiply and the add, which a single WGSL expression may evaluate with an FMA
+// contraction the compiler cannot apply across two separate dispatches. Measured
+// real effect (TestLocalize_BiasEpilogue, qwen2.5-coder-0.5b layer 0, real
+// weights): 98 of 896 elements differed between the two forms, all within 2.4e-7
+// absolute — tiny in f32 terms, but large enough that a subsequent int8 quantize
+// of an element sitting near a rounding boundary can flip which bucket it lands
+// in, and 24 layers of that compounds into the observed cosine ~0.99x /
+// maxAbs ~1 divergence in final logits. This kernel exists so PrefillLastW8A8
+// can dispatch the identical single-expression epilogue gemvBias does, for M
+// rows at once instead of M separate GEMV calls.
+const matmulTiledW8A8BiasKernelWGSL = `
+struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };
+
+@group(0) @binding(0) var<storage, read>       aq:      array<u32>;  // [M, kp/4] packed int8
+@group(0) @binding(1) var<storage, read>       bq:      array<u32>;  // [N, kp/4]
+@group(0) @binding(2) var<storage, read>       aScales: array<f32>;  // [M]
+@group(0) @binding(3) var<storage, read>       bScales: array<f32>;  // [N]
+@group(0) @binding(4) var<storage, read_write> dst:     array<f32>;  // [M, N]
+@group(0) @binding(5) var<uniform>             dims:    Dims;
+@group(0) @binding(6) var<storage, read>       bias:    array<f32>;  // [N]
+
+const TS: u32 = 16u;
+var<workgroup> As: array<u32, 256>;
+var<workgroup> Bs: array<u32, 256>;
+
+%s
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let kw = dims.kp / 4u;
+    let row = wid.y * TS + lid.y;
+    let col = wid.x * TS + lid.x;
+    let nStrips = (kw + TS - 1u) / TS;
+    var acc: i32 = 0;
+    for (var s: u32 = 0u; s < nStrips; s = s + 1u) {
+        let wcol = s * TS + lid.x;
+        var aw: u32 = 0u;
+        if (row < dims.m && wcol < kw) { aw = aq[row * kw + wcol]; }
+        As[lid.y * TS + lid.x] = aw;
+        let brow = wid.x * TS + lid.y;
+        var bw: u32 = 0u;
+        if (brow < dims.n && wcol < kw) { bw = bq[brow * kw + wcol]; }
+        Bs[lid.y * TS + lid.x] = bw;
+        workgroupBarrier();
+        for (var w: u32 = 0u; w < TS; w = w + 1u) {
+            acc = acc + dot4(As[lid.y * TS + w], Bs[lid.x * TS + w]);
+        }
+        workgroupBarrier();
+    }
+    if (row < dims.m && col < dims.n) {
+        dst[row * dims.n + col] = f32(acc) * aScales[row] * bScales[col] + bias[col];
+    }
+}
+`
+
+var (
+	matmulTiledW8A8BiasShaderWGSL     = fmt.Sprintf(matmulTiledW8A8BiasKernelWGSL, dot4UnpackedWGSL)
+	matmulTiledW8A8DP4ABiasShaderWGSL = fmt.Sprintf(matmulTiledW8A8BiasKernelWGSL, dot4PackedWGSL)
+)
+
+// ensureTiledBias compiles the bias-epilogue tiled GEMM (see
+// matmulTiledW8A8BiasKernelWGSL) — a separate pipeline from ensureTiled's, chosen
+// the same way (c.hasDP4A), since a bias-taking kernel needs its own bind group
+// layout (7 bindings vs 6).
+func (c *Context) ensureTiledBias() error {
+	if c.tiledBiasPipeline != nil {
+		return nil
+	}
+	code, label := matmulTiledW8A8BiasShaderWGSL, "matmulTiledW8A8Bias"
+	if c.hasDP4A {
+		code, label = matmulTiledW8A8DP4ABiasShaderWGSL, "matmulTiledW8A8DP4ABias"
+	}
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      label,
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
+	})
+	if err != nil {
+		return fmt.Errorf("gpu: compile tiled-bias shader: %w", err)
+	}
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label:   label,
+		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return fmt.Errorf("gpu: create tiled-bias pipeline: %w", err)
+	}
+	c.track(sh.Release, pl.Release)
+	c.tiledBiasShader = sh
+	c.tiledBiasPipeline = pl
+	c.tiledBiasLayout = c.bgl(pl)
+	return nil
+}
+
 func (c *Context) ensureTiled() error {
 	if c.tiledPipeline != nil {
 		return nil

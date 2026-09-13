@@ -111,6 +111,12 @@ type Context struct {
 	tiledShader   *wgpu.ShaderModule
 	tiledPipeline *wgpu.ComputePipeline
 	tiledLayout   *wgpu.BindGroupLayout
+	// Tiled W8A8 GEMM with a fused per-column bias epilogue (Qwen2 q/k/v bias),
+	// lazy via ensureTiledBias (gemm.go) — a separate pipeline/layout from the
+	// plain tiled GEMM's (7 bindings, not 6).
+	tiledBiasShader   *wgpu.ShaderModule
+	tiledBiasPipeline *wgpu.ComputePipeline
+	tiledBiasLayout   *wgpu.BindGroupLayout
 
 	// Thin-M (multi-row GEMV) W8A8 GEMM for the Stage-B verify (gemm_rows.go): one
 	// workgroup per output column, each weight word read once and reused across all

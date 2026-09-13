@@ -15,58 +15,69 @@ import (
 // this model uses ANY feature outside that shape. The same scope
 // DecodeTokenFusedBatched declares ("no MoE/MLA/SSM/bias/QK-norm").
 //
-// q/k/v bias (Qwen2) is DELIBERATELY declined despite AttnWeights/biasAdd having
-// working plumbing for it below (kept rather than deleted — see their own
-// comments): measured on a real checkpoint (qwen2.5-coder-0.5b, GOINFER_HEAVY_TESTS=1,
-// TestResidentPrefillLast_parity).
+// q/k/v bias (Qwen2) IS accepted here (unlike DecodeTokenFusedBatched) — see
+// AttnWeights.QBias/KBias/VBias and tiledProj's bias parameter — but callers must
+// additionally check ModelW.hasBias() against the backend before trusting the
+// result; see residency.go's prefillLast closure for that gate and the full
+// history below. This function's own scope guard is architecture-only.
 //
-// UPDATE (2026-09-12, second investigation round): the original "diverges at
-// nKeys>=3" symptom had TWO causes, not one. Cause #1, now FIXED: this function
-// unconditionally dispatched c.attnPipeline (the plain f32 kernel), while
-// decoderunner.go's sequential resident decode picks its kernel per-geometry via
-// attnKernel (attention.go) — for this exact checkpoint's geometry (hd=64,
-// kvDim=128, f32 KV) that's attnKeysEligible, so decode used the KEY-SPLIT kernel
-// while this function always used the plain one. Two different kernels computing
-// the same attention is not guaranteed bit-identical. Fixing this function to call
-// the same c.attnKernel(hd, kvDim, false) decoderunner.go uses took nKeys=3
-// bias-enabled parity from cosine 0.99/maxAbs 1.24 to EXACT (cosine 1.0, maxAbs
-// ~2.9e-6, i.e. float32 noise) — confirmed correct up through nKeys=4.
+// HISTORY (2026-09-12, real-checkpoint debugging, qwen2.5-coder-0.5b): enabling
+// bias originally diverged from sequential Forward() at nKeys>=3 (cosine ~0.99).
+// Two real, independent causes were found and fixed:
 //
-// Cause #2, still OPEN: even with both paths on the identical kernel, nKeys past
-// a threshold still diverges (cosine ~0.995-0.999, maxAbs ~0.4-1.2 depending on
-// nKeys — not monotonic with nKeys past the threshold, e.g. nKeys=20 is BETTER
-// than nKeys=5 on Metal). THE THRESHOLD ITSELF IS HARDWARE-DEPENDENT, measured on
-// the two real GPUs available: Metal/M1 Pro breaks at nKeys>=5 (exact through
-// nKeys=4); Vulkan/RTX 2070 SUPER breaks at nKeys>=8 (exact through nKeys=7,
-// confirmed at every nKeys 1-7, maxAbs <=5.7e-6 = float32 noise the whole way).
-// Same WGSL source, same Go dispatch code, two different backends, two different
-// break points — this points AWAY from a pure logic/off-by-one bug (which would
-// break at the same nKeys everywhere) and TOWARD something backend/precision-
-// specific: how naga lowers attnKeysShaderWGSL's online-softmax reduction to
-// SPIR-V (Vulkan) vs MSL (Metal), a driver-level fast-math/FMA-contraction
-// difference, or a genuine numerical instability in that kernel that different
-// backends' rounding happens to trigger at different key counts. Since both paths
-// now dispatch the SAME c.attnKeysPipeline for the SAME cached K/V, either (a) the
-// K/V cache contents themselves differ subtly between this function's rope()+cpy()
-// writes and decoderunner.go's fused qkvFinalize writes (never diffed line-by-line
-// — see attnKeysShaderWGSL vs qkvFinalizeShaderWGSL/ropeShaderWGSL), or (b)
-// attnKeysShaderWGSL (attention.go, the multi-key tiled online-softmax kernel)
-// itself has a real precision bug past some key count that a same-kernel-vs-itself
-// comparison can still expose if the SOURCE data feeding it differs. Ruled out
-// separately: the K/V bias-add width bug fixed alongside the kernel-mismatch fix
-// (reproduces identically before/after that fix, in isolation); flushPasses/
-// passesPerFlush (a huge passesPerFlush disables it with no change); bias being
-// simply wrong (disabling it entirely makes the real-checkpoint case WORSE,
-// ~0.2-0.5 cosine, at ANY nKeys). The M=20 synthetic-weight gate
-// (TestPrefillLastW8A8_parity, no bias, always uses c.attnKernel now too) stays
-// bit-exact throughout on BOTH backends — this is real-checkpoint-weight-
-// magnitude-specific, or specific to a code path the synthetic test never
-// exercises (e.g. real RoPE frequency values vs the test's synthetic invFreq).
+//  1. Kernel mismatch: this function unconditionally dispatched c.attnPipeline
+//     (the plain f32 attention kernel), while decoderunner.go's sequential decode
+//     picks per-geometry via attnKernel (attention.go) — for this checkpoint's
+//     geometry (hd=64, kvDim=128, f32 KV) that's the key-split kernel. Two
+//     different kernels computing the same attention is not guaranteed
+//     bit-identical. Fix: call the same c.attnKernel(hd, kvDim, false)
+//     decoderunner.go uses (both now share one implementation).
 //
-// Re-enable bias only after cause #2 is found and re-gated; until then this
-// decline keeps residentPrefillSeed's fallback to the (slower, proven-correct)
-// sequential loop, rather than risk serving silently-wrong prefill logits for the
-// most common dense-checkpoint family (Qwen2.5-*).
+//  2. Epilogue fusion: production's gemvBias computes
+//     `f32(acc)*aScale*bScale + bias[n]` in ONE expression inside ONE dispatch;
+//     this function did a plain GEMM into a fresh buffer, scattered it out via a
+//     byte-exact copy, THEN a separate residualShaderWGSL dispatch added the bias
+//     — mathematically the same formula, but forced through an f32 round-trip
+//     between the multiply and the add that a single WGSL expression may
+//     evaluate with a different (FMA-contracted) rounding. Measured directly
+//     (TestLocalize_BiasEpilogue, layer 0's real Q weight+bias): 98 of 896
+//     elements differed by up to 2.4e-7 between the two forms — tiny in f32
+//     terms, but enough that a subsequent int8 requantize can flip a rounding
+//     bucket for an element sitting on the boundary, and 24 layers of that
+//     compounds into the observed divergence. Fix: matmulTiledW8A8BiasKernelWGSL
+//     (gemm.go) — the SAME tiled GEMM with a fused per-column bias epilogue,
+//     textually matching gemvBias's expression.
+//
+// Together these two fixes take real-checkpoint bias-enabled parity to BIT-EXACT
+// (cosine 1.0, maxAbsDiff LITERALLY 0, not float noise) on Vulkan/RTX 2070 SUPER
+// at every nKeys measured from 1 to 50.
+//
+// STILL OPEN, Vulkan-vs-Metal only: on Metal/M1 Pro, the SAME fixes leave a
+// smaller but real residual divergence past nKeys~15 (cosine ~0.997-0.999,
+// maxAbs ~0.3-0.65 — not float noise, and NOT monotonic with nKeys). A same
+// analogy — production fuses the O-proj/down-proj GEMV WITH the residual add
+// (decoderunner.go's gemvAdd / gemvW8A8ShaderWGSL's addResidual epilogue), while
+// this function does a plain GEMM then a separate residualShaderWGSL add, same
+// forced-round-trip shape as the bias case — was the obvious next suspect and is
+// almost certainly PART of the real mechanism, but a first attempt at a fused
+// residual-epilogue kernel (mirroring matmulTiledW8A8BiasKernelWGSL) introduced a
+// NEW regression on Vulkan too (removed rather than shipped broken — see git
+// history around 2026-09-12 for the attempt, which gathered the residual stream
+// into a contiguous buffer, ran a read-write accumulate kernel, then scattered it
+// back — the bug was not found before time ran out on that investigation).
+// Whoever picks this up next: rebuild that attempt carefully (gather/accumulate/
+// scatter, matching tiledProj's bias-parameter shape but for O-proj/down-proj),
+// verify it against TestLocalize_BiasEpilogue-style isolated tests BEFORE wiring
+// it into the main loop, and re-measure both backends. Also worth checking: this
+// repo's real ship gate for a fast-prefill path is the §3.2 pooled fidelity gate
+// against the CPU-f32 reference (docs/task-prefill-gap.md), not bit-exactness
+// against sequential GPU decode — Metal's current gap might already clear that
+// bar even before a further fix, which would change the urgency here.
+//
+// Until Metal is resolved or independently cleared, residency.go's prefillLast
+// gates bias to backends where it's actually proven (Vulkan only) — a decline
+// there falls back to the slower-but-correct sequential loop, never serving a
+// silently-wrong result.
 //
 // It is a zero-copy view: every *wgpu.Buffer is wrapped, not duplicated, and the
 // caller must not Close() the resulting ModelW (ModelW.Release would double-free
@@ -97,8 +108,7 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 	layers := make([]LayerW, len(rm.layers))
 	for i := range rm.layers {
 		l := &rm.layers[i]
-		if l.qBias != nil || l.kBias != nil || l.vBias != nil ||
-			l.qNorm != nil || l.kNorm != nil ||
+		if l.qNorm != nil || l.kNorm != nil ||
 			l.oBias != nil || l.postAttnNorm != nil || l.postMLPNorm != nil ||
 			l.hasSink || l.isLocal || (l.ropeScale != 0 && l.ropeScale != 1) ||
 			l.ghd != 0 || l.gnKV != 0 || l.ghalf != 0 || l.gKEqV ||
@@ -121,6 +131,7 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 			Attn: AttnWeights{
 				Norm: view(l.attnNorm), QProj: q, KProj: k, VProj: v, OProj: o,
 				InvFreq: view(l.invFreq), KCache: view(l.kCache), VCache: view(l.vCache),
+				QBias: view(l.qBias), KBias: view(l.kBias), VBias: view(l.vBias),
 			},
 			MLPNorm: view(l.mlpNorm),
 			Gate:    gate, Up: up, Down: down,
@@ -160,7 +171,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	if len(positions) != M {
 		return nil, fmt.Errorf("gpu: PrefillLastW8A8 %d rows but %d positions", M, len(positions))
 	}
-	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled} {
+	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled, c.ensureTiledBias} {
 		if err := f(); err != nil {
 			return nil, err
 		}
@@ -299,26 +310,25 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), uint32(pos), f32bits(1), 0, 0, 0})
 		disp(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, p), uint32(heads*half+63)/64, 1)
 	}
-	residual := func(x, y *wgpu.Buffer) {
-		p := uni([]uint32{uint32(hidden), 0, 0, 0})
-		disp(c.residualPipeline, bind(c.residualLayout, x, y, p), uint32(hidden+63)/64, 1)
-	}
-	// biasAdd is residual's shape (vec[i] += bias[i]) at an explicit width n, for the
-	// q/k/v bias epilogue — q/k/v projections are qDim/kvDim/kvDim wide, NOT hidden
-	// (GQA makes kvDim < hidden), so residual's hardcoded hidden width would read/
-	// write past the buffer. Mirrors decoderunner.go's own biasAdd exactly.
-	biasAdd := func(vec, bias *wgpu.Buffer, n int) {
-		p := uni([]uint32{uint32(n), 0, 0, 0})
-		disp(c.residualPipeline, bind(c.residualLayout, vec, bias, p), uint32(n+63)/64, 1)
-	}
-
 	// tiledProj batches a projection over the given rows: gather each row's quantized
 	// activation into one packed buffer, run ONE unbounded-M tiled GEMM (weight streamed
 	// once, DP4A-accelerated when available), scatter the output rows back to per-row
 	// buffers. Passing a length-1 slice (used for the LM head below) runs the tiled
 	// kernel at M=1 — correct, just not its optimal shape; a one-off per prefill call is
 	// cheap enough that a special M=1 GEMV path isn't worth the extra code path.
-	tiledProj := func(xnRows []*wgpu.Buffer, rm *ResidentW8A8) []*wgpu.Buffer {
+	//
+	// bias (nil for every projection except Qwen2's q/k/v) selects the bias-epilogue
+	// tiled kernel instead of a separate post-hoc residual-kernel add: production's
+	// gemvBias computes `f32(acc)*aScale*bScale + bias[n]` in ONE expression inside
+	// ONE dispatch, and a plain-GEMM-then-separate-add forces an f32 round-trip
+	// through memory between the multiply and the add that a single WGSL expression
+	// may evaluate with a different (FMA-contracted) rounding. Measured real effect
+	// (TestLocalize_BiasEpilogue): 98/896 elements of a real layer-0 Q-projection
+	// differed by up to 2.4e-7 between the two forms — tiny in f32 terms, but enough
+	// that a subsequent int8 requantize can flip a rounding bucket for an element
+	// sitting on the boundary, and 24 layers of that is exactly the batched-prefill
+	// vs sequential-decode divergence this fixes.
+	tiledProj := func(xnRows []*wgpu.Buffer, rm *ResidentW8A8, bias *wgpu.Buffer) []*wgpu.Buffer {
 		rowsM := len(xnRows)
 		K, N := rm.cols, rm.rows
 		kw := rm.kp / 4
@@ -332,7 +342,11 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		dstC := storF(rowsM * N)
 		p := uni([]uint32{uint32(rowsM), uint32(rm.kp), uint32(N), 0})
 		gx, gy := (uint32(N)+15)/16, (uint32(rowsM)+15)/16
-		disp(c.tiledPipeline, bind(c.tiledLayout, aqC, rm.bq, asC, rm.bScales, dstC, p), gx, gy)
+		if bias != nil {
+			disp(c.tiledBiasPipeline, bind(c.tiledBiasLayout, aqC, rm.bq, asC, rm.bScales, dstC, p, bias), gx, gy)
+		} else {
+			disp(c.tiledPipeline, bind(c.tiledLayout, aqC, rm.bq, asC, rm.bScales, dstC, p), gx, gy)
+		}
 		outs := make([]*wgpu.Buffer, rowsM)
 		for r := range outs {
 			o := storF(N)
@@ -364,16 +378,13 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		for r := range xn {
 			xn[r] = rms(xd[r], lw.Attn.Norm.buf)
 		}
-		q := tiledProj(xn, lw.Attn.QProj)
-		k := tiledProj(xn, lw.Attn.KProj)
-		v := tiledProj(xn, lw.Attn.VProj)
-		if lw.Attn.QBias != nil { // Qwen2 q/k/v bias — applied before RoPE, matching decoderunner.go
-			for r := range xd {
-				biasAdd(q[r], lw.Attn.QBias.buf, nH*hd)
-				biasAdd(k[r], lw.Attn.KBias.buf, kvDim)
-				biasAdd(v[r], lw.Attn.VBias.buf, kvDim)
-			}
+		var qBias, kBias, vBias *wgpu.Buffer
+		if lw.Attn.QBias != nil { // Qwen2 q/k/v bias — fused into the GEMM epilogue,
+			qBias, kBias, vBias = lw.Attn.QBias.buf, lw.Attn.KBias.buf, lw.Attn.VBias.buf // matching decoderunner.go's gemvBias, not a separate post-hoc add (see tiledProj's doc comment)
 		}
+		q := tiledProj(xn, lw.Attn.QProj, qBias)
+		k := tiledProj(xn, lw.Attn.KProj, kBias)
+		v := tiledProj(xn, lw.Attn.VProj, vBias)
 		for r := range xd {
 			rope(q[r], lw.Attn.InvFreq.buf, nH, positions[r])
 			rope(k[r], lw.Attn.InvFreq.buf, nKV, positions[r])
@@ -400,16 +411,17 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 			disp(attnPl, bind(attnLy, q[r], lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, noSinks, ap, noHasSink), uint32(nH), 1)
 			ctxv[r] = cv
 		}
-		attnOut := tiledProj(ctxv, lw.Attn.OProj)
+		attnOut := tiledProj(ctxv, lw.Attn.OProj, nil)
 		for r := range xd {
-			residual(xd[r], attnOut[r])
+			p := uni([]uint32{uint32(hidden), 0, 0, 0})
+			disp(c.residualPipeline, bind(c.residualLayout, xd[r], attnOut[r], p), uint32(hidden+63)/64, 1)
 		}
 		xn2 := make([]*wgpu.Buffer, M)
 		for r := range xn2 {
 			xn2[r] = rms(xd[r], lw.MLPNorm.buf)
 		}
-		gate := tiledProj(xn2, lw.Gate)
-		up := tiledProj(xn2, lw.Up)
+		gate := tiledProj(xn2, lw.Gate, nil)
+		up := tiledProj(xn2, lw.Up, nil)
 		mid := make([]*wgpu.Buffer, M)
 		for r := range xd {
 			md := storF(inter)
@@ -417,16 +429,17 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 			disp(c.swigluPipeline, bind(c.swigluLayout, gate[r], up[r], md, sp), uint32(inter+63)/64, 1)
 			mid[r] = md
 		}
-		down := tiledProj(mid, lw.Down)
+		down := tiledProj(mid, lw.Down, nil)
 		for r := range xd {
-			residual(xd[r], down[r])
+			p := uni([]uint32{uint32(hidden), 0, 0, 0})
+			disp(c.residualPipeline, bind(c.residualLayout, xd[r], down[r], p), uint32(hidden+63)/64, 1)
 		}
 	}
 
 	// Final norm + LM head on the LAST row ONLY (matches decoder/forwardn.go's
 	// prefillLogits: the other M-1 rows' logits are never needed for prefill).
 	xnLast := rms(xd[M-1], m.FinalNorm.buf)
-	logitsBuf := tiledProj([]*wgpu.Buffer{xnLast}, m.LMHead)[0]
+	logitsBuf := tiledProj([]*wgpu.Buffer{xnLast}, m.LMHead, nil)[0]
 
 	if buildErr != nil {
 		return nil, buildErr
