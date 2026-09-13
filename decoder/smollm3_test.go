@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G4 (docs/task-families-2026-09.md, batch 2) SmolLM3-3B parity: a plain llama-shaped dense GQA
+// G4 (docs/completed/task-families-2026-09.md, batch 2) SmolLM3-3B parity: a plain llama-shaped dense GQA
 // model with per-layer NoPE via `no_rope_layers` — a field whose VALUES are the opposite of what
 // its name suggests (1 = HAS rope, 0 = NoPE, verified against the real modeling_smollm3.py), on
 // every 4th layer. Reuses the SAME Config field/convention llama4_text already established and

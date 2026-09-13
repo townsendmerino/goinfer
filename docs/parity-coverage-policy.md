@@ -1717,7 +1717,7 @@ defect-shaped, unresolved lead) to four out of eight families attempted past smo
 ## Timing: finishing pass, Group 3 — bailing_hybrid (blocked) + qwen2_5_vl (2026-09-08, Linux box)
 
 **bailing_hybrid — reachability checked, not attempted, per policy ("do not fight the
-dependency stack").** Full account in `docs/task-families-2026-09.md`'s bailing_hybrid
+dependency stack").** Full account in `docs/completed/task-families-2026-09.md`'s bailing_hybrid
 section. A fresh CUDA-enabled venv proved the KDA primitive itself fully reachable on this
 box — `fla.ops.kda` imports, and `fused_recurrent_kda` launches on the real RTX 2070 SUPER
 with finite output — upgrading the earlier "plausible, not proven" preflight to a genuine

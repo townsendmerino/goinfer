@@ -11,7 +11,7 @@
 
 | # | item | status | record |
 |---|---|---|---|
-| 1 | Nemotron 3 Nano (`G4`) | **landed**, T3'd on a real checkpoint; Nemotron 3.5 Lightning confirmed config-identical, no registry change | [`task-families-2026-09.md`](task-families-2026-09.md) F2 |
+| 1 | Nemotron 3 Nano (`G4`) | **landed**, T3'd on a real checkpoint; Nemotron 3.5 Lightning confirmed config-identical, no registry change | [`completed/task-families-2026-09.md`](completed/task-families-2026-09.md) F2 |
 | 2 | Qwen3-Next (`G5`) | **landed**, resident on WebGPU, CUDA and Metal | matrix |
 | 3 | Laguna (`G6`) | **landed**, CPU path (softplus attention gating and per-layer RoPE scales were the new primitives, as scoped) | matrix |
 | 4 | gpt-oss residency (`G7`) | **landed**, resident on all three backends. The one real forward its gate demanded found three silent wiring defects that a 100%-green kernel suite could not see — the lesson `G8` now rests on | [`completed/queue-correctness.md`](completed/queue-correctness.md) |
@@ -22,7 +22,7 @@ sequence-mixing family, the exact thing the old text said would be "natural" and
 verify the weights for first. **Qwen3.8** (the dense 27B) landed. From Tier B, **InternLM2** and
 **`qwen3_moe`** landed. Of the seven families in v0.17.0 (`qwen3_moe`, dense Granite, Ministral 3,
 SmolLM3, Olmo 3, Olmo Hybrid, Ling 3.0), none came from this doc's tiers — they came from
-`task-families-2026-09.md` and the G-series. That is the actual finding of the period: this doc
+`docs/completed/task-families-2026-09.md` and the G-series. That is the actual finding of the period: this doc
 stopped being where families came from once the axes were covered, which is what it predicted.
 
 ## Watching — current list

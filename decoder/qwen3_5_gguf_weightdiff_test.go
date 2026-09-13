@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// G1 (docs/task-families-2026-09.md, batch 2): GGUF-vs-safetensors weightDiff for the DENSE
+// G1 (docs/completed/task-families-2026-09.md, batch 2): GGUF-vs-safetensors weightDiff for the DENSE
 // qwen3_5 hybrid (Qwen3.8-27B, llama.cpp arch "qwen35") — the T3 parity item the MoE sibling
 // already has (qwen35_gguf_weightdiff_test.go) but the dense one didn't. Same method, same
 // reason it needs no HF oracle: the safetensors loader is already Gate-1 bit-exact vs HF, so it

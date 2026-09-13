@@ -669,15 +669,15 @@ var neverConfirmed = map[string]string{}
 var awaitingFirstConfirmation = map[string]string{
 	"TestQwen3Moe_forwardParity":              "2026-09-06 — newly required (qwen3_moe had no gate); promote from the first sweep that runs it",
 	"TestGraniteDense_forwardParity":          "2026-09-06 — newly required (dense granite had no gate); promote from the first sweep that runs it",
-	"TestQwen3MoeReal_oracle":                 "2026-09-06 — newly required (F1, docs/task-families-2026-09.md); real-checkpoint T3 for qwen3_moe, not yet run; promote from the first sweep that runs it",
-	"TestQwen38GGUF_weightDiff":               "2026-09-06 — newly required (batch 2 G1, docs/task-families-2026-09.md); GGUF-vs-safetensors weightDiff for the dense qwen3_5 hybrid, not yet run; promote from the first sweep that runs it",
-	"TestMinistral3_forwardParity":            "2026-09-06 — newly required (batch 2 G3, docs/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
-	"TestMinistral3_batchedMatchesSequential": "2026-09-06 — newly required (batch 2 G3, docs/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
-	"TestSmolLM3_forwardParity":               "2026-09-06 — newly required (batch 2 G4, docs/task-families-2026-09.md); new family smollm3, not yet run; promote from the first sweep that runs it",
-	"TestOlmo3_forwardParity":                 "2026-09-06 — newly required (batch 2 G2, docs/task-families-2026-09.md); new family olmo3, not yet run; promote from the first sweep that runs it",
-	"TestOlmoHybrid_forwardParity":            "2026-09-06 — newly required (batch 2 G2, docs/task-families-2026-09.md); new family olmo_hybrid, not yet run; promote from the first sweep that runs it",
-	"TestBailingHybrid_forwardParity":         "2026-09-06 — newly required (batch 2 G5, docs/task-families-2026-09.md); new family bailing_hybrid, not yet run; promote from the first sweep that runs it",
-	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/task-families-2026-09.md); " +
+	"TestQwen3MoeReal_oracle":                 "2026-09-06 — newly required (F1, docs/completed/task-families-2026-09.md); real-checkpoint T3 for qwen3_moe, not yet run; promote from the first sweep that runs it",
+	"TestQwen38GGUF_weightDiff":               "2026-09-06 — newly required (batch 2 G1, docs/completed/task-families-2026-09.md); GGUF-vs-safetensors weightDiff for the dense qwen3_5 hybrid, not yet run; promote from the first sweep that runs it",
+	"TestMinistral3_forwardParity":            "2026-09-06 — newly required (batch 2 G3, docs/completed/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
+	"TestMinistral3_batchedMatchesSequential": "2026-09-06 — newly required (batch 2 G3, docs/completed/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
+	"TestSmolLM3_forwardParity":               "2026-09-06 — newly required (batch 2 G4, docs/completed/task-families-2026-09.md); new family smollm3, not yet run; promote from the first sweep that runs it",
+	"TestOlmo3_forwardParity":                 "2026-09-06 — newly required (batch 2 G2, docs/completed/task-families-2026-09.md); new family olmo3, not yet run; promote from the first sweep that runs it",
+	"TestOlmoHybrid_forwardParity":            "2026-09-06 — newly required (batch 2 G2, docs/completed/task-families-2026-09.md); new family olmo_hybrid, not yet run; promote from the first sweep that runs it",
+	"TestBailingHybrid_forwardParity":         "2026-09-06 — newly required (batch 2 G5, docs/completed/task-families-2026-09.md); new family bailing_hybrid, not yet run; promote from the first sweep that runs it",
+	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/completed/task-families-2026-09.md); " +
 		"needs the ~60GB bf16 checkpoint on the Linux box, not yet run; promote from the first sweep that runs it",
 	"TestSmolLM3_3bReal_gate": "2026-09-07 — newly required (T3 promotion of smollm3 from tiny-golden to a " +
 		"released checkpoint, alongside TestSmolLM3_forwardParity above); the parityRealckptGates entry " +

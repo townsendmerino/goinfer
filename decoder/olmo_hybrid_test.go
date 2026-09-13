@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G2 (docs/task-families-2026-09.md, batch 2) Olmo Hybrid parity (allenai/Olmo-Hybrid-7B,
+// G2 (docs/completed/task-families-2026-09.md, batch 2) Olmo Hybrid parity (allenai/Olmo-Hybrid-7B,
 // model_type "olmo_hybrid"): qwen3_5's Gated DeltaNet (3-of-4 layers) + olmo3's own full-attention
 // shape (whole-vector QK-norm, 1-of-4 layers) — but NOT a straight composition. The real reason G2
 // paused for a design decision: norm placement differs BY LAYER KIND within one model

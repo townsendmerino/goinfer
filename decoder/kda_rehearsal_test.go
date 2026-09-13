@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestKDARehearsal_matchesReference is F4's synthetic-tiny bring-up (docs/task-families-2026-09.md):
+// TestKDARehearsal_matchesReference is F4's synthetic-tiny bring-up (docs/completed/task-families-2026-09.md):
 // per-layer HF differencing for the one new primitive in Ling-3.0-tiny's KDA mixer, against
 // fla-org/flash-linear-attention's actual reference implementation (not a from-scratch
 // reimplementation compared to itself).
