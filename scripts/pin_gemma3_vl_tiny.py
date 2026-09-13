@@ -37,6 +37,11 @@ TEXT = dict(
     sliding_window=16,
     rms_norm_eps=1e-6,
     max_position_embeddings=64,
+    # audit-metal-2026-09-12.md G-03: the default `_sliding_window_pattern` (6) with only 2
+    # layers derives ["sliding_attention", "sliding_attention"] — every real Gemma 3 mixes
+    # local/global layers, and a uniform fixture makes ropeUniform() true, so it can't exercise
+    # (or catch a regression in) Metal's FeatPerLayerRoPE admission (M-06). Force one of each.
+    layer_types=["sliding_attention", "full_attention"],
 )
 VISION = dict(
     hidden_size=32, intermediate_size=64, num_hidden_layers=2, num_attention_heads=2,

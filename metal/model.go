@@ -119,6 +119,12 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatFinalLogitSoftcap: true,
 	decoder.FeatMoE:               true,
 	decoder.FeatMoEGatedShared:    true,
+	// M-06 (audit-metal-2026-09-12.md): the dispatch loop already binds L.invf/L.uWindow PER
+	// LAYER (prefill.go's pRope dispatch), so a per-layer RoPE table was always implemented here
+	// — it just wasn't claimed, which silently declined every real Gemma 3 (5:1 local/global) to
+	// the sequential per-token path. FeatRopeMscale stays undeclared on purpose: a per-layer
+	// *mscale* family (Mellum's YaRN long-context variant) must still decline.
+	decoder.FeatPerLayerRoPE: true,
 }
 
 type residLayer struct {
@@ -911,9 +917,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				}
 				L.qkvBias = NewBufferFloats(d, append(append(append([]float32{}, qb...), kb...), vb...))
 			}
-			kvBytes := r.ctxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
+			// C-01 (audit-metal-2026-09-12.md): attention_prefill_fused's key loop reads whole
+			// 8-row simdgroup tiles and masks the ragged remainder AFTER the load (by position,
+			// not by skipping the read) — so when nKeysMax lands on the cache's last, ragged
+			// tile, the load can run up to 7 rows past ctxCap*kvDim. Round the ALLOCATION up to a
+			// multiple of 8 rows (r.ctxCap itself, the user-visible/checked capacity, is
+			// unchanged) so that read lands in the buffer's own padding, never past its end.
+			paddedCtxCap := (r.ctxCap + 7) / 8 * 8
+			kvBytes := paddedCtxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
 			if r.kvF32 {
-				kvBytes = r.ctxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
+				kvBytes = paddedCtxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
 			}
 			r.kc[l] = byteBuf(d, kvBytes)
 			r.vc[l] = byteBuf(d, kvBytes)
