@@ -37,7 +37,7 @@ CPU from the pinned host copy with the existing W4A8/W8A8 NEON/AVX2 expert kerne
 merged exactly."* Rationale: `cuda/resident.go`'s C′ path already holds every expert pinned on
 the host, already has the CPU expert kernels (P18 made them expert-major), and already pays a
 host-visible routing readback per layer — so the architectural objection recorded in
-`docs/task-freetoken-techniques.md` Lead 5 is smaller than when written. The lever: with misses
+`docs/tasks/task-freetoken-techniques.md` Lead 5 is smaller than when written. The lever: with misses
 on CPU, token time becomes `max(GPU hits, CPU misses)` instead of `hits + DMA`, and G32 already
 found the DMA bandwidth-saturated at line rate — exactly the case where moving work off the bus
 beats overlapping it.
@@ -46,7 +46,7 @@ beats overlapping it.
 the 8 GB card, paired and interleaved against the shipped C′ path and against `off`; fund at
 **≥1.3× end-to-end**, park below **1.15×**, 1.15–1.3× ambiguous → second mechanism. "The number
 to beat is 39.3" — FreeToken's own published tok/s on an RTX 4060 Laptop (a different card, per
-`docs/task-freetoken-techniques.md:7`), an external sanity check, not the primary bar.
+`docs/tasks/task-freetoken-techniques.md:7`), an external sanity check, not the primary bar.
 
 ## 1. What the trace already answers (G33, 2026-08-28 — no new hardware run needed)
 
@@ -278,7 +278,7 @@ verify at width 4 and 7, n-gram speculation at width 4 and 7 — **DECLINED**, c
 has recurrent state (Mamba-2 / Gated DeltaNet)... that speculative rollback cannot losslessly
 restore." Only the `off` arm ran (15.6–17.5 tok/s, 77.3% hit rate, 1.819 misses/stage — this
 run's own miss rate, close to but not identical to G33's 1.915 from a different trace/config,
-consistent). **The four-gate refusal `docs/task-freetoken-techniques.md` documented is still
+consistent). **The four-gate refusal `docs/tasks/task-freetoken-techniques.md` documented is still
 exactly what happens today** — nothing large enough to need expert streaming can speculate on
 CUDA. This was a direct re-run, not a grep or a re-derivation of the prior finding.
 
@@ -351,7 +351,7 @@ have silently misread every expert's shape.
 
 ## Sources
 
-`docs/audit-2026-09-02.md` L-01 (mechanism, decision rule, disposition) · `docs/task-freetoken-techniques.md`
+`docs/audit-2026-09-02.md` L-01 (mechanism, decision rule, disposition) · `docs/tasks/task-freetoken-techniques.md`
 Lead 5 (architecture, antagonism risk) · `docs/QUEUE.md` G31–G34 (DMA cost law, overlap ceiling,
 miss classification, block-verify's own infra-gap finding) · `decoder/mlp.go` (`moeMLP`,
 `swiGLUExpert` — the existing sequential CPU expert loop) · aikit `linalg.MatmulBT`/`parallelCols`

@@ -16,6 +16,16 @@
 > reasoned decision worth revisiting only for a specific regime, not a bug; two are
 > genuinely new. Read alongside `docs/task-moe-streaming.md` and `docs/completed/qwen3_5_moe.md`,
 > not instead of them.
+>
+> **Doc-review correction, 2026-09-13 (doc otherwise LIVE, corrections applied in place —
+> see inline notes at each affected section, not restated here).** Two things this doc
+> called settled moved since 2026-08-27: (1) the GPU-resident session-skip "not a gap" note
+> was reversed six days after this doc opened — `3358e6b` shipped general resident prefix
+> reuse (attention-only families; hybrid/recurrent families still excluded, which folds into
+> Lead 1); (2) Lead 5 ("genuinely new... track, don't start") has since started —
+> `docs/task-l01-hybrid-moe-cpu-gpu.md` is the live design/build record, with real code
+> landed 2026-09-10 (`cuda/l01_cpu_offload.go`, correctness-verified, not yet wired in).
+> Leads 1, 3, and 4 were checked against the current tree and stand as written.
 
 | Lead | Status | Priority |
 |---|---|---|
@@ -23,8 +33,8 @@
 | 2. Async-H2D overlap for the CUDA expert cache | already scoped (`task-moe-streaming.md` §C′) | high |
 | 3. Pin the CUDA expert-stack buffer after filling, not before | unverified, now precise | medium |
 | 4. Pool the CUDA expert cache globally instead of per-layer | half-true already (CPU path has it) | medium |
-| 5. Bandwidth-adaptive CPU/GPU co-execution | genuinely new | low — track, don't start |
-| — GPU-resident session-skip | **not a gap** — deliberate decision, see note below | revisit only for slow MoE |
+| 5. Bandwidth-adaptive CPU/GPU co-execution | **started** — see 2026-09-13 correction below | was low/track; now an active design pass |
+| — GPU-resident session-skip | **corrected 2026-09-13: fixed in general, not just "not a gap"** — see note below | Lead 1 is now the live remainder |
 
 ---
 
@@ -73,14 +83,23 @@ more there than anywhere else in the tree.
 ## Lead 2 — async-H2D overlap for the CUDA expert cache (already your own next lever)
 
 **Status: already scoped, not started.** `docs/task-moe-streaming.md`'s "§C′ — VRAM
-expert cache" section (line 346) ships step 2 (the real LRU cache,
-`GOINFER_MOE_CACHE_SLOTS`) on **synchronous** H2D DMA, and says outright that the next
-lever is a gocudrv v0.3.0 bump for async-H2D overlap of the miss DMAs with compute,
-to collapse the remaining per-token bytes toward the ~50 MB estimate. FreeToken's
-"double-buffered prefill streaming" — compute layer *l* from one buffer while a
-transfer stream loads layer *l*+1's experts into the other — is a second, independent
-data point that this class of overlap is worth the dependency bump, from a team with
-real throughput numbers to show for it.
+expert cache" section (line 356 as of 2026-09-13; the doc has grown since this lead was
+written) ships step 2 (the real LRU cache, `GOINFER_MOE_CACHE_SLOTS`) on **synchronous**
+H2D DMA, and says outright that the next lever is a gocudrv v0.3.0 bump for async-H2D
+overlap of the miss DMAs with compute, to collapse the remaining per-token bytes toward
+the ~50 MB estimate. FreeToken's "double-buffered prefill streaming" — compute layer *l*
+from one buffer while a transfer stream loads layer *l*+1's experts into the other — is a
+second, independent data point that this class of overlap is worth the dependency bump,
+from a team with real throughput numbers to show for it.
+
+**Sizing caveat, 2026-09-13.** The same `task-moe-streaming.md` §C′ also carries a later,
+more precise "Production-config decomposition" (dated 2026-08-03, so already on record
+when this lead was written, just not folded in here): at the current 38-slot config
+(89.1% LRU hit), miss-DMA is measured at 4.28 ms/tok against a ~29.3 ms/tok forward total
+— so async-H2D overlap has at most ≤4.3 ms/tok to hide, not the open-ended "collapse
+toward ~50 MB" framing above might suggest. Still worth building (a free ~15% at this
+config, more as slot count or model size grows the miss rate), just a bounded win against
+the current cache, not a second multiplier on top of it.
 
 **One refinement worth folding in when this gets picked up.** FreeToken's description
 implies the *prefill* case specifically preloads the complete expert set for the next
@@ -176,6 +195,23 @@ avoid. Worth a scoping pass of its own before any code, not a quick add-on to le
 **Priority: low for now** — track it, don't start it, until leads 1–2 land and there's
 a clearer read on how much headroom is actually left on the table.
 
+**Correction, 2026-09-13: this has since started, ahead of the "track, don't start" call
+above.** `docs/audit-2026-09-02.md` L-01 borrows this lead's mechanism directly (and notes
+that "the architectural objection recorded in `docs/task-freetoken-techniques.md` Lead 5 is
+smaller than when written," since C′ already pays a host-visible routing readback every
+layer). `docs/task-l01-hybrid-moe-cpu-gpu.md` is the live design/build record: an isolated
+microbenchmark on the real CUDA box's host CPU found sending every missed expert to CPU, run
+in parallel, beats today's GPU-compute-plus-DMA cost at every measured miss count (1.32× at
+m=1 to 3.40× at m=8); the aggregate host-CPU occupancy and multi-tenant-contention questions
+are both resolved in favour of the simpler "send everything" mechanism; and the partial-sum
+merge path is sketched against the real kernel signatures. **Real code landed 2026-09-10**
+(`cuda/l01_cpu_offload.go`): the pinned-host expert extraction, correctness-verified against
+an independent ground truth (cosine 0.99964–0.9999999 across nine expert/input combinations)
+— not yet wired into `loadRoutedExperts`, no async overlap or merge kernel yet, and not a
+funding decision until the real concurrent prototype and the pre-registered paired measurement
+on Qwen3.6-35B-A3B (fund ≥1.3×, park <1.15×) run. `docs/task-l01-hybrid-moe-cpu-gpu.md`, not
+this doc, is the one to read for Lead 5's current state.
+
 ### Pre-registered risk: Lead 5 and the speculation program may be antagonistic
 
 **Nobody had written down that these two collide, and they do.** Lead 5 and the spec
@@ -226,20 +262,39 @@ refusal, which is the right answer for today and the wrong one to carry forward.
 
 **Not a lead — a note, and a correction to how the original comparison framed it.**
 The first draft of the goinfer-vs-FreeToken comparison called this a gap. It isn't
-one. `README.md:828-831` states the reasoning directly: "the resident decode path is
-fast enough that the per-request session optimization isn't worth it. The OpenAI API
-is stateless [clients resend the whole conversation], so this is a throughput trade,
-not a correctness change." That's a considered decision, not an oversight, and
-`docs/legacy-benchmarks.md:361` and `docs/scoping-dsh-goinfer.md:32` both restate it as a
-known, documented trade-off rather than a bug.
+one, as of when this doc was opened (2026-08-27): `README.md:828-831` at the time stated
+"the resident decode path is fast enough that the per-request session optimization isn't
+worth it. The OpenAI API is stateless [clients resend the whole conversation], so this is
+a throughput trade, not a correctness change." That was a considered decision, not an
+oversight, and `docs/legacy-benchmarks.md:361` and `docs/scoping-dsh-goinfer.md:32` both
+restated it as a known, documented trade-off rather than a bug.
 
-Worth reopening only for the specific regime where the reasoning is least likely to
-hold: a large, slow MoE model (Gemma-4 26B at 11–17 tok/s, or slower) in a long,
-growing agentic conversation, where re-prefilling the entire history every turn costs
-real wall-clock — unlike whatever faster, smaller model the "fast enough" call was
-presumably made against. If Lead 1's checkpoint work happens, it's a natural moment to
-re-measure this specific case rather than treat the original decision as settled
-forever for every model size.
+**Correction, 2026-09-13: the decision was reversed six days after this doc opened, and the
+quoted README passage no longer exists at that path.** `3358e6b` (2026-09-02) shipped
+resident prefix reuse on the resident KV path itself (`decoder/resident_reuse.go`) — the
+"deliberate trade" above was traded back once it was cheap enough to build. Warm-turn TTFT
+on the resident path is now 7–8 ms against ~1700–1900 ms cold (`docs/benchmarks.md` §B10,
+2026-09-02) — roughly 250× — and `docs/roadmap.md`'s own "Superseded — June claims" table
+lists this exact claim as retired: `the resident path is "stateless (no prefix-reuse)"` →
+`resident prefix reuse shipped 2026-09-02 (3358e6b); agent turn 3 on the 1.5B 9.13 s → 0.42 s`.
+The quoted README passage moved into `docs/completed/gpu-residency-coverage-2026-06.md:280`
+as an archived record of the trade as it stood before the fix; README.md itself is 377 lines
+today and doesn't contain it. `docs/scoping-dsh-goinfer.md:32` was already corrected in place
+(it now says "GPU-resident models re-prefill each turn (no prefix-KV reuse on the resident
+path)" only as one of "the two known trade-offs" the staged/CPU path avoids — check it in
+context, that framing is about `cmd/serve`'s separate session cache, not the resident path's
+own KV reuse).
+
+**What's actually still true, and it's the same regime this note already named.** The fix is
+gated on `hasRecurrentState()`: hybrid/recurrent families (Gated DeltaNet, Mamba-2 — the
+qwen3.5/3.6-MoE class, also `docs/legacy-benchmarks.md:369`'s "serve caveat" box, itself
+marked "no longer true" for the general case) don't get the same reuse — they got the
+narrower exact-strict-extension rule instead (Lead 1, above; `docs/completed/qwen3_5_moe.md`'s
+2026-09-12 correction). So the regime this note flagged as worth reopening — "a large, slow
+MoE model... in a long, growing agentic conversation, where re-prefilling the entire history
+every turn costs real wall-clock" — is exactly where the fix does NOT reach yet, and it's
+also exactly Lead 1's open work, not a separate question. This note's job is now folded into
+Lead 1; nothing further to revisit here on its own.
 
 ---
 
@@ -250,12 +305,17 @@ forever for every model size.
   fallback-to-full-recompute line
 - `docs/task-moe-streaming.md` — §C′ (`:346`), Lever 1 (`:107`), Lever 3 (`:185`),
   Lever 4 (`:226`)
-- `README.md` — the GPU-resident session-skip note (`:828-831`); the Gemma-4 26B slot
-  table
-- `docs/legacy-benchmarks.md:361`, `docs/scoping-dsh-goinfer.md:32`
+- `README.md` — the Gemma-4 26B slot table (the GPU-resident session-skip quote this doc
+  originally cited at `:828-831` has since moved — see the 2026-09-13 correction inline)
+- `docs/legacy-benchmarks.md:361,366,369`, `docs/scoping-dsh-goinfer.md:32`
 - `decoder/moepaging.go`, `decoder/layerpaging.go`, `decoder/session.go`,
   `cuda/resident.go` (`mapBytes`)
 - FreeToken: arXiv:2608.16157; github.com/FlashML-org/FreeToken
+- Added 2026-09-13 doc-review correction: `docs/task-l01-hybrid-moe-cpu-gpu.md` (Lead 5's
+  live state), `docs/audit-2026-09-02.md` L-01, `docs/roadmap.md` ("Superseded — June
+  claims" table), `docs/benchmarks.md` §B10 (warm/cold TTFT), `docs/completed/
+  gpu-residency-coverage-2026-06.md:280` (where the old README quote moved),
+  `decoder/resident_reuse.go`, `docs/completed/qwen3_5_moe.md` (2026-09-12 correction)
 
 ## Next step
 
