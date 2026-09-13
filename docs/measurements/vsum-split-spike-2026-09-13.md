@@ -50,8 +50,31 @@ Second, smaller wrong call: I expected the combine pass to eat the gain. It is *
    1.76-4.93x closer to f64 than the sequential one — but predicted is not measured, and this
    ordering (perf first, fidelity second) is only defensible because the spike is opt-in and
    unreachable in a stock binary.
-2. **End-to-end.** ~46 tok/s against today's 39.4 at depth 8000 is ARITHMETIC from the kernel figure
-   and attention's ~51% share, not a served measurement.
+2. ~~**End-to-end.** ~46 tok/s against today's 39.4 at depth 8000 is ARITHMETIC from the kernel
+   figure and attention's ~51% share, not a served measurement.~~
+
+   **CORRECTED 2026-09-13, and the correction is the interesting part.** A served A/B *was* run the
+   same day — two `serve` arms over the same 8000-token prompt, 48 greedy tokens each — and it
+   measured **38.79 → 44.83 tok/s, +15.6%**. That number then went into a commit message while this
+   section still said end-to-end was unestablished, because **the run's output was never written
+   anywhere**: no log, no record, only a terminal. A figure whose only copy is a scrollback is not
+   evidence, which is exactly what CLAUDE.md means by "archive the log; do not leave it in `/tmp`" —
+   and the failure mode here was worse than losing it, because the unrecorded number kept being
+   quoted while the committed document went on contradicting it.
+
+   Re-run on a quiet box to give it a re-readable home, `~/goinfer-logs/vsum-served-ab-20260913-103436.log`:
+
+   | arm | tok/s | continuation |
+   |---|---:|---|
+   | exact (bit-identical vsum) | 38.60 | "…The problem is…" |
+   | spike S=4 | 44.84 | "…The following is…" |
+
+   **+16.2%**, against +15.6% unlogged — consistent, and the kernel figure predicts it to within a
+   point. Two caveats that keep this honest: the prompt prefix is cached by the preceding warm
+   request, so this is a decode-rate measurement and the "incl prefill" in the harness output is
+   misleading; and **both arms emit degenerate text** on this prompt, so the run says nothing about
+   quality — the arms differ from the first content word, which is the vacuity check passing and
+   nothing more. Quality is the fidelity gate's job (`vsum-split-fidelity-PREREGISTERED.md`).
 3. **One geometry, one depth.** D7 only. A geometry where the single-block path already wins
    (phi3-mini class, high KV traffic per key) has no reason to benefit and is untested here.
 
