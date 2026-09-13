@@ -473,7 +473,7 @@ type cudaResident struct {
 	hostIdx    []uint32    // C′: scratch for the per-layer rIdx device→host readback
 	hostSlot   []uint32    // C′: scratch for the per-token slot ids uploaded to slotIdx
 
-	// L-01 hybrid CPU/GPU MoE expert execution (docs/task-l01-hybrid-moe-cpu-gpu.md) —
+	// L-01 hybrid CPU/GPU MoE expert execution (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) —
 	// PROTOTYPE, synchronous only (no overlap yet: correctness first, matching the design
 	// pass's own discipline). GOINFER_CUDA_L01_CPU_OFFLOAD, default off, requires cacheExperts.
 	l01Enabled  bool
@@ -1192,7 +1192,7 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 	if e := gpu.Download(r.rIdx, r.hostIdx[:r.topK]); e != nil {
 		return e
 	}
-	// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE. Two more small D2H reads, only
+	// L-01 (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE. Two more small D2H reads, only
 	// when the mechanism is on: rWgt (the routing weight per position, needed to weight a
 	// CPU-computed expert's contribution the same way fMoEWacc's on-device wgt[j] already
 	// does) and mq/mSc (moeMLPPre's already-quantized MoE input activation + its single scale —
@@ -1238,7 +1238,7 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		e := r.hostIdx[j]
 		slot, hit := c.admit(e)
 		r.hostSlot[j] = uint32(slot)
-		// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE: a miss, with the mechanism on,
+		// L-01 (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE: a miss, with the mechanism on,
 		// goes to CPU instead of DMA. unadmit reverses admit's bookkeeping to EMPTY (the exact
 		// N-09 rollback path below already uses on upload failure) so the cache is left exactly
 		// as if this position had never been admitted — no DMA was queued, so there is nothing
@@ -2275,7 +2275,7 @@ func (r *cudaResident) launchGluSplitExpert(gu Buffer, inter int, outQ, outSc, o
 func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 	gu := 2 * r.moeInter
 	for j := 0; j < r.topK; j++ {
-		// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE: loadRoutedExperts already
+		// L-01 (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE: loadRoutedExperts already
 		// decided this position goes to CPU instead of GPU (and unadmitted it from the slot
 		// cache, so r.expIdx()[j] is not a valid slot to read here at all). Skip every GPU step
 		// for it; l01MergeCPUExperts (after this loop) computes and merges it instead.

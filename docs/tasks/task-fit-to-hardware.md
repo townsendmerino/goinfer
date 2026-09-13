@@ -297,7 +297,7 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    which `decoder/gguf.go`'s ~2900 lines of format logic does not separate out today); that is
    its own scoping pass, not attempted here.
 5. **Host-computed experts** as a placement when L-01 lands — the enum slot exists from step 1.
-   L-01's own design pass (`docs/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found a first-pass
+   L-01's own design pass (`docs/tasks/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found a first-pass
    estimate suggesting the naive mechanism loses was ~7× too high; a real isolated microbenchmark
    on target hardware shows it beating the shipped path's per-layer cost at every measured miss
    count. **Correction (2026-09-13 doc-review): "still no CUDA code" above was stale the same day

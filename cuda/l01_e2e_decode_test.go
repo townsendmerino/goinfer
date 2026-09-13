@@ -9,7 +9,7 @@ import (
 )
 
 // TestL01_e2eDecode_matchesBaseline is the wiring-level correctness gate
-// docs/task-l01-hybrid-moe-cpu-gpu.md §9 calls for before the freshly-wired
+// docs/tasks/task-l01-hybrid-moe-cpu-gpu.md §9 calls for before the freshly-wired
 // loadRoutedExperts/moeMLPPost changes (cuda/resident.go) are trusted: does turning
 // GOINFER_CUDA_L01_CPU_OFFLOAD on change what the model actually decodes?
 //
