@@ -1,5 +1,28 @@
 # goinfer decodes ~2x SLOWER than ollama on CPU — find out why, on Apple Silicon
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-09-13, doc review): COMPLETE — every item this doc scoped was answered,
+> and the two levers it uncovered were carried through to shipped fixes.** The deliverable itself
+> landed same-day: `docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md` gives the Mac
+> baseline (0.32x/0.25x of ollama at 0.5B/1.5B — worse than the Linux/amd64 numbers above, not
+> better or absent), answers §1 (the quant confound is real but only PART of the gap — int4→
+> int8int8 buys ~60%, a ~2x residual survives), rules out §4 item 1 (thread count/E-cores — not
+> goinfer's bottleneck, though real for ollama's own default), and its same-day follow-up section
+> runs §3's ops-per-byte profile (W4A8 is issue-limited on NEON, a arm64-specific lever amd64's
+> dead end does not transfer to) plus a per-token stub finding a ~26% non-matmul floor at both
+> model sizes. Both of those two findings were then carried to completion by their own task docs,
+> not left as hypotheses: `docs/completed/task-w4a8-neon-bandwidth.md` (the int4 kernel lever —
+> shipped, `.giw` kind 4/5, final Mac decode now 0.75-0.77x/0.57-0.60x of ollama per
+> `docs/benchmarks.md` §A) and `docs/completed/task-attention-decode-cost.md` (the non-matmul
+> floor — traced to decode attention being 99-115% of it, cut 3.86x-10.20x, shipped in aikit
+> v1.25.0). Nothing this doc asked for is still open under its own name.
+
 > Written 2026-08-22 against goinfer `f5430ed`, from the v0.15.0 peer benchmark measured on
 > `linux-62gb` (AMD Ryzen 7 3700X, 16 threads, amd64/AVX2). **This is a diagnosis task, not a
 > fix-it task** — the deliverable is a cause with evidence, and a recommendation. Do not optimise

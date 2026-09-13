@@ -1560,9 +1560,10 @@ supports.
 | `docs/completed/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:741` | goinfer | `// of the next matmul); then ctx_head[K,hd] = scores·V_head, expressed as` |
 | `docs/completed/attention-a1-bit-identical-restructure.md|decoder/forwardn.go:951` | goinfer | `// stride kvDim (vt's column index steps by a whole KV row) — skipping` |
 | `docs/completed/goinfer-w4a8-opsperbyte-citations.md|linalg/quant.go:319` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
-| `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/sampler_chunked.go:111` | goinfer | `workers := min(runtime.GOMAXPROCS(0), numChunks)` |
-| `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:750` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
-| `docs/prompts/mac-cpu-decode-vs-ollama.md|decoder/weights.go:319` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
+| `docs/completed/mac-cpu-decode-vs-ollama.md|decoder/sampler_chunked.go:111` | goinfer | `workers := min(runtime.GOMAXPROCS(0), numChunks)` |
+| `docs/completed/mac-cpu-decode-vs-ollama.md|decoder/weightmat.go:750` | goinfer | `w.MatmulBTW4A8Into(ws, a, dst, M)` |
+| `docs/completed/mac-cpu-decode-vs-ollama.md|decoder/weights.go:319` | goinfer | `workers := min(runtime.GOMAXPROCS(0), n)` |
+| `docs/completed/mac-demo-finish.md|internal/chatapp/main.go:501` | goinfer | `fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", nTok, float64(nTok)/elapsed` |
 | `docs/queue-correctness.md|decoder/gguf.go:50` | goinfer | `anchor: func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:423` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
