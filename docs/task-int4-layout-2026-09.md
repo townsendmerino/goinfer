@@ -53,7 +53,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
-**Where.** `decoder/weightmat.go:414 wantsCanonicalInt4(backendName, be)`,
+**Where.** `decoder/weightmat.go:428 wantsCanonicalInt4(backendName, be)`,
 `:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:384` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
@@ -65,7 +65,7 @@ nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 **The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:124`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
-and therefore repacked-only, `int4Concat` (`metal/model.go:465`) declined via its
+and therefore repacked-only, `int4Concat` (`metal/model.go:471`) declined via its
 panic-and-recover. Not a crash — but it shows the gate had turned `*decoder.Model` from
 backend-agnostic data into something with a hidden property and a silent failure mode.
 
@@ -161,7 +161,7 @@ reporting and the error.
 **Where (as implemented).** `decoder/serialize.go` — format comment (`:49–72`), `giwWriter.target`
 (`:933–970`), `weightMat`/`weightMatKind3Only`/`weightMatKind` (`:1009–1103`), `readWeightMat`
 kinds 3/4/5 (`:1466–1525`), `giwVersion = 11` (`:87`), `SerializeWeightsForTarget`/
-`SerializeWeightsToForTarget` (`:207–233`); `decoder/weightmat.go:542–614` (`GIWTarget`,
+`SerializeWeightsToForTarget` (`:207–233`); `decoder/weightmat.go:598–614` (`GIWTarget`,
 `GIWTargetForBackend`, `ParseGIWTarget` — new, not anticipated by the "Where" list above);
 `decoder/gguf.go` (`StreamTranscodeGGUF`'s `target GIWTarget` param); `decoder/weights.go`
 (`repackedOnlyInt4Count`); `decoder/model.go` (the `.giw` branch's post-load backend check);
@@ -367,7 +367,7 @@ decision with its own measurement — file here, do not do under L1/L2.
 
 ## L5 — amd64 split-half-only: re-open the parked decision, its own condition is now met
 
-**Where.** `decoder/weightmat.go:262–305 repackW4A8SplitHalfIfEligible`, `:323–347
+**Where.** `decoder/weightmat.go:268–305 repackW4A8SplitHalfIfEligible`, `:323–347
 w4a8SplitHalfRepackEnabled` (env opt-in `GOINFER_W4A8_SPLITHALF`, default-off);
 `docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`; aikit
 `linalg/weightmat_splithalf_amd64.go` (`RepackInt4SplitHalf` declines on AVX-512 VNNI hosts —

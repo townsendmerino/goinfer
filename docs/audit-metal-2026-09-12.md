@@ -222,7 +222,7 @@ re-baked by the code it checks (G-04).
   at `:624-625` says the feature "is not claimed").
 - **Mechanism and bound:** every real Gemma 3 prompt is sequential: M-01's 671 MB head per token on
   4B, at 13.5 ms/token. Note admitting it would still route Gemma 3 (hd=256) to the *exact*
-  `attention_prefill` (`ATTN_MAXHD 128`, `prefill.go:606`) — the 46 GB/layer re-read shape — so the
+  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:606`) — the 46 GB/layer re-read shape — so the
   fused kernel needs an hd=256 variant for the full win.
 - **Fix:** `decoder.FeatPerLayerRoPE: true` in `prefillFeatures` (safe: `FeatRopeMscale` stays
   undeclared so per-layer *mscale* families still decline); give `testdata/gemma3-vl-tiny` a global
@@ -584,7 +584,7 @@ re-baked by the code it checks (G-04).
 - **Mechanism:** 8 < 512 ⇒ decline ⇒ `Fatalf` before any MoE code runs; the admit-side MoE-vs-dense
   check C-08's fix relies on has not run green since the floor. A `go test ./metal/` that is always
   red trains everyone to ignore it.
-- **Fix:** `t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")` as `prefill_ttft_test.go:45` does.
+- **Fix:** `t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")` as `metal/prefill_ttft_test.go:45` does.
 - **Confidence:** confirmed (three reviewers).
 
 #### G-02 · The §3.2 pooled gate still drops missing cells silently and turns a fit-guard decline into a SKIP that "SHIPS" (prior audit G-08, open)
@@ -619,7 +619,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/snapshot_golden_test.go:20,177-184` ("the ABSOLUTE STORED REFERENCE";
   `GOINFER_UPDATE_GOLDENS` writes whatever current code produces), `metal/kernels.go:26-29` ("only
   deep-mantissa sha bits move — see the round's own commit"); `docs/task-autoresearch-loop.md:3`
-  ("not started") and §3 ("Do NOT point it at Metal") vs `kernels.go:102,147,729-754` (Metal rounds
+  ("not started") and §3 ("Do NOT point it at Metal") vs `metal/kernels.go:102,147,729-754` (Metal rounds
   ran on the norm-class kernels); `scripts/autoresearch_rmsnorm_results.tsv` not in
   `docs/measurements/`.
 - **Mechanism:** the one gate that sees reduction-order/fast-math drift was refreshed to the new
@@ -642,8 +642,8 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/pagecost_sharedevent_test.go:47-64` (qwen2.5-1.5b dense int8int8; "recovers ~0%"),
   `metal/pagecost_measure_test.go:47-52` ("There is NO such checkpoint on this Mac … this measures
   the SUBMISSION-STRUCTURE cost on a DENSE model"), `metal/residency_probe_test.go:11-12` (paged
-  26B: ~15 ms/boundary). Carried into production comments as settled (`gemma4_moe.go:434-436`,
-  `model.go:1360`). **Fix:** M-11's re-run. **Confidence:** confirmed.
+  26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:434-436`,
+  `metal/model.go:1360`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
 - **Where:** `metal/close_leak_test.go:160-169,224-248` vs aikit `gpu/metal.go:382-390`
@@ -654,7 +654,7 @@ re-baked by the code it checks (G-04).
 
 #### G-07 · `TestPrefillGate` (superseded §3 form) would `Fatalf` on its first cell; three files cite `TestMetalPrefillDivergenceRate`, which does not exist
 - **Where:** `metal/prefill_gate_test.go:65,75,254-257` (K=256 without the floor override);
-  `spec_prefill_regression_test.go:46`, `spec_verify_curve_test.go:22`,
+  `metal/spec_prefill_regression_test.go:46`, `metal/spec_verify_curve_test.go:22`,
   `docs/measurements/prefill-gate-l1-2026-09-05.md:66` cite a test `grep` cannot find — the
   most-quoted Metal fidelity number ("54% stream divergence") has no test behind it. **Fix:** delete
   `TestPrefillGate` or set the override; re-add the divergence test or stop citing it.
@@ -680,7 +680,7 @@ re-baked by the code it checks (G-04).
 
 #### G-09 · P-15's MoE-prefill measurement is written, never run, and refuses the paged shape that actually runs on the Mac
 - **Where:** `metal/moe_prefill_measure_test.go:14-27,52-56` (`GOINFER_MOE_PREFILL_CKPT`; declines a
-  paged resident). The "default ON above 512 for MoE" claim (`model.go:106-108`) rests on dense
+  paged resident). The "default ON above 512 for MoE" claim (`metal/model.go:106-108`) rests on dense
   cells. **Fix:** let it run on the paged 35B, sequential vs expert-major once M-05 exists.
 
 #### G-10 · The C-09 status latch (`mustCmdBufOK` / `Encoder.Err()`) is, by its own comment, inert on Apple silicon — host-side pre-checks are the real gate
@@ -704,7 +704,7 @@ re-baked by the code it checks (G-04).
   runs `ForwardEmbPipe` → full head + host argmax. Labelling defect (fused argmax is a recorded
   speed-neutral on UMA), but the curve measures a path serve never takes.
 - N-04 `docs/gpu-residency-coverage.md:19-25` — "in int8 W8A8": Metal has no int8 GEMV and
-  re-quantises to W4A8 (`model.go:435-461`). Qwen2.5-VL/Qwen3-VL "✅ resident" Metal cells are
+  re-quantises to W4A8 (`metal/model.go:435-461`). Qwen2.5-VL/Qwen3-VL "✅ resident" Metal cells are
   text-only (no `ForwardMRoPE` in `metal/`); Gemma 4 E2B/E4B CPU-only under a "✅" row — no footnote.
 - N-05 `docs/audit-2026-09-10.md:153` lists C-08 open; `:1216-1224` records it fixed (d9139bc).
 - N-06 `docs/task-autoresearch-loop.md:3` "not started" / §3 "do NOT point it at Metal" — it ran on
@@ -720,7 +720,7 @@ re-baked by the code it checks (G-04).
 - N-10 `metal/model.go:1921` "11 dispatches vs 19" is stale (block is 7); `metal-verdict.md:75`
   "337 dispatches/token" is 310 at this tree. `:1538-1541` "fastest greedy path" stale.
 - N-11 `metal/cmd/serve/main.go:7-8` "Dense residency only … int8": MoE is resident; int8 is the
-  re-quantised case. `decoder/features.go:317` cites `moe.go:206-211`; it is `:375`.
+  re-quantised case. `decoder/features.go:317` cites `metal/moe.go:206-211`; it is `:375`.
 - N-12 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:14` names `qwen2.5-1.5b-instruct`;
   test default and L2 record say `qwen2.5-coder-1.5b-instruct` — methodology wants the exact file.
 - N-13 `metal/snapshot_golden_test.go:127` names `attention_f32` as covered; N-28 says it is dead.
@@ -739,12 +739,12 @@ re-baked by the code it checks (G-04).
 - N-18 `metal/prefill.go:385` — `pTile` reloaded from `pScr` per `cc` (16×/tile); subsumed by M-04.
 - N-19 `metal/prefill.go:204-216` — `rope_f16` computes cos/sin per (row, pair) with no table; a
   second reason to fuse RoPE-K into `kv_store_f16`.
-- N-20 `metal/model.go:378-399` + `moe.go:546-552` — per stage the f16 scales are re-derived from an
+- N-20 `metal/model.go:378-399` + `metal/moe.go:546-552` — per stage the f16 scales are re-derived from an
   f32 heap copy that is 2× the bytes the GPU consumes (≈2.85 GB on the 26B, ≈4 GB on the 35B, on
   the box whose N=128 cliff was memory pressure); cache f16 per expert at build.
 - N-21 `metal/expertpool.go:150-155` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
-- N-22 `metal/moe.go:768-771`, `gemma4_moe.go:520-524` — phase 2 of layer l and phase 1 of l+1 have no
+- N-22 `metal/moe.go:768-771`, `metal/gemma4_moe.go:520-524` — phase 2 of layer l and phase 1 of l+1 have no
   host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11.
 - N-23 `metal/moe.go:774-777` — a hybrid's dense layers each get their own `Begin/End` in
   `forwardLogitsMoEPaged`.
@@ -800,7 +800,7 @@ re-baked by the code it checks (G-04).
   `waitUntilCompleted`, one serial encoder, 310 dispatches, ~1,030 purego transitions, one heap
   allocation per token; no per-token buffer creation; `setBuffers` batching already cut binds from
   ~2,600 to ~337 msgSends/token; ICB and unretained references are recorded nulls
-  (`model.go:1379-1412`, `gpu/metal.go:700-812`, `metal-verdict.md:171-172`).
+  (`metal/model.go:1379-1412`, `gpu/metal.go:700-812`, `metal-verdict.md:171-172`).
 - **Encode-ahead on the production path:** `metalResident.Forward` → `ForwardEmbPipe` → `execLoop`;
   t+1 encoded between `Commit(t)` and `WaitDone(t)`; value-independent (pos/nKeys/`r.x` written at
   commit); only 1 token in 64 (pool drain), the first token after `SetAdapter`, paged models and

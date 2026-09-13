@@ -1087,7 +1087,7 @@ do not have the heads.
 > true when written, and the record of why we thought it is the useful part.
 >
 > What changed is our own loader. `decoder/gguf.go:744`, `decoder/gguf_qwen35.go:33`,
-> `decoder/weights.go:576` and `decoder/registry.go:1715` detect these heads, name them, and skip
+> `decoder/weights.go:578` and `decoder/registry.go:1715` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
 > (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the
@@ -1499,7 +1499,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   still allocates, amortized over its K-token batch. All MoE-family int4 goldens pass bit-identical.
 - **int4 W4A8 `Workspace` alloc/token — DONE, P9, not via the fix this item originally proposed.** The
   item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in `matmul()`
-  itself (`decoder/weightmat.go:649` `matmulWSPool`), which also covers the free-matmul callers
+  itself (`decoder/weightmat.go:705` `matmulWSPool`), which also covers the free-matmul callers
   `matmulInto` never sees — `matmul()`'s int4 and W8A8-fallback branches now pull their
   `linalg.Workspace` from the pool instead of declaring one fresh per call, so the Workspace's own
   lazily-grown `i8`/`f32` quant scratch survives across calls instead of reallocating
