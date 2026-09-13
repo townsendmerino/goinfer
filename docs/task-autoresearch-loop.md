@@ -1,6 +1,14 @@
 # Task: an autonomous kernel-optimization loop (autoresearch) over goinfer's gates
 
-> **Status: PLAN / setup guide (not started).** Tracked as queue-engineering **E9**. This is an
+> **Status: PLAN / setup guide.** "Not started" no longer describes the whole picture (G-04,
+> audit-metal-2026-09-12.md): `metal/kernels.go`'s own comments on `rmsnorm_quant`/`quant_vec`
+> (the norm-class kernels) cite `scripts/autoresearch_rmsnorm_results.tsv` as the record of a
+> real vectorization-safety experiment run against Metal — contradicting §3's "do NOT point it at
+> Metal" below, at least for that one round. That tsv is not in this tree (not committed, or lost
+> since) — the SHA/reduction-order history it recorded cannot be audited from the repo as it
+> stands. Whether this was the full autoresearch LOOP (automated N-candidate search) or a
+> hand-driven experiment that happened to produce a similarly-named log is not established either
+> way; flagged here rather than guessed at. Tracked as queue-engineering **E9**. This is an
 > *execution method* for kernel campaigns, not a new campaign: an agent runs
 > edit → benchmark → keep/revert unattended, gated by goinfer's existing correctness harness.
 > Drafted 2026-08-13 after sankalp's "232× kernel via a Codex autoresearch loop" (GPU Mode qr_v2) and

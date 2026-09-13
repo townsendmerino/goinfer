@@ -628,6 +628,15 @@ re-baked by the code it checks (G-04).
   (argmax-at-every-checkpoint + cosine vs the previous golden, in `docs/measurements/`), or the
   golden is declared an OS-drift detector only; move the tsv into `docs/measurements/`; fix the
   autoresearch doc's status. **Confidence:** plausible (the tsv is not here).
+- **PARTIALLY CLOSED 2026-09-13 — doc corrected, tsv/gate-line not done.** Fixed
+  `docs/task-autoresearch-loop.md`'s stale "not started" status to note the contradiction directly
+  (kernels.go's own comments cite the tsv as a real Metal experiment) rather than restate the
+  wrong claim. The tsv itself could not be moved into `docs/measurements/` — it is not anywhere in
+  the tree, not merely misplaced; whatever generated it either never committed the file or it was
+  lost since, so the reduction-order/SHA history it would have recorded is unrecoverable from this
+  repo. The gate-line fix (argmax-at-every-checkpoint + cosine vs the previous golden on a re-bake)
+  is real, unbuilt infrastructure work on its own "plausible" confidence rating — left for a
+  dedicated pass rather than added speculatively here.
 
 #### G-05 · The shared-event verdict was measured on a shape without the cost it targets
 - **Where:** `metal/pagecost_sharedevent_test.go:47-64` (qwen2.5-1.5b dense int8int8; "recovers ~0%"),
