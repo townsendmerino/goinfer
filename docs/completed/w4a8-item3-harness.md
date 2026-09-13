@@ -1,5 +1,30 @@
 # Task (aikit + goinfer): W4A8 item 3+4 — the repacked-layout kernel, harness phase only
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-09-13, doc review): COMPLETE — GO, and the plumbing phase it funded has
+> since shipped.** The harness ran exactly as scoped: Step 0 baselines and the item-3/item-4 grid
+> are both recorded in `docs/completed/task-w4a8-neon-bandwidth.md`'s "Item-3 campaign" and
+> "Item-3 harness results" sections. Result: split-half repack (item 3) alone was flat (the
+> accumulator-chain fix, not the unpack count, was the real bottleneck), but split-half + a
+> 2-accumulator fix + 4-row interleave (item 4) cleared both named GO bars — single-call cold
+> 42.37-42.67 GMAC/s (bar ≥40) and 6-worker aggregate 1.40-1.41x (bar ≥1.4x) — and the winning
+> kernel was later proven bit-identical to canonical, not merely rel-err-close. The hand-off this
+> brief specified ("the plumbing brief... should build the arm64 load-time repack... against
+> exactly this layout") was taken up by `docs/prompts/w4a8-plumbing.md` and shipped the same week:
+> `RepackInt4Row4`/`Int4Row4`/`MatmulBTW4A8Into` landed in aikit and wired into goinfer's arm64
+> W4A8 load path, later folded into `.giw` kind 4/5 on disk. Verified directly against the tree at
+> archival time: the harness kernels this brief describes as "uncommitted, harness-only" are now
+> real, committed aikit source (`linalg/repack_w4a8_splithalf.go`, `linalg/weightmat_row4_arm64.go`,
+> `linalg/matmul_w4a8_row4_arm64.go`, `linalg/dot_w4a8_arm64.s`, `linalg/w4a8_item3_harness_test.go`
+> among others) — this brief's own "harness only, no production wiring" scope boundary was
+> deliberately crossed later, by the plumbing brief it names, not by this one.
+
 > **For:** Claude Code, in `~/tmcode/aikit` (kernel + harness work lands there) with sibling
 > `~/tmcode/goinfer` (baseline cells + doc updates). Written 2026-08-23, after the attention
 > campaign (A1) closed. Read `docs/completed/task-w4a8-neon-bandwidth.md` (goinfer) first — it carries
