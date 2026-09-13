@@ -4,8 +4,9 @@ Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `a56a7306` b
 launched. Gate: `cuda/vsum_split_gate_test.go` (`ed2624bd`).
 
 **Status: S (confirmation) scored — DOES NOT PASS under the registered rule, on criterion (a) by one
-hard flip. Criterion (a) then AMENDED by owner decision (below), before any D7 result. D7 (decision)
-reference still generating. The gate's verdict is D7's, and is not in yet.**
+hard flip; PASSES under criterion (a) as AMENDED by owner decision (below), re-scored in a logged run
+before any D7 result. D7 (decision) reference still generating. The gate's verdict is D7's, and is not
+in yet.**
 
 ## S — confirmation cell — DOES NOT PASS
 
@@ -50,7 +51,9 @@ pre-registration is titled a "§3.2" gate, but criterion (a) was written from **
 noise-aware ceiling, `exact + 2√exact`; for S that is 7 + 5.3 = 12.3, which 8 would clear. **It is
 not adopted, for S or for D7.** The committed rule text is unambiguous, and moving to the friendlier
 bar after watching a cell fail the strict one is precisely what pre-registration exists to prevent.
-The mislabel is mine and is recorded as an error, not as a loophole.
+The mislabel is mine and is recorded as an error, not as a loophole. *(Superseded the same day:
+Francis overruled this and adopted the §3.2 ceiling for (a) — see "OWNER DECISION" below. This
+paragraph is kept as the record of what was recommended at the time, not as the rule in force.)*
 
 **2. The registered criterion (a) has almost no power at these counts.** 7 against 8 hard flips is
 well inside Poisson noise (σ ≈ √7 ≈ 2.6). D7 will likely sit in the teens per arm — its K=1024
@@ -106,6 +109,26 @@ registered verdict directly off the same log line.
 **Timing:** decided and committed while D7's reference was still generating on the CPU, with no D7
 reference file on disk, so D7 is judged under a rule fixed before its data existed. S is re-scored
 under the amended rule in a separate, logged run; its registered verdict (above) is not withdrawn.
+
+## S re-scored under the amended rule — PASSES (confirmation cell)
+
+Separate process, same binary tree as `88336773`, log
+`goinfer-logs/vsum-fidelity-phaseB-S-amended-20260913-124204.log`, 6m17s.
+
+**Every per-prompt figure reproduced exactly** against the first run — agreement, hard flips and KL to
+five decimals on all ten prompts, and the same cell totals. Scoring is deterministic across
+processes, not only within one (the A/A precondition covers the latter; this covers the former).
+
+| criterion | S result | verdict |
+|---|---|---|
+| (a) amended: `spike HF <= exact + 2·√exact` | 8 <= 7 + 5.29 = 12.29 | **pass** |
+| (a) strict, as pre-registered — printed alongside | 8 <= 7 | fail |
+| (b) >= exact − 1.0 pt AND >= half | −0.78 pt, 6/10 | pass (0.02 pt outside the parked band) |
+| (c) KL <= 1.10x, parked above 1.05x | 1.0026x | pass |
+
+**S: PASSES under the amended rule; DOES NOT PASS under the registered one.** Both stand, from one
+log line. (b)'s margin to its parked band is 0.02 pt — one position in 640 would have moved it — so
+the S pass is not comfortable on agreement, only on KL. It remains a confirmation cell either way.
 
 ## Deviations from the pre-registration
 
