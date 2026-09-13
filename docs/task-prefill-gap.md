@@ -7,7 +7,7 @@
 > passed 2026-09-09, `metal/backend.go:387`; was sequential-only at this doc's first writing); on Mac CPU the gap has shrunk to
 > ~1.8× at K=512 and about parity at depth since the S-01 tile (`897fb18`), which §A of
 > `benchmarks.md` does not yet say. The workload that matters most — W4, the agent turn
-> (`task-peer-benchmarks.md:71`) — is prefill of each turn's new 500–3000 tokens, which sits exactly
+> (`tasks/task-peer-benchmarks.md:71`) — is prefill of each turn's new 500–3000 tokens, which sits exactly
 > in the band where the deficit is 1–6× on TTFT.
 >
 > **The cause is one decision, not several kernels.** Every batched prefill kernel is "the M=1 decode
@@ -198,7 +198,7 @@ when, on ≥10 realistic prose prompts per model (not `prompts.json`) spanning K
 | check | bar (§3.2 form — pooled over the decision set, paired per position) | why this one |
 |---|---|---|
 | hard flips under the 3% near-tie rule (`decoder.NearTieArgmaxForTest`, the rule CUDA decode is held to CPU by — `benchmarks.md:611`), each arm vs the reference, seed + every continuation position | pooled over the decision cells (2 × 640 positions per model): **fast ≤ exact + 2·√exact** | the bar the tree already trusts, applied to both arms, with the Poisson noise of a count of ~40 written into it instead of ignored |
-| teacher-forced top-1 agreement, each arm vs the reference's own greedy continuation | pooled: **fast ≥ exact − 2·√d / N**, where d is the number of positions on which exactly one arm matches the reference and N the pooled positions (the paired, McNemar-shaped noise); if d is not recorded, the conservative independent-errors bound 2·√(2·N·p·(1−p)) / N with p = exact's agreement | the fidelity column `task-peer-benchmarks.md` §4 is building anyway; the exact arm sets the bar because it is what ships today |
+| teacher-forced top-1 agreement, each arm vs the reference's own greedy continuation | pooled: **fast ≥ exact − 2·√d / N**, where d is the number of positions on which exactly one arm matches the reference and N the pooled positions (the paired, McNemar-shaped noise); if d is not recorded, the conservative independent-errors bound 2·√(2·N·p·(1−p)) / N with p = exact's agreement | the fidelity column `tasks/task-peer-benchmarks.md` §4 is building anyway; the exact arm sets the bar because it is what ships today |
 | mean continuation KL(reference ‖ arm) — **the gating continuous measure** | pooled mean: **fast ≤ exact**, and fast lower on ≥ half the prompts (paired sign); a hard ceiling of 1.1 × exact in any single cell | per-position and continuous, so 2,560 samples resolve differences the two counts above cannot |
 | per-cell values of all three | **reported, no per-cell veto** | a per-cell veto multiplies the false-fail rate by the number of cells (§3.2) |
 | greedy stream divergence rate | **reported, not gating** | it is what gated Metal; it measures reproducibility, not quality |

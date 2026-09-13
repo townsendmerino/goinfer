@@ -45,12 +45,12 @@ import json, os, signal, socket, subprocess, sys, threading, time, urllib.reques
 GOINFER = os.environ.get("GOINFER_SERVE", "./goinfer-serve")
 OLLAMA = os.environ.get("OLLAMA_BIN", os.path.expanduser("~/ollama-0325/bin/ollama"))
 OLLAMA_MODELS = os.environ.get("OLLAMA_MODELS", os.path.expanduser("~/ollama-0325/models"))
-# llama-server (docs/task-peer-benchmarks.md §1): verified live 2026-09-04 that its
+# llama-server (docs/tasks/task-peer-benchmarks.md §1): verified live 2026-09-04 that its
 # /v1/chat/completions stream is byte-for-byte the shape parse_openai already handles --
 # same role/content/finish_reason delta framing, same usage.completion_tokens final chunk --
 # so it reuses parse_openai directly rather than a third parser.
 LLAMACPP = os.environ.get("LLAMACPP_BIN", "llama-server")
-# MLX (Mac only, docs/task-peer-benchmarks.md §1/§7): "mlx_lm.server ... speak[s] OpenAI-compatible
+# MLX (Mac only, docs/tasks/task-peer-benchmarks.md §1/§7): "mlx_lm.server ... speak[s] OpenAI-compatible
 # chat completions, so one client covers them" -- verified live 2026-09-04, its stream is the same
 # role/content/finish_reason delta framing plus a final usage.completion_tokens chunk parse_openai
 # already handles (the terminal chunk has empty `choices` and `object: chat.completion`, not
@@ -68,7 +68,7 @@ MLX_BIN = os.environ.get("MLX_SERVER_BIN", "mlx_lm.server")
 # with extra weight"). Populated per-model as pulled; a model key with no entry here is skipped by
 # plan_engines() rather than failing the whole sweep -- see run_cell's mlx branch.
 MLX_MODELS = {
-    # S / 1.5B, pulled 2026-09-04 (docs/task-peer-benchmarks.md tier-1/tier-2 base cell). Verified
+    # S / 1.5B, pulled 2026-09-04 (docs/tasks/task-peer-benchmarks.md tier-1/tier-2 base cell). Verified
     # via HfApi.model_info before pulling, same as 7B/M35/M26 below.
     "1.5B": os.path.expanduser(os.environ.get("MLX_MODEL_1_5B",
         "~/models/mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit")),
@@ -105,7 +105,7 @@ MODELS = {
     # exposed the split-KV gate testing nKeys instead of the window-clamped nWin.
     "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m"),
     "gemma3-1b":  (os.path.expanduser("~/models/gemma3-1b-q4_k_m.gguf"), "g31b"),
-    # M35/M26 added 2026-09-04 (docs/task-peer-benchmarks.md §2, tier 1). The GGUF path here is
+    # M35/M26 added 2026-09-04 (docs/tasks/task-peer-benchmarks.md §2, tier 1). The GGUF path here is
     # what ollama and llama-server load -- Q4_K_M, same quant family as every other row. Neither
     # checkpoint had a Q4_K_M GGUF on this box: the archive only carried M35 as Q8_0 and M26 as a
     # legacy Q4_0, so both were REQUANTIZED locally with llama-quantize --allow-requantize (source
@@ -118,7 +118,7 @@ MODELS = {
     # for these two MoE models), so the GGUF here is the PEER-ONLY artifact.
     "M35": (os.path.expanduser("~/models/qwen3.6-35b-a3b-q4_k_m.gguf"), "m35q4km"),
     "M26": (os.path.expanduser("~/models/gemma4-26b-q4_k_m.gguf"), "m26q4km"),
-    # G20 added 2026-09-05 (docs/task-peer-benchmarks.md §2/§5, tier 2: "fits the Mac, not the
+    # G20 added 2026-09-05 (docs/tasks/task-peer-benchmarks.md §2/§5, tier 2: "fits the Mac, not the
     # card: a resident cell on one box and an offload cell on the other"). gpt-oss-20b's OWN
     # shipped MXFP4 quant (OpenAI's native format) -- the only GGUF for it on this box, and the
     # SAME file all three engines load (unlike M35/M26 below): decoder/gguf.go's gptOssArchitecture
@@ -153,7 +153,7 @@ MOE_MODELS = {"M35", "M26", "G20"}
 
 # goinfer's OWN path for the MOE_MODELS set, distinct from MODELS[key][0] above (which is the
 # Q4_K_M GGUF ollama/llama-server load). goinfer runs its native kind-4 .giw bundle instead --
-# the shipped-default configuration for these two models (docs/task-peer-benchmarks.md §2) -- so
+# the shipped-default configuration for these two models (docs/tasks/task-peer-benchmarks.md §2) -- so
 # the two engines are NOT reading the same file for these cells, only the same nominal quant tier.
 GOINFER_MOE_PATH = {
     "M35": os.path.expanduser("~/models/qwen3.6-35b-a3b-int4.giw"),
@@ -164,7 +164,7 @@ GOINFER_MOE_PATH = {
 # Qwen3.5-35B-A3B-Q4_K_M.gguf and a Q4_0 gemma4-26b GGUF (see the Mac-side results already
 # recorded in docs/measurements/peer-matrix-2026-09/mac-m1pro-m35m26-tier1-2026-09-04.json,
 # which carry their own provenance notes for those paths). M35/M26 are parked on the Mac
-# (kernel panic + swap-thrashing incident, 2026-09-04/05 -- see docs/task-peer-benchmarks.md
+# (kernel panic + swap-thrashing incident, 2026-09-04/05 -- see docs/tasks/task-peer-benchmarks.md
 # session notes) so this canonical (nobara-quality, real Q4_K_M) path set is not expected to
 # resolve there; a Mac re-pull/requantize is a separate follow-up if M35/M26 work resumes on
 # that box.
@@ -176,7 +176,7 @@ SERVE = {
     "cpu":    os.environ.get("GOINFER_SERVE_CPU",    "/home/francis/bench-v0.15.0/serve-cpu"),
     "cuda":   os.environ.get("GOINFER_SERVE_CUDA",   "/home/francis/bench-v0.15.0/serve-cuda"),
     "webgpu": os.environ.get("GOINFER_SERVE_WEBGPU", "/home/francis/bench-v0.15.0/serve-webgpu"),
-    # Metal, added 2026-09-04 for the Mac side of docs/task-peer-benchmarks.md. Built from the
+    # Metal, added 2026-09-04 for the Mac side of docs/tasks/task-peer-benchmarks.md. Built from the
     # `metal/` submodule (M-19: the root cmd/serve builds no backend) -- `go build
     # github.com/townsendmerino/goinfer/metal/cmd/serve`, darwin-only, no build tag needed. No
     # Linux-box default exists (there is nothing to default to), so this path is DELIBERATELY
@@ -243,7 +243,7 @@ NGEN = int(os.environ.get("BENCH_NGEN", "64"))  # tokens generated per completio
 NCOMP = 8          # completions per run  (>= 8 required)
 NRUNS = 2          # runs per cell        (>= 2 required, spread reported)
 
-# --- EMBEDDINGS PEER (docs/task-peer-benchmarks.md W8; scoped 2026-09-03, never run before this
+# --- EMBEDDINGS PEER (docs/tasks/task-peer-benchmarks.md W8; scoped 2026-09-03, never run before this
 # harness gained the capability) -------------------------------------------------------------
 # goinfer's /v1/embeddings takes a CodeRankEmbed-family HF dir (config.json + model.safetensors +
 # tokenizer.json) via -embed-model, NOT a GGUF -- a structurally different checkpoint format from
@@ -884,7 +884,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             port, url, parse, mk = LPORT, f"http://127.0.0.1:{LPORT}/v1/chat/completions", \
                 parse_openai, (lambda: llamacpp_payload(prompt, cfg))
         elif engine == "mlx":
-            # Mac only (docs/task-peer-benchmarks.md §1): MLX_MODELS holds only the checkpoints
+            # Mac only (docs/tasks/task-peer-benchmarks.md §1): MLX_MODELS holds only the checkpoints
             # actually pulled -- a model_key with no entry is a clean skip, not a crash, since a
             # release sweep run without a full mlx-community pull (35B/26B are tens of GB) must
             # still complete its other cells.
@@ -1008,7 +1008,7 @@ def run_embed_cell(engine, approx_tokens, n_inputs):
     tokens/s is reported too where the engine's own usage field gives a count. goinfer and Ollama
     only -- llamacpp/mlx have no embeddings endpoint this harness speaks to.
 
-    docs/task-peer-benchmarks.md W8, scoped 2026-09-03, never run until this function existed.
+    docs/tasks/task-peer-benchmarks.md W8, scoped 2026-09-03, never run until this function existed.
     """
     texts = [_embed_filler_text(approx_tokens) for _ in range(n_inputs)]
     proc = None

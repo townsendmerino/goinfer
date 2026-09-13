@@ -13,6 +13,21 @@
 >
 > **Status: SCOPED 2026-09-03, nothing run.** goinfer `66288c2`, aikit v1.34.0. Peer versions are
 > pinned on the day each box runs, in the header record `bench_peer.py` already writes.
+>
+> **Corrected 2026-09-13 (doc review): the line above is stale, kept only as the dated original.**
+> A tier-1/tier-2 first pass has run on both boxes since 2026-09-04: W1 (S, D7, M35, M26, G20), W3 at
+> depth 8000 (D7, M35, M26, plus a Mac `--cpu-fast-attention` decode-only row), the tier-2
+> `--quant int8int8` variant on the Mac, and one real W4 cell (D7, nobara CUDA only, 2026-09-09).
+> Current numbers, provenance and gaps live in `docs/benchmarks.md` § "Peer matrix 2026-09 — tier
+> 1/2, first pass" — read that section, not this status line. Still unbuilt as of the same date: the
+> fidelity column and the pass@1 row (§4 — no quality claim should be read into any row measured so
+> far), W2's own row in this matrix (the numbers exist elsewhere, folding them in is tidiness only),
+> W5/W6/W7, most of W8, other engines/model cells for W4, and `go-llama`/goccy on either box.
+> **FreeToken (§1) is declined structurally, not just unmeasured**: nobara's card is a Turing 2070
+> SUPER and FreeToken needs CUDA 13 (box has 12.6) plus an RTX 30-series-or-newer GPU — a hardware
+> mismatch, not a scheduling gap. The W4 harness (§7) landed as a new sibling script,
+> `scripts/bench_peer_transcript.py`, rather than as more code in `bench_peer.py` itself —
+> "extended, not replaced" held for the harness family, not that one file.
 
 ## 0. What must not change
 
@@ -202,6 +217,8 @@ whichever mechanism the reader already had in mind.
 `docs/benchmarks.md` (Methodology, B5/B10), `scripts/bench_peer.py`, `docs/ollama-chase.md`,
 `docs/task-zeno-compare.md`, `docs/tasks/task-freetoken-techniques.md`, `docs/integrations/claude-code.md`
 (the loop W4 replays), `docs/measurements/cpu-peer-prefill-2026-09-01.md`, `docs/tasks/task-fit-to-hardware.md`
-(the zero-flag question, the never-silently rule), `docs/audit-2026-09-02.md` (G28, L-01, L-05),
-`docs/task-recompute-audit.md` (R-01…R-03, R-07), aikit `CHANGELOG.md` 1.32.0–1.34.0 and
-`docs/task-simd-audit.md` (S-06).
+(the zero-flag question, the never-silently rule), `docs/completed/audit-2026-09-02.md` (G28, L-01,
+L-05 — moved there since this doc was scoped), `docs/task-recompute-audit.md` (R-01…R-03, R-07),
+aikit `CHANGELOG.md` 1.32.0–1.34.0 and `docs/task-simd-audit.md` (S-06 — this path does not resolve
+in the tree as of the 2026-09-13 review; unclear whether S-06 moved, was renamed, or never landed as
+its own file).

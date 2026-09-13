@@ -52,7 +52,7 @@
 | llama.cpp's own knobs (threads, `n_batch`/`n_ubatch`, flash-attn, KV type, `n_gpu_layers`) | server flags, one setting per server restart | per-context params, ladders in one process |
 | an f16-GGUF reference for the cells HF cannot fit (M35, M26, G20, H27 — matrix §4) | `n_probs` again | full logits, teacher-forced |
 
-The fidelity column in `docs/task-peer-benchmarks.md` §4 is "still unbuilt" as of the 2026-09-04/05
+The fidelity column in `task-peer-benchmarks.md` §4 is "still unbuilt" as of the 2026-09-04/05
 first pass. The llama.cpp half of it is cheapest to build here, and the goinfer half is
 `ForwardForTest`/`PrefillLastNArgmax`, which this module can call directly.
 
@@ -239,7 +239,7 @@ standing IOU.
 
 ## 9. Sources
 
-`docs/task-peer-benchmarks.md` (§0 one-method rule, §1 peers, §4 fidelity column, §7 harness);
+`task-peer-benchmarks.md` (§0 one-method rule, §1 peers, §4 fidelity column, §7 harness);
 `docs/benchmarks.md` (Methodology; Table 1 footnote ᶜ and the gollama.cpp / yzma citations;
 "Peer matrix 2026-09" provenance for the pinned llama-server builds; "Not done yet");
 `scripts/bench_peer.py` (header record, idle gate, `gguf_same_weights.py` discipline);
