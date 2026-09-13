@@ -189,6 +189,12 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 	if err := validateNgramSpec(target, drafter, sp); err != nil {
 		return nil, nil, err
 	}
+	// Here, not in validateNgramSpec: a Session shares that validator but verifies on its CPU cache,
+	// which never reaches the resident and so cannot see a resident divergence. This entry takes
+	// the resident path whenever it is eligible, so it is the one that must refuse.
+	if err := target.SpecDecodeConflict(); err != nil {
+		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: %w; use Generate", err)
+	}
 	if len(prompt) == 0 {
 		return nil, nil, fmt.Errorf("decoder.GenerateNgramSpeculative: empty prompt")
 	}

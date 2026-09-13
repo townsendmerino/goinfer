@@ -1223,6 +1223,16 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 			return nil, fmt.Errorf("--drafter %q: %w", cfg.drafter, err)
 		}
 	}
+	// --spec ngram: the same startup-refusal rule, for the same reason. The resident branch in
+	// openai.go treats a spec error as "fall back to plain Generate" PER REQUEST, which is right for
+	// a sampler the spec path does not support and wrong for a load-time property: it would leave an
+	// operator who asked for speculation serving every request at 1x with no signal. --drafter needs
+	// no separate check here — NewBlockSpec refuses inside attachBlockDrafter above.
+	if lm.spec {
+		if err := model.SpecDecodeConflict(); err != nil {
+			return nil, fmt.Errorf("--spec ngram: %w", err)
+		}
+	}
 	if cfg.maxQueue > 0 {
 		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
 	}

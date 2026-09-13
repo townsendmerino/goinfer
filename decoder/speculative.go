@@ -92,6 +92,11 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	if !target.specRollbackSafe() {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate")
 	}
+	// Verify runs on the resident's BATCHED path while the prompt is seeded through M=1 decode; if
+	// the resident says those two can disagree, the lossless claim above is false. See SpecDecodeConflict.
+	if err := target.SpecDecodeConflict(); err != nil {
+		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: %w; use Generate", err)
+	}
 
 	// When the target's GPU-resident decode path is built (webgpu + eligible arch),
 	// run its verify on the device: the prompt seeds the resident KV via per-token

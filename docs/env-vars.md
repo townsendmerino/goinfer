@@ -102,7 +102,10 @@ its value; kept only so tests can still force both branches while the code path 
 key axis, measured +40-43% on the attention block and +15.6% served on one geometry, and it is
 **NOT bit-identical** to the default path. Unset, the pipelines are not loaded and no scratch is
 allocated. Its fidelity is NOT established — docs/measurements/vsum-split-spike-2026-09-13.md
-says so in as many words — so do not set it on anything whose output matters).
+says so in as many words — so do not set it on anything whose output matters). **Setting it refuses
+speculative decoding**: `serve --spec ngram` and `--drafter` fail at startup, and the decoder's resident
+spec entry points return an error, because decode would sum values in a different order from the batched
+verify and the lossless guarantee would silently break (`decoder.SpecDecodeConflict`).
 
 Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,
