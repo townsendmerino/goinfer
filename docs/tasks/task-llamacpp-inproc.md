@@ -73,7 +73,7 @@ first pass. The llama.cpp half of it is cheapest to build here, and the goinfer 
 - **golang/go#81450** — Matloob, Mui et al.; proposal stage as of this writing; `//cgo:binding`
   annotations plus `go tool cgo -gen-binding` from headers. Its header-driven struct generation is
   precisely the thing purego makes us do by hand (§3, "struct mirrors"). Track; do not wait.
-- **`docs/task-bindings.md`** § "On the cgo-free promise" — the Metal backend's purego + Obj-C
+- **`docs/tasks/parked/task-bindings.md`** § "On the cgo-free promise" — the Metal backend's purego + Obj-C
   arrangement under `CGO_ENABLED=0` is the precedent that this module is not a new class of thing
   in the tree.
 - **`scripts/bench_peer.py`'s header record** is the provenance shape to reuse, not reinvent: it
@@ -244,7 +244,7 @@ standing IOU.
 "Peer matrix 2026-09" provenance for the pinned llama-server builds; "Not done yet");
 `scripts/bench_peer.py` (header record, idle gate, `gguf_same_weights.py` discipline);
 `CLAUDE.md` (§ Benchmarking — `bench_compare.sh` vs peer numbers; § Measurement discipline —
-inverting guards, paired differencing, pre-registration, retractions); `docs/task-bindings.md`
+inverting guards, paired differencing, pre-registration, retractions); `docs/tasks/parked/task-bindings.md`
 (purego under `CGO_ENABLED=0` precedent); `docs/task-prefill-gap.md` (two-term prefill model, I4);
 `docs/audit-2026-09-10.md` (dense Granite q/k permute Critical, §6 "Later" (a));
 `queue-performance.md` P19 (attention at depth) and P20 (MoE batched prefill);

@@ -113,7 +113,7 @@ p, err := llm.Into[Person](ctx, m, "Extract the person from: …")   // the READ
   library caller and a multi-model `serve` can differ per model.
 - **Typed errors** for the three things a caller must branch on: context length exceeded,
   checkpoint not found/gated (from `pull`), backend declined (with the plan's numbers).
-- **This is what the bindings export.** `task-bindings.md`'s c-archive for mobile and sidecar
+- **This is what the bindings export.** `tasks/parked/task-bindings.md`'s c-archive for mobile and sidecar
   for desktop both want exactly this surface; building the facade first means the bindings wrap
   one thing instead of re-deriving the six steps in C.
 
@@ -301,7 +301,7 @@ by default (the banner says how to turn it on); which of the five routes a given
    conflict does not exist: agent turn 3 went **9.13 s → 0.42 s (21.7×)**, whole loop
    27.00 → 9.82 s, against L-05's pre-registered ≥2× bar. Gated on token-identity vs cold
    prefill. See the commit and `docs/integrations/claude-code.md`.
-5. **Bindings** (`task-bindings.md`) wrap the facade, not the six steps.
+5. **Bindings** (`tasks/parked/task-bindings.md`) wrap the facade, not the six steps.
 
 ## 7. Open questions
 
@@ -328,7 +328,7 @@ implementation of mode 2) · `decoder/model.go:204`, `:193`, `:802` (`Options`, 
 exports) · `internal/serveapp/main.go:367`, `:354`, `:927-932` (`-web`, `-require-backend`, the
 resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and dsh today) ·
 `docs/scoping-dsh-goinfer.md` (Tier 0–2) · `docs/task-model-pull.md` (shipped; `hf:` refs, the
-cache dir, the web UI's contract) · `docs/task-bindings.md` (what the facade is for downstream) ·
+cache dir, the web UI's contract) · `docs/tasks/parked/task-bindings.md` (what the facade is for downstream) ·
 `docs/audit-2026-09-02.md` C-06, C-07, C-08, M-07, M-17–M-30, M-34, N-18, N-42, P-20, L-05, L-07,
 L-15 (the floor and the open items this builds on) · `task-fit-to-hardware.md` (placement, the
 plan, the banner's byte lines).
