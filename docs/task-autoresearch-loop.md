@@ -80,7 +80,7 @@ These are non-negotiable; each maps to a lesson already paid for in this repo.
 - **Tiered gate, or 40 exp/hour is unreachable.** A fast inner check per candidate (a bit-identity
   microbench, seconds) with the full parity/heavy suite only as a **final confirm** on a survivor.
   This is the tiered structure goinfer already uses; **E8's `go test -json` gate-runner
-  (`docs/task-gate-runner.md`) is the natural substrate the loop drives.**
+  (`docs/completed/task-gate-runner.md`) is the natural substrate the loop drives.**
 - **Determinism of the bench.** The measured number must be stable enough that a real win is
   distinguishable from clock-ramp/thermal noise. Order-alternated best-of-N (the P6a clock-ramp lesson
   — an "impossible" 13% win was run-order), not best-of-min.

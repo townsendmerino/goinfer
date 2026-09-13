@@ -165,7 +165,7 @@ before spending time, don't assume.
 ## Gates available to you
 
 - `go run ./cmd/gate gpu` — the CUDA half of this was already verified against the shell script it
-  replaced (`docs/task-gate-runner.md` §12 has the Mac-side verification write-up for comparison; the
+  replaced (`docs/completed/task-gate-runner.md` §12 has the Mac-side verification write-up for comparison; the
   CUDA half was done first, on this box). Its `suite`/`parity`/`heavy`/`cgofree` groups are your
   fastest whole-model confidence check.
 - `go run ./cmd/gate census` — a cheap sanity check across the whole matrix; run it before and after a

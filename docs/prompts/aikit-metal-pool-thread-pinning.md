@@ -50,7 +50,7 @@ is **absent from the shipped product**.
 | `go test -tags metal -short ./metal/` (what the gate runs) | 1 fail / 3 |
 | `go run ./cmd/gate gpu`, clean tree, quiet machine, sequential | PASS |
 
-`docs/task-gate-runner.md` records ~50%, and once 6-of-7, with the operator's read that the rate
+`docs/completed/task-gate-runner.md` records ~50%, and once 6-of-7, with the operator's read that the rate
 tracks cumulative GPU dispatch volume — consistent with a migration-window race. **Rate is
 load-dependent, so any "it stopped crashing" claim needs N large enough to beat it (see Gates).**
 
