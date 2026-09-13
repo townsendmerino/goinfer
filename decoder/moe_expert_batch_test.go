@@ -21,7 +21,7 @@ import (
 // matmuls at M=1, so an expert's weights are re-read for every token that
 // routes to it.
 //
-// AND WHY THE EXISTING VERDICT MAY NOT COVER IT. docs/task-moe-streaming.md
+// AND WHY THE EXISTING VERDICT MAY NOT COVER IT. docs/tasks/task-moe-streaming.md
 // Lever 4 is PARKED on "expert-major MoE prefill batching is NOT a compute
 // lever", measured 2026-08-28 as `uniform` (every row picks the same experts)
 // against `varied` (real routing), with uniform called the CEILING. But BOTH

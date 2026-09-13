@@ -248,7 +248,7 @@ var PrefillGateProseFiles = []string{
 // snapshot was populated FROM and when.
 var PrefillGateProseFilesB = []string{
 	"../docs/completed/task-attention-decode-cost.md", // moved from ../docs/task-attention-decode-cost.md when archived
-	"../docs/task-moe-streaming.md",
+	"../docs/tasks/task-moe-streaming.md",             // moved from ../docs/task-moe-streaming.md to docs/tasks/
 	"../docs/completed/queue-performance.md",
 	"../docs/ARCHITECTURE.md",
 	"../docs/how-inference-works.md",

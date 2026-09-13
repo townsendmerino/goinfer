@@ -1667,12 +1667,6 @@ supports.
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:220` | goinfer | `#define W4A8_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/kernels.go:287` | goinfer | `#define SA_BODY \` |
 | `docs/task-metal-batched-verify-kernel.md|metal/model.go:433` | goinfer | `// N-32: dnValueDim is DeltaNet's out-projection staging width. deltanet.go dispatches p` |
-| `docs/task-moe-streaming.md|decoder/forwardn.go:528` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
-| `docs/task-moe-streaming.md|decoder/forwardn.go:97` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
-| `docs/task-moe-streaming.md|decoder/mlp.go:84` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
-| `docs/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
-| `docs/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
-| `docs/task-moe-streaming.md|decoder/residency.go:307` | goinfer | `return m.residentProjsInt4()` |
 | `docs/task-prefill-gap.md|decoder/attention.go:264` | goinfer | `e := math.Exp(float64(scores[s]) - maxS)` |
 | `docs/task-prefill-gap.md|decoder/forward_gemma4.go:213` | goinfer | `gate[i] = geluTanh(gate[i]) * up[i]` |
 | `docs/task-prefill-gap.md|decoder/forwardn.go:650` | goinfer | `gate[j] = geluTanh(gate[j]) * up[j]` |
@@ -1753,6 +1747,12 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:471` | goinfer | `func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:446` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:124` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
+| `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:528` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
+| `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:97` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
+| `docs/tasks/task-moe-streaming.md|decoder/mlp.go:84` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
+| `docs/tasks/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
+| `docs/tasks/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
+| `docs/tasks/task-moe-streaming.md|decoder/residency.go:307` | goinfer | `return m.residentProjsInt4()` |
 
 ## Bare file index
 

@@ -14,7 +14,7 @@
 > already be identified next-levers blocked on a dependency; one turns out to be a
 > named-and-deferred track goinfer already has a term for; one is a deliberate,
 > reasoned decision worth revisiting only for a specific regime, not a bug; two are
-> genuinely new. Read alongside `docs/task-moe-streaming.md` and `docs/completed/qwen3_5_moe.md`,
+> genuinely new. Read alongside `docs/tasks/task-moe-streaming.md` and `docs/completed/qwen3_5_moe.md`,
 > not instead of them.
 >
 > **Doc-review correction, 2026-09-13 (doc otherwise LIVE, corrections applied in place —
@@ -30,7 +30,7 @@
 | Lead | Status | Priority |
 |---|---|---|
 | 1. State-checkpoint KV reuse for hybrid/recurrent models | named, deferred (`docs/completed/qwen3_5_moe.md`) | high |
-| 2. Async-H2D overlap for the CUDA expert cache | already scoped (`task-moe-streaming.md` §C′) | high |
+| 2. Async-H2D overlap for the CUDA expert cache | already scoped (`docs/tasks/task-moe-streaming.md` §C′) | high |
 | 3. Pin the CUDA expert-stack buffer after filling, not before | unverified, now precise | medium |
 | 4. Pool the CUDA expert cache globally instead of per-layer | half-true already (CPU path has it) | medium |
 | 5. Bandwidth-adaptive CPU/GPU co-execution | **started** — see 2026-09-13 correction below | was low/track; now an active design pass |
@@ -82,7 +82,7 @@ more there than anywhere else in the tree.
 
 ## Lead 2 — async-H2D overlap for the CUDA expert cache (already your own next lever)
 
-**Status: already scoped, not started.** `docs/task-moe-streaming.md`'s "§C′ — VRAM
+**Status: already scoped, not started.** `docs/tasks/task-moe-streaming.md`'s "§C′ — VRAM
 expert cache" section (line 356 as of 2026-09-13; the doc has grown since this lead was
 written) ships step 2 (the real LRU cache, `GOINFER_MOE_CACHE_SLOTS`) on **synchronous**
 H2D DMA, and says outright that the next lever is a gocudrv v0.3.0 bump for async-H2D
@@ -92,7 +92,7 @@ from one buffer while a transfer stream loads layer *l*+1's experts into the oth
 second, independent data point that this class of overlap is worth the dependency bump,
 from a team with real throughput numbers to show for it.
 
-**Sizing caveat, 2026-09-13.** The same `task-moe-streaming.md` §C′ also carries a later,
+**Sizing caveat, 2026-09-13.** The same `docs/tasks/task-moe-streaming.md` §C′ also carries a later,
 more precise "Production-config decomposition" (dated 2026-08-03, so already on record
 when this lead was written, just not folded in here): at the current 38-slot config
 (89.1% LRU hit), miss-DMA is measured at 4.28 ms/tok against a ~29.3 ms/tok forward total
@@ -110,11 +110,11 @@ on this layer's routing to know which ones. goinfer's `layerPager`
 routing-independent lookahead for dense weights — it's the pattern to copy for the
 expert case, not something to invent. Decode can stay reactive (one token, routing is
 cheap and known immediately); the win is specifically in the prefill-chunk case, which
-is also where Lever 4 (`task-moe-streaming.md:226`, expert-major prefill batching)
+is also where Lever 4 (`docs/tasks/task-moe-streaming.md:226`, expert-major prefill batching)
 already lives — these two probably want to be scoped together rather than as separate
 patches.
 
-**Depends on:** the gocudrv v0.3.0 bump `task-moe-streaming.md` already flags as a
+**Depends on:** the gocudrv v0.3.0 bump `docs/tasks/task-moe-streaming.md` already flags as a
 prerequisite; probably sequences after Lever 4.
 
 **Priority: high** — smallest conceptual gap between what goinfer already built and
@@ -134,7 +134,7 @@ memory as the C′ DMA source — allocates the pinned buffer first
 pinning empty pages forces the OS to zero-fill and fault them in; pinning
 already-populated pages skips that.
 
-This isn't a guess about where the cost lives: `task-moe-streaming.md`'s §C′ already
+This isn't a guess about where the cost lives: `docs/tasks/task-moe-streaming.md`'s §C′ already
 attributes the real 26B model's **4m49s load time** to "the 11.4 GB pinned alloc +
 copy," in those words. Whether reordering the two operations actually moves that
 number depends on details this doc can't see from here — whether `NewMappedHostBuffer`'s
@@ -159,7 +159,7 @@ residency space."
 
 The CUDA path doesn't: `GOINFER_MOE_CACHE_SLOTS` is a **per-layer** slot count
 (`decoder/model.go:221`, `internal/serveapp/main.go:307`), auto-capped to free VRAM at
-load. `task-moe-streaming.md`'s §C′ never discusses pooling it across layers — every
+load. `docs/tasks/task-moe-streaming.md`'s §C′ never discusses pooling it across layers — every
 mention of slot budgeting there is per-layer. If expert "hotness" is uneven across
 layers (plausible, and apparently never measured either way — the doc's own hit-rate
 findings are all reported per-run, not per-layer), a fixed depth either wastes slots on
@@ -168,7 +168,7 @@ comparison might move for free: no new VRAM, just a different split of the same 
 
 **First step:** instrument per-layer hit rate at a fixed total budget (sum of the
 current per-layer slots) on the real 26B run, the same way the 77.5%-hit-rate finding
-in `task-moe-streaming.md` was produced, and see whether the hit-rate distribution
+in `docs/tasks/task-moe-streaming.md` was produced, and see whether the hit-rate distribution
 across layers is actually uneven before building anything.
 
 **Priority: medium** — cheap to measure, uncertain payoff until measured. Exactly the
@@ -186,7 +186,7 @@ throughput — has no counterpart here. Every current path is GPU-resident-only 
 CPU-only (the mmap pager) per architecture; nothing blends the two live.
 
 This is the biggest architectural lift of the five, and the one most likely to collide
-with the "ARCHITECTURAL COST" note already on record in `task-moe-streaming.md`'s §C′:
+with the "ARCHITECTURAL COST" note already on record in `docs/tasks/task-moe-streaming.md`'s §C′:
 the on-device router exists specifically to avoid a host readback that would stall the
 pipeline, and a live CPU/GPU split would need to reintroduce some form of host-visible
 routing decision — the exact thing that section says the current design exists to
@@ -239,7 +239,7 @@ effect today is an artifact of speculation being unavailable, not of the two mec
 being compatible. Lead 5 would change exactly the terms that produce the absence:
 
 1. A CPU/GPU split needs host-visible routing, which is the "ARCHITECTURAL COST" already on
-   record in `task-moe-streaming.md` §C′ — and a host-visible router is also the thing that
+   record in `docs/tasks/task-moe-streaming.md` §C′ — and a host-visible router is also the thing that
    would let a batched MoE verify exist. Building one removes the first gate, and the
    pager-thrash question then becomes live for the first time, **untested**, because it has
    never been possible to test it.
@@ -303,7 +303,7 @@ Lead 1; nothing further to revisit here on its own.
 - The comparison this opened from: claude.ai/code/artifact/cd014aea-6e94-4f6d-b71a-196ba99b6bfa
 - `docs/completed/qwen3_5_moe.md` — "Hybrid cache (decision: correctness-first)"; `:132` for the
   fallback-to-full-recompute line
-- `docs/task-moe-streaming.md` — §C′ (`:346`), Lever 1 (`:107`), Lever 3 (`:185`),
+- `docs/tasks/task-moe-streaming.md` — §C′ (`:346`), Lever 1 (`:107`), Lever 3 (`:185`),
   Lever 4 (`:226`)
 - `README.md` — the Gemma-4 26B slot table (the GPU-resident session-skip quote this doc
   originally cited at `:828-831` has since moved — see the 2026-09-13 correction inline)

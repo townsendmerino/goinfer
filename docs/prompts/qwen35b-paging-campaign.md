@@ -9,7 +9,7 @@
 > 81.6% hit) — that cell is a regression gate here, not a target.
 
 > **PRIOR-ART CORRECTION (added 2026-08-24, before any work started):** this brief went out
-> without a prior-art sweep of `docs/task-moe-streaming.md` — an existing, dated investigation
+> without a prior-art sweep of `docs/tasks/task-moe-streaming.md` — an existing, dated investigation
 > of this exact `expertPager`/`SpanCache` machinery. That gap invalidated two of the four levers
 > below (see the inline notes at Step 0.1 and Lever 2/4). Caught at zero cost by a check-before-
 > spending pause, not by running the dead work. See `[[qwen35-paging-campaign-rescoped]]`
@@ -48,7 +48,7 @@ The diagnostic's numbers imply ~316 MB/token faulted (25 GB / 79) at an effectiv
 so BOTH the bytes and the rate are candidate levers, and their relative sizes decide the
 campaign. Measure:
 
-1. **Expert-usage skew — ALREADY MEASURED, cite don't re-derive.** `docs/task-moe-streaming.md`'s
+1. **Expert-usage skew — ALREADY MEASURED, cite don't re-derive.** `docs/tasks/task-moe-streaming.md`'s
    Lever 2 section already ran this on a real 35B-A3B trace: hottest 10% of experts absorb 72%
    of accesses, hottest 25% absorb 94%, half the universe never touched. Use these numbers for
    the ceiling math below instead of re-histogramming.
@@ -103,14 +103,14 @@ structural given that pool size on a 16 GB Mac. The ceiling math should be built
    touch (today's path), (b) single-threaded `pread`, (c) async `pread` at queue depth 4-8.
    Three numbers, an afternoon. If QD8 reaches multi-GB/s, that gap IS the campaign — and
    plausibly explains Zeno's own "disk offloading" edge, since that description matches
-   owned-buffer streaming exactly. This sizes `task-moe-streaming.md`'s Lever 1 (owned-buffer
+   owned-buffer streaming exactly. This sizes `docs/tasks/task-moe-streaming.md`'s Lever 1 (owned-buffer
    `pread`, the only route to a firm RAM cap on darwin) before committing to building it —
    design note for when it IS built: owned buffers change the paged path's buffer source from
    mmap aliases to copied slabs, but the plumbing phase's carve-out already keeps paged tensors
    on the canonical kernel, so this is a pager-internal change only — the kernel side is
    untouched, same numerics-inert gates apply (bit-identical, gemma4 cell the regression gate).
 4. **Skew-aware retention — ALREADY BUILT, MEASURED, AND FALSIFIED. Do not rebuild.**
-   `docs/task-moe-streaming.md`'s Lever 2 section replayed LRU/MRU/LFU/LFU-aging over a real
+   `docs/tasks/task-moe-streaming.md`'s Lever 2 section replayed LRU/MRU/LFU/LFU-aging over a real
    35B-A3B trace: plain LFU is strictly worse than LRU (re-fault-restarts-at-count-1
    pathology); LFU-aging only beats LRU in a narrow 3-4 GB regime nobody runs interactively; at
    every realistic budget (≥6-8 GB) all policies converge to LRU because "on a stationary

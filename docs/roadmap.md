@@ -46,7 +46,7 @@ promoting are separate decisions with separate gates (see the last section).
    `MatmulBTW4A8Batch`); the remaining named gap is 4-bit matmul to bandwidth class. Metal: no
    decode campaign is open; the last verdict is `completed/metal-verdict.md`.
 3. **MoE over capacity** — P20 (DMA-bound prefill on the streaming path),
-   [`task-moe-streaming.md`](task-moe-streaming.md). The 26B/35B streaming path is near its
+   [`task-moe-streaming.md`](tasks/task-moe-streaming.md). The 26B/35B streaming path is near its
    structural ceiling on 8 GB; more VRAM, not more kernel, is the lever.
 4. **Fit to hardware** — [`tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md): phases 0–3 done,
    4 partial (`goinfer-chat fit` dry run and self-measure ship; startup banner and `pull` verdict

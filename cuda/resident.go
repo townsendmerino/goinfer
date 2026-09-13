@@ -727,7 +727,7 @@ func (r *cudaResident) upW(h hostW) cudaWQ {
 // upExperts uploads an expert stack, VRAM-slot-cached (C′) when cacheExperts is set and the weight
 // is int4 (the only kind the resident MoE GEMVs accept), else fully VRAM-resident. (The A′ zero-copy
 // direct-read path was removed: correct in isolation but mis-read by gemv_w4a8_moe at width — see
-// docs/task-moe-streaming.md and NewMappedHostBuffer's doc; C′ reads device memory and is bit-exact.)
+// docs/tasks/task-moe-streaming.md and NewMappedHostBuffer's doc; C′ reads device memory and is bit-exact.)
 func (r *cudaResident) upExperts(h hostW) cudaWQ {
 	if r.cacheExperts && h.kind == "int4" {
 		return r.cacheWQ(h)
@@ -1048,7 +1048,7 @@ func (r *cudaResident) allocSlots() error {
 // nSlots device slots, so a routed expert already resident skips its H2D DMA. nSlots = topK is the
 // step-1 staging degenerate case (every token evicts, no reuse); nSlots > topK gives cross-token
 // reuse — LRU because the router signal is a stationary skew where recency is a sufficient statistic
-// for frequency (the Lever-2 verdict; see docs/task-moe-streaming.md). expGU and expDown share the
+// for frequency (the Lever-2 verdict; see docs/tasks/task-moe-streaming.md). expGU and expDown share the
 // slot index (loaded together), so the cache is per-LAYER, not per-projection.
 type expertCache struct {
 	nSlots       int

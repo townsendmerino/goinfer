@@ -520,7 +520,7 @@
   `swiGLUExpert` is **93.1%** — so the expert weight matmuls are **~39% of prefill and the largest
   single bucket**. `routeExperts` is 1.7% of `moeMLP`; routing is not the cost and never was.
 
-  **Why the existing verdict does not close it.** `task-moe-streaming.md` Lever 4 is parked on
+  **Why the existing verdict does not close it.** `docs/tasks/task-moe-streaming.md` Lever 4 is parked on
   "expert-major MoE prefill batching is NOT a compute lever", whose ceiling was `uniform` (every
   row picks the same experts) vs `varied`. **Both arms call `moeMLP` per row at M=1**, so that
   experiment varies *which weights are touched* — the bandwidth/locality axis — and holds the
