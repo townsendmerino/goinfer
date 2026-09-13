@@ -1,5 +1,43 @@
 # Task (aikit + goinfer): W4A8 plumbing — ship the harness-winning layout to production CPU decode
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-09-13, doc review): COMPLETE.** All six items below shipped and all
+> six Acceptance gates are met, per `docs/completed/task-w4a8-neon-bandwidth.md`'s own status
+> block (archived same day) and re-verified against the tree at archival time: (1) aikit
+> production entry point — `WeightMat.RepackInt4Row4`/`Int4Row4`/`WrapInt4Row4`/
+> `MappedSpanRow4`, current pin `github.com/townsendmerino/aikit v1.41.0` (`go.mod:6`), well past
+> the v1.26.0 the release step targeted. (2) goinfer arm64-only load-time repack —
+> `decoder/weightmat.go`'s `repackW4A8Row4IfEligible`/`wantsRow4Fallback`/
+> `repackedOnlyOrCanonical`. (3) Dispatch carve-outs — paged-MoE never repacks (proven by test,
+> not asserted: `decoder/w4a8_row4_pagedfallback_test.go`'s
+> `TestSerializedInt4Weights_neverRepacked_pagedFallback` loads a `.giw`-round-tripped model,
+> confirms no tensor holds a row4 layout, and checks the fallback-only decode token matches the
+> row4-eligible one bit-for-bit); row-count/group-count tails are handled in the repack
+> eligibility check. (4) Numerics — row4 shipped bit-identical to canonical by construction
+> (`TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical` /
+> `TestSerializedInt4Weights_row4Kind_matchesCanonical`), so the decode==prefill==verify identity
+> holds without a separate cosine re-gate or golden churn — the campaign doc's own reasoning for
+> why kind 4 was kept to exactly that layout. (5) End-to-end — measured well above the ~27 tok/s
+> projection band: 1.5B int4 21.68→39.1-40.7 tok/s (0.57-0.60x ollama), 0.5B int4
+> 41.09→81.9-83.75 tok/s (0.75-0.77x ollama), Apple M1 Pro, goinfer `a11c56b`, 2026-08-24 — load-
+> time and resident-memory deltas recorded per model size (2.01s/+223.6MB canonical-repack vs
+> 0.111s/~0 for the on-disk row4 kind). (6) Release — aikit v1.26.0 bump and the `RELEASING.md`
+> ritual ran at the time; the pin has since moved to v1.41.0 through later releases, none of
+> which reopened this work. Since this closed, `docs/tasks/task-int4-layout-2026-09.md` (L1-L3,
+> 2026-09-11) replaced kind 4 with kind 5 (row4-only) as the CPU-arm64 default — kind 4 stays
+> readable as legacy, per this doc's own "never a wholesale replacement" sequencing rule; that is
+> a later doc's story, not a reopening of this one. The `.giw` format-kind decision this doc
+> called "parked" was itself resolved (kind 4, then kind 5) — see
+> `docs/completed/task-w4a8-neon-bandwidth.md` for the full campaign, including the cold-paging
+> regression/supersession saga that followed kind 4's ship and does not change this doc's own six
+> gates.
+
 > **For:** Claude Code, in `~/tmcode/aikit` + `~/tmcode/goinfer`. Written 2026-08-24, after the
 > item-3+4 harness phase recorded GO. Read `docs/completed/task-w4a8-neon-bandwidth.md` (goinfer) first —
 > Gate 0, both probes, the items-1+2 negative, the harness grid, and the GO line are all there.
