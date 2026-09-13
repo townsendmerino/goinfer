@@ -4,7 +4,7 @@ package metal
 
 // bvkKernels — batched-M (weight-stationary) twin of decode's SA-style and COAL-style W4A8 GEMV
 // kernels, prototyped for the small-M speculative-verify use case
-// (docs/task-metal-batched-verify-kernel.md). Deliberately NOT part of allKernels and never
+// (docs/completed/task-metal-batched-verify-kernel.md). Deliberately NOT part of allKernels and never
 // referenced from model.go's dispatch path — decode itself is unmodified; these are compiled into
 // their own library and dispatched only from metal/batched_verify_test.go.
 //
