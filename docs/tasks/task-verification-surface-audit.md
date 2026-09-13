@@ -47,6 +47,11 @@ them. Worth grepping for others.
 
     loose tolerances (< 0.999): 32 | basis recorded: 9 | bare: 23
 
+*(Re-run 2026-09-13: `53 | basis recorded: 15 | bare: 38`. The tree has grown a large number of
+new real-checkpoint gates since 08-27 — this is more tests, not necessarily more risk per test —
+but the traceability gap named below has widened in absolute count and has not been re-walked.
+Method item 2 is correspondingly more owed now than when it was opened, not less.)*
+
 A tight bar (≥ 0.999) means "these should agree" and needs no defence. A loose one encodes a
 judgement about acceptable error, and that judgement is only checkable if the population it was
 calibrated on is written beside it.
@@ -93,12 +98,27 @@ the convention above is what would stop the second.
 
 1. **Reachability.** For every checkset, prove each named gate can be selected. Done for parity;
    `census`, `heavy`, `composition`, `selector`, `gpu`, `mutation` are unchecked.
-2. **Bars.** Walk the 23. For each: what population, measured when, still that population? Record
-   beside the bar. Prefer per-precision/per-geometry tables over one scalar (G25).
+
+   *(Status 2026-09-13: `gpu` has since gained a related but distinct guard —
+   `TestGPUGate_emptyFilteredCellIsNotAPass` / `noteIfEmpty` in `cmd/gate/gpu.go` — that flags a
+   cell whose `-run` pattern matched nothing AFTER it runs. That is reactive detection, not the
+   proactive proof `TestRealckptCellCanReachEveryGate` gives parity (which checks the pattern
+   compiles and matches every required gate ahead of any run); it closes the same risk class by a
+   different mechanism and is a real improvement, but `gpu` is not "done" in the sense item 1
+   means. `census`, `heavy`, `composition`, `selector`, `mutation` still have no such test either
+   way, as far as a repo-wide grep for `CanReachEveryGate`/`CellCanReach` finds.)*
+2. **Bars.** Walk the 23 (now 38 — see Finding 2's status note above). For each: what population,
+   measured when, still that population? Record beside the bar. Prefer per-precision/per-geometry
+   tables over one scalar (G25).
 3. **Harnesses.** Every measurement in `docs/benchmarks.md` should name a committed, runnable
    harness. §B6's did not exist; §B4's is a Go test and does. §B7's and §B's are unverified.
 4. **Diagnostics.** Where a check reports a blocker, does the message distinguish the causes it can
    actually tell apart? "DID NOT RUN" did not. The citation lint's `go`-missing crash did not.
+
+   *(Status 2026-09-13: for parity specifically, `whyNoResult` in `cmd/gate/parity.go` now
+   distinguishes an unreachable pattern from a genuinely missing asset at the "DID NOT RUN
+   (blocker)" line — this item is done for that one checkset. Not re-checked here for the other
+   checksets or for the citation lint's `go`-missing path.)*
 
 ## Not in scope
 
