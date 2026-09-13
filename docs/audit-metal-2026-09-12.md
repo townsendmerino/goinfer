@@ -24,6 +24,18 @@ timed; every "×" and "ms" is either the repo's own measurement (cited) or a cou
 `scripts/autoresearch_rmsnorm_results.tsv` and goinfer's own CHANGELOG were not in the snapshot;
 findings that depend on them say so.
 
+**NOTE 2026-09-13 — ten closures added a day late.** M-01, M-02, M-03, M-04, M-06, M-08, G-01,
+G-03, G-07 and C-01 were all shipped on 2026-09-13 (`6cc862a0`, `f6c222ee`, `c660ab78`, `84c3f29f`,
+`a30f2cd3`, `c7f4b1e5` — all on `main`), but the fix commits didn't touch this file, so their
+entries below sat unmarked as fully open for a day after the code moved past them. Found via
+`git log` against the finding IDs, not from this doc's own prose — a reminder that
+`doc_review_staleness.py`'s per-doc footer check (own-edit vs cited-file dates) doesn't catch this
+shape of drift: nothing here cites `metal/model.go`'s *lines* by number, and even a citation
+wouldn't show a fix that only ADDS code near an existing one. Closures below are now current as of
+this note's commit; treat the two negative-probe closures (M-09, M-10) and the four already-present
+ones (M-07 partial, G-02 partial, G-04 partial, G-08) as unaffected — those were already caught
+same-day.
+
 ---
 
 ## 0. The shape of it
@@ -122,6 +134,18 @@ re-baked by the code it checks (G-04).
   2.8 ms is the record's head rate, not a measurement here).
 - **Prior:** new as a mechanism; audit-2026-09-10 N-49 and the Metal TTFT Major name the floor, not
   the per-token head. CUDA has the twin (`TestKVOnlyPrefill_byteIdentical_tiny`).
+- **CLOSED 2026-09-13, narrower than scoped.** Shipped `ForwardNoLogits` on `*metalResident`
+  (`6cc862a0`) so `residentPrefillSeed`'s KV-only prefill skip now applies to Metal — synchronous
+  (`forwardHiddenNoHead`), not the fuller `noHead`-bit-on-`execJob` version this finding's Fix
+  section describes, which stays a follow-up worth ~0.9 ms/token of currently-unclaimed
+  encode-ahead overlap. Falls back to the full head-bearing `Forward` on a paged MoE resident,
+  since `forwardHiddenNoHead`'s trunk encoder has no paged branch (the same gap C-02 found at
+  `HiddenLast`/`ForwardArgmax` — this does not introduce that defect on a third entry point).
+  Verified: `TestForwardNoLogits_byteIdenticalKV` (dense, logits match full-logits `Forward`
+  exactly), `TestForwardNoLogits_pagedMoEFallback` (paged MoE, same requirement through the
+  fallback, real `qwen3_5_moe-tiny` fixture), `TestResidentPrefillSeed_metalKVOnly_byteIdentical`
+  (end-to-end through `decoder.Model.Generate`, mirroring CUDA's own gate) — all new, all passing;
+  full `go test ./metal/...` and `-tags goinfer_testhooks` both green.
 
 #### M-02 · The 512-token floor keeps every prompt under 512 tokens sequential, on a stated reason the repo's own gate record contradicts
 - **Where:** `metal/backend.go:329-333` (`const metalFastPrefillFloor = 512` — "K=256 is expected to
@@ -141,6 +165,10 @@ re-baked by the code it checks (G-04).
   harness already parameterises (`FLOOR=0`).
 - **Confidence:** confirmed.
 - **Prior:** new; prefill-gap §3 "Floor vs decision set" is the governing rule and it is satisfied.
+- **CLOSED 2026-09-13, shipped exactly as scoped.** `metalFastPrefillFloor` 512 → 256 (`6cc862a0`).
+  Verified: `go test ./metal/...` (79 pass) and `-tags goinfer_testhooks` (129 pass, 52 skip) both
+  green, `go test ./decoder/...` (488 pass), gofmt clean, staticcheck clean (same pre-existing
+  U1000s as `main`, none new).
 
 #### M-03 · `gemm_w4f16_store` dequants each weight tile with 8 of 32 lanes, runs 4 MMAs per barrier pair, and stages neither operand — the flat 3.3–3.6× GEMM term at every K
 - **Where:** `metal/prefill.go:66-119` (kernel; `if (lane < 8u)` dequant at `:87-92`, `RPS 4` at
@@ -167,6 +195,15 @@ re-baked by the code it checks (G-04).
   record; the ceiling is the repo's own peer row).
 - **Prior:** new. No autoresearch round touched this kernel (`theta-*`/`uploadbatch-*` are decode
   GEMV/upload). `benchmarks.md:546-550` attributes the whole gap to attention — stale (N-01).
+- **CLOSED 2026-09-13, shipped as scoped.** Widened the per-simdgroup block to 32×32 (`f6c222ee`):
+  all 32 lanes dequant per k-step (was 8 busy/24 idle), 16 MMAs per barrier pair (was 4), each A
+  row-tile loaded once per k-step and reused across the 4 column tiles. N masked per 8-wide
+  sub-tile on the ragged remainder (only guaranteed `%8==0`, per C-10). Validated against the
+  audit's own designated oracle, not bit-identity (f16 storage rounding already differs from
+  exact): `TestPrefillGateVsReference` on the S model, the deciding pooled set (K=256/1024) plus
+  K=3900 — verdict SHIPS on all three criteria, new kernel slightly ahead of the old one (73 vs 75
+  hard flips, meanKL 0.2982 vs 0.3008, lower on 17/20 pooled cells). D7 declined via the fit-guard
+  on this run (an environmental memory gap on this Mac at the time, unrelated to the change).
 
 #### M-04 · `attention_prefill_fused` keeps O in threadgroup memory and rescales it with 8 scalar lanes — ~34 barrier-separated phases per 8-key tile, the residual O(K²) term
 - **Where:** `metal/prefill.go:324-329` (`threadgroup float oScr[ATTN_SGPT][8*ATTN_MAXHD]`),
@@ -191,6 +228,17 @@ re-baked by the code it checks (G-04).
   profile exists; the CUDA twin's "1.72% of tensor peak" is an `ncu` figure).
 - **Prior:** prefill-gap §4 L1 last bullet; `…fused-attn…md` (built, 5.45× over exact at the
   kernel); `benchmarks.md` §A not re-run since the flip.
+- **CLOSED 2026-09-13, narrower than scoped.** Widened the key tile to 32 (`c660ab78`: QKᵀ score
+  MMAs for all 4 sub-tiles run first with no barrier between them, then one softmax pass over up
+  to 32 columns, then PV accumulation sums all sub-tiles before the one store+rescale — amortising
+  the barrier-heavy phase ~4×). The register-accumulator + diagonal-alpha-MMA rewrite and GQA
+  query-head grouping this finding's Fix section also describes were deliberately scoped OUT — more
+  invasive for a benefit not obviously net-positive once the diagonal-MMA's own f32→f16 round-trip
+  is counted — left as a separate, more speculative follow-up. Validated against the same §3.2
+  pooled oracle as M-03 (not bit-identity — the online-softmax rescale already reorders the sum):
+  deciding set SHIPS on all three criteria (hard flips tied 75=75, meanKL 0.2992 vs 0.3008, fast
+  lower on 18/20 cells), K=3900 confirmation cell matching (meanKL 0.4852 vs 0.4904). D7 again
+  declined via the fit-guard (same pre-existing memory gap as M-03's run).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
 - **Where:** `metal/prefill.go:651-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
@@ -228,6 +276,19 @@ re-baked by the code it checks (G-04).
   undeclared so per-layer *mscale* families still decline); give `testdata/gemma3-vl-tiny` a global
   layer so `TestPrefillParityGemma` covers the real shape (G-03); then an hd=256 fused variant.
 - **Confidence:** confirmed. **Prior:** audit-2026-09-10 M-23 — unchanged by the 53 commits.
+- **CLOSED 2026-09-13, first half shipped, hd=256 fused variant not attempted.** Declared
+  `decoder.FeatPerLayerRoPE` in `prefillFeatures` (`84c3f29f`) — `prefill.go`'s dispatch loop
+  already bound `L.invf`/`L.uWindow` per layer, so the per-layer table was always implemented, it
+  just wasn't claimed. `FeatRopeMscale` deliberately left undeclared so a per-layer *mscale* family
+  (Mellum's YaRN long-context variant) still declines. Landed together with G-03 (the fixture fix
+  that lets this be gated at all) and C-01 (a ragged-tile OOB read M-06 raises the odds of firing,
+  found while admitting Gemma 3 to this path) in the same commit. Verified against a freshly
+  regenerated checkpoint: `go test ./metal/...` (80 pass), `-tags goinfer_testhooks` (130 pass, 52
+  skip), `go test ./decoder/...` (488 pass, including the two VL image-path tests the regeneration
+  moved), `-tags 'gpu goinfer_testhooks' ./gpu/...` (99 pass), `./multimodal/...` (10 pass), gofmt
+  and staticcheck clean. The hd=256 fused-attention variant this finding's Fix section names as
+  needed for Gemma 3's *full* win was not attempted — Gemma 3 now reaches the batched GEMM path but
+  still routes to the exact (unfused) attention kernel at hd=256.
 
 ### B. Decode: two probes, one adapter kernel, one memory item
 
@@ -312,6 +373,21 @@ re-baked by the code it checks (G-04).
   up stage parallel over Out. Store A/B as f16 (the delta feeds an int8-quantised activation).
 - **Confidence:** mechanism confirmed (two reviewers); Metal magnitude plausible (unmeasured on the
   Mac). **Prior:** audit-2026-09-10 P-11 — disagree with its Metal disposition; task-gpu-paths G3.
+- **CLOSED 2026-09-13, shipped as scoped, kept fused (Metal's own tradeoff, not CUDA's).**
+  `a30f2cd3`: widened the grid to `ceil(Out/256)` threadgroups, each owning a fixed, disjoint
+  256-row block of the up stage and independently recomputing the down stage's `t[R]` rather than
+  reading it from a device-memory scratch buffer a second kernel wrote — kept as ONE dispatch
+  (unlike CUDA's `lora_delta_down`/`_up` split) because a second launch is the more expensive line
+  item against Metal's own launch/sync ceiling; the redundant per-threadgroup `R` reduction this
+  costs is cheap next to that. Also stores A/B as f16 (the delta feeds an int8-quantised
+  activation, so f32 precision was never load-bearing, and halving the bytes matters most here
+  since every threadgroup in the dispatch re-reads A whole). New gate
+  (`TestLoRADelta_multiThreadgroupMatchesReference`, `Out=600` forcing 3 threadgroups with a ragged
+  last one) confirmed to actually catch the bug class it exists for: maxAbs 8e-6 with the fix,
+  23.9 with a temporarily reintroduced single-threadgroup grid. The existing whole-model parity
+  test alone would not have caught this — its fixture's widest projection is 128, one threadgroup
+  either way. Verified: `go test ./metal/...` (81 pass), `-tags goinfer_testhooks` (131 pass, 52
+  skip), gofmt and staticcheck clean.
 
 #### M-09 · Decode attention's K read is a 32-lane 512 B-strided gather (32 load instructions per 256 B row) — every recorded probe fits an L1/LSU-transaction wall as well as the "DRAM latency" reading; the one untested corner is bit-identical cooperative staging
 - **Where:** `metal/kernels.go:628-636` (thread `tid` owns keys `tid, tid+128, …`; per key 32 `half4`
@@ -531,6 +607,17 @@ re-baked by the code it checks (G-04).
   tile and zero-fill in-kernel. Make the unit test allocate exactly `cacheLen` rows on a
   non-page-rounded size so it can see the read.
 - **Confidence:** confirmed (read pattern); NaN outcome plausible. **Prior:** N-46.
+- **CLOSED 2026-09-13, first fix option shipped.** Rounded the `kc`/`vc` allocation up to a multiple
+  of 8 rows in `buildResident` (`84c3f29f`) — `r.ctxCap` itself (the checked, user-visible capacity)
+  is unchanged, only the underlying buffer's allocated size. Landed alongside M-06, which raises the
+  odds of this tile shape actually firing (Gemma 3's sliding_window caps). New gate
+  (`TestAttentionPrefillFused_ctxCapNotMultipleOf8`) asserts the allocated `Buffer.Len()` directly
+  rather than observing the OOB read's effect on output — a first attempt drove `PrefillLast` to the
+  boundary and diffed logits against sequential `Forward`, and it passed identically with the fix
+  reverted, because Metal's actual buffer backing is page-rounded (16 KB on Apple silicon)
+  regardless of the requested length, so a 37-row and a 40-row request for a buffer this small land
+  on the same physical allocation either way — the structural gate is the one that actually
+  discriminates: fails red (2368 vs 2560 bytes) with the fix reverted, passes with it restored.
 
 #### C-02 · `HiddenLast` (serve `/v1/embeddings`), `Forward(id,pos)` and `ForwardArgmax` on a paged MoE bind the zero-value stacked-expert buffers — C-08's defect on three more entry points
 - **Where:** `metal/backend.go:481-513` (`HiddenLast` → `forwardHiddenNoHead` per position),
@@ -588,6 +675,9 @@ re-baked by the code it checks (G-04).
   red trains everyone to ignore it.
 - **Fix:** `t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")` as `metal/prefill_ttft_test.go:45` does.
 - **Confidence:** confirmed (three reviewers).
+- **CLOSED 2026-09-13, shipped exactly as scoped.** Landed in the same commit as M-01/M-02
+  (`6cc862a0`): disabled the floor via `GOINFER_METAL_FAST_PREFILL_FLOOR=0`, the same pattern
+  `prefill_ttft_test.go` already used, since this test is about MoE arch admission, not the floor.
 
 #### G-02 · The §3.2 pooled gate still drops missing cells silently and turns a fit-guard decline into a SKIP that "SHIPS" (prior audit G-08, open)
 - **Where:** `metal/prefill_gate_ref_test.go:186-202` (`if cs != nil { … }` — a missing reference
@@ -616,6 +706,15 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/prefill_gemma_test.go:44-47`; fixture `[sliding, sliding]` shares one RoPE base
   → `ropeUniform()` true; real Gemma 3 derives `FeatPerLayerRoPE` and is declined before the kernel
   runs (M-06). **Fix:** a global layer in the fixture. **Confidence:** confirmed. **Prior:** M-23.
+- **CLOSED 2026-09-13, shipped as scoped.** Forced one sliding + one full_attention layer in
+  `scripts/pin_gemma3_vl_tiny.py` (`84c3f29f`) — the `rope_parameters` block already had both bases
+  defined, only `layer_types` needed to change — and regenerated the checkpoint plus both dependent
+  goldens through the real HF pipeline (not by hand-editing `config.json`; the checkpoint directory
+  is gitignored and regenerates locally, the goldens are the only durable committed record). Also
+  refreshed `int4_forward_goldens.json`'s gemma3-vl-tiny entry, whose recorded moments the
+  weight/config change moved. Verified against the freshly regenerated checkpoint (`-count=1`
+  throughout, since Go's package-level test cache doesn't invalidate on testdata content changes)
+  — see M-06's closure note for the full test tally.
 
 #### G-04 · The absolute snapshot golden is re-baked by the code it checks after each accepted kernel round; the autoresearch ledger is outside the tree
 - **Where:** `metal/snapshot_golden_test.go:20,177-184` ("the ABSOLUTE STORED REFERENCE";
@@ -660,6 +759,19 @@ re-baked by the code it checks (G-04).
   `docs/measurements/prefill-gate-l1-2026-09-05.md:66` cite a test `grep` cannot find — the
   most-quoted Metal fidelity number ("54% stream divergence") has no test behind it. **Fix:** delete
   `TestPrefillGate` or set the override; re-add the divergence test or stop citing it.
+- **CLOSED 2026-09-13, both bugs fixed, verified by actually running the gate.** `c7f4b1e5`: added
+  the `GOINFER_METAL_FAST_PREFILL_FLOOR=0` override (M-02, already shipped, happens to clear K=256
+  on its own now, but the explicit override was added anyway so this doesn't silently break again
+  the next time the floor default moves); fixed `decoder.PrefillGateProseFiles` pointing at two
+  now-archived paths (`docs/audit-2026-09-02.md`, `docs/task-attention-decode-cost.md` — the first
+  is read live and broke the test outright, the second is a provenance-only citation). Also fixed
+  the dangling `TestMetalPrefillDivergenceRate` citations this finding flagged in four places —
+  that test no longer exists (superseded by `TestPrefillGateVsReference`'s pooled §3.2 criteria),
+  so the comments now cite the historical 54% figure's actual source
+  (`docs/ollama-chase.md:623`) instead of a test grep can't find. Verified by actually running
+  `TestPrefillGate/S`, not just reading the code: K=256 now completes cleanly and proceeds into
+  K=1024 — did not run the full ~20+ minute K=256/1024/3900 sweep to completion, but the K=256 cell
+  passing end to end is what both bugs actually blocked.
 
 #### G-08 · The §3.2 gate never exercises `startPos > 0`, which every resident-prefix-reuse turn uses
 - **Where:** `metal/prefill_gate_ref_test.go:429` (`PrefillLast(ctx, embs, 0)`) vs
@@ -907,27 +1019,37 @@ peer extrapolation was ~25% optimistic; internal projections held within 1.5%):
 Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line and a
 `benchmarks.md` touch.
 
-1. **M-02 + M-01 + G-01** (a day; `metal/backend.go`, `metal/model.go`, `moe_model_test.go`): floor
-   → 256, `noHead` executor job with the paged-aware constraint from C-02, the red test made green.
-   Gate: §3.2 pooled at K=256 (already passing), byte-identical decode after a no-head prefill
-   (CUDA's twin test), TTFT ladder re-run at K∈{64,128,256,512}.
-2. **M-03** (the GEMM tile; days): 32×32 per-simdgroup block, all-lane dequant, A staged per
-   threadgroup. Gate: §3.2 pooled + the L2 record's shapes; the number that matters is P=256 TTFT.
-3. **M-04** (fused attention, register O + diagonal α + 32-key tile + GQA grouping): re-run §3.2.
-4. **M-06 + G-03 + C-01** (three one-line changes plus a fixture): Gemma 3 onto the batched path,
-   the fixture that can see it, the cache rounding.
-5. **M-07** (task-int4-layout L4, scheduled): canonical-only for resident GPU backends; release
-   host projections after upload. Gate: RSS after load on the 1.5B and the D7 fit.
-6. **M-08** (LoRA grid): with a Mac adapter-decode measurement recorded for the first time.
+1. **M-02 + M-01 + G-01** — **CLOSED 2026-09-13** (`6cc862a0`). Floor → 256; `ForwardNoLogits`
+   shipped synchronous rather than as a `noHead` executor job (see M-01's own closure note for the
+   scoped-down fix and the follow-up that stays open); the red test made green. Not yet done: the
+   full `noHead`-executor-job version (~0.9 ms/token of unclaimed encode-ahead overlap) and the
+   TTFT ladder re-run at K∈{64,128,256,512} this item called for.
+2. **M-03** — **CLOSED 2026-09-13** (`f6c222ee`). 32×32 per-simdgroup block, all-lane dequant, A
+   staged per threadgroup, exactly as scoped. §3.2 pooled gate SHIPS (see M-03's own closure note);
+   the P=256 TTFT re-measurement this item called for has not been run.
+3. **M-04** — **CLOSED 2026-09-13, narrower than scoped** (`c660ab78`). 32-key tile shipped; the
+   register-O + diagonal-α rewrite and GQA grouping this item also named were deliberately left as
+   a separate follow-up (see M-04's own closure note for why). §3.2 re-run: SHIPS.
+4. **M-06 + G-03 + C-01** — **CLOSED 2026-09-13** (`84c3f29f`), all three exactly as scoped: Gemma 3
+   onto the batched path, the fixture that can see it, the cache rounding.
+5. **M-07** — **PARTIALLY CLOSED 2026-09-13** (`47355617`, see its own closure note): the row4-skip
+   half shipped; releasing host projections after upload (the RSS-on-1.5B/D7-fit gate this item
+   named) is not done.
+6. **M-08** — **CLOSED 2026-09-13** (`a30f2cd3`), kept fused rather than split (Metal-specific
+   tradeoff, see its own closure note). Still no Mac adapter-decode measurement recorded.
 7. **Paged:** M-14 (aikit selector, one release) → M-13 (auto-sized slots; the M35/M26/G20 rows
    re-run against the pager) → M-11 + G-05 (the shared-event re-run on the paged shape) → M-12.
+   **Unchanged — still fully open**, along with the rest of this section not marked closed above.
 8. **Probes:** both CLOSED 2026-09-13, NEGATIVE (see their own entries above). M-09 — the staged
    K-read probe measured 2.3x SLOWER than shipped, not faster; not ported. M-10 — built and A/B'd
    on the depth bench, slower at every depth; reverted.
-9. **Docs and gates batch:** N-01…N-14, G-02, G-04, G-07, G-08, G-09; the §A Metal row re-measured
-   after 1–3 with the same protocol and Ollama in the same session.
+9. **Docs and gates batch:** of N-01…N-14, G-02, G-04, G-07, G-08, G-09 — **G-02, G-04 (partially),
+   G-07, G-08 CLOSED 2026-09-13** (see their own entries); N-01…N-14 and G-09 still open. The §A
+   Metal row re-measurement this item called for (after 1–3, same protocol, Ollama same session)
+   has not been run.
 10. **M-15** (cross-repo, aikit first): the three Metal tower shapes; then `EnableResident` on Metal.
-11. **M-16** (A/B only): untracked buffers on the depth bench.
+    Unchanged — still open.
+11. **M-16** (A/B only): untracked buffers on the depth bench. Unchanged — still open.
 
 Not proposed, because the record already closed them: split-KV / dedup attention variants, Stage-B
 GEMV, ICB, unretained references, megakernel, dispatch-count fusions, rope2+kv_store, sa_qv,
