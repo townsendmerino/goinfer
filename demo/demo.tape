@@ -1,6 +1,6 @@
 # goinfer chat — "an entire LLM in one file" demo (1.5B tier)
 #
-# Render from the repo root:   vhs demo.tape    ->  docs/assets/demo.gif + .mp4
+# Render from the repo root:   vhs demo/demo.tape    ->  docs/assets/demo.gif + .mp4
 #   (needs `vhs` on PATH + `ttyd` + `ffmpeg`)
 # The Hide block cd's into demo/chat/dist and warms the page cache so the
 # visible boot shows the instant-load hook (a cold mmap reads slower).

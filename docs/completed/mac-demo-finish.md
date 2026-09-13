@@ -42,7 +42,7 @@ Your commit reasoned that "the recorded terminal UI is host-OS-agnostic, so this
 doesn't change what the demo shows". That holds for the UI chrome, but two things on screen are not
 host-agnostic:
 
-1. **The typed command is visible.** `demo.tape:21,26` type
+1. **The typed command is visible.** `demo/demo.tape:21,26` type
    `./goinfer-chat-1.5b-linux-amd64` — unmodified, as you noted — so the recording displays that
    filename while a `darwin-arm64` binary is what actually ran.
 2. **The demo prints its own throughput.** `internal/chatapp/main.go:501` writes
