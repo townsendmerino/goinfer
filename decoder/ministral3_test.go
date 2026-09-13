@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G3 (docs/task-families-2026-09.md, batch 2) Ministral 3 parity (mistralai/Ministral-3-{3b,8b,
+// G3 (docs/completed/task-families-2026-09.md, batch 2) Ministral 3 parity (mistralai/Ministral-3-{3b,8b,
 // 14b}, model_type "mistral3" — the outer VL wrapper's type, "ministral3" nested): Mistral's GQA
 // skeleton plus YaRN RoPE with a DeepSeek-style mscale/mscale_all_dim override and Llama4-style
 // attention-temperature tuning on every layer (AttnTempBeta/AttnTempOrigMaxPos). The fixture's

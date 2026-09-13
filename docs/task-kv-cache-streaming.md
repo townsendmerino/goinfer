@@ -19,7 +19,7 @@ the approach, not the figures.
 
 All weight sizes are real files on disk (`~/models/*.gguf` on this box) or `.giw`; all layer/head/
 kv-head/sliding-window fields read directly from each checkpoint's own GGUF metadata via
-`aikit/embed.GGUFFile`, except H27 (no local file — used `docs/task-families-2026-09.md`'s own
+`aikit/embed.GGUFFile`, except H27 (no local file — used `docs/completed/task-families-2026-09.md`'s own
 independently re-verified header fetch). KV bytes = growing-layer-count × 2(K,V) × kv_heads ×
 head_dim × ctx × 4B (f32, goinfer's default `kvqF32`).
 

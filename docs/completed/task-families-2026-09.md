@@ -1,5 +1,48 @@
 # Task: four families, 2026-09 (F1–F4)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status: COMPLETE, reviewed 2026-09-13.** Doc-reviewed against the tree; every registry key,
+> adapter, primitive and T1 tiny-golden test this doc describes for all nine families (F1–F4,
+> G1–G5) is present and unchanged in `decoder/` today. **The one real correction: the "T3
+> real-checkpoint parity: owed" claim below is now STALE for six of the nine families.** As of
+> this review, `testdata/parity_manifest.json` and the generated `docs/capability-matrix.md` show
+> T3 real-checkpoint validation has since RUN AND PASSED for: F1 `qwen3_moe` (`status: validated`,
+> `real-model-oracle`), F3 `granite` dense (`validated`, `full-forward-oracle`, 100.0%/1.00000), G2
+> `olmo3` AND `olmo_hybrid` (`validated`, `full-forward-oracle`, 100.0%/1.00000 each), G3
+> `mistral3`/`ministral3` (`validated`, `full-forward-oracle`, 100.0%/1.00000), and G4 `smollm3`
+> (`validated`, `full-forward-oracle`, 100.0%/1.00000). None of this is formally
+> ledger-promoted yet in `cmd/gate/parity.go`'s `awaitingFirstConfirmation` map (those entries are
+> still there, dated 2026-09-06/07) — that is a separate, still-open bookkeeping step, not a sign
+> the runs didn't happen or didn't pass. `docs/next-models.md` independently confirms all seven
+> new-registry-key families here landed by v0.17.0.
+>
+> **Still genuinely open, not owned by this doc — tracked live in `testdata/parity_manifest.json` /
+> `cmd/gate/parity.go`:** F2's Nemotron 3.5 Lightning-*specific* T3 (it shares Nano's `nemotron_h`
+> manifest row by design, so Lightning itself has never been separately run —
+> `TestNemotron35LightningReal_oracle` is still unrun); G1's `TestQwen38GGUF_weightDiff`
+> (GGUF-vs-safetensors diff for the dense qwen3_5 hybrid) — still unrun; G5 `bailing_hybrid` T3 —
+> still blocked, confirmed as of 2026-09-08 in `docs/parity-coverage-policy.md`'s timing notes (the
+> checkpoint's own remote code doesn't import on any current `transformers`, a defect in the
+> checkpoint's code, not goinfer's); G3's GGUF loader for `mistral3` — verified against a real file
+> at the header/tensor-name level only, no loader code written; peer-bench rows — **zero exist for
+> any of the nine families**, confirmed by grep of `docs/benchmarks.md` at this review.
+>
+> **One thing this doc got right that a later commit briefly broke and then fixed:** G2's `olmo3`
+> per-layer-type YaRN RoPE split (full-attention scaled, sliding-attention not) is exactly as
+> described below. An intervening commit collapsed it to one shared table on a mistaken belief;
+> `2aa4540b` (2026-09-11) reverted that and reproduced this doc's own T1 cosine
+> (0.9999999999997883) bit-for-bit. The design record below was never wrong.
+>
+> Every instruction-shaped sentence below (the "what was deliberately not done" bullets, "T3
+> owed", "follow-up") is a record of what was asked and not yet run **at the time this doc was
+> written**, not a live task list — see the correction above for what has since changed.
+
 > **Status: DONE, 2026-09-06.** All four items landed in order (F1 → F2 → F3 → F4), each committed
 > and pushed independently. Summary below; read each section's own status line for the detail.
 >
@@ -297,7 +340,7 @@ pattern this section's whole finding rests on (23 mamba / 23 moe / 6 attention, 
 Nano's) is exactly the per-layer kind CUDA/Metal's resident builders decline — `decoder/residency.go`'s
 `DecodeRunnerEligible` still refuses that arch shape for them before a backend is ever asked to
 build a resident runner. WebGPU implements it (G7 part 2,
-[`task-gpu-paths-2026-09.md`](task-gpu-paths-2026-09.md)) — a backend-specific override in that
+[`task-gpu-paths-2026-09.md`](../task-gpu-paths-2026-09.md)) — a backend-specific override in that
 same predicate, gated on `decoder.Model.DecodePath()`'s own real backend name, not a blanket
 admission. This section verifies CPU-path correctness only; the `docs/hardware-matrix.md`
 "✅ resident" row for Nemotron-H reflects a DENSE representative config and doesn't speak to this

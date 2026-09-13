@@ -1,7 +1,7 @@
 //go:build realckpt
 
 // Real-checkpoint T3 for Qwen3-MoE (Qwen3-30B-A3B, model_type "qwen3_moe") — F1 of
-// docs/task-families-2026-09.md. T1 (tiny random-weight HF oracle, cosine 0.9999999999999462)
+// docs/completed/task-families-2026-09.md. T1 (tiny random-weight HF oracle, cosine 0.9999999999999462)
 // proved the loader/forward shapes; this proves the released weights, which is a different claim:
 // a tiny fixture cannot catch a wrong tensor name, a transposed expert stack, or a router read
 // from the wrong key — every one of which produces correct shapes and plausible values.

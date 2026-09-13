@@ -1,7 +1,7 @@
 //go:build realckpt
 
 // Real-checkpoint gate for NVIDIA-Nemotron-3.5-Lightning-30B-A3B (nemotron_h MoE) — F2 of
-// docs/task-families-2026-09.md. NOT a new family: Phase 0 found this checkpoint's config.json
+// docs/completed/task-families-2026-09.md. NOT a new family: Phase 0 found this checkpoint's config.json
 // identical to the already-T3'd Nemotron 3 Nano's (docs/completed/queue-correctness.md G4) in
 // every architecturally meaningful field, including the exact 52-block layer pattern (23 mamba /
 // 23 moe / 6 attention, same order). This gate exists to confirm the ACTUALLY TRAINED weights
@@ -18,7 +18,7 @@
 // manifest; running it directly with GOINFER_MANIFEST_EMIT=1 would still emit a PARITY_ROW line,
 // and merging that WOULD overwrite Nano's specific numbers with Lightning's — a deliberate choice
 // for whoever runs it by hand, not something this gate silently does on a routine sweep. This
-// run's result is recorded in docs/task-families-2026-09.md's F2 section as confirmatory
+// run's result is recorded in docs/completed/task-families-2026-09.md's F2 section as confirmatory
 // evidence for the same family.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestNemotron35LightningReal -v -timeout 90m

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G2 (docs/task-families-2026-09.md, batch 2) Olmo 3 parity (allenai/Olmo-3-{7B,32B}, model_type
+// G2 (docs/completed/task-families-2026-09.md, batch 2) Olmo 3 parity (allenai/Olmo-3-{7B,32B}, model_type
 // "olmo3"): two real departures from every existing family, verified against the real
 // modeling_olmo3.py — NormPostOnly (no pre-norm at all; only the sublayer OUTPUT is normalized
 // before the residual add) and QKNormWhole (QK-norm over the FULL projected q/k vector, not

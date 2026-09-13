@@ -658,7 +658,7 @@ func smollm3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // is the ORIGINAL family design (the local/global RoPE split Mellum already implements,
 // `RoPELocalBase`/`RoPEGlobalBase` + `ropeScaling`/`ropeScalingLocal`, dispatched on
 // `arch.layerIsGlobal`), and `TestOlmo3_forwardParity` scored 0.9999999999997883 under it at
-// ship time (docs/task-families-2026-09.md G2).
+// ship time (docs/completed/task-families-2026-09.md G2).
 //
 // **Verified by calling the real forward, not by reading source.** A prior revision of this
 // comment ("0b0f5c9") read `modeling_olmo3.py` and concluded `Olmo3Model.__init__` builds ONE
@@ -776,7 +776,7 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // modeling_olmo_hybrid.py), olmo3's own full-attention shape (whole-vector QK-norm) on the rest —
 // but the two are NOT simply composed side by side: the full-attention layers use olmo3's
 // NormPostOnly while the DeltaNet layers use plain NormPre2, two placements in ONE model, which is
-// what NormPlacementLinear exists for (docs/task-families-2026-09.md's G2 section has the full
+// what NormPlacementLinear exists for (docs/completed/task-families-2026-09.md's G2 section has the full
 // norm-placement writeup).
 //
 // Real, checked-not-assumed departures from a straight qwen3_5-DeltaNet + olmo3-attention
@@ -2303,7 +2303,7 @@ func deepseekArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 //   - KDA (kda.go) is the one genuinely new primitive: a delta-rule recurrence structurally
 //     identical to Gated DeltaNet but with a PER-CHANNEL decay (fla-org/flash-linear-attention's
 //     actual source, not HF's opaque Triton-kernel call — see F4's own rehearsal,
-//     docs/task-families-2026-09.md). Only the no_kda_lora + kda_safe_gate variant Ling-3.0-tiny's
+//     docs/completed/task-families-2026-09.md). Only the no_kda_lora + kda_safe_gate variant Ling-3.0-tiny's
 //     own config selects is implemented; validateBailingHybrid refuses anything else rather than
 //     silently mis-running an unimplemented variant.
 //

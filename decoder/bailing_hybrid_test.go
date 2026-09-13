@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G5 (docs/task-families-2026-09.md, batch 2) Bailing Hybrid parity (inclusionAI, Ling 3.0,
+// G5 (docs/completed/task-families-2026-09.md, batch 2) Bailing Hybrid parity (inclusionAI, Ling 3.0,
 // model_type "bailing_hybrid"): DeepSeek-style Multi-head Latent Attention alternating with Kimi
 // Delta Attention (KDA) every layer_group_size-th layer being MLA, over a DeepSeekMoE FFN.
 //

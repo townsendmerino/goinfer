@@ -2,7 +2,7 @@ package decoder
 
 import "math"
 
-// F4 (docs/task-families-2026-09.md): KDA (Kimi Delta Attention) recurrence rehearsal for
+// F4 (docs/completed/task-families-2026-09.md): KDA (Kimi Delta Attention) recurrence rehearsal for
 // Ling-3.0-tiny / Kimi K3's linear-attention mixer. NOT wired to any registered family — this is
 // the scoped bring-up the F4 brief asked for: prove the one genuinely new piece of KDA's math
 // against a real reference before any registry work.

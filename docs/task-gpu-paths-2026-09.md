@@ -13,7 +13,7 @@
 >
 > Suggested order: G1 → G2 (folded into multimodal P6) → G3+G4 together → G5 (four one-kernel
 > families) → G6 → G7 (Metal TTFT) → the rest as they come up. Items are independent; each lands
-> with its own gate and hardware-matrix/CHANGELOG touch, in the pattern of task-families-2026-09.
+> with its own gate and hardware-matrix/CHANGELOG touch, in the pattern of docs/completed/task-families-2026-09.md.
 
 ## Ground rules (same as every task doc here)
 
@@ -136,7 +136,7 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Gemma 4 E2B/E4B | `FeatGemma4EModel` | same | PLE + shared-KV + per-layer FFN — not on any backend; the 26B/31B are resident |
 
 The first five rows are each one small kernel or a wiring change on backends that already run the
-rest of the family, and the tiny-oracle fixtures from task-families-2026-09 are the gates. Do
+rest of the family, and the tiny-oracle fixtures from docs/completed/task-families-2026-09.md are the gates. Do
 those five, in that order, and treat the rest as the standing residency backlog
 (`gpu-residency-coverage.md`).
 
@@ -156,7 +156,7 @@ WebGPU.
 **Where.** `decoder/residency.go:243`: `if a.nemotron != nil { return a.MoE == nil }` — the
 MoE block kind has no resident builder on any backend (comment at 234–240). `docs/hardware-matrix.md`
 row "Nemotron-H → WebGPU ✅ resident" is generated from the *dense* representative config, so it is
-true of Nemotron-H and false of the two models people download. task-families-2026-09 F2
+true of Nemotron-H and false of the two models people download. docs/completed/task-families-2026-09.md F2
 "verified" Lightning against the adapter without noting it runs CPU-only.
 
 **Fix, two parts.** (1) Today: a footnote on the matrix row and a line in the Lightning/Nano
@@ -1052,7 +1052,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     config and does not apply to the two real MoE checkpoints — regenerated via `-update`,
     `TestHardwareMatrix_fresh` passes.
   - `docs/completed/nemotron-resident.md` (scoped entirely to the dense port, but titled generically enough
-    a reader could miss that) gets an explicit scope callout up top. `docs/task-families-2026-09.md`'s
+    a reader could miss that) gets an explicit scope callout up top. `docs/completed/task-families-2026-09.md`'s
     F2 (Lightning) section — which verified CPU-path config-identity against Nano in detail but
     never once mentioned GPU residency — gets a closing note stating CPU-only-on-every-backend
     directly, same as Nano's own already-archived note in `docs/completed/nemotron3nano-t3.md`.
@@ -1163,7 +1163,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     branch got the same `isWebGPUBackend` exclusion, so it stops firing for the one backend that
     isn't actually declining. `docs/hardware-matrix.md`'s generator footnote,
     `docs/completed/nemotron-resident.md`,
-    and `docs/task-families-2026-09.md`'s F2 section (all written in part 1, when "no backend
+    and `docs/completed/task-families-2026-09.md`'s F2 section (all written in part 1, when "no backend
     implements it" was still true) updated to say webgpu now does.
   - **`TestNemotronMoEResidentParityWebGPU`** (new, `gpu/nemotron_moe_resident_test.go`): real
     committed fixture `testdata/nemotron3nano-tiny` (6 layers: linear_attention/moe/
