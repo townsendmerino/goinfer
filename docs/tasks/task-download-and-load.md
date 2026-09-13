@@ -1,14 +1,18 @@
 # Task: knowing what to download, and how long it takes to load
 
-> **Status: BOTH PARTS BUILT 2026-09-06, left uncommitted for review.** Written against a brief
-> filed 2026-09-02 that predates `internal/modelpull`, `pull/curated.json`,
-> [`quantization.md`](quantization.md) and the fit guard. The brief asked for those to be read and
+> **Status (corrected 2026-09-13 doc-review — the line below was stale): BOTH PARTS BUILT AND
+> COMMITTED.** Part A landed as `5919c00b` (2026-09-06) and grew from 3 entries to 5 in
+> `71f11c0d` (2026-09-07, first-hour batch 2); Part B landed as `fb56764b` (2026-09-06). Neither
+> is "uncommitted for review" any more — that line was true only on the day it was written.
+> Remaining open work is listed under "What is not built" below, corrected as of this review.
+> Written against a brief filed 2026-09-02 that predates `internal/modelpull`, `pull/curated.json`,
+> [`quantization.md`](../quantization.md) and the fit guard. The brief asked for those to be read and
 > reconciled first; §0 is that reconciliation, and it changed the design in two places.
 
 ## 0. Reconciliation — three things the brief asks for already existed
 
 **"Take a stance on quantization" — done, earlier the same day.**
-[`quantization.md`](quantization.md) states which quants this project stands behind, which it
+[`quantization.md`](../quantization.md) states which quants this project stands behind, which it
 measured and refused, and where there is no evidence. It also establishes that the peer's rule the
 brief cites (*"deliberately avoids Q1–Q3"*) **cannot be copied here**: this project's own
 real-model gates for GLM-4.5-Air and Llama-4-Scout run from **Q2_K** checkpoints, because that is
@@ -61,7 +65,7 @@ measures neither — it measures the repack:
 
 `build` — dequantize every tensor and re-quantize/repack it — is **98–100%** of both loads. The
 repack is slow enough that the kernel's readahead hides most of the NVMe read behind it. Full
-provenance in [`benchmarks.md`](benchmarks.md) Table 4.
+provenance in [`benchmarks.md`](../benchmarks.md) Table 4.
 
 ### Two limitations, recorded rather than smoothed over
 
@@ -103,10 +107,12 @@ $ goinfer-chat pull qwen2.5-coder-0.5b
 outside a package directory, and `TestRegistry_embeddedMatrixMatchesTheDoc` compares them byte for
 byte so the copy cannot drift. There is no second list to maintain.
 
-**Three entries, one per family whose digest could be verified locally.** Small on purpose: an
-entry exists because someone ran that checkpoint, not because the family is supported. The 0.5B's
-locally-computed sha256 matched `curated.json`'s independently-recorded pin exactly, which is what
-established that local files can supply digests matching what Hugging Face serves.
+**Three entries at launch, one per family whose digest could be verified locally — grown to five
+by 2026-09-13** (`gemma4`, `phi3`, `qwen2`, `gpt-oss`, `granitemoehybrid`; the other four joined
+in `71f11c0d`, 2026-09-07, "first-hour batch 2"). Small on purpose: an entry exists because someone
+ran that checkpoint, not because the family is supported. The 0.5B's locally-computed sha256
+matched `curated.json`'s independently-recorded pin exactly, which is what established that local
+files can supply digests matching what Hugging Face serves.
 
 **No CDN, no hosted weights.** Every entry points at Hugging Face with a sha256 the existing fetch
 verifies; the short name rewrites into the same `repo:file` reference `ParseRef` already takes, so
@@ -129,9 +135,14 @@ An empty registry fails rather than passes, so the suite cannot go green having 
 
 - **`serve` does not take a short name yet** — only `goinfer-chat pull`/`models`. Same registry,
   one call site.
-- **No fit-aware recommendation.** The genuinely useful version is "on *this* machine, run *this*
-  checkpoint", which needs `task-fit-to-hardware.md`'s `plan`. The `needs` field is written for it.
-- **Three entries is not coverage.** Growing it means verifying a digest per checkpoint, which is
+- **No fit-aware recommendation — no longer blocked on `plan` not existing, but still not wired
+  up (corrected 2026-09-13).** `task-fit-to-hardware.md`'s Phase 1 `plan()` core and
+  `goinfer-chat fit` dry run landed 2026-09-09 (`decoder/fitplan.go` + `internal/fitcmd`), so the
+  function this doc was waiting on now exists. But nothing in `pull/` calls it: `models`/`pull`
+  still list the registry's static `Needs` string rather than asking `plan()` what fits *this*
+  machine. The genuinely useful version — "on *this* machine, run *this* checkpoint" — is still a
+  one-call-site integration away, the same shape as the `serve` gap above.
+- **Five entries is not coverage.** Growing it means verifying a digest per checkpoint, which is
   a download and a hash, not a decision.
 - **Load-time instrumentation covers the GGUF path only.** safetensors and `.giw` return a nil
   profile and print nothing, which is why `Summary()` is empty rather than zero.

@@ -14,7 +14,7 @@ better starting point if you are picking something up.
 | | |
 |---|---|
 | [**book/**](book/) · [read online](https://townsendmerino.github.io/goinfer/) | eleven-chapter inference primer for Go engineers — concepts from zero, each chapter ending in a measured number |
-| [task-download-and-load.md](task-download-and-load.md) | which checkpoints to download and what a load actually costs — plus why the load is compute-bound, not storage-bound |
+| [task-download-and-load.md](tasks/task-download-and-load.md) | which checkpoints to download and what a load actually costs — plus why the load is compute-bound, not storage-bound |
 | [quantization.md](quantization.md) | which quants goinfer stands behind, which it measured and refused, and where there is no evidence — reading a format is not endorsing it |
 | [how-inference-works.md](how-inference-works.md) | the same ground in ~2,300 words, anchored to specific source lines. The code map |
 | [webgpu-primer.md](webgpu-primer.md) | orientation for anyone touching `gpu/` |
@@ -48,7 +48,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
 
-## Design records — `task-*.md` (38: 31 here, 6 in `tasks/`, 1 in `tasks/parked/`)
+## Design records — `task-*.md` (38: 30 here, 7 in `tasks/`, 1 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
