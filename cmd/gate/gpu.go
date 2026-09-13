@@ -181,7 +181,7 @@ func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 	// reports clean and its coverage is simply gone. Every -run pattern in this file is a literal
 	// test-name prefix or alternation, so renaming a test silently empties its cell — the same
 	// shape as the qwen3next oracle, where a -run pattern that could not match a required gate
-	// produced "DID NOT RUN" for five weeks (docs/task-verification-surface-audit.md).
+	// produced "DID NOT RUN" for five weeks (docs/tasks/task-verification-surface-audit.md).
 	g.noteIfEmpty(c, res)
 	g.noteIfAllSkipped(c, cr)
 	return res, cr, res.text()
