@@ -31,7 +31,16 @@ Repo: `~/tmcode/goinfer` on the Mac (`aikit` is the sibling). In Cowork it is mo
 git log -5 --format='%h %ad %s' --date=short -- <doc>
 grep -rn '<basename>' --include='*.md' docs README.md CLAUDE.md | grep -v '^docs/completed'   # live refs
 grep -c '<doc path>|' docs/QUEUE.md                                                       # citation-index rows keyed to it
+python3 scripts/doc_review_staleness.py                                                   # is this doc even due for a look?
 ```
+
+The last one is a cheap triage step, not a substitute for the rest of this skill: if the doc
+already carries a `<!-- doc-reviewed: YYYY-MM-DD -->` footer (§3b below) and the script reports
+it FRESH, nothing the doc cites has moved since it was last checked — skip it and spend the time on
+a doc the script flags STALE or with NO FOOTER instead. A FRESH result is not proof the doc is
+correct, only that nothing it points at has changed; still ground and verify normally on anything
+the script can't cover (a claim with no `path:line` citation behind it, a verdict about hardware or
+a decision, an aikit-side citation — see the script's own docstring for why those aren't checked).
 
 Then, per claim in the doc:
 - **"X shipped / is open"** → grep the code for the symbol, kernel file, flag or env var; check
@@ -49,16 +58,25 @@ Then, per claim in the doc:
 
 | verdict | meaning | action |
 |---|---|---|
-| **COMPLETE** | every item shipped, killed, measured, or moved to a doc that owns it | archive |
-| **SUPERSEDED** | the verdict or premise was overturned elsewhere | archive, with a retraction status block naming what overturned it and where |
-| **LIVE, STALE** | still the owner of open work, but carries wrong claims | correct in place (dated notes, retraction-in-place), do not move |
-| **PARKED** | open, blocked, trigger named | leave; restate the trigger in the report; check the trigger still holds |
+| **COMPLETE** | every item shipped, killed, measured, or moved to a doc that owns it | archive to `docs/completed/` |
+| **SUPERSEDED** | the verdict or premise was overturned elsewhere | archive to `docs/completed/`, with a retraction status block naming what overturned it and where |
+| **LIVE, STALE** | still the owner of open work, but carries wrong claims | correct in place (dated notes, retraction-in-place); move to `docs/tasks/` if not there already |
+| **PARKED** | open, blocked, trigger named | correct in place if needed; move to `docs/tasks/parked/` if not there already; restate the trigger in the report; check the trigger still holds |
 
 A doc with one live section and the rest complete: check whether the live section is a summary of
 something that already has a canonical home (`spec/`, an audit R-item, a queue entry). If so,
 correct it in place, then archive and re-point citers to the canonical home.
 
-## 3. Archive procedure (house conventions — follow exactly)
+**Where a doc lives, by verdict — this repo's migration convention, started 2026-09-13.**
+`docs/task-*.md` files no longer sit flat in `docs/` root: a COMPLETE/SUPERSEDED verdict archives
+to `docs/completed/<name>.md` exactly as step 3 below always did; a LIVE-STALE or
+verified-accurate-but-open verdict moves to `docs/tasks/<name>.md`; a PARKED verdict moves to
+`docs/tasks/parked/<name>.md`. `docs/prompts/*.md` briefs follow the same three-way split (archive
+delivered/superseded ones, leave genuinely open ones in `docs/prompts/`) but there is no
+`docs/prompts/parked/` — an open prompt just stays in `docs/prompts/`. If the doc is already in the
+right place for its verdict, no move is needed. Do not invent a fourth location.
+
+## 3. Archive procedure (COMPLETE or SUPERSEDED — house conventions, follow exactly)
 
 1. Prepend the standard archival header, copied verbatim from the top of
    `docs/completed/task-cuda-cgofree-spike.md` (the blockquote starting **ARCHIVED — a record, not
@@ -84,6 +102,50 @@ correct it in place, then archive and re-point citers to the canonical home.
    green. Rows keyed to a moved doc retire on their own. The Cowork VM's Python is 3.10 and the
    script needs 3.12 — if it fails to parse, say so; the pre-push hook on the Mac runs it.
 8. Stage by path. The tree almost always has unrelated uncommitted work.
+
+## 3a. Move procedure — LIVE-STALE or PARKED, relocating within the live tree
+
+Apply corrections in place first (dated notes, retraction-in-place, per the doc's own established
+convention — a blockquote correction beside the stale claim, not a silent rewrite). Then, if the
+doc is not already at the right location for its verdict:
+
+1. `git mv docs/task-<name>.md docs/tasks/task-<name>.md` (LIVE-STALE / accurate-but-open) or
+   `docs/tasks/parked/task-<name>.md` (PARKED). No ARCHIVED header, no status-block-strips-
+   imperatives step — this is still a live, actionable doc, just relocated.
+2. **Fix every downstream reference, thoroughly — this is the part most likely to be skipped.**
+   Grep the WHOLE repo (not just `docs/`) for the basename and any bare prose mentions of it —
+   markdown links, backtick prose citations, and Go/shell code comments (the citation lint does
+   not check code comments pointing at docs, so they rot silently if missed). Fix each one to the
+   new path:
+   - A same-directory `docs/*.md` markdown link becomes `tasks/task-<name>.md` (or
+     `tasks/parked/task-<name>.md`).
+   - A `docs/prompts/*.md` or `docs/measurements/*.md` file, one level down, needs `../tasks/...`.
+   - If the moved doc itself has outbound relative links (to `measurements/`, sibling `task-*.md`
+     docs, `examples/`), they need `../` prepended since the doc is now one level deeper — and if a
+     link target has ALSO already moved into `docs/tasks/` or `docs/tasks/parked/`, that link
+     becomes same-directory (or a `parked/` subpath) instead of `../`.
+   - **Leave these alone even if they cite the old path** — frozen/historical by this repo's own
+     convention: `docs/completed/*.md`, `docs/measurements/*.md`, anything under `testdata/`,
+     `CHANGELOG.md`. Editing a frozen record to match a live move defeats the point of freezing it.
+3. `python3 scripts/queue_citation_lint.py`, exit code read directly. `--update` if the move
+   drifted a citation's index key. **A `--update` run from inside a fresh git worktree can
+   mis-resolve aikit SHA citations** it can't find via the default sibling-checkout lookup, flipping
+   SHAs that were fine before your edit to UNRESOLVED — that is a worktree-location artifact, not a
+   real regression; set `GOINFER_SHA_LINT_REPOS=<path to the aikit checkout>` before `--update`, or
+   revert just those rows, rather than letting the artifact get written into the file.
+4. Do not touch `docs/README.md`'s counts on every single pass — if several docs are moving in the
+   same sweep, recount once at the end rather than after each one.
+
+## 3b. Every pass, regardless of verdict — the doc-reviewed footer
+
+`docs/tasks/*.md`, `docs/tasks/parked/*.md`, and `docs/prompts/*.md` each carry a trailing
+`<!-- doc-reviewed: YYYY-MM-DD -->` footer, checked by `scripts/doc_review_staleness.py` (step 1).
+**Add it if missing, update the date if present, on every pass that verifies the doc — including a
+pass that changes nothing at all.** A doc confirmed accurate today and left untouched still needs
+its footer bumped to today, or the staleness script has no way to know it was actually looked at;
+this genuinely means a no-op review still produces a one-line commit (`git add` the file, commit
+just the footer). `docs/completed/` files do **not** get this footer — they are frozen and excluded
+from the staleness check the same way they are excluded from the citation lint.
 
 ## 4. Remaining work
 
