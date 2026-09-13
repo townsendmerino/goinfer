@@ -59,7 +59,7 @@ This is a **CUDA-VRAM** story, not a host-RAM one, and the two are governed by d
 but were never the relevant gate: with 4.8 GB of weights this box's real host-RAM headroom was
 never in question. The load-bearing check for this scenario is CUDA's own `checkKVFits`
 (`cuda/resident.go`), which queries actual free VRAM via the driver and is what already measured
-this exact card's ceiling (`docs/task-kv-cache-streaming.md`: this same RTX 2070 SUPER runs a
+this exact card's ceiling (`docs/tasks/parked/task-kv-cache-streaming.md`: this same RTX 2070 SUPER runs a
 dense 7B at int4 fine at `-ctx 20000`, refuses at `-ctx 24576`) — `-ctx 16384` sits well inside
 that, which is why the margin above is comfortable rather than tight. It has no live per-request
 re-check (only the fixed cap `checkKVFits` validated at load), so something else competing for
