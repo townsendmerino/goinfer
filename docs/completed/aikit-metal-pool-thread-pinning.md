@@ -1,3 +1,25 @@
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (2026-09-13, doc-review): DONE, shipped 2026-08-26, archived here.** The fix landed
+> exactly as this brief specified — aikit `592352f` ("gpu(metal): pin the OS thread for each
+> autorelease pool's lifetime"), tagged into `gpu` v0.30.1. `Run1D`/`Run2D`/`Run1DBatch` each pin
+> with a `defer`; `Begin()`/`End()` hold the lock across the `Encoder`'s whole lifetime via a new
+> `pinned` field, released only after the drain — the exact hazard this doc called out to resolve
+> and document, resolved the way the doc anticipated (hold across the lifetime, reject handing an
+> `Encoder` to another goroutine). All four gates were met: N=20 consecutive runs / 0 `fault 0x10`
+> (commit message), a mutation check (pin reverted → 2/8 `fault 0x10`, crash site migrated between
+> `TestSAQVFusion_correctnessAndThroughput` and `TestAttention_ShippedKernelShapes`, confirming same
+> defect), no golden churn, and the cross-module version bump sequence. goinfer's own G22 queue
+> entry (`docs/completed/queue-engineering.md`) independently verified this on 2026-09-11 against
+> `aikit/gpu v0.32.0` with 6 more clean runs. `go.mod` here now pins aikit v1.41.0 / `gpu` v0.32.0,
+> well past the fix. No live doc or Go comment in this repo referenced this filename; nothing to
+> repoint.
+
 # Task (aikit + goinfer): pin the OS thread around aikit's Metal autorelease pools
 
 > **For:** Claude Code, in `~/tmcode/aikit` (kernel work lands there) with sibling
