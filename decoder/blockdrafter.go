@@ -112,7 +112,7 @@ var (
 )
 
 // DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw
-// — task-fit-to-hardware.md §2's "the drafter's weights (~500 MB for the 4B pairing, uploaded to
+// — tasks/task-fit-to-hardware.md §2's "the drafter's weights (~500 MB for the 4B pairing, uploaded to
 // the target's device at attach)" term, computed instead of quoted, so a caller (a fit guard
 // pricing a --drafter attach BEFORE the target's own residency is built) has a real number rather
 // than a fixed constant that drifts from whatever pairing is actually loaded.

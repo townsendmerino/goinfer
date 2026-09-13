@@ -23,7 +23,7 @@ func init() {
 	decoder.RegisterBackend("metal", func() (decoder.Backend, error) {
 		return &metalBackend{}, nil
 	})
-	// residentFitsMemory's own budget, exposed to decoder.Model.Plan (docs/task-fit-to-hardware.md
+	// residentFitsMemory's own budget, exposed to decoder.Model.Plan (docs/tasks/task-fit-to-hardware.md
 	// Phase 1) via the SAME arithmetic — not a live "available" query, deliberately: darwin's UBC
 	// reclaim makes "available" report what survived rather than what can be asked for (the
 	// residentMemFraction comment above this file's own guard). Plan sees exactly the number the

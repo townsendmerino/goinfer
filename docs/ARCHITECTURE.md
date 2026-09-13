@@ -185,7 +185,7 @@ The `.giw` carries its quant; the runtime `--quant` flag applies only to the `--
 
 **Fit.** `--fit` (default on) sizes what the flags leave unpinned — KV capacity, context,
 expert slots, whether a drafter fits — from what the machine actually has, and refuses a
-load that would not fit rather than swapping (`task-fit-to-hardware.md`). `--fit=off`
+load that would not fit rather than swapping (`tasks/task-fit-to-hardware.md`). `--fit=off`
 restores the flat historical defaults.
 
 **Running bigger than RAM (`--stream-weights`).** Weights are paged on demand out of the

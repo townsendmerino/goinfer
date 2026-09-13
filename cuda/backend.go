@@ -690,7 +690,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
-		// M-02 (docs/audit-2026-09-02.md, docs/task-fit-to-hardware.md): CUDA had no memory-fit
+		// M-02 (docs/audit-2026-09-02.md, docs/tasks/task-fit-to-hardware.md): CUDA had no memory-fit
 		// check at all for the FIXED (non-expert) part of a resident load — a dense model whose
 		// weights alone exceed free VRAM previously ran the full kernel-compile + upload sequence
 		// before failing on whatever CUDA allocation happened to be the first one that didn't fit,

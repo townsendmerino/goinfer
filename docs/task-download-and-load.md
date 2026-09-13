@@ -27,7 +27,7 @@ It is also gated against `.github/workflows/release-assets.yml`, because those t
 > asserts the two name-spaces stay disjoint. Two lists with two purposes, neither claiming to be
 > the other, beats one list answering a question it was explicitly designed not to answer.
 
-**`task-fit-to-hardware.md` Phase 0 landed the same day** as the load-time fit guard. Part A's
+**`tasks/task-fit-to-hardware.md` Phase 0 landed the same day** as the load-time fit guard. Part A's
 "feed the plan function" therefore has nothing to feed yet — `plan` does not exist, only the
 refusal. The registry's `needs` field is written to be what that function would consume.
 
@@ -130,7 +130,7 @@ An empty registry fails rather than passes, so the suite cannot go green having 
 - **`serve` does not take a short name yet** — only `goinfer-chat pull`/`models`. Same registry,
   one call site.
 - **No fit-aware recommendation.** The genuinely useful version is "on *this* machine, run *this*
-  checkpoint", which needs `task-fit-to-hardware.md`'s `plan`. The `needs` field is written for it.
+  checkpoint", which needs `tasks/task-fit-to-hardware.md`'s `plan`. The `needs` field is written for it.
 - **Three entries is not coverage.** Growing it means verifying a digest per checkpoint, which is
   a download and a hash, not a decision.
 - **Load-time instrumentation covers the GGUF path only.** safetensors and `.giw` return a nil

@@ -30,13 +30,13 @@ const fitUsage = `%[1]s fit <path> — show how this checkpoint would be placed 
                                   silently shrunk — pass a smaller -ctx to see what DOES fit)
   fit <file.gguf|dir> -quant int8int8
   fit <file.gguf|dir> -measure   also self-measure decode rate on the best admitted backend
-                                  (task-fit-to-hardware.md §5) — a REAL load + a short decode,
+                                  (tasks/task-fit-to-hardware.md §5) — a REAL load + a short decode,
                                   not free like the report above; off by default
 
 This loads the checkpoint (unlike a future header-only version): real bytes, real quantization,
 same load time %[1]s itself would pay. It reports EVERY backend compiled into this binary —
 a CPU-only build only ever reports "cpu"; the metal/cuda release assets report their own GPU
-backend too. WebGPU is planned correctly (task-fit-to-hardware.md Phase 3, M-32 fixed) but has
+backend too. WebGPU is planned correctly (tasks/task-fit-to-hardware.md Phase 3, M-32 fixed) but has
 no live free-memory probe yet — WebGPU exposes no portable query for it — so it reports "no
 memory probe available... skipped" until one exists.
 `
@@ -45,12 +45,12 @@ memory probe available... skipped" until one exists.
 func Run(args []string) int {
 	fs := flag.NewFlagSet("fit", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprintf(os.Stderr, fitUsage, self()) }
-	ctx := fs.Int("ctx", 8192, "context to plan for (task-fit-to-hardware.md §8: 8192 is the agent-turn size, not the model's max — pass the model's own window explicitly if you want that priced instead)")
+	ctx := fs.Int("ctx", 8192, "context to plan for (tasks/task-fit-to-hardware.md §8: 8192 is the agent-turn size, not the model's max — pass the model's own window explicitly if you want that priced instead)")
 	quant := fs.String("quant", "int4", "weight quant to plan at: int4 | int4mix | int8int8 | int8 | \"\" (f32)")
 	kvF16 := fs.Bool("kv-f16", false, "plan KV at f16 instead of f32 (halves KV bytes; a lossy precision choice, never chosen silently)")
 	kvI8 := fs.Bool("kv-i8", false, "plan KV at int8 instead of f32 (further shrinks KV bytes; lossy)")
 	slots := fs.Int("moe-cache-slots", 0, "an explicit expert-cache slot count to plan against instead of letting Plan choose the largest that fits")
-	measure := fs.Bool("measure", false, "self-measure decode rate on the best admitted backend (task-fit-to-hardware.md §5) — a real load + short decode, not free")
+	measure := fs.Bool("measure", false, "self-measure decode rate on the best admitted backend (tasks/task-fit-to-hardware.md §5) — a real load + short decode, not free")
 
 	var path string
 	rest := args
@@ -110,7 +110,7 @@ func Run(args []string) int {
 	return 0
 }
 
-// selfMeasure is task-fit-to-hardware.md §5's "self-measure" option: after load, decode a fixed
+// selfMeasure is tasks/task-fit-to-hardware.md §5's "self-measure" option: after load, decode a fixed
 // probe and print the rate as "measured on this machine" — the SAME model this Model was already
 // planned against, loaded again on the backend actually chosen so the probe runs through the
 // real decode path (not the plan's hypothetical byte arithmetic above). Prefers any admitted

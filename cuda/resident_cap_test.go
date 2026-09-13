@@ -172,7 +172,7 @@ func TestFitsWeightsBudget(t *testing.T) {
 	}
 }
 
-// TestReservedBudget is task-fit-to-hardware.md §2's drafter-aware sizing: allocSlots' elastic
+// TestReservedBudget is tasks/task-fit-to-hardware.md §2's drafter-aware sizing: allocSlots' elastic
 // expert-cache search must see free VRAM MINUS whatever a companion attach (--drafter) will claim
 // afterward, never a negative number capSlots was never written to handle.
 func TestReservedBudget(t *testing.T) {
@@ -228,7 +228,7 @@ func TestCheckKVFits_realDevice_explicitRefusesWithNumbers(t *testing.T) {
 	}
 }
 
-// TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers is task-fit-to-hardware.md §2's
+// TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers is tasks/task-fit-to-hardware.md §2's
 // drafter-aware sizing, on a REAL device: the sibling test above proves an absurd CTX refuses;
 // this proves a MODEST ctx that would otherwise fit can be refused purely by
 // Model.ExtraResidentBytes reserving the room instead — the companion-allocation term, not the

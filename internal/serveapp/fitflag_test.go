@@ -9,7 +9,7 @@ import (
 )
 
 // TestFitFlag_acceptsOnOff is M-14 (audit-2026-09-10): --fit=off is the spelling this flag's own
-// help text and task-fit-to-hardware.md promise ("`--fit=off` restores today's behaviour"), but a
+// help text and tasks/task-fit-to-hardware.md promise ("`--fit=off` restores today's behaviour"), but a
 // plain flag.Bool only understands strconv.ParseBool's spellings and rejected it with exit 2. This
 // drives fitFlag.Set directly rather than the real binary, since that is exactly where the parser
 // lived.
@@ -66,7 +66,7 @@ func TestFitFlag_string(t *testing.T) {
 
 // TestFitFlag_realBinaryAcceptsOff proves the fix through the FULL registered flag.CommandLine,
 // not just fitFlag.Set in isolation — --version exits before touching a model, so this is a
-// cheap way to prove "--fit=off" (the spelling task-fit-to-hardware.md and this flag's own help
+// cheap way to prove "--fit=off" (the spelling tasks/task-fit-to-hardware.md and this flag's own help
 // promise) parses cleanly end to end, where the original flag.BoolVar exited 2 with "invalid
 // boolean value \"off\"".
 func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {

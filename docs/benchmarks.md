@@ -1595,7 +1595,7 @@ default and auto-places layers across host/GPU — but only for arguments left *
 was passing `-ngl 99` unconditionally, which forces full GPU offload of a 20 GB/16.8 GB model into
 an 8 GB card regardless of `--fit`, and both cells ran their full 900s load-wait and never came up.
 Dropping `-ngl` for these two model keys on the CUDA backend (CPU-forcing elsewhere untouched) lets
-`--fit` place layers automatically — the exact "zero-flag" mode `docs/task-fit-to-hardware.md`
+`--fit` place layers automatically — the exact "zero-flag" mode `docs/tasks/task-fit-to-hardware.md`
 is about. llama.cpp went from *unable to run these cells at all* to *winning both of them.*
 
 ### W3 — long-context decode at depth 8000

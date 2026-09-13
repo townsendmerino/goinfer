@@ -81,7 +81,7 @@ type session struct {
 
 // fitFlag is a lenient bool flag.Value: plain flag.Bool only accepts strconv.ParseBool's
 // spellings (1/t/T/TRUE/true/True/0/f/F/FALSE/false/False), not "on"/"off" — the spelling
-// serve's own --fit help and task-fit-to-hardware.md use. chatapp had no --fit flag at all until
+// serve's own --fit help and tasks/task-fit-to-hardware.md use. chatapp had no --fit flag at all until
 // this (M-14, audit-2026-09-10); mirrors internal/serveapp's fitFlag.
 type fitFlag bool
 
@@ -118,7 +118,7 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "pull" {
 		os.Exit(pullcmd.Run(os.Args[2:]))
 	}
-	// `fit` — task-fit-to-hardware.md Phase 1's dry run: "does this fit, and how" without
+	// `fit` — tasks/task-fit-to-hardware.md Phase 1's dry run: "does this fit, and how" without
 	// starting a chat session. Same dispatch shape as `pull` above, for the same reason (this
 	// binary IS the only tool the person running it has).
 	if len(os.Args) > 1 && os.Args[1] == "fit" {
@@ -225,7 +225,7 @@ All flags:
 		showVersion = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	)
 	fit := fitFlag(true)
-	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")
+	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")
 	flag.Parse()
 	if *showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))

@@ -56,7 +56,7 @@ type Model struct {
 	kvPrecI8         bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8             bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	resCtxReq        int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	disableFit       bool         // task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
+	disableFit       bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache         bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots         int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	extraBytes       int64        // Options.ExtraResidentBytes — see that field's own doc comment
@@ -148,7 +148,7 @@ func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
 
 // ExtraResidentBytes returns Options.ExtraResidentBytes — VRAM a companion allocation will claim
 // on the SAME device AFTER this model's own residency is built (a --drafter's weights today; a
-// vision tower is the same class of term, task-fit-to-hardware.md §2), priced ahead of time so the
+// vision tower is the same class of term, tasks/task-fit-to-hardware.md §2), priced ahead of time so the
 // elastic terms a backend sizes against live free VRAM (CUDA's capSlots expert cache, its
 // resolveCtxCapFit context-by-default) leave room for it instead of claiming everything free VRAM
 // offers and having the later attach fail with no room left — §2's own motivating example,
@@ -157,7 +157,7 @@ func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
 // room. 0 means "nothing else is attaching" (today's behavior, unchanged).
 func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 
-// FitDisabled is task-fit-to-hardware.md's --fit=off (Options.DisableFit), true when either the
+// FitDisabled is tasks/task-fit-to-hardware.md's --fit=off (Options.DisableFit), true when either the
 // Options field or the pre-existing GOINFER_NO_FIT_DEFAULT env var (cuda/resident.go's original,
 // narrower escape hatch — kept working rather than orphaned) says to restore every "fit by
 // default" behavior to its pre-Phase-2 exact default. Checked by backend packages that implement
@@ -243,7 +243,7 @@ type Options struct {
 	// min(model context window, this) — and fails at LOAD if the KV that implies does not fit
 	// beside the weights, rather than OOM-ing mid-decode. Ignored off the residency path.
 	ResidentContext int
-	// DisableFit is task-fit-to-hardware.md's --fit=off: restores every "fit by default" behavior
+	// DisableFit is tasks/task-fit-to-hardware.md's --fit=off: restores every "fit by default" behavior
 	// to its pre-Phase-2 default exactly. Currently: CUDA's unpinned resident context stays the
 	// flat historical constant instead of asking Plan for more when there's room —
 	// cuda/resident.go's resolveCtxCapFit; and (decoder/fitguard.go's guardFit, read by

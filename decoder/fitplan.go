@@ -2,7 +2,7 @@ package decoder
 
 import "fmt"
 
-// Placement is which of task-fit-to-hardware.md's five strategies Plan chose for one backend.
+// Placement is which of tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend.
 // The enum exists in full even though this phase only ever returns three of them — Phase 1 is
 // scoped to the pure decision function ("no behaviour change yet"), and PlacementHostComputedExperts
 // is reserved so a later phase (L-01) does not need to rewrite the type.
@@ -42,7 +42,7 @@ func (p Placement) String() string {
 const ctxPlanFloor = 4096
 
 // PlanRequest is what the user asked for, with every default already resolved by the CALLER
-// (task-fit-to-hardware.md §2: "request — what the user asked for, with the defaults filled").
+// (tasks/task-fit-to-hardware.md §2: "request — what the user asked for, with the defaults filled").
 // Plan itself invents no defaults, so a caller (goinfer-chat fit, the startup banner, a table
 // test) can see and vary exactly what it asked for rather than a default buried inside the
 // function under test.
@@ -52,13 +52,13 @@ type PlanRequest struct {
 	Slots     int  // an explicit --moe-cache-slots / GOINFER_METAL_MOE_SLOTS; 0 means "let Plan choose"
 
 	// KVF16/KVI8 select a lossy KV precision. Both false means f32 (bit-exact, the default per
-	// task-fit-to-hardware.md §0: "the plan never selects a lossy... precision to make something
+	// tasks/task-fit-to-hardware.md §0: "the plan never selects a lossy... precision to make something
 	// fit without saying so... and requiring the flag" — so these must come from an explicit flag
 	// the caller read, never be set by Plan on its own initiative).
 	KVF16, KVI8 bool
 
 	// ExtraBytes prices whatever the model itself does not know about but will share its device:
-	// a block drafter's weights + verify/capture buffers, a vision tower. task-fit-to-hardware.md
+	// a block drafter's weights + verify/capture buffers, a vision tower. tasks/task-fit-to-hardware.md
 	// §2's "every allocation is a term of the plan, including the ones that attach after load" —
 	// the concrete example that motivated it (a 26B's expert cache sized before a later --drafter
 	// attach grabbed room NewBlockSpec then needed) is exactly what this term exists to prevent
@@ -138,7 +138,7 @@ func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
 // positions at f32 (the proven 8 GB fit), 32768 at f16 (half the per-token bytes), 65536 at i8
 // (a quarter). Shared here, and gpu/residency.go calls THIS function instead of repeating the
 // three literals, so the planner's ctx choice and the backend's actual allocation can never
-// drift apart — exactly what Phase 3 (task-fit-to-hardware.md §7) needs before admitting webgpu:
+// drift apart — exactly what Phase 3 (tasks/task-fit-to-hardware.md §7) needs before admitting webgpu:
 // a freeBytes-driven plan alone could pick a context above this fixed ceiling (VRAM allowing),
 // which BuildResident would then silently NOT honour (min() keeps the ceiling, and the plan's
 // promise would be wrong).
@@ -153,7 +153,7 @@ func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
 	}
 }
 
-// Plan is task-fit-to-hardware.md §2's pure function ("no behaviour change yet [Phase 1] — the
+// Plan is tasks/task-fit-to-hardware.md §2's pure function ("no behaviour change yet [Phase 1] — the
 // plan is printed beside today's decision"): given this model, a candidate backend, how many
 // bytes are free on it, and what the caller asked for, decide a placement — resident,
 // expert-cached, weight-paged, or decline — following §2's priority order (shrink context toward
@@ -161,7 +161,7 @@ func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
 // weights always stay resident; CPU alone falls to weight-paging rather than ever declining).
 //
 // No I/O, no side effects, and no defaults invented — see PlanRequest's own doc comment. backend
-// is "cuda", "metal", "cpu", or (Phase 3, task-fit-to-hardware.md §7) "webgpu" — admitted now that
+// is "cuda", "metal", "cpu", or (Phase 3, tasks/task-fit-to-hardware.md §7) "webgpu" — admitted now that
 // M-32 is fixed (gpu/residency.go: BuildResident declines the same Nemotron/Qwen3.5/MLA +
 // KVF16/KVI8 combo Plan declines below, and honours -ctx via the same WebGPUCtxCeiling); an
 // unrecognised backend name gets the same GPU-shaped feature-eligibility decline a real one would
@@ -322,7 +322,7 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 }
 
 // decline finishes Plan on the non-fitting path: CPU alone never declines outright — its whole
-// point is that it can always fall back to weight-paging from disk (task-fit-to-hardware.md §1:
+// point is that it can always fall back to weight-paging from disk (tasks/task-fit-to-hardware.md §1:
 // "-weight-cache 0 is auto, ~half of available RAM"), just slower, so a CPU "decline" reads as
 // weight-paged with the same numbers instead of a hard refusal.
 func (p Plan) decline(backend, format string, args ...any) Plan {

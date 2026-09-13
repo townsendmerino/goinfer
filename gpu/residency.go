@@ -217,7 +217,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 
 	// decoder.WebGPUCtxCeiling (fitplan.go) is the single source for these three literals — the
-	// planner (Model.Plan, Phase 3 of task-fit-to-hardware.md §7) calls the SAME function, so a
+	// planner (Model.Plan, Phase 3 of tasks/task-fit-to-hardware.md §7) calls the SAME function, so a
 	// plan's promised ctx and this actual allocation can never drift apart.
 	ctxCap := decoder.WebGPUCtxCeiling(kvF16, kvI8)
 	// M-32, the -ctx half: Options.ResidentContext / `serve -ctx` was read nowhere under gpu/,
