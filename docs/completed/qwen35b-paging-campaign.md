@@ -1,5 +1,32 @@
 # Task (goinfer): paged-MoE decode — attack the 70.5%, with the diagnostic as the before
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (doc-review, 2026-09-13): COMPLETE, archived.** This brief's own body already resolved
+> itself in real time — the prior-art correction and the "REVISED VERDICT" block above picked the
+> split-half kernel lever before any separate campaign closed it. The execution is recorded in
+> `docs/completed/task-zeno-compare.md` ("The `.giw` kind-4 lever — SHIPPED 2026-08-24" through
+> "Supersession (2026-08-25)"): the `.giw` kind-4 split-half/row4 format shipped (aikit v1.27.0),
+> the pager's double-`MADV_WILLNEED` bug (registering both the canonical and row4 spans under one
+> cache key, so every cold touch prefetched 2x the needed bytes) was found and fixed, and the
+> durable `SpanCache.AdvisedBytes` byte counter landed (aikit v1.28.0) to prove the fix
+> non-wasteful. Grounded directly against the tree at archival: `decoder/moepaging.go`'s
+> `addExpert` (lines 73-91) registers only the row4 span when present, never both, and its comment
+> cites `docs/completed/task-zeno-compare.md` by name; goinfer's `go.mod` now pins aikit v1.41.0
+> (the campaign's v1.27.0/v1.28.0 are long superseded); the on-disk int4 format moved further
+> still, past kind 4 to kind 5 (row4-only, `giwVersion` 11, `decoder/serialize.go:87`) — work this
+> doc never anticipated. The campaign's own numeric target (≥3x end-to-end, ≥~4 tok/s) was never
+> reached and is not reasserted anywhere live: the throughput story that actually closed this out
+> (a measurement-instability saga, then real CPU/Metal paged-decode numbers) lives in
+> `docs/completed/task-zeno-compare.md` and `docs/completed/queue-engineering.md`, not here. Every
+> step, lever, and acceptance line below is a record of what this brief asked for in the moment,
+> not a live task list — see the sources above for what actually happened.
+
 > **For:** Claude Code, in `~/tmcode/goinfer`, on the 16 GB M1 Pro. Written 2026-08-24, from
 > the 35B diagnostic (`0081d3e`, recorded in `docs/completed/task-zeno-compare.md`): steady-state
 > ~1.2-1.4 tok/s; split **paged MoE ~70.5%** (I/O-dominated: ~25 GB read for one 79-token
