@@ -1,5 +1,40 @@
 # MacBook task: the demo/chat numbers only Apple Silicon can settle — and Gemma 4 E2B as the Tier 2 candidate
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **STATUS 2026-09-13 — all three items closed; run and reported the same week it was written.**
+> - **Item 1 (demo/chat speed provenance) — DONE.** Measured on an Apple M1 Pro
+>   (`docs/measurements/demo-chat-macbook-2026-08-22.md`, commit `3a27941`): 0.5B median 52.3 tok/s
+>   (band 46–58), 1.5B median 27.8 tok/s (band 27.6–28.2) — on/near the README's prior unattributed
+>   ~57/~26 claims. `demo/chat/README.md` now states the measured medians and bands with full
+>   provenance (box, quant, threshold, commit, date) rather than the old bare numbers, landed in
+>   `b8fde587` and reconciled to one figure per tier in `e26e1e9a`; the size claims (~617 MB / ~1.7 GB)
+>   were also verified against real `build-embed.sh` output in the same pass.
+> - **Item 2 (Gemma 4 E2B as Tier 2 candidate) — attempted, blocked, then formally killed.** The
+>   downloaded safetensors checkpoint hit a real loader gap: `num_kv_shared_layers` (Gemma 4 E-model
+>   KV-layer sharing) was wired for the GGUF loader but not the safetensors path, so it failed before
+>   any number could be measured (`docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md`). The
+>   follow-up brief `docs/prompts/mac-demo-finish.md` closed the question outright rather than
+>   leaving it open: *"Tier 2. Dead twice over: Qwen3.5-0.8B on the 248 K-vocab decode penalty, Gemma 4
+>   E2B on the `num_kv_shared_layers` safetensors loader gap you found. The incumbent Qwen2.5 tier
+>   stays."* (The safetensors loader has since gained `SharedKVLayers` handling for other reasons —
+>   `decoder/weights.go` around the `arch.gemma4.SharedKVLayers` check — but Tier 2 was not revisited;
+>   that decision stands.)
+> - **Item 3 (does `vhs` render on the Mac) — confirmed yes.** The follow-up brief's own header states
+>   "You are now the only box that can render tapes (vhs works there, not here)", and the refreshed
+>   demo GIF (`a8ba9fd5`) was in fact rendered on this Mac. The Linux `ttyd`/`vhs` root cause was never
+>   found and was explicitly marked not worth further time — "the practical answer is that tapes get
+>   rendered on the Mac now."
+>
+> Full follow-on work (GIF attribution fix, size-table verification, gpt2 gate floor) is its own
+> brief, `docs/prompts/mac-demo-finish.md` — its archival status was not evaluated here; this
+> file's own three items are what closed.
+
 > **Why this must be the Mac.** Two open items from the demo refresh both reduce to "measure it on
 > Apple Silicon", and the Linux box cannot answer either. See `docs/task-demo-refresh.md` and the two
 > measurement records it cites.
