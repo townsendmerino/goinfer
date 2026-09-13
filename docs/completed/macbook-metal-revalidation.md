@@ -1,5 +1,30 @@
 # Task (macbook-arm64): re-validate the Metal side, and read the fit guard before you start
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (2026-09-13): COMPLETE, all four items either delivered or explicitly declined.**
+> Item 1 (the owed Metal parity sweep) shipped as
+> [`docs/measurements/parity-sweep-metal-2026-09-06.md`](../measurements/parity-sweep-metal-2026-09-06.md)
+> — 11 rows at `arch=arm64`/`machine=mac`, cosines 1.00000/1.00000 (0.99998 for qwen2_5_vl), zero
+> disagreement with the amd64 sweep, both merge-tooling bugs it found (NaN-cosine corrupting the
+> manifest merge; the machine-stamp default silently claiming `linux-62gb`) fixed in the same run,
+> and its own "what this did NOT validate" section carried forward rather than glossed over. Item 2
+> (C3, the Metal consumer device gate) is recorded **done, green** in that same measurement doc's
+> "Items 2-4" section: `go run ./cmd/gate gpu` → `PASS — metal on Darwin @ eb113cd
+> (2026-09-07T02:55:49Z)`, 10 pass / 2 skip (both legitimate) / 0 fail; it also caught and fixed a
+> stale known-red note in `RELEASING.md` §C1-M. Item 3 (install an agent CLI) is done: `opencode`
+> 1.18.29 on `macbook-arm64`, named in `docs/tasks/task-first-hour.md` §1 alongside `nobara-pc`'s
+> matching install. Item 4 (cold run 2) was correctly left **not attempted** — the brief itself
+> calls it a nice-to-have here because Run 2 is specified for the Linux box, not a gap. No
+> references to this file's old `docs/prompts/` path exist outside `docs/measurements/` (which is
+> left alone by convention) and `docs/tasks/task-first-hour.md` does not name this file at all, so
+> no reference-repointing was needed beyond the move itself.
+
 > **For:** Claude Code on `macbook-arm64`, in the goinfer checkout (sibling `aikit`).
 > Written 2026-09-06 from `nobara-pc`, where the amd64 half is done. Four items, independently
 > droppable, ordered by what is most owed.
