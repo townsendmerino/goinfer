@@ -39,7 +39,10 @@
 > Cross-references: `docs/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
 > `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
 > narrow state snapshot"), `docs/tasks/task-freetoken-techniques.md` (Lead 1), aikit
-> `docs/task-simd-audit.md` (S-02, S-03). **R-00 (the correctness bug, fixed 2026-09-03):**
+> `docs/task-simd-audit.md` (S-02, S-03), and — **added 2026-09-13** — `docs/audit-2026-09-10.md`
+> P-05, which found R-03's commit was never consumed by the speculative loops' own prefill and
+> fixed the read side too; see the correction under R-03 below. **R-00 (the correctness bug, fixed
+> 2026-09-03):**
 > `BlockSpec.generate` now claims `resBusy` and forgets `resIDs` before any resident write;
 > `GenerateSpeculative` already claimed `resBusy` and now forgets too. Mutation-checked; the full
 > mixed-traffic CUDA scenario from R-00's own Gate bullet is still unrun (no CUDA hardware here) —
@@ -297,6 +300,21 @@ positions are inherent, not recompute.
   Mutation-checked (disabling `spec_ngram.go`'s commit call breaks the gate test). Full decoder
   suite green; `spec_ngram.go`/`spec_eagle.go` are not parity-manifest core files, no hash refresh
   needed.
+- **Correction (2026-09-10, `docs/audit-2026-09-10.md` P-05): the "fixed" status above was true of
+  the commit and false of the reuse.** `spec_ngram.go`'s and `blockspec.go`'s writers correctly
+  wrote `resIDs`, but nothing on the read side consumed it: both speculative loops still
+  cold-prefilled from position 0 on every call, so a `--spec`/`--drafter` agent loop got no prefix
+  reuse at all — exactly the outcome this section's own "the difference between an agent loop that
+  gets prefix reuse and one that never does" line claimed had been achieved. P-05 fixed both
+  halves: `decoder/blockspec.go`'s `generate` now calls `m.residentReuseLen` before the forget and
+  seeds/fuses only the unreused suffix (mirroring `generateInto`), and a new `Model.resDrafterSynced
+  *BlockSpec` field (`decoder/model.go`) names which `BlockSpec` instance's own drafter context the
+  current `resIDs` actually reflects, so a token-identical commit from a *different* writer (a plain
+  turn, or another `BlockSpec`) correctly forces a cold drafter refuse rather than reusing a context
+  it was never fused into. Confirmed present in the tree at review time
+  (`decoder/blockspec.go:229,448,456`, `decoder/model.go:47-54`). No further action here; this note
+  exists so a reader of this doc alone doesn't stop at "fixed" and miss that the fix needed a
+  second pass elsewhere.
 
 ### R-04 · A second conversation, or a stop string, means a cold prefill
 

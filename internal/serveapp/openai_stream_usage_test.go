@@ -175,7 +175,7 @@ func TestSendUsage_onlyWhenRequested(t *testing.T) {
 // ids continue the prompt, and Decode applies SentencePiece's sequence-level dummy-prefix strip
 // to them — eating the response's leading space on Llama-2/Mistral.
 //
-// R-08 (audit-2026-09-02 / task-recompute-audit.md) replaced the per-token DecodeContinuation(ids)
+// R-08 (audit-2026-09-02 / docs/tasks/task-recompute-audit.md) replaced the per-token DecodeContinuation(ids)
 // re-decode of the WHOLE generated sequence (O(n^2) in output length) with DecodePiece(id)
 // appended incrementally. DecodePiece is the same non-stripping contract DecodeContinuation was
 // relied on for here — its own doc comment states it explicitly ("does NOT apply the

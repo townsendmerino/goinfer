@@ -253,7 +253,7 @@ var PrefillGateProseFilesB = []string{
 	"../docs/ARCHITECTURE.md",
 	"../docs/how-inference-works.md",
 	"../docs/tasks/task-peer-benchmarks.md", // moved from ../docs/task-peer-benchmarks.md, still LIVE
-	"../docs/task-recompute-audit.md",
+	"../docs/tasks/task-recompute-audit.md", // moved from ../docs/task-recompute-audit.md, still LIVE
 	"../docs/tasks/task-gpu-paths-2026-09.md",
 	"../docs/cuda-backend.md",
 	"../docs/completed/audit-2026-08-05.md",

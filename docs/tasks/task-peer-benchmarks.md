@@ -218,7 +218,7 @@ whichever mechanism the reader already had in mind.
 `docs/task-zeno-compare.md`, `docs/tasks/task-freetoken-techniques.md`, `docs/integrations/claude-code.md`
 (the loop W4 replays), `docs/measurements/cpu-peer-prefill-2026-09-01.md`, `docs/tasks/task-fit-to-hardware.md`
 (the zero-flag question, the never-silently rule), `docs/completed/audit-2026-09-02.md` (G28, L-01,
-L-05 — moved there since this doc was scoped), `docs/task-recompute-audit.md` (R-01…R-03, R-07),
+L-05 — moved there since this doc was scoped), `docs/tasks/task-recompute-audit.md` (R-01…R-03, R-07),
 aikit `CHANGELOG.md` 1.32.0–1.34.0 and `docs/task-simd-audit.md` (S-06 — this path does not resolve
 in the tree as of the 2026-09-13 review; unclear whether S-06 moved, was renamed, or never landed as
 its own file).
