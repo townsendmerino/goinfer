@@ -48,17 +48,21 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
 
-## Design records — `task-*.md` (38: 30 here, 7 in `tasks/`, 1 in `tasks/parked/`)
+## Design records — `task-*.md` (26: 21 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
 A `task-*.md` is not a claim that the work is open — read its status header.
 
-**`tasks/` is the new home for these, in progress.** Started 2026-09-13: a doc gets moved out of
-this flat list and into `tasks/` (or `tasks/parked/`, for a doc-review PARKED verdict — blocked,
-trigger named) the next time it goes through a `/doc-review` pass, rather than all at once. Until
-the migration finishes, expect `task-*.md` docs in both places — check `tasks/` and `tasks/parked/`
-first if a name isn't here.
+**`tasks/` is the home for these** (`tasks/parked/` for a doc-review PARKED verdict — blocked,
+trigger named). Migration finished 2026-09-13: every `task-*.md` that was still live moved out of
+the flat `docs/` root during a full `/doc-review` sweep, on top of the 7 moved a few hours earlier;
+`docs/README.md`'s own migration note above this line is now historical, not a live caveat — a new
+`task-*.md` doc should be filed directly into `tasks/` (or `tasks/parked/`) rather than the root.
+One exception, by design: [`task-demo-refresh.md`](task-demo-refresh.md) stays in the root as a
+two-line pointer stub (the `docs/plan-still-slow.md` shape) because its real content already lives
+at `docs/completed/task-demo-refresh.md` and other pages still link the old path — it is not a
+design record itself, so it is not counted above.
 
 One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
@@ -73,7 +77,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (85)
+## Archive — `completed/` (96)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
