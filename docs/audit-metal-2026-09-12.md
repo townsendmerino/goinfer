@@ -606,6 +606,18 @@ re-baked by the code it checks (G-04).
   a synthetic hd=64 case. The agent-turn shape the peer matrix calls the headline workload is not
   a fidelity cell. **Fix:** one decision cell with `from = K/2` on S. **Confidence:** plausible
   (coverage gap, no defect shown).
+- **CLOSED 2026-09-13, coverage added — no defect found.** Implemented as a focused correctness
+  test (`metal/prefill_startpos_test.go`) on the tiny synthetic fixture instead of a new decision
+  cell in the pooled §3.2 gate: `decisionKs`/`confirmKs` and the critA/B/C pooling formulas in
+  `prefill_gate_ref_test.go` are a carefully pre-registered statistical methodology (this audit's
+  own M-03/M-04 SHIPS verdicts depend on it), and this finding's own confidence — "plausible,
+  coverage gap, no defect shown" — did not justify the risk of modifying that machinery to add a
+  second dimension (K, from) it was not designed around. The new test builds a shared KV prefix
+  [0,from) on two residents via Forward (bit-identical by construction), then diverges: one
+  continues via Forward through [from,K), the other via `PrefillLast(embs[from:], from)` — the
+  exact code path (startPos/uMReal masking) this finding flagged as uncovered — and compares
+  final logits. K=48, from=24: argmax match, cosine 0.999941. No defect found; the gap is closed,
+  not a bug fixed.
 
 #### G-09 · P-15's MoE-prefill measurement is written, never run, and refuses the paged shape that actually runs on the Mac
 - **Where:** `metal/moe_prefill_measure_test.go:14-27,52-56` (`GOINFER_MOE_PREFILL_CKPT`; declines a
