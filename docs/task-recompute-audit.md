@@ -38,7 +38,7 @@
 > record of that state, not updated in place.
 > Cross-references: `docs/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
 > `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
-> narrow state snapshot"), `docs/task-freetoken-techniques.md` (Lead 1), aikit
+> narrow state snapshot"), `docs/tasks/task-freetoken-techniques.md` (Lead 1), aikit
 > `docs/task-simd-audit.md` (S-02, S-03). **R-00 (the correctness bug, fixed 2026-09-03):**
 > `BlockSpec.generate` now claims `resBusy` and forgets `resIDs` before any resident write;
 > `GenerateSpeculative` already claimed `resBusy` and now forgets too. Mutation-checked; the full

@@ -1618,8 +1618,6 @@ supports.
 | `docs/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-i` |
 | `docs/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
 | `docs/task-fit-to-hardware.md|pull/pull.go:179` | goinfer | `Size   int64` |
-| `docs/task-freetoken-techniques.md|decoder/model.go:221` | goinfer | `MoECacheSlots int` |
-| `docs/task-freetoken-techniques.md|internal/serveapp/main.go:307` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
 | `docs/task-gpu-batched-prefill.md|decoder/residency.go:90` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |
 | `docs/task-gpu-paths-2026-09.md|cuda/prefill.go:289` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
 | `docs/task-gpu-paths-2026-09.md|cuda/prefill.go:312` | goinfer | `tail := tailKVOnly` |
@@ -1702,6 +1700,8 @@ supports.
 | `docs/tasks/task-fp4-formats.md|decoder/forward_gptoss.go:17` | goinfer | `// speed on x86, and bench numbers are deferred (docs/completed/task-mxfp4-gptoss.md §6.` |
 | `docs/tasks/task-fp4-formats.md|decoder/gguf.go:851` | goinfer | `if err != nil {` |
 | `docs/tasks/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
+| `docs/tasks/task-freetoken-techniques.md|decoder/model.go:221` | goinfer | `MoECacheSlots int` |
+| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:307` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
 | `docs/tasks/task-halt-2026-09.md|decoder/generate_vl.go:19` | goinfer | `case <-ctx.Done():` |
 | `docs/tasks/task-halt-2026-09.md|decoder/model.go:1097` | goinfer | `anchor: func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,` |
 | `docs/tasks/task-halt-2026-09.md|demo/agent/agent/kenclient.go:42` | goinfer | `Name: "search",` |

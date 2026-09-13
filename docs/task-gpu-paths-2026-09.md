@@ -1275,7 +1275,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 - 2026-09-09 — G11 SCOPED, REDIRECTED. G11's own text says "no layer placement on CUDA/Metal —
   already scoped as `task-fit-to-hardware.md`, listed here for completeness." That doc, in turn,
   explicitly disclaims covering this at all: its `placement` enum has no "N dense layers on GPU,
-  the rest on CPU" state, and its own §8 names the real fix as `task-freetoken-techniques.md`'s
+  the rest on CPU" state, and its own §8 names the real fix as `docs/tasks/task-freetoken-techniques.md`'s
   Lead 5 (bandwidth-adaptive CPU/GPU co-execution) — which that doc itself marks **"the biggest
   architectural lift of the five... worth a scoping pass of its own before any code"** and
   **priority: low, don't start it yet** (flagged as possibly antagonistic with the speculation
