@@ -1,12 +1,20 @@
 # Task: one int4 layout per tensor, chosen for its consumer — 2026-09 (L1–L5)
 
-> **Status: OPEN, drafted 2026-09-11** on branch `aikit-v1.41.0-bump` (off `main` at `46c9dfa`),
-> against aikit v1.41.0 (its `docs/audit-2026-09-10.md` M-22 entry is the aikit-side contract).
-> Companion to `docs/task-gpu-paths-2026-09.md`; this is the CPU/format half of the same question —
-> which representation of an int4 tensor exists in memory and on disk, and who decided.
+> **Status (corrected 2026-09-13, doc review — stale since the day it was drafted): L1, L2, L3 all
+> DONE 2026-09-11**, all still accurate against the current tree (re-verified: `wantsCanonicalInt4`
+> at `decoder/weightmat.go:428`, `giwVersion = 11`, `decoder/w4a8_row4_giwkind5_test.go` all present
+> and matching). **L4 is PARTIALLY SHIPPED 2026-09-13** — not "filed, not scheduled" as the line
+> below still says; see L4's own section for what shipped (as M-07 in a different doc) and what
+> didn't. **L5 remains PARKED**, blocked on the same aikit prerequisite (still v1.41.0, no bump
+> since). Drafted 2026-09-11 on branch `aikit-v1.41.0-bump` (off `main` at `46c9dfa`), against
+> aikit v1.41.0 (its `docs/audit-2026-09-10.md` M-22 entry is the aikit-side contract). Companion
+> to `docs/task-gpu-paths-2026-09.md`; this is the CPU/format half of the same question — which
+> representation of an int4 tensor exists in memory and on disk, and who decided.
 >
 > Suggested order: L1 (in progress, finish first) → L3 (ten minutes, do with L1) → L2 → L5 on
-> nobara once L1 lands (its park condition is met — see L5). L4 is filed, not scheduled.
+> nobara once L1 lands (its park condition is met — see L5). **L1–L3 done; L4 partially shipped
+> (see below); L5 still parked** — this line is the ORIGINAL plan, kept as written rather than
+> rewritten to match what actually happened.
 
 ## The decision this doc records
 
@@ -356,7 +364,7 @@ name rather than restating the rule speculatively.
 
 **Size.** Ten minutes — accurate; this took about that.
 
-## L4 — Metal-resident int4 exists three times in the same RAM (FILED, not scheduled)
+## L4 — Metal-resident int4 exists three times in the same RAM (PARTIALLY SHIPPED 2026-09-13)
 
 On the M1 Pro, unified memory means the Metal buffer and the host copies share physical RAM. A
 GGUF-loaded int4 tensor on a Metal-resident box is canonical (heap) + row4 (heap,
@@ -364,6 +372,25 @@ GGUF-loaded int4 tensor on a Metal-resident box is canonical (heap) + row4 (heap
 fallback (LoRA/session paths, `task-gpu-paths` G3/G4). Whether to skip the row4 repack on a
 resident box, or release the CPU copies after a successful upload, is a residency-policy
 decision with its own measurement — file here, do not do under L1/L2.
+
+**Status (2026-09-13, doc review):** the first half shipped, as **M-07** in
+`docs/audit-metal-2026-09-12.md`, not under this doc's own L4 heading — reopened there from a
+direct measurement (`TestW4A8Row4_loadTimeAndMemoryDelta`: row4 exactly doubles the resident int4
+footprint, 223.6 MB canonical + 223.6 MB row4 on the 0.5B fixture, +15% load time). Shipped:
+`wantsRow4Fallback(backendName)` (`decoder/weightmat.go`), false only for the literal `"metal"`,
+skipping the row4 repack for Q/K/V/gate/up (`quantizeBatchedProjWM`'s five tensor names) — *not*
+o_proj/down_proj/router/experts, which route through the separate `quantizeWM` (~40
+family-specific call sites), explicitly left as a larger follow-up. Verified:
+`TestW4A8Row4_skippedForMetalBackend` (120/120 scoped tensors zeroed, 48/48 unaffected tensors
+correctly still row4), full `go test ./metal/...` green, real-checkpoint §3.2 oracle re-run with
+zero numeric drift.
+
+**Still open — this doc's own second half, not done anywhere:** "release the CPU copies after a
+successful upload." A genuine object-lifecycle change (freeing host memory while the `*Model`
+stays alive for embed lookups/CPU fallback), explicitly scoped out of the M-07 pass as its own
+risk profile. No live doc owns this specifically — `docs/audit-metal-2026-09-12.md`'s M-07 entry
+names it as "NOT done" but doesn't re-file it as its own item. Orphaned; lands here or as its own
+queue-performance.md entry, whichever is picked up first.
 
 ## L5 — amd64 split-half-only: re-open the parked decision, its own condition is now met
 

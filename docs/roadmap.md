@@ -56,7 +56,7 @@ promoting are separate decisions with separate gates (see the last section).
    two-scenario re-run on v0.17.2.
 6. **Peer measurement** — [`task-peer-benchmarks.md`](task-peer-benchmarks.md) (the matrix, with
    the 10-turn agent-turn TTFT as headline) and
-   [`task-llamacpp-inproc.md`](task-llamacpp-inproc.md) (in-process llama.cpp via purego, drafted
+   [`task-llamacpp-inproc.md`](tasks/task-llamacpp-inproc.md) (in-process llama.cpp via purego, drafted
    2026-09-12 — the fidelity column and per-token cost vs depth).
 7. **Speculative decoding** — `spec/` (13 docs). Adaptive verify width failed all four ship gates
    and was removed; the grammar-prior premise is dead; DSpark/DFlash block drafters queued
@@ -64,8 +64,8 @@ promoting are separate decisions with separate gates (see the last section).
 8. **Multimodal** — [`multimodal.md`](multimodal.md) P6–P11.
 9. **Correctness programs** — [`audit-2026-09-10.md`](audit-2026-09-10.md)'s 8-step program in
    progress; [`task-recompute-audit.md`](task-recompute-audit.md) R-01 phase 1;
-   [`task-int4-layout-2026-09.md`](task-int4-layout-2026-09.md) (one int4 layout per tensor, L1–L5)
-   and [`task-halt-2026-09.md`](task-halt-2026-09.md) (cancel / halt / lease, K1–K9), both drafted
+   [`task-int4-layout-2026-09.md`](tasks/task-int4-layout-2026-09.md) (one int4 layout per tensor, L1–L5)
+   and [`task-halt-2026-09.md`](tasks/task-halt-2026-09.md) (cancel / halt / lease, K1–K9), both drafted
    this week.
 10. **The book** — `book/`, the chaptered inference primer for a Go engineer new to ML.
 

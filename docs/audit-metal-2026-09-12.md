@@ -61,7 +61,7 @@ precedent says isolated GEMV wins can vanish end to end.
 **Memory: a Metal-backed int4 load keeps three copies of every dense projection** — host canonical,
 host row4 repack (read by nothing once resident), and the Metal buffer — 889.6 MB of dead host
 memory on the 1.5B by commit `3931ae1`'s own measurement, ~4 GB at 7B, on the box whose 26B cell
-misses the budget by 3.75 GB (M-07). This is L4 of `docs/task-int4-layout-2026-09.md`, now with
+misses the budget by 3.75 GB (M-07). This is L4 of `docs/tasks/task-int4-layout-2026-09.md`, now with
 its number.
 
 **The paged path (26B/35B/gpt-oss on the Mac) is opt-in, serialised, and measured against the wrong
@@ -251,7 +251,7 @@ re-baked by the code it checks (G-04).
   the row4 repack — the CPU fallback then runs the canonical kernel, ~1.1–1.3× slower on a path that
   is already the slow one); after `BuildResident` succeeds, release the layer projections' host
   `WeightMat`s (keep `Embed`/`LMHead` for the host lookup). This is **L4 of
-  `docs/task-int4-layout-2026-09.md`**, now with its number and a second half (drop after upload).
+  `docs/tasks/task-int4-layout-2026-09.md`**, now with its number and a second half (drop after upload).
 - **Confidence:** confirmed (three allocation sites traced; the 889.6 MB is the commit's own
   measurement). **Prior:** audit-2026-09-10 M-24 (the guard's 2× double-count — the real footprint
   is 3×); aikit M-22; task-int4-layout L4 (filed, not scheduled — schedule it).
@@ -421,7 +421,7 @@ re-baked by the code it checks (G-04).
 #### M-12 · Expert staging is queue-depth 1: k misses × 3 preads, sequential on one thread, GPU idle
 - **Where:** `metal/moe.go:764-767` (serial `ensureResident` loop), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
-  `metal/expertpool.go:164-200`; `docs/task-metal-expert-streaming-at-scale.md:206-212`.
+  `metal/expertpool.go:164-200`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
 - **Mechanism and bound (record-derived):** per-miss cost from the sweep = staging share ×
   s/token ÷ misses/token = 1.6 ms (N=8), 3.0 ms (N=32), 3.6 ms (N=64) for ~1.57 MB — 440–980 MB/s
   effective against the same file's measured 3,687 MB/s sequential pread. Per-miss cost *rising*
@@ -444,7 +444,7 @@ re-baked by the code it checks (G-04).
   `--moe-cache-slots`); `internal/serveapp/main.go:483` (`--moe-cache-experts` … "CUDA only"),
   `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1686-1696` ("falls back
   automatically to a CPU-staged … path … killed after 2h10min with zero completions");
-  `docs/task-metal-expert-streaming-at-scale.md:258-261` (recommendation: default N=64).
+  `docs/completed/task-metal-expert-streaming-at-scale.md:288-291` (recommendation: default N=64).
 - **Mechanism and bound (confirmed):** `MoECacheExperts()` has no reader in `metal/`; a zero slot
   request means "unpaged", not CUDA's "ask for all, auto-cap". The recorded Metal-paged numbers
   (2.19 tok/s at N=64 on the 35B, 0.67 on the 26B) exist only through test harnesses that set the

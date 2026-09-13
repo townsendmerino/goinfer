@@ -110,7 +110,7 @@ func TestStreamSurfaces_allSendUsageBeforeDone(t *testing.T) {
 			return true
 		})
 	}
-	// chat, /v1/completions, tools, vision, and tools' K1 cancellation exit (docs/task-halt-2026-09.md)
+	// chat, /v1/completions, tools, vision, and tools' K1 cancellation exit (docs/tasks/task-halt-2026-09.md)
 	// — five normal completions across the three files.
 	if total != 5 {
 		t.Errorf("found %d normal stream completions, want 5 — a surface was added or removed "+

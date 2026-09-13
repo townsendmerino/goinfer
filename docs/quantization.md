@@ -72,7 +72,7 @@ cheaper route — no dequant-then-repack) or arrive at it via `int8int8`.
 > against int8's **1.0156**, because the arm64 W4A8 row4 repack keeps a second buffer beside the
 > canonical nibbles. int4 is still the *faster* option there — that repack is what buys the speed
 > — so the trade on Apple Silicon is "int4 is faster and larger", not "int4 is smaller".
-> See [`task-first-hour.md`](task-first-hour.md).
+> See [`task-first-hour.md`](tasks/task-first-hour.md).
 
 ### `int4mix` — attention int8, FFN int4
 
@@ -131,7 +131,7 @@ Stated so nobody reads absence as endorsement:
 ## Sources
 
 [`nemotron-resident.md`](completed/nemotron-resident.md) (int4 default-on evidence; the granite contrast) ·
-[`task-first-hour.md`](task-first-hour.md) (the arm64 int4/int8 footprint inversion) ·
+[`task-first-hour.md`](tasks/task-first-hour.md) (the arm64 int4/int8 footprint inversion) ·
 [`audit-2026-09-02.md`](completed/audit-2026-09-02.md) L-10 (the 3-bit KV NO-GO) ·
 [`release-1.0-gate.md`](release-1.0-gate.md) (router flips, 779 of 3200) ·
 [`benchmarks.md`](benchmarks.md) (speed rows and their provenance) ·

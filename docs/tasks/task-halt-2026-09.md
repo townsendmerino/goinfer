@@ -1,12 +1,20 @@
 # Task: halting goinfer — cancel, halt, lease, and the kill drill — 2026-09 (K1–K9)
 
-> **Status: OPEN, drafted 2026-09-12** against `main` + branch `aikit-v1.41.0-bump`. Scoping doc
-> for the question "if an agent built on goinfer misbehaves, what stops it, and how do we know
-> the stop works". Companion to `docs/task-gpu-paths-2026-09.md` (nothing here touches kernels).
+> **Status (corrected 2026-09-13, doc review — the line below was stale from the day it was
+> written): drafted 2026-09-12, and K1+K2+K5 — "the useful minimum" this doc names two lines
+> down — shipped and merged into `main` that same day** (`61830dd1`/`ee2614e9`/`4b979d0c`, merged
+> `972bd2d7`; re-verified against the current tree 2026-09-13: `TestServe_cancelByID`,
+> `TestServe_haltUnderLoad` and `TestServe_adminSocket` all pass on real local hardware, one of
+> them against a real `.gguf`). **K3, K4, K6, K7, K8, K9 remain open** — see each item's own
+> section; none has a queue entry or a doc elsewhere, so this doc is still the sole owner of all
+> six. Scoping doc for the question "if an agent built on goinfer misbehaves, what stops it, and
+> how do we know the stop works". Companion to `docs/task-gpu-paths-2026-09.md` (nothing here
+> touches kernels).
 >
 > Suggested order: K1 → K2 → K5 → K3 → K4 → K6 → K8 → K7 → K9. K1+K2+K5 are the useful minimum
-> (cancel a task, halt the server, from a channel the agent cannot reach); K3 is the one that
-> changes the guarantee; K8 is what makes any of it believable.
+> (cancel a task, halt the server, from a channel the agent cannot reach) **and are now shipped**;
+> K3 is the next item, and is the one that changes the guarantee; K8 is what makes any of it
+> believable.
 
 ## Where goinfer sits, and what that means for a kill switch
 

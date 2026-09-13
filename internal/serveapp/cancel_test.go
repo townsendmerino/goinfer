@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// K1 gate (docs/task-halt-2026-09.md): start a long generation, cancel it by id partway
+// K1 gate (docs/tasks/task-halt-2026-09.md): start a long generation, cancel it by id partway
 // through, and assert (1) the stream stops promptly after the cancel request completes —
 // the practical form of "no token timestamped after the cancel" this test can check without
 // per-token wall-clock instrumentation that does not exist anywhere in the tree today, (2) the

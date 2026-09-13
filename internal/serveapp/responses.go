@@ -480,7 +480,7 @@ func responseObject(id, model string, created int64, status string, output []any
 // max_output_tokens) → "incomplete"; everything else → "completed" (N-15).
 func respStatus(finish string) string {
 	switch finish {
-	case "cancelled": // K1, docs/task-halt-2026-09.md — a real value in OpenAI's own Responses status enum
+	case "cancelled": // K1, docs/tasks/task-halt-2026-09.md — a real value in OpenAI's own Responses status enum
 		return "cancelled"
 	case "length":
 		return "incomplete"

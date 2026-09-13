@@ -719,7 +719,7 @@ the same isolation gap 0's own Gemma 3 row above uses), 1 discarded warm-up + 5 
 | warm (P9a resident reuse) | 0.051 s | **159.98×** |
 
 Full end-to-end, including a real vision-tower forward pass on every cold visit — the actual "does
-resending a screenshot get fast" claim (`docs/task-first-hour.md` scenario F), 4 visits each (no
+resending a screenshot get fast" claim (`docs/tasks/task-first-hour.md` scenario F), 4 visits each (no
 warm-up discard — the tower cost alone dominates any startup noise):
 
 | | median turn time | speedup |

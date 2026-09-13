@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// K5 (docs/task-halt-2026-09.md): a second http.Server, on a Unix socket, serving ONLY /admin/*
+// K5 (docs/tasks/task-halt-2026-09.md): a second http.Server, on a Unix socket, serving ONLY /admin/*
 // with no -api-key check — the socket's own file permissions (mode 0600, owned by whoever started
 // serve) are the auth. Deliberately separate from the TCP listener rather than a second mux on the
 // same *http.Server: a Unix socket has no host/port to bind wrong, and closing it independently at

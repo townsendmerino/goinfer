@@ -14,7 +14,7 @@ import (
 )
 
 // isAdminCLICmd reports whether args[0] (when present) names one of K5's one-word admin
-// subcommands (docs/task-halt-2026-09.md), dispatched from Main() the same way `pull`/`check`
+// subcommands (docs/tasks/task-halt-2026-09.md), dispatched from Main() the same way `pull`/`check`
 // already are — before flag.Parse, since each gets its own flag set.
 func isAdminCLICmd(cmd string) bool {
 	switch cmd {

@@ -105,14 +105,14 @@ The 2026-09-06 cold-user run could not test the scenario-B agent sub-test at all
 cline, `llm` and codex were absent, and `continue` matched a shell builtin — a false positive worth
 knowing about. `nobara-pc` now has **opencode 1.18.29** via
 `npm install --prefix ~/.local/opt/opencode opencode-ai`. Do the same, or pick another and **name
-it in [`docs/task-first-hour.md`](../task-first-hour.md) §1**. Note `aider` does **not** install on
+it in [`docs/tasks/task-first-hour.md`](../tasks/task-first-hour.md) §1**. Note `aider` does **not** install on
 a Python 3.14 host — pip backtracks to `aider-chat` 0.16.0 whose pinned `multidict` fails to build.
 
 ## Item 4 — only after a goinfer tag lands: cold run 2
 
 `RELEASING.md` pre-flight step 5 now requires a cold-user run on the previous tag. Run 2 is
 specified for the **Linux** box, so this is a *nice-to-have* here — but if you do run it on the
-Mac, follow `task-first-hour.md` §1 exactly: fresh window, empty directory outside the repo,
+Mac, follow `tasks/task-first-hour.md` §1 exactly: fresh window, empty directory outside the repo,
 published assets only, declared contamination, and **record `--version` for every binary**, which
 the first run could not do and is how a Mac asset with no Metal in it reached a release.
 

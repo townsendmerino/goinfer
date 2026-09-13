@@ -1,13 +1,16 @@
 # Task: the first hour — what a cold user found, what was fixed, and how to run it again
 
 > **Status: R1–R4 SHIPPED 2026-09-06** against the run recorded in
-> [`measurements/cold-user-2026-09-06.md`](measurements/cold-user-2026-09-06.md) (M1 Pro / 16 GB,
+> [`measurements/cold-user-2026-09-06.md`](../measurements/cold-user-2026-09-06.md) (M1 Pro / 16 GB,
 > v0.16.0, five scenarios, 13.5 min). Every fix below carries a gate that goes red on v0.16.0;
 > the mutation used to prove each one is named. R5 is the protocol, which is this document's §1
 > and does not "ship" — it is run.
 >
-> **Batch 2 — R6–R12 IMPLEMENTED 2026-09-07, uncommitted this pass**, against the run recorded
-> in [`measurements/cold-user-2026-09-06-nobara-pc.md`](measurements/cold-user-2026-09-06-nobara-pc.md)
+> **Batch 2 — R6–R12 IMPLEMENTED AND COMMITTED 2026-09-07** (corrected 2026-09-13, doc review: the
+> "uncommitted this pass" phrasing below described the moment this section was drafted, not a
+> lasting state — `71f11c0d` "first-hour batch 2: R6–R12 from cold-user run 2 (nobara-pc, v0.17.0)"
+> plus `12ec19ee`/`c7e0bf21` landed the same day and have been on `main` since), against the run recorded
+> in [`measurements/cold-user-2026-09-06-nobara-pc.md`](../measurements/cold-user-2026-09-06-nobara-pc.md)
 > (nobara-pc, Ryzen 3700X + RTX 2070 SUPER 8 GB, v0.17.0, five scenarios, ~32 min — this is run 2
 > of the protocol §1 called for). Every fix below carries a gate that goes red on v0.17.0 and was
 > mutation-checked against the actual pre-fix behavior (not merely reasoned about); several were
@@ -20,7 +23,7 @@
 > the full correction.
 >
 > **Batch 3 — R13–R16 IMPLEMENTED AND PUSHED 2026-09-07**, against the run recorded in
-> [`measurements/cold-user-2026-09-07-macbook-arm64.md`](measurements/cold-user-2026-09-07-macbook-arm64.md)
+> [`measurements/cold-user-2026-09-07-macbook-arm64.md`](../measurements/cold-user-2026-09-07-macbook-arm64.md)
 > (MacBook, M1 Pro, 16 GB RAM, v0.17.1, run 2b — a targeted continuation of run 2's protocol after
 > a safety-motivated skip; see "Protocol amendments, after run 2b" below). Every fix below carries
 > a gate that goes red on v0.17.1, mutation-checked. **R13 is the headline, and the headline is not
@@ -49,9 +52,9 @@
 > first successful end-to-end opencode completion in this project's history. See R14's own entry
 > below and `docs/integrations/opencode.md` for the full account.
 >
-> Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
+> Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
-> [`task-fit-to-hardware.md`](task-fit-to-hardware.md) owns "will it fit" — R3 implements that
+> [`task-fit-to-hardware.md`](../task-fit-to-hardware.md) owns "will it fit" — R3 implements that
 > doc's **Phase 0 and nothing else**.
 
 **The premise.** Everything this repo measures well, it measures from the inside. The first hour is
@@ -525,7 +528,7 @@ worth more than the assertion.
 
 **C (embed).** The tester found the entry point by probing 14 package URLs against pkg.go.dev, and
 `decoder`'s index has 346 entries with no "start here". Fixed with a compilable
-[`examples/embed/main.go`](../examples/embed/main.go) — 40 lines, the scenario's own bar — linked
+[`examples/embed/main.go`](../../examples/embed/main.go) — 40 lines, the scenario's own bar — linked
 from the README and **built by CI**, which is not decoration: the first draft of that example did
 not compile, against three separate signatures. The facade this really wants stays scoped in
 `task-embed-and-harness-ux.md` §2; this is the stopgap that exists today.
@@ -1179,7 +1182,7 @@ under a real schema, not a memory problem. This narrows R14's open question rath
 it — 0.5B/1.5B/3B have now all failed the harness-scale row for the same capability reason, and
 the only model class with any evidence of holding up (7B, via Claude Code, on different hardware)
 still cannot load resident here. See R14's own update in
-[`docs/integrations/opencode.md`](integrations/opencode.md) for the full accounting.
+[`docs/integrations/opencode.md`](../integrations/opencode.md) for the full accounting.
 
 ### R14 — the README named opencode as a real-agent target; no recipe for it existed anywhere
 
@@ -1189,7 +1192,7 @@ exactly one file, `claude-code.md`. The tester had to reconstruct opencode's AI-
 custom-provider JSON from outside knowledge of opencode itself, not from anything goinfer
 publishes, and that reconstruction produced the run's only safety incident (R13's swap event).
 
-**Fixed.** New [`docs/integrations/opencode.md`](integrations/opencode.md): the `opencode.json`
+**Fixed.** New [`docs/integrations/opencode.md`](../integrations/opencode.md): the `opencode.json`
 provider config that actually works, `serve check`'s harness-scale tools row promoted to "run
 this before opencode, not after."
 
@@ -1364,18 +1367,18 @@ have shipped.
 
 ## Sources
 
-[`measurements/cold-user-2026-09-06.md`](measurements/cold-user-2026-09-06.md) (run 1) ·
-[`measurements/cold-user-2026-09-06-nobara-pc.md`](measurements/cold-user-2026-09-06-nobara-pc.md)
+[`measurements/cold-user-2026-09-06.md`](../measurements/cold-user-2026-09-06.md) (run 1) ·
+[`measurements/cold-user-2026-09-06-nobara-pc.md`](../measurements/cold-user-2026-09-06-nobara-pc.md)
 (run 2) ·
-[`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) (§4 scores it) ·
-[`task-fit-to-hardware.md`](task-fit-to-hardware.md) (R3 is its Phase 0) ·
-[`api-tiers.md`](api-tiers.md) (what R1's install line may promise) ·
+[`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md) (§4 scores it) ·
+[`task-fit-to-hardware.md`](../task-fit-to-hardware.md) (R3 is its Phase 0) ·
+[`api-tiers.md`](../api-tiers.md) (what R1's install line may promise) ·
 `RELEASING.md` (the ritual this doc is now part of) ·
 `metal/backend.go` (the 70% fraction R3 reuses, and its single-measurement provenance) ·
 `docs/audit-2026-09-02.md` M-01/M-02 (the accounting R3's guard reads), M-19 (why the root
 `cmd/serve` links no backend, which is what R2 found shipped) ·
 `docs/benchmarks.md` §B8 (R12's peer-decode consistency check) ·
-[`docs/integrations/claude-code.md`](integrations/claude-code.md) (R11's "which model tool-calls
+[`docs/integrations/claude-code.md`](../integrations/claude-code.md) (R11's "which model tool-calls
 under a real agent" evidence) ·
 `pull/registry_test.go` (R7's `TestRegistry_digestsMatchLocalFiles`, whose own comment records
 the fabricated-digest mistake R7 refused to repeat)

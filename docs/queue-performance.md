@@ -12,6 +12,35 @@
 
 ## What is open
 
+- **P25 · `breakEvenTokensPerRound` is one constant (2.5) for every (target, backend); it does not
+  transfer to a CPU MoE target and would NOT have caught a real regression.** Filed 2026-09-13 from
+  `docs/task-laguna.md`'s DFlash pairing measurement, moved here at archival so the finding has a
+  live home.
+
+  **Measured, not inferred:** `poolside/Laguna-XS.2-speculator.dflash` against real
+  `Laguna-XS.2` @int4, CPU BlockSpec with a real batched verify — 3.20 tok/round accepted (above
+  the 2.5 constant) but **0.82× — SLOWER** end to end (5m58.7s speculative vs 4m54.8s plain
+  greedy, output token-identical). Working backwards from the measurement, the real break-even on
+  this target is ≈3.9 tok/round, not 2.5. **The runtime guard that disables drafting below
+  `breakEvenTokensPerRound` would have happily kept this configuration running** — it is sound in
+  shape and wrong in calibration for this regime.
+
+  **The mechanism:** the 2.5 constant was calibrated in P10 for the GPU-resident (dense) regime.
+  A batched verify over a sparse MoE does not amortize the way a dense one does — each verified
+  row routes to its own top-k of experts, so an 8-row verify approaches 8× the expert traffic
+  rather than the near-free extra rows a dense model gives you. Laguna is A3B: one decode step
+  activates ~3B of 33B total, and the batching that makes speculation pay elsewhere is exactly
+  what MoE routing defeats.
+
+  **Not fixed on the strength of one target's measurement** — changing a shipped guard's
+  semantics from a single data point would be the same over-generalization that put a
+  GPU-calibrated constant in the CPU path to begin with. Two candidate fixes, either measured
+  before landing: (a) calibrate `breakEvenTokensPerRound` per (target, backend) rather than one
+  global constant, or (b) have the guard compare wall-clock directly instead of inferring a
+  decision from an acceptance rate. **Do NOT wire Laguna's DFlash pairing into `serve --drafter`**
+  until one of these lands — the pairing itself is lossless and works (`decoder/laguna_dflash_test.go`),
+  it is simply not worth running today.
+
 - **P24 · `attn_fused` runs at 1.72% of tensor peak and 12.6% occupancy — the L2 kernel that
   shipped is nowhere near its ceiling, and the first suspect is the GRID, not the inner loop.**
   Filed 2026-09-05 from the L2/L3 prefill campaign. Named and deliberately not chased at the time:

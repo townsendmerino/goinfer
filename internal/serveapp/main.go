@@ -372,7 +372,7 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(servecheck.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
-	// K5 (docs/task-halt-2026-09.md): `status|ls|cancel|halt|resume` are a CLIENT talking to a
+	// K5 (docs/tasks/task-halt-2026-09.md): `status|ls|cancel|halt|resume` are a CLIENT talking to a
 	// RUNNING server's admin socket (-admin-socket), not the server itself — same dispatch shape
 	// as pull/check above, so the operator's command is one word instead of a raw curl-to-a-Unix-
 	// socket incantation.
@@ -637,7 +637,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
 	// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.
 	mux.HandleFunc("GET /health", auth(srv.handleHealth))
-	// K2 (docs/task-halt-2026-09.md): halt is checked AFTER auth (a bad key is still rejected
+	// K2 (docs/tasks/task-halt-2026-09.md): halt is checked AFTER auth (a bad key is still rejected
 	// during a halt) and BEFORE inf (a halt must not wait for an inflight slot — "a halt that
 	// has to wait for a slot is not a halt", the doc's own words). /admin/* and /health are
 	// deliberately NOT wrapped in this — an operator must always be able to resume/check status.
@@ -657,7 +657,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes))))))
 	// /admin/* (load/unload, K1's cancel-by-id, K2's halt/resume, K5's status) lives on EITHER
 	// the TCP listener (gated by auth+ -allow-admin, as always) OR the admin socket (K5,
-	// docs/task-halt-2026-09.md) when -admin-socket is set — never both, so a request against
+	// docs/tasks/task-halt-2026-09.md) when -admin-socket is set — never both, so a request against
 	// the surface that was deliberately not chosen 404s instead of merely being refused (a 403
 	// would confirm the surface exists; a 404 does not). See admin_socket.go for the socket side.
 	if cfg.adminSocket == "" {
@@ -686,7 +686,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		mux.HandleFunc("POST /web/models/pull", sameOrigin(auth(maxBytes(textCap, srv.handleWebPull))))
 	}
 
-	// K5 (docs/task-halt-2026-09.md): the admin socket. closeAdminSock is a no-op when
+	// K5 (docs/tasks/task-halt-2026-09.md): the admin socket. closeAdminSock is a no-op when
 	// -admin-socket is unset, so the shutdown handler below can call it unconditionally.
 	closeAdminSock := func() {}
 	if cfg.adminSocket != "" {
@@ -774,7 +774,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}
 	}()
 
-	// K2 (docs/task-halt-2026-09.md): SIGUSR1 halts, SIGUSR2 resumes — a supervisor can pull
+	// K2 (docs/tasks/task-halt-2026-09.md): SIGUSR1 halts, SIGUSR2 resumes — a supervisor can pull
 	// this switch without opening a socket or an HTTP client. Separate from the SIGINT/SIGTERM
 	// channel above: those are one-shot (shutdown then exit), these repeat for the life of the
 	// process, so they get their own Notify and a loop rather than a single <-sig receive.

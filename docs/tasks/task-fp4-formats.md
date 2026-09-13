@@ -2,8 +2,8 @@
 
 **Status:** proposed, gates before code. Filed 2026-09-02.
 **Venue:** `mac` and `linux` for the reachable half; a Blackwell-class device for the rest.
-**Relates to:** `docs/task-mxfp4-gptoss.md` (the existing MXFP4 work — this doc extends it, does not
-replace it).
+**Relates to:** `docs/completed/task-mxfp4-gptoss.md` (the existing MXFP4 work, archived
+2026-09-13 — every item it scoped shipped; this doc extends it, does not replace it).
 
 ---
 
@@ -12,17 +12,23 @@ replace it).
 **A quantization format can be a storage format or a compute format, and we currently treat MXFP4
 only as the first.**
 
-`decoder/mxfp4.go` reads MXFP4 blocks — 32 elements, one e8m0 scale byte plus 16 nibble-packed
+**Corrected 2026-09-13 (doc review):** the dequant code named below moved out of `decoder/` into
+aikit — `7a8e3815` ("decoder: MXFP4 calls aikit v1.36.0 instead of owning it") relocated it to
+`aikit/embed/mxfp4.go`. The claim's substance is unchanged (still solid, still a loader, still
+bit-exact); only the file and the function names moved, corrected below.
+
+`aikit/embed/mxfp4.go` reads MXFP4 blocks — 32 elements, one e8m0 scale byte plus 16 nibble-packed
 e2m1 bytes, 17 bytes per block — and dequantizes them through a lookup table
-(`mxfp4DequantSplitInto`) into float32. The layout is transcribed from the reference `gguf` Python
-library and verified bit-for-bit against a real gpt-oss checkpoint (`mxfp4_test.go`). That is solid
-work and it is a *loader*.
+(`DequantMXFP4Blocks`/`DequantMXFP4Split`, exported now that goinfer calls rather than owns them)
+into float32. The layout is transcribed from the reference `gguf` Python library and verified
+bit-for-bit against a real gpt-oss checkpoint (`decoder/mxfp4_test.go`, which now tests through the
+aikit import). That is solid work and it is a *loader*.
 
 The file's own comment names what is missing:
 
-> e2m1 has 16 representable values; the table below is those values DOUBLED (so the lookup stays
-> integer), paired with a HALF-scale e8m0 — d*half · value*2 == the true product, and keeping both
-> integer is what lets the eventual SIMD kernel avoid a float dequant in the inner loop.
+> The value table is the 16 representable e2m1 values DOUBLED, paired with a HALF-scale e8m0, so
+> d_half · value_doubled recovers the true product while both stay integer — which is what lets a
+> SIMD kernel skip a float dequant in its inner loop.
 
 **"The eventual SIMD kernel" does not exist.** The representation was deliberately chosen to make
 one possible and nobody has written it. That is the single most actionable item in this doc, and it
@@ -156,7 +162,7 @@ Ambiguous → parked, in every case.
 
 ## Deliverable
 
-Extend `docs/task-mxfp4-gptoss.md` for A and B — same subject, and that page already carries the
+Extend `docs/completed/task-mxfp4-gptoss.md` for A and B — same subject, and that page already carries the
 format transcription and the phase history. Open a new section or a new page for C only if gate C1
 passes.
 

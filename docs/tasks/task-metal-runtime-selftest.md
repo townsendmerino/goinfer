@@ -1,9 +1,24 @@
-# Task (SPEC — implementation deferred to the v1.0.1 batch): Metal runtime self-test at backend init
+# Task (SPEC — unscheduled, not implemented): Metal runtime self-test at backend init
 
-> **Status:** design only. No code lands from this doc before v1.0 (the release plan requires zero
-> code delta on `main` between the v0.11.0 and v1.0 tags). Implementation queues to **v1.0.1**,
-> alongside the Metal dispatch removals (audit #4/#5). Motivated by dmikey's A1111 Metal write-up
-> (the field-codegen-drift risk) — the same source as the commit/sync census (ollama-chase §A2-Metal).
+> **Status (corrected 2026-09-13, doc review): the original deferral vehicle no longer exists.**
+> This doc gated implementation on "the v1.0.1 batch, alongside the Metal dispatch removals
+> (audit #4/#5)" and a frozen `main` between v0.11.0 and v1.0. None of that holds today: current
+> tag is **v0.17.2** (16 releases past v0.11.0, all with real code deltas — the "zero code delta
+> until v1.0" freeze this doc assumed was lifted 2026-08-18), `docs/roadmap.md`'s own "v1.0
+> question" section still lists v1.0 as "not scheduled" with open checklist items, and no other
+> live doc mentions "v1.0.1" as a target at all — that batching concept is gone, not merely
+> renamed. "Audit #4/#5" is likewise untraceable under the current M-/G-/C- numbering scheme
+> (`docs/audit-metal-2026-09-12.md` and its predecessors). **The underlying gap this doc
+> describes is still real and still unaddressed** — no runtime self-test exists anywhere in
+> `metal/` (`grep -rn "self-test\|cosMaxAbs" metal/*.go` outside this doc: nothing), and
+> `TestMetalSnapshotGolden` remains the only Metal correctness gate, still machine-pinned, still
+> structurally undeployable to the field for exactly the reason this doc names. The spec below is
+> unchanged and, as far as this review checked, still technically sound (`gemma4_router_parity_test.go`
+> and `metal/snapshot_golden_test.go` both still exist and match what's cited). It simply has no
+> scheduled pickup point anymore — pick it up whenever Metal field-correctness work is next
+> prioritized, not gated on a release number. Originally motivated by dmikey's A1111 Metal
+> write-up (the field-codegen-drift risk) — the same source as the commit/sync census
+> (`docs/ollama-chase.md` §A2-Metal).
 
 ## The gap this closes
 

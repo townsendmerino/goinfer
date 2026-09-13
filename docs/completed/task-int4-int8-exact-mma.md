@@ -1,8 +1,21 @@
 # Investigation: an integer-exact int4×int8 GEMM on Metal's f16 MMA hardware
 
-**Status: NEGATIVE RESULT at Phase 1. Stopped per the task's own instructions before any kernel
-code was written. No files outside this doc were touched — decode path, prefill.go, and the
-release path are all unmodified.**
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Nothing in `docs/completed/` is actionable. If you need a task, use the live docs;
+> if something here reads as an instruction to a future reader, it was missed at archival — see
+> the doc-closeout rule in `docs/parity-coverage-policy.md`, and move it to live policy or strike
+> it.
+>
+> **Status (2026-09-13, doc review):** COMPLETE. A clean negative result, stopped correctly at
+> Phase 1 per its own gating rule, and every citation in it still matches current code verbatim
+> (`metal/kernels.go`/`metal/model.go`, all 15 checked directly against the tree) — nothing here
+> has drifted. The corollary this doc identified (a batched small-M verify kernel gets
+> bit-identity for free by hoisting decode's own reduction shape, rather than trying to replicate
+> it from a structurally different kernel) was built and measured in
+> `docs/task-metal-batched-verify-kernel.md`: bit-identity held exactly as predicted, but the
+> kernel came in decisively below break-even (every tested k under 1.0x, worsening with k) — also
+> a clean, complete **NO-GO**. Both halves of this investigation are fully closed; nothing here is
+> open or orphaned.
 
 ## Task recap
 

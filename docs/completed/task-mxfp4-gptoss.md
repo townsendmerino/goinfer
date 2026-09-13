@@ -1,13 +1,22 @@
 # task: MXFP4 quantization + gpt-oss model family, and the CPU decode scheduler
 
-> Status: **SHIPPED (CPU MXFP4/gpt-oss + GPU residency), reworked in place 2026-09-12** —
-> stale since the doc's own Phase 0/Phase 2 sections closed it out. §1–§3 (CPU format +
-> architecture support) shipped as scoped. §5 (the yielding spin-barrier) is CLOSED, NEGATIVE,
-> then answered by a different mechanism — see `docs/completed/plan-cpubrrr-steal-and-bindings.md`'s
-> A3 disposition. GPU residency — scoped below as "NOT recommended as the next step" — shipped
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Nothing in `docs/completed/` is actionable. If you need a task, use the live docs;
+> if something here reads as an instruction to a future reader, it was missed at archival — see
+> the doc-closeout rule in `docs/parity-coverage-policy.md`, and move it to live policy or strike
+> it.
+>
+> **Status (2026-09-13, doc review): COMPLETE, archived.** §1–§3 (CPU format + architecture
+> support) shipped as scoped. §5 (the yielding spin-barrier) is CLOSED, NEGATIVE, then answered
+> by a different mechanism — see `docs/completed/plan-cpubrrr-steal-and-bindings.md`'s A3
+> disposition. GPU residency — scoped below as "NOT recommended as the next step" — shipped
 > anyway, on all three resident backends (`docs/hardware-matrix.md`); see the retraction on that
-> section. This page stays live because `docs/task-fp4-formats.md` plans to extend it (its own
-> items A/B), not because anything here remains undone.
+> section. One stale claim found and corrected here before archiving: Phase 0 named
+> `decoder/mxfp4.go` as the dequant unpacker's home — it moved to `aikit/embed/mxfp4.go`
+> (`7a8e3815`, "decoder: MXFP4 calls aikit v1.36.0 instead of owning it") some time after this
+> doc was written; the substance (bit-exact, verified) is unchanged. Previously kept live because
+> `docs/task-fp4-formats.md` plans to extend it (its own items A/B) — that doc has been repointed
+> to this archived path instead; nothing here remains undone.
 >
 > Depends on aikit's Q8_K integer-accumulation task note (uncommitted in that repo, so not reachable from here) for §4 only. §1–§3 and §5
 > are independent and can start immediately.
@@ -169,7 +178,14 @@ So this is a **weight-loader** task, not a family task.
 
 **The dequant math is already written and bit-exact.** `decoder/mxfp4.go` carries goinfer's own
 MXFP4 unpacker, verified bit-for-bit against the reference `gguf` library on a real checkpoint
-(`scripts/extract_mxfp4_golden.py`).
+(`scripts/extract_mxfp4_golden.py`). **Correction (2026-09-13, doc review):** the file moved —
+`7a8e3815` ("decoder: MXFP4 calls aikit v1.36.0 instead of owning it") relocated the dequant
+functions into `aikit/embed/mxfp4.go` (`DequantMXFP4Blocks`/`DequantMXFP4Split`, exported); goinfer
+now calls them rather than owning them. `decoder/mxfp4_test.go` still exists and still tests
+against the real checkpoint, just through the aikit import. The claim's *substance* (bit-exact,
+verified, ready to use) is unchanged — only the file this doc and its own Phase 1 CORRECTION
+section below (`mxfp4DequantSplit`, etc.) name has moved. Every `mxfp4Dequant*`-named reference
+below refers to what is now aikit's `embed.DequantMXFP4*`.
 
 ### The one real difference: how the bytes are SOURCED
 

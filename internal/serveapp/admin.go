@@ -18,7 +18,7 @@ import (
 // KV as part of the drain, and reports 200 (freed) or 202 (draining) per the wait.
 
 // adminCancelReq is the body of POST /admin/generations/{id}/cancel (K1,
-// docs/task-halt-2026-09.md). reason is required so a cancelled generation's finish_reason and
+// docs/tasks/task-halt-2026-09.md). reason is required so a cancelled generation's finish_reason and
 // log line always say WHY, not just THAT — "every halt/cancel is loud and attributed" is this
 // doc's own ground rule.
 type adminCancelReq struct {
@@ -63,7 +63,7 @@ type adminUnloadReq struct {
 
 // requireAdmin is the TCP-listener gate for /admin/* — chain-level (alongside auth/haltGate/inf
 // in main.go), not a handler-internal check, so it can be left off entirely when registering the
-// same handlers on the admin socket (K5, docs/task-halt-2026-09.md): there, the socket's file
+// same handlers on the admin socket (K5, docs/tasks/task-halt-2026-09.md): there, the socket's file
 // permissions (mode 0600) are the auth, and -allow-admin has no TCP-listener meaning to enforce.
 func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +78,7 @@ func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 // registerAdminRoutes registers every /admin/* route — model load/unload, K1's generation
 // list/cancel/status, K2's halt/resume — onto mux, each wrapped with wrap. main.go calls this
 // twice: once for the TCP mux (wrap = auth+requireAdmin, gated by -api-key/-allow-admin), and
-// once for the admin socket when -admin-socket is set (K5, docs/task-halt-2026-09.md; wrap =
+// once for the admin socket when -admin-socket is set (K5, docs/tasks/task-halt-2026-09.md; wrap =
 // identity there — the socket's file permissions are the auth, and it replaces the TCP
 // registration rather than adding to it, so the two never both run for the same server).
 func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func(http.HandlerFunc) http.HandlerFunc) {

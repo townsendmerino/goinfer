@@ -615,7 +615,7 @@ number is published without provenance.
   or image placeholders; and request-time admission (`contextLengthError`/`clampMaxTokens`,
   `internal/serveapp/openai.go`) already ran on the fully placeholder-expanded prompt (`vi.ids`,
   `vision_serve.go`) before this pass touched anything — confirmed by reading the code, not
-  assumed. See `docs/task-first-hour.md`'s R2/guard section for the full writeup and
+  assumed. See `docs/tasks/task-first-hour.md`'s R2/guard section for the full writeup and
   `decoder/fitguard_test.go`'s `TestFitEstimate_safetensorsAgreesWithResidentWeightBytes` /
   `TestFitCheckFor_pricesSafetensorsNotJustGGUF` for the gates.
   (c) `serve check` gains a vision row (a fixed small data-URI image, a question
@@ -655,7 +655,7 @@ loop is the use case, and screenshots are what agents send.
 **Measurement.** Every phase re-measures per-image (and per-clip) time on both boxes with the
 current binary, paired against the previous phase, and retires the June figures explicitly — the
 171 s / 18.8 s numbers are struck from `benchmarks.md` at P6, not carried. A cold-user run
-(`docs/task-first-hour.md`) gains a scenario F — "show it a screenshot" — at P9.
+(`docs/tasks/task-first-hour.md`) gains a scenario F — "show it a screenshot" — at P9.
 
 **Not in this program.** Image generation, speech output, video decoding, remote `image_url`
 fetching (still an SSRF primitive; still a flag with the `--allow-admin` posture if ever), and any

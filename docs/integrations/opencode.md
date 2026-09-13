@@ -83,7 +83,7 @@ which one the eventual fix needed to target:
    killed for machine safety before tool-calling could even be observed. Root cause: the guard
    priced against a fixed fraction of TOTAL host RAM, which a real machine with other work open
    can exceed regardless of the model's own footprint. Fixed in two passes
-   (`docs/task-first-hour.md`, "R13-follow-on"), each re-verified live on the same Mac.
+   (`docs/tasks/task-first-hour.md`, "R13-follow-on"), each re-verified live on the same Mac.
 3. **Same Mac, third live re-run, after both fixes**: `Load` correctly *refused* this exact
    model — cleanly, zero Swapouts — because it genuinely does not fit that machine's real
    available memory under ordinary desktop load. Confirms the fix; does not reach opencode either,

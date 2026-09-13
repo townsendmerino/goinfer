@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// K1 (docs/task-halt-2026-09.md): a process-wide registry of in-flight generations, keyed by the
+// K1 (docs/tasks/task-halt-2026-09.md): a process-wide registry of in-flight generations, keyed by the
 // id each handler already mints (reqID(), via chatcmpl-/msg_/resp_ prefixes). It exists so an
 // operator can cancel one generation, or every generation of one model, from outside the
 // process that started it — the handle a cancel-by-id needs already existed (helpers.go's
@@ -18,7 +18,7 @@ import (
 // genRequest.id before calling drive/driveVL; gr.id == "" (a caller that hasn't been wired, or a
 // test) skips registration entirely — nil-safe, not an error.
 //
-// NOTE ON "SESSION" (found while implementing, not assumed): docs/task-halt-2026-09.md's K1 also
+// NOTE ON "SESSION" (found while implementing, not assumed): docs/tasks/task-halt-2026-09.md's K1 also
 // asks for `POST /admin/sessions/{id}/cancel` ("every generation of that session, since an agent
 // loop is a session"). That endpoint is NOT implemented here. goinfer's own "session"
 // (sessionLRU/decoder.Session, sessions.go) is a content-addressed KV-reuse cache selected by
@@ -156,7 +156,7 @@ func (r *generationRegistry) count() int {
 }
 
 // waitEmpty polls until no generation is registered, or timeout elapses, and returns how long it
-// actually took (K2's time-to-quiescence — docs/task-halt-2026-09.md). Each registered generation
+// actually took (K2's time-to-quiescence — docs/tasks/task-halt-2026-09.md). Each registered generation
 // stops at its next per-token ctx check (already the fastest signal there is; see generations.go's
 // top doc comment), so this is normally fast — the poll interval trades a little latency in the
 // measurement for not spinning a goroutine per halt. Used by K2's halt path after cancelAll: the

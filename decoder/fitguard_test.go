@@ -524,7 +524,7 @@ func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
 	// This replaces an assertion that int4 must be cheaper than int8, which CI proved false.
 	// Measured on darwin/arm64 2026-09-06: int4 1.2500 against int8 1.0156 — on Apple Silicon
 	// int4 weights occupy about 23% MORE resident RAM than int8int8, because int8 gets no repack.
-	// See docs/task-first-hour.md for what that means for the help text's "int4 ... smallest".
+	// See docs/tasks/task-first-hour.md for what that means for the help text's "int4 ... smallest".
 	for _, name := range []struct {
 		label string
 		mode  quantMode

@@ -10,7 +10,7 @@ import (
 )
 
 // TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical is L2's round-trip
-// gate (docs/task-int4-layout-2026-09.md): a .giw written via
+// gate (docs/tasks/task-int4-layout-2026-09.md): a .giw written via
 // SerializeWeightsForTarget(GIWTargetCPUArm64) must bake kind 5 (row4-only, NO
 // canonical arrays) for every eligible int4 tensor, round-trip with Int4()'s ok
 // FALSE and IsInt4() TRUE for each of them (repacked-only, aikit audit M-22), and
@@ -178,7 +178,7 @@ func TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad(t *testing.
 }
 
 // TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only pins the OTHER
-// named decline (docs/task-int4-layout-2026-09.md's L2): a kind-5 tensor whose
+// named decline (docs/tasks/task-int4-layout-2026-09.md's L2): a kind-5 tensor whose
 // shape this core's Int4Row4Usable rejects (rows not a multiple of 4 — the same
 // constraint repackRow4ForEmit enforces at WRITE time) must fail readWeightMat
 // with a named error, not a panic. Hand-built bytes, bypassing the normal

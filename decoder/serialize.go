@@ -58,7 +58,7 @@ import (
 //
 //             kind 5 (v11+) is q4Row4Scales, q4Row4 ALONE — no canonical arrays at
 //             all, the on-disk form of aikit audit M-22's repacked-only WeightMat
-//             (docs/task-int4-layout-2026-09.md's L2). Chosen per tensor by
+//             (docs/tasks/task-int4-layout-2026-09.md's L2). Chosen per tensor by
 //             giwWriter.target: only on a cpu-arm64 target, only for a tensor whose
 //             call site opted into kind-5 eligibility (weightMat, not
 //             weightMatKind3Only — see that function's doc for which tensors are
@@ -84,7 +84,7 @@ import (
 
 const (
 	giwMagic        = "GINFW"
-	giwVersion      = 11 // v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+	giwVersion      = 11 // v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
 	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate, v11 kind 5; older bundles stay valid and fall back to inference)
 	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
 	giwV10GraniteQK = 10 // the version at/after which a dense-granite bundle's q/k are known un-permuted (audit C-05)
@@ -205,7 +205,7 @@ func SerializeWeightsToRow4(out io.Writer, w *Weights, id string) (int64, error)
 }
 
 // SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE
-// consumer (docs/task-int4-layout-2026-09.md's L2): on a cpu-arm64 target, every
+// consumer (docs/tasks/task-int4-layout-2026-09.md's L2): on a cpu-arm64 target, every
 // eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5
 // (row4-only — no canonical arrays at all) instead of kind 3; every other target,
 // including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
@@ -952,7 +952,7 @@ type giwWriter struct {
 
 	// target opts weightMat into emitting kind 5 (row4-only — NO canonical arrays)
 	// for every eligible int4 tensor on a cpu-arm64 target, instead of kind 3
-	// (docs/task-int4-layout-2026-09.md's L2 — the one-representation-per-target
+	// (docs/tasks/task-int4-layout-2026-09.md's L2 — the one-representation-per-target
 	// policy, .giw's counterpart to wantsCanonicalInt4's in-RAM decision).
 	// GIWTargetNone (the zero value) keeps kind 3 for every int4 tensor, exactly
 	// today's default — so every existing caller that never sets this field is
@@ -1013,7 +1013,7 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) { w.weightMatKind(m, true) }
 // weightMatKind3Only is weightMat for a tensor that must never take kind 5
 // regardless of target — it always writes kind 3 (or, under the legacy row4
 // opt-in, kind 4) for an int4 tensor. Two independent reasons land a call site
-// here, per docs/task-int4-layout-2026-09.md's L2:
+// here, per docs/tasks/task-int4-layout-2026-09.md's L2:
 //
 //   - MoE-paged experts (l.Experts[*], gemma4's mo.expertsGateUp/expertsDown): the
 //     doc's ground rule — decoder/moepaging.go reads these off the mmap with no
@@ -1513,7 +1513,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		}
 		wm, ok := linalg.WrapInt4Row4Only(q4Row4, q4Row4Scales, rows, cols, group)
 		if !ok {
-			// Named and actionable, per docs/task-int4-layout-2026-09.md's ground rules — a
+			// Named and actionable, per docs/tasks/task-int4-layout-2026-09.md's ground rules — a
 			// kind-5 file is a promise to ONE target (the box/core that wrote it), unlike
 			// kind 4's "usable anywhere". ok=false here means Int4Row4Usable rejected this
 			// core: wrong arch (this file was written on/for arm64), or a shape this core's

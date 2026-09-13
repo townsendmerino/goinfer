@@ -415,7 +415,7 @@ has shipped and been measured.** Reasons, so they don't get relitigated:
   canonical layout. A bundle in the arm64 kind either gets repacked at upload (note: this
   reintroduces work on the Mellum2 direct-int4-upload fast path, 66s→13s — measure before
   accepting) or prequant simply emits the arm64 kind only for CPU-target bundles.
-- **Fold-ins, so the format is cut once:** (a) `docs/task-giw-f16-scales.md` rides along — the
+- **Fold-ins, so the format is cut once:** (a) `docs/tasks/parked/task-giw-f16-scales.md` rides along — the
   new kernel applies each group scale once at the int32 boundary, so f16 scales widened there
   cost ~nothing, unify CPU/GPU scale precision, and retire that task without its own version
   bump; (b) whatever centering convention the harness-final layout lands on (uncentered
@@ -442,7 +442,7 @@ bullet named in advance.
 **What shipped, and what didn't from the fold-in list above.** Kind 4 is
 weightMat kind 3's bytes (`q4s`, `q4` — canonical, always present and authoritative) followed
 by `q4Row4Scales`, `q4Row4` (the row4 layout), both zero-copy mmap-aliased at load — a pure
-storage-format addition. **Neither fold-in landed**: no f16 scales (`docs/task-giw-f16-scales.md`
+storage-format addition. **Neither fold-in landed**: no f16 scales (`docs/tasks/parked/task-giw-f16-scales.md`
 stays open, on its own schedule), no centering-convention change. This is deliberate, not a
 scope cut — the shipped split-half+4-row kernel is bit-identical to canonical
 (`TestDotW4A8SplitHalf4Row_bitIdenticalToCanonical`, and the "Correction to the plumbing

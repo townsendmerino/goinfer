@@ -14,7 +14,7 @@ import (
 // norms, residuals, final head — is the shared path. Isolating gpt-oss here keeps
 // the sink/clamped-activation out of the 20 other families' hot softmax/MLP kernels.
 // Parity-first and arch-neutral (no SIMD): §1 says the capability matters more than
-// speed on x86, and bench numbers are deferred (docs/task-mxfp4-gptoss.md §6.6).
+// speed on x86, and bench numbers are deferred (docs/completed/task-mxfp4-gptoss.md §6.6).
 
 // runLayersGptOss embeds token id and runs the block stack, returning the residual
 // stream after the last layer (pre-final-norm) — the same contract as runLayers, so

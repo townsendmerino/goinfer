@@ -20,7 +20,7 @@ import (
 //   - The RELEASE ASSETS ARE BUILT FROM THESE MODULES. The Mac and Linux `goinfer-serve` binaries
 //     come from metal/cmd/serve and cuda/cmd/serve, so a submodule pinning an older aikit ships an
 //     older aikit to users — the same failure shape as the release-asset finding recorded in
-//     docs/task-first-hour.md, one dependency over.
+//     docs/tasks/task-first-hour.md, one dependency over.
 //   - The parity manifest's aikit_version tracks the ROOT's pin only. A submodule on a different
 //     aikit is numerics the staleness gate cannot see, which is exactly the hole that let
 //     aikit_version sit at v1.19.0 for seventeen versions.

@@ -36,7 +36,7 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.regMu.RUnlock()
 	sort.Strings(draining)
 
-	// K2 (docs/task-halt-2026-09.md): halted is always present so a client's shape doesn't
+	// K2 (docs/tasks/task-halt-2026-09.md): halted is always present so a client's shape doesn't
 	// change between the two states; reason/at are null when not halted rather than omitted,
 	// for the same reason.
 	var haltedFields map[string]any

@@ -192,7 +192,7 @@ func (f fitCheck) declineErr() *FitDeclineError {
 	// AND int4 IS NOT ALWAYS THE SMALLER ONE. On arm64-with-dotprod (and AVX2-without-VNNI) the
 	// loader keeps a repacked second copy of the nibbles beside the canonical ones, so int4
 	// measures ~1.25 bytes/element against int8's ~1.02 — MORE resident memory, not less
-	// (measured in CI on darwin/arm64, docs/task-first-hour.md). Offering "int4, the smallest"
+	// (measured in CI on darwin/arm64, docs/tasks/task-first-hour.md). Offering "int4, the smallest"
 	// there would send a user who is already out of memory in the wrong direction, so the line is
 	// derived from the same measurement the arithmetic above uses rather than from the nominal
 	// bit width.

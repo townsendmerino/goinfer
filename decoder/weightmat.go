@@ -590,7 +590,7 @@ func isBatchedProjTensor(name string) bool {
 
 // GIWTarget names the single consumer a .giw bundle (or one cmd/prequant run) is
 // built for, so the writer can choose the one on-disk int4 layout that consumer
-// actually reads (docs/task-int4-layout-2026-09.md's L2 — the .giw analogue of
+// actually reads (docs/tasks/task-int4-layout-2026-09.md's L2 — the .giw analogue of
 // wantsCanonicalInt4's load-time decision). GIWTargetNone ("") means
 // unknown/multi-consumer and always keeps every int4 tensor canonical (kind 3) —
 // the safe default: a bundle nobody has promised to a single reader must stay

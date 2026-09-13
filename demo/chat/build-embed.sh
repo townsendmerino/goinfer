@@ -63,7 +63,7 @@ if [ ! -f "$MODEL" ]; then echo "model not found: $MODEL" >&2; exit 1; fi
 # //go:embed needs the asset inside the package dir and does not follow symlinks.
 if [ "$MODE" = prequant ]; then
   echo "building prequant bundle (quant=$QUANT) -> internal/chatapp/model.giw"
-  # -target canonical (docs/task-int4-layout-2026-09.md's L2): this ONE bundle is baked once,
+  # -target canonical (docs/tasks/task-int4-layout-2026-09.md's L2): this ONE bundle is baked once,
   # here, on the host box's own arch — then embedded into every os/arch in the TARGETS loop
   # below (darwin/*, linux/*, windows/*, cross-compiled with CGO_ENABLED=0 regardless of host),
   # so no single arch-specific repacked-only layout (kind 5, cpu-arm64-only) is safe for all of

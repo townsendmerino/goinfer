@@ -1,10 +1,13 @@
 # Task (goinfer): f16 group scales in the `.giw` (smaller W4A8 files)
 
 > **For:** Claude Code, in `~/tmcode/goinfer`. Deferred follow-on from
-> `docs/completed/roadmap-2026-06.md`. **This is a FILE-SIZE win only — it does NOT speed decode**
-> (see "Rationale, corrected"). It is **lossy for the CPU W4A8 path** (GPU is
+> `docs/completed/roadmap-2026-06.md`. **This is mostly a FILE-SIZE win — it does NOT speed decode
+> on the WebGPU-resident or CPU paths** (see "Rationale, corrected"), **but it DOES speed decode on
+> the Metal demand-paged MoE path** (corrected 2026-09-13, doc review — see the new note in
+> "Rationale, corrected"). It is **lossy for the CPU W4A8 path** (GPU is
 > unaffected), so it needs a cosine re-gate, and it's a **versioned-format change**
-> needing a bump + back-compat read. Lowest-value of the open follow-ons.
+> needing a bump + back-compat read. Lowest-value of the open follow-ons for the common case; a real
+> ~10% decode lever specifically for gemma4-26B-class Metal paging.
 
 ## Problem
 
@@ -28,7 +31,23 @@ The real reasons on-disk f16 won't move decode:
 2. **The CPU path widens to f32 on load** into the same `q4s []float32` the kernel
    reads — the on-disk bytes aren't the decode-time representation there either.
 
-So the `.giw` change shrinks the *file*, not the *working set*. Decode-neutral.
+So the `.giw` change shrinks the *file*, not the *working set*, for the **resident** paths above.
+Decode-neutral there.
+
+**Correction (2026-09-13, doc review): not decode-neutral on Metal's demand-paged MoE path.**
+`metal/model.go`'s `int4DirectBytes` re-derives each staged expert's f16 group scales from the
+on-disk f32 **every stage, every token** — this is the SAME f32→f16 widen-at-upload pattern as the
+two resident paths above, but repeated per token instead of once, because a paged (not resident)
+expert is re-read and re-converted from the mmap'd `.giw` on every token that routes to it. Measured
+directly (`667d8dda`, gemma4-26B, paged): the conversion cost **~228 ms/token before
+parallelizing it across cores, ~140 ms/token after** — against a ~1,315 ms/token total, i.e. still
+**~10% of decode time on this path**, even post-parallelization. An on-disk f16 scale format would
+remove this cost entirely rather than merely shrink it, because there would be nothing left to
+convert. **This doesn't apply to the WebGPU-resident or Metal-resident paths** (one-time upload,
+not a per-token cost) — only to Metal's paged-expert case, which today only gemma4-26B-class
+oversized-MoE checkpoints exercise. The rest of this doc's analysis (GPU bit-identity, CPU
+lossiness, the versioning trap) is unaffected; only the top-line "does not speed decode" verdict
+needed narrowing.
 
 ## What already exists (building blocks)
 
@@ -93,9 +112,15 @@ So the `.giw` change shrinks the *file*, not the *working set*. Decode-neutral.
 
 ## Why deferred / when to pick up
 
-**Lowest-value of the open follow-ons:** ~10% smaller files, **zero** decode or
-fit improvement, and it adds a permanent format-version branch + a lossy CPU
-re-gate. But note it *is* **the best available `.giw` shrink lever**: general
+**Lowest-value of the open follow-ons for the common (resident) case:** ~10% smaller files, **zero**
+decode or fit improvement there, and it adds a permanent format-version branch + a lossy CPU
+re-gate. **Exception (2026-09-13, doc review): a real ~10% decode-time lever specifically for
+Metal's demand-paged MoE path** — see the correction in "Rationale, corrected" above — but that
+path is exercised only by oversized-MoE checkpoints that don't fit resident (gemma4-26B-class
+today), not the general case this doc was scoped against. Worth re-weighing if that class of
+checkpoint becomes a priority; not enough on its own to reorder this doc ahead of the items below
+it, since it's a narrower win than either of them and a `.giw`-format bump is still permanent
+maintenance either way. But note it *is* **the best available `.giw` shrink lever**: general
 compression is already off the table — zstd was tried and dropped because q4
 nibbles are high-entropy (it shaved only ~3%, and removing `klauspost/compress`
 was the win; see `CHANGELOG.md` / `demo/chat/embed.go`), and the nibbles can't

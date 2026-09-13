@@ -1,5 +1,27 @@
 # Laguna (poolside) — G6
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes and open items record the state at the moment it was archived; nothing
+> in `docs/completed/` is actionable. If you need a task, use the live docs; if something here
+> reads as an instruction to a future reader, it was missed at archival — see the doc-closeout
+> rule in `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+>
+> **Status (2026-09-13, doc review):** COMPLETE. G6 shipped and is `DONE` in
+> [`completed/queue-correctness.md`](queue-correctness.md) (one `laguna` adapter, three real
+> generations, `experimental` manifest tier — correctly, since the real gate is coherence, not a
+> T3 logit oracle). Both leftovers this doc tracked are resolved: the GGUF loader passes on a
+> real `poolside/Laguna-XS-2.1-Q4_K_M.gguf` checkpoint, and the DFlash drafter pairing was built,
+> measured, and given a final verdict — **DO NOT SHIP** on this CPU MoE target (0.82× — slower
+> than plain greedy — see this doc's last section). That queue entry predates the DFlash
+> measurement and the GGUF pass; both are recorded here in full, since the queue entry is not
+> being edited retroactively (archived docs age with the code they described). One finding this
+> doc surfaced had no other home and has been moved live: `breakEvenTokensPerRound`'s
+> GPU-regime constant does not transfer to a CPU MoE target and would not have caught the
+> regression above — filed as
+> [`queue-performance.md` P25](../queue-performance.md#what-is-open). Nothing else here is open;
+> the two remaining "nice-to-haves" (a true T3 layer-slice oracle, an XS-2.1 real coherence gate)
+> were disclosed as such when written and still are.
+
 Target: **three generations under one `laguna` adapter** — `Laguna-XS-2.1`, `Laguna-XS.2`,
 `Laguna-M.1`. Filed from the G6 queue entry; this doc is the build record.
 

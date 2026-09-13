@@ -443,7 +443,7 @@ is exercised *slower*, end-to-end, than not using it, on the paged path specific
 directly (Francis's own redirect: check expected-vs-actual bytes before locality).** The size
 arithmetic itself came back exact — every eligible expert (7680/7680 on the gemma4 fixture checked)
 duplicates at precisely the designed 1:1 ratio (nibbles 1.0000x, f32 scales 1.0000x, no unexpected
-bloat; the f16-scale compaction in `docs/task-giw-f16-scales.md` really was never folded in, by
+bloat; the f16-scale compaction in `docs/tasks/parked/task-giw-f16-scales.md` really was never folded in, by
 design) — so the on-disk growth is not itself a bug. But re-reading `decoder/moepaging.go`'s
 `addExpert` with that confirmed in hand exposed the REAL mechanism one layer up, at the PAGER, not
 the kernel: `addExpert` registers BOTH a kind-4 expert's canonical span AND its row4 span under the

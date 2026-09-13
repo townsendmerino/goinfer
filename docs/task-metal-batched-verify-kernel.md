@@ -5,7 +5,7 @@ across two model families. Phase 3-4 (perf, ceiling re-derivation) below.**
 
 ## Task recap
 
-`docs/task-int4-int8-exact-mma.md` found that Metal's f16-MMA prefill kernel cannot be made
+`docs/completed/task-int4-int8-exact-mma.md` found that Metal's f16-MMA prefill kernel cannot be made
 bit-identical to decode, and that the *only* path that gets bit-identity by construction is a
 kernel that keeps decode's exact reduction shape (lane-strided accumulation into `simd_sum`) and
 hoists an M-token loop around it, reusing each dequantized int4 weight block across all M rows
@@ -16,7 +16,7 @@ while it's resident. This task builds and verifies that kernel.
 Decode's dense per-token projections dispatch through the `gemv_w4a8_sa` family (QKV/O/gate-up,
 `SA_BODY` macro, `metal/kernels.go:287-252`) and `gemv_w4a8_coal`/`_resid` (down-proj,
 `W4A8_BODY` macro, `metal/kernels.go:220-186`) — documented precisely in
-`docs/task-int4-int8-exact-mma.md`. An M-row hoist keeps every element of that reduction
+`docs/completed/task-int4-int8-exact-mma.md`. An M-row hoist keeps every element of that reduction
 identical — same per-lane strided block iteration, same per-block exact-integer dot, same
 `acc += float(gi) * scale` accumulation order within a lane, same `simd_sum` cross-lane
 combine — and only changes which activation row feeds a given block's already-unpacked weight
@@ -29,7 +29,7 @@ below (the wider constraint was threadgroup memory, not registers — see next p
 testing it against real weights: the residual-add epilogue.** Decode's non-sandwich O-proj and
 down-proj kernels (`gemv_w4a8_sa_resid`, `gemv_w4a8_resid`) *fuse* the residual add:
 `out[gid] += acc*asc[0]` in one kernel. Under fast-math (goinfer's default compile mode — see
-`docs/task-int4-int8-exact-mma.md`), that source form licenses the compiler to fuse it into one
+`docs/completed/task-int4-int8-exact-mma.md`), that source form licenses the compiler to fuse it into one
 `fma` (the product `acc*asc[0]` kept at full precision until the single final rounding against the
 addition). The prototype's first version instead wrote the batched projection's output to a
 separate buffer and added it into the residual stream with a second, separate kernel — mathematically
@@ -44,7 +44,7 @@ tractable to find. **The fix — matching, not avoiding, decode's own residual-a
 `gemv_w4a8_bvk_plain_resid` / `gemv_w4a8_bvk_coal_resid`, fused `+=` epilogues used for the
 non-sandwich path, while the sandwich path's genuinely-unfused split, matching decode's own
 unfused sandwich dispatch, was correct as originally written) — is exactly the same lesson
-`docs/task-int4-int8-exact-mma.md` drew about the GEMV's inner reduction, just in a place that
+`docs/completed/task-int4-int8-exact-mma.md` drew about the GEMV's inner reduction, just in a place that
 reasoning alone didn't surface: match decode's literal source form at every step with a rounding
 boundary, not only the one everyone thinks to check.**
 
@@ -70,7 +70,7 @@ does not silently truncate) M values that don't fit, rather than assuming 16 alw
 
 ## Phase 1 — feasibility
 
-Overflow is a non-issue (same bound as `docs/task-int4-int8-exact-mma.md`: max block sum 32,512,
+Overflow is a non-issue (same bound as `docs/completed/task-int4-int8-exact-mma.md`: max block sum 32,512,
 exact in f32 well under 2^24). The real constraint is the threadgroup-memory ceiling above, which
 is model-shape-dependent, not universal — reported per-model, not assumed away.
 
@@ -248,7 +248,7 @@ this doc. No changes to `metal/prefill.go`, any decode kernel, `model.go`'s disp
 file outside `metal/` and `docs/`.
 
 **Both halves of this investigation are real results, not a wash.** Bit-identity by construction
-was the hypothesis from `docs/task-int4-int8-exact-mma.md`'s corollary, and it held — measured,
+was the hypothesis from `docs/completed/task-int4-int8-exact-mma.md`'s corollary, and it held — measured,
 not assumed, across two model families, real weights, and a real bug found and fixed along the
 way. But bit-identity alone doesn't make a verify kernel worth shipping: the SAME investigation
 that proved correctness also measured a ceiling decisively below break-even, for a structural

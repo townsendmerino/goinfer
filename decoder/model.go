@@ -302,7 +302,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, lerr
 		}
-		// L2 (docs/task-int4-layout-2026-09.md): a .giw bakes its int4 representation
+		// L2 (docs/tasks/task-int4-layout-2026-09.md): a .giw bakes its int4 representation
 		// in at WRITE time (giwWriter.target), so unlike a GGUF/safetensors load —
 		// where wantsCanonicalInt4 decides needCanonical from THIS opts.Backend before
 		// a byte is quantized — the reader has to check the file's promise against

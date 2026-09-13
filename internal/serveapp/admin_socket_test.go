@@ -24,7 +24,7 @@ func unixHTTPClient(path string) *http.Client {
 	}
 }
 
-// TestServe_adminSocket is the K5 gate (docs/task-halt-2026-09.md): with -admin-socket set, halt
+// TestServe_adminSocket is the K5 gate (docs/tasks/task-halt-2026-09.md): with -admin-socket set, halt
 // works over the socket with no -api-key; /admin/halt on the TCP listener is a plain 404 (the
 // route was never registered — not a 403, which would confirm the surface exists); and a /v1
 // client holding the correct -api-key still cannot reach it there, because there is nothing at

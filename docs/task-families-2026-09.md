@@ -431,7 +431,7 @@ ship in the repo.
   names and shapes `deepseekArchitecture` (`decoder/registry.go`) already reads for DeepSeek-V2/V3.
   One real delta: `gated_attention_proj_granularity_type: "head_wise"` adds a per-head output gate
   (`g_proj: Linear(hidden, num_heads)`) that DeepSeek's own MLA doesn't have — structurally the
-  same primitive Laguna's `FeatAttnOutputGate` already ships (`docs/task-laguna.md`), not a new one.
+  same primitive Laguna's `FeatAttnOutputGate` already ships (`docs/completed/task-laguna.md`), not a new one.
 - **MoE router**: `topk_method: "noaux_tc"`, `scoring_func`/`score_function: "sigmoid"`,
   `routed_scaling_factor: 2.5`, `n_group` 8 / `topk_group` 4, `num_experts` 128,
   `num_experts_per_tok` 8, `num_shared_experts` 1, `moe_shared_expert_intermediate_size` 512,

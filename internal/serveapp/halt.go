@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// K2 (docs/task-halt-2026-09.md): a global, no-restart halt. The model stays loaded; resume is
+// K2 (docs/tasks/task-halt-2026-09.md): a global, no-restart halt. The model stays loaded; resume is
 // instant. Distinct from graceful shutdown (SIGINT/SIGTERM, main.go) — that one drains and
 // exits; this one just stops taking and running work until told otherwise.
 
@@ -61,7 +61,7 @@ func (s *server) resume(trigger string) {
 // haltGate is a chain-level wrapper (alongside auth/inf, main.go) — inference routes only.
 // Checked AFTER auth (a bad key is still rejected during a halt — halting does not change
 // what "authenticated" means) and BEFORE inf (a halt must not have to wait for an inflight
-// slot: docs/task-halt-2026-09.md's own K2 gate, "a halt that has to wait for a slot is not a
+// slot: docs/tasks/task-halt-2026-09.md's own K2 gate, "a halt that has to wait for a slot is not a
 // halt"). /admin/* and /health are never wrapped in this — an operator must always be able to
 // resume a halted server and check its status.
 func (s *server) haltGate(h http.HandlerFunc) http.HandlerFunc {
@@ -102,7 +102,7 @@ func (s *server) handleAdminResume(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"halted": false})
 }
 
-// haltFilePoller watches cfg.haltFile every 250ms (docs/task-halt-2026-09.md's own interval) —
+// haltFilePoller watches cfg.haltFile every 250ms (docs/tasks/task-halt-2026-09.md's own interval) —
 // present ⇒ halted, absent ⇒ resumed — so a supervisor can halt goinfer with `touch`/`rm` and no
 // HTTP call, socket, or signal. Only acts on the RISING/FALLING edge of the file's presence (not
 // every tick) so a long halt doesn't re-run cancelAll (a no-op, but a noisy log line) every

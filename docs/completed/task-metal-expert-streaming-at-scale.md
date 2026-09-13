@@ -1,5 +1,35 @@
 # Metal expert streaming at scale — the qwen3_5_moe 35B-A3B measurement
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes and recommendations record the state at the moment it was archived;
+> nothing in `docs/completed/` is actionable. If you need a task, use the live docs; if something
+> here reads as an instruction to a future reader, it was missed at archival — see the
+> doc-closeout rule in `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+>
+> **Status (2026-09-13, doc review):** COMPLETE — the measurement this doc scoped (does Metal
+> expert streaming work at 35B scale, does pread generalize, what is the optimal slot count) is
+> fully done: pread confirmed at 3.23×, the slot-count sweep found N=64 optimal (+14.8%) with a
+> hard REGRESSION at N=128 (−27.7%, page-cache thrashing despite a fitting RSS number), and the
+> sweep is explicitly closed ("the slot lever is closed").
+>
+> **This doc's own "Recommendation: default `GOINFER_METAL_MOE_SLOTS` to 64" was never wired into
+> code** — confirmed still true today: `metal/moe.go`/`metal/gemma4_moe.go` still treat N==0/unset
+> as "all experts resident" (no default), and `docs/task-fit-to-hardware.md`'s own gap table says
+> the same thing ("no flag, no auto"). That is not a defect in this doc — its job was the
+> measurement, not the wiring — but it means the number here is not yet load-bearing anywhere.
+>
+> **A real risk for whoever does the wiring, not yet written down anywhere else:**
+> `decoder/fitplan.go`'s generic auto-sizing (`PlacementExpertCached`, today wired only to the
+> `goinfer-chat fit` dry run, not a real load) picks the LARGEST slot count that fits the free-byte
+> budget — pure memory arithmetic, no throughput model. Applied to Metal as
+> `docs/task-fit-to-hardware.md`'s Phase 2 plans ("Metal slots become an `Option` and a flag"), it
+> would compute toward N=128 or higher on a 16 GB box whenever that fits in bytes — exactly the
+> configuration this doc measured as a 27.7% regression despite the best hit-rate and 0.0
+> faults/stage on the ladder. A byte-fit planner cannot see that cliff; it needs a measured cap
+> (or a per-class table) for Metal specifically, not "largest that fits." Filed as a note here
+> because no other doc has it; `docs/task-fit-to-hardware.md` is the natural owner once that
+> wiring is actually built.
+
 **Status: MEASURED 2026-08-28.** The lane's first real number. Before this, every claim about
 Metal expert streaming rested on a 4-expert fixture (correctness) and on gemma4's numbers
 (a different model, a different pager wiring).

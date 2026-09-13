@@ -296,7 +296,7 @@ batching, no paged attention, by decision (`positioning.md`, `roadmap.md`). Cros
 reuse is a prefix-keyed session LRU (`--kv-sessions`, with optional tiered demotion to
 `--session-dir`), which is what makes an agent loop cheap. Control — load/unload, cancel by
 id, global halt — lives on a separate admin channel (`--admin-socket`), never on the `/v1`
-listener (`task-halt-2026-09.md`). `task-work-queue-2026-09.md` scopes jobs and batch APIs on
+listener (`tasks/task-halt-2026-09.md`). `task-work-queue-2026-09.md` scopes jobs and batch APIs on
 top of this shape without changing it.
 
 ## The contract

@@ -241,7 +241,7 @@ func (w *Weights) matmulWeights() []*linalg.WeightMat {
 
 // repackedOnlyInt4Count reports how many of w's matmulWeights() tensors are
 // int4-resident with NO canonical bytes at all (IsInt4() true, Int4()'s ok
-// false) — a kind-5 .giw tensor (docs/task-int4-layout-2026-09.md's L2), or (in
+// false) — a kind-5 .giw tensor (docs/tasks/task-int4-layout-2026-09.md's L2), or (in
 // principle, never produced by any writer today) an in-RAM repacked-only build
 // that somehow reached a .giw round-trip. Used by decoder.Load's .giw branch to
 // refuse loading such a file under a backend that needs canonical bytes.
@@ -365,7 +365,7 @@ func parallelLayers(n int, fn func(i int) error) error {
 func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter) (*Weights, error) {
 	// One atomic add per model load, so the fit guard's test can OBSERVE that a refused load
 	// allocated nothing rather than infer it from an error string. Inferring is how a guard that
-	// fires after the allocation still looks correct (docs/task-first-hour.md, R3).
+	// fires after the allocation still looks correct (docs/tasks/task-first-hour.md, R3).
 	weightAllocs.Add(1)
 	if strings.HasSuffix(dir, ".gguf") {
 		return loadGGUFWeights(dir, quant, embedInt4, needCanonical, skipRow4) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load

@@ -1399,7 +1399,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 		// needCanonical=true unconditionally, regardless of target: the writer needs
 		// canonical bytes IN RAM to choose what to write (repackRow4ForEmit computes
 		// row4 from canonical), even on a cpu-arm64 target that will write kind 5
-		// (canonical-absent) to DISK. See docs/task-int4-layout-2026-09.md's L2 — the
+		// (canonical-absent) to DISK. See docs/tasks/task-int4-layout-2026-09.md's L2 — the
 		// in-RAM construction policy (wantsCanonicalInt4) and the on-disk kind policy
 		// (target) are independent decisions.
 		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, nil, "")

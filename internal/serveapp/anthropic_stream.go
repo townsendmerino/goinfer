@@ -165,7 +165,7 @@ func streamTextBlock(ss *sseWriter, index int, text string) {
 
 // anthropicMessageEnd writes the closing message_delta (stop reason + final
 // output token count) and message_stop. There is no [DONE] terminator.
-// cancelReason, when non-empty (K1, docs/task-halt-2026-09.md), adds one more named event
+// cancelReason, when non-empty (K1, docs/tasks/task-halt-2026-09.md), adds one more named event
 // naming the admin-cancel reason before message_stop — reason == "cancelled" alone doesn't
 // carry WHY, and a client must not be able to mistake this for a natural end_turn.
 func anthropicMessageEnd(ss *sseWriter, reason string, seq any, nComp int, cancelReason string) {

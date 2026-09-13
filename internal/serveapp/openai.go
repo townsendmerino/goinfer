@@ -266,11 +266,11 @@ type server struct {
 	// Responses API (/v1/responses) state store for store/previous_response_id.
 	responses *responseStore
 
-	// gens is the K1 cancel-by-id registry (docs/task-halt-2026-09.md), shared by every
+	// gens is the K1 cancel-by-id registry (docs/tasks/task-halt-2026-09.md), shared by every
 	// generation surface. Never nil after newServer.
 	gens *generationRegistry
 
-	// halted is K2's global halt state (docs/task-halt-2026-09.md); nil = running normally. See
+	// halted is K2's global halt state (docs/tasks/task-halt-2026-09.md); nil = running normally. See
 	// halt.go. Zero value is nil, so no explicit init in newServer is needed.
 	halted atomic.Pointer[haltInfo]
 }
@@ -1024,7 +1024,7 @@ func genErr(err error) error {
 
 // drive runs the generation, applying stop strings and UTF-8 holdback, calling
 // onText with each newly-completed text fragment. Returns the finish reason
-// ("stop" | "length" | "cancelled" — K1, docs/task-halt-2026-09.md), the completion
+// ("stop" | "length" | "cancelled" — K1, docs/tasks/task-halt-2026-09.md), the completion
 // token count, (non-stream) per-token logprobs, the stop string that was hit
 // (empty unless a stop sequence ended the turn), how many leading prompt tokens
 // this generation's prefill skipped via resident/session reuse

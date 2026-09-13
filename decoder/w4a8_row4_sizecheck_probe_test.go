@@ -11,7 +11,7 @@ import (
 // paged-decode regression on kernel/layout locality, check whether the on-disk growth
 // (+94.9% measured on both real models) is explained by straightforward full duplication
 // of expert int4 bytes (nibbles + f32 group scales, both stored at native size -- the
-// f16-scale compaction in docs/task-giw-f16-scales.md was explicitly NOT folded into kind
+// f16-scale compaction in docs/tasks/parked/task-giw-f16-scales.md was explicitly NOT folded into kind
 // 4) or whether something else is inflating the file. Sums actual Int4()/Int4Row4() byte
 // lengths across every MoE expert, the dominant byte consumer in both checkpoints.
 func TestRow4GiwKind_sizeArithmetic(t *testing.T) {

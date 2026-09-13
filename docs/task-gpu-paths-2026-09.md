@@ -1,7 +1,7 @@
 # Task: serving paths that run on the CPU when a GPU path exists — 2026-09 (G1–G11)
 
 > **Status: OPEN, drafted 2026-09-08** from the code at `c9db2ec`, not from the docs — R9
-> (`docs/task-first-hour.md`) showed the docs can say "GPU" where the code says CPU, so every item
+> (`docs/tasks/task-first-hour.md`) showed the docs can say "GPU" where the code says CPU, so every item
 > below cites the line that decides. Companion to `docs/gpu-residency-coverage.md` (the standing
 > residency backlog, cross-backend) and `docs/hardware-matrix.md` (the generated admission table).
 >
@@ -183,8 +183,11 @@ per-token debug seams.
 
 **Fix.** Two levers, in order: (a) extend the f16-MMA prefill to MoE (per-row FFN off the batched
 residual, exactly what CUDA does) and the Gemma set — the kernels exist for decode; (b) the
-bit-identity work that would let it default on, tracked in `task-metal-batched-verify-kernel.md`
-and `task-int4-int8-exact-mma.md`. (a) alone is worth it as an opt-in: measured 3.9–4.6× TTFT on
+bit-identity work that would let it default on. **(b) is CLOSED, NO-GO** —
+`docs/completed/task-metal-batched-verify-kernel.md` built the bit-identical batched verify
+kernel `docs/completed/task-int4-int8-exact-mma.md`'s corollary predicted, confirmed bit-identity
+by measurement across two model families, but every tested k came in decisively below break-even
+(worsening with k) — not a close call. (a) alone is worth it as an opt-in: measured 3.9–4.6× TTFT on
 dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly TTFT.
 
 **Size.** Medium. This is the Metal-specific lever if the Mac is the target.
