@@ -1,5 +1,28 @@
 # aikit task: measure W4A8's ops-per-byte before anyone redesigns a quant format
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-09-13, doc review): DONE.** This brief asked for one measurement — achieved
+> vs theoretical ops/byte for `dotW4A8FoldAVX2` — before anyone started a Q4_K-style format redesign.
+> It was answered the next day: `docs/measurements/aikit-w4a8-opsperbyte.md` (commit `f410fe2`,
+> 2026-08-22) found the kernel at ~32% of the no-unpack/no-fold reference (unpack ~57%, per-group
+> scale-fold ~43% of the gap), neither hot nor cold regime memory-bound, and recommended against the
+> format redesign — VNNI (`VPDPBUSD`) named as the untested lever. A same-day follow-up
+> (`docs/prompts/goinfer-w4a8-opsperbyte-citations.md`) flagged that the answer's aikit citations
+> pointed at uncommitted working-tree state and explicitly confirmed this prompt **stays ANSWERED** —
+> that was a provenance correction to the answer, not a reopening. The findings then fed the larger
+> `docs/completed/task-w4a8-neon-bandwidth.md` campaign (opened 2026-08-23, archived COMPLETE), whose
+> Gate-1 work built the split-half/4-row-interleave kernels; the aikit-side harness that campaign
+> funded (commits `66419cf`/`dd28f90`, 2026-08-24) also committed `linalg/w4a8_opsperbyte_bench_test.go`
+> and its arm64/VNNI siblings, closing the provenance gap the citations doc had raised. aikit later
+> shipped `dotW4A8FoldAVX512VNNI` (`linalg/dot_w4a8_avx512vnni_amd64.s`), exercising the VNNI lever
+> this doc's recommendation named as the remaining option. Nothing here needs further action.
+
 > **STATUS: ANSWERED 2026-08-22 — `docs/measurements/aikit-w4a8-opsperbyte.md` (commit `f410fe2`).**
 >
 > It was marked OPEN on 2026-08-21 and answered the next day, which is worth leaving visible rather
