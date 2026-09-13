@@ -4,6 +4,50 @@
 as "the first thing after the release." v0.13.0 has since shipped; this was never
 recorded and was reconstructed from the conversation that produced it.
 
+**Doc-review status update, 2026-09-13 (tree now at v0.17.2; this doc is B18 in
+`docs/queue-engineering.md`, still open there):** every instruction below is a record
+of what was asked, not a task — read the tree, not this file, for current state. Per
+item:
+
+- **T2 (triage rule)** — still not written. `RELEASING.md` and
+  `docs/parity-coverage-policy.md` do not contain the "can any shipped path reach
+  this" rule. Open, unblocked, cheapest item left.
+- **T1 (instruments are not gates)** — effectively shipped, but by a different
+  mechanism than this doc proposed. Rather than moving instruments to
+  `cuda/instruments/` or a build tag, the tree grew a runtime marker
+  (`drainsDevice` in `cuda/drain_marker_test.go`): a test that calls it SKIPS in
+  the main tier (`DRAIN-GROUP-SKIP`) unless `GOINFER_DRAIN_GROUP=1`, and
+  `cmd/gate/gpu.go`'s `runGPU` runs the marked set in a second, separate process
+  ("drain group") after everything else, then reconciles skip-count against
+  run-count so a derivation miss fails loudly. Net effect matches this item's
+  acceptance criterion — the main-tier run drives no test to device refusal — via
+  gating rather than physical package separation. Coverage is still admittedly "by
+  inspection" per that file's own comment: an un-marked drainer is invisible to
+  the reconciliation, which is what T5b (below) would close.
+- **T3 (four gate outcomes)** — further along than "PARTLY DONE" now.
+  `docs/parity-coverage-policy.md` fully defines pass/fail/cannot-evaluate/
+  first-run, and `cmd/gate/parity.go` enforces it: FAIL blocks a tag unless the
+  ledger says FIRST-RUN, in which case it is reported as an item, not a blocker.
+  Whichever of this item's acceptance criterion — mutation-checked both ways —
+  was not independently confirmed in this review; worth a direct check before
+  closing T3 out, but the core enforcement is in production code, not just policy
+  prose.
+- **T4 (re-tier by cost)** — still open. No smoke/standard/heavy tier split with
+  gate-measured wall-clock exists in `RELEASING.md` or `cmd/gate`.
+  `docs/completed/queue-engineering.md` (B3's entry) confirms this explicitly: B3
+  was folded into B18's T4 rather than done standalone, and was left live for
+  that reason.
+- **T5a (co-tenancy check)** — partially shipped, narrower than specified.
+  `cmd/gate/gpu.go`'s `cleanGPU` (group "cleangpu", step 0) enumerates processes
+  holding the GPU via `nvidia-smi --query-compute-apps` at the start of a run,
+  but only fails (`g.bad`, not cannot-evaluate) when the holder looks like
+  goinfer's own leaked process — a foreign co-tenant is logged and treated as
+  fine (`g.ok("no stray goinfer processes...")`), not refused. This item asked
+  for a refusal on *any* co-tenant.
+- **T5b (unmarked-drainer VRAM-boundary assertion)** — not found anywhere in the
+  tree. Still open, and per the T1 note above it is what would close that item's
+  remaining "by inspection" gap.
+
 ---
 
 ## T0 — why this exists

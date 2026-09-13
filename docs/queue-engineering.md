@@ -693,7 +693,7 @@ is fine; two entry points isn't, because **the verdict has to come from one plac
 CUDA-side), **filed 2026-08-16**. Decided 2026-08-12 by Francis as "the first thing after the
 release"; v0.13.0 shipped before this was recorded, and it was reconstructed from the
 conversation that produced it. Design page:
-[`docs/task-release-path-restructure.md`](task-release-path-restructure.md) — the context, the
+[`docs/tasks/task-release-path-restructure.md`](tasks/task-release-path-restructure.md) — the context, the
 evidence and the acceptance criteria per item live there; this entry is the claimable work.
 
 **Why:** v0.13.0's tag took two days. Day one found real defects (the 26B slot-cap bug, goldens

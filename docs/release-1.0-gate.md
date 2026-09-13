@@ -344,7 +344,7 @@ into the gate, and so nothing in the gate is deferred *into* this list without a
 - Goldens at the tag sha, composition printed; sweep: zero blockers, gaps listed by name.
 - Heavy gate run on the RC, log archived where a later reader can find it.
 - Capability + hardware matrices regenerated at the tag sha; CHANGELOG finalized; release notes
-  in the release-notes path `task-release-path-restructure.md` settled on.
+  in the release-notes path `tasks/task-release-path-restructure.md` settled on.
 - All module tags cut from the replace-free tree; `go install` of `cmd/serve` and the demo
   verified from outside the repo, both platforms.
 - README's supported count equals the manifest's; the launch copy quotes only §6-verified numbers.
