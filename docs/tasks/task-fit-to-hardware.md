@@ -25,7 +25,14 @@
 > attach after `BuildResident` grabbing VRAM an MoE expert cache already claimed — fixed 2026-09-09
 > WITHOUT the `ResidencyBackend` interface change the doc originally expected: an out-of-band hint
 > on `decoder.Model` was enough, CUDA-only since Metal hosts no drafter today, verified on real
-> nobara hardware — see `docs/task-gpu-paths-2026-09.md`'s entries). **Phase 2 is now fully closed.
+> nobara hardware — see `docs/task-gpu-paths-2026-09.md`'s entries). **Correction (2026-09-13
+> doc-review): "the real `--fit=off` switch ... 2026-09-09" above overstates the CLI plumbing's
+> actual date.** `--fit=off` did not parse until `413b3afe` (2026-09-11, M-14) — plain
+> `flag.BoolVar` only understands `strconv.ParseBool`'s spellings, so the server exited 2 with
+> "invalid boolean value" on exactly the spelling this doc's own §3 promises, and `goinfer-chat`
+> had no `--fit` flag registered at all until that same commit. Both are fixed now (a lenient
+> `fitFlag` on both binaries). The 2026-09-09 date describes when the underlying plan/placement
+> logic landed, not when the flag itself worked end-to-end. **Phase 2 is now fully closed.
 > Phase 3 (WebGPU) is DONE as of 2026-09-10** (`decoder/fitplan.go` admits `"webgpu"`; M-32's
 > family+precision decline and the shared ctx-ceiling helper are what made that safe — see §7's
 > own entry). **Phase 4 is PARTIAL as of 2026-09-10** — `fit -measure`'s self-measure half is
@@ -179,7 +186,7 @@ cache is a large fraction of a full one (57% hit at 16 slots vs 82% at 38, `docs
   the closest thing the product has to a UI (`tasks/task-embed-and-harness-ux.md` §3.3 owns its full
   shape; this doc owns the placement lines).
 - **`pull` prints the verdict for the file it fetched**, on the line that already prints the
-  `--model` command (`internal/chatapp/pull.go`): "fits resident on this machine at int4 (9.1 GB
+  `--model` command (`internal/pullcmd/pull.go`): "fits resident on this machine at int4 (9.1 GB
   of 16 GB); expect the 1.5B–7B class". Cheap: the planner reads the header of the file it just
   wrote.
 - **The web UI's Models tab shows fit before download.** `pull.File` already carries `Size`
@@ -293,9 +300,20 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    L-01's own design pass (`docs/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found a first-pass
    estimate suggesting the naive mechanism loses was ~7× too high; a real isolated microbenchmark
    on target hardware shows it beating the shipped path's per-layer cost at every measured miss
-   count. Still no CUDA code, and still not a funding decision (merge cost + real concurrency
-   unmodeled) — this phase stays blocked on those resolving, not on L-01 "landing," but the
-   picture is now promising rather than discouraging.
+   count. **Correction (2026-09-13 doc-review): "still no CUDA code" above was stale the same day
+   it was written.** `b7cc8351` (2026-09-10, ~2h after this section was last edited) wired a
+   synchronous CPU-offload prototype into the CUDA decode path (`cuda/l01_cpu_offload.go`,
+   `loadRoutedExperts`, `moeMLPPost`/`l01MergeCPUExperts`), gated behind
+   `GOINFER_CUDA_L01_CPU_OFFLOAD` (default off; `docs/env-vars.md` files it under prototype/
+   investigation knobs, not an operator contract), verified bit-identical to baseline on
+   `testdata/qwen35-tiny` (cosine 1.0, maxAbsDiff ~1e-7, argmax matches every position). It is
+   still synchronous only (no CPU/GPU overlap) and still not wired into `fitplan.go`'s
+   `PlacementHostComputedExperts` — `Plan()` never chooses it today — so Phase 5 as *this* doc
+   scopes it (the planner admitting host-computed-experts as a placement) remains unstarted; only
+   the underlying execution mechanism now has a working, correctness-verified prototype. Still
+   not a funding decision (merge cost + real async concurrency unmodeled) — this phase stays
+   blocked on those resolving, not on L-01 "landing," and the picture keeps improving rather than
+   discouraging.
 
 ## 8. Open questions, deliberately left open
 

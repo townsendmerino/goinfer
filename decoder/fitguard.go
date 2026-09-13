@@ -22,7 +22,7 @@ import (
 // -stream-weights for exactly that model and that RAM, and with it RSS capped at 8.95 GB with
 // zero swapouts. The engine does the right thing; nothing told the user it existed.
 //
-// SCOPE, deliberately. This is Phase 0 of docs/task-fit-to-hardware.md and nothing else: a
+// SCOPE, deliberately. This is Phase 0 of docs/tasks/task-fit-to-hardware.md and nothing else: a
 // refusal with arithmetic. It does NOT plan a configuration and it does NOT flip -stream-weights
 // on for you; both are that doc's later phases, and choosing for the user is a bigger change than
 // telling them.
@@ -145,7 +145,7 @@ type FitDeclineError struct {
 	msg string
 
 	// DenseStreamable is true when a -stream-weights retry after this refusal would engage
-	// decoder/layerpaging.go's windowed dense pager — the mechanism task-fit-to-hardware.md's
+	// decoder/layerpaging.go's windowed dense pager — the mechanism tasks/task-fit-to-hardware.md's
 	// CPU placement piece measured as sound for an AUTOMATIC retry
 	// (docs/task-gpu-paths-2026-09.md). It is false for MoE models and "own-forward" families
 	// (gemma4, nemotron-h-moe, lfm2): MoE CPU weight streaming is a documented, MEASURED failure

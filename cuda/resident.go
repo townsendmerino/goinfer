@@ -71,13 +71,13 @@ func resolveCtxCap(request, modelCtx int) int {
 }
 
 // fitDefaultCtx is the candidate context resolveCtxCapFit tries for an UNPINNED request, before
-// falling back to cudaCtxCapDefault — task-fit-to-hardware.md §8's own answer to "what should the
+// falling back to cudaCtxCapDefault — tasks/task-fit-to-hardware.md §8's own answer to "what should the
 // default even be": the agent-turn size docs/server.md's dsh section measured, not the model's
 // full window (which can be far larger than anyone asked for). goinfer-chat fit's own -ctx
 // default (internal/fitcmd/fit.go) uses the same figure, so the dry run and the real load agree.
 const fitDefaultCtx = 8192
 
-// resolveCtxCapFit is task-fit-to-hardware.md Phase 2's "fit by default" for CUDA's context: an
+// resolveCtxCapFit is tasks/task-fit-to-hardware.md Phase 2's "fit by default" for CUDA's context: an
 // UNPINNED load no longer gets a flat cudaCtxCapDefault regardless of the card — cudaCtxCapDefault's
 // OWN doc comment records a real measurement (RTX 2070 SUPER, dense 7B int4) where the true ceiling
 // was 5-6x the default, unused by anyone who did not know to pass -ctx. This asks Plan for a bigger
@@ -102,7 +102,7 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
 	if !ok {
 		return cudaCtxCapDefault // unknown ⇒ the safe historical default, never guess
 	}
-	// ExtraBytes: task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter attaching after
+	// ExtraBytes: tasks/task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter attaching after
 	// BuildResident must not find the context Plan chose here left it no room (m.ExtraResidentBytes's
 	// own doc comment). Zero when nothing is attaching, so this is a no-op for every load without one.
 	p := m.Plan("cuda", free, decoder.PlanRequest{Ctx: candidate, ExtraBytes: m.ExtraResidentBytes()})
@@ -897,7 +897,7 @@ func (r *cudaResident) allocSlots() error {
 		//
 		// budget, not free, goes into capSlots: r.extraBytes reserves room for a companion attach
 		// (--drafter) coming after this build (Model.ExtraResidentBytes's own doc comment) — the
-		// exact scenario task-fit-to-hardware.md §2 measured (a 26B auto-sized to 31 slots/layer,
+		// exact scenario tasks/task-fit-to-hardware.md §2 measured (a 26B auto-sized to 31 slots/layer,
 		// then --drafter attached and NewBlockSpec failed with no room left). 0 when nothing is
 		// attaching, so budget == free then and this is unchanged.
 		budget := reservedBudget(int64(free), r.extraBytes)

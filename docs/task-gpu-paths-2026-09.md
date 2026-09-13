@@ -220,7 +220,7 @@ int8int8 on the Mac" loose end from task-first-hour is void until this is decide
 **Where.** `cuda/backend.go` / `metal/backend.go` `BuildResident` admit the whole model or decline
 it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on the 8 GB card
 (M35 32.9 vs 23.5, M26 27.8 vs 24.6 tok/s; `docs/benchmarks.md` peer matrix). Already scoped as
-`task-fit-to-hardware.md`; listed here for completeness, not re-scoped.
+`tasks/task-fit-to-hardware.md`; listed here for completeness, not re-scoped.
 
 ---
 
@@ -1273,15 +1273,15 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - No code changed. Moving to the next open item.
 
 - 2026-09-09 — G11 SCOPED, REDIRECTED. G11's own text says "no layer placement on CUDA/Metal —
-  already scoped as `task-fit-to-hardware.md`, listed here for completeness." That doc, in turn,
+  already scoped as `tasks/task-fit-to-hardware.md`, listed here for completeness." That doc, in turn,
   explicitly disclaims covering this at all: its `placement` enum has no "N dense layers on GPU,
   the rest on CPU" state, and its own §8 names the real fix as `docs/tasks/task-freetoken-techniques.md`'s
   Lead 5 (bandwidth-adaptive CPU/GPU co-execution) — which that doc itself marks **"the biggest
   architectural lift of the five... worth a scoping pass of its own before any code"** and
   **priority: low, don't start it yet** (flagged as possibly antagonistic with the speculation
   program). So G11 as literally worded does not reduce to a buildable item today. Redirected to
-  `task-fit-to-hardware.md` instead, at the user's direction.
-  - **Found `task-fit-to-hardware.md`'s own status line is stale**: it says "SCOPED 2026-09-02,
+  `tasks/task-fit-to-hardware.md` instead, at the user's direction.
+  - **Found `tasks/task-fit-to-hardware.md`'s own status line is stale**: it says "SCOPED 2026-09-02,
     nothing started," but `decoder/fitguard.go` (438 lines, `db61c83`, 2026-09-06 — three days
     *before* the doc's own last edit) already implements Phase 0's accounting for the CPU staged
     GGUF load path (weight+KV byte estimation, quant-aware sizing via `measureBytesPerElem`,
@@ -1363,15 +1363,15 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     unchanged message, plus the arithmetic above for the other 2) was judged sufficient without
     re-burning nobara time already at a premium this session.
   - **Not attempted, left open**: the drafter/verify-buffer timing bug that is
-    `task-fit-to-hardware.md`'s own concrete example (a `--drafter` attach AFTER `BuildResident`
+    `tasks/task-fit-to-hardware.md`'s own concrete example (a `--drafter` attach AFTER `BuildResident`
     grabs VRAM the MoE expert cache already claimed, `NewBlockSpec` then fails) — fixing it
     requires `BuildResident`'s signature (or an out-of-band hint) to know a drafter is coming
     BEFORE `capSlots` runs, a `decoder.ResidencyBackend` interface change both CUDA and Metal
     implement, genuinely bigger and riskier than the accounting-only fix made here. The full
-    `task-fit-to-hardware.md` planner (Phases 1–5: `plan()`, `goinfer-chat fit`, fit-by-default,
+    `tasks/task-fit-to-hardware.md` planner (Phases 1–5: `plan()`, `goinfer-chat fit`, fit-by-default,
     WebGPU, rate bands) also remains entirely unstarted.
 
-- 2026-09-09 — `task-fit-to-hardware.md` Phase 1 (the pure `plan()` function + its table test, G4)
+- 2026-09-09 — `tasks/task-fit-to-hardware.md` Phase 1 (the pure `plan()` function + its table test, G4)
   DONE for the "Load()-based" scope chosen at the user's direction — not the doc's original
   header-only ambition (see below). `goinfer-chat fit` and the banner wiring (the rest of Phase
   1's surfaces) NOT started; those are next.
@@ -1427,7 +1427,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     before arithmetic, not after); the hybrid fixture either admits cleanly or declines on
     features, never on bytes it shouldn't have reached. A twelfth, separate test
     (`TestPlan_extraBytesReservedAheadOfExperts`) pins the exact regression this session's own
-    CUDA M-02 work traces back to (`task-fit-to-hardware.md`'s own motivating example: a
+    CUDA M-02 work traces back to (`tasks/task-fit-to-hardware.md`'s own motivating example: a
     `--drafter` attach grabbing VRAM an MoE expert cache had already claimed) — asserts
     `ExtraBytes` is priced AHEAD of the elastic expert-slot count, not ignored.
   - **Mutation-checked**, not just run: a deliberate one-line break to the ctx-shrink branch
@@ -1440,7 +1440,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `TestPlan_extraBytesReservedAheadOfExperts`, both counted once each despite 11+1 subtests).
     `gofmt -l`, `go vet`, staticcheck all clean.
 
-- 2026-09-09 — `task-fit-to-hardware.md` Phase 1's remaining two surfaces DONE: `goinfer-chat fit
+- 2026-09-09 — `tasks/task-fit-to-hardware.md` Phase 1's remaining two surfaces DONE: `goinfer-chat fit
   <path>` (the dry run) and, as a prerequisite it surfaced, a small cross-package memory-probe
   registry so `Plan` can be told a REAL number for whichever GPU backend a given binary actually
   links — Phase 1's own `plan()` work (previous entry) only ever took `freeBytes` as a plain
@@ -1480,7 +1480,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     - `-tags cuda` build on nobara (RTX 2070 SUPER): `qwen2.5-coder-0.5b` reports `cpu` RESIDENT
       and `cuda` RESIDENT (7.03 GB free, matching `nvidia-smi` within noise); the REAL
       `gemma-4-26B_q4_0-it.gguf` (a genuine 26B checkpoint, not a tiny fixture) reports `cuda`
-      EXPERT-CACHED at 18/128 experts, 7.03 GB free — the exact scenario `task-fit-to-hardware.md`
+      EXPERT-CACHED at 18/128 experts, 7.03 GB free — the exact scenario `tasks/task-fit-to-hardware.md`
       §4's own worked example describes, produced by this tool against a real checkpoint on the
       real card the doc was written against, on the first run.
     - An absurd pinned `-ctx` (999999999) on both cpu and metal correctly declines/falls to
@@ -1503,13 +1503,13 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `TestBackendResidentWired` (production load path) still green with the new probe registered;
     `TestFitsWeightsBudget`/`TestKVBytesForCap` unaffected. `gofmt -l`, `go vet`, staticcheck all
     clean on every touched package.
-  - **Not done, left open**: the startup banner (Phase 1's third surface, `task-fit-to-hardware.md`
+  - **Not done, left open**: the startup banner (Phase 1's third surface, `tasks/task-fit-to-hardware.md`
     §3 — "the closest thing the product has to a UI") does not yet print a `Plan`; `pull`'s
     verdict and the web UI's Models-tab listing (§3's other two surfaces) still need the
     header-only work this phase explicitly deferred. Phases 2–5 (fit-by-default, WebGPU, the rate
     band, host-computed experts) remain entirely unstarted.
 
-- 2026-09-09 — `task-fit-to-hardware.md` Phase 2 STARTED, CUDA-only, at the user's explicit
+- 2026-09-09 — `tasks/task-fit-to-hardware.md` Phase 2 STARTED, CUDA-only, at the user's explicit
   direction ("CUDA first, measured") over wiring all three backends at once — Phase 2 is a real
   production default change, unlike Phase 1's dry run, and its own gate (G1) requires a real
   decode-rate measurement, not just correctness. Metal and CPU are NOT touched this pass.
@@ -1523,7 +1523,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **`cuda/resident.go`**: new `resolveCtxCapFit(m, request, modelCtx)` next to the existing
     `resolveCtxCap`. An EXPLICIT request (a pinned `-ctx`) is untouched either way — fit-by-default
     only ever applies to the unpinned case. Otherwise: try a candidate of `fitDefaultCtx` (8192,
-    the same agent-turn-size default `task-fit-to-hardware.md` §8 and `goinfer-chat fit`'s own
+    the same agent-turn-size default `tasks/task-fit-to-hardware.md` §8 and `goinfer-chat fit`'s own
     `-ctx` default already use — so the dry run and the real load agree), clamped to the model's
     own window; ask `Plan("cuda", freeBytes, ...)` (`decoder.FreeBytesFor("cuda")` — this session's
     own earlier `fit` work) what actually fits; use whatever Plan lands on. **Built so it can only
@@ -1562,7 +1562,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     dismissed on sight: it attaches a drafter to a target loaded with an UNPINNED context
     (`decoder.Options{Backend:"cuda", Quant:"int4"}`, no `ResidentContext` set), which is exactly
     the shape this change touches — a bigger default target KV reservation competing with the
-    drafter's own attach for the same finite VRAM is precisely `task-fit-to-hardware.md`'s own
+    drafter's own attach for the same finite VRAM is precisely `tasks/task-fit-to-hardware.md`'s own
     motivating example (§2's `--drafter`-after-`BuildResident` story). Re-ran it in isolation,
     fit-by-default ON and OFF: **both pass cleanly** (`... BIT-IDENTICAL to one-shot (8) across
     8192 K values`), confirming this specific failure is the same suite-ordering VRAM-pressure
@@ -1587,7 +1587,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     explicit flag honoured or refused with numbers); the companion-aware (drafter) ctx sizing
     named just above.
 
-- 2026-09-09 — `task-fit-to-hardware.md` Phase 2, Metal's own piece: "Metal slots become an Option
+- 2026-09-09 — `tasks/task-fit-to-hardware.md` Phase 2, Metal's own piece: "Metal slots become an Option
   and a flag" (§3), done exactly as scoped — NOT Metal's context, which turned out to have a real
   structural blocker this phase correctly stays away from (below).
   - **Why Metal's ctx wasn't touched too, checked before writing anything**: CUDA's
@@ -1667,7 +1667,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **`--quant` is untouched by construction, not by a test asserting an absence**: neither
     `decoder.PlanRequest` nor `resolveCtxCapFit` has a quant field or reads `Options.Quant` at
     all — there is no code path through which fit-by-default COULD override it, matching
-    `task-fit-to-hardware.md` §0's own rule ("never selects a lossy... quant... without saying so
+    `tasks/task-fit-to-hardware.md` §0's own rule ("never selects a lossy... quant... without saying so
     and requiring the flag").
   - **What WAS tested, on real hardware**: `TestCheckKVFits_realDevice_explicitRefusesWithNumbers`
     (new, `cuda/resident_cap_test.go`) — the sibling test already pinned the sentinel/wiring
@@ -1819,7 +1819,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `ResidencyBackend` interface change). Phases 3-5 (WebGPU, the rate band, host-computed
     experts) remain entirely unstarted.
 
-- 2026-09-09 — `task-fit-to-hardware.md`'s CPU placement piece DONE, at the user's explicit choice
+- 2026-09-09 — `tasks/task-fit-to-hardware.md`'s CPU placement piece DONE, at the user's explicit choice
   between the two remaining Phase 2 items (offered both; this one chosen over the drafter-aware
   ctx fix). `decoder/fitguard.go`'s load-time guard now gets ONE automatic retry with weight
   streaming for a plain `.gguf` that will not fit resident RAM, instead of just refusing —
@@ -1936,7 +1936,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     known, documented capability boundary (unchanged by this session, matching the existing
     "M35/M26 on the Mac" verdict).
 
-- 2026-09-09 — The drafter-aware companion-allocation ctx sizing DONE — `task-fit-to-hardware.md`
+- 2026-09-09 — The drafter-aware companion-allocation ctx sizing DONE — `tasks/task-fit-to-hardware.md`
   Phase 2's last open item, at the user's explicit direction after asking why it was deferred
   (prioritization, not a technical blocker — offered both remaining items, the CPU piece above was
   chosen first) and confirming it was fine to pick up now. CUDA-only (Metal/WebGPU implement no
@@ -2067,7 +2067,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     `--drafter` pairing was never attached end-to-end WITH this fix live (the real-device tests
     above isolate the guards directly rather than running a full `serve --drafter` startup — no
     drafter+target checkpoint pair was confirmed present on nobara to do that run). **With this,
-    `task-fit-to-hardware.md` Phase 2 is now fully closed** — CUDA (context + slots + `--fit=off`),
+    `tasks/task-fit-to-hardware.md` Phase 2 is now fully closed** — CUDA (context + slots + `--fit=off`),
     Metal (slots + the `-ctx` bug fix), CPU (dense auto-retry), and the drafter-aware sizing, all
     measured on real hardware. Phases 3-5 (WebGPU, the rate band, host-computed experts) remain
     entirely unstarted.

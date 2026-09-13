@@ -1069,7 +1069,7 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/prefill.go:171` | goinfer | `func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, sta` |
 | `docs/audit-2026-09-10.md|cuda/prefill.go:247` | goinfer | `func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos ` |
 | `docs/audit-2026-09-10.md|cuda/prefill.go:722` | goinfer | `switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_CUDA_FAST_PREFILL"))) {` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:105` | goinfer | `// ExtraBytes: task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter attaching` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:105` | goinfer | `// ExtraBytes: tasks/task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter att` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:1522` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:1608` | goinfer | `// (pos, pos), so this does not duplicate Forward's body — it is what Forward calls with` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:1710` | goinfer | `if kvDim > 0 {` |
@@ -1309,7 +1309,7 @@ supports.
 | `docs/audit-2026-09-10.md|internal/servecheck/cmd.go:21` | goinfer | `Exits non-zero if any row fails, so it works as a smoke test in a script.` |
 | `docs/audit-2026-09-10.md|metal/backend.go:199` | goinfer | `for l := 0; l < nLayers; l++ {` |
 | `docs/audit-2026-09-10.md|metal/backend.go:224` | goinfer | `func residentNeedBytes(m *decoder.Model) int64 {` |
-| `docs/audit-2026-09-10.md|metal/backend.go:26` | goinfer | `// residentFitsMemory's own budget, exposed to decoder.Model.Plan (docs/task-fit-to-hard` |
+| `docs/audit-2026-09-10.md|metal/backend.go:26` | goinfer | `// residentFitsMemory's own budget, exposed to decoder.Model.Plan (docs/tasks/task-fit-t` |
 | `docs/audit-2026-09-10.md|metal/backend.go:377` | goinfer | `// CURRENTLY OPT-IN (default off) pending Phase B (TestPrefillGateVsReference, 2026-09-0` |
 | `docs/audit-2026-09-10.md|metal/backend.go:387` | goinfer | `func metalFastPrefillEnabled() bool {` |
 | `docs/audit-2026-09-10.md|metal/backend.go:395` | goinfer | `if v := strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))); ` |
@@ -1607,17 +1607,19 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:270` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
 | `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1231` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
 | `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:367` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
-| `docs/task-fit-to-hardware.md|decoder/model.go:181` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
-| `docs/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
-| `docs/task-fit-to-hardware.md|internal/serveapp/main.go:450` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
-| `docs/task-fit-to-hardware.md|internal/serveapp/main.go:474` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
-| `docs/task-fit-to-hardware.md|internal/serveapp/main.go:496` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
-| `docs/task-fit-to-hardware.md|metal/backend.go:115` | goinfer | `if !residentFitsMemory(m) {` |
-| `docs/task-fit-to-hardware.md|metal/backend.go:136` | goinfer | `const residentMemFraction = 0.70` |
-| `docs/task-fit-to-hardware.md|metal/backend.go:252` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",` |
-| `docs/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-i` |
-| `docs/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
-| `docs/task-fit-to-hardware.md|pull/pull.go:179` | goinfer | `Size   int64` |
+| `docs/tasks/task-fit-to-hardware.md|decoder/model.go:181` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
+| `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:450` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:474` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:496` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
+| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:115` | goinfer | `if !residentFitsMemory(m) {` |
+| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:136` | goinfer | `const residentMemFraction = 0.70` |
+| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:252` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",` |
+| `docs/tasks/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-i` |
+| `docs/tasks/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
+| `docs/tasks/task-fit-to-hardware.md|pull/pull.go:179` | goinfer | `Size   int64` |
+| `docs/tasks/task-freetoken-techniques.md|decoder/model.go:221` | goinfer | `MoECacheSlots int` |
+| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:307` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
 | `docs/task-gpu-batched-prefill.md|decoder/residency.go:90` | goinfer | `// ResidentGreedy is an optional capability on a ResidentForward: compute the token's gr` |
 | `docs/task-gpu-paths-2026-09.md|cuda/prefill.go:289` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
 | `docs/task-gpu-paths-2026-09.md|cuda/prefill.go:312` | goinfer | `tail := tailKVOnly` |
@@ -1697,6 +1699,17 @@ supports.
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |
 | `docs/tasks/task-first-hour.md|linalg/weightmat_row4_arm64.go:23` | aikit | `func (w *WeightMat) RepackInt4Row4() bool {` |
 | `docs/tasks/task-first-hour.md|tokenizer/bytelevel.go:258` | goinfer | `//	(?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d)\|[^\r\n\p{L}\p{N}]?\p{L}+\|\p{N}\|` |
+| `docs/tasks/task-fit-to-hardware.md|decoder/model.go:181` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
+| `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:450` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:474` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:496` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
+| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:115` | goinfer | `if !residentFitsMemory(m) {` |
+| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:136` | goinfer | `const residentMemFraction = 0.70` |
+| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:252` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",` |
+| `docs/tasks/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-i` |
+| `docs/tasks/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
+| `docs/tasks/task-fit-to-hardware.md|pull/pull.go:179` | goinfer | `Size   int64` |
 | `docs/tasks/task-fp4-formats.md|decoder/forward_gptoss.go:17` | goinfer | `// speed on x86, and bench numbers are deferred (docs/completed/task-mxfp4-gptoss.md §6.` |
 | `docs/tasks/task-fp4-formats.md|decoder/gguf.go:851` | goinfer | `if err != nil {` |
 | `docs/tasks/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |

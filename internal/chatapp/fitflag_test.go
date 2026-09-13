@@ -9,7 +9,7 @@ import (
 )
 
 // TestFitFlag_acceptsOnOff is M-14 (audit-2026-09-10): chatapp had no --fit flag at all, and
-// serve's own --fit rejected the "on"/"off" spelling its help and task-fit-to-hardware.md
+// serve's own --fit rejected the "on"/"off" spelling its help and tasks/task-fit-to-hardware.md
 // promise (a plain flag.Bool only understands strconv.ParseBool's spellings). This drives
 // fitFlag.Set directly, the same way internal/serveapp's own test does.
 func TestFitFlag_acceptsOnOff(t *testing.T) {
@@ -50,7 +50,7 @@ func TestFitFlag_isBoolFlag(t *testing.T) {
 
 // TestFitFlag_realBinaryAcceptsOff proves the fix through the FULL registered flag.CommandLine,
 // not just fitFlag.Set in isolation — --version exits before touching a model, so this is a
-// cheap way to prove "--fit=off" (the spelling task-fit-to-hardware.md promises) parses cleanly
+// cheap way to prove "--fit=off" (the spelling tasks/task-fit-to-hardware.md promises) parses cleanly
 // end to end, where a plain flag.BoolVar would exit 2 with "invalid boolean value".
 func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {
 	if testing.Short() {

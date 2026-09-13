@@ -100,7 +100,7 @@ func TestRun_pinnedCtxThatCannotFitDeclinesNotShrinks(t *testing.T) {
 	}
 }
 
-// TestRun_measureSelfMeasuresOnAdmittedBackend is task-fit-to-hardware.md §5's self-measure
+// TestRun_measureSelfMeasuresOnAdmittedBackend is tasks/task-fit-to-hardware.md §5's self-measure
 // option: on the tracked llama-tiny fixture (CPU-only in this untagged build, so "cpu" is the
 // only admitted backend and therefore the one selfMeasure picks), -measure must actually load
 // and decode, printing a real "(measure)" line with a positive rate — not just echo the dry-run
@@ -123,7 +123,7 @@ func TestRun_measureSelfMeasuresOnAdmittedBackend(t *testing.T) {
 
 // TestRun_measureOffByDefault confirms -measure is opt-in: without it, Run must never print a
 // "(measure)" line — the probe is a real extra load+decode, not something every dry run should
-// pay for silently (task-fit-to-hardware.md §0: "explicit flags stay, and win").
+// pay for silently (tasks/task-fit-to-hardware.md §0: "explicit flags stay, and win").
 func TestRun_measureOffByDefault(t *testing.T) {
 	out := captureStdout(t, func() {
 		Run([]string{"../../testdata/llama-tiny", "-ctx", "512"})

@@ -48,7 +48,7 @@ promoting are separate decisions with separate gates (see the last section).
 3. **MoE over capacity** — P20 (DMA-bound prefill on the streaming path),
    [`task-moe-streaming.md`](task-moe-streaming.md). The 26B/35B streaming path is near its
    structural ceiling on 8 GB; more VRAM, not more kernel, is the lever.
-4. **Fit to hardware** — [`task-fit-to-hardware.md`](task-fit-to-hardware.md): phases 0–3 done,
+4. **Fit to hardware** — [`tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md): phases 0–3 done,
    4 partial (`goinfer-chat fit` dry run and self-measure ship; startup banner and `pull` verdict
    open). `completed/task-model-pull.md` phase 1 shipped.
 5. **First hour / cold user** — [`task-embed-and-harness-ux.md`](tasks/task-embed-and-harness-ux.md)

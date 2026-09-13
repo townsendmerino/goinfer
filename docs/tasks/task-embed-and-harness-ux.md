@@ -11,7 +11,7 @@
 > "pure Go, one static binary, no toolchain" is a differentiator no peer has, and where the
 > audience the repo names — a Go engineer, not an ML person — actually lives: **mode 2, embed it**
 > (`go get`, in-process) and **mode 3, point my tools at it** (`serve` behind Claude Code, dsh,
-> Open-WebUI). Sibling: `task-fit-to-hardware.md` (mode 4), which owns "will it fit"; this doc
+> Open-WebUI). Sibling: `tasks/task-fit-to-hardware.md` (mode 4), which owns "will it fit"; this doc
 > owns what happens in the hour after it does. Reads `task-model-pull.md` (shipped 2026-09-02) as
 > the step that made both hours possible, and the 2026-09-02 audit's serving tranches (C-06, C-07,
 > C-08, M-17, M-18, M-19, M-21, M-22, M-23 fixed the same day) as the floor this builds on.
@@ -95,7 +95,7 @@ p, err := llm.Into[Person](ctx, m, "Extract the person from: …")   // the READ
 
 - **`Open`** takes a path *or* an `hf:` reference, resolves the reference through `modelpull`
   (exported as `goinfer/pull`, the library the CLI and the web UI already share — a third client
-  costs nothing), applies `task-fit-to-hardware.md`'s plan for the backend and quant unless the
+  costs nothing), applies `tasks/task-fit-to-hardware.md`'s plan for the backend and quant unless the
   caller pins them in `llm.Options`, loads the tokenizer, detects the template. One call, one error.
 - **`Chat`** is `iter.Seq2[Token, error]` (range-over-func; the module is at go 1.27): the
   channel, the UTF-8 holdback, the stop ids and the post-close `Err()` all live inside it. `Token`
@@ -343,5 +343,5 @@ resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and d
 `docs/scoping-dsh-goinfer.md` (Tier 0–2) · `docs/task-model-pull.md` (shipped; `hf:` refs, the
 cache dir, the web UI's contract) · `docs/tasks/parked/task-bindings.md` (what the facade is for downstream) ·
 `docs/audit-2026-09-02.md` C-06, C-07, C-08, M-07, M-17–M-30, M-34, N-18, N-42, P-20, L-05, L-07,
-L-15 (the floor and the open items this builds on) · `task-fit-to-hardware.md` (placement, the
+L-15 (the floor and the open items this builds on) · `tasks/task-fit-to-hardware.md` (placement, the
 plan, the banner's byte lines).

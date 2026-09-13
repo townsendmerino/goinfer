@@ -31,7 +31,7 @@ It is also gated against `.github/workflows/release-assets.yml`, because those t
 > asserts the two name-spaces stay disjoint. Two lists with two purposes, neither claiming to be
 > the other, beats one list answering a question it was explicitly designed not to answer.
 
-**`task-fit-to-hardware.md` Phase 0 landed the same day** as the load-time fit guard. Part A's
+**`tasks/task-fit-to-hardware.md` Phase 0 landed the same day** as the load-time fit guard. Part A's
 "feed the plan function" therefore has nothing to feed yet — `plan` does not exist, only the
 refusal. The registry's `needs` field is written to be what that function would consume.
 

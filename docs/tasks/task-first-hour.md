@@ -54,7 +54,7 @@
 >
 > Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
-> [`task-fit-to-hardware.md`](../task-fit-to-hardware.md) owns "will it fit" — R3 implements that
+> [`task-fit-to-hardware.md`](task-fit-to-hardware.md) owns "will it fit" — R3 implements that
 > doc's **Phase 0 and nothing else**.
 
 **The premise.** Everything this repo measures well, it measures from the inside. The first hour is
@@ -809,7 +809,7 @@ that page never claimed. WebGPU keeps a real `"webgpu-staged"` path, still annot
 its own int4/int4mix gap. Also touched, to state the same rule where a user reads it before
 ever loading a model: `--backend`'s help text on both binaries, `docs/benchmarks.md` §B10's row
 labels (all three GPU-prefixed rows are WebGPU-only measurements — relabeled from a bare "GPU"),
-and `docs/task-fit-to-hardware.md` §8, which now says plainly that its planner plans slots and
+and `docs/tasks/task-fit-to-hardware.md` §8, which now says plainly that its planner plans slots and
 context, not layer placement, and that real hybrid CPU/GPU layer placement (the gap the peer
 matrix's llama.cpp `--fit` comparison exposed at this same size class) is a separate, larger,
 not-yet-started item.
@@ -1169,7 +1169,7 @@ this one — a follow-up choice, not a defect in what shipped here.
 failure mode Batch 3 exists to close (an agent-shaped request silently swapping a real machine) is
 confirmed gone, live, reproducibly, at the exact scenario that found it. What remains open (a real
 agent turn completing end-to-end on capacity-constrained hardware) is real and worth pursuing, but
-it is R14's territory and docs/task-fit-to-hardware.md's later phases, not a reason to withhold
+it is R14's territory and docs/tasks/task-fit-to-hardware.md's later phases, not a reason to withhold
 this fix.
 
 **A fourth live data point, after the tag: the fix also correctly ADMITS, not only correctly
@@ -1371,7 +1371,7 @@ have shipped.
 [`measurements/cold-user-2026-09-06-nobara-pc.md`](../measurements/cold-user-2026-09-06-nobara-pc.md)
 (run 2) ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) (§4 scores it) ·
-[`task-fit-to-hardware.md`](../task-fit-to-hardware.md) (R3 is its Phase 0) ·
+[`task-fit-to-hardware.md`](task-fit-to-hardware.md) (R3 is its Phase 0) ·
 [`api-tiers.md`](../api-tiers.md) (what R1's install line may promise) ·
 `RELEASING.md` (the ritual this doc is now part of) ·
 `metal/backend.go` (the 70% fraction R3 reuses, and its single-measurement provenance) ·

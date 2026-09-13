@@ -117,7 +117,7 @@ goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
 > and how fast" before anything loads. The measured slot ladder — from an inert cache at the old
 > default of 8 to **16.12 tok/s at 30** — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
 > read the slot count as part of any number quoted from it. The remaining work to make this
-> invisible is [`docs/task-fit-to-hardware.md`](task-fit-to-hardware.md).
+> invisible is [`docs/tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md).
 
 <details>
 <summary>History — sizing the expert-slot cache by hand (superseded 2026-09; kept for the record)</summary>
