@@ -1,5 +1,45 @@
 # Plan: close the parity-coverage gap (make green CI meaningful, bind the claims)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+## Status (archived 2026-09-13, doc-review)
+
+**COMPLETE.** The doc's own purpose — bind the README/matrix "supported" claims to a current,
+enforced validation record — shipped, and shipped bigger than scoped here.
+
+- **Item 1 (manifest + staleness detector): shipped, as scoped.** `testdata/parity_manifest.json`
+  + `decoder/parity_manifest_test.go`'s `TestParityManifest_fresh` implement exactly the
+  per-family `uses`/`own` dependency-set hashing §1c specifies (the two-bucket-core draft this
+  doc rejected never shipped), including the later `serialize`-set carve-out. Verified green at
+  archival: `GOWORK=off go test ./decoder -run TestParityManifest_fresh -v` → `36/36 families
+  enforced`.
+- **Item 3 (per-family CI tiny golden + backfill): shipped.** `TestParityManifest_fresh`'s
+  COVERAGE check requires a manifest row for every family the capability matrix claims; every
+  family in this doc's backfill checklist is present in the current 36-family manifest.
+  `docs/parity-coverage-policy.md` — the durable contract this doc always deferred to — grew the
+  T1/T2/T3 tier names and absorbed the per-family checklist into its own "Definition of done for
+  a new family."
+- **Item 2 (small-real-model sweep): moved, not fully built.** The concept lives on as T2 in
+  `docs/parity-coverage-policy.md`'s Definition of Done ("the family's smallest real model added
+  to the sweep list"), and the (closed 2026-08-15) `docs/just-before-1.0-parity-backfill.md`
+  campaign folded "record continuations" into its own Bucket A. But no dedicated
+  `TestSmallModelSweep` or `pin_smallmodel_continuations.py` (§2b) was ever committed — the
+  automated harness this item scoped is an orphan: no live doc owns building it.
+- **Item 4 (extract the shared `weightDiff` helper): not done.** Still two independent
+  `Test*_weightDiff` functions (`decoder/qwen35_gguf_weightdiff_test.go`,
+  `decoder/qwen3_5_gguf_weightdiff_test.go`), sharing some same-package helpers
+  (`loadQwen35GGUFSlice`, `tensorAgreement`) organically rather than through the single extracted
+  helper this item scoped. No family's manifest row uses `method: "weightDiff"` as its primary T3
+  method today. Small, low-priority, unowned — not worth a task doc on its own.
+
+Every instruction below (the numbered items, effort estimates, "Trigger status: FIRED — do this
+now") is a record of what was asked and planned at the time, not a live task.
+
 > **Audience:** implementation plan for the contract in
 > `parity-coverage-policy.md`. Four work items, ordered by leverage; each builds
 > on scaffolding that already exists (the parity sweep, the `pin_*.py` oracle

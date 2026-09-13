@@ -117,7 +117,7 @@ and the coverage test asserts every registry key has one.
 - **Coverage-axis positioning** (`completed/task-model-families-next.md` Step 0): this
   generated, axis-organized matrix *is* the rendered table that step asks for —
   building it discharges part of that step.
-- **Parity manifest** (`task-parity-coverage.md`): the matrix joins each family to
+- **Parity manifest** (`completed/task-parity-coverage.md`): the matrix joins each family to
   its manifest row, so "supported" and "validated" appear together — directly
   serving the claim-discipline rule (no support claim without a gate).
 - **New-family definition of done**: add "matrix row generated + parity row" to the

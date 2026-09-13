@@ -1,6 +1,6 @@
 package decoder
 
-// Parity validation manifest + staleness detector (docs/task-parity-coverage.md
+// Parity validation manifest + staleness detector (docs/completed/task-parity-coverage.md
 // Item 1). The manifest testdata/parity_manifest.json records, per family, the
 // exact set of source files its numerics depend on (named shared sets via `uses`
 // plus per-family `own`), a content hash of that set, and the validation metrics.
