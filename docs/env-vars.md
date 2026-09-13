@@ -97,7 +97,12 @@ docs/task-l01-hybrid-moe-cpu-gpu.md — synchronous only, no overlap yet, defaul
 `GOINFER_SSM_SKIPFFN`, `GOINFER_SSM_STOP_LAYER`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
 `GOINFER_GEMMA4_RESIDENT` (M-56, audit-2026-09-10.md: a Gemma-4 bring-up gate that is now a
 no-op — `decoder/gemma4_admission_test.go` pins that admission is unconditional regardless of
-its value; kept only so tests can still force both branches while the code path exists).
+its value; kept only so tests can still force both branches while the code path exists),
+`GOINFER_SPLITKV_VSUM_SPLIT` (an unpromoted spike: splits the decode split-KV V-sum across the
+key axis, measured +40-43% on the attention block and +15.6% served on one geometry, and it is
+**NOT bit-identical** to the default path. Unset, the pipelines are not loaded and no scratch is
+allocated. Its fidelity is NOT established — docs/measurements/vsum-split-spike-2026-09-13.md
+says so in as many words — so do not set it on anything whose output matters).
 
 Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,
