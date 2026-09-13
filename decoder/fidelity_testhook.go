@@ -232,7 +232,7 @@ var PrefillGateProseFiles = []string{
 	"../docs/ollama-chase.md",
 	"../docs/benchmarks.md",
 	"../docs/parity-coverage-policy.md",
-	"../docs/task-w4a8-neon-bandwidth.md",
+	"../docs/completed/task-w4a8-neon-bandwidth.md", // moved from ../docs/task-w4a8-neon-bandwidth.md when archived
 	"../docs/legacy-benchmarks.md",
 	"../docs/task-zeno-compare.md",
 	"../docs/queue-release.md",

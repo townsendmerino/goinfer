@@ -60,7 +60,7 @@ format parser, and format parsers earn high CCN honestly — a branch per tensor
 type, per metadata variant. High CCN here is not automatically a defect.
 
 **But `gguf.go` and `serialize.go` are also the two files the W4A8 work already flagged as
-load-bearing for the `.giw` on-disk format** (`docs/task-w4a8-neon-bandwidth.md` § Gate 1
+load-bearing for the `.giw` on-disk format** (`docs/completed/task-w4a8-neon-bandwidth.md` § Gate 1
 correction: `serialize.go` kind=3 writes packed nibbles that are zero-copy mmap-aliased back with
 no version tag). The health score reached the same two files from pure structure, with no
 knowledge of that. Two independent signals landing on the same code is the finding worth keeping
@@ -162,7 +162,7 @@ class out; the residue is likely small.
 aikit (18.26) and fin (5.66), so not an outlier. repowise scopes this to I/O-in-loop / N+1,
 resource and defer-in-loop, blocking-in-async; it explicitly does *not* cover algorithmic blowups
 or GC pressure, which is where this repo's actual performance work lives. Low expected value here;
-`docs/task-w4a8-neon-bandwidth.md` and `docs/completed/task-attention-decode-cost.md` are where the real
+`docs/completed/task-w4a8-neon-bandwidth.md` and `docs/completed/task-attention-decode-cost.md` are where the real
 levers are.
 
 **4.5 · "0 architectural decisions" is retired.** The sandboxed pass concluded repowise's ADR-miner
@@ -202,4 +202,4 @@ Suggested order, cheapest-first, and each independently droppable:
 4. **`gguf.go` duplication** (§3.2) — only behind a `.giw` byte-identity gate.
 
 Items 1–3 are small enough not to need a gate. Item 4 does. Nothing here is urgent, and none of it
-should preempt `task-w4a8-neon-bandwidth.md` or `completed/task-attention-decode-cost.md`.
+should preempt `completed/task-w4a8-neon-bandwidth.md` or `completed/task-attention-decode-cost.md`.

@@ -409,7 +409,7 @@ cold-start/footprint table is from the v0.5.0-era CPU campaign (`docs/ARCHITECTU
 (2026-08-24, the LM-head W8A8 default). An earlier reading (2026-08-22, `d469c7c`) had the ranking
 the other way — int8int8 ahead of int4 at 0.52×/0.39× vs 0.32×/0.25× of Ollama — because int4's LM
 head ran a slow weight-only-Q8 path that was, at the time, undiagnosed; once the W4A8 NEON kernel
-(`docs/task-w4a8-neon-bandwidth.md`) and the int4-mode LM head both shipped, that asymmetry closed.
+(`docs/completed/task-w4a8-neon-bandwidth.md`) and the int4-mode LM head both shipped, that asymmetry closed.
 That reading and its diagnosis are preserved in `legacy-benchmarks.md` §A —
 
 | model | goinfer int4 | goinfer int8int8 | ollama Q4_K_M | int4 ratio | int8int8 ratio |
@@ -418,7 +418,7 @@ That reading and its diagnosis are preserved in `legacy-benchmarks.md` §A —
 | 1.5B | 39.1-40.7 tok/s | 37.56 tok/s (Step-0 cell, unaffected) | 68.3 tok/s | 0.57-0.60x | 0.55x |
 
 **int4 now matches or beats int8int8 at both sizes, at half the weight RAM.** The int8int8 cells
-here are the item-3+4 harness's own Step-0 baseline (`docs/task-w4a8-neon-bandwidth.md`), not
+here are the item-3+4 harness's own Step-0 baseline (`docs/completed/task-w4a8-neon-bandwidth.md`), not
 re-measured for this correction: the LM-head fix only touches `embedding()`'s `quantInt4`/
 `quantInt4Mix` branch — int8int8's base mode passes through unchanged, so its LM head was already
 full W8A8 before and after that fix, and its decode rate did not move. **Current guidance: `int4`

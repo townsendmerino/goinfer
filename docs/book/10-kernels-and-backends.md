@@ -245,4 +245,4 @@ Chapter 11 is about how you know any of these numbers are real.
 refutation, and the wiring),
 [`docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md) (the +2.10% A/B, its floor, the
 profile-vs-wall-clock bound, and the 4% bar fixed in advance),
-[`docs/task-w4a8-neon-bandwidth.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/task-w4a8-neon-bandwidth.md) (the arm64 side, where the same idea shipped).*
+[`docs/completed/task-w4a8-neon-bandwidth.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-w4a8-neon-bandwidth.md) (the arm64 side, where the same idea shipped).*

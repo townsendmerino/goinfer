@@ -37,7 +37,7 @@ func heapifyRow4(wm *linalg.WeightMat) bool {
 // MatmulBTW4A8Into calls directly on a small, fixed set of experts instead of running
 // full model decode, keeping the extra heap footprint under 100 MB.
 //
-// The resident-path 1.6-1.75x figure (docs/task-w4a8-neon-bandwidth.md) was measured
+// The resident-path 1.6-1.75x figure (docs/completed/task-w4a8-neon-bandwidth.md) was measured
 // against heap-resident repacked bytes (RepackInt4Row4, the GGUF/safetensors streaming
 // loaders). The kind-4 .giw path's row4 bytes are mmap-aliased even when NOT paged (no
 // StreamWeights) -- Load() always mmaps a .giw file read-only regardless of streaming

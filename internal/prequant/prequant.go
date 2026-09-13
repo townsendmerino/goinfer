@@ -39,7 +39,7 @@ const metaPrefixCap = 64 << 20
 // target names the ONE consumer this bundle is promised to (docs/task-int4-layout-
 // 2026-09.md's L2): on a cpu-arm64 target, every eligible int4 tensor writes kind
 // 5 (row4-only — the on-disk arm64 split-half + 4-row-interleaved layout,
-// docs/task-w4a8-neon-bandwidth.md's "Format follow-on") instead of kind 3
+// docs/completed/task-w4a8-neon-bandwidth.md's "Format follow-on") instead of kind 3
 // (decoder/serialize.go's weightMat vs weightMatKind3Only decides which tensors
 // are eligible, and why); every other target, including decoder.GIWTargetNone,
 // writes kind 3 for every int4 tensor. decoder.GIWTargetForBackend derives a

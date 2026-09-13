@@ -2,7 +2,7 @@
 
 > **For:** Claude Code, in `~/tmcode/aikit` (kernel + harness work lands there) with sibling
 > `~/tmcode/goinfer` (baseline cells + doc updates). Written 2026-08-23, after the attention
-> campaign (A1) closed. Read `docs/task-w4a8-neon-bandwidth.md` (goinfer) first — it carries
+> campaign (A1) closed. Read `docs/completed/task-w4a8-neon-bandwidth.md` (goinfer) first — it carries
 > Gate 0, the items-1+2 negative, both probe results, and the format follow-on's sequencing
 > rule. **This brief funds the HARNESS phase only: repacked weights exist in benchmark code,
 > kernels are real but unwired, and the deliverable is a measured go/no-go on funding the
@@ -32,7 +32,7 @@ tagged versions now on main (aikit v1.25.0):
   (~0.59x ollama); a confirmed number here upgrades the doc's zero-cost-guidance item from
   projection to measurement.
 
-Record all of it in `docs/task-w4a8-neon-bandwidth.md` before proceeding.
+Record all of it in `docs/completed/task-w4a8-neon-bandwidth.md` before proceeding.
 
 ## The design work — one layout decision, explored as a small measured grid
 
@@ -102,7 +102,7 @@ format follow-on per its own sequencing rule.
 Winning kernel + repack function + tests: committed in aikit (unwired — additive, no dispatch
 changes, no existing-API changes). Losing variants: results recorded in the campaign doc;
 code deleted or parked per aikit's own convention for measured negatives. All numbers,
-including Step 0's baselines, appended to `docs/task-w4a8-neon-bandwidth.md` in the style of
+including Step 0's baselines, appended to `docs/completed/task-w4a8-neon-bandwidth.md` in the style of
 its existing result sections, ending with the explicit GO/NO-GO line and, if GO, a short list
 of what the plumbing phase needs (calling-convention change for Σact if that variant won,
 per-worker anything, etc.) so the next brief starts from a list rather than a re-read.

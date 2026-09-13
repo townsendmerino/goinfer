@@ -156,7 +156,7 @@ diagnosis above was correct when written: at that point the int8int8 ratio (0.52
 int4 ratio (0.32x/0.25x) specifically because int8int8's own LM head happened to already run the
 fast W8A8 path, while int4's LM head ran a slow weight-only-Q8 path that was, at the time,
 undiagnosed — int8int8 wasn't faster because int4 was slow at matmul, it was faster because int4's
-*head* was slow and int8int8's wasn't. Once the W4A8 NEON kernel (`docs/task-w4a8-neon-bandwidth.md`,
+*head* was slow and int8int8's wasn't. Once the W4A8 NEON kernel (`docs/completed/task-w4a8-neon-bandwidth.md`,
 item-3+4 harness) and the int4-mode LM head (same doc's LM-head follow-up, `embedding()` moved from
 weight-only Q8 to full W8A8) both shipped, that asymmetry closed. Provenance: **Apple M1 Pro**,
 `bench_peer.py` method, decode-only, greedy, depth 128, quiet box, goinfer commit **`a11c56b`**

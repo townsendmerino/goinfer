@@ -1,7 +1,7 @@
 # Task (goinfer): the LM head — largest per-token cost, cheapest known fix
 
 > **For:** Claude Code, in `~/tmcode/goinfer`, on the M1 Pro. Written 2026-08-24, from the
-> W4A8 plumbing phase's closing diagnostic (recorded in `docs/task-w4a8-neon-bandwidth.md`):
+> W4A8 plumbing phase's closing diagnostic (recorded in `docs/completed/task-w4a8-neon-bandwidth.md`):
 > the int8-pinned LM head runs weight-only Q8 with **no `Workspace` — a fresh 151936-row
 > scratch allocation every token — achieving 11-13 GB/s against 40+ expected**, making it the
 > single largest per-token cost in 1.5B decode, bigger than the entire W4A8 matmul. Scope per

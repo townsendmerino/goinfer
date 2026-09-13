@@ -311,7 +311,7 @@ measuring.
 **The actual mechanism, found by reading the code the numbers pointed at.** `decoder/weightmat.go`
 documents it directly: the arm64 split-half + 4-row-interleaved W4A8 kernel
 (`dotW4A8SplitHalf4Row`, shipped and measured 1.6-1.75x over the canonical kernel,
-`docs/task-w4a8-neon-bandwidth.md`) requires a load-time repack (`RepackInt4Row4`) that is wired
+`docs/completed/task-w4a8-neon-bandwidth.md`) requires a load-time repack (`RepackInt4Row4`) that is wired
 into the GGUF/safetensors streaming loaders but **deliberately NOT into the `.giw` loader** — a
 paged MoE expert's heap-resident repacked copy would sit alongside its pageable mmap alias and pin
 that memory permanently, defeating paging for exactly the tensors it exists to bound. aikit's own
@@ -353,11 +353,11 @@ I/O speed (weak, 1.09x) to being the enabling plumbing for this kernel fix (stro
 engineering effort, different and stronger reason to build it. Not built in this pass; sized and
 handed to the next one.
 
-## The .giw kind-4 lever — SHIPPED 2026-08-24 (`docs/task-w4a8-neon-bandwidth.md`'s "Format follow-on")
+## The .giw kind-4 lever — SHIPPED 2026-08-24 (`docs/completed/task-w4a8-neon-bandwidth.md`'s "Format follow-on")
 
 Built the same day the split picked it: a new on-disk weightMat kind carrying the split-half +
 4-row-interleaved layout alongside the canonical bytes, both zero-copy mmap-aliased at load —
-full details, numbers, and code pointers in `docs/task-w4a8-neon-bandwidth.md`'s own "`.giw` kind
+full details, numbers, and code pointers in `docs/completed/task-w4a8-neon-bandwidth.md`'s own "`.giw` kind
 4 — SHIPPED" section (aikit v1.27.0's `WrapInt4Row4`/`MappedSpanRow4`, goinfer `giwVersion` 7,
 `cmd/prequant -row4`, the `expertPager`/`layerPager` span-registration fix).
 
@@ -587,7 +587,7 @@ residency) made no measurable difference. 35B's gap, by contrast, shrank on the 
 
 **What remains, unconfirmed:** a genuine compute-side cost specific to the row4 kernel running
 against **mmap-paged** bytes rather than the **heap-resident** bytes the original 1.6-1.75x
-figure was measured against (`docs/task-w4a8-neon-bandwidth.md`'s plumbing phase, GGUF/safetensors
+figure was measured against (`docs/completed/task-w4a8-neon-bandwidth.md`'s plumbing phase, GGUF/safetensors
 streaming loaders — heap-backed, never paged). Candidate mechanism, not verified: cold TLB entries
 for freshly-mapped pages vs. a long-lived heap allocation whose translation stays warm across a
 whole decode session, even once the underlying bytes are page-cache-resident (a real distinction

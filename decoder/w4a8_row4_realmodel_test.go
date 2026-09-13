@@ -7,7 +7,7 @@ import (
 
 // TestRow4GiwKind_gemma4_identicalToCanonical is the kind-4 acceptance gate's real-scale
 // correctness proof: the gemma4-26b-int4-row4.giw built by re-prequanting the existing
-// kind-3 bundle (docs/task-w4a8-neon-bandwidth.md's ".giw kind 4" section) must decode
+// kind-3 bundle (docs/completed/task-w4a8-neon-bandwidth.md's ".giw kind 4" section) must decode
 // byte-identical to the kind-3 original it was built from. Bit-identical dispatch was
 // already proven at 0.5B fixture scale (w4a8_row4_giwkind_test.go); this is the same
 // proof on the real 26B-A4B checkpoint. Both .giw paths default to the sidecar-naming

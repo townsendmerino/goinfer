@@ -512,7 +512,7 @@ now conditioned.
 
 **What is NOT claimed here.** This is a RESIDENT-MEMORY measurement only. int4 remains the faster
 option on Apple Silicon CPU — that is a separate, separately-measured claim
-(`docs/benchmarks.md`, `docs/task-w4a8-neon-bandwidth.md`), and the repack is precisely what buys
+(`docs/benchmarks.md`, `docs/completed/task-w4a8-neon-bandwidth.md`), and the repack is precisely what buys
 that speed. The trade on arm64 is "int4 is faster and larger", not "int4 is worse". Nothing about
 the speed rows is touched, and no benchmark number is restated.
 

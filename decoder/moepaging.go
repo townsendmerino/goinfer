@@ -60,7 +60,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	// weights and the always-on shared expert, so those are silently skipped.
 	//
 	// A kind-4 tensor carries TWO on-disk representations (canonical + row4,
-	// docs/task-w4a8-neon-bandwidth.md's "Format follow-on"), but the M==1 decode kernel
+	// docs/completed/task-w4a8-neon-bandwidth.md's "Format follow-on"), but the M==1 decode kernel
 	// (MatmulBTW4A8Into) reads ONLY row4 whenever it's present — this arch's forward is
 	// always M==1, decode and prefill alike (confirmed by "prefill path: sequential" on
 	// every load). Registering both spans under one cache key was a real, measured bug

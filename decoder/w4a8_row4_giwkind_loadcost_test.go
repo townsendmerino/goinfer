@@ -9,7 +9,7 @@ import (
 // kind-4 decision actually turns on: not kind-3-.giw vs kind-4-.giw load time
 // (neither does an in-RAM repack — repackW4A8Row4IfEligible is wired only into
 // the GGUF/safetensors streaming loaders, never into LoadSerializedWeights,
-// docs/task-w4a8-neon-bandwidth.md), but a GGUF load that pays the in-RAM
+// docs/completed/task-w4a8-neon-bandwidth.md), but a GGUF load that pays the in-RAM
 // repack cost (TestW4A8Row4_loadTimeAndMemoryDelta's own +100ms/+223.6MB
 // numbers, on the same fixture) vs. a kind-4 .giw load that gets Int4Row4()
 // populated for FREE — zero-copy mmap alias, no repack computation, per

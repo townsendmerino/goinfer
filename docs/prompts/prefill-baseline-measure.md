@@ -5,7 +5,7 @@
 > **Prior art (mandatory):** `docs/ollama-chase.md` §3b — CUDA prefill is 4.7x behind with a
 > known 61% GEMV / 39% attention split and a format-imposed component; CUDA is NOT this task.
 > `docs/benchmarks.md`'s serve-vs-decode note (prefill amortization on the sequential
-> full-logits path). The abandoned depth-2048 cell in `docs/task-w4a8-neon-bandwidth.md`
+> full-logits path). The abandoned depth-2048 cell in `docs/completed/task-w4a8-neon-bandwidth.md`
 > (CPU long-prompt prefill pain, measured by accident). `--metal-fast-prefill` (gated,
 > non-bit-identical, not this task). The qwen35 MoE family has NO batched prefill — dense
 > models only here. CLAUDE.md's measurement section and aikit rules 3+7 govern method.

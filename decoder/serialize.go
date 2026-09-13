@@ -50,7 +50,7 @@ import (
 //             non-empty: int32 rows, cols, group; uint8 w8a8; then the kind's arrays.
 //             kind 4 (v7+, legacy — no longer emitted, still read) is kind 3's arrays
 //             (q4s, q4 — canonical) followed by q4Row4Scales, q4Row4 (the arm64
-//             split-half + 4-row-interleaved layout, docs/task-w4a8-neon-bandwidth.md
+//             split-half + 4-row-interleaved layout, docs/completed/task-w4a8-neon-bandwidth.md
 //             "Format follow-on") — both layouts, so any reader could use the file.
 //             Opt-in via SerializeWeightsRow4/SerializeWeightsToRow4, for shapes
 //             RepackW4A8Row4/RepackW4A8Row4Scales accept; every other int4 tensor
@@ -173,7 +173,7 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 
 // SerializeWeightsRow4 is SerializeWeights, but ALSO opts every eligible int4
 // tensor into weightMat kind 4 — the on-disk arm64 split-half + 4-row-
-// interleaved layout (docs/task-w4a8-neon-bandwidth.md's "Format follow-on"),
+// interleaved layout (docs/completed/task-w4a8-neon-bandwidth.md's "Format follow-on"),
 // so the paged-MoE path can use the faster kernel without an in-RAM repack.
 // Never the default: SerializeWeights (kind 3 only) is what every existing
 // caller gets and stays unaffected by this function's existence. A tensor

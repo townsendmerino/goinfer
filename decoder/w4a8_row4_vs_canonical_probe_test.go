@@ -16,7 +16,7 @@ import (
 // if gemma4's paged decode is still ~47-49% slower with kind-4 than kind-3
 // (docs/task-zeno-compare.md's "Quiet-machine re-measure"), the remaining candidate is
 // that the row4 kernel itself is not faster than canonical on THESE SPECIFIC expert
-// shapes -- the original 1.6-1.75x figure (docs/task-w4a8-neon-bandwidth.md) may have
+// shapes -- the original 1.6-1.75x figure (docs/completed/task-w4a8-neon-bandwidth.md) may have
 // been measured on different tensor dimensions. Calls both free-function kernels
 // directly on the same real gemma4 expert bytes, same activation, same dst -- isolates
 // kernel choice as the only variable.

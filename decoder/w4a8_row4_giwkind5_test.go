@@ -18,7 +18,7 @@ import (
 // plain kind-3 .giw of the same weights — three paths, one answer, the same
 // standard TestSerializedInt4Weights_row4Kind_matchesCanonical already holds kind
 // 4 to. Also checks the on-disk size story: kind 5 swaps canonical for row4
-// bytes (same length per tensor, docs/task-w4a8-neon-bandwidth.md), so a kind-5
+// bytes (same length per tensor, docs/completed/task-w4a8-neon-bandwidth.md), so a kind-5
 // bundle should be close to kind-3's size — NOT ~2x like kind 4, which carries
 // both.
 func TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical(t *testing.T) {

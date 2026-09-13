@@ -466,7 +466,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		"            Apple Silicon CPU (measured M1 Pro, goinfer a11c56b 2026-08-24, docs/benchmarks.md: at or\n"+
 		"            above int8int8's decode rate -- an earlier reading had int8int8 ~60%\n"+
 		"            faster on Apple Silicon CPU, which was correct at the time but diagnosed a since-fixed LM\n"+
-		"            head, not the W4A8 kernel; see docs/task-w4a8-neon-bandwidth.md). Lossier than int8\n"+
+		"            head, not the W4A8 kernel; see docs/completed/task-w4a8-neon-bandwidth.md). Lossier than int8\n"+
 		"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the loader keeps a\n"+
 		"            repacked second copy of the nibbles beside the canonical ones there, so it measures ~1.25\n"+
 		"            bytes/element against int8int8's ~1.02 -- more resident RAM, not less. THE DEFAULT anyway,\n"+
