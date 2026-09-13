@@ -36,14 +36,19 @@ import (
 const loraRMax = 256
 
 // residLoRAProj is one projection's bound delta: the device-resident A[R,In]/B[Out,R] matrices
-// (row-major f32, PEFT's own layout) plus the uniforms the fused lora_delta kernel needs (P-11,
-// audit-2026-09-10). uOut is a uniform buffer, not a plain Go dispatch-size int, because the
-// fused kernel's up stage strides ITS OWN threads over Out rows internally — it needs the value
-// INSIDE the kernel now, not just to size an external grid.
+// (row-major, PEFT's own layout, converted f32->f16 at bind time — M-08, audit-
+// metal-2026-09-12.md: the delta feeds an int8-quantised activation, so f32 A/B precision was
+// never load-bearing, and halving their bytes matters most here since A is re-read whole by
+// every threadgroup in the dispatch, not just once) plus the uniforms the fused lora_delta
+// kernel needs (P-11, audit-2026-09-10). outN is Out as a plain Go int, alongside the uOut
+// uniform buffer the kernel itself reads for its bounds check — M-08's multi-threadgroup grid
+// (each threadgroup owns a fixed 256-row block) needs Out on the GO side too, to size the grid,
+// which a uniform buffer alone cannot supply at dispatch time.
 type residLoRAProj struct {
-	a, b         Buffer // A[R,In], B[Out,R]
+	a, b         Buffer // A[R,In], B[Out,R], both f16
 	uK, uR, uOut Buffer // uint32 uniforms: K=In, R, Out
 	uScale       Buffer // float32 uniform: this projection's LoRA scale (alpha/rank)
+	outN         int    // Out, for grid sizing (applyResidentLoRA)
 }
 
 // residLoRALayer is one transformer layer's per-projection bound deltas; a nil field is a
@@ -147,11 +152,15 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		if p.R <= 0 || p.R > loraRMax {
 			return nil, fmt.Errorf("metal: LoRA rank %d out of range (want 1..%d)", p.R, loraRMax)
 		}
+		aHalf, bHalf := make([]uint16, len(p.A)), make([]uint16, len(p.B))
+		parallelF32ToF16(aHalf, p.A)
+		parallelF32ToF16(bHalf, p.B)
 		return &residLoRAProj{
-			a: NewBufferFloats(r.d, p.A), b: NewBufferFloats(r.d, p.B),
+			a: NewBufferU16s(r.d, aHalf), b: NewBufferU16s(r.d, bHalf),
 			uK: NewBufferU32(r.d, uint32(p.In)), uR: NewBufferU32(r.d, uint32(p.R)),
 			uOut:   NewBufferU32(r.d, uint32(p.Out)),
 			uScale: NewBufferFloats(r.d, []float32{p.Scale}),
+			outN:   p.Out,
 		}, nil
 	}
 	out := make([]residLoRALayer, len(layers))
@@ -193,11 +202,15 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 // added on top, matching applyLoRA's "matmul, then add" order exactly.
 //
 // ONE dispatch, not two (P-11, audit-2026-09-10) — lora_delta (kernels.go) fuses the down and up
-// GEMVs into a single kernel over one threadgroup, removing a whole dispatch's launch overhead
-// per targeted projection.
+// GEMVs into a single kernel, removing a whole dispatch's launch overhead per targeted
+// projection. M-08 (audit-metal-2026-09-12.md): the grid is ceil(Out/256) threadgroups, not one
+// — each owns a fixed 256-row block of the up stage and independently recomputes the down
+// stage's t[R], trading a little redundant compute for real up-stage parallelism on projections
+// wide enough for it to matter (Out in the thousands).
 func (r *resident) applyResidentLoRA(e *Encoder, p *residLoRAProj, aq, aSc, out Buffer) {
 	if p == nil {
 		return
 	}
-	e.Dispatch(r.pLoraDelta, tgReduceNorm, tgReduceNorm, aq, aSc, p.a, p.b, out, p.uK, p.uR, p.uOut, p.uScale)
+	total := (p.outN + tgReduceNorm - 1) / tgReduceNorm * tgReduceNorm
+	e.Dispatch(r.pLoraDelta, total, tgReduceNorm, aq, aSc, p.a, p.b, out, p.uK, p.uR, p.uOut, p.uScale)
 }
