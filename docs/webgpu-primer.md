@@ -11,13 +11,13 @@
   (WebGPU Shading Language) is its shader language — a Rust/C-flavored language for
   compute and graphics kernels.
 - goinfer's GPU backend is **pure Go orchestration calling WGSL kernels**. The cgo
-  is quarantined inside the `cogentcore/webgpu` dependency (behind `-tags gpu`); the
-  default goinfer build stays pure Go.
-- The stack under you, top to bottom: **your Go (`gpu/`) → `cogentcore/webgpu` (Go
-  binding) → `wgpu-native` (C API) → `wgpu` (Rust) → `naga` (WGSL→native shader
+  is quarantined inside the `oliverbestmann/webgpu` dependency (behind `-tags gpu`);
+  the default goinfer build stays pure Go.
+- The stack under you, top to bottom: **your Go (`gpu/`) → `oliverbestmann/webgpu`
+  (Go binding) → `wgpu-native` (C API) → `wgpu` (Rust) → `naga` (WGSL→native shader
   compiler) → Vulkan/Metal/DX12 → the GPU.**
 - Three repos answer three questions: **gpuweb/gpuweb** = "is this legal WGSL?",
-  **gfx-rs/wgpu** = "did the feature land, on which backend?", **cogentcore/webgpu**
+  **gfx-rs/wgpu** = "did the feature land, on which backend?", **oliverbestmann/webgpu**
   = "what's the Go API I write against?"
 - What you actually write: Go (buffers, dispatches, decode-graph wiring, tests) and
   WGSL string literals (the kernels). You never write C++/Rust — that's downstream
@@ -112,14 +112,19 @@ into "runs on my GPU" — or doesn't, hence the runtime capability probe.
 
 ### Layer 4 — the Go bindings (where goinfer works)
 
-- **[cogentcore/webgpu](https://github.com/cogentcore/webgpu)** — **goinfer's
-  dependency** (`gpu/go.mod`, currently `v0.23.0`). A Go binding over `wgpu-native`.
-  This is the API the `gpu/` module calls: `New()`, `device.CreateShaderModule`,
-  `CreateComputePipeline`, `Queue.Submit`, buffer allocation, etc. It uses cgo —
-  but the cgo is *inside this dependency*, sealed behind goinfer's `-tags gpu`
-  submodule, so the default goinfer build is pure Go. It can also target **browser
-  WebGPU under wasm without cgo**, which is what makes the `demo/gemma-web`
-  client-side story possible.
+- **[oliverbestmann/webgpu](https://github.com/oliverbestmann/webgpu)** — **goinfer's
+  dependency** (`gpu/go.mod`, currently `v1.36.0`, pinning `wgpu-native v29.0.1.1`).
+  A Go binding over `wgpu-native`. This is the API the `gpu/` module calls: `New()`,
+  `device.CreateShaderModule`, `CreateComputePipeline`, `Queue.Submit`, buffer
+  allocation, etc. It uses cgo — but the cgo is *inside this dependency*, sealed
+  behind goinfer's `-tags gpu` submodule, so the default goinfer build is pure Go.
+  It can also target **browser WebGPU under wasm without cgo**, which is what makes
+  the `demo/gemma-web` client-side story possible. Migrated from
+  **[cogentcore/webgpu](https://github.com/cogentcore/webgpu)** (`a16a537d`):
+  cogentcore's fork was unmaintained and pinned an untagged `wgpu-native` snapshot of
+  unknown revision (`docs/completed/audit-2026-09-10.md` M-46); this fork tracks a
+  real tagged `wgpu-native` release and picked up the `dot4I8Packed`/`dot4U8Packed`
+  WGSL builtins cogentcore's fork never did.
 - **[gogpu/wgpu](https://github.com/gogpu/wgpu)** — a *pure-Go* WebGPU
   implementation (no cgo at all). Philosophically aligned with goinfer's no-cgo
   ethos, but almost certainly far less mature than `wgpu-native`. Worth watching,
@@ -135,7 +140,7 @@ The stack, top to bottom:
 goinfer  gpu/*.go            ← Go you write: buffers, dispatches, decode graph, tests
    │     (WGSL kernels as Go string literals: quant.go, gemv.go, attention.go, ...)
    ▼
-cogentcore/webgpu            ← Go binding (the API you call)   [cgo lives here]
+oliverbestmann/webgpu        ← Go binding (the API you call)   [cgo lives here]
    ▼
 wgpu-native (C API) → wgpu (Rust)        ← reference implementation
    ▼
@@ -165,7 +170,7 @@ Vulkan / Metal / D3D12 → the GPU
 | Is this legal / portable WGSL? | gpuweb/gpuweb |
 | Did feature X land, and on which native backend? | gfx-rs/wgpu (PRs/releases) |
 | Does my actual GPU expose it at runtime? | `gpu/spike_test.go` (probes naga + driver) |
-| What's the Go API / method signature? | cogentcore/webgpu |
+| What's the Go API / method signature? | oliverbestmann/webgpu |
 | Cross-backend shader output differs — why? | naga vs Tint (wgslrunner to diff) |
 
 ---
@@ -173,7 +178,7 @@ Vulkan / Metal / D3D12 → the GPU
 ## 4. The cgo / pure-Go boundary (the architectural rule)
 
 goinfer's whole position is that the default binary is **pure Go, no cgo**. The GPU
-backend uses cgo — but only *transitively*, through `cogentcore/webgpu`, and only
+backend uses cgo — but only *transitively*, through `oliverbestmann/webgpu`, and only
 under the `-tags gpu` build tag in a separate submodule (`gpu/go.mod`). You never
 write C or Rust; that's all downstream of the binding. CI guards the core graph so
 the cgo can't leak into the default build. This quarantine is **non-negotiable**
@@ -204,15 +209,15 @@ way in for this codebase specifically.
 ## Sources
 
 - In-repo: `gpu/spike_test.go`, `gpu/quant.go`, `gpu/attention.go`,
-  `gpu/decoderunner.go`, `decoder/residency.go`, `gpu/go.mod` (cogentcore/webgpu
-  v0.23.0); `docs/completed/gpu-assessment.md` (§3 cross-backend numerics, §4 cgo quarantine),
-  `docs/completed/gpu-next-levers-assessment.md`.
+  `gpu/decoderunner.go`, `decoder/residency.go`, `gpu/go.mod` (oliverbestmann/webgpu
+  v1.36.0, pinning wgpu-native v29.0.1.1); `docs/completed/gpu-assessment.md` (§3 cross-backend
+  numerics, §4 cgo quarantine), `docs/completed/gpu-next-levers-assessment.md`.
 - Spec: [gpuweb/gpuweb](https://github.com/gpuweb/gpuweb),
   [WGSL — Wikipedia](https://en.wikipedia.org/wiki/WebGPU_Shading_Language).
 - Implementations: [gfx-rs/wgpu](https://github.com/gfx-rs/wgpu) (PRs
   [#7494](https://github.com/gfx-rs/wgpu/pull/7494),
   [#7595](https://github.com/gfx-rs/wgpu/pull/7595)),
   [google/dawn](https://github.com/google/dawn).
-- Go bindings: [cogentcore/webgpu](https://github.com/cogentcore/webgpu),
+- Go bindings: [oliverbestmann/webgpu](https://github.com/oliverbestmann/webgpu),
   [gogpu/wgpu (pure Go)](https://github.com/gogpu/wgpu).
 - Tooling: [wgslrunner](https://github.com/hanawatson/wgslrunner).
