@@ -1,10 +1,27 @@
 # Parity staleness gate — stop diagnostic seams from tripping every `core` family
 
-> **Status:** planning. **Not urgent** — the current resolution ("refresh `deps_hash`
-> with forward goldens green") is correct every time; this is friction, not a hole.
-> **Trigger:** promote Phase 2 when capture-seam additions to `core` become common
-> enough that the refresh is recurring toil. Recorded now so the next person starts
-> from the design, not a re-derivation.
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (doc-review, 2026-09-13): COMPLETE, archived.** The doc's own top line ("Status:
+> planning") was stale years before this review — every phase it scoped had already shipped.
+> Phase 0 (manual `deps_hash` refresh) and Phase 1 (`scripts/refresh_parity_hashes.sh`, the
+> goldens-gated refresh, option D) both landed 2026-07-17. Phase 2's own self-announcing trigger
+> fired and was investigated in-doc (2026-08-02, "Phase-2 trigger fired at ~27" section below):
+> verdict **don't build option C**, keep paying the small non-numeric-refresh tax, and fix the
+> recurrence counter. That counter fix has since shipped too — `scripts/refresh_parity_hashes.sh`
+> now counts refreshes directly from the `testdata/parity_manifest.json` diff (deps_hash moved,
+> validated_at preserved) instead of the overloaded commit trailer, and its output explicitly
+> cites this doc's classification as the reason option C stays unbuilt (see
+> `scripts/refresh_parity_hashes.sh` around its `count_refreshes` function). Nothing in this doc
+> is open: Phase 2 is a closed decision, not a parked one — the ~2026-08-05 counter fix was itself
+> the last outstanding action item. Re-opening option C is still gated on the classification
+> shifting toward inert-diagnostic-seam refreshes dominating, per the doc's own §5 close and the
+> script's own ongoing self-report; that is the script's job to notice now, not this doc's.
 
 ## The problem (grounded)
 

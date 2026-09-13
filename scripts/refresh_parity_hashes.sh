@@ -295,7 +295,7 @@ echo "==> ${prior} prior non-numeric deps_hash refreshes (deps_hash moved, valid
 echo "    Counted from the manifest history, not from commit trailers — see the note above."
 echo
 echo "    This is EXPECTED, not a defect to fix by building option C. The classification in"
-echo "    docs/task-parity-staleness-diagnostic-seams.md found most refreshes are ordinary"
+echo "    docs/completed/task-parity-staleness-diagnostic-seams.md found most refreshes are ordinary"
 echo "    non-numeric edits to shared core files, NOT the inert diagnostic seams option C targets —"
 echo "    and the recorded verdict was: DON'T build option C (it addresses a small minority while"
 echo "    adding an invisible channel for a genuine numeric change to slip through), keep paying"
