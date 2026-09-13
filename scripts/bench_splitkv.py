@@ -35,6 +35,20 @@ GEOMETRIES = {
                   "nH=4 nKV=1 hd=256 L=26, sliding window 512 — the nWin-vs-nKeys case"),
     "phi3-mini": (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"),
                   "nH=32 nKV=32 hd=96 L=32 MHA — never crosses over"),
+    # Added 2026-09-12 to RE-ANCHOR the splitkvNever class at a depth its own anchor cannot reach.
+    # phi3-mini is what `never` rests on ("monotone loss to 0.754 at 3900") and it is a 4k-context
+    # model, so the 8000 cells the W3 peer matrix runs at are unmeasurable on it — by anyone, ever.
+    # mistral-7b is the same class (nH=32 >= splitkvMaxHeads=24) and reaches 32k.
+    # See docs/measurements/splitkv-8000-reanchor-PREREGISTERED.md.
+    "mistral-7b": (os.path.expanduser("~/models/mistral-7b-instruct-v0.1.Q4_K_M.gguf"),
+                   "nH=32 nKV=8 hd=128 L=32 ctx=32768 — the nH>=24 re-anchor, reaches 8000"),
+    # D7, added 2026-09-13. The peer matrix's own deep-decode cell and the geometry P24 opened over.
+    # 512 floats/key — HALF mistral's — so it is the low end of the f (DRAM-roof fraction) axis the
+    # nH keying cannot see. Key is "7B" so prompts.json's already-calibrated 7B:3900 / 7B:8000 apply;
+    # bench_peer_transcript.py maps the same key to the same checkpoint.
+    # See docs/measurements/splitkv-d7-fthreshold-PREREGISTERED.md.
+    "7B": (os.path.expanduser("~/models/qwen2.5-7b-instruct-q4_k_m.gguf"),
+           "nH=28 nKV=4 hd=128 L=28 ctx=32768 — D7; 512 floats/key, the low-f end"),
 }
 DEPTHS = [128, 256, 512, 1024, 2048, 3900]
 
@@ -56,6 +70,16 @@ MODES = {
     # Ratios near 1.000 here are the PASS condition, not a null result.
     "gate":  {"on": {},
               "off": {"GOINFER_SPLITKV_ATTN": "0"}},
+    # A/A: BOTH arms identical, so the ratio measures nothing but noise. This is the floor a `force`
+    # ratio has to clear before it means anything, and §B6.3 characterises one per cell in advance —
+    # the 2026-09-12 mistral-7b run omitted it and could not tell a 2.4% effect from drift as a
+    # result. Deliberately run through the SAME path as a real cell (fresh serve per arm, arms
+    # adjacent, order alternating), because a floor measured any other way is not the floor that
+    # applies: it must contain the fresh-process and first-arm-in-cell effects too.
+    "aa-off": {"on": {"GOINFER_SPLITKV_ATTN": "0"},
+               "off": {"GOINFER_SPLITKV_ATTN": "0"}},
+    "aa-on":  {"on": {"GOINFER_SPLITKV_MIN_KEYS": "0"},
+               "off": {"GOINFER_SPLITKV_MIN_KEYS": "0"}},
 }
 
 
@@ -87,9 +111,21 @@ def run_arm(path, prompt, arm_env, backend, quant):
         for _ in range(bp.NRUNS):
             rates = []
             for _ in range(bp.NCOMP):
-                n, tf, tl = bp.post_stream(url, mk(), bp.parse_openai)
-                if n >= 2 and tf and tl and tl > tf:
-                    rates.append(n / (tl - tf))  # decode-only: from the FIRST streamed token
+                # bench_peer.post_stream returns FIVE values as of its "counts come from the
+                # engine, not the stream" change; this call site still unpacked three and so this
+                # harness could not produce a single cell — every arm died with "too many values to
+                # unpack (expected 3, got 5)". Found 2026-09-12 on the first attempt to run it.
+                # Semantics mirrored from bench_peer.py:925-934, which is the reference usage.
+                intervals, tf, tl, chunks, reported = bp.post_stream(url, mk(), bp.parse_openai)
+                if intervals < 2 or not tf or not tl or tl <= tf:
+                    continue
+                # The ENGINE's count where it gives one, intervals as the fallback. `reported`
+                # counts every generated token, but the timing window opens at the FIRST streamed
+                # event, so exactly one token precedes it — hence the -1. Dropping that correction
+                # would inflate every rate here by 1/NGEN and would do so in BOTH arms, which is
+                # precisely the kind of error a ratio hides.
+                n = reported - 1 if reported else intervals
+                rates.append(n / (tl - tf))  # decode-only: from the FIRST streamed token
             if rates:
                 blocks.append(statistics.mean(rates))
         return blocks, None
