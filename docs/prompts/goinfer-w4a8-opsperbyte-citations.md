@@ -89,7 +89,8 @@ Constraints:
   resolvable.
 - Put the caveat where it can't be missed — near the top, with the method statement in item 1, not
   in a footnote.
-- `docs/prompts/aikit-w4a8-ops-per-byte.md` **stays ANSWERED**. This is a correction to the answer's
+- `docs/completed/aikit-w4a8-ops-per-byte.md` (archived from `docs/prompts/` in a later doc-review
+  sweep) **stays ANSWERED**. This is a correction to the answer's
   provenance, not a reopening of the question. If you add a line there, say that and nothing more.
 - One docs-only commit. Nothing in `linalg/`, nothing in aikit.
 
