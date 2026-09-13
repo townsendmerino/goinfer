@@ -121,8 +121,10 @@ and decode scratch)."* True crossover for this exact model/quant/card sits betwe
 The staged fallback inherits whatever `-quant` the resident config was using. `int4` on this box
 (Zen 2, `lscpu` confirms no AVX-512/VNNI) gives the reasonable ~4-70 tok/s numbers above.
 `int8int8` on the *same* CPU-staged path did not finish a depth-512 measurement in over 7 minutes
-(killed) — consistent with `docs/task-simd-audit.md`'s canonical-int8-wants-VNNI /
+(killed) — consistent with `docs/book/10-kernels-and-backends.md`'s canonical-int8-wants-VNNI /
 split-half-int4-is-AVX2-only split (also the subject of `[[kernel-optin-must-check-best-tier]]`).
+(Corrected 2026-09-13, doc review: this cited a `docs/task-simd-audit.md` that never existed in
+this repo's history — the real doc making this point is the one now cited.)
 An operator who picked `int8int8` for the resident config (a real, plausible choice — it's the
 `decode_bench_test.go` default) and then drifts past the VRAM ceiling gets a fallback that is not
 just slow, it is closer to unusable. Not measured further — flagged for whoever picks this back
