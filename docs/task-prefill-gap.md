@@ -250,7 +250,7 @@ gate it produced cannot answer the question it was built for:
   is a correct measurement of *how much* — it is not evidence about *which arm is wrong*.
 - **The prior is that the exact arm is the lossier one.** Per-row int8 activation quantisation is the
   known-lossy step in W4A8 (the LM head's move to W8A8 was precision-gated at 1.5% argmax flips on
-  its own, `docs/task-w4a8-neon-bandwidth.md`), its error grows with model size as activation
+  its own, `docs/completed/task-w4a8-neon-bandwidth.md`), its error grows with model size as activation
   outliers grow, and the run shows exactly that shape: D7's fast-vs-exact KL is 6–7× S's at every
   depth, with no depth dependence. A defect in the batched path would not be expected to scale with
   model size and not with K; an activation-precision difference would.

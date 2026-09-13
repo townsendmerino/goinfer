@@ -14,7 +14,7 @@ import "testing"
 // IDENTICAL to a model whose weights WERE eligible for the row4 repack. That
 // second half is the real proof: it's not enough that the paged path takes a
 // different branch, it has to be the SAME branch MatmulBTW4A8Row4Into's own
-// fallback already is (docs/task-w4a8-neon-bandwidth.md's bit-identity
+// fallback already is (docs/completed/task-w4a8-neon-bandwidth.md's bit-identity
 // finding), cross-checked here end-to-end through a real model rather than
 // only at the raw-kernel level.
 func TestSerializedInt4Weights_neverRepacked_pagedFallback(t *testing.T) {

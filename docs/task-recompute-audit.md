@@ -336,7 +336,7 @@ positions are inherent, not recompute.
   that already happens" is not available as described; building it would mean adding an entirely
   new copy-and-own fetch path to a pager whose whole design is zero-copy residency bounding.
   That gap was already found and closed a different way, before this doc was scoped: the `.giw`
-  kind-4 format (`SHIPPED 2026-08-24`, `docs/task-w4a8-neon-bandwidth.md`'s "Format follow-on")
+  kind-4 format (`SHIPPED 2026-08-24`, `docs/completed/task-w4a8-neon-bandwidth.md`'s "Format follow-on")
   bakes row4 onto DISK at prequant time (`cmd/prequant -row4`) instead of repacking at fetch
   time — "simpler than \[that doc\] anticipated: the owned-buffer `pread` architecture turned out
   NOT to be required" (its own words) — and `decoder/moepaging.go`'s `addExpert` (the exact

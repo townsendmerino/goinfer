@@ -4,7 +4,7 @@ import "testing"
 
 // TestSerializedInt4Weights_row4Kind_matchesCanonical is TestSerializedInt4Weights_
 // neverRepacked_pagedFallback's counterpart for the opt-in path: a .giw written via
-// SerializeWeightsRow4 (weightMat kind 4, docs/task-w4a8-neon-bandwidth.md's "Format
+// SerializeWeightsRow4 (weightMat kind 4, docs/completed/task-w4a8-neon-bandwidth.md's "Format
 // follow-on") must round-trip with Int4Row4() populated for every eligible int4
 // tensor — the whole point of cutting the kind — and decode must be byte-identical
 // to both (a) the same model loaded straight from GGUF (row4 built in RAM) and

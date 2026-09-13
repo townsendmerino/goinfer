@@ -1,5 +1,34 @@
 # Task: W4A8 NEON GEMV at streaming bandwidth — close the Mac CPU decode gap
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-09-13, doc review): COMPLETE.** Every gate/step lists, harness briefs,
+> and next-steps below are a record of what was asked and done, not a task for a future reader —
+> the whole campaign closed on the numbers in "Done looks like" at the bottom. Gate 0 (bandwidth
+> model) GO; Gate 1 kernel work (items 1-4: accumulator-chain fix + split-half repack + 4-row
+> interleave) GO, shipped; plumbing wired into goinfer's arm64 W4A8 load path (`decoder/
+> weightmat.go`, `.giw` kind 4); the LM-head W8A8 follow-up shipped. Final measured numbers
+> (Apple M1 Pro, goinfer `a11c56b`, 2026-08-24): 1.5B int4 21.68→39.1-40.7 tok/s (0.57-0.60x
+> ollama), 0.5B int4 41.09→81.9-83.75 tok/s (0.75-0.77x ollama) — matches `docs/benchmarks.md`'s
+> Apple Silicon CPU row, re-verified against the tree at archival time.
+>
+> Since this closed, further work built on top of it rather than reopening it:
+> `docs/tasks/task-int4-layout-2026-09.md` (L1-L3 done 2026-09-11) replaced this doc's opt-in
+> `.giw` kind-4 (canonical **and** row4, both on disk) with kind-5 (row4-only, chosen per load
+> target) as the CPU-arm64 default and moved `giwVersion` to 11 — kind 4 stays readable as
+> legacy, per this doc's own "never a wholesale replacement" decision below. The row4
+> cold-paging question this doc left open (struck/reopened/re-struck 2026-08-24/25) is owned by
+> `docs/task-zeno-compare.md`'s "Supersession" section, unchanged by this archival. Two items
+> from this doc remain open and orphaned (no live doc owns them): the uncentered-Σact-correction
+> retry (optional, deferred without cost — the folded-into-repack variant is untried), and
+> Metal-resident's "release the CPU copies after a successful upload" half of L4 (named but not
+> re-filed as its own item in `docs/audit-metal-2026-09-12.md`'s M-07 entry).
+
 > Scoping doc. Opened 2026-08-23 from `docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`
 > (Mac baseline 0.32x/0.25x vs ollama; quant confound answered; residual ~2x located but not
 > sized) + `docs/measurements/aikit-w4a8-opsperbyte.md` (AVX2 overhead split: unpack ~57%,

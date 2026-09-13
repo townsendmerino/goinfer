@@ -59,7 +59,7 @@ func matmulQuant(base quantMode, name string) quantMode {
 // against W8A8's 97.12 GB/s at the same shape — 7.7x). Precision measured before
 // switching, teacher-forced real-continuation comparison against the old
 // weight-only-Q8 pin, both real model sizes: 1.5% argmax flip rate, mean cosine
-// 0.9998+ (200 positions each, docs/task-w4a8-neon-bandwidth.md). Small and real,
+// 0.9998+ (200 positions each, docs/completed/task-w4a8-neon-bandwidth.md). Small and real,
 // nowhere near int4-weight quantizing these same tensors ("flips the argmax and
 // tanks the cosine" — mirrors why GGUF Q4_K_M keeps token_embd/output at Q6_K
 // while the projections go 4-bit) — kept as the unconditional int4-mode default,
@@ -233,7 +233,7 @@ func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 }
 
 // repackW4A8Row4IfEligible opts wm into the arm64 split-half + 4-row-interleaved
-// W4A8 layout (docs/task-w4a8-neon-bandwidth.md's item-3+4 harness, GO
+// W4A8 layout (docs/completed/task-w4a8-neon-bandwidth.md's item-3+4 harness, GO
 // 2026-08-23/24) by calling linalg.WeightMat.RepackInt4Row4 — a no-op on
 // non-int4 WeightMats, non-arm64 builds, and any shape the repack rejects
 // (rows not a multiple of 4, cols not a multiple of the int4 group size), so

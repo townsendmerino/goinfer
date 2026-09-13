@@ -1,7 +1,7 @@
 # Task (aikit + goinfer): W4A8 plumbing — ship the harness-winning layout to production CPU decode
 
 > **For:** Claude Code, in `~/tmcode/aikit` + `~/tmcode/goinfer`. Written 2026-08-24, after the
-> item-3+4 harness phase recorded GO. Read `docs/task-w4a8-neon-bandwidth.md` (goinfer) first —
+> item-3+4 harness phase recorded GO. Read `docs/completed/task-w4a8-neon-bandwidth.md` (goinfer) first —
 > Gate 0, both probes, the items-1+2 negative, the harness grid, and the GO line are all there.
 > **The layout is settled and is not this phase's to redesign: split-half nibbles (item 3) +
 > 4-row interleave (item 4), signed centering, one accumulator per real row** — single-call cold
@@ -95,7 +95,7 @@ A1 close-out's load-caveat lesson applies verbatim.
 - Load-time and resident-memory deltas measured and recorded per model size — these feed the
   parked `.giw` decision.
 - Paged-MoE fallback proven by test, not asserted.
-- All results appended to `docs/task-w4a8-neon-bandwidth.md`; a negative or shortfall recorded
+- All results appended to `docs/completed/task-w4a8-neon-bandwidth.md`; a negative or shortfall recorded
   at the campaign's usual standard is a complete deliverable.
 
 ## Not in scope

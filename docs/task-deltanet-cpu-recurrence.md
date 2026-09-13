@@ -79,7 +79,7 @@ further, not oversold on the 42.1%-of-DeltaNet figure alone.
 
 D0's own bar is fully met — scalar-chain speed confirmed, exactness surface enumerated, projection
 derived and stated. But the ~6-7% end-to-end ceiling on the 35B is below this repo's own bar for
-building a kernel without a stronger number: `docs/task-w4a8-neon-bandwidth.md`'s uncentered-Σact
+building a kernel without a stronger number: `docs/completed/task-w4a8-neon-bandwidth.md`'s uncentered-Σact
 retry was judged not-worth-building-blind at ~10% — this sits below that, with MORE implementation
 cost (a new hand-tuned NEON kernel in `aikit/linalg`, its own threading path, its own
 release/cross-family-golden discipline, permanent maintenance), not less. **Parked, not abandoned:**

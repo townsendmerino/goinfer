@@ -5,7 +5,7 @@ package decoder
 import "github.com/townsendmerino/aikit/linalg"
 
 // repackRow4ForEmit computes the on-disk split-half + 4-row-interleaved layout
-// (docs/task-w4a8-neon-bandwidth.md's "Format follow-on") from canonical int4
+// (docs/completed/task-w4a8-neon-bandwidth.md's "Format follow-on") from canonical int4
 // bytes, for the .giw writer's opt-in kind-4 path (decoder/serialize.go).
 //
 // Deliberately does NOT gate on the WRITING machine's DotProd support (unlike

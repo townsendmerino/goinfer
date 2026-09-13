@@ -172,5 +172,5 @@ you do when the model does not fit.
 
 ---
 
-*Sources: `docs/benchmarks.md` §int4/int8int8 comparison, [`docs/task-w4a8-neon-bandwidth.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/task-w4a8-neon-bandwidth.md),
+*Sources: `docs/benchmarks.md` §int4/int8int8 comparison, [`docs/completed/task-w4a8-neon-bandwidth.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-w4a8-neon-bandwidth.md),
 `cmd/gate` (parity runner), [`docs/api-tiers.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/api-tiers.md) (`.giw`).*
