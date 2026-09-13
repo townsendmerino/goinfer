@@ -4,7 +4,9 @@
 measured end-to-end. Run for the first time here: it was 7–29x SLOWER than the sequential loop it
 was meant to replace, and worsening with prompt length. Root-caused to a per-row dispatch
 explosion (~39 GPU dispatches × M per layer instead of the intended O(1)), fixed, and re-measured:
-now a consistent 2.5–3.5x win at every tested size.**
+2.5–3.5x win at every tested size — then Increment 1 (a real batched causal-attention kernel,
+eliminating the one remaining per-row dispatch cost) pushed it further, to 6.3–8.7x, with the
+speedup now flat-to-improving with M instead of declining.**
 
 ## Provenance
 
@@ -98,16 +100,34 @@ Bit-exactness unaffected: `TestRMSNormBatched_parity`, `TestRoPEBatched_parity`,
 `TestResidentPrefillLast_parity`, `TestPrefillLastW8A8_parity` all pass (cosine 1.0, maxAbsDiff 0)
 both before and after the chunking fix.
 
-## Known remainder
+## Increment 1: the remainder closed
 
-The speedup gently shrinks with M (3.52x → 3.08x → 2.52x) — consistent with the one dispatch-count
-cost this fix deliberately did not eliminate: attention itself is still M per-row dispatches into
-the existing M=1 kernel. `task-gpu-batched-prefill.md`'s own Increment 1 (a real fused
-multi-query batched-causal-attention kernel) was never built, on this branch or before it. As M
-grows, that remaining O(M) cost is an increasing share of the total — the likely reason the ratio
-is trending down rather than flat. Worth revisiting if a real workload pushes past M=1024 and the
-ratio keeps degrading; not blocking today's result, which is a clear win at every size actually
-measured.
+The 2.5–3.5x result above still had the speedup shrinking with M (3.52x → 3.08x → 2.52x) —
+consistent with the one dispatch-count cost that fix deliberately did not eliminate: attention was
+still M per-row dispatches into the existing M=1 kernel, because `task-gpu-batched-prefill.md`'s
+own Increment 1 (a real fused multi-query batched-causal-attention kernel) had never been built, on
+this branch or before it.
+
+Built on the same branch: `attnBatchedShaderWGSL` / `attnKeysBatchedShaderWGSL` (`gpu/
+prefillrunner.go`), one dispatch (grid `(nH, M)`) for all M query rows against the shared resident
+K/V cache, mirroring `attnKernel`'s own choice between the plain and tiled/key-split decompositions
+(`attention.go`). Gated by `TestAttnBatched_parity` (two geometries, one per branch) — both turned
+out bit-exact (cosine 1.0, maxAbs 0.0) against M sequential single-query dispatches, not merely
+close, and every existing real-checkpoint gate (`TestResidentPrefillLast_parity`,
+`TestPrefillLastW8A8_parity`, `TestGenerate_batchedPrefillMatchesSequential`) stayed bit-exact too.
+
+Re-measured:
+
+| P | before Increment 1 | after Increment 1 |
+|---|---|---|
+| 64 | 3.52x | **7.34x** |
+| 256 | 3.08x | **6.31x** |
+| 1024 | 2.52x | **8.71x** |
+
+The declining trend reversed — flat-to-improving with M instead of shrinking — confirming
+attention's per-row dispatch cost was the reason the earlier fix's ratio degraded at scale.
+Increments 1–3 are now all landed and gated on real hardware; `task-gpu-batched-prefill.md`'s
+Definition of Done is fully checked.
 
 ## Verdict
 
