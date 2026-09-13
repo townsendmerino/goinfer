@@ -322,6 +322,18 @@ re-baked by the code it checks (G-04).
 - **Confidence:** plausible (end-to-end unmeasured; Stage-B precedent may apply). **Prior:**
   metal-verdict §4 "do not let an agent optimize the GEMV again" — this is a dispatch-site swap
   onto the kernel that did ship.
+- **CLOSED 2026-09-13, NEGATIVE — Stage-B precedent held.** Built exactly as scoped above
+  (correctness verified: full `go test ./metal/...` and `-tags goinfer_testhooks` both green,
+  including every resident-parity test; `TestMaxThreadgroupStageBytes` extended for the new
+  `denseInter` term). `GOINFER_METAL_DEPTH_BENCH=1` on qwen2.5-coder-1.5b, M1 Pro, three runs
+  (`-count=1` each, not cached): baseline 72.3/67.9/51.4/40.4 tok/s at depth 128/512/2048/4000;
+  with the fix, 70.6/66.8/49.6/38.4 and 71.8/64.0/49.8/39.1 — **slower at every depth in both
+  post-fix runs (8/8), by roughly 2–6%**, run-to-run noise between the two post-fix runs
+  themselves notwithstanding. Reverted (`metal/model.go`'s down-proj dispatch, `metal/kernels.go`
+  untouched since no kernel code needed to change for this probe — only the dispatch site and
+  `maxThreadgroupStageBytes`). metal-verdict §4's caution was right twice now: the isolated
+  68 GB/s vs 96 GB/s gap this finding started from does not survive contact with the actual
+  decode token, same as Stage B's own 164→118 µs. Not re-proposed.
 
 ### C. The paged path (26B / 35B / gpt-oss-20b on the Mac)
 
@@ -816,8 +828,9 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
 6. **M-08** (LoRA grid): with a Mac adapter-decode measurement recorded for the first time.
 7. **Paged:** M-14 (aikit selector, one release) → M-13 (auto-sized slots; the M35/M26/G20 rows
    re-run against the pager) → M-11 + G-05 (the shared-event re-run on the paged shape) → M-12.
-8. **Probes:** M-09 and M-10 (30 lines each, behind a discriminating measurement; close them either
-   way in `metal-verdict.md`).
+8. **Probes:** M-09 (30 lines, behind a discriminating measurement). M-10 CLOSED 2026-09-13,
+   NEGATIVE — built and A/B'd on the depth bench, slower at every depth (see M-10's own entry
+   above); reverted.
 9. **Docs and gates batch:** N-01…N-14, G-02, G-04, G-07, G-08, G-09; the §A Metal row re-measured
    after 1–3 with the same protocol and Ollama in the same session.
 10. **M-15** (cross-repo, aikit first): the three Metal tower shapes; then `EnableResident` on Metal.
