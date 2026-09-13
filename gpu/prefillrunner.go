@@ -32,24 +32,35 @@ import (
 // bias-enabled parity from cosine 0.99/maxAbs 1.24 to EXACT (cosine 1.0, maxAbs
 // ~2.9e-6, i.e. float32 noise) — confirmed correct up through nKeys=4.
 //
-// Cause #2, still OPEN: even with both paths on the identical kernel, nKeys=5+
-// still diverges (cosine ~0.995-0.999, maxAbs ~0.5-0.99 depending on nKeys — not
-// monotonic with nKeys, e.g. nKeys=20 is BETTER than nKeys=5). Exact break point:
-// nKeys<=4 bit-exact, nKeys>=5 diverges. Since both paths now dispatch the
-// SAME c.attnKeysPipeline for the SAME cached K/V, either (a) the K/V cache
-// contents themselves differ subtly between this function's rope()+cpy() writes
-// and decoderunner.go's fused qkvFinalize writes (never diffed line-by-line — see
-// attnKeysShaderWGSL vs qkvFinalizeShaderWGSL/ropeShaderWGSL), or (b)
-// attnKeysShaderWGSL (attention.go, the multi-key tiled online-softmax kernel) has
-// a real bug at 5+ keys that a same-kernel-vs-itself comparison can still expose if
-// the SOURCE data feeding it differs. Ruled out separately: the K/V bias-add width
-// bug fixed alongside the kernel-mismatch fix (reproduces identically before/after
-// that fix, in isolation); flushPasses/passesPerFlush (a huge passesPerFlush
-// disables it with no change); bias being simply wrong (disabling it entirely
-// makes the real-checkpoint case WORSE, ~0.2-0.5 cosine, at ANY nKeys). The M=20
-// synthetic-weight gate (TestPrefillLastW8A8_parity, no bias, always uses
-// c.attnKernel now too) stays bit-exact throughout — this is real-checkpoint-
-// weight-magnitude-specific, or specific to a code path the synthetic test never
+// Cause #2, still OPEN: even with both paths on the identical kernel, nKeys past
+// a threshold still diverges (cosine ~0.995-0.999, maxAbs ~0.4-1.2 depending on
+// nKeys — not monotonic with nKeys past the threshold, e.g. nKeys=20 is BETTER
+// than nKeys=5 on Metal). THE THRESHOLD ITSELF IS HARDWARE-DEPENDENT, measured on
+// the two real GPUs available: Metal/M1 Pro breaks at nKeys>=5 (exact through
+// nKeys=4); Vulkan/RTX 2070 SUPER breaks at nKeys>=8 (exact through nKeys=7,
+// confirmed at every nKeys 1-7, maxAbs <=5.7e-6 = float32 noise the whole way).
+// Same WGSL source, same Go dispatch code, two different backends, two different
+// break points — this points AWAY from a pure logic/off-by-one bug (which would
+// break at the same nKeys everywhere) and TOWARD something backend/precision-
+// specific: how naga lowers attnKeysShaderWGSL's online-softmax reduction to
+// SPIR-V (Vulkan) vs MSL (Metal), a driver-level fast-math/FMA-contraction
+// difference, or a genuine numerical instability in that kernel that different
+// backends' rounding happens to trigger at different key counts. Since both paths
+// now dispatch the SAME c.attnKeysPipeline for the SAME cached K/V, either (a) the
+// K/V cache contents themselves differ subtly between this function's rope()+cpy()
+// writes and decoderunner.go's fused qkvFinalize writes (never diffed line-by-line
+// — see attnKeysShaderWGSL vs qkvFinalizeShaderWGSL/ropeShaderWGSL), or (b)
+// attnKeysShaderWGSL (attention.go, the multi-key tiled online-softmax kernel)
+// itself has a real precision bug past some key count that a same-kernel-vs-itself
+// comparison can still expose if the SOURCE data feeding it differs. Ruled out
+// separately: the K/V bias-add width bug fixed alongside the kernel-mismatch fix
+// (reproduces identically before/after that fix, in isolation); flushPasses/
+// passesPerFlush (a huge passesPerFlush disables it with no change); bias being
+// simply wrong (disabling it entirely makes the real-checkpoint case WORSE,
+// ~0.2-0.5 cosine, at ANY nKeys). The M=20 synthetic-weight gate
+// (TestPrefillLastW8A8_parity, no bias, always uses c.attnKernel now too) stays
+// bit-exact throughout on BOTH backends — this is real-checkpoint-weight-
+// magnitude-specific, or specific to a code path the synthetic test never
 // exercises (e.g. real RoPE frequency values vs the test's synthetic invFreq).
 //
 // Re-enable bias only after cause #2 is found and re-gated; until then this
