@@ -18,14 +18,18 @@ import (
 // only CUDA's. See docs/prompts/metal-verify-curve.md for the full task.
 //
 // CRITICAL, and the reason this needs stating before any number below: `PrefillLast` — the batched
-// primitive this test times — DECLINES BY DEFAULT on Metal (metal/backend.go), because its f16-MMA
-// activation path is NOT bit-identical to decode's int8 path (54% stream divergence measured,
-// §A2-Metal, when that gate last ran). GOINFER_METAL_BATCHED_PREFILL=1 forces it on for exactly the
-// "measurement/TTFT-at-the-cost-of-exactness" use this test is. So every number this test produces
-// characterizes a kernel that is NOT currently usable as P10's verify oracle on Metal — P10's own
-// design requires the verify step to reproduce sequential greedy exactly (00-core's lossless
-// contract). A real Metal P10 leg needs that bit-identity gap closed FIRST; this test answers "is
-// the timing shape even worth it", not "is this safe to ship".
+// primitive this test times — is NOT bit-identical to decode's int8 path (its f16-MMA activation
+// path once measured 54% stream divergence, §A2-Metal, docs/ollama-chase.md:623 — historical
+// record; the test that produced that figure, TestMetalPrefillDivergenceRate, no longer exists,
+// superseded by TestPrefillGateVsReference's pooled §3.2 criteria, G-07 audit-metal-2026-09-12.md).
+// PrefillLast is now default-ON above metalFastPrefillFloor for admitted architectures (it declined
+// by default only historically, when this comment was written); GOINFER_METAL_BATCHED_PREFILL=1
+// here forces it on regardless of the floor, for exactly the "measurement/TTFT-at-the-cost-of-
+// exactness" use this test is. So every number this test produces characterizes a kernel that is
+// NOT currently usable as P10's verify oracle on Metal — P10's own design requires the verify step
+// to reproduce sequential greedy exactly (00-core's lossless contract). A real Metal P10 leg needs
+// that bit-identity gap closed FIRST; this test answers "is the timing shape even worth it", not
+// "is this safe to ship".
 //
 //	GOINFER_HEAVY_TESTS=1 go test ./metal -run TestSpecVerifyCurveMetal -v
 func TestSpecVerifyCurveMetal(t *testing.T) {

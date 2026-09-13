@@ -226,7 +226,7 @@ func KLDivergenceForTest(pLogits, qLogits []float32) float64 {
 // decoder/prefill_ref_gen_test.go (the CPU f32-activation reference, §3.1) precisely so the two
 // runs score the SAME ten prompts.
 var PrefillGateProseFiles = []string{
-	"../docs/audit-2026-09-02.md",
+	"../docs/completed/audit-2026-09-02.md", // moved from ../docs/audit-2026-09-02.md when archived
 	"../docs/QUEUE.md",
 	"../docs/queue-engineering.md",
 	"../docs/ollama-chase.md",
@@ -247,7 +247,7 @@ var PrefillGateProseFiles = []string{
 // stays reproducible as these documents keep changing. Kept here only as the record of what the
 // snapshot was populated FROM and when.
 var PrefillGateProseFilesB = []string{
-	"../docs/task-attention-decode-cost.md",
+	"../docs/completed/task-attention-decode-cost.md", // moved from ../docs/task-attention-decode-cost.md when archived
 	"../docs/task-moe-streaming.md",
 	"../docs/completed/queue-performance.md",
 	"../docs/ARCHITECTURE.md",

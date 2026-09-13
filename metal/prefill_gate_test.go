@@ -44,9 +44,10 @@ import (
 //
 // Two more are REPORTED, not gating, per the doc's own table:
 //   - Seed-distribution KL divergence vs the exact path (decoder.KLDivergenceForTest).
-//   - Greedy stream divergence rate — NOT re-measured here. It is already measured and gated by
-//     TestMetalPrefillDivergenceRate (54% — metal/backend.go's PrefillLast decline comment,
-//     §A2-Metal); re-running it would duplicate that test for a number this gate only reports.
+//   - Greedy stream divergence rate — NOT re-measured here. It was once measured and gated by
+//     TestMetalPrefillDivergenceRate (54%, docs/ollama-chase.md:623); that test no longer exists
+//     (superseded by TestPrefillGateVsReference's pooled §3.2 criteria, G-07 audit-
+//     metal-2026-09-12.md) — the number is historical record, not backed by a live test.
 //
 // LONG-RUNNING: with GOINFER_HEAVY_TESTS=1 this loads two real checkpoints (S ~1.5B, D7 ~7B) and
 // runs each through prefillGateProseFiles × the K depths below, sequential-decode dominated at
@@ -63,6 +64,12 @@ func TestPrefillGate(t *testing.T) {
 		t.Skip("long-running gate: skipped in -short")
 	}
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1") // the FAST arm; the exact arm calls Forward directly
+	// G-07 (audit-metal-2026-09-12.md): this test's K=256 decision cell used to Fatalf outright —
+	// metalFastPrefillFloor was 512 and nothing here overrode it, so PrefillLast declined before
+	// any comparison ran. M-02 (same audit) lowered the default floor to 256, which happens to
+	// clear K=256 on its own now, but disable the floor explicitly anyway so this test does not
+	// silently break again the next time the floor default moves.
+	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 
 	models := []struct {
 		name        string
@@ -173,8 +180,13 @@ func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, con
 			modelName, K, seedHardFails, contHardFails, meanAgreement*100, meanSeedKL, meanKL,
 			map[bool]string{true: "FAILED", false: "PASSED"}[gateFail])
 	}
-	fmt.Printf("[gate] %s: greedy stream divergence — NOT re-measured here; see TestMetalPrefillDivergenceRate "+
-		"(54%%, metal/backend.go PrefillLast decline comment, §A2-Metal). Reported, not gating (§3).\n", modelName)
+	// G-07 (audit-metal-2026-09-12.md): TestMetalPrefillDivergenceRate, the test that originally
+	// measured this 54%, no longer exists in the tree (superseded by TestPrefillGateVsReference's
+	// pooled §3.2 criteria, which withdrew the exact-as-oracle scoring that number came from) —
+	// the figure itself is historical record, not a live test (docs/ollama-chase.md:623).
+	fmt.Printf("[gate] %s: greedy stream divergence — NOT re-measured here; historical figure 54%% "+
+		"(docs/ollama-chase.md, exact-as-oracle scoring since withdrawn by §3.2 — no live test backs "+
+		"this number). Reported, not gating (§3).\n", modelName)
 	return anyHardFail
 }
 

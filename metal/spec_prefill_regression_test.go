@@ -41,14 +41,19 @@ import (
 // repository source at run time instead.
 //
 // METAL-SPECIFIC PRECONDITION — GOINFER_METAL_BATCHED_PREFILL=1 IS MANDATORY HERE, and a green
-// without it is meaningless. Metal's PrefillLast (metal/backend.go) DECLINES by default,
-// because Metal's batched prefill is not bit-identical to its decode path (54% stream
-// divergence, TestMetalPrefillDivergenceRate). When it declines, generateInto falls through to
-// the same per-token loop the speculative path already uses, so there is NO asymmetry to
-// measure and the slope would come back ~0 for a reason that has nothing to do with the fix.
-// Metal also does NOT implement ResidentPrefillKV (only CUDA does), so the KV-only fallback —
-// CUDA's SECOND asymmetry — does not exist here. Metal has exactly one exposure to this bug and
-// it is gated behind this variable.
+// without it is meaningless. Historically (when this test was written) Metal's PrefillLast
+// (metal/backend.go) declined by default — Metal's batched prefill was not bit-identical to its
+// decode path (54% stream divergence, a figure once measured by TestMetalPrefillDivergenceRate,
+// docs/ollama-chase.md:623; that test no longer exists — superseded by TestPrefillGateVsReference's
+// pooled §3.2 criteria, G-07 audit-metal-2026-09-12.md). Batched prefill is now default-ON above
+// metalFastPrefillFloor (M-06/M-02, same audit), so this override is no longer strictly load-
+// bearing for a prompt past the floor — kept anyway so this test's precondition never depends on
+// the floor's current value or default state. Below the floor (or with the override removed),
+// PrefillLast still declines and generateInto falls through to the same per-token loop the
+// speculative path already uses, so there would be NO asymmetry to measure and the slope would
+// come back ~0 for a reason that has nothing to do with the fix. Metal also does NOT implement
+// ResidentPrefillKV (only CUDA does), so the KV-only fallback — CUDA's SECOND asymmetry — does
+// not exist here. Metal has exactly one exposure to this bug and it is gated behind this variable.
 func TestMetalSpecPrefillRegression(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
