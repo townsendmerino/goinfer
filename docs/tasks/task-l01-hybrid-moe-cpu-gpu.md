@@ -28,10 +28,26 @@
 > `testdata/qwen35-tiny` — the same family as the audit's own decision-rule model) — but NOT
 > yet wired into `loadRoutedExperts`. §9 has the concrete remainder: async overlap, the merge
 > kernel, then the real prototype and funding measurement.
+>
+> **Correction, 2026-09-13 (doc review): the line above is stale.** `b7cc8351` (2026-09-10,
+> later the same day this header was last edited) wired the extraction into the real decode
+> path: `loadRoutedExperts` now routes a miss to CPU compute instead of DMA when
+> `GOINFER_CUDA_L01_CPU_OFFLOAD` is set (default off), and `moeMLPPost` skips those slots on the
+> GPU's own accumulation and merges the CPU-computed partial sum back in via the now-real
+> `l01MergeCPUExperts` — the merge machinery §6 called "sketched, not built" is built, matching
+> the sketch. `TestL01_e2eDecode_matchesBaseline` (`cuda/l01_e2e_decode_test.go`) verifies the
+> flag on vs off end to end on `testdata/qwen35-tiny`: bit-identical to float32 rounding (cosine
+> 1.0, max abs diff ~1e-7, argmax matches at every position), including the deliberately hardest
+> case (empty LRU at pos 0, so every routed expert goes to CPU). **What is still true, and is the
+> actual remainder:** this is a *synchronous* prototype only — no real overlap between CPU
+> compute and the GPU's own per-layer compute — and the audit's pre-registered
+> paired-and-interleaved funding measurement against C′ (§0's decision rule, on
+> Qwen3.6-35B-A3B) has not run. §9 below is corrected to match; nothing else in this doc needed
+> correction.
 
 ## 0. What L-01 is, verbatim from the audit
 
-`docs/audit-2026-09-02.md` L-01: *"per layer, the m experts missing from the device cache are
+`docs/completed/audit-2026-09-02.md` L-01: *"per layer, the m experts missing from the device cache are
 split — q⋆ ≈ m·(B_PCIe/B_host) fetched into slots and run on the GPU, the rest computed on the
 CPU from the pinned host copy with the existing W4A8/W8A8 NEON/AVX2 expert kernels, partial sums
 merged exactly."* Rationale: `cuda/resident.go`'s C′ path already holds every expert pinned on
@@ -269,6 +285,14 @@ already enqueued before it's needed and costs nothing beyond the microseconds ab
 small, and shrinking as m falls — not the kind of risk that erodes §3's savings materially, but
 real and worth confirming against actual CUDA stream semantics rather than this arithmetic.
 
+**Corrected 2026-09-13 (doc review): this sketch is now real code, not just a sketch.**
+`b7cc8351` (2026-09-10) built it essentially as designed above — `loadRoutedExperts` branches a
+miss to CPU instead of DMA, `moeMLPPost` skips those slots on the GPU accumulation, and
+`l01MergeCPUExperts` does the described upload-and-add — and `TestL01_e2eDecode_matchesBaseline`
+confirms the merged result is correct end to end. See the header correction for the full
+account; the remaining CUDA-stream-semantics risk this section flagged is the async-overlap item
+§9 still lists as open.
+
 ## 7. The speculation-antagonism risk — RE-CONFIRMED 2026-09-10, still holds
 
 Ran `cuda/spec_pager_interaction_test.go` (`TestSpecPagerInteraction`) with
@@ -339,7 +363,12 @@ more). Caught and fixed one real bug in the process: `r.inter` (dense MLP interm
 `r.moeInter` (the MoE experts' own, different-sized intermediate) — using the wrong field would
 have silently misread every expert's shape.
 
-**Still not wired into `loadRoutedExperts`, and no async/merge code yet.** What remains:
+**Corrected 2026-09-13 (doc review): wired and merged as of `b7cc8351` (2026-09-10), still
+synchronous.** `loadRoutedExperts`/`moeMLPPost` (`cuda/resident.go`) now branch on
+`GOINFER_CUDA_L01_CPU_OFFLOAD` (default off) and the merge sketched in §6 is real code
+(`l01MergeCPUExperts`), end-to-end correctness-verified bit-identical against the flag-off path
+(`TestL01_e2eDecode_matchesBaseline`, `cuda/l01_e2e_decode_test.go`). What remains is exactly
+what this list already said, minus the wiring/merge item it no longer needs:
 
 1. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
    overlaps CPU expert compute with GPU hit-path compute for the SAME layer and measures
@@ -351,7 +380,7 @@ have silently misread every expert's shape.
 
 ## Sources
 
-`docs/audit-2026-09-02.md` L-01 (mechanism, decision rule, disposition) · `docs/task-freetoken-techniques.md`
+`docs/completed/audit-2026-09-02.md` L-01 (mechanism, decision rule, disposition) · `docs/task-freetoken-techniques.md`
 Lead 5 (architecture, antagonism risk) · `docs/QUEUE.md` G31–G34 (DMA cost law, overlap ceiling,
 miss classification, block-verify's own infra-gap finding) · `decoder/mlp.go` (`moeMLP`,
 `swiGLUExpert` — the existing sequential CPU expert loop) · aikit `linalg.MatmulBT`/`parallelCols`
@@ -365,4 +394,8 @@ existing routing-readback hook point; the per-slot `fMoEWacc` dispatch loop; `pe
 `cuda/moe.cu` (`gemv_w4a8_moe_wacc`'s per-slot signature) — both read directly for §6's merge
 sketch, not assumed · `cuda/l01_cpu_offload.go`/`decoder/l01_export.go` (the extraction
 prototype, §9) · `cuda/l01_cpu_offload_test.go` (the correctness verification, §9) ·
-`testdata/qwen35-tiny` (the small same-family fixture the correctness test runs against).
+`testdata/qwen35-tiny` (the small same-family fixture the correctness test runs against) ·
+`b7cc8351` (2026-09-10: wires the extraction into `loadRoutedExperts`/`moeMLPPost` behind
+`GOINFER_CUDA_L01_CPU_OFFLOAD`, builds `l01MergeCPUExperts`, synchronous only) ·
+`cuda/l01_e2e_decode_test.go` (`TestL01_e2eDecode_matchesBaseline`, the on/off end-to-end
+correctness gate for that wiring — added in the 2026-09-13 doc-review correction).

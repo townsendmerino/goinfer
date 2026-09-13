@@ -15,7 +15,7 @@ import (
 // claims: a fixed nibble-position permutation, content-independent, so proving it round-trips
 // for varied words already proves it for every possible word (the map never looks at nibble
 // VALUES). Kept as a real test alongside the one-off 2,000,000-sample check this pass already
-// ran manually (docs/task-l01-hybrid-moe-cpu-gpu.md), so CI keeps re-proving it.
+// ran manually (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md), so CI keeps re-proving it.
 func TestL01_unpermuteFast_roundTrips(t *testing.T) {
 	for i := 0; i < 100000; i++ {
 		x := uint32(i) * 2654435761
@@ -26,7 +26,7 @@ func TestL01_unpermuteFast_roundTrips(t *testing.T) {
 }
 
 // TestL01_cpuExtraction_matchesModelOwnWeights is the correctness question
-// docs/task-l01-hybrid-moe-cpu-gpu.md's own prototype note names before anything is wired into
+// docs/tasks/task-l01-hybrid-moe-cpu-gpu.md's own prototype note names before anything is wired into
 // the decode path: does l01ComputeExpert's extraction from CUDA's C′ pinned host stack
 // (fast-nibble-permuted, unpermuted back here) produce the SAME expert computation the model's
 // own CPU-native weights would? Both loads read the identical pre-quantized bytes from the same

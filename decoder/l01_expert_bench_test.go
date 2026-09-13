@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// L01 design pass (docs/task-l01-hybrid-moe-cpu-gpu.md §9 item 1): the isolated CPU
+// L01 design pass (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md §9 item 1): the isolated CPU
 // expert-compute measurement the design doc's §2 derived estimate (1.98ms/expert, folded in
 // with attention/router/shared-expert cost from a whole-decode-step measurement) needs before
 // trusting it for a funding decision. Geometry is gemma-4-26B's REAL values, probed directly
@@ -96,7 +96,7 @@ func BenchmarkL01_sequential8(b *testing.B) { l01Sequential(b, 8) }
 
 // l01Parallel times n experts computed CONCURRENTLY, one goroutine per expert, own scratch
 // each — the restructuring moeMLP's sequential design does not do today. This is the design
-// doc's open question (docs/task-l01-hybrid-moe-cpu-gpu.md §4/§8): does dividing the machine's
+// doc's open question (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md §4/§8): does dividing the machine's
 // core pool across the missed-expert set beat sequential compute at the high-m tail (m=5-8,
 // ~6.5% of decisions per the trace-distribution finding), given each expert's own matmul
 // already claims most/all cores via aikit's parallelCols (so this deliberately creates NESTED
@@ -138,7 +138,7 @@ func BenchmarkL01_parallel8(b *testing.B) { l01Parallel(b, 8) }
 
 // l01Concurrent simulates `streams` INDEPENDENT decode streams each offloading
 // expertsPerStream missed experts to CPU at the SAME time — the multi-tenant contention
-// question docs/task-l01-hybrid-moe-cpu-gpu.md §5/§9 named as unmeasured: does a second
+// question docs/tasks/task-l01-hybrid-moe-cpu-gpu.md §5/§9 named as unmeasured: does a second
 // concurrent request degrade "always offload" badly enough to matter? Measures wall-clock for
 // ALL streams' goroutines to finish (the tail, since that's what either stream's own latency
 // depends on), not aggregate throughput.

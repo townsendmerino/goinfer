@@ -562,7 +562,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
 		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
-		// L-01 (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE, synchronous only, requires
+		// L-01 (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE, synchronous only, requires
 		// cacheExperts (nothing to offload without the slot cache's own miss classification).
 		l01Enabled: os.Getenv("GOINFER_CUDA_L01_CPU_OFFLOAD") != "" && m.MoECacheExperts(),
 		dnet:       dnetP,
@@ -1386,7 +1386,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.slotIdx = r.au32(topK)
 				r.hostIdx = make([]uint32, topK)
 				r.hostSlot = make([]uint32, topK)
-				if r.l01Enabled { // L-01 prototype scratch (docs/task-l01-hybrid-moe-cpu-gpu.md)
+				if r.l01Enabled { // L-01 prototype scratch (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md)
 					r.hostWgt = make([]float32, topK)
 					r.hostMQ = make([]byte, H)
 					r.hostMSc = make([]float32, 1)

@@ -2,7 +2,7 @@ package decoder
 
 import "github.com/townsendmerino/aikit/linalg"
 
-// L-01 hybrid CPU/GPU MoE expert execution (docs/task-l01-hybrid-moe-cpu-gpu.md) — the export
+// L-01 hybrid CPU/GPU MoE expert execution (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — the export
 // seam a GPU backend needs to run one missed expert's SwiGLU MLP on the CPU from bytes it
 // already holds pinned in host memory, instead of DMA-fetching it. Nothing in this file is
 // called from goinfer's own decode path; it exists for cuda's l01_cpu_offload.go to call.

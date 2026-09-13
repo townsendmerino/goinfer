@@ -10,10 +10,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// L-01 hybrid CPU/GPU MoE expert execution (docs/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE,
+// L-01 hybrid CPU/GPU MoE expert execution (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE,
 // synchronous only (no overlap yet — correctness first). Wired into loadRoutedExperts and
 // moeMLPPost (cuda/resident.go), behind GOINFER_CUDA_L01_CPU_OFFLOAD, default off. See
-// docs/task-l01-hybrid-moe-cpu-gpu.md §9/§10 for why the extraction below was verified in
+// docs/tasks/task-l01-hybrid-moe-cpu-gpu.md §9/§10 for why the extraction below was verified in
 // isolation FIRST (cuda/l01_cpu_offload_test.go), before any decode-path
 // wiring: a wrong nibble layout here would silently produce plausible-looking wrong logits.
 
@@ -132,7 +132,7 @@ func (r *cudaResident) l01ComputeExpert(L *cudaLayer, e int, h, dst []float32) {
 // arbitrary expert subset is not new math, just a different SOURCE for some of the subset),
 // then uploads the ONE resulting [hidden] vector and adds it into x via the existing `residual`
 // kernel (cuda/glue.cu) — no new CUDA kernel needed. Synchronous for this prototype: no attempt
-// yet to overlap the CPU compute with the GPU loop above it (docs/task-l01-hybrid-moe-cpu-gpu.md
+// yet to overlap the CPU compute with the GPU loop above it (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md
 // §9's real remaining item).
 func (r *cudaResident) l01MergeCPUExperts(L *cudaLayer, x Buffer) error {
 	any := false
