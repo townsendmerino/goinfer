@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
-// TestQwen35PagedDiag_weightKinds is a throwaway diagnostic (docs/prompts/
+// TestQwen35PagedDiag_weightKinds is a throwaway diagnostic (docs/completed/
 // qwen35b-paged-decode-diagnostic.md): size the "f32-scratch handicap" —
 // the Phase 0 brief's last open item — at the REAL 35B-A3B checkpoint's
 // actual shapes, rather than the 27.8B Qwen3.8 numbers docs/queue-

@@ -1,5 +1,32 @@
 # Task (goinfer): 35B-A3B paged decode — diagnose the ~1160 ms/token, fix nothing
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (doc-review, 2026-09-13): DELIVERED, archived.** The deliverable this brief specified —
+> a ranked cost table with pager stats, the f32-scratch item sized, and a closing recommendation —
+> was executed same-day (2026-08-24) and appended to `docs/completed/task-zeno-compare.md` under
+> "## Diagnostic: the ~1160 ms/token gap", which cites this prompt by name. Confirmed against the
+> tree, not just the summary: the corrected steady-state rate (703-817 ms/token, 1.22-1.42 tok/s,
+> superseding the brief's uncorrected ~0.86 tok/s framing), the five-bucket stub split reconciled
+> to within 2.3% of the framework's own "forward" timer (MoE 70.5%, DeltaNet recurrence 19.0%, LM
+> head 7.0%, attention 3.5%, sample/logitProc/embed <0.3%), the f32-scratch handicap sized and
+> closed (<0.6% of resident weight bytes is non-int4), the LM head W8A8 dispatch traced through
+> its real call site, and pager hit rate vs gemma4 (79.0-83.6% vs 81.6%) all landed there per this
+> brief's own "Deliverable" section. Percentages sum to ~100% as required ("Sum ≈ 766 ms/token vs
+> the framework's own independently-measured... 764 ms/token"). The one permanent artifact this
+> diagnostic left behind, the env-gated `decoder/qwen35_paged_diag_probe_test.go` (a static
+> inspector, no hot-path cost), is still in the tree and still references this prompt by name. The
+> diagnostic's own "closing recommendation" was later superseded by direct instrumentation
+> (recorded in the same section of `task-zeno-compare.md`) — that supersession is part of the
+> record this brief asked for, not evidence the brief went unmet. Nothing here is open work; the
+> paging-campaign follow-on work it fed is tracked in `docs/completed/task-zeno-compare.md`'s own
+> status block, not here.
+
 > **For:** Claude Code, in `~/tmcode/goinfer`, on the 16 GB M1 Pro. Written 2026-08-24, from
 > Zeno Phase 0 Part A's close (`2dee492`): real Qwen3.5-35B-A3B, 22 GB `.giw`, expert
 > demand-paging at ~2.4-2.7 GB resident, coherent decode at **~0.86 tok/s**. The same box
