@@ -1,5 +1,29 @@
 # goinfer task: `role: "developer"` compat on the serve surface
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Archived 2026-09-13.** This was a `docs/prompts/` brief, not a `docs/task-*.md` design doc —
+> moved here on the reasoning that a fully executed, self-documented-DONE prompt is exactly the
+> kind of closed campaign record `docs/completed/` exists for; no prior prompt had been archived,
+> so this establishes rather than follows a convention. Verified against the tree, not just this
+> file's own claim: `internal/serveapp/openai.go`'s `messagesToTurns` has `case "system",
+> "developer":` (the single chokepoint this doc names), `internal/serveapp/developerrole_test.go`
+> gates it end to end, and `docs/server.md` documents the alias on the OpenAI-compatible routes.
+> One detail below is now further-superseded, not just "two things wrong": the Step-0 correction's
+> `TestAnthropicDeveloperRoleStaysUser` (pinning silent demotion-to-user on `/v1/messages`) no
+> longer exists — a later, separate queue item **G13** (`ec5629fc`, filed directly off this task's
+> own Step 0 — see the "Follow-up filed as G13" note in `docs/QUEUE.md`) changed `/v1/messages` to
+> **reject** any illegal role, `developer` included, with `400 invalid_request_error` instead of
+> folding it into a user turn; see `TestAnthropicRejectsIllegalRoles` /
+> `TestAnthropicIllegalRoleIsHTTP400` in the same test file and `docs/server.md`'s Anthropic
+> Messages API section. G13 is its own closed item, not restated here. Full record:
+> `docs/QUEUE.md`'s Done section, G12 entry.
+
 > **DONE — `4ca19e9`, 2026-08-25, on `mac`.** Queue entry G12, released to `docs/QUEUE.md`'s Done
 > with the full record. Kept as written below because the reasoning is the point; **two things in
 > it turned out wrong, both marked inline.** Read the Step-0 correction before citing this doc.
