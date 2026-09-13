@@ -115,5 +115,16 @@ Ship-worthy on the numbers now in hand: the batched path beats the sequential lo
 every tested prompt length, with bit-exact parity intact. Still gated behind
 `task-gpu-batched-prefill.md`'s own scope (Vulkan-only for bias-enabled models — Metal has an
 unresolved smaller correctness gap past nKeys~15 documented there; dense W8A8/W4A8 architectures
-only) and Increment 3 (wiring `PrefillLastW8A8` into `decoder.Generate`'s actual prefill path) is
-still not done — this branch built and gated the runner, nothing calls it in production yet.
+only).
+
+Increment 3 (wiring `PrefillLastW8A8` into `decoder.Generate`'s actual prefill path) turned out to
+already be done, not owed: `decoder/model.go`'s `residentPrefillSeed` has a generic
+`if pf, ok := m.resident.(Prefiller); ok` check that fires for ANY resident type satisfying the
+interface, and `gpu.residentDecoder` has satisfied it since `813be4e7` (already on this branch,
+predating the dispatch-count fix). Confirmed through the real `Generate()` API, not just the
+isolated `PrefillLast` gates above:
+`TestGenerate_batchedPrefillMatchesSequential` (`gpu/prefilllast_generate_integration_test.go`) —
+same real prompt, greedy, `GOINFER_BATCHED_PREFILL=0` vs default, on real hardware: 24/24 tokens
+identical, and both match `decode_parity_test.go`'s independently-pinned CPU reference for the same
+prompt/checkpoint exactly. This means the fix in this document is not a pending feature — it is
+already live in production for every eligible WebGPU resident prompt.

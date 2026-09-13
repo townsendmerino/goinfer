@@ -29,8 +29,10 @@
 > "long-prompt TTFT measurement" line, unchecked below for three months, would have caught this
 > before it shipped. Fixed on the same branch (packed-buffer dispatch consolidation, not a real
 > Increment-1 attention kernel) to a consistent 2.5–3.5× **win** at P=64/256/1024. Increment 3
-> (wiring into `decoder.Generate`) is still not done — nothing calls `PrefillLastW8A8` in
-> production yet.
+> (wiring into `decoder.Generate`) turned out to already be done — `residentPrefillSeed`'s
+> generic `Prefiller` check fires automatically once a resident type satisfies the interface,
+> which `gpu.residentDecoder` has since `813be4e7`; confirmed through the real `Generate()` API
+> (`TestGenerate_batchedPrefillMatchesSequential`), not just the isolated `PrefillLast` gates.
 
 ## Problem
 
@@ -113,12 +115,24 @@ prefill the decode `Run` continues from `pos = M`. Per layer, mirror
       see `docs/measurements/prefill-batched-ttft-2026-09-13.md`.
 
 ### Increment 3 — wire into `decoder.Generate`
-In the residency prefill (`decoder/model.go` ~338 / `residency.go`), when
-`len(prompt)` exceeds a small threshold use the `PrefillRunner`; else keep the
-per-token `Run` loop (and as the fallback). Continue decode from `pos = M`.
-- [ ] **Gate:** `TestDecodeParity`-class greedy continuation **unchanged**;
-      long-prompt TTFT measurement shows sub-linear scaling vs option (a)
-      (e.g. 1 k-token prompt: ~18 s → target a few × the one-pass cost, not 1000×).
+**DONE — already was, before this branch existed.** `decoder/model.go`'s `residentPrefillSeed`
+(shared by every resident generation path: `generateInto`, `genNgramInto`, the speculative
+target/draft) has had a backend-agnostic `if pf, ok := m.resident.(Prefiller); ok { pf.PrefillLast(...) }`
+check since before this doc's threshold language was written — `len(prompt[from:]) >= 8` and no
+bound adapter, same threshold this section names. `gpu.residentDecoder` satisfied
+`decoder.Prefiller` as of `813be4e7` (already on this branch, itself titled "Increment 3" — its own
+message: "that branch starts firing automatically once webgpuBackend's resident type satisfies
+decoder.Prefiller"). So the wiring was live the moment `PrefillLastW8A8` existed; this doc's
+Definition of Done just hadn't been checked against it.
+- [x] **Gate:** `TestDecodeParity`-class greedy continuation **unchanged**. **2026-09-13**:
+      `TestGenerate_batchedPrefillMatchesSequential` (`gpu/prefilllast_generate_integration_test.go`)
+      — the real prompt `decode_parity_test.go` pins for the CPU path, through the real
+      `Generate()` API, `GOINFER_BATCHED_PREFILL=0` vs default, on real Vulkan/RTX 2070 SUPER
+      hardware: token-for-token identical (24/24), and both match `decode_parity_test.go`'s
+      independently-pinned CPU reference exactly.
+      Long-prompt TTFT measurement: see Definition of Done below (recorded, not sub-linear in the
+      literal sense this line originally meant — see the banner's 2026-09-13 note on why Increment
+      1 not being built changes what "sub-linear" would have required).
 
 ## Memory & chunking (note, don't over-build)
 
@@ -164,10 +178,10 @@ those workloads imply).
 ## Definition of done
 
 - [ ] Increments 1–3 landed, each with its bit-exact gate on real hardware. **2026-09-13:
-      Increment 2 landed and gated (see its own checkbox above); Increment 1 (the real
-      batched-causal-attention kernel) still not built — the shipped shape substitutes a
-      per-row loop into the M=1 kernel; Increment 3 (wiring into `decoder.Generate`) not
-      started.**
+      Increment 2 landed and gated, Increment 3 turned out to already be wired and is now
+      gated too (see their own checkboxes above); only Increment 1 (the real
+      batched-causal-attention kernel) is still not built — the shipped shape substitutes a
+      per-row loop into the M=1 kernel, which is why the checkbox above stays unchecked.**
 - [x] Long-prompt TTFT measurement recorded (option (a) vs batched) in the GPU
       campaign doc / CHANGELOG. **2026-09-13**: `docs/measurements/
       prefill-batched-ttft-2026-09-13.md` — first run ever (7-29× slower, worsening with
