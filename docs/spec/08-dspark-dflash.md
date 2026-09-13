@@ -823,7 +823,7 @@ projection before committing either trunk.
 
 **Autoresearch tie-in:** the confidence-head threshold + block length are a bounded search
 with a clean metric (blended tok/s) and the airtight lossless gate 1 — an E9 target
-([task-autoresearch-loop](../task-autoresearch-loop.md)) once the DSpark path runs.
+([task-autoresearch-loop](../tasks/task-autoresearch-loop.md)) once the DSpark path runs.
 
 ### DSpark RE-PRICED against the corrected build cost (2026-08-15)
 
