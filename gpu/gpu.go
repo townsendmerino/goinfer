@@ -182,6 +182,24 @@ type Context struct {
 	ropeBatchedShader   *wgpu.ShaderModule
 	ropeBatchedPipeline *wgpu.ComputePipeline
 	ropeBatchedLayout   *wgpu.BindGroupLayout
+	// task-gpu-batched-prefill.md Increment 1: batched causal attention (PrefillLastW8A8
+	// only, lazy via ensurePrefillBatched, prefillrunner.go) — grid (nH, M), one dispatch
+	// for ALL M query rows against the shared resident K/V cache, each row's causal bound
+	// computed in-kernel as basePos+row+1. Two variants matching attnKernel's own
+	// selection (attention.go): attnKeysBatched mirrors attnKeysShaderWGSL's tiled
+	// key-split decomposition (used whenever attnKeysEligible — most real dense
+	// architectures), attnBatched mirrors the plain per-key attnShaderWGSL (the
+	// fallback attnKernel itself falls back to). Neither is bit-identical to the
+	// single-query kernel it replaces in general — same house rule as
+	// attnKeysShaderWGSL vs attnShaderWGSL, a reduction-order difference — see
+	// TestAttnKeysBatched_parity / TestAttnBatched_parity's cosine/maxAbs gates rather
+	// than a bit-exact one.
+	attnBatchedShader       *wgpu.ShaderModule
+	attnBatchedPipeline     *wgpu.ComputePipeline
+	attnBatchedLayout       *wgpu.BindGroupLayout
+	attnKeysBatchedShader   *wgpu.ShaderModule
+	attnKeysBatchedPipeline *wgpu.ComputePipeline
+	attnKeysBatchedLayout   *wgpu.BindGroupLayout
 	// Fused q-rope + k-rope-store + v-store (decode fusion, f32 KV): one dispatch for the
 	// three post-projection KV ops, cutting two dispatches/layer off the decode chain.
 	qkvFinShader   *wgpu.ShaderModule

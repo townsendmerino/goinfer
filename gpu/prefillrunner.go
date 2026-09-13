@@ -76,6 +76,184 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
+// attnBatchedShaderWGSL is attnShaderWGSL (attention.go) widened to M query rows in
+// one dispatch — grid (nH, M) instead of one dispatch per row with a fixed nKeys.
+// Each row's causal bound is basePos+row+1 (positions are always contiguous within
+// one PrefillLastW8A8 call — positions[r]=start+r, residency.go). No sink support:
+// runModelToModelW already declines any model with FeatAttnSink. Not bit-identical
+// to calling attnShaderWGSL M times in general (independent per-row reductions, so
+// in practice it likely is) — gated on cosine/maxAbs like every other attention
+// kernel pair in this file, not a bit-exact claim.
+const attnBatchedShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, basePos: u32, group: u32, scale: f32, m: u32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       q:     array<f32>;  // [M, nH*hd]  (RoPE'd)
+@group(0) @binding(1) var<storage, read>       keys:  array<f32>;  // [nKeysCache*nKV*hd]
+@group(0) @binding(2) var<storage, read>       vals:  array<f32>;  // [nKeysCache*nKV*hd]
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;  // [M, nH*hd]
+@group(0) @binding(4) var<uniform>             p:     P;
+var<workgroup> red: array<f32, 128>;
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    let row = wid.y;
+    if (qh >= p.nH || row >= p.m) { return; }
+    let d = lid.x;
+    let hd = p.hd;
+    let kvDim = p.nKV * hd;
+    let kvh = qh / p.group;
+    let qbase = row * p.nH * hd + qh * hd;
+    let kvbase = kvh * hd;
+    let lane = d < hd;
+    var qd: f32 = 0.0;
+    if (lane) { qd = q[qbase + d]; }
+    var acc: f32 = 0.0;
+    var mx: f32 = -1e30;
+    var l: f32 = 0.0;
+    let nKeys = p.basePos + row + 1u;
+    for (var s: u32 = 0u; s < nKeys; s = s + 1u) {
+        let kbase = s * kvDim + kvbase;
+        var prod: f32 = 0.0;
+        if (lane) { prod = qd * keys[kbase + d]; }
+        red[d] = prod;
+        workgroupBarrier();
+        var stride: u32 = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (d < stride) { red[d] = red[d] + red[d + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let x = red[0] * p.scale;
+        let mnew = max(mx, x);
+        let corr = exp(mx - mnew);
+        let pe = exp(x - mnew);
+        if (lane) { acc = acc * corr + pe * vals[kbase + d]; }
+        l = l * corr + pe;
+        mx = mnew;
+        workgroupBarrier();
+    }
+    if (lane) { ctx[qbase + d] = acc / l; }
+}
+`
+
+// attnKeysBatchedShaderWGSL is attnKeysShaderWGSL (attention.go) widened to M query
+// rows the same way attnBatchedShaderWGSL widens the plain kernel — grid (nH, M),
+// each row's own causal tile loop from key 0 to basePos+row (inclusive). Selected
+// whenever attnKeysEligible(hd, kvDim, false, false) (attention.go), matching
+// attnKernel's own preference for the tiled/key-split decomposition — most real
+// dense architectures (hd and kvDim both multiples of 4) take this path, not the
+// plain kernel above.
+const attnKeysBatchedShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, basePos: u32, group: u32, scale: f32, m: u32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       q4:    array<vec4<f32>>;  // [M, nH*hd/4]  (RoPE'd)
+@group(0) @binding(1) var<storage, read>       k4:    array<vec4<f32>>;  // [nKeysCache*kvDim/4]
+@group(0) @binding(2) var<storage, read>       vals:  array<f32>;        // [nKeysCache*kvDim]
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;        // [M, nH*hd]
+@group(0) @binding(4) var<uniform>             p:     P;
+
+var<workgroup> sc:  array<f32, 2048>;
+var<workgroup> red: array<f32, 128>;
+
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    let row = wid.y;
+    if (qh >= p.nH || row >= p.m) { return; }
+    let t = lid.x;
+    let hd = p.hd;
+    let hd4 = hd / 4u;
+    let kvDim = p.nKV * hd;
+    let kvDim4 = kvDim / 4u;
+    let kvh = qh / p.group;
+    let qb4 = (row * p.nH * hd + qh * hd) / 4u;
+    let kvb4 = (kvh * hd) / 4u;
+    let kvbase = kvh * hd;
+    let TILE: u32 = 2048u;
+
+    var mVal: f32 = -1e30;
+    var l: f32 = 0.0;
+    var acc: f32 = 0.0;
+
+    let nKeys = p.basePos + row + 1u;
+    var tileStart: u32 = 0u;
+    loop {
+        if (tileStart >= nKeys) { break; }
+        var tileEnd: u32 = tileStart + TILE;
+        if (tileEnd > nKeys) { tileEnd = nKeys; }
+
+        var lm: f32 = -1e30;
+        for (var s: u32 = tileStart + t; s < tileEnd; s = s + 128u) {
+            let kb = s * kvDim4 + kvb4;
+            var dot: f32 = 0.0;
+            for (var i: u32 = 0u; i < hd4; i = i + 1u) {
+                let qq = q4[qb4 + i];
+                let kk = k4[kb + i];
+                dot = dot + qq.x * kk.x;
+                dot = dot + qq.y * kk.y;
+                dot = dot + qq.z * kk.z;
+                dot = dot + qq.w * kk.w;
+            }
+            let x = dot * p.scale;
+            sc[s - tileStart] = x;
+            lm = max(lm, x);
+        }
+        red[t] = lm;
+        workgroupBarrier();
+        var stride: u32 = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (t < stride) { red[t] = max(red[t], red[t + stride]); }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let mnew = max(mVal, red[0]);
+        let corr = exp(mVal - mnew);
+        workgroupBarrier();
+
+        var ls: f32 = 0.0;
+        for (var s: u32 = tileStart + t; s < tileEnd; s = s + 128u) {
+            let e = exp(sc[s - tileStart] - mnew);
+            sc[s - tileStart] = e;
+            ls = ls + e;
+        }
+        red[t] = ls;
+        workgroupBarrier();
+        stride = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (t < stride) { red[t] = red[t] + red[t + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        l = l * corr + red[0];
+
+        if (t < hd) {
+            var a: f32 = acc * corr;
+            for (var s: u32 = tileStart; s < tileEnd; s = s + 1u) {
+                a = a + sc[s - tileStart] * vals[s * kvDim + kvbase + t];
+            }
+            acc = a;
+        }
+        mVal = mnew;
+        workgroupBarrier();
+        tileStart = tileEnd;
+    }
+    if (t < hd) { ctx[row * p.nH * hd + qh * hd + t] = acc / l; }
+}
+`
+
+// attnBatchedKernel picks the batched attention pipeline+layout for a geometry,
+// mirroring attnKernel's (attention.go) own preference for the tiled key-split
+// decomposition — restricted to the two cases PrefillLastW8A8 can ever reach
+// (runModelToModelW already declines kvF16/kvI8/hd>attnWG), unlike attnKernel's
+// full 5-way switch.
+func (c *Context) attnBatchedKernel(hd, kvDim int) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
+	if !attnKeysDisabled && attnKeysEligible(hd, kvDim, false, false) {
+		return c.attnKeysBatchedPipeline, c.attnKeysBatchedLayout
+	}
+	return c.attnBatchedPipeline, c.attnBatchedLayout
+}
+
 // ensurePrefillBatched lazily compiles the two batched-row kernels PrefillLastW8A8
 // needs beyond its existing ensure-list (M-08's dispatch-count fix, audit-metal
 // class finding but on WebGPU: the original implementation issued one dispatch PER
@@ -94,6 +272,16 @@ func (c *Context) ensurePrefillBatched() error {
 	}
 	if c.ropeBatchedPipeline == nil {
 		if c.ropeBatchedShader, c.ropeBatchedPipeline, c.ropeBatchedLayout, err = mk("rope-batched", ropeBatchedShaderWGSL); err != nil {
+			return err
+		}
+	}
+	if c.attnBatchedPipeline == nil {
+		if c.attnBatchedShader, c.attnBatchedPipeline, c.attnBatchedLayout, err = mk("attn-batched", attnBatchedShaderWGSL); err != nil {
+			return err
+		}
+	}
+	if c.attnKeysBatchedPipeline == nil {
+		if c.attnKeysBatchedShader, c.attnKeysBatchedPipeline, c.attnKeysBatchedLayout, err = mk("attn-keys-batched", attnKeysBatchedShaderWGSL); err != nil {
 			return err
 		}
 	}
@@ -538,12 +726,6 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	}
 	keepBuf(xd)
 
-	// FeatAttnSink: always bound (WGSL bind groups can't bind a null storage buffer);
-	// runModelToModelW already declined any model with a real sink, so this is always the
-	// harmless dummy + hasSink=0, matching attnShaderWGSL's convention.
-	noSinks := storF(1)
-	noHasSink := uni([]uint32{0, 0, 0, 0})
-
 	for i := range m.Layers {
 		lw := &m.Layers[i]
 		xn := rmsB(xd, lw.Attn.Norm.buf)
@@ -563,38 +745,20 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		cpy(v, 0, lw.Attn.VCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
 		// All rows' K/V are now in the cache; each row attends to its causal prefix
 		// (including earlier rows of this same prefill block) — the same ordering
-		// DecodeTokenFusedBatched's parity gate already proves correct. A real fused
-		// multi-query batched-attention kernel (task-gpu-batched-prefill.md's
-		// Increment 1) is still NOT built — this per-row loop into the existing M=1
-		// kernel is the one dispatch-count cost this rewrite did NOT eliminate (M
-		// dispatches/layer here vs the ~39×M/layer the rest of the function had before
-		// this fix). Q is extracted per row (qRow) and each row's context is scattered
-		// into a packed ctxv buffer via plain copies (not a WebGPU bind-group Offset
-		// view: GPUBindGroupEntry.offset must be a multiple of
-		// minStorageBufferOffsetAlignment, typically 256B, which nH*hd*4 is not
-		// guaranteed to satisfy for every model geometry) — 2×M copies + M dispatches,
-		// still far below the pre-fix ~39×M.
-		// attnKernel picks the SAME kernel decoderunner.go's sequential resident
-		// decode would pick for this geometry (kvF16=false always: runModelToModelW
-		// declines kvF16/kvI8 models). Dispatching a different kernel than the
-		// production Forward() path for the same geometry is exactly what caused the
-		// nKeys>=3 divergence this comment's neighbor (attnKernel, attention.go) documents.
-		attnPl, attnLy := c.attnKernel(hd, kvDim, false)
+		// DecodeTokenFusedBatched's parity gate already proves correct.
+		//
+		// task-gpu-batched-prefill.md Increment 1: ONE dispatch, grid (nH, M), against
+		// attnBatchedKernel's chosen kernel (mirrors attnKernel's own tiled-vs-plain
+		// preference, attention.go) — replaces what used to be M per-row dispatches
+		// into the M=1 kernel (the one dispatch-count cost the earlier fix in this
+		// function's history did not eliminate). q/ctxv are read/written directly at
+		// each row's own offset inside the shader now, so the qRow-extract/cv-scatter
+		// copy pair this loop used to need is gone entirely, not just the M-1 spare
+		// allocations of it.
+		attnPl, attnLy := c.attnBatchedKernel(hd, kvDim)
 		ctxv := storF(M * nH * hd)
-		// qRow/cv are allocated ONCE and reused (overwritten) every iteration, not
-		// re-allocated per row: commands within one queue execute strictly in the
-		// order they were recorded (WebGPU's ordering guarantee), so cpy(q,r,qRow)
-		// -> dispatch(reads qRow) -> cpy(cv,ctxv,r) -> cpy(q,r+1,qRow) -> … never
-		// races even across a flushPasses submit boundary. Cuts M-1 buffer
-		// allocations/layer versus a fresh pair per row.
-		qRow := storF(nH * hd)
-		cv := storF(nH * hd)
-		for r := 0; r < M; r++ {
-			cpy(q, uint64(r*nH*hd*4), qRow, 0, uint64(nH*hd*4))
-			ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[r] + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-			disp(attnPl, bind(attnLy, qRow, lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, noSinks, ap, noHasSink), uint32(nH), 1)
-			cpy(cv, 0, ctxv, uint64(r*nH*hd*4), uint64(nH*hd*4))
-		}
+		ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[0]), uint32(nH / nKV), f32bits(scale), uint32(M), 0})
+		disp(attnPl, bind(attnLy, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, ap), uint32(nH), uint32(M))
 		attnOut := tiledProjB(ctxv, M, lw.Attn.OProj, nil)
 		xd = residualB(xd, attnOut) // in-place: xd += attnOut
 		xn2 := rmsB(xd, lw.MLPNorm.buf)

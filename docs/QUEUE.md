@@ -1230,7 +1230,7 @@ supports.
 | `docs/audit-2026-09-10.md|gpu/decoderunner.go:1537` | goinfer | `anchor: func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {` |
 | `docs/audit-2026-09-10.md|gpu/gemv.go:194` | goinfer | `func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []decodeWeight) ([][]float32,` |
 | `docs/audit-2026-09-10.md|gpu/gemv_w4a8.go:94` | goinfer | `bScales *wgpu.Buffer // [N, kp/32] f32 per-group scales` |
-| `docs/audit-2026-09-10.md|gpu/gpu.go:751` | goinfer | `if err := pass.TryEnd(); err != nil {` |
+| `docs/audit-2026-09-10.md|gpu/gpu.go:769` | goinfer | `if err := pass.TryEnd(); err != nil {` |
 | `docs/audit-2026-09-10.md|gpu/lora_resident.go:191` | goinfer | `built := make([]loraRunLayer, len(layers))` |
 | `docs/audit-2026-09-10.md|gpu/residency.go:1026` | goinfer | `// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a real one-element dummy when the` |
 | `docs/audit-2026-09-10.md|gpu/residency.go:1158` | goinfer | `if err := rd.checkCap(startPos, n); err != nil {` |
