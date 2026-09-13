@@ -16,9 +16,11 @@
 > `metal/kernels.go`'s comments — is still not in this tree; that is a retention gap in the audit
 > trail, not doubt about whether the loop ran.
 >
-> The method also transferred to CUDA: `docs/prompts/cuda-kernel-autoresearch.md` ran its own first
-> pass 2026-08-22 (7 rounds, 6 landed wins, 1 honest refutation on `attn_block_full`), an independent
-> confirmation of the harness/keep-revert discipline this doc specifies.
+> The method also transferred to CUDA: `docs/completed/cuda-kernel-autoresearch.md` ran its own
+> first pass 2026-08-22 (7 rounds, 6 landed wins, 1 honest refutation on `attn_block_full`), an
+> independent confirmation of the harness/keep-revert discipline this doc specifies. Archived
+> 2026-09-13 (doc-review): its own scoped ask (one pass over `cuda/`) is done; this design doc
+> stays open independently for the FA fast-lane below.
 >
 > **What's still open:** target 1b, the FA fast-lane (§3) — blocked on `--mode fast` and its
 > quality lane, neither of which exist yet, and no other doc in this tree tracks building them.

@@ -1,5 +1,32 @@
 # Linux-box task: autoresearch kernel-optimization loop over cuda/
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it. The loop steps,
+> traps, and gate list below (§"The loop, concretely" onward) are the method as it was run, kept
+> for reference — not a live checklist.
+
+> **Status (2026-09-13, doc-review): COMPLETE — this prompt's own scoped ask (run one
+> autoresearch pass over `cuda/`) is done.** Confirmed against the tree, not just the doc's own
+> claim: all 7 kernel-level round commits from the 2026-08-21/22 run are on `main` —
+> `e7fe6ca1` (`quant_vec`, 1.079×), `6302ca00` (`rmsnorm_quant`, 1.052×), `eb05e397` (`glu_quant`,
+> 1.040×), `89d5e5b7` (three batched maxabs reductions, 1.086×/1.037×/1.026×), `33f706ea`
+> (`splitkv_softmax`, 1.068×), `756a8a2e` (`attn_block_full`, REFUTED 0.41%, reverted — the one
+> honest negative), `56486232` (`delta_rule` 8-wide unroll, 1.060×). Matches the run's own status
+> table below exactly. `docs/completed/queue-engineering.md`'s **E9** entry and
+> `docs/tasks/task-autoresearch-loop.md`'s current status block both independently corroborate
+> this same run. Only one live reference to this file existed
+> (`docs/tasks/task-autoresearch-loop.md`), repointed to `docs/completed/` in the same commit that
+> archived this file.
+>
+> **The broader autoresearch-loop *design* doc, `docs/tasks/task-autoresearch-loop.md`, stays
+> open independently** — this file was only ever the CUDA-side *execution brief* for one pass of
+> that method; the design doc's own remaining item (the FA fast-lane, its §3 target 1b) is
+> unrelated to anything this file scoped and is not affected by archiving this one.
+
 > **STATUS: FIRST PASS DONE 2026-08-22 — 7 rounds, 7 landed wins, 1 honest negative, and a decode
 > profile that says where to go next.** Results below; the method in this file is unchanged and still
 > the one to follow.
