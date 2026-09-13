@@ -1,5 +1,27 @@
 # Release qualification sweep — real models, every claimed cell, canonical timings
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (2026-09-13): SUPERSEDED.** This doc scoped a one-time, matrix-driven real-checkpoint
+> qualification sweep gating the v0.9.0 tag. That specific run happened (folded into
+> `docs/completed/release-v0.9.0-checklist.md`'s §C1 re-validation) and was later reused, with a
+> code-identity argument, as the v0.11.0 go/no-go (`docs/legacy-benchmarks.md` "v0.11.0 release
+> qualification"). The general methodology this doc describes — one representative real checkpoint
+> per family per backend, correctness plus a server-to-server timing against a same-machine peer —
+> is now **live policy**, restated (not cited from here) in `docs/what-parity-gated-means.md`
+> §"Before a release". The v0.11.0 qualification table was itself **retired 2026-08-31** as
+> unreusable evidence once the code delta from v0.11.0 to HEAD reached 802 commits, and the
+> obligation to run this sweep again is owned going forward by `docs/release-1.0-gate.md` §2's
+> REQUIRED line "v1.0 gets its OWN benchmark sweep. It cannot inherit v0.11.0's" (added
+> 2026-08-31), not by this doc. Every instruction below is a record of what was asked for the
+> v0.9.0/v0.11.0 cycle, not a task — the v1.0 sweep is scoped and tracked at
+> `docs/release-1.0-gate.md` instead. Current tag at archival: v0.17.2.
+
 > **⚠ Peer numbers below predate the Ollama v0.32.5 re-anchor (2026-08-04).** Competitive figures
 > in this doc (e.g. Ollama-CUDA ~149, Ollama-Metal 83.3, llama.cpp-CUDA 72.8, and any "×Ollama"
 > multiple) were measured against **Ollama 0.5.7 (2025-01) / Ollama-Metal 0.32.0 / llama.cpp as of
