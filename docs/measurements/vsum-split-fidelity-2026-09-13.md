@@ -60,10 +60,13 @@ while D7's outcome is unknown.** It does not change D7's rule, and if D7 fails (
 not a reason to overlook that; it is the reason a follow-up with a noise-aware rule would have to be
 pre-registered on NEW data (held-out prompt set B), not applied to this run.
 
-**An observation, not a finding:** on the prompts where spike trails exact on agreement without
-losing a hard flip — 7 and 8 — its KL is *lower*. Those argmax disagreements sit at positions the
-reference itself scores as near-ties; the arms land on opposite sides while their distributions stay
-equally close. Two prompts is not evidence of a mechanism.
+**An observation, not a finding:** three prompts have spike trailing exact on agreement with hard
+flips tied — 6, 7 and 8. On 7 and 8 its KL is *lower*; on 6 it is higher (0.08829 vs 0.08363). So
+this is 2 of 3, not a pattern. *(Corrected the same day: the first version of this paragraph named
+only 7 and 8 and read as if every such prompt went that way, which prompt 6 contradicts.)* Where it
+does hold, the argmax disagreements sit at positions the reference itself scores as near-ties, the
+arms landing on opposite sides while their distributions stay about equally close. Three prompts is
+not evidence of a mechanism.
 
 ## Deviations from the pre-registration
 
