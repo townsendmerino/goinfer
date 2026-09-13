@@ -595,7 +595,26 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 // dispatches. post-attn norm → router logits → on-GPU top-k → per-selected-expert
 // gate|up/swiglu/weighted-down → optional shared expert. Value-independent (idx/wgt read at
 // kernel-execution time), so the encode-ahead executor still pre-encodes it.
+//
+// This is the NON-PAGED path: it reads the stacked all-E buffers (ml.expGuW/expGuS/expDW/expDS),
+// which stay zero-value once the layer is paged (see moeLayer's own comment on the pool field).
+// forwardLogitsMoEPaged never reaches here for a paged layer (it tears the layer into
+// encodeMoERouter + encodeMoEExpertsPaged around a host readback instead) — the panic below is a
+// chokepoint against every OTHER caller of encodeLayer (Forward, ForwardArgmax,
+// forwardHiddenNoHead's encodeTrunkInto) reaching a paged layer through the non-paged encoder and
+// silently computing off zero-value weights instead of failing (audit-metal-2026-09-12.md C-02).
+//
+// FinishEncoding before the panic: e already has this layer's attention/mixer dispatches recorded
+// (encodeLayer calls this after encodeAttention/encodeDeltaNetMixer), and Metal asserts if a command
+// encoder is released without endEncoding — an uncommitted, never-`.End()`'d Encoder left for the Go
+// GC to finalize hits exactly that assertion (observed: "[_MTLCommandEncoder dealloc]: failed
+// assertion" on the first version of this guard). Ending encoding without committing discards the
+// partial work cleanly with no GPU execution and no side effect on r.x.
 func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
+	if L.moe.pool != nil {
+		e.FinishEncoding()
+		panic("metal: encodeMoEFFN reached a paged MoE layer — route through forwardLogitsMoEPaged instead (C-02)")
+	}
 	r.encodeMoERouter(e, L)
 	r.encodeMoEExperts(e, L, r.x)
 }

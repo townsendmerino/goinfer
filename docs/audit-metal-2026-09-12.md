@@ -242,7 +242,7 @@ re-baked by the code it checks (G-04).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
 - **Where:** `metal/prefill.go:651-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
-  `metal/moe.go:643-663`; `metal/model.go:681-682` (paged/g4moe/DeltaNet → `prefillOK=false`);
+  `metal/moe.go:662-682`; `metal/model.go:681-682` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:396-408` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
 - **Mechanism and bound (counted):** non-paged: per row per MoE layer (5 + 3k [+3–5 shared])
@@ -469,7 +469,7 @@ re-baked by the code it checks (G-04).
 
 #### M-11 · Paged decode pays a ~14 ms command-buffer boundary 61–81× per token; the one design that removes it was rejected on a measurement taken where the boundary costs 0.2 ms
 - **Where:** `metal/gemma4_moe.go:470-538` (`begin()`/`end()` per phase; `end` = commit +
-  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:747-783` (same, generic);
+  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:766-802` (same, generic);
   `metal/residency_probe_test.go:11-12` ("~15 ms/boundary of GPU-idle-in-wait, 72× Step-0's 0.213
   ms"); `metal/pagecost_sharedevent_test.go:47-64` (verdict "recovers ~0%" — measured on
   qwen2.5-coder-1.5b, dense); `metal/model.go:1138-1144` (residency-set comment: p1 still carries
@@ -495,7 +495,7 @@ re-baked by the code it checks (G-04).
   verdict — disagree (wrong shape); audit-2026-09-10 P-22; queue P21.
 
 #### M-12 · Expert staging is queue-depth 1: k misses × 3 preads, sequential on one thread, GPU idle
-- **Where:** `metal/moe.go:764-767` (serial `ensureResident` loop), `:535-553` (three sequential
+- **Where:** `metal/moe.go:783-786` (serial `ensureResident` loop), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
   `metal/expertpool.go:164-200`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
 - **Mechanism and bound (record-derived):** per-miss cost from the sweep = staging share ×
@@ -631,6 +631,21 @@ re-baked by the code it checks (G-04).
   or make `encodeLayer` refuse a layer whose `pool != nil`. Note this also constrains M-01's fix.
 - **Confidence:** confirmed (structurally; not reproduced). **Prior:** audit-2026-09-10 C-08 (fix
   covered `PrefillLast` only).
+- **CLOSED 2026-09-13.** `HiddenLast` now declines up front when `r.g4moe.paged || r.moe.paged`
+  (`metal/backend.go`), so `decoder.Model.HiddenLast` falls through to the CPU path exactly like an
+  OOM/cap decline already does — the fix text's first option. For `Forward(id,pos)`/`ForwardArgmax`
+  (test/gate-only; decoder.ResidentForward's production `Forward(embedding,pos)` always goes
+  through `ForwardEmbPipe`, which IS paged-aware), took the fix text's second option instead: a
+  chokepoint panic in `encodeMoEFFN`/`encodeGemma4MoEFFN` (the non-paged FFN encoders `encodeLayer`
+  dispatches a MoE layer to) if it ever reaches a paged layer — covers any future caller of
+  `encodeLayer`, not just these two, and calls `e.FinishEncoding()` before panicking so an
+  in-progress Metal command encoder isn't released without `endEncoding` (that assertion fired on
+  the first version of this guard; fixed before landing). New gate:
+  `TestPagedMoE_forwardEntryPointsDecline` (`metal/c02_paged_forward_entrypoints_test.go`) on the
+  tracked `testdata/mixtral-tiny` fixture — confirmed red without the fix (`HiddenLast` returned a
+  finite result at cosine 0.993 against the correct CPU answer, not just a theoretical
+  possibility). Verified: `go test ./metal/` (82 pass), `-tags goinfer_testhooks` (133 pass, 53
+  skip), `go test ./decoder/...` all pass, gofmt/vet/staticcheck clean.
 
 #### C-03 · Adapter `In`/`Out` are never checked against the base projection on Metal (prior audit M-05, open) — a same-family different-size adapter writes past the Q slot into K/V
 - **Where:** `metal/lora.go:147-149` (rank-only check), `metal/kernels.go:859-861,868-872` (`Ar = A +
@@ -639,6 +654,22 @@ re-baked by the code it checks (G-04).
   comparisons; `SetAdapter` has `r.H`, `r.I`, `L.geom`). The decoder-side chokepoint the prior
   audit proposed is the better home.
 - **Confidence:** confirmed. **Prior:** M-05.
+- **CLOSED 2026-09-13, fixed at the decoder chokepoint instead of in `metal/lora.go`.** The actual
+  gap was one level deeper than this finding's own "Where": `decoder/lora.go`'s `validateTargets`
+  (called from `Model.LoadAdapter`, the compute-time path every resident backend's `SetAdapter`
+  reads from) only checked that a delta's tensor NAME was a known projection, never that its
+  `[Out,In]` SHAPE matched the actual base weight — the merge-at-load path
+  (`weights.go`'s `loadProj` → `loraAdapter.merge`) already made exactly this check, compute-time
+  LoRA never did. Added `validateComputeTimeDims` (`decoder/lora.go`), called right after
+  `validateTargets`, comparing every targeted delta's `In`/`Out` against the already-loaded
+  `WeightMat.Cols()`/`.Rows()` for that layer/projection. Fixed once at the one chokepoint every
+  backend passes through (CPU, Metal, CUDA, WebGPU) rather than duplicated per backend — Metal's
+  `SetAdapter` itself is unchanged. New gate: `TestLoadAdapter_dimMismatchRejects`
+  (`decoder/lora_compute_test.go`) — a synthetic base plus a same-family adapter shaped for one
+  extra attention head; confirmed red without the fix (the mismatched adapter loaded silently).
+  Verified: `go test ./decoder/...` all pass, Metal's own LoRA parity tests
+  (`TestLoRADelta_multiThreadgroupMatchesReference`, `TestLoRAResidentParityMetal[_armedExecutorThenBind]`)
+  still pass unchanged, gofmt/vet/staticcheck clean.
 
 #### C-04 · `SetAdapter`'s error path leaks the partially built bind until `Close`
 - **Where:** `metal/lora.go:157-181` (`if out[i].q, err = conv(l.Q); err != nil { return err }` —
@@ -653,6 +684,18 @@ re-baked by the code it checks (G-04).
   for the whole forward; goinfer's batch-k harnesses call it unpinned.
 - **Fix:** the same two lines as `Run1DBatch`. **Confidence:** confirmed (shape). **Prior:** aikit
   G22 (missed one helper).
+- **CLOSED 2026-09-13 in aikit, committed locally (`d8c2878`), NOT yet released/bumped into
+  goinfer.** Added the same `runtime.LockOSThread()`/`defer runtime.UnlockOSThread()` pair every
+  sibling helper (`Run1D`, `Run2D`, `Run1DBatch`) already has, directly in `Run1DBatchTG`
+  (`Run1DTG` delegates straight to it, so both are covered by the one fix). Confirmed the gap was
+  real, not just shape-plausible: `gpu/metal_vit_test.go` had grown its own manual `run1dTG`
+  wrapper specifically to pin around the unpinned library call — direct evidence this had already
+  been worked around once. Verified: `go test ./gpu/` green, including
+  `TestMetal_vitAttentionSeg` (exercises `Run1DTG` on the exact `AttentionSeg` kernel
+  `qwenmetal.ForwardViT` dispatches), `go vet -tags metal ./gpu/...` and gofmt clean. This is an
+  aikit-repo fix: committed to aikit `main` locally, CHANGELOG entry added under `[Unreleased]`,
+  but not pushed, tagged, or released — goinfer's `go.mod` still pins the pre-fix aikit version
+  until a deliberate release + bump (see `RELEASING.md`) lands it.
 
 #### C-06 · `visionmetal` has no threadgroup-memory budget guard (qwenmetal's C-02 fix was not mirrored), and the status latch it relies on cannot fire on Apple silicon
 - **Where:** aikit `visionmetal/encoder.go:225-228` (`DispatchTG(…, np*4, …)` — over the 32 KiB
@@ -743,7 +786,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/pagecost_sharedevent_test.go:47-64` (qwen2.5-1.5b dense int8int8; "recovers ~0%"),
   `metal/pagecost_measure_test.go:47-52` ("There is NO such checkpoint on this Mac … this measures
   the SUBMISSION-STRUCTURE cost on a DENSE model"), `metal/residency_probe_test.go:11-12` (paged
-  26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:434-436`,
+  26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:449-451`,
   `metal/model.go:1360`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
@@ -860,9 +903,9 @@ re-baked by the code it checks (G-04).
   the box whose N=128 cliff was memory pressure); cache f16 per expert at build.
 - N-21 `metal/expertpool.go:150-155` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
-- N-22 `metal/moe.go:768-771`, `metal/gemma4_moe.go:520-524` — phase 2 of layer l and phase 1 of l+1 have no
+- N-22 `metal/moe.go:787-790`, `metal/gemma4_moe.go:535-539` — phase 2 of layer l and phase 1 of l+1 have no
   host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11.
-- N-23 `metal/moe.go:774-777` — a hybrid's dense layers each get their own `Begin/End` in
+- N-23 `metal/moe.go:793-796` — a hybrid's dense layers each get their own `Begin/End` in
   `forwardLogitsMoEPaged`.
 - N-24 `metal/moe.go:29-37,622` — f32 router weight: 84 MB/token on the 35B (deliberate, ≤0.4 ms).
   `moe_route` on one GPU thread (deliberate, value-independent dispatch; ~10% of a fitting ~5 ms

@@ -524,6 +524,15 @@ func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, 
 	if len(embeddings) == 0 {
 		return nil, fmt.Errorf("metal: HiddenLast called with no embeddings")
 	}
+	// forwardHiddenNoHead's trunk encoder (encodeTrunkInto → encodeLayer) has no paged branch — only
+	// Forward's dispatch to forwardLogitsPaged/forwardLogitsMoEPaged does — so on a paged MoE it would
+	// bind the zero-value stacked expert buffers and return a finite garbage hidden state with no
+	// error (audit-metal-2026-09-12.md C-02). Decline instead: decoder.Model.HiddenLast treats a
+	// resident decline as "no resident backend for this request" and falls through to the CPU path,
+	// exactly like an OOM or cap decline does (decoder/embed.go:81-83).
+	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
+		return nil, fmt.Errorf("metal: HiddenLast not implemented for paged MoE (no headless paged forward); use the CPU path")
+	}
 	if e := a.checkCap(startPos, len(embeddings)); e != nil {
 		return nil, e
 	}

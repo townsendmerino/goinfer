@@ -371,7 +371,22 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 // value-independent (the top-k loop count is the model constant topK; each expert GEMV reads its
 // own rIdx slot at execution time), so the command buffer is static every token and the encode-
 // ahead executor still pre-encodes token t+1 while t runs (task-metal-moe.md).
+// This is the NON-PAGED path: encodeG4Phase2NonPaged reads the stacked all-E buffers
+// (ml.expGuW/expGuS/expDW/expDS), which stay zero-value once the layer is paged. forwardLogitsPaged
+// never reaches here for a paged layer (it tears the layer into encodeG4Phase1 + encodeG4Phase2Paged
+// around a host readback instead) — the panic below is a chokepoint against every OTHER caller of
+// encodeLayer (Forward, ForwardArgmax, forwardHiddenNoHead's encodeTrunkInto) reaching a paged layer
+// through the non-paged encoder and silently computing off zero-value weights instead of failing
+// (audit-metal-2026-09-12.md C-02).
+//
+// FinishEncoding before the panic — see encodeMoEFFN's twin comment (metal/moe.go): e already has
+// this layer's attention dispatches recorded, and Metal asserts on a command encoder released
+// without endEncoding.
 func (r *resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
+	if L.g4moe.pool != nil {
+		e.FinishEncoding()
+		panic("metal: encodeGemma4MoEFFN reached a paged Gemma-4 MoE layer — route through forwardLogitsPaged instead (C-02)")
+	}
 	r.encodeG4Phase1(e, L)         // dense branch + router + preFFN2 quant
 	r.encodeG4Phase2NonPaged(e, L) // experts from the stacked all-E buffer
 	r.encodeG4Join(e, L)           // postFFN2 + join
