@@ -255,6 +255,42 @@ re-baked by the code it checks (G-04).
 - **Confidence:** confirmed (three allocation sites traced; the 889.6 MB is the commit's own
   measurement). **Prior:** audit-2026-09-10 M-24 (the guard's 2× double-count — the real footprint
   is 3×); aikit M-22; task-int4-layout L4 (filed, not scheduled — schedule it).
+- **PARTIALLY CLOSED 2026-09-13 — row4-skip shipped, host-release deferred.** L4's own text
+  ("FILED, not scheduled... its own measurement") held this back from the first Program pass;
+  reopened after a direct measurement (TestW4A8Row4_loadTimeAndMemoryDelta, decoder's own
+  existing sanctioned toggle): row4 exactly DOUBLES the resident int4 footprint — 223.6 MB
+  canonical + 223.6 MB row4 on the 0.5B fixture (100.0% additional RAM), +15% load time. A real,
+  substantial win, not a theoretical one.
+  <br>Shipped: `wantsRow4Fallback(backendName)` (decoder/weightmat.go) — false ONLY for the
+  literal "metal", threaded through `repackedOnlyOrCanonical`/`quantizeBatchedProjWM`/
+  `streamQuantizedBatchedProj` down to both Load entry points (GGUF and safetensors). Scoped to
+  Q/K/V/gate/up (`quantizeBatchedProjWM`'s own five standard tensor names) — NOT o_proj,
+  down_proj, router, or MoE experts, which route through `quantizeWM`, a separate function with
+  its OWN unconditional `repackW4A8IfEligible` call used from ~40 family-specific call sites
+  across weights.go's per-architecture builders. Reaching those too would multiply this fix's
+  blast radius well past what this pass could safely verify; left as a larger follow-up — this
+  fix captures a real slice of the measured 223.6 MB, not its entirety, and down-proj alone is
+  the audit's own N-10-cited ~22% of per-token weight bytes. Embed/LMHead deliberately
+  unaffected (`quantizeEmbedWM`/`streamQuantizedEmbed` pass skipRow4=false unconditionally) —
+  read via `.Row()` on the host on every backend regardless of GPU residency.
+  <br>Verified: TestW4A8Row4_skippedForMetalBackend (new) confirms Backend:"metal" zeroes row4 on
+  exactly the 5 scoped tensor types per layer (120/120 on the 0.5B) while o_proj/down_proj stay
+  row4 (48/48, correctly unaffected) and canonical bytes remain present (Metal's own GPU upload
+  path is untouched — it always read canonical, never row4); Backend:"" (unspecified) is
+  bit-for-bit unchanged (still both). Full `go test ./metal/...` (82 pass) and `-tags
+  goinfer_testhooks` (132 pass) both green; `go test ./decoder/...` green including
+  `scripts/refresh_parity_hashes.sh`'s 37 forward goldens (0 failed, 1 driving the quantized
+  int4 path) — a provably non-numeric core edit for every path except Backend:"metal" itself,
+  where canonical bytes (the only thing any numeric computation reads) are byte-for-byte
+  unchanged regardless of row4's presence. Re-ran the real S-model §3.2 oracle gate
+  (TestPrefillGateVsReference) after this change: K=256's cell numbers matched every prior
+  same-session baseline exactly (92.8%/93.8% agree, meanKL 0.0375/0.0340) — zero measurable
+  numeric drift, as expected.
+  <br>NOT done: the fix's own second half ("release the layer projections' host WeightMats after
+  BuildResident succeeds") — a genuine object-lifecycle change (freeing host memory while the
+  *Model stays alive and functional for embed lookups/CPU fallback) with its own risk profile,
+  out of scope for this pass; and extending skipRow4 to quantizeWM's ~40 call sites (down-proj/
+  router/experts), per above.
 
 #### M-08 · `lora_delta` runs each projection's whole adapter delta in ONE threadgroup — the design CUDA's P-11 measured at +124%/token; Metal's P-11 fused two dispatches and kept the serial block
 - **Where:** `metal/kernels.go:834-873` (`// ONE THREADGROUP ONLY … looping over ranks serially …

@@ -219,7 +219,7 @@ func TestIsW4A8_trueForRepackedOnly(t *testing.T) {
 	if !linalg.Int4Row4Usable(rows, cols, int4GroupSize) {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
-	wm := quantizeBatchedProjWM(linalg.WrapF32(syntheticEmbedF32(rows, cols), rows, cols), quantInt4, false)
+	wm := quantizeBatchedProjWM(linalg.WrapF32(syntheticEmbedF32(rows, cols), rows, cols), quantInt4, false, false)
 	if wm.Int4Layout() != "row4" {
 		t.Fatalf("test setup: Int4Layout() = %q, want %q", wm.Int4Layout(), "row4")
 	}
@@ -239,11 +239,11 @@ func TestQuantizeBatchedProjWM_repackedOnlyWhenEligible(t *testing.T) {
 		t.Skip("this core cannot build row4 at all (non-arm64, or no dotprod)")
 	}
 	f32 := syntheticEmbedF32(rows, cols)
-	repackedOnly := quantizeBatchedProjWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, false)
+	repackedOnly := quantizeBatchedProjWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, false, false)
 	if repackedOnly.Int4Layout() != "row4" {
 		t.Errorf("needCanonical=false: Int4Layout() = %q, want %q", repackedOnly.Int4Layout(), "row4")
 	}
-	both := quantizeBatchedProjWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, true)
+	both := quantizeBatchedProjWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, true, false)
 	if _, _, _, ok := both.Int4(); !ok {
 		t.Error("needCanonical=true: Int4()'s ok is false — canonical bytes are not resident")
 	}
@@ -304,7 +304,7 @@ func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 			for j := range f32 {
 				f32[j] *= float32(i + 1)
 			}
-			out[i] = quantizeBatchedProjWM(linalg.WrapF32(f32, rows, cols), quantInt4, needCanonical)
+			out[i] = quantizeBatchedProjWM(linalg.WrapF32(f32, rows, cols), quantInt4, needCanonical, false)
 		}
 		return out
 	}

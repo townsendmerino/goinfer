@@ -166,11 +166,14 @@ func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []f
 // gate/up) — see decoder/weightmat.go's quantizeEmbedWM/quantizeBatchedProjWM/
 // repackedOnlyOrCanonical for the full policy and each caller's own safety argument. The
 // row-quantize loop is identical regardless of final layout — the quantized BYTES are the same —
-// so this only differs from streamQuantized in the last step for quantInt4: when needCanonical
-// is false and the shape/core qualify, it repacks the just-quantized bytes in place
-// (linalg.RepackInt4Row4InPlace) instead of wrapping them canonical+row4 "both".
-func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
-	if mode != quantInt4 || fakeQuantScheme != "" || needCanonical {
+// so this only differs from streamQuantized in the last step for quantInt4: the repack decision
+// routes through repackedOnlyOrCanonical (row4-only when needCanonical is false and the shape/
+// core qualify; canonical, optionally row4-skipped, when needCanonical is true) instead of
+// streamQuantized's own hardcoded canonical+row4 "both" — this is why quantInt4 no longer
+// early-returns into streamQuantized the way it used to (that hardcoding is exactly what made
+// skipRow4 (M-07, audit-metal-2026-09-12.md) unreachable from the GGUF streaming path).
+func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+	if mode != quantInt4 || fakeQuantScheme != "" {
 		return streamQuantized(rows, cols, mode, rowInto)
 	}
 	scratch := make([]float32, cols)
@@ -186,20 +189,23 @@ func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical boo
 		linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
 	}
 	canon := maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))
-	return repackedOnlyOrCanonical(canon, needCanonical), nil
+	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4), nil
 }
 
 // streamQuantizedEmbed is streamQuantizedRepackable applied to Embed/LMHead — see
-// quantizeEmbedWM's own doc comment for why this tensor class is safe.
+// quantizeEmbedWM's own doc comment for why this tensor class is safe. skipRow4 is always false:
+// Embed/LMHead are read via .Row() on the host on every backend, so M-07's row4-skip trade (a
+// slower CPU fallback in exchange for less resident memory) is not this tensor class's call to
+// make — quantizeEmbedWM makes the identical choice on the non-streaming path.
 func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
-	return streamQuantizedRepackable(rows, cols, mode, needCanonical, rowInto)
+	return streamQuantizedRepackable(rows, cols, mode, needCanonical, false, rowInto)
 }
 
 // streamQuantizedBatchedProj is streamQuantizedRepackable applied to the attention Q/K/V and MLP
 // gate/up projections — see quantizeBatchedProjWM's own doc comment for the batch-path safety
 // argument this shares.
-func streamQuantizedBatchedProj(rows, cols int, mode quantMode, needCanonical bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
-	return streamQuantizedRepackable(rows, cols, mode, needCanonical, rowInto)
+func streamQuantizedBatchedProj(rows, cols int, mode quantMode, needCanonical, skipRow4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+	return streamQuantizedRepackable(rows, cols, mode, needCanonical, skipRow4, rowInto)
 }
 
 // quantizeWM returns w streamed to the requested resident precision — the
@@ -378,6 +384,14 @@ func repackW4A8IfEligible(wm linalg.WeightMat) linalg.WeightMat {
 	return repackW4A8SplitHalfIfEligible(repackW4A8Row4IfEligible(wm))
 }
 
+// repackW4A8IfEligibleSkipRow4 is repackW4A8IfEligible's twin for a backend that has committed
+// to GPU residency and will never read the arm64 row4 layout (M-07, audit-metal-2026-09-12.md;
+// wantsRow4Fallback has the measurement): applies only the amd64 split-half repack (a no-op on
+// arm64/non-int4/etc, same as always), skipping row4 entirely.
+func repackW4A8IfEligibleSkipRow4(wm linalg.WeightMat) linalg.WeightMat {
+	return repackW4A8SplitHalfIfEligible(wm)
+}
+
 // wantsCanonicalInt4 reports whether this load might need canonical int4 bytes (packed nibbles +
 // scales) for a tensor somewhere in its lifetime — the two consumers that read them directly
 // rather than through WeightMat's own layout-agnostic methods:
@@ -425,6 +439,25 @@ func wantsCanonicalInt4(backendName string, be Backend) bool {
 	return ok
 }
 
+// wantsRow4Fallback reports whether the arm64 row4 repack should be built ALONGSIDE canonical, as
+// a safety net for a CPU fallback (M-07, audit-metal-2026-09-12.md). Row4 is read ONLY by the
+// CPU's own decode kernel (arm64 SIMD dotprod) — no GPU backend's kernels ever read it, resident
+// or staged; it exists purely so a model that falls back to CPU decode (a declined residency
+// build, LoRA/session paths outside a resident backend's coverage) keeps its ~1.1-1.3x speed.
+//
+// False specifically for backendName == "metal": Options.Backend is the caller's own explicit
+// commitment to that backend (same "stated, never inferred" discipline wantsCanonicalInt4 above
+// already applies to "cpu"), and row4 is measured to exactly DOUBLE the resident int4 footprint
+// of every layer projection it applies to (TestW4A8Row4_loadTimeAndMemoryDelta: 223.6 MB
+// canonical + 223.6 MB row4 on the 0.5B fixture, 100.0% additional RAM). Accepting a slower CPU
+// fallback in the rare case Metal residency later declines is the trade this backs out of paying
+// on every load. True for every other backendName (cpu, cuda, webgpu, empty/unspecified) — this
+// is intentionally narrower than wantsCanonicalInt4's own "any non-cpu name" rule: CUDA/WebGPU
+// residency have not been measured against this same trade, so they keep today's default.
+func wantsRow4Fallback(backendName string) bool {
+	return backendName != "metal"
+}
+
 // repackedOnlyOrCanonical is the shared decision behind quantizeEmbedWM and
 // quantizeBatchedProjWM: given an already-quantized CANONICAL int4 WeightMat, build it
 // repacked-only (aikit audit M-22) when needCanonical is false and this core/shape can build
@@ -439,8 +472,18 @@ func wantsCanonicalInt4(backendName string, be Backend) bool {
 // amd64 split-half repacked-only is out of scope for both callers: split-half repacking itself
 // is already a separate, measured-marginal, parked feature (w4a8SplitHalfRepackEnabled, default
 // off), so there is no default-on amd64 path this closes yet.
-func repackedOnlyOrCanonical(canon linalg.WeightMat, needCanonical bool) linalg.WeightMat {
+//
+// skipRow4 (M-07, audit-metal-2026-09-12.md; wantsRow4Fallback's own doc comment has the
+// measurement) — only consulted in the needCanonical branch, since the !needCanonical branch
+// below is the CPU-only repacked-only path row4 exists FOR; skipRow4 there would defeat its own
+// purpose. Callers that must never skip row4 regardless of the backend (Embed/LMHead, read via
+// .Row() on the host on every backend) pass false unconditionally rather than threading a real
+// decision through.
+func repackedOnlyOrCanonical(canon linalg.WeightMat, needCanonical, skipRow4 bool) linalg.WeightMat {
 	if needCanonical {
+		if skipRow4 {
+			return repackW4A8IfEligibleSkipRow4(canon)
+		}
 		return repackW4A8IfEligible(canon)
 	}
 	q4, q4s, group, ok := canon.Int4()
@@ -475,7 +518,10 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 		return quantizeWM(w, mode) // already quantized, or empty — quantizeWM's own no-op path
 	}
 	canon := maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))
-	return repackedOnlyOrCanonical(canon, needCanonical)
+	// skipRow4 is always false here: Embed/LMHead are read via .Row() on the host on every
+	// backend, so M-07's row4-skip trade is not this tensor class's call to make (see
+	// streamQuantizedEmbed's own doc comment — the streaming path makes the identical choice).
+	return repackedOnlyOrCanonical(canon, needCanonical, false)
 }
 
 // quantizeBatchedProjWM is quantizeWM's twin for the attention Q/K/V and MLP gate/up
@@ -502,7 +548,17 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 // tensors today, but has not been separately audited), and expert/layer weights read through a
 // read-only mmap span (paged .giw loading) are explicitly excluded by aikit's own note — paging
 // has no load-time repack step, so they stay canonical-only regardless of this policy.
-func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical bool) linalg.WeightMat {
+//
+// skipRow4 (M-07, audit-metal-2026-09-12.md) is ALSO scoped to just this function's own tensor
+// class for the same reason: down-proj/router/MoE-expert weights route through quantizeWM
+// (weightmat.go's own generic quantizer), a SEPARATE function with its OWN unconditional
+// repackW4A8IfEligible call that takes no needCanonical/backend signal at all — used from ~40
+// family-specific call sites across weights.go's per-architecture builders. Reaching those too
+// would multiply this fix's blast radius well past what this pass measured or verified; left as
+// a separate, larger follow-up. This function's own scope (Q/K/V/gate/up) is a real, smaller
+// slice of the measured 223.6 MB/223.6 MB row4 overhead (TestW4A8Row4_loadTimeAndMemoryDelta),
+// not the whole of it.
+func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, skipRow4 bool) linalg.WeightMat {
 	if mode != quantInt4 || fakeQuantScheme != "" {
 		return quantizeWM(w, mode)
 	}
@@ -511,7 +567,7 @@ func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical boo
 		return quantizeWM(w, mode)
 	}
 	canon := maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))
-	return repackedOnlyOrCanonical(canon, needCanonical)
+	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4)
 }
 
 // isBatchedProjTensor reports whether name — llama.cpp's own GGUF tensor-name convention — is

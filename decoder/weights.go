@@ -299,7 +299,9 @@ func (w *Weights) bodyMatmulWeights() []*linalg.WeightMat {
 //
 // Use LoadWeightsFromFS for fs.FS-backed (MapFS, embed.FS) paths — that
 // route stays heap-backed because fs.FS doesn't expose a file descriptor.
-func LoadWeights(dir string) (*Weights, error) { return loadWeights(dir, quantNone, false, true, nil) }
+func LoadWeights(dir string) (*Weights, error) {
+	return loadWeights(dir, quantNone, false, true, false, nil)
+}
 
 // parallelLayers runs fn over the n layer indices across a worker pool, so the
 // per-tensor dequant + re-quant (independent per layer — distinct linalg.WeightMat
@@ -360,13 +362,13 @@ func parallelLayers(n int, fn func(i int) error) error {
 // big quantized checkpoint load in a quarter (int8) or eighth (int4) of the RAM
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
-func loadWeights(dir string, quant quantMode, embedInt4, needCanonical bool, lora *loraAdapter) (*Weights, error) {
+func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter) (*Weights, error) {
 	// One atomic add per model load, so the fit guard's test can OBSERVE that a refused load
 	// allocated nothing rather than infer it from an error string. Inferring is how a guard that
 	// fires after the allocation still looks correct (docs/task-first-hour.md, R3).
 	weightAllocs.Add(1)
 	if strings.HasSuffix(dir, ".gguf") {
-		return loadGGUFWeights(dir, quant, embedInt4, needCanonical) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
+		return loadGGUFWeights(dir, quant, embedInt4, needCanonical, skipRow4) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
 	}
 	if quant == quantInt4Mix {
 		return nil, fmt.Errorf("decoder: int4mix is GGUF-only (got safetensors %s)", dir)
@@ -387,7 +389,7 @@ func loadWeights(dir string, quant quantMode, embedInt4, needCanonical bool, lor
 	// on any of its ~40 error returns st would otherwise leak the mapping + fd. A serve process
 	// probing candidate dirs, or retrying a load of a checkpoint with one missing tensor,
 	// accumulates GBs of address space — the exact leak Model.Close exists to avoid (audit M-08).
-	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, needCanonical, lora)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, needCanonical, skipRow4, lora)
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -487,7 +489,7 @@ func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*Weights, error
 	if err != nil {
 		return nil, err
 	}
-	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, true, nil)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, true, false, nil)
 	if err != nil {
 		_ = st.Close() // st is retained only on success; close it on error so the mapping/fd doesn't leak (M-08)
 		return nil, err
@@ -518,7 +520,7 @@ func openCheckpointFromFS(fsys fs.FS, dir string) (*embed.SafetensorsFile, error
 // against Cfg. Factored out so the heap (fs.FS) and mmap paths share one
 // tensor-name + shape contract — a schema change is one edit, not two.
 // Mirrors encoder.buildWeightsFromSafetensors.
-func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical bool, lora *loraAdapter) (*Weights, error) {
+func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter) (*Weights, error) {
 	if arch.Name == "gpt2" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the gpt2 (Conv1D/fused-QKV) layout")
@@ -689,7 +691,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		m := linalg.WrapF32(data, out, in)
 		if batched {
-			m = quantizeBatchedProjWM(m, quant, needCanonical)
+			m = quantizeBatchedProjWM(m, quant, needCanonical, skipRow4)
 		} else {
 			m = quantizeWM(m, quant)
 		}

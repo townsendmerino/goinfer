@@ -1285,7 +1285,7 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *LayerWeights, arch *Ar
 
 // loadGGUFWeights parses a .gguf file and builds the weight bundle, mapping
 // llama.cpp tensor names to the descriptor and un-permuting q/k.
-func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical bool) (*Weights, error) {
+func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	// mmap, not heap-read: the raw quantized bytes stay in reclaimable page
 	// cache while we dequantize tensor-by-tensor. The weights end up as fresh
 	// (f32 or int8) copies, so the mapping is unneeded once the build returns.
@@ -1303,7 +1303,7 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical bool
 	var w *Weights
 	// `build` is the CPU-bound phase: dequantize every tensor and re-quantize/repack it into the
 	// resident precision. On a large model this dominates, which is the fact the banner surfaces.
-	if err := prof.timed("build", func() (e error) { w, e = buildGGUFWeights(g, quant, embedInt4, needCanonical); return e }); err != nil {
+	if err := prof.timed("build", func() (e error) { w, e = buildGGUFWeights(g, quant, embedInt4, needCanonical, skipRow4); return e }); err != nil {
 		return nil, err
 	}
 	w.prof = prof
@@ -1314,7 +1314,7 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical bool
 // memory-mapped (loadGGUFWeights) or backed by an in-memory slice
 // (LoadGGUFBytes). It resolves the config + architecture from the GGUF's own
 // metadata, so both entry points produce an identical model.
-func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical bool) (*Weights, error) {
+func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	cfg, err := ggufConfig(g)
 	if err != nil {
 		return nil, err
@@ -1326,7 +1326,7 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonic
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4, needCanonical, nil, "")
+	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4, needCanonical, skipRow4, nil, "")
 }
 
 // StreamTranscodeGGUF transcodes the GGUF at path into a .giw weights body written
@@ -1402,14 +1402,14 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 		// (canonical-absent) to DISK. See docs/task-int4-layout-2026-09.md's L2 — the
 		// in-RAM construction policy (wantsCanonicalInt4) and the on-disk kind policy
 		// (target) are independent decisions.
-		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, nil, "")
+		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, nil, "")
 		if berr != nil {
 			return 0, berr
 		}
 		return SerializeWeightsToForTarget(out, w, id, target)
 	}
 	wr := &giwWriter{sink: out, target: target}
-	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, wr, id); err != nil {
+	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id); err != nil {
 		return wr.n, err
 	}
 	var crc [4]byte
@@ -1524,7 +1524,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 		closeBackend(be)
 		return nil, err
 	}
-	w, err := buildGGUFWeights(g, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be))
+	w, err := buildGGUFWeights(g, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend))
 	g.Close()
 	if err != nil {
 		closeBackend(be)
@@ -1550,7 +1550,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 // no layer tensors (they were freed); the caller writes the trailing CRC. Streaming
 // is supported for the generic per-layer loader (llama/qwen2/qwen3/mellum/glm4_moe);
 // the qwen35/gemma4 dedicated paths reject it (those models fit resident).
-func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical bool, sink *giwWriter, id string) (*Weights, error) {
+func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
 
@@ -1583,7 +1583,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
-		return streamQuantizedBatchedProj(out, in, mode, needCanonical, func(r int, dst []float32) error {
+		return streamQuantizedBatchedProj(out, in, mode, needCanonical, skipRow4, func(r int, dst []float32) error {
 			return into(rowSrc(r), dst)
 		})
 	}

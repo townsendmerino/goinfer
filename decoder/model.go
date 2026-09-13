@@ -381,7 +381,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), lora)
+	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend), lora)
 	if err != nil {
 		closeBackend(be)
 		return nil, err
