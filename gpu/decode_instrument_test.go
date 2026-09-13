@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // TestDecode_instrument decomposes the ~44.7 ms/token that the §1 single-pass
@@ -43,16 +43,16 @@ func TestDecode_instrument(t *testing.T) {
 	timeK := func(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, gx, gy uint32, K, reps int) time.Duration {
 		best := time.Hour
 		for range reps {
-			enc, _ := ctx.device.CreateCommandEncoder(nil)
+			enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			pass.SetPipeline(pl)
 			pass.SetBindGroup(0, bg, nil)
 			for range K {
 				pass.DispatchWorkgroups(gx, gy, 1)
 			}
-			pass.End()
+			pass.TryEnd()
 			pass.Release()
-			cmd, _ := enc.Finish(nil)
+			cmd, _ := enc.TryFinish(nil)
 			t0 := time.Now()
 			ctx.queue.Submit(cmd)
 			ctx.device.Poll(true, nil)
@@ -102,19 +102,19 @@ func TestDecode_instrument(t *testing.T) {
 @group(0) @binding(0) var<storage, read_write> d: array<f32>;
 @compute @workgroup_size(64)
 fn main() { d[0] = d[0] + 1.0; }`
-	nsh, err := ctx.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "noop", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: noopWGSL}})
+	nsh, err := ctx.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "noop", WGSLSource: &wgpu.ShaderSourceWGSL{Code: noopWGSL}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer nsh.Release()
-	npl, err := ctx.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: "noop", Compute: wgpu.ProgrammableStageDescriptor{Module: nsh, EntryPoint: "main"}})
+	npl, err := ctx.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: "noop", Compute: wgpu.ProgrammableStageDescriptor{Module: nsh, EntryPoint: "main"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer npl.Release()
-	nbuf, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: 64, Usage: wgpu.BufferUsageStorage})
+	nbuf, _ := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: 64, Usage: wgpu.BufferUsageStorage})
 	defer nbuf.Release()
-	nbg, _ := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: npl.GetBindGroupLayout(0), Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: nbuf, Size: nbuf.GetSize()}}})
+	nbg, _ := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: npl.GetBindGroupLayout(0), Entries: []wgpu.BindGroupEntry{{Binding: 0, Buffer: nbuf, Size: nbuf.GetSize()}}})
 	defer nbg.Release()
 	// every dispatch reads+writes d[0] → WAW/RAW hazard → backend must barrier
 	// between them: this is the launch+barrier floor a dependent chain pays.
@@ -132,12 +132,12 @@ fn main() { d[0] = d[0] + 1.0; }`
 @group(0) @binding(1) var<storage, read_write> dst: array<f32>;
 @compute @workgroup_size(64)
 fn main(@builtin(local_invocation_id) lid: vec3<u32>) { dst[lid.x] = src[lid.x] + 1.0; }`
-	csh, err := ctx.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "chain", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: chainWGSL}})
+	csh, err := ctx.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{Label: "chain", WGSLSource: &wgpu.ShaderSourceWGSL{Code: chainWGSL}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer csh.Release()
-	cpl, err := ctx.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: "chain", Compute: wgpu.ProgrammableStageDescriptor{Module: csh, EntryPoint: "main"}})
+	cpl, err := ctx.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{Label: "chain", Compute: wgpu.ProgrammableStageDescriptor{Module: csh, EntryPoint: "main"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,12 +145,12 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) { dst[lid.x] = src[lid.x] 
 	const chainN = 600 // ≥ the ~535 real dispatches
 	cbufs := make([]*wgpu.Buffer, chainN+1)
 	for i := range cbufs {
-		cbufs[i], _ = ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: 256, Usage: wgpu.BufferUsageStorage})
+		cbufs[i], _ = ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: 256, Usage: wgpu.BufferUsageStorage})
 		defer cbufs[i].Release()
 	}
 	cbgs := make([]*wgpu.BindGroup, chainN)
 	for i := range cbgs {
-		cbgs[i], _ = ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: cpl.GetBindGroupLayout(0), Entries: []wgpu.BindGroupEntry{
+		cbgs[i], _ = ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: cpl.GetBindGroupLayout(0), Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: cbufs[i], Size: cbufs[i].GetSize()},
 			{Binding: 1, Buffer: cbufs[i+1], Size: cbufs[i+1].GetSize()},
 		}})
@@ -159,16 +159,16 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) { dst[lid.x] = src[lid.x] 
 	timeChain := func(K, reps int) time.Duration {
 		best := time.Hour
 		for range reps {
-			enc, _ := ctx.device.CreateCommandEncoder(nil)
+			enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			pass.SetPipeline(cpl)
 			for i := range K {
 				pass.SetBindGroup(0, cbgs[i], nil) // distinct bg → distinct buffers → real RAW chain
 				pass.DispatchWorkgroups(1, 1, 1)
 			}
-			pass.End()
+			pass.TryEnd()
 			pass.Release()
-			cmd, _ := enc.Finish(nil)
+			cmd, _ := enc.TryFinish(nil)
 			t0 := time.Now()
 			ctx.queue.Submit(cmd)
 			ctx.device.Poll(true, nil)

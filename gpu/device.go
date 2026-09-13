@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Stage 2 — device-resident activations. At M=1 decode the activation is a few
@@ -105,14 +105,14 @@ func (c *Context) ensureQuantize() error {
 	if c.quantizePipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:          "quantizeRowsInt8",
-		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: quantizeShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "quantizeRowsInt8",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: quantizeShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile quantize shader: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label:   "quantizeRowsInt8",
 		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
@@ -130,7 +130,7 @@ func (c *Context) ensureQuantize() error {
 // UploadF32 puts a host f32 slice into a resident device buffer (the chain's
 // input activation). The caller Releases it.
 func (c *Context) UploadF32(a []float32) (*DeviceBuffer, error) {
-	buf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	buf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "act-f32", Contents: wgpu.ToBytes(a), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
@@ -148,13 +148,13 @@ func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *D
 	}
 	kp := padK(K)
 	qWords := M * (kp / 4)
-	qBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	qBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "act-q8", Size: uint64(qWords * 4), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("gpu: quantizeDevice q buffer: %w", err)
 	}
-	scBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	scBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "act-scales", Size: uint64(M * 4), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *D
 		return nil, nil, fmt.Errorf("gpu: quantizeDevice scales buffer: %w", err)
 	}
 	dims := []uint32{uint32(M), uint32(K), uint32(kp), 0}
-	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "qdims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
@@ -171,7 +171,7 @@ func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *D
 		return nil, nil, fmt.Errorf("gpu: quantizeDevice dims: %w", err)
 	}
 	defer dimsBuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.quantizeLayout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: src.buf, Size: src.buf.GetSize()},
@@ -186,20 +186,20 @@ func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *D
 		return nil, nil, fmt.Errorf("gpu: quantizeDevice bind: %w", err)
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.quantizePipeline)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(uint32(M), 1, 1) // one workgroup per row
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		qBuf.Release()
 		scBuf.Release()
 		return nil, nil, fmt.Errorf("gpu: quantizeDevice pass: %w", err)
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd) // no Poll — pipelines with the consumer
 	return newDeviceBuffer(qBuf, qWords), newDeviceBuffer(scBuf, M), nil
@@ -212,14 +212,14 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 		return nil, err
 	}
 	N := rm.rows
-	dstBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "mm-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: matmulW8A8Device dst: %w", err)
 	}
 	dims := []uint32{uint32(M), uint32(rm.kp), uint32(N), 0}
-	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "mm-dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
@@ -227,7 +227,7 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 		return nil, fmt.Errorf("gpu: matmulW8A8Device dims: %w", err)
 	}
 	defer dimsBuf.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.quantLayout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aq.buf, Size: aq.buf.GetSize()},
@@ -243,19 +243,19 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 		return nil, fmt.Errorf("gpu: matmulW8A8Device bind: %w", err)
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.quantPipeline)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups((uint32(M)+15)/16, (uint32(N)+15)/16, 1)
-	if err := pass.End(); err != nil {
+	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		dstBuf.Release()
 		return nil, fmt.Errorf("gpu: matmulW8A8Device pass: %w", err)
 	}
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd) // no Poll
 	return newDeviceBuffer(dstBuf, M*N), nil
@@ -290,32 +290,32 @@ func (c *Context) readbackRaw(buf *wgpu.Buffer, n int) ([]float32, error) {
 // end of a chain.
 func (c *Context) Readback(db *DeviceBuffer) ([]float32, error) {
 	size := uint64(db.n * 4)
-	stage, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "readback", Size: size, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: Readback staging: %w", err)
 	}
 	defer stage.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
-	if err := enc.CopyBufferToBuffer(db.buf, 0, stage, 0, size); err != nil {
+	if err := enc.TryCopyBufferToBuffer(db.buf, 0, stage, 0, size); err != nil {
 		return nil, fmt.Errorf("gpu: Readback copy: %w", err)
 	}
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	status := wgpu.BufferMapAsyncStatusUnknown
-	if err := stage.MapAsync(wgpu.MapModeRead, 0, size, func(s wgpu.BufferMapAsyncStatus) { status = s }); err != nil {
+	status := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, size, func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
 		return nil, fmt.Errorf("gpu: Readback map: %w", err)
 	}
 	c.device.Poll(true, nil) // the one sync
-	if status != wgpu.BufferMapAsyncStatusSuccess {
+	if status != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: Readback map failed: %v", status)
 	}
 	out := make([]float32, db.n)
 	copy(out, wgpu.FromBytes[float32](stage.GetMappedRange(0, uint(size))))
-	if err := stage.Unmap(); err != nil {
+	if err := stage.TryUnmap(); err != nil {
 		return nil, fmt.Errorf("gpu: Readback unmap: %w", err)
 	}
 	return out, nil

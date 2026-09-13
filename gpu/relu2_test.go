@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -56,29 +56,29 @@ func TestNemotronRelu2FFN_parity(t *testing.T) {
 	gpuFFN := func(x []float32) []float32 {
 		// quantize x[hidden]→int8
 		xq, xs := linalg.QuantizeRowsInt8(x, 1, hidden)
-		xqb, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(packInt8(xq, 1, hidden)), Usage: stor})
-		xsb, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xs), Usage: stor})
-		upOut, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(interOdd * 4), Usage: stor | wgpu.BufferUsageCopySrc})
-		upDims, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32(padK(hidden)), uint32(interOdd), 0}), Usage: wgpu.BufferUsageUniform})
-		upBG, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: upRM.gLayout(ctx), Entries: []wgpu.BindGroupEntry{
+		xqb, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(packInt8(xq, 1, hidden)), Usage: stor})
+		xsb, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xs), Usage: stor})
+		upOut, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(interOdd * 4), Usage: stor | wgpu.BufferUsageCopySrc})
+		upDims, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32(padK(hidden)), uint32(interOdd), 0}), Usage: wgpu.BufferUsageUniform})
+		upBG, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: upRM.gLayout(ctx), Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: xqb, Size: xqb.GetSize()}, {Binding: 1, Buffer: upRM.wbuf(), Size: upRM.wbuf().GetSize()},
 			{Binding: 2, Buffer: xsb, Size: xsb.GetSize()}, {Binding: 3, Buffer: upRM.sbuf(), Size: upRM.sbuf().GetSize()},
 			{Binding: 4, Buffer: upOut, Size: upOut.GetSize()}, {Binding: 5, Buffer: upDims, Size: upDims.GetSize()}}})
 		// relu2Quant: upOut[inter] → int8 [padK(inter)/4] + scale
 		kp := padK(interOdd)
-		rq, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(kp / 4 * 4), Usage: stor | wgpu.BufferUsageCopySrc})
-		rs, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: 4, Usage: stor | wgpu.BufferUsageCopySrc})
-		rDims, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{uint32(interOdd), uint32(kp), 0, 0}), Usage: wgpu.BufferUsageUniform})
+		rq, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(kp / 4 * 4), Usage: stor | wgpu.BufferUsageCopySrc})
+		rs, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: 4, Usage: stor | wgpu.BufferUsageCopySrc})
+		rDims, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{uint32(interOdd), uint32(kp), 0, 0}), Usage: wgpu.BufferUsageUniform})
 		rBG := ctx.relu2QuantBind(upOut, rq, rs, rDims)
 		// down GEMV: rq[inter int8] → hidden
-		dOut, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: stor | wgpu.BufferUsageCopySrc})
-		dDims, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32(padK(interOdd)), uint32(hidden), 0}), Usage: wgpu.BufferUsageUniform})
-		dBG, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: downRM.gLayout(ctx), Entries: []wgpu.BindGroupEntry{
+		dOut, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: stor | wgpu.BufferUsageCopySrc})
+		dDims, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32(padK(interOdd)), uint32(hidden), 0}), Usage: wgpu.BufferUsageUniform})
+		dBG, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: downRM.gLayout(ctx), Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: rq, Size: rq.GetSize()}, {Binding: 1, Buffer: downRM.wbuf(), Size: downRM.wbuf().GetSize()},
 			{Binding: 2, Buffer: rs, Size: rs.GetSize()}, {Binding: 3, Buffer: downRM.sbuf(), Size: downRM.sbuf().GetSize()},
 			{Binding: 4, Buffer: dOut, Size: dOut.GetSize()}, {Binding: 5, Buffer: dDims, Size: dDims.GetSize()}}})
-		stag, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-		enc, _ := dev.CreateCommandEncoder(nil)
+		stag, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		enc, _ := dev.TryCreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(nil)
 		pass.SetPipeline(upRM.gPipe(ctx))
 		pass.SetBindGroup(0, upBG, nil)
@@ -91,22 +91,22 @@ func TestNemotronRelu2FFN_parity(t *testing.T) {
 		pass.SetBindGroup(0, dBG, nil)
 		gx2, gy2 := gemvGrid(hidden)
 		pass.DispatchWorkgroups(gx2, gy2, 1)
-		pass.End()
+		pass.TryEnd()
 		pass.Release()
-		enc.CopyBufferToBuffer(dOut, 0, stag, 0, uint64(hidden*4))
-		cmd, _ := enc.Finish(nil)
+		enc.TryCopyBufferToBuffer(dOut, 0, stag, 0, uint64(hidden*4))
+		cmd, _ := enc.TryFinish(nil)
 		ctx.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
-		st := wgpu.BufferMapAsyncStatusUnknown
-		stag.MapAsync(wgpu.MapModeRead, 0, uint64(hidden*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		st := wgpu.MapAsyncStatus(0)
+		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(hidden*4), func(s wgpu.MapAsyncStatus) { st = s })
 		ctx.device.Poll(true, nil)
-		if st != wgpu.BufferMapAsyncStatusSuccess {
+		if st != wgpu.MapAsyncStatusSuccess {
 			t.Fatalf("map: %v", st)
 		}
 		out := make([]float32, hidden)
 		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(hidden*4))))
-		stag.Unmap()
+		stag.TryUnmap()
 		for _, b := range []*wgpu.Buffer{xqb, xsb, upOut, upDims, rq, rs, rDims, dOut, dDims, stag} {
 			b.Release()
 		}

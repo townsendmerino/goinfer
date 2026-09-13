@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // DecodeTokenFused is the fast one-command-BUFFER decode forward: it records every
@@ -39,7 +39,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	keepBuf := func(b *wgpu.Buffer) { keep = append(keep, b.Release) }
 	keepBG := func(b *wgpu.BindGroup) { keep = append(keep, b.Release) }
 
-	enc, err := c.device.CreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -67,7 +67,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -87,7 +87,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 			}
 			es[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
-		bg, e := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
+		bg, e := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: es})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -103,7 +103,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		pass.SetPipeline(pl)
 		pass.SetBindGroup(0, bg, nil)
 		pass.DispatchWorkgroups(gx, gy, 1)
-		pass.End()
+		pass.TryEnd()
 		pass.Release()
 	}
 	// op shorthands recording into enc:
@@ -144,10 +144,10 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		if buildErr != nil || src == nil || cache == nil {
 			return
 		}
-		enc.CopyBufferToBuffer(src, 0, cache, uint64(pos*kvDim*4), uint64(kvDim*4))
+		enc.TryCopyBufferToBuffer(src, 0, cache, uint64(pos*kvDim*4), uint64(kvDim*4))
 	}
 
-	xd, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	xd, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
@@ -200,29 +200,29 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		return nil, buildErr
 	}
 
-	stag, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(m.LMHead.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(m.LMHead.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
 	}
 	defer stag.Release()
-	enc.CopyBufferToBuffer(logits, 0, stag, 0, uint64(m.LMHead.rows*4))
-	cmd, err := enc.Finish(nil)
+	enc.TryCopyBufferToBuffer(logits, 0, stag, 0, uint64(m.LMHead.rows*4))
+	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, err
 	}
 	defer cmd.Release()
 	c.queue.Submit(cmd) // the ONE submit
 
-	st := wgpu.BufferMapAsyncStatusUnknown
-	if err := stag.MapAsync(wgpu.MapModeRead, 0, uint64(m.LMHead.rows*4), func(s wgpu.BufferMapAsyncStatus) { st = s }); err != nil {
+	st := wgpu.MapAsyncStatus(0)
+	if err := stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(m.LMHead.rows*4), func(s wgpu.MapAsyncStatus) { st = s }); err != nil {
 		return nil, err
 	}
 	c.device.Poll(true, nil) // the ONE fence
-	if st != wgpu.BufferMapAsyncStatusSuccess {
+	if st != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: DecodeTokenFused map failed: %v", st)
 	}
 	out := make([]float32, m.LMHead.rows)
 	copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(m.LMHead.rows*4))))
-	stag.Unmap()
+	stag.TryUnmap()
 	return out, nil
 }

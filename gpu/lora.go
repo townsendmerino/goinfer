@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Compute-time LoRA on the resident path (G3, docs/task-gpu-paths-2026-09.md) — the WebGPU
@@ -87,14 +87,14 @@ func (c *Context) ensureLora() error {
 		return nil
 	}
 	mk := func(label, src string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, error) {
-		sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-			Label:          label,
-			WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: src},
+		sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+			Label:      label,
+			WGSLSource: &wgpu.ShaderSourceWGSL{Code: src},
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("gpu: compile %s shader: %w", label, err)
 		}
-		pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 			Label:   label,
 			Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 		})

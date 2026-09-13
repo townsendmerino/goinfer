@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Thin-M W8A8 GEMM for the Stage-B verify (docs/spec/07). The 16×16 tiled GEMM
@@ -81,14 +81,14 @@ func (c *Context) ensureGemmRow() error {
 	if c.gemmRowPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:          "gemmRowW8A8",
-		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: gemmRowW8A8ShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "gemmRowW8A8",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: gemmRowW8A8ShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile gemmRow shader: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label:   "gemmRowW8A8",
 		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
@@ -117,32 +117,32 @@ func (c *Context) MatmulW8A8GemmRow(aq []int8, aScales []float32, rm *ResidentW8
 	if err := c.ensureGemmRow(); err != nil {
 		return nil, err
 	}
-	aBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
 	defer aBuf.Release()
-	asBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-ascale", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
+	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-ascale", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
 	defer asBuf.Release()
-	dstBuf, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "gemmrow-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "gemmrow-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer dstBuf.Release()
-	dimsBuf, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "gemmrow-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}
 	defer dimsBuf.Release()
-	stage, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "gemmrow-stage", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "gemmrow-stage", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		return nil, err
 	}
 	defer stage.Release()
-	bg, err := c.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.gemmRowLayout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
@@ -157,32 +157,32 @@ func (c *Context) MatmulW8A8GemmRow(aq []int8, aScales []float32, rm *ResidentW8
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.CreateCommandEncoder(nil)
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.gemmRowPipeline)
 	pass.SetBindGroup(0, bg, nil)
 	gx, gy := gemvGrid(N)
 	pass.DispatchWorkgroups(gx, gy, 1)
-	pass.End()
+	pass.TryEnd()
 	pass.Release()
-	if err := enc.CopyBufferToBuffer(dstBuf, 0, stage, 0, uint64(M*N*4)); err != nil {
+	if err := enc.TryCopyBufferToBuffer(dstBuf, 0, stage, 0, uint64(M*N*4)); err != nil {
 		return nil, err
 	}
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	status := wgpu.BufferMapAsyncStatusUnknown
-	if err := stage.MapAsync(wgpu.MapModeRead, 0, uint64(M*N*4), func(s wgpu.BufferMapAsyncStatus) { status = s }); err != nil {
+	status := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, uint64(M*N*4), func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
 		return nil, err
 	}
 	c.device.Poll(true, nil)
-	if status != wgpu.BufferMapAsyncStatusSuccess {
+	if status != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: MatmulW8A8GemmRow map failed: %v", status)
 	}
 	out := make([]float32, M*N)
 	copy(out, wgpu.FromBytes[float32](stage.GetMappedRange(0, uint(M*N*4))))
-	if err := stage.Unmap(); err != nil {
+	if err := stage.TryUnmap(); err != nil {
 		return nil, err
 	}
 	return out, nil

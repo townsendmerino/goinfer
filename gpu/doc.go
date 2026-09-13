@@ -2,7 +2,7 @@
 // for goinfer's decoder and aikit's encoder matmuls, compiled only under the
 // `gpu` build tag.
 //
-// It is the ONE place github.com/cogentcore/webgpu (cgo, bundling the
+// It is the ONE place github.com/oliverbestmann/webgpu (cgo, bundling the
 // wgpu-native Rust library) is allowed to appear. Every file except this doc
 // carries `//go:build gpu`, and the backends register themselves through the
 // decoder/encoder Backend registries on init — so the aikit and goinfer core

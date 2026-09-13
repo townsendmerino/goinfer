@@ -15,7 +15,7 @@ import (
 // goinfer decoder and the aikit encoder. Their Backend interfaces have the
 // same method set, so one *webgpuBackend satisfies both — a `-tags gpu` build
 // that blank-imports this package gains GPU matmul on either side without the
-// core modules ever importing github.com/cogentcore/webgpu.
+// core modules ever importing github.com/oliverbestmann/webgpu.
 func init() {
 	// Return a LITERAL nil interface on failure, not the (nil, err) *webgpuBackend
 	// newWebGPUBackend hands back: a typed-nil pointer auto-converts to a NON-nil

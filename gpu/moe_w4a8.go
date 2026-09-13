@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // moeExpertGEMVW4WGSL is the int4 (W4A8) twin of moeExpertGEMVWGSL: ONE indexed
@@ -164,13 +164,13 @@ func (c *Context) ensureMoEExpertGptOssDownW4() error {
 	if c.moeExpertGptOssDownW4Pipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "moeExpertGptOssDownGEMVW4", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: moeExpertGptOssDownGEMVW4WGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "moeExpertGptOssDownGEMVW4", WGSLSource: &wgpu.ShaderSourceWGSL{Code: moeExpertGptOssDownGEMVW4WGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile moeExpertGptOssDownGEMVW4: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "moeExpertGptOssDownGEMVW4", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -186,13 +186,13 @@ func (c *Context) ensureMoEExpertW4() error {
 	if c.moeExpertW4Pipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "moeExpertGEMVW4", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: moeExpertGEMVW4WGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "moeExpertGEMVW4", WGSLSource: &wgpu.ShaderSourceWGSL{Code: moeExpertGEMVW4WGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile moeExpertGEMVW4: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "moeExpertGEMVW4", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -225,11 +225,11 @@ func (c *Context) UploadStackedExpertsInt4(nib [][]uint8, scales [][]float32, nE
 		copy(packed[e*N*wpr:(e+1)*N*wpr], packNibbles(nib[e], N, K))
 		copy(allScales[e*N*ng:(e+1)*N*ng], scales[e][:N*ng])
 	}
-	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
+	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: stacked w4 experts buffer: %w", err)
 	}
-	sc, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(packF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
+	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(packF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		bq.Release()
 		return nil, fmt.Errorf("gpu: stacked w4 scales buffer: %w", err)
@@ -261,11 +261,11 @@ func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32
 		copy(packed[e*bpe:(e+1)*bpe], q4[e][:bpe])
 		copy(allScales[e*N*ng:(e+1)*N*ng], scales[e][:N*ng])
 	}
-	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: packed, Usage: wgpu.BufferUsageStorage})
+	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-experts-w4", Contents: packed, Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: stacked w4 experts buffer: %w", err)
 	}
-	sc, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(packF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
+	sc, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "moe-expert-w4-scales", Contents: wgpu.ToBytes(packF16Pairs(allScales)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		bq.Release()
 		return nil, fmt.Errorf("gpu: stacked w4 scales buffer: %w", err)

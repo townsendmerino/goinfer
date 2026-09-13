@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // W4A8 decode GEMV: int4 group-wise weights × int8 activation. The decode
@@ -199,7 +199,7 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 		return nil, fmt.Errorf("gpu: UploadW4A8 scales too small: %d < %d", len(scales), N*nGroups)
 	}
 	packed := packNibbles(nib, N, K)
-	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w4a8-weight", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -211,7 +211,7 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 	for r := range N {
 		copy(sc[r*nGroups:(r+1)*nGroups], scales[r*nGroups:(r+1)*nGroups])
 	}
-	bs, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	bs, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w4a8-bscales", Contents: wgpu.ToBytes(packF16Pairs(sc)), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -246,13 +246,13 @@ func (c *Context) UploadW4A8Packed(q4 []byte, scales []float32, N, K int) (*Resi
 	if len(scales) < N*nGroups {
 		return nil, fmt.Errorf("gpu: UploadW4A8Packed scales too small: %d < %d", len(scales), N*nGroups)
 	}
-	bq, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	bq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w4a8-weight", Contents: q4[:wantBytes], Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create W4A8 weight buffer: %w", err)
 	}
-	bs, err := c.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	bs, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label: "w4a8-bscales", Contents: wgpu.ToBytes(packF16Pairs(scales[:N*nGroups])), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
@@ -267,13 +267,13 @@ func (c *Context) ensureGEMVW4() error {
 	if c.gemvW4Pipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "gemvW4A8", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: gemvW4A8ShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "gemvW4A8", WGSLSource: &wgpu.ShaderSourceWGSL{Code: gemvW4A8ShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile W4A8 shader: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "gemvW4A8", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {

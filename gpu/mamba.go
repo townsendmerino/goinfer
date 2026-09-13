@@ -5,7 +5,7 @@ package gpu
 import (
 	"fmt"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // Resident Mamba-2 selective-SSM decode step (Granite-4.0-H / Nemotron-H hybrids).
@@ -107,13 +107,13 @@ func (c *Context) ensureMambaConv() error {
 	if c.mambaConvPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "mambaConv", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: mambaConvShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "mambaConv", WGSLSource: &wgpu.ShaderSourceWGSL{Code: mambaConvShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile mambaConv: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "mambaConv", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -172,13 +172,13 @@ func (c *Context) ensureMambaGNorm() error {
 	if c.mambaGNormPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "mambaGNorm", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: mambaGNormShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "mambaGNorm", WGSLSource: &wgpu.ShaderSourceWGSL{Code: mambaGNormShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile mambaGNorm: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "mambaGNorm", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {
@@ -194,13 +194,13 @@ func (c *Context) ensureMambaSSM() error {
 	if c.mambaSSMPipeline != nil {
 		return nil
 	}
-	sh, err := c.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "mambaSSM", WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{Code: mambaSSMShaderWGSL},
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "mambaSSM", WGSLSource: &wgpu.ShaderSourceWGSL{Code: mambaSSMShaderWGSL},
 	})
 	if err != nil {
 		return fmt.Errorf("gpu: compile mambaSSM: %w", err)
 	}
-	pl, err := c.device.CreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
 		Label: "mambaSSM", Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
 	})
 	if err != nil {

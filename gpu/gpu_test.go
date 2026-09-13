@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // naiveMatmulBT is the ground-truth reference: dst[m,n] = Σ_k a[m,k]·b[n,k].
@@ -57,7 +57,7 @@ func softwareAdapterInfo(info wgpu.AdapterInfo) bool {
 	if info.AdapterType == wgpu.AdapterTypeCPU {
 		return true
 	}
-	name := strings.ToLower(info.Name + " " + info.DriverDescription)
+	name := strings.ToLower(info.Device + " " + info.Description)
 	for _, s := range []string{"llvmpipe", "lavapipe", "softpipe", "swiftshader", "software"} {
 		if strings.Contains(name, s) {
 			return true
@@ -75,16 +75,16 @@ func TestSoftwareAdapterDetection(t *testing.T) {
 		info wgpu.AdapterInfo
 		want bool
 	}{
-		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeCPU, Name: "llvmpipe (LLVM 17.0.6, 256 bits)"}, true}, // CI Vulkan/lavapipe
-		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Name: "llvmpipe (LLVM 17.0.6, 256 bits)"}, true},
-		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Name: "SwiftShader Device (LLVM)"}, true},
-		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Name: "NVIDIA GeForce RTX 2070 SUPER/PCIe/SSE2"}, false}, // this box, GL backend
-		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeDiscreteGPU, Name: "AMD Radeon RX 7900"}, false},
-		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeIntegratedGPU, Name: "Intel(R) Arc(tm) Graphics"}, false},
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeCPU, Device: "llvmpipe (LLVM 17.0.6, 256 bits)"}, true}, // CI Vulkan/lavapipe
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Device: "llvmpipe (LLVM 17.0.6, 256 bits)"}, true},
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Device: "SwiftShader Device (LLVM)"}, true},
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeUnknown, Device: "NVIDIA GeForce RTX 2070 SUPER/PCIe/SSE2"}, false}, // this box, GL backend
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeDiscreteGPU, Device: "AMD Radeon RX 7900"}, false},
+		{wgpu.AdapterInfo{AdapterType: wgpu.AdapterTypeIntegratedGPU, Device: "Intel(R) Arc(tm) Graphics"}, false},
 	}
 	for _, tc := range cases {
 		if got := softwareAdapterInfo(tc.info); got != tc.want {
-			t.Errorf("softwareAdapterInfo(type=%v %q) = %v, want %v", tc.info.AdapterType, tc.info.Name, got, tc.want)
+			t.Errorf("softwareAdapterInfo(type=%v %q) = %v, want %v", tc.info.AdapterType, tc.info.Device, got, tc.want)
 		}
 	}
 }
@@ -146,7 +146,7 @@ func newOrSkipHW(t *testing.T) *Context {
 	if isSoftwareAdapter(c) {
 		info := c.adapter.GetInfo()
 		c.Close()
-		t.Skipf("software adapter (%s %q); hardware-dependent test", info.AdapterType, info.Name)
+		t.Skipf("software adapter (%s %q); hardware-dependent test", info.AdapterType, info.Device)
 	}
 	return c
 }

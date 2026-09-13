@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -90,14 +90,14 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	// GPU side: the buffers persist across steps exactly as the resident runner would hold them,
 	// which is what makes this a drift test rather than 64 independent single-step checks.
 	mk := func(label string, n int, usage wgpu.BufferUsage) *wgpu.Buffer {
-		b, e := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: usage})
+		b, e := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: usage})
 		if e != nil {
 			t.Fatal(e)
 		}
 		return b
 	}
 	init := func(label string, c []float32) *wgpu.Buffer {
-		b, e := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage})
+		b, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -116,10 +116,10 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	coreBuf := mk("core", valueDim, out)
 	gatedBuf := mk("gated", valueDim, out)
 	stag := mk("stag", valueDim, wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
-	ctx.queue.WriteBuffer(stateBuf, 0, wgpu.ToBytes(make([]float32, nv*hv*hk))) // zeroed, like newDeltaState
+	ctx.queue.TryWriteBuffer(stateBuf, 0, wgpu.ToBytes(make([]float32, nv*hv*hk))) // zeroed, like newDeltaState
 
 	uni := func(label string, w []uint32) *wgpu.Buffer {
-		b, e := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		b, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 			Label: label, Contents: wgpu.ToBytes(w), Usage: wgpu.BufferUsageUniform})
 		if e != nil {
 			t.Fatal(e)
@@ -136,7 +136,7 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		for i, b := range bufs {
 			ents[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
-		g, e := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: ents})
+		g, e := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: ents})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -157,21 +157,21 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	}()
 
 	read := func(src *wgpu.Buffer, n int) []float32 {
-		e2, _ := ctx.device.CreateCommandEncoder(nil)
-		e2.CopyBufferToBuffer(src, 0, stag, 0, uint64(n*4))
-		c2, _ := e2.Finish(nil)
+		e2, _ := ctx.device.TryCreateCommandEncoder(nil)
+		e2.TryCopyBufferToBuffer(src, 0, stag, 0, uint64(n*4))
+		c2, _ := e2.TryFinish(nil)
 		ctx.queue.Submit(c2)
 		c2.Release()
 		e2.Release()
-		st := wgpu.BufferMapAsyncStatusUnknown
-		stag.MapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		st := wgpu.MapAsyncStatus(0)
+		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
 		ctx.device.Poll(true, nil)
-		if st != wgpu.BufferMapAsyncStatusSuccess {
+		if st != wgpu.MapAsyncStatusSuccess {
 			t.Fatalf("map: %v", st)
 		}
 		o := make([]float32, n)
 		copy(o, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
-		stag.Unmap()
+		stag.TryUnmap()
 		return o
 	}
 
@@ -191,13 +191,13 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 			t.Fatal("capture hook never fired — the gate would be vacuous")
 		}
 
-		ctx.queue.WriteBuffer(convBuf, 0, wgpu.ToBytes(capConv))
-		ctx.queue.WriteBuffer(vBuf, 0, wgpu.ToBytes(capConv[2*keyDim:]))
-		ctx.queue.WriteBuffer(zBuf, 0, wgpu.ToBytes(capZ))
-		ctx.queue.WriteBuffer(btBuf, 0, wgpu.ToBytes(capGateIn[:nv]))
-		ctx.queue.WriteBuffer(atBuf, 0, wgpu.ToBytes(capGateIn[nv:]))
+		ctx.queue.TryWriteBuffer(convBuf, 0, wgpu.ToBytes(capConv))
+		ctx.queue.TryWriteBuffer(vBuf, 0, wgpu.ToBytes(capConv[2*keyDim:]))
+		ctx.queue.TryWriteBuffer(zBuf, 0, wgpu.ToBytes(capZ))
+		ctx.queue.TryWriteBuffer(btBuf, 0, wgpu.ToBytes(capGateIn[:nv]))
+		ctx.queue.TryWriteBuffer(atBuf, 0, wgpu.ToBytes(capGateIn[nv:]))
 
-		enc, _ := ctx.device.CreateCommandEncoder(nil)
+		enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(nil)
 		for _, d := range []struct {
 			pl *wgpu.ComputePipeline
@@ -214,9 +214,9 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 			pass.SetBindGroup(0, d.bg, nil)
 			pass.DispatchWorkgroups(uint32((d.n+d.wg-1)/d.wg), 1, 1)
 		}
-		pass.End()
+		pass.TryEnd()
 		pass.Release()
-		cmd, _ := enc.Finish(nil)
+		cmd, _ := enc.TryFinish(nil)
 		ctx.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
@@ -296,7 +296,7 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 	}
 
 	mkS := func(c []float32) *wgpu.Buffer {
-		b, e := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		b, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -304,10 +304,10 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 	}
 	convB := mkS(conv)
 	qnB, knB := mkS(make([]float32, keyDim)), mkS(make([]float32, keyDim))
-	stag, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(keyDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	dims, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+	stag, _ := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(keyDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	dims, _ := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Contents: wgpu.ToBytes([]uint32{nk, hk, keyDim, 0, math.Float32bits(qScale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	bgrp, _ := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.deltaNormLayout, Entries: []wgpu.BindGroupEntry{
+	bgrp, _ := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.deltaNormLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: convB, Size: convB.GetSize()}, {Binding: 1, Buffer: qnB, Size: qnB.GetSize()},
 		{Binding: 2, Buffer: knB, Size: knB.GetSize()}, {Binding: 3, Buffer: dims, Size: dims.GetSize()},
 	}})
@@ -318,34 +318,34 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 		}
 	}()
 
-	enc, _ := ctx.device.CreateCommandEncoder(nil)
+	enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(ctx.deltaNormPipeline)
 	pass.SetBindGroup(0, bgrp, nil)
 	pass.DispatchWorkgroups(uint32((nk+31)/32), 1, 1)
-	pass.End()
+	pass.TryEnd()
 	pass.Release()
-	cmd, _ := enc.Finish(nil)
+	cmd, _ := enc.TryFinish(nil)
 	ctx.queue.Submit(cmd)
 	cmd.Release()
 	enc.Release()
 
 	read := func(src *wgpu.Buffer) []float32 {
-		e2, _ := ctx.device.CreateCommandEncoder(nil)
-		e2.CopyBufferToBuffer(src, 0, stag, 0, uint64(keyDim*4))
-		c2, _ := e2.Finish(nil)
+		e2, _ := ctx.device.TryCreateCommandEncoder(nil)
+		e2.TryCopyBufferToBuffer(src, 0, stag, 0, uint64(keyDim*4))
+		c2, _ := e2.TryFinish(nil)
 		ctx.queue.Submit(c2)
 		c2.Release()
 		e2.Release()
-		st := wgpu.BufferMapAsyncStatusUnknown
-		stag.MapAsync(wgpu.MapModeRead, 0, uint64(keyDim*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		st := wgpu.MapAsyncStatus(0)
+		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(keyDim*4), func(s wgpu.MapAsyncStatus) { st = s })
 		ctx.device.Poll(true, nil)
-		if st != wgpu.BufferMapAsyncStatusSuccess {
+		if st != wgpu.MapAsyncStatusSuccess {
 			t.Fatalf("map: %v", st)
 		}
 		out := make([]float32, keyDim)
 		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(keyDim*4))))
-		stag.Unmap()
+		stag.TryUnmap()
 		return out
 	}
 	gotQ, gotK := read(qnB), read(knB)

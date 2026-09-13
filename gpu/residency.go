@@ -3,12 +3,13 @@
 package gpu
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
 	"slices"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -106,6 +107,14 @@ type residentDecoder struct {
 	// to the largest K seen. batch[0] aliases runner. newRunner builds one more.
 	newRunner func() (*DecodeRunner, error)
 	batch     []*DecodeRunner
+
+	// prefillLast is decoder.Prefiller's batched-M forward (task-gpu-batched-
+	// prefill.md), captured as a closure over BuildResident's hidden/nH/inter/eps/
+	// scale/addOne locals the same way newRunner is — rd.rm (not a snapshot: this
+	// closure reads it lazily, at call time, well after BuildResident returns) is
+	// converted to the plain-dense-W8A8 ModelW shape PrefillLastW8A8 needs via
+	// runModelToModelW, declining models outside that scope.
+	prefillLast func(xs [][]float32, startPos int) ([]float32, error)
 
 	// resetErr holds the first error from Reset's state re-zero (N-15). Reset() satisfies the
 	// cross-backend ResidentForward interface and returns nothing, so the errors cannot be
@@ -307,11 +316,11 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// stateBuf allocates a build-once, zeroed, in-place-updatable Mamba state buffer
 	// (Storage|CopyDst so Reset can re-zero it per generation).
 	stateBuf := func(n int) (*wgpu.Buffer, error) {
-		b2, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		b2, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			return nil, err
 		}
-		c.queue.WriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
+		c.queue.TryWriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
 		keepF(b2.Release)
 		return b2, nil
 	}
@@ -1042,6 +1051,31 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	rd.newRunner = func() (*DecodeRunner, error) {
 		return c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
 	}
+	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
+		mw, ok := runModelToModelW(&rd.rm, hd)
+		if !ok {
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/QK-norm/sliding-window/…)")
+		}
+		// q/k/v bias (Qwen2): the fused-epilogue tiled GEMM (gemm.go's
+		// matmulTiledW8A8BiasKernelWGSL, added to fix a real nKeys-dependent
+		// divergence — see runModelToModelW's doc comment) is measured BIT-EXACT
+		// on Vulkan (RTX 2070 SUPER, nKeys 1-50) but STILL diverges on Metal
+		// (M1 Pro) past nKeys~15, cosine ~0.998 — a real, smaller, still-open gap,
+		// not float noise. Gate bias to the backend where it's actually proven
+		// rather than either fully shipping an unverified-on-Metal result or
+		// throwing away a confirmed fix everywhere. Revisit once the Metal gap is
+		// found, or once it's checked against this repo's real ship gate
+		// (docs/task-prefill-gap.md §3.2 pooled fidelity vs the CPU-f32
+		// reference, not cosine-vs-sequential-GPU-decode).
+		if mw.hasBias() && c.Backend() != "vulkan" {
+			return nil, fmt.Errorf("gpu: PrefillLast declines — q/k/v bias on backend %q is not yet verified bit-exact (Vulkan only for now)", c.Backend())
+		}
+		positions := make([]int, len(xs))
+		for i := range positions {
+			positions[i] = startPos + i
+		}
+		return c.PrefillLastW8A8(xs, mw, hidden, nH, nKV, hd, inter, positions, 0, eps, scale, addOne)
+	}
 	runner, err := rd.newRunner()
 	if err != nil {
 		return fail(err)
@@ -1168,6 +1202,43 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	return out, nil
 }
 
+var _ decoder.Prefiller = (*residentDecoder)(nil)
+
+// PrefillLast is decoder.Prefiller: process the whole embeddings slice in ONE
+// on-device batched pass (task-gpu-batched-prefill.md) and return only the LAST
+// position's logits — the sub-linear-TTFT alternative to residentPrefillSeed's
+// per-token Forward loop. Declines (falls back to that loop) when this model
+// isn't plain dense W8A8 (rd.prefillLast's runModelToModelW guard) — a decline is
+// not an error the caller should treat as fatal, so warnPrefillDeclined logs it
+// and the sequential loop takes over exactly as if PrefillLast didn't exist.
+func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err // checked once, up front — the whole pass has no finer-grained cancel point
+	}
+	n := len(embeddings)
+	if n == 0 {
+		return nil, fmt.Errorf("gpu: PrefillLast: no embeddings")
+	}
+	if err := rd.checkCap(startPos, n); err != nil {
+		return nil, err
+	}
+	if startPos == 0 {
+		rd.Reset() // fresh sequence (prefill from 0): re-zero Mamba {win,ssm} state (audit C-01) —
+		// mirrors Forward/ForwardN's own pos==0/startPos==0 reset, even though
+		// runModelToModelW currently declines every model that HAS such state; keeping the
+		// call here means this doesn't silently stop resetting if that scope ever widens.
+		if rd.resetErr != nil {
+			return nil, rd.resetErr
+		}
+	}
+	logits, err := rd.prefillLast(embeddings, startPos)
+	if err != nil {
+		return nil, err
+	}
+	applySoftcap(logits, rd.finalSoftcap)
+	return logits, nil
+}
+
 // TruncateTo is a no-op on the resident cache: it is positional and Forward sets
 // nKeys=pos+1, so entries past pos are never read and get overwritten next round
 // (see the ResidentForward.TruncateTo contract).
@@ -1209,28 +1280,28 @@ func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error
 		vw, vs := packKVInt8(vals, rd.nKV, rd.hd)
 		kvOff := uint64(base) * uint64(kvDim)
 		scOff := uint64(base) * uint64(rd.nKV) * 4
-		if err := rd.c.queue.WriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kCache, kvOff, wgpu.ToBytes(kw)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.WriteBuffer(l.kScale, scOff, wgpu.ToBytes(ks)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kScale, scOff, wgpu.ToBytes(ks)); err != nil {
 			return err
 		}
-		if err := rd.c.queue.WriteBuffer(l.vCache, kvOff, wgpu.ToBytes(vw)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.vCache, kvOff, wgpu.ToBytes(vw)); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vScale, scOff, wgpu.ToBytes(vs))
+		return rd.c.queue.TryWriteBuffer(l.vScale, scOff, wgpu.ToBytes(vs))
 	case rd.rm.kvF16:
 		off := uint64(base) * uint64(kvDim) * 2
-		if err := rd.c.queue.WriteBuffer(l.kCache, off, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kCache, off, wgpu.ToBytes(packF16Pairs(keys))); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vCache, off, wgpu.ToBytes(packF16Pairs(vals)))
+		return rd.c.queue.TryWriteBuffer(l.vCache, off, wgpu.ToBytes(packF16Pairs(vals)))
 	default:
 		off := uint64(base) * uint64(kvDim) * 4
-		if err := rd.c.queue.WriteBuffer(l.kCache, off, wgpu.ToBytes(keys)); err != nil {
+		if err := rd.c.queue.TryWriteBuffer(l.kCache, off, wgpu.ToBytes(keys)); err != nil {
 			return err
 		}
-		return rd.c.queue.WriteBuffer(l.vCache, off, wgpu.ToBytes(vals))
+		return rd.c.queue.TryWriteBuffer(l.vCache, off, wgpu.ToBytes(vals))
 	}
 }
 
@@ -1244,7 +1315,7 @@ func (rd *residentDecoder) Reset() {
 	// continues from it with no sign anything went wrong.
 	rd.resetErr = nil
 	wr := func(b *wgpu.Buffer, data []byte) {
-		if err := rd.c.queue.WriteBuffer(b, 0, data); err != nil && rd.resetErr == nil {
+		if err := rd.c.queue.TryWriteBuffer(b, 0, data); err != nil && rd.resetErr == nil {
 			rd.resetErr = fmt.Errorf("gpu: resident Reset failed to re-zero recurrent state: %w", err)
 		}
 	}

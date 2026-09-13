@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // The WIDE single-query attention kernel vs refAttn, across head dims the narrow kernel cannot
@@ -54,7 +54,7 @@ func TestAttnWide_refParity(t *testing.T) {
 			want := refAttn(q, keys, vals, tc.nH, tc.nKV, tc.hd, tc.nKeys, scale)
 
 			mk := func(c []float32, u wgpu.BufferUsage) *wgpu.Buffer {
-				b, e := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: u})
+				b, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: u})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -63,16 +63,16 @@ func TestAttnWide_refParity(t *testing.T) {
 			qB, kB, vB := mk(q, wgpu.BufferUsageStorage), mk(keys, wgpu.BufferUsageStorage), mk(vals, wgpu.BufferUsageStorage)
 			ctxB := mk(make([]float32, tc.nH*tc.hd), wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
 			n := tc.nH * tc.hd
-			stag, _ := ctx.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-			uni, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+			stag, _ := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+			uni, _ := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 				Contents: wgpu.ToBytes([]uint32{uint32(tc.nH), uint32(tc.nKV), uint32(tc.hd), uint32(tc.nKeys),
 					0, uint32(tc.nH / tc.nKV), math.Float32bits(scale), 0}),
 				Usage: wgpu.BufferUsageUniform})
 			// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
 			sinksB := mk([]float32{0}, wgpu.BufferUsageStorage)
-			hsB, _ := ctx.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+			hsB, _ := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 				Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-			bg, e := ctx.device.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.attnWideLayout, Entries: []wgpu.BindGroupEntry{
+			bg, e := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.attnWideLayout, Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, Buffer: qB, Size: qB.GetSize()}, {Binding: 1, Buffer: kB, Size: kB.GetSize()},
 				{Binding: 2, Buffer: vB, Size: vB.GetSize()}, {Binding: 3, Buffer: ctxB, Size: ctxB.GetSize()},
 				{Binding: 4, Buffer: sinksB, Size: sinksB.GetSize()}, {Binding: 5, Buffer: uni, Size: uni.GetSize()},
@@ -88,28 +88,28 @@ func TestAttnWide_refParity(t *testing.T) {
 				}
 			}()
 
-			enc, _ := ctx.device.CreateCommandEncoder(nil)
+			enc, _ := ctx.device.TryCreateCommandEncoder(nil)
 			pass := enc.BeginComputePass(nil)
 			pass.SetPipeline(ctx.attnWidePipeline)
 			pass.SetBindGroup(0, bg, nil)
 			pass.DispatchWorkgroups(uint32(tc.nH), 1, 1)
-			pass.End()
+			pass.TryEnd()
 			pass.Release()
-			enc.CopyBufferToBuffer(ctxB, 0, stag, 0, uint64(n*4))
-			cmd, _ := enc.Finish(nil)
+			enc.TryCopyBufferToBuffer(ctxB, 0, stag, 0, uint64(n*4))
+			cmd, _ := enc.TryFinish(nil)
 			ctx.queue.Submit(cmd)
 			cmd.Release()
 			enc.Release()
 
-			st := wgpu.BufferMapAsyncStatusUnknown
-			stag.MapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+			st := wgpu.MapAsyncStatus(0)
+			stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
 			ctx.device.Poll(true, nil)
-			if st != wgpu.BufferMapAsyncStatusSuccess {
+			if st != wgpu.MapAsyncStatusSuccess {
 				t.Fatalf("map: %v", st)
 			}
 			got := make([]float32, n)
 			copy(got, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
-			stag.Unmap()
+			stag.TryUnmap()
 
 			cos, maxAbs := cosSim(want, got)
 			// A stride bug leaves whole dim ranges at zero, which craters the cosine — it is not

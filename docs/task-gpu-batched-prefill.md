@@ -6,15 +6,39 @@
 > none of this touches the CPU forward; it must match the sequential GPU prefill
 > token-for-token.** Pure-Go core CI job stays untouched.
 >
-> **⚠️ GATED — do not build yet (measured 2026-06-09, RTX 2070 SUPER + M1 Pro).**
-> The whole premise — amortize the 91% VRAM weight-read with a compute-bound tiled
-> GEMM — fails on current hardware because the WGSL tiled GEMM has no `dot4I8Packed`
-> and tops out at 680 GFLOP/s (RTX), *below* the bandwidth-bound M=1 GEMV's
-> 748 GFLOP/s-equiv → batched prefill ≈ 0.91× (RTX), ≈1.2× (Metal): a wash. It's
-> kernel-limited, not silicon-limited. **Prerequisite: `dot4I8Packed` unblocks in
-> `cogentcore/webgpu`** (TU104 has the DP4A hardware) — only then does the tiled GEMM
-> clear the bandwidth wall and these increments pay off. See `docs/completed/roadmap-2026-06.md`
+> **⚠️ GATED (2026-06-09 verdict) — superseded 2026-09-13, see below.** Original text
+> preserved as a record: the premise — amortize the 91% VRAM weight-read with a compute-bound
+> tiled GEMM — failed on 2026-06-09 hardware because the WGSL tiled GEMM had no `dot4I8Packed`
+> and topped out at 680 GFLOP/s (RTX), *below* the bandwidth-bound M=1 GEMV's 748 GFLOP/s-equiv
+> → batched prefill ≈ 0.91× (RTX), ≈1.2× (Metal): a wash. **Prerequisite: `dot4I8Packed` unblocks
+> in `cogentcore/webgpu`** (TU104 has the DP4A hardware) — only then does the tiled GEMM clear
+> the bandwidth wall and these increments pay off. See `docs/completed/roadmap-2026-06.md`
 > (Backlog → GPU long-context, and the dp4a item).
+>
+> **2026-09-13 status: the prerequisite is met and the branch built ahead of this doc's own
+> ordering (Increment 2 before Increment 1) — read `docs/measurements/
+> prefill-batched-ttft-2026-09-13.md` before touching this doc further.** `cogentcore/webgpu`
+> was abandoned; migrated to the maintained `oliverbestmann/webgpu` fork (branch
+> `gpu-dp4a-batched-prefill`), unblocking `dot4I8Packed`. `PrefillLastW8A8` (Increment 2's
+> shape) was built and its bit-exact gates pass on real Vulkan/RTX 2070 SUPER hardware
+> (`TestPrefillLastW8A8_parity`, `TestResidentPrefillLast_parity`) — but Increment 1 (below)
+> was **not** built first as this doc's own ordering says to; the implementation used a
+> per-row loop into the existing M=1 attention kernel instead, and that plus a matching
+> per-row dispatch pattern everywhere else measured 7–29× **slower** than the sequential loop
+> it was meant to replace (`gpu-dp4a-fix` branch, first commit) — the Definition of Done's own
+> "long-prompt TTFT measurement" line, unchecked below for three months, would have caught this
+> before it shipped. Fixed on the same branch (packed-buffer dispatch consolidation, not yet a
+> real Increment-1 attention kernel at that point) to a consistent 2.5–3.5× win at P=64/256/1024,
+> though the ratio still shrank with M — the one dispatch-count cost left unfixed was attention
+> itself. **Increment 1 was then built for real** (`attnBatchedShaderWGSL` /
+> `attnKeysBatchedShaderWGSL`, `gpu/prefillrunner.go`) and turned out to be bit-exact (cosine 1.0,
+> maxAbs 0.0), not merely close — pushing the win to 6.3–8.7×, now flat-to-improving with M
+> instead of shrinking. Increment 3 (wiring into `decoder.Generate`) turned out to already be
+> done — `residentPrefillSeed`'s generic `Prefiller` check fires automatically once a resident
+> type satisfies the interface, which `gpu.residentDecoder` has since `813be4e7`; confirmed
+> through the real `Generate()` API (`TestGenerate_batchedPrefillMatchesSequential`), not just
+> the isolated `PrefillLast` gates. **All three increments are now landed and gated on real
+> hardware.**
 
 ## Problem
 
@@ -65,13 +89,19 @@ WGSL: `[M, nH, hd]` queries × the resident `[nKeys, nKV*hd]` K/V cache, **plain
 causal mask** per row (query i attends to keys `[0, startPos+i]`), GQA broadcast
 (`nH/nKV`). Workgroup-per-(query, head) or tiled. Add `ensureAttnBatched` + the
 pipeline.
-- [ ] **Gate:** bit-exact vs M sequential single-query `attn` dispatches over the
+- [x] **Gate:** bit-exact vs M sequential single-query `attn` dispatches over the
       same cache (clone `TestAttnBlock_parity`, software-adapter-skipped, run on
       real HW). Both oracles read a **fully pre-populated cache** — write all M K/V
       first, then attend; the sequential oracle must read the *same complete* cache
       (causal-masked per query), not rebuild it incrementally, or it isn't
-      apples-to-apples. (No sliding-window case — the path is full-attention-only;
-      the off-by-one to watch is the causal bound `j ≤ startPos+i`.)
+      apples-to-apples — **2026-09-13**: `TestAttnBatched_parity` (`gpu/
+      attnbatched_test.go`), two geometries (one per `attnKernel`/`attnBatchedKernel`
+      branch), real Vulkan/RTX 2070 SUPER hardware: cosine 1.0, maxAbs 0.0 for both —
+      genuinely bit-exact, not merely close. TTFT re-measurement:
+      `docs/measurements/prefill-batched-ttft-2026-09-13.md`'s "Increment 1" section
+      (2.5-3.5x -> 6.3-8.7x, and the speedup now improves with M instead of
+      shrinking). (No sliding-window case — the path is full-attention-only; the
+      off-by-one to watch is the causal bound `j ≤ startPos+i`.)
 
 ### Increment 2 — the prefill runner (the M-sized plan)
 A `PrefillRunner` (or a `DecodeRunner` M-mode), **built per-prompt** at M (prefill
@@ -88,16 +118,33 @@ prefill the decode `Run` continues from `pos = M`. Per layer, mirror
 - **LM head on the LAST row only** (`h[M-1]` → norm → head) — the other rows'
   logits aren't needed (matches `prefillLogits`); avoids the M×vocab matmul.
 - one Submit (or a few; see chunking).
-- [ ] **Gate:** bit-exact vs M sequential `DecodeRunner.Run` calls — same KV cache
-      contents and same `h[M-1]` logits. Run on real HW.
+- [x] **Gate:** bit-exact vs M sequential `DecodeRunner.Run` calls — same KV cache
+      contents and same `h[M-1]` logits. Run on real HW. **2026-09-13**:
+      `TestPrefillLastW8A8_parity` + `TestResidentPrefillLast_parity`, real
+      Vulkan/RTX 2070 SUPER hardware, cosine 1.0 / maxAbsDiff 0. Built via a per-row
+      attention loop into the M=1 kernel, NOT the Increment-1 kernel below (see the
+      banner) — that gap is what cost the first attempt its whole performance case;
+      see `docs/measurements/prefill-batched-ttft-2026-09-13.md`.
 
 ### Increment 3 — wire into `decoder.Generate`
-In the residency prefill (`decoder/model.go` ~338 / `residency.go`), when
-`len(prompt)` exceeds a small threshold use the `PrefillRunner`; else keep the
-per-token `Run` loop (and as the fallback). Continue decode from `pos = M`.
-- [ ] **Gate:** `TestDecodeParity`-class greedy continuation **unchanged**;
-      long-prompt TTFT measurement shows sub-linear scaling vs option (a)
-      (e.g. 1 k-token prompt: ~18 s → target a few × the one-pass cost, not 1000×).
+**DONE — already was, before this branch existed.** `decoder/model.go`'s `residentPrefillSeed`
+(shared by every resident generation path: `generateInto`, `genNgramInto`, the speculative
+target/draft) has had a backend-agnostic `if pf, ok := m.resident.(Prefiller); ok { pf.PrefillLast(...) }`
+check since before this doc's threshold language was written — `len(prompt[from:]) >= 8` and no
+bound adapter, same threshold this section names. `gpu.residentDecoder` satisfied
+`decoder.Prefiller` as of `813be4e7` (already on this branch, itself titled "Increment 3" — its own
+message: "that branch starts firing automatically once webgpuBackend's resident type satisfies
+decoder.Prefiller"). So the wiring was live the moment `PrefillLastW8A8` existed; this doc's
+Definition of Done just hadn't been checked against it.
+- [x] **Gate:** `TestDecodeParity`-class greedy continuation **unchanged**. **2026-09-13**:
+      `TestGenerate_batchedPrefillMatchesSequential` (`gpu/prefilllast_generate_integration_test.go`)
+      — the real prompt `decode_parity_test.go` pins for the CPU path, through the real
+      `Generate()` API, `GOINFER_BATCHED_PREFILL=0` vs default, on real Vulkan/RTX 2070 SUPER
+      hardware: token-for-token identical (24/24), and both match `decode_parity_test.go`'s
+      independently-pinned CPU reference exactly.
+      Long-prompt TTFT measurement: see Definition of Done below (recorded, not sub-linear in the
+      literal sense this line originally meant — see the banner's 2026-09-13 note on why Increment
+      1 not being built changes what "sub-linear" would have required).
 
 ## Memory & chunking (note, don't over-build)
 
@@ -142,8 +189,14 @@ those workloads imply).
 
 ## Definition of done
 
-- [ ] Increments 1–3 landed, each with its bit-exact gate on real hardware.
-- [ ] Long-prompt TTFT measurement recorded (option (a) vs batched) in the GPU
-      campaign doc / CHANGELOG.
+- [x] Increments 1–3 landed, each with its bit-exact gate on real hardware. **2026-09-13**:
+      all three checkboxes above now checked — Increment 1's batched attention kernel measured
+      genuinely bit-exact (cosine 1.0, maxAbs 0.0), not merely close.
+- [x] Long-prompt TTFT measurement recorded (option (a) vs batched) in the GPU
+      campaign doc / CHANGELOG. **2026-09-13**: `docs/measurements/
+      prefill-batched-ttft-2026-09-13.md` — first run ever (7-29× slower, worsening with
+      M), fixed (2.5-3.5× faster), Increment 1 built for real (6.3-8.7× faster, now
+      flat-to-improving with M instead of shrinking).
 - [ ] `TestDecodeParity` + the GPU parity gates green; software-adapter CI still
-      skips the hardware-sensitive ones (no CI regression).
+      skips the hardware-sensitive ones (no CI regression). Gates pass on real hardware
+      (see Increment 2's checkbox); this branch has not been pushed through CI itself.

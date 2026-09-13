@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/vision"
 )
 
@@ -77,7 +77,7 @@ func (c *Context) NewVisionEncoder(w vision.GPUWeights) (*VisionEncoder, error) 
 }
 
 func (c *Context) newDevBuf(n int) (*DeviceBuffer, error) {
-	b, err := c.device.CreateBuffer(&wgpu.BufferDescriptor{Label: "vbuf", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	b, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "vbuf", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}

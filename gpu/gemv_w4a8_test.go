@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // TestW4A8_parity_and_bandwidth is the W4A8 probe: it validates the int4
@@ -69,17 +69,17 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 	}
 	defer rm.Release()
 	dev := ctx.device
-	aBuf, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "w4-act", Contents: wgpu.ToBytes(packInt8(act, 1, kp)), Usage: wgpu.BufferUsageStorage})
+	aBuf, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "w4-act", Contents: wgpu.ToBytes(packInt8(act, 1, kp)), Usage: wgpu.BufferUsageStorage})
 	defer aBuf.Release()
-	asBuf, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "w4-ascale", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
+	asBuf, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "w4-ascale", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage})
 	defer asBuf.Release()
-	dstBuf, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Label: "w4-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	dstBuf, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "w4-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	defer dstBuf.Release()
-	dimsBuf, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Label: "w4-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+	dimsBuf, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "w4-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 	defer dimsBuf.Release()
-	stag, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Label: "w4-stage", Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stag, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "w4-stage", Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	defer stag.Release()
-	bg, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.gemvW4Layout, Entries: []wgpu.BindGroupEntry{
+	bg, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.gemvW4Layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
 		{Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
 		{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
@@ -91,27 +91,27 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 	gx, gy := gemvGrid(N)
 
 	// --- parity: one dispatch, read back, cosine vs ref ---
-	enc, _ := dev.CreateCommandEncoder(nil)
+	enc, _ := dev.TryCreateCommandEncoder(nil)
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(ctx.gemvW4Pipeline)
 	pass.SetBindGroup(0, bg, nil)
 	pass.DispatchWorkgroups(gx, gy, 1)
-	pass.End()
+	pass.TryEnd()
 	pass.Release()
-	enc.CopyBufferToBuffer(dstBuf, 0, stag, 0, uint64(N*4))
-	cmd, _ := enc.Finish(nil)
+	enc.TryCopyBufferToBuffer(dstBuf, 0, stag, 0, uint64(N*4))
+	cmd, _ := enc.TryFinish(nil)
 	ctx.queue.Submit(cmd)
 	cmd.Release()
 	enc.Release()
-	st := wgpu.BufferMapAsyncStatusUnknown
-	stag.MapAsync(wgpu.MapModeRead, 0, uint64(N*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+	st := wgpu.MapAsyncStatus(0)
+	stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(N*4), func(s wgpu.MapAsyncStatus) { st = s })
 	ctx.device.Poll(true, nil)
-	if st != wgpu.BufferMapAsyncStatusSuccess {
+	if st != wgpu.MapAsyncStatusSuccess {
 		t.Fatalf("map failed: %v", st)
 	}
 	got := make([]float32, N)
 	copy(got, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(N*4))))
-	stag.Unmap()
+	stag.TryUnmap()
 	cos, maxAbs := cosine(got, ref)
 	t.Logf("W4A8 GEMV parity [%d×%d, group %d]: cosine=%.6f maxAbs=%.3e", N, K, group, cos, maxAbs)
 	if cos < 0.9999 {
@@ -122,16 +122,16 @@ func TestW4A8_parity_and_bandwidth(t *testing.T) {
 	timeKd := func(Kd, reps int) time.Duration {
 		best := time.Hour
 		for range reps {
-			e, _ := dev.CreateCommandEncoder(nil)
+			e, _ := dev.TryCreateCommandEncoder(nil)
 			p := e.BeginComputePass(nil)
 			p.SetPipeline(ctx.gemvW4Pipeline)
 			p.SetBindGroup(0, bg, nil)
 			for range Kd {
 				p.DispatchWorkgroups(gx, gy, 1)
 			}
-			p.End()
+			p.TryEnd()
 			p.Release()
-			c2, _ := e.Finish(nil)
+			c2, _ := e.TryFinish(nil)
 			t0 := time.Now()
 			ctx.queue.Submit(c2)
 			ctx.device.Poll(true, nil)

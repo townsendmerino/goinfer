@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cogentcore/webgpu/wgpu"
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -101,15 +101,15 @@ func TestMambaRealInputParity(t *testing.T) {
 	dev := ctx.device
 	stor := wgpu.BufferUsageStorage
 	mkW := func(c []float32) *wgpu.Buffer {
-		b, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: stor})
+		b, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: stor})
 		return b
 	}
 	mkRW := func(n int, extra wgpu.BufferUsage) *wgpu.Buffer {
-		b, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: stor | extra})
+		b, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: stor | extra})
 		return b
 	}
 	uni := func(v []uint32) *wgpu.Buffer {
-		b, _ := dev.CreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
+		b, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform})
 		return b
 	}
 	xBuf := mkRW(convDim, wgpu.BufferUsageCopyDst)
@@ -121,9 +121,9 @@ func TestMambaRealInputParity(t *testing.T) {
 	yBuf := mkRW(dInner, wgpu.BufferUsageCopySrc)
 	gBuf := mkRW(dInner, wgpu.BufferUsageCopySrc)
 	ssmBuf := mkRW(nHeads*headDim*dState, wgpu.BufferUsageCopyDst)
-	stag, _ := dev.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(convDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	ctx.queue.WriteBuffer(winBuf, 0, wgpu.ToBytes(make([]float32, (K-1)*convDim)))
-	ctx.queue.WriteBuffer(ssmBuf, 0, wgpu.ToBytes(make([]float32, nHeads*headDim*dState)))
+	stag, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(convDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	ctx.queue.TryWriteBuffer(winBuf, 0, wgpu.ToBytes(make([]float32, (K-1)*convDim)))
+	ctx.queue.TryWriteBuffer(ssmBuf, 0, wgpu.ToBytes(make([]float32, nHeads*headDim*dState)))
 	dConvU := uni([]uint32{uint32(convDim), uint32(K), 0, 0})
 	dSSMU := uni([]uint32{uint32(nHeads), uint32(headDim), uint32(dState), uint32(nGroups), uint32(repeat), uint32(gSize), uint32(dInner), 0})
 	dGNU := uni([]uint32{uint32(dInner), 1, uint32(dInner), math.Float32bits(eps), 0, 0, 0, 0})
@@ -134,36 +134,36 @@ func TestMambaRealInputParity(t *testing.T) {
 		}
 		return e
 	}
-	bgC, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaConvLayout, Entries: ent(xBuf, cwBuf, cbBuf, winBuf, convBuf, dConvU)})
-	bgS, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaSSMLayout, Entries: ent(convBuf, dtBuf, hpBuf, ssmBuf, yBuf, dSSMU)})
-	bgG, _ := dev.CreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaGNormLayout, Entries: ent(yBuf, zBuf, nwBuf, gBuf, dGNU)})
+	bgC, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaConvLayout, Entries: ent(xBuf, cwBuf, cbBuf, winBuf, convBuf, dConvU)})
+	bgS, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaSSMLayout, Entries: ent(convBuf, dtBuf, hpBuf, ssmBuf, yBuf, dSSMU)})
+	bgG, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaGNormLayout, Entries: ent(yBuf, zBuf, nwBuf, gBuf, dGNU)})
 
 	readBuf := func(b *wgpu.Buffer, n int) []float32 {
-		enc, _ := dev.CreateCommandEncoder(nil)
-		enc.CopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
-		cmd, _ := enc.Finish(nil)
+		enc, _ := dev.TryCreateCommandEncoder(nil)
+		enc.TryCopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
+		cmd, _ := enc.TryFinish(nil)
 		ctx.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
-		st := wgpu.BufferMapAsyncStatusUnknown
-		stag.MapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.BufferMapAsyncStatus) { st = s })
+		st := wgpu.MapAsyncStatus(0)
+		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
 		ctx.device.Poll(true, nil)
-		if st != wgpu.BufferMapAsyncStatusSuccess {
+		if st != wgpu.MapAsyncStatusSuccess {
 			t.Fatalf("map: %v", st)
 		}
 		out := make([]float32, n)
 		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
-		stag.Unmap()
+		stag.TryUnmap()
 		return out
 	}
 	gpuMixer := func(proj []float32) []float32 {
 		z := proj[0:dInner]
 		xBC := proj[dInner : dInner+convDim]
 		dt := proj[projDim-nHeads:]
-		ctx.queue.WriteBuffer(xBuf, 0, wgpu.ToBytes(xBC))
-		ctx.queue.WriteBuffer(zBuf, 0, wgpu.ToBytes(z))
-		ctx.queue.WriteBuffer(dtBuf, 0, wgpu.ToBytes(dt))
-		enc, _ := dev.CreateCommandEncoder(nil)
+		ctx.queue.TryWriteBuffer(xBuf, 0, wgpu.ToBytes(xBC))
+		ctx.queue.TryWriteBuffer(zBuf, 0, wgpu.ToBytes(z))
+		ctx.queue.TryWriteBuffer(dtBuf, 0, wgpu.ToBytes(dt))
+		enc, _ := dev.TryCreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(nil)
 		pass.SetPipeline(ctx.mambaConvPipeline)
 		pass.SetBindGroup(0, bgC, nil)
@@ -174,9 +174,9 @@ func TestMambaRealInputParity(t *testing.T) {
 		pass.SetPipeline(ctx.mambaGNormPipeline)
 		pass.SetBindGroup(0, bgG, nil)
 		pass.DispatchWorkgroups(1, 1, 1)
-		pass.End()
+		pass.TryEnd()
 		pass.Release()
-		cmd, _ := enc.Finish(nil)
+		cmd, _ := enc.TryFinish(nil)
 		ctx.queue.Submit(cmd)
 		cmd.Release()
 		enc.Release()
