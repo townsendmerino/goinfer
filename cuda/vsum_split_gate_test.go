@@ -26,7 +26,7 @@ import (
 // backend's own forward with f32 activations and the exact f64-accumulating attention
 // (decoder/prefill_ref_gen_test.go, Phase A, its own process). Scoring the spike against the
 // shipped path and calling the shipped path truth is what cuda/vsum_split_fidelity_test.go does,
-// and it is the exact mistake docs/task-prefill-gap.md §3.1 corrected: the shipped path is itself
+// and it is the exact mistake docs/completed/task-prefill-gap.md §3.1 corrected: the shipped path is itself
 // one particular summation order, guaranteed to disagree with any other for reasons that have
 // nothing to do with a defect, and the distance gets booked against whichever arm is newer.
 //

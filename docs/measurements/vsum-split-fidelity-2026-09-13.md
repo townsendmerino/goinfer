@@ -1,7 +1,19 @@
 # V-sum split spike — §3.2 fidelity gate (IN PROGRESS)
 
-Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `a56a7306` before Phase A was
-launched. Gate: `cuda/vsum_split_gate_test.go` (`ed2624bd`).
+Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `f9d50cab` before Phase A was
+launched. Gate: `cuda/vsum_split_gate_test.go` (`2ef265d7`). *(The pre-registration still names
+`docs/task-prefill-gap.md`, which was archived to `docs/completed/task-prefill-gap.md` while this
+gate ran — left unedited on purpose, since a pre-registration that changes after results exist
+stops being one.)*
+
+**Which build was measured.** This work was rebased onto origin/main mid-run, rewriting every hash
+cited here; the ones above are the rebased hashes. The scoring binary for both cells was built
+BEFORE the rebase, from the commit now published as `cc90c18f` but then at `13c75842` (preserved
+locally as `backup/pre-rebase-20260913`). Between that build and main: the CUDA kernel sources and
+PTX are byte-identical, and the split-KV / V-sum Go code differs only in one comment path — but the
+rebase brought 169 Go-file changes elsewhere, including `cuda/resident.go`, `cuda/backend.go` and
+`cuda/prefill.go`. So the exact-vs-spike **comparison** is a property of the V-sum reduction tree and
+carries to main; the **absolute** agreement and KL figures are for the pre-rebase build.
 
 **Status: S (confirmation) scored — DOES NOT PASS under the registered rule, on criterion (a) by one
 hard flip; PASSES under criterion (a) as AMENDED by owner decision (below), re-scored in a logged run
@@ -92,7 +104,7 @@ failure, and a reader should weigh it knowing so.
 "move a bar only with a mechanism"): a hard-flip count in single digits to the teens is a Poisson
 count, and a strict `<=` between two such counts is decided by noise — 7 v 8 sits well inside
 σ ≈ 2.6. The replacement is not invented for this gate. It is the ceiling
-`docs/task-prefill-gap.md` §3.2 specifies ("with the Poisson noise of a count of ~40 written into
+`docs/completed/task-prefill-gap.md` §3.2 specifies ("with the Poisson noise of a count of ~40 written into
 it instead of ignored") and `metal/prefill_gate_ref_test.go` implements — the bar the Metal fast
 prefill shipped under on 2026-09-09. The pre-registration's own title named §3.2; its rule text did
 not match its title, and the amendment makes them agree.
@@ -112,7 +124,7 @@ under the amended rule in a separate, logged run; its registered verdict (above)
 
 ## S re-scored under the amended rule — PASSES (confirmation cell)
 
-Separate process, same binary tree as `88336773`, log
+Separate process, binary built from the tree at the amendment commit (`5677f44e` after rebase), log
 `goinfer-logs/vsum-fidelity-phaseB-S-amended-20260913-124204.log`, 6m17s.
 
 **Every per-prompt figure reproduced exactly** against the first run — agreement, hard flips and KL to
