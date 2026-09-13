@@ -1,5 +1,37 @@
 # Task (goinfer, MacBook): CPU prefill vs Ollama — measure the missing number
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status, doc-reviewed 2026-09-13 — SUPERSEDED, archived.** The premise this doc opened with
+> ("there is no current CPU prefill-vs-Ollama number anywhere in the record") stopped being true
+> five days after it was written. `6f54fbf3` (2026-09-01, "the first peer CPU-prefill comparison,
+> weight-matched") produced the goinfer-vs-Ollama CPU prefill table it asked for — same
+> methodology (weight-matched GGUF, `num_gpu:0`, unique prompt per cell so Ollama's aggressive CPU
+> cache can't flatter it, `LINEAR_FIT_INVALID` handled honestly) — recorded at
+> `docs/measurements/cpu-peer-prefill-2026-09-01.md`: 2.98x behind at K=512, narrowing to 1.80x at
+> K=3900. `de0cc654` (2026-09-05) superseded that row after aikit's S-01 register-blocked int4
+> tile: `docs/measurements/cpu-peer-prefill-2026-09-05.md` has goinfer at 1.54x behind at K=512
+> and **0.91x — AHEAD — at K=3900**, whole-curve marginal ratio 0.86x. Both numbers are the
+> canonical CPU-prefill-vs-Ollama figures in `docs/benchmarks.md` §A ("Apple Silicon CPU
+> prefill") today.
+>
+> **What was not executed to the letter, and is not owned by a live doc:** both measured rows are
+> **1.5B only** — 0.5B CPU prefill vs Ollama is still unmeasured (the 2026-09-01 doc says so
+> under "Not claimed"). Neither row used this doc's exact prescription: n≥6 paired prompts per
+> length (the actual runs used 4), prompt lengths 541/2048/8192 (the actual runs used
+> 512/1024/2048/3900), a separately-labeled cold first-request cell, or the specific
+> today-vs-Aug-22-baseline attribution cell this doc asked for (the 2026-09-05 doc instead
+> attributes to aikit v1.31.0-vs-v1.34.0 across a four-day window of unrelated goinfer changes
+> too, and says plainly it "should not be quoted as" an isolated A/B). None of these gaps are
+> tracked in a live queue item as of this review — flagged here rather than filed, since the
+> qualitative finding this doc was chasing (CPU prefill is no longer clearly behind Ollama; it is
+> ahead at depth on the flagship 1.5B cell) is already established and cited.
+
 > **For:** Claude Code, in `~/tmcode/goinfer`, on the M1 Pro. Written 2026-08-26. Measurement
 > only — this is the Step 0 of any future prefill campaign, and no optimization happens here.
 > **Prior art (mandatory):** `docs/ollama-chase.md` §3b — CUDA prefill is 4.7x behind with a
