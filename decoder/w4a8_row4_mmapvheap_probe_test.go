@@ -42,7 +42,7 @@ func heapifyRow4(wm *linalg.WeightMat) bool {
 // loaders). The kind-4 .giw path's row4 bytes are mmap-aliased even when NOT paged (no
 // StreamWeights) -- Load() always mmaps a .giw file read-only regardless of streaming
 // mode. If mmap-resident calls are slower than heap-resident calls on the identical
-// bytes, the quiet-machine gemma4 gap (docs/task-zeno-compare.md's "Quiet-machine
+// bytes, the quiet-machine gemma4 gap (docs/completed/task-zeno-compare.md's "Quiet-machine
 // re-measure") is memory-source mechanics (TLB/page-fault residue on mapped pages),
 // not paging-machinery overhead.
 func TestRow4_mmapVsHeapResident(t *testing.T) {

@@ -64,7 +64,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	// (MatmulBTW4A8Into) reads ONLY row4 whenever it's present — this arch's forward is
 	// always M==1, decode and prefill alike (confirmed by "prefill path: sequential" on
 	// every load). Registering both spans under one cache key was a real, measured bug
-	// (docs/task-zeno-compare.md's "At-scale acceptance run"): SpanCache.Touch issues
+	// (docs/completed/task-zeno-compare.md's "At-scale acceptance run"): SpanCache.Touch issues
 	// MADV_WILLNEED on EVERY span under a key, unconditionally, so a cold kind-4 touch
 	// prefetched both copies from disk though only one was ever read — a fixed ~2x I/O
 	// tax per miss that produced a ~25-30% throughput regression instead of the row4
@@ -155,7 +155,7 @@ func (p *expertPager) stats() (hits, misses, evictions int64) {
 // every miss — what THIS pager asked the OS to fetch, independent of whatever else
 // the machine's disk is doing. A durable, contamination-proof I/O check: a member
 // registering redundant spans (the kind-4 double-WILLNEED bug this exists to catch,
-// docs/task-zeno-compare.md's "At-scale acceptance run") shows up here directly as
+// docs/completed/task-zeno-compare.md's "At-scale acceptance run") shows up here directly as
 // bytes-per-miss exceeding the expected per-expert working set, immune to whatever an
 // external tool like iostat would also be counting on a shared machine.
 func (p *expertPager) advisedBytes() int64 {

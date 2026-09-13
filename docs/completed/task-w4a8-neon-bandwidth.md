@@ -460,7 +460,7 @@ has shipped and been measured.** Reasons, so they don't get relitigated:
 delta measured → only then cut the kind, with the paged-MoE need as the forcing function. A
 serialized format frozen around an unmeasured kernel layout is the one clearly wrong order.
 
-## `.giw` kind 4 — SHIPPED 2026-08-24 (`docs/task-zeno-compare.md`'s paging campaign, the forcing function arrived)
+## `.giw` kind 4 — SHIPPED 2026-08-24 (`docs/completed/task-zeno-compare.md`'s paging campaign, the forcing function arrived)
 
 Both sequencing-rule conditions were met (layout harness-final, load-time repack shipped and
 measured) when `b6a5387` found the actual forcing function: 91.6% of the 35B-A3B paged-MoE
@@ -517,7 +517,7 @@ existing caller; `default` behavior is untouched).
 **Verified at scale, 2026-08-24 — the projection was wrong, the cause was found and fixed, Pass 1
 recovers most of it.** Both real bundles (gemma4-26b-int4-row4.giw, qwen3.5-35b-a3b-int4-row4.giw)
 were built and measured end-to-end; full numbers, methodology, and the confirmed root cause are in
-`docs/task-zeno-compare.md`'s "At-scale acceptance run" and "Pass 1: the pager fix, measured"
+`docs/completed/task-zeno-compare.md`'s "At-scale acceptance run" and "Pass 1: the pager fix, measured"
 sections. Correctness was fully green throughout (byte-identical dispatch, real non-vacuous paged
 eviction, T3 green). Throughput first came back a **~25-30% regression**, not the projected ~1.3x
 gain — CONFIRMED (not merely hypothesized) as `decoder/moepaging.go`/`layerpaging.go` registering a
@@ -527,11 +527,11 @@ prefetched both copies from disk on every cold touch though the kernel only ever
 the pager itself was proven correct via `aikit` v1.28.0's `SpanCache.AdvisedBytes` (exact 1.0000x
 bytes-per-miss on both real models) — but a quiet-machine re-measure found gemma4's gap did NOT
 shrink, it grew (−47 to −49%, budget-invariant), while 35B's shrank to −12.3%. ~~**Root cause found
-(`docs/task-zeno-compare.md`'s "cold-touch investigation"):** the row4 kernel is 1.6-1.75x faster
+(`docs/completed/task-zeno-compare.md`'s "cold-touch investigation"):** the row4 kernel is 1.6-1.75x faster
 than canonical on WARM, repeatedly-touched data (confirmed again directly on gemma4's own shapes:
 +57-67%) but **~69% SLOWER on a cold, first-touched page**~~ — **STRUCK 2026-08-25, does not
 reproduce (3/3 corrected re-runs found row4 FASTER cold, not slower — see
-`docs/task-zeno-compare.md`'s "Supersession (2026-08-25)" for the full re-measurement, the
+`docs/completed/task-zeno-compare.md`'s "Supersession (2026-08-25)" for the full re-measurement, the
 end-to-end confirmation, and why this is held to "reversed pending different-day confirmation," not
 a new headline).** ~~real paged decode is dominated by cold
 touches (many distinct experts, a real budget, little cross-token reuse), which is exactly the
@@ -550,7 +550,7 @@ model that will be paged.**
 
 ~~**Mechanism confirmed 2026-08-25, via real PMU counters**~~ — **INTERPRETATION WITHDRAWN
 2026-08-25** (same day, later re-measurement pass; full account in
-`docs/task-zeno-compare.md`'s "Supersession (2026-08-25)"). The counter DATA below is real and
+`docs/completed/task-zeno-compare.md`'s "Supersession (2026-08-25)"). The counter DATA below is real and
 replicated — kept as data, not deleted:
 
 ~~`xcrun xctrace record

@@ -1,5 +1,43 @@
 # Task: Zeno head-to-head — feasibility and matched-depth comparison
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it. Every instruction or
+> "not yet run" item below (the streaming-transcode scope, the paging campaign's various "next
+> steps", the different-day cold-touch confirmation) is a record of what was asked or proposed at
+> the time, not a task waiting on a future reader — see "Status" immediately below for where each
+> open thread actually landed.
+
+> **Status (doc-review, 2026-09-13): COMPLETE, archived.** Phase 0 Part A (can goinfer run the real
+> checkpoint) cleared 2026-08-24: the qwen35 streaming-transcode fix landed the same day (peak RSS
+> 40.5 GB OOM → ~7.9 GB), the real 35B-A3B decodes coherently, and the resulting paging campaign
+> shipped real, committed engineering — the pager's double-`MADV_WILLNEED` fix
+> (`decoder/moepaging.go`/`layerpaging.go`), the `.giw` kind-4 split-half/row4 format (aikit
+> v1.27.0), and the durable `SpanCache.AdvisedBytes` byte-accounting counter (aikit v1.28.0). The
+> campaign's own headline mechanism claim (row4 kernel "69% slower on cold touches") did **not**
+> reproduce under a corrected, different-day re-measurement (see "Supersession (2026-08-25)"
+> below) and is held, by this doc's own final word, as "reversed pending different-day
+> confirmation" — that confirmation is real open work, but it is tracked live in
+> `docs/task-w4a8-neon-bandwidth.md` (the `-row4` flag's cold-paging warning stays in its help
+> text until it runs), not here. Phase 1 (the actual Zeno-vs-goinfer head-to-head) never launched:
+> Part B gated on an explicit install checkpoint from Francis that never happened, and the
+> question itself has since moved — `docs/task-peer-benchmarks.md` (SCOPED 2026-09-03) now owns it,
+> listing Zeno as an optional Mac peer specifically for "the 35B-on-16-GB cell." Both remaining
+> threads this doc opened therefore have live owners; nothing here is an orphan.
+>
+> **Retraction, reaching this page too.** This doc's own last-word summary ("Go/no-go for Phase 1"
+> below) quoted the diagnostic's "corrected ~1.2-1.4 tok/s" figure without incorporating this same
+> doc's later, same-day "Quiet-machine re-measure" (1.605 tok/s CPU-paged) — and that figure was
+> superseded again by direct measurement recorded in `docs/completed/queue-engineering.md`: the CPU
+> pager at **1.52-1.73 tok/s**, the Metal expert pager at **1.97-2.02 tok/s**
+> (`docs/completed/task-metal-expert-streaming-at-scale.md`). Fixed in place at the point of
+> citation below, per this repo's own "a retraction is not done until it reaches every page quoting
+> the figure" rule (`CLAUDE.md` § Measurement discipline) — CLAUDE.md itself already used this
+> exact figure as that rule's worked example.
+
 > Scoping/measurement doc. Opened 2026-08-24 from `docs/prompts/zeno-compare-phase0.md`. Context:
 > Icosa's Zeno (r/ollama post, 2026-08) ships 4-bit Qwen3.5-35B-A3B on 16 GB Macs via disk
 > offloading, posting 10k prompt — 214 tok/s prefill / 8.7 tok/s decode; 541 prompt — 66/13.2 tok/s;
@@ -932,12 +970,18 @@ reader + `decoder.LoadSerializedWeights` — 40 layers, `NumLayers=40`, `VocabSi
 
 **Part A: CLEARS, as of 2026-08-24** — the streaming fix landed, the real 35B-A3B checkpoint now
 loads (mmap + expert demand-paging, ~2.4-2.7 GB resident, 6 GB budget) and decodes coherent prose
-at a corrected **~1.2-1.4 tok/s steady-state** (see "Diagnostic: the ~1160 ms/token gap" — the
+at ~~a corrected **~1.2-1.4 tok/s steady-state**~~ (see "Diagnostic: the ~1160 ms/token gap" — the
 original ~0.86 tok/s conflated prefill's cost into the completion-token divisor), below both of the
 brief's reference points (Zeno 8.7, llama.cpp 3.5) but a real, working, now fully-diagnosed number
-rather than a blocked one. Step 4 (sizing the f32-scratch handicap) is DONE — sized and closed
-(not the gap's explanation); the diagnostic also ranked where the remaining time goes (paged MoE
-I/O ~70%, DeltaNet recurrence ~19%).
+rather than a blocked one. **STALE — fixed 2026-09-13 at archival:** this section was never updated
+after this same doc's own later "Quiet-machine re-measure" (1.605 tok/s CPU-paged, same day) or the
+subsequent direct measurement in `docs/completed/queue-engineering.md`, which puts the real
+steady-state rate at **1.52-1.73 tok/s (CPU pager) / 1.97-2.02 tok/s (Metal expert pager)**
+(`docs/completed/task-metal-expert-streaming-at-scale.md`) — still below Zeno's posted 8.7 but
+markedly closer than the ~1.3 tok/s this section quoted. Step 4 (sizing the f32-scratch handicap)
+is DONE — sized and closed (not the gap's explanation); the diagnostic also ranked where the
+remaining time goes (paged MoE I/O ~70%, DeltaNet recurrence ~19% — since found to be
+compute-dominated, not I/O-dominated, see "the admit-time I/O-vs-compute split" above).
 
 **Overall: still NO-GO for Phase 1, gated on Part B alone.** Part A no longer blocks; Part B (Zeno
 install feasibility) has not been pursued and gates on Francis's explicit checkpoint before

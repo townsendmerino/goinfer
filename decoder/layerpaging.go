@@ -81,7 +81,7 @@ func newLayerPager(w *Weights, mapping []byte, budget int64) *layerPager {
 			// Register only the span the M=1 decode kernel will actually read: row4
 			// when present, canonical otherwise — never both. Registering both under
 			// one cache key was a real, measured bug (moepaging.go's addExpert,
-			// docs/task-zeno-compare.md's "At-scale acceptance run"): SpanCache.Touch
+			// docs/completed/task-zeno-compare.md's "At-scale acceptance run"): SpanCache.Touch
 			// WILLNEEDs every span under a key unconditionally, so a cold kind-4 touch
 			// prefetched the unread canonical copy too — a fixed ~2x I/O tax per miss.
 			s := wm.MappedSpanRow4(base, end)

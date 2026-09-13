@@ -12,7 +12,7 @@ import (
 
 // deltaNetTiming env-gates the sixth outing of this repo's component-stub timing
 // method (GOINFER_DELTANET_TIMING=1): splits gatedDeltaNetStep's ~19%-of-decode-token
-// cost (docs/task-zeno-compare.md's diagnostic) into the three dominant projections
+// cost (docs/completed/task-zeno-compare.md's diagnostic) into the three dominant projections
 // (already W4A8/W8A8-quantized, presumably fast), the delta-rule recurrence proper
 // (section 3 below — plain scalar Go, the DeltaNet-CPU-recurrence brief's suspect),
 // and everything else (conv, gates, gated RMSNorm). Atomic accumulators, not

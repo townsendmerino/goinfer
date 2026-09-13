@@ -338,7 +338,7 @@ positions are inherent, not recompute.
   do not. The pager's fetch already copies into an owned buffer (the `pread` rewrite), so repacking
   during that copy memoises the unpack for the expert's whole residency.
 - **Size:** row4 vs canonical is 1.33× on the M=1 GEMV (17 vs 12.75 instructions per 32 MACs);
-  `docs/task-zeno-compare.md` puts MoE at ~70% of a CPU-paged 35B token, "91.6% genuine GEMV" on
+  `docs/completed/task-zeno-compare.md` puts MoE at ~70% of a CPU-paged 35B token, "91.6% genuine GEMV" on
   the canonical kernel — ~1.2× on the token **where the pager is compute-bound**. Not on the
   SSD-bound Mac 35B at 2.19 tok/s, where the miss stream is the term. Also lets expert-major prefill
   (P18) take the tile.
@@ -362,7 +362,7 @@ positions are inherent, not recompute.
   proposes is not just imprecise, it is a MORE complex reimplementation of a
   SIMPLER approach this repo already built and shipped for the identical goal.
   **That simpler, already-shipped approach's own performance case is explicitly unresolved.**
-  `docs/task-zeno-compare.md`'s "At-scale acceptance run" through "Supersession (2026-08-25)"
+  `docs/completed/task-zeno-compare.md`'s "At-scale acceptance run" through "Supersession (2026-08-25)"
   is an unusually thorough saga on two real checkpoints (gemma4-26b, qwen3.5-35B-A3B): kind-4
   under paging first measured a REAL 25-34% regression (root-caused and fixed — the pager was
   registering both canonical AND row4 spans per tensor, doubling I/O per miss); post-fix it

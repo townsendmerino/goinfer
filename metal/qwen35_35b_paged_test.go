@@ -198,7 +198,7 @@ func TestQwen35_35B_pagedRuns(t *testing.T) {
 // same box, same session, decoded through the CPU expert pager (StreamWeights, decoder/moepaging.go)
 // instead of the Metal one. Without it, "Metal paging is faster" would be a cross-session ratio
 // against a number measured on another day — exactly the comparison this repo's own
-// task-zeno-compare.md shows can drift 2.6x from machine load alone (kind-3 gemma4 at one identical
+// docs/completed/task-zeno-compare.md shows can drift 2.6x from machine load alone (kind-3 gemma4 at one identical
 // config read 1.128 and then 2.917 tok/s).
 //
 // IT LIVES IN metal/ AND USES NO METAL. That is deliberate: its only reason to exist is to be the
@@ -219,7 +219,7 @@ func TestQwen35_35B_cpuPagedBaseline(t *testing.T) {
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no 35B .giw (%s)", giw)
 	}
-	budgetGB := 6.0 // matches the 6 GB kind-3 row in docs/task-zeno-compare.md (1.605 tok/s, 3-run avg)
+	budgetGB := 6.0 // matches the 6 GB kind-3 row in docs/completed/task-zeno-compare.md (1.605 tok/s, 3-run avg)
 	if v := os.Getenv("GOINFER_CPU_BUDGET_GB"); v != "" {
 		budgetGB, _ = strconv.ParseFloat(v, 64)
 	}

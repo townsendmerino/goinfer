@@ -215,7 +215,7 @@ whichever mechanism the reader already had in mind.
 ## 9. Sources
 
 `docs/benchmarks.md` (Methodology, B5/B10), `scripts/bench_peer.py`, `docs/ollama-chase.md`,
-`docs/task-zeno-compare.md`, `docs/tasks/task-freetoken-techniques.md`, `docs/integrations/claude-code.md`
+`docs/completed/task-zeno-compare.md`, `docs/tasks/task-freetoken-techniques.md`, `docs/integrations/claude-code.md`
 (the loop W4 replays), `docs/measurements/cpu-peer-prefill-2026-09-01.md`, `docs/tasks/task-fit-to-hardware.md`
 (the zero-flag question, the never-silently rule), `docs/completed/audit-2026-09-02.md` (G28, L-01,
 L-05 — moved there since this doc was scoped), `docs/tasks/task-recompute-audit.md` (R-01…R-03, R-07),

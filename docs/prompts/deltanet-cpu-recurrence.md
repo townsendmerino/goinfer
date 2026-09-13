@@ -6,7 +6,7 @@
 > DeltaNet recurrence is scalar Go" under "Still open"; the kernel question "belongs to
 > aikit"); `docs/deltanet-residency-plan.md` proved the compute parallelizes (WebGPU resident
 > at 11.4-12.2x CPU decode, and the head_dim-256 wall is documented there); the 35B diagnostic
-> (`docs/task-zeno-compare.md`) measured DeltaNet at **~19% of the decode token**, the largest
+> (`docs/completed/task-zeno-compare.md`) measured DeltaNet at **~19% of the decode token**, the largest
 > component no perf campaign has ever visited. This brief funds the CPU side only.
 
 ## Gate D0 — the sixth split, plus the invariant enumeration (diagnosis before design)

@@ -50,7 +50,7 @@ same bar here.
 ## Deliverable
 
 A ranked cost table (bucket, ms/token, %, method) appended to the Phase 0 record in
-`docs/task-zeno-compare.md`, with: the pager stats alongside gemma4's for comparison, the
+`docs/completed/task-zeno-compare.md`, with: the pager stats alongside gemma4's for comparison, the
 f32-scratch item formally sized (closing the Phase 0 brief's last open item), and a closing
 recommendation naming the top one or two levers with rough sizes — scoping input for the next
 campaign, not work performed here. Quiet box; `b.Run` shapes, never nested

@@ -3,7 +3,7 @@
 > Opened 2026-08-25 from `docs/prompts/deltanet-cpu-recurrence.md`. Prior art: `docs/queue-performance.md`
 > already named this lever ("the DeltaNet recurrence is scalar Go"); `docs/deltanet-residency-plan.md`
 > proved the compute parallelizes (WebGPU resident at 11.4-12.2x CPU decode); the 35B diagnostic
-> (`docs/task-zeno-compare.md`) measured DeltaNet at ~19% of the decode token, the largest component
+> (`docs/completed/task-zeno-compare.md`) measured DeltaNet at ~19% of the decode token, the largest component
 > no perf campaign had visited before this one.
 
 ## Gate D0 — the sixth split, real 35B-A3B checkpoint, 2026-08-25
