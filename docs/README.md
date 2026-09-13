@@ -48,7 +48,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
 
-## Design records — `task-*.md` (26: 21 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (28: 23 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -89,7 +89,7 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (4) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (5) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered; the 4
   remaining are each genuinely still open (drafted-by-decision, blocked, or unshipped, per their
   own status).
