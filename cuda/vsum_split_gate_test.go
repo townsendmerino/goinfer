@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,12 +41,22 @@ import (
 //	exact  r.skVsumSplit = 0  — today's default, bit-identical to attn_batched(M=1)
 //	spike  r.skVsumSplit = S  — the key-axis split; NOT bit-identical, opt-in, unreachable in a stock binary
 //
-// GATE, per (model, K) cell, all three, as pre-registered:
+// GATE, per (model, K) cell, all three:
 //
-//	(a) spike's hard-flip count vs the reference <= exact's, over the same continuation positions
+//	(a) spike's hard-flip count vs the reference <= exact + 2·√exact   (AMENDED — see below)
 //	(b) spike's mean teacher-forced agreement >= exact's mean - 1.0 pt AND spike >= exact on >= half
 //	    the prompts (PAIRED, not pooled — CLAUDE.md rule 7)
 //	(c) spike's mean continuation KL(reference || arm) <= 1.1 x exact's mean
+//
+// CRITERION (a) WAS AMENDED BY OWNER DECISION, 2026-09-13, after the S confirmation cell was scored
+// and before any D7 reference existed. As pre-registered it read `spike HF <= exact HF`, §3's strict
+// form — which the pre-registration mislabelled "§3.2". S failed it 8 v 7 over 640 positions, a
+// difference well inside Poisson noise (σ ≈ √7 ≈ 2.6), so the strict count cannot resolve the
+// question it is asking. It now uses the ceiling task-prefill-gap.md §3.2 specifies and the Metal
+// pooled gate implements (metal/prefill_gate_ref_test.go, `exact + 2*math.Sqrt(exact)`). The STRICT
+// result is still computed and printed for every cell, so the amendment is auditable rather than
+// silent. (b) and (c) are NOT amended: §3.2's noise-aware (b) would be looser than the registered
+// 1.0 pt, and that bar stays.
 //
 // AMBIGUOUS -> PARKED: (b) inside its last 0.2 pt, or (c) in 1.05-1.10x, is inconclusive rather
 // than a pass. The band is pre-registered because the zone just under a threshold is where
@@ -266,7 +277,8 @@ func runVsumGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model str
 
 	mEA, mFA := sumEA/float64(n)*100, sumFA/float64(n)*100
 	mEKL, mFKL := sumEKL/float64(n), sumFKL/float64(n)
-	critA := fHF <= eHF
+	critAStrict := fHF <= eHF // as pre-registered; reported, no longer decisive
+	critA := float64(fHF) <= float64(eHF)+2*math.Sqrt(float64(eHF))
 	critB := mFA >= mEA-1.0 && spikeWins*2 >= n
 	critC := mFKL <= 1.1*mEKL
 	// The pre-registered ambiguous band: a pass whose margin is inside it is INCONCLUSIVE, not a pass.
@@ -286,11 +298,12 @@ func runVsumGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model str
 		"exact(meanAgree=%.2f%% HF=%d/%d worstGap=%.3f%% meanKL=%.6f) "+
 		"spike(meanAgree=%.2f%% HF=%d/%d worstGap=%.3f%% meanKL=%.6f) "+
 		"pairedWins=%d/%d rowsDiffering=%d "+
-		"critA(HF spike<=exact)=%v critB(agree>=exact-1pt & >=half)=%v critC(KL<=1.1x)=%v — %s ===\n",
+		"critA(HF spike<=exact+2*sqrt(exact))=%v [strict spike<=exact, as pre-registered: %v] "+
+		"critB(agree>=exact-1pt & >=half)=%v critC(KL<=1.1x)=%v — %s ===\n",
 		model, K, label, n, contN, nSplit,
 		mEA, eHF, n*contN, worstEGap*100, mEKL,
 		mFA, fHF, n*contN, worstFGap*100, mFKL,
-		spikeWins, n, diffPositions, critA, critB, critC, verdict)
+		spikeWins, n, diffPositions, critA, critAStrict, critB, critC, verdict)
 	t.Logf("%s K=%d (%s): %s — exact(agree=%.2f%% HF=%d KL=%.6f) spike(agree=%.2f%% HF=%d KL=%.6f)",
 		model, K, label, verdict, mEA, eHF, mEKL, mFA, fHF, mFKL)
 	if decision && verdict != "PASSES" {

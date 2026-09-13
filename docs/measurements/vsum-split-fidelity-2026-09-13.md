@@ -3,8 +3,9 @@
 Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `a56a7306` before Phase A was
 launched. Gate: `cuda/vsum_split_gate_test.go` (`ed2624bd`).
 
-**Status: S (confirmation) scored — DOES NOT PASS, on criterion (a) by one hard flip. D7 (decision)
-reference still generating; no D7 result exists. The gate's verdict is D7's, and is not in yet.**
+**Status: S (confirmation) scored — DOES NOT PASS under the registered rule, on criterion (a) by one
+hard flip. Criterion (a) then AMENDED by owner decision (below), before any D7 result. D7 (decision)
+reference still generating. The gate's verdict is D7's, and is not in yet.**
 
 ## S — confirmation cell — DOES NOT PASS
 
@@ -67,6 +68,44 @@ only 7 and 8 and read as if every such prompt went that way, which prompt 6 cont
 does hold, the argmax disagreements sit at positions the reference itself scores as near-ties, the
 arms landing on opposite sides while their distributions stay about equally close. Three prompts is
 not evidence of a mechanism.
+
+## OWNER DECISION — criterion (a) amended (2026-09-13, after S was scored, before any D7 result)
+
+**Francis overruled the strict criterion (a)** on reading the two statements above. Recorded here in
+full because it is a rule change made *after seeing a result*, and the only thing that makes such a
+change legitimate is that everything about it is visible.
+
+| | as pre-registered | as amended |
+|---|---|---|
+| (a) hard flips | `spike HF <= exact HF` (§3 strict) | `spike HF <= exact HF + 2·√exact HF` (§3.2) |
+| (b) agreement | >= exact − 1.0 pt AND >= half the prompts | **unchanged** |
+| (c) KL | <= 1.10x, parked above 1.05x | **unchanged** |
+
+**What triggered it, stated plainly:** the S confirmation cell failing strict (a) by one flip. It
+was not noticed in the abstract first. The amendment would not have been examined today without that
+failure, and a reader should weigh it knowing so.
+
+**The mechanism, which is what separates this from moving a bar because a number moved** (CLAUDE.md:
+"move a bar only with a mechanism"): a hard-flip count in single digits to the teens is a Poisson
+count, and a strict `<=` between two such counts is decided by noise — 7 v 8 sits well inside
+σ ≈ 2.6. The replacement is not invented for this gate. It is the ceiling
+`docs/task-prefill-gap.md` §3.2 specifies ("with the Poisson noise of a count of ~40 written into
+it instead of ignored") and `metal/prefill_gate_ref_test.go` implements — the bar the Metal fast
+prefill shipped under on 2026-09-09. The pre-registration's own title named §3.2; its rule text did
+not match its title, and the amendment makes them agree.
+
+**What it does NOT do:** it does not touch (b) or (c). §3.2's noise-aware (b), `exact − 2·√d/N`,
+would be *looser* than the registered 1.0 pt at these counts; it is deliberately not adopted, so the
+agreement bar and its parked band stay as registered. It does not touch the preconditions.
+
+**Auditability:** the gate computes and prints the strict (a) on every cell alongside the amended one
+(`critA(...exact+2*sqrt(exact))=… [strict spike<=exact, as pre-registered: …]`). Every cell's result
+is therefore reported under both rules, and a reader who rejects the amendment can read the
+registered verdict directly off the same log line.
+
+**Timing:** decided and committed while D7's reference was still generating on the CPU, with no D7
+reference file on disk, so D7 is judged under a rule fixed before its data existed. S is re-scored
+under the amended rule in a separate, logged run; its registered verdict (above) is not withdrawn.
 
 ## Deviations from the pre-registration
 
