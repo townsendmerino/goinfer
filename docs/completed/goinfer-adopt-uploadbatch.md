@@ -1,5 +1,32 @@
 # Task (goinfer): adopt `gpu.UploadBatch` in the C′ expert cache
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (2026-09-13, doc-review): DELIVERED, archived.** Landed same week as written —
+> `9fa307cf` (2026-08-28) implements exactly this shape: `loadExpertSlot` → `appendExpertSlot`
+> (queues instead of uploading), `loadRoutedExperts` submits one `gpu.UploadBatch` per layer.
+> `cuda/go.mod` pins `aikit/gpu v0.32.0` as the task required. Every gate below was met or beaten:
+> sync count **20916 → 2038 copies→synchronizes, 10.3x fewer** (task asked for ~240→~40, 6x, on a
+> different token count — same shape, better ratio); tok/s **+9.3%** interleaved-arms on
+> `nobara-pc` (task predicted ≈4.7% and explicitly allowed "inside noise" — it wasn't); H2D time
+> **-10.2% = 2.98 ms/token against the task's predicted "~3.0 ms"**, a direct hit; decode
+> bit-exact on hardware (`TestGemma4MoE_cacheExpertsBitExact_{tiny,scaled}` + both cacheReuse
+> tests, `-tags 'cuda goinfer_testhooks'`). Full numbers and the two ways the first measurement
+> lied (box not quiesced; `go test` cache replay) are in
+> `docs/measurements/uploadbatch-cprime-2026-08-28.md`. A follow-on, `4831a59a` (P-21), folded the
+> per-layer `slotIdx` upload into the same batch too, removing a second synchronize the original
+> task doc did not scope — verified via mutation-checked bit-identity and a real 26B end-to-end
+> decode gate. The two items this doc explicitly parked — the async sub-range variant, and
+> interleaving W/S into one buffer to halve dispatch count — remain unbuilt and are not tracked by
+> any live doc; the interleave one is arguably the more promising residual (it was sized in this
+> doc as "worth clearly less than the sync fix", i.e. a real but small further win), and if wanted
+> it should get its own queue entry rather than being read out of this closed file.
+
 > **For:** Claude Code in `~/tmcode/goinfer`, module `cuda`.
 > Written 2026-08-29 from the aikit side, as the counter-proposal to
 > `docs/prompts/aikit-subrange-async-upload.md` — **which was declined**, see the DECISION
