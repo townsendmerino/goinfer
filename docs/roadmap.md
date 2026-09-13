@@ -76,7 +76,7 @@ promoting are separate decisions with separate gates (see the last section).
   measurement before any task doc (decode is bandwidth-bound; a second stream mostly shares the
   same bytes).
 - **Bindings** (sidecar for desktop, c-archive for mobile) — scoped in
-  [`task-bindings.md`](task-bindings.md), not started. Gate: the B0.1 on-device iPhone spike.
+  [`task-bindings.md`](tasks/parked/task-bindings.md), not started. Gate: the B0.1 on-device iPhone spike.
 - **Browser / WASM** (`GOOS=js` → `navigator.gpu`, cgo-free) — a demo, not a binding strategy;
   unscheduled.
 - **WebGPU dp4a / batched WebGPU prefill** — upstream-blocked on the binding exposing
