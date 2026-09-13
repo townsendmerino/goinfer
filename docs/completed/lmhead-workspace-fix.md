@@ -1,5 +1,23 @@
 # Task (goinfer): the LM head — largest per-token cost, cheapest known fix
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-09-13, doc review): COMPLETE, both steps shipped.** Step 1 (`a7d8cd98`,
+> threading `Workspace` into the weight-only Q8 dispatch) landed measuring "no effect" (42.6-42.7
+> ms/token before and after — allocation was never the bottleneck), exactly as this doc predicted
+> could happen. Step 2 (`a11c56bf`, moving the int4-mode LM head from weight-only Q8 to full
+> W8A8/`quantInt8I8`) shipped as the unconditional default after a precision gate (1.5% argmax
+> flip rate, cosine 0.9998+, both real model sizes) — confirmed still live in `decoder/weightmat.go`
+> (`quantInt8I8`, `matmulWSPool`, `matmulInto`'s threaded `Workspace`) at archival time. Results
+> recorded in `docs/completed/task-w4a8-neon-bandwidth.md`'s "LM-head follow-up shipped" section
+> (`0e5e2017`): 1.5B int4 ~22.9-23.5 → 39.1-40.7 tok/s, 0.5B int4 45.31 → 81.9-83.75 tok/s, int4 now
+> matching or beating int8int8 at both sizes. Zeno Phase 1 unblocked, as this doc required.
+
 > **For:** Claude Code, in `~/tmcode/goinfer`, on the M1 Pro. Written 2026-08-24, from the
 > W4A8 plumbing phase's closing diagnostic (recorded in `docs/completed/task-w4a8-neon-bandwidth.md`):
 > the int8-pinned LM head runs weight-only Q8 with **no `Workspace` — a fresh 151936-row

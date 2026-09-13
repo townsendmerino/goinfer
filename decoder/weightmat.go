@@ -53,7 +53,7 @@ func matmulQuant(base quantMode, name string) quantMode {
 
 // embedding returns the precision to use for the token-embedding table (and the
 // LM head, tied or not). Full W8A8 (int8 weights AND int8 activations), not
-// weight-only Q8 — changed 2026-08-24 (docs/prompts/lmhead-workspace-fix.md Step
+// weight-only Q8 — changed 2026-08-24 (docs/completed/lmhead-workspace-fix.md Step
 // 2, after the W4A8 plumbing phase found the LM head running weight-only Q8 was
 // the single largest per-token cost in int4 decode, achieving only 11-13 GB/s
 // against W8A8's 97.12 GB/s at the same shape — 7.7x). Precision measured before
@@ -770,7 +770,7 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		}
 		// Pooled Workspace, same reason as the W8A8 case just above — the bare
 		// linalg.MatmulBTQ8 wrapper builds a fresh, non-pooled Workspace every call
-		// (docs/prompts/lmhead-workspace-fix.md, Step 1: the LM head's own weight-only
+		// (docs/completed/lmhead-workspace-fix.md, Step 1: the LM head's own weight-only
 		// Q8 path, the largest per-token cost measured in the W4A8 plumbing phase).
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
@@ -811,7 +811,7 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 		// Weight-only Q8 (the int8-pinned LM head, in int4 mode): thread the
 		// caller's own scratch Workspace directly, the same as the branches
 		// above/below, instead of falling through to matmul()'s pool round-trip.
-		// docs/prompts/lmhead-workspace-fix.md Step 1.
+		// docs/completed/lmhead-workspace-fix.md Step 1.
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
 		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
