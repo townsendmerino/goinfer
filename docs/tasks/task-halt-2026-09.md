@@ -421,3 +421,5 @@ question every rogue-agent story ends on.
   client that ignores it is outside what serve can do.
 - Adversaries with the serve user's write access to the unit, the socket dir, or the lease.
   K6 makes those root-only; an attacker with root is not this doc.
+
+<!-- doc-reviewed: 2026-09-13 -->

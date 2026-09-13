@@ -80,3 +80,5 @@ A short `docs/measurements/` note: the per-width table with spreads, the 7-vs-8 
 and pairing, and one sentence saying whether the default should move. If it should, make the
 change in the same commit — `decoder/blockspec.go`, `defaultVerifyWidth`, and update the
 comment above it, which currently justifies 8 from math's then-measured optimum.
+
+<!-- doc-reviewed: 2026-09-13 -->

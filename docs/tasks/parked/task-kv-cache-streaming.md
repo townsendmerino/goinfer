@@ -186,3 +186,5 @@ Re-open this experiment if a model surfaces that is *specifically* weight-fittin
 context whose KV lands squarely between the software default and the true per-card ceiling for a
 real deployment someone wants today — that is the exact window a pager would serve, and it did not
 show up broadly across the model set checked in Step 0.
+
+<!-- doc-reviewed: 2026-09-13 -->

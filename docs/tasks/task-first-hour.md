@@ -1382,3 +1382,5 @@ have shipped.
 under a real agent" evidence) ·
 `pull/registry_test.go` (R7's `TestRegistry_digestsMatchLocalFiles`, whose own comment records
 the fabricated-digest mistake R7 refused to repeat)
+
+<!-- doc-reviewed: 2026-09-13 -->

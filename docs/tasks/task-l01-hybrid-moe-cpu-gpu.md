@@ -399,3 +399,5 @@ prototype, §9) · `cuda/l01_cpu_offload_test.go` (the correctness verification,
 `GOINFER_CUDA_L01_CPU_OFFLOAD`, builds `l01MergeCPUExperts`, synchronous only) ·
 `cuda/l01_e2e_decode_test.go` (`TestL01_e2eDecode_matchesBaseline`, the on/off end-to-end
 correctness gate for that wiring — added in the 2026-09-13 doc-review correction).
+
+<!-- doc-reviewed: 2026-09-13 -->

@@ -64,3 +64,5 @@ width) before any perf claim — the house bar.
 - The qwen35-family dense GGUF loader gap (separate queue entry), the chunked-scan batched
   prefill (roadmap item), anything MoE/paging/kind-4 (that arc is closed), attention, W4A8.
 - Quantizing the recurrence's activations or state — numerics surface, not this pass.
+
+<!-- doc-reviewed: 2026-09-13 -->

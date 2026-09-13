@@ -164,3 +164,5 @@ asking "does this change what we ship?" until the question was raised directly.
 
 The same rule applies on that side: triage before diagnosis, and a red that no shipped
 path can reach gets filed rather than chased.
+
+<!-- doc-reviewed: 2026-09-13 -->

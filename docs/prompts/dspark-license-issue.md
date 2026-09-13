@@ -58,3 +58,5 @@ Thanks!
 - The HF-list-endpoint detail is also the root cause of **this repo's own** mis-audit: P10
   increment 1 recorded the 8b/14b as MIT on an enumeration pass. Worth carrying into any
   future licence audit here, not just upstream.
+
+<!-- doc-reviewed: 2026-09-13 -->

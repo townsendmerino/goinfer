@@ -356,3 +356,5 @@ G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residenc
 `decoder/weightbytes.go:56` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:179` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).
+
+<!-- doc-reviewed: 2026-09-13 -->

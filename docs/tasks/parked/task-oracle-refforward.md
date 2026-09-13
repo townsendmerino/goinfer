@@ -167,3 +167,5 @@ anchors, not per-model generators.
    Python, not the (irreducible) NVRTC dependency. Tracked in QUEUE.md E7 as the build-tooling
    capstone, sequenced after `queue_citation_lint`. **Independent of this plan** — recorded here only
    so the two decisions stay unconflated, as §8 promised.
+
+<!-- doc-reviewed: 2026-09-13 -->

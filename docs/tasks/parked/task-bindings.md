@@ -190,3 +190,5 @@ iOS takes `c-archive` (static, standard for Go on iOS); Android takes `c-shared`
 A is weeks and nearly risk-free; ship it first and get real binding users while B0 resolves.
 **B0.1 — Metal under c-archive on a real iPhone — is the single measurement that determines
 how good the mobile story gets.** Run it early, even out of order.
+
+<!-- doc-reviewed: 2026-09-13 -->

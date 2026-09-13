@@ -169,3 +169,5 @@ passes.
 Record the gate-0 hardware finding either way. "Native FP4 compute needs Blackwell and we do not
 have it" is a durable fact that should not have to be rediscovered, and it is the same hardware
 gate that governs the DGX Spark question.
+
+<!-- doc-reviewed: 2026-09-13 -->

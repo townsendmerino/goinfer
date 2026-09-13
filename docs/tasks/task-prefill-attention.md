@@ -152,3 +152,5 @@ within the shared-memory budget.
 
 GEMV activation-staging fix → 26B non-expert half → this. The crossover is served by the GEMV; this is
 the long-context regime and can wait behind the product-urgent number.
+
+<!-- doc-reviewed: 2026-09-13 -->

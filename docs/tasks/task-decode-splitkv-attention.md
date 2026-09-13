@@ -272,3 +272,5 @@ section already gives.
 It is the only deficit where the arithmetic says parity is reachable, and occupancy is a *solvable*
 bound (unlike the prefill tensor-core ceiling, §7). Flipping "parity at short context" to "parity
 across context lengths" is a qualitative win on the axis where users actually spend time.
+
+<!-- doc-reviewed: 2026-09-13 -->

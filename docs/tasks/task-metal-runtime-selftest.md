@@ -126,3 +126,5 @@ exact failure this whole class is about.
    golden's sequence can double as the probe vector without weakening either.
 4. **Cost of the CPU reference at init.** The CPU pass over the tiny vector must also be ~ms; confirm
    the shared-SIMD kernels don't pull in a heavy one-time init (quant tables) that blows the budget.
+
+<!-- doc-reviewed: 2026-09-13 -->

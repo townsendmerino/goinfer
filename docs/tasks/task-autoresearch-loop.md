@@ -149,3 +149,5 @@ passed the fast gate but fails the full parity confirm is a gate-coverage findin
 - **Not in scope:** the loop making merge decisions (survivors go through review); pointing it at Metal
   for wins (target 3 only); any change to the gates themselves (§4, the loop is gate-read-only);
   automating the relay's premise judgment (§2).
+
+<!-- doc-reviewed: 2026-09-13 -->

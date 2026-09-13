@@ -345,3 +345,5 @@ cache dir, the web UI's contract) · `docs/tasks/parked/task-bindings.md` (what 
 `docs/audit-2026-09-02.md` C-06, C-07, C-08, M-07, M-17–M-30, M-34, N-18, N-42, P-20, L-05, L-07,
 L-15 (the floor and the open items this builds on) · `tasks/task-fit-to-hardware.md` (placement, the
 plan, the banner's byte lines).
+
+<!-- doc-reviewed: 2026-09-13 -->

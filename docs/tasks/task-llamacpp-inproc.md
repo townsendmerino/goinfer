@@ -253,3 +253,5 @@ purego — https://github.com/ebitengine/purego (struct-by-value support, Linux 
 yzma — https://github.com/hybridgroup/yzma; gollama.cpp — https://github.com/dianlight/gollama.cpp;
 llama.cpp `include/llama.h` at the pinned tag (the §3 surface; `ggml_backend_load_all_from_path`
 in `ggml/include/ggml-backend.h`).
+
+<!-- doc-reviewed: 2026-09-13 -->

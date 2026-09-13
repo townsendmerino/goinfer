@@ -146,3 +146,5 @@ gate; the mixed-content suite committed to the harness; accept-rate telemetry; `
 verify-width queue lever closed with the measurements; a `docs/measurements/` note recording
 per-suite adaptive-vs-static, the mixed-suite result, and Phase 3's kill-gate verdicts (whatever
 they are); queue rows filed for anything discovered and deliberately not done.
+
+<!-- doc-reviewed: 2026-09-13 -->

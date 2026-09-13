@@ -203,3 +203,5 @@ Suggested order, cheapest-first, and each independently droppable:
 
 Items 1–3 are small enough not to need a gate. Item 4 does. Nothing here is urgent, and none of it
 should preempt `completed/task-w4a8-neon-bandwidth.md` or `completed/task-attention-decode-cost.md`.
+
+<!-- doc-reviewed: 2026-09-13 -->

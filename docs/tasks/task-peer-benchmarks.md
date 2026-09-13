@@ -222,3 +222,5 @@ L-05 — moved there since this doc was scoped), `docs/tasks/task-recompute-audi
 aikit `CHANGELOG.md` 1.32.0–1.34.0 and `docs/task-simd-audit.md` (S-06 — this path does not resolve
 in the tree as of the 2026-09-13 review; unclear whether S-06 moved, was renamed, or never landed as
 its own file).
+
+<!-- doc-reviewed: 2026-09-13 -->

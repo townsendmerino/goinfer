@@ -2125,3 +2125,5 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   G7 done for its doc-honesty half and WebGPU, open for CUDA/Metal, G9 an accurately-scoped parked
   wash, G4 open only for CUDA verification on real hardware, G11 redirected and its target doc now
   owns what remains (Phase 4's remainder, Phase 5).
+
+<!-- doc-reviewed: 2026-09-13 -->

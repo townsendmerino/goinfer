@@ -124,3 +124,5 @@ the convention above is what would stop the second.
 
 Making any of this a hard gate. Requiring every bar to be documented is a policy decision, and this
 audit is an inventory. `audit_gate_bars.py` reports and never fails.
+
+<!-- doc-reviewed: 2026-09-13 -->

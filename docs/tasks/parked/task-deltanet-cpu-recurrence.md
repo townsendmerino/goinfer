@@ -109,3 +109,5 @@ the clean, isolated number before deciding, the same discipline this parked entr
 CUDA/WebGPU DeltaNet residency (separate track); the qwen35-family dense GGUF loader gap; chunked-scan
 batched prefill; anything MoE/paging/kind-4; attention; W4A8; quantizing the recurrence's activations
 or state.
+
+<!-- doc-reviewed: 2026-09-13 -->

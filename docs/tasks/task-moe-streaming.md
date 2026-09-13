@@ -604,3 +604,5 @@ Peer: `github.com/drumih/turbo-fieldfare` README **@ release `0.4` (commit `8648
 layer, bounded parallel `pread` into Metal-visible buffers, shared-branch/read overlap,
 ≤128-token prefill chunks, 5.1–6.3 tok/s on an **8 GB M2 Air** and 31–35 tok/s on a **24 GB
 M5 Pro** (different rigs — reference figures, not an M1-Pro same-machine comparison row).
+
+<!-- doc-reviewed: 2026-09-13 -->

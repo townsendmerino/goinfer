@@ -146,3 +146,5 @@ An empty registry fails rather than passes, so the suite cannot go green having 
   a download and a hash, not a decision.
 - **Load-time instrumentation covers the GGUF path only.** safetensors and `.giw` return a nil
   profile and print nothing, which is why `Summary()` is empty rather than zero.
+
+<!-- doc-reviewed: 2026-09-13 -->

@@ -141,3 +141,5 @@ release-gating work.
       GPU bit-identical confirmed.
 - [ ] Back-compat verified with a banked **v1-`giwVersion`** fixture (its container
       is already `bundleVersion = 2` — don't conflate the two version fields).
+
+<!-- doc-reviewed: 2026-09-13 -->

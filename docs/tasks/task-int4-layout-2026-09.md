@@ -437,3 +437,5 @@ the parked +2.1% at ≤ canonical RSS — the bar the pre-registration would hav
 memory cost been zero.
 
 **Size.** Medium on aikit (one `.s` tile variant + gates); small on goinfer after; the measurement is the goinfer work.
+
+<!-- doc-reviewed: 2026-09-13 -->

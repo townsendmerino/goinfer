@@ -542,3 +542,5 @@ pricing, 2026-08-28); `docs/completed/qwen3_5_moe.md` §"Hybrid cache"; `docs/au
 P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aikit
 `gpu/cuda_copy.go`, `gpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
 `docs/task-simd-audit.md` (S-01, S-02, S-03, S-09.1).
+
+<!-- doc-reviewed: 2026-09-13 -->
