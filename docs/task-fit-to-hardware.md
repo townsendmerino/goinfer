@@ -35,7 +35,7 @@
 > record for the
 > "run something bigger than my hardware" mode of use; reads
 > `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
-> user's hour. Sibling: `task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes
+> user's hour. Sibling: `tasks/task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes
 > numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's
 > hand-tuned configuration.
 
@@ -176,7 +176,7 @@ cache is a large fraction of a full one (57% hit at 16 slots vs 82% at 38, `docs
   seconds, no model in memory. This is also the test surface.
 - **The startup banner prints the plan** — model, backend, placement and why, ctx cap, KV
   precision, sessions on/off, and the expected-rate band when one is available (§5). The banner is
-  the closest thing the product has to a UI (`task-embed-and-harness-ux.md` §3.3 owns its full
+  the closest thing the product has to a UI (`tasks/task-embed-and-harness-ux.md` §3.3 owns its full
   shape; this doc owns the placement lines).
 - **`pull` prints the verdict for the file it fetched**, on the line that already prints the
   `--model` command (`internal/chatapp/pull.go`): "fits resident on this machine at int4 (9.1 GB

@@ -52,7 +52,7 @@
 > first successful end-to-end opencode completion in this project's history. See R14's own entry
 > below and `docs/integrations/opencode.md` for the full account.
 >
-> Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md)
+> Sibling docs, neither superseded: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
 > owns the facade and the harness recipes (§4 below scores its predictions), and
 > [`task-fit-to-hardware.md`](../task-fit-to-hardware.md) owns "will it fit" — R3 implements that
 > doc's **Phase 0 and nothing else**.
@@ -1370,7 +1370,7 @@ have shipped.
 [`measurements/cold-user-2026-09-06.md`](../measurements/cold-user-2026-09-06.md) (run 1) ·
 [`measurements/cold-user-2026-09-06-nobara-pc.md`](../measurements/cold-user-2026-09-06-nobara-pc.md)
 (run 2) ·
-[`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md) (§4 scores it) ·
+[`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) (§4 scores it) ·
 [`task-fit-to-hardware.md`](../task-fit-to-hardware.md) (R3 is its Phase 0) ·
 [`api-tiers.md`](../api-tiers.md) (what R1's install line may promise) ·
 `RELEASING.md` (the ritual this doc is now part of) ·
