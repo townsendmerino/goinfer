@@ -6,6 +6,15 @@
 > only §3 item 1 is unambiguously worth doing on this evidence. Everything else is either
 > constrained by bit-identity (§3.2), mechanical-but-cosmetic (§3.3), or noise (§4). Do not treat
 > the 20-item tool output as a work list — §4 explains why most of it is not one.
+>
+> **Re-verified 2026-09-13 (doc review): still nothing started, §3 items 1-4 all still open.**
+> `gpu/moe_w4a8.go` is still untested (§3.1 still the one clear gap, and has grown 175→274 lines
+> since scoping — see the note there). `decoder/gguf.go`, `decoder/model.go` and
+> `decoder/serialize.go` have all been heavily edited since (net +312 / +675 / +494 lines,
+> mostly the `.giw` kind-5 int4-layout work and new families) — the §2 CCN/NLOC table and the
+> §3.2 line-number citations predate that churn and should not be trusted as current pointers;
+> re-run repowise (§5) before navigating by them. Moved `docs/` → `docs/tasks/` per this repo's
+> live-doc convention; nothing else about the triage changed.
 
 Tooling: repowise 0.45.0, `apple-m1pro`, 2026-08-26, `--no-prose` (structural only, no LLM).
 Reproduce with §5.
@@ -80,6 +89,10 @@ Its 187 dependents make it look like the scarier of the two; it is not. Downgrad
 175 lines of MoE W4A8 path with 18 dependents and no test exercising it, on the same quant path
 the W4A8 campaign is actively changing. **This is the item to do.** Not a refactor: a test.
 
+**Re-checked 2026-09-13:** still true, and the gap grew — the file is now 274 lines (WebGPU
+binding migration + a gpt-oss int4 down-projection kernel landed since scoping) and still has no
+paired `_test.go` and zero references from any `_test.go` in the repo.
+
 ### 3.2 · The duplication clusters in `gguf.go` — mechanical, but gated
 
 Nine extract-helper clusters, concentrated in two files:
@@ -88,6 +101,10 @@ Nine extract-helper clusters, concentrated in two files:
   2107-2123); 11 lines across 3 sites; 10 lines across 6 sites; plus 20-line and 15-line pairs.
 - `decoder/model.go` — four 14-to-22-line pairs (518-532/657-664, 576-589/601-608,
   604-618/621-635, 686-707/758-770).
+
+**Line ranges above are as of the 2026-08-26 repowise run and are now stale** — `gguf.go` and
+`model.go` have both grown substantially since (see the 2026-09-13 note at the top of this doc);
+treat the byte offsets as historical, not as current navigation.
 
 The `model.go` clusters are ordinary and safe. The `gguf.go` ones are in the `.giw`-adjacent
 parser, so they inherit §2's constraint: **extract-helper is only safe here behind a byte-identity
@@ -108,6 +125,10 @@ text calls recent defect history "the strongest cost-effective predictor of furt
 scores 2.1/10 over only 334 lines, so unlike §2's files it is small enough to actually read
 end-to-end in one sitting. If anything here deserves a review pass on judgment rather than metrics,
 it is this.
+
+**Update 2026-09-13:** a 4th fix landed since scoping — `e708b1a9` ("LoadSession rejected valid
+snapshots", 2026-09-05) also touched this file. The predictor keeps predicting; the review pass
+itself still has not happened.
 
 ## 4 · What is NOT a work list, and why
 
