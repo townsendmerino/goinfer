@@ -137,8 +137,20 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 			for _, k := range allKs {
 				maxK = max(maxK, k)
 			}
-			prompts := make([][]int, 0, len(decoder.PrefillGateProseFiles))
-			for _, f := range decoder.PrefillGateProseFiles {
+			// THE SNAPSHOTS, NOT THE LIVE DOCS. PrefillGateProseFiles names live repo documents
+			// (../docs/QUEUE.md and friends) that are edited constantly; PrefillGatePromptSet
+			// returns the frozen copies under testdata/prefill-gate-prose-<set>/ that Phase A
+			// actually built the reference from. b0bdf43d (2026-09-09) introduced the snapshots and
+			// moved Phase A and Metal's Phase B onto them but did not touch this file, so from that
+			// day until this fix a CUDA run prefixed a LIVE document and teacher-forced it against a
+			// reference built from the SNAPSHOT of an older revision of that document — scoring both
+			// arms on an input the reference never saw. It fails silently and plausibly: both arms
+			// get the same wrong prompt, so the run still prints agreement figures and a verdict.
+			// The Sep-5 CUDA cells quoted in prefill.go predate b0bdf43d and are unaffected.
+			setLabel, promptFiles := decoder.PrefillGatePromptSet()
+			t.Logf("prompt set %q (%d snapshot files)", setLabel, len(promptFiles))
+			prompts := make([][]int, 0, len(promptFiles))
+			for _, f := range promptFiles {
 				prompts = append(prompts, decoder.PrefillGateProseIDsForTest(t, tk, f, maxK))
 			}
 
