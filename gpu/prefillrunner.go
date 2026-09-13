@@ -8,6 +8,98 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
+// rmsnormBatchedShaderWGSL is rmsnormShaderWGSL (layer.go) widened to M rows in one
+// dispatch: grid (1, M) instead of (1, 1), each workgroup owns row wid.y and reduces
+// only that row (workgroupBarrier never crosses rows), so the per-row math and
+// reduction order are identical to calling the M=1 kernel M times — bit-identical
+// by construction, gated by TestRMSNormBatched_parity.
+const rmsnormBatchedShaderWGSL = `
+struct P { h: u32, eps: f32, addone: u32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       src:    array<f32>;  // [M, h]
+@group(0) @binding(1) var<storage, read>       weight: array<f32>;  // [h]
+@group(0) @binding(2) var<storage, read_write> dst:    array<f32>;  // [M, h]
+@group(0) @binding(3) var<uniform>             p:      P;
+var<workgroup> sh: array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let t = lid.x;
+    let base = wid.y * p.h;
+    var s: f32 = 0.0;
+    for (var i: u32 = t; i < p.h; i = i + 64u) { let v = src[base + i]; s = s + v*v; }
+    sh[t] = s;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { sh[t] = sh[t] + sh[t + stride]; }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    let inv = 1.0 / sqrt(sh[0] / f32(p.h) + p.eps);
+    for (var i: u32 = t; i < p.h; i = i + 64u) {
+        var w = weight[i];
+        if (p.addone == 1u) { w = w + 1.0; }
+        dst[base + i] = src[base + i] * inv * w;
+    }
+}
+`
+
+// ropeBatchedShaderWGSL is ropeShaderWGSL (attention.go) widened to M rows in one
+// dispatch: grid (ceil(heads*half/64), M) instead of ropeShaderWGSL's one dispatch
+// per row with a fixed scalar pos. Positions are always contiguous within one
+// PrefillLastW8A8 call (positions[r] = start+r, residency.go's prefillLast closure),
+// so row r's position is recovered as p.start+row — the same theta/cos/sin math per
+// (row, head, d) as calling the M=1 kernel M times, bit-identical by construction,
+// gated by TestRoPEBatched_parity.
+const ropeBatchedShaderWGSL = `
+struct P { heads: u32, headDim: u32, half: u32, start: u32, scale: f32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read_write> vec:     array<f32>;  // [M, heads*headDim]
+@group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
+@group(0) @binding(2) var<uniform>             p:       P;
+@compute @workgroup_size(64, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    let row = gid.y;
+    if (idx >= p.heads * p.half) { return; }
+    let h = idx / p.half;
+    let d = idx % p.half;
+    let pos = p.start + row;
+    let theta = f32(pos) * invFreq[d];
+    let c = cos(theta) * p.scale;
+    let s = sin(theta) * p.scale;
+    let base = row * p.heads * p.headDim;
+    let off = base + h * p.headDim;
+    let x1 = vec[off + d];
+    let x2 = vec[off + p.half + d];
+    vec[off + d]           = x1 * c - x2 * s;
+    vec[off + p.half + d]  = x2 * c + x1 * s;
+}
+`
+
+// ensurePrefillBatched lazily compiles the two batched-row kernels PrefillLastW8A8
+// needs beyond its existing ensure-list (M-08's dispatch-count fix, audit-metal
+// class finding but on WebGPU: the original implementation issued one dispatch PER
+// ROW for RMSNorm/RoPE/quantize-gather/GEMM-scatter, ~39 dispatches × M per layer,
+// measured 0.03-0.14x SLOWER than the sequential loop it was meant to replace at
+// P=64..1024 — see docs/measurements/ and TestResidentPrefillLast_TTFT). Kept
+// separate from ensureLayer/ensureAttn's M=1 pipelines: the decode path must not
+// pay for or risk these at all.
+func (c *Context) ensurePrefillBatched() error {
+	mk := c.mkPipeline
+	var err error
+	if c.rmsnormBatchedPipeline == nil {
+		if c.rmsnormBatchedShader, c.rmsnormBatchedPipeline, c.rmsnormBatchedLayout, err = mk("rmsnorm-batched", rmsnormBatchedShaderWGSL); err != nil {
+			return err
+		}
+	}
+	if c.ropeBatchedPipeline == nil {
+		if c.ropeBatchedShader, c.ropeBatchedPipeline, c.ropeBatchedLayout, err = mk("rope-batched", ropeBatchedShaderWGSL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // runModelToModelW narrows a resident runModel (the general polymorphic
 // representation DecodeRunner uses — W8A8/W4A8, MoE, MLA, Mamba, DeltaNet,
 // sliding window, QK-norm, bias, per-layer geometry overrides, …) down to the
@@ -171,7 +263,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	if len(positions) != M {
 		return nil, fmt.Errorf("gpu: PrefillLastW8A8 %d rows but %d positions", M, len(positions))
 	}
-	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled, c.ensureTiledBias} {
+	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled, c.ensureTiledBias, c.ensurePrefillBatched} {
 		if err := f(); err != nil {
 			return nil, err
 		}
@@ -291,53 +383,80 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		}
 	}
 
-	rms := func(in, w *wgpu.Buffer) *wgpu.Buffer {
-		out := storF(hidden)
+	// rmsB/ropeB/residualB/swigluB/quantPackedM/tiledProjB below all operate on PACKED
+	// [M, width] row-major buffers — ONE dispatch across all M rows, not M separate
+	// dispatches — the dispatch-count fix (ensurePrefillBatched's doc comment has the
+	// measured before/after).
+
+	rmsB := func(inPacked, w *wgpu.Buffer) *wgpu.Buffer {
+		out := storF(M * hidden)
 		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
-		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
+		disp(c.rmsnormBatchedPipeline, bind(c.rmsnormBatchedLayout, inPacked, w, out, p), 1, uint32(M))
 		return out
 	}
-	quant1 := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		kp := padK(K)
-		q := storF(kp / 4)
-		s := storF(1)
-		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
-		disp(c.quantizePipeline, bind(c.quantizeLayout, in, q, s, p), 1, 1)
-		return q, s
-	}
-	rope := func(vec, invFreq *wgpu.Buffer, heads, pos int) {
+	// ropeB rotates ALL M rows of a packed [M, heads*hd] buffer in place, in one
+	// dispatch. positions are always start, start+1, …, start+M-1 within one
+	// PrefillLastW8A8 call (residency.go), so passing start (not a per-row array) is
+	// enough — ropeBatchedShaderWGSL recovers row r's position as start+r.
+	ropeB := func(vecPacked, invFreq *wgpu.Buffer, heads int) {
 		half := hd / 2
-		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), uint32(pos), f32bits(1), 0, 0, 0})
-		disp(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, p), uint32(heads*half+63)/64, 1)
+		p := uni([]uint32{uint32(heads), uint32(hd), uint32(half), uint32(positions[0]), f32bits(1), 0, 0, 0})
+		disp(c.ropeBatchedPipeline, bind(c.ropeBatchedLayout, vecPacked, invFreq, p), uint32(heads*half+63)/64, uint32(M))
 	}
-	// tiledProj batches a projection over the given rows: gather each row's quantized
-	// activation into one packed buffer, run ONE unbounded-M tiled GEMM (weight streamed
-	// once, DP4A-accelerated when available), scatter the output rows back to per-row
-	// buffers. Passing a length-1 slice (used for the LM head below) runs the tiled
-	// kernel at M=1 — correct, just not its optimal shape; a one-off per prefill call is
-	// cheap enough that a special M=1 GEMV path isn't worth the extra code path.
+	// residualB / swigluB dispatch their elementwise op as ONE call over the full
+	// M*width flattened range instead of M separate width-sized dispatches — both
+	// kernels already index by a flat global_invocation_id with no cross-row state
+	// (residualShaderWGSL/swigluShaderWGSL, layer.go), so [M, width] IS [M*width]
+	// to them; only the dispatch count and per-call uniform-buffer overhead drop.
+	residualB := func(xPacked, yPacked *wgpu.Buffer) *wgpu.Buffer { // x += y, in place; returns x
+		n := M * hidden
+		p := uni([]uint32{uint32(n), 0, 0, 0})
+		disp(c.residualPipeline, bind(c.residualLayout, xPacked, yPacked, p), uint32(n+63)/64, 1)
+		return xPacked
+	}
+	swigluB := func(gatePacked, upPacked *wgpu.Buffer) *wgpu.Buffer {
+		n := M * inter
+		dst := storF(n)
+		p := uni([]uint32{uint32(n), 0, 0, 0})
+		disp(c.swigluPipeline, bind(c.swigluLayout, gatePacked, upPacked, dst, p), uint32(n+63)/64, 1)
+		return dst
+	}
+	// quantPackedM quantizes ALL M rows of a packed [M, K] buffer in ONE dispatch,
+	// straight into the [M, kp/4] packed-int8 / [M] scales layout tiledProjB's GEMM
+	// wants — quantizeShaderWGSL (device.go) was ALREADY written for M rows in one
+	// dispatch (QDims.m, workgroup_id.x = row); the old per-row call site (quant1,
+	// dispatched with m=1, M times) never used that capability. No gather needed:
+	// the GEMM's aq/aScale inputs ARE this call's direct output.
+	quantPackedM := func(inPacked *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer, int) {
+		kp := padK(K)
+		kw := kp / 4
+		aqC := storF(M * kw)
+		asC := storF(M)
+		p := uni([]uint32{uint32(M), uint32(K), uint32(kp), 0})
+		disp(c.quantizePipeline, bind(c.quantizeLayout, inPacked, aqC, asC, p), uint32(M), 1)
+		return aqC, asC, kw
+	}
+	// tiledProjB runs a projection over all M rows: quantPackedM (one dispatch, no
+	// gather) → ONE unbounded-M tiled GEMM (weight streamed once, DP4A-accelerated
+	// when available) → the packed [M, N] GEMM output IS the return value, no
+	// scatter into per-row buffers. rowsM lets the LM head reuse this at M=1 (a
+	// one-row "batch" is just the M=1 case of the same dispatch shape).
 	//
 	// bias (nil for every projection except Qwen2's q/k/v) selects the bias-epilogue
-	// tiled kernel instead of a separate post-hoc residual-kernel add: production's
-	// gemvBias computes `f32(acc)*aScale*bScale + bias[n]` in ONE expression inside
-	// ONE dispatch, and a plain-GEMM-then-separate-add forces an f32 round-trip
-	// through memory between the multiply and the add that a single WGSL expression
-	// may evaluate with a different (FMA-contracted) rounding. Measured real effect
-	// (TestLocalize_BiasEpilogue): 98/896 elements of a real layer-0 Q-projection
-	// differed by up to 2.4e-7 between the two forms — tiny in f32 terms, but enough
-	// that a subsequent int8 requantize can flip a rounding bucket for an element
-	// sitting on the boundary, and 24 layers of that is exactly the batched-prefill
-	// vs sequential-decode divergence this fixes.
-	tiledProj := func(xnRows []*wgpu.Buffer, rm *ResidentW8A8, bias *wgpu.Buffer) []*wgpu.Buffer {
-		rowsM := len(xnRows)
+	// tiled kernel instead of a separate post-hoc residual-kernel add — see the
+	// original tiledProj's doc comment (git history) for the measured reason this
+	// matters for bit-exactness (TestLocalize_BiasEpilogue).
+	tiledProjB := func(xnPacked *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer {
 		K, N := rm.cols, rm.rows
-		kw := rm.kp / 4
-		aqC := storF(rowsM * kw)
-		asC := storF(rowsM)
-		for r, xn := range xnRows {
-			q, s := quant1(xn, K)
-			cpy(q, 0, aqC, uint64(r*kw*4), uint64(kw*4))
-			cpy(s, 0, asC, uint64(r*4), 4)
+		var aqC, asC *wgpu.Buffer
+		if rowsM == M {
+			aqC, asC, _ = quantPackedM(xnPacked, K)
+		} else { // the M=1 LM-head call
+			kp := padK(K)
+			aqC = storF(kp / 4)
+			asC = storF(1)
+			p := uni([]uint32{1, uint32(K), uint32(kp), 0})
+			disp(c.quantizePipeline, bind(c.quantizeLayout, xnPacked, aqC, asC, p), 1, 1)
 		}
 		dstC := storF(rowsM * N)
 		p := uni([]uint32{uint32(rowsM), uint32(rm.kp), uint32(N), 0})
@@ -347,24 +466,18 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		} else {
 			disp(c.tiledPipeline, bind(c.tiledLayout, aqC, rm.bq, asC, rm.bScales, dstC, p), gx, gy)
 		}
-		outs := make([]*wgpu.Buffer, rowsM)
-		for r := range outs {
-			o := storF(N)
-			cpy(dstC, uint64(r*N*4), o, 0, uint64(N*4))
-			outs[r] = o
-		}
-		return outs
+		return dstC
 	}
 
-	xd := make([]*wgpu.Buffer, M)
+	xdFlat := make([]float32, 0, M*hidden)
 	for r := range xs {
-		b, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xs[r]), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
-		if err != nil {
-			return nil, err
-		}
-		keepBuf(b)
-		xd[r] = b
+		xdFlat = append(xdFlat, xs[r]...)
 	}
+	xd, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(xdFlat), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+	if err != nil {
+		return nil, err
+	}
+	keepBuf(xd)
 
 	// FeatAttnSink: always bound (WGSL bind groups can't bind a null storage buffer);
 	// runModelToModelW already declined any model with a real sink, so this is always the
@@ -374,72 +487,77 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 
 	for i := range m.Layers {
 		lw := &m.Layers[i]
-		xn := make([]*wgpu.Buffer, M)
-		for r := range xn {
-			xn[r] = rms(xd[r], lw.Attn.Norm.buf)
-		}
+		xn := rmsB(xd, lw.Attn.Norm.buf)
 		var qBias, kBias, vBias *wgpu.Buffer
 		if lw.Attn.QBias != nil { // Qwen2 q/k/v bias — fused into the GEMM epilogue,
-			qBias, kBias, vBias = lw.Attn.QBias.buf, lw.Attn.KBias.buf, lw.Attn.VBias.buf // matching decoderunner.go's gemvBias, not a separate post-hoc add (see tiledProj's doc comment)
+			qBias, kBias, vBias = lw.Attn.QBias.buf, lw.Attn.KBias.buf, lw.Attn.VBias.buf // matching decoderunner.go's gemvBias, not a separate post-hoc add (see tiledProjB's doc comment)
 		}
-		q := tiledProj(xn, lw.Attn.QProj, qBias)
-		k := tiledProj(xn, lw.Attn.KProj, kBias)
-		v := tiledProj(xn, lw.Attn.VProj, vBias)
-		for r := range xd {
-			rope(q[r], lw.Attn.InvFreq.buf, nH, positions[r])
-			rope(k[r], lw.Attn.InvFreq.buf, nKV, positions[r])
-			cpy(k[r], 0, lw.Attn.KCache.buf, uint64(positions[r]*kvDim*4), uint64(kvDim*4))
-			cpy(v[r], 0, lw.Attn.VCache.buf, uint64(positions[r]*kvDim*4), uint64(kvDim*4))
-		}
+		q := tiledProjB(xn, M, lw.Attn.QProj, qBias)
+		k := tiledProjB(xn, M, lw.Attn.KProj, kBias)
+		v := tiledProjB(xn, M, lw.Attn.VProj, vBias)
+		ropeB(q, lw.Attn.InvFreq.buf, nH)
+		ropeB(k, lw.Attn.InvFreq.buf, nKV)
+		// Bulk KV-cache write: positions are contiguous (positions[0]..positions[0]+M-1,
+		// residency.go), so k/v's packed [M, kvDim] rows land at one contiguous range of
+		// the cache — a single copy per k/v instead of M.
+		cpy(k, 0, lw.Attn.KCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
+		cpy(v, 0, lw.Attn.VCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
 		// All rows' K/V are now in the cache; each row attends to its causal prefix
 		// (including earlier rows of this same prefill block) — the same ordering
 		// DecodeTokenFusedBatched's parity gate already proves correct. A real fused
 		// multi-query batched-attention kernel (task-gpu-batched-prefill.md's
-		// Increment 1) is a perf follow-on once dispatch-count overhead at real M is
-		// actually measured (Increment 3's TTFT gate) — this per-row loop into the
-		// existing M=1 kernel is correctness-equivalent today.
+		// Increment 1) is still NOT built — this per-row loop into the existing M=1
+		// kernel is the one dispatch-count cost this rewrite did NOT eliminate (M
+		// dispatches/layer here vs the ~39×M/layer the rest of the function had before
+		// this fix). Q is extracted per row (qRow) and each row's context is scattered
+		// into a packed ctxv buffer via plain copies (not a WebGPU bind-group Offset
+		// view: GPUBindGroupEntry.offset must be a multiple of
+		// minStorageBufferOffsetAlignment, typically 256B, which nH*hd*4 is not
+		// guaranteed to satisfy for every model geometry) — 2×M copies + M dispatches,
+		// still far below the pre-fix ~39×M.
 		// attnKernel picks the SAME kernel decoderunner.go's sequential resident
 		// decode would pick for this geometry (kvF16=false always: runModelToModelW
 		// declines kvF16/kvI8 models). Dispatching a different kernel than the
 		// production Forward() path for the same geometry is exactly what caused the
 		// nKeys>=3 divergence this comment's neighbor (attnKernel, attention.go) documents.
 		attnPl, attnLy := c.attnKernel(hd, kvDim, false)
-		ctxv := make([]*wgpu.Buffer, M)
-		for r := range xd {
-			cv := storF(nH * hd)
+		ctxv := storF(M * nH * hd)
+		// qRow/cv are allocated ONCE and reused (overwritten) every iteration, not
+		// re-allocated per row: commands within one queue execute strictly in the
+		// order they were recorded (WebGPU's ordering guarantee), so cpy(q,r,qRow)
+		// -> dispatch(reads qRow) -> cpy(cv,ctxv,r) -> cpy(q,r+1,qRow) -> … never
+		// races even across a flushPasses submit boundary. Cuts M-1 buffer
+		// allocations/layer versus a fresh pair per row.
+		qRow := storF(nH * hd)
+		cv := storF(nH * hd)
+		for r := 0; r < M; r++ {
+			cpy(q, uint64(r*nH*hd*4), qRow, 0, uint64(nH*hd*4))
 			ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[r] + 1), uint32(start), uint32(nH / nKV), f32bits(scale), 0})
-			disp(attnPl, bind(attnLy, q[r], lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, noSinks, ap, noHasSink), uint32(nH), 1)
-			ctxv[r] = cv
+			disp(attnPl, bind(attnLy, qRow, lw.Attn.KCache.buf, lw.Attn.VCache.buf, cv, noSinks, ap, noHasSink), uint32(nH), 1)
+			cpy(cv, 0, ctxv, uint64(r*nH*hd*4), uint64(nH*hd*4))
 		}
-		attnOut := tiledProj(ctxv, lw.Attn.OProj, nil)
-		for r := range xd {
-			p := uni([]uint32{uint32(hidden), 0, 0, 0})
-			disp(c.residualPipeline, bind(c.residualLayout, xd[r], attnOut[r], p), uint32(hidden+63)/64, 1)
-		}
-		xn2 := make([]*wgpu.Buffer, M)
-		for r := range xn2 {
-			xn2[r] = rms(xd[r], lw.MLPNorm.buf)
-		}
-		gate := tiledProj(xn2, lw.Gate, nil)
-		up := tiledProj(xn2, lw.Up, nil)
-		mid := make([]*wgpu.Buffer, M)
-		for r := range xd {
-			md := storF(inter)
-			sp := uni([]uint32{uint32(inter), 0, 0, 0})
-			disp(c.swigluPipeline, bind(c.swigluLayout, gate[r], up[r], md, sp), uint32(inter+63)/64, 1)
-			mid[r] = md
-		}
-		down := tiledProj(mid, lw.Down, nil)
-		for r := range xd {
-			p := uni([]uint32{uint32(hidden), 0, 0, 0})
-			disp(c.residualPipeline, bind(c.residualLayout, xd[r], down[r], p), uint32(hidden+63)/64, 1)
-		}
+		attnOut := tiledProjB(ctxv, M, lw.Attn.OProj, nil)
+		xd = residualB(xd, attnOut) // in-place: xd += attnOut
+		xn2 := rmsB(xd, lw.MLPNorm.buf)
+		gate := tiledProjB(xn2, M, lw.Gate, nil)
+		up := tiledProjB(xn2, M, lw.Up, nil)
+		mid := swigluB(gate, up)
+		down := tiledProjB(mid, M, lw.Down, nil)
+		xd = residualB(xd, down) // in-place: xd += down
 	}
 
 	// Final norm + LM head on the LAST row ONLY (matches decoder/forwardn.go's
-	// prefillLogits: the other M-1 rows' logits are never needed for prefill).
-	xnLast := rms(xd[M-1], m.FinalNorm.buf)
-	logitsBuf := tiledProj([]*wgpu.Buffer{xnLast}, m.LMHead, nil)[0]
+	// prefillLogits: the other M-1 rows' logits are never needed for prefill) — one
+	// small copy to extract row M-1 from the packed buffer, then the same rms/
+	// tiledProjB path at rowsM=1.
+	xdLast := storF(hidden)
+	cpy(xd, uint64((M-1)*hidden*4), xdLast, 0, uint64(hidden*4))
+	xnLastP := storF(hidden)
+	{
+		p := uni([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), 0})
+		disp(c.rmsnormPipeline, bind(c.rmsnormLayout, xdLast, m.FinalNorm.buf, xnLastP, p), 1, 1)
+	}
+	logitsBuf := tiledProjB(xnLastP, 1, m.LMHead, nil)
 
 	if buildErr != nil {
 		return nil, buildErr

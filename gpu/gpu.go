@@ -137,9 +137,17 @@ type Context struct {
 	rmsnormShader   *wgpu.ShaderModule
 	rmsnormPipeline *wgpu.ComputePipeline
 	rmsnormLayout   *wgpu.BindGroupLayout
-	swigluShader    *wgpu.ShaderModule
-	swigluPipeline  *wgpu.ComputePipeline
-	swigluLayout    *wgpu.BindGroupLayout
+	// M-row batched RMSNorm (PrefillLastW8A8 only, lazy via ensurePrefillBatched,
+	// prefillrunner.go): one dispatch over ALL M prompt rows (grid (1, M)) instead of
+	// rmsnormPipeline's M separate (1,1) dispatches. Same per-row math and reduction
+	// order as rmsnormPipeline (each workgroup still reduces its own row independently),
+	// so bit-identical — see TestRMSNormBatched_parity.
+	rmsnormBatchedShader   *wgpu.ShaderModule
+	rmsnormBatchedPipeline *wgpu.ComputePipeline
+	rmsnormBatchedLayout   *wgpu.BindGroupLayout
+	swigluShader           *wgpu.ShaderModule
+	swigluPipeline         *wgpu.ComputePipeline
+	swigluLayout           *wgpu.BindGroupLayout
 	// G6 (docs/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
 	// twin, plain (W8A16) variant.
 	gegluShader      *wgpu.ShaderModule
@@ -165,6 +173,15 @@ type Context struct {
 	ropeShader   *wgpu.ShaderModule
 	ropePipeline *wgpu.ComputePipeline
 	ropeLayout   *wgpu.BindGroupLayout
+	// M-row batched RoPE (PrefillLastW8A8 only, lazy via ensurePrefillBatched,
+	// prefillrunner.go): one dispatch over ALL M rows (grid (heads*half, M)) instead of
+	// ropePipeline's M separate calls each with a different scalar pos uniform. Positions
+	// are always contiguous within one PrefillLastW8A8 call (positions[r] = start+r,
+	// residency.go), so a per-row pos is recovered as start+row inside the kernel rather
+	// than needing a positions array. See TestRoPEBatched_parity.
+	ropeBatchedShader   *wgpu.ShaderModule
+	ropeBatchedPipeline *wgpu.ComputePipeline
+	ropeBatchedLayout   *wgpu.BindGroupLayout
 	// Fused q-rope + k-rope-store + v-store (decode fusion, f32 KV): one dispatch for the
 	// three post-projection KV ops, cutting two dispatches/layer off the decode chain.
 	qkvFinShader   *wgpu.ShaderModule
