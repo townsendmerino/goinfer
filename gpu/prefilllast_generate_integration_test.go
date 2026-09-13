@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGenerate_batchedPrefillMatchesSequential is the integration gate task-gpu-batched-prefill.md's
+// TestGenerate_batchedPrefillMatchesSequential is the integration gate docs/completed/task-gpu-batched-prefill.md's
 // Increment 3 calls for ("TestDecodeParity-class greedy continuation unchanged") but through the
 // REAL production entry point, not an isolated PrefillLast call.
 //

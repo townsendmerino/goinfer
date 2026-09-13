@@ -1205,7 +1205,7 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 var _ decoder.Prefiller = (*residentDecoder)(nil)
 
 // PrefillLast is decoder.Prefiller: process the whole embeddings slice in ONE
-// on-device batched pass (task-gpu-batched-prefill.md) and return only the LAST
+// on-device batched pass (docs/completed/task-gpu-batched-prefill.md) and return only the LAST
 // position's logits — the sub-linear-TTFT alternative to residentPrefillSeed's
 // per-token Forward loop. Declines (falls back to that loop) when this model
 // isn't plain dense W8A8 (rd.prefillLast's runModelToModelW guard) — a decline is

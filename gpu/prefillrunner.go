@@ -747,7 +747,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		// (including earlier rows of this same prefill block) — the same ordering
 		// DecodeTokenFusedBatched's parity gate already proves correct.
 		//
-		// task-gpu-batched-prefill.md Increment 1: ONE dispatch, grid (nH, M), against
+		// docs/completed/task-gpu-batched-prefill.md Increment 1: ONE dispatch, grid (nH, M), against
 		// attnBatchedKernel's chosen kernel (mirrors attnKernel's own tiled-vs-plain
 		// preference, attention.go) — replaces what used to be M per-row dispatches
 		// into the M=1 kernel (the one dispatch-count cost the earlier fix in this

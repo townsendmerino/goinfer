@@ -84,7 +84,7 @@ fn dot4(a: u32, b: u32) -> i32 {
 // when Context.hasDP4A (probed live in New()) — on a backend that lowers it to real
 // hardware DP4A (e.g. Vulkan's VK_KHR_shader_integer_dot_product on a DP4A-capable
 // NVIDIA part), this is what clears the compute/bandwidth wall the tiled GEMM was
-// gated on (docs/task-gpu-batched-prefill.md). Same math as the unpacked fallback —
+// gated on (docs/completed/task-gpu-batched-prefill.md). Same math as the unpacked fallback —
 // dot4I8Packed treats the u32 as four little-endian sign-extended int8 lanes,
 // verified against the unpacked path's parity gate (TestMatmulW8A8Tiled_dp4aParity).
 const dot4PackedWGSL = `
