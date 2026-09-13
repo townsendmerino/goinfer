@@ -324,8 +324,18 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
 // final normalize) — same P19 category as the CUDA L2 twin. Requires hd%8==0 && hd<=128
 // (ATTN_MAXHD); the Go dispatch falls back to attention_prefill outside that range.
 // ATTN_SGPT simdgroups/threadgroup must match attnFusedSGPT (backend.go's Go-side grid helper).
+//
+// ATTN_KTILE (audit-metal-2026-09-12.md M-04): the QKᵀ score computation runs on ATTN_KTILE=32
+// keys (4 sub-tiles of 8) before the scalar softmax/rescale/PV phase — which is the barrier-heavy
+// part (2 barriers per hd-tile, hdTiles up to 16) — instead of on 8 keys as before, amortising
+// that phase 4x (the audit's count: ~34 barriers per 8 keys against 32 MMAs of useful work). O
+// itself stays in threadgroup scratch with the same scalar per-lane rescale (oScr, unchanged) —
+// this does NOT attempt the audit's further register-accumulator + diagonal-α-MMA rewrite, which
+// needs its own f32->f16 round-trip to feed the diagonal as an MMA operand and was not obviously
+// fewer barriers once that round-trip is counted; scoped out as a separate, riskier follow-up.
 #define ATTN_SGPT 4
 #define ATTN_MAXHD 128
+#define ATTN_KTILE 32
 kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device const half* kc[[buffer(1)]],
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
@@ -346,8 +356,8 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
     device const half* kBase = kc + kvh*hd;
     device const half* vBase = vc + kvh*hd;
 
-    threadgroup float sScr[ATTN_SGPT][64];
-    threadgroup half  pScr[ATTN_SGPT][64];
+    threadgroup float sScr[ATTN_SGPT][8*ATTN_KTILE];
+    threadgroup half  pScr[ATTN_SGPT][8*ATTN_KTILE];
     threadgroup float oScr[ATTN_SGPT][8*ATTN_MAXHD];
     threadgroup float stat[ATTN_SGPT][24]; // [0:8)=m  [8:16)=l  [16:24)=alpha (this block)
 
@@ -362,27 +372,34 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
     uint nKeysMax = startPos + lastRow + 1u;
     uint firstRowKeys = startPos + r0 + 1u;
     uint winStart0 = (window>0u && firstRowKeys>window) ? firstRowKeys-window : 0u;
-    uint j0start = (winStart0/8u)*8u;
+    uint j0superStart = (winStart0/ATTN_KTILE)*ATTN_KTILE;
 
-    for (uint j0=j0start; j0<nKeysMax; j0+=8u) {
-        simdgroup_float8x8 Sacc = make_filled_simdgroup_matrix<float,8,8>(0.0);
-        for (uint kk=0; kk<hdTiles; kk++) {
-            simdgroup_half8x8 kT;
-            simdgroup_load(kT, kBase + j0*kvDim + kk*8u, kvDim, ulong2(0,0), true);
-            simdgroup_multiply_accumulate(Sacc, qTile[kk], kT, Sacc);
+    for (uint j0s=j0superStart; j0s<nKeysMax; j0s+=ATTN_KTILE) {
+        // nsub: valid 8-key sub-tiles in this group (the last group may be ragged — nKeysMax
+        // need not be a multiple of ATTN_KTILE, or even of 8).
+        uint nsub = min((nKeysMax - j0s + 7u)/8u, uint(ATTN_KTILE/8));
+        for (uint sub=0; sub<nsub; sub++) {
+            uint j0 = j0s + sub*8u;
+            simdgroup_float8x8 Sacc = make_filled_simdgroup_matrix<float,8,8>(0.0);
+            for (uint kk=0; kk<hdTiles; kk++) {
+                simdgroup_half8x8 kT;
+                simdgroup_load(kT, kBase + j0*kvDim + kk*8u, kvDim, ulong2(0,0), true);
+                simdgroup_multiply_accumulate(Sacc, qTile[kk], kT, Sacc);
+            }
+            simdgroup_store(Sacc, sScr[sgid] + sub*8u, ATTN_KTILE);
         }
-        simdgroup_store(Sacc, sScr[sgid], 8);
         simdgroup_barrier(mem_flags::mem_threadgroup);
 
+        uint ncols = nsub*8u;
         if (lane < 8u) {
             uint row = lane, qi = r0+row;
             if (qi < M) {
                 uint qpos = startPos+qi, rowKeys = qpos+1u;
                 uint rowWin = (window>0u && rowKeys>window) ? rowKeys-window : 0u;
-                float sraw[8]; float rowmax = -INFINITY;
-                for (uint c=0;c<8u;c++) {
-                    uint j = j0+c;
-                    float v = sScr[sgid][row*8u+c]*scale;
+                float sraw[ATTN_KTILE]; float rowmax = -INFINITY;
+                for (uint c=0;c<ncols;c++) {
+                    uint j = j0s+c;
+                    float v = sScr[sgid][row*ATTN_KTILE+c]*scale;
                     if (j>=rowKeys || j<rowWin) v = -INFINITY;
                     sraw[c]=v; rowmax = max(rowmax, v);
                 }
@@ -390,28 +407,30 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
                 float mNew = max(mOld, rowmax);
                 float alpha = (mOld <= -INFINITY) ? 0.0f : exp(mOld-mNew);
                 float blockSum=0.0f;
-                for (uint c=0;c<8u;c++) {
+                for (uint c=0;c<ncols;c++) {
                     float p = (sraw[c] <= -INFINITY) ? 0.0f : exp(sraw[c]-mNew);
-                    pScr[sgid][row*8u+c] = half(p);
+                    pScr[sgid][row*ATTN_KTILE+c] = half(p);
                     blockSum += p;
                 }
                 stat[sgid][row] = mNew;
                 stat[sgid][8u+row] = stat[sgid][8u+row]*alpha + blockSum;
                 stat[sgid][16u+row] = alpha;
             } else {
-                for (uint c=0;c<8u;c++) pScr[sgid][row*8u+c] = half(0.0);
+                for (uint c=0;c<ncols;c++) pScr[sgid][row*ATTN_KTILE+c] = half(0.0);
                 stat[sgid][16u+row] = 1.0f;
             }
         }
         simdgroup_barrier(mem_flags::mem_threadgroup);
 
         for (uint cc=0; cc<hdTiles; cc++) {
-            simdgroup_half8x8 pTile, vTile;
-            simdgroup_load(pTile, pScr[sgid], 8);
-            simdgroup_load(vTile, vBase + j0*kvDim + cc*8u, kvDim);
             simdgroup_float8x8 pvAcc = make_filled_simdgroup_matrix<float,8,8>(0.0);
-            simdgroup_multiply_accumulate(pvAcc, pTile, vTile, pvAcc);
-            simdgroup_store(pvAcc, sScr[sgid], 8);
+            for (uint sub=0; sub<nsub; sub++) {
+                simdgroup_half8x8 pTile, vTile;
+                simdgroup_load(pTile, pScr[sgid] + sub*8u, ATTN_KTILE);
+                simdgroup_load(vTile, vBase + (j0s+sub*8u)*kvDim + cc*8u, kvDim);
+                simdgroup_multiply_accumulate(pvAcc, pTile, vTile, pvAcc);
+            }
+            simdgroup_store(pvAcc, sScr[sgid], 8); // scratch reuse: this group's scores are consumed
             simdgroup_barrier(mem_flags::mem_threadgroup);
             if (lane < 8u) {
                 uint row = lane; float a = stat[sgid][16u+row];
