@@ -1,5 +1,29 @@
 # goinfer: the W4A8 ops-per-byte answer cites three aikit artifacts that were never committed
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (archived 2026-09-13, doc review): CLOSED — provenance gap resolved by later aikit
+> work, not by editing this doc's target.** Items 1 and 3 named two missing aikit artifacts (the
+> `w4a8_opsperbyte_bench_test.go` harness, the perf-dead-ends §8.9 entry) as the reason
+> `docs/measurements/aikit-w4a8-opsperbyte.md`'s citations could not be verified. Per this doc's
+> own "Rule this out first" escape hatch, that is exactly what happened: the
+> `docs/completed/task-w4a8-neon-bandwidth.md` campaign's Gate-1 work funded an aikit-side harness
+> that committed `linalg/w4a8_opsperbyte_bench_test.go` (with `TestW4A8OpsPerByte` and
+> `TestW4A8IssueWidthProbe`, the exact two names Item 1 asked for) at aikit `66419cf`/`dd28f90`
+> (2026-08-23/24, both on `origin/main`), and `docs/internal/perf-dead-ends.md` §8.9 now documents
+> the `dotW4A8Fold4AVX2` dead end Item 2/3 asked to be resolved (confirmed tracked and committed,
+> not gitignored, matching this doc's own claim about that log). Items 1-3 are therefore moot and
+> `docs/measurements/aikit-w4a8-opsperbyte.md` was left untouched for them, per this doc's own
+> instruction to do so. Item 4 (the `QuantizeActivationsInto` misattribution) was independent of
+> the provenance question and got the small fix this doc asked for, in the same archival commit.
+> The sibling prompt this doc corrected, `docs/completed/aikit-w4a8-ops-per-byte.md`, stays
+> ANSWERED as this doc itself required. Nothing here needs further action.
+
 > Written 2026-08-22 against goinfer `9cb2c73` and aikit `aebf27e` (aikit freshly pulled, working
 > tree clean). **Scope is goinfer-side only, and docs-only.** The measurement's numbers and its
 > conclusions are NOT in question — do not re-litigate them, do not re-run anything, do not touch

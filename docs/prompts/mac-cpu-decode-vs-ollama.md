@@ -62,10 +62,11 @@ that was never the problem.
 
 ## §2 — Prior art that bears directly on this, and constrains the answer
 
-- `docs/measurements/aikit-w4a8-opsperbyte.md` is the existing W4A8 inner-loop measurement.
-  **Caveat: its method citations point at aikit files that do not exist at any commit** — see
-  `docs/prompts/goinfer-w4a8-opsperbyte-citations.md`. Use its numbers as a hypothesis, not as
-  something you can re-run.
+- `docs/measurements/aikit-w4a8-opsperbyte.md` is the existing W4A8 inner-loop measurement. Its
+  method citations pointed at uncommitted aikit working-tree state when written (2026-08-22); the
+  gap closed when the bench harness landed in aikit at `66419cf`/`dd28f90` (2026-08-23/24) — see
+  `docs/completed/goinfer-w4a8-opsperbyte-citations.md` for the provenance history. Use its
+  numbers as a hypothesis, not as something you can re-run.
 - **Low-bit unpack was already found compute-bound on NEON** and the two weight-memory items that
   depended on it (#1-A, #6) were shelved for that reason. If §1 lands on "the int4 kernel", that
   shelved result is the most relevant prior evidence and probably predicts what you will find.

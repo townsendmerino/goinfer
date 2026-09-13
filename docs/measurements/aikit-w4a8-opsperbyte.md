@@ -93,8 +93,9 @@ narrower."
 
 But raw (uncentered) nibbles compute `Σnib·act`, not the true `Σ(nib-8)·act` — a per-group
 correction `8·Σact` has to go somewhere. Priced optimally (precomputing `Σact` per group once
-per token, the same "quantize once, reuse across all N rows" shape goinfer's own
-`QuantizeActivationsInto` already uses, since the activation row is shared across every weight
+per token, the same "quantize once, reuse across all N rows" shape aikit's own
+`QuantizeActivationsInto` (`linalg/quant.go:319`) already uses — goinfer calls it, it doesn't own
+it — since the activation row is shared across every weight
 row in one M=1 matmul — not recomputed per row), the realistic instruction count is **18/group
 vs the current 20** — ~10%, not the ~50% "skip 4 ops" naively implied — and even that needs a
 real calling-convention change to `MatmulBTW4A8Into` (a precomputed per-group activation-sum
