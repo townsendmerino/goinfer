@@ -1,5 +1,28 @@
 # Batched small-M verification kernel on Metal — M-row hoist of decode's int8 GEMV
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Nothing in `docs/completed/` is actionable. If you need a task, use the live docs;
+> if something here reads as an instruction to a future reader, it was missed at archival — see
+> the doc-closeout rule in `docs/parity-coverage-policy.md`, and move it to live policy or strike
+> it.
+>
+> **Status (2026-09-13, doc review): COMPLETE.** All five phases ran to completion, verified
+> against real weights on two model families, and the doc's own Outcome section already states the
+> final call. Deliverables (`metal/batched_verify_kernels.go`, `metal/batched_verify_test.go`) are
+> in the tree, additive-only, still not referenced from `model.go`'s dispatch path or `allKernels`
+> — confirmed directly against the tree at archival, not just asserted. The body below is left
+> exactly as written; nothing needed correcting. One note for a future reader: the header line
+> immediately below reads "Phase 0-2 CONFIRMED ... Phase 3-4 below", which was accurate mid-task
+> but is misleading read cold, since Phase 3-4 are in fact filled in further down with a firm
+> **NO-GO**. `docs/audit-metal-2026-09-12.md` N-07 flagged exactly this phrasing; the fix is this
+> status block, not an edit to the frozen body. Two other closed docs already point here as the
+> results record: `docs/completed/task-int4-int8-exact-mma.md` (the corollary this doc built and
+> measured) and `docs/completed/metal-batched-verify.md` (the original prompt, which already
+> summarized this doc's five phases as DONE on 2026-08-17 and told readers not to re-run it).
+> Nothing here is open or orphaned; if Metal small-M batching is ever revisited, the doc's own
+> closing paragraph names where a redesign would have to start (the gate/up-proj regression at the
+> GEMV level).
+
 **Status: Phase 0-2 CONFIRMED — bit-identity holds by construction, verified against real weights
 across two model families. Phase 3-4 (perf, ceiling re-derivation) below.**
 

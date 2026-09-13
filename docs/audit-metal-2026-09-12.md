@@ -362,7 +362,7 @@ re-baked by the code it checks (G-04).
   replaces the per-row device byte-gather (17920× re-reads) that dominates LSU issue"),
   `metal/model.go:1903` (`e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, …)` — one simdgroup per row,
   no staging), `:1005-1009` (the M-06 comment records the choice as accounting, not a
-  measurement); `docs/task-metal-batched-verify-kernel.md:143-144` (isolated: down-proj 68 GB/s vs
+  measurement); `docs/completed/task-metal-batched-verify-kernel.md:166-167` (isolated: down-proj 68 GB/s vs
   gate/up 96 GB/s, same weight format).
 - **Mechanism and bound (counted + record):** per token the down-proj re-gathers 28 × 1536 × 8960 =
   385 MB of activation bytes from L1/L2 for 217 MB of weights and re-loads each group scale 4×.
@@ -711,8 +711,10 @@ re-baked by the code it checks (G-04).
 - N-05 `docs/audit-2026-09-10.md:153` lists C-08 open; `:1216-1224` records it fixed (d9139bc).
 - N-06 `docs/task-autoresearch-loop.md:3` "not started" / §3 "do NOT point it at Metal" — it ran on
   Metal (norm-class kernels); ledger tsv outside the tree (G-04).
-- N-07 `docs/task-metal-batched-verify-kernel.md:3` header says "CONFIRMED"; §Go/no-go is NO-GO
-  (code honours the NO-GO).
+- N-07 `docs/completed/task-metal-batched-verify-kernel.md:26` header says "CONFIRMED"; §Go/no-go
+  is NO-GO (code honours the NO-GO). Addressed at archival (2026-09-13 doc review): the doc is now
+  archived with a status block explaining the phrase; the body line itself is left as the frozen
+  record.
 - N-08 `metal/backend.go:337-340` ("CURRENTLY OPT-IN … pending Phase B" then "Default ON"), `:426`
   ("K=256 cell failed"), `:475-480` (`HiddenLast`: "declined by default") — N-44 of the prior audit,
   still present; `:355-356` accepts only `"1"` (N-45). `metal/spec_prefill_regression_test.go:43-51`

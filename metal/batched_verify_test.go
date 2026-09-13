@@ -226,7 +226,7 @@ func bvkForwardM(r *resident, pipes bvkPipes, embs [][]float32, startPos int) (b
 // (2*K*M bytes, the widest K being max(H, nH*hd)) fits under the device's threadgroup-memory
 // limit. Down-proj is unstaged (bvk_coal) so it never constrains M. Honest capping, not a silent
 // one: callers report the returned M instead of assuming 16 always fits (it does not — see
-// docs/task-metal-batched-verify-kernel.md Phase 1).
+// docs/completed/task-metal-batched-verify-kernel.md Phase 1).
 func bvkMaxM(d *Device, wideK int) int {
 	limit := d.MaxThreadgroupMemoryLength()
 	for m := 16; m >= 1; m-- {
