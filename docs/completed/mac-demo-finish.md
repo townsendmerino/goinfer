@@ -1,5 +1,37 @@
 # MacBook: finish the demo refresh — one correctness issue in the new GIF, plus the last unattributed numbers
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **STATUS 2026-09-13 — COMPLETE, all four items closed, same day the doc was written.**
+> - **Item 1** (GIF shows `linux-amd64` filename beside an Apple-Silicon `[tok/s]` line): closed
+>   via the caption option — `88f39fb3` added the attribution note under the GIF in root
+>   `README.md` ("Recorded on an Apple M1 Pro... a desktop x86 CPU measures roughly half the
+>   on-screen tok/s..."), pointing at `docs/measurements/demo-chat-macbook-2026-08-22.md`. Verified
+>   still present in the tree at review time.
+> - **Item 2** (unattributed `~617 MB` / `~1.7 GB` size table): closed in the same commit
+>   (`88f39fb3`) — both figures verified against real darwin/arm64 prequant builds (618 MiB / 1.68
+>   GiB, matching under macOS `ls -lh`'s binary-MB convention) and `demo/chat/README.md` now
+>   carries the provenance line. Verified still present in the tree at review time.
+> - **"Also outstanding" gpt2 gate floor** (raise the int4 centered-cosine floor from 0.99 to
+>   ~0.999 if the Mac's own measurement supports it): closed by `76bd1b4`, same day, ahead of
+>   `88f39fb3` which reports it — baseline centered cosine measured 0.99954293 on this box (≥0.999),
+>   so the floor was raised. That specific 0.99/0.999 pair was later superseded by an unrelated
+>   2026-08-26 re-calibration (`decoder/int4_golden_test.go`, golden rebase after the LM-head
+>   Q8→W8A8 change moved the arm64/amd64 baseline) — normal gate upkeep, not a reopening of this
+>   item.
+> - **"Not asking you to do"** (Linux vhs render failure; Tier 2 kill): purely informational, no
+>   action requested. Tier 2's kill is confirmed final by the sibling doc
+>   `docs/completed/mac-demo-chat-apple-silicon-numbers.md`.
+>
+> Every item this doc raised was resolved same-day; nothing here is open. See `88f39fb3` and
+> `76bd1b4` for the closing commits, and `docs/completed/task-demo-refresh.md` for the campaign
+> this was the tail end of.
+
 > Written 2026-08-22 at `a8ba9fd`. You are now the only box that can render tapes (vhs works there,
 > not here), so both items below are yours. Item 1 is a real problem with the refresh you just
 > landed; item 2 is small.
