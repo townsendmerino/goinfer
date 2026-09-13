@@ -1,7 +1,31 @@
 # Task: bit-identical high-occupancy decode attention (Campaign A, split-KV)
 
 > Scoping doc. Opened 2026-08-04 from the A1-reprofile (`ollama-chase.md` §A2) + D4 (§D4).
-> Status: **design + build in progress.** Bit-identity argument settled; kernels being written.
+> Status: ~~**design + build in progress.** Bit-identity argument settled; kernels being written.~~
+> **SHIPPED, DEFAULT-ON per geometry; one measurement open.** *(Status line corrected 2026-09-12: it
+> still read "kernels being written" five weeks after they landed, while every section below records
+> the build, the ship, the re-gate and the refutation. A reader who stopped at the header would have
+> mis-read the whole doc.)* The three kernels landed 2026-08-04 (`cuda/decode_splitkv.cu`,
+> `a4932832`), went default-on the same day (`26ae07da`), and were re-gated per geometry 2026-08-09
+> (P6a, `2693dcec`).
+>
+> **This doc is the DESIGN RECORD, not the open-work tracker.** `docs/queue-performance.md`'s
+> **decode-depth-falloff P24** holds the open work and says so in as many words ("the design record
+> already exists — do NOT write a second one"). Cite that entry by subject, not by number: that file
+> currently has **two** entries numbered P24, and the other one (`attn_fused` at 1.72% of tensor
+> peak) is unrelated.
+>
+> **Before quoting any absolute tok/s below, read this.** They are all pre-re-anchor.
+> `docs/benchmarks.md` §B6 is marked **superseded by §B6.3** (re-measured 2026-08-27 on driver
+> `595.91.07` / Nobara 44, per CLAUDE.md's rule that a driver change invalidates comparability).
+> The **ratios survived** — most cells agree to ±0.005, and 1.5B @2048 reads 1.189 there against the
+> 1.20× below — so the conclusions in this doc stand and only the absolutes need re-reading from
+> §B6.3. Separately, `ollama-chase.md`'s live TL;DR annotates a 2026-08-09 re-measure of the headline
+> cell, 157.6 vs 179.2 = Ollama **1.14×**, beside the 1.17× recorded below.
+>
+> **CUDA only.** Split-KV was built on Metal, measured a regression, and reverted
+> (`ollama-chase.md` §A2-Metal); Metal ships the single attention path. Nothing below is a
+> cross-backend claim.
 
 ## The problem (measured, not inferred)
 
