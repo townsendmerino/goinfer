@@ -135,7 +135,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 `
 
 // gegluQuant is swigluQuant's GELU-tanh-gated twin — Gemma's FeatGatedGELU (G6,
-// docs/task-gpu-paths-2026-09.md). Same fused shape (product recomputed in the pack pass, no
+// docs/tasks/task-gpu-paths-2026-09.md). Same fused shape (product recomputed in the pack pass, no
 // inter-wide global-memory round-trip); only the activation differs. gelu_tanh's argument is
 // CLAMPED to ±15 before calling tanh — see gegluShaderWGSL's own comment (layer.go) for why:
 // unclamped, it overflows f32 before saturating, which cost Metal's own port a real cosine

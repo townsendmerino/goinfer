@@ -24,14 +24,14 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// reasoning as qwen2_5_vl's empty profile above.
 	"qwen3_vl": {FeatQKNorm},
 	"llama":    {},
-	// SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/task-gpu-paths-2026-09.md):
+	// SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/tasks/task-gpu-paths-2026-09.md):
 	// cuda+metal now declare FeatNoPE (RopeInvFreqLayer zeroes the NoPE layers' invFreq table,
 	// no new kernel), so this is SmolLM3's ONLY required feature and it now reaches both —
 	// see the admission golden below. cohere2 also needs FeatNoPE, plus FeatLayerNorm/
 	// FeatLogitScale/FeatParallelBlock — all now declared on both backends too (G5's last row).
 	"smollm3": {FeatNoPE},
 	// Olmo 3: NormPostOnly + QKNormWhole, plus the standard sliding-window/YaRN features every
-	// backend already has. G5 (docs/task-gpu-paths-2026-09.md) declares both on cuda+metal, so
+	// backend already has. G5 (docs/tasks/task-gpu-paths-2026-09.md) declares both on cuda+metal, so
 	// this now reaches both.
 	// FeatPerLayerRoPE IS needed (restored 2026-09-12, docs/audit-2026-09-10.md G-03/G-04's
 	// disposition): YaRN applies to full_attention layers only, sliding_attention gets plain
@@ -80,7 +80,7 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	"cohere2": {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
 	"mistral": {FeatSlidingWindow},
 	// Ministral 3: no sliding window on the real releases (confirmed null), so the only feature
-	// this family needs at all is the attn-temp query scale — G5 (docs/task-gpu-paths-2026-09.md)
+	// this family needs at all is the attn-temp query scale — G5 (docs/tasks/task-gpu-paths-2026-09.md)
 	// declares it on cuda+metal (see FeatAttnTemp's own comment), so this now reaches both.
 	// Otherwise a plain GQA+YaRN model needing nothing else any backend lacks.
 	"mistral3":   {FeatAttnTemp},
@@ -184,7 +184,7 @@ func TestResidentAdmission_registryCovered(t *testing.T) {
 // Regenerate the CANDIDATE list with `go test -run TestResidentAdmission_matrix -v` (the T logs it),
 // then hand-verify each row before pasting — do NOT auto-write it, that would restore the tautology.
 var admissionGolden = map[string][]string{
-	// Cohere / Command-R + Cohere2 / Command-R7B: G5's last row (docs/task-gpu-paths-2026-09.md).
+	// Cohere / Command-R + Cohere2 / Command-R7B: G5's last row (docs/tasks/task-gpu-paths-2026-09.md).
 	// FeatParallelBlock reuses the pre-attn norm's already-quantized activation as the MLP's
 	// input too (no new kernel, a sequencing change); FeatLogitScale is a host-side multiply
 	// after readback (the same shape as FeatFinalLogitSoftcap). FeatLayerNorm was already
@@ -196,7 +196,7 @@ var admissionGolden = map[string][]string{
 	"cohere2":     {"cuda", "metal"},
 	"deepseek_v2": {"webgpu"},
 	"deepseek_v3": {"webgpu"},
-	// G6 (docs/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
 	// FeatSandwichNorm/FeatGatedGELU — gemma3 (uniform head_dim) now reaches it for real,
 	// verified against a genuine non-seeded checkpoint (testdata/gemma3-vl-tiny's text tower,
 	// gpu.TestGemma3ResidentParityWebGPU, minCosine 0.9998). gemma4/gemma4_text/
@@ -239,7 +239,7 @@ var admissionGolden = map[string][]string{
 	"kimi_k2":          {"webgpu"},
 	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
 	"llama":            {"cuda", "metal", "webgpu"},
-	// G5 (docs/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
+	// G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
 	// zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
 	// so it now reaches both.
 	"smollm3": {"cuda", "metal"},
@@ -274,7 +274,7 @@ var admissionGolden = map[string][]string{
 	//     is trusted.
 	"mellum":  {"cuda", "metal", "webgpu"},
 	"mistral": {"cuda", "metal", "webgpu"},
-	// Ministral 3: G5 (docs/task-gpu-paths-2026-09.md) declares FeatAttnTemp on cuda+metal —
+	// Ministral 3: G5 (docs/tasks/task-gpu-paths-2026-09.md) declares FeatAttnTemp on cuda+metal —
 	// rope_kv/rope2's new qTempScale param (Q-only, post-rotation) — its ONLY required feature,
 	// so it now reaches both, same shape as smollm3/FeatNoPE above. Not webgpu: unimplemented
 	// there.
@@ -367,7 +367,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// a per-layer kernel), no MLA/SSM, and no GATED shared expert (Qwen2-MoE)... which is now
 		// expressed as FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE decline
 		// is in the shared taxonomy, not a hand-coded check.
-		// G5 (docs/task-gpu-paths-2026-09.md) added seven more, across all five rows: FeatNoPE
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md) added seven more, across all five rows: FeatNoPE
 		// (SmolLM3), FeatAttnTemp (Ministral 3), FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo
 		// Hybrid), FeatLayerNorm + FeatParallelBlock + FeatLogitScale (Cohere/Command-R +
 		// Cohere2/Command-R7B, the last row — FeatLayerNorm is a genuinely new kernel here,
@@ -377,7 +377,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatLayerNorm, FeatParallelBlock, FeatLogitScale},
-		// G6 (docs/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
+		// G6 (docs/tasks/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
 		// already applies it host-side), FeatFinalLogitSoftcap/FeatOutBias (existing-kernel
 		// wiring), FeatSandwichNorm (defeats the fused residual epilogue, no new kernel),
 		// FeatGatedGELU (a genuinely new kernel pair — this backend had no GELU-tanh-gated
@@ -400,7 +400,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) landed with its own
 		// end-to-end whole-model gate (TestQwen35ResidentParityMetal, qwen3_5-tiny: worst cosine
 		// 0.9886, drift 0.0081, replay-after-Reset self-cosine 1.0) — not ahead of it.
-		// G5 (docs/task-gpu-paths-2026-09.md) added six more, across four rows (FeatLayerNorm was
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md) added six more, across four rows (FeatLayerNorm was
 		// already here, from GPT-2): FeatNoPE (SmolLM3), FeatAttnTemp (Ministral 3),
 		// FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo Hybrid), FeatParallelBlock +
 		// FeatLogitScale (Cohere/Command-R + Cohere2/Command-R7B, the last row — reusing GPT-2's
@@ -435,7 +435,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		FeatOutBias: true, FeatLogitScale: true, FeatMoE: true, FeatMoEGatedShared: true,
 		FeatMLA: true, FeatSSM: true, FeatLayerNorm: true, FeatParallelBlock: true, FeatNoPE: true,
 		FeatAttnSink: true, FeatGemma4EModel: true, FeatDeltaNet: true, // N-12: were omitted, so declaring either failed with a misleading "unknown feature"
-		// G5 (docs/task-gpu-paths-2026-09.md): FeatAttnTemp/FeatPostOnlyNorm/FeatQKNormWhole
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnTemp/FeatPostOnlyNorm/FeatQKNormWhole
 		// landed (rows 2-3) without being added here — the exact N-12 omission repeated, caught
 		// only when the last row's full-suite run exercised this test again.
 		FeatAttnTemp: true, FeatPostOnlyNorm: true, FeatQKNormWhole: true,

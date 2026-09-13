@@ -106,7 +106,7 @@ for t in "${TARGETS[@]}"; do
   os="${t%/*}"; arch="${t#*/}"
   out="$DIR/dist/$NAME-$os-$arch"
   [ "$os" = "windows" ] && out="$out.exe"
-  # G1 (docs/task-gpu-paths-2026-09.md): building every target from $DIR (the pure-Go root
+  # G1 (docs/tasks/task-gpu-paths-2026-09.md): building every target from $DIR (the pure-Go root
   # demo/chat) meant the darwin/linux embedded assets carried no GPU backend even though
   # metal/cuda exist — the same gap the goinfer-chat/goinfer-serve release loops were fixed for.
   # darwin builds ./metal/cmd/chat, linux ./cuda/cmd/chat; both are separate modules, so outside

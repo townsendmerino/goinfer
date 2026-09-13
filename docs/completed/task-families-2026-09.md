@@ -340,7 +340,7 @@ pattern this section's whole finding rests on (23 mamba / 23 moe / 6 attention, 
 Nano's) is exactly the per-layer kind CUDA/Metal's resident builders decline — `decoder/residency.go`'s
 `DecodeRunnerEligible` still refuses that arch shape for them before a backend is ever asked to
 build a resident runner. WebGPU implements it (G7 part 2,
-[`task-gpu-paths-2026-09.md`](../task-gpu-paths-2026-09.md)) — a backend-specific override in that
+[`task-gpu-paths-2026-09.md`](../tasks/task-gpu-paths-2026-09.md)) — a backend-specific override in that
 same predicate, gated on `decoder.Model.DecodePath()`'s own real backend name, not a blanket
 admission. This section verifies CPU-path correctness only; the `docs/hardware-matrix.md`
 "✅ resident" row for Nemotron-H reflects a DENSE representative config and doesn't speak to this

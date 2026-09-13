@@ -121,7 +121,7 @@ var gluePTX []byte
 //go:embed testdata/argmax.ptx
 var argmaxPTX []byte
 
-// loraPTX: lora_delta_down/lora_delta_up — compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md).
+// loraPTX: lora_delta_down/lora_delta_up — compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md).
 // A brand-new kernel pair, so per cuda/testdata/REGEN.md's rule ("adding a NEW kernel → new .cu
 // file, new .ptx, built at whatever NVRTC is present") this is its own module, never touching
 // glue.ptx's audited kernels. See cuda/lora.cu.

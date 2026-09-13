@@ -9,7 +9,7 @@ import (
 )
 
 // TestOlmo3ResidentSmokeMetal and TestOlmoHybridResidentSmokeMetal are G5's FeatPostOnlyNorm +
-// FeatQKNormWhole row (docs/task-gpu-paths-2026-09.md) smoke gates: the model actually goes
+// FeatQKNormWhole row (docs/tasks/task-gpu-paths-2026-09.md) smoke gates: the model actually goes
 // resident and produces finite, non-degenerate output.
 //
 // DELIBERATELY NOT a resident-vs-CPU cosine floor — same finding G5 rows 1-2 already recorded for

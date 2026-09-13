@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The G4 seam gate (docs/task-gpu-paths-2026-09.md).
+// The G4 seam gate (docs/tasks/task-gpu-paths-2026-09.md).
 //
 // WHY THIS EXISTS. Same shape as resident_seam_test.go's TestSeam_GenerateRunsOnTheResident: a
 // resident capability that nothing ever calls is indistinguishable from one that was never

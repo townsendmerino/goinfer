@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Compute-time LoRA on the resident path (G3, docs/task-gpu-paths-2026-09.md).
+// Compute-time LoRA on the resident path (G3, docs/tasks/task-gpu-paths-2026-09.md).
 //
 // Architecturally this backend is like Metal, not WebGPU: launchToken re-issues live kernel
 // launches every token (segA/segB/segBFFN), so binding/clearing an adapter is just a Go-side

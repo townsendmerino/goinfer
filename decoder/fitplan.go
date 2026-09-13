@@ -62,7 +62,7 @@ type PlanRequest struct {
 	// §2's "every allocation is a term of the plan, including the ones that attach after load" —
 	// the concrete example that motivated it (a 26B's expert cache sized before a later --drafter
 	// attach grabbed room NewBlockSpec then needed) is exactly what this term exists to prevent
-	// PLAN from repeating. capSlots itself is now fixed too (docs/task-gpu-paths-2026-09.md,
+	// PLAN from repeating. capSlots itself is now fixed too (docs/tasks/task-gpu-paths-2026-09.md,
 	// 2026-09-09): no ResidencyBackend interface change was needed after all — an out-of-band
 	// hint on decoder.Model (Options.ExtraResidentBytes / Model.ExtraResidentBytes()) was enough,
 	// since cuda/backend.go's BuildResident already receives *Model and can read it directly.

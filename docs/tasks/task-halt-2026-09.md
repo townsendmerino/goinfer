@@ -8,7 +8,7 @@
 > them against a real `.gguf`). **K3, K4, K6, K7, K8, K9 remain open** — see each item's own
 > section; none has a queue entry or a doc elsewhere, so this doc is still the sole owner of all
 > six. Scoping doc for the question "if an agent built on goinfer misbehaves, what stops it, and
-> how do we know the stop works". Companion to `docs/task-gpu-paths-2026-09.md` (nothing here
+> how do we know the stop works". Companion to `docs/tasks/task-gpu-paths-2026-09.md` (nothing here
 > touches kernels).
 >
 > Suggested order: K1 → K2 → K5 → K3 → K4 → K6 → K8 → K7 → K9. K1+K2+K5 are the useful minimum

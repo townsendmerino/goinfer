@@ -340,7 +340,7 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []decodeWeight) ([][]
 // (GPU sync is cheap; wgpu buffer creation is not). This is what the decoder
 // caches per weight matrix.
 //
-// rm is decodeWeight (G6, docs/task-gpu-paths-2026-09.md: the "staged int4" item) — either
+// rm is decodeWeight (G6, docs/tasks/task-gpu-paths-2026-09.md: the "staged int4" item) — either
 // W8A8 or W4A8; both kernels share the same 6-binding layout (see decodeWeight's own comment
 // in gpu/gemv_w4a8.go), so this runner is precision-agnostic exactly the way DecodeRunner's own
 // gemv/gemvAdd builders already are.

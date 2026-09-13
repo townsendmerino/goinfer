@@ -171,7 +171,7 @@ kernel void rmsnorm_quant_f16(device const half* x[[buffer(0)]], device const fl
 
 // rmsnorm_f16: one threadgroup per row. out[m] = x[m]*rsqrt(mean(x[m]²)+eps)*w (w f32).
 // addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder/rmsnorm.go / the decode
-// path's rmsnorm_quant (kernels.go). G8 (docs/task-gpu-paths-2026-09.md): added so this kernel
+// path's rmsnorm_quant (kernels.go). G8 (docs/tasks/task-gpu-paths-2026-09.md): added so this kernel
 // can serve BOTH a GEMV-input norm (Llama/Qwen, addOne=0) and Gemma's sandwich norm on a sublayer
 // OUTPUT (addOne=1) — same math either way, only the weight convention differs.
 kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
@@ -192,7 +192,7 @@ kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w
 kernel void residual_f16(device half* x[[buffer(0)]], device const half* y[[buffer(1)]],
     uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+float(y[i])); }
 
-// residual_f16_from_f32: x += y, x is f16, y is f32 (G8, docs/task-gpu-paths-2026-09.md). The
+// residual_f16_from_f32: x += y, x is f16, y is f32 (G8, docs/tasks/task-gpu-paths-2026-09.md). The
 // batched-prefill MoE row loop's expert-combine dispatches (encodeMoEExperts/
 // encodeMoESharedExpert, metal/moe.go) are F32-only — reused UNCHANGED for the per-row loop by
 // pointing their accumulate target at an isolated F32 scratch buffer instead of prefill's own F16
@@ -470,7 +470,7 @@ type prefillState struct {
 	// pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
 	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
-	// G8 (docs/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
+	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
 	// L2-Metal (docs/task-prefill-gap.md §4): the simdgroup_matrix flash-attention twin of
@@ -694,7 +694,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
 		}
 		if L.moe != nil {
-			// G8 (docs/task-gpu-paths-2026-09.md): MoE FFN — batch the attention half above as
+			// G8 (docs/tasks/task-gpu-paths-2026-09.md): MoE FFN — batch the attention half above as
 			// usual, but run the FFN ROW BY ROW off the batched residual (xF), reusing the EXACT
 			// per-token decode MoE dispatch chain (encodeMoERoute/encodeMoEExperts/
 			// encodeMoESharedExpert, metal/moe.go) unchanged — the same approach CUDA's own

@@ -101,7 +101,7 @@ const (
 	// decoder/forwardn.go) when this feature was added — admitting mistral3 to a resident path
 	// that didn't apply it would silently drop the scale for every position past
 	// original_max_position_embeddings, producing plausible-but-wrong logits at exactly the
-	// context lengths the mechanism exists for. G5 (docs/task-gpu-paths-2026-09.md): cuda and
+	// context lengths the mechanism exists for. G5 (docs/tasks/task-gpu-paths-2026-09.md): cuda and
 	// metal now apply it (Model.AttnTempScale/AttnTempParams, folded into the existing rope
 	// launch's Q output rather than a new kernel) and declare this. WebGPU still declines —
 	// otherwise a plain GQA+YaRN model needing nothing else any backend lacks, so without this
@@ -110,7 +110,7 @@ const (
 	// FeatPostOnlyNorm (Olmo 3/Olmo Hybrid, batch 2 G2): NormPostOnly — no pre-norm at all, the
 	// sublayer's OUTPUT is normalized before the residual add. Genuinely different from
 	// FeatSandwichNorm (which normalizes BOTH the input and the output). G5
-	// (docs/task-gpu-paths-2026-09.md): cuda and metal now implement it (quant_vec on the raw
+	// (docs/tasks/task-gpu-paths-2026-09.md): cuda and metal now implement it (quant_vec on the raw
 	// residual in place of the pre-norm dispatch; the sandwich post-norm dispatch already both
 	// backends ship widens to cover this placement too) and declare it.
 	FeatPostOnlyNorm ResidentFeature = "post-only-norm"
@@ -380,7 +380,7 @@ func residentMoECapacityOK(a *Architecture, backend string) bool {
 // geometry seam (cuda/resident.go's cudaLayer.hd/nKV, metal/model.go's residLayer.geom); WebGPU's
 // twin fields (runLayer.ghd/gnKV/ghalf, gpu/decoderunner.go) exist but are never populated by
 // gpu/residency.go's per-layer builder for any family — confirmed 2026-09-08 when G6's Gemma-set
-// feature work (docs/task-gpu-paths-2026-09.md) satisfied every ResidentFeature dense Gemma 4
+// feature work (docs/tasks/task-gpu-paths-2026-09.md) satisfied every ResidentFeature dense Gemma 4
 // nominally requires without also covering this, which would have silently admitted it to a path
 // that crashes on upload ("gpu: residency unsupported projection precision \"\"") rather than
 // mis-running quietly — still a decline this predicate exists to make deliberate instead of
@@ -541,13 +541,13 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		//            selected, different weights (0.895 -> 0.9964 on the real 20B).
 		FeatAttnSink: true,
 		FeatOutBias:  true,
-		// G5 (docs/task-gpu-paths-2026-09.md): SmolLM3's NoPE layers get an all-zero per-layer
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md): SmolLM3's NoPE layers get an all-zero per-layer
 		// invFreq table instead of a new kernel path — RopeInvFreqLayer folds this in for every
 		// backend that reads it (decoder/residency.go), so this line and Metal's twin are the
 		// whole change. Identity rotation at invFreq==0 holds only when mscale==1 on those
 		// layers, true of every layerNoPE family admitted so far — see that function's comment.
 		FeatNoPE: true,
-		// G5 (docs/task-gpu-paths-2026-09.md): Ministral 3's post-RoPE query scale, folded into
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md): Ministral 3's post-RoPE query scale, folded into
 		// rope_kv's existing launch (a new qTempScale parameter, applied to Q only, after the
 		// rotation) rather than a new kernel — Model.AttnTempScale/AttnTempParams
 		// (decoder/residency.go) supply the value; rope_kv_batched's twin recomputes it per row
@@ -555,7 +555,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// (exact no-op) for every other family. PTX regenerated (cuda/build_ptx.sh, NVRTC) and
 		// verified end-to-end on real CUDA hardware — TestMinistral3ResidentParityCUDA.
 		FeatAttnTemp: true,
-		// G5 (docs/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid's no-pre-norm placement
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid's no-pre-norm placement
 		// (Model.PostOnlyNormResident) — segA quantizes the RAW residual (quant_vec) instead of
 		// running rmsnorm_quant, and the pre-existing sandwich post-norm dispatch widens from
 		// `sandwich` to `sandwich || postOnly`. Requires the fused QKV path off (it bakes a real
@@ -566,7 +566,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// change. Valid only for MHA (nH==nKV); BuildResident declines otherwise rather than
 		// silently mis-normalizing a hypothetical future GQA+QKNormWhole family.
 		FeatQKNormWhole: true,
-		// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-
 		// R7B. FeatLayerNorm is a genuinely NEW kernel (layernorm_quant, cuda/glue.cu) — this
 		// backend had NO mean-centered norm before, only RMSNorm variants — but bias-free only
 		// (Cohere's LayerNorm carries no learned bias term; a future bias-bearing LayerNorm family
@@ -597,7 +597,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatNonGatedMLP:    true, // relu2Quant (Nemotron-H squared-ReLU)
 		FeatLogitScale:     true, // Granite logits_scaling — folded into the lm_head weight scale at BuildResident, not a host-side postcap
 		FeatRMSAddOne:      true, // (1+w) RMS offset
-		// G6 (docs/task-gpu-paths-2026-09.md): the Gemma3/Gemma4/gpt-oss set. FeatEmbedScale
+		// G6 (docs/tasks/task-gpu-paths-2026-09.md): the Gemma3/Gemma4/gpt-oss set. FeatEmbedScale
 		// needs ZERO gpu/ code — decoder/residency.go's embedResident already applies √hidden
 		// host-side, generically for every backend, before calling resident.Forward; this
 		// runner just consumes the already-scaled embedding like every other backend does.
@@ -682,7 +682,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatAttnTemp:          true, // Ministral 3 post-RoPE query scale (rope2's qTempScale param, Q-only, after rotation) — Model.AttnTempScale
 		FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid no-pre-norm — quant_vec on the raw residual instead of rmsnorm_quant; sandwich's post-norm dispatch widened to sandwich||postOnly
 		FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (nH=1,nKV=1,hd=nH_orig*hd_orig) — no new kernel; MHA only
-		// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+		// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
 		// FeatLayerNorm was already true (GPT-2's layernorm_quant, bias-capable via r.uLNHasBias —
 		// Cohere just needs hasBias=0, no kernel change). FeatParallelBlock reuses encodeAttention's
 		// pre-attn r.aq/r.aSc as the MLP's gate|up input in encodeLayer instead of re-normalizing

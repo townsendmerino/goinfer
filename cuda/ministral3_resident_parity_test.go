@@ -10,7 +10,7 @@ import (
 )
 
 // TestMinistral3ResidentParityCUDA is the end-to-end gate for G5's FeatAttnTemp row
-// (docs/task-gpu-paths-2026-09.md) on CUDA: declaring FeatAttnTemp is real machinery (a new
+// (docs/tasks/task-gpu-paths-2026-09.md) on CUDA: declaring FeatAttnTemp is real machinery (a new
 // qTempScale parameter threaded through rope_kv/rope_kv_batched, decoder.Model.AttnTempScale/
 // AttnTempParams), not just an admission unlock. testdata/ministral3-tiny's AttnTempOrigMaxPos=8
 // means even a modest token count steps through several distinct scale values.

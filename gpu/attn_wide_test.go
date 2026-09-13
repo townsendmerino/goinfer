@@ -68,7 +68,7 @@ func TestAttnWide_refParity(t *testing.T) {
 				Contents: wgpu.ToBytes([]uint32{uint32(tc.nH), uint32(tc.nKV), uint32(tc.hd), uint32(tc.nKeys),
 					0, uint32(tc.nH / tc.nKV), math.Float32bits(scale), 0}),
 				Usage: wgpu.BufferUsageUniform})
-			// G6 (docs/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
+			// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
 			sinksB := mk([]float32{0}, wgpu.BufferUsageStorage)
 			hsB, _ := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 				Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})

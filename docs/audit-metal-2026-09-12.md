@@ -196,7 +196,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/prefill.go:651-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:643-663`; `metal/model.go:681-682` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:396-408` (`PrefillPath` reports "batched f16-MMA" for it);
-  `docs/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
+  `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
 - **Mechanism and bound (counted):** non-paged: per row per MoE layer (5 + 3k [+3–5 shared])
   dispatches and a full read of the k routed experts — bytes ≈ M × L × k·3·H·I/2: Qwen1.5-MoE-class
   (24 L, k=4, H=2048, I=1408) ≈ 0.83 GB per row → 1.7 TB at M=2048 (≥8.5 s at 200 GB/s) plus ~0.84 M

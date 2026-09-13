@@ -6,13 +6,13 @@
 > **and its M-01/M-02 dependency is DONE/mostly-done** (M-01 fixed 2026-09-03; M-02's Metal
 > ordering/paged-accounting half fixed 2026-09-03, its KV/scratch/host-copy gaps closed
 > 2026-09-09, and CUDA's previously-nonexistent fixed-term guard added 2026-09-09 — see
-> `docs/task-gpu-paths-2026-09.md`'s G11 entries for both). Phase 0's shape differs from what this
+> `docs/tasks/task-gpu-paths-2026-09.md`'s G11 entries for both). Phase 0's shape differs from what this
 > doc originally specified (no single `WeightBudget()`; the CPU path uses `fitCheck`/
 > `estimateGGUFWeightBytes` instead, and CUDA/Metal each kept their own separate guard rather than
 > unifying on one). **Phase 1 is DONE for its `plan()` core and `goinfer-chat fit` dry run**
 > (`decoder/fitplan.go` + `internal/fitcmd`, 2026-09-09; verified end-to-end on real Mac/Metal and
 > nobara/CUDA hardware, including the exact gemma-4-26B expert-cache scenario §4 uses as its worked
-> example) — Load()-based rather than header-only, see `docs/task-gpu-paths-2026-09.md`'s entries
+> example) — Load()-based rather than header-only, see `docs/tasks/task-gpu-paths-2026-09.md`'s entries
 > for the scope decision. **The startup banner (Phase 1's third surface) is NOT started**, nor are
 > `pull`'s verdict / the web UI listing (both need the still-deferred header-only work). **Phase 2
 > is DONE for CUDA and Metal** (context + slots + the real `--fit=off` switch, all measured on real
@@ -20,12 +20,12 @@
 > resident RAM gets one automatic `-stream-weights` retry, gated by `--fit`, MoE deliberately
 > excluded after `docs/benchmarks.md`'s "M35/M26 on the Mac" measured that CPU path as
 > catastrophic — 2h10min/zero completions; the dense retry itself measured at streamed/resident =
-> 0.944, real hardware, 2026-09-09 — see `docs/task-gpu-paths-2026-09.md`'s entries) **and for the
+> 0.944, real hardware, 2026-09-09 — see `docs/tasks/task-gpu-paths-2026-09.md`'s entries) **and for the
 > drafter-aware companion-allocation ctx sizing** (§2's own motivating example — a `--drafter`
 > attach after `BuildResident` grabbing VRAM an MoE expert cache already claimed — fixed 2026-09-09
 > WITHOUT the `ResidencyBackend` interface change the doc originally expected: an out-of-band hint
 > on `decoder.Model` was enough, CUDA-only since Metal hosts no drafter today, verified on real
-> nobara hardware — see `docs/task-gpu-paths-2026-09.md`'s entries). **Correction (2026-09-13
+> nobara hardware — see `docs/tasks/task-gpu-paths-2026-09.md`'s entries). **Correction (2026-09-13
 > doc-review): "the real `--fit=off` switch ... 2026-09-09" above overstates the CLI plumbing's
 > actual date.** `--fit=off` did not parse until `413b3afe` (2026-09-11, M-14) — plain
 > `flag.BoolVar` only understands `strconv.ParseBool`'s spellings, so the server exited 2 with

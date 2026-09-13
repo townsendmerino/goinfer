@@ -279,7 +279,7 @@ func writeSTF32(t *testing.T, path string, tensors map[string]stf32) {
 }
 
 // TestMoE_declinesPrefill: MoE moved from the decline side to the admit side on 2026-09-08 (G8
-// MoE half, docs/task-gpu-paths-2026-09.md) — the f16 MMA prefill path now runs a MoE layer's FFN
+// MoE half, docs/tasks/task-gpu-paths-2026-09.md) — the f16 MMA prefill path now runs a MoE layer's FFN
 // row by row off the batched residual, reusing the unchanged per-token decode MoE dispatch chain
 // (encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, metal/moe.go); the name is historical
 // (kept so `git log -p` on it still tells the right story — decoder/gptoss_decline_test.go

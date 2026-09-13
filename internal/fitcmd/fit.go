@@ -3,7 +3,7 @@
 // see below]: bytes by class, the chosen placement per available backend, the ctx cap, and what
 // was pinned."
 //
-// PHASE 1 SCOPE NOTE (docs/task-gpu-paths-2026-09.md's G11 entry has the full reasoning): the
+// PHASE 1 SCOPE NOTE (docs/tasks/task-gpu-paths-2026-09.md's G11 entry has the full reasoning): the
 // doc wants this header-only ("two seconds, no model in memory") so `pull` and the web UI can
 // check fit before a multi-GB download. Nothing in the repo separates dense from routed-expert
 // bytes at the checkpoint-header level today, so this phase loads the model like any other

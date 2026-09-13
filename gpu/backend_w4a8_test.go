@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestWebGPUBackend_MatmulW4A8_matchesCPU is G6's staged-int4 gate (docs/task-gpu-paths-2026-09.md):
+// TestWebGPUBackend_MatmulW4A8_matchesCPU is G6's staged-int4 gate (docs/tasks/task-gpu-paths-2026-09.md):
 // webgpuBackend.MatmulW4A8, the actual decoder.QuantBackend4 entry point matmulInto/matmul now
 // call, against the CPU reference (linalg.MatmulBTW4A8Into) — the same comparison
 // TestWebGPUBackend_matchesCPU does for the f32 path, but nothing previously did this directly

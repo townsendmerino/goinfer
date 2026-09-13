@@ -20,7 +20,7 @@ import (
 // Proven directly on prefillOK rather than by running PrefillLast and comparing logits: prefillOK
 // is the ONLY thing every caller (metal/backend.go) checks before invoking PrefillLast at all, so
 // if it declines correctly no caller ever reaches the buggy row loop with a paged layer — the same
-// reasoning docs/task-gpu-paths-2026-09.md's own G8 Gemma-4 MoE guard rests on.
+// reasoning docs/tasks/task-gpu-paths-2026-09.md's own G8 Gemma-4 MoE guard rests on.
 func TestPrefillLast_declinesPagedGenericMoE(t *testing.T) {
 	const ckpt = "../testdata/mixtral-tiny"
 	if _, err := os.Stat(ckpt + "/config.json"); err != nil {

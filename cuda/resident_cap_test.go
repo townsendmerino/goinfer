@@ -76,7 +76,7 @@ func TestResolveCtxCap(t *testing.T) {
 // (Options.DisableFit) and its GOINFER_NO_FIT_DEFAULT env-var precursor both restore resolveCtxCap
 // exactly, and a model whose own window is already at or below cudaCtxCapDefault has nothing to
 // gain from asking Plan at all. The live-probe-driven branch (a real free-VRAM reading) is
-// exercised on real hardware separately (docs/task-gpu-paths-2026-09.md's G11 entry has the
+// exercised on real hardware separately (docs/tasks/task-gpu-paths-2026-09.md's G11 entry has the
 // nobara numbers). A real (if minimal, tracked-in-git) model is loaded per case rather than
 // passing nil — m.FitDisabled() reads a real field now, unlike the plain env-var check this
 // replaced, so a nil *decoder.Model would panic in the request==0 cases where it's evaluated.
@@ -195,7 +195,7 @@ func TestReservedBudget(t *testing.T) {
 	}
 }
 
-// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/task-gpu-paths-2026-09.md
+// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/tasks/task-gpu-paths-2026-09.md
 // §6): "nothing pinned is overridden... honoured or refused with numbers". The sibling test below
 // pins the SENTINEL/wiring without a device; this one calls checkKVFits itself, against a REAL
 // device's REAL free VRAM, and asserts the refusal actually NAMES the requested context and the

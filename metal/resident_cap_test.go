@@ -15,7 +15,7 @@ import (
 // — a real device write there is out-of-bounds and, on unified memory, silently corrupts adjacent
 // MTLBuffers. Pure logic (checkCap only reads ctxCap()), so no Metal device is needed. A
 // zero-value &metalResident{} (r == nil) deliberately exercises ctxCap()'s nil-safe fallback to
-// metalCtxCapMax (G6, docs/task-gpu-paths-2026-09.md added resident.ctxCap as a per-build,
+// metalCtxCapMax (G6, docs/tasks/task-gpu-paths-2026-09.md added resident.ctxCap as a per-build,
 // request-aware value; this test predates that and is meant to keep testing "the historical
 // ceiling" as pure logic, not require a real *resident).
 func TestMetalResidentCheckCap(t *testing.T) {
@@ -55,7 +55,7 @@ func TestMetalCtxCapWithinKernelBound(t *testing.T) {
 }
 
 // TestResolveMetalCtxCap is G6's own gate for the real, pre-existing gap found scoping it
-// (docs/task-gpu-paths-2026-09.md): Metal never read decoder.Model.ResidentContextRequest() at
+// (docs/tasks/task-gpu-paths-2026-09.md): Metal never read decoder.Model.ResidentContextRequest() at
 // all, so an explicit -ctx was silently ignored, always using metalCtxCapMax. Uses
 // testdata/llama-tiny (TRACKED in git, max_position_embeddings=128), so every case runs in CI
 // unconditionally — no device needed, resolveMetalCtxCap is pure logic over decoder.Model state.

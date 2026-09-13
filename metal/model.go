@@ -25,7 +25,7 @@ import (
 // TestAttention_ShippedKernelShapes measures correctness at the exact boundary (nKeys=4096).
 // Raising this past attnScoreKeyBound without resizing sc[] is a silent OOB threadgroup write; on
 // Metal's unified memory that corrupts adjacent buffers. Named …Max (not …Cap, formerly
-// metalCtxCap) since Phase 2 (docs/task-gpu-paths-2026-09.md, G6) gave resident.ctxCap its own
+// metalCtxCap) since Phase 2 (docs/tasks/task-gpu-paths-2026-09.md, G6) gave resident.ctxCap its own
 // per-build, request-aware VALUE — this constant is now the ceiling that value can never exceed,
 // not the value itself.
 const metalCtxCapMax = 4096
@@ -47,7 +47,7 @@ const attnScoreKeyBound = 4096
 // there's room" story here; an unpinned load always gets exactly metalCtxCapMax, unchanged from
 // this backend's historical behavior.
 //
-// What WAS broken (found scoping G6, docs/task-gpu-paths-2026-09.md): this backend never read
+// What WAS broken (found scoping G6, docs/tasks/task-gpu-paths-2026-09.md): this backend never read
 // decoder.Model.ResidentContextRequest() at all — an explicit -ctx was silently ignored on every
 // load, always using metalCtxCapMax regardless of what was asked for. This closes that: a request
 // in (0, metalCtxCapMax] is honored (optionally clamped further to the model's own window, same
@@ -193,7 +193,7 @@ type resident struct {
 	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
 
-	// G5 (docs/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — encodeLayer reuses encodeAttention's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
 
@@ -201,7 +201,7 @@ type resident struct {
 	attnSink                 bool    // arch.gptoss != nil
 	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
 
-	// Compute-time LoRA (G3, docs/task-gpu-paths-2026-09.md — see lora.go). pLoraDelta is
+	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — see lora.go). pLoraDelta is
 	// allocated once in BuildResident unconditionally (cheap; same "always create, gate on the
 	// per-model state" shape every other optional pipeline in this struct already uses). Fused
 	// down+up into one kernel/dispatch (P-11, audit-2026-09-10) — t[R] lives in the kernel's own
@@ -229,7 +229,7 @@ type resident struct {
 	// ctxCap is the resolved resident KV capacity in positions — resolveMetalCtxCap(m), set once
 	// in buildResident. Every r.kc[l]/r.vc[l] is sized ctxCap*kvDim; checkCap (metal/backend.go)
 	// guards writes against it. Always <= metalCtxCapMax (the kernel's hard ceiling); may be
-	// SMALLER when an explicit -ctx requested less (G6, docs/task-gpu-paths-2026-09.md).
+	// SMALLER when an explicit -ctx requested less (G6, docs/tasks/task-gpu-paths-2026-09.md).
 	ctxCap       int
 	finalSoftcap float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in finalizeLogits (FeatFinalLogitSoftcap).
 	// embedScale is Gemma's √hidden token-embedding multiplier (FeatEmbedScale); 0/1 ⇒ none.
@@ -240,7 +240,7 @@ type resident struct {
 	embedScale float32
 	embed      *linalg.WeightMat
 
-	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/task-gpu-paths-2026-09.md):
+	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/tasks/task-gpu-paths-2026-09.md):
 	// the raw params behind the post-RoPE query scale (Model.AttnTempParams) — 0 for every family
 	// without it. uQTempScale (below) is the per-forward-call scale computed from these plus the
 	// CURRENT position, mutated in place at every uPos.SetU32 call site the same way uPos itself is.
@@ -592,7 +592,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
-	r.qkNormWhole = m.QKNormWholeResident() // G5 (docs/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
+	r.qkNormWhole = m.QKNormWholeResident() // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
 	r.sandwich = m.SandwichNormResident()
 	r.postOnly = m.PostOnlyNormResident() // G5: Olmo 3/Olmo Hybrid
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
@@ -673,7 +673,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// the arch genuinely varies AND no backend without the seam could serve it — which is exactly
 	// "does this arch vary per layer at all", the thing this uniform-g0 fast path can't handle
 	// regardless of what Metal's decode path separately supports.
-	// G8 MoE (docs/task-gpu-paths-2026-09.md): Gemma-4's enable_moe_block variant (parallel
+	// G8 MoE (docs/tasks/task-gpu-paths-2026-09.md): Gemma-4's enable_moe_block variant (parallel
 	// dense‖MoE FFN, residLayer.g4moe, encodeGemma4MoEFFN) is a THIRD FFN shape this row's
 	// L.moe != nil branch in PrefillLast does not cover at all — declaring FeatMoE above would
 	// otherwise admit it if it happens to have uniform per-layer geometry (PerLayerGeomOK alone
@@ -737,7 +737,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
 			// dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
 			// AttnGate=false, and falls through to the ordinary branch below — G5,
-			// docs/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` check, silently
+			// docs/tasks/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` check, silently
 			// wrong the moment a non-gated hybrid family reached residency, since
 			// Qwen35ResidentParams hardcoded attnGate=true). Its q/k/v/o live off qattn, not
 			// lw.QProj/KProj/VProj/OProj,
@@ -822,7 +822,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
 		}
-		// postOnly (Olmo 3/Olmo Hybrid, G5 docs/task-gpu-paths-2026-09.md) is a MODEL-level flag,
+		// postOnly (Olmo 3/Olmo Hybrid, G5 docs/tasks/task-gpu-paths-2026-09.md) is a MODEL-level flag,
 		// but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear instead and
 		// carry REAL pre-norm weights regardless — isDelta is already resolved above, so gate on
 		// the per-layer truth, not the bare model-level flag.

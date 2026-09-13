@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSmolLM3ResidentSmokeMetal is G5's FeatNoPE row (docs/task-gpu-paths-2026-09.md) smoke
+// TestSmolLM3ResidentSmokeMetal is G5's FeatNoPE row (docs/tasks/task-gpu-paths-2026-09.md) smoke
 // gate: the model actually goes resident and produces finite, non-degenerate output when its
 // LAST layer is NoPE (testdata/smollm3-tiny's no_rope_layers=[1,1,1,0], 1=has-rope/0=NoPE).
 //

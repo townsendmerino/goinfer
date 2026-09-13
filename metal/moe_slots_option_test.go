@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMoESlotsViaOptions_engagesPaging is Phase 2's own gate (docs/task-gpu-paths-2026-09.md —
+// TestMoESlotsViaOptions_engagesPaging is Phase 2's own gate (docs/tasks/task-gpu-paths-2026-09.md —
 // "Metal slots become an Option and a flag"): decoder.Options.MoECacheSlots (the SAME
 // --moe-cache-slots CUDA's own auto-cap already reads) must reach the REAL dispatch-building code
 // in metal/moe.go and metal/gemma4_moe.go, not just residentNeedBytes' guard estimate
@@ -122,7 +122,7 @@ func TestMoESlotsViaOptions_engagesPaging_genericMoE(t *testing.T) {
 	}
 }
 
-// TestMoESlotsViaOptions_belowTopKRefusesWithNumbers is G6 (docs/task-gpu-paths-2026-09.md §6):
+// TestMoESlotsViaOptions_belowTopKRefusesWithNumbers is G6 (docs/tasks/task-gpu-paths-2026-09.md §6):
 // an explicit --moe-cache-slots below top-k cannot be honoured (one token's own routed set must
 // be simultaneously resident) — it must be REFUSED, with the numbers, never silently rounded up
 // or ignored. Uses testdata/mixtral-tiny (tracked, runs in CI unconditionally); the request comes

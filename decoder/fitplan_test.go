@@ -36,7 +36,7 @@ func loadSkippableTiny(t *testing.T, dir, what string) *Model {
 // TestPlan_tableDriven is G4 (docs/tasks/task-fit-to-hardware.md §6): "a table-driven unit test on
 // synthetic headers — dense, MoE, hybrid, every backend, every budget... pins the placement and
 // the ctx cap. A change to the priority order is a change to this table, reviewed." Not literally
-// synthetic headers (Phase 1 was scoped Load()-based, docs/task-gpu-paths-2026-09.md's G11 entry)
+// synthetic headers (Phase 1 was scoped Load()-based, docs/tasks/task-gpu-paths-2026-09.md's G11 entry)
 // — real tiny checkpoints instead, budgets scaled to each fixture's OWN measured byte counts
 // rather than the doc's literal "6 to 64 GB" (these are toy-sized parity fixtures, not real
 // deployment checkpoints, so a literal GB range would never exercise the decline path at all).
@@ -244,7 +244,7 @@ func TestPlan_tableDriven(t *testing.T) {
 }
 
 // TestPlan_extraBytesReservedAheadOfExperts is the regression this session's own G11 CUDA guard
-// work (docs/task-gpu-paths-2026-09.md) traces back to: tasks/task-fit-to-hardware.md's motivating
+// work (docs/tasks/task-gpu-paths-2026-09.md) traces back to: tasks/task-fit-to-hardware.md's motivating
 // example (a --drafter attach after BuildResident grabbed VRAM an MoE expert cache had already
 // claimed). PlanRequest.ExtraBytes exists so the CALLER can price a companion allocation (a
 // drafter, a vision tower) as a FIXED term ahead of the elastic expert-slot count, per §2's "every

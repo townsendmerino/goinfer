@@ -8,7 +8,7 @@
 > didn't. **L5 remains PARKED**, blocked on the same aikit prerequisite (still v1.41.0, no bump
 > since). Drafted 2026-09-11 on branch `aikit-v1.41.0-bump` (off `main` at `46c9dfa`), against
 > aikit v1.41.0 (its `docs/audit-2026-09-10.md` M-22 entry is the aikit-side contract). Companion
-> to `docs/task-gpu-paths-2026-09.md`; this is the CPU/format half of the same question — which
+> to `docs/tasks/task-gpu-paths-2026-09.md`; this is the CPU/format half of the same question — which
 > representation of an int4 tensor exists in memory and on disk, and who decided.
 >
 > Suggested order: L1 (in progress, finish first) → L3 (ten minutes, do with L1) → L2 → L5 on

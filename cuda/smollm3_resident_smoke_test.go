@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSmolLM3ResidentSmokeCUDA is G5's FeatNoPE row (docs/task-gpu-paths-2026-09.md) smoke gate
+// TestSmolLM3ResidentSmokeCUDA is G5's FeatNoPE row (docs/tasks/task-gpu-paths-2026-09.md) smoke gate
 // on CUDA — the Metal twin of this test (metal/smollm3_resident_parity_test.go) explains at
 // length why this is deliberately NOT a resident-vs-CPU cosine floor: on testdata/smollm3-tiny's
 // seeded/synthetic weights (hidden=64), a correct NoPE implementation, a reverted one (every
@@ -21,7 +21,7 @@ import (
 // FeatNoPE let the model go resident on CUDA and run without error/NaN.
 //
 // WRITTEN, NOT RUN: no CUDA device was available while writing this (see
-// docs/task-gpu-paths-2026-09.md's G5 status log) — needs a real run on a CUDA box before it can
+// docs/tasks/task-gpu-paths-2026-09.md's G5 status log) — needs a real run on a CUDA box before it can
 // be trusted, same posture as G4's cudaResident.HiddenLast.
 func TestSmolLM3ResidentSmokeCUDA(t *testing.T) {
 	const ckpt = "../testdata/smollm3-tiny"

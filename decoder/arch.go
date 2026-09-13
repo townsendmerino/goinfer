@@ -346,7 +346,7 @@ type qwen35Params struct {
 	// q_proj to 2*num_heads*head_dim). FALSE for Olmo Hybrid: its full-attention layer is
 	// olmo3's own PLAIN scheme (ordinary q_proj, no gate) — verified against the real
 	// modeling_olmo_hybrid.py, which reuses Olmo3Attention verbatim for these layers, not
-	// qwen3.5's gated one. G5 (docs/task-gpu-paths-2026-09.md): this field did not exist before
+	// qwen3.5's gated one. G5 (docs/tasks/task-gpu-paths-2026-09.md): this field did not exist before
 	// Olmo Hybrid — the resident backends assumed EVERY qwen35Params-carrying family's softmax
 	// layer was qGate, which was true of every family that had reached residency until now.
 	AttnGate bool

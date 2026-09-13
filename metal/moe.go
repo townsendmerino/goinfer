@@ -636,7 +636,7 @@ func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 //
 // dst is the down-projection's accumulate target — decode's own caller (encodeMoEFFN) always
 // passes r.x (the shared F32 residual stream), but G8's batched-prefill MoE row loop
-// (metal/prefill.go, docs/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
+// (metal/prefill.go, docs/tasks/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
 // accumulate into an isolated F32 scratch buffer instead, since prefill's own residual (xF) is
 // F16 and these kernels are F32-only — added into xF's row by a SEPARATE small kernel afterward,
 // not by pointing these dispatches at xF directly (a type mismatch: `device float*` vs `half*`).

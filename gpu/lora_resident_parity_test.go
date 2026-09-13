@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestLoRAResidentParityWebGPU is the G3 numeric gate (docs/task-gpu-paths-2026-09.md): compute-
+// TestLoRAResidentParityWebGPU is the G3 numeric gate (docs/tasks/task-gpu-paths-2026-09.md): compute-
 // time LoRA applied on this backend's resident decode path must match the CPU reference (the
 // same adapter applied via decoder's generic gatedMLP/causalAttention forward). Mirrors
 // metal/lora_resident_parity_test.go — same fixture (testdata/llama-tiny, GQA 4-heads/2-kv-heads

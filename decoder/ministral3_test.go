@@ -184,7 +184,7 @@ func TestMinistral3_batchedMatchesSequential(t *testing.T) {
 }
 
 // TestAttnTempScale_matchesSequentialFormula is G5's real gate for FeatAttnTemp
-// (docs/task-gpu-paths-2026-09.md): a resident backend calls Model.AttnTempScale(pos) (decode) or
+// (docs/tasks/task-gpu-paths-2026-09.md): a resident backend calls Model.AttnTempScale(pos) (decode) or
 // Model.AttnTempParams() (CUDA's batched prefill, which must recompute the same formula PER ROW
 // device-side since position varies within one launch) instead of a new per-model constant, so
 // this is a PURE, backend-agnostic check that both give exactly the formula

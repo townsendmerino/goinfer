@@ -35,7 +35,7 @@ const softcapParallelMin = 32768
 //
 // SIBLING SET. Six sites carry this identical loop: decoder/forwardn.go, decoder/model.go,
 // cuda/prefill.go, cuda/resident.go, metal/model.go, and gpu/softcap.go (G6,
-// docs/task-gpu-paths-2026-09.md). Both cuda/ callers now share this helper. The other three are
+// docs/tasks/task-gpu-paths-2026-09.md). Both cuda/ callers now share this helper. The other three are
 // unchanged and deliberately so — decoder/ is under the 6edd1ca numerics freeze and metal/ is on
 // hold — which is recorded in docs/QUEUE.md B6 so the pair is not left implicit.
 func applySoftcap(logits []float32, sc float32) {
