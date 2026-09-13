@@ -4,7 +4,10 @@
 > **Priority:** ahead of the queue and web-UI work, because both will produce new task docs and
 > every new task doc spends its first hours untracked.
 > **Read first:** `scripts/queue_citation_lint.py` (all of it — the module docstring is the design
-> argument and you are extending it, not overriding it), `.git/hooks/pre-push`, and
+> argument and you are extending it, not overriding it), `scripts/install-git-hooks.sh` (the
+> TRACKED source that generates `.git/hooks/pre-push` — `.git/` itself is never committed, so the
+> hook you can see in your own checkout is a per-clone artifact; edit the generator, never the
+> generated file, or the change works on your machine and nowhere else, invisibly), and
 > [`../tasks/task-work-queue-2026-09.md`](../tasks/task-work-queue-2026-09.md) §"How this doc was
 > lost" / J0, which is the incident this closes.
 
@@ -68,10 +71,15 @@ written for a path when it is a property of tracking. Generalise it to the prope
    everything as today and say so in one line. Degrading to the old behaviour is right; degrading
    silently is not.
 
-5. **`.git/hooks/pre-push`'s refusal message gains one line.** Its current advice is "Re-point the
-   citation, or run --update if it is only the index that is stale." Add: *"If the red is a doc you
-   have not committed yet, commit it — do not move it out of the tree."* The hook is where someone
-   reads advice at exactly the moment this went wrong.
+5. **The pre-push refusal message gains one line — edited in `scripts/install-git-hooks.sh`'s
+   heredoc (around its `"Re-point the citation, or run --update..."` line), NOT in
+   `.git/hooks/pre-push` directly.** `.git/hooks/pre-push` is that heredoc's OUTPUT, regenerated
+   fresh each time `bash scripts/install-git-hooks.sh` runs and never committed — an edit made
+   straight to the generated file looks like it worked (your own next push shows the new line) and
+   commits nothing, so nobody else's clone, and no future re-run of the installer on this one, ever
+   sees it. Add: *"If the red is a doc you have not committed yet, commit it — do not move it out
+   of the tree."* The hook is where someone reads advice at exactly the moment this went wrong, but
+   the FILE that ships that advice to every clone is the installer script.
 
 ## Gate — mutation-checked, red before green
 
