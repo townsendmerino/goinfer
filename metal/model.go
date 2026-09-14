@@ -294,6 +294,11 @@ type resident struct {
 	execErr error
 
 	pf *prefillState // lazily-compiled f16 MMA prefill pipelines (opt-in)
+	// pfErr latches a compile/pipeline-creation failure from ensurePrefill (N-47,
+	// audit-2026-09-10.md): without this, r.pf stays nil after a failure and every later
+	// PrefillLast call re-attempts the full MSL compile from scratch and re-panics identically —
+	// wasted work on every request for the rest of the process's life, not just the first.
+	pfErr error
 
 	// Gated-DeltaNet mixer (deltanet_kernels.go — own module, nothing else here is recurrent).
 	// dnet nil ⇒ dense model; every field below is loaded/allocated only when it is non-nil.

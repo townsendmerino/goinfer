@@ -445,6 +445,11 @@ func (r *resident) ensurePrefill() {
 	if r.pf != nil {
 		return
 	}
+	if r.pfErr != nil {
+		// N-47 (audit-2026-09-10.md): a prior attempt already failed — re-panic the SAME cached
+		// error instead of re-running the full MSL compile just to fail identically again.
+		panic(r.pfErr)
+	}
 	// M24(c): compile + pipeline creation here runs pool-less on an unpinned thread (PrefillLast
 	// calls this BEFORE its own LockOSThread). Pin + hold a pool so the autoreleased temporaries
 	// drain; the +1-owned library/pipelines are tracked on the Device and freed at Close.
@@ -452,6 +457,13 @@ func (r *resident) ensurePrefill() {
 	defer runtime.UnlockOSThread()
 	pool := NewARPool()
 	defer pool.Drain()
+	defer func() {
+		if p := recover(); p != nil {
+			err := fmt.Errorf("%v", p)
+			r.pfErr = err
+			panic(err)
+		}
+	}()
 	lib, err := r.d.CompileLibrary(prefillKernels, MSL3_1)
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill compile: %v", err))
