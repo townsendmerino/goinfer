@@ -1,4 +1,4 @@
-# V-sum split spike — §3.2 fidelity gate (IN PROGRESS)
+# V-sum split spike — §3.2 fidelity gate: D7 AMBIGUOUS — PARKED
 
 Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `05a67819` before Phase A was
 launched. Gate: `cuda/vsum_split_gate_test.go` (`c86f1e3d`). *(The pre-registration still names
@@ -25,10 +25,73 @@ rebase brought 169 Go-file changes elsewhere, including `cuda/resident.go`, `cud
 `cuda/prefill.go`. So the exact-vs-spike **comparison** is a property of the V-sum reduction tree and
 carries to main; the **absolute** agreement and KL figures are for the pre-rebase build.
 
-**Status: S (confirmation) scored — DOES NOT PASS under the registered rule, on criterion (a) by one
-hard flip; PASSES under criterion (a) as AMENDED by owner decision (below), re-scored in a logged run
-before any D7 result. D7 (decision) reference: first run stopped unfinished, relaunched per D2. The
-gate's verdict is D7's, and is not in yet.**
+**Verdict: AMBIGUOUS — PARKED.** The decision cell (D7, K=8000) passes criteria (a) and (b) — under
+the strict AND the amended hard-flip rule — and lands in the pre-registered ambiguous band on (c):
+spike KL 1.0585x exact's, inside 1.05-1.10x. By the rule registered before any data existed that is
+inconclusive, not a pass: no promotion, and a re-run needs a mechanism, never a re-roll. The spike
+stays opt-in with no fidelity clearance. S (confirmation) passes under the amended rule.
+
+## D7 — DECISION cell — AMBIGUOUS — PARKED
+
+qwen2.5-7b-instruct-q4_k_m, nH=28 nKV=4 hd=128, K=8000, prompt set A, S=4. Reference: CPU, **f32**
+weights and activations, exact f64 attention, **one worker** (per D2), 3h58m — 23-25 min per prompt
+measured, against the 17.5 min the calibration fit projected. Phase A log
+`goinfer-logs/vsum-fidelity-phaseA-D7f32w1-20260913-214302.log`; Phase B log
+`goinfer-logs/vsum-fidelity-phaseB-D7-20260914-014109.log`, 5m23s; pipeline transitions in
+`goinfer-logs/vsum-fidelity-STATUS.txt`.
+
+| D7, 10 prompts x 64 positions | exact | spike | criterion |
+|---|---:|---:|---|
+| hard flips vs reference | 30/640 | 27/640 | (a) amended `<= exact + 2√exact` (40.95) — **pass**; strict `<= exact`, as pre-registered — **pass** |
+| mean teacher-forced agreement | 83.91% | 85.16% | (b) >= exact − 1.0 pt AND >= half: **+1.25 pt, 7/10** — pass |
+| mean KL(reference ‖ arm) | 0.100720 | 0.106614 | (c) <= 1.10x: **1.0585x** — pass, but **inside the 1.05-1.10x parked band** |
+| worst near-tie gap | 10.899% | 10.899% | — |
+
+**Preconditions, all held:** A/A bit-identical over 64 rows; seed rows identical between arms;
+**630/630 decode rows differing** — the spike ran on every position of every prompt; no `DECLINED`.
+
+| p | agree (exact / spike) | HF | KL |
+|---:|---|---|---|
+| 1 | 90.6 / 89.1 | 2 / 0 | 0.07523 / 0.08266 |
+| 2 | 95.3 / 93.8 | 1 / 1 | 0.06001 / 0.06519 |
+| 3 | 82.8 / 85.9 | 5 / 5 | 0.11850 / 0.12665 |
+| 4 | 85.9 / 90.6 | 3 / 1 | 0.07967 / 0.09642 |
+| 5 | 79.7 / 81.2 | 5 / 4 | 0.14383 / 0.13539 |
+| 6 | 79.7 / 79.7 | 3 / 5 | 0.11018 / 0.11479 |
+| 7 | 78.1 / 76.6 | 6 / 5 | 0.15641 / 0.18027 |
+| 8 | 89.1 / 92.2 | 2 / 2 | 0.06678 / 0.05989 |
+| 9 | 76.6 / 81.2 | 0 / 1 | 0.10916 / 0.11695 |
+| 10 | 81.2 / 81.2 | 3 / 3 | 0.08741 / 0.08795 |
+
+### What the cell says, read no further than the data allows
+
+- **The two kinds of evidence point opposite ways, and neither is noise-shaped.** On the argmax
+  metrics the spike is *closer* to the reference: 3 fewer hard flips, +1.25 pt agreement, ahead or
+  level on 7 of 10 prompts. On the full-distribution metric it is *further*: KL higher on **8 of 10**
+  prompts, so the 5.85% is broad rather than one outlier (the largest single prompt, p7, is +0.024).
+  A result where the arms agree on the top token more often but spread probability less like the
+  reference is exactly what the parked band exists for.
+- **The owner amendment to (a) did not decide this cell.** Strict (a) passes too (27 <= 30), so D7
+  reads identically under the registered and the amended rule.
+- **The prediction was half wrong, and is recorded so.** Registered: "passes, and is more likely to
+  beat exact than to lose to it", on the reduction-tree mechanism. It beat exact on flips and
+  agreement and lost on KL, consistently. The mechanism predicted the spike's *sums* are closer to
+  f64; it did not predict what that does to a 152k-way softmax, and the KL result is the evidence that
+  the two are not the same question.
+- **S and D7 differ, and two cells cannot say why.** S's KL ratio was 1.0026x; D7's is 1.0585x. D7 is
+  the larger model with 28 query heads against 12, and the geometry where the spike's speedup is
+  largest. That is an observation about two cells, not a trend.
+
+### What this does and does not authorise
+
+**Parked, per the pre-registration: recorded, no promotion.** The spike stays opt-in, as it already
+is, and the spec-decode guard stays. It carries **no fidelity clearance** — the correct description is
+"measured on one decision cell: better argmax agreement, 5.9% worse KL, inconclusive by the registered
+rule". A re-run is not justified by the number sitting near a threshold; it needs a named mechanism
+for the KL excess. One candidate that would be a mechanism rather than a re-roll: measuring KL
+restricted to the reference's top-k, to see whether the excess lives in the head of the distribution
+(which serving cares about) or its 152k-token tail (which it largely does not). That would be a NEW
+pre-registration on held-out prompt set B, not a re-scoring of this data.
 
 ## S — confirmation cell — DOES NOT PASS
 
