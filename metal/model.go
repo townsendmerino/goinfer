@@ -1185,13 +1185,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.residencyBufs = pinned
 			rs.Commit()
 			rs.RequestResidency()
-			// KNOWN COST (cold A/B): attaching the set at the QUEUE rides it on EVERY command buffer,
-			// so phase 1 now carries the ~3 GB of pinned slots in its referenced set even though it
-			// never touches them — +2.07 ms/CB → +62 ms/tok (p1 idle scales with pin-set size; see the
-			// bisect). Net is still −189 ms (p2 −248), so it ships. FIX (fold into the next aikit
-			// release, not worth a release alone): a PHASE-SCOPED residency set attached only to
-			// phase-2's command buffers (per-encoder useResidencySet) recovers the 62 ms.
-			r.q.AddResidencySet(rs)
+			// M-14 (audit-metal-2026-09-12.md): attaching the set at the QUEUE (r.q.AddResidencySet)
+			// used to ride it on EVERY command buffer, so phase 1 carried the ~3 GB of pinned slots in
+			// its referenced set even though it never touches them — +2.07 ms/CB → +62 ms/tok measured
+			// cost. r.residency is instead attached PER-ENCODER, only on phase 2's command buffers
+			// (encodeG4Phase2Paged's / encodeMoEExpertsPaged's callers, via Encoder.UseResidencySet —
+			// aikit gpu/v0.33.1+), which is the buffer category that actually reads it.
 			r.residency = rs
 		}
 	}

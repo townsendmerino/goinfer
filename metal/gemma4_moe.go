@@ -544,7 +544,10 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 			slots := L.g4moe.pool.ensureResidentBatch(ids)
 			p.stageWallNanos += time.Since(s0).Nanoseconds() // cross-check vs pool.stageNanos (same body)
 			w2 := time.Now()
-			e2 := begin() // phase 2: experts from slots + join
+			e2 := begin()                        // phase 2: experts from slots + join
+			if r.residency != (ResidencySet{}) { // M-14: per-encoder attach, phase 2 only
+				e2.UseResidencySet(r.residency)
+			}
 			r.encodeG4Phase2Paged(e2, slots)
 			r.encodeG4Join(e2, L)
 			enc2 := time.Now()

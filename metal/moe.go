@@ -807,7 +807,10 @@ func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
 			// instead of one pread at queue depth 1 per expert — see ensureResidentBatch's own doc
 			// comment for why this is safe.
 			slots := L.moe.pool.ensureResidentBatch(ids)
-			e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)
+			e2 := r.q.Begin()                    // phase 2: experts from slots (+ shared expert)
+			if r.residency != (ResidencySet{}) { // M-14: per-encoder attach, phase 2 only
+				e2.UseResidencySet(r.residency)
+			}
 			r.encodeMoEExpertsPaged(e2, L, slots)
 			e2.End()
 			r.recordExecErr(e2.Err())

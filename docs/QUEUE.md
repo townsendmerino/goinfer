@@ -1398,7 +1398,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:49` | goinfer | `func copyBytesToU32Buf(dst Buffer, src []byte) {` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:461` | goinfer | `// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Ste` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:470` | goinfer | `// so the metalResident adapter surfaces a failed request and drops the stale logits, ra` |
-| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:547` | goinfer | `e2 := begin() // phase 2: experts from slots + join` |
+| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:547` | goinfer | `e2 := begin()                        // phase 2: experts from slots + join` |
 | `docs/audit-metal-2026-09-12.md|metal/gemv_w4a8_coal_bench_test.go:29` | goinfer | `gemvW4A8CoalN = 512  // sample rows -- enough to exercise every lane/tail shape` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:113` | goinfer | `// (see scripts/autoresearch_rmsnorm_results.tsv) -- verified here against` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:231` | goinfer | `#define W4A8_BODY \` |
@@ -1416,16 +1416,16 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/model.go:107` | goinfer | `// statement, no kernel change), and MoE (G8's second half: the FFN half runs ROW BY ROW` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:112` | goinfer | `var prefillFeatures = map[decoder.ResidentFeature]bool{` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:1175` | goinfer | `rs.AddAllDeviceBuffersExcept(d, written) // whole-device: not slot-scoped, pinned stays ` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1299` | goinfer | `// forwardHiddenNoHead encodes the trunk (all layers + final norm) for one token at abso` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1354` | goinfer | `copy(r.logitsHost, r.logits.Floats())` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1360` | goinfer | `// (Model.LogitScaleResident's own no-op value) — a single serial pass, since a multiply` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1415` | goinfer | `// Paging tears each MoE layer into two submits with a host readback between — the encod` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1416` | goinfer | `// executor (one static command buffer/token) cannot express it. Fall back to the synchr` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1423` | goinfer | `if r.execReq == nil {` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1298` | goinfer | `// forwardHiddenNoHead encodes the trunk (all layers + final norm) for one token at abso` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1353` | goinfer | `copy(r.logitsHost, r.logits.Floats())` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1359` | goinfer | `// (Model.LogitScaleResident's own no-op value) — a single serial pass, since a multiply` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1412` | goinfer | `func (r *resident) ForwardEmbPipe(emb []float32, pos int) []float32 {` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1414` | goinfer | `// Paging tears each MoE layer into two submits with a host readback between — the encod` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1422` | goinfer | `if r.execReq == nil {` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:174` | goinfer | `pSA, pSABias, pSAResid                                             Pipeline // Stage A g` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1955` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1976` | goinfer | `// encodeAttention records one layer's attention block (through the o-proj + residual/sa` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:2044` | goinfer | `// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Run` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1954` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1975` | goinfer | `// encodeAttention records one layer's attention block (through the o-proj + residual/sa` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:2043` | goinfer | `// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Run` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:379` | goinfer | `func bytesToU32(b []byte) []uint32 {` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:390` | goinfer | `// []uint32 allocation) plus the f16 group scales. The nibble bytes are byte-for-byte th` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:462` | goinfer | `// whose value dim exceeds every other staged width, the M-11 budget under-counts and th` |
@@ -1442,7 +1442,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:762` | goinfer | `func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:788` | goinfer | `for l := 0; l < r.nL; l++ {` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:809` | goinfer | `slots := L.moe.pool.ensureResidentBatch(ids)` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:810` | goinfer | `e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:810` | goinfer | `e2 := r.q.Begin()                    // phase 2: experts from slots (+ shared expert)` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_model_test.go:302` | goinfer | `embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_prefill_measure_test.go:14` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-12.md|metal/pagecost_measure_test.go:47` | goinfer | `// which doesn't fit and is the new path), so this measures the SUBMISSION-STRUCTURE cos` |

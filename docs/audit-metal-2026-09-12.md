@@ -106,9 +106,9 @@ re-baked by the code it checks (G-04).
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
 - **Where:** `decoder/model.go:1141` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
   `decoder/residency.go:109-109`; `metal/backend.go:379-560` (the complete `metalResident` method
-  set — no `ForwardNoLogits`); `metal/model.go:1415-1384` (`encodeLogitsCB`, the only executor job
-  shape, always appends `pGemvW8`); `metal/model.go:1299-1281` (`forwardHiddenNoHead` — the
-  trunk-only encode already exists, used only by `HiddenLast`); `metal/model.go:1354`
+  set — no `ForwardNoLogits`); `metal/model.go:1414-1384` (`encodeLogitsCB`, the only executor job
+  shape, always appends `pGemvW8`); `metal/model.go:1298-1281` (`forwardHiddenNoHead` — the
+  trunk-only encode already exists, used only by `HiddenLast`); `metal/model.go:1353`
   (`finalizeLogits` memcpy).
 - **Mechanism and bound (counted + record):** `hasKV` is false for `*metalResident`, so
   `residentPrefillSeed` takes `m.resident.Forward(emb, i)` for every prompt token. Which prompts
@@ -484,7 +484,7 @@ re-baked by the code it checks (G-04).
 #### M-09 · Decode attention's K read is a 32-lane 512 B-strided gather (32 load instructions per 256 B row) — every recorded probe fits an L1/LSU-transaction wall as well as the "DRAM latency" reading; the one untested corner is bit-identical cooperative staging
 - **Where:** `metal/kernels.go:642-636` (thread `tid` owns keys `tid, tid+128, …`; per key 32 `half4`
   loads at stride `kvDim*2` = 512 B across lanes), `:661-677` (V: thread `d` walks all keys
-  serially, 2 B per load), `metal/model.go:2044` (12 threadgroups × 128 threads per layer);
+  serially, 2 B per load), `metal/model.go:2043` (12 threadgroups × 128 threads per layer);
   `docs/completed/metal-verdict.md:95-99,136-145,175-178`; `metal/attn_m3_probe_test.go`,
   `attn_kvwidth_probe_test.go`.
 - **Mechanism and bound (counted + record):** each K-row load instruction touches 32 distinct cache
@@ -528,7 +528,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/kernels.go:231-233` (`W4A8_BODY`: 8 scalar byte loads of the activation + one
   half scale per 32-bit word), `:272-274` ("int8 activation staged once into threadgroup short —
   replaces the per-row device byte-gather (17920× re-reads) that dominates LSU issue"),
-  `metal/model.go:1955` (`e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, …)` — one simdgroup per row,
+  `metal/model.go:1954` (`e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, …)` — one simdgroup per row,
   no staging), `:1005-1009` (the M-06 comment records the choice as accounting, not a
   measurement); `docs/completed/task-metal-batched-verify-kernel.md:166-167` (isolated: down-proj 68 GB/s vs
   gate/up 96 GB/s, same weight format).
@@ -714,6 +714,23 @@ re-baked by the code it checks (G-04).
   C-05/C-06). The wiring itself is now fully designed (drop `r.q.AddResidencySet(rs)`, keep
   `r.residency = rs`, call `e2.UseResidencySet(r.residency)` on phase 2 only, guarded on
   `r.residency` being set) and is a goinfer-only change once a `gpu/vX.Y.Z` tag lands.
+- **CLOSED 2026-09-14 — `gpu/v0.33.1` released (the same tag as C-05/C-06/G-06), goinfer wired.**
+  `5065f24` was already an ancestor of the tagged commit, so the release unblocked this
+  immediately — no extra aikit work needed. Wired exactly as designed above: `metal/model.go`
+  drops `r.q.AddResidencySet(rs)` (kept only `r.residency = rs`); `metal/gemma4_moe.go` and
+  `metal/moe.go` each call `e2.UseResidencySet(r.residency)` (guarded on `r.residency !=
+  (ResidencySet{})`) right after opening phase 2's encoder, before `encodeG4Phase2Paged`/
+  `encodeMoEExpertsPaged`. Verified against the real `gemma4-moe-tiny` fixture:
+  `TestResidencySet_pinsExactlyTheLiveSlots` still confirms the pinned set is exactly the pool's
+  24 live slot buffers (the consistency contract this session's wiring could have silently broken
+  is unaffected — pinning moved from queue-attach to per-encoder-attach, not the SET's contents).
+  Full `go test -tags metal ./metal/...` (98 pass / 3 fail / 11 skip — the 3 failures are N-41,
+  confirmed pre-existing and reproducing identically before this change) and `-tags
+  goinfer_testhooks` both green; gofmt/vet/staticcheck clean (staticcheck's findings are the same
+  pre-existing `goinfer_testhooks`-gated U1000s, line-shifted only). The measured 62 ms/token this
+  finding recorded (p1 idle from carrying the ~3 GB pinned slot set on every command buffer, not
+  just phase 2's) has not been re-measured post-fix — this session had no paged 26B/35B checkpoint
+  to reproduce the original cold A/B on; the wiring is verified correct, not re-benchmarked.
 
 ### D. Cross-repo and unassessed
 
@@ -802,7 +819,7 @@ re-baked by the code it checks (G-04).
 
 #### C-02 · `HiddenLast` (serve `/v1/embeddings`), `Forward(id,pos)` and `ForwardArgmax` on a paged MoE bind the zero-value stacked-expert buffers — C-08's defect on three more entry points
 - **Where:** `metal/backend.go:614-551` (`HiddenLast` → `forwardHiddenNoHead` per position),
-  `metal/model.go:1299-1271` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
+  `metal/model.go:1298-1271` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
   paging lives only in `Forward`'s dispatch to `forwardLogitsPaged`, `:1241`), `metal/moe.go:289-291`
   ("expGuW/expGuS/expDW/expDS stay zero-value when paged"), `:651-659` (bound unconditionally);
   `metal.go:777-748` (OOB/unmapped reads are silently tolerated).
@@ -1010,7 +1027,7 @@ re-baked by the code it checks (G-04).
   `metal/pagecost_measure_test.go:47-52` ("There is NO such checkpoint on this Mac … this measures
   the SUBMISSION-STRUCTURE cost on a DENSE model"), `metal/residency_probe_test.go:11-12` (paged
   26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:461-463`,
-  `metal/model.go:1976-1974`). **Fix:** M-11's re-run. **Confidence:** confirmed.
+  `metal/model.go:1975-1974`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
 - **Where:** `metal/close_leak_test.go:162-169,224-248` vs aikit `metal.go:396-390`
@@ -1142,10 +1159,10 @@ re-baked by the code it checks (G-04).
   paragraph (the "K=256 cell failed"/"declined by default" sub-claims were already gone); the test
   file's own stale "Metal does NOT implement ResidentPrefillKV" claim corrected too (M-01 changed
   that, but `residentPrefillSeed` is shared between both callers so no new asymmetry resulted).
-- N-09 `metal/model.go:1360-1324` "greedy decode skips [softcap]" — false in production
+- N-09 `metal/model.go:1359-1324` "greedy decode skips [softcap]" — false in production
   (`finalizeLogits` runs every executor token; Gemma 4 greedy pays a 262k `tanh` per token, ~1%).
   **FIXED 2026-09-13.**
-- N-10 `metal/model.go:1976` "11 dispatches vs 19" is stale (block is 7); `metal-verdict.md:75`
+- N-10 `metal/model.go:1975` "11 dispatches vs 19" is stale (block is 7); `metal-verdict.md:75`
   "337 dispatches/token" is 310 at this tree. `:1538-1541` "fastest greedy path" stale. **FIXED
   2026-09-13** (the two `metal/model.go` comments; `metal-verdict.md` is `docs/completed/` — an
   archived record left as-is per that directory's own convention).
@@ -1294,7 +1311,7 @@ re-baked by the code it checks (G-04).
   otherwise, e.g. MoE/DeltaNet), Metal's `ForwardN` is always the per-token sequential loop. The
   bit-identity contract (`TestResidentForwardN_parity`) is unchanged and still universal; only the
   structural claim was wrong.
-- N-27 `metal/model.go:1354` — pipe path memcpys 608 KB into `logitsHost` before the ack; the
+- N-27 `metal/model.go:1353` — pipe path memcpys 608 KB into `logitsHost` before the ack; the
   zero-copy `r.logits.Floats()` view could be returned (the contract already says "consume before
   the next call"). ≈30–60 µs/token. **INVESTIGATED, DECLINED 2026-09-13**: this is not a free win —
   `decoder/spec_optfwd.go:214-216` documents the exact failure mode, MEASURED on CUDA before its own
@@ -1315,7 +1332,7 @@ re-baked by the code it checks (G-04).
   defensive copy back into the same invisible-to-`-race` hazard class CUDA already paid for once.
   Removing a 30-60 µs/token memcpy is not worth reopening a bug this hard to detect without a full,
   deliberate audit of every consumer for concurrent double-calls — parked, not fixed.
-- N-28 `metal/model.go:1416-1380,1419-1431` — at temperature > 0.2 (serve default 1.0) nothing
+- N-28 `metal/model.go:1412-1380,1419-1431` — at temperature > 0.2 (serve default 1.0) nothing
   overlaps the CPU sampler with the GPU: the full-vocab softmax/filter sits in the GPU-idle gap
   (order 0.5–1.5 ms of ~13.6 ms; the served 54 vs decode-only 73.6 tok/s is where it shows). The
   0.2 cap is a measured decision; the only structural way past it is device-side sampling.
@@ -1444,7 +1461,7 @@ re-baked by the code it checks (G-04).
   `waitUntilCompleted`, one serial encoder, 310 dispatches, ~1,030 purego transitions, one heap
   allocation per token; no per-token buffer creation; `setBuffers` batching already cut binds from
   ~2,600 to ~337 msgSends/token; ICB and unretained references are recorded nulls
-  (`metal/model.go:1423-1419`, `metal.go:732-812`, `metal-verdict.md:171-172`).
+  (`metal/model.go:1422-1419`, `metal.go:732-812`, `metal-verdict.md:171-172`).
 - **Encode-ahead on the production path:** `metalResident.Forward` → `ForwardEmbPipe` → `execLoop`;
   t+1 encoded between `Commit(t)` and `WaitDone(t)`; value-independent (pos/nKeys/`r.x` written at
   commit); only 1 token in 64 (pool drain), the first token after `SetAdapter`, paged models and
