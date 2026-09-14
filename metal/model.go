@@ -391,6 +391,21 @@ func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) 
 	return b, scales, true
 }
 
+// int4DirectBytesOnly is int4DirectBytes without the f16 scale conversion (N-20,
+// audit-metal-2026-09-12.md): a paged MoE stage function calls int4DirectBytes on EVERY page-in of
+// an expert, but the scales are a pure function of the (immutable) checkpoint weights — re-deriving
+// them from a heap f32 copy every stage was ~2.85 GB/token of transient allocation on the 26B (~4 GB
+// on the 35B), on the exact box whose N=128 slot-pressure cliff was memory pressure. Callers on the
+// paged hot path precompute each expert's f16 scales ONCE at build time (buildMoELayer /
+// buildGemma4MoELayer) and use this for the bytes half of every subsequent stage.
+func int4DirectBytesOnly(w *linalg.WeightMat) (q4 []byte, ok bool) {
+	b, _, group, ok := w.Int4()
+	if !ok || group != 32 {
+		return nil, false
+	}
+	return b, true
+}
+
 // parallelF32ToF16 converts src (f32 group scales) to dst (f16 bits) across up to 8 workers. In the
 // gemma4-26b expert-paging path this f32→f16 conversion runs once per expert PER STAGE (~600 stages/
 // token × ~186K scales) and was ~228 ms/token of staging, arithmetic-dominated (alloc ~27 ms, copy

@@ -480,16 +480,27 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		}
 		nGuW, nGuS := len(gw0)+len(uw0), len(gs0)+len(us0)
 		experts := lw.Experts // capture (aliases the model's own weights; kept alive by the Model)
+		// N-20 (audit-metal-2026-09-12.md): f16 scales are a pure function of the (immutable)
+		// checkpoint weights, so derive each expert's gate‖up and down scales ONCE here instead of
+		// re-converting from a heap f32 copy on every page-in — see int4DirectBytesOnly's doc comment.
+		guScaleCache := make([][]uint16, len(experts))
+		dScaleCache := make([][]uint16, len(experts))
+		for e := range experts {
+			_, gs, _ := int4DirectBytes(&experts[e].Gate)
+			_, us, _ := int4DirectBytes(&experts[e].Up)
+			_, ds, _ := int4DirectBytes(&experts[e].Down)
+			guScaleCache[e] = append(append([]uint16(nil), gs...), us...)
+			dScaleCache[e] = ds
+		}
 		stage := func(e int) ([]byte, []uint16, []byte, []uint16) {
-			gw, gs, _ := int4DirectBytes(&experts[e].Gate)
-			uw, us, _ := int4DirectBytes(&experts[e].Up)
-			dw, ds, _ := int4DirectBytes(&experts[e].Down)
+			gw, _ := int4DirectBytesOnly(&experts[e].Gate)
+			uw, _ := int4DirectBytesOnly(&experts[e].Up)
+			dw, _ := int4DirectBytesOnly(&experts[e].Down)
 			// gate|up fused per row-block: the stacked (non-paged) layout is gate rows THEN up rows
 			// per expert (int4Concat(gate,up) order), so a slot must reproduce that concatenation —
 			// gemv_w4a8_moe reads row r < inter as gate, r >= inter as up, off the SAME buffer.
 			guBytes := append(append([]byte(nil), gw...), uw...)
-			guScales := append(append([]uint16(nil), gs...), us...)
-			return guBytes, guScales, dw, ds
+			return guBytes, guScaleCache[e], dw, dScaleCache[e]
 		}
 		ml.pool = newExpertPool(d, mo.slots, nGuW, nGuS, len(dw0), len(ds0), stage)
 		// pread staging: resolve each expert's nibble file offsets within the .giw mmap (pure pointer
@@ -543,13 +554,10 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 					if err := preadRangeIntoU32Buf(fd, sl.dW, 0, sp.dOff, sp.dLen); err != nil {
 						panic(fmt.Sprintf("metal MoE pread down expert %d: %v", ei, err))
 					}
-					_, gs, _ := int4DirectBytes(&experts[ei].Gate) // f16 scales from heap q4s (no mmap fault)
-					_, us, _ := int4DirectBytes(&experts[ei].Up)
-					_, ds, _ := int4DirectBytes(&experts[ei].Down)
-					guS := sl.guS.U16s()
-					copy(guS, gs)
-					copy(guS[len(gs):], us)
-					copy(sl.dS.U16s(), ds)
+					// N-20: scales come from the build-time cache (already gate‖up-concatenated),
+					// not a fresh f32→f16 reconversion — see the byte-copy stage fn above.
+					copy(sl.guS.U16s(), guScaleCache[ei])
+					copy(sl.dS.U16s(), dScaleCache[ei])
 				}
 			}
 		}

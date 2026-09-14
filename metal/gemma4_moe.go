@@ -273,10 +273,23 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		}
 		experts := b.ExpertsGateUp // capture (aliases the model mmap; kept alive by the Model)
 		down := b.ExpertsDown
+		// N-20 (audit-metal-2026-09-12.md): f16 scales are a pure function of the (immutable)
+		// checkpoint weights — derive each expert's once here instead of re-converting from a heap
+		// f32 copy on every page-in (see int4DirectBytesOnly's doc comment).
+		gScaleCache := make([][]uint16, len(experts))
+		dScaleCache := make([][]uint16, len(down))
+		for ei := range experts {
+			_, gs, _ := int4DirectBytes(experts[ei])
+			gScaleCache[ei] = gs
+		}
+		for ei := range down {
+			_, ds, _ := int4DirectBytes(down[ei])
+			dScaleCache[ei] = ds
+		}
 		stage := func(ei int) ([]byte, []uint16, []byte, []uint16) {
-			gw, gs, _ := int4DirectBytes(experts[ei]) // nibble bytes aliased from mmap; no reconstruction/alloc
-			dw, ds, _ := int4DirectBytes(down[ei])
-			return gw, gs, dw, ds
+			gw, _ := int4DirectBytesOnly(experts[ei]) // nibble bytes aliased from mmap; no reconstruction/alloc
+			dw, _ := int4DirectBytesOnly(down[ei])
+			return gw, gScaleCache[ei], dw, dScaleCache[ei]
 		}
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
 		// GOINFER_MOE_WILLNEED=1 issues MADV_WILLNEED over the routed experts' nibble spans before
@@ -336,10 +349,9 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 					if err := preadIntoU32Buf(fd, s.dW, dOff[ei]); err != nil {
 						panic(fmt.Sprintf("metal gemma4 MoE pread down expert %d: %v", ei, err))
 					}
-					_, gs, _ := int4DirectBytes(experts[ei]) // f16 scales from heap q4s (no mmap fault)
-					_, ds, _ := int4DirectBytes(down[ei])
-					copy(s.guS.U16s(), gs)
-					copy(s.dS.U16s(), ds)
+					// N-20: scales come from the build-time cache, not a fresh f32→f16 reconversion.
+					copy(s.guS.U16s(), gScaleCache[ei])
+					copy(s.dS.U16s(), dScaleCache[ei])
 				}
 			}
 		}
