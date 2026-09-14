@@ -1,14 +1,24 @@
 # V-sum split spike — §3.2 fidelity gate (IN PROGRESS)
 
-Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `f9d50cab` before Phase A was
-launched. Gate: `cuda/vsum_split_gate_test.go` (`2ef265d7`). *(The pre-registration still names
+Pre-registration: `vsum-split-fidelity-PREREGISTERED.md`, committed `05a67819` before Phase A was
+launched. Gate: `cuda/vsum_split_gate_test.go` (`c86f1e3d`). *(The pre-registration still names
 `docs/task-prefill-gap.md`, which was archived to `docs/completed/task-prefill-gap.md` while this
 gate ran — left unedited on purpose, since a pre-registration that changes after results exist
 stops being one.)*
 
-**Which build was measured.** This work was rebased onto origin/main mid-run, rewriting every hash
-cited here; the ones above are the rebased hashes. The scoring binary for both cells was built
-BEFORE the rebase, from the commit now published as `cc90c18f` but then at `13c75842` (preserved
+**The one edit made to the pre-registration after results existed**, recorded so it is not
+discovered: its citation of the teacher-forced decode call, `cuda/prefill_gate_ref_test.go:272`, was
+changed to `:284`. Nothing it registers moved — no arm, criterion, cell, band or prediction. The
+line moved: 272 was correct when the pre-registration was written, and the prompt-source fix
+committed right after it inserted 12 lines above that call. When the citation lint first indexed the
+line it keyed the new row to whatever sat at 272 by then (`SetFastPrefillForTest`), so the lint was
+GREEN on a citation pointing at the wrong code. Line numbers are the lint's to maintain in this repo,
+and a green-but-wrong citation in the document meant to be the most trustworthy one is worse than an
+edit to it that says what it is.
+
+**Which build was measured.** This work was rebased onto origin/main mid-run (twice), rewriting every hash
+cited here; the ones above are the current ones. The scoring binary for both cells was built
+BEFORE the rebase, from the commit that is now `b288141d` but was then `13c75842` (preserved
 locally as `backup/pre-rebase-20260913`). Between that build and main: the CUDA kernel sources and
 PTX are byte-identical, and the split-KV / V-sum Go code differs only in one comment path — but the
 rebase brought 169 Go-file changes elsewhere, including `cuda/resident.go`, `cuda/backend.go` and
@@ -124,7 +134,7 @@ under the amended rule in a separate, logged run; its registered verdict (above)
 
 ## S re-scored under the amended rule — PASSES (confirmation cell)
 
-Separate process, binary built from the tree at the amendment commit (`5677f44e` after rebase), log
+Separate process, binary built from the tree at the amendment commit (`bf78feda` after rebase), log
 `goinfer-logs/vsum-fidelity-phaseB-S-amended-20260913-124204.log`, 6m17s.
 
 **Every per-prompt figure reproduced exactly** against the first run — agreement, hard flips and KL to

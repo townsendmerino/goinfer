@@ -23,7 +23,7 @@ argmax flips on nothing. Its 85.4% top-1 number is not evidence and is not carri
 the CPU backend's own forward with f32 activations and `GOINFER_CPU_FAST_ATTENTION=0` (the exact
 f64-accumulating attention). Reference rows are the prompt-final logits plus 64 teacher-forced
 continuation steps — and that continuation already runs the resident **decode** path one token at a
-time (`rf.Forward(...)`, `cuda/prefill_gate_ref_test.go:272`), which is exactly where this change
+time (`rf.Forward(...)`, `cuda/prefill_gate_ref_test.go:284`), which is exactly where this change
 lives. Phase B is therefore an arm swap, not a new harness.
 
 ## Arms
