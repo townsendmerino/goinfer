@@ -676,6 +676,10 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		// page needed the key to load, and there was nowhere to enter the key without the page.
 		// auth stays on the two routes below, which actually act (list a repo, pull a model).
 		mux.HandleFunc("GET /{$}", srv.handleWebUI)
+		// The page's own CSS and JS (task-web-ui-2026-09.md §6.1). Unauthenticated for the same
+		// V-02 reason as the page: it cannot load, and so the key cannot be entered, without them.
+		// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.
+		mux.HandleFunc("GET /ui/{file}", srv.handleWebAsset)
 		// sameOrigin (V-20, docs/review-2026-09-04.md): on the key-free loopback default,
 		// auth() alone is a no-op, and these two routes act — pull triggers a caller-named
 		// multi-gigabyte download. See sameOrigin's own doc comment in webui.go.

@@ -5,8 +5,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -58,13 +60,38 @@ func TestWebUI_rejectsBadRepo(t *testing.T) {
 // A blanket "no http(s):// substring anywhere" check would have banned that link too, which is
 // a different property than the one this test is for.
 func TestWebUI_pageIsSelfContained(t *testing.T) {
-	page := string(webUIPage)
-	if len(page) == 0 {
-		t.Fatal("embedded page is empty")
+	// EVERY EMBEDDED FILE, not just index.html. The page is split across webui/ (§6.1 of
+	// docs/tasks/task-web-ui-2026-09.md); a check that still read only index.html would pass while
+	// a CDN import sat in ui/app.js — narrowing silently exactly when the page grew.
+	var all strings.Builder
+	nFiles := 0
+	if err := fs.WalkDir(webUIFS, "webui", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := webUIFS.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		nFiles++
+		all.WriteString("\n/* ==== " + p + " ==== */\n")
+		all.Write(b)
+		return nil
+	}); err != nil {
+		t.Fatalf("walk embedded web UI: %v", err)
 	}
+	if nFiles < 3 {
+		t.Fatalf("embedded web UI has %d file(s), want index.html + ui/app.css + ui/app.js at least", nFiles)
+	}
+	page := all.String()
+	if len(webUIPage) == 0 {
+		t.Fatal("embedded index.html is empty")
+	}
+	// A LOCAL stylesheet link (href="ui/...") is now expected; an external one is still banned.
 	for _, bad := range []string{
-		"<script src=\"http", "<script src='http",
-		"<link rel=\"stylesheet\" href", "//cdn", "integrity=",
+		"<script src=\"http", "<script src='http", "<script src=\"//", "<script src='//",
+		"<link rel=\"stylesheet\" href=\"http", "<link rel=\"stylesheet\" href=\"//",
+		"@import", "//cdn", "integrity=",
 	} {
 		if strings.Contains(page, bad) {
 			t.Errorf("embedded page references %q — it must be fully self-contained (no external assets)", bad)
@@ -84,6 +111,18 @@ func TestWebUI_pageIsSelfContained(t *testing.T) {
 	if !strings.Contains(page, attribution) {
 		t.Errorf("embedded page's AmbientCSS attribution comment is missing: want %q", attribution)
 	}
+	// Every asset index.html loads must be embedded and of a type the asset route serves — a
+	// reference to a file that is not there fails in the browser with no build or test error.
+	for _, m := range regexp.MustCompile(`(?:src|href)="(ui/[^"]+)"`).FindAllStringSubmatch(string(webUIPage), -1) {
+		ref := m[1]
+		if _, err := webUIFS.ReadFile("webui/" + ref); err != nil {
+			t.Errorf("index.html references %q, which is not embedded under webui/", ref)
+		}
+		ext := ref[strings.LastIndex(ref, "."):]
+		if _, ok := webUIAssetTypes[ext]; !ok {
+			t.Errorf("index.html references %q, whose type %q the /ui/ route does not serve", ref, ext)
+		}
+	}
 	if n := strings.Count(page, "http://") + strings.Count(page, "https://"); n != 2 {
 		t.Errorf("embedded page has %d http(s):// reference(s), want exactly 2 (the book link, the "+
 			"AmbientCSS attribution comment) — a new one needs the SAME scrutiny those two already "+
@@ -93,6 +132,65 @@ func TestWebUI_pageIsSelfContained(t *testing.T) {
 	for _, want := range []string{"/v1/chat/completions", "/web/models/pull", "<title>goinfer</title>"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("embedded page is missing %q", want)
+		}
+	}
+	for _, want := range []string{`href="ui/app.css"`, `src="ui/app.js"`} {
+		if !strings.Contains(string(webUIPage), want) {
+			t.Errorf("index.html no longer loads %s — the page would render unstyled or inert", want)
+		}
+	}
+}
+
+// TestWebUI_assetRoute drives handleWebAsset through a real ServeMux using the exact pattern main.go
+// registers, so path cleaning and {file} matching are the real ones. The page is served from the
+// API's own origin: the property is that ONLY allow-listed embedded assets come back, with an
+// explicit type and nosniff, and everything else is a 404 — never a sniffed or listed file.
+func TestWebUI_assetRoute(t *testing.T) {
+	s := &server{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ui/{file}", s.handleWebAsset)
+
+	for _, c := range []struct{ file, ctype string }{
+		{"app.css", "text/css; charset=utf-8"},
+		{"app.js", "text/javascript; charset=utf-8"},
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ui/"+c.file, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("/ui/%s: status %d, want 200", c.file, w.Code)
+			continue
+		}
+		if got := w.Header().Get("Content-Type"); got != c.ctype {
+			t.Errorf("/ui/%s: Content-Type %q, want %q", c.file, got, c.ctype)
+		}
+		if w.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("/ui/%s: missing X-Content-Type-Options: nosniff", c.file)
+		}
+		want, _ := webUIFS.ReadFile("webui/ui/" + c.file)
+		if w.Body.String() != string(want) || len(want) == 0 {
+			t.Errorf("/ui/%s: body is not the embedded file (%d bytes served, %d embedded)", c.file, w.Body.Len(), len(want))
+		}
+	}
+
+	// Refused paths. Traversal is checked by what comes BACK, not by status alone: ServeMux cleans
+	// "/ui/../x" into a redirect, and the property is that no Go source or index.html is served.
+	for _, p := range []string{
+		"/ui/missing.js",    // not embedded
+		"/ui/app.txt",       // type not allow-listed
+		"/ui/.hidden.js",    // dotfile
+		"/ui/",              // directory: no listing
+		"/ui/../webui.go",   // traversal out of ui/
+		"/ui/..%2fwebui.go", // encoded traversal
+		"/ui/%2e%2e%2findex.html",
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, p, nil))
+		body := w.Body.String()
+		if w.Code == http.StatusOK {
+			t.Errorf("%s: status 200, want it refused", p)
+		}
+		if strings.Contains(body, "package serveapp") || strings.Contains(body, "<title>goinfer</title>") {
+			t.Errorf("%s: served a file outside the asset allow-list (status %d)", p, w.Code)
 		}
 	}
 }
@@ -149,8 +247,8 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	var rootAuthed, listAuthed, pullAuthed bool
-	var rootFound, listFound, pullFound bool
+	var rootAuthed, listAuthed, pullAuthed, assetAuthed bool
+	var rootFound, listFound, pullFound, assetFound bool
 	ast.Inspect(af, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -186,6 +284,9 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 		case `"GET /{$}"`:
 			rootFound = true
 			rootAuthed = wrapsInAuth(call.Args[1])
+		case `"GET /ui/{file}"`:
+			assetFound = true
+			assetAuthed = wrapsInAuth(call.Args[1])
 		case `"POST /web/models/list"`:
 			listFound = true
 			listAuthed = wrapsInAuth(call.Args[1])
@@ -195,9 +296,14 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 		}
 		return true
 	})
-	if !rootFound || !listFound || !pullFound {
-		t.Fatalf("route(s) not found (root=%v list=%v pull=%v) — this guard is watching nothing",
-			rootFound, listFound, pullFound)
+	if !rootFound || !listFound || !pullFound || !assetFound {
+		t.Fatalf("route(s) not found (root=%v list=%v pull=%v asset=%v) — this guard is watching nothing",
+			rootFound, listFound, pullFound, assetFound)
+	}
+	if assetAuthed {
+		t.Error("GET /ui/{file} is wrapped in auth(...) — the page's CSS and JS are plain subresource " +
+			"loads that send no Authorization header, so with -api-key set the page would load " +
+			"unstyled and inert, and the key field would never work (V-02)")
 	}
 	if rootAuthed {
 		t.Error("GET /{$} is wrapped in auth(...) — a browser's plain navigation sends no " +
@@ -211,6 +317,68 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 	if !pullAuthed {
 		t.Error("POST /web/models/pull lost its auth(...) wrapping — this route starts a " +
 			"caller-named multi-GB download and must stay behind the API key")
+	}
+}
+
+// TestWebUI_pageRoutesExistOnlyUnderWebFlag pins that the page and its assets are registered INSIDE
+// main.go's `if cfg.web { ... }` block. The page and /ui/ assets are harmless on their own, but
+// "off unless -web" is the documented contract for the whole UI surface, and an asset route that
+// drifted out of the block would serve UI files from every server. Found by AST, so it follows the
+// code rather than a line number.
+func TestWebUI_pageRoutesExistOnlyUnderWebFlag(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	inWeb := map[string]bool{}
+	anywhere := map[string]int{}
+	routeOf := func(n ast.Node) (string, bool) {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return "", false
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "HandleFunc" || len(call.Args) != 2 {
+			return "", false
+		}
+		lit, ok := call.Args[0].(*ast.BasicLit)
+		if !ok {
+			return "", false
+		}
+		return lit.Value, true
+	}
+	ast.Inspect(af, func(n ast.Node) bool {
+		if r, ok := routeOf(n); ok {
+			anywhere[r]++
+		}
+		ifs, ok := n.(*ast.IfStmt)
+		if !ok {
+			return true
+		}
+		sel, ok := ifs.Cond.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "web" {
+			return true
+		}
+		if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "cfg" {
+			return true
+		}
+		ast.Inspect(ifs.Body, func(m ast.Node) bool {
+			if r, ok := routeOf(m); ok {
+				inWeb[r] = true
+			}
+			return true
+		})
+		return true
+	})
+	for _, r := range []string{`"GET /{$}"`, `"GET /ui/{file}"`} {
+		if anywhere[r] == 0 {
+			t.Fatalf("route %s not registered anywhere — this guard is watching nothing", r)
+		}
+		if !inWeb[r] || anywhere[r] != 1 {
+			t.Errorf("route %s must be registered exactly once, inside `if cfg.web { ... }` "+
+				"(inside=%v, registrations=%d) — the UI surface is off unless -web", r, inWeb[r], anywhere[r])
+		}
 	}
 }
 

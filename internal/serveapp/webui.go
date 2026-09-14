@@ -2,11 +2,14 @@ package serveapp
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,8 +18,9 @@ import (
 
 // The local web UI (docs/completed/task-model-pull.md §4, option B).
 //
-// It rides the server that already exists: the page is a single embedded HTML file with no
-// external stylesheet, font or script, and it talks to the SAME /v1/models and
+// It rides the server that already exists: the page is a small set of embedded files — index.html
+// plus its stylesheet and script under webui/ui/ — with no external stylesheet, font or script,
+// and it talks to the SAME /v1/models and
 // /v1/chat/completions routes any other client uses. That is the point — it adds no second
 // inference path to keep in sync, and it cannot drift from the API, because it IS a client
 // of it. Being asset-free also keeps the offline story intact: a CDN reference would make
@@ -32,8 +36,35 @@ import (
 // startup rule that a non-loopback bind must carry an -api-key. Loopback stays key-free so
 // the ordinary single-user desktop case has no auth friction.
 
-//go:embed webui/index.html
-var webUIPage []byte
+// ONE DIRECTORY, NOT ONE FILE (docs/tasks/task-web-ui-2026-09.md §6.1). The page was a single
+// 1,828-line HTML file; the web-UI plan roughly doubles it, so it is split into index.html plus
+// webui/ui/app.css and webui/ui/app.js. What is deliberately NOT given up: still no build step, no
+// bundler, no toolchain — plain files, embedded verbatim, one binary, fully offline. The assets
+// live under ui/ and are referenced relatively ("ui/app.js"), so the same page also loads from
+// file:// with no server, which is how a headless browser can check it on a box whose sandbox
+// blocks loopback HTTP.
+//
+//go:embed webui
+var webUIFS embed.FS
+
+// webUIPage is index.html, read once. A missing file is a build defect, not a runtime condition,
+// so it panics at init rather than serving an empty page.
+var webUIPage = func() []byte {
+	b, err := webUIFS.ReadFile("webui/index.html")
+	if err != nil {
+		panic("serveapp: embedded web UI is missing index.html: " + err.Error())
+	}
+	return b
+}()
+
+// webUIAssetTypes is the complete set of asset kinds the page may load, with the Content-Type each
+// is served as. An allow-list, not mime.TypeByExtension: the page is served from the API's own
+// origin, so an embedded file of an unexpected type must 404 rather than be sniffed into
+// something executable. Add a type here deliberately, with the file that needs it.
+var webUIAssetTypes = map[string]string{
+	".css": "text/css; charset=utf-8",
+	".js":  "text/javascript; charset=utf-8",
+}
 
 // pullState serialises pulls. One at a time, deliberately: the endpoint starts a
 // multi-gigabyte transfer, so without this a handful of clicks (or requests) queue unbounded
@@ -92,6 +123,35 @@ func (s *server) handleWebUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(webUIPage)
+}
+
+// handleWebAsset serves the page's own stylesheet and script from webui/ui/. UNAUTHENTICATED, for
+// the same reason as the page (V-02, see main.go): a browser's plain subresource load sends no
+// Authorization header, and without these files the page — the only place the key can be typed —
+// cannot work at all. They are static, embedded at build time, and hold no secrets.
+//
+// Only a single path segment under ui/ with an allow-listed extension is served; anything else,
+// including a traversal attempt or a directory, is a plain 404. No directory listing, ever.
+func (s *server) handleWebAsset(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("file")
+	ctype, ok := webUIAssetTypes[path.Ext(name)]
+	if !ok || name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") || !fs.ValidPath(name) {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := webUIFS.ReadFile("webui/ui/" + name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// no-store, matching the page: the UI and the binary are one version, and a cached app.js from
+	// the previous build talking to a newer server is exactly the drift being a client of the API
+	// is supposed to rule out.
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(b)
 }
 
 type webPullReq struct {
