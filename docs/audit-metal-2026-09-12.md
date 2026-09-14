@@ -574,6 +574,18 @@ re-baked by the code it checks (G-04).
   ("useResidencySet:")` + one send; `gemma4_moe.go`/`moe.go` call it on the phase-2 encoder only and
   drop the queue attach. Ships with M-11.
 - **Confidence:** confirmed. **Prior:** new at the seam; the cost is goinfer's own record.
+- **PARTIALLY CLOSED 2026-09-13 — aikit binding shipped, goinfer wiring blocked on a release.**
+  Added `Encoder.UseResidencySet(rs)` to aikit (`5065f24`) — exactly the fix text's shape, one
+  `objc.RegisterName("useResidencySet:")` + one send on the encoder. New test
+  (`TestEncoder_useResidencySet`) confirms a dispatch under the per-encoder attach completes
+  correctly AND that a sibling encoder on the SAME queue without it is unaffected — the scoping is
+  real, not silently promoted queue-wide. Not wired into `gemma4_moe.go`/`moe.go`'s phase-2
+  encoders: goinfer's `metal/go.mod` pins `aikit/gpu v0.32.0` from the module proxy with no
+  `replace` (confirmed by attempting the wiring directly — `e2.UseResidencySet` doesn't compile
+  against the pinned version), and this backend submodule has never carried a tag (same status as
+  C-05/C-06). The wiring itself is now fully designed (drop `r.q.AddResidencySet(rs)`, keep
+  `r.residency = rs`, call `e2.UseResidencySet(r.residency)` on phase 2 only, guarded on
+  `r.residency` being set) and is a goinfer-only change once a `gpu/vX.Y.Z` tag lands.
 
 ### D. Cross-repo and unassessed
 
@@ -1170,10 +1182,12 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    named) is not done.
 6. **M-08** — **CLOSED 2026-09-13** (`a30f2cd3`), kept fused rather than split (Metal-specific
    tradeoff, see its own closure note). Still no Mac adapter-decode measurement recorded.
-7. **Paged:** M-14 (aikit selector, one release) → **M-13 CLOSED 2026-09-13** (auto-sized slots
-   shipped; the M35/M26/G20 rows re-run against the pager this item called for has NOT been run —
-   that needs the actual checkpoints, which this pass did not have) → M-11 + G-05 (the shared-event
-   re-run on the paged shape) → M-12. **M-14, M-11, M-12 unchanged — still fully open.**
+7. **Paged:** **M-14 PARTIALLY CLOSED 2026-09-13** (aikit selector shipped, `5065f24`; goinfer
+   wiring blocked on a `gpu/vX.Y.Z` release goinfer's go.mod can pin — the wiring itself is fully
+   designed, see M-14's own entry) → **M-13 CLOSED 2026-09-13** (auto-sized slots shipped; the
+   M35/M26/G20 rows re-run against the pager this item called for has NOT been run — that needs the
+   actual checkpoints, which this pass did not have) → M-11 + G-05 (the shared-event re-run on the
+   paged shape) → M-12. **M-11, M-12 unchanged — still fully open.**
 8. **Probes:** both CLOSED 2026-09-13, NEGATIVE (see their own entries above). M-09 — the staged
    K-read probe measured 2.3x SLOWER than shipped, not faster; not ported. M-10 — built and A/B'd
    on the depth bench, slower at every depth; reverted.
