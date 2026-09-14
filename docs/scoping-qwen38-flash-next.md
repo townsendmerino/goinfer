@@ -10,7 +10,8 @@
 > Qwen Team, 2026-08-26) — rather than carried forward, per the claim-discipline rule in
 > `docs/parity-coverage-policy.md` ("a claim that arrives with its own corroborating detail has
 > not been corroborated"). One thing fable said did **not** reconcile even after the primary
-> source; flagged in place below, not smoothed over.
+> source; flagged in place below, not smoothed over. (Resolved 2026-09-13 — both readings were
+> right, two different HF repos; see the resolution note under "What shipped".)
 >
 > **Reaffirmed 2026-09-12** by `docs/audit-2026-09-10.md`'s **L-02**: llama.cpp PR #27742 merged
 > 2026-08-27, and its notes give the concrete QSA indexer shapes a synthetic-tiny bring-up needs.
@@ -48,6 +49,17 @@ settle this either: its only FP8 mentions are an *internal* optimization — sto
 Efficiency") — which is unrelated to what dtype the *released weights* ship in. Don't infer one
 from the other. Pin the actual dtype from the HF repo's file listing / `config.json` `torch_dtype`
 before it feeds any download or hardware estimate.
+
+**Resolved 2026-09-13 (fable, web check): both readings were right — they were looking at
+different repos.** Alibaba publishes the main repo in BF16
+([Qwen/Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next)) AND a separate
+official FP8 repo ([Qwen/Qwen3.8-Flash-Next-FP8](https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8));
+the 172.8 GiB figure was the FP8 repo's size, this doc's BF16 reading was the main repo's. The
+original flag stands as written — the lesson (don't carry a secondhand size into a hardware
+estimate) holds even though the number turned out to have a home. What remains open is only the
+narrower question already posed under "What's actually needed": if the FP8 variant ever matters,
+check its scale encoding (`config.json` `scale_fmt`) against what `decoder/fp8.go` reads —
+f32-blockwise works today, `ue8m0` does not (the G8 / DeepSeek V4-Flash half-lift).
 
 ## Why not this checkpoint
 
@@ -217,7 +229,21 @@ harder than the license:
   forward pass either. If Alibaba's reference code hasn't landed anywhere loadable, there's no
   oracle to validate a synthetic-tiny fixture against yet — check this before scoping the
   bring-up further, it may be the actual gate, license aside.
-- **Confirm the checkpoint dtype** (BF16 vs FP8) from the HF repo's actual file listing — it
+  **Status 2026-09-13 (fable, web check): the gate has loosened, though not in the house-standard
+  form.** A `transformers` `modeling_*.py` is still unconfirmed — re-check at pickup — but two
+  independent runnable implementations now exist: llama.cpp merged support 2026-08-27 (PR #27742,
+  already cited by audit L-02 for the QSA indexer shapes) and SGLang shipped day-0 support
+  ([lmsys.org post](https://www.lmsys.org/blog/2026-08-26-qwen-flash-next/)). Notably,
+  `docs/task-llamacpp-inproc.md`'s I2 workload (full-logit fidelity against llama.cpp on the same
+  GGUF, in-process) would make llama.cpp usable as the reference forward for a tiny fixture
+  without waiting for transformers — but every existing golden in this repo is pinned against
+  HF/PyTorch, so adopting llama.cpp as a parity oracle for a family would be a deliberate,
+  recorded deviation from `docs/parity-coverage-policy.md`'s standard, decided at pickup, not
+  assumed from this note.
+- **Confirm the checkpoint dtype — RESOLVED 2026-09-13** (see the resolution note under "What
+  shipped"): BF16 main repo plus a separate official FP8 repo; only the FP8 variant's scale
+  format remains to check, and only if that variant ever matters. Original text kept below for
+  the record. ~~Confirm the checkpoint dtype~~ (BF16 vs FP8) from the HF repo's actual file listing — it
   changes download size ~2× and, if it's genuinely FP8, the gate is narrower than a flat "no fp8
   support" now: `decoder/fp8.go` reads e4m3 weights with blockwise **f32** scales from
   `*.weight_scale_inv` (shipped for Q3), so the real question is the SCALE format, not the
@@ -255,8 +281,14 @@ post-freeze family: visible, reasoned, not claimed. Pick up when either holds:
 2. Someone decides the architecture bet is worth making ahead of a real Qwen4 release, accepting
    synthetic-tiny-only validation (no real-checkpoint T3) until one exists.
 
-Either way, gate zero is unchanged: re-read the LICENSE, confirm an HF reference exists, resolve
-the dtype discrepancy — in that order, before any code.
+Either way, gate zero is unchanged in spirit and now shorter in practice: re-read the LICENSE,
+confirm the reference-forward choice (transformers if it has landed, else the recorded-deviation
+llama.cpp/I2 route) — the dtype item is resolved (2026-09-13), leaving only the FP8 variant's
+scale-format check if that variant is ever pulled.
+
+**Family status check, 2026-09-13:** no smaller carrier of this architecture has shipped —
+Flash-Next remains the family's only member, so trigger 1 has not fired. Qwen3.8-27B (supported,
+experimental) stays the closest relative, GDN lineage only.
 
 **Cross-reference:** added under `docs/next-models.md`'s "Watching" section pointing here, so
 this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
@@ -277,3 +309,11 @@ this doesn't sit as an orphaned scoping doc nobody's roadmap points to.
   `docs/tasks/task-moe-streaming.md`, `docs/spec/README.md`, `docs/completed/task-parity-coverage.md`,
   `docs/parity-coverage-policy.md`, `docs/prompts/dspark-license-issue.md`,
   `docs/completed/scoping-lfm2.md`, `docs/next-models.md`
+
+Second pass, 2026-09-13 (fable — the dtype resolution, oracle-status and family-status notes above):
+
+- [Qwen/Qwen3.8-Flash-Next-FP8 on Hugging Face](https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8)
+  (the missing half of the dtype story)
+- [SGLang day-0 support post](https://www.lmsys.org/blog/2026-08-26-qwen-flash-next/)
+- Qwen release timeline + third-party lineup surveys (no smaller family member as of this date)
+- `docs/task-llamacpp-inproc.md` (the I2 fidelity workload as a candidate oracle route)
