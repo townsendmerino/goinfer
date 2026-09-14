@@ -1112,6 +1112,13 @@ re-baked by the code it checks (G-04).
   `LastGPUTimes` (tests only); µs.
 - N-32 `metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
   fast-math OFF library-wide for one exact divide; `precise::divide` per op would free the rest.
+  **PARTIALLY CLOSED 2026-09-13** (aikit `3214193`): fixed the stale comment — `SGBigBlock` is 32,
+  and `GEMMF32Plan`'s own comment two lines below already correctly said "32×32 tile", so the fixed
+  comment was contradicting its neighbor as well as the code. Comment-only; `TestMetal_gemmF32SG` /
+  `TestMetal_vitGEMMs` / `TestMetal_gemmTiledMatchesUntiled` still pass. The fast-math half (a
+  library-wide compile flag affecting every ViT kernel's numerics, not a comment) is left open —
+  it needs its own measurement pass and, since it lives in aikit, a release decision this session
+  is not making unilaterally (same reasoning as M-14/N-31).
 - N-33 `metal/expertpool.go:49-54` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
   **FIXED 2026-09-13** — `copyBytesToU32Buf` now calls `gpu.Upload` (a signature-compatible drop-in:
   `metal.Buffer` is a type alias for `gpu.Buffer`), panicking on its error since every call site's
