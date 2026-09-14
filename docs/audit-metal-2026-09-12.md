@@ -52,7 +52,7 @@ staging) against Ollama's ~1.0 ms/token on the same weights.** That is M-03, and
 single lever on the Mac.
 
 **Below the 512-token floor — the common chat turn — the fast path never runs at all, and the floor
-is set on a premise the repo's own gate record contradicts.** `metal/backend.go:329-333` says "K=256
+is set on a premise the repo's own gate record contradicts.** `metal/backend.go:418-333` says "K=256
 is expected to fail §3.2"; `prefill-gate-l1-ref-b-2026-09-09.md:23` records K=256 **PASS** as a
 decision cell, and the fused-kernel gate passed it again. Every prompt in [8, 512) runs the decode
 kernel per token at 74–77 tok/s where the batched path's own record is 272 tok/s at P=256 (M-02).
@@ -105,7 +105,7 @@ re-baked by the code it checks (G-04).
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
 - **Where:** `decoder/model.go:1111` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
-  `decoder/residency.go:100-109`; `metal/backend.go:277-560` (the complete `metalResident` method
+  `decoder/residency.go:100-109`; `metal/backend.go:366-560` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1378-1384` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1262-1281` (`forwardHiddenNoHead` — the
   trunk-only encode already exists, used only by `HiddenLast`); `metal/model.go:1304`
@@ -148,7 +148,7 @@ re-baked by the code it checks (G-04).
   full `go test ./metal/...` and `-tags goinfer_testhooks` both green.
 
 #### M-02 · The 512-token floor keeps every prompt under 512 tokens sequential, on a stated reason the repo's own gate record contradicts
-- **Where:** `metal/backend.go:329-333` (`const metalFastPrefillFloor = 512` — "K=256 is expected to
+- **Where:** `metal/backend.go:418-333` (`const metalFastPrefillFloor = 512` — "K=256 is expected to
   fail §3.2"), `:426-431` (the decline), `:340,358` (the same file: "gate passed 2026-09-09 (S
   model, K=256/512/1024)"); `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:23` ("S K=256 …
   94.2% / 4 / 0.0328 vs exact 93.0% / 4 / 0.0347 **PASS**"), `prefill-l2-metal-fused-attn-2026-09-09.md:138`
@@ -243,7 +243,7 @@ re-baked by the code it checks (G-04).
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
 - **Where:** `metal/prefill.go:651-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:662-682`; `metal/model.go:681-682` (paged/g4moe/DeltaNet → `prefillOK=false`);
-  `metal/backend.go:435-445` (`PrefillPath` reports "batched f16-MMA" for it);
+  `metal/backend.go:524-445` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
 - **Mechanism and bound (counted):** non-paged: per row per MoE layer (5 + 3k [+3–5 shared])
   dispatches and a full read of the k routed experts — bytes ≈ M × L × k·3·H·I/2: Qwen1.5-MoE-class
@@ -515,7 +515,7 @@ re-baked by the code it checks (G-04).
 
 #### M-13 · The Metal expert pager engages only with an explicit `--moe-cache-slots N`; the default declines the 26B/35B/gpt-oss-20b to the CPU-staged path, and the peer-matrix row that "parked" them on the Mac measured that fallback
 - **Where:** `metal/backend.go:154-159` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
-  `metal/moe.go:425-434`, `metal/backend.go:224-255` (guard prices the *unpaged* set when slots are
+  `metal/moe.go:425-434`, `metal/backend.go:304-255` (guard prices the *unpaged* set when slots are
   unset, declines to CPU; the message names `GOINFER_NO_RESIDENT_MEM_GUARD` but not
   `--moe-cache-slots`); `internal/serveapp/main.go:483` (`--moe-cache-experts` … "CUDA only"),
   `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1686-1696` ("falls back
@@ -533,6 +533,34 @@ re-baked by the code it checks (G-04).
   M35/M26/G20 Mac cells measure the pager.
 - **Confidence:** confirmed. **Prior:** audit-2026-09-10 M-02 (guard prices the paged set only when
   slots are given); task-gpu-paths Phase 2 delivered the flag, not the default.
+- **CLOSED 2026-09-13, shipped as scoped.** `metalMoESlotsRequest` now calls `autoMoESlots` when
+  `MoECacheExperts()` is set and no explicit `--moe-cache-slots` was given, deriving N =
+  clamp((0.7·RAM − needFixed) / perSlotBytes, topK, 64) — `needFixed` and `perSlotBytes` both read
+  from the SAME byte accessors `residentNeedBytes` already calls (`ResidentDenseWeightBytes`,
+  `ResidentHostCopyBytes`, `residentKVBytes`, and the marginal
+  `ResidentWeightBytesPaged(2)-ResidentWeightBytesPaged(1)` for one slot's bytes), not re-derived
+  by hand. `moeTopK` supplies the floor for both MoE shapes this backend admits (Gemma-4 via
+  `Config.TopKExperts`, generic via `MoEResidentParams`). Since `metalMoESlotsRequest` is the one
+  chokepoint both `metal/moe.go` and `metal/gemma4_moe.go` already read at build time (and
+  `residentNeedBytes` reads via `metalMoESlotsFromEnv`), fixing it here reaches the memory guard,
+  the real paging engagement, and the CLI's own advertised default all at once. Also named
+  `--moe-cache-slots`/`--moe-cache-experts` in the decline message for an MoE model that doesn't
+  fit, and corrected `--moe-cache-experts`'s "CUDA only" / `--moe-cache-slots`'s "Metal: every
+  expert resident, unpaged" CLI help text (`internal/serveapp/main.go`) — plus, found in the same
+  spot, a stale "DEFAULT ON above 512 tokens" that M-02 had already moved to 256.
+  <br>The pure formula (`autoMoESlotsFor`) is split out for direct unit testing against a
+  deliberately small `ram` value, mirroring `fitsResidentBudget`'s own established pattern — no
+  real machine holds less RAM than a real MoE model's dense term, so this is the only way to
+  exercise the tight-budget and clamp-to-topK branches at all. On `testdata/mixtral-tiny` (this
+  Mac's real RAM), the auto-derived request is 64 (≥ nE=8), which correctly builds UNPAGED — a
+  tiny model has no business paging, and this is the expected, not a failing, result; forcing real
+  paging engagement through auto-sizing needs a model whose dense term is a meaningful fraction of
+  real RAM, which no committed fixture is. New tests: `TestAutoMoESlotsFor` (5 cases: ceiling,
+  small-RAM sizing, clamp-to-topK, fixed-part-alone-doesn't-fit, degenerate perSlot),
+  `TestMoeTopK_realFixtures`, `TestMetalMoESlotsRequest_autoOnlyWithCacheExperts` (confirmed red
+  without the fix: `metalMoESlotsRequest` returned `""` with `MoECacheExperts` set). Verified:
+  `go test ./metal/` (85 pass), `-tags goinfer_testhooks` (137 pass), `go test
+  ./internal/serveapp/...`, gofmt/vet/staticcheck clean.
 
 #### M-14 · The residency set rides on every command buffer because aikit's binding has `Queue.AddResidencySet` but not `MTLCommandBuffer.useResidencySet:` — a recorded +62 ms/token waiting on one selector (aikit item)
 - **Where:** aikit `residencyset.go:107-109` (only the queue-level attach; `:22-29` lists five
@@ -633,7 +661,7 @@ re-baked by the code it checks (G-04).
   discriminates: fails red (2368 vs 2560 bytes) with the fix reverted, passes with it restored.
 
 #### C-02 · `HiddenLast` (serve `/v1/embeddings`), `Forward(id,pos)` and `ForwardArgmax` on a paged MoE bind the zero-value stacked-expert buffers — C-08's defect on three more entry points
-- **Where:** `metal/backend.go:512-551` (`HiddenLast` → `forwardHiddenNoHead` per position),
+- **Where:** `metal/backend.go:601-551` (`HiddenLast` → `forwardHiddenNoHead` per position),
   `metal/model.go:1262-1271` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
   paging lives only in `Forward`'s dispatch to `forwardLogitsPaged`, `:1241`), `metal/moe.go:289-291`
   ("expGuW/expGuS/expDW/expDS stay zero-value when paged"), `:651-659` (bound unconditionally);
@@ -749,7 +777,7 @@ re-baked by the code it checks (G-04).
 
 #### G-01 · `TestMoE_declinesPrefill` has been red on every Metal box since the 512 floor landed; three commits carry it as "pre-existing, unrelated"
 - **Where:** `metal/moe_model_test.go:302,321-327` (8 embeddings; sets `GOINFER_METAL_BATCHED_PREFILL=1`
-  only), `metal/backend.go:428-431` (floor check precedes `prefillOK`); log lines 859, 909, 1213.
+  only), `metal/backend.go:517-431` (floor check precedes `prefillOK`); log lines 859, 909, 1213.
 - **Mechanism:** 8 < 512 ⇒ decline ⇒ `Fatalf` before any MoE code runs; the admit-side MoE-vs-dense
   check C-08's fix relies on has not run green since the floor. A `go test ./metal/` that is always
   red trains everyone to ignore it.
@@ -917,7 +945,7 @@ re-baked by the code it checks (G-04).
   is NO-GO (code honours the NO-GO). Addressed at archival (2026-09-13 doc review): the doc is now
   archived with a status block explaining the phrase; the body line itself is left as the frozen
   record.
-- N-08 `metal/backend.go:337-340` ("CURRENTLY OPT-IN … pending Phase B" then "Default ON"), `:426`
+- N-08 `metal/backend.go:426-340` ("CURRENTLY OPT-IN … pending Phase B" then "Default ON"), `:426`
   ("K=256 cell failed"), `:475-480` (`HiddenLast`: "declined by default") — N-44 of the prior audit,
   still present; `:355-356` accepts only `"1"` (N-45). `metal/spec_prefill_regression_test.go:43-51`
   same stale precondition. **FIXED 2026-09-13**: the spliced doc comment rewritten to one accurate
@@ -972,10 +1000,10 @@ re-baked by the code it checks (G-04).
 - N-24 `metal/moe.go:29-37,622` — f32 router weight: 84 MB/token on the 35B (deliberate, ≤0.4 ms).
   `moe_route` on one GPU thread (deliberate, value-independent dispatch; ~10% of a fitting ~5 ms
   MoE token).
-- N-25 `metal/backend.go:512-563` — `HiddenLast` is one synchronous command buffer per position
+- N-25 `metal/backend.go:601-563` — `HiddenLast` is one synchronous command buffer per position
   (≈K × 13–18 ms; ~7–9 s for 512 tokens) where the batched trunk would take ~1.8 s; the stated
   rationale ("declined by default") is stale. Fix is `PrefillLast` minus its last two dispatches.
-- N-26 `metal/backend.go:565-581` — `ForwardN` is a per-token loop allocating 608 KB per row; cold
+- N-26 `metal/backend.go:654-581` — `ForwardN` is a per-token loop allocating 608 KB per row; cold
   (Theta ≈ 1.02 declines speculation, P21) but the interface doc's "K tokens in ONE command
   buffer" is not what Metal does.
 - N-27 `metal/model.go:1304` — pipe path memcpys 608 KB into `logitsHost` before the ack; the
@@ -999,7 +1027,7 @@ re-baked by the code it checks (G-04).
   are host-side and unfenced, so a `CopyDevice` during an in-flight command buffer would race.
 - N-35 `decoder/model.go:1063-1068,1104` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
   Metal the first sub-floor prompt consumes it, so a later real decline (cap, OOM) is silent (N-49).
-- N-36 `metal/backend.go:199-202` — `residentKVBytes` charges KV for DeltaNet layers that allocate none.
+- N-36 `metal/backend.go:279-202` — `residentKVBytes` charges KV for DeltaNet layers that allocate none.
 - N-37 `metal/gemv_w4a8_coal_bench_test.go:29-30` — the GEMV micro-bench shape (512×4096, 1 MB) is
   cache-resident: a "micro-win" here is an issue/latency result, not a bytes result (the production
   down-proj reads 7–14 MB per dispatch from DRAM). `metal/profile_test.go:78` per-kernel µs are
@@ -1142,9 +1170,10 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    named) is not done.
 6. **M-08** — **CLOSED 2026-09-13** (`a30f2cd3`), kept fused rather than split (Metal-specific
    tradeoff, see its own closure note). Still no Mac adapter-decode measurement recorded.
-7. **Paged:** M-14 (aikit selector, one release) → M-13 (auto-sized slots; the M35/M26/G20 rows
-   re-run against the pager) → M-11 + G-05 (the shared-event re-run on the paged shape) → M-12.
-   **Unchanged — still fully open**, along with the rest of this section not marked closed above.
+7. **Paged:** M-14 (aikit selector, one release) → **M-13 CLOSED 2026-09-13** (auto-sized slots
+   shipped; the M35/M26/G20 rows re-run against the pager this item called for has NOT been run —
+   that needs the actual checkpoints, which this pass did not have) → M-11 + G-05 (the shared-event
+   re-run on the paged shape) → M-12. **M-14, M-11, M-12 unchanged — still fully open.**
 8. **Probes:** both CLOSED 2026-09-13, NEGATIVE (see their own entries above). M-09 — the staged
    K-read probe measured 2.3x SLOWER than shipped, not faster; not ported. M-10 — built and A/B'd
    on the depth bench, slower at every depth; reverted.

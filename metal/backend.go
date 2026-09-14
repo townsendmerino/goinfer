@@ -155,7 +155,87 @@ func metalMoESlotsRequest(m *decoder.Model) string {
 	if n := m.MoECacheSlotsRequest(); n > 0 {
 		return strconv.Itoa(n)
 	}
+	// M-13 (audit-metal-2026-09-12.md): --moe-cache-experts alone (no explicit --moe-cache-slots)
+	// used to read as "0 ⇒ unpaged" here, so a user following the CLI's own advice for a
+	// bigger-than-RAM MoE (26B/35B/gpt-oss-20b) got every-expert-resident anyway, which the memory
+	// guard then declined to the CPU-staged path the peer-matrix row actually measured. CUDA
+	// already auto-caps to free VRAM in this exact shape (MoECacheExperts set, slots unset); this
+	// is Metal's twin.
+	if m.MoECacheExperts() {
+		return strconv.Itoa(autoMoESlots(m))
+	}
 	return os.Getenv("GOINFER_METAL_MOE_SLOTS")
+}
+
+// moeTopK is this model's own top-k routed-experts-per-token count — the floor autoMoESlots must
+// clamp above, since fewer slots than top-k cannot hold one token's own routed set simultaneously
+// (the same floor buildResident enforces on an explicit --moe-cache-slots, gated by
+// TestMoESlotsViaOptions_belowTopKRefusesWithNumbers). Gemma-4's MoE and the generic MoE families
+// store their top-k under different Config fields (registry.go's own per-architecture TopK:
+// assignments), so this branches on which shape the model actually is rather than guessing one
+// field name works for both.
+func moeTopK(m *decoder.Model) int {
+	if m.HasGemma4MoEResident() {
+		if k := m.Config().TopKExperts; k > 0 {
+			return k
+		}
+		return 1
+	}
+	if _, k, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok && k > 0 {
+		return k
+	}
+	return 1
+}
+
+// autoMoESlotsMax is the per-layer expert-slot ceiling this auto-sizer will request even when
+// memory allows more — task-metal-expert-streaming-at-scale.md's own measurement run settled on
+// N=64 as the recommended default; raise it only if a future measurement moves that number.
+const autoMoESlotsMax = 64
+
+// autoMoESlotsFor is autoMoESlots' pure formula, split out (fitsResidentBudget's own pattern, and
+// residentNeedBytes' own reason for existing) so it can be unit-tested directly against a
+// deliberately small ram value — a real machine holding less RAM than a real MoE model's dense
+// term is not available to test against otherwise.
+//
+// Solves the same inequality residentFitsMemory's guard checks (0.7·RAM ≥ need) for N instead of a
+// pass/fail: need(N) = needFixed + N·perSlot, where needFixed is everything that does NOT scale
+// with the slot count (dense weights doubled by Metal's host-copy-plus-device-buffer footprint,
+// plus KV) and perSlot is one additional expert slot's marginal bytes. Clamped to
+// [topK, autoMoESlotsMax]: below topK a token's own routed set cannot fit simultaneously (the same
+// floor buildResident enforces on an explicit --moe-cache-slots); autoMoESlotsMax is
+// task-metal-expert-streaming-at-scale.md's own measured recommendation. perSlot<=0 or a
+// non-positive remaining budget both fall back to a safe default (autoMoESlotsMax or topK
+// respectively) rather than a fabricated small number — the memory guard downstream still has the
+// final say either way.
+func autoMoESlotsFor(topK int, perSlot, needFixed int64, ram uint64) int {
+	if perSlot <= 0 {
+		return max(topK, autoMoESlotsMax)
+	}
+	budget := int64(float64(ram) * residentMemFraction)
+	remaining := budget - needFixed
+	if remaining <= 0 {
+		return topK // the fixed part alone doesn't fit; buildResident/the guard will refuse either way
+	}
+	n := int(remaining / perSlot)
+	return max(topK, min(n, autoMoESlotsMax))
+}
+
+// autoMoESlots derives a per-layer expert-slot count from live memory for a model that asked to
+// stream MoE experts (MoECacheExperts) but gave no explicit slot count (M-13). perSlotBytes is
+// read from the SAME byte accessor residentNeedBytes already calls, at the marginal cost of one
+// additional slot (ResidentWeightBytesPaged(2)-ResidentWeightBytesPaged(1)) rather than re-derived
+// by hand — a layer's experts are uniform in shape (that accessor's own doc comment), so the
+// marginal slot cost is exact, not approximated, and stays correct if the byte accounting itself
+// ever changes. An unreadable hw.memsize falls back to autoMoESlotsMax (see autoMoESlotsFor).
+func autoMoESlots(m *decoder.Model) int {
+	topK := moeTopK(m)
+	perSlot := m.ResidentWeightBytesPaged(2) - m.ResidentWeightBytesPaged(1)
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if err != nil || ram == 0 {
+		return max(topK, autoMoESlotsMax)
+	}
+	needFixed := m.ResidentDenseWeightBytes() + m.ResidentHostCopyBytes(1) + residentKVBytes(m) // ResidentHostCopyBytes(>0) is dense-only (paged)
+	return autoMoESlotsFor(topK, perSlot, needFixed, ram)
 }
 
 // metalMoESlotsFromEnv is the guard's own reader (residentNeedBytes, below) — it needs an int,
@@ -246,11 +326,20 @@ func residentFitsMemory(m *decoder.Model) bool {
 	}
 	budget := uint64(float64(ram) * residentMemFraction)
 	const gb = 1 << 30
+	// M-13: name the actual escape hatch for an MoE model, not just the guard override — a model
+	// with routed experts that doesn't fit resident may still fit PAGED, and the decline line
+	// used to say nothing about how to reach that path.
+	moeHint := ""
+	if m.HasGemma4MoEResident() {
+		moeHint = " This model routes MoE experts — try --moe-cache-experts (Metal pages them; auto-sizes the slot count from free RAM) or --moe-cache-slots N to pick one yourself."
+	} else if _, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
+		moeHint = " This model routes MoE experts — try --moe-cache-experts (Metal pages them; auto-sizes the slot count from free RAM) or --moe-cache-slots N to pick one yourself."
+	}
 	fmt.Fprintf(os.Stderr, "[metal] declined — weights %.2f GB exceed %.0f%% of %.1f GB RAM "+
 		"(budget %.2f GB). Metal wires the pages it touches, so loading this would page to swap "+
 		"exhaustion rather than run; continuing on the CPU/staged path. Override with "+
-		"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.\n",
-		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb)
+		"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s\n",
+		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, moeHint)
 	return false
 }
 
