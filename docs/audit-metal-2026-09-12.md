@@ -269,6 +269,35 @@ re-baked by the code it checks (G-04).
   itself is a real, multi-file kernel-design project (a new batched-K GEMM shape, not a parameter
   change) and was deliberately left for a dedicated pass rather than attempted under this
   session's time budget.
+- **Pre-implementation probe attempted 2026-09-14, real-measurement half inconclusive on this
+  hardware; arithmetic case holds.** Before committing to the restructuring, built a cheap
+  validation: a telemetry probe (`metal/moe_expert_reuse_probe_test.go`,
+  `expertPool.distinctExperts`) that runs real text through the exact sequential paged-prefill
+  path already in production and reports `stages` (today's actual re-fetches) vs
+  `distinctExperts` (the expert-major floor) vs naive `M·k`. The arithmetic case above — expert-major
+  reads each distinct expert once per prefill regardless of M, a ≈280× reduction in the dominant
+  bandwidth term at this shape's k=4 — used only this repo's own already-measured 84–105 GB/s
+  W4A8 ceiling, no new number, and stands regardless of what follows.
+  <br>The live measurement itself could not be completed on this 16 GB Mac. Loading
+  `qwen15-moe-a27b` (int4, Metal, `MoECacheExperts`) into the auto-sized non-paged case failed on
+  severe swap pressure 7/7 times before M-07's fix; after M-07 shipped (extending row4-skip to
+  every dense/MoE projection, not just Q/K/V/gate/up) the same load succeeded twice — confirming
+  M-07 was the actual blocker for the LOAD step, not anything MoE-paging-specific. But forcing a
+  real slot count (`GOINFER_MOE_REUSE_PROBE_SLOTS=8`, since the auto-sizer now sizes all 60
+  experts resident post-M-07 and no longer pages by default) to actually exercise the paged
+  forward path drove swap to 15.6 GB within under a minute — worse and faster than the pre-M-07
+  failures — and was killed before completing a single layer's stage count. Eight attempts total
+  (7 pre-M-07 + 1 post-M-07-forced-paging) have now failed on this hardware; further retries were
+  judged not worth the risk to a shared machine.
+  <br>This is itself informative: the paged forward path — the exact mechanism this finding's Fix
+  targets — appears to carry real, severe host memory/swap cost beyond what M-07 touches, on top
+  of the already-documented dispatch-count and bandwidth costs. Consistent with, and does not
+  contradict, the finding's own "Deliberate and documented for parity; the bandwidth term ... is
+  not [documented]" framing — if anything it strengthens the case that the restructuring is worth
+  doing. No numeric measurement was obtained; the arithmetic case remains the only quantified
+  justification on record. A real measurement would need either a machine with materially more
+  headroom, or a smaller-than-production MoE fixture built specifically to keep the paged case
+  inside safe memory bounds.
 
 #### M-06 · Gemma 3 never reaches the batched prefill — `prefillFeatures` still lacks `FeatPerLayerRoPE` (prior audit M-23, open)
 - **Where:** `metal/model.go:112-122` (the map: no `FeatPerLayerRoPE`), `decoder/features.go:152`
