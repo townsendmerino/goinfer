@@ -275,8 +275,21 @@ func residentKVBytes(m *decoder.Model) int64 {
 	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	const bytesPerElem = 2 // f16; see comment above
+	// N-36 (audit-metal-2026-09-12.md): a Gated-DeltaNet layer (qwen3_5/qwen3_5_moe/qwen3_next's
+	// linear-attention layers) has no attention geometry at all — no q/k/v/o, no KV cache;
+	// metal/model.go's own buildResident comment is explicit that r.kc[l]/r.vc[l] stay zero-value
+	// for these layers. Charging them the model's default kvDim anyway overstates this guard's
+	// estimate on every DeltaNet-hybrid model (qwen3_5_moe is 3:1 linear:softmax), in the
+	// conservative direction (a guard that overcounts can only decline early, never admit a model
+	// that doesn't fit) but still wrong — the same chokepoint metal/model.go's own layer-build loop
+	// uses to decide "does this layer get a DeltaNet mixer" (Qwen35ResidentParams' ok plus
+	// Qwen35LinearLayer per layer), not a second, potentially-disagreeing predicate.
+	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
 	var total int64
 	for l := 0; l < nLayers; l++ {
+		if dnetOK && m.Qwen35LinearLayer(l) {
+			continue
+		}
 		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
 		total += 2 * int64(ctxCap) * kvDim * bytesPerElem // ×2 for K and V
 	}

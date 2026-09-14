@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/townsendmerino/aikit/gpu"
 )
 
 // expertPool is a bounded per-layer LRU pool of N expert slots for SYNCHRONOUS Metal MoE paging.
@@ -148,11 +150,17 @@ func newExpertPool(d *Device, N, nGuW, nGuS, nDW, nDS int, stage stageFn) *exper
 		stage:      stage,
 	}
 	for s := range N {
+		// N-21 (audit-metal-2026-09-12.md): every slot's contents are about to be overwritten by
+		// its first stage anyway (LRU pool: cold-started slots stage on first use, never read
+		// before that), so there is nothing to gain from zero-filling a transient Go slice just to
+		// copy it into the buffer and discard it — gpu.NewBufferLenOf allocates the right-sized,
+		// uninitialized device buffer directly. At N=64 on the 35B this was ~4.5 GB of transient Go
+		// allocation purely to zero-initialise memory the pool never reads before writing.
 		p.slots[s] = expertSlot{
-			guW: NewBufferUint32s(d, make([]uint32, nGuW)),
-			guS: NewBufferU16s(d, make([]uint16, nGuS)),
-			dW:  NewBufferUint32s(d, make([]uint32, nDW)),
-			dS:  NewBufferU16s(d, make([]uint16, nDS)),
+			guW: gpu.NewBufferLenOf[uint32](d, nGuW),
+			guS: gpu.NewBufferLenOf[uint16](d, nGuS),
+			dW:  gpu.NewBufferLenOf[uint32](d, nDW),
+			dS:  gpu.NewBufferLenOf[uint16](d, nDS),
 		}
 		p.slotExpert[s] = -1
 	}

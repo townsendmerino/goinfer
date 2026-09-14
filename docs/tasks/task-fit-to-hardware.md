@@ -94,7 +94,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
   (`internal/serveapp/main.go:496`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
   (`metal/backend.go:136`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
-  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:341`).
+  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:354`).
 
 **Still the user's decision, with no basis offered for it:**
 

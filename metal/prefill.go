@@ -17,52 +17,13 @@ const prefillKernels = `
 #include <metal_stdlib>
 using namespace metal;
 
-// Blocked int4→f16 MMA GEMM: C[M×N] = A[M×K](f16) · Wᵀ, W = resident int4/W4A8 (packed nibbles
-// + f16 group scales), dequanted in-kernel. Each simdgroup owns RPS row-tiles × one 8-col output
-// tile; dequants each 8×8 weight tile once (transposed to Wᵀ) and reuses across the RPS rows.
-#define RPS 4
-kernel void gemm_w4f16(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
-    device const half* WS[[buffer(2)]], device float* C[[buffer(3)]],
-    constant uint& M[[buffer(4)]], constant uint& N[[buffer(5)]], constant uint& K[[buffer(6)]],
-    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
-    uint sgpt[[simdgroups_per_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
-    threadgroup half wscr[8*64];
-    uint sg = tgid*sgpt + sgid;
-    uint tilesN = N/8u;
-    uint rblk = sg / tilesN, tc = sg % tilesN;
-    uint r0 = rblk*RPS;
-    if (r0*8u >= M) return;
-    uint n0 = tc*8u;
-    threadgroup half* scr = wscr + sgid*64u;
-    uint wpr = K/8u, gpr = K/32u;
-    simdgroup_float8x8 acc[RPS];
-    for (uint r=0;r<RPS;r++) acc[r]=make_filled_simdgroup_matrix<float,8,8>(0.0);
-    for (uint k=0; k<K; k+=8u) {
-        if (lane < 8u) {
-            uint nl = lane;
-            uint word = W[(n0+nl)*wpr + k/8u];
-            float sc = float(WS[(n0+nl)*gpr + k/32u]);
-            for (uint kl=0; kl<8u; kl++)
-                scr[kl*8u + nl] = half(float(int((word >> (4u*kl)) & 0xF) - 8) * sc);
-        }
-        simdgroup_barrier(mem_flags::mem_threadgroup);
-        simdgroup_half8x8 b; simdgroup_load(b, scr, 8);
-        for (uint r=0;r<RPS;r++) {
-            if ((r0+r)*8u >= M) break;
-            simdgroup_half8x8 a; simdgroup_load(a, A + ((r0+r)*8u)*K + k, K);
-            simdgroup_multiply_accumulate(acc[r], a, b, acc[r]);
-        }
-        simdgroup_barrier(mem_flags::mem_threadgroup);
-    }
-    for (uint r=0;r<RPS;r++) {
-        if ((r0+r)*8u >= M) break;
-        simdgroup_store(acc[r], C + ((r0+r)*8u)*N + n0, N);
-    }
-}
-
-// gemm_w4f16_bias / _resid — GEMM epilogues. bias adds a per-column bias (fused QKV); resid
-// accumulates C into an existing f16 buffer (o-proj / down + residual). Both take the extra
-// buffer at buffer(7). (Separate kernels keep the hot GEMM loop identical.)
+// gemm_w4f16_store: blocked int4→f16 MMA GEMM with a fused epilogue (mode 0 = plain store, 1 =
+// +bias for fused QKV, 2 = +residual for o-proj/down) — C[M×N] = A[M×K](f16) · Wᵀ, W = resident
+// int4/W4A8 (packed nibbles + f16 group scales), dequanted in-kernel. N-17 (audit-
+// metal-2026-09-12.md): this used to be two separate steps, a plain gemm_w4f16 (no epilogue) plus
+// hand-written bias/residual variants — gemm_w4f16 itself was fully replaced by this kernel but
+// its source stayed in the compiled library with no pipeline ever created from it. Deleted rather
+// than left as dead compiled source.
 //
 // CPS (audit-metal-2026-09-12.md M-03): each simdgroup owns a 32(M, RPS)×32(N, CPS) output block
 // instead of 32×8 — all 32 lanes dequant CPS=4 weight tiles per k-step (was 8 of 32 lanes doing
@@ -71,6 +32,7 @@ kernel void gemm_w4f16(device const half* A[[buffer(0)]], device const uint* W[[
 // simdgroups stream the same A rows redundantly). N is only guaranteed %8==0 (audit C-10), not
 // %32==0, so the last column super-tile is masked per 8-wide sub-tile exactly like the existing
 // M-dimension tail (the break idiom below) — never an OOB read of W/WS, never a bogus MMA/store.
+#define RPS 4
 #define CPS 4
 kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
     device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],

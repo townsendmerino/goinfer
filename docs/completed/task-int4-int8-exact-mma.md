@@ -41,7 +41,7 @@ Decode's dense per-token projections dispatch through the `gemv_w4a8_sa` family
 `gemv_w4a8_coal` (`metal/kernels.go:237-211`, wired at `metal/model.go:582`, called at
 `metal/model.go:1679, 1404` for the down-projection). Both share the identical numeric structure
 below — `gemv_w4a8_sa`'s `SA_BODY` macro (`metal/kernels.go:287-252`) and `gemv_w4a8_coal`'s
-`W4A8_BODY` macro (`metal/kernels.go:220-186`) differ only in memory-access pattern (uint4-staged
+`W4A8_BODY` macro (`metal/kernels.go:231-186`) differ only in memory-access pattern (uint4-staged
 vs per-word), not in arithmetic order or precision. This is decode's real, shipped contract for
 every dense int4×int8 weight matrix in the model — the thing the new kernel needs to match.
 

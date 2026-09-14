@@ -4,6 +4,17 @@ package metal
 
 // allKernels is the full dense-decode-layer MSL kernel set in one library (W8A8 path —
 // W4A8 is validated separately; this proves ASSEMBLY, not the int4 packing again).
+//
+// N-17 (audit-metal-2026-09-12.md): six of these kernels have no PRODUCTION pipeline —
+// gemv_w4a8_bias, gemv_w4a8_sa_amax, gemv_w4a8_sa_bk, gemv_w4a8_sa_qv, gemv_w8a8, rope2_kv — each
+// backs a dedicated micro-benchmark or recorded-negative regression test instead (profile_test.go,
+// batchk_test.go, sa_qv_fusion_test.go, gemv_test.go, rope2_kv_test.go respectively;
+// gemv_w4a8_sa_amax has no reference anywhere and is the one genuinely dead survivor of this
+// list — kept rather than deleted alongside it so its own history stays visible next to the
+// others, not because anything still needs it). None of these is "safe to delete because nothing
+// production calls it" — deleting one breaks the test that keeps its measurement/negative result
+// honest. A seventh, gemm_w4f16 (metal/prefill.go, a genuinely dead duplicate of
+// gemm_w4f16_store with no reference anywhere, test included), was deleted outright.
 const allKernels = `
 #include <metal_stdlib>
 using namespace metal;
