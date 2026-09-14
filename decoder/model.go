@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -1043,11 +1044,34 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 // See docs/task-batched-prefill-bitidentity.md.
 // from is the first position to compute: prompt[:from] is already committed to the resident
 // KV (prefix reuse, resident_reuse.go) and positions carry through unchanged because the cache
-// prefillDeclineOnce keeps warnPrefillDeclined to one line per process.
-var prefillDeclineOnce sync.Once
+// prefillDeclineDigitsRE normalizes a decline error's varying numbers (prompt length, floor,
+// byte counts) out of the dedup key below, so e.g. every below-floor prompt — a different
+// promptLen each time — collapses to the SAME reason instead of re-triggering the warning.
+var prefillDeclineDigitsRE = regexp.MustCompile(`\d+`)
 
-// warnPrefillDeclined reports, ONCE, that a backend's batched prefill refused a prompt at call time
-// and this prompt (and every one after it) is being ingested one token at a time instead.
+// prefillDeclineMu guards prefillDeclineSeen.
+var prefillDeclineMu sync.Mutex
+
+// prefillDeclineSeen is the per-reason dedup set warnPrefillDeclined reports through — see N-35
+// (audit-metal-2026-09-12.md). It used to be a single process-lifetime sync.Once (deliberately,
+// per the test this replaces), which meant the FIRST decline of any kind — on Metal, the routine
+// below-floor case, which fires on nearly every short prompt — permanently silenced every later
+// decline, including a genuinely different one (a resident-cap refusal, an OOM) an operator would
+// want to see. Keying per normalized reason keeps the routine case to one line (every below-floor
+// promptLen normalizes to the same key) while still surfacing a later, differently-worded decline.
+var prefillDeclineSeen = map[string]bool{}
+
+// resetPrefillDeclineDedup clears the per-reason dedup state; test-only (mirrors the old
+// `prefillDeclineOnce = sync.Once{}` reset tests used before this was keyed per reason).
+func resetPrefillDeclineDedup() {
+	prefillDeclineMu.Lock()
+	defer prefillDeclineMu.Unlock()
+	prefillDeclineSeen = map[string]bool{}
+}
+
+// warnPrefillDeclined reports, once per distinct reason, that a backend's batched prefill refused
+// a prompt at call time and this prompt (and every one after it with the same reason) is being
+// ingested one token at a time instead.
 //
 // It exists because the load-time report and the runtime behaviour could disagree with nothing
 // saying so. PrefillPath() answers from the model's static properties, so a serve banner and
@@ -1061,10 +1085,16 @@ var prefillDeclineOnce sync.Once
 // Stderr and not an error: the fallback is CORRECT, just slow, and failing the request over a
 // performance decline would be worse than serving it.
 func warnPrefillDeclined(n int, err error) {
-	prefillDeclineOnce.Do(func() {
-		fmt.Fprintf(os.Stderr, "goinfer: batched prefill declined for a %d-token prompt, falling back to "+
-			"the per-token path (slower TTFT; this is reported once): %v\n", n, err)
-	})
+	key := prefillDeclineDigitsRE.ReplaceAllString(err.Error(), "#")
+	prefillDeclineMu.Lock()
+	seen := prefillDeclineSeen[key]
+	prefillDeclineSeen[key] = true
+	prefillDeclineMu.Unlock()
+	if seen {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "goinfer: batched prefill declined for a %d-token prompt, falling back to "+
+		"the per-token path (slower TTFT; each distinct reason is reported once): %v\n", n, err)
 }
 
 // is positional. from == 0 is the cold path.

@@ -104,7 +104,7 @@ re-baked by the code it checks (G-04).
 ### A. Prefill: the whole-ladder gap and the short-prompt band
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
-- **Where:** `decoder/model.go:1111` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
+- **Where:** `decoder/model.go:1141` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
   `decoder/residency.go:100-109`; `metal/backend.go:379-560` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1378-1384` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1262-1281` (`forwardHiddenNoHead` — the
@@ -113,7 +113,7 @@ re-baked by the code it checks (G-04).
 - **Mechanism and bound (counted + record):** `hasKV` is false for `*metalResident`, so
   `residentPrefillSeed` takes `m.resident.Forward(emb, i)` for every prompt token. Which prompts
   are sequential on Metal: every prompt below the 512 floor (M-02), every adapter prompt at any
-  length (`decoder/model.go:1086`, C-01 of the prior audit), every family `prefillOK` rejects
+  length (`decoder/model.go:1116`, C-01 of the prior audit), every family `prefillOK` rejects
   (Gemma 3 — M-06 — every DeltaNet family, gpt-oss, GPT-2, Cohere, Olmo, SmolLM3, Ministral 3,
   Mellum, dense Gemma 4, paged MoE), every `HiddenLast` embedding token. Per prompt token: 1.5B
   V×H int8 = 233 MB (≈24% of the ~0.97 GB the token moves) + 608 KB copy; 0.5B 136 MB of ≈420 MB
@@ -938,7 +938,7 @@ re-baked by the code it checks (G-04).
 
 #### G-08 · The §3.2 gate never exercises `startPos > 0`, which every resident-prefix-reuse turn uses
 - **Where:** `metal/prefill_gate_ref_test.go:429` (`PrefillLast(ctx, embs, 0)`) vs
-  `decoder/model.go:1094` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
+  `decoder/model.go:1124` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
   a synthetic hd=64 case. The agent-turn shape the peer matrix calls the headline workload is not
   a fidelity cell. **Fix:** one decision cell with `from = K/2` on S. **Confidence:** plausible
   (coverage gap, no defect shown).
@@ -1095,8 +1095,20 @@ re-baked by the code it checks (G-04).
 - N-33 `metal/expertpool.go:44-49` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
 - N-34 `gpu/metal_copy.go`, `metal_upload_batch.go` — unused by goinfer (correct on UMA); note they
   are host-side and unfenced, so a `CopyDevice` during an in-flight command buffer would race.
-- N-35 `decoder/model.go:1063-1068,1104` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
+- N-35 `decoder/model.go:1087-1091,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
   Metal the first sub-floor prompt consumes it, so a later real decline (cap, OOM) is silent (N-49).
+  **FIXED 2026-09-13**: replaced the single `sync.Once` with a mutex-guarded set keyed on the
+  decline reason with its numbers normalized out (`decoder/model.go:1050,1053-1073`) — every
+  below-floor prompt has a different `promptLen` in its message but normalizes to the same key, so
+  the routine Metal case still logs once, while a later, differently-worded decline (a resident-cap
+  refusal, an OOM) now gets its own one-time line instead of being silenced by the first. The old
+  `TestWarnPrefillDeclined_FiresOncePerProcess` explicitly pinned the coarser sync.Once behaviour
+  "so a future change to it is a deliberate decision rather than a silent drift" — this is that
+  decision; replaced with `TestWarnPrefillDeclined_FiresOncePerReason`, confirmed red without the
+  fix (a differently-worded second decline was silenced) and green with it. Triggered a
+  `TestParityManifest_fresh` re-stale on `core` (this file is on that dependency list); resolved via
+  `scripts/refresh_parity_hashes.sh` (37 forward goldens green at this commit, 0 failed) — a
+  non-numeric diagnostic-logging change, not a forward-numerics one.
 - N-36 `metal/backend.go:289-202` — `residentKVBytes` charges KV for DeltaNet layers that allocate
   none. **FIXED 2026-09-13** — skips a layer when `Qwen35ResidentParams`'s `ok` and
   `Qwen35LinearLayer(l)` are both true, the SAME chokepoint `metal/model.go`'s own layer-build loop

@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:428 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:384` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:385` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:

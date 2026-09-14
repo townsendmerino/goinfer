@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -53,7 +52,7 @@ func (b *decliningPrefillerBackend) Close() error { return nil }
 // must produce a stderr line naming the actual reason, and the request must still complete via
 // the sequential fallback rather than failing outright.
 func TestResidentPrefillSeed_DeclineIsLoggedWithReason(t *testing.T) {
-	prefillDeclineOnce = sync.Once{} // process-lifetime Once — start this test with it unfired
+	resetPrefillDeclineDedup() // start this test with no reason yet seen
 
 	be := &decliningPrefillerBackend{}
 	name := "fake-declining-prefiller-" + t.Name()
@@ -110,24 +109,34 @@ func TestResidentPrefillSeed_DeclineIsLoggedWithReason(t *testing.T) {
 	}
 }
 
-// TestWarnPrefillDeclined_FiresOncePerProcess pins the "reported once" behaviour the doc comment
-// on warnPrefillDeclined promises: prefillDeclineOnce is a single process-lifetime gate, not
-// keyed per reason, so a second (even different) decline after the first is NOT logged again.
-// B20's own fix sketch wanted per-reason dedupe; the shipped fix is coarser than that — this test
-// pins the coarser behaviour that actually shipped, so a future change to it is a deliberate
-// decision rather than a silent drift.
-func TestWarnPrefillDeclined_FiresOncePerProcess(t *testing.T) {
-	prefillDeclineOnce = sync.Once{}
-	first := fmt.Errorf("first decline reason")
-	second := fmt.Errorf("second decline reason")
+// TestWarnPrefillDeclined_FiresOncePerReason gates N-35 (audit-metal-2026-09-12.md): the dedup key
+// is now the decline's normalized reason, not a single process-lifetime gate. B20's original fix
+// sketch wanted per-reason dedupe; the FIRST shipped version was coarser (a bare sync.Once) —
+// TestWarnPrefillDeclined_FiresOncePerProcess used to pin that coarser behaviour deliberately, on
+// the grounds that a future change to it should be a decision, not a silent drift. This is that
+// decision: on Metal, nearly every prompt under the fast-prefill floor declines with a message
+// that differs only in its promptLen, so a bare sync.Once let the very first short prompt
+// permanently silence a later, genuinely different decline (a resident-cap refusal, an OOM) an
+// operator would want to see. Numbers are normalized out of the key so same-shape declines with
+// different byte/token counts still collapse to one line, while a differently-worded reason gets
+// its own.
+func TestWarnPrefillDeclined_FiresOncePerReason(t *testing.T) {
+	resetPrefillDeclineDedup()
+	first := fmt.Errorf("metal: prompt too short (100 tokens) for fast prefill (floor=256)")
+	firstRepeat := fmt.Errorf("metal: prompt too short (200 tokens) for fast prefill (floor=256)")
+	second := fmt.Errorf("metal: prompt len 9000 at startPos 0 out of resident cap 4096")
 	got := captureStderr(t, func() {
-		warnPrefillDeclined(11, first)
-		warnPrefillDeclined(22, second)
+		warnPrefillDeclined(100, first)
+		warnPrefillDeclined(200, firstRepeat)
+		warnPrefillDeclined(9000, second)
 	})
 	if !strings.Contains(got, first.Error()) {
-		t.Fatalf("first decline not logged: got %q", got)
+		t.Fatalf("first decline reason not logged: got %q", got)
 	}
-	if strings.Contains(got, second.Error()) {
-		t.Fatalf("second decline was logged despite the once-per-process gate: got %q", got)
+	if strings.Contains(got, firstRepeat.Error()) {
+		t.Fatalf("same-shape repeat (different token count) was logged again despite per-reason dedup: got %q", got)
+	}
+	if !strings.Contains(got, second.Error()) {
+		t.Fatalf("a differently-worded later decline was silenced by the earlier one's dedup: got %q", got)
 	}
 }
