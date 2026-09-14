@@ -170,7 +170,7 @@ type resident struct {
 	d                                                                  *Device
 	q                                                                  Queue
 	pRms, pQv, pGemv, pGemvResid, pRope, pRope2, pKv, pAttn, pSw, pRes Pipeline
-	pSA, pSABias, pSAResid                                             Pipeline // Stage A gemv (K<=1536)
+	pSA, pSABias, pSAResid                                             Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
 	pArgFinish                                                         Pipeline // fused block-argmax lm head reduce
 	pQKNorm                                                            Pipeline // per-head QK-RMSNorm (Qwen3)
 	pRmsF32                                                            Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
@@ -187,7 +187,7 @@ type resident struct {
 
 	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatLearnedPos/FeatOutBias).
 	pLayerNorm, pActQuant            Pipeline          // layernorm_quant, act_quant
-	pSABiasResid, pCoalBiasResid     Pipeline          // gemv_w4a8_sa_bias_resid (o-proj), gemv_w4a8_resid_bias (down-proj, K>1536)
+	pSABiasResid, pCoalBiasResid     Pipeline          // gemv_w4a8_sa_bias_resid (o-proj), gemv_w4a8_resid_bias (down-proj — always routed to the coal family, never the SA family)
 	layerNorm, layerNormBias         bool              // arch.Norm==NormLayer; whether it carries a bias (GPT-2 yes, Cohere no)
 	nonGatedMLP, outBias, learnedPos bool              // arch.NonGatedMLP / arch.OutBias / arch.LearnedPosEmbed
 	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
@@ -1874,8 +1874,9 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 	} else if L.moe != nil {
 		r.encodeMoEFFN(e, L)
 	} else if r.nonGatedMLP {
-		// GPT-2: up→act→down, no gate — a single up-proj (K=hidden, within the SA cap for
-		// GPT-2 small/medium/large; XL's 1600 would exceed it, not covered here) feeding
+		// GPT-2: up→act→down, no gate — a single up-proj (K=hidden, checked against the M-11
+		// threadgroup-memory guard at buildResident time for whichever GPT-2 size loads; not
+		// separately verified per size here) feeding
 		// act_quant (glu_act with no multiply), then the coal-family down-proj (K=intermediate,
 		// always past the SA cap) fused with its bias and the residual add.
 		r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)

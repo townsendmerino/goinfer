@@ -361,7 +361,7 @@ re-baked by the code it checks (G-04).
   router/experts), per above.
 
 #### M-08 · `lora_delta` runs each projection's whole adapter delta in ONE threadgroup — the design CUDA's P-11 measured at +124%/token; Metal's P-11 fused two dispatches and kept the serial block
-- **Where:** `metal/kernels.go:845-873` (`// ONE THREADGROUP ONLY … looping over ranks serially …
+- **Where:** `metal/kernels.go:848-873` (`// ONE THREADGROUP ONLY … looping over ranks serially …
   is cheap`; `for (uint r = 0; r < R; r++)` with a 256-wide tree reduce + barrier per rank; up
   stage `Out/256` rows per thread), `metal/lora.go:211-216` (`e.Dispatch(r.pLoraDelta, tgReduceNorm,
   tgReduceNorm, …)` — n == tg == 256, one threadgroup); `docs/audit-2026-09-10.md:1130-1176` (CUDA:
@@ -397,9 +397,9 @@ re-baked by the code it checks (G-04).
   skip), gofmt and staticcheck clean.
 
 #### M-09 · Decode attention's K read is a 32-lane 512 B-strided gather (32 load instructions per 256 B row) — every recorded probe fits an L1/LSU-transaction wall as well as the "DRAM latency" reading; the one untested corner is bit-identical cooperative staging
-- **Where:** `metal/kernels.go:639-636` (thread `tid` owns keys `tid, tid+128, …`; per key 32 `half4`
+- **Where:** `metal/kernels.go:642-636` (thread `tid` owns keys `tid, tid+128, …`; per key 32 `half4`
   loads at stride `kvDim*2` = 512 B across lanes), `:661-677` (V: thread `d` walks all keys
-  serially, 2 B per load), `metal/model.go:2006` (12 threadgroups × 128 threads per layer);
+  serially, 2 B per load), `metal/model.go:2007` (12 threadgroups × 128 threads per layer);
   `docs/completed/metal-verdict.md:95-99,136-145,175-178`; `metal/attn_m3_probe_test.go`,
   `attn_kvwidth_probe_test.go`.
 - **Mechanism and bound (counted + record):** each K-row load instruction touches 32 distinct cache
@@ -443,7 +443,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/kernels.go:231-233` (`W4A8_BODY`: 8 scalar byte loads of the activation + one
   half scale per 32-bit word), `:272-274` ("int8 activation staged once into threadgroup short —
   replaces the per-row device byte-gather (17920× re-reads) that dominates LSU issue"),
-  `metal/model.go:1917` (`e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, …)` — one simdgroup per row,
+  `metal/model.go:1918` (`e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, …)` — one simdgroup per row,
   no staging), `:1005-1009` (the M-06 comment records the choice as accounting, not a
   measurement); `docs/completed/task-metal-batched-verify-kernel.md:166-167` (isolated: down-proj 68 GB/s vs
   gate/up 96 GB/s, same weight format).
@@ -744,7 +744,7 @@ re-baked by the code it checks (G-04).
   skip), `go test ./decoder/...` all pass, gofmt/vet/staticcheck clean.
 
 #### C-03 · Adapter `In`/`Out` are never checked against the base projection on Metal (prior audit M-05, open) — a same-family different-size adapter writes past the Q slot into K/V
-- **Where:** `metal/lora.go:147-149` (rank-only check), `metal/kernels.go:870-861,868-872` (`Ar = A +
+- **Where:** `metal/lora.go:147-149` (rank-only check), `metal/kernels.go:873-861,868-872` (`Ar = A +
   r*K`, `out[row]` for `row < Out` — both from the adapter's own uniforms).
 - **Fix:** in `conv`, refuse when `p.In`/`p.Out` differ from the projection's `K`/`N` (seven
   comparisons; `SetAdapter` has `r.H`, `r.I`, `L.geom`). The decoder-side chokepoint the prior
@@ -1010,7 +1010,7 @@ re-baked by the code it checks (G-04).
 - N-09 `metal/model.go:1323-1324` "greedy decode skips [softcap]" — false in production
   (`finalizeLogits` runs every executor token; Gemma 4 greedy pays a 262k `tanh` per token, ~1%).
   **FIXED 2026-09-13.**
-- N-10 `metal/model.go:1921` "11 dispatches vs 19" is stale (block is 7); `metal-verdict.md:75`
+- N-10 `metal/model.go:1922` "11 dispatches vs 19" is stale (block is 7); `metal-verdict.md:75`
   "337 dispatches/token" is 310 at this tree. `:1538-1541` "fastest greedy path" stale. **FIXED
   2026-09-13** (the two `metal/model.go` comments; `metal-verdict.md` is `docs/completed/` — an
   archived record left as-is per that directory's own convention).
@@ -1092,8 +1092,22 @@ re-baked by the code it checks (G-04).
 - N-29 `metal/model.go:348-368,475-478` — load path rebuilds every word byte-by-byte from nibbles
   that are already the word bytes; `int4Concat` grows by `append` (two reallocs per fused tensor);
   scales through the serial loop. ≈0.5 s at 1.5B.
-- N-30 `metal/kernels.go:748-777` — `swiglu_quant` evaluates `glu_act_pinned` twice per element;
+- N-30 `metal/kernels.go:751-777` — `swiglu_quant` evaluates `glu_act_pinned` twice per element;
   <1%. `:276` "K<=1536" stale. `:563-567` rope2_kv recorded null (0.6%) — not re-proposed.
+  **PARTIALLY CLOSED 2026-09-13**: the stale "K<=1536" comment was real and wrong, not just
+  outdated phrasing — the actual bound today is the M-11 threadgroup-memory guard
+  (`maxThreadgroupStageBytes`/`d.MaxThreadgroupMemoryLength()` at buildResident, ~32 KiB on Apple
+  GPUs), roughly 10x more permissive than 1536 words. Fixed the comment at
+  `metal/kernels.go:287-290` and the three other places quoting the same stale figure
+  (`metal/model.go:173,190,1877-1878` — the GPT-2 XL claim "1600 would exceed it" was flatly wrong
+  under today's guard, since 1600 is far below the actual ~16384-word cap). The `swiglu_quant`
+  double-eval itself is left as a recorded negative: eliminating it needs a device-memory scratch
+  buffer to cache pass 1's activated values for pass 2 (threadgroup memory can't hold it — Mixtral's
+  intermediate dim alone is 14336 elements, 57 KB, over the ~32 KiB budget), which trades a cheap
+  transcendental recompute for extra device bandwidth on a kernel that is itself
+  memory/bandwidth-bound — not a clear win, and the audit's own number (<1%) doesn't justify the
+  added complexity without measuring first. rope2_kv (0.6%) is unchanged, as the finding itself
+  says.
 - N-31 `metal.go:713-717` — `WaitDone` reads four GPU timestamps per production token for
   `LastGPUTimes` (tests only); µs.
 - N-32 `metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles

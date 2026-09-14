@@ -284,7 +284,10 @@ kernel void gemv_w4a8_resid(device const uint* bq[[buffer(0)]], device const hal
 //  (2) int8 activation staged once into threadgroup short (pre-widened) — replaces the
 //      per-row device byte-gather (17920× re-reads) that dominates LSU issue.
 //  (3) 8 simdgroups/threadgroup (tg=256) so all cores stay fed; each simdgroup = one row.
-// UNP8 = 8 (nibble-8)*int8 terms, bit-identical to _coal's per-word math. K<=1536 (As sized).
+// UNP8 = 8 (nibble-8)*int8 terms, bit-identical to _coal's per-word math. As is host-sized to K
+// shorts per dispatch; K is bounded by the M-11 threadgroup-memory guard at buildResident time
+// (2*K bytes <= d.MaxThreadgroupMemoryLength(), ~32 KiB on Apple GPUs — K<=1536 here is stale,
+// left from before that guard existed and roughly 10x too conservative against today's actual cap).
 #define UNP8(x, a) ( \
     (int((x)&0xF)-8)*int((a)[0]) + (int(((x)>>4)&0xF)-8)*int((a)[1]) \
   + (int(((x)>>8)&0xF)-8)*int((a)[2]) + (int(((x)>>12)&0xF)-8)*int((a)[3]) \

@@ -1315,9 +1315,9 @@ supports.
 | `docs/audit-2026-09-10.md|metal/backend.go:487` | goinfer | `func metalFastPrefillEnabled() bool {` |
 | `docs/audit-2026-09-10.md|metal/backend.go:571` | goinfer | `if floor := metalFastPrefillFloorFor(); floor > 0 && promptLen < floor {` |
 | `docs/audit-2026-09-10.md|metal/backend.go:75` | goinfer | `defer func() {` |
-| `docs/audit-2026-09-10.md|metal/kernels.go:526` | goinfer | `float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;` |
-| `docs/audit-2026-09-10.md|metal/kernels.go:860` | goinfer | `kernel void lora_delta(device const char* aq[[buffer(0)]], device const float* asc[[buff` |
-| `docs/audit-2026-09-10.md|metal/kernels.go:879` | goinfer | `for (uint k = tid; k < K; k += tgs) part += float(Ar[k]) * (float(aq[k]) * sc);` |
+| `docs/audit-2026-09-10.md|metal/kernels.go:529` | goinfer | `float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;` |
+| `docs/audit-2026-09-10.md|metal/kernels.go:863` | goinfer | `kernel void lora_delta(device const char* aq[[buffer(0)]], device const float* asc[[buff` |
+| `docs/audit-2026-09-10.md|metal/kernels.go:882` | goinfer | `for (uint k = tid; k < K; k += tgs) part += float(Ar[k]) * (float(aq[k]) * sc);` |
 | `docs/audit-2026-09-10.md|metal/lora.go:148` | goinfer | `conv := func(p *decoder.ResidentAdapterProj) (*residLoRAProj, error) {` |
 | `docs/audit-2026-09-10.md|metal/lora.go:166` | goinfer | `out := make([]residLoRALayer, len(layers))` |
 | `docs/audit-2026-09-10.md|metal/lora.go:83` | goinfer | `// (decoder/residency.go) never copies a loraDelta's A/B — it wraps the loraRuntime's ow` |
@@ -1400,12 +1400,13 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/gemv_w4a8_coal_bench_test.go:29` | goinfer | `gemvW4A8CoalN = 512  // sample rows -- enough to exercise every lane/tail shape` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:113` | goinfer | `// (see scripts/autoresearch_rmsnorm_results.tsv) -- verified here against` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:231` | goinfer | `#define W4A8_BODY \` |
+| `docs/audit-metal-2026-09-12.md|metal/kernels.go:287` | goinfer | `// UNP8 = 8 (nibble-8)*int8 terms, bit-identical to _coal's per-word math. As is host-si` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:37` | goinfer | `// precise:: (above) so this is stable regardless of surrounding code shape -- confirmed` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:5` | goinfer | `// allKernels is the full dense-decode-layer MSL kernel set in one library (W8A8 path —` |
-| `docs/audit-metal-2026-09-12.md|metal/kernels.go:639` | goinfer | `for (uint s=winStart+tid; s<nKeys; s+=tgs) {` |
-| `docs/audit-metal-2026-09-12.md|metal/kernels.go:748` | goinfer | `kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buff` |
-| `docs/audit-metal-2026-09-12.md|metal/kernels.go:845` | goinfer | `// M-08 (audit-metal-2026-09-12.md): P-11's fused-into-one-threadgroup shape traded a wh` |
-| `docs/audit-metal-2026-09-12.md|metal/kernels.go:870` | goinfer | `// dynamic parameter: that form requires the caller to use DispatchTG (which sets the le` |
+| `docs/audit-metal-2026-09-12.md|metal/kernels.go:642` | goinfer | `for (uint s=winStart+tid; s<nKeys; s+=tgs) {` |
+| `docs/audit-metal-2026-09-12.md|metal/kernels.go:751` | goinfer | `kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float* u[[buff` |
+| `docs/audit-metal-2026-09-12.md|metal/kernels.go:848` | goinfer | `// M-08 (audit-metal-2026-09-12.md): P-11's fused-into-one-threadgroup shape traded a wh` |
+| `docs/audit-metal-2026-09-12.md|metal/kernels.go:873` | goinfer | `// dynamic parameter: that form requires the caller to use DispatchTG (which sets the le` |
 | `docs/audit-metal-2026-09-12.md|metal/lora.go:147` | goinfer | `anchor: func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {` |
 | `docs/audit-metal-2026-09-12.md|metal/lora.go:157` | goinfer | `parallelF32ToF16(bHalf, p.B)` |
 | `docs/audit-metal-2026-09-12.md|metal/lora.go:211` | goinfer | `// applyResidentLoRA dispatches one projection's compute-time LoRA delta into out, ADDIT` |
@@ -1420,9 +1421,10 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/model.go:1378` | goinfer | `// Paging tears each MoE layer into two submits with a host readback between — the encod` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:1379` | goinfer | `// executor (one static command buffer/token) cannot express it. Fall back to the synchr` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:1386` | goinfer | `if r.execReq == nil {` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1917` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:1921` | goinfer | `r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.dO)` |
-| `docs/audit-metal-2026-09-12.md|metal/model.go:2006` | goinfer | `// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Run` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:173` | goinfer | `pSA, pSABias, pSAResid                                             Pipeline // Stage A g` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1918` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1922` | goinfer | `r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.dO)` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:2007` | goinfer | `// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Run` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:348` | goinfer | `anchor: func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:378` | goinfer | `// []uint32 allocation) plus the f16 group scales. The nibble bytes are byte-for-byte th` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:435` | goinfer | `// whose value dim exceeds every other staged width, the M-11 budget under-counts and th` |
