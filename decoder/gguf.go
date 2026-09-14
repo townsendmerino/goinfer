@@ -1567,9 +1567,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
-		return streamQuantized(out, in, mode, func(r int, dst []float32) error {
-			return into(rowSrc(r), dst)
-		})
+		rowInto := func(r int, dst []float32) error { return into(rowSrc(r), dst) }
+		// M-07 (audit-metal-2026-09-12.md): streamMat covers everything mat/permMat don't route
+		// to streamMatBatched — o_proj, down_proj, router, and any other non-batched, non-embedding
+		// layer tensor — so skipRow4 applies here exactly as it does in quantizeWMSkipRow4's
+		// safetensors twin.
+		if skipRow4 {
+			return streamQuantizedSkipRow4(out, in, mode, rowInto)
+		}
+		return streamQuantized(out, in, mode, rowInto)
 	}
 	// streamMatBatched is streamMat's twin for the attention Q/K/V and MLP gate/up projections
 	// (isBatchedProjTensor) — streamQuantizedBatchedProj instead of the plain streamQuantized, so
@@ -1682,9 +1688,15 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// rows directly into a per-expert quantized linalg.WeightMat (no whole-tensor f32).
 		res := make([]linalg.WeightMat, nExpert)
 		for e := range nExpert {
-			m, err := streamQuantized(out, in, matmulQuant(quant, name), func(r int, dst []float32) error {
-				return into((e*out+r)*in, dst)
-			})
+			rowInto := func(r int, dst []float32) error { return into((e*out+r)*in, dst) }
+			var m linalg.WeightMat
+			var err error
+			// M-07 (audit-metal-2026-09-12.md): MoE experts, same skip-row4-only scope as streamMat.
+			if skipRow4 {
+				m, err = streamQuantizedSkipRow4(out, in, matmulQuant(quant, name), rowInto)
+			} else {
+				m, err = streamQuantized(out, in, matmulQuant(quant, name), rowInto)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -1703,9 +1715,14 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != outTotal {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf-phi3): %q dims %v, want [in=%d, out=%d]", name, dims, in, outTotal)
 		}
-		return streamQuantized(rows, in, matmulQuant(quant, name), func(r int, dst []float32) error {
-			return into((rowStart+r)*in, dst)
-		})
+		rowInto := func(r int, dst []float32) error { return into((rowStart+r)*in, dst) }
+		// M-07 (audit-metal-2026-09-12.md): Phi-3's fused qkv/gate_up split, same skip-row4-only
+		// scope as streamMat — not routed through the isBatchedProjTensor naming convention (this
+		// is GGUF's own fused-tensor special case), so no needCanonical/repacked-only branch here.
+		if skipRow4 {
+			return streamQuantizedSkipRow4(rows, in, matmulQuant(quant, name), rowInto)
+		}
+		return streamQuantized(rows, in, matmulQuant(quant, name), rowInto)
 	}
 
 	var err error
@@ -1766,14 +1783,24 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// quant — "parity-first" from the bring-up — which on a 27.8B Qwen3.8 meant ~29 GB of f32
 		// weights streamed per token while the FFN was int4. Transform-then-quantize: the untile
 		// below has to see f32.
+		// M-07 (audit-metal-2026-09-12.md): these are exactly "the projections that dominate decode
+		// bandwidth" per this function's own comment above — real candidates for the row4 side-copy
+		// waste, so both route through the skip-aware wrapper like every other family's layer
+		// projections.
 		wmQ := func(name string, out, in int) (linalg.WeightMat, error) {
 			f, e := f32mat(name, out, in)
 			if e != nil {
 				return linalg.WeightMat{}, e
 			}
+			if skipRow4 {
+				return quantizeWMSkipRow4(linalg.WrapF32(f, out, in), quant), nil
+			}
 			return quantizeWM(linalg.WrapF32(f, out, in), quant), nil
 		}
 		wrapQ := func(f []float32, out, in int) linalg.WeightMat {
+			if skipRow4 {
+				return quantizeWMSkipRow4(linalg.WrapF32(f, out, in), quant)
+			}
 			return quantizeWM(linalg.WrapF32(f, out, in), quant)
 		}
 		loadQ35 := func(i int) error {

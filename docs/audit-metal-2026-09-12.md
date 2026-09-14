@@ -300,7 +300,7 @@ re-baked by the code it checks (G-04).
 ### B. Decode: two probes, one adapter kernel, one memory item
 
 #### M-07 · A GGUF/safetensors int4 load on `--backend metal` keeps THREE copies of every dense projection: host canonical + host row4 repack (read by nothing once resident) + the Metal buffer
-- **Where:** `decoder/weightmat.go:414-425` (`wantsCanonicalInt4`: `if backendName != "cpu" { return
+- **Where:** `decoder/weightmat.go:461-425` (`wantsCanonicalInt4`: `if backendName != "cpu" { return
   true }`), `:440-444` (`repackedOnlyOrCanonical` → `repackW4A8IfEligible(canon)` — both kept),
   `:251-257` ("both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside"),
   `metal/model.go:470-444,475-478` (`int4DirectWords` → `NewBufferUint32s` = `newBufferWithBytes`,
@@ -354,11 +354,67 @@ re-baked by the code it checks (G-04).
   (TestPrefillGateVsReference) after this change: K=256's cell numbers matched every prior
   same-session baseline exactly (92.8%/93.8% agree, meanKL 0.0375/0.0340) — zero measurable
   numeric drift, as expected.
-  <br>NOT done: the fix's own second half ("release the layer projections' host WeightMats after
-  BuildResident succeeds") — a genuine object-lifecycle change (freeing host memory while the
-  *Model stays alive and functional for embed lookups/CPU fallback) with its own risk profile,
-  out of scope for this pass; and extending skipRow4 to quantizeWM's ~40 call sites (down-proj/
-  router/experts), per above.
+  <br>NOT done (at the time): the fix's own second half ("release the layer projections' host
+  WeightMats after BuildResident succeeds") — a genuine object-lifecycle change with its own risk
+  profile, out of scope for that pass; and extending skipRow4 to quantizeWM's ~40 call sites
+  (down-proj/router/experts), per above.
+- **CLOSED (row4-skip half) 2026-09-13 — the ~40 remaining `quantizeWM`/`streamQuantized` call
+  sites now skip row4 on Metal too; host-WeightMat release investigated and declined.**
+  <br>Shipped: `quantizeWMSkipRow4`/`quantizeWMRow4` and `streamQuantizedSkipRow4`/
+  `streamQuantizedRow4` (decoder/weightmat.go, sharing a body with the pre-existing
+  `quantizeWM`/`streamQuantized`), threaded as a `skipRow4 bool` parameter through every
+  family-specific builder that the prior pass's scoping note left out: the generic safetensors
+  path's `loadMatQ`/`loadProj` (o_proj/down_proj/router — the single most common code path, since
+  every "standard" architecture routes through it), `loadFusedExperts`, `loadGemma4MoE`/
+  `streamExperts`, `loadQwen35Attn`; the family builders `buildGPT2Weights`, `buildGraniteWeights`,
+  `buildNemotronWeights`, `buildPhi3Weights`, `buildLlama4Weights` (decoder/weights.go),
+  `buildInternLM2Weights` (decoder/internlm2.go), and `buildGptOssWeights`
+  (decoder/gptoss_safetensors.go, including its row-streamed MXFP4 experts); and the GGUF path's
+  `streamMat`, `stackedExperts`, `fusedSplit`, and the Qwen3.5-specific `wmQ`/`wrapQ` closures
+  (decoder/gguf.go). `Embed`/`LMHead` deliberately stay on plain `quantizeWM` everywhere (unchanged
+  from the prior pass) — read via `.Row()` on the host on every backend regardless of GPU
+  residency, so row4 there is never wasted. Threaded as a parameter rather than a package-level
+  variable because `parallelLayers` loads layers concurrently within one `Load()` call (and the
+  server can load multiple models concurrently) — a global would have been a real, silent
+  data race and a cross-model leak of one model's backend choice into another's.
+  <br>Verified: `TestW4A8Row4_skippedForMetalBackend` extended — o_proj/down_proj now also
+  row4-free on Backend:"metal" (120/120 Q/K/V/gate/up + 48/48 o_proj/down_proj row4-free, all with
+  canonical bytes present; Backend:"" unaffected, still 120/120 + 48/48 row4). New
+  `TestW4A8Row4_skippedForMetalBackend_MoE` covers router/experts/shared-expert across both MoE
+  tensor shapes this repo has (generic `Router`/`Experts`/`SharedExpert` via `qwen3_5_moe-tiny`: 64
+  tensors row4-free / 60 unaffected on unspecified backend; gemma4's own
+  `expertsGateUp`/`expertsDown` via `gemma4-moe-tiny`: 16 / 16). TDD discipline applied per code
+  path (not just per test): reverting `loadProj`'s branch alone left both MoE tests green, showing
+  neither fixture's router/experts route through it (they use `loadMatQ`/`loadGemma4MoE`
+  instead) — confirmed `loadMatQ` is the load-bearing branch for `qwen3_5_moe-tiny` and `streamMat`
+  (decoder/gguf.go) for the heavy-checkpoint GGUF test, each independently red-without-fix and
+  green-with-fix. Full `go test ./decoder/...` green; `scripts/refresh_parity_hashes.sh` (required —
+  weightmat.go/weights.go are both `core`-tier in `testdata/parity_manifest.json`) ran 37 forward
+  goldens, 0 failed, and refreshed 35 deps_hash lines with nothing else touched — the expected
+  non-numeric outcome, since canonical int4 bytes are byte-identical with or without a row4
+  side-copy. `go vet`, `gofmt -l`, and CI-pinned `staticcheck` (v0.8.0, `./decoder/...` and
+  `./metal/...` including `-tags goinfer_testhooks`) all clean on every touched file (staticcheck's
+  metal findings are pre-existing U1000s in untouched files, gated behind `goinfer_testhooks`).
+  <br>**Declined: host-WeightMat release.** Investigated via a dedicated safety review before
+  writing any code. Found NOT safe to implement as the fix text originally scoped it: Sessions
+  (the normal serve-app conversational path), the `resBusy`-loser CPU fallback, three of the four
+  speculative-decode loops, and `LoadAdapter`'s `validateComputeTimeDims` all read the same
+  per-layer host `WeightMat`s at arbitrary times *after* a resident GPU backend has already been
+  built — this is not a rare edge case, it is most of the ways this codebase uses a loaded model.
+  Separately, the `.Rows() > 0` idiom used at ~30+ call sites to feature-detect an optional weight
+  ("does this exist at all") would be silently corrupted by a naive struct-zeroing release: a
+  released-but-present feature would misreport as absent instead of erroring, which is worse than
+  the memory it would save. No safe, bounded version of this half presented itself in the
+  investigation, so it is not scheduled — this is a permanent decision, not a deferral, unless a
+  future change (e.g. an explicit "host copy no longer needed" flag threaded through every one of
+  those readers) reopens it.
+  <br>**Net effect:** every dense/MoE projection on `--backend metal` now keeps two copies (host
+  canonical + Metal buffer) instead of three; the row4 side-copy — proven to exactly double the
+  resident int4 footprint (100.0% additional RAM, measured on the 0.5B fixture) — is gone for
+  every projection this loader builds, not just the five `quantizeBatchedProjWM`-scoped ones from
+  the prior pass. The host canonical copy is retained by design (`.Row()` lookups, CPU fallback,
+  LoRA merge, speculative decode all need it) and is out of scope for any future fix short of the
+  declined half above.
 
 #### M-08 · `lora_delta` runs each projection's whole adapter delta in ONE threadgroup — the design CUDA's P-11 measured at +124%/token; Metal's P-11 fused two dispatches and kept the serial block
 - **Where:** `metal/kernels.go:848-873` (`// ONE THREADGROUP ONLY … looping over ranks serially …
@@ -505,7 +561,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/moe.go:809` (was a serial `ensureResident` loop — see this finding's own
   closure note), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
-  `metal/expertpool.go:175-203`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
+  `metal/expertpool.go:183-203`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
 - **Mechanism and bound (record-derived):** per-miss cost from the sweep = staging share ×
   s/token ÷ misses/token = 1.6 ms (N=8), 3.0 ms (N=32), 3.6 ms (N=64) for ~1.57 MB — 440–980 MB/s
   effective against the same file's measured 3,687 MB/s sequential pread. Per-miss cost *rising*
@@ -1103,7 +1159,7 @@ re-baked by the code it checks (G-04).
   identical mechanical pattern already proven correct in `moe.go`'s pread path, not independently
   measured on gemma4. `go test ./metal/` (91 pass) and `-tags goinfer_testhooks` (143 pass) both
   0 fail; gofmt/go vet/staticcheck clean.
-- N-21 `metal/expertpool.go:161-158` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
+- N-21 `metal/expertpool.go:169-158` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
   **FIXED 2026-09-13** — used `gpu.NewBufferLenOf[T]` instead (the exact generic, right-sized,
   uninitialized allocator the finding names; `NewBufferBytes` alone would have mis-sized `.n` for a

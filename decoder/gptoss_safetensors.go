@@ -25,7 +25,7 @@ import (
 // MEMORY. The experts never materialize as f32: gpt-oss-20b is ~76GB dequantized across
 // all layers. Each output row is dequantized on demand straight into streamQuantized,
 // which emits the quantized WeightMat row by row.
-func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode) (*Weights, error) {
+func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
 	hidden, vocab := arch.HiddenDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -35,6 +35,22 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
 	var err error
+	// qw is quantizeWM/quantizeWMSkipRow4 (M-07, audit-metal-2026-09-12.md) for every layer
+	// projection below — Embed/LMHead deliberately stay on plain quantizeWM. streamQ is
+	// streamQuantized's own skip-aware twin, for the MoE experts (streamed row by row — see this
+	// file's own MEMORY note on why they never materialize as f32).
+	qw := func(m linalg.WeightMat, mode quantMode) linalg.WeightMat {
+		if skipRow4 {
+			return quantizeWMSkipRow4(m, mode)
+		}
+		return quantizeWM(m, mode)
+	}
+	streamQ := func(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+		if skipRow4 {
+			return streamQuantizedSkipRow4(rows, cols, mode, rowInto)
+		}
+		return streamQuantized(rows, cols, mode, rowInto)
+	}
 	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
@@ -118,7 +134,7 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 			if merr != nil {
 				return nil, merr
 			}
-			*m.dst = quantizeWM(mat, matmulQuant(quant, m.name))
+			*m.dst = qw(mat, matmulQuant(quant, m.name))
 			if *m.bias, err = bf16Rows(p+"self_attn."+m.name+".bias", m.out); err != nil {
 				return nil, err
 			}
@@ -158,19 +174,19 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		l.Experts = make([]expertWeights, nE)
 		for e := range nE {
 			// INTERLEAVED: gate row k is tensor row 2k, up row k is 2k+1.
-			gm, gerr := streamQuantized(expInter, hidden, matmulQuant(quant, "expert_gate"), func(r int, dst []float32) error {
+			gm, gerr := streamQ(expInter, hidden, matmulQuant(quant, "expert_gate"), func(r int, dst []float32) error {
 				return gateUp(e, 2*r, dst)
 			})
 			if gerr != nil {
 				return nil, fmt.Errorf("decoder(gptoss-st): layer %d expert %d gate: %w", i, e, gerr)
 			}
-			um, uerr := streamQuantized(expInter, hidden, matmulQuant(quant, "expert_up"), func(r int, dst []float32) error {
+			um, uerr := streamQ(expInter, hidden, matmulQuant(quant, "expert_up"), func(r int, dst []float32) error {
 				return gateUp(e, 2*r+1, dst)
 			})
 			if uerr != nil {
 				return nil, fmt.Errorf("decoder(gptoss-st): layer %d expert %d up: %w", i, e, uerr)
 			}
-			dm, derr := streamQuantized(hidden, expInter, matmulQuant(quant, "expert_down"), func(r int, dst []float32) error {
+			dm, derr := streamQ(hidden, expInter, matmulQuant(quant, "expert_down"), func(r int, dst []float32) error {
 				return down(e, r, dst)
 			})
 			if derr != nil {

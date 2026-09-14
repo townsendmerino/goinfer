@@ -64,13 +64,21 @@ type expertPool struct {
 	// resolution silently fell back, which would leave the fast path green but unexercised.
 	preads int
 
-	stages     int   // miss-stages performed (telemetry + isolation-test oracle)
-	hits       int   // ensureResident calls that found the expert already resident (same-expert-reuse)
-	coldStarts int   // stages into a previously-free slot (pool not yet full)
-	evictions  int   // stages that evicted an occupied slot (pool under pressure)
-	stageNanos int64 // total host time spent staging (fetch + copy) — the paging-traffic penalty term
-	fetchNanos int64 // time in stage() — mmap-aliased nibble bytes + f32→f16 scales (no reconstruction)
-	copyNanos  int64 // time byte-copying the fetched nibbles/scales into the slot's shared Metal buffers
+	stages     int // miss-stages performed (telemetry + isolation-test oracle)
+	hits       int // ensureResident calls that found the expert already resident (same-expert-reuse)
+	coldStarts int // stages into a previously-free slot (pool not yet full)
+	evictions  int // stages that evicted an occupied slot (pool under pressure)
+	// distinctExperts is every expert id this pool has EVER staged, across its whole lifetime —
+	// unlike coldStarts (caps at N once the pool fills) or where (only currently-resident), this
+	// answers "how many distinct experts did this layer's routing actually touch" — the floor an
+	// expert-major (route-then-group-then-stage-once) prefill could hit, vs. stages, which also
+	// counts every re-fetch of a previously-evicted-then-needed-again expert (M-05 investigation,
+	// audit-metal-2026-09-12.md). Negligible memory (≤ nE entries); left in production code as
+	// always-on telemetry, same as the counters above.
+	distinctExperts map[int]bool
+	stageNanos      int64 // total host time spent staging (fetch + copy) — the paging-traffic penalty term
+	fetchNanos      int64 // time in stage() — mmap-aliased nibble bytes + f32→f16 scales (no reconstruction)
+	copyNanos       int64 // time byte-copying the fetched nibbles/scales into the slot's shared Metal buffers
 
 	// prefetch, when set, issues an MADV_WILLNEED readahead over expert e's mmap-backed nibble spans.
 	// The synchronous paged forward calls prefetchAll for the whole routed top-k BEFORE touching any
@@ -185,6 +193,10 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 	} else {
 		p.coldStarts++
 	}
+	if p.distinctExperts == nil {
+		p.distinctExperts = make(map[int]bool)
+	}
+	p.distinctExperts[e] = true
 	t0 := time.Now()
 	if p.stagePread != nil {
 		// pread path: one syscall reads nibbles straight into the slot's UMA words (fetch+copy fused).
@@ -271,6 +283,10 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 		} else {
 			p.coldStarts++
 		}
+		if p.distinctExperts == nil {
+			p.distinctExperts = make(map[int]bool)
+		}
+		p.distinctExperts[e] = true
 		// Claim AND touch the slot now, not after staging: pickSlot's eviction fallback reads
 		// p.lru's tail, and deferring touch() until after this whole loop would leave p.lru
 		// reflecting the PRE-BATCH ordering while slotExpert already shows every slot claimed so

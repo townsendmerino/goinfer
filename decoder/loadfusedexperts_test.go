@@ -49,7 +49,7 @@ func TestLoadFusedExperts_perExpertSlicing(t *testing.T) {
 	}
 	defer st.Close()
 
-	experts, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone)
+	experts, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, false)
 	if err != nil {
 		t.Fatalf("loadFusedExperts: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestLoadFusedExperts_shapeMismatch(t *testing.T) {
 	}
 	defer st.Close()
 
-	if _, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone); err == nil {
+	if _, err := loadFusedExperts(st, "gate_up_proj", "down_proj", nExpert, inter, hidden, quantNone, false); err == nil {
 		t.Fatal("loadFusedExperts should reject a gate_up_proj tensor with the wrong element count")
 	}
 }

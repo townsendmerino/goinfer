@@ -30,7 +30,7 @@ import (
 //     keeps meeting. The de-interleave below is the only new code, and gathering group by
 //     group yields head order directly (head = g*groups + j), so no permutation is needed
 //     beyond the gather.
-func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode) (*Weights, error) {
+func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	nH, nKV := arch.NumHeads, arch.NumKVHeads
@@ -43,6 +43,15 @@ func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.Safetensor
 
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
 	var err error
+	// qw is quantizeWM/quantizeWMSkipRow4 (M-07, audit-metal-2026-09-12.md) for every layer
+	// projection below — Embed/LMHead deliberately stay on plain quantizeWM. Named qw, not q,
+	// because q is already the query-tensor local below.
+	qw := func(m linalg.WeightMat, mode quantMode) linalg.WeightMat {
+		if skipRow4 {
+			return quantizeWMSkipRow4(m, mode)
+		}
+		return quantizeWM(m, mode)
+	}
 	if w.Embed, err = loadMat(st, "model.tok_embeddings.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
@@ -81,15 +90,15 @@ func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.Safetensor
 			copy(k[g*hd*hidden:], qkv[base+groups*hd*hidden:base+(groups+1)*hd*hidden])
 			copy(v[g*hd*hidden:], qkv[base+(groups+1)*hd*hidden:base+gs*hd*hidden])
 		}
-		l.QProj = quantizeWM(linalg.WrapF32(q, qDim, hidden), matmulQuant(quant, "q"))
-		l.KProj = quantizeWM(linalg.WrapF32(k, kvDim, hidden), matmulQuant(quant, "k"))
-		l.VProj = quantizeWM(linalg.WrapF32(v, kvDim, hidden), matmulQuant(quant, "v"))
+		l.QProj = qw(linalg.WrapF32(q, qDim, hidden), matmulQuant(quant, "q"))
+		l.KProj = qw(linalg.WrapF32(k, kvDim, hidden), matmulQuant(quant, "k"))
+		l.VProj = qw(linalg.WrapF32(v, kvDim, hidden), matmulQuant(quant, "v"))
 
 		om, oerr := loadMat(st, p+"attention.wo.weight", hidden, qDim)
 		if oerr != nil {
 			return nil, oerr
 		}
-		l.OProj = quantizeWM(om, matmulQuant(quant, "o"))
+		l.OProj = qw(om, matmulQuant(quant, "o"))
 
 		// w1 = gate, w3 = up, w2 = down (llama's original names).
 		for _, m := range []struct {
@@ -105,7 +114,7 @@ func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.Safetensor
 			if merr != nil {
 				return nil, merr
 			}
-			*m.dst = quantizeWM(mm, matmulQuant(quant, m.name))
+			*m.dst = qw(mm, matmulQuant(quant, m.name))
 		}
 	}
 	return w, nil

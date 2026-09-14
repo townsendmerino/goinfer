@@ -125,6 +125,24 @@ const int4ParThreshold = 1 << 20
 // here are exactly the ones linalg.Quantize{Rows,Groups} call internally, just
 // driven one row at a time; the result is WrapInt8/WrapInt4/WrapF32'd (no copy).
 func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+	return streamQuantizedRow4(rows, cols, mode, true, rowInto)
+}
+
+// streamQuantizedSkipRow4 is streamQuantized with the arm64 row4 side-copy skipped (M-07,
+// audit-metal-2026-09-12.md) — for a tensor reached only through streamQuantized's own
+// non-batched callers (o_proj/down_proj/router via streamMat, MoE experts via stackedExperts,
+// gpt-oss's expert gate/up/down, fused-tensor splits via fusedSplit). These are exactly the ones
+// quantizeWMSkipRow4 covers for the safetensors path; this is streamQuantized's GGUF/streaming
+// twin, same narrower "canonical alone, no needCanonical branch" scope as quantizeWMSkipRow4.
+func streamQuantizedSkipRow4(rows, cols int, mode quantMode, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
+	return streamQuantizedRow4(rows, cols, mode, false, rowInto)
+}
+
+// streamQuantizedRow4 is streamQuantized/streamQuantizedSkipRow4's shared body; row4 selects
+// which of repackW4A8IfEligible (canonical+row4, today's default) or
+// repackW4A8IfEligibleSkipRow4 (canonical alone) runs the int4 case — every other quant mode is
+// row4-independent (row4 is int4-only).
+func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
 	scratch := make([]float32, cols)
 	switch mode {
 	case quantInt8, quantInt8I8:
@@ -149,7 +167,11 @@ func streamQuantized(rows, cols int, mode quantMode, rowInto func(r int, dst []f
 			}
 			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
 		}
-		return repackW4A8IfEligible(maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))), nil
+		canon := maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))
+		if row4 {
+			return repackW4A8IfEligible(canon), nil
+		}
+		return repackW4A8IfEligibleSkipRow4(canon), nil
 	default: // quantNone — no quant target, keep the full f32
 		f32 := make([]float32, rows*cols)
 		for r := range rows {
@@ -213,6 +235,27 @@ func streamQuantizedBatchedProj(rows, cols int, mode quantMode, needCanonical, s
 // freed-f32 memory win comes from dropping the old f32 reference at the call site).
 // No-op for quantNone or if w isn't f32-resident (already quantized / empty).
 func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
+	return quantizeWMRow4(w, mode, true)
+}
+
+// quantizeWMSkipRow4 is quantizeWM with the arm64 row4 side-copy skipped (M-07,
+// audit-metal-2026-09-12.md) — for a projection reached only through quantizeWM's ~40
+// family-specific call sites (o_proj, down_proj, router, MoE experts, shared-expert — everything
+// isBatchedProjTensor doesn't already cover via quantizeBatchedProjWM). Unlike
+// quantizeBatchedProjWM/quantizeEmbedWM, there is no needCanonical branch here: repacked-only
+// (dropping canonical entirely) is specifically the CPU-batched-dispatch trade
+// repackedOnlyOrCanonical exists for, and none of these tensor classes go through that dispatch —
+// this only ever chooses between "canonical + row4" (today's default) and "canonical alone",
+// mirroring repackW4A8IfEligibleSkipRow4's own narrower role.
+func quantizeWMSkipRow4(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
+	return quantizeWMRow4(w, mode, false)
+}
+
+// quantizeWMRow4 is quantizeWM/quantizeWMSkipRow4's shared body; row4 selects which of
+// repackW4A8IfEligible (canonical+row4, today's default) or repackW4A8IfEligibleSkipRow4
+// (canonical alone) runs the int4 case. Every other quant mode is unaffected by row4 either way
+// (row4 is int4-only), so both wrappers behave identically for int8/i8/none.
+func quantizeWMRow4(w linalg.WeightMat, mode quantMode, row4 bool) linalg.WeightMat {
 	f32, ok := w.F32()
 	if !ok {
 		return w
@@ -226,7 +269,11 @@ func quantizeWM(w linalg.WeightMat, mode quantMode) linalg.WeightMat {
 		if fakeQuantScheme != "" { // DIAGNOSTIC (default-off, single load-time env read): see fakequant.go
 			return fakeInt4WM(f32, w.Rows(), w.Cols(), fakeQuantScheme)
 		}
-		return repackW4A8IfEligible(maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))) // GOINFER_INT4_F16_SCALES diagnostic
+		canon := maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)) // GOINFER_INT4_F16_SCALES diagnostic
+		if row4 {
+			return repackW4A8IfEligible(canon)
+		}
+		return repackW4A8IfEligibleSkipRow4(canon)
 	default:
 		return w
 	}
