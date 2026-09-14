@@ -20,8 +20,9 @@ edit to it that says what it is.
 
 **Which build was measured.** This work was rebased onto origin/main mid-run (four times), rewriting every hash
 cited here; the ones above are the current ones. The scoring binary for both cells was built
-BEFORE the rebase, from the commit that is now `a276b8ef` but was then `13c75842` (preserved
-locally as `backup/pre-rebase-20260913`). Between that build and main: the CUDA kernel sources and
+BEFORE the rebase, from the commit that is now `a276b8ef` but was then `13c75842`. That pre-rebase
+commit was not published and is not kept; nothing here depends on retrieving it, because what
+matters about it is stated next and was checked at the time. Between that build and main: the CUDA kernel sources and
 PTX are byte-identical, and the split-KV / V-sum Go code differs only in one comment path — but the
 rebase brought 169 Go-file changes elsewhere, including `cuda/resident.go`, `cuda/backend.go` and
 `cuda/prefill.go`. So the exact-vs-spike **comparison** is a property of the V-sum reduction tree and
