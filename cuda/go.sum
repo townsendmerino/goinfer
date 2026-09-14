@@ -4,6 +4,8 @@ github.com/eitamring/gocudrv v0.3.2 h1:zjRj3gRSfmbxbQkt1jXSTdGKHPwL1R912qovXnOPU
 github.com/eitamring/gocudrv v0.3.2/go.mod h1:nA+ytiB8A1YvVSHzBQbn+Be+BGR4gAGVIP+7chLn+O4=
 github.com/townsendmerino/aikit v1.41.0 h1:89XvScqkWqDF3OqoWu9gHYOvLpBUzmlSLCe2bEda6iM=
 github.com/townsendmerino/aikit v1.41.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
+github.com/townsendmerino/aikit v1.42.0 h1:+DstPVNintD/8gM4BjTN0woECmdHvWY59iJyi5IiW/c=
+github.com/townsendmerino/aikit v1.42.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit/gpu v0.32.0 h1:/0XvD3z5q3Aij1vecb4gk4ycZ28gxUuTwVDy9Ie0EaY=
 github.com/townsendmerino/aikit/gpu v0.32.0/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
 github.com/townsendmerino/goinfer v0.18.0 h1:opcSE/bvxfMqUOLqKphpT6mSeSJieFoqluvFGtXxGe8=
