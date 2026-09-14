@@ -1367,6 +1367,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1141` | goinfer | `kvOnly, hasKV := m.resident.(ResidentPrefillKV)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1264` | goinfer | `useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil \|\| (lora != nil && res` |
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:109` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
+| `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:214` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:414` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:483` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:988` | goinfer | `anchor: func (s *server) loadVisionTower(cfg config) error {` |

@@ -1084,7 +1084,25 @@ re-baked by the code it checks (G-04).
   structural claim was wrong.
 - N-27 `metal/model.go:1304` — pipe path memcpys 608 KB into `logitsHost` before the ack; the
   zero-copy `r.logits.Floats()` view could be returned (the contract already says "consume before
-  the next call"). ≈30–60 µs/token.
+  the next call"). ≈30–60 µs/token. **INVESTIGATED, DECLINED 2026-09-13**: this is not a free win —
+  `decoder/spec_optfwd.go:214-216` documents the exact failure mode, MEASURED on CUDA before its own
+  fix: `cuda/resident.go` used to return a zero-copy alias of its reusable host buffer ("a per-call
+  slice" is explicitly NOT what a zero-copy view gives you), and overlapping a speculative second
+  `Forward` call with `SampleWithInfo` reading the FIRST call's result raced a DMA write against the
+  read — same token id, but logprob -2.6463 vs -2.6266, and under `-race` (timing-shifted) the
+  emitted token stream diverged outright. **`go test -race` cannot see this class of bug at all** —
+  the corrupting write is a driver/GPU write into shared memory, not a Go-visible memory access, so
+  the detector is structurally blind to it; the only way this was ever found was by measuring
+  logprobs/tokens directly. `spec_optfwd.go`'s own comment credits Metal's CURRENT copy-based
+  `Forward` with being the reason its optimistic-forward feature "verified clean" on Metal without
+  needing backend-specific handling — i.e., an existing, working piece of code's reasoning already
+  depends on the exact property N-27 proposes removing. The `gate.scratch` copy there is backend-
+  agnostic (it copies regardless of which backend it's talking to) so it would still protect THAT
+  one call site either way — but making Metal's `Forward` alias a live GPU-written buffer would put
+  every OTHER present and future `ResidentForward.Forward` consumer that does not carry its own
+  defensive copy back into the same invisible-to-`-race` hazard class CUDA already paid for once.
+  Removing a 30-60 µs/token memcpy is not worth reopening a bug this hard to detect without a full,
+  deliberate audit of every consumer for concurrent double-calls — parked, not fixed.
 - N-28 `metal/model.go:1379-1380,1419-1431` — at temperature > 0.2 (serve default 1.0) nothing
   overlaps the CPU sampler with the GPU: the full-vocab softmax/filter sits in the GPU-idle gap
   (order 0.5–1.5 ms of ~13.6 ms; the served 54 vs decode-only 73.6 tok/s is where it shows). The
