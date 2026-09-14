@@ -141,6 +141,7 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 
 	r.PrefillLast(embs, 0)         // warm: pays library compile + first scratch alloc
 	ledgerBase, _ := ledgerLens(r) // buffers on the device ledger after warm-up
+	sizeBase := r.d.CurrentAllocatedSize()
 	runtime.GC()
 	base := rssMB(t)
 	const iters = 30
@@ -152,10 +153,11 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 		}
 	}
 	ledgerEnd, _ := ledgerLens(r)
+	sizeEnd := r.d.CurrentAllocatedSize()
 	runtime.GC()
 	end := rssMB(t)
-	t.Logf("prefill: device ledger %d → %d buffers over %d prefills; RSS base %d → peak %d → end %d MB (informational)",
-		ledgerBase, ledgerEnd, iters, base, peak, end)
+	t.Logf("prefill: device ledger %d → %d buffers, CurrentAllocatedSize %d → %d bytes over %d prefills; RSS base %d → peak %d → end %d MB (informational)",
+		ledgerBase, ledgerEnd, sizeBase, sizeEnd, iters, base, peak, end)
 
 	// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every scratch
 	// buffer it allocated, so the device ledger returns to its warm-up length after each call and is
@@ -166,6 +168,18 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 	if ledgerEnd != ledgerBase {
 		t.Errorf("PREFILL LEAK: device ledger grew %d → %d buffers over %d PrefillLast calls (%+d) — per-call "+
 			"scratch is not being released", ledgerBase, ledgerEnd, iters, ledgerEnd-ledgerBase)
+	}
+	// CurrentAllocatedSize (G-06, audit-metal-2026-09-12.md): the ledger above proves this
+	// package's OWN bookkeeping returns to baseline, but ReleaseBuf/ReleaseAll clear that
+	// bookkeeping unconditionally before (not because) the native release actually happens — so
+	// a ledger-only gate cannot tell "everything was truly freed" from "the release call silently
+	// did nothing". This reads MTLDevice's own reported allocation instead, independent of the
+	// ledger. Some allocator slack is expected (rounding, fragmentation from 30 alloc/free
+	// cycles) — the bound is "close to baseline", not exact equality.
+	if sizeEnd > sizeBase+sizeBase/4+(1<<20) { // 25% slack + 1 MiB floor for a near-zero base
+		t.Errorf("PREFILL LEAK (device-reported): CurrentAllocatedSize %d → %d bytes over %d "+
+			"PrefillLast calls (%+d) — native GPU memory is not actually being freed even though "+
+			"the ledger (allocs=%d→%d) says it is", sizeBase, sizeEnd, iters, int64(sizeEnd)-int64(sizeBase), ledgerBase, ledgerEnd)
 	}
 }
 
@@ -205,6 +219,12 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 
 	// Snapshot B's device ledgers so we can prove closing A leaves them untouched.
 	bBufs0, bObjs0 := ledgerLens(b)
+	// CurrentAllocatedSize (G-06) reflects the whole PHYSICAL device, not a per-Device-handle
+	// value — confirmed directly (allocating through one *Device's handle shows up identically
+	// through another's, since MTLCreateSystemDefaultDevice hands back retains of the same
+	// underlying GPU). So this total includes both A's and B's buffers; read via b.d since a's
+	// id goes to 0 once Close runs below.
+	sizeBoth := b.d.CurrentAllocatedSize()
 	want := append([]float32(nil), b.Forward(7, 0)...) // B's output while A is alive
 
 	a.Close() // free A only
@@ -246,9 +266,21 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 		t.Errorf("closing A changed B's ledger (%d→%d buffers, %d→%d objc) — the free is not per-model",
 			bBufs0, bBufs1, bObjs0, bObjs1)
 	}
+	// CurrentAllocatedSize (G-06): with A's ledger at 0/0, closing A SHOULD have shrunk the
+	// device's real allocation by roughly A's own footprint, not just cleared A's bookkeeping —
+	// this is the check LedgerLen alone cannot make. Bound loosely (some free/small-buffer slack)
+	// rather than pin an exact byte count, since B's own resident weights/KV/scratch still
+	// dominate the total and this is only proving the total moved in the right direction.
+	sizeAfter := b.d.CurrentAllocatedSize()
+	if sizeAfter >= sizeBoth {
+		t.Errorf("device-reported total after closing A: %d bytes, want < %d (before) — A's native "+
+			"GPU memory does not appear to have actually been freed, even though its ledger reads 0/0",
+			sizeAfter, sizeBoth)
+	}
 	runtime.GC()
-	t.Logf("A+B alive → closed A: A ledger now %d buf/%d obj (want 0/0), B ledger %d buf/%d obj (unchanged from %d/%d); B bit-identical. RSS %d MB (informational)",
-		aBufs, aObjs, bBufs1, bObjs1, bBufs0, bObjs0, rssMB(t))
+	t.Logf("A+B alive → closed A: A ledger now %d buf/%d obj (want 0/0), B ledger %d buf/%d obj (unchanged from %d/%d); "+
+		"device CurrentAllocatedSize %d → %d bytes; B bit-identical. RSS %d MB (informational)",
+		aBufs, aObjs, bBufs1, bObjs1, bBufs0, bObjs0, sizeBoth, sizeAfter, rssMB(t))
 	b.Close()
 }
 

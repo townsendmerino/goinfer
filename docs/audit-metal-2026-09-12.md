@@ -691,7 +691,7 @@ re-baked by the code it checks (G-04).
   ./internal/serveapp/...`, gofmt/vet/staticcheck clean.
 
 #### M-14 · The residency set rides on every command buffer because aikit's binding has `Queue.AddResidencySet` but not `MTLCommandBuffer.useResidencySet:` — a recorded +62 ms/token waiting on one selector (aikit item)
-- **Where:** aikit `residencyset.go:107-109` (only the queue-level attach; `:22-29` lists five
+- **Where:** aikit `residencyset.go:108-109` (only the queue-level attach; `:22-29` lists five
   selectors, none per-command-buffer); `metal/model.go:1175-1144` ("+2.07 ms/CB → +62 ms/tok …
   FIX (fold into the next aikit release …): a PHASE-SCOPED residency set attached only to phase-2's
   command buffers (per-encoder useResidencySet)").
@@ -743,7 +743,7 @@ re-baked by the code it checks (G-04).
 - **Prior:** aikit audit M-14/M-09/M-10 (CUDA halves done); goinfer task-gpu-paths G2 / multimodal P6.
 
 #### M-16 · Every buffer is hazard-tracked and every encoder serial; the binding exposes neither the untracked option bit nor `computeCommandEncoderWithDispatchType:`, and the record calls the resulting per-dispatch floor "unassessed"
-- **Where:** aikit `metal.go:424,432,443,491,500` (every `newBuffer*` passes `options = 0` =
+- **Where:** aikit `metal.go:438,432,443,491,500` (every `newBuffer*` passes `options = 0` =
   Shared + DefaultCache + HazardTrackingModeDefault), `:682,701,906` (`selComputeEncoder`, serial);
   `docs/completed/metal-verdict.md:131-133` ("~14 cores + serial hazard-tracked encoding ⇒ a ~3.8
   µs/dispatch GPU-side floor"), `:248-249` (watch item, "unassessed").
@@ -805,7 +805,7 @@ re-baked by the code it checks (G-04).
   `metal/model.go:1299-1271` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
   paging lives only in `Forward`'s dispatch to `forwardLogitsPaged`, `:1241`), `metal/moe.go:289-291`
   ("expGuW/expGuS/expDW/expDS stay zero-value when paged"), `:651-659` (bound unconditionally);
-  `metal.go:745-748` (OOB/unmapped reads are silently tolerated).
+  `metal.go:777-748` (OOB/unmapped reads are silently tolerated).
 - **Failure:** on a `--moe-cache-slots` MoE (generic or Gemma 4), an embeddings request returns a
   finite garbage vector with no error; the snapshot golden's `Forward` path likewise.
 - **Fix:** decline in `HiddenLast`/`Forward`/`ForwardArgmax` when `r.g4moe.paged || r.moe.paged`,
@@ -869,7 +869,7 @@ re-baked by the code it checks (G-04).
   staticcheck clean.
 
 #### C-05 · aikit `Queue.Run1DBatchTG` / `Run1DTG` own an NSAutoreleasePool without the G22 OS-thread pin every sibling helper has
-- **Where:** aikit `metal.go:901-928` (`pool := … Send(selInit); defer pool.Send(selDrain)` with
+- **Where:** aikit `metal.go:983-928` (`pool := … Send(selInit); defer pool.Send(selDrain)` with
   no `runtime.LockOSThread`) vs `:585-589,621-625,925-929` (siblings pin, citing "intermittent
   SIGSEGV (fault 0x10) inside objc_msgSend"). Only production caller (`qwenmetal.ForwardViT`) pins
   for the whole forward; goinfer's batch-k harnesses call it unpinned.
@@ -887,11 +887,24 @@ re-baked by the code it checks (G-04).
   aikit-repo fix: committed to aikit `main` locally, CHANGELOG entry added under `[Unreleased]`,
   but not pushed, tagged, or released — goinfer's `go.mod` still pins the pre-fix aikit version
   until a deliberate release + bump (see `RELEASING.md`) lands it.
+- **RELEASED 2026-09-14 — `aikit/gpu` tagged `gpu/v0.33.1`, goinfer bumped onto it
+  (`metal/go.mod`, `cuda/go.mod`).** Cut alongside C-06 and G-06 below (all three landed in the
+  same `gpu/` tag, since none had any exported-surface conflict). `RELEASING.md`'s GPU submodule
+  ritual run in full: `preflight` PASS 10/10, `gpugate` PASS 5/6 applicable (`ptx-repro` n/a on
+  Apple Silicon), `gpudevice` run on BOTH platforms — PASS 5/5 applicable on this Mac
+  (Darwin/arm64, backend:metal) and PASS 5/5 applicable on `nobara-pc` (Linux/x86_64,
+  backend:cuda) — 9/9 gpu modules covered combined. First tag (`gpu/v0.33.0`) failed CI's
+  `gpu tag evidence` gate because its message paraphrased the device verdicts instead of pasting
+  the tool's literal `VERDICT:` lines the gate regex-matches; fixed forward with `gpu/v0.33.1`
+  carrying the verbatim lines, per `RELEASING.md`'s own "the tag is immutable, fix forward"
+  guidance. `consumergate --tag gpu/v0.33.1` PASS from outside the repo. goinfer's own
+  `metal/close_leak_test.go` now consumes `CurrentAllocatedSize()` directly (see G-06's own
+  closure note) — this finding is fully closed, not just shipped-and-queued.
 
 #### C-06 · `visionmetal` has no threadgroup-memory budget guard (qwenmetal's C-02 fix was not mirrored), and the status latch it relies on cannot fire on Apple silicon
 - **Where:** aikit `visionmetal/encoder.go:225-228` (`DispatchTG(…, np*4, …)` — over the 32 KiB
   limit above np=7,680) vs `qwenmetal/encoder.go:247-250,368` (`attnThreadgroupBytes` guard);
-  `metal.go:743-748` ("silently tolerates … over-budget threadgroup memory … status Completed").
+  `metal.go:775-748` ("silently tolerates … over-budget threadgroup memory … status Completed").
 - **Failure:** a SigLIP tower with >7,680 patches returns a plausible wrong hidden state. Not a
   shipped shape today (so400m/896 = 4,096).
 - **Fix:** the qwenmetal check with `np` in `newEncoder`. **Confidence:** plausible. **Prior:** aikit
@@ -910,6 +923,11 @@ re-baked by the code it checks (G-04).
   that have never been tagged"), and goinfer's `metal/go.mod`/`cuda/go.mod` pin `aikit/gpu v0.32.0`
   regardless; nothing in goinfer currently calls `visionmetal` (M-15 is still open), so nothing is
   blocked by the absence of a release.
+- **RELEASED 2026-09-14 — `gpu/v0.33.1`, same tag as C-05.** See C-05's own release note for the
+  ritual details. `visionmetal` is still not called from anywhere in goinfer (M-15), so this
+  release closes the fix's provenance but not any live goinfer code path — recorded for
+  completeness, matching C-05's own "the eight that have never been tagged" caveat about the
+  backend submodule itself.
 
 ---
 
@@ -995,7 +1013,7 @@ re-baked by the code it checks (G-04).
   `metal/model.go:1976-1974`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
-- **Where:** `metal/close_leak_test.go:160-169,224-248` vs aikit `metal.go:382-390`
+- **Where:** `metal/close_leak_test.go:162-169,224-248` vs aikit `metal.go:396-390`
   (`ids := d.allocs; d.allocs = nil; … for … Send(selRelease)`): `LedgerLen()` is emptied
   regardless of whether `release` is sent; the test's own comment (`:229-231`) records RSS "DID NOT
   ratchet" under a neutered `ReleaseAll` because macOS compressed the pages. **Fix:** assert on
@@ -1017,6 +1035,21 @@ re-baked by the code it checks (G-04).
   `metal/close_leak_test.go` still asserts on `LedgerLen()` only; consuming
   `CurrentAllocatedSize()` there to close this finding fully needs a deliberate aikit release +
   bump (see `RELEASING.md`) — same queued state as C-05 and C-06.
+- **FULLY CLOSED 2026-09-14 — `gpu/v0.33.1` released, goinfer now consumes
+  `CurrentAllocatedSize()`.** See C-05's release note for the tagging ritual. Both
+  `metal/close_leak_test.go` gates the finding names now assert on it alongside the existing
+  ledger check, not instead of it (the ledger still proves this package's own bookkeeping is
+  correct; the new assertion proves the native memory really moved):
+  `TestMetal_PrefillScratchDoesNotLeak` reads `r.d.CurrentAllocatedSize()` before/after 30
+  `PrefillLast` calls (measured: 391,348,224 → 391,348,224 bytes, exactly flat);
+  `TestMetal_CloseWithSecondModelAlive` reads it before/after closing model A with B still alive —
+  confirmed `CurrentAllocatedSize` reflects the whole *physical* device, not a per-`*Device`-handle
+  value (verified directly: allocating through one handle shows up identically through another's,
+  since `MTLCreateSystemDefaultDevice` hands back retains of the same GPU), so the combined total
+  dropping from A+B's 782,172,160 bytes to B-alone's 391,610,368 after `a.Close()` is real evidence
+  A's memory was freed, not an artifact of querying the wrong handle. Both real-device tests green
+  (`GOINFER_HEAVY_TESTS=1`, qwen2.5-coder-0.5b-instruct-q4_k_m.gguf); full `go test -tags metal
+  ./metal/...` green.
 
 #### G-07 · `TestPrefillGate` (superseded §3 form) would `Fatalf` on its first cell; three files cite `TestMetalPrefillDivergenceRate`, which does not exist
 - **Where:** `metal/prefill_gate_test.go:65,75,254-257` (K=256 without the floor override);
@@ -1063,7 +1096,7 @@ re-baked by the code it checks (G-04).
   cells. **Fix:** let it run on the paged 35B, sequential vs expert-major once M-05 exists.
 
 #### G-10 · The C-09 status latch (`mustCmdBufOK` / `Encoder.Err()`) is, by its own comment, inert on Apple silicon — host-side pre-checks are the real gate
-- **Where:** aikit `metal.go:743-748,770-775`, `metal/cmdbuf_status_test.go:19-22` (both repos'
+- **Where:** aikit `metal.go:775-748,770-775`, `metal/cmdbuf_status_test.go:19-22` (both repos'
   tests inject the error). Documentation, not a lever: every "Err() will catch it" reliance needs a
   pre-check (C-06 is the bare one).
 
@@ -1320,7 +1353,7 @@ re-baked by the code it checks (G-04).
   memory/bandwidth-bound — not a clear win, and the audit's own number (<1%) doesn't justify the
   added complexity without measuring first. rope2_kv (0.6%) is unchanged, as the finding itself
   says.
-- N-31 `metal.go:713-717` — `WaitDone` reads four GPU timestamps per production token for
+- N-31 `metal.go:744-747` — `WaitDone` reads four GPU timestamps per production token for
   `LastGPUTimes` (tests only); µs.
 - N-32 `metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
   fast-math OFF library-wide for one exact divide; `precise::divide` per op would free the rest.
@@ -1384,6 +1417,24 @@ re-baked by the code it checks (G-04).
 - N-40 `docs/benchmarks.md:975` — §B3 "4-bit both sides": the tied LM head (24% of per-token bytes)
   runs int8 by a deliberate fidelity pin; up to ~117 MB/token (≈1.4 ms) of the 1.5B decode deficit
   is a chosen precision trade, not kernel quality. Labelling, not a defect.
+- **N-41** (found 2026-09-14, incidental to the aikit v1.42.0/`gpu/v0.33.1` bump's verification
+  run) `decoder/fitguard.go` (unpinned-load auto-context sizing) vs `metal/model.go` (the backend's
+  hard 4096-position resident-context ceiling, "a fixed-size kernel score buffer, not a tunable
+  default"): an unpinned `decoder.Load` on Metal picks a context from currently-free host RAM with
+  no awareness of this backend-specific hard cap, so three real-device tests
+  (`TestEncodeAhead`, `TestPrefillNoNaN`, `TestPrefillParity`) fail with "resident context N
+  positions exceeds this backend's hard ceiling of 4096" whenever the full heavy `./metal/...`
+  suite runs back-to-back (cumulative memory pressure from earlier tests lowers free RAM at the
+  moment these three call `decoder.Load`, and the auto-sizer picks a context 3-7x over the
+  ceiling — measured 12109-29666 positions across several runs on this machine). Confirmed
+  environment-dependent, not a regression from this session's other work: all three PASS reliably
+  in isolation (`-run` scoped to just one of them, ~5 GB free) and FAIL reliably as part of the
+  full suite, reproducing identically with and without this session's aikit-bump/G-06 changes
+  stashed out. **Fix (not attempted, out of scope for this pass):** either the fit-guard needs to
+  know Metal's hard ceiling and clamp to it (the same shape `smallerFittingContext` already uses
+  for the KV-budget case), or these three tests need to pin an explicit `-ctx` rather than rely on
+  auto-sizing. **Confidence:** confirmed (reproduced 4x total: 2 full-suite runs fail, 2 isolated
+  runs pass, across two different memory states).
 
 ---
 
@@ -1393,7 +1444,7 @@ re-baked by the code it checks (G-04).
   `waitUntilCompleted`, one serial encoder, 310 dispatches, ~1,030 purego transitions, one heap
   allocation per token; no per-token buffer creation; `setBuffers` batching already cut binds from
   ~2,600 to ~337 msgSends/token; ICB and unretained references are recorded nulls
-  (`metal/model.go:1423-1419`, `metal.go:700-812`, `metal-verdict.md:171-172`).
+  (`metal/model.go:1423-1419`, `metal.go:732-812`, `metal-verdict.md:171-172`).
 - **Encode-ahead on the production path:** `metalResident.Forward` → `ForwardEmbPipe` → `execLoop`;
   t+1 encoded between `Commit(t)` and `WaitDone(t)`; value-independent (pos/nKeys/`r.x` written at
   commit); only 1 token in 64 (pool drain), the first token after `SetAdapter`, paged models and

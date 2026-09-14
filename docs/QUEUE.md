@@ -1372,13 +1372,13 @@ supports.
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:483` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:988` | goinfer | `anchor: func (s *server) loadVisionTower(cfg config) error {` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1085` | goinfer | `// Adapter (compute-time LoRA) models MUST NOT take the stateless resident path: the LoR` |
-| `docs/audit-metal-2026-09-12.md|metal.go:382` | gpu | `func (d *Device) ReleaseAll() {` |
-| `docs/audit-metal-2026-09-12.md|metal.go:424` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
-| `docs/audit-metal-2026-09-12.md|metal.go:700` | gpu | `return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}` |
-| `docs/audit-metal-2026-09-12.md|metal.go:713` | gpu | `e.captureErr()` |
-| `docs/audit-metal-2026-09-12.md|metal.go:743` | gpu | `// real GPU abort is nearly impossible to provoke on demand (the hardware silently toler` |
-| `docs/audit-metal-2026-09-12.md|metal.go:745` | gpu | `// such command buffer still reports status Completed), which is exactly why this status` |
-| `docs/audit-metal-2026-09-12.md|metal.go:901` | gpu | `func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {` |
+| `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
+| `docs/audit-metal-2026-09-12.md|metal.go:438` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
+| `docs/audit-metal-2026-09-12.md|metal.go:732` | gpu | `return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}` |
+| `docs/audit-metal-2026-09-12.md|metal.go:744` | gpu | `e.cb.Send(selWaitCompleted)` |
+| `docs/audit-metal-2026-09-12.md|metal.go:775` | gpu | `// real GPU abort is nearly impossible to provoke on demand (the hardware silently toler` |
+| `docs/audit-metal-2026-09-12.md|metal.go:777` | gpu | `// such command buffer still reports status Completed), which is exactly why this status` |
+| `docs/audit-metal-2026-09-12.md|metal.go:983` | gpu | `func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {` |
 | `docs/audit-metal-2026-09-12.md|metal/attention_prefill_fused_test.go:39` | goinfer | `anchor: func TestAttentionPrefillFused(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:154` | goinfer | `func metalMoESlotsRequest(m *decoder.Model) string {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:289` | goinfer | `for l := 0; l < nLayers; l++ {` |
@@ -1390,7 +1390,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:537` | goinfer | `func (a *metalResident) PrefillPath() (bool, string) {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:614` | goinfer | `// HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:675` | goinfer | `// ForwardN runs a batch of embeddings at consecutive positions (prefill). Each row is c` |
-| `docs/audit-metal-2026-09-12.md|metal/close_leak_test.go:160` | goinfer | `// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every ` |
+| `docs/audit-metal-2026-09-12.md|metal/close_leak_test.go:162` | goinfer | `// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmd/serve/main.go:5` | goinfer | `// Identical to the pure-Go root binary except it blank-imports the opt-in Metal module ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmdbuf_status_test.go:19` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:169` | goinfer | `p.slots[s] = expertSlot{` |
@@ -1471,8 +1471,8 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/spec_prefill_regression_test.go:46` | goinfer | `// decode path (54% stream divergence, a figure once measured by TestMetalPrefillDiverge` |
 | `docs/audit-metal-2026-09-12.md|metal/spec_verify_curve_test.go:22` | goinfer | `// path once measured 54% stream divergence, §A2-Metal, docs/ollama-chase.md:623 — histo` |
 | `docs/audit-metal-2026-09-12.md|metal_vit.go:168` | gpu | `// attention: bidirectional multi-head self-attention, ONE threadgroup per (head, query)` |
-| `docs/audit-metal-2026-09-12.md|metal_vit.go:576` | gpu | `// KernelGEMMF32SGBig is the aligned (M%64==0, N%64==0, K%8==0) fast path: 64×64 tile,` |
-| `docs/audit-metal-2026-09-12.md|residencyset.go:107` | gpu | `// AddResidencySet attaches the set to this command queue: every command buffer committe` |
+| `docs/audit-metal-2026-09-12.md|metal_vit.go:576` | gpu | `// KernelGEMMF32SGBig is the aligned (M%32==0, N%32==0, K%8==0) fast path: 32×32 tile` |
+| `docs/audit-metal-2026-09-12.md|residencyset.go:108` | gpu | `// AddResidencySet attaches the set to this command queue: every command buffer committe` |
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
