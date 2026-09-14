@@ -526,10 +526,10 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 			L.g4moe.pool.prefetchAll(ids) // WILLNEED all routed experts at once (no-op when disabled)
 			p.idxCoordNanos += time.Since(c0).Nanoseconds()
 			s0 := time.Now()
-			slots := make([]expertSlot, g.topK)
-			for j := 0; j < g.topK; j++ {
-				slots[j] = L.g4moe.pool.ensureResident(ids[j]) // stage on miss, evict LRU
-			}
+			// M-12 (audit-metal-2026-09-12.md): stage every miss in this token's top-k concurrently
+			// instead of one pread at queue depth 1 per expert — see ensureResidentBatch's own doc
+			// comment for why this is safe.
+			slots := L.g4moe.pool.ensureResidentBatch(ids)
 			p.stageWallNanos += time.Since(s0).Nanoseconds() // cross-check vs pool.stageNanos (same body)
 			w2 := time.Now()
 			e2 := begin() // phase 2: experts from slots + join

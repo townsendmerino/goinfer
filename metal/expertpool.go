@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"io"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -197,6 +198,129 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 	p.touch(s)
 	p.stages++
 	return p.slots[s]
+}
+
+// ensureResidentBatch is ensureResident generalized over a whole layer's routed top-k at once
+// (M-12, audit-metal-2026-09-12.md): slot selection and eviction bookkeeping run SEQUENTIALLY
+// first — the LRU/where/slotExpert state is not safe for concurrent mutation, and two misses in
+// the same batch must never be handed the same slot — but the actual staging I/O for every miss
+// then runs CONCURRENTLY. Serial staging at queue depth 1 was the measured bottleneck (per-miss
+// cost RISING with N, the signature of latency-bound cold reads with one outstanding request);
+// pread on a shared fd into disjoint destination buffers is safe (each syscall is positional —
+// it never moves a shared file offset), and the mmap byte-copy path's per-expert source/dest
+// spans are equally disjoint, so there is nothing here that needs the calls serialized.
+//
+// A duplicate id within one call (the router selecting the same expert into two of its top-k
+// slots — not expected, but not assumed impossible either) resolves to the SAME already-picked
+// slot rather than staging it twice or racing two goroutines over one slot's buffers.
+//
+// Callers must still serialize ACROSS calls exactly as before (ensureResident's own doc comment:
+// "the paged forward must submit+wait at each layer before calling this") — this only parallelizes
+// the I/O WITHIN one call, on the single host goroutine that already owns this pool exclusively.
+func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
+	out := make([]expertSlot, len(ids))
+	type miss struct{ idx, expert, slot int }
+	var misses []miss
+	seen := make(map[int]int, len(ids))     // expert id -> slot, for a duplicate id within this call
+	claimed := make(map[int]bool, len(ids)) // slot -> claimed by a miss earlier in THIS batch
+	for i, e := range ids {
+		if s, ok := seen[e]; ok {
+			// A repeat of an id already resolved earlier IN THIS BATCH (the router selecting the
+			// same expert into two top-k slots) — counts as a hit even if the FIRST occurrence was
+			// itself a miss: sequentially, ensureResident(e) called twice in a row would see the
+			// second call find e already resident. Never double-stage: the slot is correct either
+			// way (already staged, or its stage is in flight — the WaitGroup below still waits on
+			// it since it's tracked in misses by the first occurrence's index).
+			p.hits++
+			out[i] = p.slots[s]
+			continue
+		}
+		if s, ok := p.where[e]; ok {
+			p.hits++
+			p.touch(s)
+			out[i] = p.slots[s]
+			seen[e] = s
+			continue
+		}
+		s := p.pickSlot()
+		if claimed[s] {
+			// Out of contract: more DISTINCT misses in one batch than this pool has slots for, so
+			// pickSlot's eviction fallback landed on a slot a miss EARLIER in this same batch
+			// already claimed — staging both would race two goroutines over one buffer and leave
+			// p.where pointing two experts at the same slot. newExpertPool's own doc comment
+			// requires N >= the router's top-k specifically to make this unreachable in production
+			// (ids is always one layer's routed top-k, length <= N by that build-time guard); a
+			// caller that violates it gets a loud panic, not silent corruption.
+			panic(fmt.Sprintf("metal expertpool: batch of %d distinct experts exceeds this pool's "+
+				"%d slots (id %d re-picked slot %d) — the caller must ensure N >= top-k", len(ids), len(p.slots), e, s))
+		}
+		claimed[s] = true
+		if old := p.slotExpert[s]; old >= 0 {
+			delete(p.where, old)
+			p.evictions++
+		} else {
+			p.coldStarts++
+		}
+		// Claim AND touch the slot now, not after staging: pickSlot's eviction fallback reads
+		// p.lru's tail, and deferring touch() until after this whole loop would leave p.lru
+		// reflecting the PRE-BATCH ordering while slotExpert already shows every slot claimed so
+		// far as occupied — exactly the state that makes a later miss in this same batch either
+		// evict a slot another miss in this batch already claimed, or (once every slot has been
+		// claimed once) index p.lru out of range. touch() only reorders p.lru by slot INDEX; it
+		// does not depend on staged content, so moving it before the I/O below changes nothing
+		// observable about eviction order, only that the pick loop stays self-consistent.
+		p.slotExpert[s] = e
+		p.touch(s)
+		seen[e] = s
+		misses = append(misses, miss{i, e, s})
+	}
+
+	if len(misses) > 0 {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var fetchNanos int64
+		wg.Add(len(misses))
+		for _, ms := range misses {
+			go func(ms miss) {
+				defer wg.Done()
+				t0 := time.Now()
+				if p.stagePread != nil {
+					p.stagePread(ms.expert, p.slots[ms.slot])
+				} else {
+					guW, guS, dW, dS := p.stage(ms.expert)
+					copyBytesToU32Buf(p.slots[ms.slot].guW, guW)
+					copy(p.slots[ms.slot].guS.U16s(), guS)
+					copyBytesToU32Buf(p.slots[ms.slot].dW, dW)
+					copy(p.slots[ms.slot].dS.U16s(), dS)
+				}
+				d := time.Since(t0).Nanoseconds()
+				mu.Lock()
+				fetchNanos += d
+				mu.Unlock()
+			}(ms)
+		}
+		wg.Wait()
+		p.fetchNanos += fetchNanos
+		// stageNanos is the wall-clock paging-traffic penalty term (ensureResident's own comment);
+		// under concurrent staging that wall-clock is the WaitGroup's own span, not a fetchNanos
+		// sum, but summing fetchNanos here is a defensible upper bound and keeps this counter's
+		// unit consistent with the sequential path without adding a second wall-clock timer.
+		p.stageNanos += fetchNanos
+		if p.stagePread != nil {
+			p.preads += len(misses)
+		}
+		p.stages += len(misses)
+		for _, ms := range misses {
+			// where[] is populated only after staging completes — a concurrent reader is not
+			// expected here (this pool has exactly one caller, per ensureResident's own doc
+			// comment), but this keeps "resident" meaning "actually holds the right bytes" rather
+			// than "has been claimed", matching the sequential path's own ordering. touch() already
+			// ran in the claiming loop above.
+			p.where[ms.expert] = ms.slot
+			out[ms.idx] = p.slots[ms.slot]
+		}
+	}
+	return out
 }
 
 // pickSlot returns a free slot if one exists, else the least-recently-used slot (lru tail).

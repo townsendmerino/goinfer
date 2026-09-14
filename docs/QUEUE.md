@@ -1390,9 +1390,9 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/close_leak_test.go:160` | goinfer | `// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmd/serve/main.go:5` | goinfer | `// Identical to the pure-Go root binary except it blank-imports the opt-in Metal module ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmdbuf_status_test.go:19` | goinfer | `UNKEYABLE` |
-| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:150` | goinfer | `p.slots[s] = expertSlot{` |
-| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:164` | goinfer | `func (p *expertPool) ensureResident(e int) expertSlot {` |
-| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:41` | goinfer | `func copyBytesToU32Buf(dst Buffer, src []byte) {` |
+| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:151` | goinfer | `p.slots[s] = expertSlot{` |
+| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:165` | goinfer | `func (p *expertPool) ensureResident(e int) expertSlot {` |
+| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:42` | goinfer | `func copyBytesToU32Buf(dst Buffer, src []byte) {` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:449` | goinfer | `// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Ste` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:470` | goinfer | `anchor: func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:535` | goinfer | `e2 := begin() // phase 2: experts from slots + join` |
@@ -1436,7 +1436,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:546` | goinfer | `_, gs, _ := int4DirectBytes(&experts[ei].Gate) // f16 scales from heap q4s (no mmap faul` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:662` | goinfer | `func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:766` | goinfer | `for l := 0; l < r.nL; l++ {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:783` | goinfer | `slots := make([]expertSlot, mo.k)` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:786` | goinfer | `slots := L.moe.pool.ensureResidentBatch(ids)` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:787` | goinfer | `e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:793` | goinfer | `e := r.q.Begin()` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_model_test.go:302` | goinfer | `embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path` |

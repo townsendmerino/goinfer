@@ -780,10 +780,10 @@ func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
 			for j := 0; j < mo.k; j++ {
 				ids[j] = int(idx[j])
 			}
-			slots := make([]expertSlot, mo.k)
-			for j := 0; j < mo.k; j++ {
-				slots[j] = L.moe.pool.ensureResident(ids[j]) // stage on miss, evict LRU
-			}
+			// M-12 (audit-metal-2026-09-12.md): stage every miss in this token's top-k concurrently
+			// instead of one pread at queue depth 1 per expert — see ensureResidentBatch's own doc
+			// comment for why this is safe.
+			slots := L.moe.pool.ensureResidentBatch(ids)
 			e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)
 			r.encodeMoEExpertsPaged(e2, L, slots)
 			e2.End()

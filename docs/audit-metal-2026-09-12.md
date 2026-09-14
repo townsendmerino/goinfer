@@ -495,9 +495,10 @@ re-baked by the code it checks (G-04).
   verdict — disagree (wrong shape); audit-2026-09-10 P-22; queue P21.
 
 #### M-12 · Expert staging is queue-depth 1: k misses × 3 preads, sequential on one thread, GPU idle
-- **Where:** `metal/moe.go:783-786` (serial `ensureResident` loop), `:535-553` (three sequential
+- **Where:** `metal/moe.go:786` (was a serial `ensureResident` loop — see this finding's own
+  closure note), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
-  `metal/expertpool.go:164-200`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
+  `metal/expertpool.go:165-201`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
 - **Mechanism and bound (record-derived):** per-miss cost from the sweep = staging share ×
   s/token ÷ misses/token = 1.6 ms (N=8), 3.0 ms (N=32), 3.6 ms (N=64) for ~1.57 MB — 440–980 MB/s
   effective against the same file's measured 3,687 MB/s sequential pread. Per-miss cost *rising*
@@ -512,6 +513,41 @@ re-baked by the code it checks (G-04).
 - **Confidence:** plausible (derived from recorded aggregates; unmeasured). **Prior:** new; the
   sweep names the bucket ("a different lever, and not obviously a cheap one") but not the
   mechanism.
+- **CLOSED 2026-09-13, cross-expert half shipped; per-expert 3-preads-concurrently NOT done.**
+  Added `expertPool.ensureResidentBatch(ids []int) []expertSlot` — slot selection/eviction
+  bookkeeping still runs sequentially (LRU/`where`/`slotExpert` are not safe for concurrent
+  mutation, and two misses must never be handed the same slot), but every miss's actual staging I/O
+  (the pread or mmap-byte-copy call) now runs under a `WaitGroup`, concurrently. Wired into both
+  paged forwards' per-layer expert loop (`metal/moe.go`'s `forwardLogitsMoEPaged`,
+  `metal/gemma4_moe.go`'s `forwardLogitsPaged`), replacing the old serial `for j := range k {
+  ensureResident(ids[j]) }`. The finding's OWN second half — 3 concurrent preads WITHIN one
+  expert's `stagePread` — was not done this pass; cross-expert concurrency is the larger of the
+  two levers per the sweep's own math (k experts in flight vs. 3 spans of one), and doing both at
+  once would have doubled what one pass needed to get right.
+  <br>**Two real bugs found and fixed while building this, both via a failing test, before either
+  reached the real forward paths:** (1) deferring `touch()` (LRU-reorder) until after staging
+  left `pickSlot`'s eviction fallback reading `p.lru`'s PRE-BATCH ordering while `slotExpert`
+  already showed every slot claimed so far as occupied — a batch with enough misses would either
+  index `p.lru` out of range or hand two different misses in the same batch the same slot;
+  `touch()` now runs in the same sequential pass that claims the slot, before any I/O starts. (2)
+  the out-of-contract case (a batch's distinct-expert count exceeding the pool's own slot count —
+  which `newExpertPool`'s own doc comment says must never happen in production, `N >= top-k`
+  enforced at build time by `TestMoESlotsViaOptions_belowTopKRefusesWithNumbers`) hit exactly the
+  same slot-reuse failure via a different path; `ensureResidentBatch` now panics loudly on it
+  instead of racing two goroutines over one buffer.
+  <br>New tests: `TestExpertPoolBatch_matchesSequential` (batch vs. sequential produce IDENTICAL
+  eviction decisions, staged contents, AND bookkeeping counters — not just "looks right this
+  time"), `TestExpertPoolBatch_pread` (the same, through the `stagePread` fast path this finding
+  is actually about), `TestExpertPoolBatch_overCapacityPanics`. All three, plus the existing
+  `TestGemma4Paging_bitExact` and `TestMoEPaging_matchesNonPaged` (real paged-vs-non-paged forward
+  parity on `gemma4-moe-tiny`/`mixtral-tiny`, now exercising `ensureResidentBatch` through the
+  actual wired call sites — 0 logit mismatches), pass under `-race`.
+  <br>**Not measured**: the actual wall-clock win needs the real cold-read latency a 26B/35B's
+  expert spans have and this session had no such checkpoint to run against — the sweep's own
+  ≤1.6× bound is unverified, and the finding's own "per-miss cost rising with N" signature (the
+  actual evidence this is latency-bound, not something else) can only be re-checked on that
+  hardware. Verified for correctness only: `go test ./metal/` (88 pass), `-tags goinfer_testhooks`
+  (140 pass), both `-race` clean on the MoE/expertpool subset, gofmt/vet/staticcheck clean.
 
 #### M-13 · The Metal expert pager engages only with an explicit `--moe-cache-slots N`; the default declines the 26B/35B/gpt-oss-20b to the CPU-staged path, and the peer-matrix row that "parked" them on the Mac measured that fallback
 - **Where:** `metal/backend.go:154-159` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
@@ -1003,7 +1039,7 @@ re-baked by the code it checks (G-04).
 - N-20 `metal/model.go:378-399` + `metal/moe.go:546-552` — per stage the f16 scales are re-derived from an
   f32 heap copy that is 2× the bytes the GPU consumes (≈2.85 GB on the 26B, ≈4 GB on the 35B, on
   the box whose N=128 cliff was memory pressure); cache f16 per expert at build.
-- N-21 `metal/expertpool.go:150-155` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
+- N-21 `metal/expertpool.go:151-156` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
 - N-22 `metal/moe.go:787-790`, `metal/gemma4_moe.go:535-539` — phase 2 of layer l and phase 1 of l+1 have no
   host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11.
@@ -1034,7 +1070,7 @@ re-baked by the code it checks (G-04).
   `LastGPUTimes` (tests only); µs.
 - N-32 `metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
   fast-math OFF library-wide for one exact divide; `precise::divide` per op would free the rest.
-- N-33 `metal/expertpool.go:41-48` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
+- N-33 `metal/expertpool.go:42-49` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
 - N-34 `gpu/metal_copy.go`, `metal_upload_batch.go` — unused by goinfer (correct on UMA); note they
   are host-side and unfenced, so a `CopyDevice` during an in-flight command buffer would race.
 - N-35 `decoder/model.go:1063-1068,1104` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
@@ -1187,7 +1223,11 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    designed, see M-14's own entry) → **M-13 CLOSED 2026-09-13** (auto-sized slots shipped; the
    M35/M26/G20 rows re-run against the pager this item called for has NOT been run — that needs the
    actual checkpoints, which this pass did not have) → M-11 + G-05 (the shared-event re-run on the
-   paged shape) → M-12. **M-11, M-12 unchanged — still fully open.**
+   paged shape) → **M-12 CLOSED 2026-09-13, cross-expert half only** (concurrent staging across a
+   layer's routed top-k shipped and verified correct end-to-end under `-race`; the finding's own
+   3-concurrent-preads-per-expert half not done; the actual wall-clock win unmeasured — needs real
+   26B/35B cold-read latency this pass had no checkpoint for). **M-11 unchanged — still fully
+   open.**
 8. **Probes:** both CLOSED 2026-09-13, NEGATIVE (see their own entries above). M-09 — the staged
    K-read probe measured 2.3x SLOWER than shipped, not faster; not ported. M-10 — built and A/B'd
    on the depth bench, slower at every depth; reverted.
