@@ -1000,6 +1000,23 @@ re-baked by the code it checks (G-04).
   regardless of whether `release` is sent; the test's own comment (`:229-231`) records RSS "DID NOT
   ratchet" under a neutered `ReleaseAll` because macOS compressed the pages. **Fix:** assert on
   `MTLDevice.currentAllocatedSize` (exact, compression-immune). **Confidence:** confirmed.
+- **CLOSED 2026-09-14 in aikit (`91de2d8`), NOT yet released/bumped into goinfer.** Shipped exactly
+  as scoped: `gpu.Device.CurrentAllocatedSize()`, wrapping `MTLDevice.currentAllocatedSize`
+  directly — independent of `Device`'s own `allocs`/`objs` bookkeeping, so it reflects whether the
+  underlying native memory was actually freed rather than whether the Go-side ledger was cleared.
+  Confirmed the gap was real, not just shape-plausible, with the same TDD discipline this session
+  used throughout: temporarily removed `ReleaseAll`'s release loop (simulating exactly this class
+  of leak — the ledger clears, nothing native is actually freed) and reran the *existing*
+  `TestLedger_buffers`; it still passed, proving `LedgerLen()==0` alone cannot catch this bug.
+  Restored, then added `TestCurrentAllocatedSize_reflectsRealAllocation` (grows/shrinks real GPU
+  memory, checks `CurrentAllocatedSize` moves with it), which correctly failed against the same
+  neutered `ReleaseAll` and passes with it restored. `go test -tags metal ./gpu/...` green (34
+  pass / 0 fail / 3 skip), `go vet -tags metal ./gpu/...` and `gofmt` clean. This is an aikit-repo
+  fix: `gpu.Device` and its ledger live there, not in goinfer's `metal` package — pushed to aikit
+  `main`, CHANGELOG entry added under `[Unreleased]`, but not tagged/released. goinfer's own
+  `metal/close_leak_test.go` still asserts on `LedgerLen()` only; consuming
+  `CurrentAllocatedSize()` there to close this finding fully needs a deliberate aikit release +
+  bump (see `RELEASING.md`) — same queued state as C-05 and C-06.
 
 #### G-07 · `TestPrefillGate` (superseded §3 form) would `Fatalf` on its first cell; three files cite `TestMetalPrefillDivergenceRate`, which does not exist
 - **Where:** `metal/prefill_gate_test.go:65,75,254-257` (K=256 without the floor override);
