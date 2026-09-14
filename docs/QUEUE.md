@@ -1327,12 +1327,12 @@ supports.
 | `docs/audit-2026-09-10.md|metal/model.go:468` | goinfer | `func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {` |
 | `docs/audit-2026-09-10.md|metal/model.go:701` | goinfer | `// PrefillLast reads g0 := r.layers[0].geom ONCE and reuses it for every layer's rope/at` |
 | `docs/audit-2026-09-10.md|metal/model.go:724` | goinfer | `r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && m.PerLayerGeomOK("` |
-| `docs/audit-2026-09-10.md|metal/moe.go:286` | goinfer | `// pool is non-nil when mo.paged: a bounded LRU slot pool + on-demand staging (expertpoo` |
-| `docs/audit-2026-09-10.md|metal/moe.go:463` | goinfer | `ml.routerW = f32Mat(d, &lw.Router)` |
-| `docs/audit-2026-09-10.md|metal/moe.go:535` | goinfer | `gOff, ok1 := m.MmapByteOffset(gq)` |
-| `docs/audit-2026-09-10.md|metal/moe.go:678` | goinfer | `for j := 0; j < mo.k; j++ {` |
-| `docs/audit-2026-09-10.md|metal/moe.go:728` | goinfer | `// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardco` |
-| `docs/audit-2026-09-10.md|metal/moe.go:771` | goinfer | `r.uPos.SetU32(uint32(pos))` |
+| `docs/audit-2026-09-10.md|metal/moe.go:287` | goinfer | `// pool is non-nil when mo.paged: a bounded LRU slot pool + on-demand staging (expertpoo` |
+| `docs/audit-2026-09-10.md|metal/moe.go:464` | goinfer | `ml.routerW = f32Mat(d, &lw.Router)` |
+| `docs/audit-2026-09-10.md|metal/moe.go:536` | goinfer | `gOff, ok1 := m.MmapByteOffset(gq)` |
+| `docs/audit-2026-09-10.md|metal/moe.go:695` | goinfer | `for j := 0; j < mo.k; j++ {` |
+| `docs/audit-2026-09-10.md|metal/moe.go:745` | goinfer | `// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardco` |
+| `docs/audit-2026-09-10.md|metal/moe.go:788` | goinfer | `r.uPos.SetU32(uint32(pos))` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:339` | goinfer | `for (uint j0s=j0superStart; j0s<nKeysMax; j0s+=ATTN_KTILE) {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:444` | goinfer | `func (r *resident) ensurePrefill() {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:548` | goinfer | `xh := make([]uint16, Mpad*H)` |
@@ -1396,9 +1396,9 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:169` | goinfer | `p.slots[s] = expertSlot{` |
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:183` | goinfer | `func (p *expertPool) ensureResident(e int) expertSlot {` |
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:49` | goinfer | `func copyBytesToU32Buf(dst Buffer, src []byte) {` |
-| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:461` | goinfer | `// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Ste` |
-| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:470` | goinfer | `// so the metalResident adapter surfaces a failed request and drops the stale logits, ra` |
-| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:547` | goinfer | `e2 := begin()                        // phase 2: experts from slots + join` |
+| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:472` | goinfer | `// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Ste` |
+| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:481` | goinfer | `// so the metalResident adapter surfaces a failed request and drops the stale logits, ra` |
+| `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:558` | goinfer | `e2 := begin()                        // phase 2: experts from slots + join` |
 | `docs/audit-metal-2026-09-12.md|metal/gemv_w4a8_coal_bench_test.go:29` | goinfer | `gemvW4A8CoalN = 512  // sample rows -- enough to exercise every lane/tail shape` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:113` | goinfer | `// (see scripts/autoresearch_rmsnorm_results.tsv) -- verified here against` |
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:231` | goinfer | `#define W4A8_BODY \` |
@@ -1432,17 +1432,17 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/model.go:470` | goinfer | `// packed K/8 words + K/32 scales with no partial-group handling. A K%32 != 0 weight wou` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:718` | goinfer | `// FFN shape is geometry). Explicit, checked directly rather than assumed caught by the ` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:951` | goinfer | `qb, kb, vb := lw.QBias, lw.KBias, lw.VBias` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:135` | goinfer | `uint wrow = idx[slot]*rowsPerExpert + row;       // weight row in the stacked buffer` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:206` | goinfer | `// it the same way gave every routed expert expert 0's bias. Finite, plausible, wrong: t` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:289` | goinfer | `// expGuW/expGuS/expDW/expDS stay zero-value when paged (the stacked all-E buffer is exa` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:29` | goinfer | `kernel void gemv_wf32_a8(device const float* wf[[buffer(0)]], device const char* aq[[buf` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:375` | goinfer | `if nE > 256 {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:425` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:670` | goinfer | `func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:762` | goinfer | `func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:788` | goinfer | `for l := 0; l < r.nL; l++ {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:809` | goinfer | `slots := L.moe.pool.ensureResidentBatch(ids)` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:810` | goinfer | `e2 := r.q.Begin()                    // phase 2: experts from slots (+ shared expert)` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:136` | goinfer | `uint wrow = idx[slot]*rowsPerExpert + row;       // weight row in the stacked buffer` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:207` | goinfer | `// it the same way gave every routed expert expert 0's bias. Finite, plausible, wrong: t` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:30` | goinfer | `kernel void gemv_wf32_a8(device const float* wf[[buffer(0)]], device const char* aq[[buf` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:300` | goinfer | `// gpt-oss: its own router/activation/down-combine kernels (route_gptoss,` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:376` | goinfer | `if nE > 256 {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:426` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:687` | goinfer | `func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:779` | goinfer | `func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:805` | goinfer | `for l := 0; l < r.nL; l++ {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:826` | goinfer | `slots := L.moe.pool.ensureResidentBatch(ids)` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:827` | goinfer | `e2 := r.q.Begin()                    // phase 2: experts from slots (+ shared expert)` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_model_test.go:302` | goinfer | `embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_prefill_measure_test.go:14` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-12.md|metal/pagecost_measure_test.go:47` | goinfer | `// which doesn't fit and is the new path), so this measures the SUBMISSION-STRUCTURE cos` |
@@ -1620,8 +1620,8 @@ supports.
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:115` | goinfer | `if !residentFitsMemory(m) {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:136` | goinfer | `const residentMemFraction = 0.70` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:354` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s\n",` |
-| `docs/tasks/task-fit-to-hardware.md|metal/gemma4_moe.go:207` | goinfer | `// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-i` |
-| `docs/tasks/task-fit-to-hardware.md|metal/moe.go:319` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
+| `docs/tasks/task-fit-to-hardware.md|metal/gemma4_moe.go:208` | goinfer | `// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-i` |
+| `docs/tasks/task-fit-to-hardware.md|metal/moe.go:320` | goinfer | `// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging ` |
 | `docs/tasks/task-fit-to-hardware.md|pull/pull.go:179` | goinfer | `Size   int64` |
 | `docs/tasks/task-fp4-formats.md|decoder/forward_gptoss.go:17` | goinfer | `// speed on x86, and bench numbers are deferred (docs/completed/task-mxfp4-gptoss.md §6.` |
 | `docs/tasks/task-fp4-formats.md|decoder/gguf.go:851` | goinfer | `if err != nil {` |
@@ -1676,9 +1676,9 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|internal/gemmaapp/main.go:47` | goinfer | `backend  = flag.String("backend", "cpu", "compute backend: cpu \| webgpu \| metal (metal n` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/prequant/prequant.go:36` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:428` | goinfer | `// --version answers "what is in this binary" WITHOUT a model, which is the question the` |
-| `docs/tasks/task-int4-layout-2026-09.md|metal/gemma4_moe.go:225` | goinfer | `if p := m.GiwPath(); p != "" {` |
+| `docs/tasks/task-int4-layout-2026-09.md|metal/gemma4_moe.go:226` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:498` | goinfer | `func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {` |
-| `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:446` | goinfer | `if p := m.GiwPath(); p != "" {` |
+| `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:447` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:124` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
 | `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2282` | goinfer | `if r.l01Enabled && r.l01CPUMask[j] {` |
 | `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:528` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |

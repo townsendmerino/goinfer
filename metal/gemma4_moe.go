@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/townsendmerino/aikit/mmap"
@@ -343,11 +344,21 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 			if resolved {
 				fd := int(g.giwFile.Fd())
 				ml.pool.stagePread = func(ei int, s expertSlot) {
-					if err := preadIntoU32Buf(fd, s.guW, guOff[ei]); err != nil {
-						panic(fmt.Sprintf("metal gemma4 MoE pread gate|up expert %d: %v", ei, err))
+					// M-12 (audit-metal-2026-09-12.md), second half: gate|up and down are separate
+					// buffers (s.guW, s.dW) — disjoint destinations, safe to pread concurrently (same
+					// argument as moe.go's 3-way twin). Errors panic from THIS goroutine, not the
+					// spawned ones, so BuildResident's recover() still sees them.
+					var wg sync.WaitGroup
+					var errGU, errD error
+					wg.Add(2)
+					go func() { defer wg.Done(); errGU = preadIntoU32Buf(fd, s.guW, guOff[ei]) }()
+					go func() { defer wg.Done(); errD = preadIntoU32Buf(fd, s.dW, dOff[ei]) }()
+					wg.Wait()
+					if errGU != nil {
+						panic(fmt.Sprintf("metal gemma4 MoE pread gate|up expert %d: %v", ei, errGU))
 					}
-					if err := preadIntoU32Buf(fd, s.dW, dOff[ei]); err != nil {
-						panic(fmt.Sprintf("metal gemma4 MoE pread down expert %d: %v", ei, err))
+					if errD != nil {
+						panic(fmt.Sprintf("metal gemma4 MoE pread down expert %d: %v", ei, errD))
 					}
 					// N-20: scales come from the build-time cache, not a fresh f32→f16 reconversion.
 					copy(s.guS.U16s(), gScaleCache[ei])

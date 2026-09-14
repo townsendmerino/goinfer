@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -545,14 +546,30 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 				fd := int(mo.giwFile.Fd())
 				ml.pool.stagePread = func(ei int, sl expertSlot) {
 					sp := spans[ei]
-					if err := preadRangeIntoU32Buf(fd, sl.guW, 0, sp.gOff, sp.gLen); err != nil {
-						panic(fmt.Sprintf("metal MoE pread gate expert %d: %v", ei, err))
+					// M-12 (audit-metal-2026-09-12.md), second half: the three spans write disjoint
+					// destination ranges (gate/up are different byte offsets within sl.guW; down is a
+					// separate buffer sl.dW entirely), and pread on a shared fd is positional — safe to
+					// issue concurrently. Errors are collected and panicked from THIS goroutine (not
+					// inside the spawned ones) so BuildResident's recover() still sees them; a panic in
+					// an unrecovered goroutine would crash the whole process instead.
+					var wg sync.WaitGroup
+					var errG, errU, errD error
+					wg.Add(3)
+					go func() { defer wg.Done(); errG = preadRangeIntoU32Buf(fd, sl.guW, 0, sp.gOff, sp.gLen) }()
+					go func() {
+						defer wg.Done()
+						errU = preadRangeIntoU32Buf(fd, sl.guW, sp.gLen, sp.uOff, sp.uLen)
+					}()
+					go func() { defer wg.Done(); errD = preadRangeIntoU32Buf(fd, sl.dW, 0, sp.dOff, sp.dLen) }()
+					wg.Wait()
+					if errG != nil {
+						panic(fmt.Sprintf("metal MoE pread gate expert %d: %v", ei, errG))
 					}
-					if err := preadRangeIntoU32Buf(fd, sl.guW, sp.gLen, sp.uOff, sp.uLen); err != nil {
-						panic(fmt.Sprintf("metal MoE pread up expert %d: %v", ei, err))
+					if errU != nil {
+						panic(fmt.Sprintf("metal MoE pread up expert %d: %v", ei, errU))
 					}
-					if err := preadRangeIntoU32Buf(fd, sl.dW, 0, sp.dOff, sp.dLen); err != nil {
-						panic(fmt.Sprintf("metal MoE pread down expert %d: %v", ei, err))
+					if errD != nil {
+						panic(fmt.Sprintf("metal MoE pread down expert %d: %v", ei, errD))
 					}
 					// N-20: scales come from the build-time cache (already gate‖up-concatenated),
 					// not a fresh f32→f16 reconversion — see the byte-copy stage fn above.
