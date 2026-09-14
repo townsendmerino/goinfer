@@ -46,7 +46,7 @@ process that can rewrite its own service unit is out of scope for anything insid
   it stops within one token. This is the mechanism every level below builds on; nothing new is
   needed in `decoder/`.
 - **Graceful shutdown.** SIGINT/SIGTERM → stop accepting, 30 s drain, exit
-  (`internal/serveapp/main.go:685–683`). Cooperative: a stuck handler holds it for 30 s.
+  (`internal/serveapp/main.go:689–683`). Cooperative: a stuck handler holds it for 30 s.
 - **Concurrency cap.** `-max-inflight` (default 128) over the inference handlers
   (`internal/serveapp/main.go:501,619-621`). A cap, not a budget: it bounds parallelism, not total work.
 - **Auth and exposure.** Loopback by default; `-api-key` required off-loopback; `/admin/*`

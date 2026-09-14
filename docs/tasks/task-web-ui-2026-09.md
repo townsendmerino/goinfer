@@ -19,14 +19,15 @@
 
 ## 0. What exists today
 
-The page is **one embedded HTML file** — `//go:embed webui/index.html`
-(`internal/serveapp/webui.go:35`), 1,828 lines of hand-written HTML, CSS and vanilla JS, no build
-step, no external stylesheet, font or script. That is deliberate and load-bearing: a CDN reference
-would make the UI of an offline-capable engine require the network. It is off by default behind
-`-web` (`internal/serveapp/webui.go:243`), and it is a client of the same `/v1` routes any other
-client uses — so it cannot drift from the API, because it *is* the API's user.
+The page is **a small embedded directory** — `//go:embed webui` (`internal/serveapp/webui.go:47`):
+`index.html` plus `ui/app.css` and `ui/app.js`, hand-written HTML, CSS and vanilla JS, no build
+step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
+records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
+offline-capable engine require the network. It is off by default behind `-web`
+(`internal/serveapp/webui.go:303`), and it is a client of the same `/v1` routes any other client
+uses — so it cannot drift from the API, because it *is* the API's user.
 
-Two tabs (`internal/serveapp/webui/index.html:1530`):
+Two tabs (`internal/serveapp/webui/index.html:12`):
 
 - **Chat** — model dropdown, temperature, max tokens, streaming reply, Stop, and per-response
   token count / tok/s / wall time attached to the message itself.
@@ -93,7 +94,7 @@ Ranked by what a person notices in the first five minutes.
 
 ### W1 — Markdown and code blocks
 Today the page renders **plain text only**: `textContent`, never `innerHTML`
-(`internal/serveapp/webui/index.html:1658`). A code answer arrives as one unbroken run of
+(`internal/serveapp/webui/ui/app.js:74`). A code answer arrives as one unbroken run of
 characters. This is the single largest usability gap and the one every visitor meets.
 `demo/agent/cmd/agent-web/index.html:183` already carries a `renderMarkdownLite` whose own comment
 says "Deliberately tiny — full markdown is a TODO"; extend that rather than starting over.
@@ -105,7 +106,7 @@ tree. **Effort: S.**
 
 ### W3 — The conversation survives a reload
 History is `const history = []` in page memory
-(`internal/serveapp/webui/index.html:1646`). A refresh loses the conversation, including the answer
+(`internal/serveapp/webui/ui/app.js:62`). A refresh loses the conversation, including the answer
 you were about to copy. `localStorage` is the cheap correct answer; `-session-dir` holds KV
 snapshots, not transcripts, and is not this. **Effort: S.**
 
@@ -116,7 +117,7 @@ about. **Effort: S.**
 
 ### W5 — Load a model from the page
 The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
---model &lt;path&gt; to serve it"* (`internal/serveapp/webui/index.html:1815`). A first-run user is
+--model &lt;path&gt; to serve it"* (`internal/serveapp/webui/ui/app.js:231`). A first-run user is
 sent back to a terminal in the middle of the one flow the page exists for.
 
 `POST /admin/models/load` already exists (`internal/serveapp/admin.go:113`) but is gated behind
@@ -156,11 +157,11 @@ inside the binary.
 | **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:391`) | S |
 | **W11** | Image attach for vision models | no control, though `-vision` works on the same route; `demo/agent/cmd/agent-web/index.html:129` has the whole composer (click, drag, paste, preview) to transplant, plus a per-model capability check so it hides on text-only models | M |
 | **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:179`) | M |
-| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/index.html:1689`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
+| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:105`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
 | **W14** | Export the conversation | nothing. A share link is an anti-goal; Markdown and JSON to a file are not | S |
 | **W15** | Dark mode | one light surface; no `prefers-color-scheme` rule anywhere. The AmbientCSS palette is already token-shaped (`docs/completed/task-web-ui-ambient.md`) | S |
-| **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/index.html:1485`). A server on the LAN is a plausible phone client | S |
-| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/index.html:1717`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
+| **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/ui/app.css:1480`). A server on the LAN is a plausible phone client | S |
+| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:133`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
 
 ---
@@ -208,15 +209,24 @@ Named so they do not return as "gaps" in a later pass.
 
 ## 6. Three constraints that govern the build
 
-**6.1 One embedded file stops scaling here.** Tier A alone roughly doubles 1,828 lines. The
-no-build-step, no-external-asset property is worth keeping exactly as it is. The move that keeps it
-and fixes the file is **`//go:embed webui/*` over a directory** — several source files, still no
+**6.1 One embedded file stops scaling here. — DONE 2026-09-14.** Tier A alone roughly doubles 1,828
+lines. The no-build-step, no-external-asset property is worth keeping exactly as it is. The move that
+keeps it and fixes the file is **`//go:embed` over a directory** — several source files, still no
 toolchain, still one binary, still offline. What not to do is add a bundler; that trades away the
 property the project exists for.
 
+*Done as specified:* `index.html` (66 lines) + `ui/app.css` + `ui/app.js`, served by a new
+unauthenticated `GET /ui/{file}` route with an explicit type allow-list, `nosniff`, `no-store`, and
+404 for anything else, registered only under `-web`. Assets are referenced relatively, so the page
+also loads from `file://`. Proven behaviour-preserving three ways: inlining the two files back
+reproduces the original byte for byte; in headless Chrome the post-JS DOM is identical and all 57
+elements have identical computed styles, with zero exceptions before and after; and the web UI tests
+now scan every embedded file, fail on a reference to a non-embedded asset, and pin the route's type,
+gating and auth — each shown able to go red by a mutation.
+
 **6.2 W1 is where model output stops being inert, and the current rule must survive it.** The page
 says it in the source: `textContent` only, never `innerHTML`
-(`internal/serveapp/webui/index.html:1658`). **Build DOM nodes from the parsed tree; never assemble
+(`internal/serveapp/webui/ui/app.js:74`). **Build DOM nodes from the parsed tree; never assemble
 an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
@@ -232,10 +242,10 @@ W5's load route is the first real test of them.
 
 ## Sources
 
-`internal/serveapp/webui.go:35`, `:243` (the embed, the `-web` gate) ·
-`internal/serveapp/webui/index.html:1485`, `:1530`, `:1646`, `:1658`, `:1689`, `:1717`, `:1815`
-(layout, tabs, in-memory history, the textContent rule, the error path, the keybinding, the
-dead-end line) · `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
+`internal/serveapp/webui.go:47`, `:303` (the embed, the `-web` gate) ·
+`internal/serveapp/webui/ui/app.css:1480` (layout) · `internal/serveapp/webui/index.html:12` (tabs) ·
+`internal/serveapp/webui/ui/app.js:62`, `:74`, `:105`, `:133`, `:231` (in-memory history, the
+textContent rule, the error path, the keybinding, the dead-end line) · `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:391` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
