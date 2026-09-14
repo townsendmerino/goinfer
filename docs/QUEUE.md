@@ -1406,7 +1406,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/kernels.go:859` | goinfer | `// dynamic parameter: that form requires the caller to use DispatchTG (which sets the le` |
 | `docs/audit-metal-2026-09-12.md|metal/lora.go:147` | goinfer | `anchor: func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {` |
 | `docs/audit-metal-2026-09-12.md|metal/lora.go:157` | goinfer | `parallelF32ToF16(bHalf, p.B)` |
-| `docs/audit-metal-2026-09-12.md|metal/lora.go:198` | goinfer | `// applyResidentLoRA dispatches one projection's compute-time LoRA delta into out, ADDIT` |
+| `docs/audit-metal-2026-09-12.md|metal/lora.go:211` | goinfer | `// applyResidentLoRA dispatches one projection's compute-time LoRA delta into out, ADDIT` |
 | `docs/audit-metal-2026-09-12.md|metal/lora_resident_parity_test.go:104` | goinfer | `if cos < 0.95 {` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:106` | goinfer | `// statement, no kernel change), and MoE (G8's second half: the FFN half runs ROW BY ROW` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:111` | goinfer | `var prefillFeatures = map[decoder.ResidentFeature]bool{` |

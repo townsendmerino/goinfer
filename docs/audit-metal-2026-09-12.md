@@ -356,7 +356,7 @@ re-baked by the code it checks (G-04).
 #### M-08 · `lora_delta` runs each projection's whole adapter delta in ONE threadgroup — the design CUDA's P-11 measured at +124%/token; Metal's P-11 fused two dispatches and kept the serial block
 - **Where:** `metal/kernels.go:834-873` (`// ONE THREADGROUP ONLY … looping over ranks serially …
   is cheap`; `for (uint r = 0; r < R; r++)` with a 256-wide tree reduce + barrier per rank; up
-  stage `Out/256` rows per thread), `metal/lora.go:198-203` (`e.Dispatch(r.pLoraDelta, tgReduceNorm,
+  stage `Out/256` rows per thread), `metal/lora.go:211-216` (`e.Dispatch(r.pLoraDelta, tgReduceNorm,
   tgReduceNorm, …)` — n == tg == 256, one threadgroup); `docs/audit-2026-09-10.md:1130-1176` (CUDA:
   "ONE block that looped over every rank, pulling ~61 MB of f32 A matrices per token through a
   single SM … 20.06 ms vs 8.89 ms"; fix "strides ranks by `blockIdx`"; Metal disposition "the same
@@ -676,6 +676,16 @@ re-baked by the code it checks (G-04).
   buffers for layers `0..i` stay on the ledger; `releaseLoRALayers` not called).
 - **Fix:** `defer` a release of `out` on error. **Confidence:** confirmed. **Prior:** new (minor
   impact, ratchets across failed binds).
+- **CLOSED 2026-09-13, shipped exactly as scoped.** A `bound` flag latches true only after every
+  projection in every layer converts cleanly; a deferred `releaseLoRALayers(r.d, out)` fires
+  whenever `bound` is still false, undoing exactly the partial work this call itself allocated
+  (`releaseLoRALayers` already skips nil projections, so the not-yet-reached layers past the
+  failure point are no-ops). New gate: `TestSetAdapter_partialBindErrorReleasesBuffers`
+  (`testdata/llama-tiny`, 4 layers) — layer 0 converts a valid rank-4 projection, layer 1 fails on
+  an invalid rank, and the device ledger (`Device.LedgerLen()`) is asserted unchanged across the
+  failed call. Confirmed red without the fix (ledger grew 115→121 allocs on the same run).
+  Verified: `go test ./metal/` (82 pass), `-tags goinfer_testhooks` (134 pass, 53 skip), gofmt/vet/
+  staticcheck clean.
 
 #### C-05 · aikit `Queue.Run1DBatchTG` / `Run1DTG` own an NSAutoreleasePool without the G22 OS-thread pin every sibling helper has
 - **Where:** aikit `metal.go:901-928` (`pool := … Send(selInit); defer pool.Send(selDrain)` with

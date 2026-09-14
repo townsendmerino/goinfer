@@ -164,6 +164,18 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		}, nil
 	}
 	out := make([]residLoRALayer, len(layers))
+	// C-04 (audit-metal-2026-09-12.md): an error partway through (a bad rank on layer i, say)
+	// used to return immediately, leaving layers 0..i-1's already-converted device buffers on the
+	// ledger until Close — never referenced by r.loraLayers/r.loraCached, so a failed bind leaked
+	// real device memory on every attempt. bound latches true only once every projection in every
+	// layer has converted cleanly; the deferred release fires on any earlier return, undoing
+	// exactly the partial work this call itself allocated.
+	bound := false
+	defer func() {
+		if !bound {
+			releaseLoRALayers(r.d, out)
+		}
+	}()
 	for i, l := range layers {
 		var err error
 		if out[i].q, err = conv(l.Q); err != nil {
@@ -188,6 +200,7 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			return err
 		}
 	}
+	bound = true
 	releaseLoRALayers(r.d, r.loraCached) // evict the previous (different) adapter's device buffers
 	r.loraLayers = out
 	r.loraCached = out
