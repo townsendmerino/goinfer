@@ -1332,11 +1332,18 @@ func (r *resident) finalizeLogits() {
 // softcapParallel applies Gemma's final-logit softcap sc·tanh(x/sc) in place, across cores. Every
 // element is independent and math.Tanh is deterministic, so splitting the loop is BYTE-IDENTICAL to
 // the serial form (same per-element sc*float32(math.Tanh(float64(v/sc))); disjoint writes, no
-// reduction/ordering) — gated by TestMetalSoftcapParallel_bitIdentical. This runs only on the
-// full-logits path (sampling / temperature / logprobs / parity); greedy decode skips it entirely
-// (argmax is softcap-invariant — the softcap is monotonic). At Gemma's 256k vocab the serial
-// float64 tanh loop is a per-sampling-token tax this fans out over GOMAXPROCS. Serial below the
-// goroutine-spawn threshold (mirrors parallelF32ToF16).
+// reduction/ordering) — gated by TestMetalSoftcapParallel_bitIdentical.
+//
+// N-09 (audit-metal-2026-09-12.md): this does NOT skip on greedy decode in production, despite
+// argmax being softcap-invariant (the softcap is monotonic). finalizeLogits calls this whenever
+// r.finalSoftcap > 0 and runs on EVERY execLoop token (model.go's own call site,
+// unconditional on sampling mode) — the production decode path. The only site that genuinely
+// skips it is ForwardArgmax's on-device fused argmax dispatch (which never reads r.logitsHost at
+// all), and production greedy does not call that (N-03: ResidentGreedy is absent on Metal, so
+// greedy runs the same full-logits ForwardEmbPipe as sampling and argmaxes host-side). So a Gemma
+// family pays this 262k-wide tanh loop on every decode token regardless of temperature. At
+// Gemma's 256k vocab the serial float64 tanh loop is a real per-token tax this fans out over
+// GOMAXPROCS. Serial below the goroutine-spawn threshold (mirrors parallelF32ToF16).
 func softcapParallel(logits []float32, softcap float32) {
 	sc := softcap
 	n := len(logits)
@@ -1551,7 +1558,14 @@ func (r *resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 // ForwardArgmax runs the identical trunk but replaces the full lm head + 608KB readback with
 // Fable's fused block-argmax (per-tile (maxLogit,rowIdx) → argmax_finish → 4-byte token). It
 // returns argmax(Forward's logits) — same values, tie-broken first-max-wins — without ever
-// materializing the logit vector. This is the fastest greedy decode path.
+// materializing the logit vector.
+//
+// N-10 (audit-metal-2026-09-12.md): NOT actually production's greedy decode path — Metal has no
+// ResidentGreedy implementation, so generateInto's greedy case runs the same full-logits
+// ForwardEmbPipe every other sampling mode uses and argmaxes host-side (recorded speed-neutral on
+// UMA: the zero-copy logits view makes the host argmax ~30 µs, not a real cost). This method is
+// exercised only by tests/gates today; it is the fastest AVAILABLE greedy path, kept as API for a
+// future wiring, not a claim about what production calls.
 func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -1931,7 +1945,10 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 	nHhd := r.nH * g.hd
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
-	// --- attention block (11 dispatches vs 19: QKV fused +bias, residual fused, Q+K RoPE merged) ---
+	// --- attention block (7 dispatches in the baseline dense case — norm, fused QKV+bias, merged
+	// Q+K RoPE, KV store, attention, o-proj input quant, fused o-proj+residual; N-10
+	// audit-metal-2026-09-12.md: an earlier "11 vs 19" count here predates further fusion and no
+	// longer matches; qGate/qkNorm/kEqV/sandwich/LoRA each add their own extra dispatches above) ---
 	// postOnly (Olmo 3/Olmo Hybrid, G5): no pre-norm at all — quantize the RAW residual
 	// (quant_vec, the same symmetric int8 quantizer ctx-before-o-proj already uses below)
 	// instead. encodeAttention is never called for a DeltaNet layer (encodeLayer routes those to

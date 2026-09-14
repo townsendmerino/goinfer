@@ -15,12 +15,17 @@ backend's `BuildResident` accepts the model. Anything ineligible on a given back
 that backend's staged per-matmul path, or to CPU, gracefully — declining is never silent
 mis-execution.
 
-Every resident runner expresses ONE uniform per-layer block by default, in int8 W8A8:
+Every resident runner expresses ONE uniform per-layer block by default:
 
 ```
 input_RMSNorm → q/k/v/o GQA attention (RoPE) → +residual
              → post_RMSNorm → SwiGLU(silu) MLP  OR  sparse MoE → +residual
 ```
+
+The QUANTIZATION of that block is backend-specific, not "int8 W8A8" uniformly (N-04,
+`docs/audit-metal-2026-09-12.md`): Metal has no int8 GEMV kernel and re-quantises an int8/int8int8
+weight to W4A8 at build time (`metal/model.go`'s `int4Buf`) rather than running it in int8 — every
+Metal-resident dense projection is W4A8 regardless of the checkpoint's own quant label.
 
 A family is eligible on a backend only if every layer collapses onto that block, or a shape the
 backend has separately declared it can express (`ResidentFeature`s below). The eligibility
@@ -93,6 +98,14 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   `residLayer.geom`) and WebGPU's own twin fields exist but are never populated by its per-layer
   builder (`decoder/features.go:371-388`'s own comment has the full history, including the
   2026-09-08 near-miss this predicate was added to prevent).
+  <br>**Carve-out (N-04, `docs/audit-metal-2026-09-12.md`): the E2B/E4B E-models are CPU-only on
+  EVERY backend, including CUDA and Metal** — the "resident on CUDA and Metal" above describes
+  only the dense 12B/26B shape. E2B/E4B add per-layer embeddings (PLE, `hidden_size_per_layer_input
+  > 0`), a cross-layer shared-KV pattern, and variable per-layer FFN width; `FeatGemma4EModel`
+  (`decoder/features.go:98`) is declared by NO resident backend, so `decodeRunnerEligible` declines
+  all three uniformly until an E-model bridge lands (the dense bridges were built PLE-free and
+  would silently skip the PLE branch if admitted). `hardware-matrix.md`'s single "Gemma 4" row
+  cannot distinguish E2B/E4B from the dense shape it actually measures.
 - **Command-R / Command-R7B** — resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatLayerNorm` (declared `decoder/features.go:580` for cuda, `decoder/features.go:674` for
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
@@ -117,6 +130,14 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   (`decoder/features.go:674-677`). CUDA declares `FeatLayerNorm` (`decoder/features.go:580`,
   added for Command-R) and `FeatOutBias` (`decoder/features.go:543`, added for gpt-oss) but not
   `FeatNonGatedMLP` or `FeatLearnedPos` anywhere. WebGPU declares none of the four.
+- **Qwen2.5-VL / Qwen3-VL on Metal are TEXT-ONLY residents (N-04, `docs/audit-metal-2026-09-12.md`)
+  despite `hardware-matrix.md` showing "✅ resident" across every backend.** Decoding past an image
+  block needs `decoder.ResidentMRoPE`'s `ForwardMRoPE` (the m-RoPE variant that takes a separate
+  rotation position from the token position, `decoder/residency.go`) — implemented in
+  `cuda/resident.go` and `gpu/residency.go` (WebGPU), absent from `metal/` entirely. The matrix's
+  single ✅ per family/backend cell measures the base text-decoder shape only; it has no way to
+  flag a backend that is resident for plain text but falls back for the image-turn case a VL model
+  actually exists for.
 
 ## What's not here
 

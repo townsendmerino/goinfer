@@ -314,7 +314,7 @@ func ResidentEligible(a *Architecture, backend string) bool {
 var residentBackendMoECap = map[string]struct{ experts, groups int }{
 	"webgpu": {experts: 512, groups: 32}, // gpu/moe.go: MAXE 512, array<f32,512> score/sel / array<f32,32> gscore
 	"cuda":   {experts: 512, groups: 64}, // cuda/moe.cu: MOE_MAX_E 512 / MOE_MAX_G 64. 256→512 raised deliberately (see below); groups was 32→64 by audit M-17
-	"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore[64]/keep[64]; guarded at build (moe.go:206-211)
+	"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore[64]/keep[64]; guarded at build (moe.go:375-376)
 }
 
 // WHY cuda is 512 and the others are not — this is three shader constants plus this map, and only

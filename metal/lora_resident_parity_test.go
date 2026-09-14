@@ -101,6 +101,16 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 	cos, maxAbs := cosF32(want, got)
 	t.Logf("resident-with-adapter vs CPU-with-adapter: cosine=%.6f maxAbs=%.4g argmax_match=%v",
 		cos, maxAbs, argmaxF32(want) == argmaxF32(got))
+	// N-14/N-52 (audit-metal-2026-09-12.md, audit-2026-09-10.md): this floor is far looser than
+	// what a correct bind actually measures on this machine — 0.999969 here, 0.998835 on the
+	// armed-executor variant below (both this session's real runs, not a single cherry-picked
+	// number) — so a bug that drops one of the seven per-layer projections could plausibly still
+	// clear 0.95 if that projection's contribution is small relative to total variance; the
+	// vacuousness check below only proves "some effect survives", not "every targeted projection
+	// fired". NOT tightened here: two single-machine runs a few thousandths apart is not enough to
+	// pick a real "measured floor minus noise" number with confidence, and a mis-set tight floor
+	// risks flaking CI on legitimate cross-machine/quantization variance — parked per N-52's own
+	// recommendation, not rejected.
 	if cos < 0.95 {
 		t.Errorf("resident LoRA cosine %.6f < 0.95 — below the established resident-vs-CPU floor", cos)
 	}
@@ -188,6 +198,8 @@ func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
 	cos, maxAbs := cosF32(want, got)
 	t.Logf("armed-then-bound resident vs CPU-with-adapter: cosine=%.6f maxAbs=%.4g argmax_match=%v",
 		cos, maxAbs, argmaxF32(want) == argmaxF32(got))
+	// N-14/N-52: same 0.95-vs-measured-~0.999 gap as TestLoRAResidentParityMetal's own floor above
+	// — see that check's comment for why it is parked, not tightened, here.
 	if cos < 0.95 {
 		t.Errorf("cosine %.6f < 0.95 after binding on an already-armed executor — the pre-encoded "+
 			"buffer from the arming call was committed instead of a fresh encode under the bound "+

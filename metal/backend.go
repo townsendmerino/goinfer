@@ -374,11 +374,9 @@ const metalFastPrefillFloor = 256
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
 //
-// CURRENTLY OPT-IN (default off) pending Phase B (TestPrefillGateVsReference, 2026-09-09). When
-// Phase B passes under §3.2's pooled form, the default flips to ON above metalFastPrefillFloor
-// and this comment is updated to name the measurement doc. The infrastructure is here now so the
-// Default ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate passed 2026-09-09
-// (S model, K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0/false/off or --exact-prefill to opt out.
+// Default ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate (TestPrefillGateVsReference)
+// passed 2026-09-09 (S model, K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0/false/off or
+// --exact-prefill to opt out.
 //
 //	GOINFER_METAL_FAST_PREFILL  1 | true | on   on (even below the floor — for tests)
 //	                            0 | false | off  off (explicit opt-out; use --exact-prefill on the server)

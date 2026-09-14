@@ -11,7 +11,7 @@
 | Gate form | §3.2 pooled (task-prefill-gap.md) |
 | Prompt set | B (held-out; set A used during development) |
 | Reference | CPU backend, f32 weights + f32 activations (S); CPU backend, int8 weight-only + f32 activations (D7 fallback — f32 weights don't fit 16 GB) |
-| S model | qwen2.5-1.5b-instruct-q4_k_m.gguf (1.5B int4) |
+| S model | qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (1.5B int4) — corrected N-12 audit-metal-2026-09-12.md: this row dropped "coder"; the test's own default (`metal/prefill_gate_ref_test.go`) and the L2 fused-attention record both name the coder checkpoint |
 | D7 model | qwen2.5-7b-instruct-q4_k_m.gguf (7B int4) |
 | Phase A (reference gen) | `TestPrefillGateReference`, `decoder/` package, 4360 s (~72 min), EXIT:0 |
 | Phase B (scoring) | `TestPrefillGateVsReference`, `metal/` package, 2942 s (~49 min) for S |

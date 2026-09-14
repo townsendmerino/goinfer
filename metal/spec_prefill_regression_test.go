@@ -51,9 +51,13 @@ import (
 // the floor's current value or default state. Below the floor (or with the override removed),
 // PrefillLast still declines and generateInto falls through to the same per-token loop the
 // speculative path already uses, so there would be NO asymmetry to measure and the slope would
-// come back ~0 for a reason that has nothing to do with the fix. Metal also does NOT implement
-// ResidentPrefillKV (only CUDA does), so the KV-only fallback — CUDA's SECOND asymmetry — does
-// not exist here. Metal has exactly one exposure to this bug and it is gated behind this variable.
+// come back ~0 for a reason that has nothing to do with the fix. Metal now ALSO implements
+// ResidentPrefillKV (M-01, same audit: ForwardNoLogits skips the LM head on every prefill token
+// but the last) — but that lives inside residentPrefillSeed, which genNgramInto already shares
+// with generateInto (see that call site's own comment), so both arms of THIS test's comparison
+// benefit from it identically. No new asymmetry: Metal still has exactly one exposure to the
+// original bug (the batched-vs-per-token prefill seam this test targets), gated behind this
+// variable.
 func TestMetalSpecPrefillRegression(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")

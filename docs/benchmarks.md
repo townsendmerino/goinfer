@@ -37,7 +37,7 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Prefill** | **Was 12–15× behind on overhead-free throughput at depth; now 1.9–3.2× after the CUDA tensor-core prefill landed 2026-09-05.** `attn_fused` + `gemm_w4a8_mma` are **default ON above a 512-token prompt floor** (`GOINFER_CUDA_FAST_PREFILL=0` opts out; short prompts stay exact because the §3 fidelity gate fails at K=256 and passes at 512/1024/3900). End-to-end prefill **3.91× faster at K=3900** (5.451 s → 1.393 s, 1.5B int4). Marginal cost per token vs Ollama: **12.1× → 3.16× behind (1.5B)**, **14.5× → 1.89× (0.5B)**. On TTFT the crossover moves from ~K=600 to past K=2048 (1.5B) and off the ladder entirely on 0.5B. goinfer's marginal still RISES with K where Ollama's is flat — the residual O(K²) term, with the fused kernel at 1.72% of tensor peak, so it is headroom not a floor. Pre-2026-09-05 rows measured the exact path; set `=0` to reproduce them | §B2, `measurements/prefill-l2l3-phase{1,2,3,4}-2026-09-05.md` |
 | **Total request time** | **not re-derived** since the 2026-09-01 prefill re-anchor. The pre-re-anchor crossover (~320-token prompts at 1.5B) is a legacy figure and is not quoted here | legacy §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
-| **Apple Silicon Metal prefill** | **3.33× behind Ollama on TTFT at K=512, 8.81× at K=3900 (1.5B int4, M1 Pro, 2026-09-09).** Fast f16-MMA path (default ON above 512 tokens since §3.2 gate) is **2.0–3.75× faster than sequential** within goinfer at K≥512; K=256 stays sequential (below floor). Overhead-free marginal: **9× behind** — superlinear in K (O(K²) attention), the same residual that L2's fused kernel targets | §A |
+| **Apple Silicon Metal prefill** | **STALE (N-01): 3.33× behind Ollama on TTFT at K=512, 8.81× at K=3900 — measured 2026-09-09 against the PRE-fused exact attention kernel**, superseded the next day by the default-ON fused kernel (≈4.3× at K=3900 per the tree's own L2 record) and by M-03's GEMM fix (2026-09-13); no fresh same-session Ollama re-run exists yet. Fast f16-MMA path (default ON above 512 tokens since §3.2 gate) was **2.0–3.75× faster than sequential** within goinfer at K≥512 in that same pre-fix run | §A |
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
@@ -549,6 +549,20 @@ O(K²) — the same structure §2.2 names as the target for L2's fused kernel. T
 (2–3.75× within goinfer) is real and the default is now ON; the remaining gap vs Ollama is
 the attention kernel, not the GEMM.
 
+**SUPERSEDED (N-01, `docs/audit-metal-2026-09-12.md` §0): the last two sentences are false as of
+the fused `simdgroup_matrix` attention kernel (default the day after this row, 2026-09-10) and
+the 32×32 GEMM tile (M-03, 2026-09-13).** This whole row still measures the PRE-fused exact
+attention kernel — the tree's own L2 record
+([`prefill-l2-metal-fused-attn-2026-09-09.md`](measurements/prefill-l2-metal-fused-attn-2026-09-09.md))
+puts P=3900 at 17.9 s (≈4.3× behind Ollama), not the 8.8× above. And the audit's own arithmetic on
+this tree's post-M-03/M-04 numbers finds the OPPOSITE attribution: `gemm_w4f16_store` runs at
+~0.73 TFLOPS (≈0.5×3.6 ms/token, now improved by M-03's wider tile) against Ollama's ≥2.4 TFLOPS —
+the GEMM, not attention, is the flat term behind at every depth; attention was ≈18% of TTFT at
+K=3900 and ≈1.5% at K=256 even before M-04's tiling. A fresh same-session Ollama-interleaved
+re-run on this tree (§3.2's own protocol) is still owed — see the audit doc's Program item 9 —
+so no new ratio is quoted here; treat every number in this subsection as the pre-fix baseline,
+not current.
+
 #### Vision tower CPU prefill — re-measured 2026-09-08
 
 **SigLIP/Gemma 3 tower** (`gemma-3-4b-it`, 896², 4096 patches) and **Qwen2.5-VL tower**
@@ -969,8 +983,9 @@ weights / int8 activations — the 4-bit lane, speed-equivalent to int8int8 on t
 chip, §metal-verdict §4), warm, greedy (`temperature:0`), **short prompt**, 256-token
 completions (both hit the cap), **client wall clock**, interleaved reps for thermal control,
 first (session-start) run dropped, best-of-3. Measured on the Mac, **2026-08-04**. The `metal/`
-package is `//go:build darwin && metal` and is selected at runtime with `--backend metal`; it
-registers via `decoder.RegisterBackend` and must be blank-imported by the binary.
+package is `//go:build darwin` (N-02, `docs/audit-metal-2026-09-12.md`: every file in the package
+carries this tag, not a `metal`-specific one) and is selected at runtime with `--backend metal`;
+it registers via `decoder.RegisterBackend` and must be blank-imported by the binary.
 
 | model · q4_K_M (M1 Pro, warm, greedy, short prompt, wall-clock) | goinfer (Metal, W4A8) | Ollama-Metal v0.32.5 | goinfer vs peer |
 |---|---|---|---|
@@ -982,13 +997,18 @@ registers via `decoder.RegisterBackend` and must be blank-imported by the binary
   the CUDA ratio does **not** carry over. The figure is size-dependent (0.96× → 0.74×).
 - Do not quote a Metal speed *multiple* as a headline. The defensible Metal claims are
   portability (no Xcode, no toolchain, static binary) and correctness parity.
-- **This is a SHORT-prompt number, deliberately.** goinfer's Metal backend **declines batched
-  prefill by default** (it is not bit-identical to sequential decode — 54% stream divergence,
-  §A2-Metal / `metal-verdict` §2c), so it prefills the prompt sequentially through the decode
-  path. Ollama batches prefill (llama.cpp GEMM), so **on long prompts the wall-clock gap widens**
-  (measured: a ~70-token prompt drops 0.5B to 0.83× and 1.5B to 0.66×). The short-prompt rows
-  above isolate decode+serving, matching the §B2 method; the long-prompt penalty is a real
-  serving trade of the bit-identity default, not a decode-kernel deficit.
+- **This is a SHORT-prompt number, deliberately, but "declines by default" is now STALE (N-02).**
+  At the time this row was measured (2026-08-04) goinfer's Metal backend declined batched prefill
+  by default (it was not bit-identical to sequential decode — 54% stream divergence, a figure once
+  measured by a test that no longer exists, superseded by `TestPrefillGateVsReference`'s pooled
+  §3.2 criteria; see `docs/audit-metal-2026-09-12.md` G-07). Batched prefill has been default ON
+  above the fast-prefill floor since 2026-09-09 (§3.2 gate passed), so a prompt at or above 256
+  tokens no longer takes the sequential path this bullet describes. Below the floor (or with
+  `--exact-prefill`), the sequential path still runs and the long-prompt-gap reasoning below still
+  applies at those short lengths — this row's own prompt is short enough to be unaffected either
+  way. Ollama batches prefill (llama.cpp GEMM), so on a genuinely long, still-sub-floor prompt the
+  wall-clock gap widens (measured: a ~70-token prompt drops 0.5B to 0.83× and 1.5B to 0.66×). The
+  short-prompt rows above isolate decode+serving, matching the §B2 method.
 - **Where the 1.5B wall-clock (~54) sits vs the decode-only spike (73.6, `task-metal-cgofree-spike`):**
   the spike is best-of-40 at a *shallow fixed* depth with zero serving cost; the wall-clock
   averages decode over depth ~10→266 (decode decays with KV depth — §A1-Metal 63.8@128→39.8@1024)
@@ -1006,6 +1026,14 @@ ships. Provenance: **Apple M1 Pro**, macOS 26.6.1, **qwen2.5-coder-1.5b W4A8**, 
 term), KV warmed incrementally, min-of-batches, current binary, 2026-08-09 (`TestZZ_metalDepthBench`,
 opt-in `GOINFER_METAL_DEPTH_BENCH=1`). 4000 is near `metalCtxCap=4096`; the top cell is clamped
 inside the resident KV.
+
+**Labelling caveat (N-03, `docs/audit-metal-2026-09-12.md`): production greedy decode does NOT
+take the `ForwardArgmax` path this curve measures.** `metalResident` has no `ResidentGreedy`
+implementation, so `generateInto`'s greedy case runs the same full-logits `ForwardEmbPipe` every
+other sampling mode uses and argmaxes host-side — recorded speed-neutral on UMA (the zero-copy
+logits view makes the host argmax ~30 µs), so the depth SHAPE below should still be representative
+of what serving actually does, but the curve's own framing as "the" greedy decode path is not
+accurate to which method production calls.
 
 | depth | goinfer 1.5B (Metal, decode-only) | µs/pos vs previous |
 |---|---|---|

@@ -124,7 +124,7 @@ func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {
 func TestMetalSnapshotGolden(t *testing.T) {
 	models := []struct{ dir, quant string }{
 		{"../testdata/mixtral-tiny", "int8int8"},    // full-causal: attention denom past width; rmsnorm_quant
-		{"../testdata/gemma4-dense-scaled", "int4"}, // sandwich: attention_f32, rmsnorm_f32, qk_norm
+		{"../testdata/gemma4-dense-scaled", "int4"}, // sandwich: rmsnorm_f32, qk_norm (N-13: NOT attention_f32 — N-28 above)
 	}
 	checkpoints := map[int]bool{130: true, 260: true, 320: true} // past 128 and 256
 	const maxD = 320
