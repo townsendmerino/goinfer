@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -365,11 +366,17 @@ func int4DirectWords(w *linalg.WeightMat) (words []uint32, scales []uint16, ok b
 }
 
 // bytesToU32 reinterprets a little-endian byte slice as uint32 words (len must be a multiple of 4).
+// N-29 (audit-metal-2026-09-12.md): b is already the target little-endian word bytes (nothing to
+// reconstruct arithmetically) — a per-element shift-and-mask loop was doing a byte copy the slow
+// way. w is freshly allocated (always 4-aligned, unlike the mmap-backed sources int4DirectBytes
+// exists to avoid this same reinterpret on), so a single bulk copy into its own []byte view is
+// exactly as safe as manual shifts and orders of magnitude fewer instructions.
 func bytesToU32(b []byte) []uint32 {
 	w := make([]uint32, len(b)/4)
-	for i := range w {
-		w[i] = uint32(b[4*i]) | uint32(b[4*i+1])<<8 | uint32(b[4*i+2])<<16 | uint32(b[4*i+3])<<24
+	if len(w) == 0 {
+		return w
 	}
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(&w[0])), len(w)*4), b)
 	return w
 }
 
@@ -484,8 +491,18 @@ func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 // int4Concat re-quantizes and row-concatenates several same-K WeightMats into ONE W4A8
 // buffer — the fusion enabler (combined QKV → one GEMV, combined gate/up → one GEMV).
 func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
-	var words []uint32
-	var scales []uint16 // f16 group scales (L1)
+	// N-29 (audit-metal-2026-09-12.md): pre-size from the known final shape (N*K/8 words, N*K/32
+	// f16 scales per group-32 W4A8 tensor — the same formula int4Buf's own int8-fallback branch
+	// already allocates by) instead of growing two nil slices by append, which reallocates+copies
+	// on every capacity doubling across a fused tensor's weights.
+	var totalWords, totalScales int
+	for _, w := range wms {
+		n, k := w.Rows(), w.Cols()
+		totalWords += n * k / 8
+		totalScales += n * k / 32
+	}
+	words := make([]uint32, 0, totalWords)
+	scales := make([]uint16, 0, totalScales) // f16 group scales (L1)
 	for _, w := range wms {
 		// K%32==0 is a hard W4A8 invariant (group=32) — see int4Buf. int4Concat has no error return
 		// and is only called from the build path, so panic; buildResident's recover turns it into a
