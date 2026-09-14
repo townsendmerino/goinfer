@@ -715,6 +715,20 @@ re-baked by the code it checks (G-04).
   shipped shape today (so400m/896 = 4,096).
 - **Fix:** the qwenmetal check with `np` in `newEncoder`. **Confidence:** plausible. **Prior:** aikit
   C-02 (qwenmetal only).
+- **CLOSED 2026-09-13 in aikit (`a5b23b2`), NOT yet released/bumped into goinfer.** Shipped exactly
+  as scoped: `attnThreadgroupBytes(np)` (mirroring qwenmetal's identical formula for the same
+  shared kernel) checked once in `newEncoder`, before any layer weight is touched — np is fixed at
+  build time here, unlike qwenmetal's per-image patch count checked per `ForwardViT` call. New
+  tests: `TestAttnThreadgroupBytes` (arithmetic) and `TestNewEncoder_declinesOverBudgetPatchCount`
+  (end-to-end, no checkpoint needed — a synthetic `vision.GPUWeights` with an over-budget
+  `NumPatches` reaches the check before any real weight data is required). Confirmed load-bearing:
+  reverting `encoder.go` makes the test file fail to build (`attnThreadgroupBytes` undefined).
+  Verified: `go test ./gpu/visionmetal/...` green (including the real SigLIP-checkpoint parity
+  test), gofmt/vet/staticcheck clean. Same status as C-05: committed and pushed to aikit `main`,
+  not tagged/released — this backend submodule has never carried a tag (`RELEASING.md`'s "the eight
+  that have never been tagged"), and goinfer's `metal/go.mod`/`cuda/go.mod` pin `aikit/gpu v0.32.0`
+  regardless; nothing in goinfer currently calls `visionmetal` (M-15 is still open), so nothing is
+  blocked by the absence of a release.
 
 ---
 
