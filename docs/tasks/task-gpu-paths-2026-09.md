@@ -1284,6 +1284,23 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
     is a rename-in-place, not a net-new test). `gofmt -l`, `go vet`, and CI's pinned staticcheck
     (v0.8.0) all clean.
 
+- 2026-09-13 — **M-05 (`docs/audit-metal-2026-09-12.md`) bound documented here, NOT fixed.** The
+  shape the 2026-09-08 entry above ships — MoE batched prefill runs the FFN half row by row,
+  reusing the per-token decode dispatch chain unchanged, "mirrors CUDA's own established shape
+  exactly" — reads bandwidth-bound at the model sizes this repo has actually shipped MoE for: per
+  row per MoE layer, bytes read ≈ (5 + 3k [+3–5 shared]) dispatches' worth of the k routed
+  experts' weights, so a full prompt reads ≈ M × L × k·3·H·I/2 bytes total (Qwen1.5-MoE-class
+  config: 24 layers, k=4, H=2048, I=1408 ⇒ ≈0.83 GB per row, ≈1.7 TB at M=2048, ≥8.5 s at
+  200 GB/s) — an expert-major loop (route once, group by expert, stage each distinct expert
+  once, run its rows with a batch-K GEMM) would instead read ≈6 GB for the same prompt, since a
+  real prompt routes far fewer than M·k distinct experts. Paged families (26B/35B) pay the same
+  shape as M sequential DECODE tokens, at 512 tokens ≈ 3.9 minutes on the 35B. The fix — a
+  layer-major prefill loop, chunked over M to bound the residual buffer — is a real
+  dispatch-restructuring project (a new batched-K GEMM shape, not a parameter tweak to the
+  existing row loop) and was not attempted this pass; this note exists so "batched" in the
+  2026-09-08 entry above is not read as a TTFT promise at MoE model sizes, per that finding's own
+  interim ask.
+
 - 2026-09-09 — G9 SCOPED, NOT IMPLEMENTED: still a legitimate wash, gate unchanged since
   2026-06-09. `docs/completed/task-gpu-batched-prefill.md` (which this item's own Fix line points to) carries an
   explicit "GATED — do not build yet" banner: batched prefill only wins if the WGSL tiled GEMM

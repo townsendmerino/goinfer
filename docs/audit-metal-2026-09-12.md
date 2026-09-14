@@ -262,6 +262,13 @@ re-baked by the code it checks (G-04).
   G-09).
 - **Prior:** audit-2026-09-10 P-15 (dispatch count only); queue-performance P20/P18 (CPU
   expert-major 4.36×, bit-identical); CUDA `prefill-moe-m26` (batching worth 8%, expert DMA 59.5%).
+- **NOT CLOSED — interim step done 2026-09-13, the real fix not attempted.** The bound this
+  finding computed is now recorded beside G8 (`docs/tasks/task-gpu-paths-2026-09.md`, dated
+  2026-09-13 entry, exactly the ask this Fix line makes for the interim), so "batched" is no
+  longer undocumented as a TTFT promise. The layer-major/expert-major dispatch restructuring
+  itself is a real, multi-file kernel-design project (a new batched-K GEMM shape, not a parameter
+  change) and was deliberately left for a dedicated pass rather than attempted under this
+  session's time budget.
 
 #### M-06 · Gemma 3 never reaches the batched prefill — `prefillFeatures` still lacks `FeatPerLayerRoPE` (prior audit M-23, open)
 - **Where:** `metal/model.go:111-122` (the map: no `FeatPerLayerRoPE`), `decoder/features.go:152`
