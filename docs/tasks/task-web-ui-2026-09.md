@@ -1,14 +1,13 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, unstarted.** Filed from a feature comparison against the Claude
-> desktop/web app, read against the tree at `9d29d625`. Nothing here is built.
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, unstarted.** Filed from a feature comparison
+> against the Claude desktop/web app, read against the tree at `9d29d625`. Nothing here is built.
 >
-> **This doc reopens a question that was already answered once.**
-> [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §F.3 asked exactly "where does
-> `-web` stop" and recorded the lean: *chat and pull only — it is the first-run surface, not a
-> product.* Tier A below survives that reading intact, since all eight items are about the first
-> run working at all. **Tiers B and C do not.** §1 puts that decision up front rather than letting
-> it erode one feature at a time.
+> **The scope question is settled: the web UI is a product surface, to be made as fully useful for
+> users as possible** (owner decision, 2026-09-14). That reverses the lean recorded in
+> [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §F.3 — *chat and pull only, the
+> first-run surface, not a product* — which has been amended in place to point here. All three tiers
+> are in scope; §1 records what that does and does not change.
 >
 > Siblings: [`task-fit-to-hardware.md`](task-fit-to-hardware.md) §3 already owns W12 (fit before
 > download) and is cited rather than restated; [`task-work-queue-2026-09.md`](task-work-queue-2026-09.md)
@@ -51,26 +50,44 @@ feature-parity exercise is exactly how they get sanded off:
 
 ---
 
-## 1. The decision this doc needs first
+## 1. The decision — DECIDED 2026-09-14
 
-§F.3's lean was correct for what the page was. The question is whether the page is now the product
-surface for mode 1 ("try it"), in which case Tier A is not scope creep but the minimum for the
-mode to work at all — a first-run user currently hits a dead end inside the one flow the page
-exists for (W5).
+**Owner decision: make the web UI as fully useful for users as possible.** The page is a product
+surface, not only the first-run surface. §F.3's lean was right for what the page was; it is
+superseded, and amended in place in [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md)
+so it no longer reads as current.
 
-**Recommended split, to be accepted or rejected as a whole:**
+*What this replaced, kept for the record:* the recommendation here was to build Tier A only, treat
+Tier B as a deliberate widening needing sign-off, and leave Tier C unauthorised.
 
-- **Tier A is in scope under the existing §F.3 reading.** Every item is "the first run works".
-- **Tier B is a deliberate widening** of §F.3, and §F.3 should be amended in place to say so, with
-  a date, rather than left to read as still-current.
-- **Tier C is not authorised by this doc.** Each item there needs its own decision, and two of
-  them (W17, W18) belong to other docs already.
+**What the decision puts in scope:**
 
-Until that is settled, build Tier A and nothing else.
+- **Tier A (W1–W8)** — in scope, and built first. These are still the items a first-run user hits
+  within five minutes, and W1/W3/W7 are prerequisites for much of what follows.
+- **Tier B (W9–W18)** — in scope. No further sign-off needed.
+- **Tier C (W19–W26)** — in scope in principle. The "is `-web` a product?" objection no longer
+  blocks any of them. **Each still owes its own technical decision before it is built**, and those
+  are real design calls, not permission: where the tool loop runs (W19), a PDF extractor against
+  the no-new-root-dependency rule (W20), the gate for page-initiated admin actions — answered once
+  for W5 and W22 together — the RAG stack (W24), and the sandbox model (W25). Items that already
+  belong to other docs stay owned there (W12 → `task-fit-to-hardware.md` §3, W18's re-attach →
+  `task-work-queue-2026-09.md` J3).
+
+**What the decision does NOT change** — none of these were the "not a product" argument, so none
+are reopened by it:
+
+- **§5's non-goals stand.** Accounts/sync/sharing, voice, parallel generation and connectors are out
+  for reasons of architecture and model support, not scope. Revisit one only by naming it.
+- **§6's constraints still govern every item.** One binary, fully offline, no CDN and no bundler
+  (§6.1); model output rendered as DOM nodes, never an HTML string (§6.2 — this matters *more* as the
+  page does more); every mutating route behind the existing gates (§6.3).
+
+**Build order:** §6.1's move to `//go:embed webui/*` first, before Tier A doubles the file; then
+Tier A in its ranked order; then Tier B; then Tier C item by item, each opening with its own decision.
 
 ---
 
-## 2. Tier A — the eight that make it usable
+## 2. Tier A — the eight that make it usable (build first)
 
 Ranked by what a person notices in the first five minutes.
 
@@ -128,7 +145,7 @@ that had it unset; `/v1/models` would need to publish it alongside `decode_path`
 
 ---
 
-## 3. Tier B — the ten that make it a daily driver
+## 3. Tier B — the ten that make it a daily driver (in scope)
 
 Six are S. Each is a reason someone opens Open-WebUI or LM Studio instead of the page that shipped
 inside the binary.
@@ -148,7 +165,7 @@ inside the binary.
 
 ---
 
-## 4. Tier C — projects, not sessions. Not authorised by this doc.
+## 4. Tier C — projects, not sessions. In scope as of 2026-09-14; each needs its own design decision first (§1).
 
 - **W19 — Tool calls visible in the thread.** The server does tool calling and constrained JSON;
   `demo/agent/cmd/agent-web/index.html:198` has the collapsible chip UI for exactly this. The

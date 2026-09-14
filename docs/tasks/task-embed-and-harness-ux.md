@@ -327,7 +327,12 @@ by default (the banner says how to turn it on); which of the five routes a given
   plus an optional system hint; the grammar does the enforcing either way.
 - **F.3 Where `-web` stops.** The web UI is a client of the same routes, so structured output
   and tool calling could be exposed there for free; whether it should is a scope call, not a
-  design one. Lean: chat and pull only — it is the first-run surface, not a product.
+  design one. ~~Lean: chat and pull only — it is the first-run surface, not a product.~~
+  **DECIDED 2026-09-14 (owner): the web UI is a product surface, to be made as fully useful for
+  users as possible.** The lean above is superseded, not deleted, so the reversal is visible.
+  Scope, build order and the constraints that still bind it live in
+  [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) §1 — structured output (W23) and tool calls in
+  the thread (W19) included.
 - **F.4 The Anthropic-side check.** Claude Code applies its own idle timeout to a silent
   stream; the heartbeat fix (M-19) should make G5 pass, but the timeout value is unrecorded.
   Measure it in the G5 run rather than assume it.
