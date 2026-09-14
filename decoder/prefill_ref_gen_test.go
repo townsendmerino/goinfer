@@ -86,7 +86,7 @@ func TestPrefillGateReference(t *testing.T) {
 	t.Logf("prompt set %q (%d files) -> %s", setLabel, len(promptFiles), outDir)
 
 	const continuationN = 64
-	workers := min(8, runtime.NumCPU())
+	workers := refWorkers(min(8, runtime.NumCPU()))
 	// K=512 joins the decision set here (docs/completed/task-prefill-gap.md §4 L1, 2026-09-09): CUDA's floor was
 	// set from a MEASURED K=512 cell, never interpolated between 256 and 1024 (§3, "a floor placed
 	// between two measured cells would be interpolating a fidelity result nobody took") — Metal's
@@ -174,6 +174,31 @@ func refKs(def []int) []int {
 		return def
 	}
 	return out
+}
+
+// refWorkers lets a run cap how many prompts are prefilled CONCURRENTLY, via
+// GOINFER_CPU_REF_WORKERS. The default (8) is unchanged and right for the shallow standing cells.
+//
+// AT DEPTH, CONCURRENCY IS A LOSS, NOT A WIN — measured, and expensively. The exact f64-accumulating
+// attention materialises K x K score rows per head, which at K=8000 sit far outside the 3700X's
+// 32 MB of L3; eight prompts doing that at once contend for memory bandwidth until each is slower
+// than running them in series:
+//
+//   - S (1.5B, f32) at K=8000: eight concurrent prompts took 88 min EACH; the last two, running as a
+//     pair, took 10.6 min each. Throughput 0.091 -> 0.189 prompts/min on FEWER workers.
+//   - D7 (7B, int8) at K=8000 with 8 workers wrote no file in 8h50m; its KV fill (RSS growth, which
+//     matched S's own timeline to 2 min) put it ~8 of 28 layers in, projecting 24-28 h against a
+//     16 h test timeout. One prompt alone at f32 fits K=1024/2048/4096 at 2.11/3.32/6.83 min and
+//     projects ~17.5 min at K=8000: the 8-worker run was paying a 10x+ contention penalty.
+//   - two workers at K=2048 (f32) bought +8.6% throughput over one — so the break-even is somewhere
+//     between 2048 and 8000, and one worker is the safe choice at the deep cells.
+//
+// Record: docs/measurements/vsum-split-fidelity-2026-09-13.md, deviation D2.
+func refWorkers(def int) int {
+	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("GOINFER_CPU_REF_WORKERS"))); err == nil && v > 0 {
+		return v
+	}
+	return def
 }
 
 // d7RefQuant picks D7's reference weight precision. The default is "int8" — weight-only per-row

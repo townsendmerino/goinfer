@@ -27,8 +27,8 @@ carries to main; the **absolute** agreement and KL figures are for the pre-rebas
 
 **Status: S (confirmation) scored — DOES NOT PASS under the registered rule, on criterion (a) by one
 hard flip; PASSES under criterion (a) as AMENDED by owner decision (below), re-scored in a logged run
-before any D7 result. D7 (decision) reference still generating. The gate's verdict is D7's, and is not
-in yet.**
+before any D7 result. D7 (decision) reference: first run stopped unfinished, relaunched per D2. The
+gate's verdict is D7's, and is not in yet.**
 
 ## S — confirmation cell — DOES NOT PASS
 
@@ -186,6 +186,52 @@ comparisons against the same reference.
 were never at risk). A detached watcher (`goinfer-logs/vsum-fidelity-handoff.sh`, log alongside)
 waited for the D7 subtest to start, verified all ten `S-K8000-p*.bin` were on disk, stopped the f32
 run, and relaunched `-run TestPrefillGateReference/D7` at int8.
+
+### D2 — D7 reference relaunched: f32 weights (D1 REVERTED), one worker, K unchanged (decided 2026-09-13 ~21:45, no D7 result exists)
+
+**The int8 run was stopped at 8h50m with no file written.** An RSS progress meter — KV cache fill,
+262 MB per layer for 8 prompts, read off the pipeline's heartbeats — put prefill at roughly 8 of 28
+layers after 7h22m. The meter was validated against S's known timeline first: it predicted S's
+first batch at ~90 min, and it landed at 88. Projected finish 24-28 h, past the run's own 16 h test
+timeout, which would have killed it with nothing written. The heartbeats showed the step shape the
+meter predicts (flat half-hours alternating with 0.2-0.3 GB jumps).
+
+**Calibrated before relaunching**, one prompt at a time unless stated, using the generator's own
+`prefillReferenceCell` with the 64-token continuation (harness archived beside its logs as
+`goinfer-logs/vsum-refcal-harness_test.go.txt`; logs `vsum-refcal-20260913-210753.log`,
+`vsum-refcal2-20260913-211759.log`):
+
+| D7 | K=1024 | K=2048 | K=4096 |
+|---|---:|---:|---:|
+| f32, 1 worker | 2.11 min | 3.32 min | 6.83 min |
+| int8, 1 worker | 2.41 min | 8.21 min † | — |
+| f32, 2 workers | — | 6.12 min wall for 2 (+8.6% throughput) | — |
+
+† from the first calibration process, started moments after the int8 D7 run was killed; every
+other cell is from the second. Its 2.47x gap to f32 at K=2048 — against 1.14x at K=1024, and a depth
+exponent of 1.77 where f32's is 0.66 — is not explained and is not relied on. f32 is at least as fast
+at every depth measured regardless.
+
+**What it established:**
+- **int8 was not the cause** — the hypothesis the stop was argued on. At K=1024 it cost 14%.
+- **Concurrency was.** A constant + linear + quadratic fit through the three f32 points projects
+  **~17.5 min per prompt at K=8000**, so ten prompts in series ≈ 3 h. The 8-worker run was on course
+  for ~25 h: a 10x+ contention penalty. S shows the same thing from the other side — eight concurrent
+  prompts took 88 min each, the last two as a pair 10.6 min each.
+- 17.5 min is still an extrapolation (x1.95 in K beyond the last point). The relaunch's first prompt
+  is itself a K=8000 measurement and checks it at no extra cost.
+
+**The relaunch configuration:**
+- **Weights f32** (`GOINFER_CPU_REF_QUANT_D7=""`) — the PRE-REGISTERED setting, so **D1 is reverted**.
+  Memory at one worker is ~32 GB, nowhere near the ~50 GB that motivated D1.
+- **One worker** (`GOINFER_CPU_REF_WORKERS=1`, a knob added to the generator for this, default
+  unchanged). Two bought only 8.6% at K=2048, and concurrency is exactly what failed at 8000.
+- **K=8000, ten prompts, set A** — unchanged from the pre-registration.
+- **Same CPU numerics as S's reference.** The generator now builds from the rebased tree, so this was
+  checked: between S's reference build and now, aikit is identical (v1.41.0), `tokenizer/` has no code
+  change, and `decoder/`'s only non-comment changes are LoRA dimension validation (unused without an
+  adapter) and live-doc path strings the generator does not read — it reads the prompt snapshots,
+  which are byte-identical.
 
 ## Separately recorded, not a deviation
 
