@@ -1391,9 +1391,9 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/close_leak_test.go:160` | goinfer | `// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmd/serve/main.go:5` | goinfer | `// Identical to the pure-Go root binary except it blank-imports the opt-in Metal module ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmdbuf_status_test.go:19` | goinfer | `UNKEYABLE` |
-| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:159` | goinfer | `p.slots[s] = expertSlot{` |
-| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:173` | goinfer | `func (p *expertPool) ensureResident(e int) expertSlot {` |
-| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:44` | goinfer | `func copyBytesToU32Buf(dst Buffer, src []byte) {` |
+| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:161` | goinfer | `p.slots[s] = expertSlot{` |
+| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:175` | goinfer | `func (p *expertPool) ensureResident(e int) expertSlot {` |
+| `docs/audit-metal-2026-09-12.md|metal/expertpool.go:49` | goinfer | `func copyBytesToU32Buf(dst Buffer, src []byte) {` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:449` | goinfer | `// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Ste` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:470` | goinfer | `anchor: func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {` |
 | `docs/audit-metal-2026-09-12.md|metal/gemma4_moe.go:535` | goinfer | `e2 := begin() // phase 2: experts from slots + join` |

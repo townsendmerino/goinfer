@@ -505,7 +505,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/moe.go:786` (was a serial `ensureResident` loop — see this finding's own
   closure note), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
-  `metal/expertpool.go:173-201`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
+  `metal/expertpool.go:175-203`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
 - **Mechanism and bound (record-derived):** per-miss cost from the sweep = staging share ×
   s/token ÷ misses/token = 1.6 ms (N=8), 3.0 ms (N=32), 3.6 ms (N=64) for ~1.57 MB — 440–980 MB/s
   effective against the same file's measured 3,687 MB/s sequential pread. Per-miss cost *rising*
@@ -1054,7 +1054,7 @@ re-baked by the code it checks (G-04).
 - N-20 `metal/model.go:378-399` + `metal/moe.go:546-552` — per stage the f16 scales are re-derived from an
   f32 heap copy that is 2× the bytes the GPU consumes (≈2.85 GB on the 26B, ≈4 GB on the 35B, on
   the box whose N=128 cliff was memory pressure); cache f16 per expert at build.
-- N-21 `metal/expertpool.go:159-156` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
+- N-21 `metal/expertpool.go:161-158` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
   **FIXED 2026-09-13** — used `gpu.NewBufferLenOf[T]` instead (the exact generic, right-sized,
   uninitialized allocator the finding names; `NewBufferBytes` alone would have mis-sized `.n` for a
@@ -1092,7 +1092,16 @@ re-baked by the code it checks (G-04).
   `LastGPUTimes` (tests only); µs.
 - N-32 `metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
   fast-math OFF library-wide for one exact divide; `precise::divide` per op would free the rest.
-- N-33 `metal/expertpool.go:44-49` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
+- N-33 `metal/expertpool.go:49-54` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
+  **FIXED 2026-09-13** — `copyBytesToU32Buf` now calls `gpu.Upload` (a signature-compatible drop-in:
+  `metal.Buffer` is a type alias for `gpu.Buffer`), panicking on its error since every call site's
+  destination is sized for exactly that source by the pool's own construction — a failure there is an
+  invariant violation, not a runtime condition to recover from. New
+  `TestCopyBytesToU32Buf_oversizedSrcPanics` confirmed red without the fix (the old `unsafe.Slice` +
+  `copy` reinterpret silently truncated an oversized source instead of erroring) and green with it;
+  `TestCopyBytesToU32Buf_exactFitStillWorks` pins the ordinary in-bounds case still round-trips
+  correctly. Full `metal/` suite (91 pass, 0 fail) and `-tags goinfer_testhooks` (143 pass, 0 fail)
+  still green.
 - N-34 `gpu/metal_copy.go`, `metal_upload_batch.go` — unused by goinfer (correct on UMA); note they
   are host-side and unfenced, so a `CopyDevice` during an in-flight command buffer would race.
 - N-35 `decoder/model.go:1087-1091,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on

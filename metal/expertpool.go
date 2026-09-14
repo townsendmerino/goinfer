@@ -36,18 +36,20 @@ type expertSlot struct{ guW, guS, dW, dS Buffer }
 // copied into the slot immediately, so the callee may reuse/alias its backing.
 type stageFn func(e int) (guW []byte, guS []uint16, dW []byte, dS []uint16)
 
-// copyBytesToU32Buf memcpys little-endian nibble bytes into a uint32 slot buffer's shared contents.
-// The buffer is UMA/page-aligned, so reinterpreting its []uint32 view as []byte is always safe; the
-// source is an unaligned mmap span, which a byte copy handles (a *uint32 alias of it would be
-// misaligned UB — measured 73% of expert spans are not 4-aligned). On LE this yields the exact words
-// bytesToU32 would build, so paged ≡ non-paged byte-identity is preserved.
+// copyBytesToU32Buf memcpys little-endian nibble bytes into a uint32 slot buffer's shared contents,
+// via gpu.Upload rather than a hand-rolled unsafe.Slice reinterpret (N-33, audit-metal-2026-09-12.md):
+// the source is an unaligned mmap span, which gpu.Upload's byte-slice copy handles just as the old
+// reinterpret did (a *uint32 alias of it would be misaligned UB — measured 73% of expert spans are
+// not 4-aligned), but gpu.Upload also bounds-checks src against the buffer's actual allocated bytes
+// instead of Go's `copy` silently truncating an oversized src with nothing to say so. On LE this
+// yields the exact words bytesToU32 would build, so paged ≡ non-paged byte-identity is preserved.
+// Panics on error: every call site's dst is sized for exactly this src by construction (newExpertPool
+// / the stage() contract), so a failure here is an invariant violation, not a runtime condition to
+// recover from.
 func copyBytesToU32Buf(dst Buffer, src []byte) {
-	d := dst.U32s()
-	if len(d) == 0 {
-		return
+	if err := gpu.Upload(dst, src); err != nil {
+		panic(fmt.Sprintf("metal expertpool: %v", err))
 	}
-	db := unsafe.Slice((*byte)(unsafe.Pointer(&d[0])), len(d)*4)
-	copy(db, src)
 }
 
 type expertPool struct {
