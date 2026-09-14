@@ -1031,10 +1031,26 @@ re-baked by the code it checks (G-04).
   CI on real cross-machine/quantization variance.
 
 **Cold-path waste and small levers:**
-- N-15 `metal/prefill.go:503-542` — 26 per-request scratch buffers built from `make`d, zero-filled Go
-  slices then copied (`guF` alone 140 MB at M=3900; ≈262 MB memset + ≈262 MB memcpy per long
-  prompt); `gpu.NewBufferLenOf` exists and goinfer never calls it; only `xF` needs zeroed pad rows.
-  A high-water-mark cache across calls removes the allocation entirely. Tens of ms vs a 36 s TTFT.
+- N-15 `metal/prefill.go:548-601` (`PrefillLast`) — 26 per-request scratch buffers built from
+  `make`d, zero-filled Go slices then copied (`guF` alone 140 MB at M=3900; ≈262 MB memset + ≈262 MB
+  memcpy per long prompt); `gpu.NewBufferLenOf` exists and goinfer never calls it; only `xF` needs
+  zeroed pad rows. A high-water-mark cache across calls removes the allocation entirely. Tens of ms
+  vs a 36 s TTFT. **INVESTIGATED, DEFERRED 2026-09-13**: real and quantified, but not safe to
+  implement without a per-kernel trace first. The claim "only `xF` needs zeroed pad rows" needs
+  reconciling against this SAME document's own §5 "Checked and found correct" entry — "Tails: M%8
+  via `Mpad` zero rows and masks" — which treats Mpad-row zeroing as a relied-upon invariant, not
+  something only `xF` needs. Reading the dispatch loop: `normF`'s writer (`pRms` at the pre-attn
+  norm) runs over `M*tgReduceNorm` threads (REAL M), but its reader (the fused-QKV `pGemmStore`)
+  sizes its grid off `Mpad` (`gg(qkvDim)`) — so `normF`'s M..Mpad-1 rows are read WITHOUT ever being
+  written in the same call, for every buffer in the pipeline, not just `xF`. Whether that's actually
+  safe (every downstream kernel either bounds-masks per-row like `attention_prefill_fused`'s
+  documented tail masking, or the garbage stays confined to a padded row's own never-stored output)
+  needs verifying kernel-by-kernel across all ~13 prefill MSL kernels before either the zero-fill
+  removal or the cross-call cache is safe to ship — a wrong assumption here is a silent,
+  garbage-in-real-output correctness bug, not a performance regression. That verification, plus the
+  actual cross-call high-water-mark cache design (which buffers can safely persist across calls of
+  different M, and which need re-zeroing on every call regardless), is a dedicated task on its own,
+  not attempted in this sitting — same treatment as M-05/N-25's larger kernel-composition items.
 - N-16 `metal/prefill.go:400-468` — the 13-kernel prefill library + 12 pipelines compile lazily inside
   the first `PrefillLast` (the first request's TTFT); `buildResident` could do it. Also N-47: a failed
   `ensurePrefill` re-panics per call (no latch). **N-47 half FIXED 2026-09-13** (see N-47's own entry,
@@ -1058,8 +1074,12 @@ re-baked by the code it checks (G-04).
   history stays visible next to the others' rather than singled out. Verified `TestPrefillGemmW4`
   (direct `gemm_w4f16_store` parity, cos=1.0) plus the full prefill suite still pass.
 - N-18 `metal/prefill.go:347` — `pTile` reloaded from `pScr` per `cc` (16×/tile); subsumed by M-04.
-- N-19 `metal/prefill.go:166-216` — `rope_f16` computes cos/sin per (row, pair) with no table; a
-  second reason to fuse RoPE-K into `kv_store_f16`.
+- N-19 `metal/prefill.go:191` (`rope_f16`) — computes cos/sin per (row, pair) with no table; a
+  second reason to fuse RoPE-K into `kv_store_f16`. **NOT ATTEMPTED**: a genuine kernel-fusion
+  design task (write a new fused kernel, verify parity at the S-cell bar `PrefillLast`'s own batched
+  path was held to), not a bug fix — the audit's own framing ("a second reason", "speculative
+  lever, lower priority") already scopes it as a candidate to design and measure, not a same-sitting
+  change. Left for a dedicated pass.
 - N-20 `metal/model.go:390-399` + (originally the per-stage re-derivation in `metal/moe.go`, now
   deleted by the fix below) — per stage the f16 scales are re-derived from an
   f32 heap copy that is 2× the bytes the GPU consumes (≈2.85 GB on the 26B, ≈4 GB on the 35B, on

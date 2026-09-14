@@ -1447,13 +1447,13 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/moe_prefill_measure_test.go:14` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-12.md|metal/pagecost_measure_test.go:47` | goinfer | `// which doesn't fit and is the new path), so this measures the SUBMISSION-STRUCTURE cos` |
 | `docs/audit-metal-2026-09-12.md|metal/pagecost_sharedevent_test.go:47` | goinfer | `// TestPageCost_sharedEventReal is Step-6 Step-0 regime (3) on the REAL forward — the au` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill.go:166` | goinfer | `// must start at zero before encodeMoEExperts' k-expert accumulate loop — unlike decode'` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill.go:191` | goinfer | `kernel void rope_f16(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:286` | goinfer | `// final normalize) — same P19 category as the CUDA L2 twin. Requires hd%8==0 && hd<=128` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:299` | goinfer | `#define ATTN_MAXHD 128` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:347` | goinfer | `simdgroup_half8x8 kT;` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:35` | goinfer | `#define RPS 4` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:400` | goinfer | `uint idx = row*hd + cc*8u+c;` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill.go:503` | goinfer | `for i := range H {` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill.go:548` | goinfer | `xh := make([]uint16, Mpad*H)` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:580` | goinfer | `dummyBias := NewBufferFloats(d, make([]float32, 1))` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:594` | goinfer | `// commits AND waits, so the GPU is finished with them by the time this returns — releas` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:625` | goinfer | `useFusedAttn := metalFusedAttentionEnabled() && g0.hd%8 == 0 && g0.hd <= 128` |
