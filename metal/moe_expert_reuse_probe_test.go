@@ -48,6 +48,17 @@ func TestMoEExpertReuseProbe(t *testing.T) {
 			t.Fatalf("GOINFER_MOE_REUSE_PROBE_M=%q: not an int", v)
 		}
 	}
+	// M-07's row4-skip extension (audit-metal-2026-09-12.md) lowered this checkpoint's resident
+	// footprint enough that autoMoESlots (M-13) now sizes ALL 60 experts resident on a quiet 16 GB
+	// Mac, so the default auto-sized MoECacheExperts no longer pages at all — defeating this
+	// probe's whole point. GOINFER_MOE_REUSE_PROBE_SLOTS forces a real slot count so the paged path
+	// still gets exercised; 0 (default) keeps the prior auto-sized behavior.
+	slots := 0
+	if v := os.Getenv("GOINFER_MOE_REUSE_PROBE_SLOTS"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &slots); err != nil || n != 1 {
+			t.Fatalf("GOINFER_MOE_REUSE_PROBE_SLOTS=%q: not an int", v)
+		}
+	}
 
 	// Real text, not random token ids: routing is a function of the hidden state, and a genuine
 	// coherent sequence's hidden-state trajectory is not the same statistical object as M
@@ -75,9 +86,9 @@ func TestMoEExpertReuseProbe(t *testing.T) {
 	}
 	ids = ids[:M]
 
-	fmt.Fprintf(os.Stderr, "[moe-reuse-probe] loading %s (int4, metal, MoECacheExperts, auto slots)...\n", ckpt)
+	fmt.Fprintf(os.Stderr, "[moe-reuse-probe] loading %s (int4, metal, MoECacheExperts, slots=%d)...\n", ckpt, slots)
 	tLoad := time.Now()
-	m, err := decoder.Load(ckpt, decoder.Options{Backend: "metal", Quant: "int4", MoECacheExperts: true})
+	m, err := decoder.Load(ckpt, decoder.Options{Backend: "metal", Quant: "int4", MoECacheExperts: true, MoECacheSlots: slots})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

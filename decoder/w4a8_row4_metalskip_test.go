@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -129,8 +130,8 @@ func TestW4A8Row4_skippedForMetalBackend(t *testing.T) {
 func TestW4A8Row4_skippedForMetalBackend_MoE(t *testing.T) {
 	for _, ckpt := range []string{"testdata/qwen3_5_moe-tiny", "../testdata/gemma4-moe-tiny"} {
 		t.Run(ckpt, func(t *testing.T) {
-			if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
-				t.Skipf("no tiny checkpoint (%s)", ckpt)
+			if _, err := os.Stat(filepath.Join(ckpt, "model.safetensors")); errors.Is(err, fs.ErrNotExist) {
+				t.Skipf("no checkpoint at %s (model.safetensors gitignored) — run its scripts/pin_*.py", ckpt)
 			}
 			mMetal, err := Load(ckpt, Options{Quant: "int4", Backend: "metal"})
 			if err != nil {
