@@ -46,12 +46,21 @@ type ResidentForward interface {
 	// Forward runs token-at-pos: returns logits for the embedding at absolute
 	// position pos (the runner appends this position's K/V to its resident cache).
 	Forward(embedding []float32, pos int) (logits []float32, err error)
-	// ForwardN runs K tokens at consecutive positions startPos..startPos+K-1 in ONE
-	// command buffer (one Submit/Poll), appending K KV positions and returning K
-	// logit rows — the batched verify for speculative decoding. Causal: row i attends
-	// to positions [0, startPos+i]. Bit-identical to K sequential Forward calls
-	// (TestResidentForwardN_parity), so it amortizes the cgo-encode glue over K
-	// without changing numerics. nil/empty embeddings ⇒ no-op.
+	// ForwardN runs K tokens at consecutive positions startPos..startPos+K-1,
+	// appending K KV positions and returning K logit rows — the batched verify for
+	// speculative decoding. Causal: row i attends to positions [0, startPos+i].
+	// Bit-identical to K sequential Forward calls (TestResidentForwardN_parity), so
+	// no implementation may change numerics to batch. nil/empty embeddings ⇒ no-op.
+	//
+	// "Batched" is an amortization OPPORTUNITY, not a structural guarantee every
+	// backend takes: CUDA's prefillReady path runs the whole batch in one
+	// weight-stationary pass (one command submission) when the arch supports it,
+	// falling back to a per-token sequential loop otherwise (MoE, DeltaNet, and
+	// other geometries prefillCore declines); Metal's ForwardN is ALWAYS the
+	// per-token sequential loop (N-26, audit-metal-2026-09-12.md — Theta≈1.02 on
+	// Metal means the speculative-decode caller that drives this path already
+	// declines there, so no batched Metal path has been built). Callers should not
+	// assume "K rows in" implies "one command buffer out" for every backend.
 	ForwardN(embeddings [][]float32, startPos int) (logits [][]float32, err error)
 	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim]) into the resident GPU
 	// caches at absolute positions base..base+n-1 — the prefill bridge. base is normally 0

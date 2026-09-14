@@ -1186,13 +1186,13 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/registry.go:181` | goinfer | `func validateConfigBounds(cfg *Config) error {` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:769` | goinfer | `EmbedScale:       0,` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:825` | goinfer | `var base float64` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:1008` | goinfer | `// metal: both backends' own Backend.MatmulBT implementations are themselves bare CPU` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:1092` | goinfer | `return false, "sequential — this arch has its own per-token forward (no batched CPU pref` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:1129` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:138` | goinfer | `// scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:1017` | goinfer | `// metal: both backends' own Backend.MatmulBT implementations are themselves bare CPU` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:1101` | goinfer | `return false, "sequential — this arch has its own per-token forward (no batched CPU pref` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:1138` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:147` | goinfer | `// scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:35` | goinfer | `// v1 scope (documented limitations):` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:395` | goinfer | `if a.granite != nil {` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:618` | goinfer | `// SAME arch methods the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer), so the ru` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:404` | goinfer | `if a.granite != nil {` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:627` | goinfer | `// SAME arch methods the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer), so the ru` |
 | `docs/audit-2026-09-10.md|decoder/resident_reuse.go:120` | goinfer | `if m.hasRecurrentState() {` |
 | `docs/audit-2026-09-10.md|decoder/resident_reuse.go:138` | goinfer | `n := min(len(prompt)-1, len(m.resIDs))` |
 | `docs/audit-2026-09-10.md|decoder/resident_reuse.go:5` | goinfer | `// Prefix reuse on the RESIDENT positional KV.` |
@@ -1365,7 +1365,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1116` | goinfer | `if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(suffix) >= 8 && !hasAdapter {` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1124` | goinfer | `lg, perr := pf.PrefillLast(ctx, embs, from)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1141` | goinfer | `kvOnly, hasKV := m.resident.(ResidentPrefillKV)` |
-| `docs/audit-metal-2026-09-12.md|decoder/residency.go:100` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
+| `docs/audit-metal-2026-09-12.md|decoder/residency.go:109` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:414` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:483` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:988` | goinfer | `anchor: func (s *server) loadVisionTower(cfg config) error {` |
@@ -1495,9 +1495,9 @@ supports.
 | `docs/gpu-residency-coverage.md|decoder/features.go:97` | goinfer | `FeatShortConv      ResidentFeature = "short-conv"       // LFM2/LFM2.5: the gated short-` |
 | `docs/gpu-residency-coverage.md|decoder/features.go:98` | goinfer | `FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-la` |
 | `docs/gpu-residency-coverage.md|decoder/hardware_matrix_test.go:41` | goinfer | `t.Setenv("GOINFER_SSM_RESIDENT", "")` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:374` | goinfer | `return false // own forward, not yet bridged` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:375` | goinfer | `case a.lfm2 != nil:` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:395` | goinfer | `if a.granite != nil {` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:383` | goinfer | `return false // own forward, not yet bridged` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:384` | goinfer | `case a.lfm2 != nil:` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:404` | goinfer | `if a.granite != nil {` |
 | `docs/how-inference-works.md|decoder/attention.go:124` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:175` | goinfer | `cache.Append(layer, k, v)` |
 | `docs/how-inference-works.md|decoder/attention.go:59` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
@@ -1514,7 +1514,7 @@ supports.
 | `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:319` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:449` | goinfer | `switch o.Backend {` |
-| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:853` | goinfer | `func (m *Model) withResidency() *Model {` |
+| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:862` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:303` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2491` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
@@ -1555,7 +1555,7 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1514` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1715` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
-| `docs/ollama-chase.md|decoder/residency.go:1129` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/ollama-chase.md|decoder/residency.go:1138` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:705` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:578` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1519` | goinfer | `free, _, err := r.dev.Context().MemInfo()` |
@@ -1634,9 +1634,9 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1152` | goinfer | `if err = ctx.Err(); err != nil {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1281` | goinfer | `// and fall back to CPU, which applies the adapter correctly on its own` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:983` | goinfer | `return logits` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:206` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:208` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:243` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:215` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:217` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:252` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1034` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:495` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
@@ -1682,7 +1682,7 @@ supports.
 | `docs/tasks/task-moe-streaming.md|decoder/mlp.go:84` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
 | `docs/tasks/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
 | `docs/tasks/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
-| `docs/tasks/task-moe-streaming.md|decoder/residency.go:307` | goinfer | `return m.residentProjsInt4()` |
+| `docs/tasks/task-moe-streaming.md|decoder/residency.go:316` | goinfer | `return m.residentProjsInt4()` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:354` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:89` | goinfer | `matmulInto(scr.ws, be, &lw.QProj, h, q, 1)` |
 | `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:195` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |

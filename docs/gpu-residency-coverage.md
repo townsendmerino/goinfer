@@ -43,7 +43,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 ### CPU on every backend
 
 - **Llama 4** (`llama4_text`, `decoder/forward_llama4.go`) — declines at the arch-shape gate
-  before any feature is even checked (`decoder/residency.go:374`, `case a.llama4 != nil: return
+  before any feature is even checked (`decoder/residency.go:383`, `case a.llama4 != nil: return
   false // own forward, not yet bridged`). Needs: **iRoPE** (per-layer RoPE/NoPE interleave —
   RoPE layers use interleaved complex-pair RoPE + a parameter-free L2 QK-norm applied after
   rope; NoPE layers skip rope and apply an attention-temperature tweak to the query), and
@@ -51,7 +51,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   scale the expert *input* by the gate rather than the output — a variant of the existing MoE
   router kernel, not the current one). All three are new kernels, individually small, medium in
   aggregate; no recurrence involved.
-- **LFM2.5** — also an arch-shape decline (`decoder/residency.go:375-390`, `case a.lfm2 != nil:
+- **LFM2.5** — also an arch-shape decline (`decoder/residency.go:384-390`, `case a.lfm2 != nil:
   ... return false`), same discipline as Llama 4: 22 of 30 layers run a gated short convolution
   with a rolling window no uniform-layer runner can express. Even past that gate, no backend
   declares `FeatShortConv` (`decoder/features.go:97`) — "no resident backend implements the conv
@@ -67,7 +67,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   state-matrix row) where DeltaNet's is a single scalar per head. "No resident backend
   implements it."
 - **Granite-4.0-H** — genuinely different from the other four: it is **opt-in, not unimplemented**.
-  `decoder/residency.go:395-396` declines it unless `GOINFER_SSM_RESIDENT` is set
+  `decoder/residency.go:404-396` declines it unless `GOINFER_SSM_RESIDENT` is set
   (`if a.granite != nil { return os.Getenv("GOINFER_SSM_RESIDENT") != "" }`), and the
   hardware-matrix generator explicitly runs with that variable forced empty
   (`decoder/hardware_matrix_test.go:41`, `t.Setenv("GOINFER_SSM_RESIDENT", "")`) — the same

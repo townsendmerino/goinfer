@@ -105,7 +105,7 @@ re-baked by the code it checks (G-04).
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
 - **Where:** `decoder/model.go:1141` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
-  `decoder/residency.go:100-109`; `metal/backend.go:379-560` (the complete `metalResident` method
+  `decoder/residency.go:109-109`; `metal/backend.go:379-560` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1378-1384` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1262-1281` (`forwardHiddenNoHead` — the
   trunk-only encode already exists, used only by `HiddenLast`); `metal/model.go:1304`
@@ -1075,7 +1075,13 @@ re-baked by the code it checks (G-04).
   rationale ("declined by default") is stale. Fix is `PrefillLast` minus its last two dispatches.
 - N-26 `metal/backend.go:667-581` — `ForwardN` is a per-token loop allocating 608 KB per row; cold
   (Theta ≈ 1.02 declines speculation, P21) but the interface doc's "K tokens in ONE command
-  buffer" is not what Metal does.
+  buffer" is not what Metal does. **FIXED 2026-09-13** (doc-only, `decoder/residency.go`'s
+  `ForwardN` interface comment): rewrote the promise from a universal "ONE command buffer" to an
+  amortization OPPORTUNITY some backends take and others decline — CUDA's `prefillReady` path
+  batches into one weight-stationary pass where the arch allows it (falling back to sequential
+  otherwise, e.g. MoE/DeltaNet), Metal's `ForwardN` is always the per-token sequential loop. The
+  bit-identity contract (`TestResidentForwardN_parity`) is unchanged and still universal; only the
+  structural claim was wrong.
 - N-27 `metal/model.go:1304` — pipe path memcpys 608 KB into `logitsHost` before the ack; the
   zero-copy `r.logits.Floats()` view could be returned (the contract already says "consume before
   the next call"). ≈30–60 µs/token.
