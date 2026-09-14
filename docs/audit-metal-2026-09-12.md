@@ -589,6 +589,19 @@ re-baked by the code it checks (G-04).
   graph has independent siblings (the decode graph is nearly a chain, so expect less there).
 - **Confidence:** plausible. **Prior:** metal-verdict §3 Wall 1 / §5 watch item — not a recorded
   negative.
+- **CLOSED 2026-09-13, NEGATIVE — not a lever.** Built the discriminating probe the Fix text called
+  for, in aikit (`aikit/gpu/hazard_tracking_probe_test.go`, `a2dffd6`) rather than rewiring any real
+  goinfer allocation path first: one command buffer, 310 dispatches cycling 20 shared buffers (the
+  reuse pattern hazard tracking actually has to do work on), tracked vs untracked, interleaved
+  reps. Four interleaved runs: untracked measured 99.6% / 100.4% / 100.4% / 101.5% of tracked's
+  GPU-busy time — noise around zero, sign flipping between runs, nowhere near a real effect. The
+  probe's own measured floor (~3.4 µs/dispatch) lands close enough to the tree's recorded ~3.8
+  µs/dispatch to trust its shape as representative. Hazard tracking is not the mechanism behind the
+  dispatch floor; something else in the per-dispatch/pipeline-state path is. Added
+  `newBufferLenUntracked` to aikit as an UNEXPORTED helper for the probe only — no production
+  consumer, no permanent public API surface for a proven-dead lever. Not re-proposed; the
+  concurrent-dispatch-type follow-up this finding's Fix text named is gated on this probe moving,
+  which it did not.
 
 ---
 
@@ -1143,7 +1156,9 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    not been run — N-01's fix names why (no ratio invented without it) rather than skip the gap.
 10. **M-15** (cross-repo, aikit first): the three Metal tower shapes; then `EnableResident` on Metal.
     Unchanged — still open.
-11. **M-16** (A/B only): untracked buffers on the depth bench. Unchanged — still open.
+11. **M-16** — **CLOSED 2026-09-13, NEGATIVE** (aikit `a2dffd6`, see its own entry). Untracked
+    buffers measured noise-level (±0.4–1.5%) against tracked across four interleaved runs; not a
+    lever, not re-proposed.
 
 Not proposed, because the record already closed them: split-KV / dedup attention variants, Stage-B
 GEMV, ICB, unretained references, megakernel, dispatch-count fusions, rope2+kv_store, sa_qv,
