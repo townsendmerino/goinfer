@@ -614,12 +614,20 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 // HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos and
 // returns the LAST position's hidden state after the model's final norm — the resident twin of
 // PrefillLast, but for embedding requests (G4, docs/tasks/task-gpu-paths-2026-09.md) instead of
-// generation: it never runs the LM head. Metal's batched (f16-MMA) PrefillLast is declined by
-// default because it is not bit-identical to decode (§A2-Metal); rather than reuse that
-// divergent path, this runs the SAME per-token sequential kernels decode uses — one
-// forwardHiddenNoHead call per position — which is bit-identical to the CPU reference by
-// construction, at the cost of one command-buffer submit per token instead of Prefiller's one
-// pass (the same TTFT trade PrefillLast's decline already makes for generation).
+// generation: it never runs the LM head. This runs the SAME per-token sequential kernels decode
+// uses — one forwardHiddenNoHead call per position — which is bit-identical to the CPU reference
+// by construction, at the cost of one command-buffer submit per token (≈K × 13-18ms) instead of a
+// single batched pass (≈1.8s for K=512).
+//
+// N-25 (audit-metal-2026-09-12.md): unlike when this doc comment was first written, Metal's
+// batched (f16-MMA) PrefillLast is NOT declined by default for generation anymore —
+// metalFastPrefillEnabled() defaults true (§3.2 gate passed 2026-09-09) — so the fidelity bar
+// that justifies this sequential loop's cost for embeddings is already accepted for decode's own
+// output. The audit's suggested fix (PrefillLast's dispatch graph minus its last two dispatches —
+// the LM head + softcap — reused here) is a real, scoped lever, not a design question, but it is
+// its own parity-gated engineering task (a HiddenLast-batched path needs the same kind of S-cell
+// tolerance gate PrefillLast itself passed, verified against THIS function as the oracle) rather
+// than a same-sitting fix; left as follow-up work.
 func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	if len(embeddings) == 0 {
 		return nil, fmt.Errorf("metal: HiddenLast called with no embeddings")

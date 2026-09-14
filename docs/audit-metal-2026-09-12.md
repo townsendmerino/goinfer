@@ -1073,7 +1073,17 @@ re-baked by the code it checks (G-04).
 - N-25 `metal/backend.go:614-563` — `HiddenLast` is one synchronous command buffer per position
   (≈K × 13–18 ms; ~7–9 s for 512 tokens) where the batched trunk would take ~1.8 s; the stated
   rationale ("declined by default") is stale. Fix is `PrefillLast` minus its last two dispatches.
-- N-26 `metal/backend.go:667-581` — `ForwardN` is a per-token loop allocating 608 KB per row; cold
+  **PARTIALLY CLOSED 2026-09-13**: the stale rationale was real — `HiddenLast`'s doc comment said
+  Metal's batched PrefillLast was "declined by default" for generation, but `metalFastPrefillEnabled`
+  has defaulted true since M-01/M-02 (§3.2 gate passed 2026-09-09, earlier in this same audit round)
+  — the fidelity bar that would justify keeping the sequential loop for embeddings is already
+  accepted for decode's own output. Rewrote `metal/backend.go`'s `HiddenLast` doc comment to say so.
+  The batched-HiddenLast implementation itself (a real, scoped lever — PrefillLast's dispatch graph
+  minus the LM head + softcap dispatches) is its own parity-gated engineering task (needs the same
+  kind of S-cell tolerance gate PrefillLast passed, verified against the current sequential
+  `HiddenLast` as the oracle) — left as follow-up work, not attempted same-sitting, similar to
+  M-05/M-15's treatment.
+- N-26 `metal/backend.go:675-581` — `ForwardN` is a per-token loop allocating 608 KB per row; cold
   (Theta ≈ 1.02 declines speculation, P21) but the interface doc's "K tokens in ONE command
   buffer" is not what Metal does. **FIXED 2026-09-13** (doc-only, `decoder/residency.go`'s
   `ForwardN` interface comment): rewrote the promise from a universal "ONE command buffer" to an
