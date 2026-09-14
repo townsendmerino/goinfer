@@ -79,7 +79,7 @@ a supervised deployment shape; an executor pattern; a drill.
 
 ## K1 — Cancel by id: the task-level switch
 
-**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/serveapp/openai.go:1058,1197` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/serveapp/helpers.go`'s `reqID()`.
+**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/serveapp/openai.go:1062,1197` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/serveapp/helpers.go`'s `reqID()`.
 
 **Fix.** A process-wide registry `map[id]*generation{cancel, started, model, session, tokens,
 toolCalls}` populated when a handler mints its id and cleared on completion. `GET

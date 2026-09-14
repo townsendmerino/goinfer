@@ -89,7 +89,7 @@ one this item asked for — a Gemma 3 / Qwen2.5-VL image turn's text decode no l
 speed on a GPU box.
 
 **Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
-CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1179–1077`
+CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1187–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
 (`internal/serveapp/openai.go:735–663`).
 
@@ -114,10 +114,10 @@ record it there as P6a and do it with the tower move rather than after.
 
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
-**Where.** `internal/serveapp/openai.go:1087`: `if lm.model.ResidentActive() && lm.adapter == ""` —
+**Where.** `internal/serveapp/openai.go:1095`: `if lm.model.ResidentActive() && lm.adapter == ""` —
 adapter models take the session path below it, and `decoder/model.go:1152` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
-commit == nil`). The comment at `internal/serveapp/openai.go:1061–967` records the cost: 13 tok/s vs ~460 resident on
+commit == nil`). The comment at `internal/serveapp/openai.go:1065–967` records the cost: 13 tok/s vs ~460 resident on
 a 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
 **Fix.** Apply the compute-time LoRA on the resident path: the adapter is a per-projection
@@ -265,7 +265,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   serializes each model's generations (`internal/serveapp/openai.go:63` `mu`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
-- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1087`).
+- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1095`).
 - The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
   the CPU block drafter is measured-negative and deliberately not wired (`blockspec_cpu.go`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.

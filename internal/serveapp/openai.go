@@ -734,8 +734,10 @@ type genRequest struct {
 // wires response_format into a constraint masker, and resolves stop strings.
 // residentPath tells prepare whether THIS request will actually run the stateless GPU-resident
 // decode path (so the resident context cap binds). It's false for vision requests (GenerateVL is
-// CPU-only) and for adapter models (R-01 routes them to the staged/CPU session path) — applying the
-// resident cap to those over-rejected prompts the CPU path would serve (audit F-01).
+// CPU-only) and for adapter models (R-01 routes them to the session path below instead, which
+// since G3 is not always CPU either — see the routing comment above the resident-vs-session split;
+// N-39) — applying the resident cap to those over-rejected prompts the session/CPU path would
+// serve (audit F-01).
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
@@ -822,8 +824,10 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		// MaxPositions check, then dies mid-prefill with a 500 whose body leaks the internal
 		// "use the staged path" hint (there is no staged fallback on the stateless resident path).
 		// Reject it here as a clean context_length_exceeded 400 instead (audit R-10). Only when this
-		// request actually runs stateless-resident — never for vision (CPU VL) or adapter (staged)
-		// requests, which are bounded by MaxPositions, not the resident cap (audit F-01).
+		// request actually runs stateless-resident — never for vision (CPU VL) or adapter (session
+		// path; N-39: not purely staged since G3, but this specific check is about the STATELESS
+		// path's own fixed KV cap, which adapter requests never enter) requests, which are bounded
+		// by MaxPositions, not the resident cap (audit F-01).
 		if residentPath {
 			if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
 				ctx = rc
@@ -1082,8 +1086,12 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	// applied only through the session binding (sessionLRU.bindAdapter → Session.UseAdapter → the
 	// cache's lora), and the stateless Generate/GenerateNgram… run on a fresh cache with lora == nil,
 	// so they'd silently return BASE-model output. Route adapter requests down the session path below
-	// (correct, if slower — it drops to the staged path); base models keep the resident fast path
-	// (audit R-01).
+	// instead; base models keep the resident fast path here (audit R-01). Since G3
+	// (docs/tasks/task-gpu-paths-2026-09.md), the session path itself is NOT always staged/CPU for
+	// an adapter: generateInto's useGPU (decoder/model.go) admits prefillFrom==0 with a bound
+	// resident adapter onto the resident GPU path — a session's FIRST turn. A later turn on the
+	// same session (prefillFrom>0, continuing off the reused warm prefix) still drops to CPU;
+	// nothing wires compute-time LoRA into the resident prefix-reuse path yet (N-39).
 	if lm.model.ResidentActive() && lm.adapter == "" {
 		if lm.blockSpec != nil && gr.masker == nil {
 			// Pretrained BLOCK drafter (--drafter): a whole block per round, verified in one
