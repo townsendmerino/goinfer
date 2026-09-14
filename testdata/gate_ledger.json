@@ -10,6 +10,15 @@
       "value": "PASS"
     },
     {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestBailingHybrid_forwardParity",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestBailingHybrid_forwardParity$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "d0d0cf854fa98fee",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestByteLevel_llama3GoldenParity",
@@ -289,6 +298,15 @@
       "value": "PASS"
     },
     {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestGraniteDense_forwardParity",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestGraniteDense_forwardParity$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "c89c6c627cc6abba",
+      "value": "PASS"
+    },
+    {
       "commit": "eaa8bb23",
       "date": "2026-09-06",
       "gate": "TestGraniteReal_gate",
@@ -406,6 +424,24 @@
       "value": "PASS"
     },
     {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestMinistral3_batchedMatchesSequential",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestMinistral3_batchedMatchesSequential$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "5aac29fa8aadc75b",
+      "value": "PASS"
+    },
+    {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestMinistral3_forwardParity",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestMinistral3_forwardParity$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "853685273fbd530c",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestMistral_forwardParity",
@@ -439,6 +475,24 @@
       "note": "confirmed PASS in the v0.15.0 release sweep, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log (the sweep tree was bd085de +dirty). The function body is byte-identical at bd085de and at promotion time, so this confirmation is keyed to the same assertion that produced the PASS. Promoted per audit-2026-09-02 G-04.",
       "promoted_by": "francis",
       "source_sha256": "7eab36dab7f6780f",
+      "value": "PASS"
+    },
+    {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestOlmo3_forwardParity",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestOlmo3_forwardParity$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "4fa7c29ef8f25506",
+      "value": "PASS"
+    },
+    {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestOlmoHybrid_forwardParity",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestOlmoHybrid_forwardParity$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "350f23895681923e",
       "value": "PASS"
     },
     {
@@ -541,6 +595,15 @@
       "value": "PASS"
     },
     {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestQwen3Moe_forwardParity",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestQwen3Moe_forwardParity$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "0e4c0ee62508465c",
+      "value": "PASS"
+    },
+    {
       "commit": "bd085de",
       "date": "2026-08-27",
       "gate": "TestQwen3NextReal_oracle",
@@ -556,6 +619,15 @@
       "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
       "promoted_by": "francis",
       "source_sha256": "051a58eff88a5cbe",
+      "value": "PASS"
+    },
+    {
+      "commit": "b7726cd",
+      "date": "2026-09-13",
+      "gate": "TestSmolLM3_forwardParity",
+      "note": "v0.18.0 release pre-flight: go test ./decoder -run ^TestSmolLM3_forwardParity$ PASS on CPU tiny-fixture (no realckpt tag needed)",
+      "promoted_by": "claude",
+      "source_sha256": "2da86ab86f00edda",
       "value": "PASS"
     },
     {

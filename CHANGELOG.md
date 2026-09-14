@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.18.0] — 2026-09-13
+
 ### Changed
 
 - **Three default-ON flips that change greedy output on `serve`/`goinfer-chat`, none previously

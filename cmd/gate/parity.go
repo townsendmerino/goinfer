@@ -646,7 +646,27 @@ func whyNoResult(test string, cells []cell) string {
 // by design, and no test asserted `required ⊆ ledger`. TestParity_everyRequiredGateIsConfirmed is
 // that assertion, and this map is its only escape hatch — deliberately a code change with a written
 // reason rather than a state the ledger can drift into by nobody doing anything.
-var neverConfirmed = map[string]string{}
+var neverConfirmed = map[string]string{
+	// v0.18.0 RELEASE DECISION (2026-09-13, Francis via Claude): these 10 real-checkpoint
+	// (-tags realckpt) gates were already pending before v0.17.2 (2026-09-08), so
+	// TestParity_noPendingGateOutlivesARelease correctly refused to let them ride through a
+	// second release unconfirmed. Deliberately shipped v0.18.0 without running the real sweep
+	// (no CUDA box in this session; this machine had 5.6 GB free against internlm2's 13 GB
+	// requirement, and lfm2's expected asset directory does not exist on it). THIS IS NOT A
+	// PERMANENT EXEMPTION THE WAY THE FIELD NAME SUGGESTS — move each back to
+	// awaitingFirstConfirmation (or promote to the ledger directly) the moment a real sweep on
+	// a box with the checkpoints actually runs it; do not let this entry persist past that.
+	"TestQwen3MoeReal_oracle":            "2026-09-13 — deferred for v0.18.0; needs the Qwen3-30B-A3B checkpoint on a box with headroom, not run this release",
+	"TestQwen38GGUF_weightDiff":          "2026-09-13 — deferred for v0.18.0; needs the qwen3_5 GGUF+safetensors pair, not run this release",
+	"TestNemotron35LightningReal_oracle": "2026-09-13 — deferred for v0.18.0; needs the ~60GB bf16 checkpoint on the Linux box, not run this release",
+	"TestSmolLM3_3bReal_gate":            "2026-09-13 — deferred for v0.18.0; needs the SmolLM3-3B checkpoint, not run this release",
+	"TestLFM2Real_gate":                  "2026-09-13 — deferred for v0.18.0; local asset directory name mismatch (lfm25-2.6b vs lfm2.5-2.6b) plus no verified fit, not run this release",
+	"TestMinistral3Real_gate":            "2026-09-13 — deferred for v0.18.0; needs the Ministral 3 checkpoint on a box with headroom, not run this release",
+	"TestGraniteDenseReal_gate":          "2026-09-13 — deferred for v0.18.0; needs the dense Granite 4.2 checkpoint on a box with headroom, not run this release",
+	"TestOlmo3Real_gate":                 "2026-09-13 — deferred for v0.18.0; last confirmed FAIL was root-caused and fixed (docs/parity-coverage-policy.md), but the re-run to actually confirm PASS did not happen this release",
+	"TestOlmoHybridReal_gate":            "2026-09-13 — deferred for v0.18.0; needs the olmo_hybrid checkpoint on a box with headroom, not run this release",
+	"TestInternLM2_1_8bReal_gate":        "2026-09-13 — deferred for v0.18.0; this machine has 5.6 GB free against the 13 GB the checkpoint needs (f32 resident + KV), not run this release",
+}
 
 // awaitingFirstConfirmation names a required gate that has NEVER produced a confirmed result, with
 // the date it became required and what will confirm it. It is the third state, and it is not the
@@ -667,57 +687,6 @@ var neverConfirmed = map[string]string{}
 // sweep produces a value a person promotes. The date is required so an entry that quietly becomes
 // permanent is visible as one.
 var awaitingFirstConfirmation = map[string]string{
-	"TestQwen3Moe_forwardParity":              "2026-09-06 — newly required (qwen3_moe had no gate); promote from the first sweep that runs it",
-	"TestGraniteDense_forwardParity":          "2026-09-06 — newly required (dense granite had no gate); promote from the first sweep that runs it",
-	"TestQwen3MoeReal_oracle":                 "2026-09-06 — newly required (F1, docs/completed/task-families-2026-09.md); real-checkpoint T3 for qwen3_moe, not yet run; promote from the first sweep that runs it",
-	"TestQwen38GGUF_weightDiff":               "2026-09-06 — newly required (batch 2 G1, docs/completed/task-families-2026-09.md); GGUF-vs-safetensors weightDiff for the dense qwen3_5 hybrid, not yet run; promote from the first sweep that runs it",
-	"TestMinistral3_forwardParity":            "2026-09-06 — newly required (batch 2 G3, docs/completed/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
-	"TestMinistral3_batchedMatchesSequential": "2026-09-06 — newly required (batch 2 G3, docs/completed/task-families-2026-09.md); new family mistral3, not yet run; promote from the first sweep that runs it",
-	"TestSmolLM3_forwardParity":               "2026-09-06 — newly required (batch 2 G4, docs/completed/task-families-2026-09.md); new family smollm3, not yet run; promote from the first sweep that runs it",
-	"TestOlmo3_forwardParity":                 "2026-09-06 — newly required (batch 2 G2, docs/completed/task-families-2026-09.md); new family olmo3, not yet run; promote from the first sweep that runs it",
-	"TestOlmoHybrid_forwardParity":            "2026-09-06 — newly required (batch 2 G2, docs/completed/task-families-2026-09.md); new family olmo_hybrid, not yet run; promote from the first sweep that runs it",
-	"TestBailingHybrid_forwardParity":         "2026-09-06 — newly required (batch 2 G5, docs/completed/task-families-2026-09.md); new family bailing_hybrid, not yet run; promote from the first sweep that runs it",
-	"TestNemotron35LightningReal_oracle": "2026-09-06 — newly required (F2, docs/completed/task-families-2026-09.md); " +
-		"needs the ~60GB bf16 checkpoint on the Linux box, not yet run; promote from the first sweep that runs it",
-	"TestSmolLM3_3bReal_gate": "2026-09-07 — newly required (T3 promotion of smollm3 from tiny-golden to a " +
-		"released checkpoint, alongside TestSmolLM3_forwardParity above); the parityRealckptGates entry " +
-		"itself was missing until now (TestRealckptGateIsListedOrExplicitlyNotRequired caught it), so it " +
-		"has never run in any sweep; promote from the first sweep that runs it",
-	"TestLFM2Real_gate": "2026-09-07 — newly required (T3 promotion of lfm2 from tiny-golden to a released " +
-		"checkpoint); the parityRealckptGates entry itself was missing until this fix (same gap as " +
-		"smollm3's, caught the same way), so it has never run in any sweep; promote from the first " +
-		"sweep that runs it",
-	"TestMinistral3Real_gate": "2026-09-07 — newly required (T3 promotion of mistral3 from tiny-golden to a " +
-		"released checkpoint); same missing-registration gap as lfm2's above; promote from the first " +
-		"sweep that runs it",
-	"TestGraniteDenseReal_gate": "2026-09-07 — newly required (T3 promotion of DENSE granite from tiny-golden " +
-		"to a released checkpoint; NOT the same family as TestGraniteReal_oracle's granitemoehybrid, " +
-		"already confirmed above); registered in the same change as the gate and asset, unlike smollm3/" +
-		"lfm2/mistral3's first landing; promote from the first sweep that runs it",
-	"TestOlmo3Real_gate": "2026-09-07 — newly required (T3 promotion of olmo3 from tiny-golden to a released " +
-		"checkpoint); registered alongside the gate and asset. First run FAILED (cosine 0.9928 vs the " +
-		"0.9999 bar, argmax and the greedy continuation both exact) — the real Olmo3Model.forward applies " +
-		"one shared, YaRN-scaled rotary table to every layer, but olmo3Architecture's flat-rope_scaling " +
-		"branch zeroed ropeScalingLocal, leaving the 24 sliding-attention layers unscaled. Left required " +
-		"and red rather than moved to realckptNotRequired while the fix was pending (see " +
-		"docs/parity-coverage-policy.md's timing note for the full account). FIXED same day " +
-		"(decoder/registry.go's olmo3Architecture now applies one uniform base/scaling regardless of " +
-		"config form, matching what Olmo3Model.forward and Olmo3RotaryEmbedding.__init__ actually do); " +
-		"re-run confirmed cosine 1.000000. Still promote from the first sweep that runs it — this note " +
-		"records the fix, not a ledger confirmation.",
-	"TestOlmoHybridReal_gate": "2026-09-07 — newly required (T3 promotion of olmo_hybrid from tiny-golden to " +
-		"a released checkpoint); registered alongside the gate and asset; promote from the first sweep " +
-		"that runs it",
-	"TestInternLM2_1_8bReal_gate": "2026-09-07 — newly required (T3 promotion of internlm2 from tiny-golden " +
-		"to a released checkpoint); the parityRealckptGates entry itself was missing until now (same gap " +
-		"as smollm3/lfm2/mistral3, caught the same way), so it has never run in any sweep. First run FAILED " +
-		"(cosine 0.873148, argmax wrong) — root-caused to a corrupt HF reference, not a goinfer defect: " +
-		"InternLM2's RoPE inv_freq is a persistent=False buffer that this transformers version's " +
-		"from_pretrained fast-init never re-computes for buffers absent from the checkpoint's state dict, " +
-		"leaving it as uninitialized memory. scripts/pin_internlm2_real.py now patches it after loading; " +
-		"the regenerated golden and a re-run both confirm cosine 1.000000. See " +
-		"docs/parity-coverage-policy.md's RESOLVED note for the full account. Still promote from the first " +
-		"sweep that runs it — this note records the fix, not a ledger confirmation.",
 	"TestQwen2MoeReal_oracle": "2026-09-08 — newly required (T3 promotion of qwen2_moe from tiny-golden to a " +
 		"released checkpoint); registered alongside the gate and asset in the same change, per the " +
 		"discipline established after smollm3/lfm2/mistral3/internlm2's registration gaps; promote from " +
