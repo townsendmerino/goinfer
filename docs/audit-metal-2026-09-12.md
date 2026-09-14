@@ -780,6 +780,59 @@ re-baked by the code it checks (G-04).
   (goinfer) `EnableResident` for `cfg.backend == "metal"` and a crossover row in `multimodal.md`.
 - **Confidence:** confirmed for shapes and submit counts; absolute image times on the M1 unrecorded.
 - **Prior:** aikit audit M-14/M-09/M-10 (CUDA halves done); goinfer task-gpu-paths G2 / multimodal P6.
+- **PARTIALLY CLOSED 2026-09-14 — all three aikit fixes shipped (two wired, one deliberately
+  not); goinfer-side wiring and a real crossover measurement NOT done.** Attempted all three
+  fixes this Fix line names, in increasing order of risk:
+  <br>**1. Ported visionmetal's `runBatch` to qwenmetal (aikit `21d6f3d`).** `ForwardViT` now
+  opens one `gpu.Encoder` per block (patch embed gets its own) instead of a `Run1D`/`Run1DTG`/
+  `Run2D` per op — 17-22 dispatches/block down to 1 command buffer/block, 544-704 submits/image
+  down to 33. The three shared scalar buffers (safe only because each pre-fix dispatch committed
+  and waited before the next write) are replaced with visionmetal's own per-dispatch ring, reset
+  once per command buffer. TDD-verified: temporarily dropping the ring reset made
+  `TestQwenMetal_parityWithCPU` panic on ring exhaustion immediately rather than silently
+  corrupting results. `go test -tags metal -race` green: parity cosine 1.000000000 vs CPU
+  unchanged, 4 repeated forwards bit-identical.
+  <br>**2. Ported CUDA's `gemm_w8a8_reg` to Metal as `gemm_w8a8_reg` (aikit `319717c`), wired
+  into both towers' int8 projections via a new `GEMMW8A8Plan`.** MSL has neither a
+  `simdgroup_matrix` int8 form nor a hardware dp4a intrinsic, so a `dp4a_manual` helper unpacks
+  packed-int8 words via arithmetic right-shift and sums the four lane products in scalar
+  registers — still a 4× cut in threadgroup-memory traffic per operand loaded, plus 4×4 register
+  blocking, over the byte-granular `gemm_w8a8_tiled` every int8 projection ran before. Bit-identical
+  to `gemm_w8a8_tiled` by the same associativity argument CUDA's own kernel relies on. New
+  `TestMetal_gemmW8A8Reg` mirrors `cuda_vit_w8a8reg_test.go`'s structure (routing + bit-exact
+  equality across 6 shapes incl. the real so400m MLP shape). TDD-verified: removing the
+  sign-extension from `dp4a_manual` produced a large numeric mismatch immediately. `go test
+  -tags metal -race ./gpu/...` green (34 tests), whole-tower parity gates unchanged at cosine
+  1.000000000 (confirms bit-identity in production use, not just the synthetic kernel test).
+  <br>**3. Built query-tiled online-softmax attention as `attention_tiled` (aikit `060fdae`),
+  verified standalone, DELIBERATELY NOT wired into either tower.** This is the one genuinely
+  novel piece: no reference implementation exists anywhere in aikit, CUDA included — aikit's own
+  CHANGELOG (the CUDA M-14 half) says so explicitly ("the query-tiling the audit actually asks
+  for... needs an online/flash-style softmax, which re-associates the sum and is a numerics
+  decision rather than a refactor"). Implemented the standard flash-attention running-max/
+  running-sum/rescale-on-max-update recurrence: `AT_QTILE`(32) queries share one threadgroup,
+  each on its own thread; `AT_KTILE`(16)/`AT_MAXHD`(128, mirroring CUDA's own unrelated
+  K-staging kernel's `ATTN_KTILE`/`ATTN_MAXHD`) bound the static K/V staging arrays. New
+  `TestMetal_vitAttentionTiled` (float64 CPU reference) measured worst Δ 5.36e-07 — tighter than
+  the untiled kernel's own 5e-5 bound despite the re-association; gated at 1e-4 for margin.
+  `TestMetal_vitAttentionTiled_matchesUntiled` (vs. production `attention` directly): worst Δ
+  4.47e-07. TDD-verified: removing the running-accumulator rescale (the classic flash-attention
+  ordering bug) produced Δ 0.735 immediately. Left unwired on purpose: this Fix line's own
+  parenthetical — "re-baseline the ViT parity gate" — is named as its own explicit step, and
+  swapping the kernel into either tower's production `attn` call changes that tower's whole
+  parity-gate baseline, which needs a measurement pass on real hardware and real shapes, not a
+  decision folded silently into the kernel's own landing.
+  <br>**NOT done:** (a) goinfer-side wiring (`EnableResident` for `cfg.backend == "metal"` in
+  `internal/serveapp/main.go`, both the generic `vision.Encoder` path AND the separate
+  `loadQwenVisionTower`, which never calls `EnableResident` on any backend today) — blocked on a
+  fresh `gpu/vX.Y.Z` release bundling the three commits above, the same release ritual C-05/C-06/
+  G-06 already went through this session; (b) the crossover measurement itself, since this
+  session had no real SigLIP/Qwen2.5-VL checkpoint or Metal hardware benchmark run to confirm the
+  Mechanism section's arithmetic actually closes the gap to the CPU tower's recorded times, only
+  that each kernel change is individually correct; (c) `docs/multimodal.md:172` /
+  `docs/benchmarks.md:554-557`, the two doc paths this finding's own Where cites, do not exist
+  under those names in the current aikit tree — reconciling the promised "crossover row" needs
+  finding wherever that content now lives first.
 
 #### M-16 · Every buffer is hazard-tracked and every encoder serial; the binding exposes neither the untracked option bit nor `computeCommandEncoderWithDispatchType:`, and the record calls the resulting per-dispatch floor "unassessed"
 - **Where:** aikit `metal.go:438,432,443,491,500` (every `newBuffer*` passes `options = 0` =
