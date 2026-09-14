@@ -1439,10 +1439,10 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:375` | goinfer | `if nE > 256 {` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:425` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
 | `docs/audit-metal-2026-09-12.md|metal/moe.go:670` | goinfer | `func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:774` | goinfer | `for l := 0; l < r.nL; l++ {` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:794` | goinfer | `slots := L.moe.pool.ensureResidentBatch(ids)` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:795` | goinfer | `e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)` |
-| `docs/audit-metal-2026-09-12.md|metal/moe.go:801` | goinfer | `e := r.q.Begin()` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:762` | goinfer | `func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:788` | goinfer | `for l := 0; l < r.nL; l++ {` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:809` | goinfer | `slots := L.moe.pool.ensureResidentBatch(ids)` |
+| `docs/audit-metal-2026-09-12.md|metal/moe.go:810` | goinfer | `e2 := r.q.Begin() // phase 2: experts from slots (+ shared expert)` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_model_test.go:302` | goinfer | `embs := make([][]float32, 8) // >= 8 → the decoder would take the Prefiller path` |
 | `docs/audit-metal-2026-09-12.md|metal/moe_prefill_measure_test.go:14` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-12.md|metal/pagecost_measure_test.go:47` | goinfer | `// which doesn't fit and is the new path), so this measures the SUBMISSION-STRUCTURE cos` |

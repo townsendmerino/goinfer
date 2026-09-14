@@ -476,7 +476,7 @@ re-baked by the code it checks (G-04).
 
 #### M-11 · Paged decode pays a ~14 ms command-buffer boundary 61–81× per token; the one design that removes it was rejected on a measurement taken where the boundary costs 0.2 ms
 - **Where:** `metal/gemma4_moe.go:470-538` (`begin()`/`end()` per phase; `end` = commit +
-  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:774-802` (same, generic);
+  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:788-802` (same, generic);
   `metal/residency_probe_test.go:11-12` ("~15 ms/boundary of GPU-idle-in-wait, 72× Step-0's 0.213
   ms"); `metal/pagecost_sharedevent_test.go:47-64` (verdict "recovers ~0%" — measured on
   qwen2.5-coder-1.5b, dense); `metal/model.go:1175-1144` (residency-set comment: p1 still carries
@@ -502,7 +502,7 @@ re-baked by the code it checks (G-04).
   verdict — disagree (wrong shape); audit-2026-09-10 P-22; queue P21.
 
 #### M-12 · Expert staging is queue-depth 1: k misses × 3 preads, sequential on one thread, GPU idle
-- **Where:** `metal/moe.go:794` (was a serial `ensureResident` loop — see this finding's own
+- **Where:** `metal/moe.go:809` (was a serial `ensureResident` loop — see this finding's own
   closure note), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
   `metal/expertpool.go:175-203`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
@@ -1092,10 +1092,28 @@ re-baked by the code it checks (G-04).
   `TestExpertPoolBatch_matchesSequential/_pread`, and the real paged-forward parity tests
   (`TestGemma4Paging_bitExact`, `TestMoEPaging_matchesNonPaged`) all still pass — if uninitialized
   memory leaked through anywhere, the staged-content checks in these would have caught it.
-- N-22 `metal/moe.go:795-790`, `metal/gemma4_moe.go:547-539` — phase 2 of layer l and phase 1 of l+1 have no
+- N-22 `metal/moe.go:810-790`, `metal/gemma4_moe.go:547-539` — phase 2 of layer l and phase 1 of l+1 have no
   host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11.
-- N-23 `metal/moe.go:801-796` — a hybrid's dense layers each get their own `Begin/End` in
-  `forwardLogitsMoEPaged`.
+- N-23 `metal/moe.go:762` — a hybrid's dense layers each get their own `Begin/End` in
+  `forwardLogitsMoEPaged`. **FIXED 2026-09-13**: consecutive dense layers now share ONE command
+  buffer (`Begin()` on first use, closed only when the next MoE-paged layer's router readback needs
+  a real value-dependent seam, or at the loop's end) instead of a submit+wait per dense layer —
+  mirroring `encodeTrunkInto`'s own all-layers-in-one pattern for the pure-dense path, which calls
+  the SAME `encodeLayer` function repeatedly on one encoder and is proven correct by the entire
+  dense-decode test suite. Verified via the existing real-fixture regression gates
+  (`TestMoEPaging_matchesNonPaged`, `TestMoEPagingPread_matchesByteCopy`, both still exact-match) —
+  though neither fixture (`qwen3_5_moe-tiny`, `decoder_sparse_step:1`/`mlp_only_layers:[]`) has any
+  dense-only layers, so they only prove the all-MoE case is unaffected, not the actual dense-batching
+  path this fix adds. No fixture in this tree currently drives a mixed dense+paged-MoE model through
+  `metal/moe.go`'s (not `gemma4_moe.go`'s) generic paged path (the two configs with non-empty
+  `mlp_only_layers`, `laguna-xs21-tiny`/`laguna-m1-tiny`, are a different architecture family not
+  wired into the Metal backend at all) — confidence in the mixed case rests on code reuse
+  (`encodeLayer`'s correctness under repeated same-encoder dispatch), not a direct measurement.
+  `gemma4_moe.go`'s own `forwardLogitsPaged` has the identical per-dense-layer pattern but was left
+  untouched: it carries `GOINFER_MOE_PROF_SPLIT` profiling instrumentation that accumulates
+  PER-DENSE-LAYER timing (`denseWallNanos`/`denseGpuNanos`), which batching would silently break —
+  a separate, more delicate change than this finding's own citation scoped for. `go test ./metal/`
+  (93 pass) and `-tags goinfer_testhooks` (145 pass) both 0 fail; gofmt/go vet/staticcheck clean.
 - N-24 `metal/moe.go:29-37,622` — f32 router weight: 84 MB/token on the 35B (deliberate, ≤0.4 ms).
   `moe_route` on one GPU thread (deliberate, value-independent dispatch; ~10% of a fitting ~5 ms
   MoE token).

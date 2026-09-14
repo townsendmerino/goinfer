@@ -771,9 +771,24 @@ func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
 	mo := r.moe
+	// N-23 (audit-metal-2026-09-12.md): consecutive dense layers share ONE command buffer instead
+	// of a submit+wait each — only a paged MoE layer's router readback is a genuine value-dependent
+	// seam (idx/rWgt must land host-side before staging). dense is a Begin()-on-first-use, close on
+	// the next MoE layer (or the loop's end) run, mirroring encodeTrunkInto's own all-layers-in-one
+	// pattern for the pure-dense path.
+	var dense *Encoder
+	closeDense := func() {
+		if dense == nil {
+			return
+		}
+		dense.End()
+		r.recordExecErr(dense.Err())
+		dense = nil
+	}
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		if L.moe != nil && L.moe.pool != nil {
+			closeDense()
 			e := r.q.Begin() // phase 1: mixer/attention + router -> rIdx/rWgt
 			if L.delta != nil {
 				r.encodeDeltaNetMixer(e, L)
@@ -798,11 +813,12 @@ func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
 			r.recordExecErr(e2.Err())
 			continue
 		}
-		e := r.q.Begin()
-		r.encodeLayer(e, l)
-		e.End()
-		r.recordExecErr(e.Err())
+		if dense == nil {
+			dense = r.q.Begin()
+		}
+		r.encodeLayer(dense, l)
 	}
+	closeDense()
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
