@@ -1,0 +1,55 @@
+{
+ "about": "Error responses exactly as goinfer serve sent them to POST /v1/chat/completions, captured 2026-09-14 on nobara-pc (Qwen2.5-0.5B, CPU), for the W13 gate in scripts/webui_app_gate.mjs. Each was provoked for real: -api-key with no key, an unknown model, -max-queue 1 under concurrent load, -max-inflight 1 under concurrent load, a K5 halt through -admin-socket, and a 30 MB prompt (which the context pre-check rejects before any 413 \u2014 the 413 shape was not reachable at default settings and is not recorded here).",
+ "responses": [
+  {
+   "case": "no API key",
+   "status": 401,
+   "headers": {
+    "Content-Type": "application/json"
+   },
+   "body": "{\"error\":{\"message\":\"missing or invalid API key\",\"type\":\"invalid_request_error\"}}\n"
+  },
+  {
+   "case": "unknown model",
+   "status": 404,
+   "headers": {
+    "Content-Type": "application/json"
+   },
+   "body": "{\"error\":{\"message\":\"model \\\"gone\\\" not found (served: q)\",\"type\":\"invalid_request_error\"}}\n"
+  },
+  {
+   "case": "queue full",
+   "status": 429,
+   "headers": {
+    "Content-Type": "application/json",
+    "Retry-After": "1"
+   },
+   "body": "{\"error\":{\"message\":\"model \\\"q\\\" queue full; retry\",\"type\":\"rate_limit_error\"}}\n"
+  },
+  {
+   "case": "in-flight cap",
+   "status": 503,
+   "headers": {
+    "Content-Type": "application/json",
+    "Retry-After": "1"
+   },
+   "body": "{\"error\":{\"message\":\"server at capacity (max in-flight requests reached); retry\",\"type\":\"api_error\"}}\n"
+  },
+  {
+   "case": "halted",
+   "status": 503,
+   "headers": {
+    "Content-Type": "application/json"
+   },
+   "body": "{\"error\":\"halted\",\"reason\":\"maintenance window\"}\n"
+  },
+  {
+   "case": "prompt too large",
+   "status": 400,
+   "headers": {
+    "Content-Type": "application/json"
+   },
+   "body": "{\"error\":{\"message\":\"prompt is too large for the model's context window of 32768 tokens (context_length_exceeded)\",\"type\":\"invalid_request_error\"}}\n"
+  }
+ ]
+}

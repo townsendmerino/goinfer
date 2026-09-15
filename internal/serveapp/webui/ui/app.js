@@ -78,10 +78,80 @@ function showContext() {
 }
 // loadModels refreshes the model list. The current choice survives a refresh; pick, when given and
 // listed, replaces it (W5 selects the model it just loaded).
+// --- errors that say what to do (W13) ------------------------------------------------------
+// The server's failures are typed — a status, and a JSON body — and each one has a different remedy, so
+// they are explained, not pasted: a bad key, a full queue and a halted server used to read alike as a
+// red box of JSON. problemFor turns one into {title, detail, actions}; the server's own message stays in
+// the detail. Shapes, from internal/serveapp: writeErr's {"error":{"message","type"}}; the halt gate's
+// {"error":"halted","reason"}; 429 carries Retry-After.
+function serverMessage(text) {
+  try {
+    const j = JSON.parse(text);
+    if (j && j.error && typeof j.error === "object" && typeof j.error.message === "string") return {message: j.error.message};
+    if (j && j.error === "halted") return {halted: true, message: typeof j.reason === "string" ? j.reason : ""};
+  } catch { /* not JSON */ }
+  return {message: String(text || "").slice(0, 400)};
+}
+
+// problemFor describes a failed request. status 0 means no HTTP answer at all (the network failed).
+function problemFor(status, bodyText, {model = "", retryAfter = ""} = {}) {
+  const m = serverMessage(bodyText);
+  const retry = "retry", key = "key", models = "models", fresh = "newchat";
+  if (status === 0) return {title: "Can't reach the server.", detail: "The request got no answer. Check that goinfer serve is still running, then retry.", actions: [retry]};
+  if (status === 401) return {title: "The server needs an API key.", detail: "Enter it in the Server API key field on the Models tab, then retry.", actions: [key, retry]};
+  if (status === 404) return {title: "The model " + JSON.stringify(model) + " isn't loaded.", detail: m.message, actions: [models, retry]};
+  if (status === 413) return {title: "This request is larger than the server accepts.", detail: m.message + (m.message ? " " : "") + "Remove an image, or start a new chat.", actions: [fresh]};
+  if (status === 429) return {title: "The model is busy: its request queue is full.", detail: "Try again in a moment" + (retryAfter ? " (the server suggests " + retryAfter + " s)" : "") + ".", actions: [retry]};
+  if (status === 503 && m.halted) return {title: "The server has halted new generations.", detail: (m.message ? "Reason: " + m.message + ". " : "") + "Someone with admin access has to resume it before anything can be generated.", actions: [retry]};
+  if (status === 503) return {title: "The server is at capacity.", detail: (m.message ? m.message + ". " : "") + "Try again in a moment" + (retryAfter ? " (the server suggests " + retryAfter + " s)" : "") + ".", actions: [retry]};
+  if (status === 400 && /context_length_exceeded/.test(bodyText)) {
+    return {title: "This conversation no longer fits in " + model + "'s context window. Start a new chat, or delete earlier exchanges to make room.", detail: m.message, actions: [fresh]};   // W8
+  }
+  if (status >= 400 && status < 500) return {title: "The server rejected the request.", detail: m.message, actions: []};
+  if (status >= 500) return {title: "The server hit an error.", detail: m.message, actions: [retry]};
+  return {title: "The request failed (HTTP " + status + ").", detail: m.message, actions: []};
+}
+
+// showProblem renders a problem into a message bubble: title, the detail as text, and a button per remedy.
+// retryFn is what Retry does; the bubble removes itself first, since it is not part of the conversation.
+function showProblem(content, p, retryFn) {
+  const msg = content.parentElement;
+  msg.classList.add("err");
+  const t = document.createElement("p"); t.className = "err-title"; t.textContent = p.title;
+  const parts = [t];
+  if (p.detail) { const d = document.createElement("p"); d.className = "err-detail"; d.textContent = p.detail; parts.push(d); }
+  const labels = {retry: "Retry", key: "Enter API key", models: "Refresh models", newchat: "New chat"};
+  if (p.actions.length) {
+    const row = document.createElement("div"); row.className = "err-actions";
+    for (const a of p.actions) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "err-" + a; b.textContent = labels[a];
+      b.onclick = () => {
+        // the key field lives on the Models tab, hidden while chatting — show it, then focus it
+        if (a === "key") { tab("models"); $("key").scrollIntoView({block: "center"}); $("key").focus(); return; }
+        if (a === "models") { loadModels(); return; }
+        if (a === "newchat") { msg.remove(); $("newchat").click(); return; }
+        if (ac || editing) return;
+        msg.remove();
+        retryFn();
+      };
+      row.appendChild(b);
+    }
+    parts.push(row);
+  }
+  content.replaceChildren(...parts);
+}
+
+// A reply that was cut off keeps what arrived; this says why, and that Regenerate is the retry.
+class StreamProblem extends Error {}
+
 async function loadModels(pick) {
   try {
-    const r = await fetch("/v1/models", {headers: headers()});
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    let r;
+    try { r = await fetch("/v1/models", {headers: headers()}); }
+    catch { throw new Error("can't reach the server — is goinfer serve running?"); }
+    if (r.status === 401) throw new Error("API key needed — enter it on the Models tab");   // W13
+    if (!r.ok) throw new Error(problemFor(r.status, await r.text()).title);
     const j = await r.json();
     models = Array.isArray(j.data) ? j.data : [];
     const sel = $("model");
@@ -450,7 +520,8 @@ function parseMessages(list) {
     if (m.role === "user" && imageOK(m.image)) e.image = m.image;   // W11: anything else is dropped, not rendered
     if (typeof m.model === "string") e.model = m.model;
     if (typeof m.meta === "string") e.meta = m.meta;
-    if (m.state === "stopped" || m.state === "interrupted") e.state = m.state;
+    if (m.state === "stopped" || m.state === "interrupted" || m.state === "failed" || m.state === "cancelled") e.state = m.state;
+    if (typeof m.note === "string" && m.note.length <= 500) e.note = m.note;   // W13
     if (m.state === "generating") { e.state = "interrupted"; hadGenerating = true; }   // it was streaming when the page went away
     if (typeof m.thought === "number" && Number.isFinite(m.thought) && m.thought >= 0) e.thought = m.thought;   // W6
     const u = m.usage, tok = x => Number.isSafeInteger(x) && x >= 0;
@@ -643,7 +714,10 @@ function fillUserBubble(b, e) {
 function metaText(e) {
   if (e.state === "interrupted") return (e.meta ? e.meta + " · " : "") + "interrupted — the page was reloaded while this was generating";
   if (e.state === "stopped") return "stopped" + (e.meta ? " · " + e.meta : "");
-  return e.meta || "";
+  // W13: why a reply is incomplete, and what to do — kept with the reply, not in a status line
+  if (e.state === "failed") return (e.meta ? e.meta + " · " : "") + "incomplete — " + (e.note || "the reply did not finish") + ". Regenerate to try again.";
+  if (e.state === "cancelled") return (e.meta ? e.meta + " · " : "") + "cancelled by the server" + (e.note ? " (" + e.note + ")" : "") + ".";
+  return (e.meta || "") + (e.note ? " · " + e.note : "");
 }
 
 function addMeta(content, text) {
@@ -875,7 +949,7 @@ async function generate() {
   ac = new AbortController();
   syncActions();
   const started = performance.now();
-  let got = 0, acc = "", lastSave = 0;
+  let got = 0, acc = "", lastSave = 0, problem = null, finish = "";
   // Render model output as Markdown (W1). Throttled to one parse per animation frame: a fast token
   // stream would otherwise re-parse the whole answer once per token. The final render after the
   // stream (or after Stop) guarantees the last chunk is shown even if no frame ran after it.
@@ -891,25 +965,32 @@ async function generate() {
     out.scrollIntoView({block: "end"});
   };
   try {
-    const r = await fetch("/v1/chat/completions", {
+    let r;
+    try {
+     r = await fetch("/v1/chat/completions", {
       method: "POST", headers: headers(), signal: ac.signal,
       body: JSON.stringify({
         model, messages, stream: true,
         stream_options: {include_usage: true},   // W8: real token counts, for the meter and the stats
         ...sampling,                              // W10: temperature, max_tokens and whatever else is set
       }),
-    });
+     });
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      problem = problemFor(0, "");   // no HTTP answer at all
+      throw e;
+    }
     if (!r.ok) {
-      const body = await r.text();
-      // W8: the wall, said in words a user can act on — the server's own message stays underneath.
-      if (r.status === 400 && body.includes("context_length_exceeded")) {
-        throw new Error("This conversation no longer fits in " + model + "'s context window. Start a new chat, or delete earlier exchanges to make room.\n\n" + body.slice(0, 400));
-      }
-      throw new Error(body.slice(0, 400) || ("HTTP " + r.status));
+      problem = problemFor(r.status, await r.text(), {model, retryAfter: r.headers.get("Retry-After") || ""});   // W13 (and W8's wall)
+      throw new Error(problem.title);
     }
     for await (const ev of sse(r)) {
       if (ev.data === "[DONE]") break;
       let j; try { j = JSON.parse(ev.data); } catch { continue; }
+      // W13: the server reports a failure DURING a stream as an error object, not an HTTP status
+      if (j.error) throw new StreamProblem("the server reported an error: " + (typeof j.error === "object" && typeof j.error.message === "string" ? j.error.message : String(j.error)));
+      const fr = j.choices && j.choices[0] && j.choices[0].finish_reason;
+      if (typeof fr === "string" && fr) finish = fr;
       if (j.usage && Number.isSafeInteger(j.usage.prompt_tokens) && Number.isSafeInteger(j.usage.completion_tokens)) {
         entry.usage = {prompt_tokens: j.usage.prompt_tokens, completion_tokens: j.usage.completion_tokens};
       }
@@ -935,8 +1016,12 @@ async function generate() {
       ? toks + " tok · " + (toks / s).toFixed(1) + " tok/s · " + s.toFixed(1) + "s"
       : "no output";
     delete entry.state;
+    delete entry.note;
+    // W13: how the reply ended, when that is something to act on
+    if (finish === "length") entry.note = "stopped at the Max tokens limit — raise it to get more";
+    if (finish === "cancelled") entry.state = "cancelled";
     renderReply(out, acc, false, entry);   // the entry is final now: "no answer" can be judged
-    addMeta(out, entry.meta);
+    addMeta(out, metaText(entry));
     addActions(out, copyOf(acc), entry);
     showContext();
     if (currentChat.titled === "first") {
@@ -954,10 +1039,24 @@ async function generate() {
       addMeta(out, metaText(entry));
       $("chat-status").textContent = "stopped";
       addActions(out, acc ? copyOf(acc) : "", entry);   // a stopped answer is still worth copying, and regenerating
+    } else if (acc) {
+      // W13: cut off part-way — by a server error or a dropped connection. What arrived is kept (it was
+      // being saved as it streamed anyway), marked incomplete, and Regenerate is the retry.
+      live = false;
+      entry.content = acc;
+      entry.state = "failed";
+      entry.note = e instanceof StreamProblem ? e.message : "the connection to the server was lost";
+      if (got) entry.meta = got + " tok";
+      paint();
+      addMeta(out, metaText(entry));
+      addActions(out, copyOf(acc), entry);
+      $("chat-status").textContent = "";
     } else {
-      // A failed request is not a turn: drop it, as the old history never recorded one either.
+      // A request that produced nothing is not a turn: drop it, and say what happened and what to do.
       transcript.splice(transcript.indexOf(entry), 1);
-      out.textContent = String(e.message || e); out.parentElement.classList.add("err"); $("chat-status").textContent = "";
+      const p = problem || (e instanceof StreamProblem ? {title: "The server hit an error.", detail: e.message, actions: ["retry"]} : problemFor(0, ""));
+      showProblem(out, p, () => generate());
+      $("chat-status").textContent = "";
     }
   } finally {
     generating = null;

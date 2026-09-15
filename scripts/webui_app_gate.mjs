@@ -49,6 +49,10 @@
 //        large image scaled (checked by decoding the result); exactly the content parts sent, only the
 //        newest image, none to a text-only model; non-images and corrupt files refused; image-only send and
 //        edit; nothing attachable mid-reply; saved and restored; hostile stored images never rendered or sent.
+//   W13 — errors that say what to do: REAL serve error bodies replayed (401, 404, 429, 503 capacity, 503 halted,
+//        400 context) — each explained with its remedy; Retry / Enter API key / Refresh models / New chat each
+//        do it; an unreachable server; a mid-reply server error or dropped connection keeps the partial answer,
+//        labelled; finish_reason length and cancelled explained; the model list's own errors; persisted.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1311,8 +1315,135 @@ const phase21 = phase(W11_PRELUDE + String.raw`
   check("W11 after reload only the valid image is sent", imageParts().length === 1 && imageParts()[0].image_url.url.startsWith("data:image/png;base64,") && !/tracker\.invalid|javascript:|svg\+xml/.test(JSON.stringify(window.__lastBody)), shape().slice(0, 160));
 `);
 
+// ---- phase 22: W13 — errors that say what to do --------------------------------------------------------------
+// The HTTP errors are REAL serve responses, replayed byte for byte (scripts/webui-gate/captured-errors.json).
+const W13_PRELUDE = String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  window.confirm = () => true;
+  const CAPTURED = ${JSON.stringify(JSON.parse(readFileSync(resolve(here, "webui-gate", "captured-errors.json"), "utf8")))};
+  const reply = c => { window.fetch = async (url, opts) => { window.__lastBody = opts?.body ? JSON.parse(opts.body) : null; window.__calls = (window.__calls || 0) + 1; return new Response(c.body, { status: c.status, headers: c.headers }); }; };
+  const lastErr = () => [...document.querySelectorAll("#log .msg.err")].at(-1);
+  const errText = () => { const e = lastErr(); return e ? { title: e.querySelector(".err-title")?.textContent, detail: e.querySelector(".err-detail")?.textContent || "", actions: [...e.querySelectorAll(".err-actions button")].map(b => b.textContent).join(",") } : null; };
+  const ask = async q => { $("prompt").value = q; await send(); await idle(); await wait(30); };
+  const lastBotMeta = () => [...document.querySelectorAll("#log .msg.bot")].at(-1)?.querySelector(".meta")?.textContent || "";
+  // a stream of the given SSE data lines; {drop:true} ends it with a network error instead of closing
+  const streamOf = (lines, { drop = false } = {}) => { window.fetch = async (url, opts) => { window.__lastBody = JSON.parse(opts.body); return new Response(new ReadableStream({ async start(c) {
+    for (const l of lines) { c.enqueue(enc.encode("data: " + (typeof l === "string" ? l : JSON.stringify(l)) + "\n\n")); await wait(5); }
+    if (drop) { c.error(new TypeError("network error")); return; }
+    c.enqueue(enc.encode("data: [DONE]\n\n")); c.close();
+  } }), { status: 200, headers: { "Content-Type": "text/event-stream" } }); }; };
+  const delta = t => ({ choices: [{ delta: { content: t }, finish_reason: null }] });
+  const fin = r => ({ choices: [{ delta: {}, finish_reason: r }] });
+`;
+const phase22 = phase(W13_PRELUDE + String.raw`
+  $("sampling-reset").click();
+  $("newchat").click();
+  const byCase = Object.fromEntries(CAPTURED.responses.map(r => [r.case, r]));
+  const want = {
+    "no API key": ["The server needs an API key.", "Enter it in the Server API key field on the Models tab, then retry.", "Enter API key,Retry"],
+    "unknown model": ["The model \"gate-model\" isn't loaded.", "model \"gone\" not found (served: q)", "Refresh models,Retry"],
+    "queue full": ["The model is busy: its request queue is full.", "Try again in a moment (the server suggests 1 s).", "Retry"],
+    "in-flight cap": ["The server is at capacity.", "server at capacity (max in-flight requests reached); retry. Try again in a moment (the server suggests 1 s).", "Retry"],
+    "halted": ["The server has halted new generations.", "Reason: maintenance window. Someone with admin access has to resume it before anything can be generated.", "Retry"],
+    "prompt too large": ["This conversation no longer fits in gate-model's context window. Start a new chat, or delete earlier exchanges to make room.", "prompt is too large for the model's context window of 32768 tokens (context_length_exceeded)", "New chat"],
+  };
+  for (const [name, [title, detail, actions]] of Object.entries(want)) {
+    reply(byCase[name]);
+    await ask("provoke: " + name);
+    const e = errText();
+    check("W13 real " + byCase[name].status + " (" + name + "): says what happened and what to do", e && e.title === title && e.detail === detail && e.actions === actions, JSON.stringify(e));
+  }
+  check("W13 no raw JSON is shown for any of them", ![...document.querySelectorAll("#log .msg.err")].some(m => /\{"error"/.test(m.textContent)), [...document.querySelectorAll("#log .msg.err")].map(m => m.textContent.slice(0, 40)));
+  check("W13 a failed request is not a turn: no empty replies were saved", stored().messages.every(m => m.role === "user"), JSON.stringify(stored().messages.map(m => m.role)));
+
+  // ---- the buttons do what they say ----
+  reply(byCase["no API key"]);
+  await ask("needs a key");
+  lastErr().querySelector(".err-key").click();
+  check("W13 Enter API key opens the Models tab, where the key field is, and puts the cursor in it", !$("pane-models").hidden && $("pane-chat").hidden && document.activeElement === $("key"), document.activeElement?.id + " / models hidden " + $("pane-models").hidden);
+  document.activeElement.blur();
+  tab("chat");
+  reply(byCase["queue full"]);
+  await ask("busy");
+  const errCount = document.querySelectorAll("#log .msg.err").length;
+  streamAnswer("worked on retry");
+  lastErr().querySelector(".err-retry").click();
+  await until(() => !$("stop").hidden); await idle(); await wait(30);
+  check("W13 Retry removes the error and asks again with the same conversation", document.querySelectorAll("#log .msg.err").length === errCount - 1 && lastBot().children[1].textContent === "worked on retry" && window.__lastBody.messages.at(-1).content === "busy", document.querySelectorAll("#log .msg.err").length + " / " + lastBot()?.children[1].textContent);
+  let modelsFetched = 0;
+  reply(byCase["unknown model"]);
+  await ask("model gone");
+  window.fetch = async url => { if (url === "/v1/models") modelsFetched++; return new Response(JSON.stringify({ object: "list", data: [{ id: "gate-model" }] }), { status: 200 }); };
+  lastErr().querySelector(".err-models").click();
+  await until(() => modelsFetched > 0);
+  check("W13 Refresh models asks the server for the model list", modelsFetched === 1, modelsFetched);
+  reply(byCase["prompt too large"]);
+  await ask("too long");
+  const chatBefore = currentChat.id;
+  lastErr().querySelector(".err-newchat").click();
+  check("W13 New chat on the context wall starts a new conversation", currentChat.id !== chatBefore && document.querySelectorAll("#log .msg").length === 0, currentChat.id === chatBefore);
+
+  // ---- no HTTP answer at all ----
+  window.fetch = async () => { throw new TypeError("Failed to fetch"); };
+  await ask("server down");
+  check("W13 an unreachable server says so, with Retry", JSON.stringify(errText()) === JSON.stringify({ title: "Can't reach the server.", detail: "The request got no answer. Check that goinfer serve is still running, then retry.", actions: "Retry" }), JSON.stringify(errText()));
+
+  // ---- failures part-way through a reply: what arrived is kept ----
+  streamOf([delta("Half an ans"), delta("wer"), { error: { message: "generation failed: out of memory <img src=x onerror=\"window.__pwned=1\">", type: "api_error" } }]);
+  await ask("error mid-stream");
+  check("W13 a server error mid-reply keeps what arrived, marked incomplete with the reason", lastBot().children[1].textContent === "Half an answer" && /incomplete — the server reported an error: generation failed: out of memory .*\. Regenerate to try again\.$/.test(lastBotMeta()), lastBot()?.children[1].textContent + " / " + lastBotMeta());
+  check("W13 and it is saved as failed, with the partial answer", stored().messages.at(-1).state === "failed" && stored().messages.at(-1).content === "Half an answer", JSON.stringify(stored().messages.at(-1)));
+  const regen = [...document.querySelectorAll("#log .msg-regen")].find(b => !b.hidden);
+  check("W13 an incomplete reply can be regenerated", regen && !regen.disabled && regen.closest(".msg") === lastBot(), !!regen);
+  await wait(150);
+  check("W13 a hostile server message stays inert", document.querySelectorAll("#log img").length === 0 && window.__pwned === 0, document.querySelectorAll("#log img").length);
+  streamOf([delta("Cut off by the net")], { drop: true });
+  await ask("connection drops");
+  check("W13 a dropped connection mid-reply keeps what arrived and says the connection was lost", lastBot().children[1].textContent === "Cut off by the net" && /incomplete — the connection to the server was lost\. Regenerate to try again\.$/.test(lastBotMeta()), lastBotMeta());
+  streamOf([{ error: { message: "generation failed: boom", type: "api_error" } }]);
+  await ask("error before any text");
+  check("W13 a server error before any text is an error message with Retry, not an empty reply", JSON.stringify(errText()) === JSON.stringify({ title: "The server hit an error.", detail: "the server reported an error: generation failed: boom", actions: "Retry" }) && stored().messages.at(-1).role === "user", JSON.stringify(errText()));
+
+  // ---- how a reply ended ----
+  streamOf([delta("truncated"), fin("length")]);
+  await ask("long answer");
+  check("W13 a reply that hit Max tokens says so, and how to get more", /· stopped at the Max tokens limit — raise it to get more$/.test(lastBotMeta()) && !stored().messages.at(-1).state, lastBotMeta());
+  streamOf([delta("cancel"), fin("cancelled")]);
+  await ask("cancelled");
+  check("W13 a reply the server cancelled says so", /cancelled by the server\.$/.test(lastBotMeta()) && stored().messages.at(-1).state === "cancelled", lastBotMeta());
+  streamOf([delta("normal"), fin("stop")]);
+  await ask("normal");
+  check("W13 a normal stop adds nothing", !/incomplete|cancelled|Max tokens/.test(lastBotMeta()), lastBotMeta());
+
+  // ---- the model list ----
+  window.fetch = async () => new Response(CAPTURED.responses[0].body, { status: 401, headers: CAPTURED.responses[0].headers });
+  await loadModels();
+  check("W13 the model list says an API key is needed, not HTTP 401", $("stats").textContent === "API key needed — enter it on the Models tab", $("stats").textContent);
+  window.fetch = async () => { throw new TypeError("Failed to fetch"); };
+  await loadModels();
+  check("W13 the model list says when the server can't be reached", $("stats").textContent === "can't reach the server — is goinfer serve running?", $("stats").textContent);
+  window.fetch = async () => new Response(JSON.stringify({ object: "list", data: [{ id: "gate-model" }] }), { status: 200 });
+  await loadModels("gate-model");
+`);
+
+// ---- phase 23: after a reload — incomplete and cancelled replies keep their labels ----------------------------
+const phase23 = phase(W13_PRELUDE + String.raw`
+  const metas = [...document.querySelectorAll("#log .msg.bot .meta")].map(m => m.textContent);
+  check("W13 after reload an incomplete reply is still labelled, with its reason", metas.some(t => /incomplete — the server reported an error: generation failed: out of memory/.test(t)) && metas.some(t => /incomplete — the connection to the server was lost/.test(t)), JSON.stringify(metas));
+  check("W13 after reload the cancelled and max-tokens labels are still there", metas.some(t => /cancelled by the server\.$/.test(t)) && metas.some(t => /stopped at the Max tokens limit/.test(t)), JSON.stringify(metas));
+  check("W13 after reload no error message came back — they were never part of the conversation", document.querySelectorAll("#log .msg.err").length === 0, document.querySelectorAll("#log .msg.err").length);
+  const st = stored(); st.messages.at(-1).state = "exploded"; st.messages.at(-1).note = "x".repeat(600);
+  localStorage.setItem(chatKey(), JSON.stringify(st));
+  window.dispatchEvent(new StorageEvent("storage", { key: chatKey() }));
+  await wait(50);
+  check("W13 an unknown stored state or an oversized note is ignored", !/exploded|xxxx/.test([...document.querySelectorAll("#log .msg.bot .meta")].at(-1)?.textContent || ""), [...document.querySelectorAll("#log .msg.bot .meta")].at(-1)?.textContent);
+  save();
+  check("W13 an unknown stored state is dropped, not written back on the next save", stored().messages.at(-1).state === undefined && stored().messages.at(-1).note === undefined, JSON.stringify(stored().messages.at(-1)).slice(0, 120));
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }
