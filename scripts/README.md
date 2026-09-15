@@ -109,8 +109,8 @@ the script currently non-runnable as-is, not just historical).
 | script | what it checks | repeatable? |
 |---|---|---|
 | [`webui_md_gate.mjs`](webui_md_gate.mjs) (+ [`webui-gate/md-harness.html`](webui-gate/md-harness.html)) | the web UI's Markdown renderer (`internal/serveapp/webui/ui/markdown.js`, W1) in headless Chrome: hostile Markdown rendered into live DOM with a canary that must never fire, pathological inputs under a render-time budget (ReDoS), structural correctness. Runs from `go test` as `TestWebUI_markdownGateInBrowser`. | yes — after any change to `ui/markdown.js` |
-| [`webui_app_gate.mjs`](webui_app_gate.mjs) | the shipped web UI page end to end, driven through its own `send()` with a fake SSE stream: streamed Markdown (W1) and Copy on both clipboard paths, a stopped answer, and a re-render (W2). Each W-item adds its checks here. Runs from `go test` as `TestWebUI_appGateInBrowser`. | yes — after any change to the web UI |
-| [`webui-gate/cdp.mjs`](webui-gate/cdp.mjs) | shared headless-Chrome driver for both gates. Loads pages from `file://`; exit 0 pass / 1 fail (a page that navigates mid-gate is a failure) / 2 could not drive a browser. | library, not run directly |
+| [`webui_app_gate.mjs`](webui_app_gate.mjs) | the shipped web UI page end to end, driven through its own `send()` with a fake SSE stream: streamed Markdown (W1); Copy on both clipboard paths, a stopped answer, and a re-render (W2); and persistence across real page reloads — restore, a mid-stream reload, unreadable storage, quota failure, New chat, tab sync, hostile stored content (W3). Each W-item adds its checks here. Runs from `go test` as `TestWebUI_appGateInBrowser`. | yes — after any change to the web UI |
+| [`webui-gate/cdp.mjs`](webui-gate/cdp.mjs) | shared headless-Chrome driver for both gates. Loads pages from `file://`; exit 0 pass / 1 fail (including a page that navigates mid-gate, or a gate program that throws because the page is in the wrong state) / 2 ONLY when Chrome could not be launched or reached — `go test` skips on 2, so nothing page-side may produce it. | library, not run directly |
 
 ## Other
 
