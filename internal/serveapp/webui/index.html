@@ -13,6 +13,7 @@
   <nav>
     <button class="ambient amb-surface amb-rounded" id="tab-chat" aria-selected="true">Chat</button>
     <button class="ambient amb-surface amb-rounded" id="tab-models" aria-selected="false">Models</button>
+    <button class="ambient amb-surface amb-rounded" id="tab-batch" aria-selected="false">Batch</button>
   </nav>
 </header>
 
@@ -104,6 +105,28 @@
     <label>Server API key <span class="note">— only needed if the server was started with -api-key</span></label>
     <input id="key" class="ambient amb-surface-concave amb-rounded" type="password" placeholder="(none)" autocomplete="off">
     <p class="note" style="margin:8px 0 0">Kept in this tab only (sessionStorage); cleared when the tab closes.</p>
+  </div>
+</section>
+
+<section id="pane-batch" hidden>
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded">
+    <label for="batch-file">Batch input — a JSONL file, one <code>/v1/chat/completions</code> request per line</label>
+    <div class="row">
+      <input id="batch-file" type="file" accept=".jsonl,application/jsonl,application/json,text/plain">
+      <div class="fit"><button class="ambient amb-surface-convex amb-elevation-1 amb-rounded go" id="batch-run" type="button" disabled>Run batch</button></div>
+    </div>
+    <p class="note" style="margin:10px 0 0">Each line: <code>{"custom_id": "…", "method": "POST", "url": "/v1/chat/completions", "body": {…}}</code>.
+    Runs through this server's own queue, same as any other request.</p>
+  </div>
+  <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded" id="batch-card" hidden>
+    <div id="batch-what" class="note"></div>
+    <div class="bar ambient amb-surface-concave amb-rounded"><div id="batch-bar"></div></div>
+    <div id="batch-status" class="note"></div>
+    <div id="batch-actions" class="load-row" hidden>
+      <button class="ambient amb-surface amb-rounded" id="batch-cancel" type="button">Cancel</button>
+      <button class="ambient amb-surface amb-rounded" id="batch-dl-output" type="button" hidden>Download results</button>
+      <button class="ambient amb-surface amb-rounded" id="batch-dl-errors" type="button" hidden>Download errors</button>
+    </div>
   </div>
 </section>
 </main>

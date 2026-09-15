@@ -2096,6 +2096,114 @@ const phase36 = phase(W27_PRELUDE + String.raw`
   check("W27 a stored job id that is not a job id is dropped: nothing requested, no Resume", calls.length === 0 && !lastBotEl().querySelector(".msg-resume") && stored().messages.at(-1).job === undefined, JSON.stringify(calls));
 `);
 
+// ---- phase 37: W30 — a Batch tab over J4's /v1/files + /v1/batches --------------------------------
+const phase37 = phase(String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  // capture what a download would save, instead of saving it (same technique as W14's phase 24)
+  const downloads = [];
+  const realCreate = URL.createObjectURL;
+  URL.createObjectURL = blob => { const u = realCreate(blob); downloads.push({ url: u, blob }); return u; };
+  HTMLAnchorElement.prototype.click = function () { const d = downloads.find(x => x.url === this.href); if (d) { d.name = this.download; d.rel = this.rel; } };
+  const lastDownload = async () => { const d = downloads.at(-1); return d && { name: d.name, type: d.blob.type, text: await d.blob.text() }; };
+  const viaInput = f => { const d = new DataTransfer(); d.items.add(f); $("batch-file").files = d.files; $("batch-file").dispatchEvent(new Event("change")); };
+
+  tab("batch");
+  check("W30 the Batch tab is its own pane, Chat and Models hidden", !$("pane-batch").hidden && $("pane-chat").hidden && $("pane-models").hidden && $("tab-batch").getAttribute("aria-selected") === "true", $("pane-batch").hidden);
+  check("W30 Run is disabled with no file chosen", $("batch-run").disabled, $("batch-run").disabled);
+
+  // ---- the happy path: upload, run, watch progress, download both outputs ----
+  const calls = [];
+  let batchPolls = 0;
+  window.fetch = async (url, opts) => {
+    calls.push((opts && opts.method || "GET") + " " + url);
+    if (url === "/v1/files" && opts.method === "POST") {
+      window.__uploadHeaders = opts.headers; window.__uploadIsFormData = opts.body instanceof FormData;
+      return new Response(JSON.stringify({ id: "file_in1", object: "file", bytes: 123, created_at: 1, filename: "in.jsonl", purpose: "batch" }), { status: 200 });
+    }
+    if (url === "/v1/batches" && opts.method === "POST") {
+      window.__lastBatchBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ id: "batch_1", object: "batch", status: "in_progress", request_counts: { total: 3, completed: 0, failed: 0 } }), { status: 200 });
+    }
+    if (url === "/v1/batches/batch_1") {
+      batchPolls++;
+      if (batchPolls === 1) return new Response(JSON.stringify({ id: "batch_1", status: "in_progress", request_counts: { total: 3, completed: 1, failed: 0 } }), { status: 200 });
+      if (batchPolls === 2) return new Response(JSON.stringify({ id: "batch_1", status: "in_progress", request_counts: { total: 3, completed: 2, failed: 0 } }), { status: 200 });
+      return new Response(JSON.stringify({ id: "batch_1", status: "completed", request_counts: { total: 3, completed: 2, failed: 1 }, output_file_id: "file_out1", error_file_id: "file_err1" }), { status: 200 });
+    }
+    if (url === "/v1/files/file_out1/content") return new Response('{"custom_id":"a","response":{"status_code":200,"body":{}}}\n{"custom_id":"b","response":{"status_code":200,"body":{}}}\n', { status: 200 });
+    if (url === "/v1/files/file_err1/content") return new Response('{"custom_id":"c","error":{"code":"api_error","message":"boom"}}\n', { status: 200 });
+    return new Response(JSON.stringify({ error: { message: "unexpected " + url } }), { status: 500 });
+  };
+  viaInput(new File(['{"custom_id":"a","method":"POST","url":"/v1/chat/completions","body":{}}\n'], "in.jsonl", { type: "application/jsonl" }));
+  check("W30 a chosen file enables Run", !$("batch-run").disabled, $("batch-run").disabled);
+  $("batch-run").click();
+  await until(() => calls.includes("POST /v1/files"));
+  check("W30 the file is uploaded as multipart, not JSON (no Content-Type forced, real FormData body)", calls[0] === "POST /v1/files" && window.__uploadIsFormData === true && !("Content-Type" in (window.__uploadHeaders || {})), JSON.stringify(calls) + " / formdata " + window.__uploadIsFormData + " / headers " + JSON.stringify(window.__uploadHeaders));
+  await until(() => window.__lastBatchBody);
+  check("W30 the batch is created against the uploaded file, on the one supported endpoint", window.__lastBatchBody?.input_file_id === "file_in1" && window.__lastBatchBody?.endpoint === "/v1/chat/completions", JSON.stringify(window.__lastBatchBody));
+  check("W30 Run and the file input are disabled while it runs", $("batch-run").disabled && $("batch-file").disabled, $("batch-run").disabled);
+  await until(() => batchPolls >= 1);
+  await wait(1100);
+  check("W30 the progress bar and status follow the real request_counts while it polls", parseFloat($("batch-bar").style.width) > 0 && parseFloat($("batch-bar").style.width) < 100 && /\d+ of 3 done/.test($("batch-status").textContent), $("batch-bar").style.width + " / " + $("batch-status").textContent);
+  await until(() => /finished/.test($("batch-status").textContent), 6000);
+  check("W30 the finished line names ok vs failed, and the bar reaches 100%", $("batch-status").textContent === "finished — 3 of 3 done (2 ok, 1 failed)" && parseFloat($("batch-bar").style.width) === 100 && $("batch-status").className === "note err", $("batch-status").textContent + " / " + $("batch-bar").style.width + " / " + $("batch-status").className);
+  check("W30 Run and the file input re-enable once it's done, Cancel hides", !$("batch-run").disabled && !$("batch-file").disabled && $("batch-cancel").hidden, $("batch-run").disabled + " / " + $("batch-cancel").hidden);
+  const pollsAtFinish = batchPolls;
+  await wait(2200);
+  check("W30 polling really stops once finished — no further GET after the terminal status", batchPolls === pollsAtFinish, batchPolls + " vs " + pollsAtFinish + " at finish");
+  check("W30 both downloads are offered when there is an error file", !$("batch-dl-output").hidden && !$("batch-dl-errors").hidden, $("batch-dl-output").hidden + " / " + $("batch-dl-errors").hidden);
+
+  $("batch-dl-output").click();
+  await until(() => downloads.length === 1);
+  let d = await lastDownload();
+  check("W30 the results download is the real file content, under a name naming this batch", d?.name === "batch_1_output.jsonl" && d?.text === '{"custom_id":"a","response":{"status_code":200,"body":{}}}\n{"custom_id":"b","response":{"status_code":200,"body":{}}}\n', d?.name + " / " + d?.text?.length);
+  $("batch-dl-errors").click();
+  await until(() => downloads.length === 2);
+  d = await lastDownload();
+  check("W30 the errors download is the real error file content", d?.name === "batch_1_error.jsonl" && d?.text === '{"custom_id":"c","error":{"code":"api_error","message":"boom"}}\n', d?.name + " / " + d?.text);
+
+  // ---- no failures at all: only the results download is offered ----
+  batchPolls = 0;
+  window.fetch = async (url, opts) => {
+    if (url === "/v1/files" && opts.method === "POST") return new Response(JSON.stringify({ id: "file_in2" }), { status: 200 });
+    if (url === "/v1/batches" && opts.method === "POST") return new Response(JSON.stringify({ id: "batch_2", status: "in_progress", request_counts: { total: 1, completed: 0, failed: 0 } }), { status: 200 });
+    if (url === "/v1/batches/batch_2") return new Response(JSON.stringify({ id: "batch_2", status: "completed", request_counts: { total: 1, completed: 1, failed: 0 }, output_file_id: "file_out2" }), { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  viaInput(new File(["{}"], "clean.jsonl"));
+  $("batch-run").click();
+  await until(() => /finished/.test($("batch-status").textContent), 6000);
+  check("W30 no error file: only the results download is offered, and the line reads clean", !$("batch-dl-output").hidden && $("batch-dl-errors").hidden && $("batch-status").className === "note ok", $("batch-dl-errors").hidden + " / " + $("batch-status").className);
+
+  // ---- cancel while it runs ----
+  let cancelled = false;
+  window.fetch = async (url, opts) => {
+    if (url === "/v1/files" && opts.method === "POST") return new Response(JSON.stringify({ id: "file_in3" }), { status: 200 });
+    if (url === "/v1/batches" && opts.method === "POST") return new Response(JSON.stringify({ id: "batch_3", status: "in_progress", request_counts: { total: 2, completed: 0, failed: 0 } }), { status: 200 });
+    if (url === "/v1/batches/batch_3/cancel" && opts.method === "POST") { cancelled = true; return new Response(JSON.stringify({ id: "batch_3", status: "cancelling" }), { status: 200 }); }
+    if (url === "/v1/batches/batch_3") return new Response(JSON.stringify({ id: "batch_3", status: cancelled ? "cancelled" : "in_progress", request_counts: { total: 2, completed: cancelled ? 1 : 0, failed: 0 } }), { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  viaInput(new File(["{}"], "cancel-me.jsonl"));
+  $("batch-run").click();
+  await until(() => !$("batch-cancel").hidden);
+  $("batch-cancel").click();
+  await until(() => cancelled);
+  check("W30 Cancel calls the real cancel route for this batch", cancelled, cancelled);
+  await until(() => /^cancelled/.test($("batch-status").textContent), 4000);
+  check("W30 a cancelled batch says so, and stops polling", $("batch-status").textContent.startsWith("cancelled — ") && $("batch-cancel").hidden, $("batch-status").textContent);
+
+  // ---- an upload that fails leaves the tab usable, with the server's own reason ----
+  window.fetch = async (url, opts) => {
+    if (url === "/v1/files" && opts.method === "POST") return new Response(JSON.stringify({ error: { message: "request body is 99999999 bytes, which exceeds the limit" } }), { status: 413 });
+    return new Response("{}", { status: 200 });
+  };
+  viaInput(new File(["{}"], "big.jsonl"));
+  $("batch-run").click();
+  await until(() => /exceeds the limit/.test($("batch-status").textContent));
+  check("W30 an upload failure is shown with the server's own reason, and re-enables the tab", $("batch-status").className === "note err" && !$("batch-run").disabled && !$("batch-file").disabled, $("batch-status").textContent);
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2108,7 +2216,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

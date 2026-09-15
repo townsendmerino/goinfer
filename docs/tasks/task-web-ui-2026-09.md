@@ -904,11 +904,56 @@ record," "a job that failed/cancelled while away is shown as such." **Effort was
 W27** — recorded here because the doc had it as a separate M-effort item; in practice detaching
 *is* what a job-backed reply already permits, not a second thing to build.
 
-### W30 — A Batch tab
-J4 landed `/v1/files` + `/v1/batches` and the Anthropic Message Batches shape over one job store.
-Upload a JSONL, watch it run, download the results. The Models tab's pull idiom — progress bar,
-rate, ETA, a terminal line that says what is on disk — transplants directly.
-**No Claude-app analog: this is a goinfer-specific surface, not a gap being closed.** **Effort: M.**
+### W30 — A Batch tab — DONE 2026-09-15
+~~Upload a JSONL, watch it run, download the results~~ — a third tab
+(`internal/serveapp/webui/index.html`, `pane-batch`) over J4's OpenAI-shaped batch API: choose a
+`.jsonl` file, **Run batch** uploads it (`POST /v1/files`, multipart — the one request on this page
+that is not JSON, so it gets its own `authHeader()` rather than `headers()`, since fetch will not
+set its own multipart boundary if `Content-Type` is already forced), then submits it
+(`POST /v1/batches`, always `/v1/chat/completions` — the only endpoint the server accepts this
+pass). The Models tab's pull idiom transplants directly: a terminal line and a progress bar
+(`runBatch`, `internal/serveapp/webui/ui/app.js:1830`), just driven by polling
+`GET /v1/batches/{id}` once a second instead of pull's SSE stream, since a batch has no single
+connection to stream progress down — lines finish out of order, on their own schedule.
+
+`pollBatch` (`internal/serveapp/webui/ui/app.js:1868`) renders `request_counts` as it arrives —
+*"N of T done (C ok, F failed)"*, the bar at `(completed+failed)/total` — and on the terminal status
+(`completed` or `cancelled`) stops polling, re-enables the form, and offers downloads: **Download
+results** always (the server always writes an output file, even an empty one), **Download errors**
+only when `error_file_id` is present (an all-succeeded batch has none). Both fetch
+`GET /v1/files/{id}/content` and hand the real bytes to the existing `download()` helper (W14) — a
+real file save, not a re-serialization of anything the page parsed, so the download is provably the
+server's own output. **Cancel** posts `POST /v1/batches/{id}/cancel`.
+
+Decided here, and why:
+- **No per-request model field.** Each JSONL line already carries its own `body.model`; a batch is a
+  file of already-complete requests, not a form that composes them.
+- **No persisted history.** The doc's "watch it run, download the results" does not ask for one, and
+  a real history belongs to W31 (the job store's own journal), not a second, batch-specific list.
+- **`completion_window` is sent as a fixed `"24h"`.** The server does not enforce it (no polling
+  arrives that instructs an SLA); it is required by the OpenAI shape, so a constant satisfies the
+  shape without inventing a setting nothing reads.
+
+**No Claude-app analog: this is a goinfer-specific surface, not a gap being closed.**
+
+Gate: phase 37 of `scripts/webui_app_gate.mjs`, 17 checks against a scripted `/v1/files`/`/v1/batches`
+fetch stub (progress across real polls, the finished line's exact ok/failed count, both downloads'
+exact byte-for-byte content and per-batch filenames, an error-free batch offering only one download,
+Cancel calling the real route and halting further polling, an upload failure shown with the server's
+own reason and the tab left usable). Nine mutations, each red on this phase's own checks.
+
+**A gate defect the mutations found, distinct from a hang: an uncaught exception loses the whole
+phase's results, not just the one check downstream of it.** Breaking the file-select → enable-Run
+wiring left every later `await` in the phase timing out (bounded, not a hang) — except one check
+read `window.__lastBatchBody.input_file_id` with no guard, and dereferencing a property on
+`undefined` (the request that never happened) threw. That exception unwound the phase's whole async
+IIFE before it returned its `results` array, so the report showed `FAILED (gate program threw)`
+with **zero** checks recorded — including the earlier, correctly-failing "a chosen file enables Run"
+check, which never got the chance to be counted. Fixed with `?.` on every check that reads a value
+only a real request populates (`window.__lastBatchBody?.…`, the downloaded-file capture). Confirmed
+by re-running the same mutation after the fix: 14 checks now fail cleanly, by name, instead of the
+whole phase reporting nothing.
+**Effort was: M.**
 
 ### W31 — Cancel by job id, and job history
 J3's `DELETE /v1/jobs/{id}` cancels an *addressed* job, which survives a reload; today's Stop button

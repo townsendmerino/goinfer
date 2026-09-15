@@ -39,13 +39,14 @@ function headers(extra) {
 
 // --- tabs -------------------------------------------------------------------
 function tab(name) {
-  for (const n of ["chat", "models"]) {
+  for (const n of ["chat", "models", "batch"]) {
     $("tab-" + n).setAttribute("aria-selected", String(n === name));
     $("pane-" + n).hidden = n !== name;
   }
 }
 $("tab-chat").onclick = () => tab("chat");
 $("tab-models").onclick = () => tab("models");
+$("tab-batch").onclick = () => tab("batch");
 
 // --- models -----------------------------------------------------------------
 // Runtime stats as first-class chrome (decision 4): model, and whatever the
@@ -1805,4 +1806,94 @@ async function loadPulled(path, btn, msg) {
     msg.className = "note err"; msg.textContent = String(e.message || e);
     btn.disabled = false;
   }
+}
+
+// --- batch (W30) --------------------------------------------------------------------------
+// J4's /v1/files + /v1/batches over the same job store as everything else: upload a JSONL,
+// run it, watch it — the Models tab's pull idiom (a terminal line, a progress bar, a result you
+// can act on) transplants directly. No SSE here, unlike pull/load: a batch finishes lines out of
+// order and on its own schedule, so the page polls GET /v1/batches/{id} instead.
+let batchPoll = null, currentBatchID = "";
+
+function authHeader() {
+  const k = ($("key").value || "").trim();
+  return k ? {"Authorization": "Bearer " + k} : {};   // no Content-Type: fetch sets the multipart boundary itself
+}
+function apiErr(r, j) {
+  return (j && j.error && typeof j.error === "object" && typeof j.error.message === "string") ? j.error.message : "HTTP " + r.status;
+}
+
+$("batch-file").addEventListener("change", () => { $("batch-run").disabled = !$("batch-file").files.length; });
+$("batch-run").onclick = () => { const f = $("batch-file").files[0]; if (f) runBatch(f); };
+$("batch-cancel").onclick = () => currentBatchID && fetch("/v1/batches/" + currentBatchID + "/cancel", {method: "POST", headers: headers()}).catch(() => {});
+
+async function runBatch(file) {
+  clearInterval(batchPoll); batchPoll = null; currentBatchID = "";
+  $("batch-card").hidden = false;
+  $("batch-what").textContent = file.name + " · " + file.size + " bytes";
+  $("batch-bar").style.width = "0%";
+  const st = $("batch-status"); st.className = "note"; st.textContent = "uploading…";
+  $("batch-actions").hidden = true;
+  $("batch-dl-output").hidden = true; $("batch-dl-errors").hidden = true;
+  $("batch-run").disabled = true; $("batch-file").disabled = true;
+  try {
+    const form = new FormData();
+    form.append("purpose", "batch");
+    form.append("file", file, file.name || "batch.jsonl");
+    const fr = await fetch("/v1/files", {method: "POST", headers: authHeader(), body: form});
+    const fj = await fr.json().catch(() => null);
+    if (!fr.ok) throw new Error(apiErr(fr, fj));
+    st.textContent = "submitting…";
+    const br = await fetch("/v1/batches", {method: "POST", headers: headers(), body: JSON.stringify({
+      input_file_id: fj.id, endpoint: "/v1/chat/completions", completion_window: "24h",
+    })});
+    const bj = await br.json().catch(() => null);
+    if (!br.ok) throw new Error(apiErr(br, bj));
+    currentBatchID = bj.id;
+    $("batch-actions").hidden = false;
+    $("batch-cancel").hidden = false; $("batch-cancel").disabled = false;
+    pollBatch(bj);
+    batchPoll = setInterval(async () => {
+      try {
+        const r = await fetch("/v1/batches/" + currentBatchID, {headers: headers()});
+        if (r.ok) pollBatch(await r.json());
+      } catch { /* a missed poll just leaves the last line up; the next tick tries again */ }
+    }, 1000);
+  } catch (e) {
+    st.className = "note err"; st.textContent = String(e.message || e);
+    $("batch-run").disabled = false; $("batch-file").disabled = false;
+  }
+}
+
+function pollBatch(j) {
+  const st = $("batch-status");
+  const c = j.request_counts || {total: 0, completed: 0, failed: 0};
+  const done = c.completed + c.failed;
+  $("batch-bar").style.width = (c.total > 0 ? 100 * done / c.total : 0).toFixed(1) + "%";
+  const live = j.status === "in_progress" || j.status === "cancelling";
+  st.textContent = (j.status === "cancelling" ? "cancelling… " : "") + done + " of " + c.total + " done (" + c.completed + " ok, " + c.failed + " failed)";
+  if (live) return;
+  clearInterval(batchPoll); batchPoll = null;
+  $("batch-run").disabled = false; $("batch-file").disabled = false;
+  $("batch-cancel").hidden = true;
+  st.className = "note" + (c.failed ? " err" : " ok");
+  st.textContent = (j.status === "cancelled" ? "cancelled — " : "finished — ") + st.textContent;
+  const dlBtn = (id, btn, name) => {
+    if (!id) { btn.hidden = true; return; }
+    btn.hidden = false; btn.disabled = false;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const r = await fetch("/v1/files/" + id + "/content", {headers: headers()});
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        download(name, await r.text(), "application/jsonl");
+      } catch (e) {
+        st.className = "note err"; st.textContent = "download failed: " + String(e.message || e);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  };
+  dlBtn(j.output_file_id, $("batch-dl-output"), currentBatchID + "_output.jsonl");
+  dlBtn(j.error_file_id, $("batch-dl-errors"), currentBatchID + "_error.jsonl");
 }
