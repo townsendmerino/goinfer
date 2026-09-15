@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), W9–W11 and W13–W17 done; W12 skipped for now (owner, 2026-09-14); Tier B continues with W18.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1).** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -95,7 +95,7 @@ Ranked by what a person notices in the first five minutes.
 ### W1 — Markdown and code blocks — DONE 2026-09-14
 ~~Today the page renders **plain text only**~~ — model output now renders as Markdown through
 `ui/markdown.js`, a renderer that builds DOM nodes from a fixed element allow-list and never an HTML
-string (the rule is stated at `internal/serveapp/webui/ui/app.js:929`). Paragraphs and line breaks,
+string (the rule is stated at `internal/serveapp/webui/ui/app.js:935`). Paragraphs and line breaks,
 headings, fenced code with a language label (an unclosed fence renders as code, so streaming does not
 flicker), inline code, strong/em/strike, links, bare URLs, blockquotes, nested lists and GFM tables.
 Raw HTML in model output is shown as text; links are live only for `http:`/`https:`/`mailto:`; images
@@ -161,7 +161,7 @@ any failure inside a loaded page as a failure. **Effort was: M.**
 
 ### W4 — A system prompt box — DONE 2026-09-14
 ~~There is no way to set a system message at all~~ — a collapsible "System prompt" box in the settings
-card (`internal/serveapp/webui/ui/app.js:622`), whose summary reads "· active" when set so it is
+card (`internal/serveapp/webui/ui/app.js:623`), whose summary reads "· active" when set so it is
 visible while collapsed. When non-blank it is sent **first, trimmed**, with every request; blank or
 whitespace-only sends nothing. The route accepts a system message for every family — templates
 without a system role fold it into a user turn server-side (`messagesToTurns`) — so the box needs no
@@ -181,7 +181,7 @@ reload; a hostile prompt inert; tab sync, and a focused box not clobbered. Six m
 ### W5 — Load a model from the page — DONE 2026-09-14
 ~~The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
 --model &lt;path&gt; to serve it"*~~ — a finished pull now ends on a **Load it now** button
-(`internal/serveapp/webui/ui/app.js:1530`). It loads the file, shows a heartbeat while the load runs,
+(`internal/serveapp/webui/ui/app.js:1581`). It loads the file, shows a heartbeat while the load runs,
 refreshes the model list, and selects the new model, so the next message goes to it. The header
 stats now follow whichever model is selected, not always the first one listed.
 
@@ -278,7 +278,7 @@ and gpt-oss-20b after the stop fix, real token boundaries) are replayed chunk fo
 
 ### W7 — Regenerate, edit-and-resend, delete a turn — DONE 2026-09-14
 ~~None of the three~~ — all three, as buttons on each message's action row next to Copy
-(`internal/serveapp/webui/ui/app.js:835`). History is now addressable: each action changes the
+(`internal/serveapp/webui/ui/app.js:841`). History is now addressable: each action changes the
 transcript, re-renders the log from it and saves, so what is shown, saved and sent can't disagree.
 
 - **Regenerate** appears only on the **last** reply, including a stopped or interrupted one. It
@@ -375,10 +375,34 @@ inside the binary.
 | **W15** | Dark mode | **DONE 2026-09-15** — see below | S |
 | **W16** | Phone layout | **DONE 2026-09-15** — see below | S |
 | **W17** | Enter sends, ↑ edits last, Esc stops | **DONE 2026-09-15** — see below | S |
-| **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
+| **W18** | Label which turn came from which model | **DONE 2026-09-15** — see below | M |
+
+### W18 — Label which turn came from which model — DONE 2026-09-15
+The reply header already showed the model's name. What was missing is what the row names: nothing marked
+a **change** of model, and the per-reply stats had no context to be compared in
+(`labelReply`, `internal/serveapp/webui/ui/app.js:946`).
+
+- **Each reply records the compute path its model reported when the reply was sent** (`decode_path` from
+  `/v1/models`, e.g. `cuda-resident (int4)`). It is shown beside the model name, saved with the reply, and
+  exported in its heading. It is recorded at send time because a model can later be reloaded onto another
+  backend, and the stats are only comparable along with the path they were measured on.
+- **A divider marks each place where consecutive replies came from different models** ("Model changed:
+  alpha-4b → beta-9b"). It is worked out from the conversation, not stored, so it follows Regenerate
+  (regenerate the reply on the first model and the divider disappears), Edit and Delete. A request that
+  failed before producing any text leaves no divider behind.
+- Model names and paths from storage are shown as text; an over-long stored path is dropped.
+
+Not done: side-by-side "ask both models" comparison. That is two generations for one turn, closer to
+W7-style branching than to a label.
+
+Gate: phases 33–34 of `scripts/webui_app_gate.mjs`, 15 checks: label and path, saved; no divider without a
+change; the divider exactly before the new model's reply; relabelling and the divider following a
+Regenerate; a model with no path; no divider after a failure; the path in the export; after a reload, the
+exact order of messages and dividers; hostile or over-long stored labels. Ten mutations, each red.
+**Effort was: S** (less than the M the row estimated, since the name was already there).
 
 ### W17 — Enter sends, ↑ edits last, Esc stops — DONE 2026-09-15
-~~Only Ctrl/Cmd+Enter~~ — as the row asked, **a setting, not a swap** (`internal/serveapp/webui/ui/app.js:1383`).
+~~Only Ctrl/Cmd+Enter~~ — as the row asked, **a setting, not a swap** (`internal/serveapp/webui/ui/app.js:1434`).
 Ctrl/Cmd+Enter always sends. **Enter sends** is a checkbox beside the composer, off by default (long
 prompts want Enter for new lines). When on, Enter sends and Shift+Enter is a new line. The placeholder
 says which is in effect. The setting is saved, followed across tabs, and applies to the **edit box** too
@@ -473,7 +497,7 @@ to a dark preference**, so the light phase sets light explicitly. Eleven mutatio
 
 ### W14 — Export the conversation — DONE 2026-09-14
 ~~Nothing~~ — **Export this chat: Markdown · JSON** beside the Chats heading
-(`chatMarkdown`, `internal/serveapp/webui/ui/app.js:1237`). No share link: that would be a server-side
+(`chatMarkdown`, `internal/serveapp/webui/ui/app.js:1288`). No share link: that would be a server-side
 copy, the anti-goal this row names.
 
 - **Markdown** is for reading. A `## You` / `## <model>` section per turn, attached images embedded as
@@ -602,7 +626,7 @@ no element marked hidden takes up space (found by W15's screenshot pass).
 ### W10 — Full sampling controls — DONE 2026-09-14
 ~~The page sends `temperature`/`max_tokens` only~~ — a collapsible **Sampling** section beside the
 system prompt adds every other sampling field `/v1/chat/completions` accepts: `top_p`, `top_k`, `seed`,
-`stop`, `frequency_penalty` and `presence_penalty` (`internal/serveapp/webui/ui/app.js:640`).
+`stop`, `frequency_penalty` and `presence_penalty` (`internal/serveapp/webui/ui/app.js:641`).
 Temperature and max tokens stay in the top row.
 
 **A correction to what this row used to say:** it listed `logit_bias` among the fields the route
@@ -655,7 +679,7 @@ highlighted. Nothing in the list works while a reply is generating or a message 
 - **Migration:** W3's single conversation (`goinfer.chat.v1`) is migrated once into a conversation of
   its own, opened, and the old key removed.
 
-**Titles** (`autoTitle`, `internal/serveapp/webui/ui/app.js:1307`). A title starts as the first message,
+**Titles** (`autoTitle`, `internal/serveapp/webui/ui/app.js:1358`). A title starts as the first message,
 cut to fit. After the first reply, the model is asked **once**, in the background, with a non-streaming
 24-token request, for a title of at most six words. The reply is cleaned: first line only, no
 "Title:" label, quotes, markup or final period, and it is rejected if it still contains thinking or
@@ -754,7 +778,7 @@ gating and auth — each shown able to go red by a mutation.
 
 **6.2 W1 is where model output stops being inert, and the current rule must survive it. — HELD
 2026-09-14 (see W1).** The page says it in the source: content goes in via `textContent` or
-`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:929`), and a test now fails the
+`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:935`), and a test now fails the
 build if that changes. **Build DOM nodes from the parsed tree; never assemble an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
@@ -772,9 +796,9 @@ W5's load route was the first real test of them, and takes all of them (W5).
 
 `internal/serveapp/webui.go:50`, `:458` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
-`internal/serveapp/webui/ui/app.js:309`, `:929`, `:122`, `:1383`, `:1530`, `:357`, `:835`, `:86`, `:489`, `:1307`, `:640`, `:205`, `:1237`, `:7` (the conversation transcript, the
+`internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme) · `internal/serveapp/openai.go:796` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:796` (`contextWindow`) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:449` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the

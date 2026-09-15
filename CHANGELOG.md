@@ -58,6 +58,8 @@ any surface may still change.
     at least 32 px on touch screens.
   - Keyboard: an optional "Enter sends" setting (Shift+Enter for a new line; never while an input
     method is composing), ↑ in an empty box edits your last message, Esc stops a reply.
+  - Each reply shows which model wrote it and the compute path it ran on, and a divider marks where the
+    model changed in a conversation.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.
