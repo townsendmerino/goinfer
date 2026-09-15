@@ -39,14 +39,17 @@ func TestExpertPool_lruAndStaging(t *testing.T) {
 		}
 		return guW, guS, dW, dS
 	}
-	// slot must actually hold expert e's bytes (staging correctness), across BOTH gate|up and down.
-	holds := func(s expertSlot, e int) bool {
-		return s.guW.U32s()[0] == uint32(e) && s.dW.U32s()[0] == uint32(e) &&
-			s.guS.U16s()[0] == uint16(e) && s.dS.U16s()[0] == uint16(e)
-	}
-
 	const N = 4
 	p := newExpertPool(d, N, nGuW, nGuS, nDW, nDS, stage)
+
+	// slot must actually hold expert e's bytes (staging correctness), across BOTH gate|up and down.
+	// Reads through the pool's own contiguous base buffers at slot s's stride offset — s.guW etc are
+	// Buffer.At()-offset VIEWS, and U32s()/U16s() ignore that offset (see expertSlot's doc comment),
+	// so this must NOT call s.guW.U32s() directly.
+	holds := func(s expertSlot, e int) bool {
+		return p.guW.U32s()[s.slot*nGuW] == uint32(e) && p.dW.U32s()[s.slot*nDW] == uint32(e) &&
+			p.guS.U16s()[s.slot*nGuS] == uint16(e) && p.dS.U16s()[s.slot*nDS] == uint16(e)
+	}
 
 	// (1) cold start: 4 distinct experts fill the 4 free slots — 4 stages, contents correct.
 	for e := range 4 {

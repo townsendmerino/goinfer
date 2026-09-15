@@ -25,7 +25,22 @@ import (
 // reuse, it does NOT return pages to the OS (Darwin mmap.Advise(_,false) is a documented no-op) — so
 // resident footprint must be MEASURED, not inferred from N × per-expert. See
 // [[metal-moe-paging-needs-speculation]] and the Step-6 budget probe (paging_budget_test.go).
-type expertSlot struct{ guW, guS, dW, dS Buffer }
+//
+// M-11 (audit-metal-2026-09-12.md): slots live in ONE contiguous Buffer per field (guW/guS/dW/dS),
+// not N separately-allocated Buffer objects. A separate object per slot forced the paged phase-2
+// encoder to pick a specific Buffer identity at ENCODE time — after staging, which is exactly why
+// the paged forward could not be pre-encoded into one command buffer with the rest of the token
+// (the blocker M-11 names). A contiguous pool lets phase 2 bind the SAME buffer identity every
+// call and read a slot NUMBER at kernel-execution time instead — the same trick the non-paged
+// stacked-all-E path already uses via rIdx (see moe.go's gemv_w4a8_moe: "idx[slot]*rowsPerExpert").
+// expertSlot is now a lightweight VIEW into that contiguous storage (Buffer.At()-offset), valid for
+// GPU-side binding and for gpu.Upload (both respect Buffer's bind offset) but NOT for U32s()/U16s()
+// (those always read from the buffer's base, ignoring the offset — see preadIntoPoolSlot's doc
+// comment for why the pread path does its own offset arithmetic instead of relying on a view).
+type expertSlot struct {
+	guW, guS, dW, dS Buffer // .At()-offset views onto the pool's contiguous per-field buffers
+	slot             int    // the raw slot index — the GPU-side "which row of the pool" value
+}
 
 // stageFn fetches expert e's W4A8 data: gate|up packed nibble BYTES + f16 scales, down nibble bytes
 // + f16 scales. In production it is int4DirectBytes over the layer bundle's expert WeightMats — the
@@ -52,12 +67,27 @@ func copyBytesToU32Buf(dst Buffer, src []byte) {
 	}
 }
 
+// copyU16sToBuf writes f16-bits scales into a (possibly slot-offset) uint16 buffer view via
+// gpu.Upload rather than dst.U16s()+copy(): U16s() always reads from the buffer's BASE address and
+// ignores Buffer.At()'s bind offset (see expertSlot's doc comment), so a plain copy() into it would
+// silently land in slot 0 regardless of which slot's view was passed. gpu.Upload respects the offset.
+func copyU16sToBuf(dst Buffer, src []uint16) {
+	if err := gpu.Upload(dst, src); err != nil {
+		panic(fmt.Sprintf("metal expertpool: %v", err))
+	}
+}
+
 type expertPool struct {
-	slots      []expertSlot
-	slotExpert []int       // slot index → expert id resident there (-1 = free)
-	where      map[int]int // expert id → slot index
-	lru        []int       // slot indices, most-recently-used at front
-	stage      stageFn
+	// guW/guS/dW/dS are ONE contiguous Buffer per field, N slots wide (M-11) — fixed identity for
+	// the pool's whole lifetime, never reallocated. nGuW/nGuS/nDW/nDS are the per-slot element
+	// counts (uint32/uint16 words), i.e. the stride: slot s's region starts at element s*nGuW (etc),
+	// byte offset s*nGuW*4 (etc, uint16 fields use *2).
+	guW, guS, dW, dS     Buffer
+	nGuW, nGuS, nDW, nDS int
+	slotExpert           []int       // slot index → expert id resident there (-1 = free)
+	where                map[int]int // expert id → slot index
+	lru                  []int       // slot indices, most-recently-used at front
+	stage                stageFn
 
 	// preads counts miss-stages served by the pread fast path (0 ⇒ the mmap byte-copy path ran).
 	// It lets a test PROVE pread engaged: a byte-identity check passes just as well when the offset
@@ -94,14 +124,20 @@ type expertPool struct {
 	stagePread func(e int, s expertSlot)
 }
 
-// preadIntoU32Buf preads the destination's worth of nibbles from file offset off DIRECTLY into the
-// slot buffer's unified-memory contents (host-writable UMA — the read lands where the GPU reads it,
-// no intermediate copy). The []byte view of the []uint32 destination is always page-aligned; buffered
-// pread has no source-offset alignment requirement, so the 73%-unaligned expert spans are a non-issue
-// here. Loops on short reads.
-func preadIntoU32Buf(fd int, dst Buffer, off int64) error {
-	d := dst.U32s()
-	return preadRangeIntoU32Buf(fd, dst, 0, off, len(d)*4)
+// preadIntoPoolSlot/preadRangeIntoPoolSlot pread a SLOT within a pool's contiguous per-field buffer
+// (M-11), addressed by slot NUMBER rather than by a distinct Buffer object. They do NOT use
+// Buffer.At() for the destination: Buffer.U32s() (which preadRangeIntoU32Buf calls internally to
+// bounds-check and byte-view the destination) always reads from the buffer's base address and
+// ignores its bind offset (Buffer.At() only affects GPU-side
+// binding and gpu.Upload/Download, not U32s()/U16s()) — an At()-shifted view here would silently
+// pread into the POOL'S FIRST slot every time, not the one requested. Computing the byte offset
+// against the pool's base buffer directly (slot*strideWords*4 [+ subOff]) sidesteps that mismatch.
+func preadIntoPoolSlot(fd int, base Buffer, slot, strideWords int, off int64) error {
+	return preadRangeIntoU32Buf(fd, base, slot*strideWords*4, off, strideWords*4)
+}
+
+func preadRangeIntoPoolSlot(fd int, base Buffer, slot, strideWords, subOff int, off int64, n int) error {
+	return preadRangeIntoU32Buf(fd, base, slot*strideWords*4+subOff, off, n)
 }
 
 // preadRangeIntoU32Buf is preadIntoU32Buf over a SUB-RANGE of the destination: it reads n bytes from
@@ -149,32 +185,43 @@ func (p *expertPool) prefetchAll(experts []int) {
 }
 
 // newExpertPool allocates N slots sized to one expert's W4A8 buffers (nGuW/nGuS gate|up words/scales,
-// nDW/nDS down words/scales). All slots start free; the first N distinct experts fill them, then LRU
-// eviction begins. N must be >= the router's top-k or a single token can thrash its own pool.
+// nDW/nDS down words/scales) as ONE contiguous buffer per field (M-11) — never N separate objects.
+// All slots start free; the first N distinct experts fill them, then LRU eviction begins. N must be
+// >= the router's top-k or a single token can thrash its own pool.
 func newExpertPool(d *Device, N, nGuW, nGuS, nDW, nDS int, stage stageFn) *expertPool {
 	p := &expertPool{
-		slots:      make([]expertSlot, N),
+		// N-21 (audit-metal-2026-09-12.md): every slot's contents are about to be overwritten by its
+		// first stage anyway (cold-started slots stage on first use, never read before that), so
+		// there is nothing to gain from zero-filling a transient Go slice just to copy it into the
+		// buffer and discard it — gpu.NewBufferLenOf allocates the right-sized, uninitialized device
+		// buffer directly.
+		guW:  gpu.NewBufferLenOf[uint32](d, N*nGuW),
+		guS:  gpu.NewBufferLenOf[uint16](d, N*nGuS),
+		dW:   gpu.NewBufferLenOf[uint32](d, N*nDW),
+		dS:   gpu.NewBufferLenOf[uint16](d, N*nDS),
+		nGuW: nGuW, nGuS: nGuS, nDW: nDW, nDS: nDS,
 		slotExpert: make([]int, N),
 		where:      make(map[int]int, N),
 		lru:        make([]int, 0, N),
 		stage:      stage,
 	}
 	for s := range N {
-		// N-21 (audit-metal-2026-09-12.md): every slot's contents are about to be overwritten by
-		// its first stage anyway (LRU pool: cold-started slots stage on first use, never read
-		// before that), so there is nothing to gain from zero-filling a transient Go slice just to
-		// copy it into the buffer and discard it — gpu.NewBufferLenOf allocates the right-sized,
-		// uninitialized device buffer directly. At N=64 on the 35B this was ~4.5 GB of transient Go
-		// allocation purely to zero-initialise memory the pool never reads before writing.
-		p.slots[s] = expertSlot{
-			guW: gpu.NewBufferLenOf[uint32](d, nGuW),
-			guS: gpu.NewBufferLenOf[uint16](d, nGuS),
-			dW:  gpu.NewBufferLenOf[uint32](d, nDW),
-			dS:  gpu.NewBufferLenOf[uint16](d, nDS),
-		}
 		p.slotExpert[s] = -1
 	}
 	return p
+}
+
+// slotView returns the .At()-offset views for slot s — the SAME Buffer identity every call (only
+// the offset differs), valid for encode-time GPU binding and for gpu.Upload staging (both respect
+// Buffer's bind offset; see the expertSlot doc comment for why this is NOT true of U32s()/U16s()).
+func (p *expertPool) slotView(s int) expertSlot {
+	return expertSlot{
+		guW:  p.guW.At(s * p.nGuW * 4),
+		guS:  p.guS.At(s * p.nGuS * 2),
+		dW:   p.dW.At(s * p.nDW * 4),
+		dS:   p.dS.At(s * p.nDS * 2),
+		slot: s,
+	}
 }
 
 // ensureResident returns the slot holding expert e, staging it in on a miss (evicting the LRU slot)
@@ -184,7 +231,7 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 	if s, ok := p.where[e]; ok {
 		p.hits++
 		p.touch(s)
-		return p.slots[s]
+		return p.slotView(s)
 	}
 	s := p.pickSlot()
 	if old := p.slotExpert[s]; old >= 0 {
@@ -197,19 +244,20 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 		p.distinctExperts = make(map[int]bool)
 	}
 	p.distinctExperts[e] = true
+	sv := p.slotView(s)
 	t0 := time.Now()
 	if p.stagePread != nil {
 		// pread path: one syscall reads nibbles straight into the slot's UMA words (fetch+copy fused).
-		p.stagePread(e, p.slots[s])
+		p.stagePread(e, sv)
 		p.fetchNanos += time.Since(t0).Nanoseconds()
 		p.preads++
 	} else {
 		guW, guS, dW, dS := p.stage(e) // mmap-aliased nibble bytes + f16 scales (no reconstruction/alloc)
 		t1 := time.Now()
-		copyBytesToU32Buf(p.slots[s].guW, guW)
-		copy(p.slots[s].guS.U16s(), guS)
-		copyBytesToU32Buf(p.slots[s].dW, dW)
-		copy(p.slots[s].dS.U16s(), dS)
+		copyBytesToU32Buf(sv.guW, guW)
+		copyU16sToBuf(sv.guS, guS)
+		copyBytesToU32Buf(sv.dW, dW)
+		copyU16sToBuf(sv.dS, dS)
 		t2 := time.Now()
 		p.fetchNanos += t1.Sub(t0).Nanoseconds()
 		p.copyNanos += t2.Sub(t1).Nanoseconds()
@@ -219,7 +267,7 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 	p.where[e] = s
 	p.touch(s)
 	p.stages++
-	return p.slots[s]
+	return sv
 }
 
 // ensureResidentBatch is ensureResident generalized over a whole layer's routed top-k at once
@@ -254,13 +302,13 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			// way (already staged, or its stage is in flight — the WaitGroup below still waits on
 			// it since it's tracked in misses by the first occurrence's index).
 			p.hits++
-			out[i] = p.slots[s]
+			out[i] = p.slotView(s)
 			continue
 		}
 		if s, ok := p.where[e]; ok {
 			p.hits++
 			p.touch(s)
-			out[i] = p.slots[s]
+			out[i] = p.slotView(s)
 			seen[e] = s
 			continue
 		}
@@ -274,7 +322,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			// (ids is always one layer's routed top-k, length <= N by that build-time guard); a
 			// caller that violates it gets a loud panic, not silent corruption.
 			panic(fmt.Sprintf("metal expertpool: batch of %d distinct experts exceeds this pool's "+
-				"%d slots (id %d re-picked slot %d) — the caller must ensure N >= top-k", len(ids), len(p.slots), e, s))
+				"%d slots (id %d re-picked slot %d) — the caller must ensure N >= top-k", len(ids), len(p.slotExpert), e, s))
 		}
 		claimed[s] = true
 		if old := p.slotExpert[s]; old >= 0 {
@@ -310,14 +358,15 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			go func(ms miss) {
 				defer wg.Done()
 				t0 := time.Now()
+				sv := p.slotView(ms.slot)
 				if p.stagePread != nil {
-					p.stagePread(ms.expert, p.slots[ms.slot])
+					p.stagePread(ms.expert, sv)
 				} else {
 					guW, guS, dW, dS := p.stage(ms.expert)
-					copyBytesToU32Buf(p.slots[ms.slot].guW, guW)
-					copy(p.slots[ms.slot].guS.U16s(), guS)
-					copyBytesToU32Buf(p.slots[ms.slot].dW, dW)
-					copy(p.slots[ms.slot].dS.U16s(), dS)
+					copyBytesToU32Buf(sv.guW, guW)
+					copyU16sToBuf(sv.guS, guS)
+					copyBytesToU32Buf(sv.dW, dW)
+					copyU16sToBuf(sv.dS, dS)
 				}
 				d := time.Since(t0).Nanoseconds()
 				mu.Lock()
@@ -343,7 +392,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			// than "has been claimed", matching the sequential path's own ordering. touch() already
 			// ran in the claiming loop above.
 			p.where[ms.expert] = ms.slot
-			out[ms.idx] = p.slots[ms.slot]
+			out[ms.idx] = p.slotView(ms.slot)
 		}
 	}
 	return out

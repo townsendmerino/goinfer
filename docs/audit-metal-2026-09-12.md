@@ -242,7 +242,7 @@ re-baked by the code it checks (G-04).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
 - **Where:** `metal/prefill.go:625-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
-  `metal/moe.go:687-682`; `metal/model.go:718-682` (paged/g4moe/DeltaNet → `prefillOK=false`);
+  `metal/moe.go:703-682`; `metal/model.go:718-682` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:537-445` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
 - **Mechanism and bound (counted):** non-paged: per row per MoE layer (5 + 3k [+3–5 shared])
@@ -484,7 +484,7 @@ re-baked by the code it checks (G-04).
 #### M-09 · Decode attention's K read is a 32-lane 512 B-strided gather (32 load instructions per 256 B row) — every recorded probe fits an L1/LSU-transaction wall as well as the "DRAM latency" reading; the one untested corner is bit-identical cooperative staging
 - **Where:** `metal/kernels.go:642-636` (thread `tid` owns keys `tid, tid+128, …`; per key 32 `half4`
   loads at stride `kvDim*2` = 512 B across lanes), `:661-677` (V: thread `d` walks all keys
-  serially, 2 B per load), `metal/model.go:2043` (12 threadgroups × 128 threads per layer);
+  serially, 2 B per load), `metal/model.go:2042` (12 threadgroups × 128 threads per layer);
   `docs/completed/metal-verdict.md:95-99,136-145,175-178`; `metal/attn_m3_probe_test.go`,
   `attn_kvwidth_probe_test.go`.
 - **Mechanism and bound (counted + record):** each K-row load instruction touches 32 distinct cache
@@ -528,7 +528,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/kernels.go:231-233` (`W4A8_BODY`: 8 scalar byte loads of the activation + one
   half scale per 32-bit word), `:272-274` ("int8 activation staged once into threadgroup short —
   replaces the per-row device byte-gather (17920× re-reads) that dominates LSU issue"),
-  `metal/model.go:1954` (`e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, …)` — one simdgroup per row,
+  `metal/model.go:1953` (`e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, …)` — one simdgroup per row,
   no staging), `:1005-1009` (the M-06 comment records the choice as accounting, not a
   measurement); `docs/completed/task-metal-batched-verify-kernel.md:166-167` (isolated: down-proj 68 GB/s vs
   gate/up 96 GB/s, same weight format).
@@ -560,8 +560,8 @@ re-baked by the code it checks (G-04).
 ### C. The paged path (26B / 35B / gpt-oss-20b on the Mac)
 
 #### M-11 · Paged decode pays a ~14 ms command-buffer boundary 61–81× per token; the one design that removes it was rejected on a measurement taken where the boundary costs 0.2 ms
-- **Where:** `metal/gemma4_moe.go:481-538` (`begin()`/`end()` per phase; `end` = commit +
-  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:805-802` (same, generic);
+- **Where:** `metal/gemma4_moe.go:497-538` (`begin()`/`end()` per phase; `end` = commit +
+  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:822-802` (same, generic);
   `metal/residency_probe_test.go:11-12` ("~15 ms/boundary of GPU-idle-in-wait, 72× Step-0's 0.213
   ms"); `metal/pagecost_sharedevent_test.go:47-64` (verdict "recovers ~0%" — measured on
   qwen2.5-coder-1.5b, dense); `metal/model.go:1175-1144` (residency-set comment: p1 still carries
@@ -585,12 +585,60 @@ re-baked by the code it checks (G-04).
 - **Confidence:** plausible (14 ms/CB is the repo's record; the event regime on the paged shape is
   unmeasured; the pool change is traced but unbuilt). **Prior:** `pagecost_sharedevent_test.go`
   verdict — disagree (wrong shape); audit-2026-09-10 P-22; queue P21.
-
-#### M-12 · Expert staging is queue-depth 1: k misses × 3 preads, sequential on one thread, GPU idle
-- **Where:** `metal/moe.go:826` (was a serial `ensureResident` loop — see this finding's own
+- **PARTIALLY CLOSED 2026-09-14 — the contiguous-pool/slotIdx half shipped and verified; the
+  shared-event single-command-buffer half and the real 26B/35B re-measurement are NOT done.**
+  Shipped exactly the first half of this finding's own Fix line: `expertpool.go`'s per-layer pool
+  is now ONE contiguous Buffer per field (guW/guS/dW/dS), not N separately-allocated slot objects —
+  `newExpertPool` allocates `N*strideWords` once; `ensureResident`/`ensureResidentBatch` return a
+  slot NUMBER (still wrapped in `expertSlot` for the staging path's own use, but callers now read
+  only `.slot`). `slotIdx` (renamed from `idxZeros`) is a `[topK]` device buffer the host writes
+  each token with the pool ROW holding each routed expert; `encodeG4Phase2Paged` /
+  `encodeMoEExpertsPaged` now always bind the pool's fixed-identity base buffers plus `slotIdx`,
+  exactly mirroring how the non-paged stacked-all-E path already reads `rIdx` at
+  kernel-execution time (`gemv_w4a8_moe`'s `idx[slot]*rowsPerExpert`) — zero new MSL kernels
+  needed, since that addressing pattern already existed for the non-paged case. This makes phase
+  2's ENCODE graph value-independent for the first time — the specific blocker this finding names
+  ("phase-2 binds *which slot buffer* at encode time") — in both `gemma4_moe.go` and `moe.go`'s
+  generic MoE path (gpt-oss's separate `biasIdx()` index space is untouched: it still always reads
+  the router's real expert ids, never the pool slot, per its own doc comment).
+  A real correctness trap surfaced and was fixed while wiring this: `Buffer.U32s()`/`.U16s()`
+  ignore `Buffer.At()`'s bind offset (they always read from the buffer's base address — confirmed
+  by reading aikit's own `gpu/metal.go`), so the pread-staging closures' original
+  `preadIntoU32Buf(fd, s.guW, off)` calls (using an `.At()`-offset slot view as the destination)
+  would have silently pread every expert into the pool's slot 0 — a live bug this refactor would
+  have shipped had the "run every existing gate" pass not caught it. Fixed with two new
+  slot-number-addressed helpers (`preadIntoPoolSlot`/`preadRangeIntoPoolSlot`) that compute the
+  destination byte offset against the pool's base buffer directly, bypassing `.At()` entirely; the
+  byte-copy staging path has the identical hazard on the scale buffers and is fixed the same way
+  (`copyU16sToBuf`, using `gpu.Upload` — which DOES respect `.At()` — instead of `U16s()+copy()`).
+  TDD-verified per this session's discipline: deliberately zeroed every `slotIdx` write (always
+  slot 0, ignoring the real slot) and confirmed `TestGemma4Paging_bitExact` failed loudly (2040/2040
+  logit mismatches) rather than passing by coincidence; restored and reconfirmed 0 mismatches.
+  Verified bit-exact (not just cosine) on both paged shapes this repo already has small fixtures
+  for, cold-start/eviction/same-expert-reuse all exercised in both: `TestGemma4Paging_bitExact`
+  (gemma4-moe-tiny, N=3/4 slots, 8 positions, 0 mismatches) and `TestMoEPaging_matchesNonPaged`
+  (qwen3_5_moe-tiny, N=2 and N=3, 32 tokens each, exact match) — plus the isolated pool-primitive
+  tests (`TestExpertPool_lruAndStaging`, `TestExpertPoolBatch_matchesSequential`,
+  `TestExpertPoolBatch_pread`, `TestExpertPoolBatch_overCapacityPanics`) all green under `-race`.
+  `gofmt`/`go vet -tags 'darwin goinfer_testhooks'`/CI's pinned staticcheck all clean (staticcheck
+  caught the two pread helpers going briefly unused mid-refactor, which is what surfaced the
+  offset bug above — a real instance of this repo's own "prove the gate can go red" discipline
+  paying for itself, not just a documentation exercise).
+  Deliberately NOT attempted, and why: the shared-event single-command-buffer integration (tearing
+  `forwardLogitsPaged`/`forwardLogitsMoEPaged` into ONE command buffer per token with
+  `EventBoundary` at each paged-layer seam, adapting the `forwardLogitsSharedEvent` prototype) and
+  the real 26B/35B re-measurement this finding's Fix line calls for both require loading a real
+  paged 26B/35B checkpoint on this Mac — the exact class of work ([[metal-moe-paging-needs-speculation]],
+  [[mac-16gb-model-size-limits]]) that produced a kernel panic and 8/8 failed probes earlier in
+  this same audit pass (see M-05's own "pre-implementation probe attempt" note, above). The
+  contiguous-pool change is a real, tested prerequisite either way — it does not by itself change
+  the number of command-buffer boundaries per token, so it carries no expected perf effect and no
+  new risk to a running paged decode; the actual single-CB rework and its measurement remain
+  explicitly owed, gated on the same real-hardware caution as M-05.
+- **Where:** `metal/moe.go:843` (was a serial `ensureResident` loop — see this finding's own
   closure note), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
-  `metal/expertpool.go:183-203`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
+  `metal/expertpool.go:230-203`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
 - **Mechanism and bound (record-derived):** per-miss cost from the sweep = staging share ×
   s/token ÷ misses/token = 1.6 ms (N=8), 3.0 ms (N=32), 3.6 ms (N=64) for ~1.57 MB — 440–980 MB/s
   effective against the same file's measured 3,687 MB/s sequential pread. Per-miss cost *rising*
@@ -665,7 +713,7 @@ re-baked by the code it checks (G-04).
 
 #### M-13 · The Metal expert pager engages only with an explicit `--moe-cache-slots N`; the default declines the 26B/35B/gpt-oss-20b to the CPU-staged path, and the peer-matrix row that "parked" them on the Mac measured that fallback
 - **Where:** `metal/backend.go:154-159` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
-  `metal/moe.go:426-434`, `metal/backend.go:317-255` (guard prices the *unpaged* set when slots are
+  `metal/moe.go:429-434`, `metal/backend.go:317-255` (guard prices the *unpaged* set when slots are
   unset, declines to CPU; the message names `GOINFER_NO_RESIDENT_MEM_GUARD` but not
   `--moe-cache-slots`); `internal/serveapp/main.go:483` (`--moe-cache-experts` … "CUDA only"),
   `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1686-1696` ("falls back
@@ -1101,8 +1149,8 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/pagecost_sharedevent_test.go:47-64` (qwen2.5-1.5b dense int8int8; "recovers ~0%"),
   `metal/pagecost_measure_test.go:47-52` ("There is NO such checkpoint on this Mac … this measures
   the SUBMISSION-STRUCTURE cost on a DENSE model"), `metal/residency_probe_test.go:11-12` (paged
-  26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:472-463`,
-  `metal/model.go:1975-1974`). **Fix:** M-11's re-run. **Confidence:** confirmed.
+  26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:488-463`,
+  `metal/model.go:1974-1974`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
 - **Where:** `metal/close_leak_test.go:162-169,224-248` vs aikit `metal.go:396-390`
@@ -1191,6 +1239,17 @@ re-baked by the code it checks (G-04).
 - **Where:** aikit `metal.go:775-748,770-775`, `metal/cmdbuf_status_test.go:19-22` (both repos'
   tests inject the error). Documentation, not a lever: every "Err() will catch it" reliance needs a
   pre-check (C-06 is the bare one).
+- **CLOSED 2026-09-14 — this finding names no fix of its own.** It carries no independent **Fix:**
+  or **Confidence:** line because it isn't a defect; it's the general observation behind C-06,
+  which it cites as "the bare" (i.e. only) concrete instance. C-06 shipped and released this
+  session (`gpu/v0.33.1`, closed above): `visionmetal` now has the same `attnThreadgroupBytes`
+  host-side pre-check qwenmetal already had, checked in `newEncoder` before `Err()` would ever need
+  to catch the corresponding silent-tolerance case. `aikit metal.go:770-775`'s comment (Apple
+  silicon "silently tolerates … over-budget threadgroup memory … status Completed") and
+  `metal/cmdbuf_status_test.go:19-22` are unchanged and still correctly describe `Err()`'s own limits —
+  that is not something to fix, it is the documented reason the pre-check pattern exists at all.
+  With C-06 shipped, there is no further pre-check this finding is pointing at that remains
+  unbuilt; closing as a pointer resolved by its own named example, not as new work done here.
 
 ---
 
@@ -1237,14 +1296,14 @@ re-baked by the code it checks (G-04).
 - N-09 `metal/model.go:1359-1324` "greedy decode skips [softcap]" — false in production
   (`finalizeLogits` runs every executor token; Gemma 4 greedy pays a 262k `tanh` per token, ~1%).
   **FIXED 2026-09-13.**
-- N-10 `metal/model.go:1975` "11 dispatches vs 19" is stale (block is 7); `metal-verdict.md:75`
+- N-10 `metal/model.go:1974` "11 dispatches vs 19" is stale (block is 7); `metal-verdict.md:75`
   "337 dispatches/token" is 310 at this tree. `:1538-1541` "fastest greedy path" stale. **FIXED
   2026-09-13** (the two `metal/model.go` comments; `metal-verdict.md` is `docs/completed/` — an
   archived record left as-is per that directory's own convention).
 - N-11 `metal/cmd/serve/main.go` said "Dense residency only … int8": MoE is resident; int8 is the
   re-quantised case. `decoder/features.go:317` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
   2026-09-13** — `metal/cmd/serve/main.go:5-10` now names both corrections inline; the
-  `decoder/features.go:317` citation repointed to `metal/moe.go:376-376`.
+  `decoder/features.go:317` citation repointed to `metal/moe.go:379-376`.
 - N-12 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:14` names `qwen2.5-1.5b-instruct`;
   test default and L2 record say `qwen2.5-coder-1.5b-instruct` — methodology wants the exact file.
   **FIXED 2026-09-13.**
@@ -1330,7 +1389,7 @@ re-baked by the code it checks (G-04).
   identical mechanical pattern already proven correct in `moe.go`'s pread path, not independently
   measured on gemma4. `go test ./metal/` (91 pass) and `-tags goinfer_testhooks` (143 pass) both
   0 fail; gofmt/go vet/staticcheck clean.
-- N-21 `metal/expertpool.go:169-158` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
+- N-21 `metal/expertpool.go:198-201` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
   **FIXED 2026-09-13** — used `gpu.NewBufferLenOf[T]` instead (the exact generic, right-sized,
   uninitialized allocator the finding names; `NewBufferBytes` alone would have mis-sized `.n` for a
@@ -1339,9 +1398,9 @@ re-baked by the code it checks (G-04).
   `TestExpertPoolBatch_matchesSequential/_pread`, and the real paged-forward parity tests
   (`TestGemma4Paging_bitExact`, `TestMoEPaging_matchesNonPaged`) all still pass — if uninitialized
   memory leaked through anywhere, the staged-content checks in these would have caught it.
-- N-22 `metal/moe.go:827-790`, `metal/gemma4_moe.go:558-539` — phase 2 of layer l and phase 1 of l+1 have no
+- N-22 `metal/moe.go:850-790`, `metal/gemma4_moe.go:580-539` — phase 2 of layer l and phase 1 of l+1 have no
   host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11.
-- N-23 `metal/moe.go:779` — a hybrid's dense layers each get their own `Begin/End` in
+- N-23 `metal/moe.go:796` — a hybrid's dense layers each get their own `Begin/End` in
   `forwardLogitsMoEPaged`. **FIXED 2026-09-13**: consecutive dense layers now share ONE command
   buffer (`Begin()` on first use, closed only when the next MoE-paged layer's router readback needs
   a real value-dependent seam, or at the loop's end) instead of a submit+wait per dense layer —
@@ -1456,7 +1515,7 @@ re-baked by the code it checks (G-04).
   library-wide compile flag affecting every ViT kernel's numerics, not a comment) is left open —
   it needs its own measurement pass and, since it lives in aikit, a release decision this session
   is not making unilaterally (same reasoning as M-14/N-31).
-- N-33 `metal/expertpool.go:49-54` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
+- N-33 `metal/expertpool.go:64-54` — `copyBytesToU32Buf` duplicates `gpu.Upload` minus its bounds check.
   **FIXED 2026-09-13** — `copyBytesToU32Buf` now calls `gpu.Upload` (a signature-compatible drop-in:
   `metal.Buffer` is a type alias for `gpu.Buffer`), panicking on its error since every call site's
   destination is sized for exactly that source by the pool's own construction — a failure there is an

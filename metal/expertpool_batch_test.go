@@ -5,7 +5,18 @@ package metal
 import (
 	"encoding/binary"
 	"testing"
+
+	"github.com/townsendmerino/aikit/gpu"
 )
+
+// holdsInPool reports whether slot s (a view returned by pool) holds expert e's bytes. Reads
+// through the pool's own contiguous base buffers at slot s's stride offset — s.guW etc are
+// Buffer.At()-offset VIEWS, and U32s()/U16s() ignore that offset (see expertSlot's doc comment in
+// expertpool.go), so this must NOT call s.guW.U32s() directly.
+func holdsInPool(pool *expertPool, s expertSlot, e int) bool {
+	return pool.guW.U32s()[s.slot*pool.nGuW] == uint32(e) && pool.dW.U32s()[s.slot*pool.nDW] == uint32(e) &&
+		pool.guS.U16s()[s.slot*pool.nGuS] == uint16(e) && pool.dS.U16s()[s.slot*pool.nDS] == uint16(e)
+}
 
 // stagingFor builds a deterministic synthetic stageFn for expertpool tests — mirrors
 // TestExpertPool_lruAndStaging's own stage() (kept package-private and duplicated rather than
@@ -81,11 +92,6 @@ func TestExpertPoolBatch_matchesSequential(t *testing.T) {
 	const nGuW, nGuS, nDW, nDS = 8, 4, 4, 2
 	const N = 4 // deliberately smaller than some request batches below, to force in-batch eviction
 
-	holds := func(s expertSlot, e int) bool {
-		return s.guW.U32s()[0] == uint32(e) && s.dW.U32s()[0] == uint32(e) &&
-			s.guS.U16s()[0] == uint16(e) && s.dS.U16s()[0] == uint16(e)
-	}
-
 	// Each request is one "token"'s routed set, sized <= N throughout — matching production's own
 	// invariant (newExpertPool's doc comment: "N must be >= the router's top-k", enforced at build
 	// time by TestMoESlotsViaOptions_belowTopKRefusesWithNumbers) — a batch with MORE distinct
@@ -112,10 +118,10 @@ func TestExpertPoolBatch_matchesSequential(t *testing.T) {
 		batchSlots := batchPool.ensureResidentBatch(ids)
 
 		for i, e := range ids {
-			if !holds(seqSlots[i], e) {
+			if !holdsInPool(seqPool, seqSlots[i], e) {
 				t.Fatalf("request %d: sequential result for expert %d holds wrong bytes", reqN, e)
 			}
-			if !holds(batchSlots[i], e) {
+			if !holdsInPool(batchPool, batchSlots[i], e) {
 				t.Fatalf("request %d: batch result for expert %d holds wrong bytes", reqN, e)
 			}
 		}
@@ -162,6 +168,11 @@ func TestExpertPoolBatch_pread(t *testing.T) {
 	newPreadPool := func() *expertPool {
 		p := newExpertPool(d, N, nGuW, nGuS, nDW, nDS, nil)
 		p.stagePread = func(e int, s expertSlot) {
+			// s.guW/dW/guS/dS are Buffer.At()-offset VIEWS onto the pool's contiguous base buffers
+			// (expertpool.go's expertSlot doc comment) — gpu.Upload respects that offset, but a
+			// plain U32s()/U16s()+copy() would silently write slot 0 every time, so this must use
+			// gpu.Upload directly (mirrors production's copyBytesToU32Buf/copyU16sToBuf, which are
+			// unexported to the metal package and take []byte/[]uint16 rather than []uint32).
 			guW := make([]uint32, nGuW)
 			dW := make([]uint32, nDW)
 			for i := range guW {
@@ -170,21 +181,28 @@ func TestExpertPoolBatch_pread(t *testing.T) {
 			for i := range dW {
 				dW[i] = uint32(e)
 			}
-			copy(s.guW.U32s(), guW)
-			copy(s.dW.U32s(), dW)
-			guS, dS := s.guS.U16s(), s.dS.U16s()
+			guS := make([]uint16, nGuS)
+			dS := make([]uint16, nDS)
 			for i := range guS {
 				guS[i] = uint16(e)
 			}
 			for i := range dS {
 				dS[i] = uint16(e)
 			}
+			if err := gpu.Upload(s.guW, guW); err != nil {
+				t.Fatalf("upload guW: %v", err)
+			}
+			if err := gpu.Upload(s.dW, dW); err != nil {
+				t.Fatalf("upload dW: %v", err)
+			}
+			if err := gpu.Upload(s.guS, guS); err != nil {
+				t.Fatalf("upload guS: %v", err)
+			}
+			if err := gpu.Upload(s.dS, dS); err != nil {
+				t.Fatalf("upload dS: %v", err)
+			}
 		}
 		return p
-	}
-	holds := func(s expertSlot, e int) bool {
-		return s.guW.U32s()[0] == uint32(e) && s.dW.U32s()[0] == uint32(e) &&
-			s.guS.U16s()[0] == uint16(e) && s.dS.U16s()[0] == uint16(e)
 	}
 
 	seqPool, batchPool := newPreadPool(), newPreadPool()
@@ -196,7 +214,7 @@ func TestExpertPoolBatch_pread(t *testing.T) {
 		}
 		batchSlots := batchPool.ensureResidentBatch(ids)
 		for i, e := range ids {
-			if !holds(seqSlots[i], e) || !holds(batchSlots[i], e) {
+			if !holdsInPool(seqPool, seqSlots[i], e) || !holdsInPool(batchPool, batchSlots[i], e) {
 				t.Fatalf("request %d: expert %d not staged correctly via pread", reqN, e)
 			}
 		}

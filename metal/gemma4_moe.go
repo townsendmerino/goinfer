@@ -126,12 +126,19 @@ type gemma4MoeResident struct {
 
 	// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): the full expert set doesn't fit resident, so
 	// each layer keeps N experts in a slot pool and stages the routed top-k in per token. Off (all
-	// experts resident) when slots==0. idxZeros is a [topK] all-zero index buffer so the reused
-	// gemv_w4a8_moe(_wacc) kernels read row 0 of a single-expert SLOT buffer while still indexing
-	// rWgt by the selection slot — makes paged dispatch byte-identical to the stacked path.
-	paged    bool
-	slots    int
-	idxZeros Buffer
+	// experts resident) when slots==0. slotIdx is a [topK] device buffer, HOST-WRITTEN each token
+	// with the POOL SLOT NUMBER holding each of the k routed experts (M-11, audit-metal-2026-09-12.md
+	// — was idxZeros, always 0, back when each slot was its own single-expert Buffer object; now the
+	// pool's storage is one contiguous per-field buffer, so which physical row holds a given expert
+	// varies token to token and must be told to the kernel). The reused gemv_w4a8_moe(_wacc) kernels
+	// read row slotIdx[slot] of the pool's contiguous buffer while still indexing rWgt by the
+	// selection slot uSlot[j] — makes paged dispatch byte-identical to the stacked path (a slot's
+	// bytes == the stacked buffer's rows for that expert). Fixed Buffer identity for the resident's
+	// whole lifetime — only its CONTENTS change — which is what lets phase 2's encode be
+	// value-independent (the actual point of this change: see expertpool.go's own doc comment).
+	paged   bool
+	slots   int
+	slotIdx Buffer
 
 	// giwFile is the re-opened .giw for pread-staging (GOINFER_MOE_PREAD=1); nil ⇒ the mmap byte-copy
 	// path. Shared read-only fd across every layer's pool; closed by resident.Close.
@@ -204,8 +211,9 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
 	// per token (the only way the 26B's 11.96 GB expert set runs on a 16 GB Mac). N must be >=
 	// topK (a token's own top-k must fit). N==0 / unset ⇒ all experts resident (the fitting
-	// path + the paged≡non-paged parity reference). idxZeros lets the paged expert GEMVs read row 0 of
-	// a single-expert slot buffer while rWgt is still indexed by the selection slot (byte-identical).
+	// path + the paged≡non-paged parity reference). slotIdx (M-11) is host-written each token with
+	// the pool slot holding each routed expert, so the paged expert GEMVs read the RIGHT row of the
+	// pool's contiguous buffer while rWgt is still indexed by the selection slot (byte-identical).
 	if s := metalMoESlotsRequest(m); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < b.TopK {
@@ -213,7 +221,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		}
 		if n < b.NE { // n>=nE would hold every expert — no paging, just build the stacked path
 			g.paged, g.slots = true, n
-			g.idxZeros = NewBufferUint32s(d, make([]uint32, b.TopK))
+			g.slotIdx = NewBufferUint32s(d, make([]uint32, b.TopK))
 		}
 	}
 	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy
@@ -343,16 +351,22 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 			}
 			if resolved {
 				fd := int(g.giwFile.Fd())
-				ml.pool.stagePread = func(ei int, s expertSlot) {
+				pool := ml.pool
+				pool.stagePread = func(ei int, s expertSlot) {
 					// M-12 (audit-metal-2026-09-12.md), second half: gate|up and down are separate
-					// buffers (s.guW, s.dW) — disjoint destinations, safe to pread concurrently (same
-					// argument as moe.go's 3-way twin). Errors panic from THIS goroutine, not the
-					// spawned ones, so BuildResident's recover() still sees them.
+					// buffers (pool.guW, pool.dW) — disjoint destinations, safe to pread concurrently
+					// (same argument as moe.go's 3-way twin). Errors panic from THIS goroutine, not
+					// the spawned ones, so BuildResident's recover() still sees them.
+					//
+					// M-11: preadIntoPoolSlot, not preadIntoU32Buf(fd, s.guW, ...) — s.guW is a
+					// Buffer.At()-offset VIEW, and preadIntoU32Buf's U32s() call ignores that offset
+					// (expertSlot's doc comment), which would silently pread every expert into slot
+					// 0. preadIntoPoolSlot addresses the pool's base buffer by slot NUMBER instead.
 					var wg sync.WaitGroup
 					var errGU, errD error
 					wg.Add(2)
-					go func() { defer wg.Done(); errGU = preadIntoU32Buf(fd, s.guW, guOff[ei]) }()
-					go func() { defer wg.Done(); errD = preadIntoU32Buf(fd, s.dW, dOff[ei]) }()
+					go func() { defer wg.Done(); errGU = preadIntoPoolSlot(fd, pool.guW, s.slot, pool.nGuW, guOff[ei]) }()
+					go func() { defer wg.Done(); errD = preadIntoPoolSlot(fd, pool.dW, s.slot, pool.nDW, dOff[ei]) }()
 					wg.Wait()
 					if errGU != nil {
 						panic(fmt.Sprintf("metal gemma4 MoE pread gate|up expert %d: %v", ei, errGU))
@@ -361,8 +375,9 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 						panic(fmt.Sprintf("metal gemma4 MoE pread down expert %d: %v", ei, errD))
 					}
 					// N-20: scales come from the build-time cache, not a fresh f32→f16 reconversion.
-					copy(s.guS.U16s(), gScaleCache[ei])
-					copy(s.dS.U16s(), dScaleCache[ei])
+					// copyU16sToBuf, not copy(s.guS.U16s(), ...) — same offset-view caveat as above.
+					copyU16sToBuf(s.guS, gScaleCache[ei])
+					copyU16sToBuf(s.dS, dScaleCache[ei])
 				}
 			}
 		}
@@ -451,19 +466,20 @@ func (r *resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
 	}
 }
 
-// encodeG4Phase2Paged runs the k selected experts out of their staged SLOT buffers (one expert per
-// slot), accumulating into g4x2 — the paged twin of encodeG4Phase2NonPaged. idxZeros makes each GEMV
-// read row 0 of its single-expert slot (idxZeros[j]==0) while rWgt is still indexed by the selection
-// slot uSlot[j], so the reused gemv_w4a8_moe(_wacc) kernels compute byte-identically to the stacked
-// path (slot bytes == the stacked buffer's rows for that expert).
-func (r *resident) encodeG4Phase2Paged(e *Encoder, slots []expertSlot) {
+// encodeG4Phase2Paged runs the k selected experts out of the LAYER'S POOL — one contiguous buffer
+// per field (M-11) — accumulating into g4x2, the paged twin of encodeG4Phase2NonPaged. Dispatches
+// always bind pool.guW/guS/dW/dS (fixed identity for the layer's whole lifetime); slotIdx (already
+// written into g.slotIdx by the caller, one host write before this encode) tells the reused
+// gemv_w4a8_moe(_wacc) kernels which pool ROW holds each selected expert at kernel-execution time,
+// while rWgt stays indexed by the selection slot uSlot[j] — computes byte-identically to the stacked
+// path (a pool row's bytes == the stacked buffer's rows for that expert).
+func (r *resident) encodeG4Phase2Paged(e *Encoder, pool *expertPool) {
 	g := r.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
 	for j := 0; j < g.topK; j++ {
-		s := slots[j]
-		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, s.guW, s.guS, r.mq, r.mSc, r.gu, r.uH, g.idxZeros, g.uSlot[j], g.uMoeGU)
+		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, g.slotIdx, g.uSlot[j], g.uMoeGU)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
-		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, s.dW, s.dS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.idxZeros, g.rWgt, g.uSlot[j], r.uH)
+		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, pool.dW, pool.dS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.slotIdx, g.rWgt, g.uSlot[j], r.uH)
 	}
 }
 
@@ -554,12 +570,18 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 			// comment for why this is safe.
 			slots := L.g4moe.pool.ensureResidentBatch(ids)
 			p.stageWallNanos += time.Since(s0).Nanoseconds() // cross-check vs pool.stageNanos (same body)
+			// M-11: tell the GPU which pool row holds each routed expert — a small host→device write,
+			// not a re-encode. slotIdx replaces the old idxZeros (see gemma4MoeResident's doc comment).
+			gIdx := g.slotIdx.U32s()
+			for j, s := range slots {
+				gIdx[j] = uint32(s.slot)
+			}
 			w2 := time.Now()
 			e2 := begin()                        // phase 2: experts from slots + join
 			if r.residency != (ResidencySet{}) { // M-14: per-encoder attach, phase 2 only
 				e2.UseResidencySet(r.residency)
 			}
-			r.encodeG4Phase2Paged(e2, slots)
+			r.encodeG4Phase2Paged(e2, L.g4moe.pool)
 			r.encodeG4Join(e2, L)
 			enc2 := time.Now()
 			end(e2, &p.p2CommitNanos, &p.p2WaitNanos)

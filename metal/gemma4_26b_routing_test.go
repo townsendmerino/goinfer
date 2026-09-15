@@ -28,14 +28,14 @@ func (r *resident) forwardPagedCaptureIdxForTest(pos int) [][]int {
 			e.End()
 			raw := g.rIdx.U32s()
 			cur := make([]int, g.topK)
-			slots := make([]expertSlot, g.topK)
+			gIdx := g.slotIdx.U32s()
 			for j := 0; j < g.topK; j++ {
 				cur[j] = int(raw[j])
-				slots[j] = L.g4moe.pool.ensureResident(int(raw[j]))
+				gIdx[j] = uint32(L.g4moe.pool.ensureResident(int(raw[j])).slot)
 			}
 			idxs = append(idxs, cur)
 			e2 := r.q.Begin()
-			r.encodeG4Phase2Paged(e2, slots)
+			r.encodeG4Phase2Paged(e2, L.g4moe.pool)
 			r.encodeG4Join(e2, L)
 			e2.End()
 		} else {

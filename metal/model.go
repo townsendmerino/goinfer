@@ -1506,15 +1506,14 @@ func (r *resident) stopExec() {
 func (r *resident) slotBuffers() []Buffer {
 	var out []Buffer
 	for l := range r.layers {
+		// M-11: the pool's storage is now ONE contiguous buffer per field (not N per-slot objects),
+		// so pinning it is one 4-buffer add per pool regardless of N — fewer distinct buffers for
+		// the residency set to track, a small side benefit of the same change.
 		if p := r.layers[l].g4moe; p != nil && p.pool != nil {
-			for s := range p.pool.slots {
-				out = append(out, p.pool.slots[s].guW, p.pool.slots[s].guS, p.pool.slots[s].dW, p.pool.slots[s].dS)
-			}
+			out = append(out, p.pool.guW, p.pool.guS, p.pool.dW, p.pool.dS)
 		}
 		if p := r.layers[l].moe; p != nil && p.pool != nil {
-			for s := range p.pool.slots {
-				out = append(out, p.pool.slots[s].guW, p.pool.slots[s].guS, p.pool.slots[s].dW, p.pool.slots[s].dS)
-			}
+			out = append(out, p.pool.guW, p.pool.guS, p.pool.dW, p.pool.dS)
 		}
 	}
 	return out
