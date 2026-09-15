@@ -731,8 +731,10 @@ checks that the list is laid out below its heading at full width (found by W15's
   dogfood skiff: a client-side WASM index over local transcripts, running inside the engine's own
   UI, is that product's pitch demonstrated rather than described. M–L.
 - **W22 — Admin panel: running generations, cancel, halt.** K1/K2/K5 shipped and are CLI/socket
-  only, so a person watching a slow generation in the browser can neither see nor stop it. Same
-  gate question as W5 — answer it once, for both. M.
+  only, so a person watching a slow generation in the browser can neither see nor stop it. The gate
+  rule is W5's (a `-web` route acts only on what the page created, and admin routes are never
+  widened). It already settles W28 and the own-jobs half of W31. What it leaves open is exactly this
+  item and W31's other-clients half: acting on work the page did not create. M.
 - **W23 — Structured-output workbench.** Paste a JSON schema, watch a grammar-constrained
   generation fill it, see the token cost. `response_format` is live. The README's "a Go struct the
   model cannot violate" currently has nowhere a visitor can see it work. M.
@@ -811,12 +813,16 @@ conversation (W3/W9 already persist conversations), and on load resumes any job 
 **Effort: M. Unblocked.** This is the prerequisite for W29 and W31.
 
 ### W28 — Queue position while waiting
-A busy server is currently an indistinguishable spinner, and a full queue is a raw 429 rendered as
-the first 400 characters of a body (W13). J1's FIFO knows both the depth and this waiter's place in
-it. Show "2nd in queue" instead of a spinner, and give W13's 429 something to say.
-**Decision needed:** J9's `/admin/queue` is socket-only by design, so the page needs either a
-position field on its own request or a narrow `/web/queue` — the same page-initiated-admin question
-W5 answered for loading, and it should be answered once. **Effort: S–M after that call.**
+A busy server is currently an indistinguishable spinner. A full queue is no longer a raw body:
+since W13 (2026-09-14) the 429 reads *"The model is busy: its request queue is full. Try again in
+a moment (the server suggests 1 s)"*, with Retry, from a real post-J1 capture. What it still cannot
+say is *how busy*. J1's FIFO knows both the depth and this waiter's place in it. Show "2nd in queue"
+instead of a spinner, and give that 429 a number.
+**Gate: answered by W5's rule** (§2 W5, "What this settles for W22"): a `-web` route may act only on
+what the page's own flows created, and the admin routes are never widened. The page's *own* request's
+position is that request's own state, so W28 is **a position field on the page's own request** (or on
+its W27 job). **Not** a `/web/queue` listing the whole queue, since that would expose other clients'
+requests, and J9's `/admin/queue` stays socket-only. **Effort: S–M.**
 
 ### W29 — Send in the background and come back
 Submit through `/v1/jobs` rather than the streaming route, leave the page, and the answer is on the
@@ -832,9 +838,14 @@ rate, ETA, a terminal line that says what is on disk — transplants directly.
 ### W31 — Cancel by job id, and job history
 J3's `DELETE /v1/jobs/{id}` cancels an *addressed* job, which survives a reload; today's Stop button
 only aborts the local stream. And with `-job-dir` set, J2's journal is a real history that W9's
-conversation list can show, including generations this browser never saw. Overlaps W22's admin
-panel — answer the page-initiated-admin gate once, for W5, W22, W28 and W31 together.
-**Effort: M.**
+conversation list can show, including generations this browser never saw.
+**Gate, by W5's rule, splits this item in two:**
+- **Cancel jobs this page submitted, and show their history: allowed.** That is the page acting on what
+  its own flows created (the job ids it holds with its conversations, W27). Build it.
+- **Show or cancel generations this browser never saw: not decided.** Other clients' jobs have no
+  "created by this page" limit, which is exactly W22's open question (halt and cancel for everyone). It
+  stays open until W22's design call, and the two are answered together.
+**Effort: M** (the allowed half).
 
 ### What J5–J9 would add later
 J5 (the resumable `goinfer-chat -batch` runner) is a CLI, not a UI item. J6 (prefix-aware
