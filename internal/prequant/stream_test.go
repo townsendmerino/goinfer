@@ -225,6 +225,88 @@ func TestStreamTranscodeMatchesResident(t *testing.T) {
 	}
 }
 
+// TestTranscode_embedInt4Threaded gates M-31: Transcode's GGUF branch hardcoded `false` for
+// StreamTranscodeGGUF's embedInt4 parameter instead of threading the one it was given, so
+// `cmd/prequant -embed-int4` silently produced an int8-pinned embed/head table for every GGUF
+// input — identical to omitting the flag, with no error. The safetensors-directory branch
+// (transcodeDir) already threaded it correctly; only the GGUF branch was broken.
+func TestTranscode_embedInt4Threaded(t *testing.T) {
+	gguf := giwFixture(t)
+	var pinnedBuf, relaxedBuf bytes.Buffer
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &pinnedBuf, "int4", false, decoder.GIWTargetNone, "glm-tiny.gguf"); err != nil {
+		t.Fatalf("StreamTranscodeGGUF (embedInt4=false): %v", err)
+	}
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &relaxedBuf, "int4", true, decoder.GIWTargetNone, "glm-tiny.gguf"); err != nil {
+		t.Fatalf("StreamTranscodeGGUF (embedInt4=true): %v", err)
+	}
+	pinnedW, err := decoder.LoadSerializedWeights(pinnedBuf.Bytes())
+	if err != nil {
+		t.Fatalf("LoadSerializedWeights (pinned): %v", err)
+	}
+	relaxedW, err := decoder.LoadSerializedWeights(relaxedBuf.Bytes())
+	if err != nil {
+		t.Fatalf("LoadSerializedWeights (relaxed): %v", err)
+	}
+	if _, _, _, ok := pinnedW.Embed.Int8(); !ok {
+		t.Errorf("embedInt4=false: embed should be int8-pinned, kind=%s", pinnedW.Embed.Kind())
+	}
+	if _, _, _, ok := relaxedW.Embed.Int4(); !ok {
+		t.Errorf("embedInt4=true: embed should be int4, kind=%s", relaxedW.Embed.Kind())
+	}
+
+}
+
+// TestTranscode_embedInt4ThreadedThroughRealGGUF proves M-31 through the actual regression
+// surface — Transcode/cmd/prequant's own call path, not StreamTranscodeGGUF directly — so a
+// future re-hardcoding at the prequant.go call site fails this test even if
+// StreamTranscodeGGUF itself stays correct. Needs a real, tokenizer-bearing GGUF: glm-tiny.gguf
+// (used above) carries no embedded tokenizer, and Transcode's first phase requires one.
+func TestTranscode_embedInt4ThreadedThroughRealGGUF(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real GGUF)")
+	}
+	var gguf string
+	for _, cand := range []string{
+		filepath.Join("..", "..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		filepath.Join(os.Getenv("HOME"), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+	} {
+		if fi, err := os.Stat(cand); err == nil && fi.Size() > 1<<20 {
+			gguf = cand
+			break
+		}
+	}
+	if gguf == "" {
+		t.Skip("no small tokenizer-bearing GGUF found (testdata/ or ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf)")
+	}
+
+	dir := t.TempDir()
+	pinnedOut := filepath.Join(dir, "pinned.int4.giw")
+	relaxedOut := filepath.Join(dir, "relaxed.int4.giw")
+	if err := Transcode(context.Background(), gguf, pinnedOut, "int4", false, decoder.GIWTargetNone); err != nil {
+		t.Fatalf("Transcode (embedInt4=false): %v", err)
+	}
+	if err := Transcode(context.Background(), gguf, relaxedOut, "int4", true, decoder.GIWTargetNone); err != nil {
+		t.Fatalf("Transcode (embedInt4=true): %v", err)
+	}
+	pinnedM, err := decoder.Load(pinnedOut, decoder.Options{})
+	if err != nil {
+		t.Fatalf("Load pinned bundle: %v", err)
+	}
+	defer pinnedM.Close()
+	relaxedM, err := decoder.Load(relaxedOut, decoder.Options{})
+	if err != nil {
+		t.Fatalf("Load relaxed bundle: %v", err)
+	}
+	defer relaxedM.Close()
+	if _, _, _, ok := pinnedM.Weights().Embed.Int8(); !ok {
+		t.Errorf("Transcode embedInt4=false: embed should be int8-pinned, kind=%s", pinnedM.Weights().Embed.Kind())
+	}
+	if _, _, _, ok := relaxedM.Weights().Embed.Int4(); !ok {
+		t.Errorf("Transcode embedInt4=true: embed should be int4, kind=%s — cmd/prequant -embed-int4 "+
+			"is being silently ignored for this GGUF input", relaxedM.Weights().Embed.Kind())
+	}
+}
+
 // M-12: the sidecar was written IN PLACE, and freshness was mtime alone.
 //
 // giw.WriteStream patches the body-length placeholder at the END, so a bundle whose write was

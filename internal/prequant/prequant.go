@@ -98,7 +98,7 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 		return fmt.Errorf("create %s: %w", tmp, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, false, target, filepath.Base(in))
+		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, embedInt4, target, filepath.Base(in))
 	})
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
