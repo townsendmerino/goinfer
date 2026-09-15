@@ -247,7 +247,7 @@ func TestWebUI_noHTMLStringSinks(t *testing.T) {
 		t.Fatalf("checked only %d file(s) — this guard would be watching almost nothing", checked)
 	}
 	app, _ := webUIFS.ReadFile("webui/ui/app.js")
-	if !strings.Contains(string(app), "Markdown.render(out, acc)") {
+	if !strings.Contains(string(app), "renderReply(out, acc, live, entry)") || !strings.Contains(string(app), "Markdown.render(out, text)") {
 		t.Error("ui/app.js no longer renders model output through Markdown.render — W1's renderer is not wired into the chat")
 	}
 }

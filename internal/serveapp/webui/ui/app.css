@@ -1561,3 +1561,9 @@ details.system .note{margin:6px 0 0}
 
 /* W5: "Load it now" at the end of a finished pull */
 .load-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px}
+
+/* W6: a reasoning model's thinking, folded above its answer */
+details.think{margin:0 0 .7em;border-left:3px solid color-mix(in srgb,var(--gi-muted) 45%,transparent);padding:.1em 0 .1em .9em}
+details.think summary{cursor:pointer;font-size:13px;color:var(--gi-muted);width:max-content}
+details.think.live summary{color:var(--gi-accent)}
+details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}

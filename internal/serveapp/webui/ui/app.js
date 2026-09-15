@@ -75,10 +75,116 @@ const transcript = [];
 let ac = null;
 let generating = null;   // the in-progress assistant entry
 const apiMessages = () => {
-  const msgs = transcript.filter(m => m !== generating).map(m => ({role: m.role, content: m.content}));
+  // A past reply goes back WITHOUT its thinking (W6) — what Qwen3's own template does with history, and
+  // it keeps a long reasoning trace from eating the context window on every later turn.
+  const msgs = transcript.filter(m => m !== generating)
+    .map(m => ({role: m.role, content: m.role === "assistant" ? answerOf(m.content) : m.content}));
   const sys = systemText();
   return sys ? [{role: "system", content: sys}, ...msgs] : msgs;   // W4
 };
+
+// --- thinking (W6) --------------------------------------------------------------
+// Reasoning models put their thinking in the SAME content stream as the answer — the server does not
+// split it — so the page folds it. Two shapes are recognised, both measured from real serve output:
+//
+//   Qwen3 and kin   "<think>\n…</think>\n\nanswer". The opening tag counts only as the very first thing
+//                   in the reply, so an answer that merely mentions the tag is not folded. A "</think>" with
+//                   NO opening tag also folds everything before it: some templates open the thinking in
+//                   the prompt, so the model's output starts inside it.
+//   gpt-oss         "<|channel|>analysis<|message|>…<|end|><|start|>assistant<|channel|>final<|message|>answer".
+//
+// splitThinking returns null for a reply with no thinking, else {thinking, answer, open}, where open means
+// the model is still thinking. live says the reply is still streaming: only then is a half-arrived tag
+// held back instead of shown, since after the stream "<thi" is just what the model said.
+const THINK_OPEN = "<think>", THINK_CLOSE = "</think>";
+const H_ANALYSIS = "<|channel|>analysis<|message|>", H_FINAL = "<|channel|>final<|message|>";
+const H_END = "<|end|>", H_START = "<|start|>assistant";
+const H_TAIL = /(<\|return\|>|<\|end\|>)\s*$/;
+
+// heldBack is how many trailing characters of s could be the start of tag — hidden while live, so a
+// closing tag split across two chunks never flashes on screen.
+function heldBack(s, tag) {
+  for (let n = Math.min(tag.length - 1, s.length); n > 0; n--) if (tag.startsWith(s.slice(-n))) return n;
+  return 0;
+}
+const trimLive = (s, tag, live) => live ? s.slice(0, s.length - heldBack(s, tag)) : s;
+
+function splitThinking(text, live) {
+  const t = text.trimStart();
+  if (live && t && t.length < H_ANALYSIS.length && (THINK_OPEN.startsWith(t) || H_ANALYSIS.startsWith(t) || H_FINAL.startsWith(t))) {
+    return {thinking: "", answer: "", open: true, pending: true};   // could still be a tag, or not: show nothing yet
+  }
+  if (t.startsWith(THINK_OPEN)) {
+    const body = t.slice(THINK_OPEN.length), i = body.indexOf(THINK_CLOSE);
+    if (i < 0) return {thinking: trimLive(body, THINK_CLOSE, live), answer: "", open: live};
+    return {thinking: body.slice(0, i), answer: body.slice(i + THINK_CLOSE.length).trimStart(), open: false};
+  }
+  if (t.startsWith(H_ANALYSIS)) {
+    const body = t.slice(H_ANALYSIS.length), i = body.indexOf(H_END);
+    if (i < 0) return {thinking: trimLive(body, H_END, live), answer: "", open: live};
+    const rest = body.slice(i + H_END.length), f = rest.indexOf(H_FINAL);
+    // between the two channels the model is still, as far as the reader can tell, thinking
+    if (f < 0) return {thinking: body.slice(0, i), answer: "", open: live && H_START.startsWith(rest.trim().slice(0, H_START.length)) };
+    return {thinking: body.slice(0, i), answer: trimLive(rest.slice(f + H_FINAL.length).replace(H_TAIL, ""), H_END, live), open: false};
+  }
+  if (t.startsWith(H_FINAL)) return {thinking: "", answer: trimLive(t.slice(H_FINAL.length).replace(H_TAIL, ""), H_END, live), open: false};
+  const c = text.indexOf(THINK_CLOSE);
+  if (c >= 0) return {thinking: text.slice(0, c), answer: text.slice(c + THINK_CLOSE.length).trimStart(), open: false};
+  return null;
+}
+
+// answerOf is a reply without its thinking: what later turns send back. copyOf is what Copy copies —
+// the answer, or the whole reply when there is no answer to copy (stopped mid-thought).
+function answerOf(text) {
+  const p = splitThinking(text, false);
+  return p ? p.answer : text;
+}
+const copyOf = text => answerOf(text) || text;
+
+// renderReply draws a model reply into out: straight through Markdown.render when there is no
+// thinking, otherwise a folded <details> (collapsed by default) above the answer. The <details> is
+// built once and then UPDATED, so a reader who opens it mid-stream keeps it open while tokens arrive.
+// Both parts go through Markdown.render — thinking is model output too, and gets no more trust.
+// e is the transcript entry: its thought (seconds) labels the fold, and a finished reply with no state
+// that thought but never answered says so rather than showing an empty bubble.
+function renderReply(out, text, live, e) {
+  const p = splitThinking(text, live);
+  let box = out.firstElementChild;
+  const folded = box && box.classList.contains("think");
+  if (!p) {
+    if (folded) out.replaceChildren();
+    Markdown.render(out, text);
+    return;
+  }
+  if (p.pending) {
+    out.replaceChildren();
+    return;
+  }
+  if (!folded) {
+    box = document.createElement("details");
+    box.className = "think";
+    const sum = document.createElement("summary");
+    const body = document.createElement("div");
+    body.className = "think-body md";
+    box.appendChild(sum); box.appendChild(body);
+    const ans = document.createElement("div");
+    ans.className = "think-answer";
+    out.replaceChildren(box, ans);
+  }
+  const [sum, body] = box.children, ans = out.children[1];
+  sum.textContent = p.open ? "Thinking…" : (e && Number.isFinite(e.thought) ? "Thought for " + e.thought.toFixed(e.thought < 10 ? 1 : 0) + "s" : "Thinking");
+  box.classList.toggle("live", p.open);
+  Markdown.render(body, p.thinking);
+  if (p.answer || live || !p.thinking || (e && e.state)) {
+    Markdown.render(ans, p.answer);
+  } else {
+    ans.replaceChildren();
+    const n = document.createElement("p");
+    n.className = "note";
+    n.textContent = "No answer after the thinking — the model stopped before it answered.";
+    ans.appendChild(n);
+  }
+}
 
 // --- copy (W2) ----------------------------------------------------------------
 // The raw text each message was rendered from. A message's Copy button copies THIS — the Markdown
@@ -188,6 +294,7 @@ function loadStored() {
     if (typeof m.meta === "string") e.meta = m.meta;
     if (m.state === "stopped" || m.state === "interrupted") e.state = m.state;
     if (m.state === "generating") e.state = "interrupted";   // it was streaming when the page went away
+    if (typeof m.thought === "number" && Number.isFinite(m.thought) && m.thought >= 0) e.thought = m.thought;   // W6
     out.push(e);
   }
   return out;
@@ -218,9 +325,9 @@ function renderEntry(e) {
   }
   const out = bubble(e.model || "assistant", "bot amb-surface-convex amb-elevation-1");
   out.classList.add("md");
-  Markdown.render(out, e.content);
+  renderReply(out, e.content, false, e);
   addMeta(out, metaText(e));
-  if (e.content) addActions(out, e.content);
+  if (e.content) addActions(out, copyOf(e.content));
 }
 
 function showTranscript(list) {
@@ -289,7 +396,16 @@ async function send() {
   // stream would otherwise re-parse the whole answer once per token. The final render after the
   // stream (or after Stop) guarantees the last chunk is shown even if no frame ran after it.
   let paintQueued = false;
-  const paint = () => { paintQueued = false; Markdown.render(out, acc); out.scrollIntoView({block: "end"}); };
+  let live = true, thinkFrom = 0;
+  const paint = () => {
+    paintQueued = false;
+    // W6: time the thinking from its first token to the first frame that sees it closed
+    const p = splitThinking(acc, live);
+    if (p && p.thinking && !thinkFrom) thinkFrom = performance.now();
+    if (p && thinkFrom && !p.open && entry.thought === undefined) entry.thought = (performance.now() - thinkFrom) / 1000;
+    renderReply(out, acc, live, entry);
+    out.scrollIntoView({block: "end"});
+  };
   try {
     const r = await fetch("/v1/chat/completions", {
       method: "POST", headers: headers(), signal: ac.signal,
@@ -313,6 +429,7 @@ async function send() {
         if (now - lastSave > 1000) { lastSave = now; save(); }
       }
     }
+    live = false;
     paint();
     const s = (performance.now() - started) / 1000;
     // Per-response stats live WITH the response, not in a status line that
@@ -321,18 +438,20 @@ async function send() {
       ? got + " tok · " + (got / s).toFixed(1) + " tok/s · " + s.toFixed(1) + "s"
       : "no output";
     delete entry.state;
+    renderReply(out, acc, false, entry);   // the entry is final now: "no answer" can be judged
     addMeta(out, entry.meta);
-    addActions(out, acc);
+    addActions(out, copyOf(acc));
     $("chat-status").textContent = "";
   } catch (e) {
     if (e.name === "AbortError") {
-      paint();
+      live = false;
       entry.content = acc;
       entry.state = "stopped";
+      paint();
       if (got) entry.meta = got + " tok";
       addMeta(out, metaText(entry));
       $("chat-status").textContent = "stopped";
-      if (acc) addActions(out, acc);   // a stopped answer is still worth copying
+      if (acc) addActions(out, copyOf(acc));   // a stopped answer is still worth copying
     } else {
       // A failed request is not a turn: drop it, as the old history never recorded one either.
       transcript.splice(transcript.indexOf(entry), 1);

@@ -23,8 +23,13 @@
 //        shows the heartbeat, then selects the loaded model (header stats following) so the next chat
 //        goes to it. Errors, a load already running, and a stream cut off mid-load are shown and leave
 //        the button usable; "already loaded" selects instead of failing; hostile paths and errors inert.
+//   W6 — thinking folded above the answer, for the Qwen3 <think> shape (and its template-opened variant)
+//        and gpt-oss's channels: no raw tag ever on screen while streaming, a reader's open fold kept
+//        open, Copy and the next request carry only the answer, a thought-but-never-answered reply says
+//        so, a mention of the tag is not folded, hostile content inert, and the fold rebuilt after reload.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
 import { openPage, report, finishOrExit } from "./webui-gate/cdp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -433,8 +438,156 @@ const phase8 = phase(String.raw`
   check("W5 hostile pulled path stays inert", st.querySelector("code")?.textContent === pulledPath && document.querySelectorAll("img").length === 0 && window.__pwned === 0, st.innerHTML);
 `);
 
+// ---- phase 9: W6 — thinking folded above the answer ---------------------------------------------------
+// The reply shapes are the ones real serve output has (Qwen3-1.7B and gpt-oss-20b, captured 2026-09-14).
+const phase9 = phase(String.raw`
+  const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  let clip = null;
+  Object.defineProperty(navigator, "clipboard", { value: { writeText: async s => { clip = s; } }, configurable: true });
+  // On-screen text of the reply being streamed that shows a raw tag fragment, sampled on every DOM change.
+  // Only the LAST reply: an earlier one may legitimately show "<think>" (the mention check below).
+  let flashed = [];
+  const watch = new MutationObserver(() => {
+    const txt = lastBot()?.children[1]?.textContent || "";
+    if (/<\/?think>|<\|/.test(txt) || /<\/?th?i?n?k?$/.test(txt.trimEnd())) flashed.push(txt.slice(-40));
+  });
+  watch.observe($("log"), { childList: true, subtree: true, characterData: true });
+  const turn = async (text, prompt) => { streamAnswer(text); $("prompt").value = prompt; await send(); await wait(150); return lastBot(); };
+
+  // manual stream: the gate decides what arrives and when
+  let push = null, end = null;
+  const manualStream = () => { window.fetch = async (url, opts) => { window.__lastBody = JSON.parse(opts.body); return new Response(new ReadableStream({ start(c) {
+    push = t => c.enqueue(enc.encode("data: " + JSON.stringify({ choices: [{ delta: { content: t } }] }) + "\n\n"));
+    end = () => { c.enqueue(enc.encode("data: [DONE]\n\n")); c.close(); };
+    opts?.signal?.addEventListener("abort", () => { try { c.error(new DOMException("aborted", "AbortError")); } catch {} });
+  } }), { status: 200, headers: { "Content-Type": "text/event-stream" } }); }; };
+  const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  // ---- Qwen3 shape, streamed in 3-char chunks (so both tags arrive split) ----
+  const qwen = "<think>\nLet me add 2 and 2.\n</think>\n\nThe answer is **4**.";
+  let bot = await turn(qwen, "what is 2+2");
+  let box = bot.querySelector("details.think");
+  check("W6 thinking is folded into a <details>", !!box, bot.children[1].innerHTML.slice(0, 120));
+  check("W6 fold is collapsed by default", box && box.open === false, box?.open);
+  check("W6 finished fold is labelled with its duration", /^Thought for \d+(\.\d)?s$/.test(box?.querySelector("summary")?.textContent || ""), box?.querySelector("summary")?.textContent);
+  check("W6 thinking text is inside the fold", box?.querySelector(".think-body")?.textContent.trim() === "Let me add 2 and 2.", JSON.stringify(box?.querySelector(".think-body")?.textContent));
+  const ans = bot.querySelector(".think-answer");
+  check("W6 the answer renders as Markdown below the fold", ans?.querySelector("strong")?.textContent === "4" && ans.textContent.trim() === "The answer is 4.", ans?.textContent);
+  check("W6 no raw tag ever reached the screen while streaming", flashed.length === 0, JSON.stringify(flashed.slice(0, 3)));
+  bot.querySelector(".msg-copy").click(); await wait(50);
+  check("W6 Copy copies the answer without the thinking", clip === "The answer is **4**.", JSON.stringify(clip));
+  const saved = stored().messages.at(-1);
+  check("W6 the saved reply keeps the thinking and its duration", saved.content === qwen && typeof saved.thought === "number", JSON.stringify(saved).slice(0, 120));
+  await turn("ok", "and 3+3?");
+  const hist = window.__lastBody.messages.filter(m => m.role === "assistant");
+  check("W6 the next request sends the earlier reply WITHOUT its thinking", hist.at(-1)?.content === "The answer is **4**." && !JSON.stringify(window.__lastBody).includes("think>"), JSON.stringify(hist.at(-1)));
+
+  // ---- streaming behaviour, chunk by chunk ----
+  manualStream();
+  $("prompt").value = "think slowly";
+  flashed = [];
+  const running = send();
+  await until(() => push);
+  push("<th"); await frame();
+  bot = lastBot();
+  check("W6 a half-arrived opening tag shows nothing", bot.children[1].textContent === "", JSON.stringify(bot.children[1].textContent));
+  push("ink>\nfirst step </thi"); await frame();
+  box = bot.querySelector("details.think");
+  check("W6 while thinking: Thinking… and marked live", box?.querySelector("summary")?.textContent === "Thinking…" && box.classList.contains("live"), box?.querySelector("summary")?.textContent);
+  check("W6 a half-arrived closing tag is held back", box?.querySelector(".think-body")?.textContent.trim() === "first step", JSON.stringify(box?.querySelector(".think-body")?.textContent));
+  box.open = true;
+  push("nk-not-a-tag second step"); await frame();
+  check("W6 held-back text that turns out not to be a tag is shown", /first step <\/think-not-a-tag second step/.test(box.querySelector(".think-body").textContent), box.querySelector(".think-body").textContent);
+  check("W6 the fold is updated in place, so a reader's open survives new tokens", bot.querySelector("details.think") === box && box.open === true, box.open);
+  push("</think>\n\nDone."); await frame();
+  check("W6 closing the thinking relabels the fold and shows the answer", /^Thought for/.test(box.querySelector("summary").textContent) && !box.classList.contains("live") && bot.querySelector(".think-answer").textContent.trim() === "Done.", box.querySelector("summary").textContent + " / " + bot.querySelector(".think-answer")?.textContent);
+  end(); await running; await wait(100);
+  check("W6 the reader's open fold stays open after the reply finishes", bot.querySelector("details.think") === box && box.open === true, box.open);
+  check("W6 no raw tag reached the screen (chunked)", flashed.length === 0, JSON.stringify(flashed.slice(0, 3)));
+
+  // ---- other shapes ----
+  bot = await turn("Reasoning here.\n</think>\n\nAnswer.", "template opened the thinking");
+  check("W6 a closing tag with no opening folds what came before it", bot.querySelector(".think-body")?.textContent.trim() === "Reasoning here." && bot.querySelector(".think-answer")?.textContent.trim() === "Answer.", bot.children[1].textContent);
+
+  const harmony = "<|channel|>analysis<|message|>Compute 17*23.<|end|><|start|>assistant<|channel|>final<|message|>It is **391**.<|return|>";
+  bot = await turn(harmony, "gpt-oss");
+  check("W6 gpt-oss: analysis channel folded, final channel is the answer", bot.querySelector(".think-body")?.textContent.trim() === "Compute 17*23." && bot.querySelector(".think-answer strong")?.textContent === "391", bot.children[1].textContent);
+  check("W6 gpt-oss: no channel markers on screen", !/<\|/.test(bot.textContent), bot.textContent.slice(0, 120));
+  bot.querySelector(".msg-copy").click(); await wait(50);
+  check("W6 gpt-oss: Copy copies the final answer", clip === "It is **391**.", JSON.stringify(clip));
+
+  // streamed by hand, with every frame settled before the stream ends: no animation-frame paint is left
+  // pending to redraw the reply, so the note can only come from the page's own final render
+  push = null;   // so the wait below is for THIS stream, not the finished one above
+  manualStream();
+  $("prompt").value = "gpt-oss, analysis only";
+  const r1 = send();
+  await until(() => push);
+  push("<|channel|>analysis<|message|>Provide answer."); await frame(); await frame();
+  end(); await r1; await wait(100);
+  bot = lastBot();
+  check("W6 a finished reply that thought but never answered says so", /No answer after the thinking/.test(bot.querySelector(".think-answer")?.textContent || ""), bot.children[1].textContent);
+
+  bot = await turn("Qwen wraps reasoning in <think> tags.", "mention the tag");
+  check("W6 an answer that only MENTIONS the tag is not folded", !bot.querySelector("details.think") && bot.children[1].textContent.includes("<think> tags"), bot.children[1].innerHTML.slice(0, 120));
+
+  bot = await turn("<think><img src=x onerror=\"window.__pwned=1\"></think>**ok** <img src=x onerror=\"window.__pwned=1\">", "hostile");
+  await wait(200);
+  check("W6 hostile markup in thinking and answer stays inert", document.querySelectorAll("#log img").length === 0 && window.__pwned === 0 && bot.querySelector(".think-answer strong")?.textContent === "ok", document.querySelectorAll("#log img").length + " img, pwned " + window.__pwned);
+
+  // ---- stopped mid-thought ----
+  streamAnswer("<think>\na long line of reasoning that is still going ", { hang: true });
+  $("prompt").value = "stop me";
+  const r2 = send(); await wait(300); $("stop").click(); await r2; await wait(100);
+  bot = lastBot();
+  check("W6 stopped mid-thought: stopped, and no 'no answer' note", /^stopped/.test(bot.querySelector(".meta")?.textContent || "") && !/No answer/.test(bot.textContent), bot.querySelector(".meta")?.textContent + " / " + bot.children[1].textContent.slice(0, 60));
+  bot.querySelector(".msg-copy").click(); await wait(50);
+  check("W6 stopped mid-thought: Copy copies what arrived", /^<think>\na long line/.test(clip || ""), JSON.stringify(clip)?.slice(0, 40));
+
+  // ---- REAL serve output, replayed chunk for chunk (scripts/webui-gate/captured-thinking.json) ----
+  const CAPTURED = ${JSON.stringify(JSON.parse(readFileSync(resolve(here, "webui-gate", "captured-thinking.json"), "utf8")))};
+  for (const rep of CAPTURED.replies) {
+    window.fetch = async (url, opts) => { window.__lastBody = JSON.parse(opts.body); return new Response(new ReadableStream({ async start(c) {
+      for (const d of rep.deltas) { c.enqueue(enc.encode("data: " + JSON.stringify({ choices: [{ delta: { content: d } }] }) + "\n\n")); await wait(1); }
+      c.enqueue(enc.encode("data: [DONE]\n\n")); c.close();
+    } }), { status: 200, headers: { "Content-Type": "text/event-stream" } }); };
+    flashed = [];
+    $("prompt").value = rep.prompt;
+    await send(); await wait(150);
+    bot = lastBot();
+    const tag = "W6 real " + rep.model + ": ";
+    check(tag + "thinking folded, collapsed", !!bot.querySelector("details.think") && bot.querySelector("details.think").open === false && bot.querySelector(".think-body").textContent.trim().length > 20, bot.children[1].textContent.slice(0, 80));
+    check(tag + "no raw tag or channel marker reached the screen while streaming", flashed.length === 0, JSON.stringify(flashed.slice(0, 3)));
+    if (rep.answer) {
+      check(tag + "the answer below the fold is exactly the model's answer", bot.querySelector(".think-answer").textContent.trim() === rep.answer, JSON.stringify(bot.querySelector(".think-answer").textContent));
+    } else {
+      check(tag + "no final channel arrived, and the page says there is no answer", /No answer after the thinking/.test(bot.querySelector(".think-answer").textContent), bot.querySelector(".think-answer").textContent);
+    }
+  }
+  watch.disconnect();
+
+  // leave one finished Qwen-shaped reply last for the reload phase
+  await turn(qwen, "for the reload");
+`);
+
+// ---- phase 10: after a reload — the fold is rebuilt from the saved reply -----------------------------
+const phase10 = phase(String.raw`
+  let bot = lastBot();
+  let box = bot?.querySelector("details.think");
+  check("W6 restored reply is folded again", !!box && box.open === false && bot.querySelector(".think-answer strong")?.textContent === "4", bot?.children[1]?.textContent);
+  check("W6 restored fold keeps its duration label", /^Thought for \d+(\.\d)?s$/.test(box?.querySelector("summary")?.textContent || ""), box?.querySelector("summary")?.textContent);
+  // a stored duration that is not a number is ignored, not rendered
+  const st = stored();
+  st.messages.at(-1).thought = "<img src=x onerror=\"window.__pwned=1\">";
+  localStorage.setItem("goinfer.chat.v1", JSON.stringify(st));
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v1" }));
+  await wait(200);
+  box = lastBot()?.querySelector("details.think");
+  check("W6 a non-numeric stored duration falls back to a plain label", box?.querySelector("summary")?.textContent === "Thinking" && document.querySelectorAll("img").length === 0 && window.__pwned === 0, box?.querySelector("summary")?.textContent);
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }
