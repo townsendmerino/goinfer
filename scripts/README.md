@@ -1,6 +1,6 @@
 # scripts/ — what's here and whether to run it
 
-136 files, most of them one-shot fixture/golden generators tied to a specific model family or a
+138 files, most of them one-shot fixture/golden generators tied to a specific model family or a
 specific debugging session. This page exists so "is this still useful, can I delete it, should I
 run it" doesn't require opening each one. Grouped by what they're *for*, not alphabetically —
 alphabetical is what `ls` already gives you.
@@ -103,6 +103,12 @@ the script currently non-runnable as-is, not just historical).
 - [`probe_tool_templates.py`](probe_tool_templates.py) — rendered a fixed tool-calling conversation through each family's HF chat template to design goinfer's tool-call rendering. No golden output, just prints; rerunnable if a new family needs the same design pass.
 - [`ref_dflash_accept.py`](ref_dflash_accept.py), [`ref_dspark_accept.py`](ref_dspark_accept.py) — ran the upstream (z-lab DFlash / DeepSpec DSpark) speculative-decoding drafter's own verbatim acceptance-rate loop against goinfer's benchmark suite, to attribute a low acceptance rate to environment vs a genuine gap (P10 kill-gate decisions). `ref_dspark_accept.py`'s default `DEEPSPEC_DIR` points at a session-scoped `/tmp/claude-.../scratchpad/DeepSpec` path that no longer exists — override via env var and re-clone DeepSpec to rerun.
 - [`convert_dflash_f32.py`](convert_dflash_f32.py) — converted a z-lab DFlash drafter checkpoint bf16→f32 safetensors so the Go loader can read it. Speculative decoding is still live in the tree (`cuda/drafter.go`), so rerun if a new DFlash checkpoint needs the same conversion.
+
+## Web UI
+
+| script | what it checks | repeatable? |
+|---|---|---|
+| [`webui_md_gate.mjs`](webui_md_gate.mjs) (+ [`webui-md-gate/harness.html`](webui-md-gate/harness.html)) | the web UI's Markdown renderer (`internal/serveapp/webui/ui/markdown.js`, W1) in headless Chrome, loaded from `file://`: hostile Markdown rendered into live DOM with a canary that must never fire, pathological inputs under a render-time budget (ReDoS), and structural correctness. Exit 0 pass / 1 a check failed (including the page being navigated away by a payload) / 2 could not drive a browser. Also runs from `go test` as `TestWebUI_markdownGateInBrowser`. | yes — after any change to `ui/markdown.js` |
 
 ## Other
 

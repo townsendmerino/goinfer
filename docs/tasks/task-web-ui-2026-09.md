@@ -92,13 +92,30 @@ Tier A in its ranked order; then Tier B; then Tier C item by item, each opening 
 
 Ranked by what a person notices in the first five minutes.
 
-### W1 — Markdown and code blocks
-Today the page renders **plain text only**: `textContent`, never `innerHTML`
-(`internal/serveapp/webui/ui/app.js:74`). A code answer arrives as one unbroken run of
-characters. This is the single largest usability gap and the one every visitor meets.
-`demo/agent/cmd/agent-web/index.html:183` already carries a `renderMarkdownLite` whose own comment
-says "Deliberately tiny — full markdown is a TODO"; extend that rather than starting over.
-**Effort: S–M.** **See §4 — this item is also the security decision.**
+### W1 — Markdown and code blocks — DONE 2026-09-14
+~~Today the page renders **plain text only**~~ — model output now renders as Markdown through
+`ui/markdown.js`, a renderer that builds DOM nodes from a fixed element allow-list and never an HTML
+string (the rule is stated at `internal/serveapp/webui/ui/app.js:74`). Paragraphs and line breaks,
+headings, fenced code with a language label (an unclosed fence renders as code, so streaming does not
+flicker), inline code, strong/em/strike, links, bare URLs, blockquotes, nested lists and GFM tables.
+Raw HTML in model output is shown as text; links are live only for `http:`/`https:`/`mailto:`; images
+are never loaded (a Markdown image becomes a link to it). Streaming re-renders at most once per frame.
+
+**Not done the way this entry originally said, and why.** It advised extending agent-web's
+`renderMarkdownLite` (`demo/agent/cmd/agent-web/index.html:183`). That function assembles an HTML
+*string* and assigns it with `innerHTML` — exactly the pattern §6.2 forbids — so it was not a safe
+base and was not used. It escapes `<`, `>` and `&` first, so it is probably not exploitable as written,
+but agent-web renders model output that way today; that is a separate item, noted here rather than
+fixed under W1's scope.
+
+**Gates**, each shown able to go red by a mutation: `scripts/webui_md_gate.mjs` drives the shipped
+renderer in headless Chrome — 24 hostile payloads rendered into live DOM with a canary that must never
+fire, 11 pathological inputs under a 1 s budget (ReDoS), 25 structural cases — and runs from
+`go test` as `TestWebUI_markdownGateInBrowser`; `TestWebUI_noHTMLStringSinks` fails the build on any
+`innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`new Function` in the page. One
+finding from mutating it: a `<meta http-equiv=refresh>` inserted via `innerHTML` really navigates the
+page — an `innerHTML` regression would be an open redirect even without script.
+**Effort was: M.** **This item was also the security decision — §6.2.**
 
 ### W2 — Copy, per message and per code fence
 No copy affordance at all; you select by hand and catch the stats line. Falls out of W1's node
@@ -117,7 +134,7 @@ about. **Effort: S.**
 
 ### W5 — Load a model from the page
 The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
---model &lt;path&gt; to serve it"* (`internal/serveapp/webui/ui/app.js:231`). A first-run user is
+--model &lt;path&gt; to serve it"* (`internal/serveapp/webui/ui/app.js:243`). A first-run user is
 sent back to a terminal in the middle of the one flow the page exists for.
 
 `POST /admin/models/load` already exists (`internal/serveapp/admin.go:113`) but is gated behind
@@ -157,11 +174,11 @@ inside the binary.
 | **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:391`) | S |
 | **W11** | Image attach for vision models | no control, though `-vision` works on the same route; `demo/agent/cmd/agent-web/index.html:129` has the whole composer (click, drag, paste, preview) to transplant, plus a per-model capability check so it hides on text-only models | M |
 | **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:179`) | M |
-| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:105`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
+| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:113`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
 | **W14** | Export the conversation | nothing. A share link is an anti-goal; Markdown and JSON to a file are not | S |
 | **W15** | Dark mode | one light surface; no `prefers-color-scheme` rule anywhere. The AmbientCSS palette is already token-shaped (`docs/completed/task-web-ui-ambient.md`) | S |
 | **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/ui/app.css:1480`). A server on the LAN is a plausible phone client | S |
-| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:133`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
+| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:145`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
 
 ---
@@ -224,10 +241,10 @@ elements have identical computed styles, with zero exceptions before and after; 
 now scan every embedded file, fail on a reference to a non-embedded asset, and pin the route's type,
 gating and auth — each shown able to go red by a mutation.
 
-**6.2 W1 is where model output stops being inert, and the current rule must survive it.** The page
-says it in the source: `textContent` only, never `innerHTML`
-(`internal/serveapp/webui/ui/app.js:74`). **Build DOM nodes from the parsed tree; never assemble
-an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
+**6.2 W1 is where model output stops being inert, and the current rule must survive it. — HELD
+2026-09-14 (see W1).** The page says it in the source: content goes in via `textContent` or
+`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:74`), and a test now fails the
+build if that changes. **Build DOM nodes from the parsed tree; never assemble an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
 markdown (`<img onerror>`, `javascript:` links, raw `<script>`) and asserts no element is created
@@ -244,8 +261,8 @@ W5's load route is the first real test of them.
 
 `internal/serveapp/webui.go:47`, `:303` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1480` (layout) · `internal/serveapp/webui/index.html:12` (tabs) ·
-`internal/serveapp/webui/ui/app.js:62`, `:74`, `:105`, `:133`, `:231` (in-memory history, the
-textContent rule, the error path, the keybinding, the dead-end line) · `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
+`internal/serveapp/webui/ui/app.js:62`, `:74`, `:113`, `:145`, `:243` (in-memory history, the
+rendering rule, the error path, the keybinding, the dead-end line) · `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:391` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
