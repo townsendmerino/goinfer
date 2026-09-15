@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W31 added 2026-09-15 (§7) now that J1–J4 have shipped; W27, W28 and W29 DONE 2026-09-15, W30–W31 next.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27, W28 and W29 DONE 2026-09-15, W30–W32 next.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -794,7 +794,7 @@ W5's load route was the first real test of them, and takes all of them (W5).
 
 ---
 
-## 7. The queue surface — W27–W31, added 2026-09-15
+## 7. The queue surface, and unload — W27–W32, added 2026-09-15
 
 `task-work-queue-2026-09.md`'s J1–J4 shipped 2026-09-15, which makes five things buildable that
 were not when this doc was filed. They are **Tier B class** — daily-driver items, in scope under
@@ -921,6 +921,64 @@ conversation list can show, including generations this browser never saw.
   "created by this page" limit, which is exactly W22's open question (halt and cancel for everyone). It
   stays open until W22's design call, and the two are answered together.
 **Effort: M** (the allowed half).
+
+### W32 — Unload a model, and see what is resident
+
+**W5 shipped half a door.** `handleWebLoad` *adds* a model: it returns 409 only when a model of the
+same name is already loaded (`internal/serveapp/webui.go:376`) and otherwise registers a new one
+alongside, so the dropdown accumulates. The fit guard prices against currently *available* memory
+(`decoder/fitguard.go:53`, `hostRAMAvailable` — R13's fix), so a second model that does not fit is
+refused cleanly rather than swapping the machine to death. But a clean refusal is the only outcome
+available: nothing on the page can free the first model to make room. Load until the machine is
+full, then restart the server. On a 16 GB Mac — the machine this product is aimed at — that is the
+common case, not the edge.
+
+The server has done this properly for a while: `POST /admin/models/unload`
+(`internal/serveapp/admin.go:86`, `:222`) unpublishes the entry immediately, then drains in-flight
+holders on a detached goroutine before freeing native memory (`docs/completed/task-admin-unload-drain.md`).
+
+**What to build:**
+
+1. **The Models tab lists what is resident** — name, quant, backend, resident bytes, and which one
+   the Chat tab is pointed at. Today the dropdown is the only view of this, and it shows names only.
+2. **An unload button per row**, with the free-able size on it.
+3. **Surface the drain; do not pretend unload is instant.** 200 means freed within
+   `-unload-drain-wait`, 202 means the drain is still running and the model is already unroutable.
+   `/health` lists what is still draining, so `?wait=false` plus a poll of `/health` is a better UI
+   shape than blocking the request. A spinner that resolves on 202 would be lying.
+4. **"Unloaded" is not "memory freed".** Registry entries are refcounted over a shared model, and
+   the response carries `freed` — true only when this was the last owner (`releaseLocked`'s
+   delete-before-decide). Report what actually happened rather than assuming the bytes came back.
+5. **Confirm when the model is mid-generation**, and say what will happen: the in-flight turn
+   finishes, nothing new routes to it. That is the designed behaviour, and it should not arrive as
+   a surprise.
+6. **Make the fit refusal actionable.** "needs 6.2 GB, 3.1 GB available" becomes "… unload
+   `qwen2.5-1.5b` (4.0 GB) to make room" — the page knows what is resident, so the decline can name
+   the way out instead of only the shortfall.
+
+**The gate question is easier here than it was for W5, and should not wait on the others.** What
+makes admin *load* dangerous is that it maps a **caller-named path** — that is what `-allow-admin`'s
+help warns about. Unload takes a name that is already in the registry, touches no filesystem, and
+accepts nothing from the caller that is not already public on `/v1/models`. A `/web/models/unload`
+restricted to currently-loaded names can ship on W5's own precedent (`sameOrigin` + `auth` + the
+`-web` opt-in) without the broader page-initiated-admin decision that W22, W28 and W31 are queued
+behind.
+
+**What not to do: load must not auto-evict.** Serving several models at once is a deliberate
+capability, not an accident, and silently dropping someone's loaded model to make room for a new one
+is worse than a clean refusal. The user chooses which one goes.
+
+**Effort: S–M for the route** (a thin wrapper over the handler that already exists), **M for the
+tab.**
+
+**Gates:**
+- Unload with a generation in flight: the in-flight turn completes, no new request routes to it, no
+  crash. This is precisely the use-after-free the drain was built for, so run it on CUDA where the
+  naive version SIGSEGVs — a green CPU-only run does not cover it.
+- Unload then load the same name again succeeds (no leaked registry entry).
+- A fit refusal on a machine with something resident names a specific model to unload.
+- A `freed:false` unload (shared model, not last owner) renders as something other than "memory
+  freed".
 
 ### What J5–J9 would add later
 J5 (the resumable `goinfer-chat -batch` runner) is a CLI, not a UI item. J6 (prefix-aware
