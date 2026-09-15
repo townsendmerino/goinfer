@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -234,5 +235,34 @@ func TestServe_prepareEnforcesThePublishedWindow(t *testing.T) {
 	pf := body[strings.Index(body, "func (s *server) pathFields("):]
 	if !strings.Contains(pf[:strings.Index(pf, "\n}\n")], `"context_window"`) {
 		t.Error("pathFields no longer publishes context_window")
+	}
+}
+
+// TestServe_modelsReportsVision is W11's contract: /v1/models says whether a model takes images, from
+// visionCapable — the check the vision path itself uses to refuse — so the web UI can hide image input
+// on a text-only model.
+func TestServe_modelsReportsVision(t *testing.T) {
+	srv, lm := tinyServed(t)
+	visionOf := func() any {
+		w := httptest.NewRecorder()
+		srv.handleModels(w, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
+		var ml struct {
+			Data []map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &ml); err != nil || len(ml.Data) != 1 {
+			t.Fatalf("/v1/models: %v %s", err, w.Body.String())
+		}
+		return ml.Data[0]["vision"]
+	}
+	if v := visionOf(); v != false {
+		t.Errorf("text-only model: vision = %v, want false (present, not omitted)", v)
+	}
+	lm.qwenEnc = &vision.QwenVisionEncoder{} // any loaded tower makes visionCapable true
+	t.Cleanup(func() { lm.qwenEnc = nil })
+	if !lm.visionCapable() {
+		t.Fatal("precondition: visionCapable should be true with a tower set")
+	}
+	if v := visionOf(); v != true {
+		t.Errorf("model with a vision tower: vision = %v, want true", v)
 	}
 }

@@ -421,6 +421,10 @@ func (s *server) pathFields(name string) map[string]any {
 	if ctx := lm.contextWindow(lm.adapter == ""); ctx > 0 {
 		f["context_window"] = ctx
 	}
+	// W11: whether image content parts are accepted — the same visionCapable the vision path checks
+	// before answering "this model has no vision tower", so a client can hide image input on a model
+	// that would refuse it instead of finding out from a 400.
+	f["vision"] = lm.visionCapable()
 	return f
 }
 
