@@ -43,9 +43,14 @@ any surface may still change.
   - Sampling controls: top_p, top_k, seed, stop sequences, and frequency and presence penalties, next to
     temperature and max tokens. Blank fields use the server's defaults. Out-of-range values are marked
     and refuse to send, rather than being quietly clamped. Settings are kept across reloads and tabs.
+  - Attach an image on a vision model: button, drag-and-drop or paste, with a preview. Hidden on text-only
+    models. Images are converted to PNG/JPEG and scaled to at most 1344 px before sending. Only the most
+    recent image in a conversation is sent, because the server accepts one per request.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.
+- `/v1/models` and `/health` publish `vision` per model: whether image content parts are accepted, from
+  the same check that otherwise refuses them with "this model has no vision tower".
 - `pull.CacheRoot()` — the directory every pulled model lands under (Experimental, like the rest of
   `pull`).
 
