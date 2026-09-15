@@ -104,6 +104,39 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	}
 }
 
+// TestGenerateVL_residentContextCapPublishesBudgetClamped is M-02's (docs/audit-2026-09-10.md)
+// gate: when the resident context cap clamps maxTokens down, the Generation must publish
+// Budget/BudgetClamped (openai.go's effectiveBudget trusts Budget only when BudgetClamped is
+// true) — before this fix, a cap-truncated VL turn silently reported the same finish_reason as an
+// ordinary EOS-terminated one. capPos leaves room for exactly 2 decode tokens; maxNew (5) asks for
+// more, forcing the clamp on this — the "ordinary path" (residentUploadPrefill) — site.
+func TestGenerateVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
+	m, g := loadGemma3VLTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf.capPos = len(g.InputIDs) + 2
+	m.resident = rf
+
+	const maxNew = 5
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
+	var got []int
+	for id := range stream {
+		got = append(got, id)
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatalf("GenerateVL: %v", err)
+	}
+	if !gen.BudgetClamped {
+		t.Error("BudgetClamped = false, want true — the resident cap bound this turn, not the request")
+	}
+	if gen.Budget != 2 {
+		t.Errorf("Budget = %d, want 2 (capPos %d − prompt %d)", gen.Budget, rf.capPos, len(g.InputIDs))
+	}
+	if len(got) > gen.Budget {
+		t.Errorf("streamed %d tokens, more than the published Budget %d", len(got), gen.Budget)
+	}
+}
+
 // TestGenerateVL_residentBusyDeclinesToCPU is the other half: a resident already claimed by a
 // concurrent generation must make GenerateVL fall back to the CPU path cleanly — no error, no
 // resident calls, the claim and any pre-existing resIDs left exactly as found (this call never
@@ -254,6 +287,37 @@ func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
 		t.Errorf("resBusy = %d after GenerateQwenVL returned, want 0 (released)", busy)
+	}
+}
+
+// TestGenerateQwenVL_residentContextCapPublishesBudgetClamped mirrors
+// TestGenerateVL_residentContextCapPublishesBudgetClamped for the Qwen2.5-VL m-RoPE ordinary path
+// (M-02, docs/audit-2026-09-10.md) — same fix, same site shape, different function.
+func TestGenerateQwenVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
+	m, g := loadQwen25VLTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf.capPos = len(g.InputIDs) + 2
+	m.resident = rf
+
+	const maxNew = 5
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
+		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
+	var got []int
+	for id := range stream {
+		got = append(got, id)
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatalf("GenerateQwenVL: %v", err)
+	}
+	if !gen.BudgetClamped {
+		t.Error("BudgetClamped = false, want true — the resident cap bound this turn, not the request")
+	}
+	if gen.Budget != 2 {
+		t.Errorf("Budget = %d, want 2 (capPos %d − prompt %d)", gen.Budget, rf.capPos, len(g.InputIDs))
+	}
+	if len(got) > gen.Budget {
+		t.Errorf("streamed %d tokens, more than the published Budget %d", len(got), gen.Budget)
 	}
 }
 

@@ -1131,7 +1131,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:715` | goinfer | `// constraint, so the slot is what gets to decide. Every other slot buffer follows from ` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:857` | goinfer | `// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so` |
 | `docs/audit-2026-09-10.md|decoder/generate_gemma4_vl.go:172` | goinfer | `if capper, ok := m.resident.(ResidentCapped); ok {` |
-| `docs/audit-2026-09-10.md|decoder/generate_gemma4_vl.go:198` | goinfer | `m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + img` |
+| `docs/audit-2026-09-10.md|decoder/generate_gemma4_vl.go:200` | goinfer | `m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + img` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:104` | goinfer | `if capper, ok := m.resident.(ResidentCapped); ok {` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:16` | goinfer | `func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation, sampler` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:89` | goinfer | `if m.tryClaimResident() {` |
@@ -1169,6 +1169,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/model.go:1326` | goinfer | `reuseFrom := m.residentReuseLen(prompt, nil, lora)` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1327` | goinfer | `m.residentForgetIDs()` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1368` | goinfer | `// Optimistic forward: sampled decode's (Temperature>0) sibling of the greedy fast path` |
+| `docs/audit-2026-09-10.md|decoder/model.go:1386` | goinfer | `anchor: func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1514` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1593` | goinfer | `// (audit M-04). It equals the requested maxTokens unless prompt+maxTokens would` |
 | `docs/audit-2026-09-10.md|decoder/model.go:328` | goinfer | `if opts.StreamWeights {` |

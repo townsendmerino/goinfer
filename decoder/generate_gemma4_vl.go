@@ -172,11 +172,13 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 				if capper, ok := m.resident.(ResidentCapped); ok {
 					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
 						maxTokens = ctxCap - gpuPos
+						g.BudgetClamped = true // the resident cap (not the request) bounds this turn (M-02, docs/audit-2026-09-10.md)
 					}
 				}
 			}
 		}
 
+		g.Budget = maxTokens // M-02: publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
 		sampler := NewSampler(sp)
 		sampler.Observe(ids...)
 		generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {

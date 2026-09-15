@@ -151,6 +151,38 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 	}
 }
 
+// TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped mirrors
+// TestGenerateVL_residentContextCapPublishesBudgetClamped (generate_vl_resident_test.go) for
+// GenerateGemma4VL's own single clamp site (M-02, docs/audit-2026-09-10.md) — before this fix,
+// none of the 7 VL resident clamp sites published Budget/BudgetClamped, so a cap-truncated turn
+// silently reported the same finish_reason as an ordinary EOS-terminated one.
+func TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped(t *testing.T) {
+	m, g := loadGemma4VLBidirTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	rf.capPos = len(g.InputIDs) + 2
+	m.resident = rf
+
+	const maxNew = 5
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	stream, gen := m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
+	var got []int
+	for id := range stream {
+		got = append(got, id)
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatalf("GenerateGemma4VL: %v", err)
+	}
+	if !gen.BudgetClamped {
+		t.Error("BudgetClamped = false, want true — the resident cap bound this turn, not the request")
+	}
+	if gen.Budget != 2 {
+		t.Errorf("Budget = %d, want 2 (capPos %d − prompt %d)", gen.Budget, rf.capPos, len(g.InputIDs))
+	}
+	if len(got) > gen.Budget {
+		t.Errorf("streamed %d tokens, more than the published Budget %d", len(got), gen.Budget)
+	}
+}
+
 // TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU is the decline half: an UploadKV
 // error (a resident backend that can't accept this turn's KV) must fall back to the CPU
 // decode loop cleanly — no error surfaced to the caller, resIDs left forgotten (not stale,
