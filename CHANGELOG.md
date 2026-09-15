@@ -51,6 +51,9 @@ any surface may still change.
     server error or a dropped connection now keeps what arrived, marked incomplete, instead of losing
     it. Replies that stopped at Max tokens, or were cancelled by the server, say so.
   - Export a conversation as Markdown (readable, with images and folded thinking) or JSON (as stored).
+  - Dark mode: follows the system setting, or choose Light or Dark in the header. Every text colour was
+    measured against WCAG AA on every surface in both themes, which also fixed four light-theme colours
+    that fell short on reply bubbles: links, the stats line, success and warning text.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.

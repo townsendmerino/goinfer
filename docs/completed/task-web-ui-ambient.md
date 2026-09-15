@@ -141,6 +141,12 @@ before the first look.
   4.07:1 against the new surface (fails WCAG AA for normal text) and was darkened to `#5c6671`
   (4.93:1); the inset user message uses `amb-surface-concave` (shadow-only depth, no fill tint,
   per the constraint below).
+  **Correction 2026-09-15 (web UI W15):** these ratios were measured against the flat page surface. On the
+  surfaces the text actually sits on, they fall short. At the shaded end of a reply bubble's gradient
+  (rgb 212,217,231), `#5c6671` is 4.14:1 and accent text in `#0b6fd4` is 3.51:1, both under AA. So muted
+  became `#535c67` (4.73:1 there) and accent *text* `#0a5cb3` (4.57:1). The Send button keeps `#0b6fd4` as
+  its fill (`--gi-accent-fill`, white on it 4.95:1). The W15 gate now measures every text colour on every
+  real surface, including each gradient stop.
 - [x] The change is one revertible commit (`032d5cd`).
 - [x] Did not use the words "honest" or "honesty".
 
