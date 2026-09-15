@@ -71,7 +71,9 @@ function bubble(who, cls) {
   d.appendChild(h); d.appendChild(b);
   $("log").appendChild(d);
   d.scrollIntoView({block: "end"});
-  return b;                       // textContent only — never innerHTML
+  // Content goes in via textContent (the user's own text, errors) or Markdown.render (model
+  // output, W1) — never innerHTML. TestWebUI_noHTMLStringSinks enforces that for the whole page.
+  return b;
 }
 
 async function send() {
@@ -87,12 +89,18 @@ async function send() {
   $("prompt").value = "";
   // What the engine produces sits proud (amb-surface-convex, decision 3).
   const out = bubble(model, "bot amb-surface-convex amb-elevation-1");
+  out.classList.add("md");
   $("send").disabled = true; $("stop").hidden = false;
   $("chat-status").textContent = "generating…";
 
   ac = new AbortController();
   const started = performance.now();
   let got = 0, acc = "";
+  // Render model output as Markdown (W1). Throttled to one parse per animation frame: a fast token
+  // stream would otherwise re-parse the whole answer once per token. The final render after the
+  // stream (or after Stop) guarantees the last chunk is shown even if no frame ran after it.
+  let paintQueued = false;
+  const paint = () => { paintQueued = false; Markdown.render(out, acc); out.scrollIntoView({block: "end"}); };
   try {
     const r = await fetch("/v1/chat/completions", {
       method: "POST", headers: headers(), signal: ac.signal,
@@ -107,8 +115,12 @@ async function send() {
       if (ev.data === "[DONE]") break;
       let j; try { j = JSON.parse(ev.data); } catch { continue; }
       const d = j.choices && j.choices[0] && j.choices[0].delta;
-      if (d && d.content) { acc += d.content; out.textContent = acc; got++; out.scrollIntoView({block: "end"}); }
+      if (d && d.content) {
+        acc += d.content; got++;
+        if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); }
+      }
     }
+    paint();
     history.push({role: "assistant", content: acc});
     const s = (performance.now() - started) / 1000;
     // Per-response stats live WITH the response, not in a status line that
@@ -121,7 +133,7 @@ async function send() {
     out.parentElement.appendChild(meta);
     $("chat-status").textContent = "";
   } catch (e) {
-    if (e.name === "AbortError") { $("chat-status").textContent = "stopped"; history.push({role: "assistant", content: acc}); }
+    if (e.name === "AbortError") { paint(); $("chat-status").textContent = "stopped"; history.push({role: "assistant", content: acc}); }
     else { out.textContent = String(e.message || e); out.parentElement.classList.add("err"); $("chat-status").textContent = ""; }
   } finally {
     ac = null; $("send").disabled = false; $("stop").hidden = true;

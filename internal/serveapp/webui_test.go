@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"context"
 	"encoding/json"
 	"go/ast"
 	"go/parser"
@@ -8,10 +9,12 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestWebUI_disabledByDefault pins that the -web routes refuse when the flag is off. The
@@ -193,6 +196,107 @@ func TestWebUI_assetRoute(t *testing.T) {
 			t.Errorf("%s: served a file outside the asset allow-list (status %d)", p, w.Code)
 		}
 	}
+}
+
+// TestWebUI_noHTMLStringSinks makes §6.2 of docs/tasks/task-web-ui-2026-09.md a build failure rather
+// than a convention: nothing in the embedded page may turn a string into markup or code. The page is
+// served from the API's own origin with the user's key on it and renders text from models, some
+// pulled from strangers' repos — so model output goes in through createTextNode and createElement
+// (ui/markdown.js), and every one of these sinks is banned outright, even where a particular use
+// looks harmless today.
+//
+// It matches CODE patterns (an assignment to .innerHTML, a call to insertAdjacentHTML), not bare
+// words, so a comment explaining the rule does not trip it.
+func TestWebUI_noHTMLStringSinks(t *testing.T) {
+	sinks := []struct{ name, re string }{
+		{"innerHTML assignment", `\.innerHTML\s*\+?=`},
+		{"outerHTML assignment", `\.outerHTML\s*\+?=`},
+		{"insertAdjacentHTML", `\.insertAdjacentHTML\s*\(`},
+		{"document.write", `document\.write(ln)?\s*\(`},
+		{"eval", `(^|[^.\w])eval\s*\(`},
+		{"new Function", `new\s+Function\s*\(`},
+		{"srcdoc assignment", `\.srcdoc\s*=`},
+		{"createContextualFragment", `createContextualFragment\s*\(`},
+		{"DOMParser.parseFromString", `parseFromString\s*\(`},
+		{"string-form setTimeout/setInterval", `set(Timeout|Interval)\s*\(\s*["'\x60]`},
+	}
+	checked := 0
+	err := fs.WalkDir(webUIFS, "webui", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !(strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".html")) {
+			return err
+		}
+		b, err := webUIFS.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		checked++
+		for _, sink := range sinks {
+			if loc := regexp.MustCompile("(?m)" + sink.re).FindIndex(b); loc != nil {
+				line := 1 + strings.Count(string(b[:loc[0]]), "\n")
+				t.Errorf("%s:%d uses %s — the web UI must never turn a string into markup or code; "+
+					"build nodes with createElement/createTextNode (see ui/markdown.js)", p, line, sink.name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk embedded web UI: %v", err)
+	}
+	if checked < 3 {
+		t.Fatalf("checked only %d file(s) — this guard would be watching almost nothing", checked)
+	}
+	app, _ := webUIFS.ReadFile("webui/ui/app.js")
+	if !strings.Contains(string(app), "Markdown.render(out, acc)") {
+		t.Error("ui/app.js no longer renders model output through Markdown.render — W1's renderer is not wired into the chat")
+	}
+}
+
+// TestWebUI_markdownGateInBrowser runs scripts/webui_md_gate.mjs: the SHIPPED ui/markdown.js, in headless
+// Chrome, against hostile input (every payload rendered into live DOM, a canary that must never fire),
+// pathological input (bounded render time), and structural correctness. Only a real browser can show
+// that a payload did not execute, which is why this is not a pure-Go test.
+//
+// It needs node and a Chrome/Chromium binary, which GitHub's ubuntu runners have. Where either is
+// missing it SKIPS, loudly — and a skip is not a pass: run `node scripts/webui_md_gate.mjs` by hand
+// after any change to ui/markdown.js on such a machine.
+func TestWebUI_markdownGateInBrowser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser gate skipped in -short")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("SKIPPED — no node on PATH; the W1 renderer's browser gate did NOT run (node scripts/webui_md_gate.mjs)")
+	}
+	haveChrome := false
+	for _, b := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
+		if _, err := exec.LookPath(b); err == nil {
+			haveChrome = true
+			break
+		}
+	}
+	if !haveChrome {
+		t.Skip("SKIPPED — no Chrome/Chromium on PATH; the W1 renderer's browser gate did NOT run")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "../../scripts/webui_md_gate.mjs")
+	out, err := cmd.CombinedOutput()
+	switch code := cmd.ProcessState.ExitCode(); {
+	case err == nil:
+		t.Logf("%s", lastLine(out))
+	case code == 2:
+		t.Skipf("SKIPPED — the browser could not be driven here, so the gate did NOT run:\n%s", out)
+	default:
+		t.Fatalf("W1 markdown gate FAILED (exit %d):\n%s", code, out)
+	}
+}
+
+func lastLine(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if i := strings.LastIndex(s, "\n"); i >= 0 {
+		return s[i+1:]
+	}
+	return s
 }
 
 // TestPullState_singleFlight pins the one-at-a-time bound. Without it a few clicks queue

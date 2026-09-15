@@ -1515,3 +1515,29 @@ td.n{text-align:right;color:var(--gi-muted);white-space:nowrap}
 .note{font-size:13px;color:var(--gi-muted)}
 .err{color:var(--gi-err)} .ok{color:var(--gi-ok)}
 code{font-family:var(--mono);font-size:12.5px;padding:2px 6px;border-radius:6px}
+
+/* ---- rendered model output (W1: ui/markdown.js builds these nodes; app.js marks the bubble .md) ----
+   Built only from the page's own tokens. .msg keeps white-space:pre-wrap for the user's plain-text
+   bubble; inside rendered output, line breaks are real <br>/<p> nodes, so blocks reset it and code
+   blocks set their own. */
+.md{white-space:normal}
+.md > :first-child{margin-top:0}
+.md > :last-child{margin-bottom:0}
+.md p{margin:0 0 .7em;white-space:pre-wrap}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{margin:1em 0 .45em;line-height:1.25;font-weight:650}
+.md h1{font-size:1.35em} .md h2{font-size:1.2em} .md h3{font-size:1.08em} .md h4,.md h5,.md h6{font-size:1em}
+.md ul,.md ol{margin:0 0 .7em;padding-left:1.5em}
+.md li{margin:.15em 0}
+.md li > ul,.md li > ol{margin:.15em 0}
+.md blockquote{margin:0 0 .7em;padding:.1em 0 .1em .9em;border-left:3px solid color-mix(in srgb,var(--gi-muted) 45%,transparent);color:var(--gi-muted)}
+.md hr{border:0;border-top:1px solid color-mix(in srgb,var(--gi-muted) 35%,transparent);margin:1em 0}
+.md a{color:var(--gi-accent);text-decoration:underline;text-underline-offset:2px}
+.md code{background:color-mix(in srgb,var(--gi-ink) 8%,transparent)}
+.md .md-code{margin:0 0 .8em;border-radius:8px;background:color-mix(in srgb,var(--gi-ink) 7%,transparent);overflow:hidden}
+.md .md-lang{display:block;font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:6px 12px 0}
+.md pre{margin:0;padding:10px 12px;overflow-x:auto;white-space:pre;tab-size:4}
+.md pre code{background:none;padding:0;font-size:12.5px;line-height:1.5;border-radius:0}
+.md table{border-collapse:collapse;margin:0 0 .8em;display:block;overflow-x:auto;max-width:100%}
+.md th,.md td{border:1px solid color-mix(in srgb,var(--gi-muted) 30%,transparent);padding:5px 10px;text-align:left}
+.md th{font-weight:650;background:color-mix(in srgb,var(--gi-ink) 5%,transparent)}
+.md .al-center{text-align:center} .md .al-right{text-align:right}
