@@ -401,11 +401,19 @@ func (s *server) pathFields(name string) map[string]any {
 		return nil
 	}
 	batched, why := lm.model.PrefillPath()
-	return map[string]any{
+	f := map[string]any{
 		"decode_path":     lm.model.DecodePath(),
 		"prefill_batched": batched,
 		"prefill_path":    why,
 	}
+	// W8: the context window a TEXT chat request is held to — the same residentPath the text routes
+	// pass prepare (lm.adapter == ""). Vision requests are bounded by MaxPositions instead, which is
+	// never smaller, so this is the conservative number for a client to plan against. Omitted when
+	// unknown rather than published as 0.
+	if ctx := lm.contextWindow(lm.adapter == ""); ctx > 0 {
+		f["context_window"] = ctx
+	}
+	return f
 }
 
 func (s *server) servedNames() []string {
@@ -768,6 +776,32 @@ type genRequest struct {
 	masker *constrain.Masker // set on constrained requests (response_format / tool grammar); enables grammar-spec
 }
 
+// contextWindow is the context cap prepare enforces for one request: the model's MaxPositions,
+// lowered to the resident KV cap when the request runs the stateless resident path. ONE function for
+// both the enforcement and what /v1/models publishes as context_window (W8), so the number a client
+// plans against is the number that rejects it. 0 = unknown.
+//
+// Why the resident cap: on a resident backend the stateless path prefills the fixed-size resident KV,
+// which is often smaller than MaxPositions. A prompt in (residentCap, MaxPositions) passes the
+// MaxPositions check, then dies mid-prefill with a 500 whose body leaks the internal "use the staged
+// path" hint (there is no staged fallback on the stateless resident path) — so it is rejected as a
+// clean context_length_exceeded 400 instead (audit R-10). Only when the request actually runs
+// stateless-resident — never for vision (CPU VL) or adapter (session path; N-39: not purely staged
+// since G3, but this specific check is about the STATELESS path's own fixed KV cap, which adapter
+// requests never enter) requests, which are bounded by MaxPositions, not the resident cap (audit F-01).
+func (lm *loadedModel) contextWindow(residentPath bool) int {
+	if lm.model == nil {
+		return 0
+	}
+	ctx := lm.model.Config().MaxPositions
+	if residentPath {
+		if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
+			ctx = rc
+		}
+	}
+	return ctx
+}
+
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams,
 // wires response_format into a constraint masker, and resolves stop strings.
 // residentPath tells prepare whether THIS request will actually run the stateless GPU-resident
@@ -856,21 +890,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// (decoder/model.go). Only shrinks; a request already within context is untouched. (A prompt that
 	// itself exceeds the context is C-20's concern; here we only bound the max_tokens contribution.)
 	if lm.model != nil {
-		ctx := lm.model.Config().MaxPositions
-		// On a resident backend the stateless path prefills the fixed-size resident KV, which is
-		// often smaller than MaxPositions. A prompt in (residentCap, MaxPositions) passes the
-		// MaxPositions check, then dies mid-prefill with a 500 whose body leaks the internal
-		// "use the staged path" hint (there is no staged fallback on the stateless resident path).
-		// Reject it here as a clean context_length_exceeded 400 instead (audit R-10). Only when this
-		// request actually runs stateless-resident — never for vision (CPU VL) or adapter (session
-		// path; N-39: not purely staged since G3, but this specific check is about the STATELESS
-		// path's own fixed KV cap, which adapter requests never enter) requests, which are bounded
-		// by MaxPositions, not the resident cap (audit F-01).
-		if residentPath {
-			if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
-				ctx = rc
-			}
-		}
+		ctx := lm.contextWindow(residentPath)
 		if err := contextLengthError(len(promptIDs), ctx); err != nil {
 			return genRequest{}, err
 		}

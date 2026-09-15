@@ -177,3 +177,62 @@ func TestServe_requireBackendOffIsTheDefault(t *testing.T) {
 		t.Error("no prefill path reported without strict mode")
 	}
 }
+
+// TestServe_contextWindowIsTheEnforcedOne is W8's contract: /v1/models publishes context_window, and it
+// is EXACTLY the limit a text request is held to — a prompt of that many tokens is rejected with
+// context_length_exceeded and one token fewer is not. A client (the web UI's context meter) plans
+// against this number, so a published figure that differed from the enforced one would be worse than
+// none.
+func TestServe_contextWindowIsTheEnforcedOne(t *testing.T) {
+	srv, lm := tinyServed(t)
+	w := httptest.NewRecorder()
+	srv.handleModels(w, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
+	var ml struct {
+		Data []struct {
+			ContextWindow int `json:"context_window"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &ml); err != nil || len(ml.Data) != 1 {
+		t.Fatalf("/v1/models: %v %s", err, w.Body.String())
+	}
+	n := ml.Data[0].ContextWindow
+	if n <= 1 || n != lm.model.Config().MaxPositions {
+		t.Fatalf("context_window = %d, want the model's MaxPositions %d on a cpu load", n, lm.model.Config().MaxPositions)
+	}
+	one := 1
+	sm := sampling{MaxTokens: &one}
+	if _, err := lm.prepare(sm, make([]int, n), lm.adapter == ""); err == nil || !strings.Contains(err.Error(), "context_length_exceeded") {
+		t.Errorf("a prompt of context_window (%d) tokens was not rejected as context_length_exceeded: %v", n, err)
+	}
+	if _, err := lm.prepare(sm, make([]int, n-1), lm.adapter == ""); err != nil && strings.Contains(err.Error(), "context_length_exceeded") {
+		t.Errorf("a prompt of context_window-1 (%d) tokens was rejected: %v", n-1, err)
+	}
+}
+
+// TestServe_prepareEnforcesThePublishedWindow is the wiring half, for the case the cpu test above cannot
+// reach: on a resident backend context_window is LOWER than MaxPositions, and no CI box has one. So it is
+// asserted on the source — prepare must take its limit from contextWindow, the same function pathFields
+// publishes, and must not read MaxPositions itself.
+func TestServe_prepareEnforcesThePublishedWindow(t *testing.T) {
+	src, err := os.ReadFile("openai.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "func (lm *loadedModel) prepare(")
+	end := strings.Index(body[start:], "\n}\n")
+	if start < 0 || end < 0 {
+		t.Fatal("prepare not found in openai.go — this guard is watching nothing")
+	}
+	prep := body[start : start+end]
+	if !strings.Contains(prep, "lm.contextWindow(residentPath)") {
+		t.Error("prepare no longer takes its context limit from lm.contextWindow(residentPath) — /v1/models' context_window can drift from what is enforced")
+	}
+	if strings.Contains(prep, ".MaxPositions") || strings.Contains(prep, ".ResidentContextCap(") { // code, not the comments that explain them
+		t.Error("prepare reads MaxPositions/ResidentContextCap directly — derive the limit only in contextWindow, which /v1/models publishes")
+	}
+	pf := body[strings.Index(body, "func (s *server) pathFields("):]
+	if !strings.Contains(pf[:strings.Index(pf, "\n}\n")], `"context_window"`) {
+		t.Error("pathFields no longer publishes context_window")
+	}
+}
