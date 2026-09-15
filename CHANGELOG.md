@@ -46,6 +46,10 @@ any surface may still change.
   - Attach an image on a vision model: button, drag-and-drop or paste, with a preview. Hidden on text-only
     models. Images are converted to PNG/JPEG and scaled to at most 1344 px before sending. Only the most
     recent image in a conversation is sent, because the server accepts one per request.
+  - Errors say what happened and what to do, with a button for the fix: a missing API key, a full
+    queue, a halted server, a model that isn't loaded, an unreachable server. A reply cut off by a
+    server error or a dropped connection now keeps what arrived, marked incomplete, instead of losing
+    it. Replies that stopped at Max tokens, or were cancelled by the server, say so.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.
