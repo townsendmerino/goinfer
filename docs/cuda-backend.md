@@ -183,7 +183,9 @@ indistinguishable from a slow machine:
 
 - **serve prints the resolved `decode path` / `prefill path`** per model at load — the paths
   it got, not the ones requested.
-- **`GET /health`** carries `decode_path`, `prefill_batched`, `prefill_path`. The same three
+- **`GET /health`** carries `decode_path`, `prefill_batched`, `prefill_path`, and `context_window` (the
+  context cap a text request is actually held to — the resident KV cap when that is lower than the
+  model's own maximum). The same
   fields ride on each `GET /v1/models` entry as a **vendor extension** (extra keys on a schema
   goinfer does not own — the Go/Python/JS clients ignore unknown keys, but a strictly-typed
   decoder elsewhere may not; `/health` is the surface with no compatibility contract).

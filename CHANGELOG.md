@@ -32,6 +32,12 @@ any surface may still change.
   - A reasoning model's thinking (Qwen3's `<think>`, gpt-oss's analysis channel) is folded into a
     collapsed section above the answer. Copy and later turns carry only the answer.
   - Regenerate the last reply, edit one of your messages and resend from it, or delete an exchange.
+  - A context meter: about how many of the model's tokens the conversation uses, with a warning at
+    80% and 95%, and a plain explanation when a message no longer fits. Per-reply token counts now
+    come from the server's reported usage.
+- `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
+  is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
+  cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.
 - `pull.CacheRoot()` — the directory every pulled model lands under (Experimental, like the rest of
   `pull`).
 
