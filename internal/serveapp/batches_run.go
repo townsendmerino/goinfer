@@ -98,14 +98,11 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	s.jobs.setCancel(jobID, bgCancel)
 	defer bgCancel()
 
-	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs}, s.haltState)
+	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID}, s.haltState)
 	if !ok {
-		reason := haltReason
-		if reason == "" {
-			reason = "cancelled before a turn was granted"
-		}
-		s.jobs.finish(s.jobs.get(jobID), jobCancelled, nil, reason, nil)
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", reason))
+		why := notAdmitted(bgCtx, haltReason, lm.name) // a full queue is a failure, not a cancellation
+		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
+		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
 		return
 	}
 	defer lm.exit()
@@ -205,14 +202,11 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	s.jobs.setCancel(jobID, bgCancel)
 	defer bgCancel()
 
-	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs}, s.haltState)
+	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID}, s.haltState)
 	if !ok {
-		reason := haltReason
-		if reason == "" {
-			reason = "cancelled before a turn was granted"
-		}
-		s.jobs.finish(s.jobs.get(jobID), jobCancelled, nil, reason, nil)
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", reason))
+		why := notAdmitted(bgCtx, haltReason, lm.name) // a full queue is a failure, not a cancellation
+		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
+		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
 		return
 	}
 	defer lm.exit()

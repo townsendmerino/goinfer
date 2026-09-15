@@ -271,6 +271,27 @@ original spec named — K4 (budgets), which that key was "the one proposed for",
 size flag (`-job-cap`, currently a hardcoded 256 matching `responseStore`'s own bound). J4/J5 (the
 batch APIs, over this same store) and J6–J9 remain open.
 
+**Additions 2026-09-15, for the web UI's W27/W28** (`docs/tasks/task-web-ui-2026-09.md` §7). All additive.
+- **The events stream now closes the way `/v1/chat/completions` does:** a `finish_reason` chunk and a
+  usage chunk, or an OpenAI-style `{"error":…}` event for a failed job (`jobTerminalEvents`,
+  `internal/serveapp/jobs_run.go`). Before, it sent the text and `[DONE]`, so a re-attaching client had to
+  poll to learn whether the reply was complete, what it cost, or that it had failed. The chunks carry no
+  text, so the byte-identical re-attach gate above still holds.
+- **`GET /v1/jobs/{id}` reports a waiting job's place in line:** `queue: {position, waiting, running}`, from
+  `admission.position` (exact arrival order, since J1 is FIFO and J6 did not ship). It shows only the job's
+  own position, which is the one piece of queue state the web UI's gate rule allows a page to see.
+- **A defect fixed:** `tryEnter` reports both "context ended" and "queue full" as a plain refusal, and
+  `runJob` and both batch runners recorded a request turned away by a **full queue** as *"cancelled before a
+  turn was granted"*. It is now a **failed** job saying `model "m" queue full; retry` (a batch line gets a
+  429), via `notAdmitted`. `POST /v1/jobs` also refuses up front with the chat route's 429 and
+  `Retry-After` when the queue is visibly full, rather than accepting a job that can only fail.
+
+Verified: `jobs_w27_test.go`. `admission.position` follows arrival order through hand-offs; the three
+refusal kinds are classified; the closing events are right for done, failed and cancelled jobs; and, on a
+real checkpoint, a waiting job reports position 1 of 1 with one running, a submit to a full queue is a 429
+with `Retry-After`, and a finished job's re-attached stream ends with `finish_reason`, usage and `[DONE]`.
+The existing J3/J4 real-checkpoint tests pass unchanged. Six mutations, each red.
+
 ## J4 — the two batch APIs, over one job store
 
 - **OpenAI Batch**: `POST /v1/files` (JSONL upload), `POST /v1/batches`, `GET /v1/batches/{id}`,

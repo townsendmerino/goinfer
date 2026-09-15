@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -65,6 +66,15 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": hi.reason})
 		return
 	}
+	// A queue that is already full refuses NOW, with the chat route's 429, rather than accepting a job
+	// that can only fail. Racy by nature (the slot is claimed later, in runJob's tryEnter), so runJob still
+	// handles losing that race — as a failed job saying "queue full", not a mislabelled cancellation.
+	if lm.queue != nil && len(lm.queue) == cap(lm.queue) {
+		release()
+		w.Header().Set("Retry-After", "1")
+		writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
+		return
+	}
 
 	id := "job_" + reqID()
 	gr.id = id
@@ -101,6 +111,15 @@ func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if j.result != nil {
 		out["result"] = j.result
+	}
+	// W28: a waiting job's place in line — its own request's state, the only queue information the page may
+	// see (task-web-ui-2026-09.md W5's rule). Absent once it runs, and briefly before it joins the line.
+	if j.State == jobPending {
+		if lm := s.modelByName(j.Model); lm != nil {
+			if place, waiting, running, ok := lm.turns.position(j.ID); ok {
+				out["queue"] = map[string]any{"position": place, "waiting": waiting, "running": running}
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

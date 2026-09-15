@@ -15,6 +15,9 @@ import (
 // need to run that same match against the LRU at pick time.
 type admissionRecord struct {
 	promptIDs []int
+	// id names the waiter for position() — a job's id (W28: a page shows its own job's place in line).
+	// "" for requests nothing will ever ask about; position() simply never matches them.
+	id string
 }
 
 // turnWaiter is one FIFO entry: ready is closed exactly once, by admission itself, when this
@@ -83,6 +86,26 @@ func (a *admission) enter(ctx context.Context, rec admissionRecord) (ok bool) {
 	case <-w.ready:
 		return true
 	}
+}
+
+// position reports where the waiter with this id stands: its place among the waiters (1 = next to be
+// granted the turn), how many are waiting in all, and whether one is running now. ok is false when no
+// waiter has this id — it was never queued, has already been granted the turn, or dropped out. Order is
+// exactly arrival order: J1 is strict FIFO, and J6's reordering was measured and not shipped.
+func (a *admission) position(id string) (place, waiting int, running, ok bool) {
+	if id == "" {
+		return 0, 0, false, false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	i := 0
+	for e := a.waiters.Front(); e != nil; e = e.Next() {
+		i++
+		if e.Value.(*turnWaiter).rec.id == id {
+			place, ok = i, true
+		}
+	}
+	return place, i, a.held, ok
 }
 
 // release hands the turn to the next waiter (if any) or clears held. Held stays true across a
