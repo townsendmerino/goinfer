@@ -525,7 +525,9 @@ function save(bump = true) {
   if (bump || !currentChat.updated) currentChat.updated = Date.now();
   const c = currentChat;
   try {
-    localStorage.setItem(CHAT_PREFIX + c.id, JSON.stringify({v: 2, id: c.id, title: c.title, titled: c.titled, updated: c.updated, messages: transcript}));
+    const last = transcript[transcript.length - 1];
+    const running = !!(last && last.role === "assistant" && last.job && (last.state === "generating" || last.state === "interrupted"));   // W29: for the list
+    localStorage.setItem(CHAT_PREFIX + c.id, JSON.stringify({v: 2, id: c.id, title: c.title, titled: c.titled, updated: c.updated, running, messages: transcript}));
     $("store-note").hidden = true;
     if (!c.stored) { c.stored = true; renderChatList(); }
   } catch {
@@ -543,6 +545,7 @@ function parseMessages(list) {
     if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") continue;
     const e = { role: m.role, content: m.content };
     if (m.role === "user" && imageOK(m.image)) e.image = m.image;   // W11: anything else is dropped, not rendered
+    if (m.role === "assistant" && typeof m.job === "string" && JOB_ID_OK.test(m.job)) e.job = m.job;   // W27
     if (typeof m.model === "string") e.model = m.model;
     if (m.role === "assistant" && typeof m.path === "string" && m.path.length <= 200) e.path = m.path;   // W18
     if (typeof m.meta === "string") e.meta = m.meta;
@@ -578,6 +581,7 @@ function readChat(id, withMessages = true) {
     title: typeof d.title === "string" ? d.title.slice(0, 200) : "",
     titled: TITLED.has(d.titled) ? d.titled : "user",
     updated: Number.isFinite(d.updated) ? d.updated : 0,
+    running: d.running === true,   // W29
   };
   if (withMessages) Object.assign(c, parseMessages(d.messages));
   return c;
@@ -738,6 +742,7 @@ function fillUserBubble(b, e) {
 }
 
 function metaText(e) {
+  if (e.state === "interrupted" && e.job) return (e.meta ? e.meta + " · " : "") + "not finished here — " + (e.note || "the job may still be running on the server") + ".";   // W27
   if (e.state === "interrupted") return (e.meta ? e.meta + " · " : "") + "interrupted — the page was reloaded while this was generating";
   if (e.state === "stopped") return "stopped" + (e.meta ? " · " + e.meta : "");
   // W13: why a reply is incomplete, and what to do — kept with the reply, not in a status line
@@ -804,6 +809,7 @@ function addActions(content, src, entry) {
   };
   if (entry.role === "user") button("msg-edit", "Edit", "Edit message");
   else button("msg-regen", "Regenerate", "Regenerate reply");
+  if (entry.role === "assistant" && entry.job && entry.state === "interrupted") button("msg-resume", "Resume", "Re-attach to this reply's job");   // W27
   if (src) button("msg-copy", "Copy", "Copy message");
   button("msg-delete", "Delete", "Delete this exchange");
   msg.appendChild(row);
@@ -822,9 +828,16 @@ function syncActions() {
     if (!e) continue;
     const regen = msg.querySelector(".msg-regen");
     if (regen) regen.hidden = e !== last;
-    for (const b of msg.querySelectorAll(".msg-edit, .msg-regen, .msg-delete")) b.disabled = busy;
+    for (const b of msg.querySelectorAll(".msg-edit, .msg-regen, .msg-delete, .msg-resume")) b.disabled = busy;
   }
-  for (const b of $("chat-list").querySelectorAll("button")) b.disabled = busy;   // W9
+  // W9; W29: while a JOB-backed reply runs, the list stays usable — opening another conversation detaches it
+  const jobRunning = !!ac && !!(generating && generating.job);
+  const listBusy = (!!ac && !jobRunning) || !!editing;
+  for (const b of $("chat-list").querySelectorAll("button")) {
+    const onCurrent = b.closest("li")?.classList.contains("current") && !b.classList.contains("chat-open");
+    b.disabled = listBusy || (jobRunning && onCurrent);   // no renaming/deleting the conversation being written
+  }
+  $("newchat").disabled = !!ac && !jobRunning;   // W29: New chat still cancels an open edit (W7), so editing does not disable it
   showExport();   // W14
 }
 
@@ -914,11 +927,12 @@ function finishEdit(value) {
 }
 
 $("log").addEventListener("click", e => {
-  const btn = e.target.closest("button.msg-regen, button.msg-edit, button.msg-delete");
+  const btn = e.target.closest("button.msg-regen, button.msg-edit, button.msg-delete, button.msg-resume");
   if (!btn || btn.disabled) return;
   const msg = btn.closest(".msg"), entry = entries.get(msg);
   if (!entry) return;
-  if (btn.classList.contains("msg-regen")) regenerate(entry);
+  if (btn.classList.contains("msg-resume")) resumeJob(entry);   // W27
+  else if (btn.classList.contains("msg-regen")) regenerate(entry);
   else if (btn.classList.contains("msg-edit")) startEdit(entry, msg);
   else deleteExchange(entry);
 });
@@ -998,6 +1012,18 @@ async function send() {
 
 // generate asks for a reply to the conversation as it stands: after send(), and after W7's Regenerate
 // and Edit, which change the transcript first.
+// --- sending, and jobs that outlive the page (W27, W28, W29) -------------------------------------------
+// A text reply is a server-side JOB (POST /v1/jobs), streamed through GET /v1/jobs/{id}/events. The job id is
+// saved with the reply, so the reply no longer belongs to the tab. Reload mid-reply and the page re-attaches;
+// the stream replays from the start (W27). Open another conversation, or close the tab, and the job keeps
+// running — come back and the answer is there (W29). While a job waits for its turn, the reply shows its
+// place in line (W28). Stop cancels the job itself (DELETE), not just this page's copy of the stream. A reply
+// carrying an image still uses /v1/chat/completions — jobs take text only — so it stays tied to the tab.
+const JOB_ID_OK = /^job_[0-9a-f]{8,64}$/;
+let detaching = false;   // the in-flight stream is being let go on purpose (switching chats), not stopped
+
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th");
+
 async function generate() {
   if (ac || editing) return;
   if (titleAC) titleAC.abort();   // W9: a title is never worth making someone wait for their reply
@@ -1007,23 +1033,48 @@ async function generate() {
   const {params: sampling} = readSampling();
   const messages = apiMessages();          // taken BEFORE the assistant entry exists
   save();
-  // What the engine produces sits proud (amb-surface-convex, decision 3).
   const cur = models.find(m => m.id === model);
   const path = cur && typeof cur.decode_path === "string" && cur.decode_path.length <= 200 ? cur.decode_path : "";
   const prev = [...transcript].reverse().find(m => m.role === "assistant");
   const divider = prev && prev.model && prev.model !== model ? modelDivider(prev.model, model) : null;   // W18
+  // What the engine produces sits proud (amb-surface-convex, decision 3).
   const out = bubble(model, "bot amb-surface-convex amb-elevation-1");
   out.classList.add("md");
   const entry = {role: "assistant", content: "", model, state: "generating"};
   if (path) entry.path = path;   // W18: the compute path this reply was generated on
   labelReply(out, entry);
   transcript.push(entry);
-  generating = entry;
-  $("send").disabled = true; $("stop").hidden = false; $("newchat").disabled = true;
-  $("chat-status").textContent = "generating…";
+  const body = JSON.stringify({
+    model, messages, stream: true,
+    stream_options: {include_usage: true},   // W8: real token counts, for the meter and the stats
+    ...sampling,                              // W10: temperature, max_tokens and whatever else is set
+  });
+  const asJob = !messages.some(m => Array.isArray(m.content));   // W27: jobs take text only (no image parts)
+  await runReply(out, entry, divider, async signal => {
+    if (!asJob) return fetch("/v1/chat/completions", {method: "POST", headers: headers(), signal, body});
+    const r = await fetch("/v1/jobs", {method: "POST", headers: headers(), signal, body});
+    if (!r.ok) return r;
+    let id = "";
+    try { id = (await r.json()).id; } catch { /* checked below */ }
+    if (!JOB_ID_OK.test(id || "")) throw new StreamProblem("the server did not return a job id");
+    entry.job = id;
+    save();   // the id is what makes this reply outlive the tab — store it before anything else can go wrong
+    syncActions();   // W29: now that it is a job, the list and New chat become usable (they detach, not stop)
+    return fetch("/v1/jobs/" + id + "/events", {headers: headers(), signal});
+  });
+}
 
+// runReply delivers a reply into its bubble: open(signal) returns the response to read (a chat stream, or a
+// job's event stream), and everything after — Markdown, thinking, usage, errors, how it ended — is the same
+// for every route. Used by a new reply and by re-attaching to a job (resumeJob).
+async function runReply(out, entry, divider, open) {
+  generating = entry;
+  $("send").disabled = true; $("stop").hidden = false;
+  $("chat-status").textContent = "generating…";
   ac = new AbortController();
+  const mine = ac;
   syncActions();
+  const model = entry.model;
   const started = performance.now();
   let got = 0, acc = "", lastSave = 0, problem = null, finish = "";
   // Render model output as Markdown (W1). Throttled to one parse per animation frame: a fast token
@@ -1040,19 +1091,33 @@ async function generate() {
     renderReply(out, acc, live, entry);
     out.scrollIntoView({block: "end"});
   };
+  // W28: until the first token, a job that is waiting for its turn says where it stands.
+  let polling = null;
+  const pollQueue = async () => {
+    if (got || !entry.job || mine.signal.aborted) return;
+    try {
+      const r = await fetch("/v1/jobs/" + entry.job, {headers: headers(), signal: mine.signal});
+      const j = r.ok ? await r.json() : null;
+      if (got || mine.signal.aborted) return;
+      const q = j && j.queue;
+      if (q && Number.isSafeInteger(q.position) && Number.isSafeInteger(q.waiting) && q.position > 0) {
+        const n = document.createElement("p");
+        n.className = "note queue-note";
+        n.textContent = "Waiting for its turn: " + ordinal(q.position) + " in line (" + q.waiting + " waiting" + (q.running ? ", 1 running" : "") + ").";
+        out.replaceChildren(n);
+        $("chat-status").textContent = "waiting in line…";
+      } else if (j && j.status === "running" && out.querySelector(".queue-note")) {
+        out.replaceChildren();
+        $("chat-status").textContent = "generating…";
+      }
+    } catch { /* a missed poll just leaves the last word up */ }
+  };
   try {
     let r;
     try {
-     r = await fetch("/v1/chat/completions", {
-      method: "POST", headers: headers(), signal: ac.signal,
-      body: JSON.stringify({
-        model, messages, stream: true,
-        stream_options: {include_usage: true},   // W8: real token counts, for the meter and the stats
-        ...sampling,                              // W10: temperature, max_tokens and whatever else is set
-      }),
-     });
+      r = await open(mine.signal);
     } catch (e) {
-      if (e.name === "AbortError") throw e;
+      if (e.name === "AbortError" || e instanceof StreamProblem) throw e;
       problem = problemFor(0, "");   // no HTTP answer at all
       throw e;
     }
@@ -1060,6 +1125,7 @@ async function generate() {
       problem = problemFor(r.status, await r.text(), {model, retryAfter: r.headers.get("Retry-After") || ""});   // W13 (and W8's wall)
       throw new Error(problem.title);
     }
+    if (entry.job) { pollQueue(); polling = setInterval(pollQueue, 1000); }
     for await (const ev of sse(r)) {
       if (ev.data === "[DONE]") break;
       let j; try { j = JSON.parse(ev.data); } catch { continue; }
@@ -1106,7 +1172,9 @@ async function generate() {
     }
     $("chat-status").textContent = "";
   } catch (e) {
-    if (e.name === "AbortError") {
+    if (e.name === "AbortError" && detaching) {
+      // W29: let go on purpose — the job carries on without this page. detachReply already saved it.
+    } else if (e.name === "AbortError") {
       live = false;
       entry.content = acc;
       entry.state = "stopped";
@@ -1136,18 +1204,103 @@ async function generate() {
       $("chat-status").textContent = "";
     }
   } finally {
+    clearInterval(polling);
+    const wasDetach = detaching;
+    detaching = false;
     generating = null;
-    save();
-    ac = null; $("send").disabled = false; $("stop").hidden = true; $("newchat").disabled = false;
+    if (!wasDetach) save();
+    ac = null; $("send").disabled = false; $("stop").hidden = true;
     syncActions();
     renderChatList();   // W9: this conversation moves to the top, and the list is usable again
+  }
+}
+
+// stopReply is the Stop button (and Esc, W17): for a job, cancel the job on the server as well — the stream
+// ending here would otherwise leave it running to completion for nobody.
+function stopReply() {
+  if (!ac) return;
+  if (generating && generating.job) fetch("/v1/jobs/" + generating.job, {method: "DELETE", headers: headers()}).catch(() => {});
+  ac.abort();
+}
+
+// detachReply lets a job-backed reply go on without this page (W29) — used when the user opens another
+// conversation mid-reply. What has arrived is saved first, while the conversation is still the current one;
+// the reply stays "generating" with its job id, and re-attaches when the conversation is opened again.
+function detachReply() {
+  if (!ac || !generating || !generating.job) return false;
+  save();
+  detaching = true;
+  ac.abort();
+  return true;
+}
+
+// resumeJob re-attaches a saved reply to its job (W27), or fills it in from the job's final record (W29).
+// Called on opening a conversation whose last reply was still generating, and by that reply's Resume button.
+async function resumeJob(entry) {
+  if (ac || editing || !entry || !JOB_ID_OK.test(entry.job || "") || transcript[transcript.length - 1] !== entry) return;
+  const chatId = currentChat.id;
+  let r;
+  try { r = await fetch("/v1/jobs/" + entry.job, {headers: headers()}); }
+  catch { return; }   // no server: the reply stays interrupted, with its Resume button
+  if (currentChat.id !== chatId || ac || transcript[transcript.length - 1] !== entry) return;
+  if (r.status === 404) {
+    entry.state = "interrupted";
+    entry.note = "the server no longer has this job (restarted without -job-dir, or it expired)";
+    save(false); showTranscript(transcript.slice());
+    return;
+  }
+  if (!r.ok) return;
+  let j;
+  try { j = await r.json(); } catch { return; }
+  if (j.status === "pending" || j.status === "running") {
+    // live: the event stream replays everything from the start, so the reply is rebuilt, not appended to
+    entry.content = "";
+    delete entry.meta; delete entry.note; delete entry.usage; delete entry.thought;
+    entry.state = "generating";
+    showTranscript(transcript.slice(0, -1));
+    transcript.push(entry);
+    const prev = [...transcript.slice(0, -1)].reverse().find(m => m.role === "assistant");
+    const divider = prev && prev.model && prev.model !== entry.model ? modelDivider(prev.model, entry.model) : null;
+    const out = bubble(entry.model || "assistant", "bot amb-surface-convex amb-elevation-1");
+    out.classList.add("md");
+    labelReply(out, entry);
+    await runReply(out, entry, divider, signal => fetch("/v1/jobs/" + entry.job + "/events", {headers: headers(), signal}));
+    return;
+  }
+  // finished while nobody was watching: take the job's own record
+  const res = j.result && typeof j.result === "object" ? j.result : {};
+  if (typeof res.content === "string") entry.content = res.content;
+  const u = j.usage;
+  if (u && Number.isSafeInteger(u.prompt_tokens) && Number.isSafeInteger(u.completion_tokens)) entry.usage = {prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens};
+  delete entry.note;
+  if (j.status === "done") {
+    delete entry.state;
+    const toks = entry.usage ? entry.usage.completion_tokens : 0;
+    entry.meta = toks + " tok · finished while you were away";
+    if (res.finish_reason === "length") entry.note = "stopped at the Max tokens limit — raise it to get more";
+  } else if (j.status === "failed") {
+    entry.state = "failed";
+    entry.note = "the server reported an error: " + (typeof j.error === "string" ? j.error.slice(0, 300) : "unknown");
+  } else if (j.status === "cancelled") {
+    entry.state = "cancelled";
+    if (typeof j.error === "string" && j.error) entry.note = j.error.slice(0, 300);
+  } else {
+    entry.state = "interrupted";
+    entry.note = "the server lost this job when it restarted";
+  }
+  save(false);
+  showTranscript(transcript.slice());
+  if (currentChat.titled === "first" && entry.state === undefined) {
+    const first = transcript.find(m => m.role === "user");
+    if (first) autoTitle(currentChat.id, first.content, entry.model);
   }
 }
 $("send").onclick = send;
 
 // --- the conversation list (W9) ------------------------------------------------------------
 function openChat(id) {
-  if (ac || editing) return;
+  if (editing) return;
+  if (ac && !detachReply()) return;   // W29: a job-backed reply keeps running; a streamed one still blocks
   const c = readChat(id);
   if (!c) { renderChatList(); return; }
   currentChat = {id: c.id, title: c.title, titled: c.titled, updated: c.updated, stored: true};
@@ -1159,6 +1312,9 @@ function openChat(id) {
   // state is recorded rather than re-derived on every load.
   if (c.hadGenerating) save(false);
   renderChatList();
+  // W27/W29: a reply that was still being generated, by a job, re-attaches (or picks up its finished answer)
+  const last = transcript[transcript.length - 1];
+  if (last && last.role === "assistant" && last.job && last.state === "interrupted") resumeJob(last);
 }
 
 function startFresh() {
@@ -1174,7 +1330,7 @@ function startFresh() {
 // does not ask (W3's New chat cleared the only conversation, and had to). On an empty new chat it
 // does nothing but put you in the message box.
 $("newchat").onclick = () => {
-  if (ac) return;
+  if (ac && !detachReply()) return;   // W29: New chat lets a job-backed reply carry on in the background
   if (editing) finishEdit(null);
   if (!transcript.length && !currentChat.stored) { $("prompt").focus(); return; }
   startFresh();
@@ -1245,8 +1401,15 @@ function renderChatList() {
     const open = document.createElement("button");
     open.type = "button"; open.className = "chat-open"; open.disabled = busy;
     open.textContent = c.pending ? "New chat" : (c.title || "Untitled");
+    let badge = null;
+    if (c.running && c.id !== currentChat.id) {   // W29: a reply is still being written for this conversation
+      badge = document.createElement("span");
+      badge.className = "chat-running";
+      badge.textContent = "reply in progress";
+    }
     if (c.id === currentChat.id) open.setAttribute("aria-current", "true");
     li.appendChild(open);
+    if (badge) li.appendChild(badge);
     if (!c.pending) {
       for (const [cls, label, aria] of [["chat-rename", "Rename", "Rename conversation"], ["chat-delete", "Delete", "Delete conversation"]]) {
         const b = document.createElement("button");
@@ -1424,7 +1587,7 @@ loadSampling();
   if (!(id && readChat(id, false))) id = listChats()[0]?.id;
   if (id) openChat(id); else startFresh();
 })();
-$("stop").onclick = () => ac && ac.abort();
+$("stop").onclick = stopReply;
 // --- keyboard (W17) --------------------------------------------------------------------------
 // Ctrl/Cmd+Enter always sends. "Enter sends" is a SETTING, not a swap: off (the default, and what long
 // prompts want) Enter is a new line; on, Enter sends and Shift+Enter is the new line. It applies to the edit
@@ -1466,7 +1629,7 @@ $("prompt").addEventListener("keydown", e => {
 });
 // Esc anywhere stops generation — unless something closer already used it (an edit or rename box cancels).
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && !e.defaultPrevented && ac) { e.preventDefault(); ac.abort(); }
+  if (e.key === "Escape" && !e.defaultPrevented && ac) { e.preventDefault(); stopReply(); }
 });
 
 // Minimal SSE reader over fetch. The server sends "event:"/"data:" frames separated by a

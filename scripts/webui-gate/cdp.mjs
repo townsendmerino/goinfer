@@ -44,6 +44,9 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
     try { rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
   };
   process.on("exit", stop);   // also on a check failure's process.exit, and on die()
+  // A signal (a CI timeout, `timeout`, Ctrl-C) ends Node WITHOUT an exit event, which leaked a browser per killed
+  // run (found 2026-09-15: nine left behind by timed-out debug runs). Turn each into an ordinary exit.
+  for (const [sig, code] of [["SIGTERM", 143], ["SIGINT", 130], ["SIGHUP", 129]]) process.once(sig, () => process.exit(code));
   const die = (code, msg) => { console.error(msg); process.exit(code); };
   chrome.on("error", e => die(2, `could not start ${bin}: ${e.message}`));
 

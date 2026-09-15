@@ -1,0 +1,55 @@
+{
+ "about": "Jobs API traffic exactly as goinfer serve sent it, captured 2026-09-15 on nobara-pc (Qwen2.5-0.5B, CPU, -max-queue 2), for the W27–W29 gate in scripts/webui_app_gate.mjs: a submit, a waiting job's status (with the W28 queue field), a submit refused by a full queue, a finished job's record, its full replayed event stream (ending with W27's finish and usage chunks), and a job cancelled while queued.",
+ "submit": {
+  "status": 202,
+  "body": "{\"id\":\"job_f7416bdeae6879e6d3ef61d73d9744fb\",\"status\":\"pending\"}\n"
+ },
+ "waiting_status": {
+  "created": "2026-09-15T07:31:47.783435133-07:00",
+  "id": "job_f7416bdeae6879e6d3ef61d73d9744fb",
+  "model": "q",
+  "queue": {
+   "position": 1,
+   "running": true,
+   "waiting": 1
+  },
+  "status": "pending"
+ },
+ "full_queue_submit": {
+  "status": 429,
+  "retry_after": "1",
+  "body": "{\"error\":{\"message\":\"model \\\"q\\\" queue full; retry\",\"type\":\"rate_limit_error\"}}\n"
+ },
+ "finished_status": {
+  "created": "2026-09-15T07:31:47.783435133-07:00",
+  "finished": "2026-09-15T07:31:52.465133024-07:00",
+  "id": "job_f7416bdeae6879e6d3ef61d73d9744fb",
+  "model": "q",
+  "result": {
+   "content": "Bonjour!",
+   "finish_reason": "stop"
+  },
+  "started": "2026-09-15T07:31:52.246750346-07:00",
+  "status": "done",
+  "usage": {
+   "prompt_tokens": 17,
+   "completion_tokens": 2,
+   "total_tokens": 19,
+   "prefill_reused_tokens": 0
+  }
+ },
+ "events": "data: {\"choices\":[{\"delta\":{\"content\":\"Bonjour\"},\"finish_reason\":null,\"index\":0}],\"created\":1789482707,\"id\":\"job_f7416bdeae6879e6d3ef61d73d9744fb\",\"model\":\"q\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"!\"},\"finish_reason\":null,\"index\":0}],\"created\":1789482707,\"id\":\"job_f7416bdeae6879e6d3ef61d73d9744fb\",\"model\":\"q\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":0}],\"created\":1789482707,\"id\":\"job_f7416bdeae6879e6d3ef61d73d9744fb\",\"model\":\"q\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[],\"created\":1789482707,\"id\":\"job_f7416bdeae6879e6d3ef61d73d9744fb\",\"model\":\"q\",\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":2,\"total_tokens\":19,\"prefill_reused_tokens\":0}}\n\ndata: [DONE]\n\n",
+ "cancelled_status": {
+  "created": "2026-09-15T07:31:52.971752238-07:00",
+  "error": "cancelled before a turn was granted",
+  "finished": "2026-09-15T07:31:53.072643701-07:00",
+  "id": "job_722ff578d2322205e64977924c1a888e",
+  "model": "q",
+  "status": "cancelled"
+ },
+ "cancelled_events": "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"cancelled\",\"index\":0}],\"created\":1789482712,\"id\":\"job_722ff578d2322205e64977924c1a888e\",\"model\":\"q\",\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n",
+ "unknown_job": {
+  "status": 404,
+  "body": "{\"error\":{\"message\":\"job not found\",\"type\":\"invalid_request_error\"}}\n"
+ }
+}

@@ -67,6 +67,11 @@
 //   W18 — which model answered: model and compute path on each reply, saved; a divider exactly where the model
 //        changes, following Regenerate, left behind by no failed request; path in the export; hostile or
 //        over-long stored labels inert or dropped.
+//   W27–W29 — replies as server jobs, replaying REAL serve jobs traffic: a text reply is a job streamed from its
+//        events (usage and end from the real closing chunks); a waiting reply shows its place in line from the real
+//        queue field; Stop DELETEs the job; the real 429; images stay on the streaming route (list disabled there);
+//        leaving mid-reply keeps the job running, marked in the list, and re-attaches on return; finished, failed,
+//        cancelled and lost jobs are filled in or labelled; Resume after an unreachable server; a reload mid-reply.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -121,7 +126,31 @@ const prelude = String.raw`
     window.__titleBodies = [];
     window.__titleReply = { content: "Gate title" };
     let inner = window.fetch;
+    // W27: text replies go through the jobs API. This emulates it over whatever stub a phase installed: the
+    // submit is answered by the stub (as a chat request — so the stub still decides what "the model" does, and
+    // records __lastBody), a successful stream is kept behind a job id, and /events hands it back. Phases that
+    // test the jobs API itself replace window.__jobsEmulator with their own behaviour.
+    window.__jobs = {};
+    let jobSeq = 0;
+    const emulateJobs = async (url, opts) => {
+      if (url === "/v1/jobs" && opts && opts.method === "POST") {
+        const r = await inner("/v1/chat/completions", opts);
+        if (!r.ok) return r;
+        const id = "job_" + (++jobSeq).toString(16).padStart(16, "0");
+        window.__jobs[id] = { response: r, status: "running", cancelled: false };
+        return new Response(JSON.stringify({ id, status: "pending" }), { status: 202, headers: { "Content-Type": "application/json" } });
+      }
+      const m = typeof url === "string" && url.match(/^\/v1\/jobs\/(job_[0-9a-f]+)(\/events)?$/);
+      if (!m) return null;
+      const job = window.__jobs[m[1]];
+      if (!job) return new Response(JSON.stringify({ error: { message: "job not found" } }), { status: 404 });
+      if (opts && opts.method === "DELETE") { job.cancelled = true; return new Response(JSON.stringify({ id: m[1], cancelled: true }), { status: 200 }); }
+      if (m[2]) { const r = job.response; job.response = null; return r || new Response("data: [DONE]\n\n", { status: 200 }); }
+      return new Response(JSON.stringify({ id: m[1], status: job.status }), { status: 200 });
+    };
+    window.__jobsEmulator = emulateJobs;
     const wrapped = async (url, opts) => {
+      if (window.__jobsEmulator) { const j = await window.__jobsEmulator(url, opts); if (j) return j; }
       let b = null; try { b = opts && opts.body ? JSON.parse(opts.body) : null; } catch {}
       if (url === "/v1/chat/completions" && b && b.stream !== true) {
         window.__titleBodies.push(b);
@@ -273,7 +302,8 @@ const phase2 = phase(String.raw`
   $("prompt").value = "this reply gets interrupted";
   send();
   await wait(1500);
-  check("W3 New chat is disabled while a reply is generating", $("newchat").disabled === true, $("newchat").disabled);
+  // since W29 a text reply is a job: New chat stays usable during it, and leaving detaches rather than stops
+  check("W3/W29 during a job-backed reply New chat stays usable (it detaches the job, it does not stop it)", $("newchat").disabled === false && !!(generating && generating.job), $("newchat").disabled + " / job " + (generating && generating.job));
 `);
 
 // ---- phase 3: after a mid-stream reload; then corrupt the store --------------------------------------
@@ -281,7 +311,8 @@ const phase3 = phase(String.raw`
   const bots = document.querySelectorAll("#log .msg.bot");
   const last = bots[bots.length - 1];
   check("W3 mid-stream reload kept the partial answer", bots.length === 3 && last.children[1].textContent.startsWith("an answer the reload interrupts"), bots.length + " / " + last?.children[1].textContent);
-  check("W3 it is labelled interrupted", /interrupted — the page was reloaded/.test(last.querySelector(".meta")?.textContent || ""), last.querySelector(".meta")?.textContent);
+  // since W27 a text reply is a server job, so a reply the reload cut off is "not finished here", with Resume
+  check("W3/W27 it is labelled as not finished here, with a way to resume", /not finished here — the job may still be running on the server\./.test(last.querySelector(".meta")?.textContent || "") && !!last.querySelector(".msg-resume"), last.querySelector(".meta")?.textContent);
   const st = stored();
   check("W3 interrupted state written back to storage", st.messages[st.messages.length - 1].state === "interrupted", JSON.stringify(st.messages[st.messages.length - 1]));
 
@@ -988,10 +1019,8 @@ const phase15 = phase(W9_PRELUDE + String.raw`
   $("prompt").value = "busy";
   const run = send();
   await until(() => !$("stop").hidden); await wait(50);
-  check("W9 the list is disabled while a reply is generating", [...document.querySelectorAll("#chat-list button")].every(b => b.disabled), [...document.querySelectorAll("#chat-list button")].filter(b => !b.disabled).length);
-  const idBusy = currentChat.id;
-  openChat(item("Rust ownership rules").dataset.id);
-  check("W9 openChat refuses while generating, even called directly", currentChat.id === idBusy, currentChat.id);
+  // (while a JOB-backed reply runs the list stays usable and opening another chat detaches it — W29's phase
+  // covers that, and the streamed route, where the list is still disabled)
   $("stop").click(); await run; await idle();
 
   // ---- rename ----
@@ -1859,6 +1888,214 @@ const phase34 = phase(W18_PRELUDE + String.raw`
   check("W18 an over-long stored path is dropped", !whos[1].querySelector(".who-path"), whos[1].innerHTML);
 `);
 
+// ---- phases 35–36: W27–W29 — replies as server jobs: re-attach, place in line, carry on in the background -----
+// The jobs traffic replayed here is REAL serve output (scripts/webui-gate/captured-jobs.json).
+const W27_PRELUDE = String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  window.confirm = () => true;
+  const CAP = ${JSON.stringify(JSON.parse(readFileSync(resolve(here, "webui-gate", "captured-jobs.json"), "utf8")))};
+  const JOB = JSON.parse(CAP.submit.body).id;
+  // a scripted jobs server: every request is logged; per-phase code sets how each job answers
+  const calls = [];
+  const jobs = {};   // id -> {status, queue?, events: [lines] | "hang", result, usage, error}
+  let nextSubmit = null;
+  const sseResponse = (lines, signal) => new Response(new ReadableStream({ async start(c) {
+    signal?.addEventListener("abort", () => { try { c.error(new DOMException("aborted", "AbortError")); } catch {} });
+    if (lines === "hang") return;
+    for (const l of lines) { c.enqueue(enc.encode(l + "\n\n")); await wait(3); }
+    c.close();
+  } }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  window.__jobsEmulator = async (url, opts) => {
+    const method = (opts && opts.method) || "GET";
+    if (typeof url !== "string" || !url.startsWith("/v1/jobs")) return null;
+    calls.push(method + " " + url);
+    if (url === "/v1/jobs" && method === "POST") {
+      window.__lastBody = JSON.parse(opts.body);
+      const s = nextSubmit || { status: 202, body: CAP.submit.body };
+      if (s.status !== 202) return new Response(s.body, { status: s.status, headers: s.headers || {} });
+      return new Response(s.body, { status: 202, headers: { "Content-Type": "application/json" } });
+    }
+    const m = url.match(/^\/v1\/jobs\/(job_[0-9a-f]+)(\/events)?$/);
+    const j = m && jobs[m[1]];
+    if (!j) return new Response(CAP.unknown_job.body, { status: 404 });
+    if (method === "DELETE") { j.deleted = true; return new Response(JSON.stringify({ id: m[1], cancelled: true }), { status: 200 }); }
+    if (m[2]) return sseResponse(typeof j.events === "function" ? j.events() : j.events, opts && opts.signal);
+    const rec = { id: m[1], model: "gate-model", status: j.status };
+    if (j.queue) rec.queue = j.queue;
+    if (j.result) rec.result = j.result;
+    if (j.usage) rec.usage = j.usage;
+    if (j.error) rec.error = j.error;
+    return new Response(JSON.stringify(rec), { status: 200 });
+  };
+  const realEvents = CAP.events.split("\n").filter(l => l.startsWith("data: "));
+  const lastBotEl = () => [...document.querySelectorAll("#log .msg.bot")].at(-1);
+  const ask = async q => { $("prompt").value = q; await settle(send()); await idle(); await wait(40); };
+  // every await on a reply has a deadline: a reply that never ends must fail the phase, not hang the gate
+  function settle(p, ms = 6000) { return Promise.race([p, wait(ms).then(() => { check("deadline: a reply settled within " + ms + " ms", false, "it did not — the page is stuck"); })]); }
+`;
+const phase35 = phase(W27_PRELUDE + String.raw`
+  $("sampling-reset").click();
+  $("newchat").click();
+
+  // ---- W27: a text reply is a job, streamed from its events — real serve output ----
+  jobs[JOB] = { status: "running", events: realEvents };
+  await ask("say hello in french");
+  check("W27 a text reply is submitted as a job, then streamed from that job's events", calls[0] === "POST /v1/jobs" && calls.includes("GET /v1/jobs/" + JOB + "/events") && window.__lastBody.messages.at(-1).content === "say hello in french", JSON.stringify(calls));
+  check("W27 the real job stream renders the answer, and its closing chunks give the stats (usage) and a normal end", lastBotEl().children[1].textContent.trim() === "Bonjour!" && /^\d+ tok · /.test(lastBotEl().querySelector(".meta").textContent) && stored().messages.at(-1).usage?.prompt_tokens === JSON.parse(realEvents.at(-2).slice(6)).usage.prompt_tokens, lastBotEl().textContent.slice(0, 80) + " / " + JSON.stringify(stored().messages.at(-1).usage));
+  check("W27 the job id is saved with the reply", stored().messages.at(-1).job === JOB && !stored().messages.at(-1).state, JSON.stringify(stored().messages.at(-1)).slice(0, 120));
+
+  // ---- W28: waiting in line — the real waiting status's queue field ----
+  calls.length = 0;
+  jobs[JOB] = { status: "pending", queue: { position: 2, waiting: 3, running: true }, events: "hang" };
+  $("prompt").value = "wait your turn";
+  const waitRun = send();
+  await until(() => lastBotEl()?.querySelector(".queue-note"));
+  check("W28 a waiting reply says where it stands in line", lastBotEl().querySelector(".queue-note")?.textContent === "Waiting for its turn: 2nd in line (3 waiting, 1 running)." && $("chat-status").textContent === "waiting in line…", lastBotEl().children[1].textContent);
+  jobs[JOB].queue = CAP.waiting_status.queue;   // the REAL field: position 1 of 1, one running
+  await until(() => /1st in line/.test(lastBotEl().querySelector(".queue-note")?.textContent || ""), 2500);
+  check("W28 the place in line updates as the queue moves (real status: 1st of 1)", lastBotEl().querySelector(".queue-note")?.textContent === "Waiting for its turn: 1st in line (1 waiting, 1 running).", lastBotEl().children[1].textContent);
+
+  // ---- W27: Stop cancels the job on the server ----
+  $("stop").click(); await settle(waitRun); await idle();
+  check("W27 Stop on a job-backed reply cancels the job on the server (DELETE), not just the stream", jobs[JOB].deleted === true && /^stopped/.test(lastBotEl().querySelector(".meta").textContent) && !lastBotEl().querySelector(".queue-note"), JSON.stringify(calls));
+
+  // ---- a full queue at submit: the real 429 ----
+  nextSubmit = { status: 429, body: CAP.full_queue_submit.body, headers: { "Retry-After": CAP.full_queue_submit.retry_after } };
+  $("prompt").value = "queue is full"; await send(); await idle(); await wait(30);
+  check("W27 a submit refused by a full queue gets W13's explanation, from the real 429", [...document.querySelectorAll("#log .msg.err")].at(-1)?.querySelector(".err-title")?.textContent === "The model is busy: its request queue is full.", [...document.querySelectorAll("#log .msg.err")].at(-1)?.textContent);
+  nextSubmit = null;
+
+  // ---- a reply with an image stays on the streaming route — and stays tied to the tab ----
+  window.fetch = async () => new Response(JSON.stringify({ object: "list", data: [{ id: "gate-model", vision: true }] }), { status: 200 });
+  await loadModels("gate-model");
+  const cv = document.createElement("canvas"); cv.width = 2; cv.height = 2;
+  pendingImage = { url: cv.toDataURL("image/png"), info: "2×2" };
+  calls.length = 0;
+  streamAnswer("streamed ", { hang: true });
+  $("prompt").value = "with an image";
+  const imgRun = send();
+  await until(() => !$("stop").hidden); await wait(50);
+  check("W27 a reply carrying an image uses /v1/chat/completions, not a job", calls.length === 0 && Array.isArray(window.__lastBody.messages.at(-1).content), JSON.stringify(calls));
+  check("W27/W9 during a streamed (non-job) reply the conversation list is disabled", [...document.querySelectorAll("#chat-list button")].every(b => b.disabled) && $("newchat").disabled, [...document.querySelectorAll("#chat-list button")].filter(b => !b.disabled).length);
+  const streamedChat = currentChat.id;
+  openChat("nonexistent");
+  check("W9 openChat refuses during a streamed reply, even called directly", currentChat.id === streamedChat, currentChat.id);
+  $("stop").click(); await settle(imgRun); await idle();
+
+  // ---- W29: a job-backed reply carries on in the background ----
+  // (a fresh conversation: one that holds an image keeps using the streaming route, since a job cannot carry it)
+  $("newchat").click();
+  const JOB2 = "job_" + "b".repeat(32);
+  nextSubmit = { status: 202, body: JSON.stringify({ id: JOB2, status: "pending" }) };
+  jobs[JOB2] = { status: "running", events: "hang" };
+  $("prompt").value = "a long answer";
+  const bgRun = send();
+  await until(() => generating && generating.job === JOB2);
+  await wait(60);
+  const bgChat = currentChat.id;
+  check("W29 while a job-backed reply runs, the conversation list and New chat stay usable", !$("newchat").disabled && [...document.querySelectorAll("#chat-list li:not(.current) button")].every(b => !b.disabled), $("newchat").disabled);
+  $("newchat").click();
+  await settle(bgRun); await idle();
+  // the detached job's catch runs AFTER the switch, against a global status element — it must not clobber
+  // the conversation now on screen with the OLD reply's outcome (a real "stopped" text on a fresh, idle chat)
+  check("W29 leaving a job-backed reply does not leave the new conversation's status saying it was stopped", $("chat-status").textContent === "", JSON.stringify($("chat-status").textContent));
+  check("W29 leaving the conversation does not cancel the job", !jobs[JOB2].deleted && currentChat.id !== bgChat, JSON.stringify(calls.filter(c => c.startsWith("DELETE"))));
+  const kept = JSON.parse(localStorage.getItem("goinfer.chat.v2." + bgChat));
+  check("W29 the reply is kept as still generating, with its job id", kept.messages.at(-1).job === JOB2 && kept.messages.at(-1).state === "generating" && kept.running === true, JSON.stringify(kept.messages.at(-1)).slice(0, 120));
+  const badge = [...document.querySelectorAll("#chat-list li")].find(li => li.dataset.id === bgChat)?.querySelector(".chat-running");
+  check("W29 the list marks that conversation as having a reply in progress", badge?.textContent === "reply in progress", [...document.querySelectorAll("#chat-list li")].map(li => li.textContent).join(" | "));
+
+  // come back while it is still running: re-attach, replaying from the start
+  jobs[JOB2] = { status: "running", events: ["data: " + JSON.stringify({ choices: [{ delta: { content: "The whole " } }] }), "data: " + JSON.stringify({ choices: [{ delta: { content: "answer." } }] }), "data: " + JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }), "data: [DONE]"] };
+  openChat(bgChat);
+  await until(() => !generating && /The whole answer\./.test(lastBotEl()?.textContent || ""));
+  await idle(); await wait(40);
+  check("W27/W29 opening the conversation again re-attaches: the stream replays and the reply completes", lastBotEl().children[1].textContent.trim() === "The whole answer." && !JSON.parse(localStorage.getItem("goinfer.chat.v2." + bgChat)).messages.at(-1).state, lastBotEl().textContent.slice(0, 80));
+
+  // finished while away: take the job's record (the REAL finished status)
+  const JOB3 = CAP.finished_status.id;
+  nextSubmit = { status: 202, body: JSON.stringify({ id: JOB3, status: "pending" }) };
+  jobs[JOB3] = { status: "running", events: "hang" };
+  $("prompt").value = "answer while I am away";
+  const awayRun = send();
+  await until(() => generating && generating.job === JOB3); await wait(40);
+  const awayChat = currentChat.id;
+  $("newchat").click(); await settle(awayRun); await idle();
+  jobs[JOB3] = { status: "done", result: CAP.finished_status.result, usage: CAP.finished_status.usage, events: [] };
+  openChat(awayChat);
+  await until(() => /Bonjour!/.test(lastBotEl()?.textContent || ""));
+  await wait(40);
+  check("W29 a reply that finished while you were away is filled in from the job's real record", lastBotEl().children[1].textContent.trim() === "Bonjour!" && /finished while you were away/.test(lastBotEl().querySelector(".meta").textContent) && stored().messages.at(-1).usage?.completion_tokens === CAP.finished_status.usage.completion_tokens, lastBotEl().textContent.slice(0, 100));
+
+  // a job the server no longer has
+  const JOB4 = "job_" + "d".repeat(32);
+  const lostId = "lostjob1";
+  localStorage.setItem("goinfer.chat.v2." + lostId, JSON.stringify({ v: 2, id: lostId, title: "lost", titled: "user", updated: Date.now(), running: true, messages: [{ role: "user", content: "q" }, { role: "assistant", model: "gate-model", content: "part", state: "generating", job: JOB4 }] }));
+  openChat(lostId);
+  await until(() => /no longer has this job/.test(lastBotEl()?.querySelector(".meta")?.textContent || ""));
+  check("W27 a job the server no longer has (the real 404) is labelled, not left spinning", /not finished here — the server no longer has this job/.test(lastBotEl().querySelector(".meta").textContent), lastBotEl().querySelector(".meta").textContent);
+
+  // a failed job, and a cancelled one (real record)
+  const JOB5 = "job_" + "e".repeat(32);
+  jobs[JOB5] = { status: "failed", error: "generation failed: out of memory", result: { content: "", finish_reason: "" } };
+  const failId = "failjob1";
+  localStorage.setItem("goinfer.chat.v2." + failId, JSON.stringify({ v: 2, id: failId, title: "fail", titled: "user", updated: Date.now(), messages: [{ role: "user", content: "q" }, { role: "assistant", model: "gate-model", content: "", state: "generating", job: JOB5 }] }));
+  openChat(failId);
+  await until(() => /incomplete/.test(lastBotEl()?.querySelector(".meta")?.textContent || ""));
+  check("W29 a job that failed while away is shown as failed, with the server's reason", /incomplete — the server reported an error: generation failed: out of memory/.test(lastBotEl().querySelector(".meta").textContent), lastBotEl().querySelector(".meta")?.textContent);
+  const JOB6 = CAP.cancelled_status.id;
+  jobs[JOB6] = { status: CAP.cancelled_status.status, error: CAP.cancelled_status.error };
+  const cancId = "cancjob1";
+  localStorage.setItem("goinfer.chat.v2." + cancId, JSON.stringify({ v: 2, id: cancId, title: "canc", titled: "user", updated: Date.now(), messages: [{ role: "user", content: "q" }, { role: "assistant", model: "gate-model", content: "", state: "generating", job: JOB6 }] }));
+  openChat(cancId);
+  await until(() => /cancelled by the server/.test(lastBotEl()?.querySelector(".meta")?.textContent || ""));
+  check("W29 a job cancelled while queued (real record) says so, with its reason", lastBotEl().querySelector(".meta").textContent === "cancelled by the server (cancelled before a turn was granted).", lastBotEl().querySelector(".meta")?.textContent);
+
+  // Resume: the server was unreachable when the conversation opened
+  const JOB7 = "job_" + "f".repeat(32);
+  const resId = "resumejob";
+  localStorage.setItem("goinfer.chat.v2." + resId, JSON.stringify({ v: 2, id: resId, title: "resume", titled: "user", updated: Date.now(), messages: [{ role: "user", content: "q" }, { role: "assistant", model: "gate-model", content: "partial", state: "generating", job: JOB7 }] }));
+  const emu = window.__jobsEmulator;
+  window.__jobsEmulator = async () => { throw new TypeError("Failed to fetch"); };
+  openChat(resId);
+  await wait(150);
+  check("W27 with the server unreachable, the reply stays 'not finished here' and offers Resume", /not finished here — the job may still be running/.test(lastBotEl().querySelector(".meta").textContent) && !!lastBotEl().querySelector(".msg-resume"), lastBotEl().querySelector(".meta")?.textContent);
+  window.__jobsEmulator = emu;
+  jobs[JOB7] = { status: "running", events: ["data: " + JSON.stringify({ choices: [{ delta: { content: "Resumed in full." } }] }), "data: [DONE]"] };
+  lastBotEl().querySelector(".msg-resume").click();
+  await until(() => /Resumed in full\./.test(lastBotEl()?.textContent || "") && !generating);
+  await idle(); await wait(40);
+  check("W27 Resume re-attaches once the server is back, replaying the whole reply", lastBotEl().children[1].textContent.trim() === "Resumed in full." && !lastBotEl().querySelector(".msg-resume"), lastBotEl().textContent.slice(0, 80));
+
+  // leave a job running mid-reply for the reload phase
+  const JOB8 = "job_" + "a".repeat(32);
+  nextSubmit = { status: 202, body: JSON.stringify({ id: JOB8, status: "pending" }) };
+  jobs[JOB8] = { status: "running", events: ["data: " + JSON.stringify({ choices: [{ delta: { content: "first half " } }] })].concat(["hangmarker"]) };
+  jobs[JOB8].events = "hang";
+  $("prompt").value = "survive a reload";
+  send();
+  await until(() => generating && generating.job === JOB8);
+  await wait(1200);   // let the periodic save run
+  sessionStorage.setItem("gate.w27.chat", currentChat.id);
+`);
+const phase36 = phase(W27_PRELUDE + String.raw`
+  const id = sessionStorage.getItem("gate.w27.chat");
+  check("W27 after a reload mid-reply, the conversation is back with its reply marked not finished here", currentChat.id === id && /not finished here/.test(lastBotEl()?.querySelector(".meta")?.textContent || "") && stored().messages.at(-1).job === "job_" + "a".repeat(32), lastBotEl()?.querySelector(".meta")?.textContent);
+  jobs["job_" + "a".repeat(32)] = { status: "running", events: ["data: " + JSON.stringify({ choices: [{ delta: { content: "The reply, " } }] }), "data: " + JSON.stringify({ choices: [{ delta: { content: "replayed after the reload." } }] }), "data: " + JSON.stringify({ choices: [], usage: { prompt_tokens: 9, completion_tokens: 6, total_tokens: 15 } }), "data: [DONE]"] };
+  lastBotEl().querySelector(".msg-resume").click();
+  await until(() => /replayed after the reload\./.test(lastBotEl()?.textContent || "") && !generating);
+  await idle(); await wait(40);
+  check("W27 re-attaching after the reload replays the job from the start and completes the reply", lastBotEl().children[1].textContent.trim() === "The reply, replayed after the reload." && stored().messages.at(-1).usage?.completion_tokens === 6 && !stored().messages.at(-1).state, lastBotEl().textContent.slice(0, 100));
+  // a stored job id that is not a job id is never requested, and never offered for Resume
+  calls.length = 0;
+  const badId = "badjobid";
+  localStorage.setItem("goinfer.chat.v2." + badId, JSON.stringify({ v: 2, id: badId, title: "bad", titled: "user", updated: Date.now(), messages: [{ role: "user", content: "q" }, { role: "assistant", model: "gate-model", content: "x", state: "generating", job: "../../admin/halt" }] }));
+  openChat(badId);
+  await wait(200);
+  check("W27 a stored job id that is not a job id is dropped: nothing requested, no Resume", calls.length === 0 && !lastBotEl().querySelector(".msg-resume") && stored().messages.at(-1).job === undefined, JSON.stringify(calls));
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -1871,7 +2108,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

@@ -1703,3 +1703,7 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
 .who .who-path{margin-left:8px;font-family:var(--mono);text-transform:none;letter-spacing:0}
 .model-switch{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--gi-muted);margin:2px 4px}
 .model-switch::before,.model-switch::after{content:"";flex:1;border-top:1px solid color-mix(in srgb,var(--gi-muted) 40%,transparent)}
+
+/* W27–W29: jobs */
+.chat-running{flex:none;font-size:11px;color:var(--gi-accent);padding:0 6px;white-space:nowrap}
+.queue-note{margin:0}
