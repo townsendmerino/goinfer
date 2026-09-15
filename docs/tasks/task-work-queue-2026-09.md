@@ -14,7 +14,7 @@
 > Sibling: [`task-halt-2026-09.md`](task-halt-2026-09.md) (K1–K9) — this doc **reuses** K1 (cancel
 > by id), K2 (global halt), K4 (budgets) and K5 (the admin socket) rather than restating them, and
 > nothing here is worth building before those are stable. Also adjacent:
-> [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W18, whose "re-attach to a generation after a
+> [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27, whose "re-attach to a generation after a
 > reload" is J3's browser-side consumer and has no other route to existing.
 
 ---
@@ -433,6 +433,6 @@ check, `drive`) · `internal/serveapp/helpers.go:84` (`-max-inflight`, distinct 
 surface) · `internal/chatapp/main.go:203` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §3.3 ·
-[`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W18 · `docs/api-tiers.md` (what `serve` promises)
+[`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27–W31 · `docs/api-tiers.md` (what `serve` promises)
 
 <!-- doc-reviewed: 2026-09-13 -->

@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1).** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W31 added 2026-09-15 (§7) now that J1–J4 have shipped.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -11,7 +11,7 @@
 >
 > Siblings: [`task-fit-to-hardware.md`](task-fit-to-hardware.md) §3 already owns W12 (fit before
 > download) and is cited rather than restated; [`task-work-queue-2026-09.md`](task-work-queue-2026-09.md)
-> J3 is the only route to W18; [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K5 is what a
+> J3 is the only route to W27; [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K5 is what a
 > W22 admin panel would surface. `docs/completed/task-web-ui-ambient.md` is the closed record of
 > the current visual design and is not superseded by anything here.
 
@@ -71,7 +71,7 @@ Tier B as a deliberate widening needing sign-off, and leave Tier C unauthorised.
   are real design calls, not permission: where the tool loop runs (W19), a PDF extractor against
   the no-new-root-dependency rule (W20), the gate for page-initiated admin actions — answered once
   for W5 and W22 together — the RAG stack (W24), and the sandbox model (W25). Items that already
-  belong to other docs stay owned there (W12 → `task-fit-to-hardware.md` §3, W18's re-attach →
+  belong to other docs stay owned there (W12 → `task-fit-to-hardware.md` §3, W27's re-attach →
   `task-work-queue-2026-09.md` J3).
 
 **What the decision does NOT change** — none of these were the "not a product" argument, so none
@@ -789,6 +789,59 @@ outside the allowed set.
 opt-in, and the non-loopback `-api-key` rule (`internal/serveapp/webui.go`). V-20 in
 `docs/completed/review-2026-09-04.md` is the record of what it cost to learn that the first time.
 W5's load route was the first real test of them, and takes all of them (W5).
+
+---
+
+## 7. The queue surface — W27–W31, added 2026-09-15
+
+`task-work-queue-2026-09.md`'s J1–J4 shipped 2026-09-15, which makes five things buildable that
+were not when this doc was filed. They are **Tier B class** — daily-driver items, in scope under
+§1's decision, no further sign-off — and they are numbered from W27 so the existing items keep
+their recorded numbers.
+
+**A correction this section also makes.** Until now both this doc and the queue doc cross-referenced
+"W18" as the re-attach item. W18 is *Label which turn came from which model*; re-attach never had a
+number. It is **W27** below, and the four stale references have been repointed.
+
+### W27 — Re-attach to a generation after a reload
+Closing the tab still cancels the work: `r.Context()` dying is what cleans up a partial pull, and
+the same wiring kills a chat. J3's `GET /v1/jobs/{id}/events` replays from the beginning and then
+continues live, which is exactly what a reconnecting page needs. The page keeps the job id with the
+conversation (W3/W9 already persist conversations), and on load resumes any job still running.
+**Effort: M. Unblocked.** This is the prerequisite for W29 and W31.
+
+### W28 — Queue position while waiting
+A busy server is currently an indistinguishable spinner, and a full queue is a raw 429 rendered as
+the first 400 characters of a body (W13). J1's FIFO knows both the depth and this waiter's place in
+it. Show "2nd in queue" instead of a spinner, and give W13's 429 something to say.
+**Decision needed:** J9's `/admin/queue` is socket-only by design, so the page needs either a
+position field on its own request or a narrow `/web/queue` — the same page-initiated-admin question
+W5 answered for loading, and it should be answered once. **Effort: S–M after that call.**
+
+### W29 — Send in the background and come back
+Submit through `/v1/jobs` rather than the streaming route, leave the page, and the answer is on the
+job when you return. This is the one Claude-app behaviour the page could not match at any price
+before J3; it can now. Depends on W27. **Effort: M.**
+
+### W30 — A Batch tab
+J4 landed `/v1/files` + `/v1/batches` and the Anthropic Message Batches shape over one job store.
+Upload a JSONL, watch it run, download the results. The Models tab's pull idiom — progress bar,
+rate, ETA, a terminal line that says what is on disk — transplants directly.
+**No Claude-app analog: this is a goinfer-specific surface, not a gap being closed.** **Effort: M.**
+
+### W31 — Cancel by job id, and job history
+J3's `DELETE /v1/jobs/{id}` cancels an *addressed* job, which survives a reload; today's Stop button
+only aborts the local stream. And with `-job-dir` set, J2's journal is a real history that W9's
+conversation list can show, including generations this browser never saw. Overlaps W22's admin
+panel — answer the page-initiated-admin gate once, for W5, W22, W28 and W31 together.
+**Effort: M.**
+
+### What J5–J9 would add later
+J5 (the resumable `goinfer-chat -batch` runner) is a CLI, not a UI item. J6 (prefix-aware
+scheduling) was measured 2026-09-15 and **killed** — 1.024× against a 1.3–2.0× pass band
+(`docs/measurements/j6-prefix-scheduling-2026-09-15.md`) — so admission stays plain FIFO and W28's
+"position while waiting" is exactly arrival order, unqualified. J8 (N decode workers) is still open
+and would change *how* the queue is served without changing this.
 
 ---
 
