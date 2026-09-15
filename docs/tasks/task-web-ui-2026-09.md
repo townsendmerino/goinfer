@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), W9–W11 and W13–W15 done; W12 skipped for now (owner, 2026-09-14); Tier B continues with W16.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), W9–W11 and W13–W16 done; W12 skipped for now (owner, 2026-09-14); Tier B continues with W17.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -27,7 +27,7 @@ offline-capable engine require the network. It is off by default behind `-web`
 (`internal/serveapp/webui.go:458`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
-Two tabs (`internal/serveapp/webui/index.html:12`):
+Two tabs (`internal/serveapp/webui/index.html:13`):
 
 - **Chat** — model dropdown, temperature, max tokens, streaming reply, Stop, and per-response
   token count / tok/s / wall time attached to the message itself.
@@ -373,9 +373,42 @@ inside the binary.
 | **W13** | Errors that say what to do | **DONE 2026-09-14** — see below | S |
 | **W14** | Export the conversation | **DONE 2026-09-14** — see below | S |
 | **W15** | Dark mode | **DONE 2026-09-15** — see below | S |
-| **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/ui/app.css:1480`). A server on the LAN is a plausible phone client | S |
+| **W16** | Phone layout | **DONE 2026-09-15** — see below | S |
 | **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:1378`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
+
+### W16 — Phone layout — DONE 2026-09-15
+~~One `max-width:920px` column, no media query~~. The cards already stacked. The header was what broke a
+phone: brand, stats, Book, Theme and both tabs in one row forced a 400 px screen's layout to **446 px**
+(sideways scrolling) and collapsed the Theme select to 12 px. At 600 px and below the header now wraps into
+rows (brand and tabs, then the model stats, then Book and Theme) and the gutters tighten. On a narrow
+screen or a coarse pointer, the small text-sized controls grow to at least 32 px tall. Several had been
+under WCAG 2.5.8's 24 px minimum: the Export buttons (21 px) and the System prompt / Sampling toggles
+(20 px). Desktop with a mouse keeps its density.
+
+Found by looking, which is the only reason they were found: screenshots from headless Chrome at 400 and 360
+px, in both themes. The same pass caught one regression of this item's own (a `display:flex` summary loses
+its disclosure triangle) and two older bugs (hidden elements that still rendered, and the Chats list laid
+out sideways), fixed in their own commit.
+
+Gate: phases 28–30 of `scripts/webui_app_gate.mjs`, 24 checks. They use a real mobile metrics override at
+400 and 360 px, with a page crowded with what breaks narrow layouts: an unbroken 300-character URL, a
+400-character code line, a 12-column table, an error with buttons, a pending image and an open edit box.
+The checks:
+- the page does not scroll sideways;
+- nothing reaches past the screen edge except inside its own scroll box;
+- the code and table can **actually be scrolled** to their end (a clipping box reports the same sizes);
+- every visible control is at least 24×24 px (83 checked);
+- header items don't overlap, and the stats get their own row;
+- the key controls are on screen, and the toggles keep their triangles;
+- at desktop width, the header is still one row, with desktop padding and the 920 px column.
+
+Ten mutations in all. The first run left three survivors. Two were rules nothing needed once the header
+wrapped (removed, not tested), and one needed a sharper check: scrolling the code block instead of comparing
+sizes. A later survivor (phone rules applied on desktop) got the desktop-padding check.
+**Not covered:** on desktop, the dense controls stay under 24 px tall. WCAG 2.5.8 allows that when targets
+are spaced apart, which was not measured here.
+**Effort was: S–M.**
 
 ### W15 — Dark mode — DONE 2026-09-15
 ~~One light surface; no `prefers-color-scheme` rule anywhere~~ — a **Theme** control in the header:
@@ -712,7 +745,7 @@ W5's load route was the first real test of them, and takes all of them (W5).
 ## Sources
 
 `internal/serveapp/webui.go:50`, `:458` (the embed, the `-web` gate) ·
-`internal/serveapp/webui/ui/app.css:1480` (layout) · `internal/serveapp/webui/index.html:12` (tabs) ·
+`internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:929`, `:122`, `:1378`, `:1490`, `:357`, `:835`, `:86`, `:489`, `:1307`, `:640`, `:205`, `:1237`, `:7` (the conversation transcript, the
 rendering rule, the error explanations, the keybinding, the load offer that replaced the dead-end line, the thinking split,
 regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme) · `internal/serveapp/openai.go:796` (`contextWindow`) ·

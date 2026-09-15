@@ -54,6 +54,8 @@ any surface may still change.
   - Dark mode: follows the system setting, or choose Light or Dark in the header. Every text colour was
     measured against WCAG AA on every surface in both themes, which also fixed four light-theme colours
     that fell short on reply bubbles: links, the stats line, success and warning text.
+  - Phone layout: the header wraps instead of forcing sideways scrolling, and small controls grow to
+    at least 32 px on touch screens.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.
