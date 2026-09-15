@@ -1273,11 +1273,11 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/helpers.go:60` | goinfer | `func maxBytes(n int64, h http.HandlerFunc, note ...string) http.HandlerFunc {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/limits_test.go:151` | goinfer | `if strings.Contains(body, "promptTooLargeForContext(") {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/liveness.go:122` | goinfer | `func (lm *loadedModel) closeEntryNatives() {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1029` | goinfer | `if len(s.models) != 1 {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1045` | goinfer | `if cfg.backend == "webgpu" {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1195` | goinfer | `if opts.EmbedInt4 {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1201` | goinfer | `loadPath := spec.path` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1226` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1020` | goinfer | `if len(s.models) != 1 {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1036` | goinfer | `if cfg.backend == "webgpu" {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1186` | goinfer | `if opts.EmbedInt4 {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1192` | goinfer | `loadPath := spec.path` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1217` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
 | `docs/audit-2026-09-10.md|internal/serveapp/main.go:353` | goinfer | `const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables BO` |
 | `docs/audit-2026-09-10.md|internal/serveapp/main.go:452` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
 | `docs/audit-2026-09-10.md|internal/serveapp/main.go:453` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a ref` |
@@ -1370,7 +1370,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:109` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:214` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:461` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1035` | goinfer | `if visionModelType(dir) == "qwen2_5_vl" {` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1026` | goinfer | `if visionModelType(dir) == "qwen2_5_vl" {` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:485` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1186` | goinfer | `// Adapter (compute-time LoRA) models MUST NOT take the stateless resident path: the LoR` |
 | `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
@@ -1583,6 +1583,7 @@ supports.
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
+| `docs/queue-engineering.md|internal/serveapp/haltsignal_unix.go:21` | goinfer | `signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)` |
 | `docs/queue-engineering.md|internal/serveapp/main.go:789` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1145` | goinfer | `if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {` |
@@ -1608,7 +1609,7 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1001` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:205` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:271` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1305` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1296` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
 | `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:368` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |
@@ -1646,7 +1647,7 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1034` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:495` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:991` | goinfer | `lm.sessions.adapter = spec.name` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:982` | goinfer | `lm.sessions.adapter = spec.name` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1166` | goinfer | `var gen *decoder.Generation` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1196` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1288` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |

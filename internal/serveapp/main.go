@@ -822,18 +822,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// this switch without opening a socket or an HTTP client. Separate from the SIGINT/SIGTERM
 	// channel above: those are one-shot (shutdown then exit), these repeat for the life of the
 	// process, so they get their own Notify and a loop rather than a single <-sig receive.
-	haltSig := make(chan os.Signal, 1)
-	signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)
-	go func() {
-		for s := range haltSig {
-			switch s {
-			case syscall.SIGUSR1:
-				srv.halt("SIGUSR1", "SIGUSR1")
-			case syscall.SIGUSR2:
-				srv.resume("SIGUSR2")
-			}
-		}
-	}()
+	// Platform-specific (haltsignal_unix.go / haltsignal_windows.go): SIGUSR1/SIGUSR2 are
+	// undefined identifiers on Windows, not just signals it never raises.
+	startHaltSignalLoop(srv)
 
 	// K2: -halt-file. Polled in its own goroutine; stopHaltPoll (declared above, closed
 	// alongside stopDemote at shutdown) is best-effort background work with no result main()

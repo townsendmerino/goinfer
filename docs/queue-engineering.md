@@ -454,6 +454,37 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**H1 · A release that attaches ZERO assets currently publishes anyway — the gate that should
+catch this doesn't exist** — `linux` (the workflow runs on GitHub-hosted runners; the fix is
+CI-only), **filed 2026-09-15**
+
+Found via `docs/queue-presentation.md` U12, itself found by checking a Go Weekly submission's
+premise against the live release rather than believing it: `v0.18.0` (current latest) has **zero**
+release assets (`gh api repos/townsendmerino/goinfer/releases/tags/v0.18.0 --jq '.assets | length'`
+→ `0`), against 27 on each of the three releases before it. `release-assets.yml`'s `runtime
+binaries` job failed at `cross-compile goinfer-serve per platform` (run `34807285691`) — a real
+build failure, referencing `syscall.SIGUSR1`/`SIGUSR2` unconditionally, which do not exist on
+`GOOS=windows`. **Fixed forward** (build-tagged `internal/serveapp/haltsignal_unix.go:21,25,27`/
+`haltsignal_windows.go`, same commit that filed this) — that half is done.
+
+**This entry is about the OTHER half: nothing noticed.** The chat binaries and both
+model-in-binary builds compiled successfully in that same run and were simply never attached,
+because the attach step is gated on the whole job succeeding and nothing downstream checks "did
+the release that resulted actually have anything in it." The release published, the tag exists,
+the page looks exactly like every prior release page except for the asset count — which is the
+worst shape this class of failure can take, because `RELEASING.md:66-68` already names the
+precedent this repeats ("v0.16.0 shipped a README naming a binary that was not in the release ...
+every internal gate was green"). A platform-specific call landing in `cmd/serve`'s import graph
+is not a one-time event; the next one will fail the same way, silently, until a human happens to
+count assets on the releases page.
+
+**Fix:** a step in `release-assets.yml`, after the attach step, that queries the just-published
+release's own asset count via `gh api` (the same call this finding used to find the problem) and
+fails the workflow loudly if it is below the expected count for that tag — not a new build
+target, a verification step over what the workflow itself just did. Whatever the right threshold
+is (exactly the prior release's count? a fixed minimum given the "six platforms + two
+model-embedded" shape is stable?) is a decision to make when this is picked up, not assumed here.
+
 **G23 · `.repowise/`'s 87.6 MB stays in git history — the purge decision is still open** —
 `mac`, **filed 2026-09-11 (audit-2026-09-02.md N-41: the decision existed only in a commit
 message, invisible to anyone browsing the queues).**
