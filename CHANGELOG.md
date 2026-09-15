@@ -56,6 +56,8 @@ any surface may still change.
     that fell short on reply bubbles: links, the stats line, success and warning text.
   - Phone layout: the header wraps instead of forcing sideways scrolling, and small controls grow to
     at least 32 px on touch screens.
+  - Keyboard: an optional "Enter sends" setting (Shift+Enter for a new line; never while an input
+    method is composing), ↑ in an empty box edits your last message, Esc stops a reply.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.

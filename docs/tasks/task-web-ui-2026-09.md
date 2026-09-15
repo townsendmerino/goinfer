@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), W9–W11 and W13–W16 done; W12 skipped for now (owner, 2026-09-14); Tier B continues with W17.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), W9–W11 and W13–W17 done; W12 skipped for now (owner, 2026-09-14); Tier B continues with W18.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -181,7 +181,7 @@ reload; a hostile prompt inert; tab sync, and a focused box not clobbered. Six m
 ### W5 — Load a model from the page — DONE 2026-09-14
 ~~The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
 --model &lt;path&gt; to serve it"*~~ — a finished pull now ends on a **Load it now** button
-(`internal/serveapp/webui/ui/app.js:1490`). It loads the file, shows a heartbeat while the load runs,
+(`internal/serveapp/webui/ui/app.js:1530`). It loads the file, shows a heartbeat while the load runs,
 refreshes the model list, and selects the new model, so the next message goes to it. The header
 stats now follow whichever model is selected, not always the first one listed.
 
@@ -374,8 +374,34 @@ inside the binary.
 | **W14** | Export the conversation | **DONE 2026-09-14** — see below | S |
 | **W15** | Dark mode | **DONE 2026-09-15** — see below | S |
 | **W16** | Phone layout | **DONE 2026-09-15** — see below | S |
-| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:1378`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
+| **W17** | Enter sends, ↑ edits last, Esc stops | **DONE 2026-09-15** — see below | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
+
+### W17 — Enter sends, ↑ edits last, Esc stops — DONE 2026-09-15
+~~Only Ctrl/Cmd+Enter~~ — as the row asked, **a setting, not a swap** (`internal/serveapp/webui/ui/app.js:1383`).
+Ctrl/Cmd+Enter always sends. **Enter sends** is a checkbox beside the composer, off by default (long
+prompts want Enter for new lines). When on, Enter sends and Shift+Enter is a new line. The placeholder
+says which is in effect. The setting is saved, followed across tabs, and applies to the **edit box** too
+(W7), so one habit works in both.
+
+- **An input method mid-composition never sends.** In Japanese, Chinese or Korean input, Enter
+  *confirms* the characters, and a send there would ship half a word. Both signals browsers use are
+  honoured (`isComposing`, and key code 229). The rename box (W9) gets the same guard.
+- **↑ in an empty message box** opens your last message for editing (W7). With text in the box, ↑ just
+  moves the cursor.
+- **Esc stops a reply that is generating**, from anywhere on the page, unless something closer used it:
+  in an edit or rename box, Esc still cancels that.
+
+Gate: phases 31–32 of `scripts/webui_app_gate.mjs`, 24 checks. The keys are delivered as real `keydown`
+events with modifiers, `isComposing` and key code 229. The checks cover what is sent and whether the key
+was swallowed, both settings in the message box and the edit box, ↑ with and without text, Esc stopping
+a reply and cancelling an edit, the rename box under composition, and persistence and tab sync.
+Fourteen mutations, each red.
+
+**A gate defect the mutations found:** with Esc-to-stop removed, the check waited on a reply that could
+never end, and the gate **hung** instead of failing (a hang in CI is a timeout, not a clear red). That
+check now has a 5-second deadline and fails.
+**Effort was: S.**
 
 ### W16 — Phone layout — DONE 2026-09-15
 ~~One `max-width:920px` column, no media query~~. The cards already stacked. The header was what broke a
@@ -746,8 +772,8 @@ W5's load route was the first real test of them, and takes all of them (W5).
 
 `internal/serveapp/webui.go:50`, `:458` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
-`internal/serveapp/webui/ui/app.js:309`, `:929`, `:122`, `:1378`, `:1490`, `:357`, `:835`, `:86`, `:489`, `:1307`, `:640`, `:205`, `:1237`, `:7` (the conversation transcript, the
-rendering rule, the error explanations, the keybinding, the load offer that replaced the dead-end line, the thinking split,
+`internal/serveapp/webui/ui/app.js:309`, `:929`, `:122`, `:1383`, `:1530`, `:357`, `:835`, `:86`, `:489`, `:1307`, `:640`, `:205`, `:1237`, `:7` (the conversation transcript, the
+rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
 regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme) · `internal/serveapp/openai.go:796` (`contextWindow`) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:449` (the sampling fields the page never sends) ·
