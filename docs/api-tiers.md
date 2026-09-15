@@ -114,7 +114,7 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `--embed-*`, `--require-be`, `--allow-admin` bodies). `Options.Quant` and `Options.LoRA` are
   Hard and listed above.
 - **Checkpoint fetching.** The `pull` package — `Resolve`, `IsRef`, `ParseRef`, `Ref`, `File`,
-  `List`, `Select`, `CheckAccess`, `Download`, `CacheDir`, `Curated`, `CuratedNames`,
+  `List`, `Select`, `CheckAccess`, `Download`, `CacheDir`, `CacheRoot`, `Curated`, `CuratedNames`,
   `CuratedTier`, `HumanBytes` — and the `hf:`/`demo:` reference form accepted by `--model` and
   `goinfer-chat`/`goinfer-serve`. It was `internal/modelpull` until 2026-09-02 and is exported
   because a library caller embedding goinfer needs the same first step the CLIs and the web UI

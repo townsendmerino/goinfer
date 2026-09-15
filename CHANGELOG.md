@@ -15,6 +15,23 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added
+
+- **`serve -web` is becoming a full chat interface** (`docs/tasks/task-web-ui-2026-09.md`; the page
+  is now a product surface by owner decision, 2026-09-14). So far:
+  - Model output renders as Markdown (code blocks, lists, tables, links). The renderer builds DOM
+    nodes only and is gated against hostile input in a real browser.
+  - Copy buttons on code blocks and on every message.
+  - The conversation survives a reload, including one mid-answer. New chat clears it.
+  - A system prompt box. It is a setting kept across chats, not part of the saved conversation.
+  - **Load a pulled model from the page.** A finished pull offers "Load it now" instead of telling
+    you to restart the server. New route `POST /web/models/load`, only under `-web`, with the same
+    same-origin/API-key/body-cap gates as pull. It loads **only regular `.gguf` files inside the pull
+    cache** (symlinks resolved on both sides first). Anything else still needs `--model` or the
+    `-allow-admin` load, which is unchanged.
+- `pull.CacheRoot()` — the directory every pulled model lands under (Experimental, like the rest of
+  `pull`).
+
 ## [v0.18.0] — 2026-09-13
 
 ### Changed
