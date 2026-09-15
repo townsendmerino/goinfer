@@ -9,7 +9,7 @@
 // A page that NAVIGATES while a gate runs is exit 1, not 2 — nothing in a gate navigates, so a payload
 // or a bug did, and that is a failure of the thing under test.
 import { spawn, execSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,18 +25,34 @@ function chromeBinary() {
 
 // openPage launches Chrome, navigates to url, and returns { evaluate, close }. evaluate(expr) runs an
 // async expression in the page and resolves to its returned value, or to { hijacked } / { error }.
+//
+// ONE BROWSER PER RUN, AND IT IS REALLY GONE AFTERWARDS (found 2026-09-14, W7). This used to pick a random
+// port and kill the spawned process on close — but `google-chrome` is a launcher script, so that killed the
+// script and left the browser running. Every gate run leaked a Chrome (181 processes had piled up), and a
+// later run whose random port collided with a leaked one drove THAT browser: an old page, with an old
+// run's localStorage, so "fresh profile" checks failed intermittently. Now Chrome picks a free port itself
+// (port 0) and writes it into the run's own profile directory, so a run can only reach its own browser;
+// the browser is started as its own process group and the whole group is killed; the profile is removed.
 export async function openPage(url, { settleMs = 1500 } = {}) {
   const bin = chromeBinary();
-  const port = 9400 + Math.floor(Math.random() * 500);
+  const profile = mkdtempSync(join(tmpdir(), "webui-gate-"));
   const chrome = spawn(bin, ["--headless=new", "--disable-gpu", "--no-sandbox", "--allow-file-access-from-files",
-    `--remote-debugging-port=${port}`, "--remote-allow-origins=*",
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), "webui-gate-"))}`, "about:blank"], { stdio: "ignore" });
-  const die = (code, msg) => { console.error(msg); try { chrome.kill(); } catch { /* gone */ } process.exit(code); };
+    "--remote-debugging-port=0", "--remote-allow-origins=*",
+    `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore", detached: true });
+  const stop = () => {
+    try { process.kill(-chrome.pid, "SIGKILL"); } catch { /* already gone */ }
+    try { rmSync(profile, { recursive: true, force: true }); } catch { /* best effort */ }
+  };
+  process.on("exit", stop);   // also on a check failure's process.exit, and on die()
+  const die = (code, msg) => { console.error(msg); process.exit(code); };
   chrome.on("error", e => die(2, `could not start ${bin}: ${e.message}`));
 
   let target;
   for (let i = 0; i < 80 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === "page"); } catch { /* not up */ }
+    try {
+      const port = readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0].trim();
+      target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === "page");
+    } catch { /* not up yet */ }
     if (!target) await sleep(250);
   }
   if (!target) die(2, "chrome exposed no page target");
@@ -79,7 +95,7 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
       await send("Page.reload", { ignoreCache: true });
       await sleep(settleMs);
     },
-    close() { try { ws.close(); } catch { /* closed */ } try { chrome.kill(); } catch { /* gone */ } },
+    close() { try { ws.close(); } catch { /* closed */ } stop(); },
   };
 }
 
