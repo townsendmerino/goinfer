@@ -417,6 +417,95 @@ function saveSystem() {
     storeFailed();
   }
 }
+// --- sampling controls (W10) ---------------------------------------------------------
+// Every sampling field /v1/chat/completions accepts, as a SETTING like the system prompt: kept in its own
+// key, across reloads and new chats, followed across tabs. A blank optional field is not sent, so the
+// server's default applies (a blank seed means a fresh random one — M-03). Ranges are OpenAI's documented
+// ones; the server rejects some of them itself (temperature < 0, top_p outside [0,1]) and accepts the
+// rest unchecked, so the page checks them all and REFUSES to send an out-of-range value rather than
+// clamping it into one the user did not choose.
+const SAMPLING_STORE = "goinfer.sampling.v1";
+function rangeField(lo, hi, integer, label) {
+  return t => {
+    const v = Number(t);
+    if (t.trim() === "" || !Number.isFinite(v) || (integer && !Number.isInteger(v)) || v < lo || v > hi) {
+      return {error: label + " must be " + (integer ? "a whole number" : "a number") + " from " + lo + " to " + hi};
+    }
+    return {value: v};
+  };
+}
+// stopField reads one stop sequence per line; "\n" and "\t" stand for a newline and a tab.
+function stopField(t) {
+  const list = t.split("\n").map(l => l.replace(/\r$/, "")).filter(l => l !== "")
+    .map(l => l.replace(/\\(\\|n|t)/g, (_, c) => c === "n" ? "\n" : c === "t" ? "\t" : "\\"));
+  return list.length ? {value: list} : {};
+}
+const SAMPLING = [
+  {id: "temp", key: "temperature", def: "0.7", required: true, parse: rangeField(0, 2, false, "Temperature")},
+  {id: "max", key: "max_tokens", def: "512", required: true, parse: rangeField(1, 131072, true, "Max tokens")},
+  {id: "top-p", key: "top_p", def: "", parse: rangeField(0, 1, false, "top_p")},
+  {id: "top-k", key: "top_k", def: "", parse: rangeField(0, 1000000, true, "top_k")},
+  {id: "seed", key: "seed", def: "", parse: rangeField(-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, true, "Seed")},
+  {id: "freq-pen", key: "frequency_penalty", def: "", parse: rangeField(-2, 2, false, "Frequency penalty")},
+  {id: "pres-pen", key: "presence_penalty", def: "", parse: rangeField(-2, 2, false, "Presence penalty")},
+  {id: "stop", key: "stop", def: "", parse: stopField},
+];
+
+// readSampling returns {params} to merge into a request, or {error, field} for the first bad field. It also
+// marks every field valid or invalid, so the reason is visible where it is.
+function readSampling() {
+  const params = {};
+  let first = null;
+  for (const f of SAMPLING) {
+    const el = $(f.id), t = el.value;
+    const r = (t.trim() === "" && !f.required) ? {} : f.parse(t);
+    el.setAttribute("aria-invalid", String(!!r.error));
+    el.classList.toggle("invalid", !!r.error);
+    if (r.error && !first) first = {error: r.error, field: el};
+    if (r.value !== undefined) params[f.key] = r.value;
+  }
+  $("sampling-error").hidden = !first;
+  $("sampling-error").textContent = first ? first.error : "";
+  return first || {params};
+}
+
+// samplingOK is the guard every action that asks for a reply runs FIRST, before it changes the
+// conversation: a regenerate that removed the old reply and then could not send would lose it.
+function samplingOK() {
+  const r = readSampling();
+  if (!r.error) return true;
+  if (!r.field.closest("details") || r.field.closest("details").open === false) $("sampling-box").open = true;
+  r.field.focus();
+  $("chat-status").textContent = "Fix the settings first: " + r.error + ".";
+  return false;
+}
+
+function showSamplingState() {
+  const custom = SAMPLING.filter(f => $(f.id).value !== f.def).length;
+  $("sampling-state").textContent = custom ? "· " + custom + " changed" : "";
+  readSampling();
+}
+function saveSampling() {
+  const v = {};
+  for (const f of SAMPLING) v[f.id] = $(f.id).value;
+  try {
+    if (SAMPLING.every(f => v[f.id] === f.def)) localStorage.removeItem(SAMPLING_STORE);
+    else localStorage.setItem(SAMPLING_STORE, JSON.stringify({v: 1, fields: v}));
+  } catch {
+    storeFailed();
+  }
+}
+function loadSampling() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(SAMPLING_STORE) || "null"); } catch { /* unreadable: defaults */ }
+  const fields = stored && stored.v === 1 && stored.fields && typeof stored.fields === "object" ? stored.fields : {};
+  for (const f of SAMPLING) {
+    const t = fields[f.id];
+    $(f.id).value = typeof t === "string" && t.length <= 4000 ? t : f.def;   // data, and shown: strings only
+  }
+  showSamplingState();
+}
+
 function loadSystem() {
   try { $("system").value = localStorage.getItem(SYSTEM_STORE) || ""; } catch { /* blocked */ }
   showSystemState();
@@ -515,6 +604,7 @@ function rerender() {
 
 function regenerate(entry) {
   if (ac || editing || entry !== transcript[transcript.length - 1] || entry.role !== "assistant") return;
+  if (!samplingOK()) return;   // W10: before the reply is removed
   transcript.pop();
   rerender();
   generate();
@@ -577,6 +667,7 @@ function finishEdit(value) {
   if (!text) return;   // an empty message is not a message; keep the box open
   const i = transcript.indexOf(entry);
   const later = transcript.length - i - 1;
+  if (!samplingOK()) return;   // W10: before anything is dropped
   if (later > 1 && !confirm("Saving will remove the " + later + " messages after this one. Continue?")) return;
   editing = null;
   $("send").disabled = false;
@@ -614,6 +705,7 @@ async function send() {
   const text = $("prompt").value.trim();
   if (!text || ac || editing) return;
   if (!$("model").value) { $("chat-status").textContent = "no model loaded"; return; }
+  if (!samplingOK()) return;   // W10: before the message is added, so a bad setting loses nothing
 
   // What you type is recessed (amb-surface-concave, decision 3); the echo of
   // it in the log is a quieter flat surface — neither is the "product".
@@ -633,6 +725,8 @@ async function generate() {
   if (titleAC) titleAC.abort();   // W9: a title is never worth making someone wait for their reply
   const model = $("model").value;
   if (!model) { $("chat-status").textContent = "no model loaded"; return; }
+  if (!samplingOK()) return;
+  const {params: sampling} = readSampling();
   const messages = apiMessages();          // taken BEFORE the assistant entry exists
   save();
   // What the engine produces sits proud (amb-surface-convex, decision 3).
@@ -668,8 +762,7 @@ async function generate() {
       body: JSON.stringify({
         model, messages, stream: true,
         stream_options: {include_usage: true},   // W8: real token counts, for the meter and the stats
-        temperature: parseFloat($("temp").value) || 0,
-        max_tokens: parseInt($("max").value, 10) || 512,
+        ...sampling,                              // W10: temperature, max_tokens and whatever else is set
       }),
     });
     if (!r.ok) {
@@ -923,6 +1016,8 @@ addEventListener("pagehide", () => { if (generating) save(); });
 // for the system prompt, unless the user is typing in that box right now.
 addEventListener("storage", e => {
   if ((e.key === SYSTEM_STORE || e.key === null) && document.activeElement !== $("system")) loadSystem();
+  // W10: likewise, unless the user is in one of the sampling fields right now
+  if ((e.key === SAMPLING_STORE || e.key === null) && !SAMPLING.some(f => document.activeElement === $(f.id))) loadSampling();
   if (e.key === null || (e.key && e.key.startsWith(CHAT_PREFIX))) {
     renderChatList();
     if ((e.key === null || e.key === CHAT_PREFIX + currentChat.id) && !ac && !editing) {
@@ -936,8 +1031,15 @@ addEventListener("storage", e => {
 });
 
 $("system").addEventListener("input", () => { showSystemState(); saveSystem(); });
+for (const f of SAMPLING) $(f.id).addEventListener("input", () => { showSamplingState(); saveSampling(); });
+$("sampling-reset").onclick = () => {
+  for (const f of SAMPLING) $(f.id).value = f.def;
+  showSamplingState(); saveSampling();
+  $("chat-status").textContent = "";
+};
 
 loadSystem();
+loadSampling();
 
 // Open a conversation: the one migrated from W3's single store (once), else the one this tab had open,
 // else the most recently updated, else a new one.

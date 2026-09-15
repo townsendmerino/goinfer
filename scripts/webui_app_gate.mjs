@@ -41,6 +41,10 @@
 //        busy-disabled, rename (Escape/Enter/empty), delete (asks; current falls to the next); another
 //        tab's conversation listed; unreadable/mislabelled keys set aside; per-tab reopen after reload;
 //        and the W3-era single conversation migrated once.
+//   W10 — sampling controls: exactly what is sent (and not sent) for defaults, set and cleared fields; stop
+//        sequences parsed; the title request unaffected; each out-of-range value marked, explained, and
+//        refused by Send, Regenerate and Edit before anything changes; saved, followed across tabs
+//        (not over a field being typed in), reset, restored after reload, unreadable values ignored.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1045,8 +1049,122 @@ const phase17 = phase(W9_PRELUDE + String.raw`
   check("W9 a migrated conversation gets its generated title after its next reply", window.__titleBodies.length === 1 && window.__titleBodies[0].messages[0].content.endsWith("a conversation from before W9"), window.__titleBodies.length);
 `);
 
+// ---- phase 18: W10 — sampling controls ----------------------------------------------------------------------
+const W10_PRELUDE = String.raw`
+  const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  window.confirm = () => true;
+  const setField = (id, v) => { $(id).value = v; $(id).dispatchEvent(new Event("input", { bubbles: true })); };
+  const KEYS = ["top_p", "top_k", "seed", "frequency_penalty", "presence_penalty", "stop"];
+  const sentSampling = () => { const b = window.__lastBody || {}; const o = {}; for (const k of ["temperature", "max_tokens", ...KEYS]) if (k in b) o[k] = b[k]; return JSON.stringify(o); };
+  const turn = async (q, a) => { streamAnswer(a); $("prompt").value = q; await send(); await idle(); await wait(30); };
+`;
+const phase18 = phase(W10_PRELUDE + String.raw`
+  $("sampling-reset").click();
+  $("newchat").click();
+  check("W10 defaults: temperature 0.7, max 512, the rest blank, nothing marked changed", $("temp").value === "0.7" && $("max").value === "512" && ["top-p", "top-k", "seed", "freq-pen", "pres-pen", "stop"].every(id => $(id).value === "") && $("sampling-state").textContent === "", $("sampling-state").textContent);
+  await turn("defaults", "ok");
+  check("W10 with defaults, only temperature and max_tokens are sent", sentSampling() === JSON.stringify({ temperature: 0.7, max_tokens: 512 }), sentSampling());
+
+  setField("top-p", "0.9"); setField("top-k", "40"); setField("seed", "42");
+  setField("freq-pen", "0.5"); setField("pres-pen", "-0.5");
+  setField("stop", "###\n\\n\n\nEND");
+  check("W10 the summary counts what changed", $("sampling-state").textContent === "· 6 changed", $("sampling-state").textContent);
+  await turn("all set", "ok");
+  check("W10 every set field is sent, as numbers, stop as a list with \\n unescaped and blank lines dropped", sentSampling() === JSON.stringify({ temperature: 0.7, max_tokens: 512, top_p: 0.9, top_k: 40, seed: 42, frequency_penalty: 0.5, presence_penalty: -0.5, stop: ["###", "\n", "END"] }), sentSampling());
+  await until(() => window.__titleBodies.length > 0);
+  const tb = window.__titleBodies.at(-1);
+  check("W10 the background title request keeps its own settings", tb && tb.temperature === 0 && tb.max_tokens === 24 && !KEYS.some(k => k in tb), JSON.stringify(tb)?.slice(0, 160));
+
+  setField("top-k", ""); setField("stop", "");
+  await turn("two cleared", "ok");
+  const sb = JSON.parse(sentSampling());
+  check("W10 a cleared field is not sent at all", !("top_k" in sb) && !("stop" in sb) && sb.seed === 42, sentSampling());
+
+  // ---- invalid values: refused before anything changes ----
+  for (const [id, v, msg] of [
+    ["top-p", "1.5", "top_p must be a number from 0 to 1"],
+    ["top-k", "-1", "top_k must be a whole number from 0 to 1000000"],
+    ["top-k", "2.5", "top_k must be a whole number from 0 to 1000000"],
+    ["seed", "abc", "Seed must be a whole number"],
+    ["seed", "99999999999999999999", "Seed must be a whole number"],
+    ["freq-pen", "3", "Frequency penalty must be a number from -2 to 2"],
+    ["pres-pen", "-2.01", "Presence penalty must be a number from -2 to 2"],
+    ["temp", "", "Temperature must be a number from 0 to 2"],
+    ["temp", "2.5", "Temperature must be a number from 0 to 2"],
+    ["max", "0", "Max tokens must be a whole number from 1 to 131072"],
+  ]) {
+    const good = $(id).value;
+    setField(id, v);
+    const bubbles = document.querySelectorAll("#log .msg").length, last = window.__lastBody;
+    $("sampling-box").open = false;
+    $("prompt").value = "should not send";
+    await send(); await wait(30);
+    check("W10 " + id + "=" + JSON.stringify(v) + ": marked invalid, and says why", $(id).getAttribute("aria-invalid") === "true" && $(id).classList.contains("invalid") && $("sampling-error").textContent.startsWith(msg) && !$("sampling-error").hidden, $("sampling-error").textContent);
+    check("W10 " + id + "=" + JSON.stringify(v) + ": Send refuses — nothing sent, nothing added, the message kept, the field focused", window.__lastBody === last && document.querySelectorAll("#log .msg").length === bubbles && $("prompt").value === "should not send" && document.activeElement === $(id) && /^Fix the settings first/.test($("chat-status").textContent), document.activeElement?.id + " / " + $("chat-status").textContent);
+    setField(id, good);
+  }
+  setField("top-k", "-3");
+  const lastDirect = window.__lastBody, bubblesDirect = document.querySelectorAll("#log .msg").length;
+  await generate();
+  check("W10 generate() refuses a bad setting even when called directly", window.__lastBody === lastDirect && document.querySelectorAll("#log .msg").length === bubblesDirect, document.querySelectorAll("#log .msg").length + " vs " + bubblesDirect);
+  setField("top-k", "");
+  check("W10 fixing the value clears the mark and the message", [...document.querySelectorAll(".sampling-grid input, #temp, #max, #stop")].every(el => el.getAttribute("aria-invalid") !== "true") && $("sampling-error").hidden, $("sampling-error").textContent);
+  check("W10 the closed Sampling box was opened to show the bad field", $("sampling-box").open, $("sampling-box").open);
+  $("prompt").value = "";
+
+  // regenerate and edit refuse BEFORE they change the conversation
+  setField("top-p", "7");
+  const before = stored().messages.length, last = window.__lastBody;
+  const regen = [...document.querySelectorAll("#log .msg-regen")].find(b => !b.hidden);
+  regen.click(); await wait(50);
+  check("W10 Regenerate with a bad setting keeps the reply and sends nothing", stored().messages.length === before && document.querySelectorAll("#log .msg.bot").length === before / 2 && window.__lastBody === last, stored().messages.length + " vs " + before);
+  const you = [...document.querySelectorAll("#log .msg.you")][0];
+  you.querySelector(".msg-edit").click();
+  document.querySelector("#log textarea.edit-box").value = "edited";
+  document.querySelector("#log .edit-save").click(); await wait(50);
+  check("W10 saving an edit with a bad setting drops nothing and keeps the edit open", stored().messages.length === before && !!document.querySelector("#log textarea.edit-box") && window.__lastBody === last, stored().messages.length + " / " + !!document.querySelector("#log textarea.edit-box"));
+  document.querySelector("#log .edit-cancel").click();
+  setField("top-p", "0.9");
+
+  // ---- persistence, tab sync, reset ----
+  const st = JSON.parse(localStorage.getItem("goinfer.sampling.v1"));
+  check("W10 settings are saved as typed", st && st.v === 1 && st.fields["top-p"] === "0.9" && st.fields.seed === "42" && st.fields["pres-pen"] === "-0.5", JSON.stringify(st));
+  document.activeElement?.blur();   // the refused Regenerate above left focus in top_p, on purpose
+  check("W10 precondition: no sampling field has focus", !["temp", "max", "top-p", "top-k", "seed", "freq-pen", "pres-pen", "stop"].some(id => document.activeElement === $(id)), document.activeElement?.id);
+  localStorage.setItem("goinfer.sampling.v1", JSON.stringify({ v: 1, fields: { ...st.fields, seed: "7" } }));
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.sampling.v1" }));
+  check("W10 an idle page follows another tab's settings", $("seed").value === "7", $("seed").value);
+  $("sampling-box").open = true;
+  $("seed").focus();
+  $("seed").value = "123";
+  localStorage.setItem("goinfer.sampling.v1", JSON.stringify({ v: 1, fields: { ...st.fields, seed: "8" } }));
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.sampling.v1" }));
+  check("W10 another tab's change does not overwrite a field being typed in", $("seed").value === "123", $("seed").value);
+  $("seed").blur();
+  setField("seed", "42");
+  $("sampling-reset").click();
+  check("W10 Reset restores the defaults and forgets the saved settings", $("temp").value === "0.7" && $("top-p").value === "" && $("seed").value === "" && localStorage.getItem("goinfer.sampling.v1") === null && $("sampling-state").textContent === "", localStorage.getItem("goinfer.sampling.v1"));
+
+  // leave custom settings for the reload phase, plus one hostile stored value
+  setField("temp", "0"); setField("top-k", "5"); setField("stop", "STOP");
+  const saved = JSON.parse(localStorage.getItem("goinfer.sampling.v1"));
+  saved.fields.seed = { toString: 1 }; saved.fields["freq-pen"] = "x".repeat(5000);
+  localStorage.setItem("goinfer.sampling.v1", JSON.stringify(saved));
+`);
+
+// ---- phase 19: after a reload — settings restored; unreadable stored values ignored ------------------------
+const phase19 = phase(W10_PRELUDE + String.raw`
+  check("W10 after reload the settings are restored", $("temp").value === "0" && $("top-k").value === "5" && $("stop").value === "STOP" && $("sampling-state").textContent === "· 3 changed", $("temp").value + "/" + $("top-k").value + "/" + $("sampling-state").textContent);
+  check("W10 stored values that are not short strings fall back to defaults", $("seed").value === "" && $("freq-pen").value === "", JSON.stringify([$("seed").value, $("freq-pen").value.length]));
+  $("newchat").click();
+  await turn("after reload", "ok");
+  check("W10 the restored settings are what is sent", sentSampling() === JSON.stringify({ temperature: 0, max_tokens: 512, top_k: 5, stop: ["STOP"] }), sentSampling());
+  $("sampling-reset").click();
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }

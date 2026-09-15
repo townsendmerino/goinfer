@@ -34,6 +34,23 @@
       <textarea id="system" class="ambient amb-surface-concave amb-rounded" placeholder="Instructions the model follows for every reply — optional"></textarea>
       <p class="note">Sent first with every request. Kept across reloads and new chats.</p>
     </details>
+    <details id="sampling-box" class="system sampling">
+      <summary>Sampling <span id="sampling-state" class="note"></span></summary>
+      <div class="sampling-grid">
+        <div><label for="top-p">top_p</label><input id="top-p" type="text" inputmode="decimal" placeholder="server default" aria-describedby="sampling-error"></div>
+        <div><label for="top-k">top_k</label><input id="top-k" type="text" inputmode="numeric" placeholder="off" aria-describedby="sampling-error"></div>
+        <div><label for="seed">Seed</label><input id="seed" type="text" inputmode="numeric" placeholder="random" aria-describedby="sampling-error"></div>
+        <div><label for="freq-pen">Frequency penalty</label><input id="freq-pen" type="text" inputmode="decimal" placeholder="0" aria-describedby="sampling-error"></div>
+        <div><label for="pres-pen">Presence penalty</label><input id="pres-pen" type="text" inputmode="decimal" placeholder="0" aria-describedby="sampling-error"></div>
+      </div>
+      <label for="stop">Stop sequences — one per line (\n is a newline)</label>
+      <textarea id="stop" class="ambient amb-surface-concave amb-rounded" placeholder="none" aria-describedby="sampling-error"></textarea>
+      <p class="note err" id="sampling-error" hidden></p>
+      <div class="sampling-foot">
+        <p class="note">Blank uses the server's default. The same seed, prompt and settings give the same reply. Kept across reloads.</p>
+        <button type="button" id="sampling-reset" class="ambient amb-surface amb-rounded">Reset</button>
+      </div>
+    </details>
   </div>
   <div id="log"></div>
   <p class="note" id="store-note" hidden></p>

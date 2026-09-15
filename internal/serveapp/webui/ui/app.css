@@ -1594,3 +1594,12 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .chat-item:hover .chat-rename,.chat-item:hover .chat-delete,.chat-rename:focus-visible,.chat-delete:focus-visible{opacity:1}
 .chat-list button[disabled],#chat-list button[disabled]{opacity:.45;cursor:default}
 .chat-rename-box{flex:1;min-width:0;font:inherit;font-size:13px;padding:4px 8px}
+
+/* W10: sampling controls */
+.sampling-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:8px 0 10px}
+.sampling-grid input{width:100%;box-sizing:border-box}
+details.sampling textarea{min-height:48px}
+input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1px}
+.sampling-foot{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sampling-foot .note{flex:1;min-width:200px}
+#sampling-error{margin:6px 0 0}
