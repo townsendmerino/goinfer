@@ -24,7 +24,7 @@
     "Content-Type": "application/json",
     "Retry-After": "1"
    },
-   "body": "{\"error\":{\"message\":\"model \\\"q\\\" queue full; retry\",\"type\":\"rate_limit_error\"}}\n"
+   "body": "{\"error\":{\"message\":\"model \\\"q\\\" queue full (max 1 queued); retry\",\"type\":\"rate_limit_error\"}}\n"
   },
   {
    "case": "in-flight cap",

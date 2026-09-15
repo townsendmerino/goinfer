@@ -3,7 +3,6 @@ package serveapp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 )
 
@@ -30,14 +29,14 @@ type refusal struct {
 	reason  string
 }
 
-func notAdmitted(ctx context.Context, haltReason, model string) refusal {
+func notAdmitted(ctx context.Context, haltReason string, lm *loadedModel) refusal {
 	switch {
 	case haltReason != "":
 		return refusal{jobCancelled, statusCancelled, "cancelled", haltReason}
 	case ctx.Err() != nil:
 		return refusal{jobCancelled, statusCancelled, "cancelled", "cancelled before a turn was granted"}
 	default:
-		return refusal{jobFailed, http.StatusTooManyRequests, "rate_limit_error", fmt.Sprintf("model %q queue full; retry", model)}
+		return refusal{jobFailed, http.StatusTooManyRequests, "rate_limit_error", lm.queueFullMsg()}
 	}
 }
 
@@ -92,7 +91,7 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	rec.id = gr.id // W28: so GET /v1/jobs/{id} can report this job's place in line while it waits
 	ok, haltReason := lm.tryEnter(bgCtx, rec, s.haltState)
 	if !ok {
-		why := notAdmitted(bgCtx, haltReason, lm.name)
+		why := notAdmitted(bgCtx, haltReason, lm)
 		s.jobs.finish(s.jobs.get(gr.id), why.state, nil, why.reason, nil)
 		if j, found := s.jobs.snapshot(gr.id); found {
 			for _, e := range jobTerminalEvents(j, created, why.errType) {

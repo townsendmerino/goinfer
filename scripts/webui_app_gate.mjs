@@ -1396,7 +1396,7 @@ const phase22 = phase(W13_PRELUDE + String.raw`
   const want = {
     "no API key": ["The server needs an API key.", "Enter it in the Server API key field on the Models tab, then retry.", "Enter API key,Retry"],
     "unknown model": ["The model \"gate-model\" isn't loaded.", "model \"gone\" not found (served: q)", "Refresh models,Retry"],
-    "queue full": ["The model is busy: its request queue is full.", "Try again in a moment (the server suggests 1 s).", "Retry"],
+    "queue full": ["The model is busy: its request queue is full (max 1).", "Try again in a moment (the server suggests 1 s).", "Retry"],   // W28: the real 429 names its depth
     "in-flight cap": ["The server is at capacity.", "server at capacity (max in-flight requests reached); retry. Try again in a moment (the server suggests 1 s).", "Retry"],
     "halted": ["The server has halted new generations.", "Reason: maintenance window. Someone with admin access has to resume it before anything can be generated.", "Retry"],
     "prompt too large": ["This conversation no longer fits in gate-model's context window. Start a new chat, or delete earlier exchanges to make room.", "prompt is too large for the model's context window of 32768 tokens (context_length_exceeded)", "New chat"],
@@ -1963,7 +1963,7 @@ const phase35 = phase(W27_PRELUDE + String.raw`
   // ---- a full queue at submit: the real 429 ----
   nextSubmit = { status: 429, body: CAP.full_queue_submit.body, headers: { "Retry-After": CAP.full_queue_submit.retry_after } };
   $("prompt").value = "queue is full"; await send(); await idle(); await wait(30);
-  check("W27 a submit refused by a full queue gets W13's explanation, from the real 429", [...document.querySelectorAll("#log .msg.err")].at(-1)?.querySelector(".err-title")?.textContent === "The model is busy: its request queue is full.", [...document.querySelectorAll("#log .msg.err")].at(-1)?.textContent);
+  check("W27 a submit refused by a full queue gets W13's explanation, from the real 429, with W28's depth", [...document.querySelectorAll("#log .msg.err")].at(-1)?.querySelector(".err-title")?.textContent === "The model is busy: its request queue is full (max 2).", [...document.querySelectorAll("#log .msg.err")].at(-1)?.textContent);
   nextSubmit = null;
 
   // ---- a reply with an image stays on the streaming route — and stays tied to the tab ----

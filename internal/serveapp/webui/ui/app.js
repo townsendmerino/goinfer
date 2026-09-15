@@ -126,7 +126,12 @@ function problemFor(status, bodyText, {model = "", retryAfter = ""} = {}) {
   if (status === 401) return {title: "The server needs an API key.", detail: "Enter it in the Server API key field on the Models tab, then retry.", actions: [key, retry]};
   if (status === 404) return {title: "The model " + JSON.stringify(model) + " isn't loaded.", detail: m.message, actions: [models, retry]};
   if (status === 413) return {title: "This request is larger than the server accepts.", detail: m.message + (m.message ? " " : "") + "Remove an image, or start a new chat.", actions: [fresh]};
-  if (status === 429) return {title: "The model is busy: its request queue is full.", detail: "Try again in a moment" + (retryAfter ? " (the server suggests " + retryAfter + " s)" : "") + ".", actions: [retry]};
+  // W28: the server's message names its queue depth ("queue full (max N queued)") when it has one to give;
+  // shown as "(max N)" rather than parroting "queued" twice next to "queue is full".
+  if (status === 429) {
+    const depth = /queue full \(max (\d+) queued\)/.exec(m.message);
+    return {title: "The model is busy: its request queue is full" + (depth ? " (max " + depth[1] + ")" : "") + ".", detail: "Try again in a moment" + (retryAfter ? " (the server suggests " + retryAfter + " s)" : "") + ".", actions: [retry]};
+  }
   if (status === 503 && m.halted) return {title: "The server has halted new generations.", detail: (m.message ? "Reason: " + m.message + ". " : "") + "Someone with admin access has to resume it before anything can be generated.", actions: [retry]};
   if (status === 503) return {title: "The server is at capacity.", detail: (m.message ? m.message + ". " : "") + "Try again in a moment" + (retryAfter ? " (the server suggests " + retryAfter + " s)" : "") + ".", actions: [retry]};
   if (status === 400 && /context_length_exceeded/.test(bodyText)) {

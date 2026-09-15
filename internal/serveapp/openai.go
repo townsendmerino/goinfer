@@ -242,8 +242,20 @@ func (lm *loadedModel) enter(w http.ResponseWriter, r *http.Request, rec admissi
 		return false // client disconnected while queued; nothing to write to
 	}
 	w.Header().Set("Retry-After", "1")
-	writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
+	writeErr(w, http.StatusTooManyRequests, lm.queueFullMsg())
 	return false
+}
+
+// queueFullMsg is the 429's text when a model's queue is full (W28: say how busy, not just that it
+// is — cap(lm.queue)-1 is the configured -max-queue depth, the one number that is always true of a
+// FULL queue, since a live waiting count would already be stale by the time a client reads it).
+// lm.queue == nil (unbounded, -max-queue 0) can't actually reach this — see tryEnter — but a message
+// with no number, rather than a bogus one, is the safe fallback if that ever changes.
+func (lm *loadedModel) queueFullMsg() string {
+	if lm.queue != nil {
+		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, cap(lm.queue)-1)
+	}
+	return fmt.Sprintf("model %q queue full; retry", lm.name)
 }
 
 // exit releases sessMu, then the turn, then the queue slot (paired with enter — reverse order of

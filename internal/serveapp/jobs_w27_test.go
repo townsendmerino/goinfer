@@ -79,19 +79,23 @@ func TestNotAdmitted_queueFullIsAFailureNotACancellation(t *testing.T) {
 	live := context.Background()
 	done, cancel := context.WithCancel(context.Background())
 	cancel()
+	noQueue := &loadedModel{name: "m"}
+	boundedQueue := &loadedModel{name: "m", queue: make(chan struct{}, 4)} // cap-1 = 3, W28's "how busy" number
 	for _, c := range []struct {
 		name       string
 		ctx        context.Context
 		halt       string
+		lm         *loadedModel
 		wantState  jobState
 		wantStatus int
 		wantReason string
 	}{
-		{"halted", live, "maintenance", jobCancelled, statusCancelled, "maintenance"},
-		{"cancelled while waiting", done, "", jobCancelled, statusCancelled, "cancelled before a turn was granted"},
-		{"queue full", live, "", jobFailed, http.StatusTooManyRequests, `model "m" queue full; retry`},
+		{"halted", live, "maintenance", noQueue, jobCancelled, statusCancelled, "maintenance"},
+		{"cancelled while waiting", done, "", noQueue, jobCancelled, statusCancelled, "cancelled before a turn was granted"},
+		{"queue full, unbounded queue (can't really happen — see tryEnter)", live, "", noQueue, jobFailed, http.StatusTooManyRequests, `model "m" queue full; retry`},
+		{"queue full, W28's number", live, "", boundedQueue, jobFailed, http.StatusTooManyRequests, `model "m" queue full (max 3 queued); retry`},
 	} {
-		got := notAdmitted(c.ctx, c.halt, "m")
+		got := notAdmitted(c.ctx, c.halt, c.lm)
 		if got.state != c.wantState || got.status != c.wantStatus || got.reason != c.wantReason {
 			t.Errorf("%s: %+v, want state %s status %d reason %q", c.name, got, c.wantState, c.wantStatus, c.wantReason)
 		}
@@ -197,10 +201,11 @@ func TestJobs_realModelEventsQueueAndRefusal(t *testing.T) {
 	if q == nil || q["position"] != float64(1) || q["waiting"] != float64(1) || q["running"] != true {
 		t.Fatalf("waiting job's queue = %v, want position 1 of 1 waiting, with one running", q)
 	}
-	// -max-queue 1 → capacity 2 (the runner plus one waiting): both taken, so a third submit is refused now.
+	// -max-queue 1 → capacity 2 (the runner plus one waiting): both taken, so a third submit is refused now,
+	// naming that same 1 back (W28: the 429 says how busy, cap(lm.queue)-1 == -max-queue).
 	code, body, hdr := post(short)
-	if code != http.StatusTooManyRequests || hdr.Get("Retry-After") != "1" || !strings.Contains(body["error"].(map[string]any)["message"].(string), "queue full") {
-		t.Fatalf("submit to a full queue: %d %v, want 429 queue full with Retry-After", code, body)
+	if code != http.StatusTooManyRequests || hdr.Get("Retry-After") != "1" || !strings.Contains(body["error"].(map[string]any)["message"].(string), "queue full (max 1 queued)") {
+		t.Fatalf("submit to a full queue: %d %v, want 429 queue full (max 1 queued) with Retry-After", code, body)
 	}
 
 	// let both finish, then re-attach to the short one and read its whole stream

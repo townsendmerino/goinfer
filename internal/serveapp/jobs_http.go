@@ -1,7 +1,6 @@
 package serveapp
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 )
@@ -72,7 +71,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	if lm.queue != nil && len(lm.queue) == cap(lm.queue) {
 		release()
 		w.Header().Set("Retry-After", "1")
-		writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
+		writeErr(w, http.StatusTooManyRequests, lm.queueFullMsg())
 		return
 	}
 

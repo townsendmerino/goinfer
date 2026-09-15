@@ -18,7 +18,7 @@
  "full_queue_submit": {
   "status": 429,
   "retry_after": "1",
-  "body": "{\"error\":{\"message\":\"model \\\"q\\\" queue full; retry\",\"type\":\"rate_limit_error\"}}\n"
+  "body": "{\"error\":{\"message\":\"model \\\"q\\\" queue full (max 2 queued); retry\",\"type\":\"rate_limit_error\"}}\n"
  },
  "finished_status": {
   "created": "2026-09-15T07:31:47.783435133-07:00",

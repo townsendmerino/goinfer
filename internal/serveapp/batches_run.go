@@ -100,7 +100,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 
 	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID}, s.haltState)
 	if !ok {
-		why := notAdmitted(bgCtx, haltReason, lm.name) // a full queue is a failure, not a cancellation
+		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
 		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
 		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
 		return
@@ -204,7 +204,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 
 	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID}, s.haltState)
 	if !ok {
-		why := notAdmitted(bgCtx, haltReason, lm.name) // a full queue is a failure, not a cancellation
+		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
 		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
 		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
 		return

@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W31 added 2026-09-15 (§7) now that J1–J4 have shipped.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W31 added 2026-09-15 (§7) now that J1–J4 have shipped; W27 and W28 DONE 2026-09-15, W29–W31 next.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -805,24 +805,77 @@ their recorded numbers.
 "W18" as the re-attach item. W18 is *Label which turn came from which model*; re-attach never had a
 number. It is **W27** below, and the four stale references have been repointed.
 
-### W27 — Re-attach to a generation after a reload
-Closing the tab still cancels the work: `r.Context()` dying is what cleans up a partial pull, and
-the same wiring kills a chat. J3's `GET /v1/jobs/{id}/events` replays from the beginning and then
-continues live, which is exactly what a reconnecting page needs. The page keeps the job id with the
-conversation (W3/W9 already persist conversations), and on load resumes any job still running.
-**Effort: M. Unblocked.** This is the prerequisite for W29 and W31.
+### W27 — Re-attach to a generation after a reload — DONE 2026-09-15
+~~Closing the tab still cancels the work~~ — a text reply now submits as a server-side job
+(`POST /v1/jobs`) streamed through J3's `GET /v1/jobs/{id}/events`
+(`internal/serveapp/webui/ui/app.js:1032`, the `asJob` branch of `generate`), instead of the plain
+chat stream. The job id is saved with the reply the moment the server returns it, before anything
+else can go wrong, so a reload — or opening another conversation mid-reply (W29) — no longer loses
+it. Opening a conversation whose last reply is a still-running job re-attaches and replays the job's
+events from the start (`resumeJob`, `internal/serveapp/webui/ui/app.js:1244`, called from
+`openChat`, `:1306`); a job that finished while nobody was watching is filled in from its own
+finished record instead; a job the server no longer has (a restart without `-job-dir`, or
+expiry) is labelled "not finished here" with a Resume button, not left spinning forever. Stop now
+DELETEs the job on the server (`stopReply`, `:1225`), not just the local stream — before this, Stop
+only ended the page's own copy, leaving the job to run to completion for nobody. A reply carrying an
+image still uses `/v1/chat/completions`: jobs take text only (`asJob = !messages.some(m =>
+Array.isArray(m.content))`), so an image-carrying turn stays tied to the tab exactly as before.
 
-### W28 — Queue position while waiting
-A busy server is currently an indistinguishable spinner. A full queue is no longer a raw body:
-since W13 (2026-09-14) the 429 reads *"The model is busy: its request queue is full. Try again in
-a moment (the server suggests 1 s)"*, with Retry, from a real post-J1 capture. What it still cannot
-say is *how busy*. J1's FIFO knows both the depth and this waiter's place in it. Show "2nd in queue"
-instead of a spinner, and give that 429 a number.
-**Gate: answered by W5's rule** (§2 W5, "What this settles for W22"): a `-web` route may act only on
-what the page's own flows created, and the admin routes are never widened. The page's *own* request's
-position is that request's own state, so W28 is **a position field on the page's own request** (or on
-its W27 job). **Not** a `/web/queue` listing the whole queue, since that would expose other clients'
-requests, and J9's `/admin/queue` stays socket-only. **Effort: S–M.**
+This also laid the groundwork W28 and W29 build on directly: the job id is what a queue-position
+poll and a background-send need to ask about, and the "detaching, not stopping" distinction (below)
+is what lets W29 leave a job running when the tab moves on.
+
+**A mutation-testing defect found here, not in the code but in its own gate.** One mutation —
+skipping the branch that distinguishes "this reply was let go on purpose" from "this reply was
+stopped" — did not turn any check red. Tracing it down: `detachReply` (`:1234`) saves the entry as
+still-`"generating"` and aborts the fetch, but by the time that abort's `catch` actually runs
+(asynchronously, after the fetch promise rejects), `openChat`/`startFresh` has already run
+synchronously and cleared `$("chat-status")` for the *new* conversation. The old entry and its
+bubble are genuinely orphaned by then — but `$("chat-status")` is a single shared element, not
+per-conversation, so if the mutated code falls through to the generic "stopped" branch, it writes
+"stopped" into the *new*, idle conversation's status line, after the fact, with nothing to catch it.
+A stray element write invisible to every existing check is worth finding exactly the way it was
+found here — not because the branch does anything visible in the common case, but because the one
+thing it prevents (clobbering someone else's status text) has no other check watching it.
+
+Gate: phases 35–36 of `scripts/webui_app_gate.mjs`, driven by real captured `POST`/`GET`/`DELETE`
+`/v1/jobs` traffic (`scripts/webui-gate/captured-jobs.json`, Qwen2.5-0.5B, CPU) — a submit, a
+waiting job's queue field, a full-queue refusal, a finished job's record and full replayed event
+stream, and a job cancelled while queued. Eighteen mutations, each red, including the one above
+(closed by a check that leaving a job-backed reply does not leave the next conversation's status
+saying it was stopped). **Effort was: M.**
+
+### W28 — Queue position while waiting — DONE 2026-09-15
+~~A busy server is currently an indistinguishable spinner~~ — most of this shipped as part of the
+server's own job-status work this morning (`de0f13c5`) and W27's client, ahead of this doc catching
+up: `GET /v1/jobs/{id}` reports a still-queued job's `queue: {position, waiting, running}`
+(`internal/serveapp/jobs_http.go:114`, from `lm.turns.position`), and the page polls it once a
+second while nothing has streamed yet, showing *"Waiting for its turn: 2nd in line (3 waiting, 1
+running)."* in place of a spinner (`pollQueue`, `internal/serveapp/webui/ui/app.js:1101`).
+**Gate, as anticipated:** this is a field on the page's own request's own state (its W27 job), never
+a `/web/queue` listing every client's requests — the same rule W5 already settled, so nothing new
+needed deciding.
+
+**What was still missing, and is the actual work of this entry: the 429 itself carried no number.**
+W13's *"its request queue is full"* was true but not informative — it didn't say how full, or
+compared to what. `loadedModel.queueFullMsg()` (`internal/serveapp/openai.go:254`) now names the
+configured depth: `cap(lm.queue)-1`, the one number that is always accurate of a queue reported as
+FULL (a live waiting count would already be stale by the time a client could read it) — *"model "q"
+queue full (max 2 queued); retry"*. All three refusal sites share it: the synchronous chat-route and
+job-submit 429s, and `notAdmitted`'s rarer job-already-accepted race. The page folds the number into
+W13's title instead of parroting the server's own wording: *"The model is busy: its request queue is
+full (max 2)."*
+
+Measured real, not assumed: `TestJobs_realModelEventsQueueAndRefusal` drives `-max-queue 1` against
+a real loaded model and asserts the exact captured text, including the number.
+
+Gate: the widened `TestNotAdmitted_queueFullIsAFailureNotACancellation` (both the no-queue and
+bounded-queue message shapes) plus the real-model queue test above; phase 22 and phase 35's captured
+429 checks now assert the numbered title, from bodies re-captured against real `serve` output after
+this change (`scripts/webui-gate/captured-errors.json`, `captured-jobs.json`) rather than the
+pre-W28 wording. A mutation clearing the client's depth-parse regex to always miss was confirmed red
+on both the W13 and W27 checks that read it. **Effort was: S** (the position half was already done;
+this was the 429's number).
 
 ### W29 — Send in the background and come back
 Submit through `/v1/jobs` rather than the streaming route, leave the page, and the answer is on the
