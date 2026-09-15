@@ -40,6 +40,40 @@ function showStats() {
   };
   add("model", cur.id);
   if (cur.decode_path) add("path", cur.decode_path);
+  showContext();
+}
+
+// --- context meter (W8) -------------------------------------------------------------
+// How full the conversation is, against the context window the server enforces (/v1/models publishes
+// context_window from the same function that rejects an oversized prompt). "Used" is the token usage
+// the server reported for the latest reply — prompt plus completion, i.e. what the conversation
+// occupied when that reply finished — so it is approximate by design: the next request also carries
+// your new message, and sends earlier replies without their thinking (W6). It is shown as "about".
+const CTX_WARN = 0.8, CTX_FULL = 0.95;
+function contextUsed() {
+  for (let i = transcript.length - 1; i >= 0; i--) {
+    const u = transcript[i].usage;
+    if (transcript[i].role === "assistant" && u) return u.prompt_tokens + u.completion_tokens;
+  }
+  return 0;
+}
+function showContext() {
+  const cur = models.find(m => m.id === $("model").value);
+  const win = cur && Number.isFinite(cur.context_window) && cur.context_window > 0 ? cur.context_window : 0;
+  const used = contextUsed();
+  const box = $("ctx");
+  if (!win || !used) { box.hidden = true; return; }
+  const frac = used / win;
+  const pct = Math.min(100, Math.round(frac * 100));
+  box.hidden = false;
+  box.classList.toggle("warn", frac >= CTX_WARN && frac < CTX_FULL);
+  box.classList.toggle("full", frac >= CTX_FULL);
+  $("ctx-fill").style.width = pct + "%";
+  $("ctx-bar").setAttribute("aria-valuenow", String(pct));
+  let text = "about " + used.toLocaleString("en-US") + " of " + win.toLocaleString("en-US") + " tokens used (" + pct + "%)";
+  if (frac >= CTX_FULL) text += " — the next message will likely not fit. Start a new chat, or delete earlier exchanges.";
+  else if (frac >= CTX_WARN) text += " — nearing this model's context limit.";
+  $("ctx-text").textContent = text;
 }
 // loadModels refreshes the model list. The current choice survives a refresh; pick, when given and
 // listed, replaces it (W5 selects the model it just loaded).
@@ -295,6 +329,8 @@ function loadStored() {
     if (m.state === "stopped" || m.state === "interrupted") e.state = m.state;
     if (m.state === "generating") e.state = "interrupted";   // it was streaming when the page went away
     if (typeof m.thought === "number" && Number.isFinite(m.thought) && m.thought >= 0) e.thought = m.thought;   // W6
+    const u = m.usage, tok = x => Number.isSafeInteger(x) && x >= 0;
+    if (u && tok(u.prompt_tokens) && tok(u.completion_tokens)) e.usage = {prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens};   // W8
     out.push(e);
   }
   return out;
@@ -335,6 +371,7 @@ function showTranscript(list) {
   transcript.push(...list);
   $("log").replaceChildren();
   for (const e of transcript) renderEntry(e);
+  showContext();
 }
 
 // addActions records a finished message's source and adds its action row: Copy (W2), and W7's Edit on
@@ -542,14 +579,25 @@ async function generate() {
       method: "POST", headers: headers(), signal: ac.signal,
       body: JSON.stringify({
         model, messages, stream: true,
+        stream_options: {include_usage: true},   // W8: real token counts, for the meter and the stats
         temperature: parseFloat($("temp").value) || 0,
         max_tokens: parseInt($("max").value, 10) || 512,
       }),
     });
-    if (!r.ok) throw new Error((await r.text()).slice(0, 400) || ("HTTP " + r.status));
+    if (!r.ok) {
+      const body = await r.text();
+      // W8: the wall, said in words a user can act on — the server's own message stays underneath.
+      if (r.status === 400 && body.includes("context_length_exceeded")) {
+        throw new Error("This conversation no longer fits in " + model + "'s context window. Start a new chat, or delete earlier exchanges to make room.\n\n" + body.slice(0, 400));
+      }
+      throw new Error(body.slice(0, 400) || ("HTTP " + r.status));
+    }
     for await (const ev of sse(r)) {
       if (ev.data === "[DONE]") break;
       let j; try { j = JSON.parse(ev.data); } catch { continue; }
+      if (j.usage && Number.isSafeInteger(j.usage.prompt_tokens) && Number.isSafeInteger(j.usage.completion_tokens)) {
+        entry.usage = {prompt_tokens: j.usage.prompt_tokens, completion_tokens: j.usage.completion_tokens};
+      }
       const d = j.choices && j.choices[0] && j.choices[0].delta;
       if (d && d.content) {
         acc += d.content; got++;
@@ -565,13 +613,17 @@ async function generate() {
     const s = (performance.now() - started) / 1000;
     // Per-response stats live WITH the response, not in a status line that
     // the next turn overwrites (decision 4).
-    entry.meta = got
-      ? got + " tok · " + (got / s).toFixed(1) + " tok/s · " + s.toFixed(1) + "s"
+    // W8: the server's completion_tokens when it reported usage. Counting chunks undercounts — a token held
+    // back for a partial UTF-8 rune or stop string arrives merged into the next chunk.
+    const toks = entry.usage ? entry.usage.completion_tokens : got;
+    entry.meta = toks
+      ? toks + " tok · " + (toks / s).toFixed(1) + " tok/s · " + s.toFixed(1) + "s"
       : "no output";
     delete entry.state;
     renderReply(out, acc, false, entry);   // the entry is final now: "no answer" can be judged
     addMeta(out, entry.meta);
     addActions(out, copyOf(acc), entry);
+    showContext();
     $("chat-status").textContent = "";
   } catch (e) {
     if (e.name === "AbortError") {
@@ -607,6 +659,7 @@ $("newchat").onclick = () => {
   $("log").replaceChildren();
   try { localStorage.removeItem(STORE); } catch { /* blocked: nothing was stored */ }
   $("store-note").hidden = true;
+  showContext();
   $("chat-status").textContent = "";
 };
 

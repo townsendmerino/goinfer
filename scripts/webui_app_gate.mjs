@@ -31,6 +31,10 @@
 //        saves; asks before dropping more than the one reply; resends from the edited message) and Delete
 //        (the whole exchange, after asking): exactly what is sent, shown and saved after each; all of them
 //        disabled while generating or editing; hostile edits inert; and the actions restored after reload.
+//   W8 — the context meter against /v1/models' context_window: usage requested and used (stats count the
+//        server's completion_tokens), warn at 80%, "will not fit" at 95%, capped bar, re-measured on delete
+//        and model switch, hidden with no window; context_length_exceeded explained (and only it);
+//        usage saved, restored, and unreadable stored usage ignored.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -715,8 +719,106 @@ const phase12 = phase(String.raw`
   check("W7 after reload: Regenerate sends the restored history", sent === "u:keep me|a:kept|u:second", sent);
 `);
 
+// ---- phase 13: W8 — context meter, real token counts, the wall in words ----------------------------------
+const W8_PRELUDE = String.raw`
+  const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  window.confirm = () => true;
+  const MODELS = [{ id: "gate-model", context_window: 1000 }, { id: "no-window" }, { id: "big", context_window: 4000 }];
+  let nextReply = { text: "ok", usage: null, status: 200, body: "" };
+  window.fetch = async (url, opts) => {
+    if (url === "/v1/models") return new Response(JSON.stringify({ object: "list", data: MODELS }), { status: 200 });
+    window.__lastBody = JSON.parse(opts.body);
+    const r = nextReply;
+    if (r.status !== 200) return new Response(r.body, { status: r.status, headers: { "Content-Type": "application/json" } });
+    return new Response(new ReadableStream({ async start(c) {
+      for (let k = 0; k < r.text.length; k += 3) {
+        c.enqueue(enc.encode("data: " + JSON.stringify({ choices: [{ delta: { content: r.text.slice(k, k + 3) } }] }) + "\n\n"));
+        await wait(2);
+      }
+      if (r.usage) c.enqueue(enc.encode("data: " + JSON.stringify({ choices: [], usage: r.usage }) + "\n\n"));
+      c.enqueue(enc.encode("data: [DONE]\n\n"));
+      c.close();
+    } }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  };
+  const reply = async (q, text, usage) => { nextReply = { text, usage, status: 200 }; $("prompt").value = q; await send(); await idle(); await wait(50); };
+  const meter = () => ({ hidden: $("ctx").hidden, text: $("ctx-text").textContent, width: $("ctx-fill").style.width, now: $("ctx-bar").getAttribute("aria-valuenow"), warn: $("ctx").classList.contains("warn"), full: $("ctx").classList.contains("full") });
+`;
+const phase13 = phase(W8_PRELUDE + String.raw`
+  $("newchat").click();
+  await loadModels("gate-model");
+  check("W8 no meter before any reply has reported usage", $("ctx").hidden, JSON.stringify(meter()));
+
+  await reply("first", "a reply streamed in many small chunks", { prompt_tokens: 300, completion_tokens: 100 });
+  check("W8 the request asks the server for usage", window.__lastBody?.stream_options?.include_usage === true, JSON.stringify(window.__lastBody?.stream_options));
+  let m = meter();
+  check("W8 meter shows used of window, from the server's usage", !m.hidden && m.text === "about 400 of 1,000 tokens used (40%)" && m.width === "40%" && m.now === "40" && !m.warn && !m.full, JSON.stringify(m));
+  const meta = document.querySelector("#log .msg.bot:last-of-type .meta")?.textContent || "";
+  check("W8 per-reply stats count the server's completion_tokens, not stream chunks", /^100 tok · /.test(meta), meta);
+
+  await reply("second", "more", { prompt_tokens: 700, completion_tokens: 120 });
+  m = meter();
+  check("W8 at 80% or more the meter warns", m.warn && !m.full && /about 820 of 1,000 tokens used \(82%\) — nearing this model's context limit\.$/.test(m.text), JSON.stringify(m));
+  await reply("third", "even more", { prompt_tokens: 900, completion_tokens: 60 });
+  m = meter();
+  check("W8 at 95% or more it says the next message will likely not fit, and what to do", m.full && !m.warn && /\(96%\) — the next message will likely not fit\. Start a new chat, or delete earlier exchanges\.$/.test(m.text), JSON.stringify(m));
+  await reply("fourth", "over", { prompt_tokens: 1200, completion_tokens: 50 });
+  m = meter();
+  check("W8 past 100% the bar is capped, the number is not", m.width === "100%" && /about 1,250 of 1,000 tokens used \(100%\)/.test(m.text), JSON.stringify(m));
+
+  document.querySelectorAll("#log .msg.bot")[3].querySelector(".msg-delete").click();
+  m = meter();
+  check("W8 deleting the last exchange moves the meter back to the reply before it", m.full && /about 960 of 1,000/.test(m.text), JSON.stringify(m));
+
+  $("model").value = "no-window"; $("model").dispatchEvent(new Event("change"));
+  check("W8 a model that publishes no context_window shows no meter", $("ctx").hidden, JSON.stringify(meter()));
+  $("model").value = "big"; $("model").dispatchEvent(new Event("change"));
+  m = meter();
+  check("W8 switching model re-measures against its window", !m.hidden && m.text === "about 960 of 4,000 tokens used (24%)" && !m.warn && !m.full, JSON.stringify(m));
+  $("model").value = "gate-model"; $("model").dispatchEvent(new Event("change"));
+
+  // a server that sends no usage chunk: stats fall back to counting chunks, the meter keeps the last known
+  await reply("old server", "abcdefghi", null);
+  const meta2 = document.querySelector("#log .msg.bot:last-of-type .meta")?.textContent || "";
+  check("W8 without usage, stats fall back to counting chunks", /^3 tok · /.test(meta2), meta2);
+  check("W8 without usage, the meter keeps the last reported figure", /about 960 of 1,000/.test(meter().text), meter().text);
+
+  // the wall
+  const turns = document.querySelectorAll("#log .msg").length;
+  nextReply = { status: 400, body: JSON.stringify({ error: { message: "prompt is 1003 tokens but the model's context window is 1000 (context_length_exceeded) <img src=x onerror=\"window.__pwned=1\">", type: "invalid_request_error" } }) };
+  $("prompt").value = "one too many";
+  await send(); await idle(); await wait(100);
+  const errBubble = document.querySelector("#log .msg.err:last-of-type")?.children[1];
+  check("W8 context_length_exceeded is explained in words a user can act on", /^This conversation no longer fits in gate-model's context window\. Start a new chat, or delete earlier exchanges to make room\./.test(errBubble?.textContent || "") && /1003 tokens/.test(errBubble.textContent), errBubble?.textContent?.slice(0, 160));
+  await wait(150);
+  check("W8 the server's message in that error stays inert", document.querySelectorAll("#log img").length === 0 && window.__pwned === 0, document.querySelectorAll("#log img").length);
+  nextReply = { status: 400, body: JSON.stringify({ error: { message: "temperature must be between 0 and 2" } }) };
+  $("prompt").value = "other 400";
+  await send(); await idle(); await wait(50);
+  check("W8 other 400s are not dressed up as the context wall", !/no longer fits/.test(document.querySelector("#log .msg.err:last-of-type")?.textContent || ""), document.querySelector("#log .msg.err:last-of-type")?.textContent);
+
+  check("W8 usage is saved with the reply", stored().messages.filter(x => x.usage).map(x => x.usage.prompt_tokens + x.usage.completion_tokens).join(",") === "400,820,960", JSON.stringify(stored().messages.map(x => x.usage)));
+`);
+
+// ---- phase 14: after a reload — the meter comes back; hostile stored usage is ignored ----------------------
+const phase14 = phase(W8_PRELUDE + String.raw`
+  await loadModels("gate-model");
+  let m = meter();
+  check("W8 after reload the meter is restored from the saved usage", !m.hidden && /about 960 of 1,000 tokens used \(96%\)/.test(m.text) && m.full, JSON.stringify(m));
+  const st = stored();
+  const lastWithUsage = st.messages.map((x, i) => x.usage ? i : -1).filter(i => i >= 0).pop();
+  st.messages[lastWithUsage].usage = { prompt_tokens: "900<img src=x onerror=window.__pwned=1>", completion_tokens: -5 };
+  localStorage.setItem("goinfer.chat.v1", JSON.stringify(st));
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v1" }));
+  await wait(100);
+  m = meter();
+  check("W8 unreadable stored usage is ignored, falling back to the previous reply's", /about 820 of 1,000/.test(m.text) && document.querySelectorAll("img").length === 0 && window.__pwned === 0, JSON.stringify(m));
+  $("newchat").click();
+  check("W8 New chat hides the meter", $("ctx").hidden, JSON.stringify(meter()));
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }

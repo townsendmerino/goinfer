@@ -1574,3 +1574,11 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .edit-row{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
 .edit-row button{font-size:13px;padding:5px 12px;border-radius:6px}
 .edit-row .edit-save{color:var(--gi-accent);font-weight:600}
+
+/* W8: context meter */
+.ctx{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:10px}
+.ctx .bar{flex:0 0 140px;margin:0}
+.ctx.warn #ctx-fill{background:#b7791f}
+.ctx.warn #ctx-text{color:#8a5a12}
+.ctx.full #ctx-fill{background:var(--gi-err)}
+.ctx.full #ctx-text{color:var(--gi-err)}

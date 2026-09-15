@@ -36,6 +36,10 @@
   <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded">
     <label for="prompt">Message</label>
     <textarea id="prompt" class="ambient amb-surface-concave amb-rounded" placeholder="Ask something…  (Ctrl/Cmd+Enter to send)"></textarea>
+    <div id="ctx" class="ctx" hidden>
+      <div class="bar ambient amb-surface-concave amb-rounded" role="meter" id="ctx-bar" aria-label="Context used" aria-valuemin="0" aria-valuemax="100"><div id="ctx-fill"></div></div>
+      <span id="ctx-text" class="note"></span>
+    </div>
     <div class="row" style="margin-top:12px">
       <div class="note" id="chat-status"></div>
       <div class="fit"><button class="ambient amb-surface amb-rounded" id="stop" hidden>Stop</button>
