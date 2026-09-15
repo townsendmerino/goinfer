@@ -61,6 +61,9 @@
 //   W16 — phone layout at an emulated 400 and 360 px, crowded with the content most likely to break it: no
 //        sideways page scroll, nothing past the edge outside its own scroll box, every control >= 24x24 px,
 //        header items not overlapping, key controls on screen; the desktop header still one row.
+//   W17 — keyboard: Ctrl/Cmd+Enter always sends; "Enter sends" as a saved setting (Shift/Alt+Enter never send);
+//        never while an input method composes (isComposing, keyCode 229); the edit box follows the setting; ↑ in
+//        an empty box edits the last message; Esc stops a reply and still cancels an edit.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1680,6 +1683,107 @@ const phase30 = phase(String.raw`
   check("W16 desktop: the content column is still 920 px wide", Math.round(document.querySelector("main").getBoundingClientRect().width) === 920, document.querySelector("main").getBoundingClientRect().width);
 `);
 
+// ---- phases 31–32: W17 — Enter sends (a setting), ↑ edits last, Esc stops ------------------------------
+const W17_PRELUDE = String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  window.confirm = () => true;
+  // count sends by the request body streamAnswer's stub records — not by wrapping fetch again, which the
+  // prelude's title wrapper (a getter/setter on window.fetch) turns into a loop through itself
+  let sent = 0;
+  const answer = t => streamAnswer(t);
+  // a keydown as a browser delivers it; ime:true is a key pressed while an input method is composing
+  const key = (el, k, { ctrl = false, meta = false, shift = false, alt = false, ime = false, code229 = false } = {}) => {
+    const ev = new KeyboardEvent("keydown", { key: k, ctrlKey: ctrl, metaKey: meta, shiftKey: shift, altKey: alt, isComposing: ime, bubbles: true, cancelable: true });
+    if (code229) Object.defineProperty(ev, "keyCode", { get: () => 229 });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  const typeAndPress = async (text, opts) => { const before = window.__lastBody; $("prompt").value = text; const p = key($("prompt"), "Enter", opts); await wait(60); await idle(); await wait(30); if (window.__lastBody !== before) sent++; return p; };
+`;
+const phase31 = phase(W17_PRELUDE + String.raw`
+  $("newchat").click();
+  answer("ok");
+  check("W17 default: Enter does not send, and the hint says Ctrl/Cmd+Enter", !$("enter-sends").checked && /Ctrl\/Cmd\+Enter to send/.test($("prompt").placeholder), $("prompt").placeholder);
+  let prevented = await typeAndPress("plain enter");
+  check("W17 default: Enter makes a new line — nothing sent, the key not swallowed", sent === 0 && !prevented && $("prompt").value === "plain enter", sent + " sent, prevented " + prevented);
+  await typeAndPress("ctrl enter", { ctrl: true });
+  check("W17 Ctrl+Enter sends", sent === 1 && $("prompt").value === "", sent);
+  await typeAndPress("cmd enter", { meta: true });
+  check("W17 Cmd+Enter sends", sent === 2, sent);
+
+  $("enter-sends").click();
+  check("W17 turning on Enter sends is saved, and the hint changes", $("enter-sends").checked && localStorage.getItem("goinfer.keys.v1") === "enter" && /Enter to send, Shift\+Enter for a new line/.test($("prompt").placeholder), $("prompt").placeholder);
+  await typeAndPress("enter now sends");
+  check("W17 with the setting on, Enter sends", sent === 3, sent);
+  prevented = await typeAndPress("shift enter", { shift: true });
+  check("W17 Shift+Enter is still a new line", sent === 3 && !prevented && $("prompt").value === "shift enter", sent);
+  prevented = await typeAndPress("alt enter", { alt: true });
+  check("W17 Alt+Enter does not send", sent === 3 && !prevented, sent);
+  prevented = await typeAndPress("にほんご", { ime: true });
+  check("W17 Enter while an input method is composing never sends (isComposing)", sent === 3 && !prevented && $("prompt").value === "にほんご", sent);
+  prevented = await typeAndPress("かな", { code229: true });
+  check("W17 ... nor when the browser reports the composing key code 229", sent === 3 && !prevented, sent);
+  $("prompt").value = "";
+
+  // ↑ edits the last message
+  $("prompt").value = "draft";
+  prevented = key($("prompt"), "ArrowUp");
+  check("W17 ↑ with text in the box does nothing (the cursor moves, as usual)", !prevented && !document.querySelector("#log textarea.edit-box"), prevented);
+  $("prompt").value = "";
+  prevented = key($("prompt"), "ArrowUp");
+  const box = document.querySelector("#log textarea.edit-box");
+  const lastMine = [...document.querySelectorAll("#log .msg.you")].at(-1);
+  check("W17 ↑ in an empty box opens your LAST message for editing, focused", prevented && box && box.closest(".msg") === lastMine && box.value === "enter now sends" && document.activeElement === box, box?.value);
+  // the edit box follows the same setting
+  prevented = key(box, "Enter", { shift: true });
+  check("W17 in the edit box, Shift+Enter is a new line", !prevented && document.querySelector("#log textarea.edit-box") === box, prevented);
+  prevented = key(box, "Enter", { ime: true });
+  check("W17 in the edit box, Enter while composing does not save", !prevented && document.querySelector("#log textarea.edit-box") === box, prevented);
+  box.value = "edited by keyboard";
+  answer("after edit");
+  const beforeEdit = window.__lastBody;
+  key(box, "Enter");
+  await until(() => !document.querySelector("#log textarea.edit-box")); await idle(); await wait(30);
+  if (window.__lastBody !== beforeEdit) sent++;
+  check("W17 in the edit box, Enter saves and resends (setting on)", [...document.querySelectorAll("#log .msg.you")].at(-1).children[1].textContent === "edited by keyboard" && sent === 4, sent);
+  $("enter-sends").click();
+  key($("prompt"), "ArrowUp");
+  const box2 = document.querySelector("#log textarea.edit-box");
+  prevented = key(box2, "Enter");
+  check("W17 with the setting off, plain Enter in the edit box is a new line", !prevented && document.querySelector("#log textarea.edit-box") === box2, prevented);
+  key(box2, "Escape");
+  check("W17 Esc still cancels an edit", !document.querySelector("#log textarea.edit-box"), !!document.querySelector("#log textarea.edit-box"));
+
+  // rename box and an input method
+  document.querySelector("#chat-list li.current .chat-rename").click();
+  const rn = document.querySelector("#chat-list .chat-rename-box");
+  rn.value = "名前";
+  prevented = key(rn, "Enter", { ime: true });
+  check("W17 the rename box does not commit on Enter while composing", !prevented && document.querySelector("#chat-list .chat-rename-box") === rn, prevented);
+  key(rn, "Escape");
+
+  // Esc stops a reply
+  streamAnswer("slow ", { hang: true });
+  $("prompt").value = "to be stopped";
+  const run = send();
+  await until(() => !$("stop").hidden);
+  prevented = key(document.body, "Escape");
+  // with a deadline: if Esc does NOT stop it, the stream never ends, and this must fail rather than hang
+  const stoppedInTime = await Promise.race([run.then(() => true), wait(5000).then(() => false)]);
+  if (!stoppedInTime) { $("stop").click(); await run; }
+  await idle();
+  check("W17 Esc stops a reply that is generating", stoppedInTime && prevented && /^stopped/.test([...document.querySelectorAll("#log .msg.bot")].at(-1).querySelector(".meta")?.textContent || ""), [...document.querySelectorAll("#log .msg.bot")].at(-1).querySelector(".meta")?.textContent);
+  check("W17 Esc with nothing generating does nothing", !key(document.body, "Escape"), "");
+  $("enter-sends").click();   // on, for the reload phase
+`);
+const phase32 = phase(W17_PRELUDE + String.raw`
+  check("W17 after reload the Enter-sends setting is kept", $("enter-sends").checked && /Enter to send/.test($("prompt").placeholder), $("enter-sends").checked);
+  localStorage.removeItem("goinfer.keys.v1");
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.keys.v1" }));
+  check("W17 another tab's change to the setting is followed", !$("enter-sends").checked && /Ctrl\/Cmd\+Enter/.test($("prompt").placeholder), $("enter-sends").checked);
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -1692,7 +1796,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30];
+  phase30, phase31, phase32];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

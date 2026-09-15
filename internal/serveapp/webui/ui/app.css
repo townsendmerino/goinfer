@@ -1693,3 +1693,8 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
   details.system summary,details.think summary{padding-block:7px}
   .chat-open{min-height:36px}
 }
+
+/* W17: Enter-sends setting */
+.enter-pick{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gi-muted);margin:0;cursor:pointer}
+.enter-pick input{width:18px;height:18px;margin:0}
+@media (max-width: 600px), (pointer: coarse){ .enter-pick{min-height:32px} .enter-pick input{width:24px;height:24px} }

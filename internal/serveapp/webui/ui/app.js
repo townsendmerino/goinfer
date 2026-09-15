@@ -877,8 +877,8 @@ function startEdit(entry, msg) {
   saveBtn.onclick = () => finishEdit(ta.value);
   cancel.onclick = () => finishEdit(null);
   ta.addEventListener("keydown", e => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finishEdit(ta.value); }
-    if (e.key === "Escape") { e.preventDefault(); finishEdit(null); }
+    if (isSubmit(e)) { e.preventDefault(); finishEdit(ta.value); }   // W17: the same setting as the message box
+    if (e.key === "Escape" && !e.isComposing) { e.preventDefault(); finishEdit(null); }
   });
 }
 
@@ -1175,8 +1175,8 @@ function startRename(id, item) {
     if (keep && t) setTitle(id, t, "user"); else renderChatList();
   };
   input.addEventListener("keydown", e => {
-    if (e.key === "Enter") { e.preventDefault(); finish(true); }
-    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); finish(true); }   // W17: not while an IME composes
+    if (e.key === "Escape" && !e.isComposing) { e.preventDefault(); finish(false); }
   });
   input.addEventListener("blur", () => finish(true));
 }
@@ -1374,8 +1374,48 @@ loadSampling();
   if (id) openChat(id); else startFresh();
 })();
 $("stop").onclick = () => ac && ac.abort();
+// --- keyboard (W17) --------------------------------------------------------------------------
+// Ctrl/Cmd+Enter always sends. "Enter sends" is a SETTING, not a swap: off (the default, and what long
+// prompts want) Enter is a new line; on, Enter sends and Shift+Enter is the new line. It applies to the edit
+// box too, so one habit works in both. An input method mid-composition (Japanese, Chinese, Korean — where
+// Enter CONFIRMS the characters) never sends. ↑ in an empty message box edits your last message (W7), and
+// Esc stops a reply that is generating.
+const KEYS_STORE = "goinfer.keys.v1";
+const enterSends = () => $("enter-sends").checked;
+function showKeys() {
+  $("prompt").placeholder = enterSends() ? "Ask something…  (Enter to send, Shift+Enter for a new line)" : "Ask something…  (Ctrl/Cmd+Enter to send)";
+}
+function loadKeys() {
+  let on = false;
+  try { on = localStorage.getItem(KEYS_STORE) === "enter"; } catch { /* blocked */ }
+  $("enter-sends").checked = on;
+  showKeys();
+}
+$("enter-sends").addEventListener("change", () => {
+  try { if (enterSends()) localStorage.setItem(KEYS_STORE, "enter"); else localStorage.removeItem(KEYS_STORE); } catch { /* still applies here */ }
+  showKeys();
+});
+addEventListener("storage", e => { if (e.key === KEYS_STORE || e.key === null) loadKeys(); });
+loadKeys();
+
+// isSubmit says whether a keydown in a multi-line box means "send/save" under the current setting.
+function isSubmit(e) {
+  if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return false;
+  if (e.ctrlKey || e.metaKey) return true;
+  return enterSends() && !e.shiftKey && !e.altKey;
+}
+
 $("prompt").addEventListener("keydown", e => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+  if (isSubmit(e)) { e.preventDefault(); send(); return; }
+  if (e.key === "ArrowUp" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && $("prompt").value === "" && !ac && !editing) {
+    const lastUser = [...transcript].reverse().find(m => m.role === "user");
+    const msg = lastUser && [...document.querySelectorAll("#log .msg.you")].find(m => entries.get(m) === lastUser);
+    if (msg) { e.preventDefault(); startEdit(lastUser, msg); }
+  }
+});
+// Esc anywhere stops generation — unless something closer already used it (an edit or rename box cancels).
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !e.defaultPrevented && ac) { e.preventDefault(); ac.abort(); }
 });
 
 // Minimal SSE reader over fetch. The server sends "event:"/"data:" frames separated by a
