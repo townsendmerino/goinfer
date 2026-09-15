@@ -2204,6 +2204,74 @@ const phase37 = phase(String.raw`
   check("W30 an upload failure is shown with the server's own reason, and re-enables the tab", $("batch-status").className === "note err" && !$("batch-run").disabled && !$("batch-file").disabled, $("batch-status").textContent);
 `);
 
+// ---- phase 38: W31 — cancel a backgrounded job-backed reply from the chat list, without opening it --
+const phase38 = phase(W27_PRELUDE + String.raw`
+  // a conversation with a job-backed reply running, left in the background (W29's own setup)
+  $("newchat").click();
+  const JOB9 = "job_" + "c".repeat(32);
+  nextSubmit = { status: 202, body: JSON.stringify({ id: JOB9, status: "pending" }) };
+  jobs[JOB9] = { status: "running", events: "hang" };
+  $("prompt").value = "a long answer, left running";
+  const bgRun = send();
+  await until(() => generating && generating.job === JOB9);
+  await wait(60);
+  const bgChat2 = currentChat.id;
+  renderChatList();
+  const ownRow = () => [...document.querySelectorAll("#chat-list li")].find(li => li.dataset.id === bgChat2);
+  check("W31 no Cancel on the conversation you are ACTUALLY viewing (Stop already covers it)", !ownRow()?.querySelector(".chat-cancel-job") && !ownRow()?.querySelector(".chat-running"), ownRow()?.textContent);
+  $("newchat").click();
+  // the SAME synchronous tick: detachReply() has aborted the stream but the abort has not resolved
+  // yet (that is a microtask), so ac is still non-null here — the Cancel button just created for the
+  // conversation we left must render disabled, not race its own still-resolving detach.
+  const row = () => [...document.querySelectorAll("#chat-list li")].find(li => li.dataset.id === bgChat2);
+  check("W31 the newly-offered Cancel starts disabled — its own detach has not settled yet", row()?.querySelector(".chat-cancel-job")?.disabled === true, row()?.querySelector(".chat-cancel-job")?.disabled);
+  await settle(bgRun); await idle();
+
+  check("W31 the backgrounded reply offers Cancel, next to its badge", !!row()?.querySelector(".chat-cancel-job"), row()?.textContent);
+
+  // busy (mid-edit in the CURRENT conversation) disables it, same as rename/delete
+  nextSubmit = null;   // JOB9's submit response above must not leak into this NEW conversation's own send
+  jobs[JOB] = { status: "running", events: realEvents };
+  await ask("hi");
+  lastYou().querySelector(".msg-edit").click();
+  check("W31 Cancel is disabled while editing, like the list's other buttons", row().querySelector(".chat-cancel-job").disabled, row().querySelector(".chat-cancel-job").disabled);
+  document.querySelector(".edit-box")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  renderChatList();
+
+  row().querySelector(".chat-cancel-job").click();
+  await until(() => jobs[JOB9].deleted === true);
+  check("W31 Cancel calls DELETE on the real job id for that OTHER conversation, not the one on screen", jobs[JOB9].deleted === true && currentChat.id !== bgChat2, JSON.stringify(calls.filter(c => c.startsWith("DELETE"))));
+  await until(() => !row()?.querySelector(".chat-cancel-job"));
+  check("W31 the badge and Cancel disappear immediately — no need to reopen it to see the outcome", !row()?.querySelector(".chat-running") && !row()?.querySelector(".chat-cancel-job"), row()?.textContent);
+  const bgStored = JSON.parse(localStorage.getItem("goinfer.chat.v2." + bgChat2));
+  check("W31 the conversation is marked cancelled in storage, matching what a real reopen would show", bgStored.running === false && bgStored.job === undefined && bgStored.messages.at(-1).state === "cancelled", JSON.stringify(bgStored.messages.at(-1)));
+
+  calls.length = 0;
+  openChat(bgChat2);
+  await wait(150);
+  check("W31 reopening a cancelled conversation does not try to re-attach (it is not 'interrupted')", calls.length === 0 && !lastBotEl().querySelector(".msg-resume") && lastBotEl().querySelector(".meta").textContent === "cancelled by the server.", calls.join(",") + " / " + lastBotEl()?.querySelector(".meta")?.textContent);
+
+  // a hostile/unreadable stored job id offers no Cancel button at all — never DELETEs a caller-shaped id
+  $("newchat").click();
+  const hostileId = "hostilebg";
+  localStorage.setItem("goinfer.chat.v2." + hostileId, JSON.stringify({ v: 2, id: hostileId, title: "bg", titled: "user", updated: Date.now(), running: true, job: "../../admin/halt", messages: [{ role: "user", content: "q" }, { role: "assistant", model: "m", content: "", state: "generating", job: "../../admin/halt" }] }));
+  renderChatList();
+  const hostileRow = [...document.querySelectorAll("#chat-list li")].find(li => li.dataset.id === hostileId);
+  check("W31 a hostile stored job id gets the badge but never a Cancel button", !!hostileRow?.querySelector(".chat-running") && !hostileRow?.querySelector(".chat-cancel-job"), hostileRow?.textContent);
+
+  // a race: storage is legitimate when the button renders, but changes to something hostile before
+  // the click resolves — the function re-reads storage fresh rather than trusting the render, so it
+  // must still refuse. (cancelBackgroundJob is invoked directly here: the DOM cannot rebuild a
+  // now-invalid button to click, since a render never offers one on a hostile value in the first
+  // place — see the check just above — so this is the only way to exercise that re-read at all.)
+  calls.length = 0;
+  const raceId = "racebg";
+  localStorage.setItem("goinfer.chat.v2." + raceId, JSON.stringify({ v: 2, id: raceId, title: "race", titled: "user", updated: Date.now(), running: true, job: "../../admin/halt", messages: [{ role: "user", content: "q" }, { role: "assistant", model: "m", content: "", state: "generating", job: "../../admin/halt" }] }));
+  const fakeBtn = document.createElement("button");
+  await cancelBackgroundJob(raceId, fakeBtn);
+  check("W31 a job id that turned hostile between render and click is refused, never requested", calls.length === 0, JSON.stringify(calls));
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2216,7 +2284,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

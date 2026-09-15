@@ -1629,8 +1629,8 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .chat-item.current{background:color-mix(in srgb,var(--gi-accent) 9%,transparent)}
 .chat-open{flex:1;min-width:0;text-align:left;padding:5px 8px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--gi-ink)}
 .chat-item.current .chat-open{font-weight:600;color:var(--gi-accent)}
-.chat-rename,.chat-delete{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 6px;border-radius:6px;opacity:.7}
-.chat-item:hover .chat-rename,.chat-item:hover .chat-delete,.chat-rename:focus-visible,.chat-delete:focus-visible{opacity:1}
+.chat-rename,.chat-delete,.chat-cancel-job{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 6px;border-radius:6px;opacity:.7}
+.chat-item:hover .chat-rename,.chat-item:hover .chat-delete,.chat-item:hover .chat-cancel-job,.chat-rename:focus-visible,.chat-delete:focus-visible,.chat-cancel-job:focus-visible{opacity:1}
 .chat-list button[disabled],#chat-list button[disabled]{opacity:.45;cursor:default}
 .chat-rename-box{flex:1;min-width:0;font:inherit;font-size:13px;padding:4px 8px}
 
@@ -1687,7 +1687,7 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
    grow to at least 32 px tall — above WCAG 2.5.8's 24 px minimum, which several were under (the Export
    buttons at 21 px, the System prompt / Sampling toggles at 20 px). Desktop with a mouse keeps its density. */
 @media (max-width: 600px), (pointer: coarse){
-  .actions button,.md-copy,.chats-export button,.chat-rename,.chat-delete,.attach-preview button,
+  .actions button,.md-copy,.chats-export button,.chat-rename,.chat-delete,.chat-cancel-job,.attach-preview button,
   .err-actions button,.edit-row button,.theme-pick select{min-height:32px}
   /* padding, not display:flex — a flex <summary> loses its disclosure triangle */
   details.system summary,details.think summary{padding-block:7px}

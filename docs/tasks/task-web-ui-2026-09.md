@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27, W28, W29 and W30 DONE 2026-09-15, W31–W32 next.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27–W31 all DONE 2026-09-15, W32 next.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -955,17 +955,68 @@ by re-running the same mutation after the fix: 14 checks now fail cleanly, by na
 whole phase reporting nothing.
 **Effort was: M.**
 
-### W31 — Cancel by job id, and job history
-J3's `DELETE /v1/jobs/{id}` cancels an *addressed* job, which survives a reload; today's Stop button
-only aborts the local stream. And with `-job-dir` set, J2's journal is a real history that W9's
-conversation list can show, including generations this browser never saw.
-**Gate, by W5's rule, splits this item in two:**
-- **Cancel jobs this page submitted, and show their history: allowed.** That is the page acting on what
-  its own flows created (the job ids it holds with its conversations, W27). Build it.
-- **Show or cancel generations this browser never saw: not decided.** Other clients' jobs have no
-  "created by this page" limit, which is exactly W22's open question (halt and cancel for everyone). It
-  stays open until W22's design call, and the two are answered together.
-**Effort: M** (the allowed half).
+### W31 — Cancel by job id, and job history — DONE 2026-09-15 (the allowed half)
+~~J3's `DELETE /v1/jobs/{id}` cancels an addressed job... today's Stop button only aborts the local
+stream~~ — most of this half was **already true by the time this entry was reached**: W27 made Stop
+call `DELETE /v1/jobs/{id}` for whatever is on screen, and W27/W29's `resumeJob` already fills in a
+reply's outcome (done, failed, cancelled, or lost) from the job's own record the moment its
+conversation is opened — which **is** "show their history" for a job this page's own flows created;
+there is no separate history view to build, the same way W29 turned out to already be built by W27.
+
+**What was genuinely still missing: cancelling a job-backed reply that is running in the
+*background* — a different conversation than the one on screen — without switching to it first.**
+Before this, the only way to stop it was to reopen that conversation (which re-attaches, W27) and
+then click Stop. Now the chat list's "reply in progress" badge (W29) carries its own **Cancel**
+button (`renderChatList`, `internal/serveapp/webui/ui/app.js:1401`) when that conversation's own
+storage holds a job id, wired through `cancelBackgroundJob`
+(`internal/serveapp/webui/ui/app.js:1459`): `DELETE /v1/jobs/{id}` for that job, then — without
+waiting for the conversation to be reopened — the same outcome `resumeJob` would derive is written
+back into its storage directly (`state: "cancelled"`, `running` cleared), so the badge disappears
+immediately and a later open shows it correctly without ever re-attaching to a job that is no longer
+running.
+
+**Still exactly W5's rule, applied to a new spot.** The button only ever acts on a job id read back
+from the very storage key it is cancelling — never a value handed to it — so it can only cancel what
+that conversation's own flows created, the same scope W27's Stop already had. No Cancel is offered
+on the conversation actually being viewed (Stop already covers that one), nor when the stored job id
+fails the same validation W27 uses (a hostile or malformed value never becomes a request).
+
+**Gate, still split as filed:**
+- **Cancel jobs this page submitted, and show their history: allowed. Built.**
+- **Show or cancel generations this browser never saw: not decided**, unchanged — still W22's open
+  question, answered together with it.
+
+Gate: phase 38 of `scripts/webui_app_gate.mjs`, 10 checks: no Cancel on the conversation being
+viewed, a just-detached-from conversation's Cancel starting *disabled* (its own detach has not
+settled — a real, if narrow, race the mutations found needed its own check, below), Cancel offered
+next to a background reply's badge, disabled while editing (same as rename and delete), the real
+`DELETE` call naming the *other* conversation's job (not whatever is on screen), the badge and
+button disappearing immediately rather than waiting for a reopen, the cancelled state correctly
+written back to storage, a reopen afterward correctly *not* re-attaching (it is no longer
+"interrupted"), a hostile stored job id offered the badge but never a Cancel button, and — a second
+hostile-id case, distinct from the first — a job id that is valid when the button renders but turns
+hostile before the click resolves (a storage race), still refused because the handler re-reads
+storage fresh rather than trusting what the render implied.
+
+Seven mutations, each red on this phase's own checks. Two were not, on the first pass, and both
+were real gaps, not weak assertions to paper over:
+- **The busy-disabled check only ever observed `syncActions()`'s correction, never the button's own
+  creation-time value.** `syncActions()` re-disables every list button whenever `editing`/`ac`
+  changes, which happens to mask a broken `cancelBtn.disabled = busy` at the moment it is *created* —
+  except in the one window where `renderChatList()` runs with no `syncActions()` immediately behind
+  it: the instant a conversation is detached from (W29), when `ac` is still the old, still-aborting
+  controller (the abort's rejection is a microtask, not synchronous) and its row's Cancel button is
+  being created for the very first time. Closed by checking that exact instant, synchronously, before
+  any `await`.
+- **The hostile-job-id guard inside `cancelBackgroundJob` was unreachable through the UI**, because
+  `readChat` already refuses to let a bad id become a clickable button — so the function's own
+  defense-in-depth check had no test that ever exercised it. Closed by simulating the race it
+  actually guards against: a valid id at render time, corrupted before the click resolves.
+
+One of the original seven (a stale `nextSubmit` left over from setting up the background job,
+leaking into a later, unrelated send within the same phase) was a defect in the gate script itself,
+not the page — caught before it could produce a false pass.
+**Effort was: S** (small once W27/W29 existed to build it on).
 
 ### W32 — Unload a model, and see what is resident
 

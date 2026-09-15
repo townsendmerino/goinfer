@@ -533,7 +533,10 @@ function save(bump = true) {
   try {
     const last = transcript[transcript.length - 1];
     const running = !!(last && last.role === "assistant" && last.job && (last.state === "generating" || last.state === "interrupted"));   // W29: for the list
-    localStorage.setItem(CHAT_PREFIX + c.id, JSON.stringify({v: 2, id: c.id, title: c.title, titled: c.titled, updated: c.updated, running, messages: transcript}));
+    // W31: the running job's id, cheaply available to the list without a full message parse — what
+    // lets a background reply be cancelled from there directly, without switching to it first.
+    const job = running ? last.job : undefined;
+    localStorage.setItem(CHAT_PREFIX + c.id, JSON.stringify({v: 2, id: c.id, title: c.title, titled: c.titled, updated: c.updated, running, job, messages: transcript}));
     $("store-note").hidden = true;
     if (!c.stored) { c.stored = true; renderChatList(); }
   } catch {
@@ -588,6 +591,7 @@ function readChat(id, withMessages = true) {
     titled: TITLED.has(d.titled) ? d.titled : "user",
     updated: Number.isFinite(d.updated) ? d.updated : 0,
     running: d.running === true,   // W29
+    job: typeof d.job === "string" && JOB_ID_OK.test(d.job) ? d.job : "",   // W31
   };
   if (withMessages) Object.assign(c, parseMessages(d.messages));
   return c;
@@ -1407,15 +1411,22 @@ function renderChatList() {
     const open = document.createElement("button");
     open.type = "button"; open.className = "chat-open"; open.disabled = busy;
     open.textContent = c.pending ? "New chat" : (c.title || "Untitled");
-    let badge = null;
+    let badge = null, cancelBtn = null;
     if (c.running && c.id !== currentChat.id) {   // W29: a reply is still being written for this conversation
       badge = document.createElement("span");
       badge.className = "chat-running";
       badge.textContent = "reply in progress";
+      if (c.job) {   // W31: cancel it by id, from here — without switching to it first
+        cancelBtn = document.createElement("button");
+        cancelBtn.type = "button"; cancelBtn.className = "chat-cancel-job"; cancelBtn.textContent = "Cancel";
+        cancelBtn.disabled = busy;
+        cancelBtn.setAttribute("aria-label", "Cancel this reply");
+      }
     }
     if (c.id === currentChat.id) open.setAttribute("aria-current", "true");
     li.appendChild(open);
     if (badge) li.appendChild(badge);
+    if (cancelBtn) li.appendChild(cancelBtn);
     if (!c.pending) {
       for (const [cls, label, aria] of [["chat-rename", "Rename", "Rename conversation"], ["chat-delete", "Delete", "Delete conversation"]]) {
         const b = document.createElement("button");
@@ -1438,7 +1449,28 @@ $("chat-list").addEventListener("click", e => {
   if (btn.classList.contains("chat-open")) { if (id !== currentChat.id) openChat(id); }
   else if (btn.classList.contains("chat-rename")) startRename(id, li);
   else if (btn.classList.contains("chat-delete")) deleteChat(id);
+  else if (btn.classList.contains("chat-cancel-job")) cancelBackgroundJob(id, btn);
 });
+
+// cancelBackgroundJob (W31) — DELETE /v1/jobs/{id} for a reply running in a DIFFERENT conversation,
+// without switching to it first. W5's rule: only ever acts on a job id THIS storage key already
+// held (read back from the very key being cancelled, never a caller-supplied one) — the page acting
+// on what its own flows created, same as Stop (W27) does for the conversation you're actually in.
+async function cancelBackgroundJob(id, btn) {
+  btn.disabled = true;
+  let d;
+  try { d = JSON.parse(localStorage.getItem(CHAT_PREFIX + id)); } catch { renderChatList(); return; }
+  const job = d && d.v === 2 && d.id === id && typeof d.job === "string" ? d.job : "";
+  if (!JOB_ID_OK.test(job)) { renderChatList(); return; }   // stale badge from a hostile/unreadable value; just stop offering it
+  try { await fetch("/v1/jobs/" + job, {method: "DELETE", headers: headers()}); } catch { /* the next time it's opened, resumeJob reconciles it either way */ }
+  try { d = JSON.parse(localStorage.getItem(CHAT_PREFIX + id)); } catch { return; }
+  if (!d || d.v !== 2 || d.id !== id || !Array.isArray(d.messages)) return;
+  const last = d.messages[d.messages.length - 1];
+  if (last && last.role === "assistant" && last.job === job) { last.state = "cancelled"; delete last.note; }
+  d.running = false; delete d.job;
+  try { localStorage.setItem(CHAT_PREFIX + id, JSON.stringify(d)); } catch { /* the badge is now just stale, not wrong */ }
+  renderChatList();
+}
 
 // --- export (W14) -----------------------------------------------------------------------------
 // The open conversation, to a file: Markdown to read, JSON to keep or process. No share link — that would
