@@ -773,10 +773,23 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 				return
 			}
 		}
-		// int4 weights run the int8-activation W4A8 integer kernel at EVERY M (decode
-		// AND prefill): it stays integer (int4 weight × int8 activation) and benchmarks
-		// faster than the dequant-to-f32 Q4 path at every M, and its per-output result
-		// is M-independent so batched prefill is bit-identical to sequential decode.
+		// int4 weights run the int8-activation W4A8 integer kernel at EVERY M this CPU
+		// path reaches (decode AND prefill): it stays integer (int4 weight × int8
+		// activation) and benchmarks faster than the dequant-to-f32 Q4 path at every M,
+		// and its own per-output result is M-independent so, taken alone, batched
+		// prefill is bit-identical to sequential decode ON THIS KERNEL.
+		//
+		// THAT DOES NOT MAKE THE WHOLE matmul() CALL M-INDEPENDENT (M-09,
+		// docs/audit-2026-09-10.md): the QuantBackend4 consult just above intercepts
+		// M=1 for a staged webgpu backend (its own MatmulW4A8 declines any M != 1,
+		// gpu/backend.go) and routes it through a completely different kernel (a WGSL
+		// f32 GEMV with f16 group scales) — only M>1 (prefill, speculative verify)
+		// actually falls through to the bit-identical-with-itself CPU kernel this
+		// comment describes. A staged-int4 model on webgpu therefore decodes and
+		// verifies on two DIFFERENT kernels — decoder.Model.SpecDecodeConflict
+		// (decoder/spec_verify_guard.go) now refuses speculative decoding for exactly
+		// this combination (a webgpu backend + int4/int4mix quant); see that guard
+		// before assuming this comment covers the device-backed path too.
 		//
 		// The pooled Workspace lowers the fan-out threshold below aikit's default so the
 		// small int4 DECODE matmuls parallelize instead of running serial — see

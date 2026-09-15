@@ -1218,13 +1218,13 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:36` | goinfer | `if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:86` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample_test.go:81` | goinfer | `// TestNgramSampledFirstTokenMatchesPlain checks the sampled path against plain` |
+| `docs/audit-2026-09-10.md|decoder/spec_verify_guard.go:50` | goinfer | `func (m *Model) SpecDecodeConflict() error {` |
 | `docs/audit-2026-09-10.md|decoder/speculative.go:207` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/speculative.go:235` | goinfer | `if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0, false); err != nil {` |
 | `docs/audit-2026-09-10.md|decoder/speculative.go:280` | goinfer | `kRound := specRoundDraftWidth(K, tpos, target.ResidentContextCap())` |
 | `docs/audit-2026-09-10.md|decoder/staged_device_note_test.go:48` | goinfer | `{"metal", "int8", "int8"},` |
 | `docs/audit-2026-09-10.md|decoder/weightmat.go:44` | goinfer | `func matmulQuant(base quantMode, name string) quantMode {` |
-| `docs/audit-2026-09-10.md|decoder/weightmat.go:771` | goinfer | `if q4, q4s, group, ok := w.Int4(); ok {` |
-| `docs/audit-2026-09-10.md|decoder/weightmat.go:814` | goinfer | `ws.SetThreshold(DefaultDecodeParallelThreshold)` |
+| `docs/audit-2026-09-10.md|decoder/weightmat.go:827` | goinfer | `ws.SetThreshold(DefaultDecodeParallelThreshold)` |
 | `docs/audit-2026-09-10.md|decoder/weights.go:1568` | goinfer | `// override the corresponding suffix above on layers where isLinearLayer(i) is` |
 | `docs/audit-2026-09-10.md|decoder/weights.go:960` | goinfer | `if l.Router, err = loadMat(st, tn(i, s.Router), arch.MoE.NumExperts, hd); err != nil {` |
 | `docs/audit-2026-09-10.md|decoder/weights.go:98` | goinfer | `// Granite-4.0-H Mamba-2 mixer weights, set only on the mamba layers (the` |

@@ -72,6 +72,86 @@ func drain(ch <-chan int) {
 	}
 }
 
+// namedStubBackend is a minimal Backend whose only job is to report a Name() — SpecDecodeConflict's
+// M-09 check (docs/audit-2026-09-10.md) keys on isWebGPUBackend(m.be.Name()), independent of
+// m.resident, so unlike the resident-divergence tests above this needs no RegisterBackend/Load
+// machinery at all: any Model with be set to this and quant set to "int4"/"int4mix" reproduces the
+// staged condition directly.
+type namedStubBackend struct{ name string }
+
+func (b namedStubBackend) Name() string                               { return b.name }
+func (b namedStubBackend) MatmulBT(a, bb, dst []float32, M, K, N int) {}
+func (b namedStubBackend) Close() error                               { return nil }
+
+// TestSpecDecodeConflict_refusesStagedWebGPUInt4 is M-09's own gate: gpu/backend.go's MatmulW4A8
+// declines every M != 1, so a staged (non-resident) int4 model on webgpu decodes M=1 on the device
+// and verifies M>1 on the CPU kernel — two different kernels, no measured tolerance between them.
+// Mirrors TestSpecDecodeConflict_refusesEveryResidentVerifyEntry's discipline (CLAUDE.md: test
+// through the callers, not the predicate alone) for the staged half of SpecDecodeConflict.
+func TestSpecDecodeConflict_refusesStagedWebGPUInt4(t *testing.T) {
+	m, err := Load(tinyFixture(t), Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	if m.resident != nil {
+		t.Fatal("fixture came up resident on a plain cpu Load — this test needs the staged path, " +
+			"which only exists when m.resident is nil")
+	}
+	if !m.specRollbackSafe() {
+		t.Fatal("fixture is not specRollbackSafe — every entry point would refuse for a different " +
+			"reason, so this test could not tell the two refusals apart")
+	}
+
+	ctx := context.Background()
+	prompt := []int{1, 2, 3, 4, 5}
+	greedy := SamplingParams{}
+
+	for _, quant := range []string{"int4", "int4mix"} {
+		m.be = namedStubBackend{name: "webgpu"}
+		m.quant = quant
+
+		if err := m.SpecDecodeConflict(); err == nil {
+			t.Errorf("quant=%s: SpecDecodeConflict = nil, want the staged webgpu int4 refusal", quant)
+		}
+
+		ch, _, err := m.GenerateNgramSpeculative(ctx, prompt, 4, &NgramDrafter{}, 4, greedy)
+		drain(ch)
+		if err == nil {
+			t.Errorf("quant=%s: GenerateNgramSpeculative err = nil, want the staged refusal", quant)
+		}
+
+		ch, _, err = m.GenerateSpeculative(ctx, prompt, 4, m, 4, greedy)
+		drain(ch)
+		if err == nil {
+			t.Errorf("quant=%s: GenerateSpeculative err = nil, want the staged refusal", quant)
+		}
+
+		// NewBlockSpec deliberately NOT checked here: it requires m.resident to implement
+		// ResidentDrafterHost, so on this staged (m.resident == nil) model it already returns a
+		// DIFFERENT, unrelated error (errBlockSpecUnsupported) regardless of this fix — asserting
+		// "err != nil" there would pass in both the fixed and the reverted state, testing nothing.
+		// Block drafting is resident-only by construction; M-09's staged path cannot reach it.
+	}
+
+	// CONTROL — the same model, same webgpu backend, a quant the M-09 gap does not apply to.
+	// Without this arm every refusal above could be the entry point declining for some unrelated
+	// reason on this fixture, not the staged-int4 check this test is actually about.
+	m.be = namedStubBackend{name: "webgpu"}
+	m.quant = "int8int8"
+	if err := m.SpecDecodeConflict(); err != nil {
+		t.Errorf("control (int8int8 on webgpu): SpecDecodeConflict = %v, want nil — M-09 is int4-specific", err)
+	}
+
+	// CONTROL — int4 quant, but NOT a webgpu backend (this repo's staged int4 CPU kernel is
+	// M-independent on its own; M-09 is specifically about the webgpu MatmulW4A8 intercept).
+	m.be = namedStubBackend{name: "cpu"}
+	m.quant = "int4"
+	if err := m.SpecDecodeConflict(); err != nil {
+		t.Errorf("control (int4 on cpu): SpecDecodeConflict = %v, want nil — the CPU int4 kernel is M-independent on its own", err)
+	}
+}
+
 // TestSpecDecodeConflict_refusesEveryResidentVerifyEntry drives the three speculative entry points
 // that verify on the resident — not the predicate alone. CLAUDE.md: a component whose contract
 // depends on WHERE it is called must be tested through its callers, or the test only asserts the

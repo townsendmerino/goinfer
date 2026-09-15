@@ -16,24 +16,48 @@ type DecodeVerifyDiverger interface {
 	DecodeVerifyDivergence() error
 }
 
-// SpecDecodeConflict reports why speculative decoding verified on this model's resident would not
-// be lossless, or nil when it would be.
+// SpecDecodeConflict reports why speculative decoding on this model would not be lossless, or nil
+// when it would be. Two independent sources, checked in order:
+//
+//  1. M-09 (docs/audit-2026-09-10.md): the STAGED webgpu backend's own MatmulW4A8
+//     (gpu/backend.go) declines any M != 1 and falls through to the CPU int4 kernel — so a
+//     staged-int4 model on webgpu decodes each M=1 token on the device (a WGSL f32 GEMV with f16
+//     group scales) but verifies M>1 batches on the CPU's integer kernel: two different kernel
+//     implementations of the same logical matmul, with no numeric tolerance between them ever
+//     measured or pinned. This is a STAGED-path risk specifically — it exists because m.resident
+//     is nil, not despite it — so it is checked before, and independent of, the resident check
+//     below.
+//  2. The resident's own verify-vs-decode divergence (DecodeVerifyDiverger), for backends whose
+//     resident M=1 decode and batched verify can disagree (cuda's flash-decode V-sum spike is the
+//     only such case today).
 //
 // Every speculative loop that verifies on the resident — the n-gram path, the two-model draft path,
 // and block drafting — is sold as token-identical to plain greedy. That holds only while a verified
-// position scores exactly as a decoded one does. When the resident says the two can diverge, those
-// entry points refuse instead of running, the same shape specRollbackSafe uses for state a rollback
-// cannot restore: refuse at the source, never degrade silently.
+// position scores exactly as a decoded one does. When either source above says the two can diverge,
+// those entry points refuse instead of running, the same shape specRollbackSafe uses for state a
+// rollback cannot restore: refuse at the source, never degrade silently.
 //
 // Exported for callers that must refuse at STARTUP rather than per request. cmd/serve's --spec
 // ngram treats a per-request spec error as "fall back to plain decode", which would leave an
 // operator who asked for speculation serving at 1x with no signal; it checks this once at load.
 //
-// NOT consulted by the staged speculative paths (EAGLE, grammar-fused, and any Session-driven
-// n-gram run): those verify on a CPU cache, never touch the resident, and so cannot see a resident
-// divergence. Refusing them would block constrained requests for nothing.
+// The RESIDENT half is NOT consulted by the staged speculative paths (EAGLE, grammar-fused, and
+// any Session-driven n-gram run): those verify on a CPU cache, never touch the resident, and so
+// cannot see a resident divergence. The STAGED (M-09) half above applies to them too in principle
+// — a staged webgpu-int4 model's decode/verify split is the same regardless of caller — but none
+// of those three entry points call this function at all today, matching this function's own
+// "exported for callers that must refuse at startup" scope; they are unaffected either way.
 func (m *Model) SpecDecodeConflict() error {
-	if m == nil || m.resident == nil {
+	if m == nil {
+		return nil
+	}
+	if m.be != nil && isWebGPUBackend(m.be.Name()) {
+		switch m.Quant() {
+		case "int4", "int4mix":
+			return fmt.Errorf("speculative decoding would not be lossless: staged webgpu int4 decodes M=1 on the device and verifies M>1 on the CPU kernel, two different kernels with no measured tolerance between them (M-09, docs/audit-2026-09-10.md); use Generate")
+		}
+	}
+	if m.resident == nil {
 		return nil
 	}
 	d, ok := m.resident.(DecodeVerifyDiverger)
