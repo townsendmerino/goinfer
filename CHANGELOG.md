@@ -35,6 +35,11 @@ any surface may still change.
   - A context meter: about how many of the model's tokens the conversation uses, with a warning at
     80% and 95%, and a plain explanation when a message no longer fits. Per-reply token counts now
     come from the server's reported usage.
+  - Separate conversations in a Chats list. New chat keeps the conversation you were in, and each
+    conversation can be opened, renamed or deleted. A title starts as your first message; after the
+    first reply the model is asked once, in the background, for a short one. The request is cancelled
+    whenever you send a message, and it never overrides a rename. The conversation stored by earlier
+    versions is migrated into the list.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.
