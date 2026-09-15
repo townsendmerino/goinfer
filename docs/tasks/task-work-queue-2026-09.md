@@ -1,15 +1,17 @@
 # Task: goinfer as a work queue — admission, jobs, batch APIs (J1–J9) — 2026-09
 
-> **Status: J0/J1/J2/J3/J4 DONE 2026-09-15 (J3/J4 text-chat scope only), J5–J9 unstarted.** This
-> doc was first written 2026-09-12 and was never committed. It was deleted the next morning by a
+> **Status: J0/J1/J2/J3/J4 DONE 2026-09-15 (J3/J4 text-chat scope only); J6 KILLED 2026-09-15
+> (measured 1.024× against a 1.3–2.0× pass band, not shipped); J5/J7/J8/J9 unstarted.** This doc
+> was first written 2026-09-12 and was never committed. It was deleted the next morning by a
 > workaround, not by a decision — see "How this doc was lost" below, which is kept because the
 > failure is structural and the fix was J0. The rebuild is faithful to the J1–J9 scope as filed,
 > the prose re-derived from the tree at `9d29d625`, so every citation here was re-verified rather
 > than carried over.
 >
-> J5 needs J4's line format but is otherwise independent (a local CLI runner, no server); J6/J8
-> each need hours of real benchmarking against a pre-registered pass/kill band, out of scope for
-> any of this. All three remain fully open.
+> J5 needs J4's line format but is otherwise independent (a local CLI runner, no server); J8 needs
+> hours of real benchmarking against a pre-registered pass/kill band, same as J6 (see J6's own
+> closure note for the measurement discipline that applies just as much here). Both remain fully
+> open.
 >
 > Sibling: [`task-halt-2026-09.md`](task-halt-2026-09.md) (K1–K9) — this doc **reuses** K1 (cancel
 > by id), K2 (global halt), K4 (budgets) and K5 (the admin socket) rather than restating them, and
@@ -375,6 +377,23 @@ shares the longest prefix with a session already warm in the LRU
   N configurable and measured at the same time, since the guard is what caps the win.
 - Measure on the quiet box with paired differencing, both quants, and report the negative at full
   value if it lands there.
+
+**Status: KILLED 2026-09-15** (measured, not shipped) — full record in
+`docs/measurements/j6-prefix-scheduling-2026-09-15.md`. Mechanism was implemented and
+unit-tested (`internal/serveapp/admission.go`'s `release`/`pickLocked`/`longestResidentPrefix`,
+`internal/serveapp/sessions.go`'s `residentPrefixSnapshot`), then measured with a new harness
+(`scripts/bench_j6_scheduling.py` — neither `bench_compare.sh` nor
+`bench_peer.py`/`bench_peer_transcript.py` can drive concurrent admission-queue contention) against
+the pre-registered band in `docs/measurements/j6-prefix-scheduling-PREREGISTERED.md`. **Measured
+result: 1.024× mean paired throughput ratio (n=24, spread 4.4%/5.9%, clean run)** — under the
+1.15× kill line, not ambiguous. Code reverted (`git revert`), never shipped or pushed to
+`origin/main`; J1's plain FIFO stays the running behavior. A first measurement attempt hit the
+pre-registered void rule (36.8%/59.7% spread) from a background macOS/Xcode update running during
+the sweep — investigated rather than discarded, root-caused, harness improved (per-cell `loadavg`,
+incremental JSON writes) in response, then re-measured clean — see the dated write-up for the full
+account, including a hypothesis for why the effect measured small (not re-tested this pass: one
+quant, CPU only, starvation bound left at its shipped default rather than swept — none of that
+would plausibly turn a clean 1.024× into 1.3×, so not chased further).
 
 ## J7 — classes, priorities, deadlines, budgets
 

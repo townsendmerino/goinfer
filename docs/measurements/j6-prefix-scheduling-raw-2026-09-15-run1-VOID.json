@@ -1,0 +1,409 @@
+{
+  "header": {
+    "utc": "2026-09-15T06:24:19Z",
+    "host": "macbookpro.lan",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "goinfer_commit": "65fcde97",
+    "goinfer_dirty": true,
+    "loadavg": "{ 4.59 3.59 2.95 }",
+    "args": {
+      "out": "docs/measurements/j6-prefix-scheduling-raw-2026-09-15.json",
+      "old": "/Users/francistownsend-merino/j6-bench/serve-old",
+      "new": "/Users/francistownsend-merino/j6-bench/serve-new",
+      "model": "/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+      "conversations": 8,
+      "kv_sessions": 4,
+      "max_queue": 32,
+      "turns": 5,
+      "max_tokens": 48,
+      "reps": 24,
+      "starvation_bounds": ""
+    }
+  },
+  "cells": [
+    {
+      "rep": 0,
+      "arm": "old_fifo",
+      "wall_s": 53.696051915999995,
+      "tokens": 1920,
+      "agg_tok_s": 35.75681882540588,
+      "errors": []
+    },
+    {
+      "rep": 0,
+      "arm": "new_prefix_aware",
+      "wall_s": 49.949846083000004,
+      "tokens": 1920,
+      "agg_tok_s": 38.438556883831026,
+      "errors": []
+    },
+    {
+      "rep": 1,
+      "arm": "old_fifo",
+      "wall_s": 55.28846312500001,
+      "tokens": 1920,
+      "agg_tok_s": 34.72695552522649,
+      "errors": []
+    },
+    {
+      "rep": 1,
+      "arm": "new_prefix_aware",
+      "wall_s": 52.181477958000016,
+      "tokens": 1920,
+      "agg_tok_s": 36.79466498716988,
+      "errors": []
+    },
+    {
+      "rep": 2,
+      "arm": "old_fifo",
+      "wall_s": 58.047703833000014,
+      "tokens": 1920,
+      "agg_tok_s": 33.07624373091022,
+      "errors": []
+    },
+    {
+      "rep": 2,
+      "arm": "new_prefix_aware",
+      "wall_s": 56.60422324999996,
+      "tokens": 1920,
+      "agg_tok_s": 33.91973053883398,
+      "errors": []
+    },
+    {
+      "rep": 3,
+      "arm": "old_fifo",
+      "wall_s": 57.18309979200001,
+      "tokens": 1920,
+      "agg_tok_s": 33.57635397493108,
+      "errors": []
+    },
+    {
+      "rep": 3,
+      "arm": "new_prefix_aware",
+      "wall_s": 56.03360624999999,
+      "tokens": 1920,
+      "agg_tok_s": 34.265151370656255,
+      "errors": []
+    },
+    {
+      "rep": 4,
+      "arm": "old_fifo",
+      "wall_s": 58.443540625000026,
+      "tokens": 1920,
+      "agg_tok_s": 32.85221907275573,
+      "errors": []
+    },
+    {
+      "rep": 4,
+      "arm": "new_prefix_aware",
+      "wall_s": 56.514931124999976,
+      "tokens": 1920,
+      "agg_tok_s": 33.973322833099374,
+      "errors": []
+    },
+    {
+      "rep": 5,
+      "arm": "old_fifo",
+      "wall_s": 59.59449524999991,
+      "tokens": 1920,
+      "agg_tok_s": 32.217740782023036,
+      "errors": []
+    },
+    {
+      "rep": 5,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.388424708,
+      "tokens": 1920,
+      "agg_tok_s": 34.66428247638329,
+      "errors": []
+    },
+    {
+      "rep": 6,
+      "arm": "old_fifo",
+      "wall_s": 57.105630874999974,
+      "tokens": 1920,
+      "agg_tok_s": 33.621903314626515,
+      "errors": []
+    },
+    {
+      "rep": 6,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.47744829099997,
+      "tokens": 1920,
+      "agg_tok_s": 34.608657376036504,
+      "errors": []
+    },
+    {
+      "rep": 7,
+      "arm": "old_fifo",
+      "wall_s": 62.19261124999991,
+      "tokens": 1920,
+      "agg_tok_s": 30.87183447374551,
+      "errors": []
+    },
+    {
+      "rep": 7,
+      "arm": "new_prefix_aware",
+      "wall_s": 92.04374787500001,
+      "tokens": 1920,
+      "agg_tok_s": 20.85964603057511,
+      "errors": []
+    },
+    {
+      "rep": 8,
+      "arm": "old_fifo",
+      "wall_s": 79.67549404099998,
+      "tokens": 1920,
+      "agg_tok_s": 24.09774828646802,
+      "errors": []
+    },
+    {
+      "rep": 8,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.915358291000075,
+      "tokens": 1920,
+      "agg_tok_s": 34.33761418477821,
+      "errors": []
+    },
+    {
+      "rep": 9,
+      "arm": "old_fifo",
+      "wall_s": 56.42075770799988,
+      "tokens": 1920,
+      "agg_tok_s": 34.030028627704226,
+      "errors": []
+    },
+    {
+      "rep": 9,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.27315224999984,
+      "tokens": 1920,
+      "agg_tok_s": 34.736575024993364,
+      "errors": []
+    },
+    {
+      "rep": 10,
+      "arm": "old_fifo",
+      "wall_s": 56.61897183299993,
+      "tokens": 1920,
+      "agg_tok_s": 33.91089484392479,
+      "errors": []
+    },
+    {
+      "rep": 10,
+      "arm": "new_prefix_aware",
+      "wall_s": 56.02863212500006,
+      "tokens": 1920,
+      "agg_tok_s": 34.26819337149752,
+      "errors": []
+    },
+    {
+      "rep": 11,
+      "arm": "old_fifo",
+      "wall_s": 57.48144916699994,
+      "tokens": 1920,
+      "agg_tok_s": 33.40208063338582,
+      "errors": []
+    },
+    {
+      "rep": 11,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.13868016699985,
+      "tokens": 1920,
+      "agg_tok_s": 34.82129050214568,
+      "errors": []
+    },
+    {
+      "rep": 12,
+      "arm": "old_fifo",
+      "wall_s": 57.12092462500004,
+      "tokens": 1920,
+      "agg_tok_s": 33.6129012722542,
+      "errors": []
+    },
+    {
+      "rep": 12,
+      "arm": "new_prefix_aware",
+      "wall_s": 56.674468041999944,
+      "tokens": 1920,
+      "agg_tok_s": 33.87768895470071,
+      "errors": []
+    },
+    {
+      "rep": 13,
+      "arm": "old_fifo",
+      "wall_s": 57.82666783400009,
+      "tokens": 1920,
+      "agg_tok_s": 33.20267398964853,
+      "errors": []
+    },
+    {
+      "rep": 13,
+      "arm": "new_prefix_aware",
+      "wall_s": 57.956259875000114,
+      "tokens": 1920,
+      "agg_tok_s": 33.12843175424105,
+      "errors": []
+    },
+    {
+      "rep": 14,
+      "arm": "old_fifo",
+      "wall_s": 69.506881583,
+      "tokens": 1920,
+      "agg_tok_s": 27.623164156879596,
+      "errors": []
+    },
+    {
+      "rep": 14,
+      "arm": "new_prefix_aware",
+      "wall_s": 101.81179954200002,
+      "tokens": 1920,
+      "agg_tok_s": 18.858324954839347,
+      "errors": []
+    },
+    {
+      "rep": 15,
+      "arm": "old_fifo",
+      "wall_s": 71.47444237499985,
+      "tokens": 1920,
+      "agg_tok_s": 26.86274892396464,
+      "errors": []
+    },
+    {
+      "rep": 15,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.88126125000008,
+      "tokens": 1920,
+      "agg_tok_s": 34.35856594951134,
+      "errors": []
+    },
+    {
+      "rep": 16,
+      "arm": "old_fifo",
+      "wall_s": 57.22661641700006,
+      "tokens": 1920,
+      "agg_tok_s": 33.55082163183134,
+      "errors": []
+    },
+    {
+      "rep": 16,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.88475362500003,
+      "tokens": 1920,
+      "agg_tok_s": 34.35641879865224,
+      "errors": []
+    },
+    {
+      "rep": 17,
+      "arm": "old_fifo",
+      "wall_s": 56.534176665999894,
+      "tokens": 1920,
+      "agg_tok_s": 33.961757528427995,
+      "errors": []
+    },
+    {
+      "rep": 17,
+      "arm": "new_prefix_aware",
+      "wall_s": 56.556408333000036,
+      "tokens": 1920,
+      "agg_tok_s": 33.94840755613721,
+      "errors": []
+    },
+    {
+      "rep": 18,
+      "arm": "old_fifo",
+      "wall_s": 57.51817883399963,
+      "tokens": 1920,
+      "agg_tok_s": 33.380750902096835,
+      "errors": []
+    },
+    {
+      "rep": 18,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.04646566600013,
+      "tokens": 1920,
+      "agg_tok_s": 34.87962354658317,
+      "errors": []
+    },
+    {
+      "rep": 19,
+      "arm": "old_fifo",
+      "wall_s": 56.54031158299995,
+      "tokens": 1920,
+      "agg_tok_s": 33.95807250162535,
+      "errors": []
+    },
+    {
+      "rep": 19,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.29131162499971,
+      "tokens": 1920,
+      "agg_tok_s": 34.72516646054533,
+      "errors": []
+    },
+    {
+      "rep": 20,
+      "arm": "old_fifo",
+      "wall_s": 58.572273416999906,
+      "tokens": 1920,
+      "agg_tok_s": 32.78001497962589,
+      "errors": []
+    },
+    {
+      "rep": 20,
+      "arm": "new_prefix_aware",
+      "wall_s": 87.81005079099987,
+      "tokens": 1920,
+      "agg_tok_s": 21.865378538156946,
+      "errors": []
+    },
+    {
+      "rep": 21,
+      "arm": "old_fifo",
+      "wall_s": 80.21062541599986,
+      "tokens": 1920,
+      "agg_tok_s": 23.936978299847688,
+      "errors": []
+    },
+    {
+      "rep": 21,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.39403983400007,
+      "tokens": 1920,
+      "agg_tok_s": 34.66076866308515,
+      "errors": []
+    },
+    {
+      "rep": 22,
+      "arm": "old_fifo",
+      "wall_s": 56.75410562499974,
+      "tokens": 1920,
+      "agg_tok_s": 33.83015164905101,
+      "errors": []
+    },
+    {
+      "rep": 22,
+      "arm": "new_prefix_aware",
+      "wall_s": 60.61625637499992,
+      "tokens": 1920,
+      "agg_tok_s": 31.67467136409746,
+      "errors": []
+    },
+    {
+      "rep": 23,
+      "arm": "old_fifo",
+      "wall_s": 59.286832959000094,
+      "tokens": 1920,
+      "agg_tok_s": 32.38493109132308,
+      "errors": []
+    },
+    {
+      "rep": 23,
+      "arm": "new_prefix_aware",
+      "wall_s": 55.5987316249998,
+      "tokens": 1920,
+      "agg_tok_s": 34.53316188847513,
+      "errors": []
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "utc": "2026-09-15T07:18:53Z",
+  "host": "macbookpro.lan",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "goinfer_commit": "",
+  "goinfer_dirty": false,
+  "loadavg": "{ 1.57 4.92 6.29 }",
+  "args": {
+    "out": "docs/measurements/j6-prefix-scheduling-raw-2026-09-15-run2.json",
+    "old": "/Users/francistownsend-merino/j6-bench/serve-old",
+    "new": "/Users/francistownsend-merino/j6-bench/serve-new",
+    "model": "/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+    "conversations": 8,
+    "kv_sessions": 4,
+    "max_queue": 32,
+    "turns": 5,
+    "max_tokens": 48,
+    "reps": 24,
+    "starvation_bounds": ""
+  }
+}
+=== rep 0 arm old_fifo === loadavg { 1.57 4.92 6.29 }
+  wall=50.00s tokens=1920 agg_tok/s=38.40 errors=0 loadavg_after={ 4.30 5.03 6.24 }
+=== rep 0 arm new_prefix_aware === loadavg { 4.30 5.03 6.24 }
+  wall=47.55s tokens=1920 agg_tok/s=40.38 errors=0 loadavg_after={ 5.47 5.20 6.23 }
+=== rep 1 arm old_fifo === loadavg { 5.47 5.20 6.23 }
+  wall=48.26s tokens=1920 agg_tok/s=39.78 errors=0 loadavg_after={ 5.70 5.24 6.18 }
+=== rep 1 arm new_prefix_aware === loadavg { 5.70 5.24 6.18 }
+  wall=48.73s tokens=1920 agg_tok/s=39.40 errors=0 loadavg_after={ 4.37 4.94 6.01 }
+=== rep 2 arm old_fifo === loadavg { 4.37 4.94 6.01 }
+  wall=49.50s tokens=1920 agg_tok/s=38.79 errors=0 loadavg_after={ 4.14 4.75 5.87 }
+=== rep 2 arm new_prefix_aware === loadavg { 4.14 4.75 5.87 }
+  wall=49.11s tokens=1920 agg_tok/s=39.09 errors=0 loadavg_after={ 4.29 4.67 5.78 }
+=== rep 3 arm old_fifo === loadavg { 4.29 4.67 5.78 }
+  wall=49.58s tokens=1920 agg_tok/s=38.73 errors=0 loadavg_after={ 4.12 4.57 5.67 }
+=== rep 3 arm new_prefix_aware === loadavg { 4.12 4.57 5.67 }
+  wall=48.52s tokens=1920 agg_tok/s=39.57 errors=0 loadavg_after={ 4.59 4.63 5.63 }
+=== rep 4 arm old_fifo === loadavg { 4.59 4.63 5.63 }
+  wall=49.43s tokens=1920 agg_tok/s=38.84 errors=0 loadavg_after={ 4.44 4.58 5.55 }
+=== rep 4 arm new_prefix_aware === loadavg { 4.44 4.58 5.55 }
+  wall=47.47s tokens=1920 agg_tok/s=40.44 errors=0 loadavg_after={ 3.79 4.38 5.42 }
+=== rep 5 arm old_fifo === loadavg { 3.79 4.38 5.42 }
+  wall=48.64s tokens=1920 agg_tok/s=39.48 errors=0 loadavg_after={ 3.82 4.29 5.32 }
+=== rep 5 arm new_prefix_aware === loadavg { 3.82 4.29 5.32 }
+  wall=48.22s tokens=1920 agg_tok/s=39.82 errors=0 loadavg_after={ 4.46 4.39 5.30 }
+=== rep 6 arm old_fifo === loadavg { 4.46 4.39 5.30 }
+  wall=48.61s tokens=1920 agg_tok/s=39.50 errors=0 loadavg_after={ 4.23 4.31 5.21 }
+=== rep 6 arm new_prefix_aware === loadavg { 4.23 4.31 5.21 }
+  wall=48.07s tokens=1920 agg_tok/s=39.94 errors=0 loadavg_after={ 3.90 4.19 5.11 }
+=== rep 7 arm old_fifo === loadavg { 3.90 4.19 5.11 }
+  wall=48.55s tokens=1920 agg_tok/s=39.54 errors=0 loadavg_after={ 3.45 4.00 4.98 }
+=== rep 7 arm new_prefix_aware === loadavg { 3.45 4.00 4.98 }
+  wall=48.77s tokens=1920 agg_tok/s=39.37 errors=0 loadavg_after={ 4.54 4.21 5.00 }
+=== rep 8 arm old_fifo === loadavg { 4.54 4.21 5.00 }
+  wall=49.55s tokens=1920 agg_tok/s=38.75 errors=0 loadavg_after={ 5.25 4.47 5.05 }
+=== rep 8 arm new_prefix_aware === loadavg { 5.25 4.47 5.05 }
+  wall=47.68s tokens=1920 agg_tok/s=40.27 errors=0 loadavg_after={ 4.91 4.49 5.02 }
+=== rep 9 arm old_fifo === loadavg { 4.91 4.49 5.02 }
+  wall=49.17s tokens=1920 agg_tok/s=39.05 errors=0 loadavg_after={ 4.61 4.43 4.96 }
+=== rep 9 arm new_prefix_aware === loadavg { 4.61 4.43 4.96 }
+  wall=46.86s tokens=1920 agg_tok/s=40.98 errors=0 loadavg_after={ 4.98 4.57 4.99 }
+=== rep 10 arm old_fifo === loadavg { 4.98 4.57 4.99 }
+  wall=49.38s tokens=1920 agg_tok/s=38.88 errors=0 loadavg_after={ 5.09 4.64 4.99 }
+=== rep 10 arm new_prefix_aware === loadavg { 5.09 4.64 4.99 }
+  wall=48.31s tokens=1920 agg_tok/s=39.74 errors=0 loadavg_after={ 5.00 4.69 4.99 }
+=== rep 11 arm old_fifo === loadavg { 5.00 4.69 4.99 }
+  wall=48.83s tokens=1920 agg_tok/s=39.32 errors=0 loadavg_after={ 4.76 4.67 4.96 }
+=== rep 11 arm new_prefix_aware === loadavg { 4.76 4.67 4.96 }
+  wall=47.97s tokens=1920 agg_tok/s=40.03 errors=0 loadavg_after={ 4.30 4.56 4.90 }
+=== rep 12 arm old_fifo === loadavg { 4.30 4.56 4.90 }
+  wall=49.00s tokens=1920 agg_tok/s=39.18 errors=0 loadavg_after={ 3.94 4.44 4.84 }
+=== rep 12 arm new_prefix_aware === loadavg { 3.94 4.44 4.84 }
+  wall=47.94s tokens=1920 agg_tok/s=40.05 errors=0 loadavg_after={ 4.22 4.39 4.79 }
+=== rep 13 arm old_fifo === loadavg { 4.22 4.39 4.79 }
+  wall=48.95s tokens=1920 agg_tok/s=39.22 errors=0 loadavg_after={ 3.63 4.19 4.69 }
+=== rep 13 arm new_prefix_aware === loadavg { 3.63 4.19 4.69 }
+  wall=47.81s tokens=1920 agg_tok/s=40.16 errors=0 loadavg_after={ 4.37 4.29 4.69 }
+=== rep 14 arm old_fifo === loadavg { 4.37 4.29 4.69 }
+  wall=48.47s tokens=1920 agg_tok/s=39.61 errors=0 loadavg_after={ 4.78 4.41 4.71 }
+=== rep 14 arm new_prefix_aware === loadavg { 4.78 4.41 4.71 }
+  wall=47.51s tokens=1920 agg_tok/s=40.41 errors=0 loadavg_after={ 4.68 4.42 4.70 }
+=== rep 15 arm old_fifo === loadavg { 4.68 4.42 4.70 }
+  wall=48.70s tokens=1920 agg_tok/s=39.43 errors=0 loadavg_after={ 4.82 4.52 4.72 }
+=== rep 15 arm new_prefix_aware === loadavg { 4.82 4.52 4.72 }
+  wall=48.15s tokens=1920 agg_tok/s=39.87 errors=0 loadavg_after={ 5.05 4.60 4.74 }
+=== rep 16 arm old_fifo === loadavg { 5.05 4.60 4.74 }
+  wall=49.06s tokens=1920 agg_tok/s=39.13 errors=0 loadavg_after={ 5.14 4.68 4.76 }
+=== rep 16 arm new_prefix_aware === loadavg { 5.14 4.68 4.76 }
+  wall=48.19s tokens=1920 agg_tok/s=39.84 errors=0 loadavg_after={ 5.17 4.72 4.76 }
+=== rep 17 arm old_fifo === loadavg { 5.17 4.72 4.76 }
+  wall=48.67s tokens=1920 agg_tok/s=39.45 errors=0 loadavg_after={ 4.27 4.57 4.70 }
+=== rep 17 arm new_prefix_aware === loadavg { 4.27 4.57 4.70 }
+  wall=48.01s tokens=1920 agg_tok/s=39.99 errors=0 loadavg_after={ 4.39 4.55 4.68 }
+=== rep 18 arm old_fifo === loadavg { 4.39 4.55 4.68 }
+  wall=50.34s tokens=1920 agg_tok/s=38.14 errors=0 loadavg_after={ 4.43 4.52 4.66 }
+=== rep 18 arm new_prefix_aware === loadavg { 4.43 4.52 4.66 }
+  wall=49.69s tokens=1920 agg_tok/s=38.64 errors=0 loadavg_after={ 4.99 4.65 4.70 }
+=== rep 19 arm old_fifo === loadavg { 4.99 4.65 4.70 }
+  wall=50.25s tokens=1920 agg_tok/s=38.21 errors=0 loadavg_after={ 4.22 4.48 4.63 }
+=== rep 19 arm new_prefix_aware === loadavg { 4.22 4.48 4.63 }
+  wall=48.03s tokens=1920 agg_tok/s=39.97 errors=0 loadavg_after={ 5.12 4.62 4.67 }
+=== rep 20 arm old_fifo === loadavg { 5.12 4.62 4.67 }
+  wall=49.49s tokens=1920 agg_tok/s=38.80 errors=0 loadavg_after={ 4.37 4.49 4.62 }
+=== rep 20 arm new_prefix_aware === loadavg { 4.37 4.49 4.62 }
+  wall=47.87s tokens=1920 agg_tok/s=40.11 errors=0 loadavg_after={ 4.46 4.50 4.61 }
+=== rep 21 arm old_fifo === loadavg { 4.46 4.50 4.61 }
+  wall=49.36s tokens=1920 agg_tok/s=38.90 errors=0 loadavg_after={ 4.87 4.59 4.64 }
+=== rep 21 arm new_prefix_aware === loadavg { 4.87 4.59 4.64 }
+  wall=47.65s tokens=1920 agg_tok/s=40.29 errors=0 loadavg_after={ 4.40 4.50 4.60 }
+=== rep 22 arm old_fifo === loadavg { 4.40 4.50 4.60 }
+  wall=50.46s tokens=1920 agg_tok/s=38.05 errors=0 loadavg_after={ 6.32 4.95 4.75 }
+=== rep 22 arm new_prefix_aware === loadavg { 6.32 4.95 4.75 }
+  wall=48.02s tokens=1920 agg_tok/s=39.98 errors=0 loadavg_after={ 4.94 4.80 4.71 }
+=== rep 23 arm old_fifo === loadavg { 4.94 4.80 4.71 }
+  wall=49.22s tokens=1920 agg_tok/s=39.01 errors=0 loadavg_after={ 4.67 4.74 4.69 }
+=== rep 23 arm new_prefix_aware === loadavg { 4.67 4.74 4.69 }
+  wall=48.14s tokens=1920 agg_tok/s=39.89 errors=0 loadavg_after={ 3.30 4.34 4.54 }
+wrote docs/measurements/j6-prefix-scheduling-raw-2026-09-15-run2.json

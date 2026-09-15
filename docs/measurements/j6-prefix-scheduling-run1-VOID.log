@@ -1,0 +1,118 @@
+{
+  "utc": "2026-09-15T06:24:19Z",
+  "host": "macbookpro.lan",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "goinfer_commit": "65fcde97",
+  "goinfer_dirty": true,
+  "loadavg": "{ 4.59 3.59 2.95 }",
+  "args": {
+    "out": "docs/measurements/j6-prefix-scheduling-raw-2026-09-15.json",
+    "old": "/Users/francistownsend-merino/j6-bench/serve-old",
+    "new": "/Users/francistownsend-merino/j6-bench/serve-new",
+    "model": "/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+    "conversations": 8,
+    "kv_sessions": 4,
+    "max_queue": 32,
+    "turns": 5,
+    "max_tokens": 48,
+    "reps": 24,
+    "starvation_bounds": ""
+  }
+}
+=== rep 0 arm old_fifo ===
+  wall=53.70s tokens=1920 agg_tok/s=35.76 errors=0
+=== rep 0 arm new_prefix_aware ===
+  wall=49.95s tokens=1920 agg_tok/s=38.44 errors=0
+=== rep 1 arm old_fifo ===
+  wall=55.29s tokens=1920 agg_tok/s=34.73 errors=0
+=== rep 1 arm new_prefix_aware ===
+  wall=52.18s tokens=1920 agg_tok/s=36.79 errors=0
+=== rep 2 arm old_fifo ===
+  wall=58.05s tokens=1920 agg_tok/s=33.08 errors=0
+=== rep 2 arm new_prefix_aware ===
+  wall=56.60s tokens=1920 agg_tok/s=33.92 errors=0
+=== rep 3 arm old_fifo ===
+  wall=57.18s tokens=1920 agg_tok/s=33.58 errors=0
+=== rep 3 arm new_prefix_aware ===
+  wall=56.03s tokens=1920 agg_tok/s=34.27 errors=0
+=== rep 4 arm old_fifo ===
+  wall=58.44s tokens=1920 agg_tok/s=32.85 errors=0
+=== rep 4 arm new_prefix_aware ===
+  wall=56.51s tokens=1920 agg_tok/s=33.97 errors=0
+=== rep 5 arm old_fifo ===
+  wall=59.59s tokens=1920 agg_tok/s=32.22 errors=0
+=== rep 5 arm new_prefix_aware ===
+  wall=55.39s tokens=1920 agg_tok/s=34.66 errors=0
+=== rep 6 arm old_fifo ===
+  wall=57.11s tokens=1920 agg_tok/s=33.62 errors=0
+=== rep 6 arm new_prefix_aware ===
+  wall=55.48s tokens=1920 agg_tok/s=34.61 errors=0
+=== rep 7 arm old_fifo ===
+  wall=62.19s tokens=1920 agg_tok/s=30.87 errors=0
+=== rep 7 arm new_prefix_aware ===
+  wall=92.04s tokens=1920 agg_tok/s=20.86 errors=0
+=== rep 8 arm old_fifo ===
+  wall=79.68s tokens=1920 agg_tok/s=24.10 errors=0
+=== rep 8 arm new_prefix_aware ===
+  wall=55.92s tokens=1920 agg_tok/s=34.34 errors=0
+=== rep 9 arm old_fifo ===
+  wall=56.42s tokens=1920 agg_tok/s=34.03 errors=0
+=== rep 9 arm new_prefix_aware ===
+  wall=55.27s tokens=1920 agg_tok/s=34.74 errors=0
+=== rep 10 arm old_fifo ===
+  wall=56.62s tokens=1920 agg_tok/s=33.91 errors=0
+=== rep 10 arm new_prefix_aware ===
+  wall=56.03s tokens=1920 agg_tok/s=34.27 errors=0
+=== rep 11 arm old_fifo ===
+  wall=57.48s tokens=1920 agg_tok/s=33.40 errors=0
+=== rep 11 arm new_prefix_aware ===
+  wall=55.14s tokens=1920 agg_tok/s=34.82 errors=0
+=== rep 12 arm old_fifo ===
+  wall=57.12s tokens=1920 agg_tok/s=33.61 errors=0
+=== rep 12 arm new_prefix_aware ===
+  wall=56.67s tokens=1920 agg_tok/s=33.88 errors=0
+=== rep 13 arm old_fifo ===
+  wall=57.83s tokens=1920 agg_tok/s=33.20 errors=0
+=== rep 13 arm new_prefix_aware ===
+  wall=57.96s tokens=1920 agg_tok/s=33.13 errors=0
+=== rep 14 arm old_fifo ===
+  wall=69.51s tokens=1920 agg_tok/s=27.62 errors=0
+=== rep 14 arm new_prefix_aware ===
+  wall=101.81s tokens=1920 agg_tok/s=18.86 errors=0
+=== rep 15 arm old_fifo ===
+  wall=71.47s tokens=1920 agg_tok/s=26.86 errors=0
+=== rep 15 arm new_prefix_aware ===
+  wall=55.88s tokens=1920 agg_tok/s=34.36 errors=0
+=== rep 16 arm old_fifo ===
+  wall=57.23s tokens=1920 agg_tok/s=33.55 errors=0
+=== rep 16 arm new_prefix_aware ===
+  wall=55.88s tokens=1920 agg_tok/s=34.36 errors=0
+=== rep 17 arm old_fifo ===
+  wall=56.53s tokens=1920 agg_tok/s=33.96 errors=0
+=== rep 17 arm new_prefix_aware ===
+  wall=56.56s tokens=1920 agg_tok/s=33.95 errors=0
+=== rep 18 arm old_fifo ===
+  wall=57.52s tokens=1920 agg_tok/s=33.38 errors=0
+=== rep 18 arm new_prefix_aware ===
+  wall=55.05s tokens=1920 agg_tok/s=34.88 errors=0
+=== rep 19 arm old_fifo ===
+  wall=56.54s tokens=1920 agg_tok/s=33.96 errors=0
+=== rep 19 arm new_prefix_aware ===
+  wall=55.29s tokens=1920 agg_tok/s=34.73 errors=0
+=== rep 20 arm old_fifo ===
+  wall=58.57s tokens=1920 agg_tok/s=32.78 errors=0
+=== rep 20 arm new_prefix_aware ===
+  wall=87.81s tokens=1920 agg_tok/s=21.87 errors=0
+=== rep 21 arm old_fifo ===
+  wall=80.21s tokens=1920 agg_tok/s=23.94 errors=0
+=== rep 21 arm new_prefix_aware ===
+  wall=55.39s tokens=1920 agg_tok/s=34.66 errors=0
+=== rep 22 arm old_fifo ===
+  wall=56.75s tokens=1920 agg_tok/s=33.83 errors=0
+=== rep 22 arm new_prefix_aware ===
+  wall=60.62s tokens=1920 agg_tok/s=31.67 errors=0
+=== rep 23 arm old_fifo ===
+  wall=59.29s tokens=1920 agg_tok/s=32.38 errors=0
+=== rep 23 arm new_prefix_aware ===
+  wall=55.60s tokens=1920 agg_tok/s=34.53 errors=0
+wrote docs/measurements/j6-prefix-scheduling-raw-2026-09-15.json
