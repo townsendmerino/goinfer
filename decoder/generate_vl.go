@@ -88,43 +88,50 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 		// tower or the CPU prefill. Held only long enough to check+use; released either way.
 		if m.tryClaimResident() {
 			claim := []residentImageClaim{{Start: imgPos, Len: imgLen, Hash: imgHash}}
+			// M-01 (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions) has
+			// already passed prepare's own MaxPositions check, so residentPrefillSeed below would
+			// die mid-prefill with no CPU fallback (its error just sets g.err and returns) — decline
+			// the fast path up front when it would overrun the cap instead, falling through to the
+			// SAME "not fully reused" path below (release resBusy, tower + CPU prefill + re-claim).
 			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= imgPos+imgLen {
-				// FULL reuse: the image, and everything before it, is already resident.
-				// Stay inside THIS claim (no release/reclaim) — reseed via the ordinary
-				// ResidentForward.Forward path (no CPU prefill, no tower call at all).
-				g.PrefillReused = reuseFrom                                      // observable proof the fast path actually fired
-				m.residentForgetIDs()                                            // forget first — from here the cache is mid-write
-				logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom, false) // no adapter path here yet
-				if err != nil {
+				if ctxCap := m.ResidentContextCap(); ctxCap <= 0 || len(ids) <= ctxCap {
+					// FULL reuse: the image, and everything before it, is already resident.
+					// Stay inside THIS claim (no release/reclaim) — reseed via the ordinary
+					// ResidentForward.Forward path (no CPU prefill, no tower call at all).
+					g.PrefillReused = reuseFrom                                      // observable proof the fast path actually fired
+					m.residentForgetIDs()                                            // forget first — from here the cache is mid-write
+					logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom, false) // no adapter path here yet
+					if err != nil {
+						atomic.StoreInt32(&m.resBusy, 0)
+						g.err = err
+						return
+					}
+					gpuPos := len(ids)
+					if capper, ok := m.resident.(ResidentCapped); ok {
+						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+							maxTokens = ctxCap - gpuPos
+							g.BudgetClamped = true // the resident cap (not the request) bounds this turn (M-02, docs/audit-2026-09-10.md)
+						}
+					}
+					g.Budget = maxTokens // M-02: publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
+					sampler := NewSampler(sp)
+					sampler.Observe(ids...)
+					generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+						l, err := m.resident.Forward(m.embedResident(next), gpuPos)
+						gpuPos++
+						return l, err
+					})
+					if g.err == nil {
+						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+					} else {
+						m.residentForgetIDs()
+					}
 					atomic.StoreInt32(&m.resBusy, 0)
-					g.err = err
 					return
 				}
-				gpuPos := len(ids)
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos
-						g.BudgetClamped = true // the resident cap (not the request) bounds this turn (M-02, docs/audit-2026-09-10.md)
-					}
-				}
-				g.Budget = maxTokens // M-02: publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
-				sampler := NewSampler(sp)
-				sampler.Observe(ids...)
-				generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
-					l, err := m.resident.Forward(m.embedResident(next), gpuPos)
-					gpuPos++
-					return l, err
-				})
-				if g.err == nil {
-					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
-				} else {
-					m.residentForgetIDs()
-				}
-				atomic.StoreInt32(&m.resBusy, 0)
-				return
 			}
-			// Not fully reused: release immediately — do not hold the claim across the
-			// tower call below.
+			// Not fully reused, or declined by the M-01 cap check above: release immediately —
+			// do not hold the claim across the tower call below.
 			atomic.StoreInt32(&m.resBusy, 0)
 		}
 
@@ -264,38 +271,45 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 
 		if r, ok := m.resident.(ResidentMRoPE); ok && m.tryClaimResident() {
 			claim := []residentImageClaim{{Start: imgPos, Len: imgLen, Hash: imgHash}}
+			// M-01 (docs/audit-2026-09-10.md): same cap decline as GenerateVL's identical P9a
+			// site above — a prompt in (ResidentContextCap, MaxPositions) already passed
+			// prepare's MaxPositions check, so residentPrefillSeedMRoPE below would die
+			// mid-prefill with no CPU fallback; decline up front and fall through to the "not
+			// fully reused" release/re-claim path instead.
 			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= imgPos+imgLen {
-				g.PrefillReused = reuseFrom // observable proof the fast path actually fired
-				m.residentForgetIDs()
-				logits, err := m.residentPrefillSeedMRoPE(ctx, r, ids, reuseFrom, mropeDelta)
-				if err != nil {
+				if ctxCap := m.ResidentContextCap(); ctxCap <= 0 || len(ids) <= ctxCap {
+					g.PrefillReused = reuseFrom // observable proof the fast path actually fired
+					m.residentForgetIDs()
+					logits, err := m.residentPrefillSeedMRoPE(ctx, r, ids, reuseFrom, mropeDelta)
+					if err != nil {
+						atomic.StoreInt32(&m.resBusy, 0)
+						g.err = err
+						return
+					}
+					gpuPos := len(ids)
+					if capper, ok := m.resident.(ResidentCapped); ok {
+						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+							maxTokens = ctxCap - gpuPos
+							g.BudgetClamped = true // the resident cap (not the request) bounds this turn (M-02, docs/audit-2026-09-10.md)
+						}
+					}
+					g.Budget = maxTokens // M-02: publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
+					sampler := NewSampler(sp)
+					sampler.Observe(ids...)
+					generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+						ropePos := gpuPos + mropeDelta
+						l, err := r.ForwardMRoPE(m.embedResident(next), gpuPos, ropePos)
+						gpuPos++
+						return l, err
+					})
+					if g.err == nil {
+						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+					} else {
+						m.residentForgetIDs()
+					}
 					atomic.StoreInt32(&m.resBusy, 0)
-					g.err = err
 					return
 				}
-				gpuPos := len(ids)
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos
-						g.BudgetClamped = true // the resident cap (not the request) bounds this turn (M-02, docs/audit-2026-09-10.md)
-					}
-				}
-				g.Budget = maxTokens // M-02: publish the effective (possibly clamped) budget so a cap-truncated turn reports finish_reason "length"
-				sampler := NewSampler(sp)
-				sampler.Observe(ids...)
-				generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
-					ropePos := gpuPos + mropeDelta
-					l, err := r.ForwardMRoPE(m.embedResident(next), gpuPos, ropePos)
-					gpuPos++
-					return l, err
-				})
-				if g.err == nil {
-					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
-				} else {
-					m.residentForgetIDs()
-				}
-				atomic.StoreInt32(&m.resBusy, 0)
-				return
 			}
 			atomic.StoreInt32(&m.resBusy, 0)
 		}

@@ -42,7 +42,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
+	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return

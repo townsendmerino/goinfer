@@ -425,6 +425,58 @@ func TestGenerateVL_imageReuseFastPath_sameImageSkipsTower(t *testing.T) {
 	}
 }
 
+// TestGenerateVL_imageReuseFastPath_declinesPastResidentCap is M-01's own gate for the P9a fast
+// path (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions) — a strict
+// extension of an already-committed prefix, so P9a's own full-reuse condition (reuseFrom >=
+// imgPos+imgLen) is satisfied — must NOT take the fast path once it would overrun the resident
+// cap. Before the fix, residentPrefillSeed's own error there just set g.err and returned with no
+// fallback; this must instead decline cleanly and fall through to the ordinary path (tower runs
+// again), exactly as "not fully reused" already does.
+func TestGenerateVL_imageReuseFastPath_declinesPastResidentCap(t *testing.T) {
+	m, g := loadGemma3VLTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = rf
+
+	towerCalls := 0
+	features := func() ([]float32, error) {
+		towerCalls++
+		return g.ImageFeatures, nil
+	}
+	const imgHash = 42
+	const maxNew = 3
+
+	// Turn 1: cold — commits the image block to the resident KV (capPos unbounded so far).
+	stream1, gen1 := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, imgHash, features, maxNew, SamplingParams{Temperature: 0})
+	var gen1IDs []int
+	for id := range stream1 {
+		gen1IDs = append(gen1IDs, id)
+	}
+	if err := gen1.Err(); err != nil {
+		t.Fatalf("turn 1 GenerateVL: %v", err)
+	}
+	if towerCalls != 1 {
+		t.Fatalf("turn 1: tower called %d times, want 1", towerCalls)
+	}
+
+	// Turn 2: the same image resent as a strict extension — P9a's full-reuse condition is
+	// satisfied — but the cap is now set to just BELOW prompt2's length, so the fast path must
+	// decline instead of committing to a prefill that would overrun it.
+	prompt2 := append(append([]int{}, g.InputIDs...), gen1IDs...)
+	prompt2 = append(prompt2, g.InputIDs[len(g.InputIDs)-1])
+	rf.capPos = len(prompt2) - 1
+
+	stream2, gen2 := m.GenerateVL(context.Background(), prompt2, g.ImageTokenStart, g.MMTokens, imgHash, features, maxNew, SamplingParams{Temperature: 0})
+	for range stream2 {
+	}
+	if err := gen2.Err(); err != nil {
+		t.Fatalf("turn 2 GenerateVL past the resident cap: %v (want a clean decline, not an error)", err)
+	}
+	if towerCalls != 2 {
+		t.Errorf("turn 2: tower called %d times total, want 2 — the P9a fast path must decline (past "+
+			"the cap) and fall through to the ordinary path, which runs the tower again", towerCalls)
+	}
+}
+
 // TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower is the atomicity kill
 // condition's decoder-level half (the real-hardware half lives in
 // gpu/resident_reuse_parity_test.go): a turn that claims a DIFFERENT image (a different imgHash)
@@ -523,6 +575,52 @@ func TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE(t *testing.
 	}
 	if rf.forwards <= forwardsAfterTurn1 {
 		t.Error("turn 2 never called resident Forward (via ForwardMRoPE) — decode did not run at all")
+	}
+}
+
+// TestGenerateQwenVL_imageReuseFastPath_declinesPastResidentCap mirrors
+// TestGenerateVL_imageReuseFastPath_declinesPastResidentCap for GenerateQwenVL's own P9a m-RoPE
+// fast path (M-01, docs/audit-2026-09-10.md) — same decline, same fallthrough, different function.
+func TestGenerateQwenVL_imageReuseFastPath_declinesPastResidentCap(t *testing.T) {
+	m, g := loadQwen25VLTiny(t)
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = rf
+
+	towerCalls := 0
+	features := func() ([]float32, error) {
+		towerCalls++
+		return g.ImageFeatures, nil
+	}
+	const imgHash = 7
+	maxNew := len(g.Continuation)
+
+	stream1, gen1 := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, imgHash, features,
+		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
+	var gen1IDs []int
+	for id := range stream1 {
+		gen1IDs = append(gen1IDs, id)
+	}
+	if err := gen1.Err(); err != nil {
+		t.Fatalf("turn 1 GenerateQwenVL: %v", err)
+	}
+	if towerCalls != 1 {
+		t.Fatalf("turn 1: tower called %d times, want 1", towerCalls)
+	}
+
+	prompt2 := append(append([]int{}, g.InputIDs...), gen1IDs...)
+	prompt2 = append(prompt2, g.InputIDs[len(g.InputIDs)-1])
+	rf.capPos = len(prompt2) - 1
+
+	stream2, gen2 := m.GenerateQwenVL(context.Background(), prompt2, g.ImageStart, g.NImageTokens, imgHash, features,
+		g.GridTHW, 2, g.ImageToken, maxNew, SamplingParams{Temperature: 0})
+	for range stream2 {
+	}
+	if err := gen2.Err(); err != nil {
+		t.Fatalf("turn 2 GenerateQwenVL past the resident cap: %v (want a clean decline, not an error)", err)
+	}
+	if towerCalls != 2 {
+		t.Errorf("turn 2: tower called %d times total, want 2 — the P9a fast path must decline (past "+
+			"the cap) and fall through to the ordinary path, which runs the tower again", towerCalls)
 	}
 }
 

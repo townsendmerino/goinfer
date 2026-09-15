@@ -1274,7 +1274,18 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// resBusy winner's SetAdapter/Forward/SetAdapter(nil) sequence ever runs at a time, so
 		// two adapter sessions (or an adapter session and a base-model session) can never
 		// observe each other's bound delta.
-		if m.tryClaimResident() {
+		if ctxCap := m.ResidentContextCap(); ctxCap > 0 && len(prompt) > ctxCap {
+			// M-01 (docs/audit-2026-09-10.md): decline BEFORE ever claiming the resident — a
+			// prefill past this fixed KV cap fails mid-write below (residentPrefillSeed's error
+			// a few lines down just sets g.err and returns; there is no CPU fallback once this
+			// commits), so refuse here and fall through to the staged CPU path below, exactly as
+			// "not resident" already does. Chiefly the adapter case: an adapter's first turn
+			// (prefillFrom==0) reaches this branch too, and prepare() enforces MaxPositions for
+			// it unless the caller derives residentPath from ResidentActive() (serveapp's own
+			// M-01 fix) — this is the decoder-seam half, defense in depth for any caller that
+			// doesn't.
+			useGPU = false
+		} else if m.tryClaimResident() {
 			if resAdapter != nil {
 				if err := resAdapter.SetAdapter(residentAdapterLayers(lora)); err != nil {
 					// Bind failed after claiming resBusy — release immediately (not via defer)

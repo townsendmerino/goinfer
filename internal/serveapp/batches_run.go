@@ -81,7 +81,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		setResult(batch, i, lineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
+	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
 		setResult(batch, i, lineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
 		return
@@ -187,7 +187,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		setResult(batch, i, lineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
 	}
-	gr, err := lm.prepare(req.toSampling(), ids, lm.adapter == "")
+	gr, err := lm.prepare(req.toSampling(), ids, lm.residentPath())
 	if err != nil {
 		setResult(batch, i, lineError(customID, prepareErrStatus(err), "invalid_request_error", err.Error()))
 		return

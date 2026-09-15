@@ -637,7 +637,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
+	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
@@ -734,7 +734,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
+	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
@@ -826,14 +826,30 @@ func (lm *loadedModel) contextWindow(residentPath bool) int {
 	return ctx
 }
 
+// residentPath reports whether a text-completion request against lm will actually run the
+// stateless GPU-resident decode path, for contextWindow/prepare's residentPath argument (M-01,
+// docs/audit-2026-09-10.md). NOT `lm.adapter == ""`: an adapter model's FIRST turn
+// (prefillFrom==0) still runs resident GPU decode when one is active
+// (decoder/model.go's generateInto useGPU condition doesn't exclude adapters), so keying this on
+// "no adapter" left an adapter+resident request enforced against the uncapped MaxPositions while
+// generateInto actually bound it to the smaller ResidentContextCap() — dying mid-prefill with a
+// leaking 500 instead of a clean 400 (the R-10 regression this fixes). ResidentActive() is safe on
+// every other combination too: not resident (adapter or not) makes ResidentContextCap() report 0,
+// so contextWindow's own `rc > 0` guard no-ops regardless of what residentPath says — this only
+// tightens the one case that was actually broken. Guarded against lm.model == nil (an embedding-only
+// entry) the same way contextWindow itself is, even though no text-completion caller should reach
+// prepare with one.
+func (lm *loadedModel) residentPath() bool {
+	return lm.model != nil && lm.model.ResidentActive()
+}
+
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams,
 // wires response_format into a constraint masker, and resolves stop strings.
 // residentPath tells prepare whether THIS request will actually run the stateless GPU-resident
-// decode path (so the resident context cap binds). It's false for vision requests (GenerateVL is
-// CPU-only) and for adapter models (R-01 routes them to the session path below instead, which
-// since G3 is not always CPU either — see the routing comment above the resident-vs-session split;
-// N-39) — applying the resident cap to those over-rejected prompts the session/CPU path would
-// serve (audit F-01).
+// decode path (so the resident context cap binds) — see the residentPath() helper above for what
+// determines it. Every text-completion caller passes lm.residentPath(); it's unconditionally false
+// for vision requests (GenerateVL is CPU-prefilled; the resident image-reuse fast path, P9a, is a
+// separate cap check of its own in decoder/generate_vl.go, not this one).
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
 	sp := decoder.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),

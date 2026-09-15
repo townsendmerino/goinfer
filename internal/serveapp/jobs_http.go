@@ -54,7 +54,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")
+	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
 		release()
 		writeErr(w, prepareErrStatus(err), err.Error())

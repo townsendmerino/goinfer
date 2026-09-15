@@ -66,3 +66,40 @@ func TestGenerate_casLoserStillCompletesOnCPU(t *testing.T) {
 			"than once (a repeated allocation mid-decode would be its own bug)", delta)
 	}
 }
+
+// TestGenerate_residentContextCapDeclinesToCPUInsteadOfErroring is M-01's decoder-seam gate
+// (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions) must decline the
+// resident path up front and fall through to the CPU path, not commit to a resident prefill that
+// dies mid-write with no fallback (residentPrefillSeed's own error just sets g.err and returns).
+// This is defense in depth for the decoder seam — internal/serveapp's own residentPath() fix
+// (M-01, openai.go) is the primary guard that should stop such a request even earlier, but this
+// exercises the decoder package directly, independent of any caller's enforcement.
+func TestGenerate_residentContextCapDeclinesToCPUInsteadOfErroring(t *testing.T) {
+	m, be := loadWithFakeResident(t)
+	if !m.ResidentActive() {
+		t.Skip("fixture is not resident-eligible; the other seam tests still gate the wiring")
+	}
+	be.rf.capPos = 3
+	prompt := []int{1, 2, 3, 4, 5} // longer than capPos, well under the tiny fixture's MaxPositions
+
+	before := prefillEnters.Load()
+	ch, g := m.Generate(context.Background(), prompt, 2, SamplingParams{Temperature: 0})
+	var got []int
+	for tok := range ch {
+		got = append(got, tok)
+	}
+	if g.Err() != nil {
+		t.Fatalf("Generate with a prompt past the resident cap: %v (want a clean CPU fallback, not an error)", g.Err())
+	}
+	if len(got) == 0 {
+		t.Fatal("Generate produced no tokens — the CPU fallback did not run to completion")
+	}
+	if delta := prefillEnters.Load() - before; delta != 1 {
+		t.Errorf("prefillEnters advanced by %d, want exactly 1 — the cap decline must fall through "+
+			"to the CPU path (lazily allocating its cache), not attempt the resident prefill at all", delta)
+	}
+	if be.rf.forwards != 0 {
+		t.Errorf("resident Forward called %d times, want 0 — the cap check must decline BEFORE "+
+			"ever calling into the resident, not attempt it and recover from an error", be.rf.forwards)
+	}
+}
