@@ -108,7 +108,28 @@ func (s *server) loadDecoderEmbedder(cfg config) error {
 	if err != nil {
 		return fmt.Errorf("load embedding tokenizer (%s): %w", cfg.embedPath, err)
 	}
-	m, err := decoder.Load(cfg.embedPath, decoder.Options{})
+	// M-17 (docs/audit-2026-09-10.md): Backend/Quant were left zero-valued here, so this embedder
+	// always loaded CPU-only regardless of -backend, and -embed-quant was silently never read for
+	// a .gguf embed model — the resident HiddenLast path (decoder/embed.go) this model may
+	// implement was shipped but never reachable from serve. decoder.Load builds m.resident off
+	// Options.Backend alone (decoder/model.go's .withResidency()), so this is sufficient for
+	// reachability — no separate resident-build step, matching how chat models get residency
+	// (modelSpec.options, main.go:172). A resident embedder gets its own resBusy CAS
+	// (decoder/model.go), structurally identical to a second resident chat model — nothing shared
+	// needs a new guard.
+	//
+	// cfg.embedQuant is NOT passed through as decoder.Options.Quant directly: the two use
+	// different vocabularies (-embed-quant's "f32"|"q8", the aikit-encoder path's own precision
+	// names, vs decoder.Options.Quant's ""|"int8"|"int8int8"|"int4", decoder/model.go's
+	// parseQuant) — parseQuant hard-errors on any string it doesn't recognize, so passing "q8"
+	// straight through would make -embed-quant q8 FAIL TO LOAD instead of silently ignoring it, a
+	// worse regression than the bug this fixes. "q8" maps to Quant's own "int8" (weight-only
+	// per-row), the same precision class the aikit encoder's LoadQ8 path uses.
+	quant := ""
+	if strings.EqualFold(cfg.embedQuant, "q8") {
+		quant = "int8"
+	}
+	m, err := decoder.Load(cfg.embedPath, decoder.Options{Backend: cfg.backend, Quant: quant})
 	if err != nil {
 		return fmt.Errorf("load embedding model (%s): %w", cfg.embedPath, err)
 	}

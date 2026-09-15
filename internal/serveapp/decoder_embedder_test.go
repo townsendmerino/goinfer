@@ -257,6 +257,85 @@ func TestDecoderEmbedder_emptyInput(t *testing.T) {
 	}
 }
 
+// TestLoadDecoderEmbedder_requestedBackendReachesTheLoad is M-17's own gate
+// (docs/audit-2026-09-10.md): loadDecoderEmbedder must actually pass -backend through to the
+// embedder's own decoder.Load, or the resident HiddenLast path (decoder/embed.go) it may
+// implement is shipped but unreachable — every /v1/embeddings call silently takes the CPU
+// sequential path regardless of -backend.
+//
+// Asserts against decoder.Model.RequestedBackend(), not ResidentActive(): this test binary
+// (plain `go test ./internal/serveapp/...`, no -tags gpu, no metal/cmd/serve submodule build)
+// cannot make ANY GPU backend actually activate — decoder.NewBackend falls back to CPU with an
+// explanatory error for every non-cpu name here, by design (M-19: the real backends live in
+// submodule entrypoints, not a build tag on the root binary). RequestedBackend() is exactly the
+// signal that survives that fallback: it records what Options.Backend WAS at load time,
+// independent of whether the backend actually built — which is exactly M-17's own claim ("the
+// decoder-embedder is loaded with decoder.Options{} (Backend ”)"), so this is a real,
+// hardware-independent test of the fix, not a proxy for one.
+func TestLoadDecoderEmbedder_requestedBackendReachesTheLoad(t *testing.T) {
+	requireHeavyModel(t)
+	p := os.ExpandEnv("$HOME/models/Qwen3-0.6B-Q8_0.gguf")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no checkpoint at %s", p)
+	}
+	s := &server{}
+	if err := s.loadDecoderEmbedder(config{embedPath: p, backend: "metal"}); err != nil {
+		t.Fatalf("loadDecoderEmbedder: %v", err)
+	}
+	de, ok := s.embed.(*decoderEmbedder)
+	if !ok {
+		t.Fatalf("s.embed is %T, want *decoderEmbedder", s.embed)
+	}
+	defer de.m.Close()
+	if got := de.m.RequestedBackend(); got != "metal" {
+		t.Errorf("RequestedBackend() = %q, want %q — loadDecoderEmbedder is not passing -backend "+
+			"through to decoder.Load (M-17: Options{} was left zero-valued)", got, "metal")
+	}
+}
+
+// TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU is the fix's own regression guard: an unset
+// -backend must still normalize to "cpu" (decoder.NewBackend's own "" → cpu rule), unchanged from
+// before M-17 — this must not regress into requesting some other backend by accident.
+func TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU(t *testing.T) {
+	requireHeavyModel(t)
+	p := os.ExpandEnv("$HOME/models/Qwen3-0.6B-Q8_0.gguf")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no checkpoint at %s", p)
+	}
+	s := &server{}
+	if err := s.loadDecoderEmbedder(config{embedPath: p}); err != nil {
+		t.Fatalf("loadDecoderEmbedder: %v", err)
+	}
+	de := s.embed.(*decoderEmbedder)
+	defer de.m.Close()
+	if got := de.m.RequestedBackend(); got != "cpu" {
+		t.Errorf("RequestedBackend() = %q, want %q with no -backend configured", got, "cpu")
+	}
+}
+
+// TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8 is the other half of M-17: -embed-quant's own
+// vocabulary ("f32"|"q8") is NOT decoder.Options.Quant's ("" |"int8"|"int8int8"|"int4") — passing
+// "q8" straight through would make decoder.Load's parseQuant reject it outright as unknown
+// (worse than the silent-ignore this fixes: a hard load failure), so loadDecoderEmbedder must
+// translate "q8" to Quant's own "int8" instead.
+func TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8(t *testing.T) {
+	requireHeavyModel(t)
+	p := os.ExpandEnv("$HOME/models/Qwen3-0.6B-Q8_0.gguf")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no checkpoint at %s", p)
+	}
+	s := &server{}
+	if err := s.loadDecoderEmbedder(config{embedPath: p, embedQuant: "q8"}); err != nil {
+		t.Fatalf("loadDecoderEmbedder with -embed-quant q8: %v", err)
+	}
+	de := s.embed.(*decoderEmbedder)
+	defer de.m.Close()
+	if got := de.m.Quant(); got != "int8" {
+		t.Errorf("Quant() = %q, want %q — -embed-quant q8 must map to decoder.Options.Quant's "+
+			"own \"int8\" (weight-only), not pass through literally", got, "int8")
+	}
+}
+
 func cosineF32(a, b []float32) float64 {
 	var dot, na, nb float64
 	for i := range a {

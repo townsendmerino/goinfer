@@ -1268,7 +1268,7 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/anthropic.go:496` | goinfer | `if gr, err = lm.prepare(req.toSampling(), ids, lm.adapter == ""); err != nil {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/anthropic_stream.go:62` | goinfer | `anthropicEvent(ss, "ping", map[string]any{"type": "ping"}) // liveness check; cheap insu` |
 | `docs/audit-2026-09-10.md|internal/serveapp/banner.go:94` | goinfer | `ctxLine := "context: "` |
-| `docs/audit-2026-09-10.md|internal/serveapp/decoder_embedder.go:111` | goinfer | `m, err := decoder.Load(cfg.embedPath, decoder.Options{})` |
+| `docs/audit-2026-09-10.md|internal/serveapp/decoder_embedder.go:132` | goinfer | `m, err := decoder.Load(cfg.embedPath, decoder.Options{Backend: cfg.backend, Quant: quant` |
 | `docs/audit-2026-09-10.md|internal/serveapp/helpers.go:214` | goinfer | `// frame writes one preformatted SSE frame under the lock, and is the ONLY place this pa` |
 | `docs/audit-2026-09-10.md|internal/serveapp/helpers.go:60` | goinfer | `func maxBytes(n int64, h http.HandlerFunc, note ...string) http.HandlerFunc {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/limits_test.go:151` | goinfer | `if strings.Contains(body, "promptTooLargeForContext(") {` |
@@ -1711,8 +1711,10 @@ supports.
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/constrain.go:23` | goinfer | `type Grammar interface {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/tool_grammar.go:30` | goinfer | `func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, paramSchema [` |
 | `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:588` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/tasks/task-web-ui-2026-09.md|decoder/fitguard.go:53` | goinfer | `var hostRAMAvailable = HostRAMAvailableBytes` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:113` | goinfer | `func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:171` | goinfer | `func (s *server) publishLoaded(lm *loadedModel) bool {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:86` | goinfer | `mux.HandleFunc("POST /admin/models/unload", wrap(maxBytes(textCap, s.handleAdminUnload))` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/anthropic.go:35` | goinfer | `// dropped by the decoder); stop_reason is therefore never "thinking" in v1.` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/jobs_http.go:114` | goinfer | `// W28: a waiting job's place in line — its own request's state, the only queue informat` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:724` | goinfer | `mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebL` |
@@ -1723,6 +1725,7 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:816` | goinfer | `func (lm *loadedModel) contextWindow(residentPath bool) int {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/vision_serve.go:20` | goinfer | `maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:321` | goinfer | `func webLoadPath(p string) (string, error) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:376` | goinfer | `_, dup := s.models[name]` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:458` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:50` | goinfer | `//go:embed webui` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:179` | goinfer | `Size   int64` |
