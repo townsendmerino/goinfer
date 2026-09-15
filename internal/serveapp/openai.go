@@ -1123,7 +1123,13 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
 	}
 	if jobs != nil && gr.id != "" {
-		j := jobs.create(gr.id, lm.name, gr.promptIDs)
+		j := jobs.getOrCreate(gr.id, lm.name, gr.promptIDs)
+		// J3's result content: accumulated independently of whatever the caller's own onText does
+		// (SSE send, a handler-local strings.Builder, …) — every job gets one uniformly, whether
+		// or not the caller happens to read it back itself.
+		var resultText strings.Builder
+		wrapped := onText
+		onText = func(t string) { resultText.WriteString(t); wrapped(t) }
 		// Reads the function's own named return values — set by whichever return statement below
 		// actually fires — so this sees the FINAL finish/nComp/prefillReused/cancelReason/err
 		// regardless of which of drive's several return points ran.
@@ -1139,7 +1145,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			jobs.finish(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
 				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
-			}, errMsg)
+			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1286,7 +1292,10 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
 	}
 	if jobs != nil && gr.id != "" {
-		j := jobs.create(gr.id, lm.name, gr.promptIDs)
+		j := jobs.getOrCreate(gr.id, lm.name, gr.promptIDs)
+		var resultText strings.Builder
+		wrapped := onText
+		onText = func(t string) { resultText.WriteString(t); wrapped(t) }
 		defer func() {
 			state := jobDone
 			var errMsg string
@@ -1299,7 +1308,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			jobs.finish(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
 				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
-			}, errMsg)
+			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)

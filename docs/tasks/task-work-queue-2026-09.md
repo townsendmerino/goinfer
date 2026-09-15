@@ -1,14 +1,15 @@
 # Task: goinfer as a work queue — admission, jobs, batch APIs (J1–J9) — 2026-09
 
-> **Status: J0/J1/J2 DONE 2026-09-14, J3–J9 unstarted.** This doc was first written 2026-09-12 and
-> was never committed. It was deleted the next morning by a workaround, not by a decision — see
-> "How this doc was lost" below, which is kept because the failure is structural and the fix was
-> J0. The rebuild is faithful to the J1–J9 scope as filed; the prose is re-derived from the tree at
-> `9d29d625`, so every citation here was re-verified rather than carried over.
+> **Status: J0/J1/J2/J3 DONE 2026-09-14 (J3 text-chat scope only), J4–J9 unstarted.** This doc was
+> first written 2026-09-12 and was never committed. It was deleted the next morning by a
+> workaround, not by a decision — see "How this doc was lost" below, which is kept because the
+> failure is structural and the fix was J0. The rebuild is faithful to the J1–J9 scope as filed,
+> the prose re-derived from the tree at `9d29d625`, so every citation here was re-verified rather
+> than carried over.
 >
-> J1–J2 were scoped deliberately: J3/J4/J5 need J2's job object to exist first; J6/J8 each need
-> hours of real benchmarking against a pre-registered pass/kill band, out of scope for this pass.
-> Both remain fully open.
+> J4/J5 need J3's HTTP surface (now built) but add real surface area of their own (two full batch
+> API dialects); J6/J8 each need hours of real benchmarking against a pre-registered pass/kill
+> band, out of scope for any of this. All three remain fully open.
 >
 > Sibling: [`task-halt-2026-09.md`](task-halt-2026-09.md) (K1–K9) — this doc **reuses** K1 (cancel
 > by id), K2 (global halt), K4 (budgets) and K5 (the admin socket) rather than restating them, and
@@ -221,6 +222,52 @@ behavior (`TestServe_backpressure`, `TestServe_haltUnderLoad`, `TestServe_anthro
   `metadata.user_id`.
 - Gate: start a job, kill the client mid-stream, reconnect to `/events`, and assemble a transcript
   byte-identical to an uninterrupted run of the same seed.
+
+**Status: DONE 2026-09-14** (`main`), text-chat scope only — see "not built" below.
+`internal/serveapp/jobs_http.go` (the four routes), `jobs_run.go` (`runJob`, the async
+counterpart to `serveChatText`, decoupled from any HTTP request's lifetime), `jobeventlog.go`
+(the replay-then-live buffer). The one real architectural gap: every existing generation path runs
+`drive()` synchronously inside its own handler, holding `withModel`'s RLock
+(`internal/serveapp/liveness.go:94`) for the handler's whole body so `/admin` unload can't free the model
+mid-generation. `POST /v1/jobs` returns before the generation finishes, so `resolveAndLock`
+(`internal/serveapp/liveness.go:69`) is called directly instead of through `withModel`, and its `release` is handed
+to `runJob` to defer over the job's whole life instead of the handler's. Everything else needed —
+admission (`lm.tryEnter`, no `http.ResponseWriter` required), cancel-by-id (`drive`/`driveVL`
+already register `gr.id` in K1's registry once running) — was already reusable as-is.
+
+`jobStore` (J2) gained a `responseStore`-style FIFO cap (`internal/serveapp/responses.go:49`'s pattern), skipping
+over any still-pending/running job rather than evicting it; and two creation paths — `create`
+(unchanged, both transitions at once, for every synchronous handler) and `createPending` +
+`getOrCreate` (the async path: pre-create pending BEFORE admission is even attempted, so
+`GET /v1/jobs/{id}` can see "pending" while genuinely queued, not just an instant flash before
+"running" the way the synchronous paths' timing makes unavoidable).
+
+Found by `-race`, not by inspection: J2 never had a reader of `*job`'s fields from outside the
+single goroutine that owned it, so `markRunning`/`finish` mutated them without holding
+`jobStore.mu`. J3's `handleGetJob` is a genuine second reader (a different goroutine, while
+`runJob` is still running the job) — the very first real-checkpoint run of the new HTTP tests
+caught the resulting data race immediately. Fixed by moving those mutations under the lock and
+adding `snapshot(id) (job, bool)` (a copy taken under the lock) for `handleGetJob` to read instead
+of the live pointer.
+
+Verified: `jobeventlog_test.go` (replay from a fresh reader, partial-replay-then-live, a blocked
+waiter unblocking within milliseconds of `append`/`markDone`, `-race` clean under concurrent
+readers+writers), `jobs_test.go` (eviction never drops a live job; oldest-finished-first;
+`getOrCreate` transitions the pre-created job rather than creating a second one). The task doc's
+own gate, real-checkpoint (`GOINFER_SERVE_MODEL`): `TestJobs_submitPollReattachMatchesSyncRun`
+(submit, read a few frames, disconnect, poll to completion, re-attach as a brand-new connection —
+the replayed transcript is byte-identical to an uninterrupted `/v1/chat/completions` run of the
+same seed) and `TestJobs_deleteCancelsAQueuedJob` (DELETE stops a job that is still queued, not
+only a running one — the concrete case J1's admission fix exists for). No regression to the
+existing synchronous paths or goroutine count (`TestServe_backpressure`, `TestServe_haltUnderLoad`,
+`TestServe_goroutineLeakCheck` all pass unchanged).
+
+**Not built this pass:** vision and tool-calling request bodies (`POST /v1/jobs` accepts
+`serveChatText`'s plain-text scope only); the `user`/`metadata.user_id` client-visible key the
+original spec named — K4 (budgets), which that key was "the one proposed for", is not built yet
+(`docs/tasks/task-halt-2026-09.md` lists it as open), so there is nothing to reuse; a job-store
+size flag (`-job-cap`, currently a hardcoded 256 matching `responseStore`'s own bound). J4/J5 (the
+batch APIs, over this same store) and J6–J9 remain open.
 
 ## J4 — the two batch APIs, over one job store
 

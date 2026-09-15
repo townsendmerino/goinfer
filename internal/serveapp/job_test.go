@@ -10,7 +10,7 @@ import (
 // doc J2: "Every generation gets one, whether or not anything durable is on"), but nothing
 // touches disk.
 func TestJobStore_inMemoryWithoutJobDir(t *testing.T) {
-	s, err := newJobStore("")
+	s, err := newJobStore("", 0)
 	if err != nil {
 		t.Fatalf("newJobStore(\"\"): %v", err)
 	}
@@ -24,7 +24,7 @@ func TestJobStore_inMemoryWithoutJobDir(t *testing.T) {
 	if j.Started == nil {
 		t.Fatal("Started not set after create")
 	}
-	s.finish(j, jobDone, &usage{PromptTokens: 3, CompletionTokens: 5, TotalTokens: 8}, "")
+	s.finish(j, jobDone, &usage{PromptTokens: 3, CompletionTokens: 5, TotalTokens: 8}, "", nil)
 	if j.State != jobDone || j.Finished == nil {
 		t.Fatalf("state after finish = %+v, want done with Finished set", j)
 	}
@@ -34,7 +34,7 @@ func TestJobStore_inMemoryWithoutJobDir(t *testing.T) {
 // state per id after a reload — the core "keep the last snapshot" reconstruction rule.
 func TestJobJournal_roundTrip(t *testing.T) {
 	dir := t.TempDir()
-	s, err := newJobStore(dir)
+	s, err := newJobStore(dir, 0)
 	if err != nil {
 		t.Fatalf("newJobStore: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestJobJournal_roundTrip(t *testing.T) {
 		t.Fatal("journal should be non-nil when -job-dir is set")
 	}
 	j := s.create("id-1", "m", []int{1, 2, 3})
-	s.finish(j, jobDone, &usage{PromptTokens: 3, CompletionTokens: 4, TotalTokens: 7}, "")
+	s.finish(j, jobDone, &usage{PromptTokens: 3, CompletionTokens: 4, TotalTokens: 7}, "", nil)
 
 	restored, err := loadJournal(filepath.Join(dir, "jobs.jsonl"))
 	if err != nil {

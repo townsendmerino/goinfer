@@ -649,6 +649,16 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		mux.HandleFunc("POST /v1/responses", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses)))))
 		mux.HandleFunc("POST /v1/messages", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages)))))
 		mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
+		// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets the
+		// same haltGate/inf/maxBytes stack as every other POST above. Polling state (GET), reading
+		// the event stream (GET .../events), and cancelling (DELETE) are NOT new inference work —
+		// haltGate'ing them would 503 a client just trying to learn that its job was halted, and
+		// inf's inflight cap exists to bound pre-queue JSON/image decode + tokenization, none of
+		// which these three do — so they get auth only.
+		mux.HandleFunc("POST /v1/jobs", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateJob)))))
+		mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
+		mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
+		mux.HandleFunc("DELETE /v1/jobs/{id}", auth(srv.handleCancelJob))
 	}
 	// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a JSON
 	// error naming -embed-model rather than a bare 404, so an SDK sees "unconfigured" not "wrong URL".
@@ -868,7 +878,9 @@ func newServer(cfg config) (*server, error) {
 	if cfg.unloadDrainWait <= 0 {
 		cfg.unloadDrainWait = 5 * time.Second // floor; the flag defaults here too. ?wait=false is the per-request path to an immediate 202.
 	}
-	jobs, err := newJobStore(cfg.jobDir)
+	// 256 matches responseStore's own bound (newResponseStore(256), just below) — no dedicated
+	// -job-cap flag yet; a job past this many jobs old is only evicted once terminal (evictLocked).
+	jobs, err := newJobStore(cfg.jobDir, 256)
 	if err != nil {
 		return nil, fmt.Errorf("-job-dir %q: %w", cfg.jobDir, err)
 	}
