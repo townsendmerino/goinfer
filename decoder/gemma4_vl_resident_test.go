@@ -102,8 +102,9 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 	m.resIDs = []int{9, 9, 9} // stale — must not be mistaken for a reusable prefix
 
 	const maxNew = 4
+	const testImgHash = 0xC0FFEE // nonzero — a real hash, so the M-07 block-commit assertion below is meaningful
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
-	stream, gen := m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
+	stream, gen := m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, testImgHash, features, maxNew, SamplingParams{Temperature: 0})
 	var got []int
 	for id := range stream {
 		got = append(got, id)
@@ -113,6 +114,16 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 	}
 	if len(got) == 0 {
 		t.Fatal("GenerateGemma4VL streamed no tokens")
+	}
+	// M-07 (docs/audit-2026-09-10.md): the commit must record an image block, or a later turn's
+	// residentReuseLen has nothing to key a reuse check on and can walk straight through this
+	// image's K/V for any prompt sharing Gemma4's content-independent soft-token ids.
+	if len(m.resImgBlocks) != 1 {
+		t.Fatalf("resImgBlocks = %v, want exactly 1 entry after a resident-committed image turn", m.resImgBlocks)
+	}
+	if got := m.resImgBlocks[0]; got.start != g.ImageTokenStart || got.end != g.ImageTokenStart+g.NImageTokens || got.hash != testImgHash {
+		t.Errorf("resImgBlocks[0] = %+v, want {start:%d end:%d hash:%d}",
+			got, g.ImageTokenStart, g.ImageTokenStart+g.NImageTokens, uint64(testImgHash))
 	}
 	if nLayers := m.w.arch.NumLayers; len(rf.uploadKVs) != nLayers {
 		t.Errorf("UploadKV called %d times, want %d (once per layer)", len(rf.uploadKVs), nLayers)
@@ -203,5 +214,42 @@ func TestGenerateGemma4VL_sequentialPathNeverTouchesResident(t *testing.T) {
 	}
 	if rf.forwards != 0 {
 		t.Errorf("resident Forward called %d times for a sequential (non-bidirectional) checkpoint, want 0", rf.forwards)
+	}
+}
+
+// TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse is M-07's own gate, at the unit
+// level (no checkpoint needed — residentCommitIDs/residentReuseLen are pure Model-field
+// manipulation, the same primitives GenerateGemma4VL's real commit call now uses). Mirrors
+// TestResidentReuseLen_imageBlockAtomicity's style (this file's own package).
+//
+// Reproduces M-07's exact failure shape: Gemma4's soft-token placeholder ids are
+// content-independent (same id/count for the same patch grid), so two DIFFERENT images of the
+// same size produce IDENTICAL ids in that span — without a committed residentImageBlock,
+// residentReuseLen's prefix scan has nothing to key a boundary check on and falls through to a
+// plain id comparison that a different image's identical-shaped placeholder ids satisfy by
+// coincidence, silently reusing the first image's K/V for the second.
+func TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse(t *testing.T) {
+	m := &Model{}
+	// [text 100,101] [image: 3 soft-tokens, all id 900 — content-independent] [text 200,201]
+	prompt := []int{100, 101, 900, 900, 900, 200, 201}
+	generated := []int{300, 301}
+	m.residentCommitIDs(prompt, generated, &residentImageBlock{start: 2, end: 5, hash: 0xC0FFEE}, nil)
+
+	if len(m.resImgBlocks) != 1 {
+		t.Fatalf("resImgBlocks = %v, want exactly 1 entry", m.resImgBlocks)
+	}
+	if got := m.resImgBlocks[0]; got.start != 2 || got.end != 5 || got.hash != 0xC0FFEE {
+		t.Errorf("resImgBlocks[0] = %+v, want {start:2 end:5 hash:0xC0FFEE}", got)
+	}
+
+	// A SECOND, DIFFERENT image (different hash) at the identical span, same placeholder ids —
+	// the exact scenario M-07 describes. Without this pass's fix, the scan would report a full
+	// match through the whole shared prefix (id-identical); with the block recorded, it must
+	// stop at (or before) the block's start instead of reusing past it.
+	secondPrompt := []int{100, 101, 900, 900, 900, 202, 203}
+	claims := []residentImageClaim{{Start: 2, Len: 3, Hash: 0xBADC0DE}} // different hash — NOT the same image
+	if got := m.residentReuseLen(secondPrompt, claims, nil); got > 2 {
+		t.Errorf("residentReuseLen = %d, want <= 2 — a differently-hashed image at the same span "+
+			"must not be treated as reusable, but the scan walked past the image boundary", got)
 	}
 }

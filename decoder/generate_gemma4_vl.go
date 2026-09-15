@@ -121,10 +121,12 @@ func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []in
 // UseBidirectionalAttention explicitly rather than relying on that decline
 // incidentally.
 //
-// `imgHash` is accepted for signature parity with GenerateVL/GenerateQwenVL
-// (driveVL dispatches to all three uniformly) but unused — there is no
-// resident-image-reuse (P9a) fast path here to key on it; every turn pays for
-// a fresh CPU prefill before (optionally) uploading to resident decode.
+// `imgHash`, `imgPos` and `imgLen` are also what the resident commit below records as this
+// turn's residentImageBlock, so a later turn's prefix scan (residentReuseLen) can tell this
+// image's span apart from ordinary text — Gemma4's soft-token placeholder ids are
+// content-independent (same id/count per patch grid), so two different images of the same size
+// produce IDENTICAL ids, and without a block record the scan cannot tell them apart (M-07,
+// docs/audit-2026-09-10.md).
 func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
@@ -189,10 +191,11 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			return m.forward(next, cache)
 		})
 		if useGPU && g.err == nil {
-			// nil: no image-block-reuse record — P9a-style resident-image reuse is
-			// out of scope here (see doc comment above), so there is nothing to key
-			// a future turn's reuse check on.
-			m.residentCommitIDs(ids, generated, nil, nil)
+			// M-07 (docs/audit-2026-09-10.md): commit the image block the same way GenerateVL
+			// and GenerateQwenVL do, so residentReuseLen's prefix scan has something to key a
+			// later turn's reuse check on instead of falling through to a plain id comparison
+			// that Gemma4's content-independent soft-token ids can satisfy by coincidence.
+			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
 			committed = true
 		}
 	}()

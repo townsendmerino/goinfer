@@ -1130,8 +1130,8 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:146` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:715` | goinfer | `// constraint, so the slot is what gets to decide. Every other slot buffer follows from ` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:857` | goinfer | `// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so` |
-| `docs/audit-2026-09-10.md|decoder/generate_gemma4_vl.go:170` | goinfer | `if capper, ok := m.resident.(ResidentCapped); ok {` |
-| `docs/audit-2026-09-10.md|decoder/generate_gemma4_vl.go:191` | goinfer | `if useGPU && g.err == nil {` |
+| `docs/audit-2026-09-10.md|decoder/generate_gemma4_vl.go:172` | goinfer | `if capper, ok := m.resident.(ResidentCapped); ok {` |
+| `docs/audit-2026-09-10.md|decoder/generate_gemma4_vl.go:198` | goinfer | `m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + img` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:104` | goinfer | `if capper, ok := m.resident.(ResidentCapped); ok {` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:16` | goinfer | `func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation, sampler` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:89` | goinfer | `if m.tryClaimResident() {` |
