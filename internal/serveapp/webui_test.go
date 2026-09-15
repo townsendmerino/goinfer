@@ -255,17 +255,30 @@ func TestWebUI_noHTMLStringSinks(t *testing.T) {
 // Chrome, against hostile input (every payload rendered into live DOM, a canary that must never fire),
 // pathological input (bounded render time), and structural correctness. Only a real browser can show
 // that a payload did not execute, which is why this is not a pure-Go test.
-//
-// It needs node and a Chrome/Chromium binary, which GitHub's ubuntu runners have. Where either is
-// missing it SKIPS, loudly — and a skip is not a pass: run `node scripts/webui_md_gate.mjs` by hand
-// after any change to ui/markdown.js on such a machine.
 func TestWebUI_markdownGateInBrowser(t *testing.T) {
+	runBrowserGate(t, "../../scripts/webui_md_gate.mjs", "W1 markdown renderer")
+}
+
+// TestWebUI_appGateInBrowser runs scripts/webui_app_gate.mjs: the SHIPPED index.html driven through its own
+// send() with a fake SSE stream — W1's streamed rendering end to end, and W2's Copy on both clipboard
+// paths (async API, and the textarea fallback an insecure http://<lan-ip> page needs), on a stopped
+// answer, and after a re-render rebuilds every code-block button.
+func TestWebUI_appGateInBrowser(t *testing.T) {
+	runBrowserGate(t, "../../scripts/webui_app_gate.mjs", "web UI app")
+}
+
+// runBrowserGate runs one of the web UI's headless-Chrome gates. They need node and a Chrome/Chromium
+// binary, which GitHub's ubuntu runners have. Where either is missing the test SKIPS, loudly — and a
+// skip is not a pass: run the script by hand after changing the page on such a machine. Gate exit 2
+// means the browser could not be driven at all (also a loud skip); exit 1 is a real failure.
+func runBrowserGate(t *testing.T, script, what string) {
+	t.Helper()
 	if testing.Short() {
-		t.Skip("browser gate skipped in -short")
+		t.Skipf("%s browser gate skipped in -short", what)
 	}
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("SKIPPED — no node on PATH; the W1 renderer's browser gate did NOT run (node scripts/webui_md_gate.mjs)")
+		t.Skipf("SKIPPED — no node on PATH; the %s browser gate did NOT run (node %s)", what, strings.TrimPrefix(script, "../../"))
 	}
 	haveChrome := false
 	for _, b := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
@@ -275,19 +288,19 @@ func TestWebUI_markdownGateInBrowser(t *testing.T) {
 		}
 	}
 	if !haveChrome {
-		t.Skip("SKIPPED — no Chrome/Chromium on PATH; the W1 renderer's browser gate did NOT run")
+		t.Skipf("SKIPPED — no Chrome/Chromium on PATH; the %s browser gate did NOT run", what)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "../../scripts/webui_md_gate.mjs")
+	cmd := exec.CommandContext(ctx, node, script)
 	out, err := cmd.CombinedOutput()
 	switch code := cmd.ProcessState.ExitCode(); {
 	case err == nil:
 		t.Logf("%s", lastLine(out))
 	case code == 2:
-		t.Skipf("SKIPPED — the browser could not be driven here, so the gate did NOT run:\n%s", out)
+		t.Skipf("SKIPPED — the browser could not be driven here, so the %s gate did NOT run:\n%s", what, out)
 	default:
-		t.Fatalf("W1 markdown gate FAILED (exit %d):\n%s", code, out)
+		t.Fatalf("%s gate FAILED (exit %d):\n%s", what, code, out)
 	}
 }
 

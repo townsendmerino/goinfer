@@ -1541,3 +1541,13 @@ code{font-family:var(--mono);font-size:12.5px;padding:2px 6px;border-radius:6px}
 .md th,.md td{border:1px solid color-mix(in srgb,var(--gi-muted) 30%,transparent);padding:5px 10px;text-align:left}
 .md th{font-weight:650;background:color-mix(in srgb,var(--gi-ink) 5%,transparent)}
 .md .al-center{text-align:center} .md .al-right{text-align:right}
+
+/* ---- copy affordances (W2) ----
+   Quiet by default and always visible: hover-only controls do not exist on a touch screen, and the
+   phone on the LAN is a planned client (W16). */
+.md .md-code-head{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 0 12px;min-height:26px}
+.md .md-lang{padding:0}
+.md .md-code-head .md-copy{margin-left:auto}
+.md-copy,.actions button{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 8px;border-radius:6px}
+.md-copy:hover,.actions button:hover,.md-copy:focus-visible,.actions button:focus-visible{color:var(--gi-accent);background:color-mix(in srgb,var(--gi-ink) 7%,transparent)}
+.actions{display:flex;justify-content:flex-end;gap:4px;margin-top:4px}

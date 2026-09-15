@@ -62,6 +62,64 @@ loadModels();
 const history = [];
 let ac = null;
 
+// --- copy (W2) ----------------------------------------------------------------
+// The raw text each message was rendered from. A message's Copy button copies THIS — the Markdown
+// source — not the rendered text, so pasting it elsewhere keeps its formatting.
+const sources = new WeakMap();
+
+// copyText tries the async clipboard API, then falls back to a selected textarea. The fallback is not
+// an edge case: the async API only exists in a SECURE context, and the page opened from another
+// machine at a plain-http LAN address (a phone on the LAN, W16) is not one.
+async function copyText(s) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(s); return; } catch { /* fall through */ }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = s;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed"; ta.style.top = "0"; ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  ta.remove();
+  if (!ok) throw new Error("copy refused");
+}
+
+function flash(btn, label) {
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  btn.textContent = label;
+  clearTimeout(btn.flashTimer);
+  btn.flashTimer = setTimeout(() => { btn.textContent = btn.dataset.label; }, 1500);
+}
+
+// One delegated handler for every Copy button in the log. Code-block buttons are rebuilt on each
+// streamed frame by Markdown.render, so binding them individually would drop handlers mid-stream.
+$("log").addEventListener("click", async e => {
+  const btn = e.target.closest("button.md-copy, button.msg-copy");
+  if (!btn) return;
+  const text = btn.classList.contains("md-copy")
+    ? btn.closest(".md-code")?.querySelector("pre code")?.textContent
+    : sources.get(btn.closest(".msg")?.children[1]);
+  if (text == null) return;
+  try { await copyText(text); flash(btn, "Copied"); }
+  catch { flash(btn, "Copy failed"); }
+});
+
+// addActions records a finished message's source and adds its action row (Copy; W7 adds more here).
+function addActions(content, src) {
+  sources.set(content, src);
+  const row = document.createElement("div");
+  row.className = "actions";
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "msg-copy";
+  b.textContent = "Copy";
+  b.setAttribute("aria-label", "Copy message");
+  row.appendChild(b);
+  content.parentElement.appendChild(row);
+}
+
 function bubble(who, cls) {
   const d = document.createElement("div");
   d.className = "msg ambient amb-rounded " + cls;
@@ -84,7 +142,9 @@ async function send() {
 
   // What you type is recessed (amb-surface-concave, decision 3); the echo of
   // it in the log is a quieter flat surface — neither is the "product".
-  bubble("you", "you amb-surface").textContent = text;
+  const mine = bubble("you", "you amb-surface");
+  mine.textContent = text;
+  addActions(mine, text);
   history.push({role: "user", content: text});
   $("prompt").value = "";
   // What the engine produces sits proud (amb-surface-convex, decision 3).
@@ -131,9 +191,13 @@ async function send() {
       ? got + " tok · " + (got / s).toFixed(1) + " tok/s · " + s.toFixed(1) + "s"
       : "no output";
     out.parentElement.appendChild(meta);
+    addActions(out, acc);
     $("chat-status").textContent = "";
   } catch (e) {
-    if (e.name === "AbortError") { paint(); $("chat-status").textContent = "stopped"; history.push({role: "assistant", content: acc}); }
+    if (e.name === "AbortError") {
+      paint(); $("chat-status").textContent = "stopped"; history.push({role: "assistant", content: acc});
+      if (acc) addActions(out, acc);   // a stopped answer is still worth copying
+    }
     else { out.textContent = String(e.message || e); out.parentElement.classList.add("err"); $("chat-status").textContent = ""; }
   } finally {
     ac = null; $("send").disabled = false; $("stop").hidden = true;

@@ -25,7 +25,7 @@ const Markdown = (() => {
   // never contains anything else.
   const TAGS = new Set(["p", "br", "strong", "em", "del", "code", "pre", "a", "ul", "ol", "li",
     "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "table", "thead", "tbody", "tr", "th",
-    "td", "div", "span"]);
+    "td", "div", "span", "button"]);
   const LINK_OK = /^(https?:|mailto:)/i;
   const LANG_OK = /^[A-Za-z0-9_+#.-]{1,32}$/;
 
@@ -140,11 +140,21 @@ const Markdown = (() => {
         while (i < lines.length && !close.test(lines[i])) body.push(lines[i++]);
         if (i < lines.length) i++; // consume the closing fence; an unclosed one runs to the end
         const wrap = el("div", "md-code");
+        // Header row: the language label (if any) and a Copy button (W2). The button carries NO
+        // handler — this block is rebuilt on every streamed frame, so app.js handles clicks by
+        // delegation on the log instead of binding each button.
+        const head = el("div", "md-code-head");
         if (lang) {
           const label = el("span", "md-lang");
           label.textContent = lang;
-          wrap.appendChild(label);
+          head.appendChild(label);
         }
+        const copy = el("button", "md-copy");
+        copy.type = "button";
+        copy.textContent = "Copy";
+        copy.setAttribute("aria-label", "Copy code");
+        head.appendChild(copy);
+        wrap.appendChild(head);
         const pre = el("pre");
         const code = el("code", lang ? "language-" + lang : "");
         code.textContent = body.join("\n");
