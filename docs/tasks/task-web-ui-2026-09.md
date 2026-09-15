@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1 and W1–W6 done.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1 and W1–W7 done (Tier A remaining: W8).** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -95,7 +95,7 @@ Ranked by what a person notices in the first five minutes.
 ### W1 — Markdown and code blocks — DONE 2026-09-14
 ~~Today the page renders **plain text only**~~ — model output now renders as Markdown through
 `ui/markdown.js`, a renderer that builds DOM nodes from a fixed element allow-list and never an HTML
-string (the rule is stated at `internal/serveapp/webui/ui/app.js:363`). Paragraphs and line breaks,
+string (the rule is stated at `internal/serveapp/webui/ui/app.js:484`). Paragraphs and line breaks,
 headings, fenced code with a language label (an unclosed fence renders as code, so streaming does not
 flicker), inline code, strong/em/strike, links, bare URLs, blockquotes, nested lists and GFM tables.
 Raw HTML in model output is shown as text; links are live only for `http:`/`https:`/`mailto:`; images
@@ -179,7 +179,7 @@ reload; a hostile prompt inert; tab sync, and a focused box not clobbered. Six m
 ### W5 — Load a model from the page — DONE 2026-09-14
 ~~The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
 --model &lt;path&gt; to serve it"*~~ — a finished pull now ends on a **Load it now** button
-(`internal/serveapp/webui/ui/app.js:612`). It loads the file, shows a heartbeat while the load runs,
+(`internal/serveapp/webui/ui/app.js:745`). It loads the file, shows a heartbeat while the load runs,
 refreshes the model list, and selects the new model, so the next message goes to it. The header
 stats now follow whichever model is selected, not always the first one listed.
 
@@ -274,10 +274,44 @@ Two replies of **real captured serve output** (`scripts/webui-gate/captured-thin
 and gpt-oss-20b after the stop fix, real token boundaries) are replayed chunk for chunk. Fifteen mutations, each red.
 **Effort was: M.**
 
-### W7 — Regenerate, edit-and-resend, delete a turn
-None of the three. A bad turn is permanent, and the only recovery is a reload, which costs the
-whole conversation (W3). Needs history to become addressable rather than append-only.
-**Effort: M.**
+### W7 — Regenerate, edit-and-resend, delete a turn — DONE 2026-09-14
+~~None of the three~~ — all three, as buttons on each message's action row next to Copy
+(`internal/serveapp/webui/ui/app.js:392`). History is now addressable: each action changes the
+transcript, re-renders the log from it and saves, so what is shown, saved and sent can't disagree.
+
+- **Regenerate** appears only on the **last** reply, including a stopped or interrupted one. It
+  resends the history up to the last question and replaces the reply. It is not offered on earlier
+  replies, where it would have to silently discard everything after them; Edit covers that case.
+- **Edit** opens one of your messages in place (Ctrl/Cmd+Enter saves, Escape cancels). Saving replaces
+  the message, drops everything after it, and resends from there. If that would drop more than the one
+  reply being replaced, it asks first and says how many messages go. An empty edit keeps the box open.
+- **Delete** removes a whole **exchange** (your message and its reply), after asking. There is no
+  undo. Deleting half an exchange would leave two user turns in a row, which some chat templates refuse.
+- **Nothing changes the conversation while a reply is generating or a message is open for editing.**
+  The buttons are disabled, and the functions refuse on their own too, since W17's keyboard shortcuts
+  will call them with no button in between. Send can't fire during an edit either, not even by
+  keyboard. Another tab's change doesn't close an open edit, and New chat cancels it.
+
+Decided here, and why: **edits truncate; they don't branch.** A branching history (keep both versions,
+switch between them) is what the Claude app does. It needs conversation storage to hold a tree, which is
+W9's territory (separate conversations). Truncation with a warning is the honest single-thread version.
+
+Gate: phases 11–12 of `scripts/webui_app_gate.mjs`, 30 checks. After each action they check exactly
+what is sent, shown and saved; they also cover the disabled states (including direct calls), the confirm
+prompts and declining them, Escape and Ctrl+Enter, a hostile edit inert, and the actions and Regenerate
+working after a reload. Seventeen mutations, each red on its own W7 checks.
+
+**Found while proving it: the browser gates were leaking Chrome.** `scripts/webui-gate/cdp.mjs` killed
+the `google-chrome` launcher script, not the browser it starts. Every gate run since W1 left a Chrome
+running (181 had built up), and the random debugging port sometimes landed on a leaked browser still
+holding an old page and old localStorage. That made two W7 mutation runs fail on *unrelated* W3/W4
+checks. Fixed: Chrome now picks its own port and writes it into the run's own profile directory, so a
+run can only reach its own browser; the whole process group is killed; the profile is removed. After
+17 back-to-back mutant runs, 0 browsers remain. **What this means for earlier records:** a collision
+could have made a mutant look red for the wrong reason. The kept W5 and W6 mutation outputs all fail on
+their own checks. The W1–W4 runs kept only final outputs, so they are not individually re-verified,
+though fewer browsers had leaked then and a collision was much less likely.
+**Effort was: M.**
 
 ### W8 — Context meter, and a warning before the wall
 You discover the context limit by hitting `400 context_length_exceeded` mid-conversation. The
@@ -298,11 +332,11 @@ inside the binary.
 | **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:393`) | S |
 | **W11** | Image attach for vision models | no control, though `-vision` works on the same route; `demo/agent/cmd/agent-web/index.html:129` has the whole composer (click, drag, paste, preview) to transplant, plus a per-model capability check so it hides on text-only models | M |
 | **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:179`) | M |
-| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:418`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
+| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:549`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
 | **W14** | Export the conversation | nothing. A share link is an anti-goal; Markdown and JSON to a file are not | S |
 | **W15** | Dark mode | one light surface; no `prefers-color-scheme` rule anywhere. The AmbientCSS palette is already token-shaped (`docs/completed/task-web-ui-ambient.md`) | S |
 | **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/ui/app.css:1480`). A server on the LAN is a plausible phone client | S |
-| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:500`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
+| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:633`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
 
 ---
@@ -367,7 +401,7 @@ gating and auth — each shown able to go red by a mutation.
 
 **6.2 W1 is where model output stops being inert, and the current rule must survive it. — HELD
 2026-09-14 (see W1).** The page says it in the source: content goes in via `textContent` or
-`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:363`), and a test now fails the
+`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:484`), and a test now fails the
 build if that changes. **Build DOM nodes from the parsed tree; never assemble an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
@@ -385,8 +419,9 @@ W5's load route was the first real test of them, and takes all of them (W5).
 
 `internal/serveapp/webui.go:50`, `:458` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1480` (layout) · `internal/serveapp/webui/index.html:12` (tabs) ·
-`internal/serveapp/webui/ui/app.js:74`, `:363`, `:418`, `:500`, `:612`, `:112` (the conversation transcript, the
-rendering rule, the error path, the keybinding, the load offer that replaced the dead-end line, the thinking split) ·
+`internal/serveapp/webui/ui/app.js:74`, `:484`, `:549`, `:633`, `:745`, `:112`, `:392` (the conversation transcript, the
+rendering rule, the error path, the keybinding, the load offer that replaced the dead-end line, the thinking split,
+regenerate/edit/delete) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:393` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the

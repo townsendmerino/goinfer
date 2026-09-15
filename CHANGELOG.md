@@ -31,6 +31,7 @@ any surface may still change.
     `-allow-admin` load, which is unchanged.
   - A reasoning model's thinking (Qwen3's `<think>`, gpt-oss's analysis channel) is folded into a
     collapsed section above the answer. Copy and later turns carry only the answer.
+  - Regenerate the last reply, edit one of your messages and resend from it, or delete an exchange.
 - `pull.CacheRoot()` — the directory every pulled model lands under (Experimental, like the rest of
   `pull`).
 
