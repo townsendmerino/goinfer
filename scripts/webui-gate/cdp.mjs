@@ -95,6 +95,14 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
       await send("Page.reload", { ignoreCache: true });
       await sleep(settleMs);
     },
+    // cdp sends one raw DevTools command — for what evaluate() cannot do from inside the page: emulating
+    // prefers-color-scheme or a phone-width viewport (W15, W16), or capturing a screenshot. Resolves to the
+    // command's result, or throws with the protocol's error message.
+    async cdp(method, params = {}) {
+      const r = await send(method, params);
+      if (r.error) throw new Error(method + ": " + r.error.message);
+      return r.result;
+    },
     close() { try { ws.close(); } catch { /* closed */ } stop(); },
   };
 }

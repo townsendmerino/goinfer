@@ -352,6 +352,10 @@ the wall explained (and only the wall), usage saved, restored, and unreadable st
 Fourteen page mutations, each red. Writing the gate found one real bug on the way: New chat left the old
 conversation's meter showing.
 **Effort was: M.**
+**Correction 2026-09-15:** the empty context meter (before any usage, or on a model with no window) shipped visible when it should have been hidden. A CSS `display`
+rule on its class overrode the `hidden` attribute, and the gate only read `el.hidden`, which stayed true.
+Fixed with a global `[hidden]{display:none !important}`, and every gate phase now ends by checking that
+no element marked hidden takes up space (found by W15's screenshot pass).
 
 ---
 
@@ -496,6 +500,10 @@ hostile stored images never rendered or sent. Twenty-four mutations, each red. *
 cancelling `dragover`. Real browsers need it for a drop to happen at all, but a synthetic drop event
 fires regardless, so a gate cannot tell. It was checked by reading the code, not by a mutation.
 **Effort was: M.**
+**Correction 2026-09-15:** the image preview row, with its "Remove" button, shipped visible when it should have been hidden. A CSS `display`
+rule on its class overrode the `hidden` attribute, and the gate only read `el.hidden`, which stayed true.
+Fixed with a global `[hidden]{display:none !important}`, and every gate phase now ends by checking that
+no element marked hidden takes up space (found by W15's screenshot pass).
 
 ### W10 — Full sampling controls — DONE 2026-09-14
 ~~The page sends `temperature`/`max_tokens` only~~ — a collapsible **Sampling** section beside the
@@ -586,6 +594,9 @@ period sat outside the markup. One run was cut off by a disconnect and left a mu
 it was caught by checking every mutant's original text, restored, and the whole run redone detached
 with a backup that refuses a restart over a dirty file.
 **Effort was: M.**
+**Correction 2026-09-15:** the list rendered as a row squeezed beside its heading. The header's
+`nav{display:flex}` also matched `<nav id="chats">`. Fixed with `#chats{display:block}`, and the gate now
+checks that the list is laid out below its heading at full width (found by W15's screenshot pass).
 
 ---
 

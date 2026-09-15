@@ -1478,7 +1478,10 @@ button{font:inherit;color:inherit;background:none;border:0;
 nav button.ambient{padding:6px 13px}
 nav button[aria-selected=true]{color:var(--gi-accent);font-weight:600}
 main{max-width:920px;margin:0 auto;padding:16px 20px 44px}
-section[hidden]{display:none}
+/* The hidden attribute must always win. Any rule that sets display on a class (.ctx, .attach-preview,
+   .load-row, …) otherwise overrides it, and the element keeps rendering while the page believes it is
+   hidden — which is how an empty context meter (W8) and a stray "Remove" button (W11) shipped. */
+[hidden]{display:none !important}
 
 /* Flat neutral panels — the README's own recipe
    (.ambient .amb-surface .amb-chamfer .amb-elevation-1 .amb-rounded). */
@@ -1584,6 +1587,9 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .ctx.full #ctx-text{color:var(--gi-err)}
 
 /* W9: the conversation list */
+/* #chats is a <nav> for its meaning, not its layout: the header's nav{display:flex} must not lay the list
+   out as a row beside its own heading (W9 shipped that way). */
+#chats{display:block}
 .chats-head{font-size:12px;color:var(--gi-muted);letter-spacing:.02em;margin-bottom:6px}
 #chat-list{list-style:none;margin:0;padding:0;max-height:176px;overflow-y:auto}
 .chat-item{display:flex;align-items:center;gap:4px;border-radius:6px}

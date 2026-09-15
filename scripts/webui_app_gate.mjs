@@ -124,7 +124,15 @@ const prelude = String.raw`
     Object.defineProperty(window, "fetch", { configurable: true, get: () => wrapped, set: f => { inner = f; } });
   }
 `;
-const phase = body => "(async () => {" + prelude + body + "\n  return results;\n})()";
+// Every phase ends with the same rendering check, because a property check cannot see this class of bug:
+// an element can carry the hidden attribute (el.hidden === true) while a CSS display rule keeps it on
+// screen. The context meter (W8) and the image preview's Remove button (W11) both shipped that way — every
+// check that read .hidden passed. So: nothing marked hidden may take up any space.
+const RENDER_CHECK = String.raw`
+  const leaks = [...document.querySelectorAll("[hidden]")].filter(el => el.getClientRects().length > 0).map(el => el.id || el.className || el.tagName);
+  check("render: nothing marked hidden is on screen (" + document.querySelectorAll("[hidden]").length + " hidden elements)", leaks.length === 0, JSON.stringify(leaks));
+`;
+const phase = body => "(async () => {" + prelude + body + RENDER_CHECK + "\n  return results;\n})()";
 
 // ---- phase 1: W1 + W2 in a fresh page, then what W3 saved -----------------------------------------
 const phase1 = phase(String.raw`
@@ -881,6 +889,8 @@ const W9_PRELUDE = String.raw`
 const phase15 = phase(W9_PRELUDE + String.raw`
   for (const k of v2keys()) localStorage.removeItem(k);
   startFresh();
+  const headBox = document.querySelector("#chats .chats-head").getBoundingClientRect(), listBox = $("chat-list").getBoundingClientRect();
+  check("W9 the conversation list is laid out below its heading, full width — not squeezed into a row beside it", listBox.top >= headBox.bottom - 1 && listBox.width > headBox.width * 0.9, JSON.stringify({ headBottom: headBox.bottom, listTop: listBox.top, listW: listBox.width, headW: headBox.width }));
   check("W9 a fresh start lists one pending New chat, current, with no rename or delete", titles() === "New chat" && items()[0].classList.contains("current") && !items()[0].querySelector(".chat-rename, .chat-delete"), titles());
   const freshId = currentChat.id;
   $("newchat").click();
