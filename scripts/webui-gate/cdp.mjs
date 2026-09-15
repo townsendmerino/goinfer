@@ -73,6 +73,12 @@ export async function openPage(url, { settleMs = 1500 } = {}) {
       if (err) return { error: err };
       return { value: r.result?.result?.value };
     },
+    // reload is a DELIBERATE navigation between gate phases (W3: does state survive it?). It is the one
+    // navigation a gate may perform; one that happens inside evaluate() is still reported as a hijack.
+    async reload() {
+      await send("Page.reload", { ignoreCache: true });
+      await sleep(settleMs);
+    },
     close() { try { ws.close(); } catch { /* closed */ } try { chrome.kill(); } catch { /* gone */ } },
   };
 }
@@ -89,16 +95,29 @@ export function report(title, results, exceptions = []) {
   process.exit(failed ? 1 : 0);
 }
 
-// finish handles an evaluate() outcome that is not a results array.
+// finishOrExit handles an evaluate() outcome that is not a results array.
+//
+// EXIT 2 IS ONLY FOR "THE BROWSER COULD NOT BE DRIVEN" — openPage failing to start Chrome or reach it.
+// Once the page is loaded and running, anything that stops a gate program from returning results is
+// exit 1: an exception inside it means the page was not in the state the gate expects (a missing
+// restored bubble dereferenced as undefined, say), which is a failure of the page. This matters
+// because go test turns exit 2 into a SKIP — found by mutation (W3): with restore-on-load deleted,
+// the gate threw, exited 2, and a broken restore would have reached CI as a skipped test.
 export function finishOrExit(title, out) {
   if (out.hijacked) {
     console.log(`  FAIL  the page navigated away during the gate — something took effect (${out.hijacked})`);
     console.log(`${title}: FAILED (page hijacked)`);
     process.exit(1);
   }
-  if (out.error || !Array.isArray(out.value)) {
-    console.error(`${title}: gate program did not complete: ${out.error || JSON.stringify(out.value).slice(0, 400)}`);
-    process.exit(2);
+  if (out.error) {
+    console.log(`  FAIL  the gate program threw — the page is not in the state the gate expects:\n          ${out.error.split("\n")[0]}`);
+    console.log(`${title}: FAILED (gate program threw)`);
+    process.exit(1);
+  }
+  if (!Array.isArray(out.value)) {
+    console.log(`  FAIL  the gate program returned no results: ${JSON.stringify(out.value).slice(0, 300)}`);
+    console.log(`${title}: FAILED (no results)`);
+    process.exit(1);
   }
   return out.value;
 }

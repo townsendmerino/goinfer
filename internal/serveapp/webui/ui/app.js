@@ -59,8 +59,14 @@ async function loadModels() {
 loadModels();
 
 // --- chat -------------------------------------------------------------------
-const history = [];
+// transcript is the conversation — one entry per turn: {role, content, model?, meta?, state?}, where
+// state is "generating" (streaming now), "stopped" (Stop pressed) or "interrupted" (the page was
+// reloaded mid-stream). What the API is sent is DERIVED from it (apiMessages), so the log on screen,
+// what is saved, and what the model sees cannot drift apart.
+const transcript = [];
 let ac = null;
+let generating = null;   // the in-progress assistant entry
+const apiMessages = () => transcript.filter(m => m !== generating).map(m => ({role: m.role, content: m.content}));
 
 // --- copy (W2) ----------------------------------------------------------------
 // The raw text each message was rendered from. A message's Copy button copies THIS — the Markdown
@@ -106,6 +112,86 @@ $("log").addEventListener("click", async e => {
   catch { flash(btn, "Copy failed"); }
 });
 
+// --- persistence (W3) ------------------------------------------------------------
+// The conversation survives a reload, in localStorage under a versioned key. Every failure mode is
+// non-fatal: storage blocked, quota exceeded, or a value this page cannot read — the chat keeps
+// working, and an unreadable value is set aside under STORE+".unreadable" rather than destroyed.
+// One conversation is shared by every tab on this origin; an idle tab follows another tab's changes
+// (the "storage" listener below). Separate conversations are W9.
+const STORE = "goinfer.chat.v1";
+
+function save() {
+  try {
+    localStorage.setItem(STORE, JSON.stringify({ v: 1, messages: transcript }));
+    $("store-note").hidden = true;
+  } catch {
+    $("store-note").textContent = "This conversation can't be kept across a reload (browser storage is full or blocked) — " +
+      "it stays on screen until you close or reload the page.";
+    $("store-note").hidden = false;
+  }
+}
+
+function loadStored() {
+  let raw;
+  try { raw = localStorage.getItem(STORE); } catch { return []; }   // storage blocked
+  if (!raw) return [];
+  let data = null;
+  try { data = JSON.parse(raw); } catch { /* unreadable */ }
+  if (!data || data.v !== 1 || !Array.isArray(data.messages)) {
+    try { localStorage.setItem(STORE + ".unreadable", raw); localStorage.removeItem(STORE); } catch { /* leave it */ }
+    return [];
+  }
+  const out = [];
+  for (const m of data.messages) {
+    // Validate every field: this is data, and it is rendered.
+    if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") continue;
+    const e = { role: m.role, content: m.content };
+    if (typeof m.model === "string") e.model = m.model;
+    if (typeof m.meta === "string") e.meta = m.meta;
+    if (m.state === "stopped" || m.state === "interrupted") e.state = m.state;
+    if (m.state === "generating") e.state = "interrupted";   // it was streaming when the page went away
+    out.push(e);
+  }
+  return out;
+}
+
+function metaText(e) {
+  if (e.state === "interrupted") return (e.meta ? e.meta + " · " : "") + "interrupted — the page was reloaded while this was generating";
+  if (e.state === "stopped") return "stopped" + (e.meta ? " · " + e.meta : "");
+  return e.meta || "";
+}
+
+function addMeta(content, text) {
+  if (!text) return;
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = text;
+  content.parentElement.appendChild(meta);
+}
+
+// renderEntry draws one finished turn exactly as a live one is drawn: the user's text as text, the
+// model's through Markdown.render. Restored content gets no more trust than fresh model output.
+function renderEntry(e) {
+  if (e.role === "user") {
+    const b = bubble("you", "you amb-surface");
+    b.textContent = e.content;
+    addActions(b, e.content);
+    return;
+  }
+  const out = bubble(e.model || "assistant", "bot amb-surface-convex amb-elevation-1");
+  out.classList.add("md");
+  Markdown.render(out, e.content);
+  addMeta(out, metaText(e));
+  if (e.content) addActions(out, e.content);
+}
+
+function showTranscript(list) {
+  transcript.length = 0;
+  transcript.push(...list);
+  $("log").replaceChildren();
+  for (const e of transcript) renderEntry(e);
+}
+
 // addActions records a finished message's source and adds its action row (Copy; W7 adds more here).
 function addActions(content, src) {
   sources.set(content, src);
@@ -145,17 +231,22 @@ async function send() {
   const mine = bubble("you", "you amb-surface");
   mine.textContent = text;
   addActions(mine, text);
-  history.push({role: "user", content: text});
+  transcript.push({role: "user", content: text});
+  const messages = apiMessages();          // taken BEFORE the assistant entry exists
+  save();
   $("prompt").value = "";
   // What the engine produces sits proud (amb-surface-convex, decision 3).
   const out = bubble(model, "bot amb-surface-convex amb-elevation-1");
   out.classList.add("md");
-  $("send").disabled = true; $("stop").hidden = false;
+  const entry = {role: "assistant", content: "", model, state: "generating"};
+  transcript.push(entry);
+  generating = entry;
+  $("send").disabled = true; $("stop").hidden = false; $("newchat").disabled = true;
   $("chat-status").textContent = "generating…";
 
   ac = new AbortController();
   const started = performance.now();
-  let got = 0, acc = "";
+  let got = 0, acc = "", lastSave = 0;
   // Render model output as Markdown (W1). Throttled to one parse per animation frame: a fast token
   // stream would otherwise re-parse the whole answer once per token. The final render after the
   // stream (or after Stop) guarantees the last chunk is shown even if no frame ran after it.
@@ -165,7 +256,7 @@ async function send() {
     const r = await fetch("/v1/chat/completions", {
       method: "POST", headers: headers(), signal: ac.signal,
       body: JSON.stringify({
-        model, messages: history, stream: true,
+        model, messages, stream: true,
         temperature: parseFloat($("temp").value) || 0,
         max_tokens: parseInt($("max").value, 10) || 512,
       }),
@@ -177,33 +268,71 @@ async function send() {
       const d = j.choices && j.choices[0] && j.choices[0].delta;
       if (d && d.content) {
         acc += d.content; got++;
+        entry.content = acc;
         if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); }
+        // Save the partial answer about once a second, so a reload mid-stream keeps what arrived (W3).
+        const now = performance.now();
+        if (now - lastSave > 1000) { lastSave = now; save(); }
       }
     }
     paint();
-    history.push({role: "assistant", content: acc});
     const s = (performance.now() - started) / 1000;
     // Per-response stats live WITH the response, not in a status line that
     // the next turn overwrites (decision 4).
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = got
+    entry.meta = got
       ? got + " tok · " + (got / s).toFixed(1) + " tok/s · " + s.toFixed(1) + "s"
       : "no output";
-    out.parentElement.appendChild(meta);
+    delete entry.state;
+    addMeta(out, entry.meta);
     addActions(out, acc);
     $("chat-status").textContent = "";
   } catch (e) {
     if (e.name === "AbortError") {
-      paint(); $("chat-status").textContent = "stopped"; history.push({role: "assistant", content: acc});
+      paint();
+      entry.content = acc;
+      entry.state = "stopped";
+      if (got) entry.meta = got + " tok";
+      addMeta(out, metaText(entry));
+      $("chat-status").textContent = "stopped";
       if (acc) addActions(out, acc);   // a stopped answer is still worth copying
+    } else {
+      // A failed request is not a turn: drop it, as the old history never recorded one either.
+      transcript.splice(transcript.indexOf(entry), 1);
+      out.textContent = String(e.message || e); out.parentElement.classList.add("err"); $("chat-status").textContent = "";
     }
-    else { out.textContent = String(e.message || e); out.parentElement.classList.add("err"); $("chat-status").textContent = ""; }
   } finally {
-    ac = null; $("send").disabled = false; $("stop").hidden = true;
+    generating = null;
+    save();
+    ac = null; $("send").disabled = false; $("stop").hidden = true; $("newchat").disabled = false;
   }
 }
 $("send").onclick = send;
+
+// New chat (W3): with the conversation now persistent, it needs a way to start over. Asks first,
+// because clearing has no undo. Disabled while a reply is generating.
+$("newchat").onclick = () => {
+  if (ac) return;
+  if (transcript.length && !confirm("Start a new chat? This conversation will be cleared.")) return;
+  transcript.length = 0;
+  $("log").replaceChildren();
+  try { localStorage.removeItem(STORE); } catch { /* blocked: nothing was stored */ }
+  $("store-note").hidden = true;
+  $("chat-status").textContent = "";
+};
+
+// A reload mid-stream: save what has arrived. pagehide fires where beforeunload is unreliable (mobile).
+addEventListener("pagehide", () => { if (generating) save(); });
+
+// Another tab changed the conversation: follow it, unless this tab is mid-reply (its own save wins then).
+addEventListener("storage", e => {
+  if ((e.key !== STORE && e.key !== null) || ac) return;
+  showTranscript(loadStored());
+});
+
+// Restore the conversation this browser was having. A "generating" entry becomes "interrupted"; saving
+// right away writes that back, so the state is recorded rather than re-derived on every load.
+showTranscript(loadStored());
+if (transcript.some(e => e.state === "interrupted")) save();
 $("stop").onclick = () => ac && ac.abort();
 $("prompt").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
