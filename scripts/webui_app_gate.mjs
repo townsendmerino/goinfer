@@ -58,6 +58,9 @@
 //   W15 — theme: System follows the (emulated) preference either way, Light and Dark override it, saved and
 //        followed across tabs, restored first thing after reload; WCAG AA contrast measured for every text
 //        colour on every real surface (gradient stops included) in each mode.
+//   W16 — phone layout at an emulated 400 and 360 px, crowded with the content most likely to break it: no
+//        sideways page scroll, nothing past the edge outside its own scroll box, every control >= 24x24 px,
+//        header items not overlapping, key controls on screen; the desktop header still one row.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1615,13 +1618,81 @@ const phase27 = phase(W15_PRELUDE + String.raw`
   setTheme("system");
 `);
 
+// ---- phases 28–30: W16 — phone layout ----------------------------------------------------------------------
+// The viewport is emulated from Node (a real mobile metrics override, so the layout viewport is what a phone
+// gives, and it can be blown wider by content — which is exactly the bug). The page is filled with the
+// content most likely to break a narrow layout: an unbroken 300-character URL, a very long code line, a wide
+// table, an error with buttons, a pending image, an open edit box.
+const W16_BODY = String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  window.confirm = () => true;
+  window.fetch = async () => new Response(JSON.stringify({ object: "list", data: [{ id: "a-model-with-a-rather-long-name-q4_k_m", vision: true, context_window: 8192, decode_path: "cuda-resident (int4)" }] }), { status: 200 });
+  await loadModels("a-model-with-a-rather-long-name-q4_k_m");
+  const url = "https://example.com/" + "a".repeat(300);
+  const id = "phonecase";
+  localStorage.setItem("goinfer.chat.v2." + id, JSON.stringify({ v: 2, id, title: "A very long conversation title that will not fit on a phone screen at all", titled: "user", updated: Date.now(), messages: [
+    { role: "user", content: "Look at " + url },
+    { role: "assistant", model: "a-model-with-a-rather-long-name-q4_k_m", content: "<think>\nhm\n</think>\n\nSee " + url + "\n\n\x60\x60\x60\n" + "x".repeat(400) + "\n\x60\x60\x60\n\n| " + Array.from({ length: 12 }, (_, i) => "column" + i).join(" | ") + " |\n|" + "---|".repeat(12) + "\n| " + Array.from({ length: 12 }, () => "value").join(" | ") + " |", meta: "96 tok · 31.2 tok/s · 3.1s", usage: { prompt_tokens: 7000, completion_tokens: 900 } },
+    { role: "user", content: "second" },
+    { role: "assistant", model: "m", content: "cut off", meta: "2 tok", state: "failed", note: "the connection to the server was lost" } ] }));
+  openChat(id);
+  showProblem(bubble("m", "bot amb-surface-convex amb-elevation-1"), problemFor(401, "{}"), () => {});
+  const cv = document.createElement("canvas"); cv.width = 2; cv.height = 2;
+  pendingImage = { url: cv.toDataURL("image/png"), info: "2×2" }; showAttach();
+  $("system-box").open = true; $("sampling-box").open = true;
+  [...document.querySelectorAll("#log .msg.you")][1].querySelector(".msg-edit").click();
+  await wait(150);
+
+  const W = innerWidth;
+  check("W16 @" + W + ": the page does not scroll sideways (layout " + document.documentElement.scrollWidth + " px)", document.documentElement.scrollWidth <= W && W === window.__expectW, document.documentElement.scrollWidth + " vs " + W + " (expected " + window.__expectW + ")");
+  // anything past the right edge must be inside a container that scrolls on its own
+  const scroller = el => { for (let e = el.parentElement; e; e = e.parentElement) { const o = getComputedStyle(e).overflowX; if (o === "auto" || o === "scroll" || o === "hidden") return true; } return false; };
+  const escapes = [...document.querySelectorAll("body *")].filter(e => { if (!e.getClientRects().length) return false; const b = e.getBoundingClientRect(); return (b.right > W + 1 || b.left < -1) && !scroller(e); }).map(e => e.tagName + "." + e.className);
+  check("W16 @" + W + ": nothing reaches past the screen edge, except inside its own scroll box (code, tables)", escapes.length === 0, JSON.stringify(escapes.slice(0, 5)));
+  const code = document.querySelector("#log pre"), table = document.querySelector("#log table");
+  // really scroll them: a container that merely clips would report the same sizes, and hide the rest of the line
+  code.scrollLeft = 1e6; table.scrollLeft = 1e6;
+  check("W16 @" + W + ": the long code line and the wide table can be scrolled to their end, inside themselves", code.scrollLeft > 0 && table.scrollLeft > 0, code.scrollLeft + " / " + table.scrollLeft);
+  code.scrollLeft = 0; table.scrollLeft = 0;
+  const controls = [...document.querySelectorAll("button, select, input:not([type=file]), textarea, summary")].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden");
+  const tiny = controls.map(e => { const b = e.getBoundingClientRect(); return { e: e.id || e.className || e.tagName, w: Math.round(b.width), h: Math.round(b.height) }; }).filter(x => x.w < 24 || x.h < 24);
+  check("W16 @" + W + ": every visible control is at least 24×24 px (WCAG 2.5.8) — " + controls.length + " checked", tiny.length === 0, JSON.stringify(tiny.slice(0, 6)));
+  const rect = sel => document.querySelector(sel).getBoundingClientRect();
+  const head = ["header .brand", "header nav", "#stats", ".book-link", ".theme-pick"].map(sel => [sel, rect(sel)]);
+  const overlaps = [];
+  for (let i = 0; i < head.length; i++) for (let j = i + 1; j < head.length; j++) { const [a, A] = head[i], [b, B] = head[j]; if (A.left < B.right - 1 && B.left < A.right - 1 && A.top < B.bottom - 1 && B.top < A.bottom - 1) overlaps.push(a + " × " + b); }
+  check("W16 @" + W + ": header items do not overlap", overlaps.length === 0, JSON.stringify(overlaps));
+  check("W16 @" + W + ": the model stats get a row of their own, not a squeezed column", rect("#stats").width >= rect("header").width * 0.8, Math.round(rect("#stats").width) + " of " + Math.round(rect("header").width));
+  const inView = ["#send", "#prompt", "#model", "#tab-chat", "#tab-models", "#theme", "#newchat"].filter(sel => { const b = rect(sel); return b.left < 0 || b.right > W || b.width === 0; });
+  check("W16 @" + W + ": Send, the message box, model, tabs, theme and New chat are fully on screen", inView.length === 0, JSON.stringify(inView));
+  check("W16 @" + W + ": the theme select is usable, not collapsed", rect("#theme").width >= 60, rect("#theme").width);
+  check("W16 @" + W + ": the disclosure toggles keep their triangle (display list-item)", [...document.querySelectorAll("details > summary")].filter(e => e.getClientRects().length).every(e => getComputedStyle(e).display === "list-item"), [...document.querySelectorAll("details > summary")].map(e => getComputedStyle(e).display));
+  finishEdit(null); pendingImage = null; showAttach();
+`;
+const phase28 = phase("window.__expectW = 400;" + W16_BODY);
+const phase29 = phase("window.__expectW = 360;" + W16_BODY);
+const phase30 = phase(String.raw`
+  window.fetch = async () => new Response(JSON.stringify({ object: "list", data: [{ id: "m", decode_path: "cpu" }] }), { status: 200 });
+  await loadModels("m");
+  const top = sel => document.querySelector(sel).getBoundingClientRect().top;
+  check("W16 desktop: the header is still one row", Math.abs(top("header .brand") - top("header nav")) < 12 && Math.abs(top("#stats") - top("header nav")) < 12, [top("header .brand"), top("#stats"), top("header nav")].map(Math.round));
+  check("W16 desktop: the phone spacing does not apply (cards keep 18 px padding, the header 20 px)", getComputedStyle(document.querySelector(".card")).paddingLeft === "18px" && getComputedStyle(document.querySelector("header")).paddingLeft === "20px", getComputedStyle(document.querySelector(".card")).paddingLeft + " / " + getComputedStyle(document.querySelector("header")).paddingLeft);
+  check("W16 desktop: the content column is still 920 px wide", Math.round(document.querySelector("main").getBoundingClientRect().width) === 920, document.querySelector("main").getBoundingClientRect().width);
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
   async () => page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] }),
   phase25,
   async () => page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }),
-  phase26, phase27];
+  phase26, phase27,
+  async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 400, height: 860, deviceScaleFactor: 2, mobile: true }); },
+  phase28,
+  async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
+  phase29,
+  async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
+  phase30];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

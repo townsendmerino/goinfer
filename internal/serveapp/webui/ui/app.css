@@ -1665,3 +1665,31 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
 /* W15: theme control */
 .theme-pick{font-size:12px;color:var(--gi-muted);display:flex;align-items:center;gap:6px}
 .theme-pick select{font-size:12px;padding:3px 6px}
+
+/* W16: phone layout. The desktop header is one row (brand, stats, Book, Theme, tabs) that cannot fit a phone:
+   it forced the layout to 446 px on a 400 px screen, and collapsed the Theme select to 12 px. At phone
+   width the header wraps into rows — brand and tabs, then the stats, then Book and Theme — and the page
+   gutters tighten. Cards already stack; tables and code scroll inside themselves (.md table / pre). */
+@media (max-width: 600px){
+  header{flex-wrap:wrap;gap:6px 12px;padding:10px 12px}
+  .brand{order:1;flex:1}
+  header nav{order:2}
+  .stats{order:3;flex-wrap:wrap;gap:2px 12px;min-width:0}
+  .stats span{overflow-wrap:anywhere}
+  .book-link{order:4;margin-left:0}
+  .theme-pick{order:5;margin-left:auto}
+  main{padding:12px 10px 32px}
+  .card{padding:14px 12px}
+  .msg{padding:10px 11px}
+  .row>*{min-width:120px}
+}
+/* Touch targets: on a coarse pointer (a phone, a tablet) or a narrow screen, the small text-sized controls
+   grow to at least 32 px tall — above WCAG 2.5.8's 24 px minimum, which several were under (the Export
+   buttons at 21 px, the System prompt / Sampling toggles at 20 px). Desktop with a mouse keeps its density. */
+@media (max-width: 600px), (pointer: coarse){
+  .actions button,.md-copy,.chats-export button,.chat-rename,.chat-delete,.attach-preview button,
+  .err-actions button,.edit-row button,.theme-pick select{min-height:32px}
+  /* padding, not display:flex — a flex <summary> loses its disclosure triangle */
+  details.system summary,details.think summary{padding-block:7px}
+  .chat-open{min-height:36px}
+}
