@@ -329,7 +329,7 @@ re-baked by the code it checks (G-04).
 ### B. Decode: two probes, one adapter kernel, one memory item
 
 #### M-07 · A GGUF/safetensors int4 load on `--backend metal` keeps THREE copies of every dense projection: host canonical + host row4 repack (read by nothing once resident) + the Metal buffer
-- **Where:** `decoder/weightmat.go:461-425` (`wantsCanonicalInt4`: `if backendName != "cpu" { return
+- **Where:** `decoder/weightmat.go:473-425` (`wantsCanonicalInt4`: `if backendName != "cpu" { return
   true }`), `:440-444` (`repackedOnlyOrCanonical` → `repackW4A8IfEligible(canon)` — both kept),
   `:251-257` ("both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside"),
   `metal/model.go:470-444,475-478` (`int4DirectWords` → `NewBufferUint32s` = `newBufferWithBytes`,

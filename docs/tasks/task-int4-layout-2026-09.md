@@ -2,7 +2,7 @@
 
 > **Status (corrected 2026-09-13, doc review — stale since the day it was drafted): L1, L2, L3 all
 > DONE 2026-09-11**, all still accurate against the current tree (re-verified: `wantsCanonicalInt4`
-> at `decoder/weightmat.go:475`, `giwVersion = 11`, `decoder/w4a8_row4_giwkind5_test.go` all present
+> at `decoder/weightmat.go:487`, `giwVersion = 11`, `decoder/w4a8_row4_giwkind5_test.go` all present
 > and matching). **L4 is PARTIALLY SHIPPED 2026-09-13** — not "filed, not scheduled" as the line
 > below still says; see L4's own section for what shipped (as M-07 in a different doc) and what
 > didn't. **L5 remains PARKED**, blocked on the same aikit prerequisite (still v1.41.0, no bump
@@ -61,7 +61,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
-**Where.** `decoder/weightmat.go:475 wantsCanonicalInt4(backendName, be)`,
+**Where.** `decoder/weightmat.go:487 wantsCanonicalInt4(backendName, be)`,
 `:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:404` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
@@ -169,7 +169,7 @@ reporting and the error.
 **Where (as implemented).** `decoder/serialize.go` — format comment (`:49–72`), `giwWriter.target`
 (`:933–970`), `weightMat`/`weightMatKind3Only`/`weightMatKind` (`:1009–1103`), `readWeightMat`
 kinds 3/4/5 (`:1466–1525`), `giwVersion = 11` (`:87`), `SerializeWeightsForTarget`/
-`SerializeWeightsToForTarget` (`:207–233`); `decoder/weightmat.go:645–614` (`GIWTarget`,
+`SerializeWeightsToForTarget` (`:207–233`); `decoder/weightmat.go:657–614` (`GIWTarget`,
 `GIWTargetForBackend`, `ParseGIWTarget` — new, not anticipated by the "Where" list above);
 `decoder/gguf.go` (`StreamTranscodeGGUF`'s `target GIWTarget` param); `decoder/weights.go`
 (`repackedOnlyInt4Count`); `decoder/model.go` (the `.giw` branch's post-load backend check);
@@ -394,7 +394,7 @@ queue-performance.md entry, whichever is picked up first.
 
 ## L5 — amd64 split-half-only: re-open the parked decision, its own condition is now met
 
-**Where.** `decoder/weightmat.go:315–305 repackW4A8SplitHalfIfEligible`, `:323–347
+**Where.** `decoder/weightmat.go:327–305 repackW4A8SplitHalfIfEligible`, `:323–347
 w4a8SplitHalfRepackEnabled` (env opt-in `GOINFER_W4A8_SPLITHALF`, default-off);
 `docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`; aikit
 `linalg/weightmat_splithalf_amd64.go` (`RepackInt4SplitHalf` declines on AVX-512 VNNI hosts —

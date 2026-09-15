@@ -2177,7 +2177,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				return nil
 			}
 			moe := arch.MoE
-			if l.Router, e = mat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden); e != nil {
+			// Router stays f32 regardless of the ambient quant mode (M-27, docs/audit-2026-09-10.md;
+			// matching qwen35/gptoss above) — top-k selection is discrete, so quantizing it flips
+			// which experts win rather than adding rounding noise.
+			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
 			// exp_probs_b is llama.cpp's name for e_score_correction_bias.
@@ -2310,7 +2313,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			// MoE on every layer: router + stacked routed experts + ungated shared.
 			expInter := arch.MoE.IntermediateDim
-			if l.Router, e = mat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden); e != nil {
+			// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
 			gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, arch.MoE.NumExperts)
@@ -2453,7 +2457,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				// existing helper other GGUF MoE families already use for this shape.
 				// exp_probs_b.bias is llama.cpp's name for e_score_correction_bias.
 				moe := arch.MoE
-				if l.Router, e = mat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden); e != nil {
+				// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+				if l.Router, e = streamMat(p+"ffn_gate_inp.weight", moe.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 					return e
 				}
 				if l.RouterBias, e = flat(p+"exp_probs_b.bias", moe.NumExperts); e != nil {
@@ -2602,7 +2607,10 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				if gm.postFFNNorm2, e = vnorm(p+"post_ffw_norm_2.weight", hidden); e != nil {
 					return e
 				}
-				if gm.routerProj, e = mat(p+"ffn_gate_inp.weight", nE, hidden); e != nil {
+				// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+				// The safetensors Gemma4 loader (decoder/weights.go) already does this correctly;
+				// this GGUF path was the one family missing it.
+				if gm.routerProj, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 					return e
 				}
 				if gm.routerScale, e = vec(p+"ffn_gate_inp.scale", hidden); e != nil {
@@ -2687,7 +2695,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				}
 				return nil
 			}
-			if l.Router, e = mat(p+"ffn_gate_inp.weight", nE, hidden); e != nil {
+			// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+			if l.Router, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r int) int { return r * hidden }); e != nil {
 				return e
 			}
 			gate, ge := stackedExperts(p+"ffn_gate_exps.weight", expInter, hidden, nE)
@@ -2845,7 +2854,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			// (ffn_*_shexp, ungated). GLM's first_k_dense_replace prefix (i < FirstKDense)
 			// has no router and falls through to the dense FFN below.
 			expInter := arch.MoE.IntermediateDim
-			if l.Router, err = mat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden); err != nil {
+			// Router stays f32 (M-27, docs/audit-2026-09-10.md) — see the Laguna site above.
+			if l.Router, err = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); err != nil {
 				return err
 			}
 			if arch.MoE.RouterSigmoid { // DeepSeek/GLM e_score_correction_bias (a bias term)

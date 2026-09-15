@@ -517,7 +517,15 @@ func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok boo
 		return b, false
 	}
 	proj, has := gm.routerProj.F32()
-	if !has || len(gm.routerScale) != m.w.arch.HiddenDim {
+	if !has {
+		// M-27 (docs/audit-2026-09-10.md): named, so a future regression here (the router
+		// loaded non-f32) surfaces as this instead of the caller's unrelated "gate/up/down
+		// proj zero-shape" error further down — the same reasoning as cuda/backend.go's own
+		// "router is %q, not f32" decline for the generic (non-gemma4) MoE path.
+		fmt.Fprintf(os.Stderr, "[resident] gemma4 MoE layer %d: router is %q, not f32 — declining\n", l, gm.routerProj.Kind())
+		return b, false
+	}
+	if len(gm.routerScale) != m.w.arch.HiddenDim {
 		return b, false
 	}
 	H := m.w.arch.HiddenDim

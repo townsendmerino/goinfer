@@ -45,6 +45,18 @@ func matmulQuant(base quantMode, name string) quantMode {
 	if base != quantInt4Mix {
 		return base
 	}
+	// M-27 (docs/audit-2026-09-10.md): the router (ffn_gate_inp) must stay out of the "ffn_"
+	// bulk even though its own name contains that prefix — top-k selection is discrete, so
+	// quantizing it flips which experts win rather than adding rounding noise (the same
+	// reasoning that keeps it out of quantInt4 entirely at every other quant mode). Every
+	// current call site already routes the router through streamMat(..., quantNone, ...)
+	// directly and never reaches matmulQuant at all; this is a guardrail against a future
+	// family adding a router through the generic mat() helper and repeating that mistake —
+	// it would then degrade to int8 (this function's own "attention stays int8" branch)
+	// rather than int4.
+	if strings.Contains(name, "ffn_gate_inp") {
+		return quantInt8
+	}
 	if strings.Contains(name, "ffn_") {
 		return quantInt4
 	}
