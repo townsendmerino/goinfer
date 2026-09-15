@@ -1206,12 +1206,22 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 
 	loadPath := spec.path
-	if opts.StreamWeights && strings.HasSuffix(spec.path, ".gguf") {
-		giwPath, err := ensureGIW()
-		if err != nil {
-			return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
+	if opts.StreamWeights {
+		if strings.HasSuffix(spec.path, ".gguf") {
+			giwPath, err := ensureGIW()
+			if err != nil {
+				return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
+			}
+			loadPath = giwPath
+		} else if fi, serr := os.Stat(spec.path); serr == nil && fi.IsDir() {
+			// M-30 (docs/audit-2026-09-10.md): -stream-weights is a genuine no-op for a
+			// safetensors directory (decoder.Load ignores it for anything but a .giw), so a load
+			// that then refuses on the fit guard produced an identical refusal AFTER the user did
+			// what they were told — named here instead of left silent, so it reads as "did
+			// nothing" rather than "should have worked."
+			fmt.Fprintf(os.Stderr, "note: -stream-weights only applies to a .gguf source; %q is a "+
+				"safetensors directory — see cmd/prequant to build a streamable .giw from it\n", spec.path)
 		}
-		loadPath = giwPath
 	}
 
 	tk, err := loadDecoderTokenizer(loadPath)

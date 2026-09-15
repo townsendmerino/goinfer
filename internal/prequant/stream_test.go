@@ -135,14 +135,15 @@ func giwLabelOffset(t *testing.T, b []byte) int {
 }
 
 // transcodeBothWays returns the resident and streamed .giw bundles for one quant mode, plus the
-// resolved quant label the buffer path records.
+// resolved quant label the buffer path records — see residentLabelFor's own doc comment for why
+// that is NOT always simply the requested quant string.
 func transcodeBothWays(t *testing.T, gguf, quant string) (resident, streamed []byte, label string) {
 	t.Helper()
 	m, err := decoder.Load(gguf, decoder.Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	label = m.Quant()
+	label = residentLabelFor(quant, m.Quant())
 	resident, err = decoder.SerializeWeights(m.Weights(), "glm-tiny.gguf")
 	m.Close()
 	if err != nil {
@@ -153,6 +154,32 @@ func transcodeBothWays(t *testing.T, gguf, quant string) (resident, streamed []b
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	return resident, buf.Bytes(), label
+}
+
+// residentLabelFor is what decoder.(*Weights).quantLabel() actually resolves to for
+// testdata/glm-tiny.gguf's RESIDENT (buffer-path) bundle at a given requested quant — which is
+// NOT always what decoder.Model.Quant() reports for a live load, and callers here must not
+// assume it is. liveQuant is m.Quant()'s own answer, the correct value for every case except the
+// one M-27 changed.
+//
+// M-27 (docs/audit-2026-09-10.md): before that fix, glm-tiny's router was (incorrectly)
+// quantized right alongside the rest of the body, so an "int4" load was uniformly int4 and
+// quantLabel() collapsed to "int4". Now the router correctly stays f32 regardless of the
+// ambient quant — a real, intentional precision difference from the int4 body — and
+// quantLabel()'s own documented contract (decoder/serialize.go: "int4mix... when int4 coexists
+// with a higher-precision BODY weight," which explicitly classifies the router as a body
+// weight) correctly reports that as "int4mix", not "int4". This was the bug being fixed, not a
+// fact worth re-pinning: decoder.Model.Quant() (used for a LIVE, non-.giw model) is unaffected
+// and still reports back exactly what was requested for "int4" (Model.quant short-circuits
+// before ever calling quantLabel()) — only the .giw bundle's own baked, inferred label changes,
+// honestly, because the bundle genuinely is no longer uniform-precision. Every other quant
+// mode (including "", where Model.Quant() already falls through to the real quantLabel()
+// inference rather than echoing the request) is unaffected and liveQuant is already correct.
+func residentLabelFor(quant, liveQuant string) string {
+	if quant == "int4" {
+		return "int4mix"
+	}
+	return liveQuant
 }
 
 func giwFixture(t *testing.T) string {

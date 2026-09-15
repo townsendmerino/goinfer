@@ -418,6 +418,35 @@ func TestFitCheckFor_unresolvableSafetensorsProceedsUnknown(t *testing.T) {
 	}
 }
 
+// TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory gates M-30: the remedy text for a
+// refused safetensors DIRECTORY used to unconditionally recommend -stream-weights — a flag that
+// is a genuine no-op for a directory (decoder.Load ignores it for anything but a .giw, and
+// serve's own -stream-weights gates are .gguf-suffix-only) — so a user who did exactly what the
+// message told them got an identical refusal back. The remedy must now name the escape hatch
+// that actually works for this source (GOINFER_NO_FIT_GUARD=1) and the real path to a permanent
+// fix (cmd/prequant), and must NOT recommend -stream-weights at all.
+func TestFitGuard_remedyNamesPrequantNotStreamWeightsForDirectory(t *testing.T) {
+	restore := injectHostRAM(t, 128<<10) // far below anything internlm2-tiny needs — forces refusal
+	defer restore()
+
+	m, err := Load("testdata/internlm2-tiny", Options{Quant: "int4"})
+	if err == nil {
+		if m != nil {
+			m.Close()
+		}
+		t.Fatal("Load succeeded on a machine too small to hold the model — the guard did not fire")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "Re-run goinfer-serve with -stream-weights") {
+		t.Errorf("refusal for a safetensors DIRECTORY still RECOMMENDS -stream-weights (a no-op for it):\n%s", msg)
+	}
+	for _, want := range []string{"GOINFER_NO_FIT_GUARD", "cmd/prequant", "safetensors"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("refusal does not mention %q:\n%s", want, msg)
+		}
+	}
+}
+
 // injectHostRAM replaces BOTH the machine's total-RAM figure AND its currently-available figure
 // with the same value, for one test. Most callers do not care about the total-vs-available
 // distinction (they are testing the arithmetic given "a machine with N bytes to work with"); a

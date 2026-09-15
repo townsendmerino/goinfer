@@ -1116,10 +1116,11 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/features.go:440` | goinfer | `// rotary, and MoE (routed + ungated shared expert). Still NOT implemented: per-layer ro` |
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:149` | goinfer | `func NearTieArgmaxForTest(refLogits, candLogits []float32) (agree bool, gapPct float64, ` |
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:202` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:129` | goinfer | `// Only a .gguf can reach a refusal (fitCheckFor prices nothing else), and goinfer-serve` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:182` | goinfer | `_, own := arch.ownForward()` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:341` | goinfer | `if len(dims) < 2 {` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:398` | goinfer | `func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:151` | goinfer | `func (f fitCheck) remedy() string {` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:206` | goinfer | `_, own := arch.ownForward()` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:227` | goinfer | `anchor: func (f fitCheck) declineErr() *FitDeclineError {` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:365` | goinfer | `if len(dims) < 2 {` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:422` | goinfer | `func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {` |
 | `docs/audit-2026-09-10.md|decoder/fitplan.go:107` | goinfer | `func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {` |
 | `docs/audit-2026-09-10.md|decoder/fitplan.go:228` | goinfer | `tryCtx := func(ctx int) (kv int64, fits bool) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:33` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
@@ -1376,7 +1377,7 @@ supports.
 | `docs/audit-2026-09-10.md|tokenizer/split_o200k_test.go:44` | goinfer | `// a run at end-of-input, disagreed with the walker, and was itself the thing that` |
 | `docs/audit-metal-2026-09-12.md|decoder/features.go:152` | goinfer | `add(!a.ropeUniform(), FeatPerLayerRoPE)` |
 | `docs/audit-metal-2026-09-12.md|decoder/features.go:317` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
-| `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:251` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
+| `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:275` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1069` | goinfer | `var prefillDeclineDigitsRE = regexp.MustCompile(`\d+`)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1106` | goinfer | `func warnPrefillDeclined(n int, err error) {` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1135` | goinfer | `if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(suffix) >= 8 && !hasAdapter {` |
@@ -1625,7 +1626,7 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1020` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:217` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:290` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1312` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1318` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
 | `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:368` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |

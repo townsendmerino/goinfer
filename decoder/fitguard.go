@@ -84,6 +84,11 @@ type fitCheck struct {
 	// Carried into declineErr()'s *FitDeclineError so a caller can decide whether an automatic
 	// retry is sound without re-deriving this from the arch registry itself.
 	denseStreamable bool
+
+	// isGGUF is true when the source that was priced is a .gguf FILE, false for a safetensors
+	// DIRECTORY (M-30, docs/audit-2026-09-10.md) — remedy() needs this because -stream-weights
+	// only has anything to do for a .gguf source; see that function's own doc comment.
+	isGGUF bool
 }
 
 func (f fitCheck) need() int64   { return f.weightBytes + f.kvBytes }
@@ -123,16 +128,35 @@ func (f fitCheck) warning() string {
 		f.arithmetic(), f.ratio()*100, f.remedy())
 }
 
-// remedy names -stream-weights and says what it will do, because the user who reads this message
-// is by definition the one who did not know the flag existed.
+// remedy names -stream-weights (a .gguf source) or GOINFER_NO_FIT_GUARD=1 (a safetensors
+// directory) and says what it will do, because the user who reads this message is by definition
+// the one who did not know the option existed.
 //
-// Only a .gguf can reach a refusal (fitCheckFor prices nothing else), and goinfer-serve
-// transcodes a .gguf to a sidecar .giw on first use — so the flag alone is the whole remedy, with
-// no manual prequant step. A .giw is already mmap-backed and pageable, which is why it is never
-// refused and why this text does not need a second branch.
+// M-30 (docs/audit-2026-09-10.md): this used to return the -stream-weights text unconditionally,
+// on the stale claim that only a .gguf can reach a refusal. P9(b) (b7715ca) made a safetensors
+// DIRECTORY reachable here too (it now prices those, correctly — before it they silently always
+// "fit"), and -stream-weights genuinely does nothing for one: serve's manual and auto-retry gates
+// are both .gguf-suffix-only, and decoder.Load ignores Options.StreamWeights for a directory
+// input — so the flag was being recommended as a fix that could not possibly change anything,
+// producing an identical refusal after the user did what they were told.
+//
+// cmd/prequant CAN build a streamable .giw from a directory (transcodeDir) — but it is not
+// offered as the remedy here, because transcodeDir loads the checkpoint fully resident to
+// serialize it (unlike the .gguf path's true one-layer-at-a-time streaming transcode), so it
+// hits this exact guard for the exact same reason and cannot help a checkpoint that genuinely
+// does not fit. GOINFER_NO_FIT_GUARD=1 is named directly instead — it is already the correct,
+// working escape hatch for the case this guard's own 70% margin is being conservative about (a
+// checkpoint that would actually fit), and cmd/prequant becomes a real, valuable one-time step
+// only once that variable lets its own internal load through.
 func (f fitCheck) remedy() string {
-	return "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, " +
-		"then pages weights out of it on demand instead of holding them all resident."
+	if f.isGGUF {
+		return "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, " +
+			"then pages weights out of it on demand instead of holding them all resident."
+	}
+	return "This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you " +
+		"believe this machine can actually hold it (this guard's 70% margin is deliberately " +
+		"conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a " +
+		"streamable .giw from it once, for every later run."
 }
 
 // ErrWontFitResident is wrapped into every load-time fit-guard refusal (declineErr), so a caller
@@ -466,6 +490,7 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 	f.kvF16 = opts.KVPrecision == "f16"
 	f.kvI8 = opts.KVQuant == "i8"
 	if strings.HasSuffix(path, ".gguf") {
+		f.isGGUF = true
 		f.weightBytes = estimateGGUFWeightBytes(path, quant)
 		g, err := embed.OpenGGUFMmap(path)
 		if err != nil {
