@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1 and W1–W5 done.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1 and W1–W6 done.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -95,7 +95,7 @@ Ranked by what a person notices in the first five minutes.
 ### W1 — Markdown and code blocks — DONE 2026-09-14
 ~~Today the page renders **plain text only**~~ — model output now renders as Markdown through
 `ui/markdown.js`, a renderer that builds DOM nodes from a fixed element allow-list and never an HTML
-string (the rule is stated at `internal/serveapp/webui/ui/app.js:256`). Paragraphs and line breaks,
+string (the rule is stated at `internal/serveapp/webui/ui/app.js:363`). Paragraphs and line breaks,
 headings, fenced code with a language label (an unclosed fence renders as code, so streaming does not
 flicker), inline code, strong/em/strike, links, bare URLs, blockquotes, nested lists and GFM tables.
 Raw HTML in model output is shown as text; links are live only for `http:`/`https:`/`mailto:`; images
@@ -159,7 +159,7 @@ any failure inside a loaded page as a failure. **Effort was: M.**
 
 ### W4 — A system prompt box — DONE 2026-09-14
 ~~There is no way to set a system message at all~~ — a collapsible "System prompt" box in the settings
-card (`internal/serveapp/webui/ui/app.js:156`), whose summary reads "· active" when set so it is
+card (`internal/serveapp/webui/ui/app.js:262`), whose summary reads "· active" when set so it is
 visible while collapsed. When non-blank it is sent **first, trimmed**, with every request; blank or
 whitespace-only sends nothing. The route accepts a system message for every family — templates
 without a system role fold it into a user turn server-side (`messagesToTurns`) — so the box needs no
@@ -179,7 +179,7 @@ reload; a hostile prompt inert; tab sync, and a focused box not clobbered. Six m
 ### W5 — Load a model from the page — DONE 2026-09-14
 ~~The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
 --model &lt;path&gt; to serve it"*~~ — a finished pull now ends on a **Load it now** button
-(`internal/serveapp/webui/ui/app.js:493`). It loads the file, shows a heartbeat while the load runs,
+(`internal/serveapp/webui/ui/app.js:612`). It loads the file, shows a heartbeat while the load runs,
 refreshes the model list, and selects the new model, so the next message goes to it. The header
 stats now follow whichever model is selected, not always the first one listed.
 
@@ -225,12 +225,47 @@ the page cannot offer those without a fresh pull. That is a small follow-up (lis
 part of W9/W14.
 **Effort was: M.**
 
-### W6 — Fold the thinking block
-Reasoning tokens stream inline as body text, so any reasoning-class model looks like it is
-rambling before it answers. The server does not split them either — `stop_reason` is never
-`thinking` in v1 (`internal/serveapp/anthropic.go:35`). Page-side tag folding is the cheap half and
-worth doing alone; a real content-block split is a server change and its own item.
-**Effort: S–M page-side.**
+### W6 — Fold the thinking block — DONE 2026-09-14 (page side)
+~~Reasoning tokens stream inline as body text~~ — a reply's thinking is now folded into a collapsed
+"Thinking…" section above the answer, relabelled "Thought for Ns" when it closes
+(`splitThinking`, `internal/serveapp/webui/ui/app.js:112`). The server still does not split
+thinking from the answer (`stop_reason` is never `thinking` in v1, `internal/serveapp/anthropic.go:35`),
+so the page does it.
+
+The recognised shapes come from real `serve` output, captured before writing any code, not from
+documentation:
+- **Qwen3**: the reply's content starts with `<think>\n…</think>`. The opening tag counts only as the
+  very first thing in a reply, so an answer that merely mentions the tag is not folded. A `</think>` with
+  no opening tag also folds everything before it, for templates that open the thinking in the prompt.
+- **gpt-oss**: `<|channel|>analysis<|message|>…<|end|><|start|>assistant<|channel|>final<|message|>…`.
+  The analysis channel is folded and the final channel is the answer, with no markers left on screen.
+
+Also decided here:
+- **Nothing raw flashes while streaming.** A tag split across chunks is held back until it is known
+  to be a tag (or not). A reply's first `<th` shows nothing yet.
+- **The fold is updated in place**, so a reader who opens it mid-stream keeps it open.
+- **Copy copies the answer**, or the whole reply if there is no answer (stopped mid-thought).
+- **Earlier replies go back to the model without their thinking.** This is what Qwen3's own template
+  does with history, and it keeps long reasoning from filling the context window on every turn.
+- **The saved conversation keeps the thinking and its duration.** A restored reply is folded again.
+- **A finished reply that thought but never answered says so**, instead of showing an empty bubble.
+  A stopped or interrupted reply does not, since its label already explains it.
+
+**Open server defect, found here: gpt-oss never answers through `serve`.** Captured 2026-09-14
+(`gpt-oss-20b-MXFP4.gguf`, CPU): the stream is only the analysis channel, ending with
+`finish_reason: stop`. The harmony template's stop list includes `<|end|>`, which closes the
+*analysis* message, so generation stops before the model reaches its `final` channel. The page now
+shows that honestly ("No answer after the thinking"), but the fix belongs to the server: stop on
+`<|return|>` (and `<|call|>` for tools), not on every `<|end|>`. The full content-block split of
+thinking and answer on the API is a separate server item and stays open.
+
+Gate: phases 9–10 of `scripts/webui_app_gate.mjs`, 35 checks. A DOM observer fails the gate if any raw
+tag fragment is ever on screen during streaming. Streams are fed chunk by chunk to test the held-back
+tags and the fold staying open, and there are checks for the template-opened and gpt-oss shapes, a
+mention of the tag, hostile content, stopping mid-thought, the history sent, and restore after a reload.
+Two replies of **real captured serve output** (`scripts/webui-gate/captured-thinking.json`, Qwen3-1.7B
+and gpt-oss-20b, real token boundaries) are replayed chunk for chunk. Fifteen mutations, each red.
+**Effort was: M.**
 
 ### W7 — Regenerate, edit-and-resend, delete a turn
 None of the three. A bad turn is permanent, and the only recovery is a reload, which costs the
@@ -256,11 +291,11 @@ inside the binary.
 | **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:393`) | S |
 | **W11** | Image attach for vision models | no control, though `-vision` works on the same route; `demo/agent/cmd/agent-web/index.html:129` has the whole composer (click, drag, paste, preview) to transplant, plus a per-model capability check so it hides on text-only models | M |
 | **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:179`) | M |
-| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:302`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
+| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:418`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
 | **W14** | Export the conversation | nothing. A share link is an anti-goal; Markdown and JSON to a file are not | S |
 | **W15** | Dark mode | one light surface; no `prefers-color-scheme` rule anywhere. The AmbientCSS palette is already token-shaped (`docs/completed/task-web-ui-ambient.md`) | S |
 | **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/ui/app.css:1480`). A server on the LAN is a plausible phone client | S |
-| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:381`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
+| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:500`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
 
 ---
@@ -325,7 +360,7 @@ gating and auth — each shown able to go red by a mutation.
 
 **6.2 W1 is where model output stops being inert, and the current rule must survive it. — HELD
 2026-09-14 (see W1).** The page says it in the source: content goes in via `textContent` or
-`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:256`), and a test now fails the
+`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:363`), and a test now fails the
 build if that changes. **Build DOM nodes from the parsed tree; never assemble an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
@@ -343,8 +378,8 @@ W5's load route was the first real test of them, and takes all of them (W5).
 
 `internal/serveapp/webui.go:50`, `:458` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1480` (layout) · `internal/serveapp/webui/index.html:12` (tabs) ·
-`internal/serveapp/webui/ui/app.js:74`, `:256`, `:302`, `:381`, `:493` (the conversation transcript, the
-rendering rule, the error path, the keybinding, the load offer that replaced the dead-end line) ·
+`internal/serveapp/webui/ui/app.js:74`, `:363`, `:418`, `:500`, `:612`, `:112` (the conversation transcript, the
+rendering rule, the error path, the keybinding, the load offer that replaced the dead-end line, the thinking split) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:393` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the

@@ -29,6 +29,8 @@ any surface may still change.
     same-origin/API-key/body-cap gates as pull. It loads **only regular `.gguf` files inside the pull
     cache** (symlinks resolved on both sides first). Anything else still needs `--model` or the
     `-allow-admin` load, which is unchanged.
+  - A reasoning model's thinking (Qwen3's `<think>`, gpt-oss's analysis channel) is folded into a
+    collapsed section above the answer. Copy and later turns carry only the answer.
 - `pull.CacheRoot()` — the directory every pulled model lands under (Experimental, like the rest of
   `pull`).
 
