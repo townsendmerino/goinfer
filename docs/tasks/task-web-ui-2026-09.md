@@ -186,7 +186,7 @@ stats now follow whichever model is selected, not always the first one listed.
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
 (`internal/serveapp/admin.go:113`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:697`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:707`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
 (`webLoadPath`, `internal/serveapp/webui.go:321`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither

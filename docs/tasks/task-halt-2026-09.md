@@ -46,12 +46,12 @@ process that can rewrite its own service unit is out of scope for anything insid
   it stops within one token. This is the mechanism every level below builds on; nothing new is
   needed in `decoder/`.
 - **Graceful shutdown.** SIGINT/SIGTERM → stop accepting, 30 s drain, exit
-  (`internal/serveapp/main.go:691–683`). Cooperative: a stuck handler holds it for 30 s.
+  (`internal/serveapp/main.go:701–683`). Cooperative: a stuck handler holds it for 30 s.
 - **Concurrency cap.** `-max-inflight` (default 128) over the inference handlers
   (`internal/serveapp/main.go:503,619-621`). A cap, not a budget: it bounds parallelism, not total work.
 - **Auth and exposure.** Loopback by default; `-api-key` required off-loopback; `/admin/*`
   opt-in behind `-allow-admin` **on the same listener and the same key as `/v1`**
-  (`internal/serveapp/main.go:660`). Today an agent that can call `/v1` can also call `/admin` if admin is on.
+  (`internal/serveapp/main.go:670`). Today an agent that can call `/v1` can also call `/admin` if admin is on.
 - **Unguessable ids** for responses/messages/tool calls (`internal/serveapp/helpers.go:500-511`) — the handle a
   cancel-by-id needs already exists; it is just not registered anywhere.
 - **Client-side interrupt** in the demo agent: `signal.NotifyContext(os.Interrupt)`
@@ -79,7 +79,7 @@ a supervised deployment shape; an executor pattern; a drill.
 
 ## K1 — Cancel by id: the task-level switch
 
-**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/serveapp/openai.go:1145,1197` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/serveapp/helpers.go`'s `reqID()`.
+**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/serveapp/openai.go:1151,1197` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/serveapp/helpers.go`'s `reqID()`.
 
 **Fix.** A process-wide registry `map[id]*generation{cancel, started, model, session, tokens,
 toolCalls}` populated when a handler mints its id and cleared on completion. `GET
@@ -258,7 +258,7 @@ session budget.
 
 ## K5 — Control on its own channel: the admin socket
 
-**Where.** `internal/serveapp/main.go:660` admin routes; new listener.
+**Where.** `internal/serveapp/main.go:670` admin routes; new listener.
 
 **Fix.** `-admin-socket /run/goinfer/admin.sock` (unix, mode 0600, owned by the supervisor's
 user): `/admin/*` — load/unload, generations, halt, resume, lease status — move there, off the
@@ -325,7 +325,7 @@ confirm the refactor below didn't regress K1/K2 — all green.
   own "Where" line named a `main.go` line pair for the admin routes that, after K1/K2/K5, no
   longer described anything real — the gating logic it pointed at, the inline `adminEnabled`
   check, no longer exists at all (see the refactor above). Now points at
-  `internal/serveapp/main.go:660` (`registerAdminRoutes`'s call site, wrapped in the same `auth`
+  `internal/serveapp/main.go:670` (`registerAdminRoutes`'s call site, wrapped in the same `auth`
   middleware `/v1` uses). Left as a historical note rather than deleted, since the underlying
   observation — a bare line-number citation into a file under active refactor drifts on the next
   unrelated edit regardless of how carefully it was pinned — still stands and is worth keeping

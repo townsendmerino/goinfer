@@ -89,7 +89,7 @@ one this item asked for — a Gemma 3 / Qwen2.5-VL image turn's text decode no l
 speed on a GPU box.
 
 **Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
-CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1270–1077`
+CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1276–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
 (`internal/serveapp/openai.go:807–663`).
 
@@ -114,10 +114,10 @@ record it there as P6a and do it with the tower move rather than after.
 
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
-**Where.** `internal/serveapp/openai.go:1178`: `if lm.model.ResidentActive() && lm.adapter == ""` —
+**Where.** `internal/serveapp/openai.go:1184`: `if lm.model.ResidentActive() && lm.adapter == ""` —
 adapter models take the session path below it, and `decoder/model.go:1152` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
-commit == nil`). The comment at `internal/serveapp/openai.go:1148–967` records the cost: 13 tok/s vs ~460 resident on
+commit == nil`). The comment at `internal/serveapp/openai.go:1154–967` records the cost: 13 tok/s vs ~460 resident on
 a 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
 **Fix.** Apply the compute-time LoRA on the resident path: the adapter is a per-projection
@@ -126,7 +126,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:957`).
+assumes (`internal/serveapp/main.go:969`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -265,7 +265,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   serializes each model's generations (`internal/serveapp/openai.go:63` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
-- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1178`).
+- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1184`).
 - The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
   the CPU block drafter is measured-negative and deliberately not wired (`blockspec_cpu.go`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.
