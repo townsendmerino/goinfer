@@ -40,6 +40,9 @@ any surface may still change.
     first reply the model is asked once, in the background, for a short one. The request is cancelled
     whenever you send a message, and it never overrides a rename. The conversation stored by earlier
     versions is migrated into the list.
+  - Sampling controls: top_p, top_k, seed, stop sequences, and frequency and presence penalties, next to
+    temperature and max tokens. Blank fields use the server's defaults. Out-of-range values are marked
+    and refuse to send, rather than being quietly clamped. Settings are kept across reloads and tabs.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.

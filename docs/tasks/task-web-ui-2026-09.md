@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8) and W9 done; Tier B continues with W10.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), W9 and W10 done; Tier B continues with W11.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -95,7 +95,7 @@ Ranked by what a person notices in the first five minutes.
 ### W1 — Markdown and code blocks — DONE 2026-09-14
 ~~Today the page renders **plain text only**~~ — model output now renders as Markdown through
 `ui/markdown.js`, a renderer that builds DOM nodes from a fixed element allow-list and never an HTML
-string (the rule is stated at `internal/serveapp/webui/ui/app.js:608`). Paragraphs and line breaks,
+string (the rule is stated at `internal/serveapp/webui/ui/app.js:699`). Paragraphs and line breaks,
 headings, fenced code with a language label (an unclosed fence renders as code, so streaming does not
 flicker), inline code, strong/em/strike, links, bare URLs, blockquotes, nested lists and GFM tables.
 Raw HTML in model output is shown as text; links are live only for `http:`/`https:`/`mailto:`; images
@@ -181,7 +181,7 @@ reload; a hostile prompt inert; tab sync, and a focused box not clobbered. Six m
 ### W5 — Load a model from the page — DONE 2026-09-14
 ~~The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
 --model &lt;path&gt; to serve it"*~~ — a finished pull now ends on a **Load it now** button
-(`internal/serveapp/webui/ui/app.js:1065`). It loads the file, shows a heartbeat while the load runs,
+(`internal/serveapp/webui/ui/app.js:1167`). It loads the file, shows a heartbeat while the load runs,
 refreshes the model list, and selects the new model, so the next message goes to it. The header
 stats now follow whichever model is selected, not always the first one listed.
 
@@ -278,7 +278,7 @@ and gpt-oss-20b after the stop fix, real token boundaries) are replayed chunk fo
 
 ### W7 — Regenerate, edit-and-resend, delete a turn — DONE 2026-09-14
 ~~None of the three~~ — all three, as buttons on each message's action row next to Copy
-(`internal/serveapp/webui/ui/app.js:516`). History is now addressable: each action changes the
+(`internal/serveapp/webui/ui/app.js:605`). History is now addressable: each action changes the
 transcript, re-renders the log from it and saves, so what is shown, saved and sent can't disagree.
 
 - **Regenerate** appears only on the **last** reply, including a stopped or interrupted one. It
@@ -363,15 +363,53 @@ inside the binary.
 | # | Item | Today | Effort |
 |---|---|---|---|
 | **W9** | Conversation list with generated titles | **DONE 2026-09-14** — see below | M (after W3) |
-| **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:437`) | S |
+| **W10** | Full sampling controls | **DONE 2026-09-14** — see below | S |
 | **W11** | Image attach for vision models | no control, though `-vision` works on the same route; `demo/agent/cmd/agent-web/index.html:129` has the whole composer (click, drag, paste, preview) to transplant, plus a per-model capability check so it hides on text-only models | M |
 | **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:179`) | M |
-| **W13** | Errors that say what to do | apart from the context wall (W8), any non-200 becomes the first 400 characters of the response body in a red bubble (`internal/serveapp/webui/ui/app.js:681`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
+| **W13** | Errors that say what to do | apart from the context wall (W8), any non-200 becomes the first 400 characters of the response body in a red bubble (`internal/serveapp/webui/ui/app.js:774`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
 | **W14** | Export the conversation | nothing. A share link is an anti-goal; Markdown and JSON to a file are not | S |
 | **W15** | Dark mode | one light surface; no `prefers-color-scheme` rule anywhere. The AmbientCSS palette is already token-shaped (`docs/completed/task-web-ui-ambient.md`) | S |
 | **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/ui/app.css:1480`). A server on the LAN is a plausible phone client | S |
-| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:953`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
+| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:1055`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
+
+### W10 — Full sampling controls — DONE 2026-09-14
+~~The page sends `temperature`/`max_tokens` only~~ — a collapsible **Sampling** section beside the
+system prompt adds every other sampling field `/v1/chat/completions` accepts: `top_p`, `top_k`, `seed`,
+`stop`, `frequency_penalty` and `presence_penalty` (`internal/serveapp/webui/ui/app.js:427`).
+Temperature and max tokens stay in the top row.
+
+**A correction to what this row used to say:** it listed `logit_bias` among the fields the route
+accepts. It does not. The request struct (`internal/serveapp/openai.go:435`) has no such field. The
+sampler supports `LogitBias`, `MinP` and `RepeatPenalty`, but the HTTP route exposes none of them, so
+W10 covers what the route actually takes. Exposing the other three is a server item of its own.
+
+Decided here, and why:
+- **A setting, like the system prompt:** its own key, kept across reloads and New chat, followed across
+  tabs, but never over a field the user is typing in. **Reset** returns to the defaults.
+- **Blank means not sent**, so the server's default applies. A blank seed is a fresh random one each
+  time (M-03).
+- **Ranges are OpenAI's documented ones, and an out-of-range value is refused, not clamped.** The
+  server rejects only some of them (negative temperature, `top_p` outside [0,1]) and passes the rest
+  through unchecked, so the page checks all of them. The field is marked and the reason shown. Send,
+  Regenerate and Edit all refuse **before changing the conversation**; otherwise a regenerate could
+  remove the old reply and then fail to send. A seed must be a safe JavaScript integer, since a larger
+  one cannot round-trip exactly.
+- **Stop sequences, one per line.** `\n` and `\t` stand for a newline and a tab, since a line can't
+  hold a newline; blank lines are ignored.
+- **The background title request (W9) keeps its own fixed settings**, whatever is set here.
+
+Measured on a real model before writing the gate (CPU, Qwen2.5-0.5B, request bodies shaped like the
+page's). The same seed twice gave identical output, and a different seed gave different output.
+`top_k: 1` at temperature 1.5 matched greedy decoding exactly. A `,` stop sequence cut the reply to
+"apple". Penalties of 2 changed the output. `top_p: 1.5` came back as a 400 from the server itself.
+
+Gate: phases 18–19 of `scripts/webui_app_gate.mjs`, 39 checks. They cover exactly what is sent for
+defaults, set fields and cleared fields; stop parsing; the title request unaffected; ten out-of-range
+values, each marked, explained and refused before anything changes (including by Regenerate, Edit, and
+`generate()` called directly); saving, tab sync, reset, restore after reload, and unreadable stored
+values ignored. Twenty mutations, each red, run detached with the source backed up (W9's lesson).
+**Effort was: S–M.**
 
 ### W9 — Conversation list with generated titles — DONE 2026-09-14
 A **Chats** list above the settings card. New chat now starts another conversation and keeps the one
@@ -391,7 +429,7 @@ highlighted. Nothing in the list works while a reply is generating or a message 
 - **Migration:** W3's single conversation (`goinfer.chat.v1`) is migrated once into a conversation of
   its own, opened, and the old key removed.
 
-**Titles** (`autoTitle`, `internal/serveapp/webui/ui/app.js:891`). A title starts as the first message,
+**Titles** (`autoTitle`, `internal/serveapp/webui/ui/app.js:984`). A title starts as the first message,
 cut to fit. After the first reply, the model is asked **once**, in the background, with a non-streaming
 24-token request, for a title of at most six words. The reply is cleaned: first line only, no
 "Title:" label, quotes, markup or final period, and it is rejected if it still contains thinking or
@@ -487,7 +525,7 @@ gating and auth — each shown able to go red by a mutation.
 
 **6.2 W1 is where model output stops being inert, and the current rule must survive it. — HELD
 2026-09-14 (see W1).** The page says it in the source: content goes in via `textContent` or
-`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:608`), and a test now fails the
+`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:699`), and a test now fails the
 build if that changes. **Build DOM nodes from the parsed tree; never assemble an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
@@ -505,9 +543,9 @@ W5's load route was the first real test of them, and takes all of them (W5).
 
 `internal/serveapp/webui.go:50`, `:458` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1480` (layout) · `internal/serveapp/webui/index.html:12` (tabs) ·
-`internal/serveapp/webui/ui/app.js:108`, `:608`, `:681`, `:953`, `:1065`, `:146`, `:516`, `:60`, `:278`, `:891` (the conversation transcript, the
+`internal/serveapp/webui/ui/app.js:108`, `:699`, `:774`, `:1055`, `:1167`, `:146`, `:605`, `:60`, `:278`, `:984`, `:427` (the conversation transcript, the
 rendering rule, the error path, the keybinding, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles) · `internal/serveapp/openai.go:792` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls) · `internal/serveapp/openai.go:792` (`contextWindow`) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:445` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
