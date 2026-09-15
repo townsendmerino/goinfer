@@ -102,10 +102,32 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
 	if !ok {
 		return cudaCtxCapDefault // unknown ⇒ the safe historical default, never guess
 	}
+	// M-12 (docs/audit-2026-09-10.md): Plan's own chooseCtx reserves NO margin — it picks the
+	// largest ctx that exactly fills freeBytes-dense-extra, budget down to the last byte. But the
+	// REAL build-time check, checkKVFits below, requires an ADDITIONAL ctxCapMarginBytes (384 MiB)
+	// beyond dense+KV+extra. Asking Plan with the raw free bytes let it choose a ctx that had
+	// already spent that margin, so any interior (non-ceiling, non-floor) choice failed
+	// checkKVFits almost every time — the whole resident build declining to CPU-only on any card
+	// where the default 8192 doesn't fit outright. Subtracting the SAME margin here, before Plan
+	// ever sees freeBytes, makes the two checks agree: whatever ctx Plan picks now already leaves
+	// room for it. floored at 0 rather than going negative on an already-tiny free-bytes probe
+	// (Plan's own tryCtx/chooseCtx already decline cleanly on an unfittable budget).
+	marginedFree := free - ctxCapMarginBytes
+	if marginedFree < 0 {
+		marginedFree = 0
+	}
 	// ExtraBytes: tasks/task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter attaching after
 	// BuildResident must not find the context Plan chose here left it no room (m.ExtraResidentBytes's
 	// own doc comment). Zero when nothing is attaching, so this is a no-op for every load without one.
-	p := m.Plan("cuda", free, decoder.PlanRequest{Ctx: candidate, ExtraBytes: m.ExtraResidentBytes()})
+	//
+	// M-22 (docs/audit-2026-09-10.md): a drafter's device K/V is priced here too now, against
+	// CANDIDATE — the widest ctx this very call is asking Plan to fit, before Plan has shrunk it to
+	// whatever the card actually holds. Plan's chooseCtx only ever shrinks from the value it is
+	// asked with, never grows past it (fitplan.go's own "never GROW past what was asked"), so
+	// pricing the drafter's K/V at candidate can only over-estimate the eventual real cost (safe)
+	// or land exactly on it — never under-price the way pricing at a fixed guess could.
+	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)
+	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
 	if p.Placement == decoder.PlacementDecline || p.Ctx < cudaCtxCapDefault {
 		return cudaCtxCapDefault // Plan could not confidently improve on the historical floor
 	}

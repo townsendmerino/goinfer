@@ -547,6 +547,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// ---- resident + pinned executor ----
 	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
+	// Computed once, referenced by both ctxCap and extraBytes below (M-22, docs/audit-2026-09-10.md
+	// — extraBytes now needs this same final ctxCap value, and a struct literal cannot reference a
+	// sibling field being set in the same literal).
+	residentCtxCap := resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions)
 	r := &cudaResident{
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(),
@@ -571,9 +575,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
 		// cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who
 		// did not ask allocates exactly what they always did.
-		ctxCap:      resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions),
+		ctxCap:      residentCtxCap,
 		ctxExplicit: m.ResidentContextRequest() > 0,
-		extraBytes:  m.ExtraResidentBytes(),
+		// M-22 (docs/audit-2026-09-10.md): a drafter's device K/V is priced here at the FINAL,
+		// actually-chosen ctxCap — resolveCtxCapFit's own ExtraBytes consult (above, feeding
+		// residentCtxCap) already priced it at candidate, the widest ctx that call considered; this
+		// is the real number checkKVFits below enforces against the real allocation about to
+		// happen, which can only be <= candidate (fitplan.go's chooseCtx never grows past what it
+		// was asked), so this is never a smaller price than what was already planned against.
+		extraBytes: m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(residentCtxCap),
 	}
 	if moeSig {
 		r.moeSigmoid = 1

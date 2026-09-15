@@ -1181,6 +1181,11 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 			return nil, fmt.Errorf("--drafter %q: load drafter: %w", cfg.drafter, derr)
 		}
 		opts.ExtraResidentBytes = decoder.DrafterResidentBytesEstimate(drafter)
+		// M-22 (docs/audit-2026-09-10.md): the drafter's own device K/V scales with whatever
+		// resident context the target ends up choosing, which is not known yet here — see
+		// Options.ExtraResidentKVPerPosition's own doc comment for why this is a rate, not a
+		// total, and who multiplies it by what.
+		opts.ExtraResidentKVPerPosition = decoder.DrafterKVBytesPerPosition(drafter)
 	}
 
 	// Weight streaming needs the read-only mmap that only .giw provides. For a plain

@@ -61,6 +61,7 @@ type Model struct {
 	moeCache         bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots         int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	extraBytes       int64        // Options.ExtraResidentBytes — see that field's own doc comment
+	extraKVPerPos    int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
 	mmap             []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	srcPath          string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
 	pager            *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
@@ -157,6 +158,17 @@ func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
 // attached and NewBlockSpec failed on a 15.9 MB buffer because the cache had already taken the
 // room. 0 means "nothing else is attaching" (today's behavior, unchanged).
 func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
+
+// ExtraResidentKVPerPosition returns Options.ExtraResidentKVPerPosition — M-22's own fix
+// (docs/audit-2026-09-10.md): a companion allocation's ExtraResidentBytes above prices only its
+// FIXED terms (a drafter's weights); its device K/V, when the companion has any, scales with
+// whatever resident context THIS model ends up choosing, which ExtraResidentBytes's own caller
+// (loadDecoder, priced before this model's residency is built at all) cannot know yet. This field
+// carries the RATE instead (decoder.DrafterKVBytesPerPosition's own doc comment has the shape and
+// why it is a rate, not a total) — a residency builder that knows its own candidate/final ctx
+// multiplies by it locally. 0 means "the companion, if any, has no ctx-scaling K/V term" (today's
+// default, and every model without a drafter attached).
+func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 
 // FitDisabled is tasks/task-fit-to-hardware.md's --fit=off (Options.DisableFit), true when either the
 // Options field or the pre-existing GOINFER_NO_FIT_DEFAULT env var (cuda/resident.go's original,
@@ -263,6 +275,13 @@ type Options struct {
 	// Model.ExtraResidentBytes's own doc comment for why this exists and what it fixes. 0 (the
 	// default) is today's behavior, unchanged.
 	ExtraResidentBytes int64
+	// ExtraResidentKVPerPosition is ExtraResidentBytes' ctx-scaling twin (M-22,
+	// docs/audit-2026-09-10.md): a companion allocation's device K/V, when it has any, scales with
+	// whatever resident context THIS model ends up choosing — unknowable at loadDecoder's pricing
+	// point, unlike the fixed weight bytes ExtraResidentBytes carries. See
+	// Model.ExtraResidentKVPerPosition's own doc comment and decoder.DrafterKVBytesPerPosition for
+	// the shape and rationale. 0 (the default) is today's behavior, unchanged.
+	ExtraResidentKVPerPosition int64
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -323,7 +342,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}
+		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
@@ -421,7 +440,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	if raw, err := json.Marshal(resolvedEOS); err == nil {
 		w.Cfg.EOSTokenID = raw
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes}).withBackendNames(opts.Backend, beErr)
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.

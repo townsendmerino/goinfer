@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:475 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:385` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:404` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -132,7 +132,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   `TestBackendReport_int4LayoutVisible` (both surfaces, both arms — `Backend:"cpu"` shows
   `row4-only`, unspecified does not).
 - **Item 3 ("Same by inspection in `cuda/` and `gpu/`") found a REAL latent bug in `cuda/`, worse
-  than Metal's.** `cuda/resident.go:3112`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
+  than Metal's.** `cuda/resident.go:3134`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
   for a repacked-only tensor — `Kind()` is precision, not layout) and used to discard `Int4()`'s
   `ok` entirely (`q4, sc, _, _ := w.Int4()`), so a repacked-only tensor's nil `q4` would panic on
   an out-of-range slice index (`q4[i*4:i*4+4]`) rather than decline through the function's own

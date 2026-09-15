@@ -134,6 +134,10 @@ var (
 // ctxCapMarginBytes/slotMarginBytes margins in cuda/resident.go are there to absorb. Naming this
 // rather than silently folding it into "close enough": the weights are the term this function
 // computes for real, not the whole attach.
+//
+// ALSO NOT included: the drafter's own K/V (M-22, docs/audit-2026-09-10.md) — see
+// DrafterKVBytesPerPosition below for why that term needs a ctx to multiply by that this function,
+// called before the target's own residency is built, does not yet have.
 func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 	int8Bytes := func(w *linalg.WeightMat) int64 {
 		if w == nil {
@@ -151,4 +155,24 @@ func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 		}
 	}
 	return total
+}
+
+// DrafterKVBytesPerPosition is M-22's own fix (docs/audit-2026-09-10.md): the drafter's device K/V
+// scales with the TARGET's own resident context, not a fixed size of its own —
+// cuda/drafter.go's ExtendContext sizes d.kc/d.vc at capRows = max(need+512, r.ctxCap) — so a
+// 5-layer trunk at a large target context is hundreds of MB, not the "few MB" the scratch-buffer
+// exemption on DrafterResidentBytesEstimate is about, and DrafterResidentBytesEstimate itself
+// cannot price it: it runs BEFORE the target's own residency (and so its chosen ctx) exists.
+//
+// Returns bytes PER POSITION (layers × kvDim × 2 for K+V × 4 bytes, matching cuda/drafter.go's
+// own d.kc[l]/d.vc[l] = af(capRows*kvDim) sizing exactly) so the caller — resolveCtxCapFit, which
+// already knows the candidate ctx it is about to ask Plan to fit, and the real build, which knows
+// the FINAL ctxCap once chosen — can each multiply by the ctx value they actually have in hand,
+// rather than this function guessing one. Both multiplications land on a real, non-circular bound:
+// Plan's chooseCtx only ever SHRINKS from the candidate it is asked with, never grows past it, so
+// pricing the planning-time call against the candidate can only over-estimate (safe) or be exact.
+func DrafterKVBytesPerPosition(dw BlockDrafterWeights) int64 {
+	geo := dw.DrafterGeometry()
+	kvDim := int64(geo.NumKVHeads) * int64(geo.HeadDim)
+	return int64(geo.Layers) * kvDim * 2 /* K+V */ * 4 /* f32 */
 }

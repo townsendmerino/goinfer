@@ -113,6 +113,118 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 	}
 }
 
+// TestResolveCtxCapFit_agreesWithCheckKVFits is M-12 and M-22's own gate (docs/audit-2026-09-10.md),
+// on a real device: resolveCtxCapFit's own PLANNING-time choice must actually pass checkKVFits'
+// BUILD-time check — before M-12's fix, Plan reserved zero margin while checkKVFits required an
+// extra 384 MiB on top, so any INTERIOR (non-ceiling, non-floor) choice failed almost every time.
+// A real card usually has far more free VRAM than testdata/llama-tiny plus 8192 positions could
+// ever need, so the default candidate hits the CEILING branch (fits outright) — never buggy even
+// before the fix, and not what this finding is about. ExtraResidentBytes forces the INTERIOR
+// branch deterministically: computed from a real free-bytes probe so the remaining budget lands
+// resolveCtxCapFit's candidate choice between the floor and the ceiling, not by chance.
+//
+// Run with and without an ADDITIONAL simulated companion K/V rate (M-22) on top of that forced
+// interior scenario: resolveCtxCapFit prices that rate against its own candidate (never smaller
+// than what it eventually picks), and the real build prices it against the FINAL chosen ctx — this
+// proves those two, independently-computed prices stay consistent, not just individually
+// plausible. The companion rate (40960 B/position) is the audit finding's own cited real number: a
+// 5-layer DFlash trunk's K/V measured at "5 x 8192 x 1024 x 8 B ~ 335 MB" for an 8192-position
+// target, i.e. ~40.96 KB/position — not a round guess.
+func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no cuda device: %v", err)
+	}
+	defer dev.ReleaseObjects()
+
+	// First load: no extra, just to read this fixture's own DenseBytes/geometry — needed to compute
+	// an ExtraResidentBytes value that lands the interior branch, which can only be set at Load.
+	probe, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load (probe): %v", err)
+	}
+	_, nLayers, _, nKV, hd, _, _ := probe.Dims()
+	layers := make([]cudaLayer, nLayers)
+	for i := range layers {
+		layers[i].kvDim = nKV * hd
+	}
+	perPos := kvBytesForCap(1, layers)
+	dense := probe.ResidentDenseWeightBytes()
+	probe.Close()
+
+	free, ok := decoder.FreeBytesFor("cuda")
+	if !ok {
+		t.Skip("no cuda free-bytes probe available")
+	}
+	// Target the interior of (cudaCtxCapDefault, fitDefaultCtx]: an ExtraResidentBytes big enough
+	// that, with the SAME margin the fixed resolveCtxCapFit itself subtracts before calling Plan,
+	// dense+kv(fitDefaultCtx)+extra does NOT fit, but dense+kv(targetCtx)+extra does — forcing
+	// chooseCtx's budget branch instead of its "fits outright" shortcut. Computed against the
+	// MARGINED budget on purpose: llama-tiny's own perPos is tiny (a plain dense fixture) next to
+	// ctxCapMarginBytes (384 MiB), so a forcing term sized against raw free would leave the fixed
+	// code's own margin subtraction with nothing to bite on and land the floor instead of the
+	// interior — sized this way, the interior landing is exact in the FIXED case; the reverted
+	// case (no internal margin subtraction) gets ~384 MiB of slack this same term doesn't leave
+	// room for, landing it at the ceiling (fitDefaultCtx) instead — still a real, checkable
+	// disagreement between planning and build time (see the checkKVFits assertion below), just not
+	// "interior" in that one arm. Both arms are logged, not asserted on, for exactly that reason.
+	const targetCtx = 6000
+	if targetCtx <= cudaCtxCapDefault || targetCtx >= fitDefaultCtx {
+		t.Fatalf("test bug: targetCtx %d must sit strictly inside (%d, %d)", targetCtx, cudaCtxCapDefault, fitDefaultCtx)
+	}
+
+	for _, c := range []struct {
+		name          string
+		kvPerPosition int64
+	}{
+		{"interior branch, no companion", 0},
+		{"interior branch, with a drafter-sized companion K/V rate", 40960},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// Computed PER CASE: the companion K/V rate itself adds fitDefaultCtx*kvPerPosition to
+			// what resolveCtxCapFit's own Plan call reserves (priced at candidate, not targetCtx —
+			// M-22's own over-estimate-not-under design), so a forcing term calibrated for the
+			// no-companion case would over-constrain the companion one.
+			forcedExtra := free - ctxCapMarginBytes - dense - perPos*targetCtx - c.kvPerPosition*fitDefaultCtx
+			if forcedExtra <= 0 {
+				t.Skipf("this box's free VRAM (%d bytes) is too small relative to llama-tiny's dense "+
+					"weights (%d bytes) to construct a positive forcing term — nothing to check here", free, dense)
+			}
+			m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{
+				Quant:                      "int4",
+				ExtraResidentBytes:         forcedExtra,
+				ExtraResidentKVPerPosition: c.kvPerPosition,
+			})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			defer m.Close()
+
+			// Unpinned, modelCtx large enough that fitDefaultCtx itself is the real candidate.
+			ctx := resolveCtxCapFit(m, 0, 1<<20)
+			if ctx <= cudaCtxCapDefault {
+				t.Fatalf("resolveCtxCapFit did not improve on the historical default (got %d) — the "+
+					"forcing term left no room at all; this test's own arithmetic needs adjusting, not "+
+					"a sign the fix is broken", ctx)
+			}
+			t.Logf("chosen ctx=%d (floor %d, forced-interior target %d, ceiling %d)", ctx, cudaCtxCapDefault, targetCtx, fitDefaultCtx)
+
+			// The SAME extraBytes arithmetic the real build uses (cuda/backend.go): priced at the
+			// FINAL ctx this test just got back, not the candidate resolveCtxCapFit tried internally.
+			r := &cudaResident{
+				dev:        dev,
+				ctxCap:     ctx,
+				layers:     layers,
+				extraBytes: m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(ctx),
+			}
+			if err := r.checkKVFits(); err != nil {
+				t.Errorf("resolveCtxCapFit chose an INTERIOR ctx=%d, but checkKVFits refuses it at the "+
+					"real build (M-12/M-22, docs/audit-2026-09-10.md): %v", ctx, err)
+			}
+		})
+	}
+}
+
 // TestKVBytesForCap pins the sizing formula against the two geometries the deep-context measurements
 // were taken on (docs/benchmarks.md): 24.0 KB/position for qwen2.5-coder-0.5b and 56.0 KB/position
 // for the 1.5B. The VRAM fail-fast message quotes these, so a formula drift would misreport what a
