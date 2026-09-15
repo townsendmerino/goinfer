@@ -1,5 +1,30 @@
 "use strict";
 const $ = id => document.getElementById(id);
+
+// --- theme (W15) --------------------------------------------------------------------------
+// System (the default: follows prefers-color-scheme), Light or Dark. A choice is a data-theme attribute on
+// <html>; the stylesheet does the rest. Applied first thing, so a page reloaded in Dark does not repaint.
+const THEME_STORE = "goinfer.theme.v1";
+function applyTheme(t) {
+  if (t !== "light" && t !== "dark") t = "system";
+  if (t === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.dataset.theme = t;
+  $("theme").value = t;
+}
+function loadTheme() {
+  let t = "system";
+  try { t = localStorage.getItem(THEME_STORE) || "system"; } catch { /* blocked */ }
+  applyTheme(t);
+}
+loadTheme();
+$("theme").addEventListener("change", () => {
+  applyTheme($("theme").value);
+  try {
+    if ($("theme").value === "system") localStorage.removeItem(THEME_STORE);
+    else localStorage.setItem(THEME_STORE, $("theme").value);
+  } catch { /* the choice still applies to this page */ }
+});
+addEventListener("storage", e => { if (e.key === THEME_STORE || e.key === null) loadTheme(); });
 const KEY = "goinfer.apikey";
 
 // --- auth -------------------------------------------------------------------

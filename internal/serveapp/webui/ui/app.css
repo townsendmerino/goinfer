@@ -1440,7 +1440,8 @@
    produces (decision 3), and runtime stats as first-class chrome, not an
    afterthought (decision 4). Bright-blue accent, chosen because at the
    saturation that reads right, orange could not carry white text — blue
-   at #0b6fd4 does (4.95:1), so the send button can be the brightest
+   at #0b6fd4 does (4.95:1), so the send button can be the brightest (W15: that is the button FILL, --gi-accent-fill;
+   accent TEXT is #0a5cb3, see --gi-accent)
    thing on screen instead of a tinted outline.
    ========================================================================== */
 /* Consistent light direction, no exceptions (decision 2): AmbientCSS's own
@@ -1452,13 +1453,45 @@
   /* #69737f darkened toward --gi-ink until it clears WCAG AA for normal
      text on --gi-surface (4.5:1) — the muted tone the task doc flagged
      as a contrast risk measured at 4.07:1, just under the line. */
-  --gi-muted:#5c6671;
-  --gi-accent:#0b6fd4;
+  /* W15: #5c6671 cleared 4.5:1 on the flat page, but was 4.14:1 on the shaded end of a reply bubble —
+     where every reply's stats line sits. #535c67 is 4.73:1 there. */
+  --gi-muted:#535c67;
+  /* Accent TEXT. Was #0b6fd4, measured against the flat page only; W15 measured it on the surfaces it
+     actually sits on, and on the shaded end of a reply bubble's gradient (rgb 212,217,231) it was 3.51:1 —
+     under AA, on every link and "Thinking…" in every reply. #0a5cb3 is 4.57:1 there. The Send button
+     keeps #0b6fd4 as its fill (--gi-accent-fill), where white text on it is 4.95:1. */
+  --gi-accent:#0a5cb3;
   --gi-accent-ink:#fff;
   --gi-err:#b3261e;
-  --gi-ok:#1e7d43;
+  --gi-ok:#186534;   /* was #1e7d43: 3.66:1 on a reply bubble's shaded stop (W15 measurement); 4.95:1 now */
+  /* W15: the Send button's fill — its own token because no one blue is both readable as text on these
+     surfaces and a fill that carries white text at the brightness the Send button was designed for. */
+  --gi-accent-fill:#0b6fd4;
+  --gi-warn:#b7791f;
+  --gi-warn-ink:#744b0f;   /* W15: #8a5a12 was 4.19:1 on a reply bubble's shaded stop; 4.95:1 now */
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --amb-albedo:var(--gi-surface);
+  color-scheme:light;
+}
+/* W15 — dark. Two selectors carry the same tokens: the system preference (unless the page is set to Light),
+   and an explicit Dark. Only tokens change; every rule reads them. AmbientCSS shades a surface as albedo x
+   light, so a dark albedo is the whole of the surface change — the lights stay where they are. Every pair
+   below was measured against WCAG AA (4.5:1 for text) by the W15 gate, not chosen by eye. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --gi-surface:#1b1f25; --gi-ink:#e4e8ee; --gi-muted:#a3adb8;
+    --gi-accent:#6cb0ff; --gi-accent-fill:#1a64c4; --gi-accent-ink:#fff;
+    --gi-err:#ff8f86; --gi-ok:#6fd699; --gi-warn:#e0a43c; --gi-warn-ink:#f2bd5e;
+    --amb-key-light-intensity:.6; --amb-fill-light-intensity:.55;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --gi-surface:#1b1f25; --gi-ink:#e4e8ee; --gi-muted:#a3adb8;
+  --gi-accent:#6cb0ff; --gi-accent-fill:#1a64c4; --gi-accent-ink:#fff;
+  --gi-err:#ff8f86; --gi-ok:#6fd699; --gi-warn:#e0a43c; --gi-warn-ink:#f2bd5e;
+  --amb-key-light-intensity:.6; --amb-fill-light-intensity:.55;
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--gi-surface);color:var(--gi-ink);
@@ -1499,7 +1532,7 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--gi-accent);outli
    accent-coloured surface on screen — the brightest thing here, on
    purpose (task doc: "a real fix for this style's main accessibility
    weakness, not a cosmetic one"). */
-.go{--amb-albedo:var(--gi-accent);color:var(--gi-accent-ink);font-weight:600;padding:9px 18px}
+.go{--amb-albedo:var(--gi-accent-fill);color:var(--gi-accent-ink);font-weight:600;padding:9px 18px}
 .go[disabled]{opacity:.5;cursor:default}
 #stop{padding:9px 16px}
 
@@ -1581,8 +1614,8 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 /* W8: context meter */
 .ctx{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:10px}
 .ctx .bar{flex:0 0 140px;margin:0}
-.ctx.warn #ctx-fill{background:#b7791f}
-.ctx.warn #ctx-text{color:#8a5a12}
+.ctx.warn #ctx-fill{background:var(--gi-warn)}
+.ctx.warn #ctx-text{color:var(--gi-warn-ink)}
 .ctx.full #ctx-fill{background:var(--gi-err)}
 .ctx.full #ctx-text{color:var(--gi-err)}
 
@@ -1628,3 +1661,7 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
 .chats-export{font-size:12px;color:var(--gi-muted)}
 .chats-export button{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 6px;border-radius:6px}
 .chats-export button[disabled]{opacity:.45;cursor:default}
+
+/* W15: theme control */
+.theme-pick{font-size:12px;color:var(--gi-muted);display:flex;align-items:center;gap:6px}
+.theme-pick select{font-size:12px;padding:3px 6px}

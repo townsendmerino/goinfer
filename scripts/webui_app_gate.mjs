@@ -55,6 +55,9 @@
 //        labelled; finish_reason length and cancelled explained; the model list's own errors; persisted.
 //   W14 — export: the exact Markdown (turns, image, folded thinking, stats and state, labelled system prompt)
 //        and JSON (the stored conversation, format tag, version); safe file names; disabled when empty or busy.
+//   W15 — theme: System follows the (emulated) preference either way, Light and Dark override it, saved and
+//        followed across tabs, restored first thing after reload; WCAG AA contrast measured for every text
+//        colour on every real surface (gradient stops included) in each mode.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1535,10 +1538,96 @@ const phase24 = phase(String.raw`
   URL.createObjectURL = realCreate; HTMLAnchorElement.prototype.click = realClick;
 `);
 
+// ---- phases 25–27: W15 — theme, and contrast measured in every mode ----------------------------------------
+// Contrast is computed from what the browser actually resolved: each text colour against the real
+// backgrounds it sits on — the page, a card, a message, a text field (every stop of its gradient) — and white
+// on the Send button. WCAG AA for text: 4.5:1. The browser's colour scheme is switched from Node (DevTools
+// Emulation), between phases, because a page cannot emulate its own media query.
+const W15_PRELUDE = String.raw`
+  const parse = c => {
+    let m = c.match(/^rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)$/);
+    if (m) return { r: m[1] / 255, g: m[2] / 255, b: m[3] / 255, a: m[4] === undefined ? 1 : +m[4] };
+    m = c.match(/^color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: \/ ([\d.]+))?\)$/);
+    if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+    return null;
+  };
+  const lum = c => { const f = v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  // every solid colour a surface is painted with: its background-color if opaque, and each gradient stop
+  const surfaceColors = el => {
+    const cs = getComputedStyle(el), out = [];
+    const bg = parse(cs.backgroundColor); if (bg && bg.a > 0.99) out.push(bg);
+    for (const m of cs.backgroundImage.matchAll(/(rgba?\([^)]*\)|color\(srgb [^)]*\))/g)) { const c = parse(m[1]); if (c && c.a > 0.99) out.push(c); }
+    return out;
+  };
+  // resolve a token where el sits (a <textarea> cannot hold a probe element, so its parent stands in)
+  const tokenOn = (el, token) => { const host = /^(TEXTAREA|INPUT|SELECT)$/.test(el.tagName) ? el.parentElement : el; const s = document.createElement("span"); s.style.color = "var(" + token + ")"; host.appendChild(s); const c = parse(getComputedStyle(s).color); s.remove(); return c; };
+  const TEXT = ["--gi-ink", "--gi-muted", "--gi-accent", "--gi-err", "--gi-ok", "--gi-warn-ink"];
+  const worst = () => {
+    const surfaces = { page: document.body, card: document.querySelector(".card"), header: document.querySelector("header"), message: document.querySelector("#log .msg.bot") || document.querySelector(".card"), "text field": $("prompt") };
+    let low = { r: 99 };
+    for (const [sn, el] of Object.entries(surfaces)) for (const bg of surfaceColors(el)) for (const t of TEXT) {
+      const fg = tokenOn(el, t), r = ratio(fg, bg); if (r < low.r) low = { r, what: t + " on " + sn + " " + JSON.stringify([fg, bg].map(c => [c.r, c.g, c.b].map(v => Math.round(v * 255)))) };
+    }
+    const field = $("prompt"), typed = parse(getComputedStyle(field).color);   // what you type, on the field itself
+    for (const bg of surfaceColors(field)) { const r = ratio(typed, bg); if (r < low.r) low = { r, what: "typed text in the message field" }; }
+    const send = $("send"), ink = parse(getComputedStyle(send).color);
+    for (const bg of surfaceColors(send)) { const r = ratio(ink, bg); if (r < low.r) low = { r, what: "Send label on its button" }; }
+    return low;
+  };
+  const isDark = () => lum(parse(getComputedStyle(document.body).backgroundColor)) < 0.2;
+  const setTheme = v => { $("theme").value = v; $("theme").dispatchEvent(new Event("change")); };
+`;
+const phase25 = phase(W15_PRELUDE + String.raw`
+  // a message on screen, so a message surface is measured too
+  streamAnswer("Some **answer** text.");
+  $("prompt").value = "contrast"; await send(); await new Promise(r => setTimeout(r, 150));
+  check("W15 default is System, with no theme stored", $("theme").value === "system" && !document.documentElement.hasAttribute("data-theme") && localStorage.getItem("goinfer.theme.v1") === null, $("theme").value);
+  check("W15 System under a light preference is light", !isDark() && getComputedStyle(document.documentElement).colorScheme === "light", getComputedStyle(document.body).backgroundColor);
+  let w = worst();
+  check("W15 light: every text colour on every surface meets WCAG AA (worst " + w.r.toFixed(2) + ":1, " + w.what + ")", w.r >= 4.5, w.r.toFixed(2) + " " + w.what);
+  setTheme("dark");
+  check("W15 choosing Dark switches the page to dark, saved", isDark() && document.documentElement.dataset.theme === "dark" && localStorage.getItem("goinfer.theme.v1") === "dark" && getComputedStyle(document.documentElement).colorScheme === "dark", getComputedStyle(document.body).backgroundColor);
+  w = worst();
+  check("W15 Dark chosen: every text colour on every surface meets WCAG AA (worst " + w.r.toFixed(2) + ":1, " + w.what + ")", w.r >= 4.5, w.r.toFixed(2) + " " + w.what);
+  setTheme("system");
+  check("W15 back to System forgets the choice and follows the (light) preference", !isDark() && localStorage.getItem("goinfer.theme.v1") === null && !document.documentElement.hasAttribute("data-theme"), localStorage.getItem("goinfer.theme.v1"));
+  localStorage.setItem("goinfer.theme.v1", "<script>");
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.theme.v1" }));
+  check("W15 an unknown stored theme is treated as System", $("theme").value === "system" && !document.documentElement.hasAttribute("data-theme"), $("theme").value + " / " + document.documentElement.getAttribute("data-theme"));
+  localStorage.removeItem("goinfer.theme.v1");
+`);
+const phase26 = phase(W15_PRELUDE + String.raw`
+  check("W15 System under a dark preference is dark, with nothing stored", isDark() && $("theme").value === "system" && getComputedStyle(document.documentElement).colorScheme === "dark", getComputedStyle(document.body).backgroundColor);
+  let w = worst();
+  check("W15 dark (system): every text colour on every surface meets WCAG AA (worst " + w.r.toFixed(2) + ":1, " + w.what + ")", w.r >= 4.5, w.r.toFixed(2) + " " + w.what);
+  setTheme("light");
+  check("W15 choosing Light overrides a dark system preference", !isDark() && getComputedStyle(document.documentElement).colorScheme === "light", getComputedStyle(document.body).backgroundColor);
+  w = worst();
+  check("W15 Light chosen under a dark system: WCAG AA holds (worst " + w.r.toFixed(2) + ":1, " + w.what + ")", w.r >= 4.5, w.r.toFixed(2) + " " + w.what);
+  window.__otherTab = true;
+  localStorage.setItem("goinfer.theme.v1", "dark");
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.theme.v1" }));
+  check("W15 another tab's theme choice is followed", isDark() && $("theme").value === "dark", $("theme").value);
+`);
+const phase27 = phase(W15_PRELUDE + String.raw`
+  check("W15 after reload a chosen theme is applied before anything else", document.documentElement.dataset.theme === "dark" && $("theme").value === "dark" && isDark(), document.documentElement.getAttribute("data-theme"));
+  setTheme("system");
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24].entries()) {
-  if (i > 0) await page.reload();
-  all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
+const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
+  // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
+  async () => page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] }),
+  phase25,
+  async () => page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }),
+  phase26, phase27];
+let n = 0;
+for (const prog of PHASES) {
+  if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase
+  n++;
+  if (n > 1) await page.reload();
+  all.push(...finishOrExit("webui app gate (phase " + n + ")", await page.evaluate(prog), all));
 }
 page.close();
 report("webui app gate", all, page.exceptions);
