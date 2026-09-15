@@ -1056,8 +1056,8 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/backend.go:365` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:787` | goinfer | `anchor: func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar` |
 | `docs/audit-2026-09-10.md|cuda/drafter.go:107` | goinfer | `err := r.do(func() error {` |
-| `docs/audit-2026-09-10.md|cuda/drafter.go:187` | goinfer | `if n > d.ctxCap {` |
-| `docs/audit-2026-09-10.md|cuda/drafter.go:282` | goinfer | `capRows := need + 512` |
+| `docs/audit-2026-09-10.md|cuda/drafter.go:191` | goinfer | `if d.ctxCap > 0 {` |
+| `docs/audit-2026-09-10.md|cuda/drafter.go:291` | goinfer | `capRows := need + 512` |
 | `docs/audit-2026-09-10.md|cuda/kernel_local_memory_test.go:150` | goinfer | `len(names), strings.Join(names, " "))` |
 | `docs/audit-2026-09-10.md|cuda/kernels.go:105` | goinfer | `// attention (GQA online softmax), swiglu_quant, residual. (argmax_reduce moved to argma` |
 | `docs/audit-2026-09-10.md|cuda/lora.go:119` | goinfer | `func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {` |
@@ -1066,6 +1066,7 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/lora.go:179` | goinfer | `func (r *cudaResident) applyLora(p *cudaLoraProj, aq, ascale Buffer, k int, dst Buffer) ` |
 | `docs/audit-2026-09-10.md|cuda/lora.go:209` | goinfer | `type loraProjKey struct {` |
 | `docs/audit-2026-09-10.md|cuda/lora_resident_parity_test.go:95` | goinfer | `if cos < 0.95 {` |
+| `docs/audit-2026-09-10.md|cuda/prefill.go:1289` | goinfer | `// RELEASE BEFORE GROWING. This was grow-only: each larger prompt abandoned the previous` |
 | `docs/audit-2026-09-10.md|cuda/prefill.go:1512` | goinfer | `func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {` |
 | `docs/audit-2026-09-10.md|cuda/prefill.go:171` | goinfer | `func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, sta` |
 | `docs/audit-2026-09-10.md|cuda/prefill.go:247` | goinfer | `func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos ` |

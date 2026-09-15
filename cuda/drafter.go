@@ -185,6 +185,15 @@ func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 	out := make([][]float32, n)
 	err := d.r.do(func() error {
 		if n > d.ctxCap {
+			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md), the same shape
+			// batchedHeadArgmax already fixed (cuda/prefill.go) for the identical grow-and-abandon
+			// pattern — audit-2026-09-02 C-12 reached logitsB only, not this drafter's own buffers.
+			if d.ctxCap > 0 {
+				d.r.dev.ReleaseBuf(d.ctxIn)
+				d.r.dev.ReleaseBuf(d.ctxQ)
+				d.r.dev.ReleaseBuf(d.ctxSc)
+				d.r.dev.ReleaseBuf(d.ctxFuse)
+			}
 			d.ctxIn = d.r.af(n * k)
 			d.ctxQ = d.r.ai(n * (k / 4))
 			d.ctxSc = d.r.af(n)
@@ -296,6 +305,16 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 		// with at least as many rows — an ordering rule between two exported methods that
 		// nothing states and that fails as a confusing capacity error.
 		if n > d.extCap {
+			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md) — see FuseContext's identical
+			// fix above for the shared rationale.
+			if d.extCap > 0 {
+				d.r.dev.ReleaseBuf(d.extIn)
+				d.r.dev.ReleaseBuf(d.ctxFQ)
+				d.r.dev.ReleaseBuf(d.ctxFSc)
+				d.r.dev.ReleaseBuf(d.ctxQ2)
+				d.r.dev.ReleaseBuf(d.ctxKB)
+				d.r.dev.ReleaseBuf(d.ctxVB)
+			}
 			d.extIn = d.r.af(n * hidden)
 			d.ctxFQ = d.r.ai(n * (hidden / 4))
 			d.ctxFSc = d.r.af(n)
@@ -439,6 +458,14 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	err := d.r.do(func() error {
 		s := &d.blk
 		if M > s.cap {
+			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md) — see FuseContext's identical
+			// fix for the shared rationale. 16 buffers, same as this block's own allocation below.
+			if s.cap > 0 {
+				for _, b := range []Buffer{s.x, s.aq, s.aSc, s.mq, s.mSc, s.cq, s.cSc, s.dq, s.dSc,
+					s.q, s.k, s.v, s.cctx, s.g, s.u, s.dScr} {
+					d.r.dev.ReleaseBuf(b)
+				}
+			}
 			s.x = d.r.af(M * hidden)
 			s.aq, s.aSc = d.r.ai(M*(hidden/4)), d.r.af(M)
 			s.mq, s.mSc = d.r.ai(M*(hidden/4)), d.r.af(M)
@@ -622,6 +649,14 @@ func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
 	ids := make([]int, M)
 	err := r.do(func() error {
 		if M > d.headCap {
+			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md) — see FuseContext's identical
+			// fix for the shared rationale.
+			if d.headCap > 0 {
+				r.dev.ReleaseBuf(d.headIn)
+				r.dev.ReleaseBuf(d.headQ)
+				r.dev.ReleaseBuf(d.headSc)
+				r.dev.ReleaseBuf(d.headOut)
+			}
 			d.headIn = r.af(M * hidden)
 			d.headQ, d.headSc = r.ai(M*(hidden/4)), r.af(M)
 			d.headOut = r.af(M * r.vocab)
