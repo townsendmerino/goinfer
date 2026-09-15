@@ -308,6 +308,11 @@ type server struct {
 	// a job whether or not -job-dir is set; jobs.journal is what's nil in that case.
 	jobs *jobStore
 
+	// files and batches are J4's stores (task-work-queue-2026-09.md): OpenAI's uploaded/assembled
+	// files, and both dialects' batch records. Never nil after newServer, same convention as jobs.
+	files   *fileStore
+	batches *batchStore
+
 	// halted is K2's global halt state (docs/tasks/task-halt-2026-09.md); nil = running normally. See
 	// halt.go. Zero value is nil, so no explicit init in newServer is needed.
 	halted atomic.Pointer[haltInfo]
@@ -346,8 +351,9 @@ func (s *server) lookupLocked(name string) *loadedModel {
 //
 // The embed cap is INDEPENDENT of both: /v1/embeddings is served by the encoder, which is not in
 // s.models, so a decoder-derived cap is measuring the wrong thing entirely — see maxEmbedBodyBytes.
-// All three are reported on startup.
-func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap int64) {
+// fileCap (J4) is independent for the identical reason — see maxBatchFileBytes. All four are
+// reported on startup.
+func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, fileCap int64) {
 	textCap = maxBodyBytes // 4 MiB floor
 	if override > 0 {
 		textCap = override
@@ -371,10 +377,12 @@ func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap i
 	}
 	visionCap = textCap + maxVisionBodyBytes // image data on top of the text budget
 	embedCap = maxEmbedBodyBytes
+	fileCap = maxBatchFileBytes
 	if override > 0 {
 		embedCap = override // an explicit -max-body-bytes governs every route
+		fileCap = override
 	}
-	return textCap, visionCap, embedCap
+	return textCap, visionCap, embedCap, fileCap
 }
 
 // modelNotFound writes the OpenAI-shaped 404 for an unknown model field.
@@ -1145,7 +1153,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			jobs.finish(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
 				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
-			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish})
+			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1308,7 +1316,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			jobs.finish(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
 				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
-			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish})
+			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)

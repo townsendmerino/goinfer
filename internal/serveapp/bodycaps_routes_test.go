@@ -27,7 +27,7 @@ import (
 func TestBodyCaps_embeddingsIsIndependentOfDecoderContext(t *testing.T) {
 	// An embed-only server: no decoder loaded, so the derived TEXT cap falls to its 4 MiB floor.
 	s := &server{models: map[string]*loadedModel{}}
-	textCap, visionCap, embedCap := s.resolveBodyCaps(0)
+	textCap, visionCap, embedCap, fileCap := s.resolveBodyCaps(0)
 
 	if textCap != maxBodyBytes {
 		t.Fatalf("text cap = %d, want the %d floor with no decoder loaded", textCap, maxBodyBytes)
@@ -53,6 +53,10 @@ func TestBodyCaps_embeddingsIsIndependentOfDecoderContext(t *testing.T) {
 	if visionCap <= textCap {
 		t.Errorf("vision cap %d should exceed text cap %d", visionCap, textCap)
 	}
+	if fileCap != maxBatchFileBytes {
+		t.Errorf("file cap = %d, want %d — POST /v1/files (J4) is independent of the decoder-derived "+
+			"text cap for the same reason embeddings is (see maxBatchFileBytes' own comment)", fileCap, maxBatchFileBytes)
+	}
 }
 
 // TestBodyCaps_explicitOverrideGovernsEveryRoute: -max-body-bytes is documented as "the" cap, so it
@@ -60,13 +64,17 @@ func TestBodyCaps_embeddingsIsIndependentOfDecoderContext(t *testing.T) {
 func TestBodyCaps_explicitOverrideGovernsEveryRoute(t *testing.T) {
 	s := &server{models: map[string]*loadedModel{}}
 	const override = int64(7 << 20)
-	textCap, _, embedCap := s.resolveBodyCaps(override)
+	textCap, _, embedCap, fileCap := s.resolveBodyCaps(override)
 	if textCap != override {
 		t.Errorf("text cap = %d, want the override %d", textCap, override)
 	}
 	if embedCap != override {
 		t.Errorf("embed cap = %d, want the override %d — an explicit -max-body-bytes must govern "+
 			"/v1/embeddings too, or the flag silently does not mean what it says", embedCap, override)
+	}
+	if fileCap != override {
+		t.Errorf("file cap = %d, want the override %d — an explicit -max-body-bytes must govern "+
+			"POST /v1/files (J4) too, or the flag silently does not mean what it says", fileCap, override)
 	}
 }
 

@@ -48,9 +48,16 @@ type job struct {
 
 // jobResult is a job's assembled output — J3. FinishReason mirrors the OpenAI chat completion
 // field ("stop" | "length" | "cancelled").
+//
+// StopSeq is J4's addition (task-work-queue-2026-09.md): drive's own stop-string match, when
+// FinishReason came from one, so a caller in Anthropic's vocabulary can call the exact
+// anthropicStopReason(finish, stopSeq) helper serveMessagesWith already uses instead of losing
+// "which stop sequence matched" fidelity. "" for every non-stop-string finish, and a no-op for the
+// OpenAI surface, which never reads it.
 type jobResult struct {
 	Content      string `json:"content"`
 	FinishReason string `json:"finish_reason"`
+	StopSeq      string `json:"-"`
 }
 
 // jobStore is a process-wide, in-memory registry — every generation gets a job, whether or not

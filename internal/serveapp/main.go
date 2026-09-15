@@ -633,7 +633,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// served model's context window, floored at the historical constants so a small-context
 	// model keeps a usable body budget (the per-request tokenization guard, not this cap,
 	// protects it), and overridable with -max-body-bytes. Reported on the startup line.
-	textCap, visionCap, embedCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
+	textCap, visionCap, embedCap, fileCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
 	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
@@ -659,6 +659,23 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
 		mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
 		mux.HandleFunc("DELETE /v1/jobs/{id}", auth(srv.handleCancelJob))
+		// J4 (task-work-queue-2026-09.md): the two batch APIs, over the same job store. POST
+		// /v1/files is an upload, not inference — it carries no generation work by itself, so it
+		// follows /web/models/pull's own precedent (main.go, below) rather than /v1/jobs': auth +
+		// maxBytes only, no haltGate/inf (those bound decode concurrency/backpressure, not upload
+		// I/O). POST /v1/batches and POST /v1/messages/batches DO queue real generation work (one
+		// job per line, same pipeline as /v1/jobs), so they get the full stack. Every GET and every
+		// .../cancel gets auth only, same reasoning as /v1/jobs' own GET/DELETE routes above.
+		mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
+		mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
+		mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
+		mux.HandleFunc("POST /v1/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateBatch)))))
+		mux.HandleFunc("GET /v1/batches/{id}", auth(srv.handleGetBatch))
+		mux.HandleFunc("POST /v1/batches/{id}/cancel", auth(srv.handleCancelBatch))
+		mux.HandleFunc("POST /v1/messages/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateMessageBatch)))))
+		mux.HandleFunc("GET /v1/messages/batches/{id}", auth(srv.handleGetMessageBatch))
+		mux.HandleFunc("GET /v1/messages/batches/{id}/results", auth(srv.handleGetMessageBatchResults))
+		mux.HandleFunc("POST /v1/messages/batches/{id}/cancel", auth(srv.handleCancelMessageBatch))
 	}
 	// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a JSON
 	// error naming -embed-model rather than a bare 404, so an SDK sees "unconfigured" not "wrong URL".
@@ -857,7 +874,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if cfg.maxBodyBytes > 0 {
 		capSrc = "-max-body-bytes"
 	}
-	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) / %s (embeddings) [%s]\n", humanBytes(textCap), humanBytes(visionCap), humanBytes(embedCap), capSrc)
+	fmt.Fprintf(os.Stderr, "request body cap: %s (text) / %s (vision) / %s (embeddings) / %s (batch files) [%s]\n", humanBytes(textCap), humanBytes(visionCap), humanBytes(embedCap), humanBytes(fileCap), capSrc)
 	var listenErr error
 	if useTLS {
 		listenErr = httpSrv.ListenAndServeTLS(*tlsCert, *tlsKey)
@@ -892,6 +909,11 @@ func newServer(cfg config) (*server, error) {
 		responses: newResponseStore(256),
 		gens:      newGenerationRegistry(),
 		jobs:      jobs,
+		// 256 matches jobs'/responses' own bound above — no dedicated -file-cap/-batch-cap flag
+		// yet, same reasoning as jobs' own comment (J3): a size past this many old is only evicted
+		// once terminal.
+		files:   newFileStore(256),
+		batches: newBatchStore(256),
 	}
 	for _, spec := range cfg.models {
 		// An `hf:`/`demo:` spec is fetched (or found in the cache) BEFORE the load, so the

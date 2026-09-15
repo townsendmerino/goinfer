@@ -805,7 +805,7 @@ re-baked by the code it checks (G-04).
 ### D. Cross-repo and unassessed
 
 #### M-15 · On a Metal box every image turn runs the vision tower on the CPU, and aikit's Metal tower cannot be wired as a win until three shapes change (aikit M-14/M-09/M-10 Metal halves)
-- **Where:** `internal/serveapp/main.go:1013-992` (`EnableResident` only for `webgpu`; nothing imports
+- **Where:** `internal/serveapp/main.go:1026-992` (`EnableResident` only for `webgpu`; nothing imports
   `visionmetal`/`qwenmetal`); aikit `metal_vit.go:168-221` (attention: one threadgroup per
   (head, query), re-streams K and V per query — no query tile; score lanes 4,608 B apart; PV keeps
   hd=72 of 256 lanes busy), `:397-420` (`gemm_w8a8_tiled`: one output per thread, byte-granular
@@ -1554,10 +1554,10 @@ re-baked by the code it checks (G-04).
   warm-cache for the same reason.
 - N-38 `metal/prefill_ttft_test.go:81` — the first `PrefillLast` (P=256) includes the one-time compile;
   the L2 record's P=256 row carries it in both arms.
-- N-39 `internal/serveapp/openai.go:1174-1086` — comment says adapter requests "drop to the staged
+- N-39 `internal/serveapp/openai.go:1182-1086` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1174-1093,735-739,826-829`) to say what
+  adapter routing (`internal/serveapp/openai.go:1182-1093,735-739,826-829`) to say what
   `decoder/model.go:1264`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on

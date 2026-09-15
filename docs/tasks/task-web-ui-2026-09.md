@@ -188,7 +188,7 @@ stats now follow whichever model is selected, not always the first one listed.
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
 (`internal/serveapp/admin.go:113`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:707`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:724`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
 (`webLoadPath`, `internal/serveapp/webui.go:321`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
@@ -324,7 +324,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:792`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:800`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -509,7 +509,7 @@ W5's load route was the first real test of them, and takes all of them (W5).
 rendering rule, the error path, the keybinding, the load offer that replaced the dead-end line, the thinking split,
 regenerate/edit/delete, the context meter, conversation storage, generated titles) · `internal/serveapp/openai.go:792` (`contextWindow`) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
-`internal/serveapp/openai.go:437` (the sampling fields the page never sends) ·
+`internal/serveapp/openai.go:445` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
 markdown TODO, the tool chips — all transplantable) ·

@@ -32,6 +32,13 @@ const (
 	// reason. 64 MiB covers a realistic maximal RAG batch (2048 inputs × ~32 KiB) while still
 	// bounding the read. -max-body-bytes overrides it like the others.
 	maxEmbedBodyBytes = 64 << 20 // 64 MiB
+	// maxBatchFileBytes is POST /v1/files' own floor (J4, task-work-queue-2026-09.md) — independent
+	// of the other three the same way maxEmbedBodyBytes is (see its own comment): a batch input
+	// file's size scales with LINE COUNT, not with any one decoder's context window, so a
+	// textCap-derived cap would be measuring the wrong thing. 64 MiB covers a realistic batch
+	// (thousands of chat-sized lines) while still bounding the read. -max-body-bytes overrides it
+	// like the others.
+	maxBatchFileBytes = 64 << 20 // 64 MiB
 )
 
 // maxBytes wraps a handler so its request body is bounded to n bytes (n <= 0 disables).

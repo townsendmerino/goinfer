@@ -1,15 +1,15 @@
 # Task: goinfer as a work queue — admission, jobs, batch APIs (J1–J9) — 2026-09
 
-> **Status: J0/J1/J2/J3 DONE 2026-09-14 (J3 text-chat scope only), J4–J9 unstarted.** This doc was
-> first written 2026-09-12 and was never committed. It was deleted the next morning by a
+> **Status: J0/J1/J2/J3/J4 DONE 2026-09-15 (J3/J4 text-chat scope only), J5–J9 unstarted.** This
+> doc was first written 2026-09-12 and was never committed. It was deleted the next morning by a
 > workaround, not by a decision — see "How this doc was lost" below, which is kept because the
 > failure is structural and the fix was J0. The rebuild is faithful to the J1–J9 scope as filed,
 > the prose re-derived from the tree at `9d29d625`, so every citation here was re-verified rather
 > than carried over.
 >
-> J4/J5 need J3's HTTP surface (now built) but add real surface area of their own (two full batch
-> API dialects); J6/J8 each need hours of real benchmarking against a pre-registered pass/kill
-> band, out of scope for any of this. All three remain fully open.
+> J5 needs J4's line format but is otherwise independent (a local CLI runner, no server); J6/J8
+> each need hours of real benchmarking against a pre-registered pass/kill band, out of scope for
+> any of this. All three remain fully open.
 >
 > Sibling: [`task-halt-2026-09.md`](task-halt-2026-09.md) (K1–K9) — this doc **reuses** K1 (cancel
 > by id), K2 (global halt), K4 (budgets) and K5 (the admin socket) rather than restating them, and
@@ -99,9 +99,9 @@ Not rebuilt below; this is the floor J1–J9 build on.
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:507`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
-  (`internal/serveapp/helpers.go:77`).
+  (`internal/serveapp/helpers.go:84`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1107`). The client's connection *is* the job: close it and the
+  (`internal/serveapp/openai.go:1115`). The client's connection *is* the job: close it and the
   work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
@@ -282,6 +282,78 @@ batch APIs, over this same store) and J6–J9 remain open.
 - Gate: an off-the-shelf OpenAI SDK batch round-trip completes against `serve` with no goinfer
   knowledge, and the result file's `custom_id` ordering matches the input.
 
+**Status: DONE 2026-09-15** (`main`), text-only scope — see "not built" below. Both dialects reduce
+to the same three parts, all new: `internal/serveapp/files.go` (OpenAI's file store — write-once,
+so unlike `job` it needs no `snapshot`-style copy to read race-free), `internal/serveapp/batches.go`
+(`batchStore`/`batchRecord`, mirroring `jobStore`'s own FIFO-skip-a-live-one eviction shape almost
+verbatim), `internal/serveapp/batches_run.go` (`runBatchChatLine`/`runBatchMessageLine`, one
+goroutine per line), `internal/serveapp/batches_finalize.go` (`finalizeBatch`, assembling the
+output once every line is terminal), `internal/serveapp/batches_http.go` (the ten new routes).
+
+**No second execution path, literally**: every line calls the exact same `lm.tryEnter`/`lm.drive`
+pair every other surface calls, with the SAME `jobStore.createPending`/`setCancel`/`finish`
+bookkeeping `runJob` (J3) already established — a batch line IS a job, so it gets restart-journal
+durability and K1 cancel-by-id for free. What's new is bookkeeping *around* that call, not a second
+way to run it: a `sync.WaitGroup` on each `batchRecord` (`Add(n)` at creation, one `Done()` per
+line as its own last act) replaces polling — `finalizeBatch`'s only job is `wg.Wait()` then
+assemble. `POST .../cancel` calls `jobStore.cancel` for every constituent job, exactly what
+`DELETE /v1/jobs/{id}` already does one at a time.
+
+Deliberately does **not** call `handleCreateJob`/`serveMessagesWith` — both are tied to writing an
+`http.ResponseWriter` mid-body, and making either callable headless risked regressing J3's/the
+Anthropic surface's own tested synchronous paths for a one-time win. Reuses every *expensive*
+helper they call (`lm.prepare`, `lm.tryEnter`, `lm.drive`, `anthropicTurns`, `anthropicStopReason`,
+`textBlock`) and duplicates only the thin (~15-line) validation sequence — the same shape
+openai.go and anthropic.go already independently carry for their own two synchronous surfaces, not
+a new pattern this adds.
+
+`jobResult` (`job.go`) gained one field, `StopSeq string`, set from `drive`'s own `stopHitOut`
+named return in its existing job-finish block — needed so a batch's Anthropic line can call the
+*exact* `anthropicStopReason(finish, stopSeq)` helper `serveMessagesWith` already uses, instead of
+losing "which stop sequence matched" fidelity. `json:"-"`: invisible to `GET /v1/jobs/{id}`'s
+existing response shape, a no-op for every OpenAI-originated job, which never reads it.
+
+Found by `-race`, not by inspection — the same class of bug J3's own `jobStore` hit, in a new
+place: `batchRecord.JobIDs` is written by each line's own goroutine (`setJobID`, disjoint indices)
+and read WHOLESALE by `requestCancel` (cancel reaching every constituent job) from a different
+goroutine. Disjoint-index writes don't save a plain slice from racing a concurrent read of its
+backing array with no synchronization between them — caught on the very first real-checkpoint run
+of `TestBatches_cancelStopsQueuedLines`. Fixed by writing `JobIDs[i]` under `batchRecord.mu`
+(`setJobID`) and copying the slice under the same lock before `requestCancel` ranges over it.
+`Results[i]` was written under the lock from the start this time (same reasoning stated up front
+in `batchRecord`'s own doc comment) rather than finding the identical defect a second time in the
+same file.
+
+Verified: unit tests for `fileStore`/`batchStore` CRUD, FIFO eviction (mutation-checked: the
+`batchStore` live-skip test was confirmed red — nothing evicted at all — against a deliberately
+broken `evictLocked`, then restored), `requestCancel`'s idempotence on an already-terminal batch,
+and `assembleOpenAIOutput`'s success/error JSONL split preserving `custom_id` order. Real-checkpoint
+(`GOINFER_SERVE_MODEL`): `TestBatches_openAIRoundTrip` (a 2-line input file — one plain, one
+requesting an image — through `POST /v1/files` → `POST /v1/batches` → poll → `GET
+.../content`, asserting the good line's `response.body` matches an uninterrupted
+`/v1/chat/completions` call of the same seed, and the bad line lands in the error file without
+failing the batch), `TestBatches_anthropicRoundTrip` (the inline-request twin, one line missing
+`max_tokens`, polled to `"ended"`, read from the dedicated `.../results` endpoint — no file store
+involved on this side, matching the real API's own shape), and
+`TestBatches_cancelStopsQueuedLines` (mirrors `TestJobs_deleteCancelsAQueuedJob`: a batch queued
+behind a long holder job, cancelled, both lines land as errored/cancelled rather than completing).
+All three pass under `-race`. No regression to J1–J3's own real-checkpoint gates
+(`TestServe_backpressure`, `TestServe_haltUnderLoad`, `TestJobs_submitPollReattachMatchesSyncRun`,
+`TestJobs_deleteCancelsAQueuedJob`), and the full `go test ./...` across every module is green.
+
+**Not built this pass:** vision and tool-calling batch lines (matches J3's own scope line, same
+reason); OpenAI batch endpoints other than `/v1/chat/completions` (`/v1/embeddings`,
+`/v1/completions`, `/v1/responses` — the real API supports all four; a line asking for a
+different `endpoint` is a clean 400 naming the one this pass supports, not a silent
+mistranslation); `completion_window`/batch-expiry enforcement (accepted and echoed, never
+enforced, as this section's own bullet says up front); `DELETE /v1/files/{id}` (not needed by the
+round-trip gate, not named in this section's own route list); a literal openai-python/
+anthropic-python SDK-driven gate (K1's "verified live against the official SDKs" note,
+`task-halt-2026-09.md`, was a manual one-off check — this repo's actual enforced gates are
+Go-native real-checkpoint tests throughout J1–J4; the gate here is a Go `multipart.Writer`/
+`http.Client` round trip built to match the documented wire shapes field-for-field instead). J5–J9
+remain open.
+
 ## J5 — `goinfer-chat -batch in.jsonl -o out.jsonl`
 
 - A resumable local runner sharing J4's line format exactly, so a file is interchangeable between
@@ -354,7 +426,7 @@ The only throughput item, and it is deliberately last.
 ## Sources
 
 `internal/serveapp/openai.go:94`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
-check, `drive`) · `internal/serveapp/helpers.go:77` (`-max-inflight`, distinct from the per-model
+check, `drive`) · `internal/serveapp/helpers.go:84` (`-max-inflight`, distinct from the per-model
 429) · `internal/serveapp/main.go:502`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:507` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
