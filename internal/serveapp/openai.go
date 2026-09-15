@@ -425,6 +425,11 @@ func (s *server) pathFields(name string) map[string]any {
 		"decode_path":     lm.model.DecodePath(),
 		"prefill_batched": batched,
 		"prefill_path":    why,
+		// W32: quant and resident size, so the web UI's Models tab can list what's actually
+		// resident (and show a free-able size on an Unload button) from the one request it
+		// already makes, rather than a second web-only route just to ask the registry twice.
+		"quant":          lm.model.Quant(),
+		"resident_bytes": lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes(),
 	}
 	// W8: the context window a TEXT chat request is held to — the same residentPath the text routes
 	// pass prepare (lm.adapter == ""). Vision requests are bounded by MaxPositions instead, which is

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/pull"
 )
 
@@ -434,7 +435,7 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 		case res := <-doneCh:
 			switch {
 			case res.err != nil:
-				send("error", map[string]any{"message": res.err.Error(), "status": http.StatusBadRequest})
+				send("error", map[string]any{"message": res.err.Error() + s.unloadSuggestion(res.err), "status": http.StatusBadRequest})
 			case !s.publishLoaded(res.lm):
 				send("error", map[string]any{"message": fmt.Sprintf("model %q already loaded", name), "status": http.StatusConflict})
 			default:
@@ -443,6 +444,68 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+type webUnloadReq struct {
+	Name string `json:"name"`
+}
+
+// unloadSuggestion turns a fit-guard refusal into an actionable one (W32, task-web-ui-2026-09.md
+// bullet 6): the decoder package that raised it has no view of the registry, so it can only say the
+// shortfall; the registry is what can name a way out. Returns "" for any other kind of error, or
+// when nothing is resident to suggest freeing (a fresh server's first load is a real refusal with no
+// fix on this page — the message should not imply one exists).
+func (s *server) unloadSuggestion(err error) string {
+	if !errors.Is(err, decoder.ErrWontFitResident) {
+		return ""
+	}
+	s.regMu.RLock()
+	var biggest string
+	var biggestBytes int64
+	for name, lm := range s.models {
+		if lm.model == nil {
+			continue
+		}
+		b := lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes()
+		if b > biggestBytes {
+			biggest, biggestBytes = name, b
+		}
+	}
+	s.regMu.RUnlock()
+	if biggest == "" {
+		return ""
+	}
+	// Prose, not a line break: the caller appends this straight onto res.err.Error(), which the page
+	// renders as plain textContent with no white-space:pre-line — a literal "\n" would just collapse
+	// to a space, so the sentence has to read correctly either way.
+	return fmt.Sprintf(" Unload %q (%.1f GB) to make room.", biggest, float64(biggestBytes)/(1<<30))
+}
+
+// handleWebUnload is W32 (task-web-ui-2026-09.md): unload a model the page itself can already see.
+//
+// UNLIKE LOAD, THIS NEEDS NO PATH POLICY AT ALL. webLoadPath exists because a load names a
+// filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
+// registry key, and the only registry keys that exist are the ones GET /v1/models already publishes
+// to every client. s.models[req.Name] under regMu — the same lookup unloadByName does internally —
+// IS the whole policy: a name not currently loaded is a 404, exactly as if the page had asked to
+// cancel a job id it never held (W27/W31's rule, applied here to a different registry). No new
+// containment logic, no -allow-admin, no widening of the admin surface: unloadByName is the same
+// function the admin route calls, so a model unloaded from the page drains exactly the way one
+// unloaded through /admin does.
+func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {
+	if !s.webEnabled(w) {
+		return
+	}
+	var req webUnloadReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	status, body, ok := s.unloadByName(req.Name, s.cfg.unloadDrainWait)
+	if !ok {
+		s.modelNotFound(w, req.Name)
+		return
+	}
+	writeJSON(w, status, body)
 }
 
 // webLoadDecoder is loadDecoder, as a seam: the tests need a load that blocks until told to finish,

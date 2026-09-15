@@ -211,46 +211,58 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 // via withModel (spanning the preamble and the generation), and unload waits that lock out before
 // closing. See docs/completed/task-admin-unload-drain.md and the reciprocal note at resident.Close.
 //
-// Two phases. Phase 1 (here, under regMu): unpublish the entry and decide last-ownership —
-// delete-before-decide, so two concurrent sibling unloads cannot both decline (releaseLocked). Phase
-// 2 (startDrain, detached): drain in-flight holders, checkpoint the settled KV, close the entry's
-// private natives, close the shared model iff last owner. The response is a bounded wait: 200
-// (freed) if the drain completes within -unload-drain-wait, else 202 with the drain continuing
-// detached — the model is unroutable immediately either way, and /health lists what is still
-// draining. ?wait=false skips straight to 202. (This replaces the old 409-busy, which was only ever
-// safe because it never freed anything.)
+// Two phases, in unloadByName below (shared with the web route, W32 — task-web-ui-2026-09.md).
+// Phase 1 (under regMu): unpublish the entry and decide last-ownership — delete-before-decide, so
+// two concurrent sibling unloads cannot both decline (releaseLocked). Phase 2 (startDrain, detached):
+// drain in-flight holders, checkpoint the settled KV, close the entry's private natives, close the
+// shared model iff last owner. The response is a bounded wait: 200 (freed) if the drain completes
+// within -unload-drain-wait, else 202 with the drain continuing detached — the model is unroutable
+// immediately either way, and /health lists what is still draining. ?wait=false skips straight to
+// 202. (This replaces the old 409-busy, which was only ever safe because it never freed anything.)
 func (s *server) handleAdminUnload(w http.ResponseWriter, r *http.Request) {
 	var req adminUnloadReq
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	s.regMu.Lock()
-	lm, ok := s.models[req.Name]
-	if !ok {
-		s.regMu.Unlock()
-		s.modelNotFound(w, req.Name)
-		return
-	}
-	delete(s.models, req.Name)            // unpublish: no new request can resolve it
-	ml, last := s.releaseLocked(lm.model) // decrement refs + last-owner decision (delete-before-decide)
-	s.regMu.Unlock()
-
-	// Detached drain-and-close: waits out in-flight holders, checkpoints KV, frees native memory.
-	// It owns the free and runs to completion regardless of this request (a disconnected admin
-	// client must not orphan the model) and regardless of shutdown (bare goroutine, never joined).
-	done := s.startDrain(lm, ml, last)
-
 	wait := s.cfg.unloadDrainWait
 	if r.URL.Query().Get("wait") == "false" {
 		wait = 0
 	}
+	status, body, ok := s.unloadByName(req.Name, wait)
+	if !ok {
+		s.modelNotFound(w, req.Name)
+		return
+	}
+	writeJSON(w, status, body)
+}
+
+// unloadByName is handleAdminUnload's two phases (see its own doc comment for the drain design),
+// shared with the web route (webui.go) so a model unloaded from the page is unpublished and drained
+// exactly the same way as one unloaded through /admin — the only difference between the two routes
+// is which names a caller is allowed to name, not what happens once one is accepted.
+func (s *server) unloadByName(name string, wait time.Duration) (status int, body map[string]any, ok bool) {
+	s.regMu.Lock()
+	lm, found := s.models[name]
+	if !found {
+		s.regMu.Unlock()
+		return 0, nil, false
+	}
+	delete(s.models, name)                // unpublish: no new request can resolve it
+	ml, last := s.releaseLocked(lm.model) // decrement refs + last-owner decision (delete-before-decide)
+	s.regMu.Unlock()
+
+	// Detached drain-and-close: waits out in-flight holders, checkpoints KV, frees native memory.
+	// It owns the free and runs to completion regardless of this request (a disconnected caller
+	// must not orphan the model) and regardless of shutdown (bare goroutine, never joined).
+	done := s.startDrain(lm, ml, last)
+
 	select {
 	case <-done:
-		writeJSON(w, http.StatusOK, map[string]any{"id": req.Name, "status": "unloaded", "freed": last})
+		return http.StatusOK, map[string]any{"id": name, "status": "unloaded", "freed": last}, true
 	case <-time.After(wait):
-		writeJSON(w, http.StatusAccepted, map[string]any{
-			"id": req.Name, "status": "unloading", "freed": false,
+		return http.StatusAccepted, map[string]any{
+			"id": name, "status": "unloading", "freed": false,
 			"note": "native memory is released as in-flight requests finish; poll GET /health (draining) until this model no longer appears",
-		})
+		}, true
 	}
 }

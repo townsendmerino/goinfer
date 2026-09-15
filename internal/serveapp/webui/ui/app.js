@@ -195,11 +195,75 @@ async function loadModels(pick) {
     }
     if (models.some(m => m.id === keep)) sel.value = keep;
     showStats();
+    renderResidentModels();   // W32
   } catch (e) {
     $("stats").textContent = e.message;
   }
 }
-$("model").addEventListener("change", showStats);
+$("model").addEventListener("change", () => { showStats(); renderResidentModels(); });
+
+// --- resident models + unload (W32) -----------------------------------------------------------
+// "The Models tab lists what is resident" — the same /v1/models the dropdown already reads, filtered
+// to entries with a decoder (an embedding-only entry has no decode_path and nothing to unload). Each
+// row gets an Unload button naming the size it would free, so the load-until-the-machine-is-full
+// dead end (W5 shipped only the loading half) has a way back.
+function humanGB(bytes) {
+  return Number.isFinite(bytes) && bytes > 0 ? (bytes / (1 << 30)).toFixed(1) + " GB" : "";
+}
+function renderResidentModels() {
+  const ul = $("resident-list");
+  ul.textContent = "";
+  const real = models.filter(m => typeof m.decode_path === "string");
+  $("resident-card").hidden = real.length === 0;
+  const current = $("model").value;
+  for (const m of real) {
+    const li = document.createElement("li");
+    li.className = "resident-item";
+    const name = document.createElement("span");
+    name.className = "resident-name";
+    name.textContent = m.id + (m.id === current ? " — in Chat" : "");
+    const meta = document.createElement("span");
+    meta.className = "note";
+    const size = humanGB(m.resident_bytes);
+    meta.textContent = [m.quant, m.decode_path, size].filter(x => typeof x === "string" && x).join(" · ");
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "ambient amb-surface amb-rounded resident-unload";
+    btn.textContent = size ? "Unload (" + size + ")" : "Unload";
+    btn.onclick = () => unloadModel(m.id, li, btn);
+    li.append(name, meta, btn);
+    ul.appendChild(li);
+  }
+}
+async function unloadModel(name, li, btn) {
+  // Mid-generation is only knowable for THIS tab's own request; another client's in-flight turn on
+  // the same model is invisible here, so the generic wording states the guarantee rather than
+  // claiming to know what is running elsewhere.
+  const msg = generating && generating.model === name
+    ? "Unload " + name + "? Your current reply will finish first; nothing new will be sent to it after that."
+    : "Unload " + name + "? A request already in flight elsewhere will finish; nothing new will route to it until it is loaded again.";
+  if (!confirm(msg)) return;
+  btn.disabled = true;
+  const note = document.createElement("span"); note.className = "note resident-note";
+  li.appendChild(note);
+  note.textContent = "unloading…";
+  try {
+    const r = await fetch("/web/models/unload", {method: "POST", headers: headers(), body: JSON.stringify({name})});
+    const j = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((j && j.error && j.error.message) || "HTTP " + r.status);
+    // A spinner that resolved here on a 202 would be lying (task-web-ui-2026-09.md W32): the model is
+    // already unroutable either way, but native memory is only DEFINITELY freed on freed:true.
+    note.textContent = j.status === "unloading" ? "unloading — finishing an in-flight request; its memory frees as that completes"
+      : j.freed ? "unloaded — memory freed" : "unloaded — its memory is shared with another loaded entry, so it was not freed";
+  } catch (e) {
+    note.textContent = String(e.message || e);
+    btn.disabled = false;
+    return;
+  }
+  // No explicit pick: if this was the selected model, it is no longer in the fresh list, so
+  // loadModels's own "keep the current selection only if it still exists" guard falls through to
+  // whatever the rebuilt <select> defaults to — there is nothing sensible to ask it to keep instead.
+  await loadModels();
+}
 
 // --- images (W11) -------------------------------------------------------------------------
 // Attach one image to the next message — Attach button, drop, or paste — on a model whose /v1/models

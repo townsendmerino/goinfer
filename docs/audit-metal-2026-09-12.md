@@ -805,7 +805,7 @@ re-baked by the code it checks (G-04).
 ### D. Cross-repo and unassessed
 
 #### M-15 · On a Metal box every image turn runs the vision tower on the CPU, and aikit's Metal tower cannot be wired as a win until three shapes change (aikit M-14/M-09/M-10 Metal halves)
-- **Where:** `internal/serveapp/main.go:1026-992` (`EnableResident` only for `webgpu`; nothing imports
+- **Where:** `internal/serveapp/main.go:1030-992` (`EnableResident` only for `webgpu`; nothing imports
   `visionmetal`/`qwenmetal`); aikit `metal_vit.go:168-221` (attention: one threadgroup per
   (head, query), re-streams K and V per query — no query tile; score lanes 4,608 B apart; PV keeps
   hd=72 of 256 lanes busy), `:397-420` (`gemm_w8a8_tiled`: one output per thread, byte-granular

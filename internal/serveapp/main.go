@@ -722,6 +722,10 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		// regular .gguf files under the pull cache (webLoadPath), and gets the same stack as pull:
 		// it is at least as heavy an action. Not in inf() either, for the pull's reason.
 		mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebLoad))))
+		// W32 (task-web-ui-2026-09.md): unload a currently-loaded model. Needs no path policy the way
+		// load does — the only names it can act on are ones GET /v1/models already publishes — so it
+		// reuses unloadByName directly rather than gating a new admin surface. Same stack as load.
+		mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWebUnload))))
 	}
 
 	// K5 (docs/tasks/task-halt-2026-09.md): the admin socket. closeAdminSock is a no-op when

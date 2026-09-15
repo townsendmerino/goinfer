@@ -23,9 +23,10 @@ import (
 func TestWebUI_disabledByDefault(t *testing.T) {
 	s := &server{cfg: config{web: false}}
 	for name, h := range map[string]http.HandlerFunc{
-		"list": s.handleWebList,
-		"pull": s.handleWebPull,
-		"load": s.handleWebLoad,
+		"list":   s.handleWebList,
+		"pull":   s.handleWebPull,
+		"load":   s.handleWebLoad,
+		"unload": s.handleWebUnload,
 	} {
 		w := httptest.NewRecorder()
 		h(w, httptest.NewRequest(http.MethodPost, "/web/models/"+name, strings.NewReader(`{"repo":"a/b","quant":"q4_k_m"}`)))
@@ -554,7 +555,7 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	var listFound, pullFound, loadFound, listSO, pullSO, loadSO bool
+	var listFound, pullFound, loadFound, unloadFound, listSO, pullSO, loadSO, unloadSO bool
 	ast.Inspect(af, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -585,11 +586,14 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 		case `"POST /web/models/load"`:
 			loadFound = true
 			loadSO = isSameOrigin
+		case `"POST /web/models/unload"`:
+			unloadFound = true
+			unloadSO = isSameOrigin
 		}
 		return true
 	})
-	if !listFound || !pullFound || !loadFound {
-		t.Fatalf("route(s) not found (list=%v pull=%v load=%v) — this guard is watching nothing", listFound, pullFound, loadFound)
+	if !listFound || !pullFound || !loadFound || !unloadFound {
+		t.Fatalf("route(s) not found (list=%v pull=%v load=%v unload=%v) — this guard is watching nothing", listFound, pullFound, loadFound, unloadFound)
 	}
 	if !loadSO {
 		t.Error("POST /web/models/load is not wrapped in sameOrigin(...) — a cross-origin POST could " +
@@ -602,5 +606,9 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 	if !pullSO {
 		t.Error("POST /web/models/pull is not wrapped in sameOrigin(...) — a cross-origin POST " +
 			"could start a caller-named multi-GB download on the key-free loopback default (V-20)")
+	}
+	if !unloadSO {
+		t.Error("POST /web/models/unload is not wrapped in sameOrigin(...) — a cross-origin POST " +
+			"could free a resident model on the key-free loopback default (V-20), W32")
 	}
 }

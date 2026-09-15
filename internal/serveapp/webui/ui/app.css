@@ -1634,6 +1634,15 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .chat-list button[disabled],#chat-list button[disabled]{opacity:.45;cursor:default}
 .chat-rename-box{flex:1;min-width:0;font:inherit;font-size:13px;padding:4px 8px}
 
+/* W32: resident models list (Models tab) */
+#resident-list{list-style:none;margin:0;padding:0}
+.resident-item{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--gi-ink) 8%,transparent)}
+.resident-item:last-child{border-bottom:none}
+.resident-name{font-weight:600;font-size:13px;color:var(--gi-ink)}
+.resident-item .note{flex:1;min-width:120px}
+.resident-unload{font-size:12px;padding:5px 10px;white-space:nowrap}
+.resident-note{flex-basis:100%;order:3}
+
 /* W10: sampling controls */
 .sampling-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:8px 0 10px}
 .sampling-grid input{width:100%;box-sizing:border-box}
@@ -1688,7 +1697,7 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
    buttons at 21 px, the System prompt / Sampling toggles at 20 px). Desktop with a mouse keeps its density. */
 @media (max-width: 600px), (pointer: coarse){
   .actions button,.md-copy,.chats-export button,.chat-rename,.chat-delete,.chat-cancel-job,.attach-preview button,
-  .err-actions button,.edit-row button,.theme-pick select{min-height:32px}
+  .err-actions button,.edit-row button,.theme-pick select,.resident-unload{min-height:32px}
   /* padding, not display:flex — a flex <summary> loses its disclosure triangle */
   details.system summary,details.think summary{padding-block:7px}
   .chat-open{min-height:36px}

@@ -2272,6 +2272,102 @@ const phase38 = phase(W27_PRELUDE + String.raw`
   check("W31 a job id that turned hostile between render and click is refused, never requested", calls.length === 0, JSON.stringify(calls));
 `);
 
+// ---- phase 39: W32 — the Models tab lists what is resident, with an Unload per row -----------------
+const phase39 = phase(String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  tab("models");
+  const GATE_MODEL = { id: "gate-model", object: "model", decode_path: "cuda-resident (int4)", prefill_batched: true, prefill_path: "batched", quant: "int8int8", resident_bytes: 4_500_000_000, vision: false };
+  const EMBED_MODEL = { id: "embed-model", object: "model" };   // no decode_path: never listed as resident
+  const calls = [];
+  const serveModels = list => { window.fetch = async (url, opts) => { calls.push((opts && opts.method || "GET") + " " + url); if (url === "/v1/models") return new Response(JSON.stringify({ object: "list", data: list }), { status: 200 }); return new Response("{}", { status: 200 }); }; };
+
+  serveModels([GATE_MODEL, EMBED_MODEL]);
+  await loadModels();
+  check("W32 the resident list shows only entries with a decoder, not the embedding-only one", $("resident-list").children.length === 1 && !$("resident-card").hidden, $("resident-list").textContent);
+  const row = () => $("resident-list").children[0];
+  check("W32 a row names the model (marked as the one in Chat), its quant, decode path and resident size", row().querySelector(".resident-name").textContent === "gate-model — in Chat" && /int8int8/.test(row().querySelector(".note").textContent) && /cuda-resident \(int4\)/.test(row().querySelector(".note").textContent) && /4\.2 GB/.test(row().querySelector(".note").textContent), row().textContent);
+  check("W32 the Unload button names the same free-able size", row().querySelector(".resident-unload").textContent === "Unload (4.2 GB)", row().querySelector(".resident-unload").textContent);
+
+  // declining the confirm sends nothing; the wording states the general guarantee, since another
+  // client's in-flight work on this model is invisible to this page. unloadModel is invoked through
+  // its own onclick, not a synthetic .click(), so each scenario's promise can be awaited directly —
+  // a real event-dispatch .click() gives no handle back, and the confusable "unloading…" placeholder
+  // this button sets before its own fetch resolves is otherwise indistinguishable from a settled one.
+  let confirmMsg = "";
+  window.confirm = m => { confirmMsg = m; return false; };
+  calls.length = 0;
+  await row().querySelector(".resident-unload").onclick();
+  check("W32 declining the confirm sends nothing", calls.filter(c => c.startsWith("POST /web/models/unload")).length === 0, JSON.stringify(calls));
+  check("W32 the confirm states the drain guarantee, not a claim about what is running elsewhere", /in flight elsewhere will finish/.test(confirmMsg), confirmMsg);
+
+  // this page's OWN active reply on the model gets the specific wording instead
+  generating = { model: "gate-model" };
+  await row().querySelector(".resident-unload").onclick();
+  check("W32 unloading the model you are mid-reply on warns about YOUR reply specifically", /Your current reply will finish first/.test(confirmMsg), confirmMsg);
+  generating = null;
+
+  // accepted, freed:true — the row disappears (refreshed from the real, now-shorter /v1/models)
+  window.confirm = () => true;
+  calls.length = 0;
+  window.fetch = async (url, opts) => {
+    calls.push((opts && opts.method || "GET") + " " + url);
+    if (url === "/web/models/unload") { window.__lastUnload = JSON.parse(opts.body); return new Response(JSON.stringify({ id: "gate-model", status: "unloaded", freed: true }), { status: 200 }); }
+    if (url === "/v1/models") return new Response(JSON.stringify({ object: "list", data: [EMBED_MODEL] }), { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  await row().querySelector(".resident-unload").onclick();
+  check("W32 Unload posts exactly the row's own name", window.__lastUnload && window.__lastUnload.name === "gate-model", JSON.stringify(window.__lastUnload));
+  check("W32 a freed unload refreshes the list from the real /v1/models — the row is gone", $("resident-card").hidden && $("resident-list").children.length === 0, $("resident-list").textContent);
+
+  // accepted, freed:false — unloaded (unrouted) but shared with a sibling, so memory was not freed.
+  // Captured from the TEST's own fetch stub, at the instant unloadModel's own follow-up GET
+  // /v1/models fires: by then note.textContent already holds the final text (it is set before that
+  // call), but a moment later renderResidentModels rebuilds the list and the note element is gone —
+  // there is no later, safer point to read it from outside app.js itself.
+  serveModels([GATE_MODEL, EMBED_MODEL]);
+  await loadModels();
+  window.fetch = async (url, opts) => {
+    if (url === "/web/models/unload") return new Response(JSON.stringify({ id: "gate-model", status: "unloaded", freed: false }), { status: 200 });
+    if (url === "/v1/models") {
+      window.__capturedNote = $("resident-list").querySelector(".resident-note")?.textContent || "";
+      return new Response(JSON.stringify({ object: "list", data: [EMBED_MODEL] }), { status: 200 });
+    }
+    return new Response("{}", { status: 200 });
+  };
+  await row().querySelector(".resident-unload").onclick();
+  check("W32 'unloaded' is not 'freed': a shared model says its memory was not freed", /not freed/.test(window.__capturedNote), window.__capturedNote);
+
+  // 202 — the drain is still running; the page must not pretend it already finished
+  serveModels([GATE_MODEL, EMBED_MODEL]);
+  await loadModels();
+  window.fetch = async (url, opts) => {
+    if (url === "/web/models/unload") return new Response(JSON.stringify({ id: "gate-model", status: "unloading", freed: false }), { status: 202 });
+    if (url === "/v1/models") {
+      window.__capturedNote = $("resident-list").querySelector(".resident-note")?.textContent || "";
+      return new Response(JSON.stringify({ object: "list", data: [EMBED_MODEL] }), { status: 200 });
+    }
+    return new Response("{}", { status: 200 });
+  };
+  await row().querySelector(".resident-unload").onclick();
+  check("W32 a 202 says it is still draining — no spinner that resolves as if it were already done", /unloading/.test(window.__capturedNote) && /in-flight/.test(window.__capturedNote), window.__capturedNote);
+
+  // an unload failure leaves the row usable, not silently dropped
+  serveModels([GATE_MODEL, EMBED_MODEL]);
+  await loadModels();
+  window.fetch = async (url) => {
+    if (url === "/web/models/unload") return new Response(JSON.stringify({ error: { message: "model not found" } }), { status: 404 });
+    if (url === "/v1/models") return new Response(JSON.stringify({ object: "list", data: [GATE_MODEL, EMBED_MODEL] }), { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  await row().querySelector(".resident-unload").onclick();
+  check("W32 a failed unload shows the server's reason and re-enables the button, without touching the list", /model not found/.test(row().querySelector(".resident-note")?.textContent || "") && !row().querySelector(".resident-unload").disabled && $("resident-list").children.length === 1, row().querySelector(".resident-note")?.textContent);
+
+  // no decoder anywhere: no card, nothing to unload
+  serveModels([EMBED_MODEL]);
+  await loadModels();
+  check("W32 no resident card when nothing has a decoder", $("resident-card").hidden, $("resident-card").hidden);
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2284,7 +2380,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

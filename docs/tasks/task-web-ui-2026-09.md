@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27–W31 all DONE 2026-09-15, W32 next.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27–W32 all DONE 2026-09-15. Tier C is what remains.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -19,12 +19,12 @@
 
 ## 0. What exists today
 
-The page is **a small embedded directory** — `//go:embed webui` (`internal/serveapp/webui.go:50`):
+The page is **a small embedded directory** — `//go:embed webui` (`internal/serveapp/webui.go:51`):
 `index.html` plus `ui/app.css` and `ui/app.js`, hand-written HTML, CSS and vanilla JS, no build
 step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
 records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
 offline-capable engine require the network. It is off by default behind `-web`
-(`internal/serveapp/webui.go:458`), and it is a client of the same `/v1` routes any other client
+(`internal/serveapp/webui.go:521`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
 Two tabs (`internal/serveapp/webui/index.html:13`):
@@ -190,7 +190,7 @@ stats now follow whichever model is selected, not always the first one listed.
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
 (`internal/serveapp/main.go:724`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
-(`webLoadPath`, `internal/serveapp/webui.go:321`). Symlinks are resolved on both the path and the
+(`webLoadPath`, `internal/serveapp/webui.go:322`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
 `../` nor a symlink planted in the cache can point the loader outside it. The suffix check also
 rejects a half-finished `.part` download. The page can load what it pulled, and nothing else.
@@ -324,7 +324,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:816`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:821`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -630,7 +630,7 @@ system prompt adds every other sampling field `/v1/chat/completions` accepts: `t
 Temperature and max tokens stay in the top row.
 
 **A correction to what this row used to say:** it listed `logit_bias` among the fields the route
-accepts. It does not. The request struct (`internal/serveapp/openai.go:451`) has no such field. The
+accepts. It does not. The request struct (`internal/serveapp/openai.go:456`) has no such field. The
 sampler supports `LogitBias`, `MinP` and `RepeatPenalty`, but the HTTP route exposes none of them, so
 W10 covers what the route actually takes. Exposing the other three is a server item of its own.
 
@@ -1018,63 +1018,81 @@ leaking into a later, unrelated send within the same phase) was a defect in the 
 not the page — caught before it could produce a false pass.
 **Effort was: S** (small once W27/W29 existed to build it on).
 
-### W32 — Unload a model, and see what is resident
+### W32 — Unload a model, and see what is resident — DONE 2026-09-15
 
-**W5 shipped half a door.** `handleWebLoad` *adds* a model: it returns 409 only when a model of the
-same name is already loaded (`internal/serveapp/webui.go:376`) and otherwise registers a new one
-alongside, so the dropdown accumulates. The fit guard prices against currently *available* memory
-(`decoder/fitguard.go:53`, `hostRAMAvailable` — R13's fix), so a second model that does not fit is
-refused cleanly rather than swapping the machine to death. But a clean refusal is the only outcome
-available: nothing on the page can free the first model to make room. Load until the machine is
-full, then restart the server. On a 16 GB Mac — the machine this product is aimed at — that is the
-common case, not the edge.
+**W5 shipped half a door.** ~~nothing on the page can free the first model to make room~~ — a
+`POST /web/models/unload` route now exists over `unloadByName`
+(`internal/serveapp/admin.go:243`), the two-phase unpublish-then-drain `handleAdminUnload` already
+did (unpublish under `regMu`, drain-and-close detached) — pulled out into its own function
+specifically so the web route and the admin route share it verbatim, rather than the page getting a
+second, parallel implementation of the same use-after-free-avoiding logic.
 
-The server has done this properly for a while: `POST /admin/models/unload`
-(`internal/serveapp/admin.go:86`, `:222`) unpublishes the entry immediately, then drains in-flight
-holders on a detached goroutine before freeing native memory (`docs/completed/task-admin-unload-drain.md`).
+**No path policy needed here, unlike load.** `webLoadPath` (W5) exists because a load names a
+filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
+registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
+client. `handleWebUnload` (`internal/serveapp/webui.go:495`) is `sameOrigin(auth(...))` behind
+`-web` — W5's exact gate stack (`internal/serveapp/main.go:728`) — with `s.models[req.Name]` under
+`regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
+as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
+(`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/serveapp/webui_test.go`) were both
+extended to this route rather than left to trust it by resemblance.
 
-**What to build:**
+**The Models tab now lists what is resident** (`renderResidentModels`,
+`internal/serveapp/webui/ui/app.js:213`) — filtered to entries with a decoder (an embedding-only
+entry has nothing to unload) — showing quant, decode path and resident size per row, and marking
+whichever one Chat is pointed at. `quant` and `resident_bytes` are new fields on `pathFields`
+(`internal/serveapp/openai.go:431`), the one function `/v1/models` and `/health` already share, so
+both surfaces gained them for free rather than the page needing a second, web-only request just to
+ask the registry twice. Each row's **Unload** button names its own free-able size.
 
-1. **The Models tab lists what is resident** — name, quant, backend, resident bytes, and which one
-   the Chat tab is pointed at. Today the dropdown is the only view of this, and it shows names only.
-2. **An unload button per row**, with the free-able size on it.
-3. **Surface the drain; do not pretend unload is instant.** 200 means freed within
-   `-unload-drain-wait`, 202 means the drain is still running and the model is already unroutable.
-   `/health` lists what is still draining, so `?wait=false` plus a poll of `/health` is a better UI
-   shape than blocking the request. A spinner that resolves on 202 would be lying.
-4. **"Unloaded" is not "memory freed".** Registry entries are refcounted over a shared model, and
-   the response carries `freed` — true only when this was the last owner (`releaseLocked`'s
-   delete-before-decide). Report what actually happened rather than assuming the bytes came back.
-5. **Confirm when the model is mid-generation**, and say what will happen: the in-flight turn
-   finishes, nothing new routes to it. That is the designed behaviour, and it should not arrive as
-   a surprise.
-6. **Make the fit refusal actionable.** "needs 6.2 GB, 3.1 GB available" becomes "… unload
-   `qwen2.5-1.5b` (4.0 GB) to make room" — the page knows what is resident, so the decline can name
-   the way out instead of only the shortfall.
+**"Unloaded" is not "memory freed", stated on screen.** `unloadModel`
+(`internal/serveapp/webui/ui/app.js:237`) reads the response's `status`/`freed` and says exactly one
+of three things: *"unloading — finishing an in-flight request; its memory frees as that completes"*
+(202: a spinner that resolved here would be lying), *"unloaded — memory freed"* (200, last owner),
+or *"unloaded — its memory is shared with another loaded entry, so it was not freed"* (200, not the
+last owner). All three leave the model gone from `/v1/models` either way — draining only withholds
+the *native memory* claim, never the routing one — so the list refreshes and the row disappears
+regardless of which of the three it was.
 
-**The gate question is easier here than it was for W5, and should not wait on the others.** What
-makes admin *load* dangerous is that it maps a **caller-named path** — that is what `-allow-admin`'s
-help warns about. Unload takes a name that is already in the registry, touches no filesystem, and
-accepts nothing from the caller that is not already public on `/v1/models`. A `/web/models/unload`
-restricted to currently-loaded names can ship on W5's own precedent (`sameOrigin` + `auth` + the
-`-web` opt-in) without the broader page-initiated-admin decision that W22, W28 and W31 are queued
-behind.
+**Confirm before unloading, worded to what this page can actually know.** Another client's in-flight
+turn on the same model is invisible here, so the default wording states the drain guarantee rather
+than claiming to observe it: *"A request already in flight elsewhere will finish; nothing new will
+route to it until it is loaded again."* When *this* page's own reply is the one running on that
+model (`generating.model === name`), the wording says so specifically instead.
 
-**What not to do: load must not auto-evict.** Serving several models at once is a deliberate
-capability, not an accident, and silently dropping someone's loaded model to make room for a new one
-is worse than a clean refusal. The user chooses which one goes.
+**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:458`)
+checks `errors.Is(err, decoder.ErrWontFitResident)` — the exported sentinel `FitDeclineError`
+unwraps to, chosen over `errors.As` on the concrete type specifically so the check (and its test)
+never need that type's unexported fields — and, if something is resident, appends *"Unload
+`"qwen2.5-1.5b"` (4.0 GB) to make room."* to the load error. Prose, not a line break: the page renders
+this as plain `textContent` with no `white-space:pre-line`, so a literal `\n` would just collapse to
+a space. Nothing to suggest (a fresh server's first load) leaves the message exactly as the decoder
+raised it, so the page never implies a fix that doesn't exist.
 
-**Effort: S–M for the route** (a thin wrapper over the handler that already exists), **M for the
-tab.**
+**Decided here, and why:**
+- **`?wait=false` is not plumbed through the web route.** The doc floated "`?wait=false` plus a poll
+  of `/health`" as the better UI shape; in practice the client has to handle both 200 and 202
+  regardless (bullet 3), and the common case — an idle model — drains within the default wait and
+  returns 200 without an extra round trip, so there was nothing to gain by forcing every unload
+  through the slower path.
+- **No CUDA-specific re-gate.** The doc's own gate list asks for one because the drain is precisely
+  the use-after-free fix that CUDA can SIGSEGV on if it's wrong — but `unloadByName` is the *exact*
+  function `handleAdminUnload` already called, unmodified, and that safety property is already
+  proven backend-agnostically by `unloaddrain_testhooks_test.go`'s `preamblePark` hook. This route
+  adds no new path through the drain, so re-running that proof here would be re-verifying code this
+  change never touched.
+- **Load still does not auto-evict.** Untouched, as specified — the user chooses which model goes.
 
-**Gates:**
-- Unload with a generation in flight: the in-flight turn completes, no new request routes to it, no
-  crash. This is precisely the use-after-free the drain was built for, so run it on CUDA where the
-  naive version SIGSEGVs — a green CPU-only run does not cover it.
-- Unload then load the same name again succeeds (no leaked registry entry).
-- A fit refusal on a machine with something resident names a specific model to unload.
-- A `freed:false` unload (shared model, not last owner) renders as something other than "memory
-  freed".
+Gate: `TestWebUnload_publishesRemoval`, `TestWebUnload_unknownNameIs404`,
+`TestWebUnload_freedTrueForARealModel` (the committed tiny fixture, a real `*decoder.Model`, proving
+`freed:true` end to end rather than only through the already-proven shared function) and
+`TestUnloadSuggestion` (`internal/serveapp/webui_unload_test.go`), plus the two existing route-guard
+tests widened to the new route. Phase 39 of `scripts/webui_app_gate.mjs`, 12 checks: the list
+excludes the embedding-only entry, a row's exact text (quant, decode path, size, the "in Chat"
+mark), the Unload button's own size label, the confirm's two wordings (generic and "your current
+reply"), the real POST naming exactly that row, all three response shapes' exact wording, a failed
+unload leaving the row usable without touching the list, and no card at all when nothing has a
+decoder. Nine mutations, each red on this phase's own checks.
 
 ### What J5–J9 would add later
 J5 (the resumable `goinfer-chat -batch` runner) is a CLI, not a UI item. J6 (prefix-aware
@@ -1087,13 +1105,13 @@ and would change *how* the queue is served without changing this.
 
 ## Sources
 
-`internal/serveapp/webui.go:50`, `:458` (the embed, the `-web` gate) ·
+`internal/serveapp/webui.go:51`, `:521` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:808` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:813` (`contextWindow`) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
-`internal/serveapp/openai.go:461` (the sampling fields the page never sends) ·
+`internal/serveapp/openai.go:466` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
 markdown TODO, the tool chips — all transplantable) ·
