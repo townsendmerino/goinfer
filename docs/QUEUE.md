@@ -1073,11 +1073,12 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/resident.go:105` | goinfer | `// ExtraBytes: tasks/task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter att` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:1522` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:1608` | goinfer | `// (pos, pos), so this does not duplicate Forward's body — it is what Forward calls with` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:1710` | goinfer | `if kvDim > 0 {` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:1800` | goinfer | `func (r *cudaResident) Close() error {` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:1888` | goinfer | `anchor: func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) e` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:1983` | goinfer | `if e := gpu.Download(src, h); e != nil {` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:565` | goinfer | `dnQSplit, dnAttnGate                     Pipeline // the family's fused double-width q_p` |
-| `docs/audit-2026-09-10.md|cuda/vision_encoder.go:243` | goinfer | `q := r.dev.NewCommandQueue()` |
+| `docs/audit-2026-09-10.md|cuda/vision_encoder.go:247` | goinfer | `q := r.stream` |
+| `docs/audit-2026-09-10.md|cuda/vision_encoder.go:256` | goinfer | `var scratch []Buffer` |
 | `docs/audit-2026-09-10.md|decoder/arch.go:273` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
 | `docs/audit-2026-09-10.md|decoder/arch.go:529` | goinfer | `RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax` |
 | `docs/audit-2026-09-10.md|decoder/attention.go:158` | goinfer | `acc64 := true` |
@@ -1280,10 +1281,10 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/limits_test.go:151` | goinfer | `if strings.Contains(body, "promptTooLargeForContext(") {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/liveness.go:122` | goinfer | `func (lm *loadedModel) closeEntryNatives() {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/main.go:1020` | goinfer | `if len(s.models) != 1 {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1036` | goinfer | `if cfg.backend == "webgpu" {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1186` | goinfer | `if opts.EmbedInt4 {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1192` | goinfer | `loadPath := spec.path` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1217` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1062` | goinfer | `if cfg.backend == "webgpu" {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1193` | goinfer | `if opts.EmbedInt4 {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1199` | goinfer | `loadPath := spec.path` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1224` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
 | `docs/audit-2026-09-10.md|internal/serveapp/main.go:353` | goinfer | `const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables BO` |
 | `docs/audit-2026-09-10.md|internal/serveapp/main.go:452` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
 | `docs/audit-2026-09-10.md|internal/serveapp/main.go:453` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a ref` |
@@ -1615,7 +1616,7 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1001` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:205` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:271` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1296` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1303` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
 | `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:368` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |

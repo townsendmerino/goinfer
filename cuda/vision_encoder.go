@@ -43,7 +43,10 @@ type visionLayer struct {
 
 // VisionEncoder is a device-resident SigLIP forward, uploaded once from vision.GPUWeights.
 type VisionEncoder struct {
-	dev   *Device
+	dev    *Device
+	stream Queue // created once at setup (M-18, docs/audit-2026-09-10.md) — ForwardPatches used to
+	// call r.dev.NewCommandQueue() per invocation, matching neither cudaResident's own
+	// once-per-lifetime r.stream (cuda/resident.go) nor this tower's own scratch-buffer lifetime.
 	reqCh chan func() error
 	ackCh chan error
 
@@ -105,6 +108,7 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
+		r.stream = r.dev.NewCommandQueue()
 		loadFrom := func(ptx []byte, name string, dst *Pipeline) error {
 			mod, e := r.dev.CompileLibrary(ptx)
 			if e != nil {
@@ -240,17 +244,33 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 
 	var out []float32
 	err := r.do(func() error {
-		q := r.dev.NewCommandQueue()
+		q := r.stream
 
-		pd := r.af(M * r.cpp)
+		// --- M-sized scratch (device), freed at the end. Mirrors cuda/prefill.go's own free-list
+		// (audit C-24 there): the list and its defer are registered BEFORE the first allocation,
+		// and each buffer joins the list as it is created via the af/ai closures below, so a later
+		// allocation panicking (gpu.NewBufferLenOf's OOM contract) still releases every buffer
+		// already made — not just the ones a flat post-hoc list would have caught. Before this fix
+		// (M-18, docs/audit-2026-09-10.md) NONE of these 19 buffers, nor the queue above, were ever
+		// released: ~265 MB per image call, held for the encoder's lifetime.
+		var scratch []Buffer
+		defer func() {
+			for _, b := range scratch {
+				r.dev.ReleaseBuf(b)
+			}
+		}()
+		af := func(n int) Buffer { b := r.af(n); scratch = append(scratch, b); return b }
+		ai := func(n int) Buffer { b := r.ai(n); scratch = append(scratch, b); return b }
+
+		pd := af(M * r.cpp)
 		if e := gpu.Upload(pd, patches); e != nil {
 			return e
 		}
-		pq, ps := r.ai(M*r.cpp/4), r.af(M)
+		pq, ps := ai(M*r.cpp/4), af(M)
 		if e := r.quant(&q, pd, r.cpp, pq, ps, M); e != nil {
 			return e
 		}
-		h := r.af(M * hidden)
+		h := af(M * hidden)
 		if e := r.bGemv(&q, r.patchW, pq, ps, r.patchB, h, M); e != nil {
 			return e
 		}
@@ -267,15 +287,15 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			return e
 		}
 
-		aq, as := r.ai(M*hidden/4), r.af(M)
-		qb, kb, vb := r.af(M*qDim), r.af(M*qDim), r.af(M*qDim)
-		attnOut := r.af(M * qDim)
-		aoq, aos := r.ai(M*qDim/4), r.af(M)
-		oProj := r.af(M * hidden)
-		fq, fs := r.ai(M*hidden/4), r.af(M)
-		g := r.af(M * inter)
-		gq, gs := r.ai(M*inter/4), r.af(M)
-		fc2Out := r.af(M * hidden)
+		aq, as := ai(M*hidden/4), af(M)
+		qb, kb, vb := af(M*qDim), af(M*qDim), af(M*qDim)
+		attnOut := af(M * qDim)
+		aoq, aos := ai(M*qDim/4), af(M)
+		oProj := af(M * hidden)
+		fq, fs := ai(M*hidden/4), af(M)
+		g := af(M * inter)
+		gq, gs := ai(M*inter/4), af(M)
+		fc2Out := af(M * hidden)
 
 		for li := range r.layers {
 			L := &r.layers[li]
@@ -376,14 +396,24 @@ func addInPlaceHost(q *Queue, x, y Buffer, n int) error {
 	return gpu.Upload(x, xh)
 }
 
-// Close tears down the device and its executor goroutine.
+// Close tears down the device and its executor goroutine. The release runs ON the executor (via
+// reqCh, not called directly from Close's own caller goroutine) because CUDA contexts are
+// thread-affine — the context was created on the executor's locked OS thread (NewVisionEncoder),
+// so it must be released there too, mirroring cudaResident's own Close (cuda/resident.go: send the
+// teardown job, wait for its ack, THEN close reqCh — not the reverse). Before this fix (M-18,
+// docs/audit-2026-09-10.md) ReleaseAll ran directly on whatever goroutine called Close.
 func (r *VisionEncoder) Close() {
-	if r.reqCh != nil {
-		close(r.reqCh)
-		r.reqCh = nil
+	if r.reqCh == nil {
+		return
 	}
-	if r.dev != nil {
-		r.dev.ReleaseAll()
-		r.dev = nil
+	r.reqCh <- func() error {
+		if r.dev != nil {
+			r.dev.ReleaseAll()
+			r.dev = nil
+		}
+		return nil
 	}
+	<-r.ackCh
+	close(r.reqCh)
+	r.reqCh = nil
 }

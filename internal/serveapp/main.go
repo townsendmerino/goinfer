@@ -1021,8 +1021,8 @@ func (s *server) loadVisionTower(cfg config) error {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(s.models))
 	}
 	// The resident GPU encoder needs int8 (W8A8) matmul weights, so --backend
-	// webgpu implies an int8 tower even if --vision-quant wasn't set.
-	int8Tower := cfg.visionQuant == "int8" || cfg.backend == "webgpu"
+	// webgpu/cuda implies an int8 tower even if --vision-quant wasn't set.
+	int8Tower := cfg.visionQuant == "int8" || cfg.backend == "webgpu" || cfg.backend == "cuda"
 	if visionModelType(dir) == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower)
 	}
@@ -1033,7 +1033,11 @@ func (s *server) loadVisionTower(cfg config) error {
 	if err != nil {
 		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
 	}
-	if cfg.backend == "webgpu" {
+	// M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CUDA vision
+	// tower's own leak/threading bugs are fixed (cuda/vision_encoder.go) — cuda/vision_register.go
+	// already registered its factory with vision.RegisterResident via cuda/cmd/serve's blank
+	// import; this gate was the only thing that never called EnableResident() for it.
+	if cfg.backend == "webgpu" || cfg.backend == "cuda" {
 		if err := enc.EnableResident(); err != nil {
 			return fmt.Errorf("enable resident GPU vision encoder: %w", err)
 		}
@@ -1057,6 +1061,9 @@ func (s *server) loadVisionTower(cfg config) error {
 		}
 		if cfg.backend == "webgpu" {
 			vq = "int8/webgpu-resident"
+		}
+		if cfg.backend == "cuda" {
+			vq = "int8/cuda-resident"
 		}
 		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
 	}

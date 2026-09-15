@@ -129,8 +129,13 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    blocked regardless of the floor (chunk N's in-block rows need chunk N+1's not-yet-computed K/V
    at every layer — no pass ordering can supply that). Remaining out of scope: `attn_fused` L2 for
    image blocks (as above), Metal/WebGPU.
-1. **A downloaded binary cannot use the GPU for images** (cuda/metal have no vision tower; WebGPU
-   is cgo). Every Mac and Linux user of the release gets ~minutes per image.
+1. **A downloaded binary cannot use the GPU for images** (Metal has no vision tower yet; CUDA's
+   and WebGPU's are both cgo — reached only via each backend's own submodule build, `cuda/cmd/serve`
+   / `-tags gpu`, never the pure-Go root binary a release download is). CUDA's tower was also never
+   actually reachable from `serve --backend cuda` until M-18 (docs/audit-2026-09-10.md) wired
+   `EnableResident()` into its load path, 2026-09-15 — see §P6's own CUDA entry below, which was
+   itself stale on exactly this point. Every Mac and every Linux release-binary user still gets
+   ~minutes per image; a `-tags cuda`/`-tags gpu` self-build on Linux does not.
 2. **Vision is one family.** ~~Gemma 4 — the family most of the resident work went into — is
    text-only here~~ **CLOSED for CPU serving 2026-09-09/10 (P7 Phases B+C): Gemma 4 E2B/E4B
    (Phase B) AND 26B-A4B/31B (Phase C, the bidirectional-block-attention case) now serve real
@@ -169,7 +174,9 @@ number is published without provenance.
   count ≈ core count on this box, total work is close to unchanged, just redistributed. Kept
   anyway: parity holds, it's the proven decoder mechanism, and the removed memory materialization
   may still matter at an untested config (more heads than cores, memory pressure).
-  **CUDA (SigLIP/Gemma-3) — DONE, 2026-09-08. Metal — still not started.** The doc's own earlier
+  **CUDA (SigLIP/Gemma-3) — kernels DONE 2026-09-08, but never enabled in `serve --backend cuda`
+  until M-18 (docs/audit-2026-09-10.md) fixed the gate + a real scratch-buffer/command-queue leak
+  and a wrong-thread `Close`, 2026-09-15. Metal — still not started.** The doc's own earlier
   framing here overstated the gap, found by reading the actual kernels rather than assuming: a
   FULLY non-causal attention kernel turned out to need ZERO new kernel source at all —
   `attn_img_batched` (already shipped this session, for Gemma-3's TEXT-decoder image-block
