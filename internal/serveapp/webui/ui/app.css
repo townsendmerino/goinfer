@@ -1698,3 +1698,8 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
 .enter-pick{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gi-muted);margin:0;cursor:pointer}
 .enter-pick input{width:18px;height:18px;margin:0}
 @media (max-width: 600px), (pointer: coarse){ .enter-pick{min-height:32px} .enter-pick input{width:24px;height:24px} }
+
+/* W18: which model answered */
+.who .who-path{margin-left:8px;font-family:var(--mono);text-transform:none;letter-spacing:0}
+.model-switch{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--gi-muted);margin:2px 4px}
+.model-switch::before,.model-switch::after{content:"";flex:1;border-top:1px solid color-mix(in srgb,var(--gi-muted) 40%,transparent)}

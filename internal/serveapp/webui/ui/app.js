@@ -544,6 +544,7 @@ function parseMessages(list) {
     const e = { role: m.role, content: m.content };
     if (m.role === "user" && imageOK(m.image)) e.image = m.image;   // W11: anything else is dropped, not rendered
     if (typeof m.model === "string") e.model = m.model;
+    if (m.role === "assistant" && typeof m.path === "string" && m.path.length <= 200) e.path = m.path;   // W18
     if (typeof m.meta === "string") e.meta = m.meta;
     if (m.state === "stopped" || m.state === "interrupted" || m.state === "failed" || m.state === "cancelled") e.state = m.state;
     if (typeof m.note === "string" && m.note.length <= 500) e.note = m.note;   // W13
@@ -763,6 +764,7 @@ function renderEntry(e) {
     return;
   }
   const out = bubble(e.model || "assistant", "bot amb-surface-convex amb-elevation-1");
+  labelReply(out, e);   // W18
   out.classList.add("md");
   renderReply(out, e.content, false, e);
   addMeta(out, metaText(e));
@@ -773,7 +775,11 @@ function showTranscript(list) {
   transcript.length = 0;
   transcript.push(...list);
   $("log").replaceChildren();
-  for (const e of transcript) renderEntry(e);
+  transcript.forEach((e, i) => {
+    const from = modelChangeBefore(i);   // W18
+    if (from) modelDivider(from, e.model);
+    renderEntry(e);
+  });
   showContext();
   showAttach();
 }
@@ -931,6 +937,44 @@ function bubble(who, cls) {
   return b;
 }
 
+// --- which model answered (W18) ------------------------------------------------------------------
+// Every reply is labelled with the model that wrote it AND the compute path that model was on when it did
+// (/v1/models' decode_path, recorded at send time — a model can be reloaded onto another backend later).
+// The per-reply stats are where a comparison between models means something, and tok/s is meaningless
+// without the path. Where consecutive replies came from different models, a divider says so. Both are
+// derived from the transcript, so they follow Regenerate, Edit and Delete without being stored twice.
+function labelReply(content, e) {
+  const who = content.parentElement.querySelector(".who");
+  who.textContent = e.model || "assistant";
+  if (e.path) {
+    const p = document.createElement("span");
+    p.className = "who-path";
+    p.textContent = e.path;
+    who.appendChild(p);
+  }
+}
+
+// modelChangeBefore returns the previous reply's model when the reply at index i came from a different
+// one, else "" — the divider is drawn only where the model actually changed.
+function modelChangeBefore(i) {
+  const e = transcript[i];
+  if (!e || e.role !== "assistant" || !e.model) return "";
+  for (let j = i - 1; j >= 0; j--) {
+    const p = transcript[j];
+    if (p.role === "assistant") return p.model && p.model !== e.model ? p.model : "";
+  }
+  return "";
+}
+
+function modelDivider(from, to) {
+  const d = document.createElement("div");
+  d.className = "model-switch";
+  d.setAttribute("role", "separator");
+  d.textContent = "Model changed: " + from + " → " + to;
+  $("log").appendChild(d);
+  return d;
+}
+
 async function send() {
   const text = $("prompt").value.trim();
   if ((!text && !pendingImage) || ac || editing) return;
@@ -964,9 +1008,15 @@ async function generate() {
   const messages = apiMessages();          // taken BEFORE the assistant entry exists
   save();
   // What the engine produces sits proud (amb-surface-convex, decision 3).
+  const cur = models.find(m => m.id === model);
+  const path = cur && typeof cur.decode_path === "string" && cur.decode_path.length <= 200 ? cur.decode_path : "";
+  const prev = [...transcript].reverse().find(m => m.role === "assistant");
+  const divider = prev && prev.model && prev.model !== model ? modelDivider(prev.model, model) : null;   // W18
   const out = bubble(model, "bot amb-surface-convex amb-elevation-1");
   out.classList.add("md");
   const entry = {role: "assistant", content: "", model, state: "generating"};
+  if (path) entry.path = path;   // W18: the compute path this reply was generated on
+  labelReply(out, entry);
   transcript.push(entry);
   generating = entry;
   $("send").disabled = true; $("stop").hidden = false; $("newchat").disabled = true;
@@ -1080,6 +1130,7 @@ async function generate() {
     } else {
       // A request that produced nothing is not a turn: drop it, and say what happened and what to do.
       transcript.splice(transcript.indexOf(entry), 1);
+      if (divider) divider.remove();   // W18: no reply from the new model, so nothing changed
       const p = problem || (e instanceof StreamProblem ? {title: "The server hit an error.", detail: e.message, actions: ["retry"]} : problemFor(0, ""));
       showProblem(out, p, () => generate());
       $("chat-status").textContent = "";
@@ -1246,7 +1297,7 @@ function chatMarkdown(when = new Date()) {
       if (e.image) lines.push("![attached image](" + e.image + ")", "");
       continue;
     }
-    lines.push("## " + (e.model || "Assistant"), "");
+    lines.push("## " + (e.model || "Assistant") + (e.path ? " · " + e.path : ""), "");   // W18
     const p = splitThinking(e.content, false);
     if (p && p.thinking) lines.push("<details><summary>Thinking</summary>", "", p.thinking.trim(), "", "</details>", "");
     const answer = p ? p.answer : e.content;

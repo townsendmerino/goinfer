@@ -64,6 +64,9 @@
 //   W17 — keyboard: Ctrl/Cmd+Enter always sends; "Enter sends" as a saved setting (Shift/Alt+Enter never send);
 //        never while an input method composes (isComposing, keyCode 229); the edit box follows the setting; ↑ in
 //        an empty box edits the last message; Esc stops a reply and still cancels an edit.
+//   W18 — which model answered: model and compute path on each reply, saved; a divider exactly where the model
+//        changes, following Regenerate, left behind by no failed request; path in the export; hostile or
+//        over-long stored labels inert or dropped.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1784,6 +1787,78 @@ const phase32 = phase(W17_PRELUDE + String.raw`
   check("W17 another tab's change to the setting is followed", !$("enter-sends").checked && /Ctrl\/Cmd\+Enter/.test($("prompt").placeholder), $("enter-sends").checked);
 `);
 
+// ---- phases 33–34: W18 — which model answered each turn --------------------------------------------------
+const W18_PRELUDE = String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  window.confirm = () => true;
+  const MODELS = [{ id: "alpha-4b", decode_path: "cpu (int8)" }, { id: "beta-9b", decode_path: "cuda-resident (int4)" }, { id: "gamma", }];
+  const pick = async id => { window.fetch = async () => new Response(JSON.stringify({ object: "list", data: MODELS }), { status: 200 }); await loadModels(id); };
+  const turn = async (q, a) => { streamAnswer(a); $("prompt").value = q; await send(); await idle(); await wait(30); };
+  const labels = () => [...document.querySelectorAll("#log .msg.bot .who")].map(w => w.firstChild?.textContent + "|" + (w.querySelector(".who-path")?.textContent || ""));
+  const dividers = () => [...document.querySelectorAll("#log .model-switch")].map(d => d.textContent);
+  const order = () => [...document.querySelectorAll("#log > *")].map(el => el.classList.contains("model-switch") ? "—" : el.classList.contains("you") ? "u" : "a").join("");
+`;
+const phase33 = phase(W18_PRELUDE + String.raw`
+  $("sampling-reset").click();
+  $("newchat").click();
+  await pick("alpha-4b");
+  await turn("one", "first");
+  check("W18 a reply is labelled with its model and the compute path it ran on", JSON.stringify(labels()) === JSON.stringify(["alpha-4b|cpu (int8)"]), JSON.stringify(labels()));
+  check("W18 the path is saved with the reply", stored().messages[1].path === "cpu (int8)" && stored().messages[1].model === "alpha-4b", JSON.stringify(stored().messages[1]));
+  await turn("two", "second");
+  check("W18 no divider while the model stays the same", dividers().length === 0, JSON.stringify(dividers()));
+  await pick("beta-9b");
+  await turn("three", "third");
+  check("W18 a divider marks where the model changed, just before the new model's reply", JSON.stringify(dividers()) === JSON.stringify(["Model changed: alpha-4b → beta-9b"]) && order() === "uauau—a", order() + " " + JSON.stringify(dividers()));
+  check("W18 the new reply carries the new model and its path", labels().at(-1) === "beta-9b|cuda-resident (int4)", JSON.stringify(labels()));
+  check("W18 the divider is a separator, and is not part of the conversation", document.querySelector("#log .model-switch").getAttribute("role") === "separator" && stored().messages.length === 6, stored().messages.length);
+
+  // regenerate the last reply on the first model: relabelled, and the divider goes
+  await pick("alpha-4b");
+  streamAnswer("third, again");
+  [...document.querySelectorAll("#log .msg-regen")].find(b => !b.hidden).click();
+  await until(() => !$("stop").hidden); await idle(); await wait(30);
+  check("W18 regenerating on another model relabels the reply, and the divider follows the conversation", labels().at(-1) === "alpha-4b|cpu (int8)" && dividers().length === 0, JSON.stringify(labels()) + " " + JSON.stringify(dividers()));
+
+  // a model that publishes no path
+  await pick("gamma");
+  await turn("four", "fourth");
+  check("W18 a model with no decode_path is labelled by name only", labels().at(-1) === "gamma|" && stored().messages.at(-1).path === undefined && dividers().length === 1, JSON.stringify(labels()));
+
+  // a failed request to a different model leaves no divider behind
+  await pick("beta-9b");
+  window.fetch = async () => new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 });
+  $("prompt").value = "fails"; await send(); await idle(); await wait(30);
+  check("W18 a request that failed before any text leaves no model divider", dividers().length === 1 && !!document.querySelector("#log .msg.err"), JSON.stringify(dividers()));
+
+  // export
+  const downloads = [];
+  const realCreate = URL.createObjectURL;
+  URL.createObjectURL = blob => { downloads.push(blob); return realCreate(blob); };
+  const realClick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+  $("export-md").click();
+  await until(() => downloads.length);
+  const md = await downloads[0].text();
+  URL.createObjectURL = realCreate; HTMLAnchorElement.prototype.click = realClick;
+  check("W18 the Markdown export names each reply's model and path", md.includes("\n## alpha-4b · cpu (int8)\n") && md.includes("\n## gamma\n"), md.slice(0, 300));
+
+  // hostile stored labels
+  const st = stored();
+  st.messages[1].model = "<img src=x onerror=\"window.__pwned=1\">";
+  st.messages[1].path = "<b onmouseover=window.__pwned=1>p</b>";
+  st.messages[3].path = "x".repeat(300);
+  localStorage.setItem(chatKey(), JSON.stringify(st));
+`);
+const phase34 = phase(W18_PRELUDE + String.raw`
+  await wait(200);
+  const whos = [...document.querySelectorAll("#log .msg.bot .who")];
+  // replies: hostile-model, alpha, alpha, gamma — two model changes; the failed request left its user message, no reply
+  check("W18 after reload labels and dividers come back from the saved conversation", whos.length === 4 && dividers().length === 2 && order() === "uau—auau—au", order() + " " + JSON.stringify(labels()));
+  check("W18 hostile stored model and path names are shown as text", whos[0].firstChild.textContent === "<img src=x onerror=\"window.__pwned=1\">" && whos[0].querySelector(".who-path").textContent === "<b onmouseover=window.__pwned=1>p</b>" && document.querySelectorAll("#log img, #log b").length === 0 && window.__pwned === 0, whos[0].innerHTML);
+  check("W18 an over-long stored path is dropped", !whos[1].querySelector(".who-path"), whos[1].innerHTML);
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -1796,7 +1871,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32];
+  phase30, phase31, phase32, phase33, phase34];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase
