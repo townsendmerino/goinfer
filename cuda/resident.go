@@ -592,7 +592,21 @@ type cudaResident struct {
 	// chunk: prefillChunked splits a long prompt into passes of <=512 rows, so gating on M alone
 	// would judge a 3900-token prompt by its 512-row chunk. Per-pass mutable state on the resident,
 	// the same shape as prof above.
-	passPromptLen                                           int
+	passPromptLen int
+	// forceExactKernels disables useAttnFused/useGemmMMA (the L2/L3 fast levers) for the
+	// DURATION of one prefillCore pass — the same "per-pass mutable state on the resident" shape
+	// as passPromptLen above, set/cleared once at prefillCore's own r.do(...) boundary. M-09/M-10/
+	// M-11 (docs/audit-2026-09-10.md): those levers are chosen purely on shape (M/K/position),
+	// never on WHO is asking — HiddenLast's own norm-output tail and speculative verify's
+	// tailAllLogits/tailAllArgmax tails both need decode-identical numerics (the whole point of
+	// verifying, or of HiddenLast's bit-identity contract), which the fast levers do not carry
+	// (they are cosine-close to gemv_w4a8_rn/attn_batched, not proven bit-identical — that is
+	// exactly why they are opt-in performance levers rather than the default path). Set true for
+	// every prefillCore tail except tailLastLogits (ordinary single-row-output prefill, where the
+	// existing cosine-gated tolerance already applies and always has); the drafter's own forward
+	// (cuda/drafter.go) never touches this field, so its bGemvB calls are unaffected — a proposal
+	// never needs to be bit-identical to anything, only the target's verify of it does.
+	forceExactKernels                                       bool
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
 	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)

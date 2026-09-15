@@ -802,12 +802,20 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	// The fast-prefill floor is judged on the WHOLE prompt, so record it once here rather than
 	// letting each selector see only this chunk's M (prefillChunked passes <=512 rows at a time).
 	r.passPromptLen = startPos + M
+	// M-09/M-10/M-11 (docs/audit-2026-09-10.md): every tail EXCEPT tailLastLogits (ordinary
+	// single-row prefill) needs decode-identical numerics — HiddenLast's bit-identity contract,
+	// speculative verify's "verify == sequential greedy" invariant — so the fast L2/L3 levers,
+	// which are cosine-close but not proven bit-identical, must not engage for those tails. See
+	// forceExactKernels's own doc comment (cuda/resident.go) for why this is a field rather than a
+	// parameter threaded through bGemvB's ~20 call sites.
+	r.forceExactKernels = tail != tailLastLogits
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 
 	var outs [][]float32
 	var ids []int
 	err := r.do(func() error {
+		defer func() { r.forceExactKernels = false }()
 		r.launchErr = nil // N-04: clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.
 		// --- M-sized scratch (device), freed at the end.
@@ -1446,6 +1454,14 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 // useAttnFused is the ONE place the L2 kernel is chosen, so the fallback cannot drift between call
 // sites. Every "no" means attn_batched, which is the exact path, is bit-identical to decode, and is
 // what spec-decode verify and the parity gates run.
+//
+// THAT LAST CLAIM WAS ASPIRATIONAL UNTIL M-11 (docs/audit-2026-09-10.md): before
+// forceExactKernels existed, the only gates here were M/floor-based (attnFusedMinRows,
+// aboveFastPrefillFloor), which verify's own M (often >=16 past the floor) could satisfy by
+// coincidence of constants, not by construction — "is what spec-decode verify runs" was true of
+// serve's DEFAULT widths, not guaranteed for every caller. forceExactKernels (set by prefillCore,
+// cuda/resident.go's own field comment) now makes it a real guarantee: unconditional "no" for any
+// tail but tailLastLogits, independent of M/K/position.
 // It returns only the shared-memory size, NOT the pipeline: the launch site names
 // r.bAttnFused64 / r.bAttnFused128 explicitly. Handing back a Pipeline in a local variable would
 // hide WHICH kernel runs from every static reader, including
@@ -1453,7 +1469,7 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 // launched by nothing — the exact state gemv_w4a8_batched sat in while a benchmark quoted its
 // throughput as the shipping kernel's.
 func (r *cudaResident) useAttnFused(hd, M int) (uint32, bool) {
-	if !r.fastAttn || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
+	if r.forceExactKernels || !r.fastAttn || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
 		return 0, false
 	}
 	p, sh := r.attnFusedFor(hd)
@@ -1483,13 +1499,19 @@ func gemmMMAShmem() uint32 {
 // useGemmMMA is the ONE place the L3 kernel is chosen. Every "no" means gemv_w4a8_rn, which is the
 // exact path, is bit-identical to the M=1 decode GEMV, and is what the parity gates run.
 //
+// M-09/M-11 (docs/audit-2026-09-10.md): before forceExactKernels (see its own doc comment,
+// cuda/resident.go), the only gate here was shape-based (gemmMMAMinRows, aboveFastPrefillFloor) —
+// speculative verify's own M (often >=16) could cross it by coincidence, not by construction, the
+// same M-dependent-kernel gap WebGPU's staged int4 path has independently (M-09). forceExactKernels
+// now makes exactness unconditional for any prefillCore tail but tailLastLogits.
+//
 // The K constraints are not defensive padding: the kernel contracts 32 elements per group scale and
 // 8 per packed weight word, so a K that is not a multiple of 32 would misalign the group-scale fold.
 // Every production shape here satisfies it (1536, 3584, 8960, 18944 are all multiples of 32), and a
 // shape that does not is served correctly by the exact path rather than by a special case.
 func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {
-	return r.fastGemm && kind == "int4" && M >= gemmMMAMinRows && r.aboveFastPrefillFloor() &&
-		r.bGemmMMA != (Pipeline{}) && K%32 == 0
+	return !r.forceExactKernels && r.fastGemm && kind == "int4" && M >= gemmMMAMinRows &&
+		r.aboveFastPrefillFloor() && r.bGemmMMA != (Pipeline{}) && K%32 == 0
 }
 
 // rnBlockRows must equal RN in gemv_w4a8_rn.cu — each warp computes this many output rows, so the grid
