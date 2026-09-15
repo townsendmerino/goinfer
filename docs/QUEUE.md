@@ -1039,7 +1039,7 @@ supports.
 | `docs/QUEUE.md|cuda/softcap.go:25` | goinfer | `// This runs on the SAMPLING path only. ForwardArgmax reduces the argmax on-device and r` |
 | `docs/audit-2026-09-10.md|chat/chat.go:146` | goinfer | `case strings.Contains(t, "[INST]"):` |
 | `docs/audit-2026-09-10.md|chat/chat.go:2` | goinfer | `// chat template expects — no Jinja engine. goinfer loads a handful of families` |
-| `docs/audit-2026-09-10.md|chat/templates.go:231` | goinfer | `func Mistral() *Template {` |
+| `docs/audit-2026-09-10.md|chat/templates.go:239` | goinfer | `func Mistral() *Template {` |
 | `docs/audit-2026-09-10.md|chat/tools.go:108` | goinfer | `func funcDefJSON(t Tool) string {` |
 | `docs/audit-2026-09-10.md|chat/tools.go:191` | goinfer | `func renderMistralTools(system string, turns []Turn, tools []Tool) string {` |
 | `docs/audit-2026-09-10.md|cmd/gate/gpu.go:445` | goinfer | `g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "pref` |

@@ -251,20 +251,27 @@ Also decided here:
 - **A finished reply that thought but never answered says so**, instead of showing an empty bubble.
   A stopped or interrupted reply does not, since its label already explains it.
 
-**Open server defect, found here: gpt-oss never answers through `serve`.** Captured 2026-09-14
-(`gpt-oss-20b-MXFP4.gguf`, CPU): the stream is only the analysis channel, ending with
-`finish_reason: stop`. The harmony template's stop list includes `<|end|>`, which closes the
-*analysis* message, so generation stops before the model reaches its `final` channel. The page now
-shows that honestly ("No answer after the thinking"), but the fix belongs to the server: stop on
-`<|return|>` (and `<|call|>` for tools), not on every `<|end|>`. The full content-block split of
-thinking and answer on the API is a separate server item and stays open.
+**Server defect found here, FIXED 2026-09-14: gpt-oss never answered through `serve`.** Captured
+before the fix (`gpt-oss-20b-MXFP4.gguf`, CPU): the stream held only the analysis channel, ending
+with `finish_reason: stop`. The harmony template stopped on `<|end|>`, which closes the *analysis
+message*, so generation ended before the model reached its `final` channel. The stops are now
+upstream's own, from gpt-oss-20b's `generation_config.json`: `<|return|>`, `<|call|>` and
+`<|endoftext|>` (`chat/templates.go`, pinned by `TestHarmony_stopsAreUpstreams`). Re-run on the same
+model and prompt, the reply now carries the final channel (`17 × 23 = 391.`), and streaming and
+non-streaming agree. The change reaches every user of the template, not just the page:
+`goinfer-chat` and the demo agent read the same stops. The page's "No answer after the thinking" note
+stays, for any model that really does stop mid-thought.
+
+**Still open on the server:** the API's `content` carries gpt-oss's raw channel markers, and Qwen3's
+`<think>` block, to every client. The page hides them; an OpenAI SDK client sees them. Splitting
+thinking into its own field (or content block, on the Anthropic route) is its own server item.
 
 Gate: phases 9–10 of `scripts/webui_app_gate.mjs`, 35 checks. A DOM observer fails the gate if any raw
 tag fragment is ever on screen during streaming. Streams are fed chunk by chunk to test the held-back
 tags and the fold staying open, and there are checks for the template-opened and gpt-oss shapes, a
 mention of the tag, hostile content, stopping mid-thought, the history sent, and restore after a reload.
 Two replies of **real captured serve output** (`scripts/webui-gate/captured-thinking.json`, Qwen3-1.7B
-and gpt-oss-20b, real token boundaries) are replayed chunk for chunk. Fifteen mutations, each red.
+and gpt-oss-20b after the stop fix, real token boundaries) are replayed chunk for chunk. Fifteen mutations, each red.
 **Effort was: M.**
 
 ### W7 — Regenerate, edit-and-resend, delete a turn

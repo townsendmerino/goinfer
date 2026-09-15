@@ -34,6 +34,14 @@ any surface may still change.
 - `pull.CacheRoot()` — the directory every pulled model lands under (Experimental, like the rest of
   `pull`).
 
+### Fixed
+
+- **gpt-oss never gave its answer.** The harmony chat template stopped on `<|end|>`, which closes each
+  message rather than the turn, so a reply ended after its analysis (thinking) channel and never
+  reached the `final` channel. This affected `serve`, `goinfer-chat` and the demo agent. The stops
+  are now gpt-oss's own (`<|return|>`, `<|call|>`, `<|endoftext|>`, from its
+  `generation_config.json`). Replies still contain the raw channel markers in `content`.
+
 ## [v0.18.0] — 2026-09-13
 
 ### Changed
