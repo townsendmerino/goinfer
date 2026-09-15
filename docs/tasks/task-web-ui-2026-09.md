@@ -95,7 +95,7 @@ Ranked by what a person notices in the first five minutes.
 ### W1 — Markdown and code blocks — DONE 2026-09-14
 ~~Today the page renders **plain text only**~~ — model output now renders as Markdown through
 `ui/markdown.js`, a renderer that builds DOM nodes from a fixed element allow-list and never an HTML
-string (the rule is stated at `internal/serveapp/webui/ui/app.js:218`). Paragraphs and line breaks,
+string (the rule is stated at `internal/serveapp/webui/ui/app.js:248`). Paragraphs and line breaks,
 headings, fenced code with a language label (an unclosed fence renders as code, so streaming does not
 flicker), inline code, strong/em/strike, links, bare URLs, blockquotes, nested lists and GFM tables.
 Raw HTML in model output is shown as text; links are live only for `http:`/`https:`/`mailto:`; images
@@ -157,14 +157,28 @@ mutations, each red. Two of them first exited as "could not run", which `go test
 SKIP — a broken restore would have reached CI as a skipped test; the shared gate driver now reports
 any failure inside a loaded page as a failure. **Effort was: M.**
 
-### W4 — A system prompt box
-There is no way to set a system message at all. One textarea, prepended to `messages`; the route
-has always accepted it. It is also the only way the page can show the thing harness users care
-about. **Effort: S.**
+### W4 — A system prompt box — DONE 2026-09-14
+~~There is no way to set a system message at all~~ — a collapsible "System prompt" box in the settings
+card (`internal/serveapp/webui/ui/app.js:148`), whose summary reads "· active" when set so it is
+visible while collapsed. When non-blank it is sent **first, trimmed**, with every request; blank or
+whitespace-only sends nothing. The route accepts a system message for every family — templates
+without a system role fold it into a user turn server-side (`messagesToTurns`) — so the box needs no
+per-model exceptions.
+
+Decided here, and why: it is a **setting, not part of a conversation**. It has its own storage key,
+survives New chat and reloads, and is never written into the saved transcript — it is applied to
+each request, not said once. People reuse a system prompt across chats; New chat wiping it would be
+the wrong default. An idle tab follows another tab's change, but never overwrites a box the user is
+typing in. W9 (separate conversations) may revisit per-conversation prompts.
+
+Gate: phases 6–7 of `scripts/webui_app_gate.mjs` read the actual request body — empty, set,
+whitespace-only and padded prompts; not in the transcript; kept by New chat; restored and sent after a
+reload; a hostile prompt inert; tab sync, and a focused box not clobbered. Six mutations, each red.
+**Effort was: S.**
 
 ### W5 — Load a model from the page
 The pull flow dead-ends on its own success line: *"Downloaded, not loaded — restart the server with
---model &lt;path&gt; to serve it"* (`internal/serveapp/webui/ui/app.js:436`). A first-run user is
+--model &lt;path&gt; to serve it"* (`internal/serveapp/webui/ui/app.js:471`). A first-run user is
 sent back to a terminal in the middle of the one flow the page exists for.
 
 `POST /admin/models/load` already exists (`internal/serveapp/admin.go:113`) but is gated behind
@@ -204,11 +218,11 @@ inside the binary.
 | **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:391`) | S |
 | **W11** | Image attach for vision models | no control, though `-vision` works on the same route; `demo/agent/cmd/agent-web/index.html:129` has the whole composer (click, drag, paste, preview) to transplant, plus a per-model capability check so it hides on text-only models | M |
 | **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:179`) | M |
-| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:264`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
+| **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:294`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
 | **W14** | Export the conversation | nothing. A share link is an anti-goal; Markdown and JSON to a file are not | S |
 | **W15** | Dark mode | one light surface; no `prefers-color-scheme` rule anywhere. The AmbientCSS palette is already token-shaped (`docs/completed/task-web-ui-ambient.md`) | S |
 | **W16** | Phone layout | one `max-width:920px` column, no media query (`internal/serveapp/webui/ui/app.css:1480`). A server on the LAN is a plausible phone client | S |
-| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:338`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
+| **W17** | Enter sends, ↑ edits last, Esc stops | only Ctrl/Cmd+Enter (`internal/serveapp/webui/ui/app.js:373`). Make it a setting, not a swap — the current behaviour suits long prompts | S |
 | **W18** | Label which turn came from which model | the dropdown is read at send time so switching half-works, but nothing marks the turns, and the per-response stats are the one place that comparison would mean something | M |
 
 ---
@@ -273,7 +287,7 @@ gating and auth — each shown able to go red by a mutation.
 
 **6.2 W1 is where model output stops being inert, and the current rule must survive it. — HELD
 2026-09-14 (see W1).** The page says it in the source: content goes in via `textContent` or
-`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:218`), and a test now fails the
+`Markdown.render`, never `innerHTML` (`internal/serveapp/webui/ui/app.js:248`), and a test now fails the
 build if that changes. **Build DOM nodes from the parsed tree; never assemble an HTML string.** Otherwise a model — possibly one pulled from a stranger's Hugging Face repo
 minutes earlier, by this very page — gets script execution on the same origin as the API, with the
 user's key in a field on that page. The gate for W1 is a test that feeds the renderer hostile
@@ -291,7 +305,7 @@ W5's load route is the first real test of them.
 
 `internal/serveapp/webui.go:47`, `:303` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1480` (layout) · `internal/serveapp/webui/index.html:12` (tabs) ·
-`internal/serveapp/webui/ui/app.js:66`, `:218`, `:264`, `:338`, `:436` (the conversation transcript, the
+`internal/serveapp/webui/ui/app.js:66`, `:248`, `:294`, `:373`, `:471` (the conversation transcript, the
 rendering rule, the error path, the keybinding, the dead-end line) · `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:391` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
