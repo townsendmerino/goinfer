@@ -35,6 +35,12 @@
 //        server's completion_tokens), warn at 80%, "will not fit" at 95%, capped bar, re-measured on delete
 //        and model switch, hidden with no window; context_length_exceeded explained (and only it);
 //        usage saved, restored, and unreadable stored usage ignored.
+//   W9 — separate conversations: an empty chat is not stored; provisional title from the first message,
+//        then ONE background title request (non-streaming, cleaned, hostile-inert, cancelled by a reply and
+//        re-asked, never retried once unusable, never overriding a rename); most-recent-first list; open,
+//        busy-disabled, rename (Escape/Enter/empty), delete (asks; current falls to the next); another
+//        tab's conversation listed; unreadable/mislabelled keys set aside; per-tab reopen after reload;
+//        and the W3-era single conversation migrated once.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -76,7 +82,33 @@ const prelude = String.raw`
   }
   const lastBot = () => { const b = document.querySelectorAll("#log .msg.bot"); return b[b.length - 1]; };
   const lastYou = () => { const b = document.querySelectorAll("#log .msg.you"); return b[b.length - 1]; };
-  const stored = () => { try { return JSON.parse(localStorage.getItem("goinfer.chat.v1")); } catch { return "UNPARSEABLE"; } };
+  // W9: the conversation on screen is stored under its own key
+  const chatKey = () => "goinfer.chat.v2." + currentChat.id;
+  const stored = () => { try { return JSON.parse(localStorage.getItem(chatKey())); } catch { return "UNPARSEABLE"; } };
+  const putStored = messages => localStorage.setItem(chatKey(), JSON.stringify({ v: 2, id: currentChat.id, title: "t", titled: "user", updated: Date.now(), messages }));
+
+  // W9 asks the model for a title in the background, as a NON-streaming chat request. Every fetch stub a
+  // phase installs is wrapped so that request is answered here — recorded in __titleBodies, answered with
+  // __titleReply — and never reaches the stub, whose __lastBody the other checks read.
+  if (!window.__titleWrapped) {
+    window.__titleWrapped = true;
+    window.__titleBodies = [];
+    window.__titleReply = { content: "Gate title" };
+    let inner = window.fetch;
+    const wrapped = async (url, opts) => {
+      let b = null; try { b = opts && opts.body ? JSON.parse(opts.body) : null; } catch {}
+      if (url === "/v1/chat/completions" && b && b.stream !== true) {
+        window.__titleBodies.push(b);
+        const t = window.__titleReply;
+        if (t.hang) await new Promise((_, no) => opts?.signal?.addEventListener("abort", () => { window.__titleAborts = (window.__titleAborts || 0) + 1; no(new DOMException("aborted", "AbortError")); }));
+        if (t.delay) await wait(t.delay);
+        if (t.status) return new Response("{}", { status: t.status });
+        return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: t.content } }] }), { status: 200 });
+      }
+      return inner(url, opts);
+    };
+    Object.defineProperty(window, "fetch", { configurable: true, get: () => wrapped, set: f => { inner = f; } });
+  }
 `;
 const phase = body => "(async () => {" + prelude + body + "\n  return results;\n})()";
 
@@ -179,7 +211,7 @@ const phase1 = phase(String.raw`
   // ---- W3: what was saved -------------------------------------------------------------------------
   const st = stored();
   const msgs = st && st.messages;
-  check("W3 conversation saved under a versioned key", st && st.v === 1 && Array.isArray(msgs), JSON.stringify(st)?.slice(0, 120));
+  check("W3 conversation saved under a versioned key", st && st.v === 2 && st.id === currentChat.id && Array.isArray(msgs), JSON.stringify(st)?.slice(0, 120));
   check("W3 saved exactly the four turns", msgs && msgs.map(m => m.role).join(",") === "user,assistant,user,assistant", msgs && msgs.map(m => m.role));
   check("W3 saved the full answer and its stats", msgs && msgs[1].content === answer && /tok\/s/.test(msgs[1].meta || "") && !msgs[1].state, JSON.stringify(msgs && msgs[1])?.slice(0, 160));
   check("W3 saved the stopped answer as stopped, with what arrived", msgs && msgs[3].content === partial && msgs[3].state === "stopped", JSON.stringify(msgs && msgs[3]));
@@ -219,14 +251,17 @@ const phase3 = phase(String.raw`
   const st = stored();
   check("W3 interrupted state written back to storage", st.messages[st.messages.length - 1].state === "interrupted", JSON.stringify(st.messages[st.messages.length - 1]));
 
-  localStorage.setItem("goinfer.chat.v1", "{this is not json");
+  window.__corruptKey = chatKey();
+  sessionStorage.setItem("gate.corruptKey", chatKey());
+  localStorage.setItem(chatKey(), "{this is not json");
 `);
 
 // ---- phase 4: after a reload with unreadable storage; quota; New chat; tab sync ---------------------
 const phase4 = phase(String.raw`
+  const corrupt = sessionStorage.getItem("gate.corruptKey");
   check("W3 unreadable storage: page loads with an empty log", document.querySelectorAll("#log .msg").length === 0, document.querySelectorAll("#log .msg").length);
-  check("W3 unreadable storage is set aside, not destroyed", localStorage.getItem("goinfer.chat.v1.unreadable") === "{this is not json", localStorage.getItem("goinfer.chat.v1.unreadable"));
-  check("W3 unreadable value removed from the live key", localStorage.getItem("goinfer.chat.v1") === null, localStorage.getItem("goinfer.chat.v1"));
+  check("W3 unreadable storage is set aside, not destroyed", !!corrupt && localStorage.getItem(corrupt + ".unreadable") === "{this is not json", localStorage.getItem(corrupt + ".unreadable"));
+  check("W3 unreadable value removed from the live key", localStorage.getItem(corrupt) === null, localStorage.getItem(corrupt));
 
   // quota: every write throws — the chat must keep working and say so
   const realSet = Storage.prototype.setItem;
@@ -238,32 +273,31 @@ const phase4 = phase(String.raw`
   check("W3 quota failure: the note is shown", !$("store-note").hidden && /can't be kept across a reload/.test($("store-note").textContent), $("store-note").hidden + " " + $("store-note").textContent);
   Storage.prototype.setItem = realSet;
 
-  // New chat, cancelled: nothing cleared
-  window.confirm = () => false;
+  // New chat (W9 semantics): starts another conversation, keeps this one, asks nothing
+  let asked = 0;
+  window.confirm = () => { asked++; return false; };
+  save();   // storage works again: write the quota-era conversation
+  const before = chatKey();
   $("newchat").click();
-  check("W3 New chat cancelled keeps the conversation", document.querySelectorAll("#log .msg").length === 2, document.querySelectorAll("#log .msg").length);
-  // New chat, confirmed
-  window.confirm = () => true;
-  localStorage.setItem("goinfer.chat.v1", JSON.stringify({ v: 1, messages: [{ role: "user", content: "x" }] }));
-  $("newchat").click();
-  check("W3 New chat confirmed clears the log", document.querySelectorAll("#log .msg").length === 0, document.querySelectorAll("#log .msg").length);
-  check("W3 New chat confirmed clears storage", localStorage.getItem("goinfer.chat.v1") === null, localStorage.getItem("goinfer.chat.v1"));
+  check("W3/W9 New chat clears the log", document.querySelectorAll("#log .msg").length === 0, document.querySelectorAll("#log .msg").length);
+  check("W3/W9 New chat keeps the previous conversation stored, and asks nothing", asked === 0 && JSON.parse(localStorage.getItem(before))?.messages?.length === 2 && chatKey() !== before, asked + " asked / " + localStorage.getItem(before)?.slice(0, 60));
   check("W3 New chat hides the storage note", $("store-note").hidden, $("store-note").hidden);
+  window.confirm = () => true;
 
-  // another tab writes a conversation: this idle tab follows it
-  localStorage.setItem("goinfer.chat.v1", JSON.stringify({ v: 1, messages: [
+  // another tab writes the conversation this tab has open: this idle tab follows it
+  putStored([
     { role: "user", content: "from the other tab" },
-    { role: "assistant", content: "**synced**", model: "other-model", meta: "3 tok" } ] }));
-  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v1" }));
+    { role: "assistant", content: "**synced**", model: "other-model", meta: "3 tok" } ]);
+  window.dispatchEvent(new StorageEvent("storage", { key: chatKey() }));
   await wait(50);
   check("W3 idle tab follows another tab's conversation", lastBot()?.children[1].querySelector("strong")?.textContent === "synced" && lastYou()?.children[1].textContent === "from the other tab", lastBot()?.innerText);
 
   // hostile stored content, rendered on the next load
-  localStorage.setItem("goinfer.chat.v1", JSON.stringify({ v: 1, messages: [
+  putStored([
     { role: "user", content: "<img src=x onerror=\"window.__pwned=1\">" },
     { role: "assistant", content: "[x](javascript:window.__pwned=1)\n\n<script>window.__pwned=1<\/script>", model: "<b onmouseover=window.__pwned=1>m</b>", meta: "<img src=x onerror=window.__pwned=1>" },
     { role: "system", content: "not a turn this page renders" },
-    { role: "assistant", content: 42 } ] }));
+    { role: "assistant", content: 42 } ]);
 `);
 
 // ---- phase 5: after a reload with hostile stored content --------------------------------------------
@@ -587,8 +621,8 @@ const phase10 = phase(String.raw`
   // a stored duration that is not a number is ignored, not rendered
   const st = stored();
   st.messages.at(-1).thought = "<img src=x onerror=\"window.__pwned=1\">";
-  localStorage.setItem("goinfer.chat.v1", JSON.stringify(st));
-  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v1" }));
+  localStorage.setItem(chatKey(), JSON.stringify(st));
+  window.dispatchEvent(new StorageEvent("storage", { key: chatKey() }));
   await wait(200);
   box = lastBot()?.querySelector("details.think");
   check("W6 a non-numeric stored duration falls back to a plain label", box?.querySelector("summary")?.textContent === "Thinking" && document.querySelectorAll("img").length === 0 && window.__pwned === 0, box?.querySelector("summary")?.textContent);
@@ -650,7 +684,7 @@ const phase11 = phase(String.raw`
   await send();
   check("W7 the prompt cannot send while a message is being edited", window.__lastBody === beforeEdit && yous().length === 3 && $("prompt").value === "sneaks in while editing", yous().length);
   $("prompt").value = "";
-  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v1" }));
+  window.dispatchEvent(new StorageEvent("storage", { key: chatKey() }));
   check("W7 another tab's change does not close an open edit", document.querySelector("#log textarea.edit-box") === ta, !!document.querySelector("#log textarea.edit-box"));
   ta.value = "changed but cancelled";
   ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -808,8 +842,8 @@ const phase14 = phase(W8_PRELUDE + String.raw`
   const st = stored();
   const lastWithUsage = st.messages.map((x, i) => x.usage ? i : -1).filter(i => i >= 0).pop();
   st.messages[lastWithUsage].usage = { prompt_tokens: "900<img src=x onerror=window.__pwned=1>", completion_tokens: -5 };
-  localStorage.setItem("goinfer.chat.v1", JSON.stringify(st));
-  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v1" }));
+  localStorage.setItem(chatKey(), JSON.stringify(st));
+  window.dispatchEvent(new StorageEvent("storage", { key: chatKey() }));
   await wait(100);
   m = meter();
   check("W8 unreadable stored usage is ignored, falling back to the previous reply's", /about 820 of 1,000/.test(m.text) && document.querySelectorAll("img").length === 0 && window.__pwned === 0, JSON.stringify(m));
@@ -817,8 +851,202 @@ const phase14 = phase(W8_PRELUDE + String.raw`
   check("W8 New chat hides the meter", $("ctx").hidden, JSON.stringify(meter()));
 `);
 
+// ---- phase 15: W9 — conversations, the list, generated titles --------------------------------------------
+const W9_PRELUDE = String.raw`
+  const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  let asked = [], answer = true;
+  window.confirm = m => { asked.push(m); return answer; };
+  const items = () => [...document.querySelectorAll("#chat-list li.chat-item")];
+  const titles = () => items().map(li => li.querySelector(".chat-open")?.textContent).join("|");
+  const currentTitle = () => document.querySelector("#chat-list li.current .chat-open")?.textContent;
+  const v2keys = () => Object.keys(localStorage).filter(k => k.startsWith("goinfer.chat.v2.") && !k.endsWith(".unreadable"));
+  const item = t => items().find(li => li.querySelector(".chat-open")?.textContent === t);
+  const turn = async (q, a) => { streamAnswer(a); $("prompt").value = q; await send(); await idle(); await wait(30); };
+`;
+const phase15 = phase(W9_PRELUDE + String.raw`
+  for (const k of v2keys()) localStorage.removeItem(k);
+  startFresh();
+  check("W9 a fresh start lists one pending New chat, current, with no rename or delete", titles() === "New chat" && items()[0].classList.contains("current") && !items()[0].querySelector(".chat-rename, .chat-delete"), titles());
+  const freshId = currentChat.id;
+  $("newchat").click();
+  check("W9 New chat on an empty chat does nothing", currentChat.id === freshId && items().length === 1, currentChat.id + " / " + items().length);
+  save();   // save() has many callers (reload, tab sync, W7) — on an empty new chat it must write nothing
+  check("W9 an empty chat is not stored, even when save() is called", v2keys().length === 0, v2keys());
+
+  // ---- titles ----
+  window.__titleBodies.length = 0;
+  window.__titleReply = { content: "Capital of France", delay: 150 };
+  streamAnswer("Paris.");
+  $("prompt").value = "What is the capital of France?";
+  await send(); await idle();
+  check("W9 first message gives an instant provisional title", titles() === "What is the capital of France?" && stored().titled === "first", titles());
+  check("W9 the chat is stored once something is said", v2keys().length === 1 && !items()[0].querySelector(".chat-open").textContent.includes("New chat"), v2keys());
+  await until(() => titles() === "Capital of France");
+  const tb = window.__titleBodies[0];
+  check("W9 after the first reply the model is asked for a title — once, non-streaming, short", window.__titleBodies.length === 1 && tb.stream === false && tb.max_tokens === 24 && tb.messages[0].content.endsWith("What is the capital of France?") && tb.model === "gate-model", JSON.stringify(tb)?.slice(0, 200));
+  check("W9 the generated title replaces the provisional one, and is saved", titles() === "Capital of France" && stored().title === "Capital of France" && stored().titled === "model", titles() + " / " + JSON.stringify(stored()?.titled));
+  check("W9 the title request never becomes the chat's last request", window.__lastBody?.stream === true, JSON.stringify(window.__lastBody)?.slice(0, 80));
+  await turn("And of Spain?", "Madrid.");
+  await wait(100);
+  check("W9 later replies do not ask for a title again", window.__titleBodies.length === 1, window.__titleBodies.length);
+
+  // a reply that is not a usable title: provisional stays, and it is not retried
+  $("newchat").click();
+  check("W9 New chat adds a pending chat on top and keeps the old one", titles() === "New chat|Capital of France", titles());
+  window.__titleReply = { content: "<think>\nThe user wants a title. Let me think about" };
+  await turn("x".repeat(30) + " a long first message that will not fit in the list", "ok");
+  await until(() => stored()?.titled === "tried");
+  check("W9 a thinking-only title reply keeps the provisional title, marked tried", stored().titled === "tried" && currentTitle() === ("x".repeat(30) + " a long first message th").slice(0, 47) + "…", currentTitle() + " / " + stored()?.titled);
+  const n = window.__titleBodies.length;
+  await turn("again", "ok"); await wait(100);
+  check("W9 a tried title is not asked for again", window.__titleBodies.length === n, window.__titleBodies.length + " vs " + n);
+
+  $("newchat").click();
+  window.__titleReply = { content: "Title: \"**Rust ownership rules**.\"\nSome explanation after" };
+  await turn("explain ownership", "ok");
+  await until(() => stored()?.titled === "model");
+  check("W9 the model's title is cleaned: first line, no label, quotes, markup or final period", currentTitle() === "Rust ownership rules", currentTitle());
+
+  $("newchat").click();
+  window.__titleReply = { content: "<think>\nThe user asks about bread.\n</think>\n\nSourdough starter trouble" };
+  await turn("my starter smells odd", "ok");
+  await until(() => stored()?.titled !== "first");
+  check("W9 a reasoning model that finishes thinking gets its title, without the thinking", currentTitle() === "Sourdough starter trouble" && stored().titled === "model", currentTitle());
+
+  $("newchat").click();
+  window.__titleReply = { content: "<img src=x onerror=\"window.__pwned=1\">" };
+  await turn("hostile title", "ok");
+  await until(() => stored()?.titled === "model");
+  await wait(150);
+  check("W9 a hostile title is shown as text and stays inert", currentTitle() === "<img src=x onerror=\"window.__pwned=1\">" && document.querySelectorAll("img").length === 0 && window.__pwned === 0, currentTitle());
+
+  // a reply started while the title request is out cancels it; it is asked again after that reply
+  $("newchat").click();
+  window.__titleReply = { hang: true };
+  const before = window.__titleBodies.length;
+  await turn("first of two", "one");
+  await until(() => window.__titleBodies.length === before + 1);
+  window.__titleReply = { content: "Asked again" };
+  window.__titleAborts = 0;
+  streamAnswer("two", { hang: true });
+  $("prompt").value = "second of two";
+  const r2 = send();
+  await until(() => !$("stop").hidden);
+  check("W9 starting a reply cancels the title request that is out", window.__titleAborts === 1, window.__titleAborts);
+  $("stop").click(); await r2; await idle();
+  await turn("third", "three");
+  await until(() => currentTitle() === "Asked again");
+  check("W9 a cancelled title is asked for again after a later reply", window.__titleBodies.length === before + 2 && currentTitle() === "Asked again", window.__titleBodies.length - before + " / " + currentTitle());
+
+  // ---- the list: order, switching, busy ----
+  check("W9 the list is most recently updated first", titles() === "Asked again|<img src=x onerror=\"window.__pwned=1\">|Sourdough starter trouble|Rust ownership rules|" + ("x".repeat(30) + " a long first message th").slice(0, 47) + "…|Capital of France", titles());
+  item("Capital of France").querySelector(".chat-open").click();
+  check("W9 opening a conversation shows it and marks it current", currentTitle() === "Capital of France" && [...document.querySelectorAll("#log .msg.you")].map(m => m.children[1].textContent).join("|") === "What is the capital of France?|And of Spain?", currentTitle());
+  check("W9 the open conversation is remembered for this tab", sessionStorage.getItem("goinfer.chat.current") === currentChat.id, sessionStorage.getItem("goinfer.chat.current"));
+  check("W9 opening a conversation does not reorder the list", titles().startsWith("Asked again|"), titles());
+  await turn("And of Italy?", "Rome.");
+  check("W9 replying moves a conversation to the top, with its history intact", titles().startsWith("Capital of France|") && window.__lastBody.messages.filter(m => m.role !== "system").length === 5, titles());
+
+  streamAnswer("slow ", { hang: true });
+  $("prompt").value = "busy";
+  const run = send();
+  await until(() => !$("stop").hidden); await wait(50);
+  check("W9 the list is disabled while a reply is generating", [...document.querySelectorAll("#chat-list button")].every(b => b.disabled), [...document.querySelectorAll("#chat-list button")].filter(b => !b.disabled).length);
+  const idBusy = currentChat.id;
+  openChat(item("Rust ownership rules").dataset.id);
+  check("W9 openChat refuses while generating, even called directly", currentChat.id === idBusy, currentChat.id);
+  $("stop").click(); await run; await idle();
+
+  // ---- rename ----
+  const renameOrder = titles();
+  item("Rust ownership rules").querySelector(".chat-rename").click();
+  let box = document.querySelector("#chat-list .chat-rename-box");
+  check("W9 Rename opens the title for editing, focused", box && box.value === "Rust ownership rules" && document.activeElement === box, box?.value);
+  box.value = "discarded";
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  check("W9 Escape cancels a rename", titles() === renameOrder, titles());
+  item("Rust ownership rules").querySelector(".chat-rename").click();
+  box = document.querySelector("#chat-list .chat-rename-box");
+  box.value = "  Borrow   checker notes ";
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  const renamedId = item("Borrow checker notes")?.dataset.id;
+  const renamed = renamedId && JSON.parse(localStorage.getItem("goinfer.chat.v2." + renamedId));
+  check("W9 Enter saves a rename — tidied, marked user, without moving it in the list", renamed && renamed.title === "Borrow checker notes" && renamed.titled === "user" && titles() === renameOrder.replace("Rust ownership rules", "Borrow checker notes"), titles());
+  item("Borrow checker notes").querySelector(".chat-rename").click();
+  box = document.querySelector("#chat-list .chat-rename-box");
+  box.value = "   ";
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  check("W9 an empty rename keeps the old title", !!item("Borrow checker notes"), titles());
+  // rename the OPEN conversation while it is not the most recent: a rename is not activity
+  items()[2].querySelector(".chat-open").click();
+  const orderOpen = titles(), openTitle = currentTitle();
+  document.querySelector("#chat-list li.current .chat-rename").click();
+  box = document.querySelector("#chat-list .chat-rename-box");
+  box.value = "Renamed while open";
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  check("W9 renaming the open conversation does not move it either", titles() === orderOpen.replace(openTitle, "Renamed while open") && currentTitle() === "Renamed while open", titles() + " vs " + orderOpen);
+
+  // a rename made while a title request is out wins over it
+  $("newchat").click();
+  window.__titleReply = { content: "Model would say this", delay: 400 };
+  await turn("race the title", "ok");
+  document.querySelector("#chat-list li.current .chat-rename").click();
+  box = document.querySelector("#chat-list .chat-rename-box");
+  box.value = "Mine";
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await wait(600);
+  check("W9 a rename wins over a title that arrives after it", currentTitle() === "Mine" && stored().titled === "user", currentTitle());
+
+  // ---- delete ----
+  asked = []; answer = false;
+  const curBefore = currentChat.id;
+  item("Borrow checker notes").querySelector(".chat-delete").click();
+  check("W9 Delete asks first; declining keeps it", asked.length === 1 && /cannot be undone/.test(asked[0]) && !!item("Borrow checker notes"), JSON.stringify(asked));
+  answer = true;
+  const delId = item("Borrow checker notes").dataset.id;
+  item("Borrow checker notes").querySelector(".chat-delete").click();
+  check("W9 deleting another conversation removes it and its storage, and leaves you where you are", !item("Borrow checker notes") && localStorage.getItem("goinfer.chat.v2." + delId) === null && currentChat.id === curBefore, titles());
+  const nextUp = items().find(li => !li.classList.contains("current"))?.querySelector(".chat-open").textContent;
+  document.querySelector("#chat-list li.current .chat-delete").click();
+  check("W9 deleting the open conversation opens the most recent remaining one", currentTitle() === nextUp && document.querySelectorAll("#log .msg").length > 0, currentTitle() + " vs " + nextUp);
+
+  // ---- another tab, and what storage can hold ----
+  localStorage.setItem("goinfer.chat.v2.othertab1", JSON.stringify({ v: 2, id: "othertab1", title: "From another tab", titled: "user", updated: Date.now() + 1000, messages: [{ role: "user", content: "hi" }] }));
+  localStorage.setItem("goinfer.chat.v2.brokenchat", "{not json");
+  localStorage.setItem("goinfer.chat.v2.Bad-Id!", JSON.stringify({ v: 2, id: "Bad-Id!", title: "invalid id", updated: 1, messages: [] }));
+  localStorage.setItem("goinfer.chat.v2.mismatch", JSON.stringify({ v: 2, id: "notmismatch", title: "wrong id inside", updated: 1, messages: [] }));
+  const openId = currentChat.id;
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v2.othertab1" }));
+  check("W9 a conversation added in another tab appears in the list, without switching this tab", titles().startsWith("From another tab|") && currentChat.id === openId, titles());
+  check("W9 unreadable or mislabelled stored conversations are not listed, and are set aside", !/invalid id|wrong id inside/.test(titles()) && localStorage.getItem("goinfer.chat.v2.brokenchat.unreadable") === "{not json" && localStorage.getItem("goinfer.chat.v2.brokenchat") === null && localStorage.getItem("goinfer.chat.v2.mismatch.unreadable") !== null, titles());
+  localStorage.removeItem("goinfer.chat.v2.Bad-Id!");
+  sessionStorage.setItem("gate.w9.open", currentChat.id);
+  sessionStorage.setItem("gate.w9.titles", titles());
+`);
+
+// ---- phase 16: after a reload — same conversation open, same list; then plant a W3-era store ------------
+const phase16 = phase(W9_PRELUDE + String.raw`
+  check("W9 after reload this tab reopens the conversation it had open", currentChat.id === sessionStorage.getItem("gate.w9.open"), currentChat.id);
+  check("W9 after reload the list and its titles are unchanged", titles() === sessionStorage.getItem("gate.w9.titles"), titles());
+  sessionStorage.setItem("gate.w9.count", String(v2keys().length));
+  localStorage.setItem("goinfer.chat.v1", JSON.stringify({ v: 1, messages: [
+    { role: "user", content: "a conversation from before W9" }, { role: "assistant", content: "kept", meta: "1 tok" } ] }));
+  sessionStorage.removeItem("goinfer.chat.current");
+`);
+
+// ---- phase 17: after a reload — the W3 conversation migrated into a conversation of its own -------------
+const phase17 = phase(W9_PRELUDE + String.raw`
+  check("W9 a W3-era conversation is migrated and opened", [...document.querySelectorAll("#log .msg")].map(m => m.children[1].textContent).join("|") === "a conversation from before W9|kept" && currentTitle() === "a conversation from before W9", currentTitle());
+  check("W9 migration removes the old key and adds exactly one conversation", localStorage.getItem("goinfer.chat.v1") === null && v2keys().length === Number(sessionStorage.getItem("gate.w9.count")) + 1, v2keys().length);
+  window.__titleBodies.length = 0;
+  await turn("carry on", "sure");
+  await until(() => window.__titleBodies.length === 1);
+  check("W9 a migrated conversation gets its generated title after its next reply", window.__titleBodies.length === 1 && window.__titleBodies[0].messages[0].content.endsWith("a conversation from before W9"), window.__titleBodies.length);
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }

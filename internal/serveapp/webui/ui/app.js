@@ -264,13 +264,34 @@ $("log").addEventListener("click", async e => {
   catch { flash(btn, "Copy failed"); }
 });
 
-// --- persistence (W3) ------------------------------------------------------------
-// The conversation survives a reload, in localStorage under a versioned key. Every failure mode is
-// non-fatal: storage blocked, quota exceeded, or a value this page cannot read — the chat keeps
-// working, and an unreadable value is set aside under STORE+".unreadable" rather than destroyed.
-// One conversation is shared by every tab on this origin; an idle tab follows another tab's changes
-// (the "storage" listener below). Separate conversations are W9.
-const STORE = "goinfer.chat.v1";
+// --- persistence (W3) and conversations (W9) -------------------------------------------
+// Every conversation survives a reload, in localStorage, ONE KEY PER CONVERSATION (CHAT_PREFIX + id):
+// {v: 2, id, title, titled, updated, messages}. One key each, rather than one key for all, so the
+// once-a-second save while a reply streams rewrites only the conversation being written, and so a
+// conversation that cannot be read costs only itself. There is no separate index to fall out of step:
+// the list is read from the keys. Every failure mode is non-fatal — storage blocked, quota exceeded,
+// or a value this page cannot read (set aside under its key + ".unreadable", never destroyed).
+//
+// Which conversation a tab shows is per TAB (sessionStorage), so two tabs can have different chats
+// open; a new tab opens the most recently updated one. W3's single conversation (LEGACY_STORE) is
+// migrated into a conversation of its own, once, and opened.
+const CHAT_PREFIX = "goinfer.chat.v2.";
+const LEGACY_STORE = "goinfer.chat.v1";
+const CURRENT_CHAT = "goinfer.chat.current";
+const CHAT_ID_OK = /^[a-z0-9]{1,32}$/;
+// titled says where the title came from: "first" = provisional, from the first message, model not yet
+// asked; "tried" = provisional, and the model's attempt gave nothing usable; "model"; "user" (renamed).
+const TITLED = new Set(["first", "tried", "model", "user"]);
+
+const newChatId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const freshChat = () => ({id: newChatId(), title: "", titled: "", updated: 0, stored: false});
+let currentChat = freshChat();
+
+// provisionalTitle is the instant title: the first message, one line, cut to fit the list.
+function provisionalTitle(text) {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > 48 ? t.slice(0, 47) + "…" : t;
+}
 
 function storeFailed() {
   $("store-note").textContent = "This conversation can't be kept across a reload (browser storage is full or blocked) — " +
@@ -278,13 +299,105 @@ function storeFailed() {
   $("store-note").hidden = false;
 }
 
-function save() {
+function rememberCurrent() {
+  try { sessionStorage.setItem(CURRENT_CHAT, currentChat.id); } catch { /* blocked */ }
+}
+
+// save writes the current conversation. An empty new chat is not written — it is not a conversation
+// until something is said in it. bump=false keeps its place in the list (a rename is not activity).
+function save(bump = true) {
+  if (!transcript.length && !currentChat.stored) return;
+  if (!currentChat.title) {
+    const first = transcript.find(m => m.role === "user");
+    if (first) { currentChat.title = provisionalTitle(first.content); currentChat.titled = "first"; }
+  }
+  if (bump || !currentChat.updated) currentChat.updated = Date.now();
+  const c = currentChat;
   try {
-    localStorage.setItem(STORE, JSON.stringify({ v: 1, messages: transcript }));
+    localStorage.setItem(CHAT_PREFIX + c.id, JSON.stringify({v: 2, id: c.id, title: c.title, titled: c.titled, updated: c.updated, messages: transcript}));
     $("store-note").hidden = true;
+    if (!c.stored) { c.stored = true; renderChatList(); }
   } catch {
     storeFailed();
   }
+  rememberCurrent();
+}
+
+// parseMessages validates stored messages field by field: this is data, and it is rendered.
+// hadGenerating reports a reply that was streaming when the page went away.
+function parseMessages(list) {
+  const out = [];
+  let hadGenerating = false;
+  for (const m of list) {
+    if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") continue;
+    const e = { role: m.role, content: m.content };
+    if (typeof m.model === "string") e.model = m.model;
+    if (typeof m.meta === "string") e.meta = m.meta;
+    if (m.state === "stopped" || m.state === "interrupted") e.state = m.state;
+    if (m.state === "generating") { e.state = "interrupted"; hadGenerating = true; }   // it was streaming when the page went away
+    if (typeof m.thought === "number" && Number.isFinite(m.thought) && m.thought >= 0) e.thought = m.thought;   // W6
+    const u = m.usage, tok = x => Number.isSafeInteger(x) && x >= 0;
+    if (u && tok(u.prompt_tokens) && tok(u.completion_tokens)) e.usage = {prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens};   // W8
+    out.push(e);
+  }
+  return {messages: out, hadGenerating};
+}
+
+// setAside moves an unreadable value out of the live key, keeping it.
+function setAside(key, raw) {
+  try { localStorage.setItem(key + ".unreadable", raw); localStorage.removeItem(key); } catch { /* leave it */ }
+}
+
+// readChat returns a stored conversation, or null when there is none (or it could not be read, in
+// which case it has been set aside). withMessages=false skips message validation, for the list.
+function readChat(id, withMessages = true) {
+  if (!CHAT_ID_OK.test(id)) return null;
+  const key = CHAT_PREFIX + id;
+  let raw;
+  try { raw = localStorage.getItem(key); } catch { return null; }
+  if (!raw) return null;
+  let d = null;
+  try { d = JSON.parse(raw); } catch { /* unreadable */ }
+  if (!d || d.v !== 2 || d.id !== id || !Array.isArray(d.messages)) { setAside(key, raw); return null; }
+  const c = {
+    id, stored: true,
+    title: typeof d.title === "string" ? d.title.slice(0, 200) : "",
+    titled: TITLED.has(d.titled) ? d.titled : "user",
+    updated: Number.isFinite(d.updated) ? d.updated : 0,
+  };
+  if (withMessages) Object.assign(c, parseMessages(d.messages));
+  return c;
+}
+
+// listChats reads every stored conversation's metadata, most recently updated first.
+function listChats() {
+  const ids = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(CHAT_PREFIX) && CHAT_ID_OK.test(k.slice(CHAT_PREFIX.length))) ids.push(k.slice(CHAT_PREFIX.length));
+    }
+  } catch { return []; }
+  return ids.map(id => readChat(id, false)).filter(Boolean).sort((a, b) => b.updated - a.updated);
+}
+
+// migrateLegacy turns W3's single conversation into a W9 conversation, once. Returns its id, or null.
+function migrateLegacy() {
+  let raw;
+  try { raw = localStorage.getItem(LEGACY_STORE); } catch { return null; }
+  if (!raw) return null;
+  let d = null;
+  try { d = JSON.parse(raw); } catch { /* unreadable */ }
+  if (!d || d.v !== 1 || !Array.isArray(d.messages)) { setAside(LEGACY_STORE, raw); return null; }
+  const {messages} = parseMessages(d.messages);
+  const c = freshChat();
+  const first = messages.find(m => m.role === "user");
+  const value = {v: 2, id: c.id, title: first ? provisionalTitle(first.content) : "", titled: "first", updated: Date.now(), messages};
+  try {
+    if (messages.length) localStorage.setItem(CHAT_PREFIX + c.id, JSON.stringify(value));
+    localStorage.removeItem(LEGACY_STORE);
+  } catch { return null; }   // quota: leave the legacy value where it is, try again next load
+  return messages.length ? c.id : null;
 }
 
 // --- system prompt (W4) -----------------------------------------------------------
@@ -307,33 +420,6 @@ function saveSystem() {
 function loadSystem() {
   try { $("system").value = localStorage.getItem(SYSTEM_STORE) || ""; } catch { /* blocked */ }
   showSystemState();
-}
-
-function loadStored() {
-  let raw;
-  try { raw = localStorage.getItem(STORE); } catch { return []; }   // storage blocked
-  if (!raw) return [];
-  let data = null;
-  try { data = JSON.parse(raw); } catch { /* unreadable */ }
-  if (!data || data.v !== 1 || !Array.isArray(data.messages)) {
-    try { localStorage.setItem(STORE + ".unreadable", raw); localStorage.removeItem(STORE); } catch { /* leave it */ }
-    return [];
-  }
-  const out = [];
-  for (const m of data.messages) {
-    // Validate every field: this is data, and it is rendered.
-    if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") continue;
-    const e = { role: m.role, content: m.content };
-    if (typeof m.model === "string") e.model = m.model;
-    if (typeof m.meta === "string") e.meta = m.meta;
-    if (m.state === "stopped" || m.state === "interrupted") e.state = m.state;
-    if (m.state === "generating") e.state = "interrupted";   // it was streaming when the page went away
-    if (typeof m.thought === "number" && Number.isFinite(m.thought) && m.thought >= 0) e.thought = m.thought;   // W6
-    const u = m.usage, tok = x => Number.isSafeInteger(x) && x >= 0;
-    if (u && tok(u.prompt_tokens) && tok(u.completion_tokens)) e.usage = {prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens};   // W8
-    out.push(e);
-  }
-  return out;
 }
 
 function metaText(e) {
@@ -414,6 +500,7 @@ function syncActions() {
     if (regen) regen.hidden = e !== last;
     for (const b of msg.querySelectorAll(".msg-edit, .msg-regen, .msg-delete")) b.disabled = busy;
   }
+  for (const b of $("chat-list").querySelectorAll("button")) b.disabled = busy;   // W9
 }
 
 // --- regenerate, edit, delete (W7) ------------------------------------------------
@@ -543,6 +630,7 @@ async function send() {
 // and Edit, which change the transcript first.
 async function generate() {
   if (ac || editing) return;
+  if (titleAC) titleAC.abort();   // W9: a title is never worth making someone wait for their reply
   const model = $("model").value;
   if (!model) { $("chat-status").textContent = "no model loaded"; return; }
   const messages = apiMessages();          // taken BEFORE the assistant entry exists
@@ -624,6 +712,10 @@ async function generate() {
     addMeta(out, entry.meta);
     addActions(out, copyOf(acc), entry);
     showContext();
+    if (currentChat.titled === "first") {
+      const first = transcript.find(m => m.role === "user");
+      if (first) queueMicrotask(() => autoTitle(currentChat.id, first.content, model));
+    }
     $("chat-status").textContent = "";
   } catch (e) {
     if (e.name === "AbortError") {
@@ -645,42 +737,217 @@ async function generate() {
     save();
     ac = null; $("send").disabled = false; $("stop").hidden = true; $("newchat").disabled = false;
     syncActions();
+    renderChatList();   // W9: this conversation moves to the top, and the list is usable again
   }
 }
 $("send").onclick = send;
 
-// New chat (W3): with the conversation now persistent, it needs a way to start over. Asks first,
-// because clearing has no undo. Disabled while a reply is generating.
+// --- the conversation list (W9) ------------------------------------------------------------
+function openChat(id) {
+  if (ac || editing) return;
+  const c = readChat(id);
+  if (!c) { renderChatList(); return; }
+  currentChat = {id: c.id, title: c.title, titled: c.titled, updated: c.updated, stored: true};
+  rememberCurrent();
+  showTranscript(c.messages);
+  $("store-note").hidden = true;
+  $("chat-status").textContent = "";
+  // A reply that was streaming when the page went away is now "interrupted"; write that back, so the
+  // state is recorded rather than re-derived on every load.
+  if (c.hadGenerating) save(false);
+  renderChatList();
+}
+
+function startFresh() {
+  currentChat = freshChat();
+  rememberCurrent();
+  showTranscript([]);
+  $("store-note").hidden = true;
+  $("chat-status").textContent = "";
+  renderChatList();
+}
+
+// New chat starts another conversation; the one you were in stays in the list. Nothing is lost, so it
+// does not ask (W3's New chat cleared the only conversation, and had to). On an empty new chat it
+// does nothing but put you in the message box.
 $("newchat").onclick = () => {
   if (ac) return;
   if (editing) finishEdit(null);
-  if (transcript.length && !confirm("Start a new chat? This conversation will be cleared.")) return;
-  transcript.length = 0;
-  $("log").replaceChildren();
-  try { localStorage.removeItem(STORE); } catch { /* blocked: nothing was stored */ }
-  $("store-note").hidden = true;
-  showContext();
-  $("chat-status").textContent = "";
+  if (!transcript.length && !currentChat.stored) { $("prompt").focus(); return; }
+  startFresh();
 };
+
+function deleteChat(id) {
+  if (ac || editing) return;
+  if (!confirm("Delete this conversation? This cannot be undone.")) return;
+  try { localStorage.removeItem(CHAT_PREFIX + id); } catch { /* blocked */ }
+  if (id !== currentChat.id) { renderChatList(); return; }
+  const next = listChats()[0];
+  if (next) openChat(next.id); else startFresh();
+}
+
+// setTitle changes a conversation's title without moving it in the list. Returns false when the
+// conversation no longer exists.
+function setTitle(id, title, titled) {
+  if (id === currentChat.id) {
+    currentChat.title = title; currentChat.titled = titled;
+    if (currentChat.stored) save(false);
+    renderChatList();
+    return true;
+  }
+  let d;
+  try { d = JSON.parse(localStorage.getItem(CHAT_PREFIX + id)); } catch { return false; }
+  if (!d || d.v !== 2 || d.id !== id) return false;
+  d.title = title; d.titled = titled;
+  try { localStorage.setItem(CHAT_PREFIX + id, JSON.stringify(d)); } catch { storeFailed(); return false; }
+  renderChatList();
+  return true;
+}
+
+let renaming = null;   // id of the conversation whose title is being edited in the list
+function startRename(id, item) {
+  if (ac || editing || renaming) return;
+  const c = id === currentChat.id ? currentChat : readChat(id, false);
+  if (!c) return;
+  renaming = id;
+  const input = document.createElement("input");
+  input.type = "text"; input.className = "chat-rename-box"; input.maxLength = 200;
+  input.value = c.title; input.setAttribute("aria-label", "Conversation title");
+  item.replaceChildren(input);
+  input.focus(); input.select();
+  let done = false;
+  const finish = keep => {
+    if (done) return;
+    done = true; renaming = null;
+    const t = input.value.replace(/\s+/g, " ").trim();
+    if (keep && t) setTitle(id, t, "user"); else renderChatList();
+  };
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+}
+
+function renderChatList() {
+  if (renaming) return;   // do not pull the box out from under someone typing a title
+  const ul = $("chat-list");
+  const chats = listChats();
+  if (!currentChat.stored) chats.unshift({id: currentChat.id, title: "", pending: true});
+  const busy = !!ac || !!editing;
+  const items = chats.map(c => {
+    const li = document.createElement("li");
+    li.className = "chat-item" + (c.id === currentChat.id ? " current" : "");
+    li.dataset.id = c.id;
+    const open = document.createElement("button");
+    open.type = "button"; open.className = "chat-open"; open.disabled = busy;
+    open.textContent = c.pending ? "New chat" : (c.title || "Untitled");
+    if (c.id === currentChat.id) open.setAttribute("aria-current", "true");
+    li.appendChild(open);
+    if (!c.pending) {
+      for (const [cls, label, aria] of [["chat-rename", "Rename", "Rename conversation"], ["chat-delete", "Delete", "Delete conversation"]]) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = cls; b.textContent = label; b.disabled = busy;
+        b.setAttribute("aria-label", aria);
+        li.appendChild(b);
+      }
+    }
+    return li;
+  });
+  ul.replaceChildren(...items);
+}
+
+$("chat-list").addEventListener("click", e => {
+  const btn = e.target.closest("button");
+  const li = btn && btn.closest("li.chat-item");
+  if (!btn || !li || btn.disabled) return;
+  const id = li.dataset.id;
+  if (btn.classList.contains("chat-open")) { if (id !== currentChat.id) openChat(id); }
+  else if (btn.classList.contains("chat-rename")) startRename(id, li);
+  else if (btn.classList.contains("chat-delete")) deleteChat(id);
+});
+
+// --- generated titles (W9) --------------------------------------------------------------------
+// After a conversation's first reply, the model is asked once, in the background, for a short title.
+// Until then — and for good, if the model gives nothing usable (a reasoning model can spend its whole
+// budget thinking) — the title is the first message. The request is cancelled the moment a reply is
+// asked for, so it never holds the model while you are waiting; a rename always wins over it.
+const TITLE_PROMPT = "Write a short title, at most six words, for a conversation that begins with the message below. " +
+  "Reply with the title only — no quotes, no punctuation at the end.\n\n";
+let titleAC = null;
+
+// cleanTitle turns a model's reply into a title, or "" when it is not one.
+function cleanTitle(text) {
+  const line = (answerOf(text || "").split("\n").map(l => l.trim()).find(Boolean) || "");
+  if (/<\||<\/?think/.test(line)) return "";
+  // strip wrapping markup and a final period until nothing changes: "**Title**." has the period outside
+  let t = line.replace(/^(title\s*:\s*)/i, ""), prev;
+  do { prev = t; t = t.replace(/^[#>*_`"'“”‘’\s]+|[*_`"'“”‘’\s.。]+$/g, ""); } while (t !== prev);
+  t = t.replace(/\s+/g, " ").trim();
+  if (t.length > 60) t = t.slice(0, 59) + "…";
+  return t;
+}
+
+async function autoTitle(id, first, model) {
+  const mine = new AbortController();
+  titleAC = mine;
+  let settled = false;
+  try {
+    const r = await fetch("/v1/chat/completions", {
+      method: "POST", headers: headers(), signal: mine.signal,
+      body: JSON.stringify({model, stream: false, temperature: 0, max_tokens: 24,
+        messages: [{role: "user", content: TITLE_PROMPT + first.slice(0, 1000)}]}),
+    });
+    const j = r.ok ? await r.json() : null;
+    const t = cleanTitle(j?.choices?.[0]?.message?.content);
+    settled = true;
+    const c = id === currentChat.id ? currentChat : readChat(id, false);
+    if (!c || c.titled !== "first") return;   // deleted, or renamed while we waited
+    setTitle(id, t || c.title, t ? "model" : "tried");
+  } catch {
+    // cancelled by a new reply (it will be asked again after that one), or the request failed
+    if (!mine.signal.aborted && !settled) {
+      const c = id === currentChat.id ? currentChat : readChat(id, false);
+      if (c && c.titled === "first") setTitle(id, c.title, "tried");
+    }
+  } finally {
+    if (titleAC === mine) titleAC = null;
+  }
+}
 
 // A reload mid-stream: save what has arrived. pagehide fires where beforeunload is unreliable (mobile).
 addEventListener("pagehide", () => { if (generating) save(); });
 
-// Another tab changed the conversation or the system prompt: follow it — unless this tab is mid-reply
-// (its own save wins then), or, for the system prompt, the user is typing in that box right now.
+// Another tab changed a conversation or the system prompt. The list always follows. The conversation
+// on screen follows too — unless this tab is mid-reply (its own save wins then) or editing a message;
+// for the system prompt, unless the user is typing in that box right now.
 addEventListener("storage", e => {
   if ((e.key === SYSTEM_STORE || e.key === null) && document.activeElement !== $("system")) loadSystem();
-  if ((e.key === STORE || e.key === null) && !ac && !editing) showTranscript(loadStored());
+  if (e.key === null || (e.key && e.key.startsWith(CHAT_PREFIX))) {
+    renderChatList();
+    if ((e.key === null || e.key === CHAT_PREFIX + currentChat.id) && !ac && !editing) {
+      const c = readChat(currentChat.id);
+      if (c) {
+        Object.assign(currentChat, {title: c.title, titled: c.titled, updated: c.updated, stored: true});
+        showTranscript(c.messages);
+      }
+    }
+  }
 });
 
 $("system").addEventListener("input", () => { showSystemState(); saveSystem(); });
 
 loadSystem();
 
-// Restore the conversation this browser was having. A "generating" entry becomes "interrupted"; saving
-// right away writes that back, so the state is recorded rather than re-derived on every load.
-showTranscript(loadStored());
-if (transcript.some(e => e.state === "interrupted")) save();
+// Open a conversation: the one migrated from W3's single store (once), else the one this tab had open,
+// else the most recently updated, else a new one.
+(() => {
+  const migrated = migrateLegacy();
+  let id = migrated;
+  if (!id) { try { id = sessionStorage.getItem(CURRENT_CHAT); } catch { /* blocked */ } }
+  if (!(id && readChat(id, false))) id = listChats()[0]?.id;
+  if (id) openChat(id); else startFresh();
+})();
 $("stop").onclick = () => ac && ac.abort();
 $("prompt").addEventListener("keydown", e => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }

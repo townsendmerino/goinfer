@@ -1582,3 +1582,15 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .ctx.warn #ctx-text{color:#8a5a12}
 .ctx.full #ctx-fill{background:var(--gi-err)}
 .ctx.full #ctx-text{color:var(--gi-err)}
+
+/* W9: the conversation list */
+.chats-head{font-size:12px;color:var(--gi-muted);letter-spacing:.02em;margin-bottom:6px}
+#chat-list{list-style:none;margin:0;padding:0;max-height:176px;overflow-y:auto}
+.chat-item{display:flex;align-items:center;gap:4px;border-radius:6px}
+.chat-item.current{background:color-mix(in srgb,var(--gi-accent) 9%,transparent)}
+.chat-open{flex:1;min-width:0;text-align:left;padding:5px 8px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--gi-ink)}
+.chat-item.current .chat-open{font-weight:600;color:var(--gi-accent)}
+.chat-rename,.chat-delete{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 6px;border-radius:6px;opacity:.7}
+.chat-item:hover .chat-rename,.chat-item:hover .chat-delete,.chat-rename:focus-visible,.chat-delete:focus-visible{opacity:1}
+.chat-list button[disabled],#chat-list button[disabled]{opacity:.45;cursor:default}
+.chat-rename-box{flex:1;min-width:0;font:inherit;font-size:13px;padding:4px 8px}
