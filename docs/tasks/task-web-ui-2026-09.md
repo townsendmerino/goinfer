@@ -186,7 +186,7 @@ stats now follow whichever model is selected, not always the first one listed.
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
 (`internal/serveapp/admin.go:113`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:695`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:697`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
 (`webLoadPath`, `internal/serveapp/webui.go:321`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
@@ -329,7 +329,7 @@ inside the binary.
 | # | Item | Today | Effort |
 |---|---|---|---|
 | **W9** | Conversation list with generated titles | one unnamed conversation, until reload | M (after W3) |
-| **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:393`) | S |
+| **W10** | Full sampling controls | page sends `temperature`/`max_tokens` only; the route already accepts `top_p`, `top_k`, `seed`, `stop`, penalties and `logit_bias` (`internal/serveapp/openai.go:429`) | S |
 | **W11** | Image attach for vision models | no control, though `-vision` works on the same route; `demo/agent/cmd/agent-web/index.html:129` has the whole composer (click, drag, paste, preview) to transplant, plus a per-model capability check so it hides on text-only models | M |
 | **W12** | Fit verdict before a multi-GB pull | size only. **Already scoped** — `task-fit-to-hardware.md` §3; `pull.File` carries `Size` (`pull/pull.go:179`) | M |
 | **W13** | Errors that say what to do | any non-200 becomes `(await r.text()).slice(0, 400)` in a red bubble (`internal/serveapp/webui/ui/app.js:549`), so a queue-full 429, a halted 503 and a bad key read alike — while the server's error shapes are typed | S |
@@ -423,7 +423,7 @@ W5's load route was the first real test of them, and takes all of them (W5).
 rendering rule, the error path, the keybinding, the load offer that replaced the dead-end line, the thinking split,
 regenerate/edit/delete) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
-`internal/serveapp/openai.go:393` (the sampling fields the page never sends) ·
+`internal/serveapp/openai.go:429` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
 markdown TODO, the tool chips — all transplantable) ·

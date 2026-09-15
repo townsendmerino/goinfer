@@ -156,7 +156,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	gr.id = id // K1: registers this generation for cancel-by-id
-	if !lm.enter(w, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -171,7 +171,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
-		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
+		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			sseEvent(ss, "response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
@@ -195,7 +195,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 
 	var sb strings.Builder
-	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -234,7 +234,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)
 		return
 	}
-	if !lm.enter(w, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -255,7 +255,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	if ss != nil {
 		stopBeat = sseHeartbeat(ss)
 	}
-	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if stopBeat != nil {
 		stopBeat() // joins the ticker goroutine before anything else writes to w
 	}

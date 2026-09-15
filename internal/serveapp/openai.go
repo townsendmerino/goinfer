@@ -60,7 +60,24 @@ type loadedModel struct {
 	// 0.17x — a 6x loss — with the loop itself perfectly healthy (docs/spec/08).
 	blockSpec *decoder.BlockSpec
 	sessions  *sessionLRU // prefix-keyed KV reuse across requests
-	mu        sync.Mutex  // serialize this model's generations (the single decode worker)
+	turns     admission   // J1: FIFO, context-aware turn-granter serializing this model's single
+	// decode worker — replaces the OLD lm.mu's admission role. A mutex has no notion of context,
+	// so a waiting request could not notice its own client disconnecting (or a K2 halt) without
+	// first being granted the lock. Zero value ready to use, same as the mutex it replaces.
+	//
+	// sessMu is the OTHER thing the old lm.mu did, unrelated to admission: sessionLRU is not
+	// goroutine-safe (sessions.go's own doc comment), and a background goroutine (admin.go's
+	// load-time restore, liveness.go's idle-close save, main.go's graceful-shutdown save, its
+	// idle-demote ticker) must be excluded not just from the single sessions.acquire call inside
+	// drive/driveVL, but from the WHOLE generation that follows it — the acquired *decoder.Session
+	// keeps being read and written (its KV grows) for as long as the generation runs, and
+	// demoteIdle() evicting/demoting that same session mid-generation would free or move memory
+	// out from under it. The old lm.mu got this "for free" by being held for the entire
+	// tryEnter..exit span; sessMu is taken and released at exactly those same two points (see
+	// tryEnter/exit below) so this safety property is unchanged — only the WAIT for a turn (now
+	// `turns`, above) gained context-awareness. `admission` cannot itself serve this role: it is a
+	// FIFO queue, not a lockable mutex a background goroutine can take on a whim.
+	sessMu sync.Mutex
 
 	// tokenBytes is the constraint masker's token→bytes table (one entry per vocab id, up to
 	// ~152k). It's a pure function of (vocab, tokenizer), so build it ONCE per model rather than
@@ -167,22 +184,21 @@ func (lm *loadedModel) visionCapable() bool {
 	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.gemma4Enc != nil
 }
 
-// tryEnter claims a queue slot then locks the model's mutex (the decode worker). It returns
-// (false, "") when the queue is full, so each API surface can render the backpressure failure in
-// its own error shape.
+// tryEnter claims a queue slot then waits for this model's turn (J1's admission — the decode
+// worker). It returns (false, "") when the queue is full, so each API surface can render the
+// backpressure failure in its own error shape. ctx ending while queued (client disconnect, or a
+// K2 halt racing the wait) also returns (false, ""): admission.enter itself is what makes that
+// possible without waiting to be granted the turn first (see admission.go's own doc comment) —
+// this replaces the second, post-acquisition-only halt check the old mutex-based version needed
+// because sync.Mutex.Lock() could not be interrupted.
 //
-// haltState, when non-nil, is checked AFTER the (possibly blocking) mutex acquisition, and its
-// non-nil result is returned as (false, reason) with both the mutex and queue slot released
-// again — K2's haltGate (main.go) only runs once, at the front of the chain, before a request is
-// admitted; a request already admitted and QUEUED behind this model's single decode worker when
-// a halt lands is invisible to that gate and to K1's cancelAll (nothing has registered it in the
-// generation registry yet — that happens inside drive/driveVL, further down the call stack than
-// this). Without this second check, sync.Mutex.Lock() is not context-aware, so a halt would
-// cancel only the ONE generation currently holding the mutex; everything else queued behind it
-// would run to natural completion one at a time, un-cancelled — found by reasoning through the
-// K2 gate's own "32 concurrent generations, halt, every stream ended cancelled" scenario before
-// writing that test, not by the test failing first (unlike K1's registered-context bug).
-func (lm *loadedModel) tryEnter(haltState func() *haltInfo) (ok bool, haltReason string) {
+// haltState, when non-nil, is ALSO checked once the turn is actually granted, and its non-nil
+// result is returned as (false, reason) with the turn and queue slot released again — a halt that
+// lands in the narrow window between admission.enter granting the turn and this check running is
+// still caught here; K2's haltGate (main.go) only runs once, at the front of the chain, before a
+// request is admitted, and nothing has registered this generation in K1's registry yet (that
+// happens inside drive/driveVL, further down the call stack than this).
+func (lm *loadedModel) tryEnter(ctx context.Context, rec admissionRecord, haltState func() *haltInfo) (ok bool, haltReason string) {
 	if lm.queue != nil {
 		select {
 		case lm.queue <- struct{}{}:
@@ -190,13 +206,19 @@ func (lm *loadedModel) tryEnter(haltState func() *haltInfo) (ok bool, haltReason
 			return false, ""
 		}
 	}
-	lm.mu.Lock()
+	if !lm.turns.enter(ctx, rec) {
+		if lm.queue != nil {
+			<-lm.queue
+		}
+		return false, ""
+	}
+	// Held from here through exit() — the same span the old lm.mu covered — so a background
+	// goroutine (demoteLoop et al.) cannot evict or mutate the session this generation is about to
+	// acquire and then keep using for its whole duration. See sessMu's own doc comment.
+	lm.sessMu.Lock()
 	if haltState != nil {
 		if hi := haltState(); hi != nil {
-			lm.mu.Unlock()
-			if lm.queue != nil {
-				<-lm.queue
-			}
+			lm.exit()
 			return false, hi.reason
 		}
 	}
@@ -204,9 +226,11 @@ func (lm *loadedModel) tryEnter(haltState func() *haltInfo) (ok bool, haltReason
 }
 
 // enter is the OpenAI-flavored wrapper: a full queue writes a 429 + Retry-After; a halt found
-// after the queue wait writes the same 503 shape haltGate does at the front of the chain.
-func (lm *loadedModel) enter(w http.ResponseWriter, haltState func() *haltInfo) bool {
-	ok, haltReason := lm.tryEnter(haltState)
+// after the queue wait writes the same 503 shape haltGate does at the front of the chain. A
+// context that ended while queued (client gone) writes nothing at all — the client is no longer
+// listening.
+func (lm *loadedModel) enter(w http.ResponseWriter, r *http.Request, rec admissionRecord, haltState func() *haltInfo) bool {
+	ok, haltReason := lm.tryEnter(r.Context(), rec, haltState)
 	if ok {
 		return true
 	}
@@ -214,14 +238,21 @@ func (lm *loadedModel) enter(w http.ResponseWriter, haltState func() *haltInfo) 
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": haltReason})
 		return false
 	}
+	if r.Context().Err() != nil {
+		return false // client disconnected while queued; nothing to write to
+	}
 	w.Header().Set("Retry-After", "1")
 	writeErr(w, http.StatusTooManyRequests, fmt.Sprintf("model %q queue full; retry", lm.name))
 	return false
 }
 
-// exit releases the mutex then the queue slot (paired with enter).
+// exit releases sessMu, then the turn, then the queue slot (paired with enter — reverse order of
+// acquisition). Unconditional for whichever request currently holds the turn: admission.release()
+// needs no per-caller identity, since only one holder exists at a time by construction (see
+// admission.go), and sessMu is likewise always held by exactly the current turn-holder.
 func (lm *loadedModel) exit() {
-	lm.mu.Unlock()
+	lm.sessMu.Unlock()
+	lm.turns.release()
 	if lm.queue != nil {
 		<-lm.queue
 	}
@@ -271,6 +302,11 @@ type server struct {
 	// gens is the K1 cancel-by-id registry (docs/tasks/task-halt-2026-09.md), shared by every
 	// generation surface. Never nil after newServer.
 	gens *generationRegistry
+
+	// jobs is J2's job registry (docs/tasks/task-work-queue-2026-09.md), shared by every
+	// generation surface the same way gens is. Never nil after newServer — every generation gets
+	// a job whether or not -job-dir is set; jobs.journal is what's nil in that case.
+	jobs *jobStore
 
 	// halted is K2's global halt state (docs/tasks/task-halt-2026-09.md); nil = running normally. See
 	// halt.go. Zero value is nil, so no explicit init in newServer is needed.
@@ -578,7 +614,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
 	}
-	if !lm.enter(w, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -593,7 +629,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(ss, role)
-		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
+		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
@@ -614,7 +650,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 
 	var sb strings.Builder
-	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -671,7 +707,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	if !lm.enter(w, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -684,7 +720,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
-		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
+		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
 		if gerr != nil {
@@ -702,7 +738,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -1043,7 +1079,12 @@ func genErr(err error) error {
 // gens is the server's K1 registry; nil (or gr.id == "") skips registration — every
 // generation funnels through here or driveVL, so this is the one place that bookkeeping
 // lives, not each of the ~15 call sites (see generations.go's own doc comment).
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+//
+// jobs is J2's store (task-work-queue-2026-09.md) — every job store instance always exists (see
+// newJobStore), so this is nil only in a unit test calling drive directly. Gated on the SAME
+// gr.id != "" condition as K1's registration, sharing the same id, so the two records can be
+// joined by id later (J3) without a retrofit.
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	var g *generation
 	if gens != nil && gr.id != "" {
 		// K1's cancel must land on `parent` itself, not on `ctx` below (drive's own
@@ -1060,6 +1101,26 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		defer gens.remove(gr.id)
 		wrapped := onText
 		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
+	}
+	if jobs != nil && gr.id != "" {
+		j := jobs.create(gr.id, lm.name, gr.promptIDs)
+		// Reads the function's own named return values — set by whichever return statement below
+		// actually fires — so this sees the FINAL finish/nComp/prefillReused/cancelReason/err
+		// regardless of which of drive's several return points ran.
+		defer func() {
+			state := jobDone
+			var errMsg string
+			switch {
+			case cancelReason != "":
+				state = jobCancelled
+			case err != nil:
+				state, errMsg = jobFailed, err.Error()
+			}
+			jobs.finish(j, state, &usage{
+				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
+				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
+			}, errMsg)
+		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -1191,8 +1252,8 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // token count, stop string, how many leading prompt tokens were reused (see
 // drive's doc comment), the K1 admin-cancel reason (empty unless an admin cancel
 // ended the turn), and any terminal generation error (nil on a clean end — see
-// genErr). gens is drive's own K1 registry parameter; see its doc comment.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, onText func(string)) (finish string, nComp int, stopHitOut string, prefillReused int, cancelReason string, err error) {
+// genErr). gens and jobs are drive's own K1/J2 parameters; see drive's doc comments.
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	var g *generation
 	if gens != nil && gr.id != "" {
 		// See drive's identical block for why this must wrap parent, not the ctx derived below.
@@ -1203,6 +1264,23 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		defer gens.remove(gr.id)
 		wrapped := onText
 		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
+	}
+	if jobs != nil && gr.id != "" {
+		j := jobs.create(gr.id, lm.name, gr.promptIDs)
+		defer func() {
+			state := jobDone
+			var errMsg string
+			switch {
+			case cancelReason != "":
+				state = jobCancelled
+			case err != nil:
+				state, errMsg = jobFailed, err.Error()
+			}
+			jobs.finish(j, state, &usage{
+				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
+				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
+			}, errMsg)
+		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()

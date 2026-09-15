@@ -13,9 +13,9 @@ import (
 // TestDriveUsesRequestContext gates M6 (and the whole class it belongs to): every
 // lm.drive / lm.driveVL call in a request path must pass a request-derived context,
 // never context.Background(). A detached context means a disconnected client can't
-// cancel the decode — the model runs to max_output_tokens holding lm.mu and a queue
-// slot, and retries amplify into a DoS. responses.go's tool path was the one caller
-// that got this wrong; this scans the whole package so a future one can't regress.
+// cancel the decode — the model runs to max_output_tokens holding its turn, lm.sessMu,
+// and a queue slot, and retries amplify into a DoS. responses.go's tool path was the
+// one caller that got this wrong; this scans the whole package so a future one can't regress.
 func TestDriveUsesRequestContext(t *testing.T) {
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(".")

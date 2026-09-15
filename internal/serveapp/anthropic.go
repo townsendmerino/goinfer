@@ -506,10 +506,13 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 
 	// A full queue is honest backpressure: 529 overloaded_error (the kind
 	// Anthropic clients back off on), not the OpenAI 429.
-	if ok, haltReason := lm.tryEnter(s.haltState); !ok {
+	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs}, s.haltState); !ok {
 		if haltReason != "" {
 			writeAnthropicErr(w, http.StatusServiceUnavailable, "overloaded_error", "halted: "+haltReason)
 			return
+		}
+		if r.Context().Err() != nil {
+			return // client disconnected while queued; nothing to write to
 		}
 		w.Header().Set("Retry-After", "1")
 		writeAnthropicErr(w, 529, "overloaded_error", fmt.Sprintf("model %q is busy; retry", lm.name))
@@ -525,7 +528,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	id := "msg_" + reqID()
 	gr.id = id
 	var sb strings.Builder
-	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
 		return

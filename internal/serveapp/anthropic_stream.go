@@ -71,7 +71,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		"type": "content_block_start", "index": 0,
 		"content_block": map[string]any{"type": "text", "text": ""},
 	})
-	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
 			"delta": map[string]any{"type": "text_delta", "text": t},
@@ -100,7 +100,7 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 	// (audit-2026-09-02 M-19). Safe to add only now: before sseWriter, a ticker writing here would
 	// have raced the handler on the same ResponseWriter (C-06).
 	stopBeat := sseHeartbeat(ss)
-	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	stopBeat()
 	if gerr != nil {
 		anthropicStreamErr(ss, "generation failed: "+gerr.Error())

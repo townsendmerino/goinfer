@@ -190,13 +190,14 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 	s.retainLocked(lm.model) // one more registry entry backed by this *decoder.Model (liveness refs)
 	s.regMu.Unlock()
 	if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
-		// The model is now published, so a request can already acquire it. lm.mu is the
-		// sessionLRU's guard (every handler holds it via enter across sessions.acquire), and
-		// load doesn't take it — so hold it here to serialize this not-goroutine-safe restore
-		// against a handler that reaches the LRU first, instead of racing the map (M5).
-		lm.mu.Lock()
+		// The model is now published, so a request can already acquire it. lm.sessMu is the
+		// sessionLRU's guard (drive/driveVL take it around their own sessions.acquire — J1,
+		// task-work-queue-2026-09.md), and load doesn't take it — so hold it here to serialize
+		// this not-goroutine-safe restore against a handler that reaches the LRU first, instead
+		// of racing the map (M5).
+		lm.sessMu.Lock()
 		lm.sessions.load(sessionSubdir(s.cfg.sessionDir, lm.fp))
-		lm.mu.Unlock()
+		lm.sessMu.Unlock()
 	}
 	return true
 }

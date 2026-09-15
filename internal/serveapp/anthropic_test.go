@@ -436,16 +436,16 @@ func TestServe_anthropic_streamAbort(t *testing.T) {
 	cancel()
 	resp.Body.Close()
 
-	// The decode mutex (held for the duration of a generation) must free promptly
-	// once the request context is cancelled.
+	// sessMu (held for the duration of a generation, same span the old lm.mu covered — J1,
+	// task-work-queue-2026-09.md) must free promptly once the request context is cancelled.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if lm.mu.TryLock() {
-			lm.mu.Unlock()
+		if lm.sessMu.TryLock() {
+			lm.sessMu.Unlock()
 			return // free — generation stopped
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("model mutex still held 5s after client abort — generation did not stop")
+			t.Fatal("model still holds sessMu 5s after client abort — generation did not stop")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

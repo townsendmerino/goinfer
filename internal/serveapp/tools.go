@@ -59,7 +59,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
-	if !lm.enter(w, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -116,7 +116,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		// cover the whole generation as before.
 		stopBeat = sseHeartbeat(ss)
 	}
-	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, func(t string) {
+	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 		sb.WriteString(t)
 		if prose == nil {
 			return

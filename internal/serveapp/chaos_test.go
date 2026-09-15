@@ -298,11 +298,11 @@ func TestServe_warmKVRestore(t *testing.T) {
 		t.Fatalf("round 1: %v", err)
 	}
 	lmA := srvA.models["m"]
-	lmA.mu.Lock()
+	lmA.sessMu.Lock()
 	if err := lmA.sessions.save(sessionSubdir(dir, lmA.fp)); err != nil {
 		t.Fatalf("session save: %v", err)
 	}
-	lmA.mu.Unlock()
+	lmA.sessMu.Unlock()
 	tsA.Close()
 
 	// The follow-up conversation = turn 1 + the assistant reply + a new user turn.
@@ -397,9 +397,9 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 
 	// Go idle past the threshold, then run the background sweep: the session is
 	// snapshotted to disk and its RAM slot freed.
-	lm.mu.Lock()
+	lm.sessMu.Lock()
 	if got := len(lm.sessions.order); got != 1 {
-		lm.mu.Unlock()
+		lm.sessMu.Unlock()
 		t.Fatalf("after turn 1 resident sessions = %d, want 1", got)
 	}
 	clk = base.Add(11 * time.Minute)
@@ -409,7 +409,7 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 	if cold == 1 {
 		blob = lm.sessions.cold[0].path
 	}
-	lm.mu.Unlock()
+	lm.sessMu.Unlock()
 	if n != 1 || resid != 0 || cold != 1 {
 		t.Fatalf("demoteIdle: demoted=%d resident=%d cold=%d, want 1/0/1", n, resid, cold)
 	}
@@ -423,9 +423,9 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fault-back follow-up: %v", err)
 	}
-	lm.mu.Lock()
+	lm.sessMu.Lock()
 	resid, cold = len(lm.sessions.order), len(lm.sessions.cold)
-	lm.mu.Unlock()
+	lm.sessMu.Unlock()
 	if resid != 1 || cold != 0 {
 		t.Fatalf("after fault-back resident=%d cold=%d, want 1/0", resid, cold)
 	}

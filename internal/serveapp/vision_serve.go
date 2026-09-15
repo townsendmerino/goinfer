@@ -270,7 +270,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	if !lm.enter(w, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -286,7 +286,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
 		// nComp was discarded here; include_usage needs the real generated-token count,
 		// which no count of emitted chunks can report (M-26).
-		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) {
+		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		if gerr != nil {
@@ -304,7 +304,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -360,10 +360,13 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		writeAnthropicErr(w, prepareErrStatus(err), "invalid_request_error", err.Error())
 		return
 	}
-	if ok, haltReason := lm.tryEnter(s.haltState); !ok {
+	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs}, s.haltState); !ok {
 		if haltReason != "" {
 			writeAnthropicErr(w, http.StatusServiceUnavailable, "overloaded_error", "halted: "+haltReason)
 			return
+		}
+		if r.Context().Err() != nil {
+			return // client disconnected while queued; nothing to write to
 		}
 		w.Header().Set("Retry-After", "1")
 		writeAnthropicErr(w, 529, "overloaded_error", fmt.Sprintf("model %q is busy; retry", lm.name))
@@ -391,7 +394,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
-		finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) {
+		finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
@@ -408,7 +411,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, func(t string) { sb.WriteString(t) })
+	finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
 		return

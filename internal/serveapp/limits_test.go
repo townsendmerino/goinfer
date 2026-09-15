@@ -468,7 +468,7 @@ func TestReqID_isNotGuessable(t *testing.T) {
 }
 
 // N-20: demoteLoop mutates the session LRU on its own ticker while the unload drain saved it
-// without holding lm.mu. The drain waits out in-flight REQUESTS, which is a different thing —
+// without holding lm.sessMu. The drain waits out in-flight REQUESTS, which is a different thing —
 // the idle-demote goroutine is not a request and holds no ml.rw. sessions.go documents the LRU
 // as not goroutine-safe, so this is a concurrently-mutated map: a process crash, not a wrong
 // answer.
@@ -488,16 +488,16 @@ func TestStartDrain_savesSessionsUnderTheLRULock(t *testing.T) {
 			continue
 		}
 		found = true
-		// lm.mu must be held: look for the Lock in the few lines above.
+		// lm.sessMu must be held: look for the Lock in the few lines above.
 		var locked bool
 		for j := i - 1; j >= 0 && j >= i-6; j-- {
-			if strings.Contains(lines[j], "lm.mu.Lock()") {
+			if strings.Contains(lines[j], "lm.sessMu.Lock()") {
 				locked = true
 				break
 			}
 		}
 		if !locked {
-			t.Errorf("liveness.go:%d saves the session LRU without taking lm.mu — demoteLoop "+
+			t.Errorf("liveness.go:%d saves the session LRU without taking lm.sessMu — demoteLoop "+
 				"mutates the same map on its ticker (N-20):\n\t%s", i+1, strings.TrimSpace(ln))
 		}
 	}

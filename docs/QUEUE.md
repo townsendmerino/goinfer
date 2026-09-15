@@ -1,4 +1,4 @@
-# QUEUE — the index over four queues
+# QUEUE — the index over five queues
 
 The work list is split by **success criterion**, not by component. An entry lives in exactly one
 queue, keeps its original ID, and keeps the section it was filed under.
@@ -9,6 +9,7 @@ queue, keeps its original ID, and keeps the section it was filed under.
 | [**correctness**](queue-correctness.md) | parity, numerics, goldens, quantization, families | *does it compute the right thing* |
 | [**engineering**](queue-engineering.md) | gates, lints, censuses, tooling, process rules | *would we find out* |
 | [**release**](queue-release.md) | release gates, tagging, v1.0 criteria, capability claims | *can we tag* |
+| [**presentation**](queue-presentation.md) | web UI, README, landing site, published docs, model discovery, outbound comms | *what a user sees, reads, or can find* |
 
 **Task docs are not queues.** `docs/task-*.md` are design records — why a thing is built as it is —
 and they are cited from **88 code comments**. A queue entry cannot carry that, so they stay where
@@ -1272,29 +1273,29 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/helpers.go:53` | goinfer | `func maxBytes(n int64, h http.HandlerFunc, note ...string) http.HandlerFunc {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/limits_test.go:151` | goinfer | `if strings.Contains(body, "promptTooLargeForContext(") {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/liveness.go:122` | goinfer | `func (lm *loadedModel) closeEntryNatives() {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1148` | goinfer | `if opts.EmbedInt4 {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1154` | goinfer | `loadPath := spec.path` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1179` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:352` | goinfer | `const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables BO` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:451` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a ref` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:482` | goinfer | `flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at st` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:490` | goinfer | `flag.Var((*fitFlag)(&cfg.fit), "fit", "size an unpinned load to what this machine actual` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:492` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:512` | goinfer | `flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 \|` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:529` | goinfer | `if cfg.exactPrefill {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:628` | goinfer | `inf := func(h http.HandlerFunc) http.HandlerFunc { return limitInflight(inflight, h) }` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:667` | goinfer | `// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:982` | goinfer | `if len(s.models) != 1 {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/main.go:998` | goinfer | `if cfg.backend == "webgpu" {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:1329` | goinfer | `func effectiveBudget(gen *decoder.Generation, requested int) int {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:155` | goinfer | `// chatInputBytes sums the tokenizable text across chat messages — the input the BPE run` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:172` | goinfer | `// its own error shape.` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:414` | goinfer | `type chatReq struct {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:501` | goinfer | `PrefillReusedTokens int `json:"prefill_reused_tokens"`` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:572` | goinfer | `gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:594` | goinfer | `role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:737` | goinfer | `// residentPath tells prepare whether THIS request will actually run the stateless GPU-r` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:848` | goinfer | `eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1002` | goinfer | `if cfg.backend == "webgpu" {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1152` | goinfer | `if opts.EmbedInt4 {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1158` | goinfer | `loadPath := spec.path` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:1183` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:353` | goinfer | `const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables BO` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:452` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:453` | goinfer | `flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a ref` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:484` | goinfer | `flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at st` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:494` | goinfer | `flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model ov` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:514` | goinfer | `flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 \|` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:531` | goinfer | `if cfg.exactPrefill {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:630` | goinfer | `inf := func(h http.HandlerFunc) http.HandlerFunc { return limitInflight(inflight, h) }` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:669` | goinfer | `// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and` |
+| `docs/audit-2026-09-10.md|internal/serveapp/main.go:986` | goinfer | `if len(s.models) != 1 {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:1407` | goinfer | `func effectiveBudget(gen *decoder.Generation, requested int) int {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:172` | goinfer | `// chatInputBytes sums the tokenizable text across chat messages — the input the BPE run` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:189` | goinfer | `// backpressure failure in its own error shape. ctx ending while queued (client disconne` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:450` | goinfer | `type chatReq struct {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:537` | goinfer | `PrefillReusedTokens int `json:"prefill_reused_tokens"`` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:608` | goinfer | `gr, err := lm.prepare(req.sampling, ids, lm.adapter == "")` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:630` | goinfer | `role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:773` | goinfer | `// residentPath tells prepare whether THIS request will actually run the stateless GPU-r` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:884` | goinfer | `eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)` |
 | `docs/audit-2026-09-10.md|internal/serveapp/responses.go:115` | goinfer | `if err := lm.promptTooLargeForContext(chatInputBytes(messages)); err != nil {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/responses.go:153` | goinfer | `gr, err := lm.prepare(sm, ids, lm.adapter == "")` |
 | `docs/audit-2026-09-10.md|internal/serveapp/sessions.go:165` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
@@ -1352,7 +1353,7 @@ supports.
 | `docs/audit-2026-09-10.md|scripts/gate_ledger.py:62` | goinfer | `def func_source(name):` |
 | `docs/audit-2026-09-10.md|scripts/pin_gemma3_real.py:63` | goinfer | `input_ids = prefix + [boi] + [image_token] * mm_tokens + [eoi] + suffix` |
 | `docs/audit-2026-09-10.md|scripts/pin_gemma3_vl_image.py:40` | goinfer | `input_ids = prefix + [IMAGE_TOKEN] * MM_TOKENS + suffix` |
-| `docs/audit-2026-09-10.md|scripts/queue_citation_lint.py:692` | goinfer | `UNKEYABLE` |
+| `docs/audit-2026-09-10.md|scripts/queue_citation_lint.py:692` | goinfer | `for m in BARE_RE.finditer(body):   # bare refs: QUEUE.md only, where they carry decision` |
 | `docs/audit-2026-09-10.md|scripts/readme_smoke.sh:62` | goinfer | `for f in $(echo "$c" \| grep -oE '(^\| )-[a-zA-Z][-a-zA-Z0-9]*' \| tr -d ' '); do` |
 | `docs/audit-2026-09-10.md|tokenizer/gguf.go:322` | goinfer | `case "gpt-2", "default", "":` |
 | `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:822` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
@@ -1369,9 +1370,9 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:109` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:214` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:461` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:483` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:988` | goinfer | `if visionModelType(dir) == "qwen2_5_vl" {` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1087` | goinfer | `// Adapter (compute-time LoRA) models MUST NOT take the stateless resident path: the LoR` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:485` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:992` | goinfer | `if visionModelType(dir) == "qwen2_5_vl" {` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1148` | goinfer | `// Adapter (compute-time LoRA) models MUST NOT take the stateless resident path: the LoR` |
 | `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
 | `docs/audit-metal-2026-09-12.md|metal.go:438` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
 | `docs/audit-metal-2026-09-12.md|metal.go:732` | gpu | `return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}` |
@@ -1582,7 +1583,8 @@ supports.
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:114` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:755` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
+| `docs/queue-engineering.md|internal/serveapp/haltsignal_unix.go:21` | goinfer | `signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:762` | goinfer | `// A SECOND signal during the drain force-exits instead of being swallowed by the buffer` |
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1145` | goinfer | `if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:763` | goinfer | `def gate_cell_idle():` |
@@ -1607,17 +1609,17 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1001` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:205` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:271` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1250` | goinfer | `for _, str := range tmpl.Stops().Strings {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:367` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1262` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:368` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |
 | `docs/tasks/task-first-hour.md|linalg/weightmat_row4_arm64.go:23` | aikit | `func (w *WeightMat) RepackInt4Row4() bool {` |
 | `docs/tasks/task-first-hour.md|tokenizer/bytelevel.go:258` | goinfer | `//	(?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d)\|[^\r\n\p{L}\p{N}]?\p{L}+\|\p{N}\|` |
 | `docs/tasks/task-fit-to-hardware.md|decoder/model.go:182` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
 | `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:450` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:474` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:496` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:452` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:476` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:498` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:115` | goinfer | `if !residentFitsMemory(m) {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:136` | goinfer | `const residentMemFraction = 0.70` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:354` | goinfer | `"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s\n",` |
@@ -1645,12 +1647,12 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1034` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:495` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:941` | goinfer | `spec:     cfg.spec == "ngram",` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1067` | goinfer | `var gen *decoder.Generation` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1097` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1189` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:63` | goinfer | `mu        sync.Mutex  // serialize this model's generations (the single decode worker)` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:737` | goinfer | `// residentPath tells prepare whether THIS request will actually run the stateless GPU-r` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:948` | goinfer | `lm.sessions.adapter = spec.name` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1128` | goinfer | `var gen *decoder.Generation` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1158` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1250` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:63` | goinfer | `turns     admission   // J1: FIFO, context-aware turn-granter serializing this model's s` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:773` | goinfer | `// residentPath tells prepare whether THIS request will actually run the stateless GPU-r` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:495` | goinfer | `if v := strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))); ` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:538` | goinfer | `if !a.r.prefillOK {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:55` | goinfer | `func (b *metalBackend) Name() string { return "metal" }` |
@@ -1661,11 +1663,11 @@ supports.
 | `docs/tasks/task-halt-2026-09.md|decoder/model.go:1097` | goinfer | `"the per-token path (slower TTFT; each distinct reason is reported once): %v\n", n, err)` |
 | `docs/tasks/task-halt-2026-09.md|demo/agent/agent/kenclient.go:42` | goinfer | `Name: "search",` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/helpers.go:500` | goinfer | `for i := 0; i < len(s); {` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:501` | goinfer | `flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm sessi` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:658` | goinfer | `// /admin/* (load/unload, K1's cancel-by-id, K2's halt/resume, K5's status) lives on EIT` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:689` | goinfer | `// its own (pullState), which is the bound that actually fits it.` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:1064` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:434` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:503` | goinfer | `flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm sessi` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:660` | goinfer | `// /admin/* (load/unload, K1's cancel-by-id, K2's halt/resume, K5's status) lives on EIT` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:691` | goinfer | `// its own (pullState), which is the bound that actually fits it.` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:1125` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:470` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
 | `docs/tasks/task-int4-layout-2026-09.md|cuda/resident.go:3098` | goinfer | `p := make([]uint32, N*(K/4))` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/gguf.go:1401` | goinfer | `// row4 from canonical), even on a cpu-arm64 target that will write kind 5` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/model.go:385` | goinfer | `w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), ` |
@@ -1676,7 +1678,7 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|internal/chatapp/main.go:177` | goinfer | `anchor: func Main() {` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/gemmaapp/main.go:47` | goinfer | `backend  = flag.String("backend", "cpu", "compute backend: cpu \| webgpu \| metal (metal n` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/prequant/prequant.go:36` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
-| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:428` | goinfer | `// --version answers "what is in this binary" WITHOUT a model, which is the question the` |
+| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:429` | goinfer | `// --version answers "what is in this binary" WITHOUT a model, which is the question the` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/gemma4_moe.go:234` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:498` | goinfer | `func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:450` | goinfer | `if p := m.GiwPath(); p != "" {` |
@@ -1708,8 +1710,8 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:113` | goinfer | `func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:171` | goinfer | `func (s *server) publishLoaded(lm *loadedModel) bool {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/anthropic.go:35` | goinfer | `// dropped by the decoder); stop_reason is therefore never "thinking" in v1.` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:695` | goinfer | `mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebL` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:393` | goinfer | `TopP                *float64        `json:"top_p"`` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:697` | goinfer | `mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebL` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:429` | goinfer | `TopP                *float64        `json:"top_p"`` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:321` | goinfer | `func webLoadPath(p string) (string, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:458` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:50` | goinfer | `//go:embed webui` |
@@ -1718,12 +1720,12 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:507` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/helpers.go:77` | goinfer | `// distinct from the per-model 429. sem == nil disables it (-max-inflight 0). The slot i` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:500` | goinfer | `flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefille` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:506` | goinfer | `flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests ` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:1046` | goinfer | `func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegi` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:170` | goinfer | `// tryEnter claims a queue slot then locks the model's mutex (the decode worker). It ret` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:180` | goinfer | `// this). Without this second check, sync.Mutex.Lock() is not context-aware, so a halt w` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:77` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:502` | goinfer | `flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefille` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:508` | goinfer | `flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests ` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:1087` | goinfer | `func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegi` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:209` | goinfer | `if !lm.turns.enter(ctx, rec) {` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:220` | goinfer | `if hi := haltState(); hi != nil {` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:94` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
 
 ## Bare file index

@@ -322,6 +322,7 @@ type config struct {
 	weightCacheGB    float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
 	embedInt4        bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
 	maxQueue         int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	jobDir           string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight      int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
 	maxBodyBytes     int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
 	unloadDrainWait  time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
@@ -441,6 +442,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		tlsKey  = flag.String("tls-key", "", "PEM private key file, paired with -tls-cert")
 	)
 	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
+	flag.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir for a durable job journal — one JSONL line per generation state transition (pending/running/done/failed/cancelled), 0700/0600 permissions matching -session-dir. On restart, any job still 'running' at the last recorded transition is marked 'interrupted', never silently 'failed'. Off by default: every generation still gets an in-memory job record, just no durability across a restart")
 	flag.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
 	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
 	flag.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
@@ -718,8 +720,13 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// srvCtx is the server-lifetime context. BaseContext makes every request's r.Context() a child of
 	// it, so cancelling srvCtx at shutdown cancels every in-flight generation (drive derives its
 	// context from r.Context()). Without this, httpSrv.Shutdown waits for a long streaming generation
-	// but never cancels it, so it runs past the 30s timeout still holding lm.mu and the checkpoint loop
-	// below deadlocks on lm.mu.Lock() forever (audit C-22).
+	// but never cancels it, so it runs past the 30s timeout — the checkpoint loop below no longer
+	// deadlocks on that specific generation's lm.sessMu (J1, task-work-queue-2026-09.md, split
+	// sessMu out from the admission turn it used to share: sessMu is now held only briefly, around
+	// sessions.acquire, not for the whole generation), but Shutdown itself still waits for the
+	// handler to return, so cancelling the generation is still what bounds the overall shutdown
+	// (audit C-22); tryLockUntil's own deadline is the remaining belt-and-braces bound on sessMu
+	// specifically, for whatever brief window a generation is actually inside sessions.acquire.
 	srvCtx, srvCancel := context.WithCancel(context.Background())
 	defer srvCancel()
 	httpSrv := &http.Server{
@@ -769,16 +776,17 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
 			deadline := time.Now().Add(5 * time.Second)
 			for _, lm := range srv.modelList() {
-				// TryLock with a deadline: srvCancel above should have freed lm.mu, but a generation
-				// mid-forward (not yet at a ctx check) could still hold it — skip its checkpoint rather
-				// than deadlock the whole shutdown (audit C-22).
-				if !tryLockUntil(&lm.mu, deadline) {
+				// TryLock with a deadline: srvCancel above should have freed a generation still
+				// inside sessions.acquire (a generation mid-forward, not yet at a ctx check, could
+				// briefly still hold lm.sessMu) — skip its checkpoint rather than deadlock the
+				// whole shutdown (audit C-22).
+				if !tryLockUntil(&lm.sessMu, deadline) {
 					fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
 					continue
 				}
 				_ = lm.sessions.save(sessionSubdir(cfg.sessionDir, lm.fp))
 				lm.sessions.removeColdFiles() // the cold tier is in-process; clear its scratch
-				lm.mu.Unlock()
+				lm.sessMu.Unlock()
 			}
 		}
 	}()
@@ -860,6 +868,10 @@ func newServer(cfg config) (*server, error) {
 	if cfg.unloadDrainWait <= 0 {
 		cfg.unloadDrainWait = 5 * time.Second // floor; the flag defaults here too. ?wait=false is the per-request path to an immediate 202.
 	}
+	jobs, err := newJobStore(cfg.jobDir)
+	if err != nil {
+		return nil, fmt.Errorf("-job-dir %q: %w", cfg.jobDir, err)
+	}
 	s := &server{
 		models:    map[string]*loadedModel{},
 		liveness:  map[*decoder.Model]*modelLiveness{},
@@ -867,6 +879,7 @@ func newServer(cfg config) (*server, error) {
 		cfg:       cfg,
 		responses: newResponseStore(256),
 		gens:      newGenerationRegistry(),
+		jobs:      jobs,
 	}
 	for _, spec := range cfg.models {
 		// An `hf:`/`demo:` spec is fetched (or found in the cache) BEFORE the load, so the
@@ -1448,11 +1461,11 @@ func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
 			return
 		case <-t.C:
 			for _, lm := range srv.modelList() {
-				lm.mu.Lock()
+				lm.sessMu.Lock()
 				if n := lm.sessions.demoteIdle(); n > 0 {
 					fmt.Fprintf(os.Stderr, "tiered-kv: demoted %d idle session(s) for %q\n", n, lm.name)
 				}
-				lm.mu.Unlock()
+				lm.sessMu.Unlock()
 			}
 		}
 	}

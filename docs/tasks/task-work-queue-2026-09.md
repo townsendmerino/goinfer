@@ -1,10 +1,14 @@
 # Task: goinfer as a work queue — admission, jobs, batch APIs (J1–J9) — 2026-09
 
-> **Status: REBUILT 2026-09-13, unstarted.** This doc was first written 2026-09-12 and was never
-> committed. It was deleted the next morning by a workaround, not by a decision — see "How this
-> doc was lost" below, which is kept because the failure is structural and the fix is J0.
-> The rebuild is faithful to the J1–J9 scope as filed; the prose is re-derived from the tree at
+> **Status: J0/J1/J2 DONE 2026-09-14, J3–J9 unstarted.** This doc was first written 2026-09-12 and
+> was never committed. It was deleted the next morning by a workaround, not by a decision — see
+> "How this doc was lost" below, which is kept because the failure is structural and the fix was
+> J0. The rebuild is faithful to the J1–J9 scope as filed; the prose is re-derived from the tree at
 > `9d29d625`, so every citation here was re-verified rather than carried over.
+>
+> J1–J2 were scoped deliberately: J3/J4/J5 need J2's job object to exist first; J6/J8 each need
+> hours of real benchmarking against a pre-registered pass/kill band, out of scope for this pass.
+> Both remain fully open.
 >
 > Sibling: [`task-halt-2026-09.md`](task-halt-2026-09.md) (K1–K9) — this doc **reuses** K1 (cancel
 > by id), K2 (global halt), K4 (budgets) and K5 (the admin socket) rather than restating them, and
@@ -64,33 +68,44 @@ each one spends its first hours untracked.
 
 Brief for this is at [`../prompts/citation-lint-untracked.md`](../prompts/citation-lint-untracked.md).
 
+**Status: DONE 2026-09-14** (`0c74a161`, `main`). `scripts/queue_citation_lint.py`'s `live_docs()`
+now filters on `git ls-files -z`, cached once per process; `untracked_live_docs()` feeds `main()`'s
+startup note (printed once, never silent); `--update` inherits the fix automatically since it
+iterates `live_docs()` too. `scripts/install-git-hooks.sh`'s pre-push refusal message gained the
+matching advice line (edited in the generator, not the generated `.git/hooks/pre-push`). Gate
+built exactly as specified in `scripts/test_queue_citation_lint.py`, against an isolated temp git
+repo — mutation-checked: reverted the filter, confirmed the test reds exactly as this doc's own
+loss incident describes, restored, green. Verified against the real repo: this doc's own sibling,
+`docs/queue-presentation.md`, was genuinely untracked at the time and was correctly skipped-and-
+reported rather than reddening the lint.
+
 ---
 
 ## What exists today, cited
 
 Not rebuilt below; this is the floor J1–J9 build on.
 
-- **One decode worker per model.** `tryEnter` claims a queue slot and then takes the model's mutex
-  (`internal/serveapp/openai.go:170`), and the mutex is what serialises decode. The cap is
-  literally `1 running + --max-queue` (`internal/serveapp/openai.go:77`).
+- **One decode worker per model.** `tryEnter` claims a queue slot and then takes its turn
+  (`internal/serveapp/openai.go:209`), and that turn is what serialises decode. The cap is
+  literally `1 running + --max-queue` (`internal/serveapp/openai.go:94`).
 - **The wait is not fair and not context-aware by itself.** `sync.Mutex.Lock()` has no context, so
   a second check exists purely so a halt can cut a waiter loose
-  (`internal/serveapp/openai.go:180`). Waiters are woken in whatever order the mutex chooses: a
+  (`internal/serveapp/openai.go:220`). Waiters are woken in whatever order the mutex chooses: a
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/serveapp/main.go:506`); a full queue is a 429 on the OpenAI routes and a 529
+  (`internal/serveapp/main.go:508`); a full queue is a 429 on the OpenAI routes and a 529
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:507`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
   (`internal/serveapp/helpers.go:77`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1046`). The client's connection *is* the job: close it and the
+  (`internal/serveapp/openai.go:1087`). The client's connection *is* the job: close it and the
   work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
-  (`internal/serveapp/main.go:500`). Admission order therefore has a measurable cost today that
+  (`internal/serveapp/main.go:502`). Admission order therefore has a measurable cost today that
   admission does not know about.
 - **One route already takes a batch.** `/v1/embeddings` accepts up to 2,048 inputs in a request
   (`internal/serveapp/embeddings.go:34`) — the only bulk surface in the product, and the shape J4
@@ -125,13 +140,38 @@ Replace the bare mutex wait with an explicit queue the server can reason about.
 
 - A per-model FIFO of waiting requests with a real `context.Context` per waiter, so a cancelled or
   halted waiter leaves immediately and the second halt check in
-  `internal/serveapp/openai.go:180` stops being load-bearing.
+  `internal/serveapp/openai.go:220` stops being load-bearing.
 - **Context-aware**, in both senses: the admission record carries the request's prompt-token count
   and its session/prefix key, so J6 and J7 have something to schedule on. J1 itself keeps strict
   FIFO — it establishes the structure and changes no order.
 - 429/529 semantics unchanged at the boundary, and `-max-queue` keeps its meaning.
 - Gate: with `-max-queue 1` and two concurrent requests, the second's cancellation is observed at
   the server within one decode step, not at the end of the first generation. Red before the change.
+
+**Status: DONE 2026-09-14** (`main`). `internal/serveapp/admission.go`: a size-1, FIFO,
+context-aware turn-granter (modeled on `golang.org/x/sync/semaphore.Weighted`'s `Acquire` as a
+*technique*, not a dependency — ground rule 4 forbids a new module for this), replacing
+`loadedModel.mu`. `sessionLRU` turned out to have no client-visible session key at all — it matches
+by longest-common-prefix over the actual prompt token ids (`sessions.go`'s `bestExtend`) — so the
+"session/prefix key" the admission record carries is, concretely, `promptIDs []int`.
+
+Found while integrating: `lm.mu` was doing double duty — also the *only* thing excluding a
+background goroutine (session restore-on-load, the idle-demote ticker, graceful-shutdown save)
+from touching `sessionLRU` while a generation was using it. `admission` is a FIFO queue, not a
+lockable mutex a background goroutine can take on a whim, so this needed a second, dedicated field
+(`loadedModel.sessMu`), held for the identical `tryEnter..exit` span the old `lm.mu` covered — the
+safety property is unchanged; only the *wait for a turn* gained context-awareness.
+
+Gate built as specified in `internal/serveapp/admission_test.go`, deterministic and fast (no real
+checkpoint needed — the defect is in the wait mechanism itself): a waiter behind an indefinitely-
+held turn is cancelled and must return well within milliseconds, not "the end of the first
+generation." Verified red without the fix with a companion test running the identical scenario
+against a bare `sync.Mutex` (must hang; `TestAdmission_mutexWouldFailThisGate`), proving the first
+test actually discriminates the defect. `-race` clean; FIFO order and the immediate-admit fast path
+also covered. Confirmed against a real checkpoint with no behavioral change: `TestServe_backpressure`
+(burst 12, `-max-queue 2` → 3×200/9×429, unchanged) and `TestServe_haltUnderLoad` (K2
+time-to-quiescence ~30ms; of 32 concurrent requests, 31 *queued* ones were refused immediately
+rather than needing to be granted their turn first — the concrete, observable form of this fix).
 
 ## J2 — the job object, and an optional journal
 
@@ -146,6 +186,28 @@ Replace the bare mutex wait with an explicit queue the server can reason about.
   point of writing it down.
 - This subsumes K9 (the append-only generation log) rather than duplicating it: one journal, two
   readers.
+
+**Status: DONE 2026-09-14** (`main`). `internal/serveapp/job.go` (the `job`/`jobStore` object,
+in-memory, always populated — `newServer` constructs it unconditionally) and
+`internal/serveapp/jobjournal.go` (the optional JSONL durability layer, gated on `-job-dir`).
+`request` is scoped to what `drive`/`driveVL`'s existing K1 chokepoint actually has — the decoded
+prompt token ids, not the raw HTTP body, which would need new plumbing from all 8 handler call
+sites for no reader that exists yet. Each journal line is a full snapshot at that transition (not a
+diff), so reconstruction is "keep the last line per id." Jobs are created/finished at the *same*
+`drive`/`driveVL` chokepoint as K1's registration, keyed on the same `gr.id`, so J3's later "the two
+registries are joined, not parallel" is a lookup away rather than a retrofit — not built this pass.
+
+Gate built as specified in `internal/serveapp/job_test.go`: round-trip (write, reload, get the last
+state back), the interrupted-on-restart case (a `running` transition with no terminal follow-up
+reconstructs as `interrupted`, verified red without the fix by removing that logic and confirming
+the test catches it), a *second* restart's own last line correctly stays `interrupted` (not
+re-derived), and the 0700/0600 permission check matching `sessions.go`'s existing rationale
+exactly. Confirmed with a real checkpoint that job creation/finishing is invisible to existing
+behavior (`TestServe_backpressure`, `TestServe_haltUnderLoad`, `TestServe_anthropic_integration`/
+`_streaming` all pass unchanged with `-job-dir` unset).
+
+**Not built this pass** (explicitly out of scope): the `/v1/jobs` HTTP surface (J3), the batch APIs
+(J4/J5), and anything that reads `jobStore` from outside the process.
 
 ## J3 — `/v1/jobs`: submit, poll, re-attach
 
@@ -244,9 +306,9 @@ The only throughput item, and it is deliberately last.
 
 ## Sources
 
-`internal/serveapp/openai.go:77`, `:170`, `:180`, `:1040` (the queue cap, `tryEnter`, the halt
+`internal/serveapp/openai.go:94`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
 check, `drive`) · `internal/serveapp/helpers.go:77` (`-max-inflight`, distinct from the per-model
-429) · `internal/serveapp/main.go:500`, `:506` (`-kv-sessions`, `-max-queue`) ·
+429) · `internal/serveapp/main.go:502`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:507` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
 surface) · `internal/chatapp/main.go:203` (the CLI J5 extends) ·
