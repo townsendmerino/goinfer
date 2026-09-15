@@ -41,12 +41,12 @@
     "bailing_hybrid": {
       "uses": [],
       "own": [],
-      "deps_hash": "sha256:abf5096ebb399e8eb200400358fb476c7fe644fcf79ceba257d2a0c1ec709ebd",
+      "deps_hash": "sha256:004194925af78e6d0893ce9e0f1050702d1e3b56e44072c0b29df46c52bc991e",
       "status": "experimental",
-      "validated_at": "d72400e",
-      "date": "2026-09-06",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
       "reference": "hand-assembled f32 reference (bailing_hybrid-tiny fixture, MLA+KDA composition, KDA's per-channel-decay recurrence via fla-org's own naive reference)",
-      "machine": "mac",
+      "machine": "darwin-arm64",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
@@ -61,7 +61,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -81,7 +81,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -104,7 +104,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:94a6def2d8a0484c82e58137302c875c0c72c864c6fb0bb216faf6d9bb119da9",
+      "deps_hash": "sha256:a555a35dc9cf53a57604d2da5c91f95e3d388fffd37bd3bb2ee7bf3f55ab17a0",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -127,7 +127,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:94a6def2d8a0484c82e58137302c875c0c72c864c6fb0bb216faf6d9bb119da9",
+      "deps_hash": "sha256:a555a35dc9cf53a57604d2da5c91f95e3d388fffd37bd3bb2ee7bf3f55ab17a0",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -147,7 +147,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -169,7 +169,7 @@
       "own": [
         "decoder/forward_gemma4.go"
       ],
-      "deps_hash": "sha256:d89073294ee4b70ef8249686753e6e4af588dbaf68b41dfb19f79bfe0a36cb94",
+      "deps_hash": "sha256:6a89da7f39b06c6f89a968a90bff68ea319a0541452f34cbd1597a45851c3688",
       "status": "validated",
       "validated_at": "d64afe4",
       "date": "2026-06-16",
@@ -190,12 +190,12 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "experimental",
-      "validated_at": "d72400e",
-      "date": "2026-09-06",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
       "reference": "HF f32 (glm-tiny seeded fixture)",
-      "machine": "mac",
+      "machine": "darwin-arm64",
       "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
@@ -216,7 +216,7 @@
         "decoder/gptoss_safetensors.go",
         "decoder/gptoss_safetensors_test.go"
       ],
-      "deps_hash": "sha256:2fbfe43d1d66c520f5236c320e65c2406e8be8b654e8d0fcde87be8af7d8ae1b",
+      "deps_hash": "sha256:9e024ed727160950b269752c286344ad7c0180b4cdc576d6710ed35323b56404",
       "status": "validated",
       "validated_at": "25a4711",
       "date": "2026-07-27",
@@ -235,12 +235,12 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
-      "validated_at": "d72400e",
-      "date": "2026-09-06",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
       "reference": "HF f32 (GPT-2 small, 124M)",
-      "machine": "mac",
+      "machine": "darwin-arm64",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
@@ -256,13 +256,13 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
-      "status": "validated",
-      "validated_at": "493897af",
-      "date": "2026-09-07",
-      "reference": "HF f32 (ibm-granite/granite-4.2-3b, GraniteForCausalLM)",
-      "machine": "linux-62gb",
-      "method": "full-forward-oracle",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF f32 (granite-dense-tiny seeded fixture, non-trivial scalar multipliers)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 1.00000,
@@ -280,7 +280,7 @@
       "own": [
         "decoder/forward_granite.go"
       ],
-      "deps_hash": "sha256:d84dbc25e307f172fd1e8760addbd2d3934c37500cd1017bcb5cf8db4e548d71",
+      "deps_hash": "sha256:82fbef1ebee9cec10a5ed2e0c2b874edd57f38bc29dc503282f0e3624052777c",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -304,7 +304,7 @@
         "decoder/internlm2_test.go",
         "scripts/pin_internlm2_tiny.py"
       ],
-      "deps_hash": "sha256:affb3b0992abed4b2a86760fad9f65d4507bbedc87f2df08d5726973a36ef51a",
+      "deps_hash": "sha256:f1ad7db98d7349baa5c7ea1772f8b2112ca939b992ab4db65854d92d5f7482e4",
       "status": "validated",
       "validated_at": "5251f4f0",
       "date": "2026-09-07",
@@ -327,7 +327,7 @@
       "own": [
         "decoder/forward_deepseek.go"
       ],
-      "deps_hash": "sha256:94a6def2d8a0484c82e58137302c875c0c72c864c6fb0bb216faf6d9bb119da9",
+      "deps_hash": "sha256:a555a35dc9cf53a57604d2da5c91f95e3d388fffd37bd3bb2ee7bf3f55ab17a0",
       "status": "validated",
       "validated_at": "b067007",
       "date": "2026-08-05",
@@ -351,7 +351,7 @@
         "scripts/pin_laguna_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:324dfd15f8d4be721917b026e99da38f30778210bcdc864dfb94d05b2b2a7e41",
+      "deps_hash": "sha256:5a34d7942ab63c8c826d2fd7b8eac9b621d41075ef16228ab2047c11cb27751d",
       "status": "experimental",
       "validated_at": "41673f7",
       "date": "2026-08-17",
@@ -373,13 +373,13 @@
         "decoder/lfm2.go",
         "decoder/forward_lfm2.go"
       ],
-      "deps_hash": "sha256:7824e90f0ca09eae46b2e4c137c6eabb57f7518361de90877dd8a8cf80a9f5e2",
-      "status": "validated",
-      "validated_at": "596f097b",
-      "date": "2026-09-07",
-      "reference": "HF f32 (LFM2.5-2.6B, Lfm2ForCausalLM)",
-      "machine": "linux-62gb",
-      "method": "full-forward-oracle",
+      "deps_hash": "sha256:0641c37ffbfb15f85b13d4d4600a59172c46ab66685d08db65168effa3ab8f25",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF f32 (lfm2-tiny seeded fixture)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 1.00000,
@@ -393,7 +393,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -416,7 +416,7 @@
       "own": [
         "decoder/forward_llama4.go"
       ],
-      "deps_hash": "sha256:2bb79e4092f4b2eec3bd406250af4837b380dd59771bfd8767a156df83f2361f",
+      "deps_hash": "sha256:c07c35cd752c0a04ffe273206e8f4f49c0258d7dca41aa1c1072013127ae0fb2",
       "status": "experimental",
       "validated_at": "3f23c96",
       "date": "2026-06-16",
@@ -440,7 +440,7 @@
         "decoder/mellum_slice_test.go",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:91bc9604fb992a14d9de0d9b7350e3128838bdd941d0cc386d6506566696ec5b",
+      "deps_hash": "sha256:be1e6c4744aa5c4ae21bfa56e86cc0e6030d463593da1dffa7c7846795cb5065",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -460,7 +460,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -480,13 +480,13 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
-      "status": "validated",
-      "validated_at": "596f097b",
-      "date": "2026-09-07",
-      "reference": "HF f32 (Ministral-3-3b-Instruct-2512-BF16, Mistral3ForConditionalGeneration text path)",
-      "machine": "linux-62gb",
-      "method": "full-forward-oracle",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF f32 (ministral3-tiny seeded fixture, prompt \u003e original_max_position_embeddings to exercise attn-temp)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 1.00000,
@@ -501,7 +501,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "experimental",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -524,7 +524,7 @@
       "own": [
         "decoder/forward_nemotron.go"
       ],
-      "deps_hash": "sha256:00050daa23fc08c758cb0fb0f9ecc335443ed8ecc307bfe66e08a8df97cb8cea",
+      "deps_hash": "sha256:cdc42d73cafbe53e34e0a2519ba47275f420d21db7fc20e03cb30e3a06193bfc",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -544,13 +544,13 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
-      "status": "validated",
-      "validated_at": "edfb4519",
-      "date": "2026-09-07",
-      "reference": "HF f32 (allenai/Olmo-3-7B-Think, Olmo3ForCausalLM)",
-      "machine": "linux-62gb",
-      "method": "full-forward-oracle",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF f32 (olmo3-tiny seeded fixture, NormPostOnly + QKNormWhole + YaRN-on-full-only)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 1.00000,
@@ -571,13 +571,13 @@
         "scripts/pin_olmo_hybrid_real.py",
         "scripts/pin_olmo_hybrid_tiny.py"
       ],
-      "deps_hash": "sha256:fd5a97be99d221e28d7d4ebf8d08f3dffb162bdc4d89f2679a383548fc031ace",
-      "status": "validated",
-      "validated_at": "493897af",
-      "date": "2026-09-07",
-      "reference": "HF f32 (allenai/Olmo-Hybrid-7B, OlmoHybridForCausalLM)",
-      "machine": "linux-62gb",
-      "method": "full-forward-oracle",
+      "deps_hash": "sha256:1217ef8fc355c0297a28faf55313ce4a73727cbea3c8623cb9ff3d2e6584e278",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF f32 (olmo_hybrid-tiny seeded fixture, mixed NormPlacement + NegEigval + separate DeltaNet tensors + NoPE)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 1.00000,
@@ -591,7 +591,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -611,7 +611,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -631,17 +631,17 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
-      "status": "validated",
-      "validated_at": "c5fbbbc2",
-      "date": "2026-09-08",
-      "reference": "HF f32 (Qwen/Qwen2.5-VL-3B-Instruct, real image, prefill forward only)",
-      "machine": "linux-62gb",
-      "method": "full-forward-oracle",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.99946,
-        "cosine_mean": 0.99946
+        "cosine_min": 0.99998,
+        "cosine_mean": 0.99998
       }
     },
     "qwen2_moe": {
@@ -652,7 +652,7 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "c9db2ec4",
       "date": "2026-09-08",
@@ -672,7 +672,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -697,7 +697,7 @@
         "decoder/qwen3_5_test.go",
         "scripts/pin_qwen3_5_forward.py"
       ],
-      "deps_hash": "sha256:d5d0c31fa497ea5ffb8312ac58b6fbc45682ef4388889abc9c34dff21d8440e8",
+      "deps_hash": "sha256:20b6a3713f0f3e8c4e9065a8c3faad29d1bb4a0ded196a388255ab6cc8e79902",
       "status": "experimental",
       "validated_at": "e295fcd",
       "date": "2026-08-18",
@@ -722,7 +722,7 @@
         "decoder/forward_qwen35.go",
         "decoder/gguf_qwen35.go"
       ],
-      "deps_hash": "sha256:d75e1f1d171918c8bc9775f204bd8292d686ccbc1cb1bb2012b7f8dc5b6d8815",
+      "deps_hash": "sha256:0ca341cfde75d198964a4da4dbb366e3b96c56157b010a89625d032767debd42",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -743,17 +743,17 @@
         "moe"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
-      "status": "validated",
-      "validated_at": "c9db2ec4",
-      "date": "2026-09-08",
-      "reference": "HF bf16 (Qwen/Qwen3-30B-A3B; int8 weights, f32 activations)",
-      "machine": "linux-62gb",
-      "method": "real-model-oracle",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF f32 (qwen3moe-tiny seeded fixture, 8x top-2, no shared expert)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.99834,
-        "cosine_mean": 0.99834
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
       }
     },
     "qwen3_next": {
@@ -773,7 +773,7 @@
         "scripts/pin_qwen3next_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:761bb5a27b649bdd9f1bcb82fba4266e847ef95e543fe3050e6048c498c2f1f1",
+      "deps_hash": "sha256:e76867de1457d574916b8af8499e9c675e8f4694afe3cd0dd47323ebab7051c9",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -793,7 +793,7 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
       "status": "experimental",
       "validated_at": "59dd7097",
       "date": "2026-09-08",
@@ -813,13 +813,13 @@
         "quant"
       ],
       "own": [],
-      "deps_hash": "sha256:3023d6acd4a91044cb6866752ddc3ee023b6b2fbc87877451c6ee37f260fdb6b",
-      "status": "validated",
-      "validated_at": "dcf55ee8",
-      "date": "2026-09-07",
-      "reference": "HF f32 (SmolLM3-3B, SmolLM3ForCausalLM)",
-      "machine": "linux-62gb",
-      "method": "full-forward-oracle",
+      "deps_hash": "sha256:07a743f46159311f9eeaff0f2ec1af76dcd7a3775fac4ce859874a3cba615999",
+      "status": "experimental",
+      "validated_at": "4c3f53dd",
+      "date": "2026-09-14",
+      "reference": "HF f32 (smollm3-tiny seeded fixture, per-layer NoPE on layer 3)",
+      "machine": "darwin-arm64",
+      "method": "tiny-golden",
       "metrics": {
         "argmax_pct": 100.0,
         "cosine_min": 1.00000,
