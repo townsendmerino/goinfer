@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W31 added 2026-09-15 (§7) now that J1–J4 have shipped; W27 and W28 DONE 2026-09-15, W29–W31 next.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W31 added 2026-09-15 (§7) now that J1–J4 have shipped; W27, W28 and W29 DONE 2026-09-15, W30–W31 next.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -877,10 +877,32 @@ pre-W28 wording. A mutation clearing the client's depth-parse regex to always mi
 on both the W13 and W27 checks that read it. **Effort was: S** (the position half was already done;
 this was the 429's number).
 
-### W29 — Send in the background and come back
-Submit through `/v1/jobs` rather than the streaming route, leave the page, and the answer is on the
-job when you return. This is the one Claude-app behaviour the page could not match at any price
-before J3; it can now. Depends on W27. **Effort: M.**
+### W29 — Send in the background and come back — DONE 2026-09-15 (landed with W27)
+~~Submit through `/v1/jobs` rather than the streaming route, leave the page, and the answer is on
+the job when you return~~ — this fell out of W27's own machinery rather than needing its own build:
+once a text reply *is* a job (W27), opening another conversation or hitting New chat mid-reply no
+longer has to block or stop it. `detachReply` (`internal/serveapp/webui/ui/app.js:1234`) saves the
+in-flight reply as still-`"generating"` with its job id and lets the local stream go; `openChat`
+and New chat call it instead of refusing when a job-backed reply is running
+(`internal/serveapp/webui/ui/app.js:1306`, `:1333`) — only an image-carrying (non-job) reply still
+blocks them, since there is nothing server-side to detach from. The conversation list marks that
+chat *"reply in progress"* while it runs (`internal/serveapp/webui/ui/app.js:1412`), and the list
+and New chat both stay usable, not disabled, for the whole time it is away.
+
+`resumeJob` (`internal/serveapp/webui/ui/app.js:1244`) is what makes coming back work: still
+running → re-attach and replay from the start (W27); finished while away → filled in from the job's
+own record, labelled *"finished while you were away"*; failed or cancelled while away → shown as
+such, with the server's own reason; the job itself gone (restarted without `-job-dir`) →
+*"interrupted — the server lost this job when it restarted"*, same as any other lost job. This is
+the one Claude-app behaviour the page could not match at any price before J3 — closing the tab, or
+even just looking at another conversation, used to be the same as Stop.
+
+Gate: the same phases 35–36 as W27 (`scripts/webui_app_gate.mjs`), sharing its 18 red mutations —
+"leaving the conversation does not cancel the job," "the list marks that conversation as having a
+reply in progress," "a reply that finished while you were away is filled in from the job's real
+record," "a job that failed/cancelled while away is shown as such." **Effort was: none beyond
+W27** — recorded here because the doc had it as a separate M-effort item; in practice detaching
+*is* what a job-backed reply already permits, not a second thing to build.
 
 ### W30 — A Batch tab
 J4 landed `/v1/files` + `/v1/batches` and the Anthropic Message Batches shape over one job store.
